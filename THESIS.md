@@ -54,6 +54,23 @@ This extends beyond bounties. Supply chain audits: every package ships with a pr
 
 The unit of trust in software shifts from "someone tested it" to "here's the proof." And the proofs come from log statements that already exist.
 
+## Beyond log statements.
+
+The log statement is the lowest-friction entry point — every codebase has thousands and they require zero code changes. But the methodology generalizes.
+
+Programmer intent is everywhere in the code, expressed informally:
+- **Comments:** `// this should never be null`
+- **Variable names:** `safeBalance`, `validatedInput`, `sanitizedHtml`
+- **Function names:** `validateOrder`, `ensureAuthenticated`
+- **Type annotations:** `quantity: PositiveInteger`
+- **Test assertions:** `expect(result).toBeGreaterThan(0)`
+- **Error messages:** `throw new Error("balance cannot be negative")`
+- **TODO comments:** `// TODO: handle the race condition here`
+
+The real insight isn't "log statements are assertions." It's: programmer intent is embedded throughout the code, expressed informally, and can be formalized and proven.
+
+The log statement is where we start. It's not where we stop.
+
 ## Your log statements already describe your system's behavior.
 
 Every one of them is a claim about what's happening.
