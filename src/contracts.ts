@@ -18,6 +18,7 @@ export interface Contract {
   proven: ProvenProperty[];
   violations: Violation[];
   clause_history: ClauseHistory[];
+  depends_on: string[];  // hashes of contracts that were in context during derivation
 }
 
 export interface ProvenProperty {
@@ -283,6 +284,57 @@ export class ContractStore {
       });
     }
 
-    return { file, function: functionName, line, proven, violations, clause_history };
+    return { file, function: functionName, line, proven, violations, clause_history, depends_on: [] };
   }
+
+  /**
+   * Compute a content hash for a contract — used as a dependency identifier.
+   */
+  static contractHash(contract: Contract): string {
+    const content = contract.proven.map((p) => p.smt2).join("\n") +
+      contract.violations.map((v) => v.smt2).join("\n");
+    return createHash("md5").update(content).digest("hex").slice(0, 12);
+  }
+
+  /**
+   * Set the depends_on field for a contract based on which contracts
+   * were in context during its derivation.
+   */
+  static withDependencies(contract: Contract, contextContracts: Contract[]): Contract {
+    contract.depends_on = contextContracts.map((c) => ContractStore.contractHash(c));
+    return contract;
+  }
+}
+
+/**
+ * Walk the dependency chain and find all contracts that are stale
+ * because a dependency changed.
+ *
+ * A contract is stale if:
+ * 1. Its own file changed (file_hash mismatch — handled by existing cache logic)
+ * 2. Any contract in its depends_on list has a different hash than when
+ *    the dependency was recorded (the upstream contract was re-derived)
+ */
+export function findStaleContracts(contracts: Contract[]): Contract[] {
+  const currentHashes = new Map<string, string>();
+  for (const c of contracts) {
+    const key = `${c.file}:${c.function}:${c.line}`;
+    currentHashes.set(key, ContractStore.contractHash(c));
+  }
+
+  const stale: Contract[] = [];
+  for (const c of contracts) {
+    if (!c.depends_on || c.depends_on.length === 0) continue;
+
+    // Check if any dependency hash no longer matches a current contract
+    const allCurrentHashes = new Set(currentHashes.values());
+    for (const depHash of c.depends_on) {
+      if (!allCurrentHashes.has(depHash)) {
+        stale.push(c);
+        break;
+      }
+    }
+  }
+
+  return stale;
 }

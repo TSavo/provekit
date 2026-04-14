@@ -10,6 +10,7 @@ import { PrincipleStore, findNewViolations, classifyAndGeneralize } from "./prin
 import { reportResults, AnalysisResult } from "./reporter";
 import { collectViolationIssues, fileViolationIssues } from "./issues";
 import { applyAxioms, checkConsistency } from "./axiom-engine";
+import { findStaleContracts } from "./contracts";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -106,10 +107,11 @@ async function main(): Promise<void> {
 
     const verifications = verifyAll(derivation.rawResponse);
 
-    // Store contract and write to disk
+    // Store contract with dependency tracking and write to disk
     const contract = ContractStore.fromVerificationResults(
       filePath, site.functionName, site.line, verifications
     );
+    ContractStore.withDependencies(contract, contractStore.getAll());
     contractStore.add(contract);
     contractStore.writeToDisk(filePath, source, principleStore.computePrincipleHash());
 
@@ -246,11 +248,24 @@ async function runVerify(args: string[]): Promise<void> {
     }
   }
 
+  // Dependency chain staleness
+  console.log();
+  console.log("Checking dependency chain...");
+  const stale = findStaleContracts(contracts);
+  if (stale.length === 0) {
+    console.log("  ✓ All dependencies current");
+  } else {
+    for (const s of stale) {
+      console.log(`  ⚠ STALE: ${s.function}:${s.line} — upstream dependency changed, needs re-derivation`);
+    }
+  }
+
   console.log();
   console.log("═══════════════════════════════════════════════════════════");
   console.log(`  ${contracts.length} contracts, ${results.length} axiom checks`);
   console.log(`  ${proven} proven  |  ${violations} violations  |  ${errors} errors`);
   console.log(`  Consistency: ${consistency[0]?.verdict || "n/a"}`);
+  console.log(`  Dependencies: ${stale.length === 0 ? "all current" : `${stale.length} stale`}`);
   console.log("  No LLM was used.");
   console.log("═══════════════════════════════════════════════════════════");
 }
