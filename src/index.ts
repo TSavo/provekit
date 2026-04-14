@@ -111,7 +111,7 @@ async function main(): Promise<void> {
       filePath, site.functionName, site.line, verifications
     );
     contractStore.add(contract);
-    contractStore.writeToDisk(filePath, source);
+    contractStore.writeToDisk(filePath, source, principleStore.computePrincipleHash());
 
     // Collect [NEW] violations for Phase 2
     const newViolations = findNewViolations(
@@ -148,7 +148,11 @@ async function main(): Promise<void> {
       if (principle) {
         principle.id = principleStore.nextId();
         principleStore.add(principle);
-        console.log(`NEW PRINCIPLE: ${principle.id} — ${principle.name}`);
+        const tag = principle.validated ? "VALIDATED" : "UNVALIDATED";
+        console.log(`NEW PRINCIPLE [${tag}]: ${principle.id} — ${principle.name}`);
+        if (!principle.validated && principle.validationFailure) {
+          console.log(`    Validation failure: ${principle.validationFailure}`);
+        }
       } else {
         console.log("mapped to existing principle");
       }

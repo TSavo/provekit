@@ -217,28 +217,18 @@ async function evaluateContract(
     function: contract.function,
   };
 
-  // Only evaluate proven properties (unsat = the negation is unsatisfiable,
-  // meaning the property always holds). At runtime we substitute concrete
-  // values and check if the property *still* holds.
+  // Evaluate proven properties — these should still hold at runtime.
+  // If Z3 returns sat (the negation is satisfiable), the live data violates the invariant.
   for (const prop of contract.proven) {
     const grounded = substituteSmt2(prop.smt2, logData);
-
-    // If no substitution happened (no variable names matched), skip.
     if (grounded === prop.smt2) continue;
 
     const { result, error } = await runZ3Async(grounded);
 
-    // For a proven property (originally unsat), we expect the grounded
-    // version to also be unsat. If it becomes sat, the live data violates
-    // the invariant.
     let proofResult: "pass" | "fail" | "error";
-    if (result === "unsat") {
-      proofResult = "pass";
-    } else if (result === "sat") {
-      proofResult = "fail";
-    } else {
-      proofResult = "error";
-    }
+    if (result === "unsat") proofResult = "pass";
+    else if (result === "sat") proofResult = "fail";
+    else proofResult = "error";
 
     const entry: ProofEntry = {
       neurallog: true,
@@ -248,7 +238,34 @@ async function evaluateContract(
       result: proofResult,
     };
     if (error) entry.error = error;
+    entries.push(entry);
+  }
 
+  // Evaluate violations — these are bugs that were statically reachable.
+  // At runtime, substitute concrete values and check: is this specific call
+  // actually triggering the violation? If Z3 returns sat with the concrete
+  // values, the bug is happening RIGHT NOW, not just theoretically reachable.
+  for (const violation of contract.violations) {
+    const grounded = substituteSmt2(violation.smt2, logData);
+    if (grounded === violation.smt2) continue;
+
+    const { result, error } = await runZ3Async(grounded);
+
+    // For violations: sat means the bug is active with these values.
+    // unsat means these specific values don't trigger it.
+    let proofResult: "pass" | "fail" | "error";
+    if (result === "unsat") proofResult = "pass";    // this call is safe
+    else if (result === "sat") proofResult = "fail";  // bug is happening NOW
+    else proofResult = "error";
+
+    const entry: ProofEntry = {
+      neurallog: true,
+      ts: now,
+      callSite,
+      property: `VIOLATION CHECK: ${violation.claim}`,
+      result: proofResult,
+    };
+    if (error) entry.error = error;
     entries.push(entry);
   }
 

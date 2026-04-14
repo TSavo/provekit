@@ -3,12 +3,21 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join, dirname, relative, basename } from "path";
 import { createHash } from "crypto";
 
+export interface ClauseHistory {
+  clause: string;          // the SMT-LIB assertion
+  status: "active" | "weakened";
+  weaken_step: number;
+  witness_count_at_last_weaken: number;
+  current_witness_count: number;
+}
+
 export interface Contract {
   file: string;
   function: string;
   line: number;
   proven: ProvenProperty[];
   violations: Violation[];
+  clause_history: ClauseHistory[];
 }
 
 export interface ProvenProperty {
@@ -25,6 +34,7 @@ export interface Violation {
 
 export interface ContractFile {
   file_hash: string;
+  principle_hash?: string;
   contracts: Contract[];
 }
 
@@ -66,6 +76,27 @@ export class ContractStore {
         const data: ContractFile = JSON.parse(
           readFileSync(jsonPath, "utf-8")
         );
+        for (const contract of data.contracts) {
+          // Backward compat: older contract files may lack clause_history
+          if (!contract.clause_history) {
+            contract.clause_history = [
+              ...contract.proven.map((p) => ({
+                clause: p.smt2,
+                status: "active" as const,
+                weaken_step: 0,
+                witness_count_at_last_weaken: 0,
+                current_witness_count: 0,
+              })),
+              ...contract.violations.map((v) => ({
+                clause: v.smt2,
+                status: "active" as const,
+                weaken_step: 0,
+                witness_count_at_last_weaken: 0,
+                current_witness_count: 0,
+              })),
+            ];
+          }
+        }
         this.contracts.push(...data.contracts);
       } catch {
         // skip corrupt files
@@ -77,7 +108,61 @@ export class ContractStore {
     this.contracts.push(contract);
   }
 
-  writeToDisk(filePath: string, fileSource: string): void {
+  /**
+   * Increment current_witness_count for a matching clause in the contract
+   * at the given file:line. Called from the runtime transport when a proof
+   * entry is recorded.
+   */
+  recordWitness(file: string, line: number, clause: string): void {
+    for (const c of this.contracts) {
+      if (c.file === file && c.line === line) {
+        for (const h of c.clause_history) {
+          if (h.clause === clause) {
+            h.current_witness_count++;
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Mark a clause as weakened. Sets status to "weakened", increments
+   * weaken_step, and snapshots the current witness count.
+   */
+  weakenClause(file: string, line: number, clause: string): void {
+    for (const c of this.contracts) {
+      if (c.file === file && c.line === line) {
+        for (const h of c.clause_history) {
+          if (h.clause === clause) {
+            h.status = "weakened";
+            h.weaken_step++;
+            h.witness_count_at_last_weaken = h.current_witness_count;
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Returns true only if new evidence has arrived since the last weakening,
+   * i.e. current_witness_count > witness_count_at_last_weaken.
+   */
+  canStrengthen(file: string, line: number, clause: string): boolean {
+    for (const c of this.contracts) {
+      if (c.file === file && c.line === line) {
+        for (const h of c.clause_history) {
+          if (h.clause === clause) {
+            return h.current_witness_count > h.witness_count_at_last_weaken;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  writeToDisk(filePath: string, fileSource: string, principleHash?: string): void {
     const relPath = relative(this.projectRoot, filePath);
     const contractPath = join(
       this.contractsDir,
@@ -93,6 +178,7 @@ export class ContractStore {
 
     const data: ContractFile = {
       file_hash: fileHash,
+      ...(principleHash ? { principle_hash: principleHash } : {}),
       contracts: contractsForFile,
     };
 
@@ -170,6 +256,28 @@ export class ContractStore {
       }
     }
 
-    return { file, function: functionName, line, proven, violations };
+    const clause_history: ClauseHistory[] = [];
+
+    for (const p of proven) {
+      clause_history.push({
+        clause: p.smt2,
+        status: "active",
+        weaken_step: 0,
+        witness_count_at_last_weaken: 0,
+        current_witness_count: 0,
+      });
+    }
+
+    for (const v of violations) {
+      clause_history.push({
+        clause: v.smt2,
+        status: "active",
+        weaken_step: 0,
+        witness_count_at_last_weaken: 0,
+        current_witness_count: 0,
+      });
+    }
+
+    return { file, function: functionName, line, proven, violations, clause_history };
   }
 }
