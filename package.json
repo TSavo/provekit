@@ -1,10 +1,10 @@
 {
   "name": "neurallog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A logger that fixes your code.",
   "main": "dist/index.js",
   "bin": {
-    "neurallog": "dist/index.js"
+    "neurallog": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

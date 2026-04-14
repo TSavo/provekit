@@ -11,6 +11,7 @@ import { reportResults, AnalysisResult } from "./reporter";
 import { collectViolationIssues, fileViolationIssues } from "./issues";
 import { applyAxioms, checkConsistency } from "./axiom-engine";
 import { findStaleContracts } from "./contracts";
+import { resolveImports, ResolvedImport } from "./imports";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -62,6 +63,16 @@ async function main(): Promise<void> {
   const tree = parseFile(source);
   const callSites = findLogStatements(tree, source);
 
+  // Phase -1: Build dependency graph
+  const imports = resolveImports(tree, filePath);
+  if (imports.length > 0) {
+    console.log(`Resolved ${imports.length} import${imports.length === 1 ? "" : "s"}:`);
+    for (const imp of imports) {
+      console.log(`  ${imp.specifier} → ${imp.resolvedPath}`);
+    }
+    console.log();
+  }
+
   console.log(
     `Found ${callSites.length} log statement${callSites.length === 1 ? "" : "s"}`
   );
@@ -102,7 +113,7 @@ async function main(): Promise<void> {
     );
 
     const derivation = await deriveContract(
-      site, source, filePath, model, contractStore, principleStore, verbose
+      site, source, filePath, model, contractStore, principleStore, verbose, imports
     );
 
     const verifications = verifyAll(derivation.rawResponse);

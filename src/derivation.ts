@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { LogCallSite } from "./parser";
 import { ContractStore } from "./contracts";
 import { PrincipleStore } from "./principles";
+import { ResolvedImport } from "./imports";
 import { readFileSync } from "fs";
 import { join } from "path";
 import Handlebars from "handlebars";
@@ -46,9 +47,10 @@ export async function deriveContract(
   model: string = "sonnet",
   contractStore?: ContractStore,
   principleStore?: PrincipleStore,
-  verbose: boolean = false
+  verbose: boolean = false,
+  imports?: ResolvedImport[]
 ): Promise<DerivationResult> {
-  const prompt = buildPrompt(callSite, fileSource, filePath, contractStore, principleStore);
+  const prompt = buildPrompt(callSite, fileSource, filePath, contractStore, principleStore, imports);
 
   let rawResponse = "";
 
@@ -94,7 +96,8 @@ function buildPrompt(
   fileSource: string,
   filePath: string,
   contractStore?: ContractStore,
-  principleStore?: PrincipleStore
+  principleStore?: PrincipleStore,
+  imports?: ResolvedImport[]
 ): string {
   const isExported = callSite.functionSource.includes("export ");
   const visibility = isExported ? "public (exported)" : "module-private";
@@ -107,14 +110,20 @@ function buildPrompt(
     ? principleStore.formatForPrompt()
     : "";
 
-  // Inject discovered principles into the prompt after the seed principles
+  let importSources = "(no imports resolved)";
+  if (imports && imports.length > 0) {
+    importSources = imports
+      .map((imp) => `#### ${imp.resolvedPath}\n\`\`\`typescript\n${imp.source}\n\`\`\``)
+      .join("\n\n");
+  }
+
   let prompt = compiledTemplate({
     TARGET_FILE: filePath,
     TARGET_FUNCTION: callSite.functionName,
     TARGET_LINE: String(callSite.line),
     TARGET_STATEMENT: callSite.logText,
     TARGET_FILE_SOURCE: fileSource,
-    IMPORT_SOURCES: "(single-file analysis — no imports resolved yet)",
+    IMPORT_SOURCES: importSources,
     EXISTING_CONTRACTS: existingContracts,
     CALLING_CONTEXT: `${callSite.functionName} is ${visibility}. ${
       isExported
