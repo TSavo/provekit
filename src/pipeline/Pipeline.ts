@@ -1,7 +1,8 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, relative } from "path";
 import { SignalRegistry, computeSignalHash } from "../signals";
-import { ContractStore } from "../contracts";
+import { ContractStore, Contract } from "../contracts";
+import { PrincipleStore, hashPrinciple } from "../principles";
 import { DependencyPhase, DependencyGraph } from "./DependencyPhase";
 import { ContextPhase, ContextBundle, CallSiteContext } from "./ContextPhase";
 import { DerivationPhase, DerivationOutput } from "./DerivationPhase";
@@ -15,6 +16,7 @@ export interface PipelineConfig {
   projectRoot: string;
   model: string;
   verbose: boolean;
+  maxConcurrency?: number;
   changedFiles?: string[];
   signalRegistry?: SignalRegistry;
 }
@@ -59,8 +61,29 @@ export class Pipeline {
       return { graph, bundles, derivation: emptyDerivation, classification: emptyClassification, report };
     }
 
+    const store = new ContractStore(config.projectRoot);
+    const existingContracts = store.getAll();
+    const staleBundles = this.filterStaleBundles(bundles, existingContracts);
+
+    if (staleBundles.length === 0) {
+      console.log("All signal hashes current. No derivation needed.");
+      const emptyDerivation: DerivationOutput = { contracts: [], newViolations: [], derivedAt: new Date().toISOString() };
+      const emptyClassification: ClassificationOutput = { discovered: 0, validated: 0, rejected: 0, classifiedAt: new Date().toISOString() };
+      const { data: report } = this.axiomPhase.execute(undefined, options);
+      return { graph, bundles, derivation: emptyDerivation, classification: emptyClassification, report };
+    }
+
+    const staleSiteCount = staleBundles.reduce((n, b) => n + b.callSites.length, 0);
+    const skippedBundles = bundles.length - staleBundles.length;
+    const skippedSites = bundles.reduce((n, b) => n + b.callSites.length, 0) - staleSiteCount;
+    if (skippedBundles > 0) {
+      console.log(`  ${skippedBundles} files skipped (signal hashes current), ${skippedSites} signals already derived`);
+      console.log(`  ${staleBundles.length} files need derivation, ${staleSiteCount} signals`);
+      console.log();
+    }
+
     const { data: derivation } = await this.derivationPhase.execute(
-      { bundles, model: config.model },
+      { bundles: staleBundles, model: config.model, parallelGroups: graph.parallelGroups, maxConcurrency: config.maxConcurrency },
       options
     );
 
@@ -81,14 +104,18 @@ export class Pipeline {
       verbose: config.verbose,
     };
 
+    const startTime = Date.now();
     console.log("neurallog: incremental verification...");
+    console.log(`  Signals: ${signalRegistry.getGeneratorNames().join(", ")}`);
 
     const changedFiles = config.changedFiles || [];
     if (changedFiles.length === 0) {
-      console.log("  No changed files.");
+      console.log("  No changed TypeScript files in staging area.");
+      console.log("  Running Phase 5 against cached contracts...");
       const { data: report } = this.axiomPhase.execute(undefined, options);
+      console.log(`  Completed in ${Date.now() - startTime}ms`);
       return {
-        graph: { root: "", projectRoot: config.projectRoot, files: [], topologicalOrder: [], builtAt: new Date().toISOString() },
+        graph: { root: "", projectRoot: config.projectRoot, files: [], topologicalOrder: [], parallelGroups: [], builtAt: new Date().toISOString() },
         bundles: [],
         derivation: { contracts: [], newViolations: [], derivedAt: new Date().toISOString() },
         classification: { discovered: 0, validated: 0, rejected: 0, classifiedAt: new Date().toISOString() },
@@ -96,12 +123,24 @@ export class Pipeline {
       };
     }
 
+    console.log(`  Changed files: ${changedFiles.length}`);
+    for (const f of changedFiles) {
+      console.log(`    ${relative(config.projectRoot, f)}`);
+    }
+
     const store = new ContractStore(config.projectRoot);
     const existingContracts = store.getAll();
+    const principleStore = new PrincipleStore(config.projectRoot);
+
+    console.log(`  Existing contracts: ${existingContracts.length}`);
+    console.log(`  Principles: ${principleStore.getPrincipleCount()} (7 seed + ${principleStore.getAll().length} discovered)`);
+    console.log(`  Checking signal hashes...`);
 
     const staleContracts = new Set<string>();
     let freshCount = 0;
+    let staleProofCount = 0;
 
+    // Pass 1: signal-level staleness (code changed around the verification point)
     for (const filePath of changedFiles) {
       if (!existsSync(filePath)) continue;
 
@@ -132,7 +171,25 @@ export class Pipeline {
       }
     }
 
-    // Cascade: contracts that depend on stale contracts are also stale
+    // Pass 2: principle-level staleness (a principle changed, proofs tagged with it are stale)
+    for (const c of existingContracts) {
+      const key = `${c.file}:${c.function}:${c.line}`;
+      if (staleContracts.has(key)) continue;
+
+      const allProofs = [...c.proven, ...c.violations];
+      for (const proof of allProofs) {
+        if (!proof.principle || !proof.principle_hash) continue;
+        const currentPHash = principleStore.hashForPrinciple(proof.principle);
+        if (currentPHash && proof.principle_hash !== currentPHash) {
+          staleContracts.add(key);
+          staleProofCount++;
+          console.log(`  STALE: ${relative(config.projectRoot, c.file)}:${c.function}:${c.line} — principle ${proof.principle} changed`);
+          break;
+        }
+      }
+    }
+
+    // Pass 3: cascade through depends_on
     let cascaded = true;
     while (cascaded) {
       cascaded = false;
@@ -157,14 +214,19 @@ export class Pipeline {
       }
     }
 
+    if (staleProofCount > 0) {
+      console.log(`  ${staleProofCount} proofs stale due to principle changes`);
+    }
+
     console.log(`  ${freshCount} fresh, ${staleContracts.size} stale`);
 
     if (staleContracts.size === 0) {
       console.log("  All contracts current. Running Phase 5...");
       console.log();
       const { data: report } = this.axiomPhase.execute(undefined, options);
+      console.log(`  Completed in ${formatDuration(Date.now() - startTime)}`);
       return {
-        graph: { root: "", projectRoot: config.projectRoot, files: [], topologicalOrder: [], builtAt: new Date().toISOString() },
+        graph: { root: "", projectRoot: config.projectRoot, files: [], topologicalOrder: [], parallelGroups: [], builtAt: new Date().toISOString() },
         bundles: [],
         derivation: { contracts: [], newViolations: [], derivedAt: new Date().toISOString() },
         classification: { discovered: 0, validated: 0, rejected: 0, classifiedAt: new Date().toISOString() },
@@ -175,11 +237,35 @@ export class Pipeline {
     console.log(`  Re-deriving ${staleContracts.size} contracts...`);
     console.log();
 
-    return this.runFull({
+    const result = await this.runFull({
       ...config,
       changedFiles,
       signalRegistry,
     });
+
+    console.log(`  Incremental verification completed in ${formatDuration(Date.now() - startTime)}`);
+    return result;
+  }
+
+  private filterStaleBundles(bundles: ContextBundle[], existingContracts: Contract[]): ContextBundle[] {
+    const filtered: ContextBundle[] = [];
+
+    for (const bundle of bundles) {
+      const staleSites = bundle.callSites.filter((callSite) => {
+        const existing = existingContracts.find(
+          (c) => (c.file === bundle.filePath || c.file.endsWith(bundle.relativePath))
+            && c.function === callSite.functionName
+            && Math.abs(c.line - callSite.line) <= 2
+        );
+        return !existing || existing.signal_hash !== callSite.signalHash;
+      });
+
+      if (staleSites.length > 0) {
+        filtered.push({ ...bundle, callSites: staleSites });
+      }
+    }
+
+    return filtered;
   }
 
   runVerifyOnly(projectRoot: string, verbose: boolean = false): AxiomReport {
@@ -187,4 +273,16 @@ export class Pipeline {
     const { data: report } = this.axiomPhase.execute(undefined, options);
     return report;
   }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
 }

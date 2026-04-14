@@ -133,6 +133,8 @@ async function runAnalyze(args: string[]): Promise<void> {
   console.log(`Project: ${projectRoot}`);
   console.log();
 
+  const concurrency = parseInt(getFlag(args, "--concurrency") || "5", 10);
+
   const pipeline = new Pipeline();
   const result = await pipeline.runFull({
     entryFilePath: filePath,
@@ -140,6 +142,7 @@ async function runAnalyze(args: string[]): Promise<void> {
     model,
     verbose,
     signalRegistry,
+    maxConcurrency: concurrency,
   });
 
   printSummary(result);

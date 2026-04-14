@@ -1,0 +1,361 @@
+{
+  "file_hash": "717bba0a1359f440ea1930c5df73b9a660c7045812bed2063f69780215911f8c",
+  "principle_hash": "59ea436891b9af080d14797b93cd20938c7929a4a69df21620890e1afa2930a8",
+  "contracts": [
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "parseFile",
+      "line": 39,
+      "signal_hash": "145d2f96695ad83f4bdd535a850fbc88176754e87eb5d9f5a0513cb712325b87",
+      "proven": [],
+      "violations": [],
+      "depends_on": [],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractFunctionName",
+      "line": 137,
+      "signal_hash": "981eb2fbf1f1fb58c9ae1995393b452af406a6c8d5dae8969a65147e2ce341a3",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractFunctionName",
+      "line": 151,
+      "signal_hash": "578eac6723edf77bcb6605cc5e24f3e3b8bef808a90c98c32e84d6b1a199c46a",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractFunctionName",
+      "line": 157,
+      "signal_hash": "973101c26c9d0fc9a522f62e163f8eb2cb2e5671906968e4357e9109481eba70",
+      "proven": [],
+      "violations": [
+        {
+          "principle": "P2",
+          "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+          "claim": "The walk modifies no state - it's purely read-only traversal",
+          "smt2": "; PRINCIPLE: P2 - State Mutation Analysis\n; The walk modifies no state - it's purely read-only traversal\n\n(declare-const current_node String)\n(declare-const parent_node String)\n\n; The code: let current = node.parent; while (current) { ... }\n; Each iteration reads current.type and childForFieldName\n; No state is modified - just traversal\n\n(check-sat)\n; sat → This is a read-only traversal, no state mutation"
+        }
+      ],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": [
+        {
+          "clause": "; PRINCIPLE: P2 - State Mutation Analysis\n; The walk modifies no state - it's purely read-only traversal\n\n(declare-const current_node String)\n(declare-const parent_node String)\n\n; The code: let current = node.parent; while (current) { ... }\n; Each iteration reads current.type and childForFieldName\n; No state is modified - just traversal\n\n(check-sat)\n; sat → This is a read-only traversal, no state mutation",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractParameters",
+      "line": 198,
+      "signal_hash": "ae84817c9ae59e0d9de86f09c44f0a4fa6fa0d088b247fed68b5e40f394d3a5b",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractPathConditions",
+      "line": 234,
+      "signal_hash": "c4facef37a71dc97e515d299fa325c026ad538748b2951ef3e89ece8469c8b1f",
+      "proven": [],
+      "violations": [
+        {
+          "principle": "P5",
+          "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+          "claim": "What if the log is in both branches due to complex nesting?",
+          "smt2": "; PRINCIPLE: P5 - Semantic Correctness\n; What if the log is in both branches due to complex nesting?\n\n(declare-const in_consequence Bool)\n(declare-const in_alternative Bool)\n(declare-const condition_text String)\n\n; Code checks: isDescendantOf(logNode, consequence) OR isDescendantOf(logNode, alternative)\n; If log is inside a nested structure that spans both branches, what happens?\n\n; Example: log is inside a function that's called from both branches\n; The isDescendantOf check looks for direct ancestry\n\n(assert (not (or in_consequence in_alternative)))\n\n; But current.parent.type === \"if_statement\" - doesn't cover all nesting cases\n; If log is in a function called from both branches, not captured\n\n(check-sat)\n; sat → Code only checks direct ancestry, not functional calls from branches\n; Log in a function called from both branches gets no path condition"
+        }
+      ],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": [
+        {
+          "clause": "; PRINCIPLE: P5 - Semantic Correctness\n; What if the log is in both branches due to complex nesting?\n\n(declare-const in_consequence Bool)\n(declare-const in_alternative Bool)\n(declare-const condition_text String)\n\n; Code checks: isDescendantOf(logNode, consequence) OR isDescendantOf(logNode, alternative)\n; If log is inside a nested structure that spans both branches, what happens?\n\n; Example: log is inside a function that's called from both branches\n; The isDescendantOf check looks for direct ancestry\n\n(assert (not (or in_consequence in_alternative)))\n\n; But current.parent.type === \"if_statement\" - doesn't cover all nesting cases\n; If log is in a function called from both branches, not captured\n\n(check-sat)\n; sat → Code only checks direct ancestry, not functional calls from branches\n; Log in a function called from both branches gets no path condition",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractPathConditions",
+      "line": 243,
+      "signal_hash": "5ffa6992cfa9a4046a51e0543e67ae12e07fb6e120a454793ae0d230b0f3d993",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractPathConditions",
+      "line": 246,
+      "signal_hash": "707d373979cab9094e30a8c0e07ddb121a49384696f2f87004a8d4a1889bbccf",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractPathConditions",
+      "line": 252,
+      "signal_hash": "8471b80648619733c7999328ec2b711c7882e20b5f8e1c1a0b63c4eb7e4d608d",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractPathConditions",
+      "line": 253,
+      "signal_hash": "7c9dc9ef5d151b5166f48ac1d9230b9caf38f1220164ecedcb533b96e08b5f63",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "extractPathConditions",
+      "line": 266,
+      "signal_hash": "959a78b9d0694cf1ef6c29da556340e95e641200e119d22185399e807b2fd2e6",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "visit",
+      "line": 292,
+      "signal_hash": "b592f9329c06ca06fffd639a3f8851d7ed0d8c5f1606c3f389e04629a76e1bae",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "visit",
+      "line": 304,
+      "signal_hash": "bea989d019a9ed97f60043ec6bc3a431f52a953b72f227114ae754e364112a1c",
+      "proven": [
+        {
+          "principle": null,
+          "principle_hash": "",
+          "claim": "PROVEN PROPERTY: P3 - When path conditions hold, inference is attempted",
+          "smt2": "; PROVEN PROPERTY: P3 - When path conditions hold, inference is attempted\n\n(declare-const has_value_node Bool)\n(declare-const no_type_annotation Bool)\n\n; Path conditions guarantee:\n; - variable_declarator with nameNode\n; - typeNode is falsy (no annotation)\n; - valueNode exists (has initializer)\n\n(assert (and has_value_node no_type_annotation))\n\n; Therefore: inferType(valueNode) is called\n; Negation: prove inference not called when conditions hold\n(assert (not has_value_node))\n(check-sat)\n; unsat → When all conditions hold, inferType is invoked on value"
+        }
+      ],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": [
+        {
+          "clause": "; PROVEN PROPERTY: P3 - When path conditions hold, inference is attempted\n\n(declare-const has_value_node Bool)\n(declare-const no_type_annotation Bool)\n\n; Path conditions guarantee:\n; - variable_declarator with nameNode\n; - typeNode is falsy (no annotation)\n; - valueNode exists (has initializer)\n\n(assert (and has_value_node no_type_annotation))\n\n; Therefore: inferType(valueNode) is called\n; Negation: prove inference not called when conditions hold\n(assert (not has_value_node))\n(check-sat)\n; unsat → When all conditions hold, inferType is invoked on value",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "inferType",
+      "line": 331,
+      "signal_hash": "5b014150bdf54e6385a271209d87c715a7c41e7f829db577de82dde286294283",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "0d18c47bdb5d30fd2e5f5bb2e165621050aa8194271ef04af78b303411c386fc"
+      ],
+      "clause_history": []
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "inferType",
+      "line": 335,
+      "signal_hash": "d0fb7b5ee8534f4315f3e629c2203f87c34d9423a979a2f3ae4d453f7bf8902d",
+      "proven": [
+        {
+          "principle": null,
+          "principle_hash": "",
+          "claim": "PROVEN PROPERTY: P3 - The patterns are correctly identified",
+          "smt2": "; PROVEN PROPERTY: P3 - The patterns are correctly identified\n\n(declare-const in_call_expr Bool)\n(declare-const fn_is_member Bool)\n(declare-const prop_exists Bool)\n\n; Path condition: fn?.type === \"member_expression\"\n; At this line, we know we have a member expression\n\n(assert (and in_call_expr fn_is_member prop_exists))\n\n; The patterns toString, toFixed, toUpperCase are for string methods\n; length, indexOf are for array/string methods\n\n; Negation: prove patterns don't apply\n(assert (not (or (= prop_exists true) (= in_call_expr true))))\n(check-sat)\n; unsat → At this line, patterns can be evaluated"
+        }
+      ],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "0d18c47bdb5d30fd2e5f5bb2e165621050aa8194271ef04af78b303411c386fc",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "clause_history": [
+        {
+          "clause": "; PROVEN PROPERTY: P3 - The patterns are correctly identified\n\n(declare-const in_call_expr Bool)\n(declare-const fn_is_member Bool)\n(declare-const prop_exists Bool)\n\n; Path condition: fn?.type === \"member_expression\"\n; At this line, we know we have a member expression\n\n(assert (and in_call_expr fn_is_member prop_exists))\n\n; The patterns toString, toFixed, toUpperCase are for string methods\n; length, indexOf are for array/string methods\n\n; Negation: prove patterns don't apply\n(assert (not (or (= prop_exists true) (= in_call_expr true))))\n(check-sat)\n; unsat → At this line, patterns can be evaluated",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "function": "isDescendantOf",
+      "line": 350,
+      "signal_hash": "3d1326ece1150bfc29ea838e9afa24bf3a543651c9b010d14e338fc81196e341",
+      "proven": [],
+      "violations": [],
+      "depends_on": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "576f50247e3184e0e02ff979bd6fddf5fa7d52b7d7283573cc24067a05686737",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ddec610186279c7dcd4e60cc829dfa0ee1cbd5678b9229ebb0c169ebc6b8d59e",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "0d18c47bdb5d30fd2e5f5bb2e165621050aa8194271ef04af78b303411c386fc",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "646e3d4836d08f519facff014b2eb562c901eb41a158b747530ae145a8600b64"
+      ],
+      "clause_history": []
+    }
+  ]
+}

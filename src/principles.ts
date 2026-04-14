@@ -1,4 +1,4 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { LLMProvider, createProvider } from "./llm";
 import { VerificationResult } from "./verifier";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
@@ -81,6 +81,19 @@ const SEED_AXIOMS = [
   },
 ];
 
+export function hashPrinciple(id: string): string {
+  const seed = SEED_AXIOMS.find((a) => a.id === id);
+  if (seed) {
+    return createHash("sha256")
+      .update(seed.id)
+      .update(seed.name)
+      .update(seed.description)
+      .update(seed.teachingExample)
+      .digest("hex");
+  }
+  return "";
+}
+
 function getAdversaryModel(model: string): string {
   const lower = model.toLowerCase();
   if (lower.includes("opus")) return "sonnet";
@@ -122,6 +135,23 @@ export class PrincipleStore {
     return [...this.principles];
   }
 
+  hashForPrinciple(id: string): string {
+    const seedHash = hashPrinciple(id);
+    if (seedHash) return seedHash;
+
+    const discovered = this.principles.find((p) => p.id === id);
+    if (discovered) {
+      return createHash("sha256")
+        .update(discovered.id)
+        .update(discovered.name)
+        .update(discovered.description)
+        .update(discovered.teachingExample.smt2)
+        .digest("hex");
+    }
+
+    return "";
+  }
+
   add(principle: Principle): void {
     this.principles.push(principle);
     mkdirSync(this.principlesDir, { recursive: true });
@@ -137,20 +167,39 @@ export class PrincipleStore {
    * contract cache key so contracts are invalidated when principles change.
    */
   computePrincipleHash(): string {
-    if (!existsSync(this.principlesDir)) return "";
-
     const hash = createHash("sha256");
-    const entries = readdirSync(this.principlesDir)
-      .filter((e) => e.endsWith(".json"))
-      .sort(); // deterministic order
 
-    for (const entry of entries) {
-      const content = readFileSync(join(this.principlesDir, entry), "utf-8");
-      hash.update(entry);
-      hash.update(content);
+    for (const axiom of SEED_AXIOMS) {
+      hash.update(axiom.id);
+      hash.update(axiom.name);
+      hash.update(axiom.description);
+      hash.update(axiom.teachingExample);
+    }
+
+    if (existsSync(this.principlesDir)) {
+      const entries = readdirSync(this.principlesDir)
+        .filter((e) => e.endsWith(".json"))
+        .sort();
+
+      for (const entry of entries) {
+        const content = readFileSync(join(this.principlesDir, entry), "utf-8");
+        hash.update(entry);
+        hash.update(content);
+      }
     }
 
     return hash.digest("hex");
+  }
+
+  getPrincipleCount(): number {
+    return SEED_AXIOMS.length + this.principles.length;
+  }
+
+  getNewPrinciplesSince(contractPrincipleHash: string): Principle[] {
+    if (!contractPrincipleHash) return this.principles;
+    const currentHash = this.computePrincipleHash();
+    if (currentHash === contractPrincipleHash) return [];
+    return this.principles;
   }
 
   nextId(): string {
@@ -205,7 +254,8 @@ export function findNewViolations(
 async function semanticDiffCheck(
   proposed: { name: string; description: string },
   existingPrinciples: Principle[],
-  model: string
+  model: string,
+  provider: LLMProvider
 ): Promise<{ covered: boolean; coveredBy?: string }> {
   const allAxioms = [
     ...SEED_AXIOMS,
@@ -243,24 +293,16 @@ Respond with ONLY one of:
 - "EXISTING: P<N> — <brief explanation>" if covered
 - "GENUINELY_NEW" if truly not covered by any existing principle`;
 
-  let rawResponse = "";
-  for await (const message of query({
-    prompt,
-    options: {
-      maxTurns: 1,
-      model,
-      systemPrompt:
-        "You deduplicate verification principles. Be strict — most proposed principles are already covered. Respond with either 'EXISTING: P<N>' or 'GENUINELY_NEW'. Nothing else.",
-    },
-  })) {
-    if (message.type === "result" && message.subtype === "success") {
-      rawResponse = message.result;
-    }
-  }
+  const response = await provider.complete(prompt, {
+    model,
+    systemPrompt: "You deduplicate verification principles. Be strict — most proposed principles are already covered. Respond with either 'EXISTING: P<N>' or 'GENUINELY_NEW'. Nothing else.",
+  });
 
-  if (rawResponse.includes("GENUINELY_NEW")) {
+  if (response.text.includes("GENUINELY_NEW")) {
     return { covered: false };
   }
+
+  const rawResponse = response.text;
 
   const match = rawResponse.match(/EXISTING:\s*(P\d+)/);
   return {
@@ -277,7 +319,8 @@ Respond with ONLY one of:
  */
 async function adversarialModelTest(
   proposed: { name: string; description: string; teachingExample: { domain: string; explanation: string; smt2: string } },
-  derivationModel: string
+  derivationModel: string,
+  provider: LLMProvider
 ): Promise<{ passed: boolean; failure?: string }> {
   const adversaryModel = getAdversaryModel(derivationModel);
 
@@ -327,22 +370,15 @@ Be aggressive. Try hard to break the principle. If the principle is vague, overl
   const MAX_ATTEMPTS = 5;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    let rawResponse = "";
-    for await (const message of query({
-      prompt: attempt === 0
-        ? prompt
-        : `${prompt}\n\nThis is attempt ${attempt + 1} of ${MAX_ATTEMPTS}. Previous attempts did not find counterexamples. Try harder — consider edge cases, adversarial inputs, concurrency, type coercion, and unusual but valid code patterns.`,
-      options: {
-        maxTurns: 1,
-        model: adversaryModel,
-        systemPrompt:
-          "You are an adversarial red-teamer for verification principles. Your ONLY goal is to find counterexamples that break the principle. Be creative and thorough. Respond with JSON only.",
-      },
-    })) {
-      if (message.type === "result" && message.subtype === "success") {
-        rawResponse = message.result;
-      }
-    }
+    const attemptPrompt = attempt === 0
+      ? prompt
+      : `${prompt}\n\nThis is attempt ${attempt + 1} of ${MAX_ATTEMPTS}. Previous attempts did not find counterexamples. Try harder — consider edge cases, adversarial inputs, concurrency, type coercion, and unusual but valid code patterns.`;
+
+    const response = await provider.complete(attemptPrompt, {
+      model: adversaryModel,
+      systemPrompt: "You are an adversarial red-teamer for verification principles. Your ONLY goal is to find counterexamples that break the principle. Be creative and thorough. Respond with JSON only.",
+    });
+    const rawResponse = response.text;
 
     // Parse the adversary's response
     const jsonMatch = rawResponse.match(/```json\s*([\s\S]*?)```/);
@@ -418,7 +454,8 @@ async function reverseFramingCheck(
   violation: VerificationResult,
   context: string,
   existingPrinciples: Principle[],
-  model: string
+  model: string,
+  provider: LLMProvider
 ): Promise<{ isNew: boolean; matchedPrinciple?: string }> {
   const detailedPrinciples = formatAllPrinciplesDetailed(existingPrinciples);
 
@@ -453,20 +490,11 @@ Only if you are CERTAIN that no existing principle covers this pattern, respond 
 
 Err on the side of REDUNDANT. The cost of a false NEW is higher than the cost of mapping to an existing principle.`;
 
-  let rawResponse = "";
-  for await (const message of query({
-    prompt,
-    options: {
-      maxTurns: 1,
-      model,
-      systemPrompt:
-        "You are a strict second-opinion reviewer. Your bias is toward finding an existing principle that covers the violation. Respond with either 'REDUNDANT: P<N>' or 'CONFIRMED_NEW'. Nothing else.",
-    },
-  })) {
-    if (message.type === "result" && message.subtype === "success") {
-      rawResponse = message.result;
-    }
-  }
+  const response = await provider.complete(prompt, {
+    model,
+    systemPrompt: "You are a strict second-opinion reviewer. Your bias is toward finding an existing principle that covers the violation. Respond with either 'REDUNDANT: P<N>' or 'CONFIRMED_NEW'. Nothing else.",
+  });
+  const rawResponse = response.text;
 
   if (rawResponse.includes("CONFIRMED_NEW")) {
     return { isNew: true };
@@ -483,8 +511,10 @@ export async function classifyAndGeneralize(
   violation: VerificationResult,
   context: string,
   existingPrinciples: Principle[],
-  model: string
+  model: string,
+  provider?: LLMProvider
 ): Promise<Principle | null> {
+  const llm = provider || createProvider();
   // Build detailed principle list with full descriptions and teaching examples
   const detailedPrinciples = formatAllPrinciplesDetailed(existingPrinciples);
 
@@ -522,21 +552,11 @@ Read each existing principle's FULL description and teaching example carefully. 
 
 Be rigorous. Most violations fit existing principles. Only propose a new one if you genuinely cannot capture the pattern with the existing set.`;
 
-  let stage1Response = "";
-
-  for await (const message of query({
-    prompt: stage1Prompt,
-    options: {
-      maxTurns: 1,
-      model,
-      systemPrompt:
-        "You classify verification violations. Be concise. Respond with either 'EXISTING: P<N>' or a JSON object. Nothing else.",
-    },
-  })) {
-    if (message.type === "result" && message.subtype === "success") {
-      stage1Response = message.result;
-    }
-  }
+  const stage1Result = await llm.complete(stage1Prompt, {
+    model,
+    systemPrompt: "You classify verification violations. Be concise. Respond with either 'EXISTING: P<N>' or a JSON object. Nothing else.",
+  });
+  const stage1Response = stage1Result.text;
 
   // If Stage 1 says EXISTING, accept immediately
   if (stage1Response.includes("EXISTING:")) {
@@ -562,7 +582,8 @@ Be rigorous. Most violations fit existing principles. Only propose a new one if 
     violation,
     context,
     existingPrinciples,
-    model
+    model,
+    llm
   );
 
   // If Stage 2 says it's redundant, reject the new principle
@@ -576,7 +597,8 @@ Be rigorous. Most violations fit existing principles. Only propose a new one if 
   const diffResult = await semanticDiffCheck(
     { name: parsed.name, description: parsed.description },
     existingPrinciples,
-    model
+    model,
+    llm
   );
 
   if (diffResult.covered) {
@@ -590,7 +612,8 @@ Be rigorous. Most violations fit existing principles. Only propose a new one if 
       description: parsed.description,
       teachingExample: parsed.teachingExample,
     },
-    model
+    model,
+    llm
   );
 
   const principle: Principle = {

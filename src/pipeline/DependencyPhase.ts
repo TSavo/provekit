@@ -14,11 +14,18 @@ export interface FileNode {
   hash: string;
 }
 
+export interface ParallelismGroup {
+  depth: number;
+  files: string[];
+  signalCount: number;
+}
+
 export interface DependencyGraph {
   root: string;
   projectRoot: string;
   files: FileNode[];
   topologicalOrder: string[];
+  parallelGroups: ParallelismGroup[];
   builtAt: string;
 }
 
@@ -59,11 +66,20 @@ export class DependencyPhase extends Phase<DependencyInput, DependencyGraph> {
 
     this.detail(`Topological sort: ${topologicalOrder.length} files`);
 
+    const parallelGroups = this.computeParallelGroups(files, topologicalOrder);
+    for (const group of parallelGroups) {
+      const fileNames = group.files.map((f) => relative(options.projectRoot, f));
+      this.detail(`  Depth ${group.depth}: ${group.files.length} files, ${group.signalCount} signals [${fileNames.join(", ")}]`);
+    }
+    const maxParallelism = Math.max(...parallelGroups.map((g) => g.files.length), 0);
+    this.detail(`Max parallelism: ${maxParallelism} files, ${parallelGroups.length} sequential groups`);
+
     const graph: DependencyGraph = {
       root: entryPath,
       projectRoot: options.projectRoot,
       files,
       topologicalOrder,
+      parallelGroups,
       builtAt: new Date().toISOString(),
     };
 
@@ -215,5 +231,45 @@ export class DependencyPhase extends Phase<DependencyInput, DependencyGraph> {
     }
 
     return affected;
+  }
+
+  private computeParallelGroups(files: FileNode[], topoOrder: string[]): ParallelismGroup[] {
+    const fileMap = new Map(files.map((f) => [f.path, f]));
+    const depths = new Map<string, number>();
+
+    for (const path of topoOrder) {
+      const node = fileMap.get(path);
+      if (!node) {
+        depths.set(path, 0);
+        continue;
+      }
+
+      let maxDepDepth = -1;
+      for (const imp of node.imports) {
+        const depDepth = depths.get(imp);
+        if (depDepth !== undefined && depDepth > maxDepDepth) {
+          maxDepDepth = depDepth;
+        }
+      }
+      depths.set(path, maxDepDepth + 1);
+    }
+
+    const groupMap = new Map<number, string[]>();
+    for (const [path, depth] of depths) {
+      if (!groupMap.has(depth)) groupMap.set(depth, []);
+      groupMap.get(depth)!.push(path);
+    }
+
+    const groups: ParallelismGroup[] = [];
+    for (const depth of [...groupMap.keys()].sort((a, b) => a - b)) {
+      const groupFiles = groupMap.get(depth)!;
+      const signalCount = groupFiles.reduce((n, f) => {
+        const node = fileMap.get(f);
+        return n + (node?.signalCount || 0);
+      }, 0);
+      groups.push({ depth, files: groupFiles, signalCount });
+    }
+
+    return groups;
   }
 }

@@ -1,5 +1,5 @@
 export { Phase, PhaseResult, PhaseOptions } from "./Phase";
-export { DependencyPhase, DependencyGraph, FileNode, DependencyInput } from "./DependencyPhase";
+export { DependencyPhase, DependencyGraph, FileNode, DependencyInput, ParallelismGroup } from "./DependencyPhase";
 export { ContextPhase, ContextBundle, CallSiteContext, ContextInput } from "./ContextPhase";
 export { DerivationPhase, DerivationOutput, DerivedContract, DerivationInput } from "./DerivationPhase";
 export { ClassificationPhase, ClassificationOutput, ClassificationInput } from "./ClassificationPhase";

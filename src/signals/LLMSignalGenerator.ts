@@ -1,7 +1,7 @@
 import Parser from "tree-sitter";
 import { relative } from "path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { Signal, SignalGenerator, ParameterType } from "./Signal";
+import { LLMProvider, createProvider } from "../llm";
 
 const SYSTEM_PROMPT = `You identify verification points in source code. For each point, you output a JSON array of objects with these fields:
 - line: the 1-based line number
@@ -32,6 +32,7 @@ File: {{FILE_PATH}}
 export interface LLMSignalConfig {
   model?: string;
   maxSignalsPerFile?: number;
+  provider?: LLMProvider;
 }
 
 interface LLMSignalResult {
@@ -47,11 +48,13 @@ export class LLMSignalGenerator implements SignalGenerator {
 
   private model: string;
   private maxSignalsPerFile: number;
+  private provider: LLMProvider;
 
   constructor(config: LLMSignalConfig = {}) {
     this.model = config.model || "sonnet";
     this.maxSignalsPerFile = config.maxSignalsPerFile || 50;
-    console.log(`[llm-signal] Initialized LLMSignalGenerator (model: ${this.model}, max: ${this.maxSignalsPerFile}/file)`);
+    this.provider = config.provider || createProvider();
+    console.log(`[llm-signal] Initialized LLMSignalGenerator (model: ${this.model}, provider: ${this.provider.name}, max: ${this.maxSignalsPerFile}/file)`);
   }
 
   async findSignals(filePath: string, source: string, tree: Parser.Tree): Promise<Signal[]> {
@@ -62,22 +65,14 @@ export class LLMSignalGenerator implements SignalGenerator {
       .replace("{{FILE_PATH}}", filePath)
       .replace("{{SOURCE}}", source);
 
-    console.log(`[llm-signal] Sending ${prompt.length} chars to ${this.model}...`);
+    console.log(`[llm-signal] Sending ${prompt.length} chars to ${this.model} via ${this.provider.name}...`);
     const startTime = Date.now();
 
-    let rawResponse = "";
-    for await (const message of query({
-      prompt,
-      options: {
-        model: this.model,
-        maxTurns: 1,
-        systemPrompt: SYSTEM_PROMPT,
-      },
-    })) {
-      if (message.type === "result" && message.subtype === "success") {
-        rawResponse = message.result;
-      }
-    }
+    const response = await this.provider.complete(prompt, {
+      model: this.model,
+      systemPrompt: SYSTEM_PROMPT,
+    });
+    const rawResponse = response.text;
 
     const elapsed = Date.now() - startTime;
     console.log(`[llm-signal] Response received in ${elapsed}ms (${rawResponse.length} chars)`);

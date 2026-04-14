@@ -1,4 +1,3 @@
-import { VerificationResult } from "./verifier";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs";
 import { join, dirname, relative, basename } from "path";
 import { createHash } from "crypto";
@@ -24,12 +23,14 @@ export interface Contract {
 
 export interface ProvenProperty {
   principle: string | null;
+  principle_hash: string;
   claim: string;
   smt2: string;
 }
 
 export interface Violation {
   principle: string | null;
+  principle_hash: string;
   claim: string;
   smt2: string;
 }
@@ -232,61 +233,6 @@ export class ContractStore {
     }
 
     return sections.join("\n\n");
-  }
-
-  static fromVerificationResults(
-    file: string,
-    functionName: string,
-    line: number,
-    verifications: VerificationResult[],
-    signalHash: string
-  ): Contract {
-    const proven: ProvenProperty[] = [];
-    const violations: Violation[] = [];
-
-    for (const v of verifications) {
-      const commentLines = v.smt2
-        .split("\n")
-        .filter((l) => l.trim().startsWith(";"))
-        .map((l) => l.trim().replace(/^;\s*/, ""));
-
-      const claim =
-        commentLines.find(
-          (l) =>
-            !l.startsWith("PRINCIPLE:") &&
-            l.length > 10
-        ) || "(no claim extracted)";
-
-      if (v.z3Result === "unsat") {
-        proven.push({ principle: v.principle, claim, smt2: v.smt2 });
-      } else if (v.z3Result === "sat") {
-        violations.push({ principle: v.principle, claim, smt2: v.smt2 });
-      }
-    }
-
-    const clause_history: ClauseHistory[] = [];
-
-    for (const p of proven) {
-      clause_history.push({
-        clause: p.smt2,
-        status: "active",
-        weaken_step: 0,
-        witness_count_at_last_weaken: 0,
-        current_witness_count: 0,
-      });
-    }
-
-    for (const v of violations) {
-      clause_history.push({
-        clause: v.smt2,
-        status: "active",
-        weaken_step: 0,
-        witness_count_at_last_weaken: 0,
-        current_witness_count: 0,
-      });
-    }
-
-    return { file, function: functionName, line, signal_hash: signalHash, proven, violations, clause_history, depends_on: [] };
   }
 
   /**
