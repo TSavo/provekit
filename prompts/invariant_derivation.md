@@ -225,6 +225,15 @@ For the target line, produce:
 
 **REACHABLE VIOLATIONS:** For every precondition of every function called before the target line, determine whether the calling code establishes it. If it does not, produce a satisfiability check demonstrating the violation is reachable. Frame as: actual code guarantees + violation condition → expect sat.
 
+**CRITICAL: No vacuous violations.** Every violation block MUST model at least one code transition — an assignment, a computation, a function call's effect on state. A block that only declares an unconstrained variable and asserts a condition on it (e.g., `(declare-const x Int) (assert (< x 0)) (check-sat)`) is vacuously satisfiable and proves nothing. That's asking "can an integer be negative?" — not finding a bug.
+
+Every violation block must contain:
+1. At least one constraint that models what the code actually does (a transition, an assignment, a return value binding)
+2. The violation condition as a consequence of the code model, not just an assertion on an unconstrained variable
+3. No invented constants or arbitrary ceilings — if the code has no upper bound, don't invent one to make Z3 say sat
+
+If you cannot model a substantive code path that leads to the violation, do not emit the block.
+
 Produce complete, self-contained SMT-LIB 2 blocks. Each block must be independently feedable to Z3.
 
 ### The Target Line

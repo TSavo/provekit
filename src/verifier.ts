@@ -49,10 +49,59 @@ export function verifyBlock(smt2: string): { result: "sat" | "unsat" | "unknown"
   }
 }
 
+/**
+ * Detect vacuous SMT-LIB blocks — those that are trivially satisfiable
+ * because they assert a condition on an unconstrained variable with no
+ * code-model transitions.
+ *
+ * A vacuous block has:
+ * - declare-const variables
+ * - assertion(s) that are ONLY the violation condition
+ * - NO transitional assertions (= new_x (- old_x quantity)), etc.
+ *
+ * The heuristic: if the only non-comment, non-declare, non-check-sat
+ * assertions are simple comparisons on single variables (< x 0), (= x 0),
+ * (> x CONST) with no binary operations referencing other declared vars,
+ * the block is vacuous.
+ */
+export function isVacuous(smt2: string): boolean {
+  const lines = smt2.split("\n").map((l) => l.trim());
+  const declares = lines.filter((l) => l.startsWith("(declare-const"));
+  const asserts = lines.filter((l) => l.startsWith("(assert"));
+
+  if (declares.length === 0 || asserts.length === 0) return false;
+
+  const declaredNames = new Set(
+    declares.map((d) => {
+      const m = d.match(/\(declare-const\s+(\S+)/);
+      return m ? m[1]! : "";
+    }).filter(Boolean)
+  );
+
+  // Count assertions that reference multiple declared variables (transitions)
+  let transitionCount = 0;
+  for (const a of asserts) {
+    let referencedVars = 0;
+    for (const name of declaredNames) {
+      if (a.includes(name)) referencedVars++;
+    }
+    // A transition references at least 2 declared variables (e.g., new_x = old_x - quantity)
+    if (referencedVars >= 2) transitionCount++;
+  }
+
+  // If no assertions reference multiple variables, this is likely vacuous
+  return transitionCount === 0;
+}
+
 export function verifyAll(response: string): VerificationResult[] {
   const blocks = extractSmt2Blocks(response);
-  return blocks.map(({ smt2, principle }) => {
-    const { result, error } = verifyBlock(smt2);
-    return { smt2, z3Result: result, principle, error };
-  });
+  return blocks
+    .filter(({ smt2 }) => {
+      if (isVacuous(smt2)) return false;
+      return true;
+    })
+    .map(({ smt2, principle }) => {
+      const { result, error } = verifyBlock(smt2);
+      return { smt2, z3Result: result, principle, error };
+    });
 }
