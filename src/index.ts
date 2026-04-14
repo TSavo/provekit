@@ -8,6 +8,7 @@ import { verifyAll } from "./verifier";
 import { ContractStore } from "./contracts";
 import { PrincipleStore, findNewViolations, classifyAndGeneralize } from "./principles";
 import { reportResults, AnalysisResult } from "./reporter";
+import { collectViolationIssues, fileViolationIssues } from "./issues";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -18,6 +19,12 @@ async function main(): Promise<void> {
     console.log("Analyzes a TypeScript file and derives formal invariants");
     console.log("from every log statement. Verifies them with Z3.");
     console.log("Contracts and principles accumulate in .neurallog/");
+    console.log();
+    console.log("Options:");
+    console.log("  --model <name>  LLM model to use (default: sonnet)");
+    console.log("  --verbose, -v   Show verbose output");
+    console.log("  --issues        File GitHub issues for Z3-confirmed violations (sat)");
+    console.log("  --dry-run       Print issues without filing them (use with --issues)");
     process.exit(0);
   }
 
@@ -33,6 +40,8 @@ async function main(): Promise<void> {
     ? args[args.indexOf("--model") + 1]!
     : "sonnet";
   const verbose = args.includes("--verbose") || args.includes("-v");
+  const fileIssues = args.includes("--issues");
+  const dryRun = args.includes("--dry-run");
 
   const projectRoot = findProjectRoot(dirname(filePath));
 
@@ -149,6 +158,23 @@ async function main(): Promise<void> {
   }
 
   reportResults(results);
+
+  // File GitHub issues for sat violations if --issues flag is set
+  if (fileIssues || dryRun) {
+    const issues = collectViolationIssues(results);
+
+    if (issues.length === 0) {
+      console.log("\nNo Z3-confirmed violations to file as issues.");
+    } else {
+      console.log(
+        `\n${dryRun ? "[DRY RUN] " : ""}Filing ${issues.length} GitHub issue${issues.length === 1 ? "" : "s"} for Z3-confirmed violations...`
+      );
+      const { filed, skipped, errors } = fileViolationIssues(issues, dryRun);
+      console.log(
+        `\nIssues: ${filed} ${dryRun ? "previewed" : "filed"}, ${skipped} skipped (duplicate), ${errors} errors`
+      );
+    }
+  }
 }
 
 function findProjectRoot(startDir: string): string {
