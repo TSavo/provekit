@@ -379,27 +379,120 @@ Be aggressive. Try hard to break the principle. If the principle is vague, overl
   return { passed: true };
 }
 
+/**
+ * Build a detailed description of all principles (seed + discovered) for
+ * use in classifier prompts. Includes full descriptions and teaching examples
+ * so the LLM can make proper semantic comparisons.
+ */
+function formatAllPrinciplesDetailed(existingPrinciples: Principle[]): string {
+  const sections: string[] = [];
+
+  for (const axiom of SEED_AXIOMS) {
+    sections.push(`### ${axiom.id}. ${axiom.name}`);
+    sections.push(axiom.description);
+    sections.push(`**Teaching example:** ${axiom.teachingExample}`);
+    sections.push("");
+  }
+
+  for (const p of existingPrinciples) {
+    sections.push(`### ${p.id}. ${p.name}`);
+    sections.push(p.description);
+    sections.push(`**Teaching example (${p.teachingExample.domain}):** ${p.teachingExample.explanation}`);
+    sections.push("");
+  }
+
+  return sections.join("\n");
+}
+
+/**
+ * Stage 2 of two-stage classification: given a proposed NEW principle,
+ * re-examine with reversed framing — asking whether any existing principle
+ * could have caught this violation if applied correctly.
+ *
+ * This catches cases where Stage 1 said NEW because it wasn't thinking
+ * carefully enough about the existing principles' scope.
+ */
+async function reverseFramingCheck(
+  proposedName: string,
+  proposedDescription: string,
+  violation: VerificationResult,
+  context: string,
+  existingPrinciples: Principle[],
+  model: string
+): Promise<{ isNew: boolean; matchedPrinciple?: string }> {
+  const detailedPrinciples = formatAllPrinciplesDetailed(existingPrinciples);
+
+  const prompt = `You are a second-opinion reviewer for principle classification. A first-pass classifier looked at a violation and proposed creating a NEW principle. Your job is to challenge that decision.
+
+## The Proposed New Principle
+Name: ${proposedName}
+Description: ${proposedDescription}
+
+## The Violation That Triggered It
+Found at: ${context}
+SMT-LIB block:
+\`\`\`smt2
+${violation.smt2}
+\`\`\`
+
+## All Existing Principles (with full descriptions and teaching examples)
+${detailedPrinciples}
+
+## Your Task — Challenge the "NEW" Classification
+
+For EACH existing principle above, ask yourself:
+1. Could this existing principle, if applied thoroughly, have caught the violation described above?
+2. Is the proposed new principle just a specific instance or sub-case of this existing principle?
+3. Does the proposed principle's description overlap significantly with this existing principle's scope?
+
+If ANY existing principle could reasonably cover this violation, respond with:
+"REDUNDANT: P<number> — <explanation of how the existing principle covers this>"
+
+Only if you are CERTAIN that no existing principle covers this pattern, respond with:
+"CONFIRMED_NEW"
+
+Err on the side of REDUNDANT. The cost of a false NEW is higher than the cost of mapping to an existing principle.`;
+
+  let rawResponse = "";
+  for await (const message of query({
+    prompt,
+    options: {
+      maxTurns: 1,
+      model,
+      systemPrompt:
+        "You are a strict second-opinion reviewer. Your bias is toward finding an existing principle that covers the violation. Respond with either 'REDUNDANT: P<N>' or 'CONFIRMED_NEW'. Nothing else.",
+    },
+  })) {
+    if (message.type === "result" && message.subtype === "success") {
+      rawResponse = message.result;
+    }
+  }
+
+  if (rawResponse.includes("CONFIRMED_NEW")) {
+    return { isNew: true };
+  }
+
+  const match = rawResponse.match(/REDUNDANT:\s*(P\d+)/);
+  return {
+    isNew: false,
+    matchedPrinciple: match ? match[1] : "unknown existing principle",
+  };
+}
+
 export async function classifyAndGeneralize(
   violation: VerificationResult,
   context: string,
   existingPrinciples: Principle[],
   model: string
 ): Promise<Principle | null> {
-  const existingList = [
-    "P1. Precondition Propagation",
-    "P2. State Mutation Analysis",
-    "P3. Calling Context Analysis",
-    "P4. Temporal Analysis",
-    "P5. Semantic Correctness",
-    "P6. Boundary and Degenerate Inputs",
-    "P7. Arithmetic Safety",
-    ...existingPrinciples.map((p) => `${p.id}. ${p.name}`),
-  ].join("\n");
+  // Build detailed principle list with full descriptions and teaching examples
+  const detailedPrinciples = formatAllPrinciplesDetailed(existingPrinciples);
 
-  const prompt = `You are a verification principle analyst. A formal verification engine found a violation tagged [NEW] — meaning it doesn't fit any existing principle. Your job is to determine if this is genuinely new, and if so, generalize it.
+  // --- Stage 1: Classification with full principle descriptions ---
+  const stage1Prompt = `You are a verification principle analyst. A formal verification engine found a violation tagged [NEW] — meaning the derivation engine thought it doesn't fit any existing principle. Your job is to determine if this is genuinely new, and if so, generalize it.
 
-## Existing Principles
-${existingList}
+## Existing Principles (with full descriptions and teaching examples)
+${detailedPrinciples}
 
 ## The [NEW] Violation
 Found at: ${context}
@@ -410,9 +503,11 @@ ${violation.smt2}
 
 ## Your Task
 
-1. Does this violation actually fit one of the existing principles listed above? If yes, respond with ONLY: "EXISTING: P<number>" and explain why.
+Read each existing principle's FULL description and teaching example carefully. Many violations that appear new at first glance are actually covered by an existing principle when you consider the principle's full scope.
 
-2. If genuinely new, respond with a JSON object (and NOTHING else before or after it):
+1. Does this violation fit one of the existing principles listed above? Consider whether any principle, applied broadly, covers this pattern. If yes, respond with ONLY: "EXISTING: P<number>" and a brief explanation.
+
+2. If genuinely new — meaning NO existing principle's description covers this class of bug even when interpreted broadly — respond with a JSON object (and NOTHING else before or after it):
 \`\`\`json
 {
   "name": "Short Principle Name",
@@ -427,10 +522,10 @@ ${violation.smt2}
 
 Be rigorous. Most violations fit existing principles. Only propose a new one if you genuinely cannot capture the pattern with the existing set.`;
 
-  let rawResponse = "";
+  let stage1Response = "";
 
   for await (const message of query({
-    prompt,
+    prompt: stage1Prompt,
     options: {
       maxTurns: 1,
       model,
@@ -439,63 +534,81 @@ Be rigorous. Most violations fit existing principles. Only propose a new one if 
     },
   })) {
     if (message.type === "result" && message.subtype === "success") {
-      rawResponse = message.result;
+      stage1Response = message.result;
     }
   }
 
-  // Check if it maps to an existing principle
-  if (rawResponse.includes("EXISTING:")) {
+  // If Stage 1 says EXISTING, accept immediately
+  if (stage1Response.includes("EXISTING:")) {
     return null;
   }
 
-  // Try to extract JSON
-  const jsonMatch = rawResponse.match(/```json\s*([\s\S]*?)```/);
-  const jsonStr = jsonMatch ? jsonMatch[1]! : rawResponse;
+  // Stage 1 said NEW — extract the proposed principle
+  const jsonMatch = stage1Response.match(/```json\s*([\s\S]*?)```/);
+  const jsonStr = jsonMatch ? jsonMatch[1]! : stage1Response;
 
+  let parsed: any;
   try {
-    const parsed = JSON.parse(jsonStr.trim());
-
-    // Step 1: Semantic diff — is this actually covered by an existing axiom?
-    const diffResult = await semanticDiffCheck(
-      { name: parsed.name, description: parsed.description },
-      existingPrinciples,
-      model
-    );
-
-    if (diffResult.covered) {
-      return null;
-    }
-
-    // Step 2: Adversarial model test — can a different model break it?
-    const adversarialResult = await adversarialModelTest(
-      {
-        name: parsed.name,
-        description: parsed.description,
-        teachingExample: parsed.teachingExample,
-      },
-      model
-    );
-
-    // Step 3: Tag validated vs unvalidated
-    const principle: Principle = {
-      id: "", // filled by caller
-      name: parsed.name,
-      description: parsed.description,
-      teachingExample: parsed.teachingExample,
-      provenance: {
-        discoveredIn: context,
-        violation: violation.smt2.slice(0, 200),
-        generalizedAt: new Date().toISOString(),
-      },
-      validated: adversarialResult.passed,
-    };
-
-    if (!adversarialResult.passed) {
-      principle.validationFailure = adversarialResult.failure;
-    }
-
-    return principle;
+    parsed = JSON.parse(jsonStr.trim());
   } catch {
     return null;
   }
+
+  // --- Stage 2: Reverse framing check ---
+  // Re-examine with a different prompt that biases toward finding existing matches
+  const stage2Result = await reverseFramingCheck(
+    parsed.name,
+    parsed.description,
+    violation,
+    context,
+    existingPrinciples,
+    model
+  );
+
+  // If Stage 2 says it's redundant, reject the new principle
+  if (!stage2Result.isNew) {
+    return null;
+  }
+
+  // Both stages agree it's NEW — proceed through existing validation pipeline
+
+  // Semantic diff check (existing Step 1 — additional safety net)
+  const diffResult = await semanticDiffCheck(
+    { name: parsed.name, description: parsed.description },
+    existingPrinciples,
+    model
+  );
+
+  if (diffResult.covered) {
+    return null;
+  }
+
+  // Adversarial model test (existing Step 2)
+  const adversarialResult = await adversarialModelTest(
+    {
+      name: parsed.name,
+      description: parsed.description,
+      teachingExample: parsed.teachingExample,
+    },
+    model
+  );
+
+  const principle: Principle = {
+    id: "", // filled by caller
+    name: parsed.name,
+    description: parsed.description,
+    teachingExample: parsed.teachingExample,
+    provenance: {
+      discoveredIn: context,
+      violation: violation.smt2.slice(0, 200),
+      generalizedAt: new Date().toISOString(),
+    },
+    validated: adversarialResult.passed,
+  };
+
+  if (!adversarialResult.passed) {
+    principle.validationFailure = adversarialResult.failure;
+  }
+
+  return principle;
 }
