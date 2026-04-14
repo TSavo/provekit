@@ -29,8 +29,11 @@ export interface CallSiteContext {
   functionSource: string;
   fileSource: string;
   importSources: { path: string; source: string }[];
-  existingContracts: string;  // formatted for prompt injection
+  existingContracts: string;
   callingContext: string;
+  // Enriched from AST:
+  typeContext: string;       // formatted parameter types, return type, local types
+  pathConditions: string[];  // if/else conditions that must hold to reach this log
 }
 
 export function assembleContexts(graph: DependencyGraph): ContextBundle[] {
@@ -77,6 +80,25 @@ export function assembleContexts(graph: DependencyGraph): ContextBundle[] {
       const isExported = site.functionSource.includes("export ");
       const visibility = isExported ? "public (exported)" : "module-private";
 
+      // Format type context from AST
+      const typeLines: string[] = [];
+      if (site.parameters.length > 0) {
+        typeLines.push("Parameters:");
+        for (const p of site.parameters) {
+          typeLines.push(`  ${p.name}: ${p.type}`);
+        }
+      }
+      if (site.returnType !== "unknown") {
+        typeLines.push(`Return type: ${site.returnType}`);
+      }
+      const localEntries = Object.entries(site.localTypes);
+      if (localEntries.length > 0) {
+        typeLines.push("Local variables (before this log statement):");
+        for (const [name, type] of localEntries) {
+          typeLines.push(`  ${name}: ${type}`);
+        }
+      }
+
       return {
         line: site.line,
         column: site.column,
@@ -91,6 +113,8 @@ export function assembleContexts(graph: DependencyGraph): ContextBundle[] {
             ? "Any caller can pass any arguments."
             : "Only called within this module."
         }`,
+        typeContext: typeLines.length > 0 ? typeLines.join("\n") : "(no type annotations found)",
+        pathConditions: site.pathConditions,
       };
     });
 

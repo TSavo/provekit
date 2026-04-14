@@ -188,6 +188,19 @@ function buildPrompt(
         .join("\n\n")
     : "(no imports)";
 
+  // Build enriched calling context with type info and path conditions
+  let enrichedContext = callSite.callingContext;
+
+  if (callSite.typeContext && callSite.typeContext !== "(no type annotations found)") {
+    enrichedContext += `\n\nType information (from TypeScript AST):\n${callSite.typeContext}`;
+  }
+
+  if (callSite.pathConditions && callSite.pathConditions.length > 0) {
+    enrichedContext += `\n\nPath conditions (must be true for execution to reach this log statement):\n`;
+    enrichedContext += callSite.pathConditions.map((c, i) => `  ${i + 1}. ${c}`).join("\n");
+    enrichedContext += `\nThese are KNOWN FACTS at this log statement — the code guarantees them.`;
+  }
+
   let prompt = compiledTemplate({
     TARGET_FILE: filePath,
     TARGET_FUNCTION: callSite.functionName,
@@ -196,7 +209,7 @@ function buildPrompt(
     TARGET_FILE_SOURCE: callSite.fileSource,
     IMPORT_SOURCES: importSources,
     EXISTING_CONTRACTS: accumulated,
-    CALLING_CONTEXT: callSite.callingContext,
+    CALLING_CONTEXT: enrichedContext,
   });
 
   // Inject discovered principles after seed principles
