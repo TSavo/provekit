@@ -170,6 +170,10 @@ function substituteSmt2(smt2: string, bindings: Record<string, unknown>): string
   return result;
 }
 
+function normalizeClause(s: string): string {
+  return s.replace(/;[^\n]*/g, "").replace(/\s+/g, " ").trim();
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -278,6 +282,7 @@ async function evaluateContract(
 
 class NeurallogTransform extends Transform {
   private contractIndex: ContractIndex;
+  private contractStore: ContractStore;
   private projectRoot: string;
   private destination: NodeJS.WritableStream;
 
@@ -287,8 +292,8 @@ class NeurallogTransform extends Transform {
     this.destination = opts.destination || process.stdout;
 
     // Load contracts from disk once at startup
-    const store = new ContractStore(this.projectRoot);
-    const contracts = store.getAll();
+    this.contractStore = new ContractStore(this.projectRoot);
+    const contracts = this.contractStore.getAll();
     this.contractIndex = buildContractIndex(contracts);
   }
 
@@ -331,6 +336,12 @@ class NeurallogTransform extends Transform {
       .then((entries) => {
         for (const entry of entries) {
           this.destination.write(JSON.stringify(entry) + "\n");
+          // Record witnesses for the termination bookkeeping
+          if (entry.result === "pass") {
+            this.contractStore.recordWitness(
+              contract.file, contract.line, normalizeClause(entry.property)
+            );
+          }
         }
       })
       .catch(() => {

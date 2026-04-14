@@ -114,16 +114,21 @@ export class ContractStore {
    * entry is recorded.
    */
   recordWitness(file: string, line: number, clause: string): void {
+    const normalized = this.normalizeClause(clause);
     for (const c of this.contracts) {
       if (c.file === file && c.line === line) {
         for (const h of c.clause_history) {
-          if (h.clause === clause) {
+          if (this.normalizeClause(h.clause) === normalized) {
             h.current_witness_count++;
             return;
           }
         }
       }
     }
+  }
+
+  private normalizeClause(s: string): string {
+    return s.replace(/;[^\n]*/g, "").replace(/\s+/g, " ").trim();
   }
 
   /**

@@ -5,6 +5,7 @@ export interface VerificationResult {
   z3Result: "sat" | "unsat" | "unknown" | "error";
   principle: string | null;
   error?: string;
+  trivial?: boolean;
 }
 
 export function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {
@@ -31,7 +32,8 @@ export function extractSmt2Blocks(response: string): { smt2: string; principle: 
 
 export function verifyBlock(smt2: string): { result: "sat" | "unsat" | "unknown" | "error"; error?: string } {
   try {
-    const output = execSync(`echo '${smt2.replace(/'/g, "'\\''")}' | z3 -in -T:5`, {
+    const output = execSync("z3 -in -T:5", {
+      input: smt2,
       encoding: "utf-8",
       timeout: 10000,
     }).trim();
@@ -83,7 +85,7 @@ export function isVacuous(smt2: string): boolean {
   for (const a of asserts) {
     let referencedVars = 0;
     for (const name of declaredNames) {
-      if (a.includes(name)) referencedVars++;
+      if (new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(a)) referencedVars++;
     }
     // A transition references at least 2 declared variables (e.g., new_x = old_x - quantity)
     if (referencedVars >= 2) transitionCount++;
@@ -93,15 +95,31 @@ export function isVacuous(smt2: string): boolean {
   return transitionCount === 0;
 }
 
+/**
+ * Detect trivial identity proofs — blocks that assert (= x y) and then
+ * assert (not (= x y)). These are tautologically unsat and prove nothing
+ * beyond the identity of an assignment.
+ */
+export function isTrivialIdentity(smt2: string): boolean {
+  const lines = smt2.split("\n").map((l) => l.trim());
+  const asserts = lines.filter((l) => l.startsWith("(assert"));
+
+  if (asserts.length !== 2) return false;
+
+  // Pattern: one assert is (= A B), the other is (not (= A B))
+  const hasEquality = asserts.some((a) => /^\(assert\s+\(=\s+\S+\s+\S+\)\)$/.test(a));
+  const hasNegation = asserts.some((a) => /^\(assert\s+\(not\s+\(=\s+\S+\s+\S+\)\)\)$/.test(a));
+
+  return hasEquality && hasNegation;
+}
+
 export function verifyAll(response: string): VerificationResult[] {
   const blocks = extractSmt2Blocks(response);
   return blocks
-    .filter(({ smt2 }) => {
-      if (isVacuous(smt2)) return false;
-      return true;
-    })
+    .filter(({ smt2 }) => !isVacuous(smt2))
     .map(({ smt2, principle }) => {
       const { result, error } = verifyBlock(smt2);
-      return { smt2, z3Result: result, principle, error };
+      const trivial = isTrivialIdentity(smt2);
+      return { smt2, z3Result: result, principle, error, trivial };
     });
 }

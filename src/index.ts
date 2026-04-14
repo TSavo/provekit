@@ -147,11 +147,15 @@ async function main(): Promise<void> {
 
       if (principle) {
         principle.id = principleStore.nextId();
-        principleStore.add(principle);
         const tag = principle.validated ? "VALIDATED" : "UNVALIDATED";
-        console.log(`NEW PRINCIPLE [${tag}]: ${principle.id} — ${principle.name}`);
-        if (!principle.validated && principle.validationFailure) {
-          console.log(`    Validation failure: ${principle.validationFailure}`);
+        if (principle.validated) {
+          principleStore.add(principle);
+          console.log(`NEW PRINCIPLE [${tag}]: ${principle.id} — ${principle.name}`);
+        } else {
+          console.log(`REJECTED PRINCIPLE [${tag}]: ${principle.id} — ${principle.name}`);
+          if (principle.validationFailure) {
+            console.log(`    Reason: ${principle.validationFailure}`);
+          }
         }
       } else {
         console.log("mapped to existing principle");

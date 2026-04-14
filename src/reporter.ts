@@ -38,7 +38,8 @@ export function reportResults(results: AnalysisResult[]): void {
       const tag = v.principle ? `[${v.principle}]` : "[?]";
       if (v.z3Result === "unsat") {
         totalProven++;
-        console.log(`  ✓ PROVEN (unsat)  ${tag}`);
+        const trivialTag = v.trivial ? " [trivial identity]" : "";
+        console.log(`  ✓ PROVEN (unsat)  ${tag}${trivialTag}`);
       } else if (v.z3Result === "sat") {
         totalSat++;
         console.log(`  ✗ VIOLATION REACHABLE (sat)  ${tag}`);
