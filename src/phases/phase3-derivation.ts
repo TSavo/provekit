@@ -16,6 +16,8 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import Handlebars from "handlebars";
 import { ContextBundle, CallSiteContext } from "./phase2-context";
 import { verifyAll, VerificationResult } from "../verifier";
+import { PrincipleStore } from "../principles";
+import { ClauseHistory } from "../contracts";
 
 export interface DerivedContract {
   file: string;
@@ -24,7 +26,7 @@ export interface DerivedContract {
   proven: { principle: string | null; claim: string; smt2: string }[];
   violations: { principle: string | null; claim: string; smt2: string }[];
   depends_on: string[];
-  clause_history: any[];
+  clause_history: ClauseHistory[];
 }
 
 export interface DerivationOutput {
@@ -65,6 +67,11 @@ export async function deriveContracts(
 ): Promise<DerivationOutput> {
   console.log("Phase 3: Deriving contracts...");
 
+  // Load discovered principles for prompt injection
+  const principleStore = new PrincipleStore(projectRoot);
+  const discoveredPrinciples = principleStore.formatForPrompt();
+  const principleHash = principleStore.computePrincipleHash();
+
   const allContracts: DerivedContract[] = [];
   const allNewViolations: { violation: VerificationResult; context: string }[] = [];
   let accumulated = "(no existing contracts yet — first pass)";
@@ -77,7 +84,7 @@ export async function deriveContracts(
         `    ${callSite.functionName}:${callSite.line} (${allContracts.length} in context) ... `
       );
 
-      const prompt = buildPrompt(callSite, accumulated);
+      const prompt = buildPrompt(callSite, bundle.filePath, accumulated, discoveredPrinciples);
 
       let rawResponse = "";
       for await (const message of query({
@@ -140,7 +147,7 @@ export async function deriveContracts(
     }
 
     // Write contracts for this file to disk
-    writeContractsForFile(bundle.filePath, allContracts, projectRoot);
+    writeContractsForFile(bundle.filePath, allContracts, projectRoot, principleHash);
   }
 
   const output: DerivationOutput = {
@@ -159,15 +166,20 @@ export async function deriveContracts(
   return output;
 }
 
-function buildPrompt(callSite: CallSiteContext, accumulated: string): string {
+function buildPrompt(
+  callSite: CallSiteContext,
+  filePath: string,
+  accumulated: string,
+  discoveredPrinciples: string
+): string {
   const importSources = callSite.importSources.length > 0
     ? callSite.importSources
         .map((imp) => `#### ${imp.path}\n\`\`\`typescript\n${imp.source}\n\`\`\``)
         .join("\n\n")
     : "(no imports)";
 
-  return compiledTemplate({
-    TARGET_FILE: callSite.functionName,
+  let prompt = compiledTemplate({
+    TARGET_FILE: filePath,
     TARGET_FUNCTION: callSite.functionName,
     TARGET_LINE: String(callSite.line),
     TARGET_STATEMENT: callSite.logText,
@@ -176,6 +188,16 @@ function buildPrompt(callSite: CallSiteContext, accumulated: string): string {
     EXISTING_CONTRACTS: accumulated,
     CALLING_CONTEXT: callSite.callingContext,
   });
+
+  // Inject discovered principles after seed principles
+  if (discoveredPrinciples) {
+    const insertPoint = prompt.indexOf("### SMT-LIB 2 Grammar");
+    if (insertPoint !== -1) {
+      prompt = prompt.slice(0, insertPoint) + discoveredPrinciples + "\n\n" + prompt.slice(insertPoint);
+    }
+  }
+
+  return prompt;
 }
 
 function buildContract(
@@ -244,7 +266,8 @@ function formatAccumulated(contracts: DerivedContract[]): string {
 function writeContractsForFile(
   filePath: string,
   allContracts: DerivedContract[],
-  projectRoot: string
+  projectRoot: string,
+  principleHash?: string
 ): void {
   const { relative } = require("path");
   const relPath = relative(projectRoot, filePath);
@@ -258,6 +281,7 @@ function writeContractsForFile(
 
   writeFileSync(contractPath, JSON.stringify({
     file_hash: fileHash,
+    ...(principleHash ? { principle_hash: principleHash } : {}),
     contracts: contractsForFile,
   }, null, 2));
 }
