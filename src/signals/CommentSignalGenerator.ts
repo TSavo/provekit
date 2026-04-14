@@ -1,5 +1,6 @@
 import Parser from "tree-sitter";
-import { Signal, SignalGenerator, ParameterType } from "./Signal";
+import { Signal, SignalGenerator } from "./Signal";
+import { findEnclosingFunction, extractFunctionName } from "../parser";
 
 export class CommentSignalGenerator implements SignalGenerator {
   readonly name = "comment";
@@ -31,14 +32,14 @@ export class CommentSignalGenerator implements SignalGenerator {
       }
 
       const line = commentNode.startPosition.row + 1;
-      const enclosingFn = this.findEnclosingFunction(commentNode);
+      const enclosingFn = findEnclosingFunction(commentNode);
 
       if (!enclosingFn) {
         skippedNoFunction++;
         return;
       }
 
-      const fnName = this.extractFunctionName(enclosingFn);
+      const fnName = extractFunctionName(enclosingFn);
       const parameters = this.extractParameters(enclosingFn);
       const returnType = this.extractReturnType(enclosingFn);
       const pathConditions = this.extractPathConditions(commentNode, enclosingFn);
@@ -63,7 +64,7 @@ export class CommentSignalGenerator implements SignalGenerator {
       });
     });
 
-    console.log(`[comment-signal] ${totalComments} comments, ${signals.length} signals, ${skippedNoFunction} module-scope, ${skippedTooling} tooling directives`);
+    console.log(`[comment-signal] ${totalComments} comments, ${signals.length} signals, ${skippedNoFunction} module-scope, ${skippedTooling} tooling`);
     return signals;
   }
 
@@ -76,38 +77,8 @@ export class CommentSignalGenerator implements SignalGenerator {
     }
   }
 
-  private findEnclosingFunction(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-    let current: Parser.SyntaxNode | null = node.parent;
-    while (current) {
-      if (
-        current.type === "function_declaration" ||
-        current.type === "method_definition" ||
-        current.type === "arrow_function" ||
-        current.type === "function_expression" ||
-        current.type === "function"
-      ) {
-        return current;
-      }
-      if (current.type === "export_statement" && current.firstNamedChild?.type === "function_declaration") {
-        return current.firstNamedChild;
-      }
-      current = current.parent;
-    }
-    return null;
-  }
-
-  private extractFunctionName(node: Parser.SyntaxNode): string {
-    const nameNode = node.childForFieldName("name");
-    if (nameNode) return nameNode.text;
-    if (node.parent?.type === "variable_declarator") {
-      const varName = node.parent.childForFieldName("name");
-      if (varName) return varName.text;
-    }
-    return "<anonymous>";
-  }
-
-  private extractParameters(fnNode: Parser.SyntaxNode): ParameterType[] {
-    const params: ParameterType[] = [];
+  private extractParameters(fnNode: Parser.SyntaxNode): { name: string; type: string }[] {
+    const params: { name: string; type: string }[] = [];
     const paramsNode = fnNode.childForFieldName("parameters");
     if (!paramsNode) return params;
 

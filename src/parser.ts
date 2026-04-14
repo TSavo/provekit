@@ -102,7 +102,7 @@ function tryExtractLogCall(
   };
 }
 
-function findEnclosingFunction(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+export function findEnclosingFunction(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
   let current: Parser.SyntaxNode | null = node.parent;
   while (current) {
     if (
@@ -125,13 +125,54 @@ function findEnclosingFunction(node: Parser.SyntaxNode): Parser.SyntaxNode | nul
   return null;
 }
 
-function extractFunctionName(node: Parser.SyntaxNode): string {
+export function extractFunctionName(node: Parser.SyntaxNode): string {
   const nameNode = node.childForFieldName("name");
   if (nameNode) return nameNode.text;
 
   if (node.parent?.type === "variable_declarator") {
     const varName = node.parent.childForFieldName("name");
     if (varName) return varName.text;
+  }
+
+  // Callback argument: fn((...) => { }) or obj.method((...) => { })
+  if (node.parent?.type === "arguments" && node.parent.parent?.type === "call_expression") {
+    const callFn = node.parent.parent.childForFieldName("function");
+    if (callFn?.type === "member_expression") {
+      const method = callFn.childForFieldName("property");
+      const object = callFn.childForFieldName("object");
+      if (method) {
+        const objName = object?.type === "call_expression"
+          ? extractFunctionName(object) || object.childForFieldName("function")?.text
+          : object?.text;
+        if (objName) return `${objName}.${method.text}`;
+        return method.text;
+      }
+    }
+    // build(async function() { }) → "build.callback"
+    if (callFn?.type === "identifier") {
+      return `${callFn.text}.callback`;
+    }
+  }
+
+  // Walk up to find any named ancestor for context
+  let current: Parser.SyntaxNode | null = node.parent;
+  while (current) {
+    if (current.type === "variable_declarator") {
+      const name = current.childForFieldName("name");
+      if (name) return name.text;
+    }
+    if (current.type === "pair") {
+      const key = current.childForFieldName("key");
+      if (key) return key.text;
+    }
+    if (current.type === "assignment_expression") {
+      const left = current.childForFieldName("left");
+      if (left?.type === "member_expression") {
+        const prop = left.childForFieldName("property");
+        if (prop) return prop.text;
+      }
+    }
+    current = current.parent;
   }
 
   return "<anonymous>";

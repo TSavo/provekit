@@ -74,19 +74,30 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     this.detail(`Model: ${model}`);
     this.detail(`Principles: 7 seed${discoveredCount > 0 ? ` + ${discoveredCount} discovered` : ""}`);
     this.detail(`Principle hash: ${principleHash.slice(0, 12)}...`);
-    this.detail(`Bundles: ${bundles.length} files, ${bundles.reduce((n, b) => n + b.callSites.length, 0)} call sites`);
+    const totalCallSites = bundles.reduce((n, b) => n + b.callSites.length, 0);
+    this.detail(`Bundles: ${bundles.length} files, ${totalCallSites} call sites`);
     console.log();
 
     const allContracts: DerivedContract[] = [];
     const allNewViolations: { violation: VerificationResult; context: string }[] = [];
     let accumulated = "(no existing contracts yet -- first pass)";
+    let completed = 0;
+    const startTime = Date.now();
 
     for (const bundle of bundles) {
       this.detail(`${bundle.relativePath}:`);
 
       for (const callSite of bundle.callSites) {
+        completed++;
+        const pct = Math.round((completed / totalCallSites) * 100);
+        const filled = Math.round((completed / totalCallSites) * 20);
+        const bar = "\u2588".repeat(filled) + "\u2591".repeat(20 - filled);
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+        const rate = completed > 1 ? ((Date.now() - startTime) / (completed - 1) / 1000).toFixed(1) : "?";
+        const eta = completed > 1 ? (((totalCallSites - completed) * (Date.now() - startTime)) / (completed - 1) / 1000).toFixed(0) : "?";
+
         process.stdout.write(
-          `    ${callSite.functionName}:${callSite.line} (${allContracts.length} in context) ... `
+          `\r    [${bar}] ${completed}/${totalCallSites} (${pct}%) ${callSite.functionName}:${callSite.line} ~${rate}s/site ETA ${eta}s    \n`
         );
 
         const prompt = this.buildPrompt(callSite, bundle.filePath, accumulated, discoveredPrinciples);
@@ -131,13 +142,13 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
         accumulated = this.formatAccumulated(allContracts);
 
-        const proven = verifications.filter((v) => v.z3Result === "unsat").length;
-        const violations = verifications.filter((v) => v.z3Result === "sat").length;
+        const provenCount = verifications.filter((v) => v.z3Result === "unsat").length;
+        const violationCount = verifications.filter((v) => v.z3Result === "sat").length;
         const newCount = newViolations.length;
 
-        console.log(
-          `${verifications.length} blocks: ${proven} proven, ${violations} violations` +
-            (newCount > 0 ? ` (${newCount} [NEW])` : "")
+        process.stdout.write(
+          `      → ${verifications.length} blocks: ${provenCount} ✓ ${violationCount} ✗` +
+            (newCount > 0 ? ` (${newCount} [NEW])` : "") + "\n"
         );
       }
 

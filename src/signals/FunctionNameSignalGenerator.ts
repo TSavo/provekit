@@ -1,5 +1,6 @@
 import Parser from "tree-sitter";
 import { Signal, SignalGenerator, ParameterType } from "./Signal";
+import { extractFunctionName as parserExtractFunctionName } from "../parser";
 
 const NAME_PATTERNS: { pattern: RegExp; type: string; contract: string }[] = [
   { pattern: /^sanitize/i, type: "sanitization", contract: "output must not contain dangerous characters that were present in input" },
@@ -136,13 +137,7 @@ export class FunctionNameSignalGenerator implements SignalGenerator {
   }
 
   private extractFunctionName(node: Parser.SyntaxNode): string {
-    const nameNode = node.childForFieldName("name");
-    if (nameNode) return nameNode.text;
-    if (node.parent?.type === "variable_declarator") {
-      const varName = node.parent.childForFieldName("name");
-      if (varName) return varName.text;
-    }
-    return "<anonymous>";
+    return parserExtractFunctionName(node);
   }
 
   private extractParameters(fnNode: Parser.SyntaxNode): ParameterType[] {
