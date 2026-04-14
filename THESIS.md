@@ -42,6 +42,18 @@ Not because we made programmers into mathematicians.
 
 Because we realized they always were.
 
+## Proof as the unit of trust.
+
+Bug bounty platforms shut down because of AI slop — LLMs generating reports that sound right but aren't grounded. The problem isn't AI. The problem is that the reports are opinions, not proofs.
+
+The fix isn't "ban AI." The fix is "require proofs."
+
+The submission form isn't "describe the vulnerability." It's "upload the SMT-LIB." The triage isn't a human reading a report. It's `z3 -in`. sat or unsat. The cost of triage goes to zero. The signal is the math.
+
+This extends beyond bounties. Supply chain audits: every package ships with a proof log. Compliance: the regulator runs `z3 -in`, not a checklist. Insurance: the proof log coverage percentage IS the risk metric. Liability: the proof is admissible evidence.
+
+The unit of trust in software shifts from "someone tested it" to "here's the proof." And the proofs come from log statements that already exist.
+
 ## Your log statements already describe your system's behavior.
 
 Every one of them is a claim about what's happening.
