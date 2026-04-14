@@ -15,6 +15,7 @@ export interface Contract {
   file: string;
   function: string;
   line: number;
+  signal_hash: string;   // hash of the signal that generated this contract
   proven: ProvenProperty[];
   violations: Violation[];
   clause_history: ClauseHistory[];
@@ -177,7 +178,7 @@ export class ContractStore {
     const dir = dirname(contractPath);
     mkdirSync(dir, { recursive: true });
 
-    const fileHash = createHash("md5").update(fileSource).digest("hex");
+    const fileHash = createHash("sha256").update(fileSource).digest("hex");
     const contractsForFile = this.contracts.filter(
       (c) => c.file === filePath || c.file === relPath
     );
@@ -237,7 +238,8 @@ export class ContractStore {
     file: string,
     functionName: string,
     line: number,
-    verifications: VerificationResult[]
+    verifications: VerificationResult[],
+    signalHash: string
   ): Contract {
     const proven: ProvenProperty[] = [];
     const violations: Violation[] = [];
@@ -284,7 +286,7 @@ export class ContractStore {
       });
     }
 
-    return { file, function: functionName, line, proven, violations, clause_history, depends_on: [] };
+    return { file, function: functionName, line, signal_hash: signalHash, proven, violations, clause_history, depends_on: [] };
   }
 
   /**
@@ -293,7 +295,7 @@ export class ContractStore {
   static contractHash(contract: Contract): string {
     const content = contract.proven.map((p) => p.smt2).join("\n") +
       contract.violations.map((v) => v.smt2).join("\n");
-    return createHash("md5").update(content).digest("hex").slice(0, 12);
+    return createHash("sha256").update(content).digest("hex");
   }
 
   /**

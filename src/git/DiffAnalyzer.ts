@@ -55,12 +55,12 @@ export class DiffAnalyzer {
 
   isGitRepo(): boolean {
     try {
-      execSync("git rev-parse --is-inside-work-tree", {
+      const output = execSync("git rev-parse --is-inside-work-tree", {
         cwd: this.projectRoot,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
-      });
-      return true;
+      }).trim();
+      return output === "true";
     } catch {
       return false;
     }

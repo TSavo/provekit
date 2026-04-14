@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   switch (command) {
     case "init":     await runInit(rest); break;
     case "analyze":  await runAnalyze(rest); break;
-    case "verify":   runVerify(rest); break;
+    case "verify":   await runVerify(rest); break;
     case "derive":   await runDerive(rest); break;
     case "diff":     runDiff(rest); break;
     case "explain":  runExplain(rest); break;
@@ -196,30 +196,53 @@ async function runDerive(args: string[]): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// verify — Phase 5 only (git hook mode)
+// verify — incremental in hook mode, Phase 5 only otherwise
 // ---------------------------------------------------------------------------
 
-function runVerify(args: string[]): void {
+async function runVerify(args: string[]): Promise<void> {
   const projectRoot = resolveProjectRoot(args);
   const isHook = args.includes("--hook");
   const ci = args.includes("--ci");
   const verbose = args.includes("--verbose") || args.includes("-v");
+  const model = getFlag(args, "--model") || "sonnet";
 
-  if (!isHook) {
-    console.log(`neurallog v${VERSION} — verify (Phase 5 only, no LLM, pure Z3)`);
-    console.log(`Project: ${projectRoot}`);
-    console.log();
+  if (isHook) {
+    const { DiffAnalyzer } = require("./git");
+    const diff = new DiffAnalyzer(projectRoot);
+    const changedFiles = diff.getChangedTypeScriptFiles();
+
+    if (changedFiles.length === 0) {
+      process.exit(0);
+    }
+
+    const signalRegistry = buildSignalRegistry(args, model);
+    const pipeline = new Pipeline();
+    const result = await pipeline.runIncremental({
+      entryFilePath: changedFiles[0]!,
+      projectRoot,
+      model,
+      verbose,
+      changedFiles,
+      signalRegistry,
+    });
+
+    if (result.report.violations > 0) {
+      process.exit(1);
+    }
+    process.exit(0);
   }
+
+  console.log(`neurallog v${VERSION} — verify (Phase 5 only, no LLM, pure Z3)`);
+  console.log(`Project: ${projectRoot}`);
+  console.log();
 
   const pipeline = new Pipeline();
   const report = pipeline.runVerifyOnly(projectRoot, verbose);
 
-  if (isHook || ci) {
+  if (ci) {
     if (report.violations > 0) {
-      if (!isHook) {
-        console.log();
-        console.log(`${report.violations} violation${report.violations === 1 ? "" : "s"} found.`);
-      }
+      console.log();
+      console.log(`${report.violations} violation${report.violations === 1 ? "" : "s"} found.`);
       process.exit(1);
     }
     process.exit(0);

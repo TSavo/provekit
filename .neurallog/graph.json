@@ -1,17 +1,26 @@
 {
-  "root": "/Users/tsavo/Projects/neurallog/examples/cache.ts",
+  "root": "/Users/tsavo/Projects/neurallog/src/types.ts",
   "projectRoot": "/Users/tsavo/Projects/neurallog",
   "files": [
     {
-      "path": "/Users/tsavo/Projects/neurallog/examples/cache.ts",
-      "relativePath": "examples/cache.ts",
+      "path": "/Users/tsavo/Projects/neurallog/src/types.ts",
+      "relativePath": "src/types.ts",
+      "imports": [
+        "/Users/tsavo/Projects/neurallog/src/verifier.ts"
+      ],
+      "signalCount": 0,
+      "hash": "bade62c65ba0c96c5db1b9d0d50a1ccdd9a753d25e4875080868aff6da940c52"
+    },
+    {
+      "path": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+      "relativePath": "src/verifier.ts",
       "imports": [],
-      "logStatements": 5,
-      "hash": "bc7b2a4c5fbb0e85d74d9870600d944b"
+      "signalCount": 14,
+      "hash": "895fa89e8ac664e7092a361c190136fb72d4805692014afdf8a19db8c0503595"
     }
   ],
   "topologicalOrder": [
-    "/Users/tsavo/Projects/neurallog/examples/cache.ts"
+    "/Users/tsavo/Projects/neurallog/src/types.ts"
   ],
-  "builtAt": "2026-04-14T21:03:22.750Z"
+  "builtAt": "2026-04-14T22:18:47.358Z"
 }

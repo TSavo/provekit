@@ -1,4 +1,5 @@
 import Parser from "tree-sitter";
+import { createHash } from "crypto";
 
 export interface ParameterType {
   name: string;
@@ -19,6 +20,21 @@ export interface Signal {
   returnType: string;
   pathConditions: string[];
   localTypes: Record<string, string>;
+}
+
+export function computeSignalHash(signal: Signal): string {
+  const content = [
+    signal.file,
+    signal.functionName,
+    signal.functionSource,
+    signal.text,
+    signal.type,
+    ...signal.pathConditions,
+    ...signal.parameters.map((p) => `${p.name}:${p.type}`),
+    signal.returnType,
+    ...Object.entries(signal.localTypes).map(([k, v]) => `${k}:${v}`),
+  ].join("\n");
+  return createHash("sha256").update(content).digest("hex");
 }
 
 export interface SignalGenerator {

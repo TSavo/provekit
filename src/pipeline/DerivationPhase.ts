@@ -8,11 +8,13 @@ import { ContextBundle, CallSiteContext } from "./ContextPhase";
 import { verifyAll, VerificationResult } from "../verifier";
 import { PrincipleStore } from "../principles";
 import { ClauseHistory } from "../contracts";
+import { computeSignalHash } from "../signals";
 
 export interface DerivedContract {
   file: string;
   function: string;
   line: number;
+  signal_hash: string;
   proven: { principle: string | null; claim: string; smt2: string }[];
   violations: { principle: string | null; claim: string; smt2: string }[];
   depends_on: string[];
@@ -73,7 +75,7 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
     this.detail(`Model: ${model}`);
     this.detail(`Principles: 7 seed${discoveredCount > 0 ? ` + ${discoveredCount} discovered` : ""}`);
-    this.detail(`Principle hash: ${principleHash.slice(0, 12)}...`);
+    this.detail(`Principle hash: ${principleHash}`);
     const totalCallSites = bundles.reduce((n, b) => n + b.callSites.length, 0);
     this.detail(`Bundles: ${bundles.length} files, ${totalCallSites} call sites`);
     console.log();
@@ -132,7 +134,7 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
         }
 
         const verifications = verifyAll(rawResponse);
-        const contract = this.buildContract(bundle.filePath, callSite.functionName, callSite.line, verifications, allContracts);
+        const contract = this.buildContract(bundle.filePath, callSite.functionName, callSite.line, callSite.signalHash, verifications, allContracts);
         allContracts.push(contract);
 
         const newViolations = verifications
@@ -224,6 +226,7 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     file: string,
     functionName: string,
     line: number,
+    signalHash: string,
     verifications: VerificationResult[],
     priorContracts: DerivedContract[]
   ): DerivedContract {
@@ -247,13 +250,14 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
     const depends_on = priorContracts.map((c) => {
       const content = c.proven.map((p) => p.smt2).join("\n") + c.violations.map((v) => v.smt2).join("\n");
-      return createHash("md5").update(content).digest("hex").slice(0, 12);
+      return createHash("sha256").update(content).digest("hex");
     });
 
     return {
       file,
       function: functionName,
       line,
+      signal_hash: signalHash,
       proven,
       violations,
       depends_on,
@@ -294,7 +298,7 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     mkdirSync(dir, { recursive: true });
 
     const fileSource = readFileSync(filePath, "utf-8");
-    const fileHash = createHash("md5").update(fileSource).digest("hex");
+    const fileHash = createHash("sha256").update(fileSource).digest("hex");
     const contractsForFile = allContracts.filter((c) => c.file === filePath);
 
     writeFileSync(contractPath, JSON.stringify({

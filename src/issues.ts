@@ -1,6 +1,6 @@
 import { execSync } from "child_process";
-import { AnalysisResult } from "./reporter";
 import { VerificationResult } from "./verifier";
+import { AnalysisResult } from "./types";
 
 export interface IssueData {
   title: string;

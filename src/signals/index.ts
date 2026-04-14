@@ -1,4 +1,4 @@
-export { Signal, SignalGenerator, ParameterType } from "./Signal";
+export { Signal, SignalGenerator, ParameterType, computeSignalHash } from "./Signal";
 export { LogSignalGenerator } from "./LogSignalGenerator";
 export { CommentSignalGenerator } from "./CommentSignalGenerator";
 export { FunctionNameSignalGenerator } from "./FunctionNameSignalGenerator";

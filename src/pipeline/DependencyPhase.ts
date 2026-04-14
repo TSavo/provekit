@@ -51,6 +51,10 @@ export class DependencyPhase extends Phase<DependencyInput, DependencyGraph> {
       const affected = this.findAffected(files, changedSet);
       topologicalOrder = topologicalOrder.filter((p) => affected.has(p));
       this.detail(`Changed files: ${input.changedFiles.length}, affected: ${affected.size}`);
+
+      if (topologicalOrder.length === 0 && files.length > 0) {
+        this.detail("No changed files intersect the dependency graph — nothing to derive");
+      }
     }
 
     this.detail(`Topological sort: ${topologicalOrder.length} files`);
@@ -93,7 +97,7 @@ export class DependencyPhase extends Phase<DependencyInput, DependencyGraph> {
       return;
     }
 
-    const hash = createHash("md5").update(source).digest("hex");
+    const hash = createHash("sha256").update(source).digest("hex");
 
     const parser = new Parser();
     parser.setLanguage(TypeScript.typescript);

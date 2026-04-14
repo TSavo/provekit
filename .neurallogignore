@@ -1,7 +1,2 @@
 # Files with intentional violations (example/test code)
 examples/**
-
-# Framework internals — known violations, not blocking shipping
-src/pipeline/Phase.ts
-src/pipeline/DependencyPhase.ts
-src/git/DiffAnalyzer.ts

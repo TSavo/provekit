@@ -15,10 +15,14 @@ export abstract class Phase<TInput, TOutput> {
   abstract execute(input: TInput, options: PhaseOptions): Promise<PhaseResult<TOutput>> | PhaseResult<TOutput>;
 
   protected log(message: string): void {
-    console.log(`Phase ${this.phaseNumber}: ${message}`);
+    if (this.phaseNumber < 1 || this.phaseNumber > 10) {
+      throw new Error(`Invalid phaseNumber: ${this.phaseNumber}`);
+    }
+    console.log(`Phase ${this.phaseNumber}: ${message || this.name}`);
   }
 
   protected detail(message: string): void {
+    if (!message) return;
     console.log(`  ${message}`);
   }
 }

@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join, relative } from "path";
 import { Phase, PhaseResult, PhaseOptions } from "./Phase";
 import { DependencyGraph } from "./DependencyPhase";
-import { SignalRegistry, Signal } from "../signals";
+import { SignalRegistry, Signal, computeSignalHash } from "../signals";
 import { parseFile } from "../parser";
 
 export interface CallSiteContext {
@@ -11,6 +11,7 @@ export interface CallSiteContext {
   functionName: string;
   signalText: string;
   signalType: string;
+  signalHash: string;
   functionSource: string;
   fileSource: string;
   importSources: { path: string; source: string }[];
@@ -128,6 +129,7 @@ export class ContextPhase extends Phase<ContextInput, ContextBundle[]> {
       functionName: signal.functionName,
       signalText: signal.text,
       signalType: signal.type,
+      signalHash: computeSignalHash(signal),
       functionSource: signal.functionSource,
       fileSource: source,
       importSources,
