@@ -1,0 +1,463 @@
+{
+  "file_hash": "bec67e8b57b62f2b76db8584d3f8dc9b",
+  "contracts": [
+    {
+      "file": "/Users/tsavo/Projects/neurallog/examples/inventory.ts",
+      "function": "checkAvailability",
+      "line": 11,
+      "proven": [
+        {
+          "principle": "P5",
+          "claim": "PROVEN: available at line 11 equals the return value of db.getStock (assignment identity)",
+          "smt2": "; PRINCIPLE: P5\n; PROVEN: available at line 11 equals the return value of db.getStock (assignment identity)\n; Proof by contradiction: precondition (transition) + negation → unsat\n(declare-const getStock_return Int)\n(declare-const available Int)\n; Transition (line 10): available = db.getStock(productId)\n(assert (= available getStock_return))\n; Negation of property: available ≠ getStock_return\n(assert (not (= available getStock_return)))\n(check-sat)\n; Expected: unsat — the assignment is an identity; the logged value is exactly what getStock returned"
+        }
+      ],
+      "violations": [
+        {
+          "principle": "P3",
+          "claim": "VIOLATION: db.getStock has no lower-bound contract; available can be negative",
+          "smt2": "; PRINCIPLE: P3\n; VIOLATION: db.getStock has no lower-bound contract; available can be negative\n; The code assigns available = db.getStock() with no post-call validation.\n; A negative value is semantically invalid stock and would be silently logged/returned.\n(declare-const getStock_return Int)\n(declare-const available Int)\n; Transition (line 10): available = db.getStock(productId)\n(assert (= available getStock_return))\n; db.getStock signature is (): number — no contract establishes a lower bound of 0\n; No guard exists between line 10 and line 11\n; Violation: negative available reaches the log and the return\n(assert (< available 0))\n(check-sat)\n; Expected: sat — negative stock is reachable; no validation prevents it\n; Concrete witness: getStock_return = -1 → available = -1"
+        },
+        {
+          "principle": "P2",
+          "claim": "VIOLATION: reserveStock mutates setAvailable but never setStock.",
+          "smt2": "; PRINCIPLE: P2\n; VIOLATION: reserveStock mutates setAvailable but never setStock.\n; After any reservation, getStock is permanently stale.\n; checkAvailability will log/return the original pre-reservation total indefinitely.\n(declare-const initial_stock Int)\n(declare-const initial_available Int)\n(declare-const quantity Int)\n(declare-const available_after_reserve Int)\n; Setup: initially consistent state\n(assert (> initial_stock 0))\n(assert (= initial_available initial_stock))\n(assert (> quantity 0))\n(assert (<= quantity initial_available))\n; Transition: reserveStock calls setAvailable (line 21 of reserveStock)\n;   db.setAvailable(productId, available - quantity)\n; db.setStock is NEVER called by any function in this module\n(assert (= available_after_reserve (- initial_available quantity)))\n; After reservation: checkAvailability still reads getStock = initial_stock (unchanged)\n; Violation: logged/returned value does not reflect post-reservation availability\n(assert (not (= initial_stock available_after_reserve)))\n(check-sat)\n; Expected: sat — checkAvailability returns the stale total-stock figure, not true available\n; Witness: initial_stock=10, quantity=3 → checkAvailability logs 10, true available is 7"
+        },
+        {
+          "principle": "P2",
+          "claim": "VIOLATION: releaseStock mutates setAvailable (adds back) but never setStock.",
+          "smt2": "; PRINCIPLE: P2\n; VIOLATION: releaseStock mutates setAvailable (adds back) but never setStock.\n; After a release, getStock still reflects the original count; getAvailable is higher.\n; checkAvailability can then log a value LESS than actual available units.\n(declare-const original_stock Int)\n(declare-const available_before_release Int)\n(declare-const reserved_qty Int)\n(declare-const available_after_release Int)\n; State prior to release: available < stock (due to earlier reservations)\n(assert (> original_stock 0))\n(assert (> reserved_qty 0))\n(assert (< available_before_release original_stock))\n(assert (= available_before_release (- original_stock reserved_qty)))\n; Transition: releaseStock calls setAvailable(productId, available + quantity)\n(assert (= available_after_release (+ available_before_release reserved_qty)))\n; db.setStock is NEVER called — getStock still returns original_stock\n; Violation: checkAvailability reports original_stock, but true available = available_after_release\n; These are equal only if no reservations ever happened — generally false\n(assert (= available_after_release original_stock))   ; they coincide only at trivial base case\n(assert (> reserved_qty 0))                           ; non-trivial: something was reserved\n(check-sat)\n; Expected: sat — demonstrates the only non-divergence case is when reserved_qty=0,\n; meaning any real reservation/release cycle leaves getStock permanently inconsistent\n; Witness: original_stock=10, reserved_qty=3 → release returns available_after_release=10=original_stock\n; but only by accident of full release; partial release leaves them permanently diverged"
+        },
+        {
+          "principle": "P6",
+          "claim": "VIOLATION: available = 0 is reachable; checkAvailability returns 0 with no error signal.",
+          "smt2": "; PRINCIPLE: P6\n; VIOLATION: available = 0 is reachable; checkAvailability returns 0 with no error signal.\n; A caller cannot distinguish \"no stock data\" from \"zero stock available.\"\n; The function still returns normally, masking upstream errors (empty DB, failed load).\n(declare-const getStock_return Int)\n(declare-const available Int)\n; Transition (line 10): available = db.getStock(productId)\n(assert (= available getStock_return))\n; Boundary: getStock returns 0 — stub implementation returns exactly 0\n(assert (= getStock_return 0))\n; Function logs and returns 0 without throwing, without signaling error\n(assert (= available 0))\n(check-sat)\n; Expected: sat — zero-stock is logged and returned as a valid result;\n; no sentinel distinguishes \"product has 0 units\" from \"product not found / DB error\""
+        }
+      ],
+      "depends_on": [],
+      "clause_history": [
+        {
+          "clause": "; PRINCIPLE: P5\n; PROVEN: available at line 11 equals the return value of db.getStock (assignment identity)\n; Proof by contradiction: precondition (transition) + negation → unsat\n(declare-const getStock_return Int)\n(declare-const available Int)\n; Transition (line 10): available = db.getStock(productId)\n(assert (= available getStock_return))\n; Negation of property: available ≠ getStock_return\n(assert (not (= available getStock_return)))\n(check-sat)\n; Expected: unsat — the assignment is an identity; the logged value is exactly what getStock returned",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P3\n; VIOLATION: db.getStock has no lower-bound contract; available can be negative\n; The code assigns available = db.getStock() with no post-call validation.\n; A negative value is semantically invalid stock and would be silently logged/returned.\n(declare-const getStock_return Int)\n(declare-const available Int)\n; Transition (line 10): available = db.getStock(productId)\n(assert (= available getStock_return))\n; db.getStock signature is (): number — no contract establishes a lower bound of 0\n; No guard exists between line 10 and line 11\n; Violation: negative available reaches the log and the return\n(assert (< available 0))\n(check-sat)\n; Expected: sat — negative stock is reachable; no validation prevents it\n; Concrete witness: getStock_return = -1 → available = -1",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P2\n; VIOLATION: reserveStock mutates setAvailable but never setStock.\n; After any reservation, getStock is permanently stale.\n; checkAvailability will log/return the original pre-reservation total indefinitely.\n(declare-const initial_stock Int)\n(declare-const initial_available Int)\n(declare-const quantity Int)\n(declare-const available_after_reserve Int)\n; Setup: initially consistent state\n(assert (> initial_stock 0))\n(assert (= initial_available initial_stock))\n(assert (> quantity 0))\n(assert (<= quantity initial_available))\n; Transition: reserveStock calls setAvailable (line 21 of reserveStock)\n;   db.setAvailable(productId, available - quantity)\n; db.setStock is NEVER called by any function in this module\n(assert (= available_after_reserve (- initial_available quantity)))\n; After reservation: checkAvailability still reads getStock = initial_stock (unchanged)\n; Violation: logged/returned value does not reflect post-reservation availability\n(assert (not (= initial_stock available_after_reserve)))\n(check-sat)\n; Expected: sat — checkAvailability returns the stale total-stock figure, not true available\n; Witness: initial_stock=10, quantity=3 → checkAvailability logs 10, true available is 7",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P2\n; VIOLATION: releaseStock mutates setAvailable (adds back) but never setStock.\n; After a release, getStock still reflects the original count; getAvailable is higher.\n; checkAvailability can then log a value LESS than actual available units.\n(declare-const original_stock Int)\n(declare-const available_before_release Int)\n(declare-const reserved_qty Int)\n(declare-const available_after_release Int)\n; State prior to release: available < stock (due to earlier reservations)\n(assert (> original_stock 0))\n(assert (> reserved_qty 0))\n(assert (< available_before_release original_stock))\n(assert (= available_before_release (- original_stock reserved_qty)))\n; Transition: releaseStock calls setAvailable(productId, available + quantity)\n(assert (= available_after_release (+ available_before_release reserved_qty)))\n; db.setStock is NEVER called — getStock still returns original_stock\n; Violation: checkAvailability reports original_stock, but true available = available_after_release\n; These are equal only if no reservations ever happened — generally false\n(assert (= available_after_release original_stock))   ; they coincide only at trivial base case\n(assert (> reserved_qty 0))                           ; non-trivial: something was reserved\n(check-sat)\n; Expected: sat — demonstrates the only non-divergence case is when reserved_qty=0,\n; meaning any real reservation/release cycle leaves getStock permanently inconsistent\n; Witness: original_stock=10, reserved_qty=3 → release returns available_after_release=10=original_stock\n; but only by accident of full release; partial release leaves them permanently diverged",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P6\n; VIOLATION: available = 0 is reachable; checkAvailability returns 0 with no error signal.\n; A caller cannot distinguish \"no stock data\" from \"zero stock available.\"\n; The function still returns normally, masking upstream errors (empty DB, failed load).\n(declare-const getStock_return Int)\n(declare-const available Int)\n; Transition (line 10): available = db.getStock(productId)\n(assert (= available getStock_return))\n; Boundary: getStock returns 0 — stub implementation returns exactly 0\n(assert (= getStock_return 0))\n; Function logs and returns 0 without throwing, without signaling error\n(assert (= available 0))\n(check-sat)\n; Expected: sat — zero-stock is logged and returned as a valid result;\n; no sentinel distinguishes \"product has 0 units\" from \"product not found / DB error\"",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/examples/inventory.ts",
+      "function": "reserveStock",
+      "line": 18,
+      "proven": [
+        {
+          "principle": "P5",
+          "claim": "PROVEN: At line 18, `available` and `reserved` are exactly the return",
+          "smt2": "; PRINCIPLE: P5\n; PROVEN: At line 18, `available` and `reserved` are exactly the return\n; values of db.getAvailable and db.getReserved (assignment identity).\n; Negation: the logged values could differ from db return values → expect unsat.\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const getAvailable_result Int)\n(declare-const getReserved_result Int)\n; Transitions: lines 16-17 bind via direct assignment\n(assert (= available getAvailable_result))\n(assert (= reserved getReserved_result))\n; Negation of property\n(assert (or\n  (not (= available getAvailable_result))\n  (not (= reserved getReserved_result))))\n(check-sat)\n; unsat → the values logged at line 18 are exactly what db returned"
+        }
+      ],
+      "violations": [
+        {
+          "principle": "P7",
+          "claim": "VIOLATION: available - quantity underflows (oversell).",
+          "smt2": "; PRINCIPLE: P7\n; VIOLATION: available - quantity underflows (oversell).\n; reserveStock performs no guard on (quantity <= available) before line 18.\n; The subsequent mutation at line 20 writes a negative availability.\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n; Transition line 16: available = db.getAvailable — no lower-bound contract\n(assert (>= available 0))\n; Transition line 20: new_available = available - quantity (mutation after log)\n(assert (= new_available (- available quantity)))\n; No quantity <= available guard exists anywhere before line 18\n; Violation: new_available is negative\n(assert (> quantity 0))\n(assert (< new_available 0))\n(check-sat)\n; sat → e.g., available=3, quantity=10, new_available=-7\n; db.setAvailable stores a negative stock value; the log at line 18 is the\n; last observable state before this silent corruption occurs."
+        },
+        {
+          "principle": "P3",
+          "claim": "VIOLATION: quantity is caller-supplied with no positivity check before line 18.",
+          "smt2": "; PRINCIPLE: P3\n; VIOLATION: quantity is caller-supplied with no positivity check before line 18.\n; A zero-quantity reservation is logged as successful, then executes as a no-op.\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n(declare-const new_reserved Int)\n; Transitions lines 16-17: bind from db (no constraints imposed)\n(assert (>= available 0))\n(assert (>= reserved 0))\n; quantity arrives at line 18 with no validation\n(assert (= quantity 0))\n; Transitions lines 20-21: mutations execute\n(assert (= new_available (- available quantity)))\n(assert (= new_reserved (+ reserved quantity)))\n; Violation: mutations are no-ops despite a \"successful\" reservation being logged\n(assert (= new_available available))\n(assert (= new_reserved reserved))\n(check-sat)\n; sat → quantity=0 logs a reservation and calls setAvailable/setReserved\n; but neither db field changes. The reservation silently succeeds as a no-op."
+        },
+        {
+          "principle": "P3",
+          "claim": "VIOLATION: negative quantity inverts reserveStock semantics.",
+          "smt2": "; PRINCIPLE: P3\n; VIOLATION: negative quantity inverts reserveStock semantics.\n; quantity < 0 increases available and decreases reserved —\n; the opposite of a reservation — with no guard before line 18.\n(declare-const quantity Int)\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const new_available Int)\n(declare-const new_reserved Int)\n; Transitions lines 16-17\n(assert (>= available 0))\n(assert (> reserved 0))\n; Caller passes a negative quantity; no guard stops it\n(assert (< quantity 0))\n; Transitions lines 20-21\n(assert (= new_available (- available quantity)))  ; available - neg = available + |q|\n(assert (= new_reserved (+ reserved quantity)))    ; reserved + neg = reserved - |q|\n; Violation: reserved goes negative\n(assert (< new_reserved 0))\n(check-sat)\n; sat → e.g., reserved=2, quantity=-5 → new_reserved=-3\n; A \"reservation\" releases stock and destroys the reserved counter."
+        },
+        {
+          "principle": "P4",
+          "claim": "VIOLATION: Two calls to reserveStock on the same productId.",
+          "smt2": "; PRINCIPLE: P4\n; VIOLATION: Two calls to reserveStock on the same productId.\n; The first call mutates db.getAvailable; the second call reads the mutated value.\n; Even if the first call was individually valid, the second causes oversell.\n(declare-const available_init Int)\n(declare-const quantity_1 Int)\n(declare-const quantity_2 Int)\n(declare-const available_after_1 Int)\n(declare-const new_available_2 Int)\n; First call: assume individually valid preconditions hold\n(assert (> quantity_1 0))\n(assert (>= available_init quantity_1))\n; Transition: first call mutates db.setAvailable (line 20)\n(assert (= available_after_1 (- available_init quantity_1)))\n; Second call: reads the already-reduced state, no re-check\n(assert (> quantity_2 0))\n; Transition: second call's new_available computation\n(assert (= new_available_2 (- available_after_1 quantity_2)))\n; Violation: second call drives availability negative\n(assert (< new_available_2 0))\n(check-sat)\n; sat → e.g., available=5, q1=3, available_after=2, q2=3, new=-1\n; No idempotency guard; concurrent or sequential double-calls oversell silently."
+        },
+        {
+          "principle": "P2",
+          "claim": "VIOLATION: checkAvailability reads db.getStock; reserveStock reads db.getAvailable.",
+          "smt2": "; PRINCIPLE: P2\n; VIOLATION: checkAvailability reads db.getStock; reserveStock reads db.getAvailable.\n; These are separate unlinked fields. A caller who verifies stock via\n; checkAvailability and then calls reserveStock operates on divergent state.\n(declare-const stock Int)        ; db.getStock — what checkAvailability returns\n(declare-const available Int)    ; db.getAvailable — what reserveStock reads at line 16\n(declare-const quantity Int)\n(declare-const new_available Int)\n; Caller checked stock as sufficient\n(assert (> quantity 0))\n(assert (>= stock quantity))\n; Transition line 16: reserveStock reads a DIFFERENT field — available can be less\n(assert (= new_available (- available quantity)))\n; available and stock are not constrained to be equal (separate db fields)\n(assert (< available quantity))\n; Violation: new_available is negative despite stock check passing\n(assert (< new_available 0))\n(check-sat)\n; sat → stock=10, quantity=5, available=2: caller's stock check passes,\n; but reserveStock uses the getAvailable field (=2), causing oversell.\n; The two db fields silently diverge; no synchronization exists."
+        },
+        {
+          "principle": "P6",
+          "claim": "VIOLATION: available = 0 at line 18 is reachable (no lower-bound contract",
+          "smt2": "; PRINCIPLE: P6\n; VIOLATION: available = 0 at line 18 is reachable (no lower-bound contract\n; on db.getAvailable). A positive-quantity reservation against zero stock\n; proceeds past the log without an error signal.\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n; Transition line 16: available = db.getAvailable — zero stock is a valid return\n(assert (= available 0))\n; Caller passes a positive quantity (well-formed request)\n(assert (> quantity 0))\n; Transition line 20: new_available = available - quantity\n(assert (= new_available (- available quantity)))\n; Violation: result is negative; the log at line 18 is the last signal before write\n(assert (< new_available 0))\n(check-sat)\n; sat → available=0, quantity=1 → new_available=-1\n; The console.log at line 18 faithfully prints \"0 available\" but no error is raised;\n; db.setAvailable writes -1 on the very next line."
+        }
+      ],
+      "depends_on": [
+        "e7a8e4dab56d"
+      ],
+      "clause_history": [
+        {
+          "clause": "; PRINCIPLE: P5\n; PROVEN: At line 18, `available` and `reserved` are exactly the return\n; values of db.getAvailable and db.getReserved (assignment identity).\n; Negation: the logged values could differ from db return values → expect unsat.\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const getAvailable_result Int)\n(declare-const getReserved_result Int)\n; Transitions: lines 16-17 bind via direct assignment\n(assert (= available getAvailable_result))\n(assert (= reserved getReserved_result))\n; Negation of property\n(assert (or\n  (not (= available getAvailable_result))\n  (not (= reserved getReserved_result))))\n(check-sat)\n; unsat → the values logged at line 18 are exactly what db returned",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P7\n; VIOLATION: available - quantity underflows (oversell).\n; reserveStock performs no guard on (quantity <= available) before line 18.\n; The subsequent mutation at line 20 writes a negative availability.\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n; Transition line 16: available = db.getAvailable — no lower-bound contract\n(assert (>= available 0))\n; Transition line 20: new_available = available - quantity (mutation after log)\n(assert (= new_available (- available quantity)))\n; No quantity <= available guard exists anywhere before line 18\n; Violation: new_available is negative\n(assert (> quantity 0))\n(assert (< new_available 0))\n(check-sat)\n; sat → e.g., available=3, quantity=10, new_available=-7\n; db.setAvailable stores a negative stock value; the log at line 18 is the\n; last observable state before this silent corruption occurs.",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P3\n; VIOLATION: quantity is caller-supplied with no positivity check before line 18.\n; A zero-quantity reservation is logged as successful, then executes as a no-op.\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n(declare-const new_reserved Int)\n; Transitions lines 16-17: bind from db (no constraints imposed)\n(assert (>= available 0))\n(assert (>= reserved 0))\n; quantity arrives at line 18 with no validation\n(assert (= quantity 0))\n; Transitions lines 20-21: mutations execute\n(assert (= new_available (- available quantity)))\n(assert (= new_reserved (+ reserved quantity)))\n; Violation: mutations are no-ops despite a \"successful\" reservation being logged\n(assert (= new_available available))\n(assert (= new_reserved reserved))\n(check-sat)\n; sat → quantity=0 logs a reservation and calls setAvailable/setReserved\n; but neither db field changes. The reservation silently succeeds as a no-op.",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P3\n; VIOLATION: negative quantity inverts reserveStock semantics.\n; quantity < 0 increases available and decreases reserved —\n; the opposite of a reservation — with no guard before line 18.\n(declare-const quantity Int)\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const new_available Int)\n(declare-const new_reserved Int)\n; Transitions lines 16-17\n(assert (>= available 0))\n(assert (> reserved 0))\n; Caller passes a negative quantity; no guard stops it\n(assert (< quantity 0))\n; Transitions lines 20-21\n(assert (= new_available (- available quantity)))  ; available - neg = available + |q|\n(assert (= new_reserved (+ reserved quantity)))    ; reserved + neg = reserved - |q|\n; Violation: reserved goes negative\n(assert (< new_reserved 0))\n(check-sat)\n; sat → e.g., reserved=2, quantity=-5 → new_reserved=-3\n; A \"reservation\" releases stock and destroys the reserved counter.",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P4\n; VIOLATION: Two calls to reserveStock on the same productId.\n; The first call mutates db.getAvailable; the second call reads the mutated value.\n; Even if the first call was individually valid, the second causes oversell.\n(declare-const available_init Int)\n(declare-const quantity_1 Int)\n(declare-const quantity_2 Int)\n(declare-const available_after_1 Int)\n(declare-const new_available_2 Int)\n; First call: assume individually valid preconditions hold\n(assert (> quantity_1 0))\n(assert (>= available_init quantity_1))\n; Transition: first call mutates db.setAvailable (line 20)\n(assert (= available_after_1 (- available_init quantity_1)))\n; Second call: reads the already-reduced state, no re-check\n(assert (> quantity_2 0))\n; Transition: second call's new_available computation\n(assert (= new_available_2 (- available_after_1 quantity_2)))\n; Violation: second call drives availability negative\n(assert (< new_available_2 0))\n(check-sat)\n; sat → e.g., available=5, q1=3, available_after=2, q2=3, new=-1\n; No idempotency guard; concurrent or sequential double-calls oversell silently.",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P2\n; VIOLATION: checkAvailability reads db.getStock; reserveStock reads db.getAvailable.\n; These are separate unlinked fields. A caller who verifies stock via\n; checkAvailability and then calls reserveStock operates on divergent state.\n(declare-const stock Int)        ; db.getStock — what checkAvailability returns\n(declare-const available Int)    ; db.getAvailable — what reserveStock reads at line 16\n(declare-const quantity Int)\n(declare-const new_available Int)\n; Caller checked stock as sufficient\n(assert (> quantity 0))\n(assert (>= stock quantity))\n; Transition line 16: reserveStock reads a DIFFERENT field — available can be less\n(assert (= new_available (- available quantity)))\n; available and stock are not constrained to be equal (separate db fields)\n(assert (< available quantity))\n; Violation: new_available is negative despite stock check passing\n(assert (< new_available 0))\n(check-sat)\n; sat → stock=10, quantity=5, available=2: caller's stock check passes,\n; but reserveStock uses the getAvailable field (=2), causing oversell.\n; The two db fields silently diverge; no synchronization exists.",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P6\n; VIOLATION: available = 0 at line 18 is reachable (no lower-bound contract\n; on db.getAvailable). A positive-quantity reservation against zero stock\n; proceeds past the log without an error signal.\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n; Transition line 16: available = db.getAvailable — zero stock is a valid return\n(assert (= available 0))\n; Caller passes a positive quantity (well-formed request)\n(assert (> quantity 0))\n; Transition line 20: new_available = available - quantity\n(assert (= new_available (- available quantity)))\n; Violation: result is negative; the log at line 18 is the last signal before write\n(assert (< new_available 0))\n(check-sat)\n; sat → available=0, quantity=1 → new_available=-1\n; The console.log at line 18 faithfully prints \"0 available\" but no error is raised;\n; db.setAvailable writes -1 on the very next line.",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/examples/inventory.ts",
+      "function": "reserveStock",
+      "line": 25,
+      "proven": [
+        {
+          "principle": "P5",
+          "claim": "PROVE: newAvailable + newReserved = available + reserved",
+          "smt2": "; PRINCIPLE: P5\n; PROVE: newAvailable + newReserved = available + reserved\n; Method: assert transitions + negated property → expect unsat\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const newAvailable Int)\n(declare-const newReserved Int)\n; Transition (line 24): newAvailable = available - quantity\n(assert (= newAvailable (- available quantity)))\n; Transition (line 25): newReserved = reserved + quantity\n(assert (= newReserved (+ reserved quantity)))\n; Negation of conservation property\n(assert (not (= (+ newAvailable newReserved) (+ available reserved))))\n(check-sat)\n; Expected: unsat — conservation is algebraically guaranteed by the transitions"
+        },
+        {
+          "principle": "P5",
+          "claim": "PROVE: newAvailable (logged at line 25) = db_available_written (line 21)",
+          "smt2": "; PRINCIPLE: P5\n; PROVE: newAvailable (logged at line 25) = db_available_written (line 21)\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const db_available_written Int)\n(declare-const newAvailable Int)\n; Transition (line 21): db.setAvailable writes available - quantity\n(assert (= db_available_written (- available quantity)))\n; Transition (line 24): newAvailable = available - quantity\n(assert (= newAvailable (- available quantity)))\n; Negation: log disagrees with DB write\n(assert (not (= newAvailable db_available_written)))\n(check-sat)\n; Expected: unsat — both expressions are (available - quantity); they are identical"
+        },
+        {
+          "principle": "P5",
+          "claim": "PROVE: newReserved (logged at line 25) = db_reserved_written (line 22)",
+          "smt2": "; PRINCIPLE: P5\n; PROVE: newReserved (logged at line 25) = db_reserved_written (line 22)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const db_reserved_written Int)\n(declare-const newReserved Int)\n; Transition (line 22): db.setReserved writes reserved + quantity\n(assert (= db_reserved_written (+ reserved quantity)))\n; Transition (line 25): newReserved = reserved + quantity\n(assert (= newReserved (+ reserved quantity)))\n; Negation: log disagrees with DB write\n(assert (not (= newReserved db_reserved_written)))\n(check-sat)\n; Expected: unsat — both are (reserved + quantity); identically computed"
+        }
+      ],
+      "violations": [
+        {
+          "principle": "P7",
+          "claim": "VIOLATION: negative available stock committed and logged as success",
+          "smt2": "; PRINCIPLE: P7\n; VIOLATION: negative available stock committed and logged as success\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const newAvailable Int)\n; Code establishes: available >= 0 (reasonable DB invariant, no enforcement)\n(assert (>= available 0))\n; Code establishes: quantity > 0 (caller-supplied, no positivity check in reserveStock)\n(assert (> quantity 0))\n; No check quantity <= available exists anywhere in reserveStock\n; Oversell condition: caller requests more than available\n(assert (> quantity available))\n; Transition (line 24): newAvailable = available - quantity\n(assert (= newAvailable (- available quantity)))\n; Violation: negative available stock is logged as \"Reservation complete\"\n(assert (< newAvailable 0))\n(check-sat)\n; Expected: sat — e.g. available=3, quantity=5 → newAvailable=-2, logged as success\n; The DB write at line 21 already committed this negative value before line 25 fires"
+        },
+        {
+          "principle": "P3",
+          "claim": "VIOLATION: negative quantity makes newReserved decrease; log still says \"complete\"",
+          "smt2": "; PRINCIPLE: P3\n; VIOLATION: negative quantity makes newReserved decrease; log still says \"complete\"\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const newReserved Int)\n; Code establishes: reserved >= 0 (reasonable DB invariant)\n(assert (>= reserved 0))\n; quantity is caller-supplied — no sign check in reserveStock\n(assert (< quantity 0))\n; Transition (line 25): newReserved = reserved + quantity\n(assert (= newReserved (+ reserved quantity)))\n; Violation: newReserved < reserved — reservation decreased the reserved count\n(assert (< newReserved reserved))\n(check-sat)\n; Expected: sat — e.g. quantity=-3, reserved=5 → newReserved=2\n; The log announces \"Reservation complete: X available, 2 reserved\" masking the un-reserve"
+        },
+        {
+          "principle": "P7",
+          "claim": "VIOLATION: newReserved < 0 is committed and logged as \"Reservation complete\"",
+          "smt2": "; PRINCIPLE: P7\n; VIOLATION: newReserved < 0 is committed and logged as \"Reservation complete\"\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const newReserved Int)\n; Code establishes: reserved >= 0 (no lower-bound contract on db.getReserved enforced)\n(assert (>= reserved 0))\n; quantity is caller-supplied and negative; |quantity| > reserved\n(assert (< quantity 0))\n(assert (> (- quantity) reserved))  ; i.e., -quantity > reserved\n; Transition (line 25): newReserved = reserved + quantity\n(assert (= newReserved (+ reserved quantity)))\n; Violation: reserved count is now physically impossible (negative)\n(assert (< newReserved 0))\n(check-sat)\n; Expected: sat — e.g. quantity=-5, reserved=2 → newReserved=-3, committed + logged"
+        },
+        {
+          "principle": null,
+          "claim": "[NEW] PRINCIPLE: Post-mutation logging — line 25 fires after DB writes are committed",
+          "smt2": "; [NEW] PRINCIPLE: Post-mutation logging — line 25 fires after DB writes are committed\n; The log provides no conditional branch; it cannot signal failure.\n; Caller cannot distinguish a valid reservation from an oversell.\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const db_available_written Int)   ; committed at line 21\n(declare-const db_reserved_written Int)    ; committed at line 22\n(declare-const newAvailable Int)           ; logged at line 25\n(declare-const newReserved Int)            ; logged at line 25\n; Transition (line 21): DB write already executed\n(assert (= db_available_written (- available quantity)))\n; Transition (line 22): DB write already executed\n(assert (= db_reserved_written (+ db_available_written quantity)))\n; Transition (lines 24-25): log variables mirror the DB writes\n(assert (= newAvailable db_available_written))\n; Oversell: available < quantity, no validation guard exists in reserveStock\n(assert (>= available 0))\n(assert (> quantity available))\n; Both DB writes are committed AND line 25 is reached AND newAvailable < 0\n(assert (< db_available_written 0))\n(assert (< newAvailable 0))\n(check-sat)\n; Expected: sat — the corruption is already in the DB when the log fires;\n; the function returns void; the log always prints \"Reservation complete\";\n; no exception, no return code, no conditional message distinguishes this from success.\n; The caller has no recourse once reserveStock returns."
+        }
+      ],
+      "depends_on": [
+        "e7a8e4dab56d",
+        "2e9ffaf5b659"
+      ],
+      "clause_history": [
+        {
+          "clause": "; PRINCIPLE: P5\n; PROVE: newAvailable + newReserved = available + reserved\n; Method: assert transitions + negated property → expect unsat\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const newAvailable Int)\n(declare-const newReserved Int)\n; Transition (line 24): newAvailable = available - quantity\n(assert (= newAvailable (- available quantity)))\n; Transition (line 25): newReserved = reserved + quantity\n(assert (= newReserved (+ reserved quantity)))\n; Negation of conservation property\n(assert (not (= (+ newAvailable newReserved) (+ available reserved))))\n(check-sat)\n; Expected: unsat — conservation is algebraically guaranteed by the transitions",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P5\n; PROVE: newAvailable (logged at line 25) = db_available_written (line 21)\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const db_available_written Int)\n(declare-const newAvailable Int)\n; Transition (line 21): db.setAvailable writes available - quantity\n(assert (= db_available_written (- available quantity)))\n; Transition (line 24): newAvailable = available - quantity\n(assert (= newAvailable (- available quantity)))\n; Negation: log disagrees with DB write\n(assert (not (= newAvailable db_available_written)))\n(check-sat)\n; Expected: unsat — both expressions are (available - quantity); they are identical",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P5\n; PROVE: newReserved (logged at line 25) = db_reserved_written (line 22)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const db_reserved_written Int)\n(declare-const newReserved Int)\n; Transition (line 22): db.setReserved writes reserved + quantity\n(assert (= db_reserved_written (+ reserved quantity)))\n; Transition (line 25): newReserved = reserved + quantity\n(assert (= newReserved (+ reserved quantity)))\n; Negation: log disagrees with DB write\n(assert (not (= newReserved db_reserved_written)))\n(check-sat)\n; Expected: unsat — both are (reserved + quantity); identically computed",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P7\n; VIOLATION: negative available stock committed and logged as success\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const newAvailable Int)\n; Code establishes: available >= 0 (reasonable DB invariant, no enforcement)\n(assert (>= available 0))\n; Code establishes: quantity > 0 (caller-supplied, no positivity check in reserveStock)\n(assert (> quantity 0))\n; No check quantity <= available exists anywhere in reserveStock\n; Oversell condition: caller requests more than available\n(assert (> quantity available))\n; Transition (line 24): newAvailable = available - quantity\n(assert (= newAvailable (- available quantity)))\n; Violation: negative available stock is logged as \"Reservation complete\"\n(assert (< newAvailable 0))\n(check-sat)\n; Expected: sat — e.g. available=3, quantity=5 → newAvailable=-2, logged as success\n; The DB write at line 21 already committed this negative value before line 25 fires",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P3\n; VIOLATION: negative quantity makes newReserved decrease; log still says \"complete\"\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const newReserved Int)\n; Code establishes: reserved >= 0 (reasonable DB invariant)\n(assert (>= reserved 0))\n; quantity is caller-supplied — no sign check in reserveStock\n(assert (< quantity 0))\n; Transition (line 25): newReserved = reserved + quantity\n(assert (= newReserved (+ reserved quantity)))\n; Violation: newReserved < reserved — reservation decreased the reserved count\n(assert (< newReserved reserved))\n(check-sat)\n; Expected: sat — e.g. quantity=-3, reserved=5 → newReserved=2\n; The log announces \"Reservation complete: X available, 2 reserved\" masking the un-reserve",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P7\n; VIOLATION: newReserved < 0 is committed and logged as \"Reservation complete\"\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const newReserved Int)\n; Code establishes: reserved >= 0 (no lower-bound contract on db.getReserved enforced)\n(assert (>= reserved 0))\n; quantity is caller-supplied and negative; |quantity| > reserved\n(assert (< quantity 0))\n(assert (> (- quantity) reserved))  ; i.e., -quantity > reserved\n; Transition (line 25): newReserved = reserved + quantity\n(assert (= newReserved (+ reserved quantity)))\n; Violation: reserved count is now physically impossible (negative)\n(assert (< newReserved 0))\n(check-sat)\n; Expected: sat — e.g. quantity=-5, reserved=2 → newReserved=-3, committed + logged",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; [NEW] PRINCIPLE: Post-mutation logging — line 25 fires after DB writes are committed\n; The log provides no conditional branch; it cannot signal failure.\n; Caller cannot distinguish a valid reservation from an oversell.\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const db_available_written Int)   ; committed at line 21\n(declare-const db_reserved_written Int)    ; committed at line 22\n(declare-const newAvailable Int)           ; logged at line 25\n(declare-const newReserved Int)            ; logged at line 25\n; Transition (line 21): DB write already executed\n(assert (= db_available_written (- available quantity)))\n; Transition (line 22): DB write already executed\n(assert (= db_reserved_written (+ db_available_written quantity)))\n; Transition (lines 24-25): log variables mirror the DB writes\n(assert (= newAvailable db_available_written))\n; Oversell: available < quantity, no validation guard exists in reserveStock\n(assert (>= available 0))\n(assert (> quantity available))\n; Both DB writes are committed AND line 25 is reached AND newAvailable < 0\n(assert (< db_available_written 0))\n(assert (< newAvailable 0))\n(check-sat)\n; Expected: sat — the corruption is already in the DB when the log fires;\n; the function returns void; the log always prints \"Reservation complete\";\n; no exception, no return code, no conditional message distinguishes this from success.\n; The caller has no recourse once reserveStock returns.",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/examples/inventory.ts",
+      "function": "releaseStock",
+      "line": 31,
+      "proven": [
+        {
+          "principle": "P5",
+          "claim": "PROVEN: At line 31, `available` and `reserved` are exact identity bindings",
+          "smt2": "; PRINCIPLE: P5\n; PROVEN: At line 31, `available` and `reserved` are exact identity bindings\n; from db.getAvailable (line 29) and db.getReserved (line 30).\n; No transformation occurs between those reads and the console.log at line 31.\n(declare-const available Int)\n(declare-const db_available_out Int)\n(declare-const reserved Int)\n(declare-const db_reserved_out Int)\n; Transitions: direct assignments at lines 29-30\n(assert (= available db_available_out))\n(assert (= reserved db_reserved_out))\n; Negate: at least one binding is broken\n(assert (or\n  (not (= available db_available_out))\n  (not (= reserved db_reserved_out))))\n(check-sat)\n; expect: unsat — both are identity assignments with no intervening transformation"
+        }
+      ],
+      "violations": [
+        {
+          "principle": "P7",
+          "claim": "VIOLATION: At line 31, no guard ensures quantity <= reserved.",
+          "smt2": "; PRINCIPLE: P7\n; VIOLATION: At line 31, no guard ensures quantity <= reserved.\n; db.setReserved(productId, reserved - quantity) at line 34 will commit a negative value.\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const new_reserved Int)\n; Transition: line 34 computes reserved - quantity and writes it\n(assert (= new_reserved (- reserved quantity)))\n; Code constraint: reserved comes from db.getReserved — no lower bound enforced\n; Optimistic: assume prior reserveStock left reserved >= 0\n(assert (>= reserved 0))\n; Code constraint: quantity is caller-supplied; releaseStock validates nothing\n(assert (> quantity 0))\n; Violation: quantity exceeds reserved — negative value committed after line 31 logs success\n(assert (> quantity reserved))\n(assert (< new_reserved 0))\n(check-sat)\n; expect: sat — e.g. reserved=2, quantity=5, new_reserved=-3\n; The log at line 31 announces the release; line 34 commits the invalid state."
+        },
+        {
+          "principle": "P3",
+          "claim": "VIOLATION: quantity is caller-supplied with no positivity check before line 31.",
+          "smt2": "; PRINCIPLE: P3\n; VIOLATION: quantity is caller-supplied with no positivity check before line 31.\n; A negative quantity inverts releaseStock semantics at lines 33-34:\n; available DECREASES and reserved INCREASES — opposite of the function's intent.\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n(declare-const new_reserved Int)\n; Transitions: lines 33-34 always execute unconditionally\n(assert (= new_available (+ available quantity)))\n(assert (= new_reserved (- reserved quantity)))\n; releaseStock validates nothing — quantity sign is unchecked at line 31\n(assert (< quantity 0))\n; DB reads: assume valid prior state\n(assert (>= available 0))\n(assert (>= reserved 0))\n; Violation: semantics inverted — available shrinks, reserved grows\n(assert (< new_available available))\n(assert (> new_reserved reserved))\n(check-sat)\n; expect: sat — e.g. quantity=-3, available=10→7, reserved=2→5"
+        },
+        {
+          "principle": "P1",
+          "claim": "VIOLATION: releaseStock does not establish the precondition",
+          "smt2": "; PRINCIPLE: P1\n; VIOLATION: releaseStock does not establish the precondition\n; available + quantity >= 0 before calling db.setAvailable at line 33.\n; If available is negative (left by a prior oversell in reserveStock),\n; the release can push it further negative.\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n; Transition: line 33 computes and commits available + quantity\n(assert (= new_available (+ available quantity)))\n; Code constraint: available comes from db.getAvailable after a prior oversell\n; Existing contract [P7, reserveStock line 18] proves available can be negative\n(assert (< available 0))\n; Code constraint: quantity is positive — a valid-looking release\n(assert (> quantity 0))\n; Code constraint: quantity is not large enough to cancel the negative available\n(assert (< quantity (- available)))  ; |quantity| < |available|\n; Violation: db.setAvailable commits a negative value — precondition not established\n(assert (< new_available 0))\n(check-sat)\n; expect: sat — e.g. available=-10, quantity=3, new_available=-7"
+        },
+        {
+          "principle": "P4",
+          "claim": "VIOLATION: Two calls to releaseStock on the same productId.",
+          "smt2": "; PRINCIPLE: P4\n; VIOLATION: Two calls to releaseStock on the same productId.\n; The second call's reserved starts from the value the first call wrote.\n; Even with individually valid-looking quantities, the combined release overshoots.\n(declare-const reserved_initial Int)\n(declare-const quantity_1 Int)\n(declare-const quantity_2 Int)\n(declare-const reserved_after_1 Int)\n(declare-const reserved_after_2 Int)\n; Transition: first call — line 34 writes reserved - quantity_1\n(assert (= reserved_after_1 (- reserved_initial quantity_1)))\n; Transition: second call reads reserved_after_1 as its \"reserved\", then writes\n(assert (= reserved_after_2 (- reserved_after_1 quantity_2)))\n; Both calls receive positive quantities\n(assert (> quantity_1 0))\n(assert (> quantity_2 0))\n; First call looks valid: reserved_initial >= quantity_1\n(assert (>= reserved_initial quantity_1))\n; Second call drives reserved negative\n(assert (> quantity_2 reserved_after_1))\n(assert (< reserved_after_2 0))\n(check-sat)\n; expect: sat — e.g. reserved_initial=5, q1=4, reserved_after_1=1, q2=3, reserved_after_2=-2"
+        },
+        {
+          "principle": "P6",
+          "claim": "VIOLATION: quantity = 0 is a degenerate input that reaches line 31 unchecked.",
+          "smt2": "; PRINCIPLE: P6\n; VIOLATION: quantity = 0 is a degenerate input that reaches line 31 unchecked.\n; The function logs \"Releasing 0 of X back to stock\" then performs a no-op write pair,\n; committing available+0 and reserved-0. No guard exists before line 31.\n(declare-const quantity Int)\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const new_available Int)\n(declare-const new_reserved Int)\n; Transitions: lines 33-34 execute unconditionally\n(assert (= new_available (+ available quantity)))\n(assert (= new_reserved (- reserved quantity)))\n; Degenerate input: zero quantity, no validation in releaseStock\n(assert (= quantity 0))\n(assert (>= available 0))\n(assert (>= reserved 0))\n; Consequence: mutations are pure no-ops — identical to pre-call state\n(assert (= new_available available))\n(assert (= new_reserved reserved))\n(check-sat)\n; expect: sat — zero-quantity release passes silently through line 31, logs and writes anyway"
+        },
+        {
+          "principle": null,
+          "claim": "[NEW] PRINCIPLE: Pre-mutation logging",
+          "smt2": "; [NEW] PRINCIPLE: Pre-mutation logging\n; VIOLATION: Line 31 fires BEFORE db.setAvailable (line 33) and db.setReserved (line 34).\n; The log announces \"Releasing quantity back to stock\" without having validated that\n; reserved >= quantity. A semantically invalid mutation is guaranteed to follow,\n; but the log presents it as a pending success.\n(declare-const quantity Int)\n(declare-const reserved Int)\n(declare-const new_reserved Int)\n; Transition: log fires at line 31 — quantity is embedded in the message\n; Transition: line 34 then commits reserved - quantity regardless\n(assert (= new_reserved (- reserved quantity)))\n; Code constraints: positive quantity, non-negative reserved (prior valid state)\n(assert (> quantity 0))\n(assert (>= reserved 0))\n; Violation: log has already fired announcing the release,\n; but the committed value is invalid — created a false audit record\n(assert (> quantity reserved))\n(assert (< new_reserved 0))\n(check-sat)\n; expect: sat — line 31 log fires unconditionally before the validation gap is exposed at line 34\n; e.g. reserved=1, quantity=4: log says \"Releasing 4\", line 34 writes reserved=-3"
+        }
+      ],
+      "depends_on": [
+        "e7a8e4dab56d",
+        "2e9ffaf5b659",
+        "5fa3eb91a3da"
+      ],
+      "clause_history": [
+        {
+          "clause": "; PRINCIPLE: P5\n; PROVEN: At line 31, `available` and `reserved` are exact identity bindings\n; from db.getAvailable (line 29) and db.getReserved (line 30).\n; No transformation occurs between those reads and the console.log at line 31.\n(declare-const available Int)\n(declare-const db_available_out Int)\n(declare-const reserved Int)\n(declare-const db_reserved_out Int)\n; Transitions: direct assignments at lines 29-30\n(assert (= available db_available_out))\n(assert (= reserved db_reserved_out))\n; Negate: at least one binding is broken\n(assert (or\n  (not (= available db_available_out))\n  (not (= reserved db_reserved_out))))\n(check-sat)\n; expect: unsat — both are identity assignments with no intervening transformation",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P7\n; VIOLATION: At line 31, no guard ensures quantity <= reserved.\n; db.setReserved(productId, reserved - quantity) at line 34 will commit a negative value.\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const new_reserved Int)\n; Transition: line 34 computes reserved - quantity and writes it\n(assert (= new_reserved (- reserved quantity)))\n; Code constraint: reserved comes from db.getReserved — no lower bound enforced\n; Optimistic: assume prior reserveStock left reserved >= 0\n(assert (>= reserved 0))\n; Code constraint: quantity is caller-supplied; releaseStock validates nothing\n(assert (> quantity 0))\n; Violation: quantity exceeds reserved — negative value committed after line 31 logs success\n(assert (> quantity reserved))\n(assert (< new_reserved 0))\n(check-sat)\n; expect: sat — e.g. reserved=2, quantity=5, new_reserved=-3\n; The log at line 31 announces the release; line 34 commits the invalid state.",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P3\n; VIOLATION: quantity is caller-supplied with no positivity check before line 31.\n; A negative quantity inverts releaseStock semantics at lines 33-34:\n; available DECREASES and reserved INCREASES — opposite of the function's intent.\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n(declare-const new_reserved Int)\n; Transitions: lines 33-34 always execute unconditionally\n(assert (= new_available (+ available quantity)))\n(assert (= new_reserved (- reserved quantity)))\n; releaseStock validates nothing — quantity sign is unchecked at line 31\n(assert (< quantity 0))\n; DB reads: assume valid prior state\n(assert (>= available 0))\n(assert (>= reserved 0))\n; Violation: semantics inverted — available shrinks, reserved grows\n(assert (< new_available available))\n(assert (> new_reserved reserved))\n(check-sat)\n; expect: sat — e.g. quantity=-3, available=10→7, reserved=2→5",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P1\n; VIOLATION: releaseStock does not establish the precondition\n; available + quantity >= 0 before calling db.setAvailable at line 33.\n; If available is negative (left by a prior oversell in reserveStock),\n; the release can push it further negative.\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const new_available Int)\n; Transition: line 33 computes and commits available + quantity\n(assert (= new_available (+ available quantity)))\n; Code constraint: available comes from db.getAvailable after a prior oversell\n; Existing contract [P7, reserveStock line 18] proves available can be negative\n(assert (< available 0))\n; Code constraint: quantity is positive — a valid-looking release\n(assert (> quantity 0))\n; Code constraint: quantity is not large enough to cancel the negative available\n(assert (< quantity (- available)))  ; |quantity| < |available|\n; Violation: db.setAvailable commits a negative value — precondition not established\n(assert (< new_available 0))\n(check-sat)\n; expect: sat — e.g. available=-10, quantity=3, new_available=-7",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P4\n; VIOLATION: Two calls to releaseStock on the same productId.\n; The second call's reserved starts from the value the first call wrote.\n; Even with individually valid-looking quantities, the combined release overshoots.\n(declare-const reserved_initial Int)\n(declare-const quantity_1 Int)\n(declare-const quantity_2 Int)\n(declare-const reserved_after_1 Int)\n(declare-const reserved_after_2 Int)\n; Transition: first call — line 34 writes reserved - quantity_1\n(assert (= reserved_after_1 (- reserved_initial quantity_1)))\n; Transition: second call reads reserved_after_1 as its \"reserved\", then writes\n(assert (= reserved_after_2 (- reserved_after_1 quantity_2)))\n; Both calls receive positive quantities\n(assert (> quantity_1 0))\n(assert (> quantity_2 0))\n; First call looks valid: reserved_initial >= quantity_1\n(assert (>= reserved_initial quantity_1))\n; Second call drives reserved negative\n(assert (> quantity_2 reserved_after_1))\n(assert (< reserved_after_2 0))\n(check-sat)\n; expect: sat — e.g. reserved_initial=5, q1=4, reserved_after_1=1, q2=3, reserved_after_2=-2",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P6\n; VIOLATION: quantity = 0 is a degenerate input that reaches line 31 unchecked.\n; The function logs \"Releasing 0 of X back to stock\" then performs a no-op write pair,\n; committing available+0 and reserved-0. No guard exists before line 31.\n(declare-const quantity Int)\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const new_available Int)\n(declare-const new_reserved Int)\n; Transitions: lines 33-34 execute unconditionally\n(assert (= new_available (+ available quantity)))\n(assert (= new_reserved (- reserved quantity)))\n; Degenerate input: zero quantity, no validation in releaseStock\n(assert (= quantity 0))\n(assert (>= available 0))\n(assert (>= reserved 0))\n; Consequence: mutations are pure no-ops — identical to pre-call state\n(assert (= new_available available))\n(assert (= new_reserved reserved))\n(check-sat)\n; expect: sat — zero-quantity release passes silently through line 31, logs and writes anyway",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; [NEW] PRINCIPLE: Pre-mutation logging\n; VIOLATION: Line 31 fires BEFORE db.setAvailable (line 33) and db.setReserved (line 34).\n; The log announces \"Releasing quantity back to stock\" without having validated that\n; reserved >= quantity. A semantically invalid mutation is guaranteed to follow,\n; but the log presents it as a pending success.\n(declare-const quantity Int)\n(declare-const reserved Int)\n(declare-const new_reserved Int)\n; Transition: log fires at line 31 — quantity is embedded in the message\n; Transition: line 34 then commits reserved - quantity regardless\n(assert (= new_reserved (- reserved quantity)))\n; Code constraints: positive quantity, non-negative reserved (prior valid state)\n(assert (> quantity 0))\n(assert (>= reserved 0))\n; Violation: log has already fired announcing the release,\n; but the committed value is invalid — created a false audit record\n(assert (> quantity reserved))\n(assert (< new_reserved 0))\n(check-sat)\n; expect: sat — line 31 log fires unconditionally before the validation gap is exposed at line 34\n; e.g. reserved=1, quantity=4: log says \"Releasing 4\", line 34 writes reserved=-3",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    },
+    {
+      "file": "/Users/tsavo/Projects/neurallog/examples/inventory.ts",
+      "function": "releaseStock",
+      "line": 36,
+      "proven": [
+        {
+          "principle": "P5",
+          "claim": "PROVE: logged values at line 36 == DB-written values at lines 33-34",
+          "smt2": "; PRINCIPLE: P5\n; PROVE: logged values at line 36 == DB-written values at lines 33-34\n; Method: assert both transitions, negate equality → expect unsat\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const db_available_written Int)\n(declare-const db_reserved_written Int)\n(declare-const logged_available Int)\n(declare-const logged_reserved Int)\n; Transition: line 33 — db.setAvailable commits (available + quantity)\n(assert (= db_available_written (+ available quantity)))\n; Transition: line 34 — db.setReserved commits (reserved - quantity)\n(assert (= db_reserved_written (- reserved quantity)))\n; Transition: line 36 — log computes from same original bindings\n(assert (= logged_available (+ available quantity)))\n(assert (= logged_reserved (- reserved quantity)))\n; Negate: can the log diverge from what was written?\n(assert (or\n  (not (= logged_available db_available_written))\n  (not (= logged_reserved db_reserved_written))\n))\n(check-sat)\n; unsat — the logged values are provably identical to the DB-written values.\n; The log is an accurate mirror of the committed state (even if that state is invalid)."
+        }
+      ],
+      "violations": [
+        {
+          "principle": "P7",
+          "claim": "VIOLATION: reserved - quantity committed as negative, then logged as \"Release complete\"",
+          "smt2": "; PRINCIPLE: P7\n; VIOLATION: reserved - quantity committed as negative, then logged as \"Release complete\"\n; Model: reserved comes from DB (>= 0), quantity is caller-supplied (> 0, unchecked upper bound)\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const db_reserved_written Int)\n(declare-const logged_reserved Int)\n; DB read at L30: reserved is non-negative (DB invariant, no contract violated yet)\n(assert (>= reserved 0))\n; L29: available is non-negative\n(assert (>= available 0))\n; quantity is caller-supplied — releaseStock performs no check: quantity <= reserved\n(assert (> quantity 0))\n; Transition L34: db.setReserved commits reserved - quantity\n(assert (= db_reserved_written (- reserved quantity)))\n; Transition L36: log reads same arithmetic — mirrors committed value\n(assert (= logged_reserved (- reserved quantity)))\n; No guard between L30 and L34 enforces quantity <= reserved\n; Violation reachable: quantity > reserved\n(assert (> quantity reserved))\n; Consequence: negative value is committed AND logged as \"Release complete\"\n(assert (< db_reserved_written 0))\n(assert (= logged_reserved db_reserved_written))\n(check-sat)\n; sat — negative reserved stock is committed at L34 and confirmed at L36 as \"complete\"\n; Witness: reserved=2, quantity=5 → db_reserved_written=-3, logged_reserved=-3"
+        },
+        {
+          "principle": "P3",
+          "claim": "VIOLATION: negative quantity makes available decrease and reserved increase at line 36",
+          "smt2": "; PRINCIPLE: P3\n; VIOLATION: negative quantity makes available decrease and reserved increase at line 36\n; The log still announces \"Release complete\" despite inverse semantics\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const logged_available Int)\n(declare-const logged_reserved Int)\n; DB read state: non-negative\n(assert (>= available 0))\n(assert (>= reserved 0))\n; Transition L33: db.setAvailable(available + quantity) — quantity unchecked\n(assert (= logged_available (+ available quantity)))\n; Transition L34: db.setReserved(reserved - quantity)\n(assert (= logged_reserved (- reserved quantity)))\n; Caller supplies negative quantity — no guard in releaseStock prevents this\n(assert (< quantity 0))\n; Consequence: available DECREASES (opposite of release)\n(assert (< logged_available available))\n; Consequence: reserved INCREASES (opposite of release)\n(assert (> logged_reserved reserved))\n(check-sat)\n; sat — negative quantity causes releaseStock to behave as reserveStock\n; DB writes and log at L36 both confirm semantically inverted state as \"Release complete\"\n; Witness: quantity=-3, available=5→2, reserved=4→7"
+        },
+        {
+          "principle": "P4",
+          "claim": "VIOLATION: two releaseStock calls on the same productId",
+          "smt2": "; PRINCIPLE: P4\n; VIOLATION: two releaseStock calls on the same productId\n; First call mutates reserved; second call reads the reduced value and may overdraw\n(declare-const reserved_0 Int)\n(declare-const available_0 Int)\n(declare-const quantity_1 Int)\n(declare-const quantity_2 Int)\n(declare-const reserved_after_call1 Int)\n(declare-const available_after_call1 Int)\n(declare-const logged_reserved_call2 Int)\n; Initial DB state\n(assert (>= reserved_0 0))\n(assert (>= available_0 0))\n; Both calls use positive quantities\n(assert (> quantity_1 0))\n(assert (> quantity_2 0))\n; First call: transitions at L33-L34 mutate shared DB state\n(assert (= reserved_after_call1 (- reserved_0 quantity_1)))\n(assert (= available_after_call1 (+ available_0 quantity_1)))\n; First call succeeds (quantity_1 <= reserved_0)\n(assert (<= quantity_1 reserved_0))\n; Second call L30 reads the mutated reserved state\n; Second call L36: logs reserved_after_call1 - quantity_2\n(assert (= logged_reserved_call2 (- reserved_after_call1 quantity_2)))\n; Violation: second call overdraws what remains\n(assert (> quantity_2 reserved_after_call1))\n(assert (< logged_reserved_call2 0))\n(check-sat)\n; sat — two sequential releases on the same product drive reserved negative\n; Witness: reserved_0=5, q1=3, reserved_after=2, q2=3 → logged=-1"
+        },
+        {
+          "principle": "P6",
+          "claim": "VIOLATION: quantity = 0 passes all code paths and reaches line 36 unchallenged",
+          "smt2": "; PRINCIPLE: P6\n; VIOLATION: quantity = 0 passes all code paths and reaches line 36 unchallenged\n; DB state is unchanged; log still announces \"Release complete\"\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const logged_available Int)\n(declare-const logged_reserved Int)\n; DB read state\n(assert (>= available 0))\n(assert (>= reserved 0))\n; Transition L33-L34: writes happen regardless of quantity value\n(assert (= logged_available (+ available quantity)))\n(assert (= logged_reserved (- reserved quantity)))\n; Degenerate: zero quantity — no guard exists before L33\n(assert (= quantity 0))\n; Consequence: DB and log show identical pre/post state — a committed no-op\n(assert (= logged_available available))\n(assert (= logged_reserved reserved))\n(check-sat)\n; sat — a zero-quantity release is committed and logged as \"Release complete\" with zero effect\n; This masks upstream logic errors (wrong productId, wrong quantity binding, etc.)"
+        },
+        {
+          "principle": null,
+          "claim": "[NEW] PRINCIPLE: Post-mutation logging",
+          "smt2": "; [NEW] PRINCIPLE: Post-mutation logging\n; VIOLATION: the log at L36 fires unconditionally after both DB writes are committed\n; There is no conditional, no rollback, no exception path between L34 and L36\n; A successful log emission is therefore NOT evidence of a valid release\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const db_reserved_written Int)\n(declare-const log_fires Int)         ; 1 = log fires, 0 = log suppressed\n(declare-const logged_reserved Int)\n; DB state: reserved is non-negative\n(assert (>= reserved 0))\n(assert (> quantity 0))\n; Transition L34: DB write committed unconditionally\n(assert (= db_reserved_written (- reserved quantity)))\n; Structural fact: no branch between L34 and L36\n; log_fires is always 1 — the log cannot be suppressed by invalid state\n(assert (= log_fires 1))\n(assert (= logged_reserved db_reserved_written))\n; Violation: invalid state (negative reserved) committed\n(assert (> quantity reserved))\n(assert (< db_reserved_written 0))\n; AND the log fires anyway, announcing success\n(assert (= log_fires 1))\n(check-sat)\n; sat — L36 fires unconditionally after L34, even when db_reserved_written < 0\n; \"Release complete\" is a structural lie: it proves execution reached L36, not correctness"
+        }
+      ],
+      "depends_on": [
+        "e7a8e4dab56d",
+        "2e9ffaf5b659",
+        "5fa3eb91a3da",
+        "ab1baa19382f"
+      ],
+      "clause_history": [
+        {
+          "clause": "; PRINCIPLE: P5\n; PROVE: logged values at line 36 == DB-written values at lines 33-34\n; Method: assert both transitions, negate equality → expect unsat\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const db_available_written Int)\n(declare-const db_reserved_written Int)\n(declare-const logged_available Int)\n(declare-const logged_reserved Int)\n; Transition: line 33 — db.setAvailable commits (available + quantity)\n(assert (= db_available_written (+ available quantity)))\n; Transition: line 34 — db.setReserved commits (reserved - quantity)\n(assert (= db_reserved_written (- reserved quantity)))\n; Transition: line 36 — log computes from same original bindings\n(assert (= logged_available (+ available quantity)))\n(assert (= logged_reserved (- reserved quantity)))\n; Negate: can the log diverge from what was written?\n(assert (or\n  (not (= logged_available db_available_written))\n  (not (= logged_reserved db_reserved_written))\n))\n(check-sat)\n; unsat — the logged values are provably identical to the DB-written values.\n; The log is an accurate mirror of the committed state (even if that state is invalid).",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P7\n; VIOLATION: reserved - quantity committed as negative, then logged as \"Release complete\"\n; Model: reserved comes from DB (>= 0), quantity is caller-supplied (> 0, unchecked upper bound)\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const db_reserved_written Int)\n(declare-const logged_reserved Int)\n; DB read at L30: reserved is non-negative (DB invariant, no contract violated yet)\n(assert (>= reserved 0))\n; L29: available is non-negative\n(assert (>= available 0))\n; quantity is caller-supplied — releaseStock performs no check: quantity <= reserved\n(assert (> quantity 0))\n; Transition L34: db.setReserved commits reserved - quantity\n(assert (= db_reserved_written (- reserved quantity)))\n; Transition L36: log reads same arithmetic — mirrors committed value\n(assert (= logged_reserved (- reserved quantity)))\n; No guard between L30 and L34 enforces quantity <= reserved\n; Violation reachable: quantity > reserved\n(assert (> quantity reserved))\n; Consequence: negative value is committed AND logged as \"Release complete\"\n(assert (< db_reserved_written 0))\n(assert (= logged_reserved db_reserved_written))\n(check-sat)\n; sat — negative reserved stock is committed at L34 and confirmed at L36 as \"complete\"\n; Witness: reserved=2, quantity=5 → db_reserved_written=-3, logged_reserved=-3",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P3\n; VIOLATION: negative quantity makes available decrease and reserved increase at line 36\n; The log still announces \"Release complete\" despite inverse semantics\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const logged_available Int)\n(declare-const logged_reserved Int)\n; DB read state: non-negative\n(assert (>= available 0))\n(assert (>= reserved 0))\n; Transition L33: db.setAvailable(available + quantity) — quantity unchecked\n(assert (= logged_available (+ available quantity)))\n; Transition L34: db.setReserved(reserved - quantity)\n(assert (= logged_reserved (- reserved quantity)))\n; Caller supplies negative quantity — no guard in releaseStock prevents this\n(assert (< quantity 0))\n; Consequence: available DECREASES (opposite of release)\n(assert (< logged_available available))\n; Consequence: reserved INCREASES (opposite of release)\n(assert (> logged_reserved reserved))\n(check-sat)\n; sat — negative quantity causes releaseStock to behave as reserveStock\n; DB writes and log at L36 both confirm semantically inverted state as \"Release complete\"\n; Witness: quantity=-3, available=5→2, reserved=4→7",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P4\n; VIOLATION: two releaseStock calls on the same productId\n; First call mutates reserved; second call reads the reduced value and may overdraw\n(declare-const reserved_0 Int)\n(declare-const available_0 Int)\n(declare-const quantity_1 Int)\n(declare-const quantity_2 Int)\n(declare-const reserved_after_call1 Int)\n(declare-const available_after_call1 Int)\n(declare-const logged_reserved_call2 Int)\n; Initial DB state\n(assert (>= reserved_0 0))\n(assert (>= available_0 0))\n; Both calls use positive quantities\n(assert (> quantity_1 0))\n(assert (> quantity_2 0))\n; First call: transitions at L33-L34 mutate shared DB state\n(assert (= reserved_after_call1 (- reserved_0 quantity_1)))\n(assert (= available_after_call1 (+ available_0 quantity_1)))\n; First call succeeds (quantity_1 <= reserved_0)\n(assert (<= quantity_1 reserved_0))\n; Second call L30 reads the mutated reserved state\n; Second call L36: logs reserved_after_call1 - quantity_2\n(assert (= logged_reserved_call2 (- reserved_after_call1 quantity_2)))\n; Violation: second call overdraws what remains\n(assert (> quantity_2 reserved_after_call1))\n(assert (< logged_reserved_call2 0))\n(check-sat)\n; sat — two sequential releases on the same product drive reserved negative\n; Witness: reserved_0=5, q1=3, reserved_after=2, q2=3 → logged=-1",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; PRINCIPLE: P6\n; VIOLATION: quantity = 0 passes all code paths and reaches line 36 unchallenged\n; DB state is unchanged; log still announces \"Release complete\"\n(declare-const available Int)\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const logged_available Int)\n(declare-const logged_reserved Int)\n; DB read state\n(assert (>= available 0))\n(assert (>= reserved 0))\n; Transition L33-L34: writes happen regardless of quantity value\n(assert (= logged_available (+ available quantity)))\n(assert (= logged_reserved (- reserved quantity)))\n; Degenerate: zero quantity — no guard exists before L33\n(assert (= quantity 0))\n; Consequence: DB and log show identical pre/post state — a committed no-op\n(assert (= logged_available available))\n(assert (= logged_reserved reserved))\n(check-sat)\n; sat — a zero-quantity release is committed and logged as \"Release complete\" with zero effect\n; This masks upstream logic errors (wrong productId, wrong quantity binding, etc.)",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        },
+        {
+          "clause": "; [NEW] PRINCIPLE: Post-mutation logging\n; VIOLATION: the log at L36 fires unconditionally after both DB writes are committed\n; There is no conditional, no rollback, no exception path between L34 and L36\n; A successful log emission is therefore NOT evidence of a valid release\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const db_reserved_written Int)\n(declare-const log_fires Int)         ; 1 = log fires, 0 = log suppressed\n(declare-const logged_reserved Int)\n; DB state: reserved is non-negative\n(assert (>= reserved 0))\n(assert (> quantity 0))\n; Transition L34: DB write committed unconditionally\n(assert (= db_reserved_written (- reserved quantity)))\n; Structural fact: no branch between L34 and L36\n; log_fires is always 1 — the log cannot be suppressed by invalid state\n(assert (= log_fires 1))\n(assert (= logged_reserved db_reserved_written))\n; Violation: invalid state (negative reserved) committed\n(assert (> quantity reserved))\n(assert (< db_reserved_written 0))\n; AND the log fires anyway, announcing success\n(assert (= log_fires 1))\n(check-sat)\n; sat — L36 fires unconditionally after L34, even when db_reserved_written < 0\n; \"Release complete\" is a structural lie: it proves execution reached L36, not correctness",
+          "status": "active",
+          "weaken_step": 0,
+          "witness_count_at_last_weaken": 0,
+          "current_witness_count": 0
+        }
+      ]
+    }
+  ]
+}

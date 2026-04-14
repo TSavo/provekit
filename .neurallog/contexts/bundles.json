@@ -1,0 +1,64 @@
+[
+  {
+    "filePath": "/Users/tsavo/Projects/neurallog/examples/inventory.ts",
+    "relativePath": "examples/inventory.ts",
+    "callSites": [
+      {
+        "line": 11,
+        "column": 2,
+        "functionName": "checkAvailability",
+        "logText": "console.log(`Stock check for ${productId}: ${available} available`)",
+        "functionSource": "function checkAvailability(productId: string): number {\n  const available = db.getStock(productId);\n  console.log(`Stock check for ${productId}: ${available} available`);\n  return available;\n}",
+        "fileSource": "const db = {\n  getStock: (productId: string): number => 0,\n  getAvailable: (productId: string): number => 0,\n  getReserved: (productId: string): number => 0,\n  setAvailable: (productId: string, value: number): void => {},\n  setReserved: (productId: string, value: number): void => {},\n};\n\nexport function checkAvailability(productId: string): number {\n  const available = db.getStock(productId);\n  console.log(`Stock check for ${productId}: ${available} available`);\n  return available;\n}\n\nexport function reserveStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Reserving ${quantity} of ${productId} (${available} available, ${reserved} reserved)`);\n\n  db.setAvailable(productId, available - quantity);\n  db.setReserved(productId, reserved + quantity);\n\n  const newAvailable = available - quantity;\n  const newReserved = reserved + quantity;\n  console.log(`Reservation complete: ${newAvailable} available, ${newReserved} reserved`);\n}\n\nexport function releaseStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Releasing ${quantity} of ${productId} back to stock`);\n\n  db.setAvailable(productId, available + quantity);\n  db.setReserved(productId, reserved - quantity);\n\n  console.log(`Release complete: ${available + quantity} available, ${reserved - quantity} reserved`);\n}\n",
+        "importSources": [],
+        "existingContracts": "(no existing contracts for imports)",
+        "callingContext": "checkAvailability is module-private. Only called within this module."
+      },
+      {
+        "line": 18,
+        "column": 2,
+        "functionName": "reserveStock",
+        "logText": "console.log(`Reserving ${quantity} of ${productId} (${available} available, ${reserved} reserved)`)",
+        "functionSource": "function reserveStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Reserving ${quantity} of ${productId} (${available} available, ${reserved} reserved)`);\n\n  db.setAvailable(productId, available - quantity);\n  db.setReserved(productId, reserved + quantity);\n\n  const newAvailable = available - quantity;\n  const newReserved = reserved + quantity;\n  console.log(`Reservation complete: ${newAvailable} available, ${newReserved} reserved`);\n}",
+        "fileSource": "const db = {\n  getStock: (productId: string): number => 0,\n  getAvailable: (productId: string): number => 0,\n  getReserved: (productId: string): number => 0,\n  setAvailable: (productId: string, value: number): void => {},\n  setReserved: (productId: string, value: number): void => {},\n};\n\nexport function checkAvailability(productId: string): number {\n  const available = db.getStock(productId);\n  console.log(`Stock check for ${productId}: ${available} available`);\n  return available;\n}\n\nexport function reserveStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Reserving ${quantity} of ${productId} (${available} available, ${reserved} reserved)`);\n\n  db.setAvailable(productId, available - quantity);\n  db.setReserved(productId, reserved + quantity);\n\n  const newAvailable = available - quantity;\n  const newReserved = reserved + quantity;\n  console.log(`Reservation complete: ${newAvailable} available, ${newReserved} reserved`);\n}\n\nexport function releaseStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Releasing ${quantity} of ${productId} back to stock`);\n\n  db.setAvailable(productId, available + quantity);\n  db.setReserved(productId, reserved - quantity);\n\n  console.log(`Release complete: ${available + quantity} available, ${reserved - quantity} reserved`);\n}\n",
+        "importSources": [],
+        "existingContracts": "(no existing contracts for imports)",
+        "callingContext": "reserveStock is module-private. Only called within this module."
+      },
+      {
+        "line": 25,
+        "column": 2,
+        "functionName": "reserveStock",
+        "logText": "console.log(`Reservation complete: ${newAvailable} available, ${newReserved} reserved`)",
+        "functionSource": "function reserveStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Reserving ${quantity} of ${productId} (${available} available, ${reserved} reserved)`);\n\n  db.setAvailable(productId, available - quantity);\n  db.setReserved(productId, reserved + quantity);\n\n  const newAvailable = available - quantity;\n  const newReserved = reserved + quantity;\n  console.log(`Reservation complete: ${newAvailable} available, ${newReserved} reserved`);\n}",
+        "fileSource": "const db = {\n  getStock: (productId: string): number => 0,\n  getAvailable: (productId: string): number => 0,\n  getReserved: (productId: string): number => 0,\n  setAvailable: (productId: string, value: number): void => {},\n  setReserved: (productId: string, value: number): void => {},\n};\n\nexport function checkAvailability(productId: string): number {\n  const available = db.getStock(productId);\n  console.log(`Stock check for ${productId}: ${available} available`);\n  return available;\n}\n\nexport function reserveStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Reserving ${quantity} of ${productId} (${available} available, ${reserved} reserved)`);\n\n  db.setAvailable(productId, available - quantity);\n  db.setReserved(productId, reserved + quantity);\n\n  const newAvailable = available - quantity;\n  const newReserved = reserved + quantity;\n  console.log(`Reservation complete: ${newAvailable} available, ${newReserved} reserved`);\n}\n\nexport function releaseStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Releasing ${quantity} of ${productId} back to stock`);\n\n  db.setAvailable(productId, available + quantity);\n  db.setReserved(productId, reserved - quantity);\n\n  console.log(`Release complete: ${available + quantity} available, ${reserved - quantity} reserved`);\n}\n",
+        "importSources": [],
+        "existingContracts": "(no existing contracts for imports)",
+        "callingContext": "reserveStock is module-private. Only called within this module."
+      },
+      {
+        "line": 31,
+        "column": 2,
+        "functionName": "releaseStock",
+        "logText": "console.log(`Releasing ${quantity} of ${productId} back to stock`)",
+        "functionSource": "function releaseStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Releasing ${quantity} of ${productId} back to stock`);\n\n  db.setAvailable(productId, available + quantity);\n  db.setReserved(productId, reserved - quantity);\n\n  console.log(`Release complete: ${available + quantity} available, ${reserved - quantity} reserved`);\n}",
+        "fileSource": "const db = {\n  getStock: (productId: string): number => 0,\n  getAvailable: (productId: string): number => 0,\n  getReserved: (productId: string): number => 0,\n  setAvailable: (productId: string, value: number): void => {},\n  setReserved: (productId: string, value: number): void => {},\n};\n\nexport function checkAvailability(productId: string): number {\n  const available = db.getStock(productId);\n  console.log(`Stock check for ${productId}: ${available} available`);\n  return available;\n}\n\nexport function reserveStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Reserving ${quantity} of ${productId} (${available} available, ${reserved} reserved)`);\n\n  db.setAvailable(productId, available - quantity);\n  db.setReserved(productId, reserved + quantity);\n\n  const newAvailable = available - quantity;\n  const newReserved = reserved + quantity;\n  console.log(`Reservation complete: ${newAvailable} available, ${newReserved} reserved`);\n}\n\nexport function releaseStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Releasing ${quantity} of ${productId} back to stock`);\n\n  db.setAvailable(productId, available + quantity);\n  db.setReserved(productId, reserved - quantity);\n\n  console.log(`Release complete: ${available + quantity} available, ${reserved - quantity} reserved`);\n}\n",
+        "importSources": [],
+        "existingContracts": "(no existing contracts for imports)",
+        "callingContext": "releaseStock is module-private. Only called within this module."
+      },
+      {
+        "line": 36,
+        "column": 2,
+        "functionName": "releaseStock",
+        "logText": "console.log(`Release complete: ${available + quantity} available, ${reserved - quantity} reserved`)",
+        "functionSource": "function releaseStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Releasing ${quantity} of ${productId} back to stock`);\n\n  db.setAvailable(productId, available + quantity);\n  db.setReserved(productId, reserved - quantity);\n\n  console.log(`Release complete: ${available + quantity} available, ${reserved - quantity} reserved`);\n}",
+        "fileSource": "const db = {\n  getStock: (productId: string): number => 0,\n  getAvailable: (productId: string): number => 0,\n  getReserved: (productId: string): number => 0,\n  setAvailable: (productId: string, value: number): void => {},\n  setReserved: (productId: string, value: number): void => {},\n};\n\nexport function checkAvailability(productId: string): number {\n  const available = db.getStock(productId);\n  console.log(`Stock check for ${productId}: ${available} available`);\n  return available;\n}\n\nexport function reserveStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Reserving ${quantity} of ${productId} (${available} available, ${reserved} reserved)`);\n\n  db.setAvailable(productId, available - quantity);\n  db.setReserved(productId, reserved + quantity);\n\n  const newAvailable = available - quantity;\n  const newReserved = reserved + quantity;\n  console.log(`Reservation complete: ${newAvailable} available, ${newReserved} reserved`);\n}\n\nexport function releaseStock(productId: string, quantity: number): void {\n  const available = db.getAvailable(productId);\n  const reserved = db.getReserved(productId);\n  console.log(`Releasing ${quantity} of ${productId} back to stock`);\n\n  db.setAvailable(productId, available + quantity);\n  db.setReserved(productId, reserved - quantity);\n\n  console.log(`Release complete: ${available + quantity} available, ${reserved - quantity} reserved`);\n}\n",
+        "importSources": [],
+        "existingContracts": "(no existing contracts for imports)",
+        "callingContext": "releaseStock is module-private. Only called within this module."
+      }
+    ],
+    "builtAt": "2026-04-14T20:33:03.531Z"
+  }
+]

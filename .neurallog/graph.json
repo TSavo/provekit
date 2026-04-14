@@ -1,0 +1,17 @@
+{
+  "root": "/Users/tsavo/Projects/neurallog/examples/inventory.ts",
+  "projectRoot": "/Users/tsavo/Projects/neurallog",
+  "files": [
+    {
+      "path": "/Users/tsavo/Projects/neurallog/examples/inventory.ts",
+      "relativePath": "examples/inventory.ts",
+      "imports": [],
+      "logStatements": 5,
+      "hash": "bec67e8b57b62f2b76db8584d3f8dc9b"
+    }
+  ],
+  "topologicalOrder": [
+    "/Users/tsavo/Projects/neurallog/examples/inventory.ts"
+  ],
+  "builtAt": "2026-04-14T20:33:03.526Z"
+}
