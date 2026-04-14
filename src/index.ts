@@ -9,6 +9,7 @@ import { ContractStore } from "./contracts";
 import { PrincipleStore, findNewViolations, classifyAndGeneralize } from "./principles";
 import { reportResults, AnalysisResult } from "./reporter";
 import { collectViolationIssues, fileViolationIssues } from "./issues";
+import { applyAxioms, checkConsistency } from "./axiom-engine";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -29,9 +30,14 @@ async function main(): Promise<void> {
   }
 
   const command = args[0];
+  if (command === "verify") {
+    await runVerify(args.slice(1));
+    return;
+  }
   if (command !== "analyze") {
     console.error(`Unknown command: ${command}`);
     console.error("Usage: neurallog analyze <file.ts>");
+    console.error("       neurallog verify <project-root>  (Layer 2: no LLM, just Z3)");
     process.exit(1);
   }
 
@@ -175,6 +181,70 @@ async function main(): Promise<void> {
       );
     }
   }
+}
+
+async function runVerify(args: string[]): Promise<void> {
+  const projectRoot = resolve(args[0] || ".");
+
+  console.log("neurallog verify — Layer 2: mechanical axiom application");
+  console.log(`Project: ${projectRoot}`);
+  console.log("No LLM. No network. Just Z3 against cached contracts.");
+  console.log();
+
+  const store = new ContractStore(projectRoot);
+  const contracts = store.getAll();
+
+  if (contracts.length === 0) {
+    console.log("No contracts found in .neurallog/. Run 'neurallog analyze' first.");
+    process.exit(0);
+  }
+
+  console.log(`Loaded ${contracts.length} contracts from .neurallog/`);
+  console.log();
+
+  // Apply all axiom templates
+  console.log("Applying axiom templates...");
+  const results = applyAxioms(contracts);
+
+  let proven = 0;
+  let violations = 0;
+  let errors = 0;
+
+  for (const r of results) {
+    if (r.verdict === "proven") {
+      proven++;
+      console.log(`  ✓ [${r.axiom}] ${r.description}`);
+    } else if (r.verdict === "violation") {
+      violations++;
+      console.log(`  ✗ [${r.axiom}] ${r.description}`);
+    } else {
+      errors++;
+      console.log(`  ⚠ [${r.axiom}] ${r.description} — ${r.error?.slice(0, 60)}`);
+    }
+  }
+
+  console.log();
+
+  // Cross-contract consistency
+  console.log("Checking cross-contract consistency...");
+  const consistency = checkConsistency(contracts);
+  for (const c of consistency) {
+    if (c.verdict === "proven") {
+      console.log(`  ✓ ${c.description}`);
+    } else if (c.verdict === "violation") {
+      console.log(`  ✗ INCONSISTENCY: ${c.description}`);
+    } else {
+      console.log(`  ⚠ ${c.description} — ${c.error?.slice(0, 60)}`);
+    }
+  }
+
+  console.log();
+  console.log("═══════════════════════════════════════════════════════════");
+  console.log(`  ${contracts.length} contracts, ${results.length} axiom checks`);
+  console.log(`  ${proven} proven  |  ${violations} violations  |  ${errors} errors`);
+  console.log(`  Consistency: ${consistency[0]?.verdict || "n/a"}`);
+  console.log("  No LLM was used.");
+  console.log("═══════════════════════════════════════════════════════════");
 }
 
 function findProjectRoot(startDir: string): string {
