@@ -96,9 +96,8 @@ The prompt template lives at `prompts/invariant_derivation.md` and is assembled 
 
 | Metric | Count | Breakdown |
 |---|---|---|
-| Proven (unsat) | 11 | 9 meaningful, 2 trivial identity |
-| Violations (sat) | 30 pre-filter | 22 real, 6 vacuous (now filtered), 2 invented (now filtered) |
-| Signal rate | 73% pre-filter | ~95%+ post-filter |
+| Proven (unsat) | 7 | Post-filter run via five-phase pipeline |
+| Violations (sat) | 25 | Post-filter, vacuous blocks removed |
 
 Real bugs found:
 - `setAvailable` precondition violation: `quantity > available` never checked, stock goes negative
@@ -108,19 +107,13 @@ Real bugs found:
 - Double-release drives reserved negative
 - Conservation law *proven*: `(+ new_available new_reserved) = (+ available reserved)`
 
-### orders.ts (cross-file, verified)
+### orders.ts (cross-file, artifact pending)
 
-4 log statements, 25 Z3-verified blocks, 7 proven, 18 violations. With `inventory.ts` resolved as import — the LLM saw both files and derived cross-file precondition chains.
+4 log statements with `inventory.ts` resolved as import. The LLM sees both files and derives cross-file precondition chains. Pipeline run in progress — artifact will be committed when complete.
 
-### billing.ts (real production code, verified, on disk)
+### billing.ts (real production code, prior pipeline, artifact not preserved)
 
-`platform-core/.neurallog/contracts/src/api/routes/billing.ts.json`
-
-| Metric | Post-filter |
-|---|---|
-| Contracts | 9 |
-| Proven (unsat) | 27 |
-| Violations (sat) | 31 |
+billing.ts was analyzed in a prior pipeline run (pre-refactor). The terminal output showed 168 Z3-verified blocks across 14 log statements. Two [NEW] violations were classified (credential exposure in token hint, audit-observation atomicity). **These artifacts were not preserved through the five-phase refactor.** The specific numbers (27 proven, 31 violations, 9 contracts) are from terminal output, not from committed JSON. A re-run through the current pipeline with artifact persistence is needed to verify these numbers.
 
 Real findings in production billing code:
 - **Credential exposure:** `authHeader.slice(7, 15)` leaks the full Bearer token when it's 8 chars or shorter. The "hint" is the entire secret.
