@@ -55,26 +55,16 @@ export async function deriveContract(
   for await (const message of query({
     prompt,
     options: {
-      maxTurns: 1,
       model,
+      includePartialMessages: true,
       systemPrompt:
         `You are a formal verification engine. You produce SMT-LIB 2 formulas. Be precise and concise. Every SMT-LIB block MUST use \`\`\`smt2 fences and include (check-sat). Tag every block with ; PRINCIPLE: P1-P${7 + (principleStore?.getAll().length ?? 0)} or [NEW].`,
     },
   })) {
-    if (verbose) {
-      if (message.type === "assistant") {
-        const content = (message as any).message?.content;
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === "text" && block.text?.trim()) {
-              const firstLine = block.text.trim().split("\n")[0]!;
-              process.stderr.write(`    ${firstLine.slice(0, 120)}\n`);
-            }
-            if (block.type === "tool_use") {
-              process.stderr.write(`    [tool] ${block.name}(${JSON.stringify(block.input).slice(0, 80)})\n`);
-            }
-          }
-        }
+    if (verbose && message.type === "stream_event") {
+      const event = (message as any).event;
+      if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
+        process.stdout.write(event.delta.text);
       }
     }
 
