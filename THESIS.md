@@ -69,7 +69,11 @@ Programmer intent is everywhere in the code, expressed informally:
 
 The real insight isn't "log statements are assertions." It's: programmer intent is embedded throughout the code, expressed informally, and can be formalized and proven.
 
-The log statement is where we start. It's not where we stop.
+The log statement is the Trojan horse. The methodology is the payload.
+
+The product roadmap: start with loggers (richest runtime signal, zero friction, every codebase has thousands). Then expand to comments, function names, types, tests, error messages. Each is a new signal source feeding the same pipeline — derive what should be true, prove it with Z3. The five-phase architecture is signal-agnostic. Phase 1 finds signals. Phases 2-5 don't care where they came from.
+
+Think in terms of signal, not logger. Logger is an opportunity — especially a runtime opportunity. But the code is full of other opportunities. Every informal expression of programmer intent is a candidate for formalization.
 
 ## Your log statements already describe your system's behavior.
 
