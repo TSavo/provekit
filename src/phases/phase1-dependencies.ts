@@ -37,11 +37,15 @@ export function buildDependencyGraph(
   const visited = new Map<string, FileNode>();
 
   console.log("Phase 1: Building dependency graph...");
+  console.log(`  Entry: ${entryPath}`);
 
   walk(entryPath, projectRoot, visited);
 
   const files = [...visited.values()];
+  console.log(`  Walked ${files.length} file${files.length === 1 ? "" : "s"}, ${files.reduce((n, f) => n + f.imports.length, 0)} import edges`);
+
   const topologicalOrder = topoSort(files);
+  console.log(`  Topological sort: ${topologicalOrder.length} files, no cycles detected`);
 
   const graph: DependencyGraph = {
     root: entryPath,
@@ -51,12 +55,14 @@ export function buildDependencyGraph(
     builtAt: new Date().toISOString(),
   };
 
-  // Write immutable artifact
   const outDir = join(projectRoot, ".neurallog");
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, "graph.json"), JSON.stringify(graph, null, 2));
+  const graphPath = join(outDir, "graph.json");
+  writeFileSync(graphPath, JSON.stringify(graph, null, 2));
+  console.log(`  Graph written to ${relative(projectRoot, graphPath)}`);
 
-  console.log(`  ${files.length} file${files.length === 1 ? "" : "s"} in graph`);
+  const totalLogStatements = files.reduce((n, f) => n + f.logStatements, 0);
+  console.log(`  ${totalLogStatements} log statements across ${files.length} files`);
   console.log(`  Derivation order: ${topologicalOrder.map(p => relative(projectRoot, p)).join(" → ")}`);
   console.log();
 
@@ -74,6 +80,7 @@ function walk(
   try {
     source = readFileSync(filePath, "utf-8");
   } catch {
+    console.log(`  WARNING: Could not read ${relative(projectRoot, filePath)}, skipping`);
     return;
   }
 

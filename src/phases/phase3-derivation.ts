@@ -67,10 +67,15 @@ export async function deriveContracts(
 ): Promise<DerivationOutput> {
   console.log("Phase 3: Deriving contracts...");
 
-  // Load discovered principles for prompt injection
   const principleStore = new PrincipleStore(projectRoot);
   const discoveredPrinciples = principleStore.formatForPrompt();
   const principleHash = principleStore.computePrincipleHash();
+  const discoveredCount = principleStore.getAll().length;
+  console.log(`  Model: ${model}`);
+  console.log(`  Principles: 7 seed${discoveredCount > 0 ? ` + ${discoveredCount} discovered` : ""}`);
+  console.log(`  Principle hash: ${principleHash.slice(0, 12)}...`);
+  console.log(`  Bundles: ${bundles.length} files, ${bundles.reduce((n, b) => n + b.callSites.length, 0)} call sites`);
+  console.log();
 
   const allContracts: DerivedContract[] = [];
   const allNewViolations: { violation: VerificationResult; context: string }[] = [];
@@ -150,17 +155,22 @@ export async function deriveContracts(
     writeContractsForFile(bundle.filePath, allContracts, projectRoot, principleHash);
   }
 
+  const totalProven = allContracts.reduce((n, c) => n + c.proven.length, 0);
+  const totalViolations = allContracts.reduce((n, c) => n + c.violations.length, 0);
+
   const output: DerivationOutput = {
     contracts: allContracts,
     newViolations: allNewViolations,
     derivedAt: new Date().toISOString(),
   };
 
-  // Write full derivation output
   const outPath = join(projectRoot, ".neurallog", "derivation.json");
   writeFileSync(outPath, JSON.stringify(output, null, 2));
-
-  console.log(`  ${allContracts.length} contracts derived, ${allNewViolations.length} [NEW] violations`);
+  console.log(`  Derivation complete:`);
+  console.log(`    ${allContracts.length} contracts across ${bundles.length} files`);
+  console.log(`    ${totalProven} proven (unsat) | ${totalViolations} violations (sat)`);
+  console.log(`    ${allNewViolations.length} [NEW] violations for Phase 4`);
+  console.log(`    Written to .neurallog/derivation.json + .neurallog/contracts/`);
   console.log();
 
   return output;

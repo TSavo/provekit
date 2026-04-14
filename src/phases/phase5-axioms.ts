@@ -28,10 +28,11 @@ export interface AxiomReport {
 }
 
 export function applyAxiomsPhase(projectRoot: string): AxiomReport {
-  console.log("Phase 5: Mechanical axiom application (no LLM)...");
+  console.log("Phase 5: Mechanical axiom application (no LLM, no network, pure Z3)...");
 
   const store = new ContractStore(projectRoot);
   const contracts = store.getAll();
+  console.log(`  Loaded ${contracts.length} contracts from .neurallog/contracts/`);
 
   if (contracts.length === 0) {
     console.log("  No contracts to verify.");

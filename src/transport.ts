@@ -291,10 +291,10 @@ class NeurallogTransform extends Transform {
     this.projectRoot = require("path").resolve(opts.projectRoot);
     this.destination = opts.destination || process.stdout;
 
-    // Load contracts from disk once at startup
     this.contractStore = new ContractStore(this.projectRoot);
     const contracts = this.contractStore.getAll();
     this.contractIndex = buildContractIndex(contracts);
+    console.log(`[neurallog] Transport loaded: ${contracts.length} contracts, ${this.contractIndex.size} indexed call sites`);
   }
 
   _transform(chunk: Buffer, _encoding: string, callback: TransformCallback): void {

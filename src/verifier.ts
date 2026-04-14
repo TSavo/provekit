@@ -115,6 +115,10 @@ export function isTrivialIdentity(smt2: string): boolean {
 
 export function verifyAll(response: string): VerificationResult[] {
   const blocks = extractSmt2Blocks(response);
+  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;
+  if (vacuousCount > 0) {
+    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? "" : "s"} filtered)`);
+  }
   return blocks
     .filter(({ smt2 }) => !isVacuous(smt2))
     .map(({ smt2, principle }) => {

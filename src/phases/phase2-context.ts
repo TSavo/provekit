@@ -35,13 +35,20 @@ export interface CallSiteContext {
 
 export function assembleContexts(graph: DependencyGraph): ContextBundle[] {
   console.log("Phase 2: Assembling context bundles...");
+  console.log(`  Processing ${graph.topologicalOrder.length} files in dependency order`);
 
   const bundles: ContextBundle[] = [];
 
-  // Process files in topological order — leaves first
   for (const filePath of graph.topologicalOrder) {
     const fileNode = graph.files.find((f) => f.path === filePath);
-    if (!fileNode || fileNode.logStatements === 0) continue;
+    if (!fileNode) {
+      console.log(`  WARNING: ${filePath} in topological order but not in graph`);
+      continue;
+    }
+    if (fileNode.logStatements === 0) {
+      console.log(`  ${fileNode.relativePath}: no log statements, skipping`);
+      continue;
+    }
 
     const source = readFileSync(filePath, "utf-8");
     const tree = parseFile(source);
@@ -96,17 +103,20 @@ export function assembleContexts(graph: DependencyGraph): ContextBundle[] {
 
     bundles.push(bundle);
 
+    const importContractCount = existingContracts === "(no existing contracts for imports)" ? 0 : existingContracts.split("###").length - 1;
     console.log(
-      `  ${bundle.relativePath}: ${callSiteContexts.length} call sites, ${importSources.length} imports`
+      `  ${bundle.relativePath}: ${callSiteContexts.length} call sites, ${importSources.length} imports, ${importContractCount} dependency contracts`
     );
   }
 
-  // Write immutable artifact
   const outDir = join(graph.projectRoot, ".neurallog", "contexts");
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, "bundles.json"), JSON.stringify(bundles, null, 2));
+  const bundlePath = join(outDir, "bundles.json");
+  writeFileSync(bundlePath, JSON.stringify(bundles, null, 2));
 
-  console.log(`  ${bundles.length} context bundle${bundles.length === 1 ? "" : "s"} assembled`);
+  const totalCallSites = bundles.reduce((n, b) => n + b.callSites.length, 0);
+  console.log(`  ${bundles.length} bundles, ${totalCallSites} total call sites`);
+  console.log(`  Written to ${relative(graph.projectRoot, bundlePath)}`);
   console.log();
 
   return bundles;
