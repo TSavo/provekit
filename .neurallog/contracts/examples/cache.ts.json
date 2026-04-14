@@ -1,4 +1,5 @@
 {
+  "file_hash": "bc7b2a4c5fbb0e85d74d9870600d944b",
   "contracts": [
     {
       "file": "/Users/tsavo/Projects/neurallog/examples/cache.ts",
@@ -358,26 +359,5 @@
         }
       ]
     }
-  ],
-  "newViolations": [
-    {
-      "violation": {
-        "smt2": "; PRINCIPLE: [NEW] — Semantic authorization staleness\n; Role is an authorization claim. If the DB role changed after cacheSet,\n; cached.role at line 37 is an incorrect claim. Model: role as Int (0=member, 1=admin).\n; The code path: DB had role=1 (admin) at T1; role downgraded to 0 at T2; read at T3.\n(declare-const role_at_cache_time Int)\n(declare-const role_at_read_time Int)\n(declare-const cachedAt Int)\n(declare-const role_changed_at Int)\n(declare-const now_read Int)\n(declare-const age Int)\n(declare-const ttlMs Int)\n; Transition 1: cacheSet stored role=1 (admin) at cachedAt\n(assert (= role_at_cache_time 1))\n(assert (>= cachedAt 0))\n; Transition 2: ttlMs = 300000\n(assert (= ttlMs 300000))\n; Transition 3: age computed at read time\n(assert (= age (- now_read cachedAt)))\n(assert (> now_read cachedAt))\n; Transition 4: role was downgraded in DB after caching but before TTL expiry\n(assert (> role_changed_at cachedAt))\n(assert (< role_changed_at now_read))\n(assert (= role_at_read_time 0))\n; Transition 5: TTL has not yet expired — cacheGet returns stale entry\n(assert (<= age ttlMs))\n; Violation: line 37 logs role=1 (admin) but the authoritative DB role is 0 (member)\n(assert (not (= role_at_cache_time role_at_read_time)))\n(check-sat)\n; Expected: sat — e.g., cachedAt=0, role_changed_at=60000, now_read=120000, age=120000 < 300000\n; Line 37 reports role=admin for a user whose privilege was revoked 60 seconds ago.",
-        "z3Result": "sat",
-        "principle": "[NEW]",
-        "trivial": false
-      },
-      "context": "/Users/tsavo/Projects/neurallog/examples/cache.ts:getUserProfile:37"
-    },
-    {
-      "violation": {
-        "smt2": "; PRINCIPLE: [NEW] — Authorization claim staleness\n; profile.role = \"member\" (literal 0) is stored via cacheSet at line 42.\n; If the user's actual DB role changes to \"admin\" after this line,\n; subsequent reads return the stale cached role indefinitely (no TTL eviction).\n; role encoding: 0 = member, 1 = admin\n(declare-const cached_role Int)\n(declare-const db_role_later Int)\n(declare-const returned_role Int)\n; Transition (line 41): profile.role = \"member\" = 0\n(assert (= cached_role 0))\n; External event: DB role changes to \"admin\" = 1\n(assert (= db_role_later 1))\n; Transition (cacheGet, no TTL check): returned_role = cached_role\n(assert (= returned_role cached_role))\n; Violation: caller receives stale authorization claim\n(assert (not (= returned_role db_role_later)))\n(check-sat)\n; sat → role=\"member\" returned after DB promotion to \"admin\"; access control is incorrect",
-        "z3Result": "sat",
-        "principle": "[NEW]",
-        "trivial": false
-      },
-      "context": "/Users/tsavo/Projects/neurallog/examples/cache.ts:getUserProfile:44"
-    }
-  ],
-  "derivedAt": "2026-04-14T21:13:26.679Z"
+  ]
 }

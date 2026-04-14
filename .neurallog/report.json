@@ -1,12 +1,191 @@
 {
-  "contractCount": 9,
-  "axiomChecks": 77,
-  "proven": 45,
-  "violations": 32,
+  "contractCount": 14,
+  "axiomChecks": 98,
+  "proven": 55,
+  "violations": 43,
   "errors": 0,
   "consistency": "violation",
   "staleContracts": 0,
   "results": [
+    {
+      "axiom": "P4",
+      "description": "Temporal violation at cacheGet:18: VIOLATION: getUserProfile calls cacheGet → line 18 (miss) → ",
+      "sourceContract": "cacheGet:18",
+      "smt2": "; PRINCIPLE: P4 [NEW] — Temporal: Role-bearing profile returned after TTL expiry\n; VIOLATION: getUserProfile calls cacheGet → line 18 (miss) → cacheSet (TTL clock starts).\n; A second call after TTL expiry hits the hit-path, not line 18, returning stale role.\n(declare-const cached_at Int)\n(declare-const now_call1 Int)   ; time of first cacheGet call — reaches line 18\n(declare-const now_call2 Int)   ; time of second cacheGet call — after TTL\n(declare-const ttl_ms Int)\n(declare-const age_call2 Int)\n\n; Code transition: cacheSet in getUserProfile sets ttlMs = 300000, cachedAt = now_call1\n(assert (= ttl_ms 300000))\n(assert (= cached_at now_call1))\n\n; Code transition (line 21 on second call): age = now_call2 - cached_at\n(assert (= age_call2 (- now_call2 cached_at)))\n\n; Time progresses between calls\n(assert (> now_call2 now_call1))\n\n; Violation: second call is after TTL expiry\n(assert (> age_call2 ttl_ms))\n\n; Code transition: entry IS present on second call (store.get finds it)\n; → !entry is false → line 18 NOT reached → stale profile returned\n(assert (> age_call2 0))\n(check-sat)\n; Expected: sat — second call serves stale user profile (stale role e.g. \"admin\" → \"member\")\n; without re-triggering line 18. TTL is stored but never enforced.",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P6",
+      "description": "Boundary violation at cacheGet:18: VIOLATION: cacheSet(key, value, 0) creates an entry with zer",
+      "sourceContract": "cacheGet:18",
+      "smt2": "; PRINCIPLE: P6 [NEW] — Degenerate: ttlMs = 0 entry is immediately stale, never a miss\n; VIOLATION: cacheSet(key, value, 0) creates an entry with zero TTL — immediately expired.\n; But the code never re-enters line 18 for it; stale value is served indefinitely.\n(declare-const cached_at Int)\n(declare-const now Int)\n(declare-const ttl_ms Int)\n(declare-const age Int)\n\n; Code transition (cacheSet caller): ttlMs = 0 (degenerate input, cacheSet does not validate)\n(assert (= ttl_ms 0))\n\n; Code transition (line 21): age = now - cachedAt\n(assert (= age (- now cached_at)))\n\n; Any non-negative time after caching\n(assert (>= age 0))\n\n; Consequence: age >= ttlMs always holds (any age >= 0 = ttlMs)\n; Entry is immediately and permanently expired\n(assert (>= age ttl_ms))\n\n; Code transition: entry IS in store → line 18 not reached → stale value returned\n; The \"no-cache\" semantic intent of ttlMs=0 is silently ignored\n(check-sat)\n; Expected: sat — ttlMs=0 entry is always expired but never evicted or cache-missed.\n; Witness: ttl_ms=0, age=1, age >= ttl_ms → stale return, line 18 bypassed.",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P7",
+      "description": "Arithmetic violation at cacheGet:18: VIOLATION: If cachedAt > now (NTP correction, mocked clock, ",
+      "sourceContract": "cacheGet:18",
+      "smt2": "; PRINCIPLE: P7 [NEW] — Arithmetic Safety: negative age from clock skew\n; VIOLATION: If cachedAt > now (NTP correction, mocked clock, serialized timestamp),\n; age = now - cachedAt < 0. Negative age is always < any positive ttlMs → entry immortal.\n(declare-const cached_at Int)\n(declare-const now Int)\n(declare-const ttl_ms Int)\n(declare-const age Int)\n\n; Code transition (line 21): age = now - cachedAt\n(assert (= age (- now cached_at)))\n\n; Clock skew: cachedAt was recorded in the future relative to now\n(assert (> cached_at now))\n\n; Consequence of transition: age is negative\n(assert (< age 0))\n\n; Precondition: ttlMs is positive (set by getUserProfile as 300000)\n(assert (> ttl_ms 0))\n\n; Consequence: age < ttlMs is trivially true (negative < positive)\n; The code's implicit freshness check (age <= ttlMs) always passes\n(assert (< age ttl_ms))\n\n; Code transition: entry in store, age < ttlMs → hit path taken → line 18 NOT reached\n; Entry is permanently \"fresh\" — the cache miss path is unreachable for this entry\n(check-sat)\n; Expected: sat — clock skew makes entries immortal, bypassing line 18 forever.\n; Witness: cached_at=1000, now=500, age=-500, ttl_ms=300000 → age < ttlMs always.",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P1",
+      "description": "cacheGet:18 → cacheSet:31: After store.set on line 30, entry.ttlMs equals exactly the t",
+      "sourceContract": "cacheSet:31",
+      "targetContract": "cacheGet:18",
+      "smt2": "; P1 MECHANICAL: Does cacheGet:18 establish preconditions for cacheSet:31?\n; Property: After store.set on line 30, entry.ttlMs equals exactly the ttlMs parameter.\n; PRINCIPLE: P1\n; After store.set on line 30, entry.ttlMs equals exactly the ttlMs parameter.\n; Prove: ¬(entry_ttl = ttl_param) is unsat.\n(declare-const ttl_param Int)\n(declare-const entry_ttl Int)\n; Transition: store.set stores ttlMs field directly (no transformation)\n(assert (= entry_ttl ttl_param))\n; Negate: the stored TTL differs from the parameter\n(assert (not (= entry_ttl ttl_param)))\n(check-sat)\n; Expected: unsat — entry always carries exactly the supplied ttlMs",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "cacheGet:23 → cacheSet:31: After store.set on line 30, entry.ttlMs equals exactly the t",
+      "sourceContract": "cacheSet:31",
+      "targetContract": "cacheGet:23",
+      "smt2": "; P1 MECHANICAL: Does cacheGet:23 establish preconditions for cacheSet:31?\n; Property: After store.set on line 30, entry.ttlMs equals exactly the ttlMs parameter.\n; PRINCIPLE: P1\n; After store.set on line 30, entry.ttlMs equals exactly the ttlMs parameter.\n; Prove: ¬(entry_ttl = ttl_param) is unsat.\n(declare-const ttl_param Int)\n(declare-const entry_ttl Int)\n; Transition: store.set stores ttlMs field directly (no transformation)\n(assert (= entry_ttl ttl_param))\n; Negate: the stored TTL differs from the parameter\n(assert (not (= entry_ttl ttl_param)))\n(check-sat)\n; Expected: unsat — entry always carries exactly the supplied ttlMs",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "cacheGet:18 → cacheSet:31: After store.set on line 30, entry.cachedAt equals Date.now()",
+      "sourceContract": "cacheSet:31",
+      "targetContract": "cacheGet:18",
+      "smt2": "; P1 MECHANICAL: Does cacheGet:18 establish preconditions for cacheSet:31?\n; Property: After store.set on line 30, entry.cachedAt equals Date.now() captured at that call.\n; PRINCIPLE: P2\n; After store.set on line 30, entry.cachedAt equals Date.now() captured at that call.\n; Prove: ¬(cached_at = now_at_set) is unsat.\n(declare-const now_at_set Int)\n(declare-const cached_at  Int)\n; Constraint: epoch timestamps are positive\n(assert (> now_at_set 0))\n; Transition: cachedAt = Date.now() — direct assignment, no arithmetic\n(assert (= cached_at now_at_set))\n; Negate: cachedAt differs from the captured timestamp\n(assert (not (= cached_at now_at_set)))\n(check-sat)\n; Expected: unsat — cachedAt is exactly Date.now() at set-time",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "cacheGet:23 → cacheSet:31: After store.set on line 30, entry.cachedAt equals Date.now()",
+      "sourceContract": "cacheSet:31",
+      "targetContract": "cacheGet:23",
+      "smt2": "; P1 MECHANICAL: Does cacheGet:23 establish preconditions for cacheSet:31?\n; Property: After store.set on line 30, entry.cachedAt equals Date.now() captured at that call.\n; PRINCIPLE: P2\n; After store.set on line 30, entry.cachedAt equals Date.now() captured at that call.\n; Prove: ¬(cached_at = now_at_set) is unsat.\n(declare-const now_at_set Int)\n(declare-const cached_at  Int)\n; Constraint: epoch timestamps are positive\n(assert (> now_at_set 0))\n; Transition: cachedAt = Date.now() — direct assignment, no arithmetic\n(assert (= cached_at now_at_set))\n; Negate: cachedAt differs from the captured timestamp\n(assert (not (= cached_at now_at_set)))\n(check-sat)\n; Expected: unsat — cachedAt is exactly Date.now() at set-time",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P3",
+      "description": "Public input violation at cacheSet:31: cacheSet does not validate ttlMs > 0. An external (or future",
+      "sourceContract": "cacheSet:31",
+      "smt2": "; PRINCIPLE: P3\n; cacheSet does not validate ttlMs > 0. An external (or future internal) caller\n; can supply ttlMs <= 0, creating an entry that is expired at birth.\n; The transition: store.set stores the entry; any non-negative age satisfies age >= ttlMs.\n(declare-const ttl_param   Int)\n(declare-const cached_at   Int)\n(declare-const now_at_set  Int)\n(declare-const now_at_read Int)\n(declare-const age         Int)\n; Transition: entry stored with supplied (unvalidated) ttlMs\n(assert (= cached_at now_at_set))\n; Code imposes no lower bound on ttlMs — model caller supplying zero or negative\n(assert (<= ttl_param 0))\n; Transition: age computed at any subsequent read\n(assert (> now_at_read now_at_set))\n(assert (= age (- now_at_read cached_at)))\n(assert (> age 0))\n; Violation: age >= ttlMs holds trivially since ttlMs <= 0 < age\n(assert (>= age ttl_param))\n(check-sat)\n; Expected: sat — a zero/negative TTL entry is stored at line 30 with no guard",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P6",
+      "description": "Boundary violation at cacheSet:31: getUserProfile passes 300000, but cacheSet is exported with ",
+      "sourceContract": "cacheSet:31",
+      "smt2": "; PRINCIPLE: P6 (boundary — zero TTL)\n; getUserProfile passes 300000, but cacheSet is exported with no contract on ttlMs.\n; External caller passes ttlMs = 0: entry expires before any read can occur.\n(declare-const ttl_ms    Int)\n(declare-const cached_at Int)\n(declare-const now_read  Int)\n(declare-const age       Int)\n; Transition: store.set stores entry at now_at_set\n(assert (= cached_at now_read))         ; read immediately after set (best case)\n(assert (= age (- now_read cached_at))) ; age = 0 at earliest read\n; Boundary: ttlMs = 0 (caller supplies this; cacheSet does not reject it)\n(assert (= ttl_ms 0))\n; Violation: even at the instant of creation, age (0) >= ttlMs (0) → expired\n(assert (>= age ttl_ms))\n(check-sat)\n; Expected: sat — a zero-TTL entry is stored and is expired at birth",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P7",
+      "description": "Arithmetic violation at cacheSet:31: cachedAt = Date.now() at line 30. If a subsequent read's clo",
+      "sourceContract": "cacheSet:31",
+      "smt2": "; PRINCIPLE: P7 (clock regression — arithmetic safety)\n; cachedAt = Date.now() at line 30. If a subsequent read's clock is behind\n; that timestamp (NTP step-back, mocked time), age goes negative.\n; A negative age satisfies age < ttlMs for any positive ttlMs, so the entry\n; appears perpetually fresh — doubly compounded by cacheGet's missing TTL check.\n(declare-const now_at_set  Int)\n(declare-const now_at_read Int)\n(declare-const cached_at   Int)\n(declare-const ttl_ms      Int)\n(declare-const age         Int)\n; Transition: entry stored with valid positive TTL\n(assert (> now_at_set 0))\n(assert (= cached_at now_at_set))\n(assert (> ttl_ms 0))\n; Violation condition: clock regresses between set and read\n(assert (< now_at_read now_at_set))\n(assert (= age (- now_at_read cached_at)))\n; age is now negative\n(assert (< age 0))\n; Negative age < any positive ttlMs — entry appears eternally valid\n(assert (< age ttl_ms))\n(check-sat)\n; Expected: sat — a regressed clock makes every entry appear perpetually fresh",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P4",
+      "description": "Temporal violation at getUserProfile:37: Temporal: two invocations of getUserProfile for the same use",
+      "sourceContract": "getUserProfile:37",
+      "smt2": "; PRINCIPLE: P4\n; Temporal: two invocations of getUserProfile for the same userId.\n; First call: cache miss → DB fetch → cacheSet (role=\"member\").\n; Between calls: role changes in DB to \"admin\".\n; Second call: cache hit (TTL not expired) → line 37 logs role=\"member\" (stale).\n(declare-const cachedAt Int)\n(declare-const call2_time Int)\n(declare-const age_at_call2 Int)\n(declare-const ttlMs Int)\n; Transition 1: first call populated cache with ttlMs=300000 at cachedAt\n(assert (= ttlMs 300000))\n(assert (>= cachedAt 0))\n; Transition 2: second call happens before TTL expiry\n(assert (= age_at_call2 (- call2_time cachedAt)))\n(assert (> call2_time cachedAt))\n(assert (< age_at_call2 ttlMs))\n; Transition 3: cacheGet returns entry.value (no TTL guard) → cached != null → line 37 reached\n; Violation: age_at_call2 > 0 means data is from the past, but no staleness is signaled\n(assert (> age_at_call2 0))\n(check-sat)\n; Expected: sat — e.g., cachedAt=0, call2_time=1, age=1ms, 1 < 300000.\n; Any two calls where the second arrives after the first writes the cache reach this state.\n; The role logged at line 37 on call 2 is from call 1's DB snapshot.",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P6",
+      "description": "Boundary violation at getUserProfile:37: cacheSet is exported with no validation on ttlMs (proven at ",
+      "sourceContract": "getUserProfile:37",
+      "smt2": "; PRINCIPLE: P6\n; cacheSet is exported with no validation on ttlMs (proven at cacheSet line 31).\n; An external caller can do: cacheSet(\"user:alice\", {name:\"Alice\", role:\"admin\"}, 0)\n; getUserProfile then hits this entry at line 36 (cached != null) and logs it at line 37.\n(declare-const cachedAt Int)\n(declare-const now_read Int)\n(declare-const ttlMs Int)\n(declare-const age Int)\n; Transition 1: external call to cacheSet with ttlMs = 0 (no validation prevents this)\n(assert (= ttlMs 0))\n; Transition 2: age = now_read - cachedAt, computed in cacheGet\n(assert (= age (- now_read cachedAt)))\n(assert (>= now_read cachedAt))\n; Transition 3: cacheGet returns entry.value regardless of age vs ttlMs\n; Violation: entry was expired at the instant it was written (age >= ttlMs = 0)\n(assert (>= age ttlMs))\n; And the entry is still returned (reaches line 37)\n(assert (>= cachedAt 0))\n(check-sat)\n; Expected: sat — ttlMs=0, age=0 already satisfies age >= 0. Reached line 37 with dead entry.",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P7",
+      "description": "Arithmetic violation at getUserProfile:37: If cachedAt was written with a future timestamp (mocked cloc",
+      "sourceContract": "getUserProfile:37",
+      "smt2": "; PRINCIPLE: P7\n; If cachedAt was written with a future timestamp (mocked clock, NTP correction,\n; serialized from another process with clock skew), age = now_read - cachedAt < 0.\n; A negative age is always < ttlMs = 300000, so the entry is never considered stale.\n; This entry will remain \"fresh\" forever from the checking code's perspective.\n(declare-const cachedAt Int)\n(declare-const now_read Int)\n(declare-const age Int)\n(declare-const ttlMs Int)\n; Transition 1: ttlMs = 300000 per getUserProfile line 43\n(assert (= ttlMs 300000))\n; Transition 2: age = now_read - cachedAt  (cacheGet line 22)\n(assert (= age (- now_read cachedAt)))\n; Transition 3: cachedAt is in the future relative to the reading clock\n(assert (> cachedAt now_read))\n; Consequence: age is negative\n(assert (< age 0))\n; Consequence: age < ttlMs is trivially true — entry appears perpetually fresh\n(assert (< age ttlMs))\n; The entry is returned and line 37 is reached\n(check-sat)\n; Expected: sat — e.g., cachedAt=1000, now_read=500, age=-500 < 300000\n; cached.role at line 37 is from a \"future\" write; staleness check is meaningless.",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P1",
+      "description": "cacheGet:18 → getUserProfile:44: getUserProfile hardcodes 300000. Existing cacheSet contract ",
+      "sourceContract": "getUserProfile:44",
+      "targetContract": "cacheGet:18",
+      "smt2": "; P1 MECHANICAL: Does cacheGet:18 establish preconditions for getUserProfile:44?\n; Property: getUserProfile hardcodes 300000. Existing cacheSet contract proves entry.ttlMs = param.\n; PRINCIPLE: P1\n; getUserProfile hardcodes 300000. Existing cacheSet contract proves entry.ttlMs = param.\n; Negation: can entry.ttlMs differ from 300000?\n(declare-const ttlMs_param Int)\n(declare-const entry_ttlMs Int)\n; Transition (cacheSet contract, proven at line 31): entry.ttlMs = ttlMs_param\n(assert (= entry_ttlMs ttlMs_param))\n; getUserProfile literal: ttlMs_param = 300000\n(assert (= ttlMs_param 300000))\n; Negate: entry.ttlMs != 300000\n(assert (not (= entry_ttlMs 300000)))\n(check-sat)\n; unsat → entry.ttlMs is provably 300000 on every execution reaching line 44",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "cacheGet:23 → getUserProfile:44: getUserProfile hardcodes 300000. Existing cacheSet contract ",
+      "sourceContract": "getUserProfile:44",
+      "targetContract": "cacheGet:23",
+      "smt2": "; P1 MECHANICAL: Does cacheGet:23 establish preconditions for getUserProfile:44?\n; Property: getUserProfile hardcodes 300000. Existing cacheSet contract proves entry.ttlMs = param.\n; PRINCIPLE: P1\n; getUserProfile hardcodes 300000. Existing cacheSet contract proves entry.ttlMs = param.\n; Negation: can entry.ttlMs differ from 300000?\n(declare-const ttlMs_param Int)\n(declare-const entry_ttlMs Int)\n; Transition (cacheSet contract, proven at line 31): entry.ttlMs = ttlMs_param\n(assert (= entry_ttlMs ttlMs_param))\n; getUserProfile literal: ttlMs_param = 300000\n(assert (= ttlMs_param 300000))\n; Negate: entry.ttlMs != 300000\n(assert (not (= entry_ttlMs 300000)))\n(check-sat)\n; unsat → entry.ttlMs is provably 300000 on every execution reaching line 44",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "cacheSet:31 → getUserProfile:44: getUserProfile hardcodes 300000. Existing cacheSet contract ",
+      "sourceContract": "getUserProfile:44",
+      "targetContract": "cacheSet:31",
+      "smt2": "; P1 MECHANICAL: Does cacheSet:31 establish preconditions for getUserProfile:44?\n; Property: getUserProfile hardcodes 300000. Existing cacheSet contract proves entry.ttlMs = param.\n; PRINCIPLE: P1\n; getUserProfile hardcodes 300000. Existing cacheSet contract proves entry.ttlMs = param.\n; Negation: can entry.ttlMs differ from 300000?\n(declare-const ttlMs_param Int)\n(declare-const entry_ttlMs Int)\n; Transition (cacheSet contract, proven at line 31): entry.ttlMs = ttlMs_param\n(assert (= entry_ttlMs ttlMs_param))\n; getUserProfile literal: ttlMs_param = 300000\n(assert (= ttlMs_param 300000))\n; Negate: entry.ttlMs != 300000\n(assert (not (= entry_ttlMs 300000)))\n(check-sat)\n; unsat → entry.ttlMs is provably 300000 on every execution reaching line 44",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "getUserProfile:37 → getUserProfile:44: getUserProfile hardcodes 300000. Existing cacheSet contract ",
+      "sourceContract": "getUserProfile:44",
+      "targetContract": "getUserProfile:37",
+      "smt2": "; P1 MECHANICAL: Does getUserProfile:37 establish preconditions for getUserProfile:44?\n; Property: getUserProfile hardcodes 300000. Existing cacheSet contract proves entry.ttlMs = param.\n; PRINCIPLE: P1\n; getUserProfile hardcodes 300000. Existing cacheSet contract proves entry.ttlMs = param.\n; Negation: can entry.ttlMs differ from 300000?\n(declare-const ttlMs_param Int)\n(declare-const entry_ttlMs Int)\n; Transition (cacheSet contract, proven at line 31): entry.ttlMs = ttlMs_param\n(assert (= entry_ttlMs ttlMs_param))\n; getUserProfile literal: ttlMs_param = 300000\n(assert (= ttlMs_param 300000))\n; Negate: entry.ttlMs != 300000\n(assert (not (= entry_ttlMs 300000)))\n(check-sat)\n; unsat → entry.ttlMs is provably 300000 on every execution reaching line 44",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P4",
+      "description": "Temporal violation at getUserProfile:44: First invocation reaches line 44: cacheSet stores profile (r",
+      "sourceContract": "getUserProfile:44",
+      "smt2": "; PRINCIPLE: P4\n; First invocation reaches line 44: cacheSet stores profile (role=\"member\") at time1.\n; Second invocation at time2 > time1: cacheGet hits the entry.\n; cacheGet never evicts based on TTL (P5 violation).\n(declare-const time1 Int)\n(declare-const time2 Int)\n(declare-const age2 Int)\n(declare-const ttlMs Int)\n; Transition (line 42, first call): ttlMs = 300000, entry written at time1\n(assert (= ttlMs 300000))\n(assert (>= time1 0))\n; Transition (second call, cacheGet line 21): age2 = time2 - time1\n(assert (> time2 time1))\n(assert (= age2 (- time2 time1)))\n; Second call arrives well after TTL\n(assert (> age2 ttlMs))\n; cacheGet returns entry.value without checking age2 <= ttlMs\n; Violation: second caller receives role=\"member\" with age > 300000ms, no refresh\n(assert (> age2 0))\n(check-sat)\n; sat → witness: time1=0, time2=600001, age2=600001, ttlMs=300000 → stale hit",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P7",
+      "description": "Arithmetic violation at getUserProfile:44: cacheSet (line 42): cachedAt = Date.now() at write time.",
+      "sourceContract": "getUserProfile:44",
+      "smt2": "; PRINCIPLE: P7\n; cacheSet (line 42): cachedAt = Date.now() at write time.\n; If NTP correction rolls the clock back, now_read < cachedAt.\n; cacheGet: age = now_read - cachedAt; age < 0 < ttlMs → entry never evicted.\n(declare-const cachedAt Int)\n(declare-const now_read Int)\n(declare-const age Int)\n(declare-const ttlMs Int)\n; Transition (cacheSet, line 42): ttlMs = 300000\n(assert (= ttlMs 300000))\n; Transition (cacheGet, line 21): age = now_read - cachedAt\n(assert (= age (- now_read cachedAt)))\n; Clock skew: read clock behind write clock (NTP rollback after cacheSet)\n(assert (> cachedAt now_read))\n; Consequence: age < 0 → age <= ttlMs trivially, entry permanently valid\n(assert (< age 0))\n(assert (< age ttlMs))\n(check-sat)\n; sat → negative age satisfies any TTL check; entry stored at line 42 never expires",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
     {
       "axiom": "P3",
       "description": "Public input violation at checkAvailability:11: REACHABLE VIOLATION: reserveStock does not validate quantity",
@@ -657,6 +836,26 @@
     },
     {
       "axiom": "P2",
+      "description": "State mutation between cacheGet:18 and cacheGet:23: PROVEN: At line 18, !entry holds → cacheGet returns null (no",
+      "sourceContract": "cacheGet:18",
+      "targetContract": "cacheGet:23",
+      "smt2": "; PRINCIPLE: P1\n; PROVEN: At line 18, !entry holds → cacheGet returns null (no T value exposed on this path)\n; Strategy: precondition + path-condition transition + negated property → unsat\n(declare-const entry_found Int)   ; 1 = store.get returned a value; 0 = undefined\n(declare-const return_null Int)   ; 1 = function returns null; 0 = returns a T\n\n; Path condition at line 18: !entry → entry_found = 0\n(assert (= entry_found 0))\n\n; Code transition: if !entry, execute `return null` (line 19)\n; The return branch is directly determined by entry_found\n(assert (= return_null entry_found))  ; return_null = 1 iff entry_found = 1, so with entry_found=0, return_null=0\n; Wait — let me fix the logic: if !entry (entry_found=0), then return null (return_null=1)\n; So: return_null = (1 - entry_found)  when entry_found ∈ {0,1}\n; Re-express: entry_found = 0 → return_null = 1\n(assert (=> (= entry_found 0) (= return_null 1)))\n\n; Negate: return is NOT null even though !entry\n(assert (= return_null 0))\n(check-sat)\n; Expected: unsat — proven: when !entry, cacheGet always returns null on this path",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P2",
+      "description": "State mutation between cacheGet:18 and cacheGet:23: PROVEN: The cache-miss path does not mutate the store (no st",
+      "sourceContract": "cacheGet:18",
+      "targetContract": "cacheGet:23",
+      "smt2": "; PRINCIPLE: P2\n; PROVEN: The cache-miss path does not mutate the store (no store.set called in cacheGet)\n(declare-const store_size_before Int)\n(declare-const store_size_after Int)\n\n; Precondition: store is non-empty (other entries may exist)\n(assert (>= store_size_before 0))\n\n; Code transition: cacheGet never calls store.set — it only calls store.get\n; Therefore store_size is unchanged by cacheGet on any path\n(assert (= store_size_after store_size_before))\n\n; Negate: the store was mutated by cacheGet\n(assert (not (= store_size_after store_size_before)))\n(check-sat)\n; Expected: unsat — proven: cacheGet (cache-miss path) is store-read-only",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P2",
       "description": "State mutation between reserveStock:18 and reserveStock:25: PROVE: With the stub db, every positive-quantity reservation",
       "sourceContract": "reserveStock:18",
       "targetContract": "reserveStock:25",
@@ -746,5 +945,5 @@
       "verdict": "proven"
     }
   ],
-  "reportedAt": "2026-04-14T21:02:28.294Z"
+  "reportedAt": "2026-04-14T21:14:00.479Z"
 }
