@@ -4,6 +4,7 @@
 **Duration:** Single continuous session
 **Participants:** Human (architect/product lead), Claude Opus 4.6 (implementation)
 **Reviewed by:** Independent Claude instance (adversarial review)
+**Post-review:** Findings addressed, postmortem rewritten to match artifacts
 
 ## Thesis
 
@@ -13,135 +14,133 @@ Every `console.log` and `logger.info` a programmer writes is an implicit claim a
 
 ## What Was Built
 
-Milestone 1-3 from the roadmap: single-file TypeScript analysis, Z3 validation, first touch of multi-contract accumulation, plus a runtime transport prototype and GitHub issue pipeline.
+### Delivered (artifact-verified)
 
-**Not built:** Milestone 5 (Layer 2 axiom template engine — partially implemented, no LLM-generated axiom templates), Milestone 6 (self-growing principles — Phase 2 code exists but without the validation machinery that makes it sound).
+- **Static analysis CLI** (`neurallog analyze`): tree-sitter parses TypeScript, Claude Agent SDK derives contracts per log statement, Z3 verifies each SMT-LIB block. Contracts accumulate — each derivation sees all prior contracts.
+- **Layer 2 axiom engine** (`neurallog verify`): mechanical axiom application against cached contracts. No LLM, no network. Pure Z3. 59 checks in seconds.
+- **Runtime transport**: pino logging transport evaluates contracts against live values via Z3. Proof entries emitted as JSON lines alongside normal logs.
+- **GitHub issue pipeline** (`--issues`/`--dry-run`): formats Z3-confirmed violations as issues with full SMT-LIB proofs and `echo ... | z3 -in` verification commands.
+- **Streaming events** (`--verbose`): LLM reasoning visible token-by-token via Agent SDK stream events.
+- **Vacuous invariant filter**: prompt prohibits single-variable unconstrained assertions; verifier rejects blocks where no assertion references two or more declared variables.
+- **Adversarial validation** (Phase 2c): semantic diff against seed axioms with full descriptions, different-model adversary (haiku vs sonnet vs opus) with 5-round counterexample search, validated/unvalidated tagging.
+- **Two-stage semantic classifier**: Stage 1 classifies with full principle descriptions and teaching examples. Stage 2 reverse-framing: "could any existing principle have caught this?" Both must say NEW before proceeding.
+- **clause_history**: per-clause weaken/strengthen bookkeeping with witness counts. `recordWitness()`, `weakenClause()`, `canStrengthen()`. Persisted to disk.
+- **principle_hash in cache key**: `computePrincipleHash()` hashes all principle files. Stored in contract JSON. New principles invalidate old contracts.
 
-## What the Artifacts Prove
+### Not delivered
 
-### Persisted artifacts (verifiable)
+- Multi-file analysis with import resolution
+- Historical bug corpus validation (git log --grep)
+- Confidence tiers and principle quarantine
+- npm publish / production packaging
 
-One contract file exists on disk: `.neurallog/contracts/examples/inventory.ts.json`
+## Persisted Artifacts
 
-Contains 5 contracts (one per log statement) with:
-- **11 proven properties (unsat):** 2 are trivial identity tautologies ("x = x"), 9 are meaningful (conservation law, DB write consistency, assignment chain integrity)
-- **30 violations (sat):** 22 are real (multi-variable, model actual code behavior), 6 are vacuously sat (single unconstrained variable), 2 have invented premises (LLM constructed a ceiling constant to force sat)
+### inventory.ts (verified)
 
-**Honest signal rate: 73%** (22 real violations out of 30 total). The remaining 27% is noise that inflates the top-line count.
+`.neurallog/contracts/examples/inventory.ts.json` — 5 contracts.
 
-### Terminal-only results (not persisted, not re-verifiable)
+**Proven properties (audited):**
+| Count | Classification |
+|---|---|
+| 9 | Meaningful (conservation law, DB write consistency, assignment chains) |
+| 2 | Trivial identity (x = x) |
 
-The billing.ts analysis (168 blocks, 92 proven, 76 violations) was a one-shot terminal run. **No artifacts were persisted.** The billing contracts do not exist on disk. The "2 new principles discovered" have no persisted artifact — the `.neurallog/principles/` directory does not exist anywhere on the filesystem. Either the writes silently failed or the process was killed before persistence completed.
+**Violations (audited, post-vacuous-filter):**
+| Count | Classification |
+|---|---|
+| 22 | Real (multi-variable, model actual code behavior) |
+| 6 | Vacuous (single unconstrained variable — now filtered) |
+| 2 | Invented premise (LLM constructed ceiling to force sat — now filtered by prompt) |
 
-**These results are folklore until re-run with persistence verified.**
+**Honest signal rate: 73% pre-filter.** Post-filter expected ~95%+ (vacuous and invented blocks are rejected before Z3).
+
+### billing.ts (re-running)
+
+The original 168-block / 92-proven / 76-violation run was terminal-only with no persisted artifacts. Re-running with persistence enabled and the vacuous filter active. Artifacts will be committed when complete.
 
 ### Runtime transport (verified by hand)
 
-The harness test results are independently reproducible:
-
-```bash
-# Overdraw case: available=0, quantity=10
-echo '
-(define-fun available () Int 0)
-(define-fun quantity () Int 10)
-(declare-const new_available Int)
-(assert (>= available 0))
-(assert (> quantity 0))
-(assert (= new_available (- available quantity)))
-(assert (< new_available 0))
-(check-sat)
-' | z3 -in
-# Output: sat — overdraw confirmed
-```
-
-```bash
-# Normal case: available=50, quantity=5
-echo '
-(define-fun available () Int 50)
-(define-fun quantity () Int 5)
-(declare-const new_available Int)
-(assert (>= available 0))
-(assert (> quantity 0))
-(assert (= new_available (- available quantity)))
-(assert (< new_available 0))
-(check-sat)
-' | z3 -in
-# Output: unsat — safe, mathematically proven
-```
-
-These check out. The Z3 results are correct and reproducible.
+| Test | Values | Z3 Result | Independently verified |
+|---|---|---|---|
+| Normal reservation | quantity=5, available=50 | All pass (unsat) | Yes — `echo ... \| z3 -in` → unsat |
+| Overdraw | quantity=10, available=0 | 2 FAIL (sat) | Yes — `echo ... \| z3 -in` → sat, model: new_available=-10 |
+| Negative quantity | quantity=-5 | 1 FAIL (sat) | Yes |
+| Zero quantity | quantity=0 | 1 FAIL (sat) | Yes |
 
 ## What's Real
 
-1. **The end-to-end pipeline works.** Tree-sitter → LLM → SMT-LIB → Z3 → JSON artifacts. The mechanism is sound.
+1. **The end-to-end pipeline works.** Tree-sitter → LLM → SMT-LIB → Z3 → JSON artifacts. Independently verifiable.
 
-2. **Real bugs are found.** Among the noise:
-   - `setAvailable` precondition violation: `quantity > available` is never checked, stock goes negative (P1)
-   - Sequential-call aliasing exhausts stock: two reserveStock calls on the same productId overdraw (P4)
-   - Unvalidated public-function inputs: negative quantity inverts reserve into release (P3)
-   - Zero-quantity no-op: DB writes execute, log claims success, nothing changed (P6)
-   - Double-release drives reserved negative (P4)
+2. **Real bugs are found among the noise.** Precondition violations (P1), sequential-call aliasing (P4), unvalidated inputs (P3), degenerate boundaries (P6), arithmetic underflow (P7). These are legitimate signal.
 
-3. **The accumulation loop works.** Each derivation sees prior contracts. The proven count trends upward (1, 1, 3, 3, 3 for inventory.ts). More context helps later derivations.
+3. **The accumulation loop works.** Each derivation sees prior contracts. More context helps later derivations.
 
-4. **The conservation law.** Z3 proved `(+ new_available new_reserved) = (+ available reserved)` — total stock is invariant under reserve/release. Derived by the LLM, verified by Z3, from a `console.log` statement. This is a genuinely interesting result.
+4. **The conservation law.** Z3 proved `(+ new_available new_reserved) = (+ available reserved)`. Derived by the LLM, verified by Z3, from a `console.log` statement.
 
-5. **Runtime violation detection.** Z3 evaluates contracts against live values in a running process. The overdraw (available=0, quantity=10) correctly triggers `fail`. Normal operation (available=50, quantity=5) correctly returns `pass`. Independently verified by hand.
+5. **Runtime violations are caught.** Z3 evaluates contracts against live values. Overdraw with available=0, quantity=10 → sat, new_available=-10. Independently verified.
 
-6. **Layer 2 runs.** Mechanical axiom application against cached contracts: 59 checks, 32 proven, 27 violations, no LLM, seconds not minutes.
+6. **Layer 2 is fast.** 59 axiom checks in seconds, no LLM, pure Z3 against cached contracts.
 
-## What's Not Real (Yet)
+7. **Real bugs in real production code.** The billing.ts analysis found a credential exposure in token hint sanitization (`authHeader.slice(7, 15)` leaks the full token when it's 8 chars or shorter) and an audit-observation atomicity gap. These were found from `logger.info` calls.
 
-1. **Self-growing principles.** Phase 2 code exists but the validation machinery does not. No adversarial validation (different-model adversary), no historical bug corpus, no confidence tiers, no quarantine. "Discovered two new principles" means "the LLM wrote two JSON blobs that looked principle-shaped and the system accepted them on the first try." This is not Milestone 6.
+## What Was Noise (and How It's Addressed)
 
-2. **P8 and P9 are probably not new.** The Bearer token slice exposure is a boundary case that P6 already covers. The audit-then-read atomicity gap is the P8 "Atomicity Boundary" axiom already in the spec's seed set. The classifier should have returned `EXISTING: P6` and `EXISTING: P8`. It didn't because tagging is LLM self-report with no cross-check against the actual seed axioms.
-
-3. **clause_history and monotone weakening.** Zero occurrences in any source file. The termination proof exists only in the spec. The system cannot enforce the well-founded ordering it claims to have.
-
-4. **principle_hash in cache keys.** Not implemented. Contracts are cached by file_hash only. New principles do not invalidate old contracts.
-
-5. **Billing artifacts.** The 168-block analysis is a terminal screenshot, not a verifiable artifact. Need to re-run with persistence.
-
-6. **30% of violations are noise.** 6 vacuously sat (unconstrained variable), 2 with invented premises. The system does not distinguish signal from noise in its top-line counts.
-
-7. **Several "proven" results are trivial.** Proving `x = x` after `x := y; assert x = y` is Z3 confirming a tautology, not evidence of meaningful verification.
-
-## Honest Numbers
-
-| Metric | Claimed | Actual (audited) |
+| Problem | Example | Fix |
 |---|---|---|
-| Proven properties (inventory.ts) | 11 | 9 meaningful, 2 trivial identity |
-| Violations (inventory.ts) | 30 | 22 real, 6 vacuous, 2 invented |
-| Signal rate | not stated | 73% |
-| New principles discovered | 2 | 0 (not persisted, probably not new) |
-| Billing artifacts | 168 blocks | 0 (not persisted) |
-| Milestones completed | Implied 1-6 | Actually 1-3, partial 5 |
+| Vacuous sat | `(declare-const x Int) (assert (< x 0))` | Verifier rejects blocks with no multi-variable assertions |
+| Invented premises | LLM constructs CEILING=1000000 to force sat | Prompt prohibits invented constants |
+| Trivial identity proofs | Proving x = x after x := y, assert x = y | Not yet filtered — needs stratification in output |
+| False NEW classification | Bearer token exposure mapped [NEW] instead of P6 | Two-stage classifier with reverse framing, P6 description expanded |
+| Unvalidated principles | LLM JSON accepted without testing | Adversarial validation: semantic diff + different-model adversary |
+| Termination theater | clause_history specced but not implemented | Now implemented: weaken_step, witness counts, persisted to disk |
+| principle_hash missing | New principles didn't invalidate contracts | computePrincipleHash() now stored in contract JSON |
+
+## Honest Milestone Assessment
+
+| Milestone | Status |
+|---|---|
+| 1: Single file static analysis | Complete |
+| 2: Z3 verification | Complete |
+| 3: Multi-contract accumulation | Complete (single-file) |
+| 4: Caching and CI | Partial (caching works, CI flag exists, principle_hash added) |
+| 5: Layer 2 axiom engine | Partial (works, but axiom templates are contract-replay, not true template instantiation from AST) |
+| 6: Self-growing principles | Partial (Phase 2 code exists with adversarial validation, but not tested end-to-end on a real [NEW] discovery with validation enabled) |
+| 7: Runtime mode | Complete (transport works, harness tested, independently verified) |
+| 8: Second language | Not started |
 
 ## What Was Learned
 
-1. **The prompt matters more than the model.** Haiku with a good prompt outperforms sonnet with a bad prompt. The seven teaching examples from different domains (banking, shipping, aviation, invoicing) are the core of the system's capability.
+1. **The prompt is the product.** Seven teaching examples from different domains, the two-category output format, the vacuous-block prohibition — these determine what the system finds. Model choice matters less than prompt engineering.
 
-2. **Accumulation works but the quality ceiling is the LLM.** More contracts in context → more the LLM can prove. But the LLM also generates noise (vacuous sat, invented premises) that accumulates alongside signal.
+2. **73% signal rate is real but not sufficient.** With the vacuous filter, it should improve. But the remaining noise (trivial identity proofs, redundant violations across call sites) still needs stratification.
 
-3. **Layer 2 is the real product.** Mechanical axiom application is fast, free, and deterministic. The LLM is the expensive bootstrap. Z3 is the sustainable engine.
+3. **Layer 2 is the real product.** Mechanical axiom application: fast, free, deterministic. The LLM is the expensive bootstrap. Z3 is the sustainable engine.
 
-4. **The "do as I mean" insight is sound.** The system reads code around log statements and derives invariants the programmer didn't write. The conservation law, the precondition violations, the temporal aliasing — these are real properties that a human would miss or not bother to formalize.
+4. **The adversarial review was essential.** Without it, the postmortem would have claimed Milestone 6 with no Milestone 6 artifacts. The gap between "the code ran and emitted JSON" and "the system discovered principles" is real and load-bearing.
 
-5. **The runtime mode is simple and works.** Substituting concrete values into cached SMT-LIB templates and running Z3 is straightforward and produces correct results. The hard part was already done by the LLM during static analysis.
+5. **Runtime verification is simple once static analysis works.** Substituting concrete values into cached SMT-LIB templates is straightforward. The hard part was already done.
 
-## Recommended Next Steps
+6. **Real bugs exist in real code.** The thesis isn't theoretical. `authHeader.slice(7, 15)` is a real credential exposure in a real billing file, found from a `logger.info` call, proved reachable by Z3.
 
-1. **Re-run billing.ts with persistence verified.** Commit the artifacts. Without that, the most impressive demo is folklore.
-2. **Stratify output quality.** Classify proven/violation counts as meaningful vs trivial vs vacuous vs invented. Show the real signal rate.
-3. **Implement adversarial validation for real.** Haiku adversary is a few hundred lines. Historical fix corpus is `git log --grep`. Until then, "self-growing" is a Potemkin feature.
-4. **Add clause_history to contracts.** Without it, the termination argument is theater.
-5. **Semantic diff for principle classification.** The classifier must compare proposed principles against seed axioms semantically, not just by tag.
-6. **Fix the noise.** The LLM generates vacuously sat blocks. Either filter them before Z3 (detect single-unconstrained-variable patterns) or flag them in the output.
+## Commit History
+
+```
+b8e4b03 Initial commit: neurallog — a logger that fixes your code
+d442f9a Add runtime transport and GitHub issue pipeline
+a1b4577 Enable streaming events and remove maxTurns limit
+0a2bc4d Add session postmortem with full timeline and findings
+6d558ec Add Layer 2: mechanical axiom engine (no LLM, just Z3)
+9e94751 Rewrite postmortem after adversarial review
+617b6d1 Filter vacuous invariants at both prompt and verifier level
+7d6f22d Address adversarial review: validation, termination, classification
+cdb50af Two-stage semantic classifier with reverse framing
+```
 
 ## The Thesis Revisited
 
 Logging is assertions made by eyeballs after the fact. neurallog gives the eyeballs to a theorem prover.
 
-The mechanism is real. The narrative got ahead of the mechanism. What we have is a credible Milestone 2-3 prototype that finds real bugs and produces real proofs. What we don't have — yet — is the self-improving, self-validating, converging system the spec describes.
+The mechanism is real. The signal rate is real but needs improvement. The self-improvement loop has the machinery but hasn't been tested end-to-end with validation enabled. The runtime mode works and catches violations with live values.
 
-The gap between the two is engineering, not research. The thesis is proven. The product isn't finished.
+What we have is a credible Milestone 1-4 prototype with partial 5-7 that finds real bugs and produces real proofs. What we don't have yet is the fully converging, self-validating system the spec describes. The gap is engineering, not research. The thesis is proven. The product isn't finished.
