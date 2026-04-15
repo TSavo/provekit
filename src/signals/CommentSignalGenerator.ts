@@ -63,6 +63,7 @@ export class CommentSignalGenerator implements SignalGenerator {
         pathConditions,
         localTypes,
         callees,
+        calledBy: [],
       });
     });
 

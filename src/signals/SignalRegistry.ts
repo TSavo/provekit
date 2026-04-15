@@ -44,6 +44,31 @@ export class SignalRegistry {
     return this.generators.map((g) => g.name);
   }
 
+  static resolveCalledBy(signals: Signal[]): void {
+    const byFunction = new Map<string, Signal[]>();
+    for (const s of signals) {
+      if (!byFunction.has(s.functionName)) byFunction.set(s.functionName, []);
+      byFunction.get(s.functionName)!.push(s);
+    }
+
+    for (const s of signals) {
+      s.calledBy = [];
+    }
+
+    for (const caller of signals) {
+      for (const calleeName of caller.callees) {
+        const targets = byFunction.get(calleeName);
+        if (targets) {
+          for (const target of targets) {
+            if (target !== caller && !target.calledBy.includes(caller.functionName)) {
+              target.calledBy.push(caller.functionName);
+            }
+          }
+        }
+      }
+    }
+  }
+
   static createDefault(): SignalRegistry {
     const registry = new SignalRegistry();
     registry.register(new LogSignalGenerator());

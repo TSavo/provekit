@@ -177,6 +177,7 @@ export class LLMSignalGenerator implements SignalGenerator {
         pathConditions,
         localTypes,
         callees: [],
+        calledBy: [],
       });
     }
 

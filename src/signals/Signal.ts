@@ -21,6 +21,7 @@ export interface Signal {
   pathConditions: string[];
   localTypes: Record<string, string>;
   callees: string[];
+  calledBy: string[];
 }
 
 export function computeSignalHash(signal: Signal): string {

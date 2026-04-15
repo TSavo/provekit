@@ -85,6 +85,7 @@ export class FunctionNameSignalGenerator implements SignalGenerator {
           pathConditions: [],
           localTypes: {},
           callees: [],
+          calledBy: [],
         });
 
         break;
