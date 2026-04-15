@@ -1,0 +1,40 @@
+{
+  "key": "src/verifier.ts/isTrivialIdentity[106]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isTrivialIdentity",
+  "line": 106,
+  "signal_hash": "a9d6cc29cb9d7bc19cb3ea18f0e0b6d7b234d417f2244c9adddb9db2571b32f0",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVEN: isTrivialIdentity returning true implies asserts.length == 2",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 106\n; PROVEN: isTrivialIdentity returning true implies asserts.length == 2\n; Code transition: guard (asserts.length !== 2) -> return false\n; Code transition: result = has_eq AND has_neg (after guard passes)\n\n(declare-const asserts_len Int)\n(declare-const has_eq Int)\n(declare-const has_neg Int)\n(declare-const result Int)\n\n; Guard transition: result cannot be 1 when length != 2\n(assert (=> (not (= asserts_len 2)) (= result 0)))\n; Conjunction transition: result = has_eq * has_neg when guard passes\n(assert (=> (= asserts_len 2) (= result (* has_eq has_neg))))\n; Boolean bounds for has_eq and has_neg\n(assert (>= has_eq 0))\n(assert (<= has_eq 1))\n(assert (>= has_neg 0))\n(assert (<= has_neg 1))\n\n; Negate the property: result=1 AND asserts_len != 2\n(assert (= result 1))\n(assert (not (= asserts_len 2)))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "VIOLATION: isTrivialIdentity returns true when equality and negation assert",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 106\n; VIOLATION: isTrivialIdentity returns true when equality and negation assert\n; different variable pairs — (= x y) and (not (= a b)) where x != a.\n; The two .some() calls are independent; no cross-check links eq_lhs to neg_lhs.\n\n(declare-const eq_lhs Int)    ; variable-name token (encoded as ID) in equality LHS\n(declare-const eq_rhs Int)    ; variable-name token in equality RHS\n(declare-const neg_lhs Int)   ; variable-name token in negation LHS\n(declare-const neg_rhs Int)   ; variable-name token in negation RHS\n(declare-const has_eq Int)    ; 1 = hasEquality regex matched\n(declare-const has_neg Int)   ; 1 = hasNegation regex matched\n(declare-const fn_result Int) ; isTrivialIdentity return value (1 = true)\n\n; Code transition: has_eq=1 because equality regex matched — eq_lhs and eq_rhs are valid IDs\n(assert (= has_eq 1))\n(assert (> eq_lhs 0))\n(assert (> eq_rhs 0))\n\n; Code transition: has_neg=1 because negation regex matched — neg_lhs and neg_rhs are valid IDs\n(assert (= has_neg 1))\n(assert (> neg_lhs 0))\n(assert (> neg_rhs 0))\n\n; Code transition: fn_result = has_eq * has_neg (guard passed: asserts.length == 2)\n(assert (= fn_result (* has_eq has_neg)))\n\n; Violation: LHS variables differ between patterns — no true contradiction exists\n(assert (not (= eq_lhs neg_lhs)))\n\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 106\n; PROVEN: isTrivialIdentity returning true implies asserts.length == 2\n; Code transition: guard (asserts.length !== 2) -> return false\n; Code transition: result = has_eq AND has_neg (after guard passes)\n\n(declare-const asserts_len Int)\n(declare-const has_eq Int)\n(declare-const has_neg Int)\n(declare-const result Int)\n\n; Guard transition: result cannot be 1 when length != 2\n(assert (=> (not (= asserts_len 2)) (= result 0)))\n; Conjunction transition: result = has_eq * has_neg when guard passes\n(assert (=> (= asserts_len 2) (= result (* has_eq has_neg))))\n; Boolean bounds for has_eq and has_neg\n(assert (>= has_eq 0))\n(assert (<= has_eq 1))\n(assert (>= has_neg 0))\n(assert (<= has_neg 1))\n\n; Negate the property: result=1 AND asserts_len != 2\n(assert (= result 1))\n(assert (not (= asserts_len 2)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 106\n; VIOLATION: isTrivialIdentity returns true when equality and negation assert\n; different variable pairs — (= x y) and (not (= a b)) where x != a.\n; The two .some() calls are independent; no cross-check links eq_lhs to neg_lhs.\n\n(declare-const eq_lhs Int)    ; variable-name token (encoded as ID) in equality LHS\n(declare-const eq_rhs Int)    ; variable-name token in equality RHS\n(declare-const neg_lhs Int)   ; variable-name token in negation LHS\n(declare-const neg_rhs Int)   ; variable-name token in negation RHS\n(declare-const has_eq Int)    ; 1 = hasEquality regex matched\n(declare-const has_neg Int)   ; 1 = hasNegation regex matched\n(declare-const fn_result Int) ; isTrivialIdentity return value (1 = true)\n\n; Code transition: has_eq=1 because equality regex matched — eq_lhs and eq_rhs are valid IDs\n(assert (= has_eq 1))\n(assert (> eq_lhs 0))\n(assert (> eq_rhs 0))\n\n; Code transition: has_neg=1 because negation regex matched — neg_lhs and neg_rhs are valid IDs\n(assert (= has_neg 1))\n(assert (> neg_lhs 0))\n(assert (> neg_rhs 0))\n\n; Code transition: fn_result = has_eq * has_neg (guard passed: asserts.length == 2)\n(assert (= fn_result (* has_eq has_neg)))\n\n; Violation: LHS variables differ between patterns — no true contradiction exists\n(assert (not (= eq_lhs neg_lhs)))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "key": "src/verifier.ts/isVacuous[97]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isVacuous",
+  "line": 97,
+  "signal_hash": "4169123a3e959c0fb656cf3665c618e168d3af92e52c3b05c0d5082031461533",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVE: result=0 (non-vacuous) implies transitionCount > 0.",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 97\n; PROVE: result=0 (non-vacuous) implies transitionCount > 0.\n; The return is a strict biconditional of transitionCount === 0.\n(declare-const num_declares Int)\n(declare-const num_asserts Int)\n(declare-const transition_count Int)\n(declare-const result Int)\n(assert (> num_declares 0))\n(assert (> num_asserts 0))\n(assert (>= transition_count 0))\n; Code: return (transitionCount === 0)\n(assert (=> (= transition_count 0) (= result 1)))\n(assert (=> (> transition_count 0) (= result 0)))\n; Negate: result=0 (returns false) but transitionCount=0\n(assert (= result 0))\n(assert (= transition_count 0))\n(check-sat)"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 97\n; PROVE: result=0 (non-vacuous) implies transitionCount > 0.\n; The return is a strict biconditional of transitionCount === 0.\n(declare-const num_declares Int)\n(declare-const num_asserts Int)\n(declare-const transition_count Int)\n(declare-const result Int)\n(assert (> num_declares 0))\n(assert (> num_asserts 0))\n(assert (>= transition_count 0))\n; Code: return (transitionCount === 0)\n(assert (=> (= transition_count 0) (= result 1)))\n(assert (=> (> transition_count 0) (= result 0)))\n; Negate: result=0 (returns false) but transitionCount=0\n(assert (= result 0))\n(assert (= transition_count 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "key": "src/verifier.ts/isVacuous[59]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isVacuous",
+  "line": 59,
+  "signal_hash": "4483ffce4bb6ff40f98b7c620644bb38e46db75013c467fad558a64c60c973b7",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

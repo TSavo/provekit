@@ -1,0 +1,39 @@
+{
+  "key": "src/verifier.ts/isVacuous[86]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isVacuous",
+  "line": 86,
+  "signal_hash": "374b91fe45b188c0bf19e89ccd346bf900bef793729bfeb1e3cdc93ac0acde21",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVE: transitionCount is bounded — it cannot exceed the number of assertions.",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 86\n; PROVE: transitionCount is bounded — it cannot exceed the number of assertions.\n; Each assertion contributes at most 1 to transitionCount.\n(declare-const num_asserts Int)\n(declare-const counted_asserts Int)    ; asserts with referencedVars >= 2\n(declare-const transition_count Int)\n; Code: asserts is a filtered list, length >= 0\n(assert (>= num_asserts 0))\n; Code: counted_asserts is a subset of asserts\n(assert (>= counted_asserts 0))\n(assert (<= counted_asserts num_asserts))\n; Code: transitionCount = counted_asserts (one increment per qualifying assert)\n(assert (= transition_count counted_asserts))\n; Negate: transitionCount > num_asserts\n(assert (> transition_count num_asserts))\n(check-sat)"
+    },
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVE: when all assertions have < 2 referenced variables, transitionCount = 0.",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 86\n; PROVE: when all assertions have < 2 referenced variables, transitionCount = 0.\n; Models the partition: single_var_count + transition_count = num_asserts\n(declare-const num_asserts Int)\n(declare-const single_var_count Int)\n(declare-const transition_count Int)\n; At least one assertion exists (past early-return)\n(assert (>= num_asserts 1))\n; Code: every assertion has referencedVars < 2 → all go to single_var_count\n(assert (= single_var_count num_asserts))\n; Code: partition — every assert lands in exactly one bucket\n(assert (= (+ single_var_count transition_count) num_asserts))\n(assert (>= transition_count 0))\n; Negate: transitionCount > 0 despite all assertions being single-variable\n(assert (> transition_count 0))\n(check-sat)"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 86\n; PROVE: transitionCount is bounded — it cannot exceed the number of assertions.\n; Each assertion contributes at most 1 to transitionCount.\n(declare-const num_asserts Int)\n(declare-const counted_asserts Int)    ; asserts with referencedVars >= 2\n(declare-const transition_count Int)\n; Code: asserts is a filtered list, length >= 0\n(assert (>= num_asserts 0))\n; Code: counted_asserts is a subset of asserts\n(assert (>= counted_asserts 0))\n(assert (<= counted_asserts num_asserts))\n; Code: transitionCount = counted_asserts (one increment per qualifying assert)\n(assert (= transition_count counted_asserts))\n; Negate: transitionCount > num_asserts\n(assert (> transition_count num_asserts))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 86\n; PROVE: when all assertions have < 2 referenced variables, transitionCount = 0.\n; Models the partition: single_var_count + transition_count = num_asserts\n(declare-const num_asserts Int)\n(declare-const single_var_count Int)\n(declare-const transition_count Int)\n; At least one assertion exists (past early-return)\n(assert (>= num_asserts 1))\n; Code: every assertion has referencedVars < 2 → all go to single_var_count\n(assert (= single_var_count num_asserts))\n; Code: partition — every assert lands in exactly one bucket\n(assert (= (+ single_var_count transition_count) num_asserts))\n(assert (>= transition_count 0))\n; Negate: transitionCount > 0 despite all assertions being single-variable\n(assert (> transition_count 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

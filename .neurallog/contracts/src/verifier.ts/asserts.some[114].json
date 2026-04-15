@@ -1,0 +1,40 @@
+{
+  "key": "src/verifier.ts/asserts.some[114]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "asserts.some",
+  "line": 114,
+  "signal_hash": "d9f9ec497ca55e50e551f79fa3bcd6e5ade02d68574a6ffb34dd92aeb0d5eac5",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVEN: has_negation = 1 implies at least one assertion matched the negation pattern.",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 114\n; PROVEN: has_negation = 1 implies at least one assertion matched the negation pattern.\n; Strategy: assert preconditions + transitions, negate property → expect unsat.\n(declare-const asserts_length Int)\n(declare-const match_count_negation Int)\n(declare-const has_negation Int)\n; Code transition: guard asserts.length !== 2 already passed (same guard as line 113)\n(assert (= asserts_length 2))\n; Code transition: match count bounded by array length\n(assert (>= match_count_negation 0))\n(assert (<= match_count_negation asserts_length))\n; Code transition: Array.some return-value semantics\n(assert (=> (= match_count_negation 0) (= has_negation 0)))\n(assert (=> (> match_count_negation 0) (= has_negation 1)))\n; Negate the property: has_negation = 1 but no assertion matched\n(assert (= has_negation 1))\n(assert (= match_count_negation 0))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "VIOLATION: asserts.some returns false (0) for negation check without throwing.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 114\n; VIOLATION: asserts.some returns false (0) for negation check without throwing.\n; Contract says: must throw if condition does not hold.\n; Strategy: model actual code transitions + violation condition → expect sat.\n(declare-const asserts_length Int)\n(declare-const match_count_negation Int)\n(declare-const has_negation Int)\n(declare-const did_throw Int)\n; Code transition: guard passed, exactly 2 assertions in the array\n(assert (= asserts_length 2))\n; Code transition: match_count_negation bounded by array length\n(assert (>= match_count_negation 0))\n(assert (<= match_count_negation asserts_length))\n; Code transition: Array.some binds return value to 0 when no negation match found\n(assert (=> (= match_count_negation 0) (= has_negation 0)))\n(assert (=> (> match_count_negation 0) (= has_negation 1)))\n; Code transition: Array.prototype.some never throws\n(assert (= did_throw 0))\n; Violation: negation condition fails yet no exception raised\n(assert (= has_negation 0))\n(assert (= did_throw 0))\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 114\n; PROVEN: has_negation = 1 implies at least one assertion matched the negation pattern.\n; Strategy: assert preconditions + transitions, negate property → expect unsat.\n(declare-const asserts_length Int)\n(declare-const match_count_negation Int)\n(declare-const has_negation Int)\n; Code transition: guard asserts.length !== 2 already passed (same guard as line 113)\n(assert (= asserts_length 2))\n; Code transition: match count bounded by array length\n(assert (>= match_count_negation 0))\n(assert (<= match_count_negation asserts_length))\n; Code transition: Array.some return-value semantics\n(assert (=> (= match_count_negation 0) (= has_negation 0)))\n(assert (=> (> match_count_negation 0) (= has_negation 1)))\n; Negate the property: has_negation = 1 but no assertion matched\n(assert (= has_negation 1))\n(assert (= match_count_negation 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 114\n; VIOLATION: asserts.some returns false (0) for negation check without throwing.\n; Contract says: must throw if condition does not hold.\n; Strategy: model actual code transitions + violation condition → expect sat.\n(declare-const asserts_length Int)\n(declare-const match_count_negation Int)\n(declare-const has_negation Int)\n(declare-const did_throw Int)\n; Code transition: guard passed, exactly 2 assertions in the array\n(assert (= asserts_length 2))\n; Code transition: match_count_negation bounded by array length\n(assert (>= match_count_negation 0))\n(assert (<= match_count_negation asserts_length))\n; Code transition: Array.some binds return value to 0 when no negation match found\n(assert (=> (= match_count_negation 0) (= has_negation 0)))\n(assert (=> (> match_count_negation 0) (= has_negation 1)))\n; Code transition: Array.prototype.some never throws\n(assert (= did_throw 0))\n; Violation: negation condition fails yet no exception raised\n(assert (= has_negation 0))\n(assert (= did_throw 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

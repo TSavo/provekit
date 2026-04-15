@@ -1,0 +1,53 @@
+{
+  "key": "src/verifier.ts/isVacuous[72]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isVacuous",
+  "line": 72,
+  "signal_hash": "3570cbe39732fc77a3431e37d4aaeaddd69fe64b63b1a706a21fd497bc11e935",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVE: when transitionCount > 0, isVacuous returns false (result=0).",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 72\n; PROVE: when transitionCount > 0, isVacuous returns false (result=0).\n; The return value is exactly (transitionCount === 0).\n(declare-const num_declares Int)\n(declare-const num_asserts Int)\n(declare-const transition_count Int)\n(declare-const result Int)\n; Guard: past early-return (non-empty declares and asserts)\n(assert (> num_declares 0))\n(assert (> num_asserts 0))\n; Code: transitionCount initialized to 0, only incremented → non-negative\n(assert (>= transition_count 0))\n; Code: return (transitionCount === 0)\n(assert (=> (> transition_count 0) (= result 0)))\n(assert (=> (= transition_count 0) (= result 1)))\n; Negate contract: result=1 (vacuous) despite transitionCount > 0\n(assert (> transition_count 0))\n(assert (= result 1))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "VIOLATION: false negative — isVacuous returns false for a genuinely vacuous block.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 72\n; VIOLATION: false negative — isVacuous returns false for a genuinely vacuous block.\n; Cause: (assert (and (> x 0) (< y 0))) co-references x and y in one string →\n; inner loop finds both names → referencedVars=2 → transitionCount++ →\n; return false. But there is no arithmetic dependency between x and y.\n(declare-const x_appears Int)          ; 1 if \"x\" found via \\bx\\b in the assertion string\n(declare-const y_appears Int)          ; 1 if \"y\" found via \\by\\b\n(declare-const referenced_vars Int)    ; x_appears + y_appears, computed by inner loop\n(declare-const transition_count Int)   ; incremented when referenced_vars >= 2\n(declare-const result Int)             ; 0 = false (non-vacuous), 1 = true (vacuous)\n; Code: both variable names appear in the assertion string\n(assert (= x_appears 1))\n(assert (= y_appears 1))\n; Code: inner loop computes referenced_vars by counting matches\n(assert (= referenced_vars (+ x_appears y_appears)))\n; Code: referenced_vars >= 2 → transitionCount is incremented from 0 to 1\n(assert (>= referenced_vars 2))\n(assert (= transition_count 1))\n; Code: return (transitionCount === 0) → false, so result=0\n(assert (=> (> transition_count 0) (= result 0)))\n(assert (= result 0))\n; The block is vacuous: (and (> x 0) (< y 0)) has no arithmetic relationship x↔y\n; yet the function classifies it as non-vacuous\n(check-sat)"
+    },
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "VIOLATION: false positive — isVacuous returns true for a block that IS a genuine transition.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 72\n; VIOLATION: false positive — isVacuous returns true for a block that IS a genuine transition.\n; Cause: (assert (= x (- x 1))) references only one declared variable name \"x\" →\n; referencedVars=1 < 2 → transitionCount stays 0 → return true (vacuous).\n; But (= x (- x 1)) IS a state mutation: it constrains x relative to itself.\n(declare-const x_appears Int)          ; 1 — \"x\" found in \"(assert (= x (- x 1)))\"\n(declare-const referenced_vars Int)    ; = x_appears = 1 (only one declared variable)\n(declare-const transition_count Int)   ; stays 0 — threshold not reached\n(declare-const result Int)             ; 1 = true (vacuous)\n; Code: only \"x\" matches in the assertion string\n(assert (= x_appears 1))\n; Code: inner loop finds exactly one declared name\n(assert (= referenced_vars x_appears))\n; Code: referenced_vars = 1 < 2 → the conditional is not entered\n(assert (< referenced_vars 2))\n(assert (= transition_count 0))\n; Code: return (transitionCount === 0) → true\n(assert (= result 1))\n; Violation: function says \"vacuous\" for a block containing (assert (= x (- x 1)))\n; which is a genuine self-referential transition\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 72\n; PROVE: when transitionCount > 0, isVacuous returns false (result=0).\n; The return value is exactly (transitionCount === 0).\n(declare-const num_declares Int)\n(declare-const num_asserts Int)\n(declare-const transition_count Int)\n(declare-const result Int)\n; Guard: past early-return (non-empty declares and asserts)\n(assert (> num_declares 0))\n(assert (> num_asserts 0))\n; Code: transitionCount initialized to 0, only incremented → non-negative\n(assert (>= transition_count 0))\n; Code: return (transitionCount === 0)\n(assert (=> (> transition_count 0) (= result 0)))\n(assert (=> (= transition_count 0) (= result 1)))\n; Negate contract: result=1 (vacuous) despite transitionCount > 0\n(assert (> transition_count 0))\n(assert (= result 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 72\n; VIOLATION: false negative — isVacuous returns false for a genuinely vacuous block.\n; Cause: (assert (and (> x 0) (< y 0))) co-references x and y in one string →\n; inner loop finds both names → referencedVars=2 → transitionCount++ →\n; return false. But there is no arithmetic dependency between x and y.\n(declare-const x_appears Int)          ; 1 if \"x\" found via \\bx\\b in the assertion string\n(declare-const y_appears Int)          ; 1 if \"y\" found via \\by\\b\n(declare-const referenced_vars Int)    ; x_appears + y_appears, computed by inner loop\n(declare-const transition_count Int)   ; incremented when referenced_vars >= 2\n(declare-const result Int)             ; 0 = false (non-vacuous), 1 = true (vacuous)\n; Code: both variable names appear in the assertion string\n(assert (= x_appears 1))\n(assert (= y_appears 1))\n; Code: inner loop computes referenced_vars by counting matches\n(assert (= referenced_vars (+ x_appears y_appears)))\n; Code: referenced_vars >= 2 → transitionCount is incremented from 0 to 1\n(assert (>= referenced_vars 2))\n(assert (= transition_count 1))\n; Code: return (transitionCount === 0) → false, so result=0\n(assert (=> (> transition_count 0) (= result 0)))\n(assert (= result 0))\n; The block is vacuous: (and (> x 0) (< y 0)) has no arithmetic relationship x↔y\n; yet the function classifies it as non-vacuous\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 72\n; VIOLATION: false positive — isVacuous returns true for a block that IS a genuine transition.\n; Cause: (assert (= x (- x 1))) references only one declared variable name \"x\" →\n; referencedVars=1 < 2 → transitionCount stays 0 → return true (vacuous).\n; But (= x (- x 1)) IS a state mutation: it constrains x relative to itself.\n(declare-const x_appears Int)          ; 1 — \"x\" found in \"(assert (= x (- x 1)))\"\n(declare-const referenced_vars Int)    ; = x_appears = 1 (only one declared variable)\n(declare-const transition_count Int)   ; stays 0 — threshold not reached\n(declare-const result Int)             ; 1 = true (vacuous)\n; Code: only \"x\" matches in the assertion string\n(assert (= x_appears 1))\n; Code: inner loop finds exactly one declared name\n(assert (= referenced_vars x_appears))\n; Code: referenced_vars = 1 < 2 → the conditional is not entered\n(assert (< referenced_vars 2))\n(assert (= transition_count 0))\n; Code: return (transitionCount === 0) → true\n(assert (= result 1))\n; Violation: function says \"vacuous\" for a block containing (assert (= x (- x 1)))\n; which is a genuine self-referential transition\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

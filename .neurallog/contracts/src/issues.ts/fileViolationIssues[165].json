@@ -1,0 +1,39 @@
+{
+  "key": "src/issues.ts/fileViolationIssues[165]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "fileViolationIssues",
+  "line": 165,
+  "signal_hash": "8e6e64e09ead525f773349dca6f664321bc55356c9253570b44198b9170f8b92",
+  "proven": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "After a successful `fileIssue` call the function logs the returned URL",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 165\n; After a successful `fileIssue` call the function logs the returned URL\n; and increments `filed`.  The invariant: `filed` is exactly the number of\n; successful filings performed so far.\n(declare-const filed_before Int)\n(declare-const filed_after Int)\n(declare-const issueExists_ret Bool)\n(declare-const fileIssue_succeeds Bool)\n\n; pre‑condition: we are in the non‑dry‑run path and the issue is not a duplicate\n(assert (= issueExists_ret false))\n(assert (= fileIssue_succeeds true))\n\n; transition: successful filing increments `filed`\n(assert (= filed_after (+ filed_before 1)))\n\n; negated property: `filed` does NOT increase after a successful filing\n(assert (not (= filed_after (+ filed_before 1))))\n\n(check-sat)"
+    },
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "The log is printed only after a successful `fileIssue` call.",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 165 (file‑success logging)\n; The log is printed only after a successful `fileIssue` call.\n; Prove that if the log appears then `filed` must have been increased.\n(declare-const fileIssue_ret Bool)\n(declare-const filed_before Int)\n(declare-const filed_after Int)\n\n; success of filing\n(assert (= fileIssue_ret true))\n\n; transition: successful filing increments `filed`\n(assert (= filed_after (+ filed_before 1)))\n\n; negated property: log appears while `filed` stays unchanged\n(assert (and (= fileIssue_ret true) (not (= filed_after (+ filed_before 1)))))\n\n(check-sat)"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 165\n; After a successful `fileIssue` call the function logs the returned URL\n; and increments `filed`.  The invariant: `filed` is exactly the number of\n; successful filings performed so far.\n(declare-const filed_before Int)\n(declare-const filed_after Int)\n(declare-const issueExists_ret Bool)\n(declare-const fileIssue_succeeds Bool)\n\n; pre‑condition: we are in the non‑dry‑run path and the issue is not a duplicate\n(assert (= issueExists_ret false))\n(assert (= fileIssue_succeeds true))\n\n; transition: successful filing increments `filed`\n(assert (= filed_after (+ filed_before 1)))\n\n; negated property: `filed` does NOT increase after a successful filing\n(assert (not (= filed_after (+ filed_before 1))))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 165 (file‑success logging)\n; The log is printed only after a successful `fileIssue` call.\n; Prove that if the log appears then `filed` must have been increased.\n(declare-const fileIssue_ret Bool)\n(declare-const filed_before Int)\n(declare-const filed_after Int)\n\n; success of filing\n(assert (= fileIssue_ret true))\n\n; transition: successful filing increments `filed`\n(assert (= filed_after (+ filed_before 1)))\n\n; negated property: log appears while `filed` stays unchanged\n(assert (and (= fileIssue_ret true) (not (= filed_after (+ filed_before 1)))))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

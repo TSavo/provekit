@@ -1,0 +1,15 @@
+{
+  "key": "src/verifier.ts/verifyAll[137]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "verifyAll",
+  "line": 137,
+  "signal_hash": "fd265dcba3e13c555a47d0a7c83fbe3ddd70829f9fa26851f4b6545639908d2e",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/verifier.ts/isTrivialIdentity[94]",
+    "src/verifier.ts/isVacuous[59]",
+    "src/verifier.ts/verifyBlock[32]"
+  ],
+  "clause_history": []
+}

@@ -3,20 +3,20 @@
   "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
   "function": "extractSmt2Blocks",
   "line": 14,
-  "signal_hash": "e8914ead03a828d32683153df40d5f1f870fa52d023c55d632274b673dbd1625",
+  "signal_hash": "c8613f8256fcf019a6d74517460b60fa4f9e81d34ca2c1358e472788f3d4bce9",
   "proven": [
     {
-      "principle": "P3",
-      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
-      "claim": "Prove: match[1] is never undefined when codeBlockRegex.exec() returns non-null.",
-      "smt2": "; PRINCIPLE: P3\n; LINE: 14\n; Prove: match[1] is never undefined when codeBlockRegex.exec() returns non-null.\n; The regex has exactly one capture group ([\\s\\S]*?) which lazily matches\n; zero or more chars — it is always present in the match array.\n; Code transitions:\n;   exec() returns non-null  →  exec_returned_null = 0\n;   non-null match with one capture group  →  match1_defined = 1\n(declare-const exec_returned_null Int)\n(declare-const match1_defined Int)\n; Transition: exec returning non-null guarantees capture group 1 exists\n(assert (=> (= exec_returned_null 0) (= match1_defined 1)))\n; Inside the while loop the guard guarantees exec returned non-null\n(assert (= exec_returned_null 0))\n; Negation of property: match[1] is undefined inside the loop\n(assert (not (= match1_defined 1)))\n(check-sat)\n; expect unsat → match[1]! non-null assertion is always safe"
+      "principle": "P4",
+      "principle_hash": "a1b5093df48e8e1f7473af05b14e02a6715311445690b006840d2fc640b4234d",
+      "claim": "Proving: global regex lastIndex strictly advances each iteration → loop terminates.",
+      "smt2": "; PRINCIPLE: P4\n; LINE: 14\n; Proving: global regex lastIndex strictly advances each iteration → loop terminates.\n; Transition: exec() on a /g regex sets lastIndex = end-of-match after each call\n(declare-const lastIndex_before Int)\n(declare-const matchEnd Int)\n(declare-const lastIndex_after Int)\n(declare-const responseLength Int)\n; Code model: exec starts from lastIndex_before ≥ 0\n(assert (>= lastIndex_before 0))\n; Code model: a match ends strictly after it begins (non-empty match)\n(assert (> matchEnd lastIndex_before))\n(assert (<= matchEnd responseLength))\n; Code transition: exec() updates lastIndex to matchEnd\n(assert (= lastIndex_after matchEnd))\n; Negated property: lastIndex does NOT strictly advance\n(assert (not (> lastIndex_after lastIndex_before)))\n(check-sat)"
     }
   ],
   "violations": [],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P3\n; LINE: 14\n; Prove: match[1] is never undefined when codeBlockRegex.exec() returns non-null.\n; The regex has exactly one capture group ([\\s\\S]*?) which lazily matches\n; zero or more chars — it is always present in the match array.\n; Code transitions:\n;   exec() returns non-null  →  exec_returned_null = 0\n;   non-null match with one capture group  →  match1_defined = 1\n(declare-const exec_returned_null Int)\n(declare-const match1_defined Int)\n; Transition: exec returning non-null guarantees capture group 1 exists\n(assert (=> (= exec_returned_null 0) (= match1_defined 1)))\n; Inside the while loop the guard guarantees exec returned non-null\n(assert (= exec_returned_null 0))\n; Negation of property: match[1] is undefined inside the loop\n(assert (not (= match1_defined 1)))\n(check-sat)\n; expect unsat → match[1]! non-null assertion is always safe",
+      "clause": "; PRINCIPLE: P4\n; LINE: 14\n; Proving: global regex lastIndex strictly advances each iteration → loop terminates.\n; Transition: exec() on a /g regex sets lastIndex = end-of-match after each call\n(declare-const lastIndex_before Int)\n(declare-const matchEnd Int)\n(declare-const lastIndex_after Int)\n(declare-const responseLength Int)\n; Code model: exec starts from lastIndex_before ≥ 0\n(assert (>= lastIndex_before 0))\n; Code model: a match ends strictly after it begins (non-empty match)\n(assert (> matchEnd lastIndex_before))\n(assert (<= matchEnd responseLength))\n; Code transition: exec() updates lastIndex to matchEnd\n(assert (= lastIndex_after matchEnd))\n; Negated property: lastIndex does NOT strictly advance\n(assert (not (> lastIndex_after lastIndex_before)))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

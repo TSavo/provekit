@@ -3,11 +3,9 @@
   "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
   "function": "fileViolationIssues",
   "line": 149,
-  "signal_hash": "9ab07fcd9a914de558555c076788537ac5639681891ab1c31e232137cf402ac6",
+  "signal_hash": "db1feb342a62a4f7cdd348b7d9031d85d84fddb4eccef1d6c28ca7034dec0312",
   "proven": [],
   "violations": [],
-  "depends_on": [
-    "src/issues.ts/issueExists[101]"
-  ],
+  "depends_on": [],
   "clause_history": []
 }

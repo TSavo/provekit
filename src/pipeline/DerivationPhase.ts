@@ -11,6 +11,7 @@ import { computeSignalHash } from "../signals";
 import { LLMProvider, createProvider } from "../llm";
 import { DagExecutor } from "./DagExecutor";
 import { buildSignalFrame } from "./PromptStrategy";
+import { assembleDossier, formatDossier } from "./Dossier";
 
 export interface DerivationOutput {
   contracts: Contract[];
@@ -147,9 +148,11 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
       const callSites = fn.signals.map((s) => s.callSite);
       const signalFrame = buildSignalFrame(callSites);
+      const dossier = assembleDossier(callSites, fn.filePath, options.projectRoot, store);
+      const dossierText = formatDossier(dossier);
 
       const deriveStart = Date.now();
-      const prompt = this.buildPrompt(callSites[0]!, fn.filePath, contextAccumulated, discoveredPrinciples, signalFrame);
+      const prompt = this.buildPrompt(callSites[0]!, fn.filePath, contextAccumulated, discoveredPrinciples, signalFrame, dossierText);
       const response = await provider.complete(prompt, { model, systemPrompt });
       const deriveMs = Date.now() - deriveStart;
 
@@ -207,7 +210,8 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     filePath: string,
     accumulated: string,
     discoveredPrinciples: string,
-    signalFrame: string
+    signalFrame: string,
+    dossierText: string
   ): string {
     const importSources = representative.importSources.length > 0
       ? representative.importSources.map((imp) => `#### ${imp.path}\n\`\`\`typescript\n${imp.source}\n\`\`\``).join("\n\n")
@@ -222,6 +226,10 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     }
 
     enrichedContext += `\n\n${signalFrame}`;
+
+    if (dossierText) {
+      enrichedContext += `\n\n${dossierText}`;
+    }
 
     let prompt = this.compiledTemplate({
       TARGET_FILE: filePath,

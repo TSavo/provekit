@@ -1,0 +1,30 @@
+{
+  "key": "src/verifier.ts/verifyAll[126]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "verifyAll",
+  "line": 126,
+  "signal_hash": "524cb8254d8e50dd429022f155deba01ec53cd115289a4782e50624ed8ca915c",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "VP2 continued: can vacuousCount undercount?",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 126\n; VP2 continued: can vacuousCount undercount?\n; Would require isVacuous to return false for truly vacuous blocks\n\n; Truly vacuous: no declarations, no assertions\n(declare-const decls Int)\n(declare-const defFuns Int)\n(declare-const asserts Int)\n\n; True vacuous: no vars declared, no assertions\n(assert (= decls 0))\n(assert (= defFuns 0))\n(assert (= asserts 0))\n\n; isVacuous returns false (line 50: \"if declares.length === 0 && defFuns.length === 0) return false\")\n; So truly empty blocks are NOT counted as vacuous\n\n; This is a classification issue:\n; isVacuous(true) = true only when there are declarations but no asserts\n; isVacuous(false) for completely empty blocks\n\n; The log says \"vacuous blocks filtered\" - but empty blocks aren't counted\n(assert (and (= decls 0) (= asserts 0)))\n(check-sat)"
+    }
+  ],
+  "depends_on": [
+    "src/verifier.ts/isTrivialIdentity[94]",
+    "src/verifier.ts/isVacuous[59]",
+    "src/verifier.ts/verifyBlock[32]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P6\n; LINE: 126\n; VP2 continued: can vacuousCount undercount?\n; Would require isVacuous to return false for truly vacuous blocks\n\n; Truly vacuous: no declarations, no assertions\n(declare-const decls Int)\n(declare-const defFuns Int)\n(declare-const asserts Int)\n\n; True vacuous: no vars declared, no assertions\n(assert (= decls 0))\n(assert (= defFuns 0))\n(assert (= asserts 0))\n\n; isVacuous returns false (line 50: \"if declares.length === 0 && defFuns.length === 0) return false\")\n; So truly empty blocks are NOT counted as vacuous\n\n; This is a classification issue:\n; isVacuous(true) = true only when there are declarations but no asserts\n; isVacuous(false) for completely empty blocks\n\n; The log says \"vacuous blocks filtered\" - but empty blocks aren't counted\n(assert (and (= decls 0) (= asserts 0)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

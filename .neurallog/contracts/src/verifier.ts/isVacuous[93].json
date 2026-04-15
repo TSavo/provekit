@@ -1,0 +1,40 @@
+{
+  "key": "src/verifier.ts/isVacuous[93]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isVacuous",
+  "line": 93,
+  "signal_hash": "93483b10ff610fe7a8c9955439bcaf4be77536644d04121ffed8a11b42eba526",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVE: the threshold is applied exactly — referencedVars >= 2 iff contributes=1.",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 93\n; PROVE: the threshold is applied exactly — referencedVars >= 2 iff contributes=1.\n; Models the conditional: if (referencedVars >= 2) transitionCount++\n(declare-const refs_in_assert Int)    ; referencedVars for one assertion\n(declare-const contributes Int)       ; 1 if this assert increments transitionCount\n; Code: the conditional check\n(assert (=> (>= refs_in_assert 2) (= contributes 1)))\n(assert (=> (< refs_in_assert 2) (= contributes 0)))\n(assert (>= refs_in_assert 0))\n; Negate: refs >= 2 but contributes = 0 (threshold not applied)\n(assert (>= refs_in_assert 2))\n(assert (= contributes 0))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "VIOLATION: boundary at referencedVars = 1 — genuine single-variable transitions are excluded.",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 93\n; VIOLATION: boundary at referencedVars = 1 — genuine single-variable transitions are excluded.\n; A block with N assertions each referencing exactly 1 variable stays at transitionCount=0\n; regardless of whether those assertions encode meaningful state constraints.\n(declare-const num_asserts Int)\n(declare-const single_var_count Int)   ; asserts where referencedVars = 1 exactly\n(declare-const transition_count Int)\n(declare-const result Int)\n; Multiple assertions, each referencing exactly one declared variable\n(assert (> num_asserts 1))\n(assert (= single_var_count num_asserts))\n; Code: partition — all assertions fall below the threshold\n(assert (= (+ single_var_count transition_count) num_asserts))\n(assert (= transition_count 0))\n; Code: return true (vacuous)\n(assert (= result 1))\n; Violation: a block like:\n;   (assert (>= balance 0))\n;   (assert (= balance_after (- balance 100)))  ← actually 2 vars, counted\n; versus:\n;   (assert (>= x 0))\n;   (assert (< x 100))\n; The second block has x in both asserts but referencedVars=1 per assert →\n; transitionCount=0 → classified vacuous despite meaningful constraints\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 93\n; PROVE: the threshold is applied exactly — referencedVars >= 2 iff contributes=1.\n; Models the conditional: if (referencedVars >= 2) transitionCount++\n(declare-const refs_in_assert Int)    ; referencedVars for one assertion\n(declare-const contributes Int)       ; 1 if this assert increments transitionCount\n; Code: the conditional check\n(assert (=> (>= refs_in_assert 2) (= contributes 1)))\n(assert (=> (< refs_in_assert 2) (= contributes 0)))\n(assert (>= refs_in_assert 0))\n; Negate: refs >= 2 but contributes = 0 (threshold not applied)\n(assert (>= refs_in_assert 2))\n(assert (= contributes 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P6\n; LINE: 93\n; VIOLATION: boundary at referencedVars = 1 — genuine single-variable transitions are excluded.\n; A block with N assertions each referencing exactly 1 variable stays at transitionCount=0\n; regardless of whether those assertions encode meaningful state constraints.\n(declare-const num_asserts Int)\n(declare-const single_var_count Int)   ; asserts where referencedVars = 1 exactly\n(declare-const transition_count Int)\n(declare-const result Int)\n; Multiple assertions, each referencing exactly one declared variable\n(assert (> num_asserts 1))\n(assert (= single_var_count num_asserts))\n; Code: partition — all assertions fall below the threshold\n(assert (= (+ single_var_count transition_count) num_asserts))\n(assert (= transition_count 0))\n; Code: return true (vacuous)\n(assert (= result 1))\n; Violation: a block like:\n;   (assert (>= balance 0))\n;   (assert (= balance_after (- balance 100)))  ← actually 2 vars, counted\n; versus:\n;   (assert (>= x 0))\n;   (assert (< x 100))\n; The second block has x in both asserts but referencedVars=1 per assert →\n; transitionCount=0 → classified vacuous despite meaningful constraints\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

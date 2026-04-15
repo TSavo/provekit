@@ -1,0 +1,26 @@
+{
+  "key": "src/verifier.ts/isTrivialIdentity[112]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isTrivialIdentity",
+  "line": 112,
+  "signal_hash": "ffc796f687f596204cc4ee69a6e032da5a325ac7e55c1028eb70e5aa547c54c3",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "VIOLATION: Comment promises \"one assert is (= A B), the other is (not (= A B))\"",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 112\n; VIOLATION: Comment promises \"one assert is (= A B), the other is (not (= A B))\"\n; — implying the SAME A and B in both patterns. But the code allows different\n; variable pairs. When variables differ, both asserts are simultaneously satisfiable,\n; meaning the block is NOT tautologically unsat — yet fn returns true.\n\n(declare-const val_eq_lhs Int)   ; semantic value: LHS variable in equality assert\n(declare-const val_eq_rhs Int)   ; semantic value: RHS variable in equality assert\n(declare-const val_neg_lhs Int)  ; semantic value: LHS variable in negation assert\n(declare-const val_neg_rhs Int)  ; semantic value: RHS variable in negation assert\n\n; Code transition: (= A B) assert forces val_eq_lhs = val_eq_rhs\n(assert (= val_eq_lhs val_eq_rhs))\n\n; Code transition: (not (= C D)) assert forces val_neg_lhs != val_neg_rhs\n; C,D are DIFFERENT variables from A,B — the regex allows this\n(assert (not (= val_neg_lhs val_neg_rhs)))\n\n; Violation: both constraints are simultaneously satisfiable — block is SAT not UNSAT.\n; isTrivialIdentity labels this block \"trivial\" but Z3 would return sat.\n; Witness: val_eq_lhs=5, val_eq_rhs=5, val_neg_lhs=3, val_neg_rhs=7\n\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 112\n; VIOLATION: Comment promises \"one assert is (= A B), the other is (not (= A B))\"\n; — implying the SAME A and B in both patterns. But the code allows different\n; variable pairs. When variables differ, both asserts are simultaneously satisfiable,\n; meaning the block is NOT tautologically unsat — yet fn returns true.\n\n(declare-const val_eq_lhs Int)   ; semantic value: LHS variable in equality assert\n(declare-const val_eq_rhs Int)   ; semantic value: RHS variable in equality assert\n(declare-const val_neg_lhs Int)  ; semantic value: LHS variable in negation assert\n(declare-const val_neg_rhs Int)  ; semantic value: RHS variable in negation assert\n\n; Code transition: (= A B) assert forces val_eq_lhs = val_eq_rhs\n(assert (= val_eq_lhs val_eq_rhs))\n\n; Code transition: (not (= C D)) assert forces val_neg_lhs != val_neg_rhs\n; C,D are DIFFERENT variables from A,B — the regex allows this\n(assert (not (= val_neg_lhs val_neg_rhs)))\n\n; Violation: both constraints are simultaneously satisfiable — block is SAT not UNSAT.\n; isTrivialIdentity labels this block \"trivial\" but Z3 would return sat.\n; Witness: val_eq_lhs=5, val_eq_rhs=5, val_neg_lhs=3, val_neg_rhs=7\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

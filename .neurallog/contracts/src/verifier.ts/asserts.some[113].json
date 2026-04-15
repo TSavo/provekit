@@ -1,0 +1,40 @@
+{
+  "key": "src/verifier.ts/asserts.some[113]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "asserts.some",
+  "line": 113,
+  "signal_hash": "594910960a534dde9122c8dd33499b775d2c25e230cba989c60eb40cbf0d8e4e",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVEN: has_equality = 1 implies at least one assertion matched the equality pattern.",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 113\n; PROVEN: has_equality = 1 implies at least one assertion matched the equality pattern.\n; Strategy: assert preconditions + transitions, then negate the property → expect unsat.\n(declare-const asserts_length Int)\n(declare-const match_count_equality Int)\n(declare-const has_equality Int)\n; Code transition: guard asserts.length !== 2 already passed\n(assert (= asserts_length 2))\n; Code transition: match count is bounded by array length\n(assert (>= match_count_equality 0))\n(assert (<= match_count_equality asserts_length))\n; Code transition: Array.some return-value semantics\n(assert (=> (= match_count_equality 0) (= has_equality 0)))\n(assert (=> (> match_count_equality 0) (= has_equality 1)))\n; Negate the property: has_equality = 1 but no assertion matched\n(assert (= has_equality 1))\n(assert (= match_count_equality 0))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "VIOLATION: asserts.some returns false (0) without throwing.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 113\n; VIOLATION: asserts.some returns false (0) without throwing.\n; Contract says: must throw if condition does not hold.\n; Strategy: model actual code transitions + violation condition → expect sat.\n(declare-const asserts_length Int)\n(declare-const match_count_equality Int)\n(declare-const has_equality Int)\n(declare-const did_throw Int)\n; Code transition: guard passed, exactly 2 assertions in the array\n(assert (= asserts_length 2))\n; Code transition: match_count bounded by array length\n(assert (>= match_count_equality 0))\n(assert (<= match_count_equality asserts_length))\n; Code transition: Array.some binds return value to 0 when no match found\n(assert (=> (= match_count_equality 0) (= has_equality 0)))\n(assert (=> (> match_count_equality 0) (= has_equality 1)))\n; Code transition: Array.prototype.some never throws — did_throw is permanently 0\n(assert (= did_throw 0))\n; Violation: condition holds false (no equality match) yet no exception was raised\n(assert (= has_equality 0))\n(assert (= did_throw 0))\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 113\n; PROVEN: has_equality = 1 implies at least one assertion matched the equality pattern.\n; Strategy: assert preconditions + transitions, then negate the property → expect unsat.\n(declare-const asserts_length Int)\n(declare-const match_count_equality Int)\n(declare-const has_equality Int)\n; Code transition: guard asserts.length !== 2 already passed\n(assert (= asserts_length 2))\n; Code transition: match count is bounded by array length\n(assert (>= match_count_equality 0))\n(assert (<= match_count_equality asserts_length))\n; Code transition: Array.some return-value semantics\n(assert (=> (= match_count_equality 0) (= has_equality 0)))\n(assert (=> (> match_count_equality 0) (= has_equality 1)))\n; Negate the property: has_equality = 1 but no assertion matched\n(assert (= has_equality 1))\n(assert (= match_count_equality 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 113\n; VIOLATION: asserts.some returns false (0) without throwing.\n; Contract says: must throw if condition does not hold.\n; Strategy: model actual code transitions + violation condition → expect sat.\n(declare-const asserts_length Int)\n(declare-const match_count_equality Int)\n(declare-const has_equality Int)\n(declare-const did_throw Int)\n; Code transition: guard passed, exactly 2 assertions in the array\n(assert (= asserts_length 2))\n; Code transition: match_count bounded by array length\n(assert (>= match_count_equality 0))\n(assert (<= match_count_equality asserts_length))\n; Code transition: Array.some binds return value to 0 when no match found\n(assert (=> (= match_count_equality 0) (= has_equality 0)))\n(assert (=> (> match_count_equality 0) (= has_equality 1)))\n; Code transition: Array.prototype.some never throws — did_throw is permanently 0\n(assert (= did_throw 0))\n; Violation: condition holds false (no equality match) yet no exception was raised\n(assert (= has_equality 0))\n(assert (= did_throw 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

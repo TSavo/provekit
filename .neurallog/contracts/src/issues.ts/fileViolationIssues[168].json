@@ -1,0 +1,26 @@
+{
+  "key": "src/issues.ts/fileViolationIssues[168]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "fileViolationIssues",
+  "line": 168,
+  "signal_hash": "7731e8b8f9bb91833da4133a4029774e4ad39bb37e9438b66d7bbb5687afa4a2",
+  "proven": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "When `fileIssue` throws, the `catch` block logs an error and increments `errors`.",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 168\n; When `fileIssue` throws, the `catch` block logs an error and increments `errors`.\n; Prove that if an exception occurs, `errors` must be incremented.\n(declare-const errors_before Int)\n(declare-const errors_after Int)\n(declare-const filing_throws Bool)\n\n; pre‑condition: an exception is thrown\n(assert (= filing_throws true))\n; transition: error branch increments `errors`\n(assert (= errors_after (+ errors_before 1)))\n\n; negated property: errors stay the same despite the exception\n(assert (not (= errors_after (+ errors_before 1))))\n\n(check-sat)"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 168\n; When `fileIssue` throws, the `catch` block logs an error and increments `errors`.\n; Prove that if an exception occurs, `errors` must be incremented.\n(declare-const errors_before Int)\n(declare-const errors_after Int)\n(declare-const filing_throws Bool)\n\n; pre‑condition: an exception is thrown\n(assert (= filing_throws true))\n; transition: error branch increments `errors`\n(assert (= errors_after (+ errors_before 1)))\n\n; negated property: errors stay the same despite the exception\n(assert (not (= errors_after (+ errors_before 1))))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

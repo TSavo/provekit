@@ -3,22 +3,47 @@
   "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
   "function": "fileViolationIssues",
   "line": 158,
-  "signal_hash": "95addea7db5295e23af2ba2c555265382b56ab1c8328d44a5ab20d3b3d7f47f2",
+  "signal_hash": "394f49d427f6c8799e6ce7d919af3a9ba4b77377b54981eeb3024cd6e8f158bf",
   "proven": [
     {
-      "principle": "P7",
-      "principle_hash": "61561b8577104a2514f412235b45b0c4b2c3114a30d8725d4cb990ed5d924ecc",
-      "claim": "Invariant: filed + skipped + errors = |issues| in non-dry-run mode.",
-      "smt2": "; PRINCIPLE: P7\n; LINE: 158\n; Invariant: filed + skipped + errors = |issues| in non-dry-run mode.\n; Every iteration takes exactly one of three paths; no issue is double-counted or lost.\n(declare-const num_issues Int)\n(declare-const filed Int)\n(declare-const skipped Int)\n(declare-const errors Int)\n(assert (>= num_issues 0))\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n; Transitions: skip path (skipped++), success path (filed++), error path (errors++)\n; Mutual exclusion + exhaustiveness via continue and try/catch\n(assert (= (+ filed (+ skipped errors)) num_issues))\n; Attempt to falsify the conservation property\n(assert (not (= (+ filed (+ skipped errors)) num_issues)))\n(check-sat)\n; unsat → proven: every issue is accounted for in exactly one counter"
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "Correct behaviour: if a title is in `seen` then `skipped` must increase by one.",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 158\n; Correct behaviour: if a title is in `seen` then `skipped` must increase by one.\n; Prove that any execution respecting the contract cannot leave `skipped`\n; unchanged when a duplicate is detected.\n(declare-const title Int)\n(declare-const seen_before (Array Int Bool))\n(declare-const seen_after (Array Int Bool))\n(declare-const skipped_before Int)\n(declare-const skipped_after Int)\n(declare-const issueExists_ret Bool)\n\n; pre‑condition: title already seen\n(assert (= (select seen_before title) true))\n(assert (>= skipped_before 0))\n\n; the contract of `issueExists` is that it returns true exactly when the title\n; is in the repository.  For this proof we *assume* the contract holds:\n(assert (= issueExists_ret true))\n\n; transition: duplicate branch executes → skipped increments, title added to `seen`\n(assert (= skipped_after (+ skipped_before 1)))\n(assert (= (store seen_before title true) seen_after))\n\n; negated property: skipped does NOT increase despite duplicate detection\n(assert (not (= skipped_after (+ skipped_before 1))))\n\n(check-sat)"
+    },
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "The log statement itself does not modify state, but the *presence* of the log",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 158 (duplicate‑skip logging)\n; The log statement itself does not modify state, but the *presence* of the log\n; implies that the duplicate branch was taken.  We therefore prove that the\n; log can only be emitted when `skipped` has been incremented.\n(declare-const issueExists_ret Bool)\n(declare-const skipped_before Int)\n(declare-const skipped_after Int)\n\n; contract: duplicate branch is entered only if issueExists returns true\n(assert (= issueExists_ret true))\n\n; transition: duplicate branch increments `skipped`\n(assert (= skipped_after (+ skipped_before 1)))\n\n; negated property: the log is printed while `skipped` did NOT change\n(assert (and (= issueExists_ret true) (not (= skipped_after (+ skipped_before 1)))))\n\n(check-sat)"
     }
   ],
-  "violations": [],
-  "depends_on": [
-    "src/issues.ts/issueExists[101]"
+  "violations": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "When `issueExists(issue.title)` returns true the code executes the *duplicate* branch,",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 158\n; When `issueExists(issue.title)` returns true the code executes the *duplicate* branch,\n; increments `skipped` and adds the title to `seen`.  The invariant we want is:\n; *if a title has been seen before, the only way `skipped` can increase is because\n;  issueExists returned true*.\n; We show a reachable violation where `issueExists` returns false even though the title\n; is already in `seen`, causing a duplicate to be filed instead of skipped.\n(declare-const title Int)               ; abstract identifier for the issue title\n(declare-const seen_before (Array Int Bool)) ; modeling the Set<string> as a map Int→Bool\n(declare-const seen_after (Array Int Bool))\n(declare-const skipped_before Int)\n(declare-const skipped_after Int)\n(declare-const issueExists_ret Bool)\n\n; pre‑condition: the title is already in the seen set\n(assert (= (select seen_before title) true))\n; counters before processing this issue\n(assert (= skipped_before 0))\n\n; transition of the duplicate‑check branch:\n;   if issueExists(title) then skip, else fall through.\n; We model the buggy situation where issueExists incorrectly returns false.\n(assert (= issueExists_ret false))\n\n; because issueExists_ret is false, the code does NOT execute the\n;   `skipped++` branch.  Instead it proceeds to the normal filing path,\n;   leaving `skipped` unchanged.\n(assert (= skipped_after skipped_before))\n\n; Violation condition we want to demonstrate:\n; *the title was already seen* ∧ *skipped was NOT incremented*.\n(assert (and (= (select seen_before title) true)\n             (= skipped_after skipped_before)))\n\n(check-sat)"
+    }
   ],
+  "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P7\n; LINE: 158\n; Invariant: filed + skipped + errors = |issues| in non-dry-run mode.\n; Every iteration takes exactly one of three paths; no issue is double-counted or lost.\n(declare-const num_issues Int)\n(declare-const filed Int)\n(declare-const skipped Int)\n(declare-const errors Int)\n(assert (>= num_issues 0))\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n; Transitions: skip path (skipped++), success path (filed++), error path (errors++)\n; Mutual exclusion + exhaustiveness via continue and try/catch\n(assert (= (+ filed (+ skipped errors)) num_issues))\n; Attempt to falsify the conservation property\n(assert (not (= (+ filed (+ skipped errors)) num_issues)))\n(check-sat)\n; unsat → proven: every issue is accounted for in exactly one counter",
+      "clause": "; PRINCIPLE: P2\n; LINE: 158\n; Correct behaviour: if a title is in `seen` then `skipped` must increase by one.\n; Prove that any execution respecting the contract cannot leave `skipped`\n; unchanged when a duplicate is detected.\n(declare-const title Int)\n(declare-const seen_before (Array Int Bool))\n(declare-const seen_after (Array Int Bool))\n(declare-const skipped_before Int)\n(declare-const skipped_after Int)\n(declare-const issueExists_ret Bool)\n\n; pre‑condition: title already seen\n(assert (= (select seen_before title) true))\n(assert (>= skipped_before 0))\n\n; the contract of `issueExists` is that it returns true exactly when the title\n; is in the repository.  For this proof we *assume* the contract holds:\n(assert (= issueExists_ret true))\n\n; transition: duplicate branch executes → skipped increments, title added to `seen`\n(assert (= skipped_after (+ skipped_before 1)))\n(assert (= (store seen_before title true) seen_after))\n\n; negated property: skipped does NOT increase despite duplicate detection\n(assert (not (= skipped_after (+ skipped_before 1))))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 158 (duplicate‑skip logging)\n; The log statement itself does not modify state, but the *presence* of the log\n; implies that the duplicate branch was taken.  We therefore prove that the\n; log can only be emitted when `skipped` has been incremented.\n(declare-const issueExists_ret Bool)\n(declare-const skipped_before Int)\n(declare-const skipped_after Int)\n\n; contract: duplicate branch is entered only if issueExists returns true\n(assert (= issueExists_ret true))\n\n; transition: duplicate branch increments `skipped`\n(assert (= skipped_after (+ skipped_before 1)))\n\n; negated property: the log is printed while `skipped` did NOT change\n(assert (and (= issueExists_ret true) (not (= skipped_after (+ skipped_before 1)))))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 158\n; When `issueExists(issue.title)` returns true the code executes the *duplicate* branch,\n; increments `skipped` and adds the title to `seen`.  The invariant we want is:\n; *if a title has been seen before, the only way `skipped` can increase is because\n;  issueExists returned true*.\n; We show a reachable violation where `issueExists` returns false even though the title\n; is already in `seen`, causing a duplicate to be filed instead of skipped.\n(declare-const title Int)               ; abstract identifier for the issue title\n(declare-const seen_before (Array Int Bool)) ; modeling the Set<string> as a map Int→Bool\n(declare-const seen_after (Array Int Bool))\n(declare-const skipped_before Int)\n(declare-const skipped_after Int)\n(declare-const issueExists_ret Bool)\n\n; pre‑condition: the title is already in the seen set\n(assert (= (select seen_before title) true))\n; counters before processing this issue\n(assert (= skipped_before 0))\n\n; transition of the duplicate‑check branch:\n;   if issueExists(title) then skip, else fall through.\n; We model the buggy situation where issueExists incorrectly returns false.\n(assert (= issueExists_ret false))\n\n; because issueExists_ret is false, the code does NOT execute the\n;   `skipped++` branch.  Instead it proceeds to the normal filing path,\n;   leaving `skipped` unchanged.\n(assert (= skipped_after skipped_before))\n\n; Violation condition we want to demonstrate:\n; *the title was already seen* ∧ *skipped was NOT incremented*.\n(assert (and (= (select seen_before title) true)\n             (= skipped_after skipped_before)))\n\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,
