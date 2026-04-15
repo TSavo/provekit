@@ -5,7 +5,22 @@
   "line": 32,
   "signal_hash": "5dc874197d0e50108f667dd0fee0da0497fc845ec30acad8972d5ecc88ad4d29",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "Bug: classify() searches backward: sat → unsat → unknown",
+      "smt2": "; PRINCIPLE: P3 - Calling Context Analysis\n; LINE: 32\n; Bug: classify() searches backward: sat → unsat → unknown\n; If output has \"unsat\" on line 1 and \"sat\" on line 2, backward search finds \"sat\" first\n; Model: Last line index where each keyword appears\n\n(declare-const sat_line Int)\n(declare-const unsat_line Int)\n; Z3 output: \"unsat\" appears at line index 1, \"sat\" appears at line index 2\n(assert (= sat_line 2))\n(assert (= unsat_line 1))\n; backward loop: for (i = lines.length - 1; i >= 0; i--)\n; At i=2: lines[2] == \"sat\" → returns \"sat\" immediately\n; But Z3 actually said UNSAT - this is a violation misclassification\n(assert (> sat_line unsat_line))\n(check-sat)"
+    }
+  ],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3 - Calling Context Analysis\n; LINE: 32\n; Bug: classify() searches backward: sat → unsat → unknown\n; If output has \"unsat\" on line 1 and \"sat\" on line 2, backward search finds \"sat\" first\n; Model: Last line index where each keyword appears\n\n(declare-const sat_line Int)\n(declare-const unsat_line Int)\n; Z3 output: \"unsat\" appears at line index 1, \"sat\" appears at line index 2\n(assert (= sat_line 2))\n(assert (= unsat_line 1))\n; backward loop: for (i = lines.length - 1; i >= 0; i--)\n; At i=2: lines[2] == \"sat\" → returns \"sat\" immediately\n; But Z3 actually said UNSAT - this is a violation misclassification\n(assert (> sat_line unsat_line))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

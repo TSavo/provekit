@@ -5,7 +5,22 @@
   "line": 59,
   "signal_hash": "4483ffce4bb6ff40f98b7c620644bb38e46db75013c467fad558a64c60c973b7",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "Bug at line 65: If declares.length=0 AND defineFuns.length=0, returns false",
+      "smt2": "; PRINCIPLE: P6 - Boundary Analysis\n; LINE: 59\n; Bug at line 65: If declares.length=0 AND defineFuns.length=0, returns false\n; Counterexample: SMT2 with no variables but trivial asserts like (= 1 1)\n\n(declare-const num_declares Int)\n(declare-const num_defines Int)\n(declare-const num_asserts Int)\n\n; Case: No variables declared, but has an assertion like (assert (= 1 1))\n(assert (= num_declares 0))\n(assert (= num_defines 0))\n(assert (= num_asserts 1))\n\n; Code path: lines 65-66 check (declares.length === 0 && defineFuns.length === 0)\n; Since both are 0, returns false (not vacuous)\n; But formula is vacuous because it has no variables to constrain\n(assert (and (= num_declares 0) (= num_defines 0)))\n(check-sat)"
+    }
+  ],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P6 - Boundary Analysis\n; LINE: 59\n; Bug at line 65: If declares.length=0 AND defineFuns.length=0, returns false\n; Counterexample: SMT2 with no variables but trivial asserts like (= 1 1)\n\n(declare-const num_declares Int)\n(declare-const num_defines Int)\n(declare-const num_asserts Int)\n\n; Case: No variables declared, but has an assertion like (assert (= 1 1))\n(assert (= num_declares 0))\n(assert (= num_defines 0))\n(assert (= num_asserts 1))\n\n; Code path: lines 65-66 check (declares.length === 0 && defineFuns.length === 0)\n; Since both are 0, returns false (not vacuous)\n; But formula is vacuous because it has no variables to constrain\n(assert (and (= num_declares 0) (= num_defines 0)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

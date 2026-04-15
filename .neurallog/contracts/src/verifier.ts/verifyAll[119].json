@@ -4,15 +4,21 @@
   "function": "verifyAll",
   "line": 119,
   "signal_hash": "e8bcc203ff372e99c8dfcccb112e54744a7452b2494236904e86ff8e906c355d",
-  "proven": [
+  "proven": [],
+  "violations": [
     {
-      "principle": "P3, P5",
-      "principle_hash": "75dc6e96e950e23f33276dc5e9ca5f66752fcb19e159c91e79236e1eeb7359eb",
-      "claim": "VP1: verifyAll promises results contain correct Z3 results",
-      "smt2": "; PRINCIPLE: P3, P5\n; LINE: 119\n; VP1: verifyAll promises results contain correct Z3 results\n; verifyAll returns results from: nonVacuous.map(verifyBlock(smt2))\n; Each result.z3Result comes from verifyBlock\n\n; Model the pipeline:\n; 1. extractSmt2Blocks produces blocks with smt2 strings\n; 2. nonVacuous = blocks.filter where isVacuous(smt2) = false\n; 3. results.map calls verifyBlock on each smt2\n\n; Can results contain incorrect z3Result?\n; verifyBlock returns: \"sat\" | \"unsat\" | \"unknown\" | \"error\"\n; results.z3Result = verifyBlock(smt2).result\n\n; The function name \"verifyBlock\" is a contract: it returns Z3's result\n; From prior analysis (line 32), classify() is sound\n; verifyBlock passes smt2 to Z3 and returns classify's result\n\n; To prove violation: assert actual guarantees + violation\n(declare-const smt2_input String)\n(declare-const z3_output String)\n(declare-const z3_result String)\n\n; Transition: verifyBlock executes Z3\n(assert (= z3_output \"sat\"))\n; classify derives result from z3_output\n(assert (= z3_result \"sat\"))\n\n; Property: z3Result matches actual Z3 output\n; Violation: z3Result ≠ z3_output\n(assert (not (= z3_result z3_output)))\n(check-sat)"
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "verifyAll computes vacuousCount using isVacuous which has false negative bug",
+      "smt2": "; PRINCIPLE: P2 - State Mutation Analysis  \n; LINE: 119\n; verifyAll computes vacuousCount using isVacuous which has false negative bug\n; Line 122: vacuousCount = blocks.filter(isVacuous).length\n; If isVacuous returns false for actually vacuous formula, vacuousCount is wrong\n\n(declare-const isVacuous_result Bool)\n(declare-const actually_vacuous Bool)\n; Formula has no variables - vacuous by definition\n(assert (= actually_vacuous True))\n; isVacuous bug returns false when declares.length=0 AND defines.length=0\n(assert (= isVacuous_result False))\n; verifyAll computes vacuousCount = 0 (incorrect)\n; But should be 1\n(assert (and (= actually_vacuous True) (= isVacuous_result False)))\n(check-sat)"
+    },
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "verifyAll computes trivialCount using isTrivialIdentity with regex bug",
+      "smt2": "; PRINCIPLE: P1 - Precondition Propagation\n; LINE: 119\n; verifyAll computes trivialCount using isTrivialIdentity with regex bug\n; Line 135: trivialCount = results.filter(r => r.trivial).length\n; isTrivialIdentity bug: regex requires exact whitespace\n\n(declare-const isTrivial_result Bool)\n(declare-const actually_trivial Bool)\n; SMT2 has (= x y) and (not (= x y)) but extra whitespace\n(assert (= actually_trivial True))\n; isTrivialIdentity regex fails due to whitespace → returns false\n(assert (= isTrivial_result False))\n; verifyAll computes trivialCount = 0 but should be 1\n(assert (and (= actually_trivial True) (= isTrivial_result False)))\n(check-sat)"
     }
   ],
-  "violations": [],
   "depends_on": [
     "src/verifier.ts/isTrivialIdentity[94]",
     "src/verifier.ts/isVacuous[59]",
@@ -20,7 +26,14 @@
   ],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P3, P5\n; LINE: 119\n; VP1: verifyAll promises results contain correct Z3 results\n; verifyAll returns results from: nonVacuous.map(verifyBlock(smt2))\n; Each result.z3Result comes from verifyBlock\n\n; Model the pipeline:\n; 1. extractSmt2Blocks produces blocks with smt2 strings\n; 2. nonVacuous = blocks.filter where isVacuous(smt2) = false\n; 3. results.map calls verifyBlock on each smt2\n\n; Can results contain incorrect z3Result?\n; verifyBlock returns: \"sat\" | \"unsat\" | \"unknown\" | \"error\"\n; results.z3Result = verifyBlock(smt2).result\n\n; The function name \"verifyBlock\" is a contract: it returns Z3's result\n; From prior analysis (line 32), classify() is sound\n; verifyBlock passes smt2 to Z3 and returns classify's result\n\n; To prove violation: assert actual guarantees + violation\n(declare-const smt2_input String)\n(declare-const z3_output String)\n(declare-const z3_result String)\n\n; Transition: verifyBlock executes Z3\n(assert (= z3_output \"sat\"))\n; classify derives result from z3_output\n(assert (= z3_result \"sat\"))\n\n; Property: z3Result matches actual Z3 output\n; Violation: z3Result ≠ z3_output\n(assert (not (= z3_result z3_output)))\n(check-sat)",
+      "clause": "; PRINCIPLE: P2 - State Mutation Analysis  \n; LINE: 119\n; verifyAll computes vacuousCount using isVacuous which has false negative bug\n; Line 122: vacuousCount = blocks.filter(isVacuous).length\n; If isVacuous returns false for actually vacuous formula, vacuousCount is wrong\n\n(declare-const isVacuous_result Bool)\n(declare-const actually_vacuous Bool)\n; Formula has no variables - vacuous by definition\n(assert (= actually_vacuous True))\n; isVacuous bug returns false when declares.length=0 AND defines.length=0\n(assert (= isVacuous_result False))\n; verifyAll computes vacuousCount = 0 (incorrect)\n; But should be 1\n(assert (and (= actually_vacuous True) (= isVacuous_result False)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1 - Precondition Propagation\n; LINE: 119\n; verifyAll computes trivialCount using isTrivialIdentity with regex bug\n; Line 135: trivialCount = results.filter(r => r.trivial).length\n; isTrivialIdentity bug: regex requires exact whitespace\n\n(declare-const isTrivial_result Bool)\n(declare-const actually_trivial Bool)\n; SMT2 has (= x y) and (not (= x y)) but extra whitespace\n(assert (= actually_trivial True))\n; isTrivialIdentity regex fails due to whitespace → returns false\n(assert (= isTrivial_result False))\n; verifyAll computes trivialCount = 0 but should be 1\n(assert (and (= actually_trivial True) (= isTrivial_result False)))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

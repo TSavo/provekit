@@ -1,38 +1,17 @@
 {
-  "root": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "root": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
   "projectRoot": "/Users/tsavo/Projects/neurallog",
   "files": [
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/issues.ts",
-      "relativePath": "src/issues.ts",
-      "imports": [
-        "/Users/tsavo/Projects/neurallog/src/verifier.ts",
-        "/Users/tsavo/Projects/neurallog/src/types.ts"
-      ],
-      "signalCount": 10,
-      "hash": "a7f1dfead026a3b3948623ff735bb9d436871b845c722b3d562a4b811c6f85a8"
-    },
     {
       "path": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
       "relativePath": "src/verifier.ts",
       "imports": [],
       "signalCount": 6,
       "hash": "913908d2093b043332697dde9a55ee6c385449753fd8b76ce73773d4fea4f05e"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/types.ts",
-      "relativePath": "src/types.ts",
-      "imports": [
-        "/Users/tsavo/Projects/neurallog/src/verifier.ts"
-      ],
-      "signalCount": 0,
-      "hash": "bade62c65ba0c96c5db1b9d0d50a1ccdd9a753d25e4875080868aff6da940c52"
     }
   ],
   "topologicalOrder": [
-    "/Users/tsavo/Projects/neurallog/src/verifier.ts",
-    "/Users/tsavo/Projects/neurallog/src/types.ts",
-    "/Users/tsavo/Projects/neurallog/src/issues.ts"
+    "/Users/tsavo/Projects/neurallog/src/verifier.ts"
   ],
   "parallelGroups": [
     {
@@ -41,21 +20,7 @@
         "/Users/tsavo/Projects/neurallog/src/verifier.ts"
       ],
       "signalCount": 6
-    },
-    {
-      "depth": 1,
-      "files": [
-        "/Users/tsavo/Projects/neurallog/src/types.ts"
-      ],
-      "signalCount": 0
-    },
-    {
-      "depth": 2,
-      "files": [
-        "/Users/tsavo/Projects/neurallog/src/issues.ts"
-      ],
-      "signalCount": 10
     }
   ],
-  "builtAt": "2026-04-15T01:15:29.913Z"
+  "builtAt": "2026-04-15T01:34:44.275Z"
 }

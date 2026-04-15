@@ -5,22 +5,7 @@
   "line": 94,
   "signal_hash": "6bace2e7ffa32268fc8758b7082ee767ae70db6d5a30eea4f121ed8eff9581ce",
   "proven": [],
-  "violations": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Prove: if the SMT‑2 block does **not** contain a matching pair of",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 94\n; Prove: if the SMT‑2 block does **not** contain a matching pair of\n; an equality and its negation, then isTrivialIdentity must return false.\n; Encoding:\n;   eq  = 1 ⇔ an (= a b) assertion exists\n;   neq = 1 ⇔ a (not (= a b)) assertion exists\n;   ret = 1 ⇔ function returns true\n; We assert the situation where at least one of eq or neq is missing\n; yet the function would incorrectly return true (ret = 1).  This should\n; be impossible → Z3 should return unsat.\n(declare-const eq Int)   ; 0 = absent, 1 = present\n(declare-const neq Int)  ; 0 = absent, 1 = present\n(declare-const ret Int)  ; 0 = false, 1 = true\n\n; code‑level guarantees: NOT (eq = 1 ∧ neq = 1)\n(assert (or (= eq 0) (= neq 0)))   ; at least one component missing\n\n; contradictory return value (function would claim “trivial”)\n(assert (= ret 1))\n\n; domain constraints\n(assert (or (= eq 0) (= eq 1)))\n(assert (or (= neq 0) (= neq 1)))\n(assert (or (= ret 0) (= ret 1)))\n\n(check-sat)"
-    }
-  ],
+  "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 94\n; Prove: if the SMT‑2 block does **not** contain a matching pair of\n; an equality and its negation, then isTrivialIdentity must return false.\n; Encoding:\n;   eq  = 1 ⇔ an (= a b) assertion exists\n;   neq = 1 ⇔ a (not (= a b)) assertion exists\n;   ret = 1 ⇔ function returns true\n; We assert the situation where at least one of eq or neq is missing\n; yet the function would incorrectly return true (ret = 1).  This should\n; be impossible → Z3 should return unsat.\n(declare-const eq Int)   ; 0 = absent, 1 = present\n(declare-const neq Int)  ; 0 = absent, 1 = present\n(declare-const ret Int)  ; 0 = false, 1 = true\n\n; code‑level guarantees: NOT (eq = 1 ∧ neq = 1)\n(assert (or (= eq 0) (= neq 0)))   ; at least one component missing\n\n; contradictory return value (function would claim “trivial”)\n(assert (= ret 1))\n\n; domain constraints\n(assert (or (= eq 0) (= eq 1)))\n(assert (or (= neq 0) (= neq 1)))\n(assert (or (= ret 0) (= ret 1)))\n\n(check-sat)",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

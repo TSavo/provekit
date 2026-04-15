@@ -22,27 +22,100 @@ export class OpenCodeProvider implements LLMProvider {
     const client = await this.ensureClient();
     const sessionID = await this.ensureSession(client);
 
-    const result = await client.session.prompt({
+    const eventStream = await client.event.subscribe();
+    let fullText = "";
+    let done = false;
+
+    const promptPromise = client.session.prompt({
       path: { id: sessionID },
       body: {
         parts: [{ type: "text", text: `${options.systemPrompt}\n\n${prompt}` }],
       },
     });
 
-    const text = this.extractText(result);
-    console.log(`[llm:${this.name}] Response received in ${Date.now() - startTime}ms (${text.length} chars)`);
+    const eventPromise = (async () => {
+      try {
+        for await (const event of eventStream) {
+          if (done) break;
+
+          if (event.type === "message.part.updated") {
+            const part = event.properties?.part;
+            if (part?.type === "text" && part.text) {
+              fullText = part.text;
+              process.stdout.write(".");
+            }
+          }
+
+          if (event.type === "session.idle") {
+            break;
+          }
+
+          if (event.type === "session.error") {
+            console.log(`\n[llm:${this.name}] Session error: ${event.properties?.error}`);
+            break;
+          }
+        }
+      } catch {
+        // Stream ended or aborted
+      }
+    })();
+
+    const result = await promptPromise;
+    done = true;
+
+    try {
+      eventStream.controller?.abort();
+    } catch {}
+
+    const text = this.extractText(result) || fullText;
+    const elapsed = Date.now() - startTime;
+    console.log(`\n[llm:${this.name}] Response in ${this.formatDuration(elapsed)} (${text.length} chars)`);
     return { text };
   }
 
   async *stream(prompt: string, options: LLMRequestOptions): AsyncIterable<LLMStreamEvent> {
-    const response = await this.complete(prompt, options);
-    yield { type: "done", text: response.text };
+    const client = await this.ensureClient();
+    const sessionID = await this.ensureSession(client);
+
+    const eventStream = await client.event.subscribe();
+    let done = false;
+
+    const promptPromise = client.session.prompt({
+      path: { id: sessionID },
+      body: {
+        parts: [{ type: "text", text: `${options.systemPrompt}\n\n${prompt}` }],
+      },
+    });
+
+    try {
+      for await (const event of eventStream) {
+        if (done) break;
+
+        if (event.type === "message.part.updated") {
+          const part = event.properties?.part;
+          if (part?.type === "text" && part.text) {
+            yield { type: "text_delta", text: part.text };
+          }
+        }
+
+        if (event.type === "session.idle" || event.type === "session.error") {
+          break;
+        }
+      }
+    } catch {}
+
+    const result = await promptPromise;
+    done = true;
+    try { eventStream.controller?.abort(); } catch {}
+
+    const text = this.extractText(result);
+    yield { type: "done", text };
   }
 
   private async ensureClient(): Promise<any> {
     if (this.client) return this.client;
     const mod = await (Function('return import("@opencode-ai/sdk")')() as Promise<any>);
-    this.client = mod.createOpencodeClient({ baseUrl: this.baseUrl });
+    this.client = mod.createOpencodeClient({ baseUrl: this.baseUrl, timeout: 300000 });
     console.log(`[llm:${this.name}] Client created for ${this.baseUrl}`);
     return this.client;
   }
@@ -61,7 +134,7 @@ export class OpenCodeProvider implements LLMProvider {
 
   private extractText(result: any): string {
     const data = result?.data;
-    if (!data) return JSON.stringify(result);
+    if (!data) return "";
 
     if (data.parts) {
       return data.parts
@@ -80,6 +153,13 @@ export class OpenCodeProvider implements LLMProvider {
       }
     }
 
-    return JSON.stringify(data);
+    return "";
+  }
+
+  private formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s / 60)}m ${s % 60}s`;
   }
 }
