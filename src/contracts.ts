@@ -37,7 +37,8 @@ export interface Contract {
 }
 
 export function signalKey(file: string, fn: string, line: number): string {
-  return `${file}/${fn}[${line}]`;
+  const normalized = file.replace(/\\/g, "/").replace(/^\/+/, "");
+  return `${normalized}/${fn}[${line}]`;
 }
 
 export function signalKeyToPath(key: string): string {

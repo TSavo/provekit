@@ -32,34 +32,10 @@ export function createProvider(name?: ProviderName | string): LLMProvider {
 export function createPool(): ProviderPool {
   const providers: PooledProvider[] = [];
 
-  if (process.env.OPENCODE_URL) {
-    providers.push({
-      provider: new OpenCodeProvider(),
-      maxConcurrency: parseInt(process.env.OPENCODE_CONCURRENCY || "5", 10),
-      priority: 0,
-    });
-  }
-
-  if (process.env.OPENROUTER_API_KEY) {
-    providers.push({
-      provider: new OpenRouterProvider(),
-      maxConcurrency: parseInt(process.env.OPENROUTER_CONCURRENCY || "3", 10),
-      priority: 1,
-    });
-  }
-
-  if (process.env.OPENAI_API_KEY) {
-    providers.push({
-      provider: new OpenAIProvider(),
-      maxConcurrency: parseInt(process.env.OPENAI_CONCURRENCY || "3", 10),
-      priority: 2,
-    });
-  }
-
   providers.push({
     provider: new ClaudeAgentProvider(),
     maxConcurrency: parseInt(process.env.CLAUDE_AGENT_CONCURRENCY || "5", 10),
-    priority: 5,
+    priority: 0,
   });
 
 
@@ -67,11 +43,5 @@ export function createPool(): ProviderPool {
 }
 
 function detectProvider(): ProviderName {
-  const available: string[] = [];
-  if (process.env.OPENCODE_URL) available.push("opencode");
-  if (process.env.OPENROUTER_API_KEY) available.push("openrouter");
-  if (process.env.OPENAI_API_KEY) available.push("openai");
-
-  if (available.length > 0) return "pool";
   return "claude-agent";
 }

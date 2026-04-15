@@ -196,10 +196,14 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
     const totalProven = allContracts.reduce((n, c) => n + c.proven.length, 0);
     const totalViolations = allContracts.reduce((n, c) => n + c.violations.length, 0);
+    const unattributed = allContracts.filter((c) => c.proven.length === 0 && c.violations.length === 0).length;
     this.detail(`Derivation complete: ${this.formatDuration(Date.now() - startTime)}`);
     this.detail(`  ${allContracts.length} contracts across ${functionNodes.size} functions`);
-    this.detail(`  ${totalProven} proven (unsat) | ${totalViolations} violations (sat)`);
+    this.detail(`  ${totalProven} proven (unsat) | ${totalViolations} violations (sat) | ${unattributed} unattributed`);
     this.detail(`  ${allNewViolations.length} [NEW] violations for Phase 4`);
+    if (unattributed > 0) {
+      this.detail(`  WARNING: ${unattributed} signals received zero attributed SMT-LIB blocks`);
+    }
     console.log();
 
     return { data: output, writtenTo: outPath };
