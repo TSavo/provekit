@@ -59,16 +59,22 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
       return { data: report, writtenTo: outPath };
     }
 
+    this.detail(`Running axiom templates against ${contracts.length} contracts...`);
+    const axiomStart = Date.now();
     const results = applyAxioms(contracts);
 
     let proven = 0;
     let violations = 0;
     let errors = 0;
 
-    for (const r of results) {
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i]!;
+      if (i % 500 === 0 && i > 0 && results.length > 100) {
+        const pct = Math.round((i / results.length) * 100);
+        console.log(`  Checking... ${i}/${results.length} (${pct}%)`);
+      }
       if (r.verdict === "proven") {
         proven++;
-        this.detail(`✓ [${r.axiom}] ${r.description}`);
       } else if (r.verdict === "violation") {
         violations++;
         this.detail(`✗ [${r.axiom}] ${r.description}`);
@@ -76,6 +82,9 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
         errors++;
         this.detail(`⚠ [${r.axiom}] ${r.description} -- ${r.error?.slice(0, 60)}`);
       }
+    }
+    if (results.length > 100) {
+      process.stdout.write(`\r  ${results.length} checks complete in ${this.formatDuration(Date.now() - axiomStart)}                    \n`);
     }
 
     console.log();
@@ -137,5 +146,12 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
     writeFileSync(outPath, JSON.stringify(report, null, 2));
 
     return { data: report, writtenTo: outPath };
+  }
+
+  private formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s / 60)}m ${s % 60}s`;
   }
 }

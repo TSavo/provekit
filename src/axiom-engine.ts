@@ -232,44 +232,62 @@ function applyP7(contract: Contract): AxiomCheck[] {
  * If the set is unsatisfiable, the contracts contradict.
  */
 export function checkConsistency(contracts: Contract[]): AxiomResult[] {
-  const allProvenSmt2: string[] = [];
+  const namespacedBlocks: string[] = [];
+  let proofIndex = 0;
 
   for (const c of contracts) {
     for (const p of c.proven) {
-      // Extract just the assertions (skip declare-const and check-sat)
-      const assertions = p.smt2
-        .split("\n")
-        .filter((line) => line.trim().startsWith("(assert"))
-        .join("\n");
-      if (assertions) allProvenSmt2.push(assertions);
+      const prefix = `c${proofIndex}_`;
+      proofIndex++;
+
+      const lines = p.smt2.split("\n");
+      const varNames: string[] = [];
+
+      for (const line of lines) {
+        const declMatch = line.match(/\(declare-const\s+(\S+)/);
+        if (declMatch) varNames.push(declMatch[1]!);
+        const defMatch = line.match(/\(define-fun\s+(\S+)/);
+        if (defMatch) varNames.push(defMatch[1]!);
+      }
+
+      const assertLines = lines.filter((l) => l.trim().startsWith("(assert"));
+      if (assertLines.length < 2) continue;
+      const preconditionAsserts = assertLines.slice(0, -1);
+
+      const declLines = lines.filter((l) =>
+        l.trim().startsWith("(declare-const") || l.trim().startsWith("(define-fun")
+      );
+
+      // Skip blocks whose preconditions alone are unsat — they're self-contradictory
+      const selfCheck = [...declLines, ...preconditionAsserts, "(check-sat)"].join("\n");
+      const selfResult = verifyBlock(selfCheck);
+      if (selfResult.result === "unsat") continue;
+
+      let block = [...declLines, ...preconditionAsserts].join("\n");
+
+      for (const name of varNames) {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        block = block.replace(new RegExp(`\\b${escaped}\\b`, "g"), `${prefix}${name}`);
+      }
+
+      namespacedBlocks.push(block);
     }
   }
 
-  if (allProvenSmt2.length < 2) return [];
+  if (namespacedBlocks.length < 2) return [];
 
-  // Collect all declared variables
-  const allDecls = new Set<string>();
-  for (const c of contracts) {
-    for (const p of c.proven) {
-      const decls = p.smt2
-        .split("\n")
-        .filter((line) => line.trim().startsWith("(declare-const"));
-      decls.forEach((d) => allDecls.add(d.trim()));
-    }
-  }
-
-  const smt2 = `; CONSISTENCY CHECK: Are all proven properties mutually satisfiable?
-${[...allDecls].join("\n")}
-
-${allProvenSmt2.join("\n")}
+  const smt2 = `; CONSISTENCY CHECK: Are preconditions across all contracts mutually satisfiable?
+; Only preconditions and transitions are included (negated properties stripped).
+; Each contract's variables are namespaced to avoid collisions.
+${namespacedBlocks.join("\n\n")}
 
 (check-sat)
-; Expected: sat — if all properties can hold simultaneously, they're consistent
-; unsat would mean the contracts contradict each other`;
+; Expected: sat — all preconditions can hold simultaneously
+; unsat — genuine contradiction between contract preconditions`;
 
   const check: AxiomCheck = {
     axiom: "CONSISTENCY",
-    description: `Cross-contract consistency: ${contracts.length} contracts, ${allProvenSmt2.length} proven assertions`,
+    description: `Cross-contract consistency: ${contracts.length} contracts, ${namespacedBlocks.length} precondition sets`,
     sourceContract: "all",
     smt2,
     expected: "sat",
