@@ -17,13 +17,13 @@ export function extractSmt2Blocks(response: string): { smt2: string; principle: 
 
   while ((match = codeBlockRegex.exec(response)) !== null) {
     const content = match[1]!.trim();
-    // Only include blocks that have (check-sat)
     if (content.includes("(check-sat)")) {
-      // Extract principle tag from comments
       const principleMatch = content.match(/;\s*PRINCIPLE:\s*(P\d+(?:\s*[,+&]\s*P\d+)*|\[NEW\])/i);
       const principle = principleMatch ? principleMatch[1]!.trim() : null;
 
-      blocks.push({ smt2: content, principle });
+      const firstCheckSat = content.indexOf("(check-sat)");
+      const truncated = content.slice(0, firstCheckSat + "(check-sat)".length);
+      blocks.push({ smt2: truncated, principle });
     }
   }
 
@@ -31,23 +31,26 @@ export function extractSmt2Blocks(response: string): { smt2: string; principle: 
 }
 
 export function verifyBlock(smt2: string): { result: "sat" | "unsat" | "unknown" | "error"; error?: string } {
+  const classify = (output: string): { result: "sat" | "unsat" | "unknown" | "error"; error?: string } => {
+    const lastLine = output.trim().split("\n").pop()?.trim() || "";
+    if (lastLine === "sat") return { result: "sat" };
+    if (lastLine === "unsat") return { result: "unsat" };
+    if (lastLine === "unknown") return { result: "unknown" };
+    return { result: "error", error: output };
+  };
+
   try {
     const output = execSync("z3 -in -T:5", {
       input: smt2,
       encoding: "utf-8",
       timeout: 10000,
-    }).trim();
-
-    if (output === "sat") return { result: "sat" };
-    if (output === "unsat") return { result: "unsat" };
-    if (output === "unknown") return { result: "unknown" };
-    return { result: "error", error: output };
+    });
+    return classify(output);
   } catch (err: any) {
     const stderr = err.stderr?.toString() || "";
-    const stdout = err.stdout?.toString()?.trim() || "";
-    if (stdout === "sat") return { result: "sat" };
-    if (stdout === "unsat") return { result: "unsat" };
-    return { result: "error", error: stderr || stdout || err.message };
+    const stdout = err.stdout?.toString() || "";
+    if (stdout.trim()) return classify(stdout);
+    return { result: "error", error: stderr || err.message };
   }
 }
 
