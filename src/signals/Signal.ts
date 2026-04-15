@@ -20,6 +20,7 @@ export interface Signal {
   returnType: string;
   pathConditions: string[];
   localTypes: Record<string, string>;
+  callees: string[];
 }
 
 export function computeSignalHash(signal: Signal): string {

@@ -339,7 +339,7 @@ class NeurallogTransform extends Transform {
           // Record witnesses for the termination bookkeeping
           if (entry.result === "pass") {
             this.contractStore.recordWitness(
-              contract.file, contract.line, normalizeClause(entry.property)
+              contract.key, normalizeClause(entry.property)
             );
           }
         }

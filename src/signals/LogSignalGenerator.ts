@@ -22,6 +22,7 @@ export class LogSignalGenerator implements SignalGenerator {
       returnType: site.returnType,
       pathConditions: site.pathConditions,
       localTypes: site.localTypes,
+      callees: site.callees,
     }));
   }
 }

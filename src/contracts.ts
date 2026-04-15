@@ -1,24 +1,13 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs";
-import { join, dirname, relative, basename } from "path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "fs";
+import { join, dirname, relative } from "path";
 import { createHash } from "crypto";
 
 export interface ClauseHistory {
-  clause: string;          // the SMT-LIB assertion
+  clause: string;
   status: "active" | "weakened";
   weaken_step: number;
   witness_count_at_last_weaken: number;
   current_witness_count: number;
-}
-
-export interface Contract {
-  file: string;
-  function: string;
-  line: number;
-  signal_hash: string;   // hash of the signal that generated this contract
-  proven: ProvenProperty[];
-  violations: Violation[];
-  clause_history: ClauseHistory[];
-  depends_on: string[];  // hashes of contracts that were in context during derivation
 }
 
 export interface ProvenProperty {
@@ -35,14 +24,34 @@ export interface Violation {
   smt2: string;
 }
 
-export interface ContractFile {
-  file_hash: string;
-  principle_hash?: string;
-  contracts: Contract[];
+export interface Contract {
+  key: string;
+  file: string;
+  function: string;
+  line: number;
+  signal_hash: string;
+  proven: ProvenProperty[];
+  violations: Violation[];
+  clause_history: ClauseHistory[];
+  depends_on: string[];
+}
+
+export function signalKey(file: string, fn: string, line: number): string {
+  return `${file}/${fn}[${line}]`;
+}
+
+export function signalKeyToPath(key: string): string {
+  return key + ".json";
+}
+
+export function contractHash(contract: Contract): string {
+  const content = contract.proven.map((p) => p.smt2).join("\n") +
+    contract.violations.map((v) => v.smt2).join("\n");
+  return createHash("sha256").update(content).digest("hex");
 }
 
 export class ContractStore {
-  private contracts: Contract[] = [];
+  private contracts: Map<string, Contract> = new Map();
   private projectRoot: string;
 
   constructor(projectRoot: string) {
@@ -50,12 +59,8 @@ export class ContractStore {
     this.loadFromDisk();
   }
 
-  private get neurallogDir(): string {
-    return join(this.projectRoot, ".neurallog");
-  }
-
   private get contractsDir(): string {
-    return join(this.neurallogDir, "contracts");
+    return join(this.projectRoot, ".neurallog", "contracts");
   }
 
   private loadFromDisk(): void {
@@ -63,226 +68,160 @@ export class ContractStore {
 
     const walk = (dir: string): string[] => {
       const entries: string[] = [];
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          entries.push(...walk(full));
-        } else if (entry.name.endsWith(".json")) {
-          entries.push(full);
+      try {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, entry.name);
+          if (entry.isDirectory()) {
+            entries.push(...walk(full));
+          } else if (entry.name.endsWith(".json")) {
+            entries.push(full);
+          }
         }
-      }
+      } catch {}
       return entries;
     };
 
     for (const jsonPath of walk(this.contractsDir)) {
       try {
-        const data: ContractFile = JSON.parse(
-          readFileSync(jsonPath, "utf-8")
-        );
-        for (const contract of data.contracts) {
-          // Backward compat: older contract files may lack clause_history
+        const raw = readFileSync(jsonPath, "utf-8");
+        const data = JSON.parse(raw);
+
+        if (data.key) {
+          const contract: Contract = data;
           if (!contract.clause_history) {
             contract.clause_history = [
-              ...contract.proven.map((p) => ({
-                clause: p.smt2,
-                status: "active" as const,
-                weaken_step: 0,
-                witness_count_at_last_weaken: 0,
-                current_witness_count: 0,
-              })),
-              ...contract.violations.map((v) => ({
-                clause: v.smt2,
-                status: "active" as const,
-                weaken_step: 0,
-                witness_count_at_last_weaken: 0,
-                current_witness_count: 0,
-              })),
+              ...contract.proven.map((p) => ({ clause: p.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
+              ...contract.violations.map((v) => ({ clause: v.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
             ];
           }
-        }
-        this.contracts.push(...data.contracts);
-      } catch {
-        // skip corrupt files
-      }
-    }
-  }
-
-  add(contract: Contract): void {
-    this.contracts.push(contract);
-  }
-
-  /**
-   * Increment current_witness_count for a matching clause in the contract
-   * at the given file:line. Called from the runtime transport when a proof
-   * entry is recorded.
-   */
-  recordWitness(file: string, line: number, clause: string): void {
-    const normalized = this.normalizeClause(clause);
-    for (const c of this.contracts) {
-      if (c.file === file && c.line === line) {
-        for (const h of c.clause_history) {
-          if (this.normalizeClause(h.clause) === normalized) {
-            h.current_witness_count++;
-            return;
+          this.contracts.set(contract.key, contract);
+        } else if (data.contracts) {
+          for (const contract of data.contracts) {
+            const key = contract.key || signalKey(contract.file, contract.function, contract.line);
+            contract.key = key;
+            if (!contract.clause_history) {
+              contract.clause_history = [
+                ...contract.proven.map((p: any) => ({ clause: p.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
+                ...contract.violations.map((v: any) => ({ clause: v.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
+              ];
+            }
+            this.contracts.set(key, contract);
           }
         }
-      }
+      } catch {}
     }
+
+    console.log(`[contracts] Loaded ${this.contracts.size} contracts from disk`);
   }
 
-  private normalizeClause(s: string): string {
-    return s.replace(/;[^\n]*/g, "").replace(/\s+/g, " ").trim();
+  get(key: string): Contract | undefined {
+    return this.contracts.get(key);
   }
 
-  /**
-   * Mark a clause as weakened. Sets status to "weakened", increments
-   * weaken_step, and snapshots the current witness count.
-   */
-  weakenClause(file: string, line: number, clause: string): void {
-    for (const c of this.contracts) {
-      if (c.file === file && c.line === line) {
-        for (const h of c.clause_history) {
-          if (h.clause === clause) {
-            h.status = "weakened";
-            h.weaken_step++;
-            h.witness_count_at_last_weaken = h.current_witness_count;
-            return;
-          }
-        }
-      }
-    }
+  has(key: string): boolean {
+    return this.contracts.has(key);
   }
 
-  /**
-   * Returns true only if new evidence has arrived since the last weakening,
-   * i.e. current_witness_count > witness_count_at_last_weaken.
-   */
-  canStrengthen(file: string, line: number, clause: string): boolean {
-    for (const c of this.contracts) {
-      if (c.file === file && c.line === line) {
-        for (const h of c.clause_history) {
-          if (h.clause === clause) {
-            return h.current_witness_count > h.witness_count_at_last_weaken;
-          }
-        }
-      }
-    }
-    return false;
+  put(contract: Contract): void {
+    this.contracts.set(contract.key, contract);
+    this.writeSingle(contract);
   }
 
-  writeToDisk(filePath: string, fileSource: string, principleHash?: string): void {
-    const relPath = relative(this.projectRoot, filePath);
-    const contractPath = join(
-      this.contractsDir,
-      relPath + ".json"
-    );
-    const dir = dirname(contractPath);
-    mkdirSync(dir, { recursive: true });
-
-    const fileHash = createHash("sha256").update(fileSource).digest("hex");
-    const contractsForFile = this.contracts.filter(
-      (c) => c.file === filePath || c.file === relPath
-    );
-
-    const data: ContractFile = {
-      file_hash: fileHash,
-      ...(principleHash ? { principle_hash: principleHash } : {}),
-      contracts: contractsForFile,
-    };
-
-    writeFileSync(contractPath, JSON.stringify(data, null, 2));
+  remove(key: string): void {
+    this.contracts.delete(key);
+    const filePath = join(this.contractsDir, signalKeyToPath(key));
+    try { unlinkSync(filePath); } catch {}
   }
 
   getAll(): Contract[] {
-    return [...this.contracts];
+    return [...this.contracts.values()];
   }
 
-  formatForPrompt(): string {
-    if (this.contracts.length === 0) {
-      return "(no existing contracts yet — first pass)";
-    }
+  getByFile(file: string): Contract[] {
+    return this.getAll().filter((c) => c.file === file);
+  }
 
-    const sections: string[] = [];
+  getDependents(key: string): Contract[] {
+    return this.getAll().filter((c) => c.depends_on.includes(key));
+  }
 
-    for (const contract of this.contracts) {
-      const lines: string[] = [];
-      lines.push(
-        `### ${contract.file}:${contract.function} (line ${contract.line})`
-      );
+  findStale(): Contract[] {
+    const stale: Contract[] = [];
+    const staleKeys = new Set<string>();
 
-      if (contract.proven.length > 0) {
-        lines.push("\nProven properties (Z3 confirmed unsat):");
-        for (const p of contract.proven) {
-          const tag = p.principle ? `[${p.principle}]` : "";
-          lines.push(`  ${tag} ${p.claim}`);
-          lines.push("  ```smt2");
-          lines.push(`  ${p.smt2}`);
-          lines.push("  ```");
+    for (const c of this.contracts.values()) {
+      for (const dep of c.depends_on) {
+        if (!this.contracts.has(dep)) {
+          stale.push(c);
+          staleKeys.add(c.key);
+          break;
         }
       }
+    }
 
-      if (contract.violations.length > 0) {
-        lines.push("\nReachable violations (Z3 confirmed sat):");
-        for (const v of contract.violations) {
+    let cascaded = true;
+    while (cascaded) {
+      cascaded = false;
+      for (const c of this.contracts.values()) {
+        if (staleKeys.has(c.key)) continue;
+        for (const dep of c.depends_on) {
+          if (staleKeys.has(dep)) {
+            stale.push(c);
+            staleKeys.add(c.key);
+            cascaded = true;
+            break;
+          }
+        }
+      }
+    }
+
+    return stale;
+  }
+
+  formatForPrompt(keys?: string[]): string {
+    const contracts = keys
+      ? keys.map((k) => this.contracts.get(k)).filter((c): c is Contract => !!c)
+      : this.getAll();
+
+    if (contracts.length === 0) return "(no existing contracts)";
+
+    return contracts.map((c) => {
+      const lines: string[] = [];
+      lines.push(`### ${c.key}`);
+      if (c.proven.length > 0) {
+        lines.push("\nProven (Z3 unsat):");
+        for (const p of c.proven) {
+          const tag = p.principle ? `[${p.principle}]` : "";
+          lines.push(`  ${tag} ${p.claim}`);
+        }
+      }
+      if (c.violations.length > 0) {
+        lines.push("\nViolations (Z3 sat):");
+        for (const v of c.violations) {
           const tag = v.principle ? `[${v.principle}]` : "";
           lines.push(`  ${tag} ${v.claim}`);
         }
       }
-
-      sections.push(lines.join("\n"));
-    }
-
-    return sections.join("\n\n");
+      return lines.join("\n");
+    }).join("\n\n");
   }
 
-  /**
-   * Compute a content hash for a contract — used as a dependency identifier.
-   */
-  static contractHash(contract: Contract): string {
-    const content = contract.proven.map((p) => p.smt2).join("\n") +
-      contract.violations.map((v) => v.smt2).join("\n");
-    return createHash("sha256").update(content).digest("hex");
+  private writeSingle(contract: Contract): void {
+    const filePath = join(this.contractsDir, signalKeyToPath(contract.key));
+    const dir = dirname(filePath);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(filePath, JSON.stringify(contract, null, 2));
   }
 
-  /**
-   * Set the depends_on field for a contract based on which contracts
-   * were in context during its derivation.
-   */
-  static withDependencies(contract: Contract, contextContracts: Contract[]): Contract {
-    contract.depends_on = contextContracts.map((c) => ContractStore.contractHash(c));
-    return contract;
-  }
-}
-
-/**
- * Walk the dependency chain and find all contracts that are stale
- * because a dependency changed.
- *
- * A contract is stale if:
- * 1. Its own file changed (file_hash mismatch — handled by existing cache logic)
- * 2. Any contract in its depends_on list has a different hash than when
- *    the dependency was recorded (the upstream contract was re-derived)
- */
-export function findStaleContracts(contracts: Contract[]): Contract[] {
-  const currentHashes = new Map<string, string>();
-  for (const c of contracts) {
-    const key = `${c.file}:${c.function}:${c.line}`;
-    currentHashes.set(key, ContractStore.contractHash(c));
-  }
-
-  const stale: Contract[] = [];
-  for (const c of contracts) {
-    if (!c.depends_on || c.depends_on.length === 0) continue;
-
-    // Check if any dependency hash no longer matches a current contract
-    const allCurrentHashes = new Set(currentHashes.values());
-    for (const depHash of c.depends_on) {
-      if (!allCurrentHashes.has(depHash)) {
-        stale.push(c);
-        break;
+  recordWitness(key: string, clause: string): void {
+    const c = this.contracts.get(key);
+    if (!c) return;
+    const normalized = clause.replace(/;[^\n]*/g, "").replace(/\s+/g, " ").trim();
+    for (const h of c.clause_history) {
+      if (h.clause.replace(/;[^\n]*/g, "").replace(/\s+/g, " ").trim() === normalized) {
+        h.current_witness_count++;
+        return;
       }
     }
   }
-
-  return stale;
 }

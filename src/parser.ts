@@ -17,8 +17,9 @@ export interface LogCallSite {
   // Enriched context from AST:
   parameters: ParameterType[];
   returnType: string;
-  pathConditions: string[];  // if/else conditions that must hold to reach this log
-  localTypes: Record<string, string>;  // variable name → type annotation
+  pathConditions: string[];
+  localTypes: Record<string, string>;
+  callees: string[];
 }
 
 const LOG_OBJECTS = new Set([
@@ -86,6 +87,7 @@ function tryExtractLogCall(
   const returnType = extractReturnType(enclosingFn);
   const pathConditions = extractPathConditions(node, enclosingFn);
   const localTypes = extractLocalTypes(enclosingFn, node);
+  const callees = extractCallees(enclosingFn);
 
   return {
     line: node.startPosition.row + 1,
@@ -99,6 +101,7 @@ function tryExtractLogCall(
     returnType,
     pathConditions,
     localTypes,
+    callees,
   };
 }
 
@@ -362,4 +365,29 @@ function containsReturn(node: Parser.SyntaxNode): boolean {
     if (containsReturn(child)) return true;
   }
   return false;
+}
+
+export function extractCallees(fnNode: Parser.SyntaxNode): string[] {
+  const callees = new Set<string>();
+
+  const visit = (node: Parser.SyntaxNode): void => {
+    if (node.type === "call_expression") {
+      const fn = node.childForFieldName("function");
+      if (fn) {
+        if (fn.type === "identifier") {
+          callees.add(fn.text);
+        } else if (fn.type === "member_expression") {
+          const prop = fn.childForFieldName("property");
+          if (prop) callees.add(prop.text);
+        }
+      }
+    }
+    for (const child of node.children) {
+      visit(child);
+    }
+  };
+
+  const body = fnNode.childForFieldName("body");
+  if (body) visit(body);
+  return [...callees];
 }

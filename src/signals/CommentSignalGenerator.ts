@@ -1,6 +1,6 @@
 import Parser from "tree-sitter";
 import { Signal, SignalGenerator } from "./Signal";
-import { findEnclosingFunction, extractFunctionName } from "../parser";
+import { findEnclosingFunction, extractFunctionName, extractCallees } from "../parser";
 
 export class CommentSignalGenerator implements SignalGenerator {
   readonly name = "comment";
@@ -44,8 +44,9 @@ export class CommentSignalGenerator implements SignalGenerator {
       const returnType = this.extractReturnType(enclosingFn);
       const pathConditions = this.extractPathConditions(commentNode, enclosingFn);
       const localTypes = this.extractLocalTypes(enclosingFn, commentNode);
+      const callees = extractCallees(enclosingFn);
 
-      console.log(`[comment-signal] Line ${line} in ${fnName}(): "${cleanText.slice(0, 70)}"`);
+      console.log(`[comment-signal] Line ${line} in ${fnName}(): "${cleanText.slice(0, 70)}" calls:[${callees.join(",")}]`);
 
       signals.push({
         file: filePath,
@@ -61,6 +62,7 @@ export class CommentSignalGenerator implements SignalGenerator {
         returnType,
         pathConditions,
         localTypes,
+        callees,
       });
     });
 

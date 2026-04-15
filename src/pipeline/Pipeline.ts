@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, relative } from "path";
 import { SignalRegistry, computeSignalHash } from "../signals";
-import { ContractStore, Contract } from "../contracts";
+import { ContractStore, Contract, signalKey, contractHash } from "../contracts";
 import { PrincipleStore, hashPrinciple } from "../principles";
 import { DependencyPhase, DependencyGraph } from "./DependencyPhase";
 import { ContextPhase, ContextBundle, CallSiteContext } from "./ContextPhase";
@@ -62,8 +62,7 @@ export class Pipeline {
     }
 
     const store = new ContractStore(config.projectRoot);
-    const existingContracts = store.getAll();
-    const staleBundles = this.filterStaleBundles(bundles, existingContracts);
+    const staleBundles = this.filterStaleBundles(bundles, store);
 
     if (staleBundles.length === 0) {
       console.log("All signal hashes current. No derivation needed.");
@@ -83,7 +82,7 @@ export class Pipeline {
     }
 
     const { data: derivation } = await this.derivationPhase.execute(
-      { bundles: staleBundles, model: config.model, parallelGroups: graph.parallelGroups, maxConcurrency: config.maxConcurrency },
+      { bundles: staleBundles, model: config.model, maxConcurrency: config.maxConcurrency },
       options
     );
 
@@ -199,7 +198,7 @@ export class Pipeline {
 
         for (const depHash of c.depends_on) {
           const depContract = existingContracts.find(
-            (d) => ContractStore.contractHash(d) === depHash
+            (d) => contractHash(d) === depHash
           );
           if (depContract) {
             const depKey = `${depContract.file}:${depContract.function}:${depContract.line}`;
@@ -247,16 +246,13 @@ export class Pipeline {
     return result;
   }
 
-  private filterStaleBundles(bundles: ContextBundle[], existingContracts: Contract[]): ContextBundle[] {
+  private filterStaleBundles(bundles: ContextBundle[], store: ContractStore): ContextBundle[] {
     const filtered: ContextBundle[] = [];
 
     for (const bundle of bundles) {
       const staleSites = bundle.callSites.filter((callSite) => {
-        const existing = existingContracts.find(
-          (c) => (c.file === bundle.filePath || c.file.endsWith(bundle.relativePath))
-            && c.function === callSite.functionName
-            && Math.abs(c.line - callSite.line) <= 2
-        );
+        const key = signalKey(bundle.relativePath, callSite.functionName, callSite.line);
+        const existing = store.get(key);
         return !existing || existing.signal_hash !== callSite.signalHash;
       });
 

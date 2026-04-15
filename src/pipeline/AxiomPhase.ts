@@ -2,7 +2,7 @@ import { writeFileSync } from "fs";
 import { join } from "path";
 import { Phase, PhaseResult, PhaseOptions } from "./Phase";
 import { applyAxioms, checkConsistency, AxiomResult } from "../axiom-engine";
-import { ContractStore, Contract, findStaleContracts } from "../contracts";
+import { ContractStore, Contract } from "../contracts";
 import { IgnoreFilter } from "../git";
 
 export interface AxiomReport {
@@ -87,7 +87,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
     }
 
     this.detail("Checking dependency chain...");
-    const stale = findStaleContracts(contracts);
+    const stale = store.findStale();
     if (stale.length === 0) {
       this.detail("✓ All dependencies current");
     } else {
