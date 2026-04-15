@@ -409,25 +409,36 @@ function runReport(args: string[]): void {
 
   let totalProven = 0;
   let totalViolations = 0;
+  let totalUnverified = 0;
 
-  const byFile = new Map<string, { proven: number; violations: number }>();
+  const byFile = new Map<string, { proven: number; violations: number; unverified: number; signals: number }>();
 
   for (const c of contracts) {
     totalProven += c.proven.length;
     totalViolations += c.violations.length;
+    const isUnverified = c.proven.length === 0 && c.violations.length === 0;
+    if (isUnverified) totalUnverified++;
 
     const key = c.file;
-    const entry = byFile.get(key) || { proven: 0, violations: 0 };
+    const entry = byFile.get(key) || { proven: 0, violations: 0, unverified: 0, signals: 0 };
     entry.proven += c.proven.length;
     entry.violations += c.violations.length;
+    if (isUnverified) entry.unverified++;
+    entry.signals++;
     byFile.set(key, entry);
   }
 
+  const coveragePct = contracts.length > 0
+    ? Math.round(((contracts.length - totalUnverified) / contracts.length) * 100)
+    : 0;
+
   console.log(`neurallog v${VERSION} — coverage report`);
   console.log("──────────────────────────────────────────");
-  console.log(`Contracts:     ${contracts.length}`);
+  console.log(`Signals:       ${contracts.length}`);
   console.log(`  Proven:      ${totalProven}`);
   console.log(`  Violations:  ${totalViolations}`);
+  console.log(`  Unverified:  ${totalUnverified}`);
+  console.log(`  Coverage:    ${coveragePct}% (${contracts.length - totalUnverified}/${contracts.length} signals have proofs)`);
   console.log();
 
   if (byFile.size > 0) {
@@ -435,7 +446,8 @@ function runReport(args: string[]): void {
     const sorted = [...byFile.entries()].sort((a, b) => b[1].violations - a[1].violations);
     for (const [file, counts] of sorted) {
       const relPath = file.length > 60 ? "..." + file.slice(-57) : file;
-      console.log(`  ${relPath.padEnd(60)} ${counts.proven} proven, ${counts.violations} violations`);
+      const fileCoverage = counts.signals > 0 ? Math.round(((counts.signals - counts.unverified) / counts.signals) * 100) : 0;
+      console.log(`  ${relPath.padEnd(50)} ${counts.proven} proven  ${counts.violations} violations  ${counts.unverified} unverified  ${fileCoverage}%`);
     }
   }
 }
