@@ -1,0 +1,53 @@
+{
+  "key": "src/axiom-engine.ts/applyP2[113]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "applyP2",
+  "line": 113,
+  "signal_hash": "b3036e6ccec8bc68099bcb91459263d9920c5eb11f1aaef7043fe8e4d23bcd55",
+  "proven": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "PROVEN: [...fnContracts].sort(...) is a length-preserving permutation",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)"
+    },
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "VIOLATION: Two contracts at the same line produce a P2 check with no temporal gap",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 113\n; VIOLATION: Two contracts at the same line produce a P2 check with no temporal gap\n\n(declare-const line_a Int)\n(declare-const line_b Int)\n(declare-const earlier_line Int)\n(declare-const later_line Int)\n(declare-const temporal_gap Int)   ; = later_line - earlier_line; must be > 0 for P2 to be meaningful\n\n; Transition: both contracts are in the same function group\n(assert (= line_a line_b))\n\n; Transition: sort comparator returns 0 for equal lines → either ordering is valid\n(assert (= earlier_line line_a))\n(assert (= later_line line_b))\n\n; Transition: temporal_gap computed from assigned ordering\n(assert (= temporal_gap (- later_line earlier_line)))\n\n; Violation: gap is zero → no mutation can have occurred between the two \"points\"\n(assert (= temporal_gap 0))\n\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 113\n; VIOLATION: Two contracts at the same line produce a P2 check with no temporal gap\n\n(declare-const line_a Int)\n(declare-const line_b Int)\n(declare-const earlier_line Int)\n(declare-const later_line Int)\n(declare-const temporal_gap Int)   ; = later_line - earlier_line; must be > 0 for P2 to be meaningful\n\n; Transition: both contracts are in the same function group\n(assert (= line_a line_b))\n\n; Transition: sort comparator returns 0 for equal lines → either ordering is valid\n(assert (= earlier_line line_a))\n(assert (= later_line line_b))\n\n; Transition: temporal_gap computed from assigned ordering\n(assert (= temporal_gap (- later_line earlier_line)))\n\n; Violation: gap is zero → no mutation can have occurred between the two \"points\"\n(assert (= temporal_gap 0))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

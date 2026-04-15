@@ -1,0 +1,10 @@
+{
+  "id": "obs-6",
+  "signalKey": "src/axiom-engine.ts/applyP2[120]",
+  "claim": "VIOLATION: earlier.function and later.function are always identical within a group",
+  "smt2": "; PRINCIPLE: [NEW]\n; LINE: 120\n; VIOLATION: earlier.function and later.function are always identical within a group\n;            but sourceContract vs targetContract labels suggest different functions —\n;            P2 description \"State mutation between X and Y\" is misleading when X == Y\n\n(declare-const earlier_function Int)   ; hash/id of earlier.function string\n(declare-const later_function Int)     ; hash/id of later.function string\n(declare-const same_group Int)         ; 1 = both contracts are in the same byFunction group\n\n; Transition: grouping key = file + \":\" + function\n; If both are in the same group, they have identical file and function values\n(assert (= same_group 1))\n(assert (=> (= same_group 1) (= earlier_function later_function)))\n\n; Transition: description reads `${earlier.function}:${earlier.line} and ${later.function}:${later.line}`\n; Both function names are the same value — the description implies cross-function which is false\n(declare-const description_implies_different_functions Int)  ; 1 = reader infers different fns\n(assert (= description_implies_different_functions 1))\n\n; Violation: description misleads — functions are identical, not distinct\n(assert (= earlier_function later_function))\n(assert (= description_implies_different_functions 1))\n\n(check-sat)",
+  "rejectedPrincipleName": "",
+  "rejectedPrincipleDescription": "",
+  "adversaryFeedback": "",
+  "observedAt": "2026-04-15T03:45:32.670Z"
+}

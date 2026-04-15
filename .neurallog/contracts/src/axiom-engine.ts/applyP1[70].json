@@ -1,0 +1,26 @@
+{
+  "key": "src/axiom-engine.ts/applyP1[70]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "applyP1",
+  "line": 70,
+  "signal_hash": "b62871c86e37f4a462fb532706c52015f85b9ed567d5eab42096313e86a51f8d",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Ordering constraint violation: line-number ordering is used as a call-graph proxy.",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 70\n; Ordering constraint violation: line-number ordering is used as a call-graph proxy.\n; An earlier-line function is not necessarily a caller of the later-line function.\n(declare-const caller_line Int)\n(declare-const contract_line Int)\n(declare-const same_file Int)              ; 1 = caller.file === contract.file\n(declare-const actually_calls_contract Int); 1 = caller truly invokes contract's function\n(declare-const check_emitted Int)          ; 1 = AxiomCheck is pushed to array\n; Code transition: filter passes when same_file=1 AND caller_line < contract_line\n(assert (= same_file 1))\n(assert (< caller_line contract_line))\n; Code transition: no call-graph lookup performed — filter is purely positional\n(assert (= actually_calls_contract 0))\n; Code transition: filter passes → check is pushed regardless of actual call relationship\n(assert (= check_emitted 1))\n; Violation: a P1 check is generated for a non-caller pair\n(assert (= actually_calls_contract 0))\n(assert (= check_emitted 1))\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 70\n; Ordering constraint violation: line-number ordering is used as a call-graph proxy.\n; An earlier-line function is not necessarily a caller of the later-line function.\n(declare-const caller_line Int)\n(declare-const contract_line Int)\n(declare-const same_file Int)              ; 1 = caller.file === contract.file\n(declare-const actually_calls_contract Int); 1 = caller truly invokes contract's function\n(declare-const check_emitted Int)          ; 1 = AxiomCheck is pushed to array\n; Code transition: filter passes when same_file=1 AND caller_line < contract_line\n(assert (= same_file 1))\n(assert (< caller_line contract_line))\n; Code transition: no call-graph lookup performed — filter is purely positional\n(assert (= actually_calls_contract 0))\n; Code transition: filter passes → check is pushed regardless of actual call relationship\n(assert (= check_emitted 1))\n; Violation: a P1 check is generated for a non-caller pair\n(assert (= actually_calls_contract 0))\n(assert (= check_emitted 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

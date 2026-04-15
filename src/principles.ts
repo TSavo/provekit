@@ -22,76 +22,9 @@ export interface Principle {
   validationFailure?: string;
 }
 
-const SEED_AXIOMS = [
-  {
-    id: "P1",
-    name: "Precondition Propagation",
-    description:
-      "Every function has preconditions. When function A calls function B, A must establish B's preconditions before the call. If it does not, the violation is reachable.",
-    teachingExample:
-      "transfer(from, to, amount) calls withdraw(account, amount) where withdraw requires amount <= account.balance. If transfer only checks amount > 0 but not amount <= balance, the violation is reachable.",
-  },
-  {
-    id: "P2",
-    name: "State Mutation Analysis",
-    description:
-      "When a function mutates shared state, subsequent calls reading that state see different values. Each mutation changes the precondition landscape for everything that follows. Loop iterations are NOT independent when they can alias the same shared state.",
-    teachingExample:
-      "A loop processes work items that can reference the same resource by ID. The first iteration reduces a budget; the second iteration on the same resource finds the budget exhausted.",
-  },
-  {
-    id: "P3",
-    name: "Calling Context Analysis",
-    description:
-      "Public functions can receive any input. The set of valid inputs is only what the function itself validates. Unvalidated inputs can violate any assumption the function's body makes.",
-    teachingExample:
-      "process_payment(invoice) trusts invoice.amount without validation. A negative payment is reachable because the function never checks.",
-  },
-  {
-    id: "P4",
-    name: "Temporal Analysis",
-    description:
-      "If the same function can be invoked multiple times on the same input, analyze whether the second invocation's preconditions still hold given the first invocation's side effects on shared state.",
-    teachingExample:
-      "ship_order(order) decrements inventory and sets order.shipped = true but doesn't check order.shipped before executing. A second call drives inventory negative.",
-  },
-  {
-    id: "P5",
-    name: "Semantic Correctness",
-    description:
-      "Beyond precondition violations, check whether the computed values are meaningful in the domain. A function might execute without error but produce a result that is semantically wrong — a refund that exceeds the payment, a price that is negative, a date in the past.",
-    teachingExample:
-      "calculate_discount(original_price, discount_percent) doesn't cap the discount. A 150% discount produces a negative price — semantically invalid even though the code runs without error.",
-  },
-  {
-    id: "P6",
-    name: "Boundary and Degenerate Inputs",
-    description:
-      "Functions that process collections or accumulate values can receive empty inputs, zero-valued inputs, or single-element inputs. The code may execute without error but produce a degenerate result — a zero total, an empty output, a no-op that still mutates state. Also covers boundary exposure: when input crosses a trust or format boundary (e.g., internal tokens passed to external contexts, raw user input reaching privileged operations), the boundary itself is the degenerate case.",
-    teachingExample:
-      "finalize_invoice(line_items) sums items and marks the invoice finalized. If line_items is empty, a zero-dollar invoice is finalized — masking upstream bugs. Similarly, a Bearer token included in an external-facing log or response crosses a trust boundary.",
-  },
-  {
-    id: "P7",
-    name: "Arithmetic Safety",
-    description:
-      "Division, modular arithmetic, and subtraction can produce undefined or unexpected results at boundary values. Division by zero is undefined. Subtraction can underflow. Integer division truncates.",
-    teachingExample:
-      "compute_average(total, count) divides total by count. If count comes from len(items) and items is empty, division by zero is reachable.",
-  },
-];
 
 export function hashPrinciple(id: string): string {
-  const seed = SEED_AXIOMS.find((a) => a.id === id);
-  if (seed) {
-    return createHash("sha256")
-      .update(seed.id)
-      .update(seed.name)
-      .update(seed.description)
-      .update(seed.teachingExample)
-      .digest("hex");
-  }
-  return "";
+  return id;
 }
 
 function getAdversaryModel(model: string): string {
@@ -121,9 +54,7 @@ export class PrincipleStore {
           readFileSync(join(this.principlesDir, entry), "utf-8")
         );
         this.principles.push(data);
-      } catch {
-        // skip corrupt files
-      }
+      } catch {}
     }
   }
 
@@ -165,30 +96,23 @@ export class PrincipleStore {
   computePrincipleHash(): string {
     const hash = createHash("sha256");
 
-    for (const axiom of SEED_AXIOMS) {
-      hash.update(axiom.id);
-      hash.update(axiom.name);
-      hash.update(axiom.description);
-      hash.update(axiom.teachingExample);
-    }
+    if (!existsSync(this.principlesDir)) return "";
 
-    if (existsSync(this.principlesDir)) {
-      const entries = readdirSync(this.principlesDir)
-        .filter((e) => e.endsWith(".json"))
-        .sort();
+    const entries = readdirSync(this.principlesDir)
+      .filter((e) => e.endsWith(".json"))
+      .sort();
 
-      for (const entry of entries) {
-        const content = readFileSync(join(this.principlesDir, entry), "utf-8");
-        hash.update(entry);
-        hash.update(content);
-      }
+    for (const entry of entries) {
+      const content = readFileSync(join(this.principlesDir, entry), "utf-8");
+      hash.update(entry);
+      hash.update(content);
     }
 
     return hash.digest("hex");
   }
 
   getPrincipleCount(): number {
-    return SEED_AXIOMS.length + this.principles.length;
+    return this.principles.length;
   }
 
   getNewPrinciplesSince(contractPrincipleHash: string): Principle[] {
@@ -199,7 +123,7 @@ export class PrincipleStore {
   }
 
   nextId(): string {
-    const existing = this.principles.length + 8; // P1-P7 are seed, P8+ are discovered
+    const existing = this.principles.length + 1;
     return `P${existing}`;
   }
 
@@ -244,7 +168,7 @@ export function findNewViolations(
 
 /**
  * Step 1: Semantic diff — check if a proposed principle is already covered
- * by an existing seed axiom (P1-P7) or discovered principle.
+ * by an existing principle (seed or discovered).
  * Uses a separate LLM call with strict 80% overlap threshold.
  */
 async function semanticDiffCheck(
@@ -253,17 +177,8 @@ async function semanticDiffCheck(
   model: string,
   provider: LLMProvider
 ): Promise<{ covered: boolean; coveredBy?: string }> {
-  const allAxioms = [
-    ...SEED_AXIOMS,
-    ...existingPrinciples.map((p) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description,
-    })),
-  ];
-
-  const axiomList = allAxioms
-    .map((a) => `${a.id}. ${a.name}: ${a.description}`)
+  const axiomList = existingPrinciples
+    .map((p) => `${p.id}. ${p.name}: ${p.description}`)
     .join("\n\n");
 
   const prompt = `You are a strict deduplication checker for formal verification principles.
@@ -412,17 +327,12 @@ Be practical. Only report found:true if a normal developer would actually write 
 function formatAllPrinciplesDetailed(existingPrinciples: Principle[]): string {
   const sections: string[] = [];
 
-  for (const axiom of SEED_AXIOMS) {
-    sections.push(`### ${axiom.id}. ${axiom.name}`);
-    sections.push(axiom.description);
-    sections.push(`**Teaching example:** ${axiom.teachingExample}`);
-    sections.push("");
-  }
-
   for (const p of existingPrinciples) {
     sections.push(`### ${p.id}. ${p.name}`);
     sections.push(p.description);
-    sections.push(`**Teaching example (${p.teachingExample.domain}):** ${p.teachingExample.explanation}`);
+    if (p.teachingExample.domain) {
+      sections.push(`**Teaching example (${p.teachingExample.domain}):** ${p.teachingExample.explanation}`);
+    }
     sections.push("");
   }
 

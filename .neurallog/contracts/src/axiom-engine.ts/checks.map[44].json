@@ -1,0 +1,66 @@
+{
+  "key": "src/axiom-engine.ts/checks.map[44]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "checks.map",
+  "line": 44,
+  "signal_hash": "4310062785411771590ff70af959ce77b5581790b614c93c63b095f0e2272027",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "PROVEN: verdict is always in {proven=0, violation=1, error=2}",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 44\n; PROVEN: verdict is always in {proven=0, violation=1, error=2}\n; The nested ternary at lines 47-50 covers every (expected, result) pair.\n\n(declare-const expected Int)  ; 0=unsat, 1=sat\n(declare-const result  Int)   ; 0=unsat, 1=sat, 2=unknown, 3=error\n(declare-const verdict Int)   ; 0=proven, 1=violation, 2=error\n\n; Domain constraints\n(assert (or (= expected 0) (= expected 1)))\n(assert (>= result 0))\n(assert (<= result 3))\n\n; Code transition: expected=0 (unsat) branch\n(assert (=> (and (= expected 0) (= result 0))\n            (= verdict 0)))\n(assert (=> (and (= expected 0) (= result 1))\n            (= verdict 1)))\n(assert (=> (and (= expected 0) (and (not (= result 0)) (not (= result 1))))\n            (= verdict 2)))\n\n; Code transition: expected=1 (sat) branch\n(assert (=> (and (= expected 1) (= result 1))\n            (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 0))\n            (= verdict 0)))\n(assert (=> (and (= expected 1) (and (not (= result 0)) (not (= result 1))))\n            (= verdict 2)))\n\n; Negation: verdict escapes the valid range\n(assert (or (< verdict 0) (> verdict 2)))\n(check-sat)"
+    },
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "PROVEN: A definitive Z3 result (sat or unsat) never yields verdict=error.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 44\n; PROVEN: A definitive Z3 result (sat or unsat) never yields verdict=error.\n; verdict=error is only reachable when result=unknown or result=error (2,3).\n\n(declare-const expected Int)  ; 0=unsat, 1=sat\n(declare-const result  Int)   ; 0=unsat (0) or 1=sat ONLY\n(declare-const verdict Int)\n\n; Domain: expected is binary; result is definitive\n(assert (or (= expected 0) (= expected 1)))\n(assert (or (= result 0) (= result 1)))\n\n; Code transitions: both branches of the ternary, definitive results only\n(assert (=> (and (= expected 0) (= result 0)) (= verdict 0)))\n(assert (=> (and (= expected 0) (= result 1)) (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 1)) (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 0)) (= verdict 0)))\n\n; Negation: verdict = error\n(assert (= verdict 2))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Vacuity bypass: applyAxioms calls verifyBlock(check.smt2) directly (line 45),",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 44\n; Vacuity bypass: applyAxioms calls verifyBlock(check.smt2) directly (line 45),\n; bypassing the isVacuous filter in verifyAll. A vacuous formula — one with\n; declared vars but no assertions relating them — is trivially satisfiable.\n; For expected=\"unsat\" (all P1 and P2 checks), sat → verdict=\"violation\",\n; producing a false positive with no real code transition modelled.\n\n(declare-const has_real_transitions Int) ; 1 = formula has ≥1 assert referencing 2+ vars\n(declare-const z3_result Int)            ; 0=unsat, 1=sat\n(declare-const expected Int)             ; 0=unsat (P1/P2 checks always use expected=unsat)\n(declare-const verdict Int)              ; 0=proven, 1=violation, 2=error\n\n; Code transition: vacuous formula — vars declared but no cross-var constraint\n(assert (= has_real_transitions 0))\n\n; Code transition: vacuous formula is trivially satisfiable; Z3 returns sat\n(assert (=> (= has_real_transitions 0) (= z3_result 1)))\n\n; Code transition: applyP1 and applyP2 always set expected=\"unsat\" (they prove properties)\n(assert (= expected 0))\n\n; Code transition: verdict logic — expected=unsat, result=sat → violation\n(assert (=> (and (= expected 0) (= z3_result 1)) (= verdict 1)))\n\n; Reachability: vacuous formula produces false \"violation\" verdict\n(assert (= has_real_transitions 0))\n(assert (= verdict 1))\n(check-sat)"
+    },
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Semantic: applyP1 constructs its check formula as:",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 44\n; Semantic: applyP1 constructs its check formula as:\n;   comment_header + proven.smt2\n; proven.smt2 was already verified unsat (it IS the proven property).\n; Re-running the identical formula always returns unsat → verdict=\"proven\"\n; for EVERY caller, regardless of whether that caller establishes the precondition.\n; The caller's own context (its proven assertions, its constraints) is never injected.\n\n(declare-const caller_assertions_in_formula Int) ; count of caller-specific asserts added\n(declare-const proven_smt2_was_unsat Int)        ; 1 = already verified unsat\n(declare-const z3_result Int)                    ; 0=unsat, 1=sat\n(declare-const verdict Int)                      ; 0=proven, 1=violation\n\n; Code transition: applyP1 concatenates only a comment + proven.smt2 (no caller asserts)\n(assert (= caller_assertions_in_formula 0))\n\n; Code transition: proven.smt2 is in contract.proven → was previously unsat\n(assert (= proven_smt2_was_unsat 1))\n\n; Code transition: re-running the same formula returns the same result\n(assert (=> (and (= proven_smt2_was_unsat 1) (= caller_assertions_in_formula 0))\n            (= z3_result 0)))\n\n; Code transition: expected=unsat, result=unsat → verdict=proven\n(assert (=> (= z3_result 0) (= verdict 0)))\n\n; Semantic violation: verdict=proven for every caller regardless of its behavior\n; because caller context was never included in the formula\n(assert (= caller_assertions_in_formula 0))\n(assert (= verdict 0))\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 44\n; PROVEN: verdict is always in {proven=0, violation=1, error=2}\n; The nested ternary at lines 47-50 covers every (expected, result) pair.\n\n(declare-const expected Int)  ; 0=unsat, 1=sat\n(declare-const result  Int)   ; 0=unsat, 1=sat, 2=unknown, 3=error\n(declare-const verdict Int)   ; 0=proven, 1=violation, 2=error\n\n; Domain constraints\n(assert (or (= expected 0) (= expected 1)))\n(assert (>= result 0))\n(assert (<= result 3))\n\n; Code transition: expected=0 (unsat) branch\n(assert (=> (and (= expected 0) (= result 0))\n            (= verdict 0)))\n(assert (=> (and (= expected 0) (= result 1))\n            (= verdict 1)))\n(assert (=> (and (= expected 0) (and (not (= result 0)) (not (= result 1))))\n            (= verdict 2)))\n\n; Code transition: expected=1 (sat) branch\n(assert (=> (and (= expected 1) (= result 1))\n            (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 0))\n            (= verdict 0)))\n(assert (=> (and (= expected 1) (and (not (= result 0)) (not (= result 1))))\n            (= verdict 2)))\n\n; Negation: verdict escapes the valid range\n(assert (or (< verdict 0) (> verdict 2)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 44\n; PROVEN: A definitive Z3 result (sat or unsat) never yields verdict=error.\n; verdict=error is only reachable when result=unknown or result=error (2,3).\n\n(declare-const expected Int)  ; 0=unsat, 1=sat\n(declare-const result  Int)   ; 0=unsat (0) or 1=sat ONLY\n(declare-const verdict Int)\n\n; Domain: expected is binary; result is definitive\n(assert (or (= expected 0) (= expected 1)))\n(assert (or (= result 0) (= result 1)))\n\n; Code transitions: both branches of the ternary, definitive results only\n(assert (=> (and (= expected 0) (= result 0)) (= verdict 0)))\n(assert (=> (and (= expected 0) (= result 1)) (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 1)) (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 0)) (= verdict 0)))\n\n; Negation: verdict = error\n(assert (= verdict 2))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 44\n; Vacuity bypass: applyAxioms calls verifyBlock(check.smt2) directly (line 45),\n; bypassing the isVacuous filter in verifyAll. A vacuous formula — one with\n; declared vars but no assertions relating them — is trivially satisfiable.\n; For expected=\"unsat\" (all P1 and P2 checks), sat → verdict=\"violation\",\n; producing a false positive with no real code transition modelled.\n\n(declare-const has_real_transitions Int) ; 1 = formula has ≥1 assert referencing 2+ vars\n(declare-const z3_result Int)            ; 0=unsat, 1=sat\n(declare-const expected Int)             ; 0=unsat (P1/P2 checks always use expected=unsat)\n(declare-const verdict Int)              ; 0=proven, 1=violation, 2=error\n\n; Code transition: vacuous formula — vars declared but no cross-var constraint\n(assert (= has_real_transitions 0))\n\n; Code transition: vacuous formula is trivially satisfiable; Z3 returns sat\n(assert (=> (= has_real_transitions 0) (= z3_result 1)))\n\n; Code transition: applyP1 and applyP2 always set expected=\"unsat\" (they prove properties)\n(assert (= expected 0))\n\n; Code transition: verdict logic — expected=unsat, result=sat → violation\n(assert (=> (and (= expected 0) (= z3_result 1)) (= verdict 1)))\n\n; Reachability: vacuous formula produces false \"violation\" verdict\n(assert (= has_real_transitions 0))\n(assert (= verdict 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 44\n; Semantic: applyP1 constructs its check formula as:\n;   comment_header + proven.smt2\n; proven.smt2 was already verified unsat (it IS the proven property).\n; Re-running the identical formula always returns unsat → verdict=\"proven\"\n; for EVERY caller, regardless of whether that caller establishes the precondition.\n; The caller's own context (its proven assertions, its constraints) is never injected.\n\n(declare-const caller_assertions_in_formula Int) ; count of caller-specific asserts added\n(declare-const proven_smt2_was_unsat Int)        ; 1 = already verified unsat\n(declare-const z3_result Int)                    ; 0=unsat, 1=sat\n(declare-const verdict Int)                      ; 0=proven, 1=violation\n\n; Code transition: applyP1 concatenates only a comment + proven.smt2 (no caller asserts)\n(assert (= caller_assertions_in_formula 0))\n\n; Code transition: proven.smt2 is in contract.proven → was previously unsat\n(assert (= proven_smt2_was_unsat 1))\n\n; Code transition: re-running the same formula returns the same result\n(assert (=> (and (= proven_smt2_was_unsat 1) (= caller_assertions_in_formula 0))\n            (= z3_result 0)))\n\n; Code transition: expected=unsat, result=unsat → verdict=proven\n(assert (=> (= z3_result 0) (= verdict 0)))\n\n; Semantic violation: verdict=proven for every caller regardless of its behavior\n; because caller context was never included in the formula\n(assert (= caller_assertions_in_formula 0))\n(assert (= verdict 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "key": "src/axiom-engine.ts/checkConsistency[234]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "checkConsistency",
+  "line": 234,
+  "signal_hash": "7b309ad193c9bcb862dd1e6a3d37e96c2a7ebb24a9b474634fd45d45e369c46a",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

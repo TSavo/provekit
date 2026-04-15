@@ -1,0 +1,10 @@
+{
+  "id": "obs-4",
+  "signalKey": "src/axiom-engine.ts/checks.map[44]",
+  "claim": "Vacuity bypass: applyAxioms calls verifyBlock(check.smt2) directly (line 45),",
+  "smt2": "; PRINCIPLE: [NEW]\n; LINE: 44\n; Vacuity bypass: applyAxioms calls verifyBlock(check.smt2) directly (line 45),\n; bypassing the isVacuous filter in verifyAll. A vacuous formula — one with\n; declared vars but no assertions relating them — is trivially satisfiable.\n; For expected=\"unsat\" (all P1 and P2 checks), sat → verdict=\"violation\",\n; producing a false positive with no real code transition modelled.\n\n(declare-const has_real_transitions Int) ; 1 = formula has ≥1 assert referencing 2+ vars\n(declare-const z3_result Int)            ; 0=unsat, 1=sat\n(declare-const expected Int)             ; 0=unsat (P1/P2 checks always use expected=unsat)\n(declare-const verdict Int)              ; 0=proven, 1=violation, 2=error\n\n; Code transition: vacuous formula — vars declared but no cross-var constraint\n(assert (= has_real_transitions 0))\n\n; Code transition: vacuous formula is trivially satisfiable; Z3 returns sat\n(assert (=> (= has_real_transitions 0) (= z3_result 1)))\n\n; Code transition: applyP1 and applyP2 always set expected=\"unsat\" (they prove properties)\n(assert (= expected 0))\n\n; Code transition: verdict logic — expected=unsat, result=sat → violation\n(assert (=> (and (= expected 0) (= z3_result 1)) (= verdict 1)))\n\n; Reachability: vacuous formula produces false \"violation\" verdict\n(assert (= has_real_transitions 0))\n(assert (= verdict 1))\n(check-sat)",
+  "rejectedPrincipleName": "",
+  "rejectedPrincipleDescription": "",
+  "adversaryFeedback": "",
+  "observedAt": "2026-04-15T03:40:33.306Z"
+}

@@ -5,7 +5,7 @@ import Handlebars from "handlebars";
 import { Phase, PhaseResult, PhaseOptions } from "./Phase";
 import { ContextBundle, CallSiteContext } from "./ContextPhase";
 import { verifyAll, VerificationResult } from "../verifier";
-import { PrincipleStore, hashPrinciple } from "../principles";
+import { PrincipleStore } from "../principles";
 import { Contract, ContractStore, signalKey, ClauseHistory, ProvenProperty, Violation } from "../contracts";
 import { computeSignalHash } from "../signals";
 import { LLMProvider, createProvider } from "../llm";
@@ -79,7 +79,7 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     const observationStore = new ObservationStore(options.projectRoot);
 
     this.detail(`Model: ${model}`);
-    this.detail(`Principles: 7 seed + ${principleStore.getAll().length} discovered, ${observationStore.getAll().length} observations`);
+    this.detail(`Principles: ${principleStore.getPrincipleCount()} (${principleStore.getAll().length} discovered), ${observationStore.getAll().length} observations`);
 
     const store = new ContractStore(options.projectRoot);
 
@@ -133,7 +133,7 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     const allNewViolations: { violation: VerificationResult; context: string }[] = [];
     let completedFunctions = 0;
     const startTime = Date.now();
-    const principleCount = 7 + principleStore.getAll().length;
+    const principleCount = principleStore.getPrincipleCount();
     const systemPrompt = `You are a formal verification engine. Produce SMT-LIB 2 formulas.
 
 Every block MUST:
@@ -163,8 +163,10 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
       const dossier = assembleDossier(callSites, fn.filePath, options.projectRoot, store);
       const dossierText = formatDossier(dossier);
 
+      const observationsContext = observationStore.formatForPrompt();
+
       const deriveStart = Date.now();
-      const prompt = this.buildPrompt(callSites[0]!, fn.filePath, contextAccumulated, discoveredPrinciples, signalFrame, dossierText);
+      const prompt = this.buildPrompt(callSites[0]!, fn.filePath, contextAccumulated, discoveredPrinciples + observationsContext, signalFrame, dossierText);
       const response = await provider.complete(prompt, { model, systemPrompt });
       const deriveMs = Date.now() - deriveStart;
 
@@ -172,7 +174,7 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
       const verifications = verifyAll(response.text);
       const verifyMs = Date.now() - verifyStart;
 
-      const contracts = this.buildContracts(fn, verifications, depKeys);
+      const contracts = this.buildContracts(fn, verifications, depKeys, principleStore);
 
       for (const contract of contracts) {
         store.put(contract);
@@ -309,7 +311,8 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
   private buildContracts(
     fn: FunctionNode,
     verifications: VerificationResult[],
-    dependencyKeys: string[]
+    dependencyKeys: string[],
+    principleStore: PrincipleStore
   ): Contract[] {
     const contracts: Contract[] = [];
 
@@ -330,7 +333,7 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
       for (const v of toUse) {
         const commentLines = v.smt2.split("\n").filter((l) => l.trim().startsWith(";")).map((l) => l.trim().replace(/^;\s*/, ""));
         const claim = commentLines.find((l) => !l.startsWith("PRINCIPLE:") && !l.startsWith("LINE:") && l.length > 10) || "(no claim extracted)";
-        const pHash = v.principle ? this.resolvePrincipleHash(v.principle) : "";
+        const pHash = v.principle ? this.resolvePrincipleHash(v.principle, principleStore) : "";
 
         if (v.z3Result === "unsat") {
           proven.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2 });
@@ -358,12 +361,12 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
     return contracts;
   }
 
-  private resolvePrincipleHash(principleTag: string): string {
+  private resolvePrincipleHash(principleTag: string, store: PrincipleStore): string {
     const ids = principleTag.replace(/\[NEW\]/gi, "").split(/[,+&\s]+/).map((s) => s.trim()).filter((s) => /^P\d+$/i.test(s));
     if (ids.length === 0) return "";
-    if (ids.length === 1) return hashPrinciple(ids[0]!);
+    if (ids.length === 1) return store.hashForPrinciple(ids[0]!);
     const combined = createHash("sha256");
-    for (const id of ids.sort()) { combined.update(id); combined.update(hashPrinciple(id)); }
+    for (const id of ids.sort()) { combined.update(id); combined.update(store.hashForPrinciple(id)); }
     return combined.digest("hex");
   }
 

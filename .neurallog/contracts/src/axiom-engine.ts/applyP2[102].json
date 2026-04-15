@@ -1,0 +1,40 @@
+{
+  "key": "src/axiom-engine.ts/applyP2[102]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "applyP2",
+  "line": 102,
+  "signal_hash": "cf242d9c2d84a7cb3d779faba5398d4d67b2360c4cd8b3498306c9ec92aa48ce",
+  "proven": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "PROVEN: Map-with-push partitions input — sum of group sizes equals total input size",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "VIOLATION: Unescaped \":\" delimiter in key = `${file}:${function}` causes ambiguous grouping",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 102\n; VIOLATION: Unescaped \":\" delimiter in key = `${file}:${function}` causes ambiguous grouping\n\n; Two contracts with structurally distinct (file, function) pairs\n(declare-const c1_file_contains_colon Int)   ; 1 = c1.file has a \":\" (e.g. Windows path \"C:\\src\\foo.ts\")\n(declare-const c2_different_function Int)    ; 1 = c2.function != c1.function\n(declare-const keys_collide Int)             ; 1 = compound keys are equal despite different identities\n\n; Transition: key construction is string concatenation with no escaping\n(assert (= c1_file_contains_colon 1))\n(assert (= c2_different_function 1))\n\n; Transition: unescaped \":\" in file allows split-point ambiguity\n; \"a:b:c\" is produced both by (file=\"a:b\", fn=\"c\") and (file=\"a\", fn=\"b:c\")\n(assert (=> (= c1_file_contains_colon 1) (= keys_collide 1)))\n\n; Violation: contracts from different functions land in the same group\n(assert (= keys_collide 1))\n(assert (= c2_different_function 1))\n\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 102\n; VIOLATION: Unescaped \":\" delimiter in key = `${file}:${function}` causes ambiguous grouping\n\n; Two contracts with structurally distinct (file, function) pairs\n(declare-const c1_file_contains_colon Int)   ; 1 = c1.file has a \":\" (e.g. Windows path \"C:\\src\\foo.ts\")\n(declare-const c2_different_function Int)    ; 1 = c2.function != c1.function\n(declare-const keys_collide Int)             ; 1 = compound keys are equal despite different identities\n\n; Transition: key construction is string concatenation with no escaping\n(assert (= c1_file_contains_colon 1))\n(assert (= c2_different_function 1))\n\n; Transition: unescaped \":\" in file allows split-point ambiguity\n; \"a:b:c\" is produced both by (file=\"a:b\", fn=\"c\") and (file=\"a\", fn=\"b:c\")\n(assert (=> (= c1_file_contains_colon 1) (= keys_collide 1)))\n\n; Violation: contracts from different functions land in the same group\n(assert (= keys_collide 1))\n(assert (= c2_different_function 1))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

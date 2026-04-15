@@ -1,0 +1,10 @@
+{
+  "id": "obs-3",
+  "signalKey": "src/axiom-engine.ts/applyP2[102]",
+  "claim": "VIOLATION: Unescaped \":\" delimiter in key = `${file}:${function}` causes ambiguous grouping",
+  "smt2": "; PRINCIPLE: [NEW]\n; LINE: 102\n; VIOLATION: Unescaped \":\" delimiter in key = `${file}:${function}` causes ambiguous grouping\n\n; Two contracts with structurally distinct (file, function) pairs\n(declare-const c1_file_contains_colon Int)   ; 1 = c1.file has a \":\" (e.g. Windows path \"C:\\src\\foo.ts\")\n(declare-const c2_different_function Int)    ; 1 = c2.function != c1.function\n(declare-const keys_collide Int)             ; 1 = compound keys are equal despite different identities\n\n; Transition: key construction is string concatenation with no escaping\n(assert (= c1_file_contains_colon 1))\n(assert (= c2_different_function 1))\n\n; Transition: unescaped \":\" in file allows split-point ambiguity\n; \"a:b:c\" is produced both by (file=\"a:b\", fn=\"c\") and (file=\"a\", fn=\"b:c\")\n(assert (=> (= c1_file_contains_colon 1) (= keys_collide 1)))\n\n; Violation: contracts from different functions land in the same group\n(assert (= keys_collide 1))\n(assert (= c2_different_function 1))\n\n(check-sat)",
+  "rejectedPrincipleName": "",
+  "rejectedPrincipleDescription": "",
+  "adversaryFeedback": "",
+  "observedAt": "2026-04-15T03:39:52.850Z"
+}

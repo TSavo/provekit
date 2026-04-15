@@ -1,0 +1,26 @@
+{
+  "key": "src/axiom-engine.ts/applyP2[121]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "applyP2",
+  "line": 121,
+  "signal_hash": "5177dff58b080fee3d7068e760a5fc3e96c7a786f8847883a38e62881352b478",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "VIOLATION: smt2 field is prop.smt2 verbatim; later contract's mutations are absent —",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 121\n; VIOLATION: smt2 field is prop.smt2 verbatim; later contract's mutations are absent —\n;            the check replays the original proof and can never return sat (violation)\n\n(declare-const smt2_is_earlier_verbatim Int)   ; 1 = pushed smt2 == prop.smt2 unchanged\n(declare-const later_mutations_in_smt2 Int)    ; 1 = later contract's effects appear in formula\n(declare-const check_can_return_sat Int)       ; 1 = check could detect a P2 violation\n\n; Transition: smt2 field assigned as `prop.smt2` — no composition with later contract\n(assert (= smt2_is_earlier_verbatim 1))\n\n; Transition: later contract is only referenced in targetContract string label, not in smt2\n(assert (=> (= smt2_is_earlier_verbatim 1) (= later_mutations_in_smt2 0)))\n\n; Transition: a formula with no later-state variables cannot constrain post-mutation state\n(assert (=> (= later_mutations_in_smt2 0) (= check_can_return_sat 0)))\n\n; Violation: the check structure guarantees the original proof still holds\n(assert (= check_can_return_sat 0))\n\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 121\n; VIOLATION: smt2 field is prop.smt2 verbatim; later contract's mutations are absent —\n;            the check replays the original proof and can never return sat (violation)\n\n(declare-const smt2_is_earlier_verbatim Int)   ; 1 = pushed smt2 == prop.smt2 unchanged\n(declare-const later_mutations_in_smt2 Int)    ; 1 = later contract's effects appear in formula\n(declare-const check_can_return_sat Int)       ; 1 = check could detect a P2 violation\n\n; Transition: smt2 field assigned as `prop.smt2` — no composition with later contract\n(assert (= smt2_is_earlier_verbatim 1))\n\n; Transition: later contract is only referenced in targetContract string label, not in smt2\n(assert (=> (= smt2_is_earlier_verbatim 1) (= later_mutations_in_smt2 0)))\n\n; Transition: a formula with no later-state variables cannot constrain post-mutation state\n(assert (=> (= later_mutations_in_smt2 0) (= check_can_return_sat 0)))\n\n; Violation: the check structure guarantees the original proof still holds\n(assert (= check_can_return_sat 0))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

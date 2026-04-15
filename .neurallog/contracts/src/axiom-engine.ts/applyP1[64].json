@@ -1,0 +1,26 @@
+{
+  "key": "src/axiom-engine.ts/applyP1[64]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "applyP1",
+  "line": 64,
+  "signal_hash": "f72590fdaf067e7f9d01526687b706ea35e26b239fb5789ba802b3331728687e",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "applyAxioms calls applyP1 without establishing proven[i].smt2 is valid SMT-LIB.",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 64\n; applyAxioms calls applyP1 without establishing proven[i].smt2 is valid SMT-LIB.\n; proven[i].smt2 is loaded from disk JSON — no validation at load site or call site.\n(declare-const smt2_is_valid_smtlib Int)   ; 1 = well-formed, 0 = malformed\n(declare-const caller_validates_smt2 Int)  ; 1 = applyAxioms checks smt2 before call\n; Code transition: ContractStore.loadFromDisk parses JSON but never validates smt2 content\n(assert (= caller_validates_smt2 0))\n; Code transition: applyAxioms calls applyP1 directly from the contracts array\n; no validation step between load and call\n(assert (=> (= caller_validates_smt2 0) (= smt2_is_valid_smtlib 0)))\n; Violation: applyP1 receives malformed smt2\n(assert (= smt2_is_valid_smtlib 0))\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 64\n; applyAxioms calls applyP1 without establishing proven[i].smt2 is valid SMT-LIB.\n; proven[i].smt2 is loaded from disk JSON — no validation at load site or call site.\n(declare-const smt2_is_valid_smtlib Int)   ; 1 = well-formed, 0 = malformed\n(declare-const caller_validates_smt2 Int)  ; 1 = applyAxioms checks smt2 before call\n; Code transition: ContractStore.loadFromDisk parses JSON but never validates smt2 content\n(assert (= caller_validates_smt2 0))\n; Code transition: applyAxioms calls applyP1 directly from the contracts array\n; no validation step between load and call\n(assert (=> (= caller_validates_smt2 0) (= smt2_is_valid_smtlib 0)))\n; Violation: applyP1 receives malformed smt2\n(assert (= smt2_is_valid_smtlib 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

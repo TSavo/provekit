@@ -1,0 +1,11 @@
+{
+  "key": "src/axiom-engine.ts/applyP1[66]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "applyP1",
+  "line": 66,
+  "signal_hash": "f3e945d1fff30092ad139664955a290949d042732ac594c0cbb2403e222e47e9",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

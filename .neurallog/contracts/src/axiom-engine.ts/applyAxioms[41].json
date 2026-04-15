@@ -1,0 +1,88 @@
+{
+  "key": "src/axiom-engine.ts/applyAxioms[41]",
+  "file": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
+  "function": "applyAxioms",
+  "line": 41,
+  "signal_hash": "26c76b7a2b2a61a9b7286f4ae353fdfd34e8a12bad960a4143631c7f1ecc4dcf",
+  "proven": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "PROVEN: applyP2 called once with N contracts finds N-1 adjacent pairs per function;",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 41\n; PROVEN: applyP2 called once with N contracts finds N-1 adjacent pairs per function;\n; calling it per-contract (with a single-element slice) yields 0 pairs.\n; Code transition: byFunction groups contracts by function key.\n; A group of size 1 has 0 adjacent pairs; a group of size N has N-1.\n(declare-const N Int)                     ; contracts.length passed to applyP2 at line 41\n(declare-const pairs_full_call Int)       ; pairs found: applyP2(contracts) — full array\n(declare-const pairs_per_contract Int)    ; pairs found: applyP2([contract]) — one at a time\n; Precondition: at least 2 contracts exist in the same function\n(assert (>= N 2))\n; Code transition: applyP2(contracts) groups all N into one function bucket → N-1 pairs\n(assert (= pairs_full_call (- N 1)))\n; Code transition: applyP2([contract]) for each contract → group size = 1 → 0 pairs per call\n(assert (= pairs_per_contract 0))\n; Negation: full call finds no more pairs than per-contract\n(assert (<= pairs_full_call pairs_per_contract))\n(check-sat)"
+    },
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "PROVEN: applyAxioms([]) returns [] — empty input produces empty output at all stages.",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 41\n; PROVEN: applyAxioms([]) returns [] — empty input produces empty output at all stages.\n; Code transition: loop runs 0 times (contracts.length = 0), checks stays empty.\n; Code transition: applyP2([]) — byFunction never populated, returns [].\n; Code transition: [].map(...) = [].\n(declare-const num_contracts Int)\n(declare-const checks_after_loop Int)\n(declare-const p2_checks Int)\n(declare-const total_checks Int)\n(declare-const num_results Int)\n; Transition: empty input\n(assert (= num_contracts 0))\n; Transition: loop body never executes — nothing pushed\n(assert (= checks_after_loop 0))\n; Transition: applyP2([]) — no function groups, no pairs, returns []\n(assert (= p2_checks 0))\n; Transition: total = loop output + p2 output\n(assert (= total_checks (+ checks_after_loop p2_checks)))\n; Transition: .map() over empty array returns empty array\n(assert (= num_results total_checks))\n; Negation: result is non-empty\n(assert (> num_results 0))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "VIOLATION: Output ordering constraint — P2 results are always appended at index K",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 41\n; VIOLATION: Output ordering constraint — P2 results are always appended at index K\n; (after all per-contract checks), regardless of the source line numbers of the\n; contracts P2 analyzes. A P2 check for contracts at lines 5 and 10 will appear\n; AFTER a P1 check for a contract at line 200 in the result array.\n; Code transition: checks built in two phases:\n;   Phase 1 (loop): P1/P3/P4/P6/P7 per contract, 0..K-1\n;   Phase 2 (line 41): applyP2 appended at index K..K+M-1\n(declare-const K Int)                ; total per-contract checks (P1+P3+P4+P6+P7)\n(declare-const M Int)                ; checks from applyP2\n(declare-const p1_result_index Int)  ; index of a P1 result in output array\n(declare-const p2_result_index Int)  ; index of a P2 result in output array\n(declare-const p1_source_line Int)   ; source line of the contract behind the P1 check\n(declare-const p2_source_line_a Int) ; first contract line in the P2 pair\n(declare-const p2_source_line_b Int) ; second contract line in the P2 pair\n; Code transition: per-contract checks occupy indices 0..K-1\n(assert (> K 0))\n(assert (>= p1_result_index 0))\n(assert (< p1_result_index K))\n; Code transition: P2 checks are appended at indices K..K+M-1\n(assert (> M 0))\n(assert (= p2_result_index K))\n; Witness: P2 analyzes contracts at early lines, P1 check covers a late line\n(assert (< p2_source_line_a p1_source_line))\n(assert (< p2_source_line_b p1_source_line))\n; Violation: P2 result (for early-line contracts) appears after P1 result (for late-line contract)\n(assert (> p2_result_index p1_result_index))\n(check-sat)"
+    },
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "VIOLATION: If applyP2 were moved inside the loop (a natural refactoring),",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 41\n; VIOLATION: If applyP2 were moved inside the loop (a natural refactoring),\n; it would be called N times with the full contracts array, producing N×M\n; duplicate AxiomCheck entries instead of M.\n; The comment \"P2 needs pairs\" explains WHY it's outside, but nothing in the\n; type system or runtime prevents this refactoring mistake.\n; Code transition: applyP2(contracts) called once → M checks added\n; Hypothetical refactoring: called once per contract iteration → N×M checks added\n(declare-const N Int)                   ; contracts.length\n(declare-const M Int)                   ; |applyP2(contracts)| — unique P2 checks\n(declare-const checks_if_outside Int)   ; current design: called once\n(declare-const checks_if_inside Int)    ; refactored design: called N times\n; Current code transition: applyP2 called once, appends M checks\n(assert (> N 1))\n(assert (> M 0))\n(assert (= checks_if_outside M))\n; Refactored transition: applyP2(contracts) called N times in loop body\n(assert (= checks_if_inside (* N M)))\n; Violation: refactored version produces more checks than intended\n(assert (> checks_if_inside checks_if_outside))\n(check-sat)"
+    },
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "VIOLATION: The two-phase construction of `checks` (loop first, P2 appended second)",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 41\n; VIOLATION: The two-phase construction of `checks` (loop first, P2 appended second)\n; means that verifyBlock is called on P2 checks AFTER all per-contract checks.\n; If verifyBlock has shared mutable state (e.g., a Z3 process cache or call counter),\n; P1/P3/P4/P6/P7 calls in the loop mutate that state before P2 checks run.\n; Code transition: checks.map(verifyBlock) is called left-to-right on the combined array.\n; Code transition: per-contract checks occupy indices 0..K-1; P2 checks at K..K+M-1.\n(declare-const K Int)                       ; per-contract check count\n(declare-const M Int)                       ; P2 check count\n(declare-const verifyBlock_calls_before_p2 Int) ; verifyBlock invocations before first P2 check\n(declare-const verifyBlock_calls_total Int)\n; Code transition: .map() iterates left-to-right\n(assert (> K 0))\n(assert (> M 0))\n(assert (= verifyBlock_calls_before_p2 K))\n(assert (= verifyBlock_calls_total (+ K M)))\n; Mutation: verifyBlock was called K times with non-P2 SMT2 before the first P2 block\n; If verifyBlock accumulates state (Z3 solver context, open process), P2 sees that state\n(assert (> verifyBlock_calls_before_p2 0))\n; Violation: P2 is not the first consumer of verifyBlock — it always runs in a \"warm\" context\n(assert (= verifyBlock_calls_before_p2 K))\n(assert (> K 0))\n(check-sat)"
+    }
+  ],
+  "depends_on": [
+    "src/axiom-engine.ts/applyP1[64]",
+    "src/axiom-engine.ts/applyP1[66]",
+    "src/axiom-engine.ts/applyP1[70]",
+    "src/axiom-engine.ts/applyP1[75]",
+    "src/axiom-engine.ts/applyP2[102]",
+    "src/axiom-engine.ts/applyP2[113]",
+    "src/axiom-engine.ts/applyP2[120]",
+    "src/axiom-engine.ts/applyP2[121]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 41\n; PROVEN: applyP2 called once with N contracts finds N-1 adjacent pairs per function;\n; calling it per-contract (with a single-element slice) yields 0 pairs.\n; Code transition: byFunction groups contracts by function key.\n; A group of size 1 has 0 adjacent pairs; a group of size N has N-1.\n(declare-const N Int)                     ; contracts.length passed to applyP2 at line 41\n(declare-const pairs_full_call Int)       ; pairs found: applyP2(contracts) — full array\n(declare-const pairs_per_contract Int)    ; pairs found: applyP2([contract]) — one at a time\n; Precondition: at least 2 contracts exist in the same function\n(assert (>= N 2))\n; Code transition: applyP2(contracts) groups all N into one function bucket → N-1 pairs\n(assert (= pairs_full_call (- N 1)))\n; Code transition: applyP2([contract]) for each contract → group size = 1 → 0 pairs per call\n(assert (= pairs_per_contract 0))\n; Negation: full call finds no more pairs than per-contract\n(assert (<= pairs_full_call pairs_per_contract))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P6\n; LINE: 41\n; PROVEN: applyAxioms([]) returns [] — empty input produces empty output at all stages.\n; Code transition: loop runs 0 times (contracts.length = 0), checks stays empty.\n; Code transition: applyP2([]) — byFunction never populated, returns [].\n; Code transition: [].map(...) = [].\n(declare-const num_contracts Int)\n(declare-const checks_after_loop Int)\n(declare-const p2_checks Int)\n(declare-const total_checks Int)\n(declare-const num_results Int)\n; Transition: empty input\n(assert (= num_contracts 0))\n; Transition: loop body never executes — nothing pushed\n(assert (= checks_after_loop 0))\n; Transition: applyP2([]) — no function groups, no pairs, returns []\n(assert (= p2_checks 0))\n; Transition: total = loop output + p2 output\n(assert (= total_checks (+ checks_after_loop p2_checks)))\n; Transition: .map() over empty array returns empty array\n(assert (= num_results total_checks))\n; Negation: result is non-empty\n(assert (> num_results 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 41\n; VIOLATION: Output ordering constraint — P2 results are always appended at index K\n; (after all per-contract checks), regardless of the source line numbers of the\n; contracts P2 analyzes. A P2 check for contracts at lines 5 and 10 will appear\n; AFTER a P1 check for a contract at line 200 in the result array.\n; Code transition: checks built in two phases:\n;   Phase 1 (loop): P1/P3/P4/P6/P7 per contract, 0..K-1\n;   Phase 2 (line 41): applyP2 appended at index K..K+M-1\n(declare-const K Int)                ; total per-contract checks (P1+P3+P4+P6+P7)\n(declare-const M Int)                ; checks from applyP2\n(declare-const p1_result_index Int)  ; index of a P1 result in output array\n(declare-const p2_result_index Int)  ; index of a P2 result in output array\n(declare-const p1_source_line Int)   ; source line of the contract behind the P1 check\n(declare-const p2_source_line_a Int) ; first contract line in the P2 pair\n(declare-const p2_source_line_b Int) ; second contract line in the P2 pair\n; Code transition: per-contract checks occupy indices 0..K-1\n(assert (> K 0))\n(assert (>= p1_result_index 0))\n(assert (< p1_result_index K))\n; Code transition: P2 checks are appended at indices K..K+M-1\n(assert (> M 0))\n(assert (= p2_result_index K))\n; Witness: P2 analyzes contracts at early lines, P1 check covers a late line\n(assert (< p2_source_line_a p1_source_line))\n(assert (< p2_source_line_b p1_source_line))\n; Violation: P2 result (for early-line contracts) appears after P1 result (for late-line contract)\n(assert (> p2_result_index p1_result_index))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 41\n; VIOLATION: If applyP2 were moved inside the loop (a natural refactoring),\n; it would be called N times with the full contracts array, producing N×M\n; duplicate AxiomCheck entries instead of M.\n; The comment \"P2 needs pairs\" explains WHY it's outside, but nothing in the\n; type system or runtime prevents this refactoring mistake.\n; Code transition: applyP2(contracts) called once → M checks added\n; Hypothetical refactoring: called once per contract iteration → N×M checks added\n(declare-const N Int)                   ; contracts.length\n(declare-const M Int)                   ; |applyP2(contracts)| — unique P2 checks\n(declare-const checks_if_outside Int)   ; current design: called once\n(declare-const checks_if_inside Int)    ; refactored design: called N times\n; Current code transition: applyP2 called once, appends M checks\n(assert (> N 1))\n(assert (> M 0))\n(assert (= checks_if_outside M))\n; Refactored transition: applyP2(contracts) called N times in loop body\n(assert (= checks_if_inside (* N M)))\n; Violation: refactored version produces more checks than intended\n(assert (> checks_if_inside checks_if_outside))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 41\n; VIOLATION: The two-phase construction of `checks` (loop first, P2 appended second)\n; means that verifyBlock is called on P2 checks AFTER all per-contract checks.\n; If verifyBlock has shared mutable state (e.g., a Z3 process cache or call counter),\n; P1/P3/P4/P6/P7 calls in the loop mutate that state before P2 checks run.\n; Code transition: checks.map(verifyBlock) is called left-to-right on the combined array.\n; Code transition: per-contract checks occupy indices 0..K-1; P2 checks at K..K+M-1.\n(declare-const K Int)                       ; per-contract check count\n(declare-const M Int)                       ; P2 check count\n(declare-const verifyBlock_calls_before_p2 Int) ; verifyBlock invocations before first P2 check\n(declare-const verifyBlock_calls_total Int)\n; Code transition: .map() iterates left-to-right\n(assert (> K 0))\n(assert (> M 0))\n(assert (= verifyBlock_calls_before_p2 K))\n(assert (= verifyBlock_calls_total (+ K M)))\n; Mutation: verifyBlock was called K times with non-P2 SMT2 before the first P2 block\n; If verifyBlock accumulates state (Z3 solver context, open process), P2 sees that state\n(assert (> verifyBlock_calls_before_p2 0))\n; Violation: P2 is not the first consumer of verifyBlock — it always runs in a \"warm\" context\n(assert (= verifyBlock_calls_before_p2 K))\n(assert (> K 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

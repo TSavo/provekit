@@ -265,7 +265,9 @@ export function checkConsistency(contracts: Contract[]): AxiomResult[] {
 
       let block = [...declLines, ...preconditionAsserts].join("\n");
 
+      const smt2Keywords = new Set(["assert", "declare-const", "define-fun", "check-sat", "and", "or", "not", "Int", "Real", "Bool", "String", "true", "false"]);
       for (const name of varNames) {
+        if (smt2Keywords.has(name)) continue;
         const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         block = block.replace(new RegExp(`\\b${escaped}\\b`, "g"), `${prefix}${name}`);
       }

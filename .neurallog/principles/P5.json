@@ -1,0 +1,16 @@
+{
+  "id": "P5",
+  "name": "Semantic Correctness",
+  "description": "Beyond precondition violations, check whether the computed values are meaningful in the domain. A function might execute without error but produce a result that is semantically wrong — a refund that exceeds the payment, a price that is negative, a date in the past.",
+  "teachingExample": {
+    "domain": "seed",
+    "explanation": "calculate_discount(original_price, discount_percent) doesn't cap the discount. A 150% discount produces a negative price — semantically invalid even though the code runs without error.",
+    "smt2": ""
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true
+}

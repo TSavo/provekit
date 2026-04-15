@@ -122,7 +122,7 @@ export class Pipeline {
     const principleStore = new PrincipleStore(config.projectRoot);
 
     console.log(`  Existing contracts: ${existingContracts.length}`);
-    console.log(`  Principles: ${principleStore.getPrincipleCount()} (7 seed + ${principleStore.getAll().length} discovered)`);
+    console.log(`  Principles: ${principleStore.getPrincipleCount()} (${principleStore.getAll().length} discovered)`);
     console.log(`  Checking signal hashes...`);
 
     const staleContracts = new Set<string>();

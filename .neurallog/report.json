@@ -1,15 +1,434 @@
 {
-  "contractCount": 161,
-  "axiomChecks": 2442,
-  "proven": 2419,
-  "violations": 23,
+  "contractCount": 173,
+  "axiomChecks": 2488,
+  "proven": 2464,
+  "violations": 24,
   "errors": 0,
   "unverified": 0,
   "ignored": 0,
   "consistency": "error",
-  "consistencyDetail": "(error \"line 151 column 33: unknown constant assert (Bool) \")",
+  "consistencyDetail": "(error \"line 66 column 15: unknown constant c8_expected\")",
   "staleContracts": 0,
   "results": [
+    {
+      "axiom": "P1",
+      "description": "applyAxioms:41 → applyP2:102: PROVEN: Map-with-push partitions input — sum of group sizes ",
+      "sourceContract": "applyP2:102",
+      "targetContract": "applyAxioms:41",
+      "smt2": "; P1 MECHANICAL: Does applyAxioms:41 establish preconditions for applyP2:102?\n; Property: PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:64 → applyP2:102: PROVEN: Map-with-push partitions input — sum of group sizes ",
+      "sourceContract": "applyP2:102",
+      "targetContract": "applyP1:64",
+      "smt2": "; P1 MECHANICAL: Does applyP1:64 establish preconditions for applyP2:102?\n; Property: PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:66 → applyP2:102: PROVEN: Map-with-push partitions input — sum of group sizes ",
+      "sourceContract": "applyP2:102",
+      "targetContract": "applyP1:66",
+      "smt2": "; P1 MECHANICAL: Does applyP1:66 establish preconditions for applyP2:102?\n; Property: PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:70 → applyP2:102: PROVEN: Map-with-push partitions input — sum of group sizes ",
+      "sourceContract": "applyP2:102",
+      "targetContract": "applyP1:70",
+      "smt2": "; P1 MECHANICAL: Does applyP1:70 establish preconditions for applyP2:102?\n; Property: PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:75 → applyP2:102: PROVEN: Map-with-push partitions input — sum of group sizes ",
+      "sourceContract": "applyP2:102",
+      "targetContract": "applyP1:75",
+      "smt2": "; P1 MECHANICAL: Does applyP1:75 establish preconditions for applyP2:102?\n; Property: PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "checks.map:44 → applyP2:102: PROVEN: Map-with-push partitions input — sum of group sizes ",
+      "sourceContract": "applyP2:102",
+      "targetContract": "checks.map:44",
+      "smt2": "; P1 MECHANICAL: Does checks.map:44 establish preconditions for applyP2:102?\n; Property: PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyAxioms:41 → applyP2:113: PROVEN: [...fnContracts].sort(...) is a length-preserving pe",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyAxioms:41",
+      "smt2": "; P1 MECHANICAL: Does applyAxioms:41 establish preconditions for applyP2:113?\n; Property: PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:64 → applyP2:113: PROVEN: [...fnContracts].sort(...) is a length-preserving pe",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP1:64",
+      "smt2": "; P1 MECHANICAL: Does applyP1:64 establish preconditions for applyP2:113?\n; Property: PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:66 → applyP2:113: PROVEN: [...fnContracts].sort(...) is a length-preserving pe",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP1:66",
+      "smt2": "; P1 MECHANICAL: Does applyP1:66 establish preconditions for applyP2:113?\n; Property: PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:70 → applyP2:113: PROVEN: [...fnContracts].sort(...) is a length-preserving pe",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP1:70",
+      "smt2": "; P1 MECHANICAL: Does applyP1:70 establish preconditions for applyP2:113?\n; Property: PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:75 → applyP2:113: PROVEN: [...fnContracts].sort(...) is a length-preserving pe",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP1:75",
+      "smt2": "; P1 MECHANICAL: Does applyP1:75 establish preconditions for applyP2:113?\n; Property: PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP2:102 → applyP2:113: PROVEN: [...fnContracts].sort(...) is a length-preserving pe",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP2:102",
+      "smt2": "; P1 MECHANICAL: Does applyP2:102 establish preconditions for applyP2:113?\n; Property: PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "checks.map:44 → applyP2:113: PROVEN: [...fnContracts].sort(...) is a length-preserving pe",
+      "sourceContract": "applyP2:113",
+      "targetContract": "checks.map:44",
+      "smt2": "; P1 MECHANICAL: Does checks.map:44 establish preconditions for applyP2:113?\n; Property: PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyAxioms:41 → applyP2:113: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= ",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyAxioms:41",
+      "smt2": "; P1 MECHANICAL: Does applyAxioms:41 establish preconditions for applyP2:113?\n; Property: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:64 → applyP2:113: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= ",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP1:64",
+      "smt2": "; P1 MECHANICAL: Does applyP1:64 establish preconditions for applyP2:113?\n; Property: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:66 → applyP2:113: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= ",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP1:66",
+      "smt2": "; P1 MECHANICAL: Does applyP1:66 establish preconditions for applyP2:113?\n; Property: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:70 → applyP2:113: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= ",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP1:70",
+      "smt2": "; P1 MECHANICAL: Does applyP1:70 establish preconditions for applyP2:113?\n; Property: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:75 → applyP2:113: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= ",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP1:75",
+      "smt2": "; P1 MECHANICAL: Does applyP1:75 establish preconditions for applyP2:113?\n; Property: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP2:102 → applyP2:113: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= ",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP2:102",
+      "smt2": "; P1 MECHANICAL: Does applyP2:102 establish preconditions for applyP2:113?\n; Property: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "checks.map:44 → applyP2:113: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= ",
+      "sourceContract": "applyP2:113",
+      "targetContract": "checks.map:44",
+      "smt2": "; P1 MECHANICAL: Does checks.map:44 establish preconditions for applyP2:113?\n; Property: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyAxioms:41 → applyP2:120: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "applyAxioms:41",
+      "smt2": "; P1 MECHANICAL: Does applyAxioms:41 establish preconditions for applyP2:120?\n; Property: PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:64 → applyP2:120: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "applyP1:64",
+      "smt2": "; P1 MECHANICAL: Does applyP1:64 establish preconditions for applyP2:120?\n; Property: PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:66 → applyP2:120: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "applyP1:66",
+      "smt2": "; P1 MECHANICAL: Does applyP1:66 establish preconditions for applyP2:120?\n; Property: PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:70 → applyP2:120: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "applyP1:70",
+      "smt2": "; P1 MECHANICAL: Does applyP1:70 establish preconditions for applyP2:120?\n; Property: PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:75 → applyP2:120: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "applyP1:75",
+      "smt2": "; P1 MECHANICAL: Does applyP1:75 establish preconditions for applyP2:120?\n; Property: PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP2:102 → applyP2:120: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "applyP2:102",
+      "smt2": "; P1 MECHANICAL: Does applyP2:102 establish preconditions for applyP2:120?\n; Property: PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP2:113 → applyP2:120: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "applyP2:113",
+      "smt2": "; P1 MECHANICAL: Does applyP2:113 establish preconditions for applyP2:120?\n; Property: PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "checks.map:44 → applyP2:120: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "checks.map:44",
+      "smt2": "; P1 MECHANICAL: Does checks.map:44 establish preconditions for applyP2:120?\n; Property: PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyAxioms:41 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyAxioms:41",
+      "smt2": "; P1 MECHANICAL: Does applyAxioms:41 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:64 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyP1:64",
+      "smt2": "; P1 MECHANICAL: Does applyP1:64 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:66 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyP1:66",
+      "smt2": "; P1 MECHANICAL: Does applyP1:66 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:70 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyP1:70",
+      "smt2": "; P1 MECHANICAL: Does applyP1:70 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP1:75 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyP1:75",
+      "smt2": "; P1 MECHANICAL: Does applyP1:75 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP2:102 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyP2:102",
+      "smt2": "; P1 MECHANICAL: Does applyP2:102 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP2:113 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyP2:113",
+      "smt2": "; P1 MECHANICAL: Does applyP2:113 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP2:120 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyP2:120",
+      "smt2": "; P1 MECHANICAL: Does applyP2:120 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyP2:121 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "applyP2:121",
+      "smt2": "; P1 MECHANICAL: Does applyP2:121 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "checkConsistency:234 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "checkConsistency:234",
+      "smt2": "; P1 MECHANICAL: Does checkConsistency:234 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "checks.map:44 → checkConsistency:261: PROVEN: blocks with assertLines.length < 2 are always exclud",
+      "sourceContract": "checkConsistency:261",
+      "targetContract": "checks.map:44",
+      "smt2": "; P1 MECHANICAL: Does checks.map:44 establish preconditions for checkConsistency:261?\n; Property: PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; PRINCIPLE: [NEW]\n; LINE: 261\n; PROVEN: blocks with assertLines.length < 2 are always excluded before self-check\n; Precondition: assertLines extracted from a proven property's SMT2\n; Transition: early-continue guard fires before verifyBlock is called\n; Negated: verifyBlock called on a block with fewer than 2 asserts\n(declare-const assert_line_count Int)\n(declare-const verify_called Int)   ; 1 = verifyBlock invoked\n; Code transition: if assertLines.length < 2, continue before verifyBlock\n(assert (< assert_line_count 2))\n(assert (=> (< assert_line_count 2) (= verify_called 0)))\n; Negated property: verifyBlock was called\n(assert (= verify_called 1))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P3",
+      "description": "Public input violation at checkConsistency:261: checkConsistency receives Contract[] from callers with no SM",
+      "sourceContract": "checkConsistency:261",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 261\n; checkConsistency receives Contract[] from callers with no SMT2 content validation.\n; Contract.proven[i].smt2 is an arbitrary string — can be malformed.\n; verifyBlock on malformed SMT2 returns \"error\", not \"unsat\".\n; Guard: if (selfResult.result === \"unsat\") continue\n;   → \"error\" != \"unsat\" → block is NOT skipped → self-contradictory block included.\n; Code transitions:\n;   - smt2_valid = 0 (malformed/unparseable content from input contract)\n;   - selfResult = \"error\" (Z3 rejects the SMT2)\n;   - guard fires only on \"unsat\" → block_included = 1\n(declare-const smt2_valid Int)       ; 1 = parseable by Z3, 0 = malformed\n(declare-const self_result Int)      ; 0=sat, 1=unsat, 2=unknown, 3=error\n(declare-const block_included Int)   ; 1 = pushed to namespacedBlocks\n; Code transition: malformed SMT2 causes Z3 to return error (3)\n(assert (= smt2_valid 0))\n(assert (=> (= smt2_valid 0) (= self_result 3)))\n; Code transition: guard only excludes on unsat (1)\n(assert (=> (= self_result 1) (= block_included 0)))\n(assert (=> (not (= self_result 1)) (= block_included 1)))\n; Reachable violation: malformed block included in merged consistency check\n(assert (= self_result 3))\n(assert (= block_included 1))\n(check-sat)",
+      "expected": "sat",
+      "z3Result": "sat",
+      "verdict": "violation"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyAxioms:41 → checks.map:44: PROVEN: verdict is always in {proven=0, violation=1, error=2",
+      "sourceContract": "checks.map:44",
+      "targetContract": "applyAxioms:41",
+      "smt2": "; P1 MECHANICAL: Does applyAxioms:41 establish preconditions for checks.map:44?\n; Property: PROVEN: verdict is always in {proven=0, violation=1, error=2}\n; PRINCIPLE: P5\n; LINE: 44\n; PROVEN: verdict is always in {proven=0, violation=1, error=2}\n; The nested ternary at lines 47-50 covers every (expected, result) pair.\n\n(declare-const expected Int)  ; 0=unsat, 1=sat\n(declare-const result  Int)   ; 0=unsat, 1=sat, 2=unknown, 3=error\n(declare-const verdict Int)   ; 0=proven, 1=violation, 2=error\n\n; Domain constraints\n(assert (or (= expected 0) (= expected 1)))\n(assert (>= result 0))\n(assert (<= result 3))\n\n; Code transition: expected=0 (unsat) branch\n(assert (=> (and (= expected 0) (= result 0))\n            (= verdict 0)))\n(assert (=> (and (= expected 0) (= result 1))\n            (= verdict 1)))\n(assert (=> (and (= expected 0) (and (not (= result 0)) (not (= result 1))))\n            (= verdict 2)))\n\n; Code transition: expected=1 (sat) branch\n(assert (=> (and (= expected 1) (= result 1))\n            (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 0))\n            (= verdict 0)))\n(assert (=> (and (= expected 1) (and (not (= result 0)) (not (= result 1))))\n            (= verdict 2)))\n\n; Negation: verdict escapes the valid range\n(assert (or (< verdict 0) (> verdict 2)))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P1",
+      "description": "applyAxioms:41 → checks.map:44: PROVEN: A definitive Z3 result (sat or unsat) never yields v",
+      "sourceContract": "checks.map:44",
+      "targetContract": "applyAxioms:41",
+      "smt2": "; P1 MECHANICAL: Does applyAxioms:41 establish preconditions for checks.map:44?\n; Property: PROVEN: A definitive Z3 result (sat or unsat) never yields verdict=error.\n; PRINCIPLE: P5\n; LINE: 44\n; PROVEN: A definitive Z3 result (sat or unsat) never yields verdict=error.\n; verdict=error is only reachable when result=unknown or result=error (2,3).\n\n(declare-const expected Int)  ; 0=unsat, 1=sat\n(declare-const result  Int)   ; 0=unsat (0) or 1=sat ONLY\n(declare-const verdict Int)\n\n; Domain: expected is binary; result is definitive\n(assert (or (= expected 0) (= expected 1)))\n(assert (or (= result 0) (= result 1)))\n\n; Code transitions: both branches of the ternary, definitive results only\n(assert (=> (and (= expected 0) (= result 0)) (= verdict 0)))\n(assert (=> (and (= expected 0) (= result 1)) (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 1)) (= verdict 1)))\n(assert (=> (and (= expected 1) (= result 0)) (= verdict 0)))\n\n; Negation: verdict = error\n(assert (= verdict 2))\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
     {
       "axiom": "P3",
       "description": "Public input violation at <anonymous>.catch:590: err: unknown — .message is accessed with no null/undefined g",
@@ -24049,6 +24468,46 @@
     },
     {
       "axiom": "P2",
+      "description": "State mutation between applyP2:102 and applyP2:113: PROVEN: Map-with-push partitions input — sum of group sizes ",
+      "sourceContract": "applyP2:102",
+      "targetContract": "applyP2:113",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 102\n; PROVEN: Map-with-push partitions input — sum of group sizes equals total input size\n\n(declare-const total_contracts Int)\n(declare-const sum_group_sizes Int)\n(declare-const num_groups Int)\n\n; Precondition: non-negative, finite input\n(assert (>= total_contracts 0))\n(assert (>= num_groups 0))\n(assert (<= num_groups total_contracts))\n\n; Transition: each iteration picks exactly one key and pushes exactly one contract\n; → sum of all group sizes equals total_contracts\n(assert (= sum_group_sizes total_contracts))\n\n; Negation of property\n(assert (not (= sum_group_sizes total_contracts)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P2",
+      "description": "State mutation between applyP2:113 and applyP2:120: PROVEN: [...fnContracts].sort(...) is a length-preserving pe",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP2:120",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: [...fnContracts].sort(...) is a length-preserving permutation\n\n(declare-const fn_contract_count Int)\n(declare-const sorted_count Int)\n\n; Precondition: only groups with >= 2 reach this block\n(assert (>= fn_contract_count 2))\n\n; Transition: spread copies every element; sort rearranges in place\n(assert (= sorted_count fn_contract_count))\n\n; Negation of property\n(assert (not (= sorted_count fn_contract_count)))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P2",
+      "description": "State mutation between applyP2:113 and applyP2:120: PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= ",
+      "sourceContract": "applyP2:113",
+      "targetContract": "applyP2:120",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 113\n; PROVEN: For all 0 <= i < sorted.length-1, sorted[i].line <= sorted[i+1].line\n\n(declare-const line_i Int)\n(declare-const line_j Int)\n\n; Precondition: valid source-code line numbers\n(assert (> line_i 0))\n(assert (> line_j 0))\n\n; Transition: comparator = (a,b) => a.line - b.line → ascending sort\n(assert (<= line_i line_j))\n\n; Negation of property: some adjacent pair violates order\n(assert (> line_i line_j))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P2",
+      "description": "State mutation between applyP2:120 and applyP2:121: PROVEN: extractDeclaredVars guard ensures only contracts wit",
+      "sourceContract": "applyP2:120",
+      "targetContract": "applyP2:121",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 120\n; PROVEN: extractDeclaredVars guard ensures only contracts with SMT variable declarations\n;         contribute checks — zero-var contracts are silently skipped\n\n(declare-const vars_length Int)\n(declare-const checks_pushed Int)\n\n; Precondition: vars_length is the count returned by extractDeclaredVars\n(assert (>= vars_length 0))\n\n; Transition: if (vars.length === 0) continue  — no push occurs\n(assert (=> (= vars_length 0) (= checks_pushed 0)))\n\n; Transition: if vars_length > 0, exactly one check is pushed per proven property\n(assert (=> (> vars_length 0) (= checks_pushed 1)))\n\n; Negation: a zero-var contract still produces a check\n(assert (= vars_length 0))\n(assert (> checks_pushed 0))\n\n(check-sat)",
+      "expected": "unsat",
+      "z3Result": "unsat",
+      "verdict": "proven"
+    },
+    {
+      "axiom": "P2",
       "description": "State mutation between fileIssues:518 and fileIssues:520: \"Filing N issues\" — N is a sat-only count. collectViolationI",
       "sourceContract": "fileIssues:518",
       "targetContract": "fileIssues:520",
@@ -24408,5 +24867,5 @@
       "verdict": "proven"
     }
   ],
-  "reportedAt": "2026-04-15T03:36:22.491Z"
+  "reportedAt": "2026-04-15T04:00:34.829Z"
 }

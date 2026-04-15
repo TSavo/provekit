@@ -1,0 +1,10 @@
+{
+  "id": "obs-9",
+  "signalKey": "src/axiom-engine.ts/applyAxioms[41]",
+  "claim": "VIOLATION: If applyP2 were moved inside the loop (a natural refactoring),",
+  "smt2": "; PRINCIPLE: [NEW]\n; LINE: 41\n; VIOLATION: If applyP2 were moved inside the loop (a natural refactoring),\n; it would be called N times with the full contracts array, producing N×M\n; duplicate AxiomCheck entries instead of M.\n; The comment \"P2 needs pairs\" explains WHY it's outside, but nothing in the\n; type system or runtime prevents this refactoring mistake.\n; Code transition: applyP2(contracts) called once → M checks added\n; Hypothetical refactoring: called once per contract iteration → N×M checks added\n(declare-const N Int)                   ; contracts.length\n(declare-const M Int)                   ; |applyP2(contracts)| — unique P2 checks\n(declare-const checks_if_outside Int)   ; current design: called once\n(declare-const checks_if_inside Int)    ; refactored design: called N times\n; Current code transition: applyP2 called once, appends M checks\n(assert (> N 1))\n(assert (> M 0))\n(assert (= checks_if_outside M))\n; Refactored transition: applyP2(contracts) called N times in loop body\n(assert (= checks_if_inside (* N M)))\n; Violation: refactored version produces more checks than intended\n(assert (> checks_if_inside checks_if_outside))\n(check-sat)",
+  "rejectedPrincipleName": "",
+  "rejectedPrincipleDescription": "",
+  "adversaryFeedback": "",
+  "observedAt": "2026-04-15T03:57:37.897Z"
+}
