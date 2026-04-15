@@ -5,7 +5,22 @@
   "line": 39,
   "signal_hash": "758dd2c8ed17c5783f9c96edf3742f932af0128708e0db17fc8af6b31cf65c52",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "State machine: cancelOrder's name-contract promises it only cancels",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 39\n; State machine: cancelOrder's name-contract promises it only cancels\n; orders for which cancellation is a valid transition.\n; VALID_TRANSITIONS[\"shipped\"]   = []  → cancel is NOT valid from shipped\n; VALID_TRANSITIONS[\"cancelled\"] = []  → cancel is NOT valid from cancelled\n; The function body contains zero guards on pre_state.\n\n(declare-const pre_state Int)\n(declare-const post_state Int)\n; is_valid_cancel = 1 iff pre_state ∈ {0,1,2} per VALID_TRANSITIONS\n(declare-const is_valid_cancel Int)\n\n; Code transition: cancelOrder sets no guard — any OrderState value reaches line 41\n(assert (>= pre_state 0))\n(assert (<= pre_state 4))\n\n; Code transition: line 41 unconditionally sets state = 4\n(assert (= post_state 4))\n\n; Transition table encodes VALID_TRANSITIONS\n(assert (=> (= pre_state 0) (= is_valid_cancel 1)))\n(assert (=> (= pre_state 1) (= is_valid_cancel 1)))\n(assert (=> (= pre_state 2) (= is_valid_cancel 1)))\n(assert (=> (= pre_state 3) (= is_valid_cancel 0)))\n(assert (=> (= pre_state 4) (= is_valid_cancel 0)))\n\n; Violation: name-contract broken — mutation proceeds on invalid pre_state\n(assert (= is_valid_cancel 0))\n\n(check-sat)"
+    }
+  ],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 39\n; State machine: cancelOrder's name-contract promises it only cancels\n; orders for which cancellation is a valid transition.\n; VALID_TRANSITIONS[\"shipped\"]   = []  → cancel is NOT valid from shipped\n; VALID_TRANSITIONS[\"cancelled\"] = []  → cancel is NOT valid from cancelled\n; The function body contains zero guards on pre_state.\n\n(declare-const pre_state Int)\n(declare-const post_state Int)\n; is_valid_cancel = 1 iff pre_state ∈ {0,1,2} per VALID_TRANSITIONS\n(declare-const is_valid_cancel Int)\n\n; Code transition: cancelOrder sets no guard — any OrderState value reaches line 41\n(assert (>= pre_state 0))\n(assert (<= pre_state 4))\n\n; Code transition: line 41 unconditionally sets state = 4\n(assert (= post_state 4))\n\n; Transition table encodes VALID_TRANSITIONS\n(assert (=> (= pre_state 0) (= is_valid_cancel 1)))\n(assert (=> (= pre_state 1) (= is_valid_cancel 1)))\n(assert (=> (= pre_state 2) (= is_valid_cancel 1)))\n(assert (=> (= pre_state 3) (= is_valid_cancel 0)))\n(assert (=> (= pre_state 4) (= is_valid_cancel 0)))\n\n; Violation: name-contract broken — mutation proceeds on invalid pre_state\n(assert (= is_valid_cancel 0))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

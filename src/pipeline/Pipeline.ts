@@ -6,7 +6,6 @@ import { PrincipleStore, hashPrinciple } from "../principles";
 import { DependencyPhase, DependencyGraph } from "./DependencyPhase";
 import { ContextPhase, ContextBundle, CallSiteContext } from "./ContextPhase";
 import { DerivationPhase, DerivationOutput } from "./DerivationPhase";
-import { ClassificationPhase, ClassificationOutput } from "./ClassificationPhase";
 import { AxiomPhase, AxiomReport } from "./AxiomPhase";
 import { PhaseOptions } from "./Phase";
 import { parseFile } from "../parser";
@@ -26,7 +25,6 @@ export interface PipelineResult {
   graph: DependencyGraph;
   bundles: ContextBundle[];
   derivation: DerivationOutput;
-  classification: ClassificationOutput;
   report: AxiomReport;
 }
 
@@ -34,7 +32,6 @@ export class Pipeline {
   private dependencyPhase = new DependencyPhase();
   private contextPhase = new ContextPhase();
   private derivationPhase = new DerivationPhase();
-  private classificationPhase = new ClassificationPhase();
   private axiomPhase = new AxiomPhase();
 
   async runFull(config: PipelineConfig): Promise<PipelineResult> {
@@ -57,9 +54,8 @@ export class Pipeline {
     if (bundles.length === 0) {
       console.log("No signals found in the dependency graph.");
       const emptyDerivation: DerivationOutput = { contracts: [], newViolations: [], derivedAt: new Date().toISOString() };
-      const emptyClassification: ClassificationOutput = { discovered: 0, validated: 0, rejected: 0, classifiedAt: new Date().toISOString() };
       const { data: report } = this.axiomPhase.execute(undefined, options);
-      return { graph, bundles, derivation: emptyDerivation, classification: emptyClassification, report };
+      return { graph, bundles, derivation: emptyDerivation, report };
     }
 
     const store = new ContractStore(config.projectRoot);
@@ -68,9 +64,8 @@ export class Pipeline {
     if (staleBundles.length === 0) {
       console.log("All signal hashes current. No derivation needed.");
       const emptyDerivation: DerivationOutput = { contracts: [], newViolations: [], derivedAt: new Date().toISOString() };
-      const emptyClassification: ClassificationOutput = { discovered: 0, validated: 0, rejected: 0, classifiedAt: new Date().toISOString() };
       const { data: report } = this.axiomPhase.execute(undefined, options);
-      return { graph, bundles, derivation: emptyDerivation, classification: emptyClassification, report };
+      return { graph, bundles, derivation: emptyDerivation, report };
     }
 
     const staleSiteCount = staleBundles.reduce((n, b) => n + b.callSites.length, 0);
@@ -87,14 +82,9 @@ export class Pipeline {
       options
     );
 
-    const { data: classification } = await this.classificationPhase.execute(
-      { derivation, model: config.model },
-      options
-    );
-
     const { data: report } = this.axiomPhase.execute(undefined, options);
 
-    return { graph, bundles, derivation, classification, report };
+    return { graph, bundles, derivation, report };
   }
 
   async runIncremental(config: PipelineConfig): Promise<PipelineResult> {
@@ -118,8 +108,7 @@ export class Pipeline {
         graph: { root: "", projectRoot: config.projectRoot, files: [], topologicalOrder: [], parallelGroups: [], builtAt: new Date().toISOString() },
         bundles: [],
         derivation: { contracts: [], newViolations: [], derivedAt: new Date().toISOString() },
-        classification: { discovered: 0, validated: 0, rejected: 0, classifiedAt: new Date().toISOString() },
-        report,
+                report,
       };
     }
 
@@ -212,8 +201,7 @@ export class Pipeline {
         graph: { root: "", projectRoot: config.projectRoot, files: [], topologicalOrder: [], parallelGroups: [], builtAt: new Date().toISOString() },
         bundles: [],
         derivation: { contracts: [], newViolations: [], derivedAt: new Date().toISOString() },
-        classification: { discovered: 0, validated: 0, rejected: 0, classifiedAt: new Date().toISOString() },
-        report,
+                report,
       };
     }
 

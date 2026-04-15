@@ -4,33 +4,19 @@
   "function": "cancelOrder",
   "line": 40,
   "signal_hash": "80e1ffa550aafa79ecf48370782f8f07da6b0b5e33e84eeaa1e227862aa68179",
-  "proven": [
-    {
-      "principle": "[NEW]",
-      "principle_hash": "",
-      "claim": "PROVEN: The log at line 40 fires BEFORE the mutation at line 41,",
-      "smt2": "; PRINCIPLE: [NEW] — State machine constraint\n; LINE: 40\n; PROVEN: The log at line 40 fires BEFORE the mutation at line 41,\n; so logged_state accurately reflects the pre-mutation state.\n; The \"was in state ${order.state}\" portion is always truthful.\n(declare-const pre_state Int)\n(declare-const logged_state Int)\n; Code transition: log executes at line 40, mutation at line 41 — order matters\n; Therefore: logged_state captures order.state at function entry = pre_state\n(assert (= logged_state pre_state))\n; Negate: can logged_state differ from pre_state?\n(assert (not (= logged_state pre_state)))\n(check-sat)"
-    }
-  ],
+  "proven": [],
   "violations": [
     {
       "principle": "[NEW]",
       "principle_hash": "",
-      "claim": "The log says \"Order X cancelled: reason, was in state Y\".",
-      "smt2": "; PRINCIPLE: [NEW] — State machine constraint\n; LINE: 40\n; The log says \"Order X cancelled: reason, was in state Y\".\n; The word \"cancelled\" implies a valid cancellation is being performed.\n; But the log fires unconditionally — even when the state machine forbids the transition.\n; This makes the log's claim (\"cancelled\") semantically false for shipped(3) and cancelled(4).\n(declare-const pre_state Int)\n(declare-const logged_state Int)\n(declare-const is_valid_source Int) ; 1 if pre_state ∈ {0,1,2}, 0 otherwise\n; Code transition: log fires first, captures state before mutation\n(assert (= logged_state pre_state))\n; Code transition: valid sources are draft(0), submitted(1), approved(2)\n; shipped(3) is NOT a valid source per VALID_TRANSITIONS\n(assert (= pre_state 3))\n; Violation: log claims \"cancelled\" but VALID_TRANSITIONS[3] = [] forbids this\n; The log's implicit validity claim is false\n(assert (not (or (= logged_state 0) (= logged_state 1) (= logged_state 2))))\n(check-sat)"
+      "claim": "Information flow + state machine: log at line 40 is the first statement.",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 40\n; Information flow + state machine: log at line 40 is the first statement.\n; It fires before any validation (none exists). It records \"cancelled\"\n; as a fait accompli even when VALID_TRANSITIONS forbids the transition.\n; A shipped order (pre_state=3) produces a false audit entry.\n\n(declare-const pre_state Int)\n(declare-const log_fires Int)        ; 1 = log statement executes\n(declare-const transition_valid Int) ; 1 = transition permitted by VALID_TRANSITIONS\n\n; Code transition: log is the first statement — always executes (no early return before it)\n(assert (= log_fires 1))\n\n; VALID_TRANSITIONS encodes which pre-states permit cancellation\n(assert (=> (= pre_state 0) (= transition_valid 1)))\n(assert (=> (= pre_state 1) (= transition_valid 1)))\n(assert (=> (= pre_state 2) (= transition_valid 1)))\n(assert (=> (= pre_state 3) (= transition_valid 0)))  ; shipped: no valid transitions\n(assert (=> (= pre_state 4) (= transition_valid 0)))  ; cancelled: no valid transitions\n\n; Violation: log fires claiming cancellation when the transition is forbidden\n(assert (= log_fires 1))\n(assert (= transition_valid 0))\n\n(check-sat)"
     }
   ],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: [NEW] — State machine constraint\n; LINE: 40\n; PROVEN: The log at line 40 fires BEFORE the mutation at line 41,\n; so logged_state accurately reflects the pre-mutation state.\n; The \"was in state ${order.state}\" portion is always truthful.\n(declare-const pre_state Int)\n(declare-const logged_state Int)\n; Code transition: log executes at line 40, mutation at line 41 — order matters\n; Therefore: logged_state captures order.state at function entry = pre_state\n(assert (= logged_state pre_state))\n; Negate: can logged_state differ from pre_state?\n(assert (not (= logged_state pre_state)))\n(check-sat)",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: [NEW] — State machine constraint\n; LINE: 40\n; The log says \"Order X cancelled: reason, was in state Y\".\n; The word \"cancelled\" implies a valid cancellation is being performed.\n; But the log fires unconditionally — even when the state machine forbids the transition.\n; This makes the log's claim (\"cancelled\") semantically false for shipped(3) and cancelled(4).\n(declare-const pre_state Int)\n(declare-const logged_state Int)\n(declare-const is_valid_source Int) ; 1 if pre_state ∈ {0,1,2}, 0 otherwise\n; Code transition: log fires first, captures state before mutation\n(assert (= logged_state pre_state))\n; Code transition: valid sources are draft(0), submitted(1), approved(2)\n; shipped(3) is NOT a valid source per VALID_TRANSITIONS\n(assert (= pre_state 3))\n; Violation: log claims \"cancelled\" but VALID_TRANSITIONS[3] = [] forbids this\n; The log's implicit validity claim is false\n(assert (not (or (= logged_state 0) (= logged_state 1) (= logged_state 2))))\n(check-sat)",
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 40\n; Information flow + state machine: log at line 40 is the first statement.\n; It fires before any validation (none exists). It records \"cancelled\"\n; as a fait accompli even when VALID_TRANSITIONS forbids the transition.\n; A shipped order (pre_state=3) produces a false audit entry.\n\n(declare-const pre_state Int)\n(declare-const log_fires Int)        ; 1 = log statement executes\n(declare-const transition_valid Int) ; 1 = transition permitted by VALID_TRANSITIONS\n\n; Code transition: log is the first statement — always executes (no early return before it)\n(assert (= log_fires 1))\n\n; VALID_TRANSITIONS encodes which pre-states permit cancellation\n(assert (=> (= pre_state 0) (= transition_valid 1)))\n(assert (=> (= pre_state 1) (= transition_valid 1)))\n(assert (=> (= pre_state 2) (= transition_valid 1)))\n(assert (=> (= pre_state 3) (= transition_valid 0)))  ; shipped: no valid transitions\n(assert (=> (= pre_state 4) (= transition_valid 0)))  ; cancelled: no valid transitions\n\n; Violation: log fires claiming cancellation when the transition is forbidden\n(assert (= log_fires 1))\n(assert (= transition_valid 0))\n\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

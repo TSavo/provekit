@@ -9,6 +9,7 @@ import { PrincipleStore, hashPrinciple } from "../principles";
 import { Contract, ContractStore, signalKey, ClauseHistory, ProvenProperty, Violation } from "../contracts";
 import { computeSignalHash } from "../signals";
 import { LLMProvider, createProvider } from "../llm";
+import { classifyAndGeneralize } from "../principles";
 import { DagExecutor } from "./DagExecutor";
 import { buildSignalFrame } from "./PromptStrategy";
 import { assembleDossier, formatDossier } from "./Dossier";
@@ -73,7 +74,7 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     this.detail(`Provider: ${provider.name}`);
 
     const principleStore = new PrincipleStore(options.projectRoot);
-    const discoveredPrinciples = principleStore.formatForPrompt();
+    let discoveredPrinciples = principleStore.formatForPrompt();
 
     this.detail(`Model: ${model}`);
     this.detail(`Principles: 7 seed + ${principleStore.getAll().length} discovered`);
@@ -173,6 +174,34 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
 
       for (const contract of contracts) {
         store.put(contract);
+      }
+
+      // Inline Phase 4: classify [NEW] violations immediately
+      for (const contract of contracts) {
+        for (const v of contract.violations) {
+          if (!v.principle?.toUpperCase().includes("NEW")) continue;
+
+          console.log(`    [NEW] found in ${contract.key} — classifying inline...`);
+          const violation = { smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined };
+          const principle = await classifyAndGeneralize(
+            violation, contract.key, principleStore.getAll(), model, provider
+          );
+
+          if (principle) {
+            principle.id = principleStore.nextId();
+            if (principle.validated) {
+              principleStore.add(principle);
+              discoveredPrinciples = principleStore.formatForPrompt();
+              console.log(`    VALIDATED: ${principle.id} — ${principle.name}`);
+              console.log(`    Subsequent derivations will use this principle.`);
+            } else {
+              console.log(`    REJECTED: ${principle.id} — ${principle.name}`);
+              if (principle.validationFailure) {
+                console.log(`      Reason: ${principle.validationFailure}`);
+              }
+            }
+          }
+        }
       }
 
       const totalProofs = contracts.reduce((n, c) => n + c.proven.length + c.violations.length, 0);

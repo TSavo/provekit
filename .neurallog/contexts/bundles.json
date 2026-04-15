@@ -1,215 +1,178 @@
 [
   {
-    "filePath": "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts",
-    "relativePath": "examples/resource-leak.ts",
+    "filePath": "/Users/tsavo/Projects/neurallog/examples/state-machine.ts",
+    "relativePath": "examples/state-machine.ts",
     "callSites": [
       {
-        "line": 8,
+        "line": 21,
         "column": 2,
-        "functionName": "processFile",
-        "signalText": "console.log(`Processing file: ${path}, fd=${fd}`)",
+        "functionName": "submitOrder",
+        "signalText": "console.log(`Order ${order.id} submitted with ${order.items.length} items`)",
         "signalType": "log",
-        "signalHash": "6ecba451c9f0f2472028ba632c799c785642f5acaa5ead382cdf4c0d1fe12958",
-        "functionSource": "function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}",
-        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "signalHash": "2b183bf8b31ccddfd04310c262d42dc405c504f0e9a34449f1c11de4314b6adb",
+        "functionSource": "function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
         "importSources": [],
         "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "processFile is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  path: string\nReturn type: string[]\nLocal variables (before this signal):\n  results: string[]",
+        "callingContext": "submitOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\nReturn type: void",
         "pathConditions": [],
         "callees": [
-          "alloc",
-          "closeSync",
-          "includes",
-          "log",
-          "openSync",
-          "push",
-          "readSync",
-          "toString",
-          "trim"
-        ],
-        "calledBy": []
-      },
-      {
-        "line": 14,
-        "column": 6,
-        "functionName": "processFile",
-        "signalText": "console.log(`Found error in ${path}: ${line}`)",
-        "signalType": "log",
-        "signalHash": "b7803c6acd36b7af1ac31511b7bfd119213cb05fa91b26660f841f5a1d31f117",
-        "functionSource": "function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}",
-        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
-        "importSources": [],
-        "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "processFile is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  path: string\nReturn type: string[]\nLocal variables (before this signal):\n  results: string[]",
-        "pathConditions": [
-          "(line.includes(\"ERROR\"))"
-        ],
-        "callees": [
-          "alloc",
-          "closeSync",
-          "includes",
-          "log",
-          "openSync",
-          "push",
-          "readSync",
-          "toString",
-          "trim"
-        ],
-        "calledBy": []
-      },
-      {
-        "line": 15,
-        "column": 23,
-        "functionName": "processFile",
-        "signalText": "BUG: returns without closing fd",
-        "signalType": "comment",
-        "signalHash": "d532eca56de925dc3aacda71fef4c9761f8c8c4e60092848be7a9ce3aeddafd0",
-        "functionSource": "function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}",
-        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
-        "importSources": [],
-        "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "processFile is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  path: string\nReturn type: string[]\nLocal variables (before this signal):\n  results: string[]",
-        "pathConditions": [
-          "(line.includes(\"ERROR\"))"
-        ],
-        "callees": [
-          "alloc",
-          "closeSync",
-          "includes",
-          "log",
-          "openSync",
-          "push",
-          "readSync",
-          "toString",
-          "trim"
+          "log"
         ],
         "calledBy": []
       },
       {
         "line": 22,
         "column": 2,
-        "functionName": "processFile",
-        "signalText": "console.log(`Finished processing ${path}, ${results.length} lines`)",
-        "signalType": "log",
-        "signalHash": "529aee5fdda943e076b74481f37286f567b323db6b93de2a1cabd027210f0119",
-        "functionSource": "function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}",
-        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "functionName": "submitOrder",
+        "signalText": "BUG: no check that order.state === \"draft\" before transitioning",
+        "signalType": "comment",
+        "signalHash": "51f3d9ace81000ebe2561d5156f12a622dbab96eddca7e4385cd7c5575163d5a",
+        "functionSource": "function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
         "importSources": [],
         "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "processFile is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  path: string\nReturn type: string[]\nLocal variables (before this signal):\n  results: string[]",
+        "callingContext": "submitOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\nReturn type: void",
         "pathConditions": [],
         "callees": [
-          "alloc",
-          "closeSync",
-          "includes",
-          "log",
-          "openSync",
-          "push",
-          "readSync",
-          "toString",
-          "trim"
+          "log"
         ],
         "calledBy": []
       },
       {
         "line": 28,
         "column": 2,
-        "functionName": "connectAndQuery",
-        "signalText": "console.log(`Connected to ${host}, running query`)",
+        "functionName": "approveOrder",
+        "signalText": "console.log(`Order ${order.id} approved by ${approver}`)",
         "signalType": "log",
-        "signalHash": "4c1ad07f8f56ee9544f0a4bfb3b3674dc76c2b5c71016d014803b3c93e03de52",
-        "functionSource": "function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}",
-        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "signalHash": "dd45e653bc1022afc912b92cda051f32928088d96fc1697081cdf4cc41f71266",
+        "functionSource": "function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
         "importSources": [],
         "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "connectAndQuery is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  host: string\n  query: string\nReturn type: any",
+        "callingContext": "approveOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\n  approver: string\nReturn type: void",
         "pathConditions": [],
         "callees": [
-          "close",
-          "createConnection",
-          "execute",
           "log"
         ],
         "calledBy": []
       },
       {
-        "line": 33,
-        "column": 4,
-        "functionName": "connectAndQuery",
-        "signalText": "console.log(`Query failed: ${result.error}`)",
-        "signalType": "log",
-        "signalHash": "249ad847c68ecb095b1c734f01dd9748715a059ccf9102d6cc86041cc289a850",
-        "functionSource": "function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}",
-        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
-        "importSources": [],
-        "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "connectAndQuery is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  host: string\n  query: string\nReturn type: any",
-        "pathConditions": [
-          "(result.error)"
-        ],
-        "callees": [
-          "close",
-          "createConnection",
-          "execute",
-          "log"
-        ],
-        "calledBy": []
-      },
-      {
-        "line": 34,
-        "column": 18,
-        "functionName": "connectAndQuery",
-        "signalText": "BUG: connection never closed on error path",
-        "signalType": "comment",
-        "signalHash": "33c74ff44244e32a9a67ce2068a00fdd580ed04c23edec900d366625cc6751bc",
-        "functionSource": "function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}",
-        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
-        "importSources": [],
-        "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "connectAndQuery is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  host: string\n  query: string\nReturn type: any",
-        "pathConditions": [
-          "(result.error)"
-        ],
-        "callees": [
-          "close",
-          "createConnection",
-          "execute",
-          "log"
-        ],
-        "calledBy": []
-      },
-      {
-        "line": 38,
+        "line": 29,
         "column": 2,
-        "functionName": "connectAndQuery",
-        "signalText": "console.log(`Query complete, ${result.rows.length} rows`)",
-        "signalType": "log",
-        "signalHash": "d5efde5f868172d06a79f9812dd428b2f1485ad12c48afc4c22514b562815986",
-        "functionSource": "function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}",
-        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "functionName": "approveOrder",
+        "signalText": "BUG: can approve a cancelled or shipped order",
+        "signalType": "comment",
+        "signalHash": "f83cbdec04a508662e46253805d4147bf1b356d795450facccdda7d8f35fdb1b",
+        "functionSource": "function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
         "importSources": [],
         "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "connectAndQuery is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  host: string\n  query: string\nReturn type: any",
-        "pathConditions": [
-          "!((result.error))"
-        ],
+        "callingContext": "approveOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\n  approver: string\nReturn type: void",
+        "pathConditions": [],
         "callees": [
-          "close",
-          "createConnection",
-          "execute",
+          "log"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 35,
+        "column": 2,
+        "functionName": "shipOrder",
+        "signalText": "console.log(`Order ${order.id} shipped, tracking: ${tracking}`)",
+        "signalType": "log",
+        "signalHash": "dc69df5adc2d9495d4cde3254f7bf03a4a4465d2a7ab45038b7080b1b2dc48e9",
+        "functionSource": "function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "shipOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\n  tracking: string\nReturn type: void",
+        "pathConditions": [],
+        "callees": [
+          "log"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 36,
+        "column": 2,
+        "functionName": "shipOrder",
+        "signalText": "BUG: can ship a draft order, skipping submit and approve",
+        "signalType": "comment",
+        "signalHash": "c8d2c477a40e1f78edd0f88d0537ebc638205c94207ebc5003c2c855aee104de",
+        "functionSource": "function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "shipOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\n  tracking: string\nReturn type: void",
+        "pathConditions": [],
+        "callees": [
+          "log"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 39,
+        "column": 7,
+        "functionName": "cancelOrder",
+        "signalText": "Function \"cancelOrder\" promises: return value must accurately reflect the capability",
+        "signalType": "name:predicate",
+        "signalHash": "758dd2c8ed17c5783f9c96edf3742f932af0128708e0db17fc8af6b31cf65c52",
+        "functionSource": "function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "cancelOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\n  reason: string\nReturn type: void",
+        "pathConditions": [],
+        "callees": [],
+        "calledBy": []
+      },
+      {
+        "line": 40,
+        "column": 2,
+        "functionName": "cancelOrder",
+        "signalText": "console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`)",
+        "signalType": "log",
+        "signalHash": "80e1ffa550aafa79ecf48370782f8f07da6b0b5e33e84eeaa1e227862aa68179",
+        "functionSource": "function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "cancelOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\n  reason: string\nReturn type: void",
+        "pathConditions": [],
+        "callees": [
+          "log"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 42,
+        "column": 2,
+        "functionName": "cancelOrder",
+        "signalText": "BUG: can cancel a shipped order",
+        "signalType": "comment",
+        "signalHash": "994611c7c4e23e0a7f91902f328e735851809346221acca51be23ba26e7b0a81",
+        "functionSource": "function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}",
+        "fileSource": "type OrderState = \"draft\" | \"submitted\" | \"approved\" | \"shipped\" | \"cancelled\";\n\ninterface Order {\n  id: string;\n  state: OrderState;\n  items: { sku: string; qty: number }[];\n  approvedBy: string | null;\n  trackingNumber: string | null;\n}\n\nconst VALID_TRANSITIONS: Record<OrderState, OrderState[]> = {\n  draft: [\"submitted\", \"cancelled\"],\n  submitted: [\"approved\", \"cancelled\"],\n  approved: [\"shipped\", \"cancelled\"],\n  shipped: [],\n  cancelled: [],\n};\n\nexport function submitOrder(order: Order): void {\n  order.state = \"submitted\";\n  console.log(`Order ${order.id} submitted with ${order.items.length} items`);\n  // BUG: no check that order.state === \"draft\" before transitioning\n}\n\nexport function approveOrder(order: Order, approver: string): void {\n  order.approvedBy = approver;\n  order.state = \"approved\";\n  console.log(`Order ${order.id} approved by ${approver}`);\n  // BUG: can approve a cancelled or shipped order\n}\n\nexport function shipOrder(order: Order, tracking: string): void {\n  order.trackingNumber = tracking;\n  order.state = \"shipped\";\n  console.log(`Order ${order.id} shipped, tracking: ${tracking}`);\n  // BUG: can ship a draft order, skipping submit and approve\n}\n\nexport function cancelOrder(order: Order, reason: string): void {\n  console.log(`Order ${order.id} cancelled: ${reason}, was in state ${order.state}`);\n  order.state = \"cancelled\";\n  // BUG: can cancel a shipped order\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "cancelOrder is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  order: Order\n  reason: string\nReturn type: void",
+        "pathConditions": [],
+        "callees": [
           "log"
         ],
         "calledBy": []
       }
     ],
-    "builtAt": "2026-04-15T02:12:44.541Z"
+    "builtAt": "2026-04-15T02:28:12.745Z"
   }
 ]

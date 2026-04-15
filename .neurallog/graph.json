@@ -1,26 +1,26 @@
 {
-  "root": "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts",
+  "root": "/Users/tsavo/Projects/neurallog/examples/state-machine.ts",
   "projectRoot": "/Users/tsavo/Projects/neurallog",
   "files": [
     {
-      "path": "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts",
-      "relativePath": "examples/resource-leak.ts",
+      "path": "/Users/tsavo/Projects/neurallog/examples/state-machine.ts",
+      "relativePath": "examples/state-machine.ts",
       "imports": [],
-      "signalCount": 8,
-      "hash": "30edad58c576d2b51a887826c1144864c4c9fc0012a080e407ea6fee7fda1933"
+      "signalCount": 9,
+      "hash": "1e2cf553d311c06661ecbd1731c603586b628e0820772b3862c51efb16a18812"
     }
   ],
   "topologicalOrder": [
-    "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts"
+    "/Users/tsavo/Projects/neurallog/examples/state-machine.ts"
   ],
   "parallelGroups": [
     {
       "depth": 0,
       "files": [
-        "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts"
+        "/Users/tsavo/Projects/neurallog/examples/state-machine.ts"
       ],
-      "signalCount": 8
+      "signalCount": 9
     }
   ],
-  "builtAt": "2026-04-15T02:12:44.524Z"
+  "builtAt": "2026-04-15T02:28:12.732Z"
 }

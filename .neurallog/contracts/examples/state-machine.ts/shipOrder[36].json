@@ -5,22 +5,7 @@
   "line": 36,
   "signal_hash": "c8d2c477a40e1f78edd0f88d0537ebc638205c94207ebc5003c2c855aee104de",
   "proven": [],
-  "violations": [
-    {
-      "principle": "P4",
-      "principle_hash": "a1b5093df48e8e1f7473af05b14e02a6715311445690b006840d2fc640b4234d",
-      "claim": "Temporal: shipOrder called twice on the same Order object.",
-      "smt2": "; PRINCIPLE: P4\n; LINE: 36\n; Temporal: shipOrder called twice on the same Order object.\n; First call succeeds. Second call: state_before = shipped (3),\n; VALID_TRANSITIONS[\"shipped\"] = [] — but no guard blocks re-execution.\n; trackingNumber is silently overwritten.\n\n(declare-const state_after_first Int)\n(declare-const state_after_second Int)\n(declare-const tracking_v1 Int)       ; tracking set by first call\n(declare-const tracking_v2 Int)       ; tracking set by second call\n\n; Code transition (first call): state := shipped (3)\n(assert (= state_after_first 3))\n(assert (= tracking_v1 1))            ; first tracking value\n\n; Code transition (second call): no guard on current state\n; state_before for second call = state_after_first = 3\n(assert (= state_after_second 3))\n; Code transition: trackingNumber is overwritten unconditionally\n(assert (= tracking_v2 2))\n(assert (not (= tracking_v1 tracking_v2)))\n\n; Violation: second call fires on shipped order (invalid per VALID_TRANSITIONS[\"shipped\"]=[])\n; and silently replaces the tracking number\n(assert (= state_after_first 3))      ; pre-state for second call is \"shipped\"\n\n(check-sat)"
-    }
-  ],
+  "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P4\n; LINE: 36\n; Temporal: shipOrder called twice on the same Order object.\n; First call succeeds. Second call: state_before = shipped (3),\n; VALID_TRANSITIONS[\"shipped\"] = [] — but no guard blocks re-execution.\n; trackingNumber is silently overwritten.\n\n(declare-const state_after_first Int)\n(declare-const state_after_second Int)\n(declare-const tracking_v1 Int)       ; tracking set by first call\n(declare-const tracking_v2 Int)       ; tracking set by second call\n\n; Code transition (first call): state := shipped (3)\n(assert (= state_after_first 3))\n(assert (= tracking_v1 1))            ; first tracking value\n\n; Code transition (second call): no guard on current state\n; state_before for second call = state_after_first = 3\n(assert (= state_after_second 3))\n; Code transition: trackingNumber is overwritten unconditionally\n(assert (= tracking_v2 2))\n(assert (not (= tracking_v1 tracking_v2)))\n\n; Violation: second call fires on shipped order (invalid per VALID_TRANSITIONS[\"shipped\"]=[])\n; and silently replaces the tracking number\n(assert (= state_after_first 3))      ; pre-state for second call is \"shipped\"\n\n(check-sat)",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

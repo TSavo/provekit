@@ -95,11 +95,7 @@ export function hashPrinciple(id: string): string {
 }
 
 function getAdversaryModel(model: string): string {
-  const lower = model.toLowerCase();
-  if (lower.includes("opus")) return "sonnet";
-  if (lower.includes("sonnet")) return "haiku";
-  // Default: if haiku or unknown, use sonnet as adversary
-  return "sonnet";
+  return model;
 }
 
 export class PrincipleStore {
@@ -324,59 +320,52 @@ async function adversarialModelTest(
 ): Promise<{ passed: boolean; failure?: string }> {
   const adversaryModel = getAdversaryModel(derivationModel);
 
-  const prompt = `You are an adversarial tester for formal verification principles. Your goal is to BREAK the proposed principle by finding counterexamples.
+  const prompt = `You are testing whether a verification principle is useful in practice.
 
 ## Proposed Principle
 Name: ${proposed.name}
 Description: ${proposed.description}
 
-Teaching Example:
-Domain: ${proposed.teachingExample.domain}
-Explanation: ${proposed.teachingExample.explanation}
-SMT2:
+Teaching Example (${proposed.teachingExample.domain}):
+${proposed.teachingExample.explanation}
 \`\`\`smt2
 ${proposed.teachingExample.smt2}
 \`\`\`
 
 ## Your Task
-Try to find BOTH of these counterexamples. You have 5 attempts for each.
 
-### False Negative Test
-Produce a realistic code snippet (in TypeScript/JavaScript) where this principle SHOULD detect a violation but WOULD NOT. This means code that has exactly the kind of bug the principle describes, but structured in a way that the principle's pattern would miss it.
+Write TWO short, realistic TypeScript functions (under 20 lines each) that a normal developer would actually write:
 
-### False Positive Test
-Produce a realistic code snippet where this principle WOULD flag a violation but SHOULD NOT. This means code that superficially matches the principle's pattern but is actually correct.
+1. **False negative**: A function with exactly the bug this principle describes, but written in a way that might slip past it. Keep it realistic — no async edge cases, no metaprogramming, no framework magic. Just a normal function with the bug.
 
-## Response Format
-Respond with ONLY a JSON object:
+2. **False positive**: A function that looks like it has the bug but is actually correct. The principle would wrongly flag it.
+
+If you genuinely cannot write either one after honest effort, say found: false.
+
 \`\`\`json
 {
   "falseNegative": {
     "found": true/false,
-    "snippet": "code here or null",
-    "explanation": "why this is a false negative, or why you couldn't find one"
+    "snippet": "short realistic TypeScript function or null",
+    "explanation": "one sentence"
   },
   "falsePositive": {
     "found": true/false,
-    "snippet": "code here or null",
-    "explanation": "why this is a false positive, or why you couldn't find one"
+    "snippet": "short realistic TypeScript function or null",
+    "explanation": "one sentence"
   }
 }
 \`\`\`
 
-Be aggressive. Try hard to break the principle. If the principle is vague, overly broad, or poorly defined, it should be easy to find counterexamples. Only report found:false if you genuinely cannot construct a counterexample after careful thought.`;
+Be practical. Only report found:true if a normal developer would actually write that code. No async edge cases, no metaprogramming, no theoretical constructs.`;
 
   const failures: string[] = [];
-  const MAX_ATTEMPTS = 5;
+  const MAX_ATTEMPTS = 2;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const attemptPrompt = attempt === 0
-      ? prompt
-      : `${prompt}\n\nThis is attempt ${attempt + 1} of ${MAX_ATTEMPTS}. Previous attempts did not find counterexamples. Try harder — consider edge cases, adversarial inputs, concurrency, type coercion, and unusual but valid code patterns.`;
-
-    const response = await provider.complete(attemptPrompt, {
+    const response = await provider.complete(prompt, {
       model: adversaryModel,
-      systemPrompt: "You are an adversarial red-teamer for verification principles. Your ONLY goal is to find counterexamples that break the principle. Be creative and thorough. Respond with JSON only.",
+      systemPrompt: "Write realistic TypeScript counterexamples. Short, practical, something a real developer would write. Respond with JSON only.",
     });
     const rawResponse = response.text;
 
@@ -518,11 +507,9 @@ export async function classifyAndGeneralize(
   // Build detailed principle list with full descriptions and teaching examples
   const detailedPrinciples = formatAllPrinciplesDetailed(existingPrinciples);
 
-  // --- Stage 1: Classification with full principle descriptions ---
-  const stage1Prompt = `You are a verification principle analyst. A formal verification engine found a violation tagged [NEW] — meaning the derivation engine thought it doesn't fit any existing principle. Your job is to determine if this is genuinely new, and if so, generalize it.
-
-## Existing Principles (with full descriptions and teaching examples)
-${detailedPrinciples}
+  // The derivation engine tagged this [NEW]. Trust that judgment.
+  // Generalize it into a principle, then let the adversary try to break it.
+  const generalizePrompt = `A formal verification engine found a novel violation pattern. Generalize it into a reusable verification principle.
 
 ## The [NEW] Violation
 Found at: ${context}
@@ -531,41 +518,33 @@ SMT-LIB block:
 ${violation.smt2}
 \`\`\`
 
+## Existing Principles (for reference — do NOT map to these)
+${detailedPrinciples}
+
 ## Your Task
 
-Read each existing principle's FULL description and teaching example carefully. Many violations that appear new at first glance are actually covered by an existing principle when you consider the principle's full scope.
+This violation was tagged [NEW] because it doesn't fit the existing principles. Your job is to GENERALIZE it — extract the abstract pattern so it can find similar bugs in other codebases.
 
-1. Does this violation fit one of the existing principles listed above? Consider whether any principle, applied broadly, covers this pattern. If yes, respond with ONLY: "EXISTING: P<number>" and a brief explanation.
-
-2. If genuinely new — meaning NO existing principle's description covers this class of bug even when interpreted broadly — respond with a JSON object (and NOTHING else before or after it):
+Respond with a JSON object:
 \`\`\`json
 {
-  "name": "Short Principle Name",
-  "description": "One paragraph description in formal verification textbook language.",
+  "name": "Short Principle Name (e.g., Resource Lifecycle, State Machine Constraint)",
+  "description": "One paragraph description in formal verification textbook language. Describe the GENERAL class of bug, not this specific instance.",
   "teachingExample": {
     "domain": "A domain COMPLETELY DIFFERENT from the original code (e.g., aviation, healthcare, networking, physics)",
     "explanation": "One sentence explaining the teaching example.",
     "smt2": "A self-contained SMT-LIB 2 block demonstrating the pattern. Must include (check-sat)."
   }
 }
-\`\`\`
+\`\`\``;
 
-Be rigorous. Most violations fit existing principles. Only propose a new one if you genuinely cannot capture the pattern with the existing set.`;
-
-  const stage1Result = await llm.complete(stage1Prompt, {
+  const generalizeResult = await llm.complete(generalizePrompt, {
     model,
-    systemPrompt: "You classify verification violations. Be concise. Respond with either 'EXISTING: P<N>' or a JSON object. Nothing else.",
+    systemPrompt: "You generalize bug patterns into reusable verification principles. Be precise and abstract. Respond with JSON only.",
   });
-  const stage1Response = stage1Result.text;
 
-  // If Stage 1 says EXISTING, accept immediately
-  if (stage1Response.includes("EXISTING:")) {
-    return null;
-  }
-
-  // Stage 1 said NEW — extract the proposed principle
-  const jsonMatch = stage1Response.match(/```json\s*([\s\S]*?)```/);
-  const jsonStr = jsonMatch ? jsonMatch[1]! : stage1Response;
+  const jsonMatch = generalizeResult.text.match(/```json\s*([\s\S]*?)```/);
+  const jsonStr = jsonMatch ? jsonMatch[1]! : generalizeResult.text;
 
   let parsed: any;
   try {
@@ -574,64 +553,74 @@ Be rigorous. Most violations fit existing principles. Only propose a new one if 
     return null;
   }
 
-  // --- Stage 2: Reverse framing check ---
-  // Re-examine with a different prompt that biases toward finding existing matches
-  const stage2Result = await reverseFramingCheck(
-    parsed.name,
-    parsed.description,
-    violation,
-    context,
-    existingPrinciples,
-    model,
-    llm
-  );
+  const MAX_REFINEMENTS = 3;
+  let current = parsed;
 
-  // If Stage 2 says it's redundant, reject the new principle
-  if (!stage2Result.isNew) {
-    return null;
+  for (let round = 0; round < MAX_REFINEMENTS; round++) {
+    const adversarialResult = await adversarialModelTest(
+      { name: current.name, description: current.description, teachingExample: current.teachingExample },
+      model, llm
+    );
+
+    if (adversarialResult.passed) {
+      return {
+        id: "",
+        name: current.name,
+        description: current.description,
+        teachingExample: current.teachingExample,
+        provenance: { discoveredIn: context, violation: violation.smt2.slice(0, 200), generalizedAt: new Date().toISOString() },
+        validated: true,
+      };
+    }
+
+    if (round === MAX_REFINEMENTS - 1) {
+      return {
+        id: "",
+        name: current.name,
+        description: current.description,
+        teachingExample: current.teachingExample,
+        provenance: { discoveredIn: context, violation: violation.smt2.slice(0, 200), generalizedAt: new Date().toISOString() },
+        validated: false,
+        validationFailure: adversarialResult.failure,
+      };
+    }
+
+    console.log(`      Refining principle (round ${round + 1}): ${adversarialResult.failure?.slice(0, 100)}`);
+
+    const refineResult = await llm.complete(`A verification principle was proposed but the adversary found a weakness. Refine the principle to address the weakness.
+
+## Current Principle
+Name: ${current.name}
+Description: ${current.description}
+
+## Adversary's Criticism
+${adversarialResult.failure}
+
+## Your Task
+Refine the principle to address the adversary's criticism. Make the description more precise so the weakness no longer applies. Do NOT make it so narrow that it only catches the original bug — keep it general.
+
+Respond with a JSON object:
+\`\`\`json
+{
+  "name": "Refined Principle Name",
+  "description": "Refined one-paragraph description addressing the adversary's criticism.",
+  "teachingExample": {
+    "domain": "A different domain from the original",
+    "explanation": "One sentence.",
+    "smt2": "Self-contained SMT-LIB 2 block. Must include (check-sat)."
+  }
+}
+\`\`\``, { model, systemPrompt: "You refine verification principles based on adversarial feedback. Make them stronger, not narrower. Respond with JSON only." });
+
+    const refineMatch = refineResult.text.match(/```json\s*([\s\S]*?)```/);
+    const refineStr = refineMatch ? refineMatch[1]! : refineResult.text;
+
+    try {
+      current = JSON.parse(refineStr.trim());
+    } catch {
+      break;
+    }
   }
 
-  // Both stages agree it's NEW — proceed through existing validation pipeline
-
-  // Semantic diff check (existing Step 1 — additional safety net)
-  const diffResult = await semanticDiffCheck(
-    { name: parsed.name, description: parsed.description },
-    existingPrinciples,
-    model,
-    llm
-  );
-
-  if (diffResult.covered) {
-    return null;
-  }
-
-  // Adversarial model test (existing Step 2)
-  const adversarialResult = await adversarialModelTest(
-    {
-      name: parsed.name,
-      description: parsed.description,
-      teachingExample: parsed.teachingExample,
-    },
-    model,
-    llm
-  );
-
-  const principle: Principle = {
-    id: "", // filled by caller
-    name: parsed.name,
-    description: parsed.description,
-    teachingExample: parsed.teachingExample,
-    provenance: {
-      discoveredIn: context,
-      violation: violation.smt2.slice(0, 200),
-      generalizedAt: new Date().toISOString(),
-    },
-    validated: adversarialResult.passed,
-  };
-
-  if (!adversarialResult.passed) {
-    principle.validationFailure = adversarialResult.failure;
-  }
-
-  return principle;
+  return null;
 }
