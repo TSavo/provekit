@@ -1,0 +1,39 @@
+{
+  "key": "src/parser.ts/inferType[338]",
+  "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+  "function": "inferType",
+  "line": 338,
+  "signal_hash": "ce0757da5a9c01705d166176a17fddb3b3d24b427dc1dabbdc748cdd5c5c3ef9",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "At line 338 the path condition fn?.type === \"member_expression\" holds.",
+      "smt2": "; PRINCIPLE: P1\n; At line 338 the path condition fn?.type === \"member_expression\" holds.\n; Prove: fn cannot be null at this point.\n; Optional chaining: null?.type === undefined ≠ \"member_expression\",\n; so path_cond_holds = 1 forces fn_null = 0.\n\n(declare-const fn_null         Int)   ; 1 = fn is null,  0 = fn is non-null\n(declare-const path_cond_holds Int)   ; 1 = fn?.type === \"member_expression\" is true\n\n; Code semantics of optional chaining:\n; fn is null → fn?.type = undefined → condition is false\n(assert (=> (= fn_null 1) (= path_cond_holds 0)))\n\n; Known fact: path condition is satisfied (given in problem context)\n(assert (= path_cond_holds 1))\n\n; Negation of property: fn IS null when path condition holds\n(assert (= fn_null 1))\n\n(check-sat)\n; Expected: unsat — fn cannot be null at line 338"
+    },
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "Prove: when prop is non-null and prop.text ∈ {toString, toFixed, toUpperCase},",
+      "smt2": "; PRINCIPLE: P1\n; Prove: when prop is non-null and prop.text ∈ {toString, toFixed, toUpperCase},\n; inferType provably returns \"string\" (not null, not \"number\").\n; Return encoding: 0 = null, 1 = \"number\", 2 = \"string\"\n\n(declare-const prop_is_null     Int)  ; 0 = non-null\n(declare-const prop_text_match  Int)  ; 1 = prop.text is toString/toFixed/toUpperCase\n(declare-const inferred         Int)  ; return value of inferType\n\n; Code transition (line 339):\n;   if (prop?.text === \"toString\" || prop?.text === \"toFixed\" ||\n;       prop?.text === \"toUpperCase\") return \"string\";\n; Encoded as: prop non-null AND text matches → return \"string\"\n(assert (=> (and (= prop_is_null 0) (= prop_text_match 1))\n            (= inferred 2)))\n\n; Establish preconditions\n(assert (= prop_is_null 0))\n(assert (= prop_text_match 1))\n\n; Negate the property: inferred ≠ \"string\"\n(assert (not (= inferred 2)))\n\n(check-sat)\n; Expected: unsat — the string-method branch provably returns \"string\""
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; At line 338 the path condition fn?.type === \"member_expression\" holds.\n; Prove: fn cannot be null at this point.\n; Optional chaining: null?.type === undefined ≠ \"member_expression\",\n; so path_cond_holds = 1 forces fn_null = 0.\n\n(declare-const fn_null         Int)   ; 1 = fn is null,  0 = fn is non-null\n(declare-const path_cond_holds Int)   ; 1 = fn?.type === \"member_expression\" is true\n\n; Code semantics of optional chaining:\n; fn is null → fn?.type = undefined → condition is false\n(assert (=> (= fn_null 1) (= path_cond_holds 0)))\n\n; Known fact: path condition is satisfied (given in problem context)\n(assert (= path_cond_holds 1))\n\n; Negation of property: fn IS null when path condition holds\n(assert (= fn_null 1))\n\n(check-sat)\n; Expected: unsat — fn cannot be null at line 338",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1\n; Prove: when prop is non-null and prop.text ∈ {toString, toFixed, toUpperCase},\n; inferType provably returns \"string\" (not null, not \"number\").\n; Return encoding: 0 = null, 1 = \"number\", 2 = \"string\"\n\n(declare-const prop_is_null     Int)  ; 0 = non-null\n(declare-const prop_text_match  Int)  ; 1 = prop.text is toString/toFixed/toUpperCase\n(declare-const inferred         Int)  ; return value of inferType\n\n; Code transition (line 339):\n;   if (prop?.text === \"toString\" || prop?.text === \"toFixed\" ||\n;       prop?.text === \"toUpperCase\") return \"string\";\n; Encoded as: prop non-null AND text matches → return \"string\"\n(assert (=> (and (= prop_is_null 0) (= prop_text_match 1))\n            (= inferred 2)))\n\n; Establish preconditions\n(assert (= prop_is_null 0))\n(assert (= prop_text_match 1))\n\n; Negate the property: inferred ≠ \"string\"\n(assert (not (= inferred 2)))\n\n(check-sat)\n; Expected: unsat — the string-method branch provably returns \"string\"",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

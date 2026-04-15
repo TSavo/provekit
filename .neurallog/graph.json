@@ -1,41 +1,46 @@
 {
-  "root": "/Users/tsavo/Projects/neurallog/src/pipeline/Pipeline.ts",
+  "root": "/Users/tsavo/Projects/neurallog/src/cli.ts",
   "projectRoot": "/Users/tsavo/Projects/neurallog",
   "files": [
     {
-      "path": "/Users/tsavo/Projects/neurallog/src/pipeline/Pipeline.ts",
-      "relativePath": "src/pipeline/Pipeline.ts",
+      "path": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+      "relativePath": "src/cli.ts",
       "imports": [
+        "/Users/tsavo/Projects/neurallog/src/pipeline",
         "/Users/tsavo/Projects/neurallog/src/signals",
+        "/Users/tsavo/Projects/neurallog/src/git",
         "/Users/tsavo/Projects/neurallog/src/contracts.ts",
-        "/Users/tsavo/Projects/neurallog/src/principles.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/DependencyPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/ContextPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/ClassificationPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/AxiomPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
-        "/Users/tsavo/Projects/neurallog/src/parser.ts"
+        "/Users/tsavo/Projects/neurallog/src/llm",
+        "/Users/tsavo/Projects/neurallog/src/parser.ts",
+        "/Users/tsavo/Projects/neurallog/src/git",
+        "/Users/tsavo/Projects/neurallog/src/issues.ts"
       ],
-      "signalCount": 31,
-      "hash": "48a221c794ba9295548f0ba330216a21172e5d4064a36f5bf2e079d0f5b33f17"
+      "signalCount": 126,
+      "hash": "de5e9ad5577fd0204d7768e5f9d77caf32ed619864642d1ee2ae066bb2ff5834"
     },
     {
       "path": "/Users/tsavo/Projects/neurallog/src/contracts.ts",
       "relativePath": "src/contracts.ts",
       "imports": [],
-      "signalCount": 5,
-      "hash": "4cde5f03a9fc64a85aabae8a14e16cdcfebdf7e461943a790ff0329e0da9dc17"
+      "signalCount": 1,
+      "hash": "75f9814d839e9ebc8e0233af724c7db5cd4ceb0f6e22a53b1371bc5b7500eecc"
     },
     {
-      "path": "/Users/tsavo/Projects/neurallog/src/principles.ts",
-      "relativePath": "src/principles.ts",
+      "path": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+      "relativePath": "src/parser.ts",
+      "imports": [],
+      "signalCount": 16,
+      "hash": "d1dc129fe98b12b5a598477c0327807807e9f6a064f69ed0a04e93931c4ee5a9"
+    },
+    {
+      "path": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+      "relativePath": "src/issues.ts",
       "imports": [
-        "/Users/tsavo/Projects/neurallog/src/llm",
-        "/Users/tsavo/Projects/neurallog/src/verifier.ts"
+        "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+        "/Users/tsavo/Projects/neurallog/src/types.ts"
       ],
-      "signalCount": 20,
-      "hash": "bc5aeba99bf96681317a2f0d1b914f27dd6002b8ebd90ce3dac97b5ef2de3de4"
+      "signalCount": 11,
+      "hash": "f5b534a08e9c383b92f8ee3f5f91400f797e5e12e982cd729fd25b17323d3a7b"
     },
     {
       "path": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
@@ -45,169 +50,62 @@
       "hash": "895fa89e8ac664e7092a361c190136fb72d4805692014afdf8a19db8c0503595"
     },
     {
-      "path": "/Users/tsavo/Projects/neurallog/src/pipeline/DependencyPhase.ts",
-      "relativePath": "src/pipeline/DependencyPhase.ts",
+      "path": "/Users/tsavo/Projects/neurallog/src/types.ts",
+      "relativePath": "src/types.ts",
       "imports": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
-        "/Users/tsavo/Projects/neurallog/src/signals"
-      ],
-      "signalCount": 1,
-      "hash": "b5c9ee239183ad81c5dc9c6c8cbf349fb23f54e20d4d7c99059b8483fb92ffb7"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
-      "relativePath": "src/pipeline/Phase.ts",
-      "imports": [],
-      "signalCount": 2,
-      "hash": "ef8b912530cdafcc504d2855b0eb9c7819578b4f1cd504789356243bbe34941a"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/pipeline/ContextPhase.ts",
-      "relativePath": "src/pipeline/ContextPhase.ts",
-      "imports": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/DependencyPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/signals",
-        "/Users/tsavo/Projects/neurallog/src/parser.ts"
-      ],
-      "signalCount": 3,
-      "hash": "90cac60f41e42b0940cdb79506890e0611a9e41174004bc2604f9bb3bdd3dfe3"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/parser.ts",
-      "relativePath": "src/parser.ts",
-      "imports": [],
-      "signalCount": 16,
-      "hash": "717bba0a1359f440ea1930c5df73b9a660c7045812bed2063f69780215911f8c"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
-      "relativePath": "src/pipeline/DerivationPhase.ts",
-      "imports": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/ContextPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/verifier.ts",
-        "/Users/tsavo/Projects/neurallog/src/principles.ts",
-        "/Users/tsavo/Projects/neurallog/src/contracts.ts",
-        "/Users/tsavo/Projects/neurallog/src/signals",
-        "/Users/tsavo/Projects/neurallog/src/llm",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/DagExecutor.ts"
-      ],
-      "signalCount": 12,
-      "hash": "0ec28998cad30d9ffdf51747ea1d7ab279394d9024cca30ae199580908076b1f"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/pipeline/DagExecutor.ts",
-      "relativePath": "src/pipeline/DagExecutor.ts",
-      "imports": [],
-      "signalCount": 4,
-      "hash": "b69c2e60758170221815ca16499b60ac6fcdd0f953238f638127a96262582a51"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/pipeline/ClassificationPhase.ts",
-      "relativePath": "src/pipeline/ClassificationPhase.ts",
-      "imports": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/principles.ts"
-      ],
-      "signalCount": 6,
-      "hash": "1b5ea3d478d7b6e89df3a904cbd3a3c56265849736d41077fe4034f9ab59bfa5"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/pipeline/AxiomPhase.ts",
-      "relativePath": "src/pipeline/AxiomPhase.ts",
-      "imports": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
-        "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
-        "/Users/tsavo/Projects/neurallog/src/contracts.ts",
-        "/Users/tsavo/Projects/neurallog/src/git"
-      ],
-      "signalCount": 4,
-      "hash": "4eabddbd3de40cd30aecde70d83228ea46869cc9209672433af95159b481dd8f"
-    },
-    {
-      "path": "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
-      "relativePath": "src/axiom-engine.ts",
-      "imports": [
-        "/Users/tsavo/Projects/neurallog/src/contracts.ts",
         "/Users/tsavo/Projects/neurallog/src/verifier.ts"
       ],
-      "signalCount": 14,
-      "hash": "b1b0ce288696994d2640280d94daa6ed5f87dd147c26c81b5187d6c0faf751e5"
+      "signalCount": 0,
+      "hash": "bade62c65ba0c96c5db1b9d0d50a1ccdd9a753d25e4875080868aff6da940c52"
     }
   ],
   "topologicalOrder": [
+    "/Users/tsavo/Projects/neurallog/src/pipeline",
     "/Users/tsavo/Projects/neurallog/src/signals",
+    "/Users/tsavo/Projects/neurallog/src/git",
     "/Users/tsavo/Projects/neurallog/src/contracts.ts",
     "/Users/tsavo/Projects/neurallog/src/llm",
-    "/Users/tsavo/Projects/neurallog/src/verifier.ts",
-    "/Users/tsavo/Projects/neurallog/src/principles.ts",
-    "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
-    "/Users/tsavo/Projects/neurallog/src/pipeline/DependencyPhase.ts",
     "/Users/tsavo/Projects/neurallog/src/parser.ts",
-    "/Users/tsavo/Projects/neurallog/src/pipeline/ContextPhase.ts",
-    "/Users/tsavo/Projects/neurallog/src/pipeline/DagExecutor.ts",
-    "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
-    "/Users/tsavo/Projects/neurallog/src/pipeline/ClassificationPhase.ts",
-    "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts",
-    "/Users/tsavo/Projects/neurallog/src/git",
-    "/Users/tsavo/Projects/neurallog/src/pipeline/AxiomPhase.ts",
-    "/Users/tsavo/Projects/neurallog/src/pipeline/Pipeline.ts"
+    "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+    "/Users/tsavo/Projects/neurallog/src/types.ts",
+    "/Users/tsavo/Projects/neurallog/src/issues.ts",
+    "/Users/tsavo/Projects/neurallog/src/cli.ts"
   ],
   "parallelGroups": [
     {
       "depth": 0,
       "files": [
+        "/Users/tsavo/Projects/neurallog/src/pipeline",
         "/Users/tsavo/Projects/neurallog/src/signals",
+        "/Users/tsavo/Projects/neurallog/src/git",
         "/Users/tsavo/Projects/neurallog/src/contracts.ts",
         "/Users/tsavo/Projects/neurallog/src/llm",
-        "/Users/tsavo/Projects/neurallog/src/verifier.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/Phase.ts",
         "/Users/tsavo/Projects/neurallog/src/parser.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/DagExecutor.ts",
-        "/Users/tsavo/Projects/neurallog/src/git"
+        "/Users/tsavo/Projects/neurallog/src/verifier.ts"
       ],
-      "signalCount": 41
+      "signalCount": 31
     },
     {
       "depth": 1,
       "files": [
-        "/Users/tsavo/Projects/neurallog/src/principles.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/DependencyPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/axiom-engine.ts"
+        "/Users/tsavo/Projects/neurallog/src/types.ts"
       ],
-      "signalCount": 35
+      "signalCount": 0
     },
     {
       "depth": 2,
       "files": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/ContextPhase.ts",
-        "/Users/tsavo/Projects/neurallog/src/pipeline/AxiomPhase.ts"
+        "/Users/tsavo/Projects/neurallog/src/issues.ts"
       ],
-      "signalCount": 7
+      "signalCount": 11
     },
     {
       "depth": 3,
       "files": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts"
+        "/Users/tsavo/Projects/neurallog/src/cli.ts"
       ],
-      "signalCount": 12
-    },
-    {
-      "depth": 4,
-      "files": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/ClassificationPhase.ts"
-      ],
-      "signalCount": 6
-    },
-    {
-      "depth": 5,
-      "files": [
-        "/Users/tsavo/Projects/neurallog/src/pipeline/Pipeline.ts"
-      ],
-      "signalCount": 31
+      "signalCount": 126
     }
   ],
-  "builtAt": "2026-04-14T23:51:49.045Z"
+  "builtAt": "2026-04-15T00:26:39.103Z"
 }

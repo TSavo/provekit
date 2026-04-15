@@ -1,0 +1,39 @@
+{
+  "key": "src/verifier.ts/isTrivialIdentity[103]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isTrivialIdentity",
+  "line": 103,
+  "signal_hash": "a9d6cc29cb9d7bc19cb3ea18f0e0b6d7b234d417f2244c9adddb9db2571b32f0",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "---- PROVEN PROPERTY -------------------------------------------------",
+      "smt2": "; PRINCIPLE: P1  (Precondition Propagation – prove the function returns true only when the SMT block is a trivial identity)\n; ---- PROVEN PROPERTY -------------------------------------------------\n; Model the internal checks of isTrivialIdentity:\n;   len = number of assert statements\n;   eq  = does one assert match (= A B)\n;   ne  = does another assert match (not (= A B))\n;   result = 1  (true)  iff  len = 2  ∧ eq = 1 ∧ ne = 1\n(declare-const len Int)\n(declare-const eq Int)   ; 1 if equality pattern present, 0 otherwise\n(declare-const ne Int)   ; 1 if negated‑equality pattern present, 0 otherwise\n(declare-const result Int) ; 1 = true, 0 = false\n\n; Preconditions: the block really is a trivial identity\n(assert (= len 2))\n(assert (= eq 1))\n(assert (= ne 1))\n\n; Transition constraints encoding the function logic\n; If the three checks all succeed, result must be true\n(assert (=> (and (= len 2) (= eq 1) (= ne 1)) (= result 1)))\n; If any check fails, result must be false\n(assert (=> (or (not (= len 2)) (not (= eq 1)) (not (= ne 1))) (= result 0)))\n\n; Negate the property we want to prove:\n;   \"result = true implies the block is a trivial identity\"\n; So we assert result = 1 and the block is NOT a trivial identity\n(assert (= result 1))\n(assert (or (not (= len 2)) (not (= eq 1)) (not (= ne 1))))\n\n(check-sat)\n; Expected: unsat → the function cannot return true unless the block is a trivial identity."
+    },
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "---- REACHABLE VIOLATION ---------------------------------------------",
+      "smt2": "; PRINCIPLE: P3  (Calling Context Analysis – reachable bug: function could return true for a non‑trivial block)\n; ---- REACHABLE VIOLATION ---------------------------------------------\n; Same model as above, but we now assume the block fails the “negated equality” test.\n; We then force the function to return true, showing the bug is reachable.\n(declare-const len Int)\n(declare-const eq Int)   ; equality pattern present\n(declare-const ne Int)   ; negated‑equality pattern absent\n(declare-const result Int)\n\n; Code actually observes: two asserts, one of them is an equality, the other is NOT a negated equality\n(assert (= len 2))\n(assert (= eq 1))\n(assert (= ne 0))\n\n; Transition constraints (identical to the correct implementation)\n(assert (=> (and (= len 2) (= eq 1) (= ne 1)) (= result 1)))\n(assert (=> (or (not (= len 2)) (not (= eq 1)) (not (= ne 1))) (= result 0)))\n\n; Buggy outcome: the function (incorrectly) returns true even though the\n; negated‑equality pattern is missing.\n(assert (= result 1))\n\n(check-sat)\n; Expected: sat → a concrete counter‑example exists (e.g., len=2, eq=1, ne=0, result=1),\n; demonstrating that the current implementation could mis‑classify a non‑trivial block as trivial."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1  (Precondition Propagation – prove the function returns true only when the SMT block is a trivial identity)\n; ---- PROVEN PROPERTY -------------------------------------------------\n; Model the internal checks of isTrivialIdentity:\n;   len = number of assert statements\n;   eq  = does one assert match (= A B)\n;   ne  = does another assert match (not (= A B))\n;   result = 1  (true)  iff  len = 2  ∧ eq = 1 ∧ ne = 1\n(declare-const len Int)\n(declare-const eq Int)   ; 1 if equality pattern present, 0 otherwise\n(declare-const ne Int)   ; 1 if negated‑equality pattern present, 0 otherwise\n(declare-const result Int) ; 1 = true, 0 = false\n\n; Preconditions: the block really is a trivial identity\n(assert (= len 2))\n(assert (= eq 1))\n(assert (= ne 1))\n\n; Transition constraints encoding the function logic\n; If the three checks all succeed, result must be true\n(assert (=> (and (= len 2) (= eq 1) (= ne 1)) (= result 1)))\n; If any check fails, result must be false\n(assert (=> (or (not (= len 2)) (not (= eq 1)) (not (= ne 1))) (= result 0)))\n\n; Negate the property we want to prove:\n;   \"result = true implies the block is a trivial identity\"\n; So we assert result = 1 and the block is NOT a trivial identity\n(assert (= result 1))\n(assert (or (not (= len 2)) (not (= eq 1)) (not (= ne 1))))\n\n(check-sat)\n; Expected: unsat → the function cannot return true unless the block is a trivial identity.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3  (Calling Context Analysis – reachable bug: function could return true for a non‑trivial block)\n; ---- REACHABLE VIOLATION ---------------------------------------------\n; Same model as above, but we now assume the block fails the “negated equality” test.\n; We then force the function to return true, showing the bug is reachable.\n(declare-const len Int)\n(declare-const eq Int)   ; equality pattern present\n(declare-const ne Int)   ; negated‑equality pattern absent\n(declare-const result Int)\n\n; Code actually observes: two asserts, one of them is an equality, the other is NOT a negated equality\n(assert (= len 2))\n(assert (= eq 1))\n(assert (= ne 0))\n\n; Transition constraints (identical to the correct implementation)\n(assert (=> (and (= len 2) (= eq 1) (= ne 1)) (= result 1)))\n(assert (=> (or (not (= len 2)) (not (= eq 1)) (not (= ne 1))) (= result 0)))\n\n; Buggy outcome: the function (incorrectly) returns true even though the\n; negated‑equality pattern is missing.\n(assert (= result 1))\n\n(check-sat)\n; Expected: sat → a concrete counter‑example exists (e.g., len=2, eq=1, ne=0, result=1),\n; demonstrating that the current implementation could mis‑classify a non‑trivial block as trivial.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

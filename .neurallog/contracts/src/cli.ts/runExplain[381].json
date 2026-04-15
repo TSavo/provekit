@@ -1,0 +1,11 @@
+{
+  "key": "src/cli.ts/runExplain[381]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runExplain",
+  "line": 381,
+  "signal_hash": "6858908594ac37f5c5769a1c593141243447635400868c86ba61cc8210813026",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

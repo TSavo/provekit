@@ -1,0 +1,26 @@
+{
+  "key": "src/verifier.ts/extractSmt2Blocks[14]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "extractSmt2Blocks",
+  "line": 14,
+  "signal_hash": "e8914ead03a828d32683153df40d5f1f870fa52d023c55d632274b673dbd1625",
+  "proven": [
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "Proven: the (check-sat) filter is conservative — output cannot exceed matched blocks.",
+      "smt2": "; PRINCIPLE: P6\n; Proven: the (check-sat) filter is conservative — output cannot exceed matched blocks.\n; Precondition:  total_matched >= 0, with_checksat <= total_matched\n; Transition:    output_count = with_checksat   (the filter keeps only those blocks)\n; Negation:      output_count > total_matched\n(declare-const total_matched Int)\n(declare-const with_checksat Int)\n(declare-const output_count Int)\n(assert (>= total_matched 0))\n(assert (>= with_checksat 0))\n(assert (<= with_checksat total_matched))\n(assert (= output_count with_checksat))\n(assert (> output_count total_matched))\n(check-sat)\n; unsat — output_count <= total_matched is invariant"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P6\n; Proven: the (check-sat) filter is conservative — output cannot exceed matched blocks.\n; Precondition:  total_matched >= 0, with_checksat <= total_matched\n; Transition:    output_count = with_checksat   (the filter keeps only those blocks)\n; Negation:      output_count > total_matched\n(declare-const total_matched Int)\n(declare-const with_checksat Int)\n(declare-const output_count Int)\n(assert (>= total_matched 0))\n(assert (>= with_checksat 0))\n(assert (<= with_checksat total_matched))\n(assert (= output_count with_checksat))\n(assert (> output_count total_matched))\n(check-sat)\n; unsat — output_count <= total_matched is invariant",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

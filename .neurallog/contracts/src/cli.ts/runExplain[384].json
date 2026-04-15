@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/runExplain[384]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runExplain",
+  "line": 384,
+  "signal_hash": "7ff9f19d5a42ce149563a4802ab7676bbf7f81ede0366df40d779aed0f7dad04",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "when the surrounding contract actually has at least one violation.",
+      "smt2": "; PRINCIPLE: P1 – The `console.log` of a violation line is only reachable\n; when the surrounding contract actually has at least one violation.\n; ------------------------------------------------------------\n; Model the relevant state at the point just before line 384 is executed.\n;   len            – number of violations stored in `contract.violations`\n;   i              – index of the current iteration of the `for … of` loop\n;   smt2Line       – a concrete line extracted from the stored SMT‑LIB text\n;\n; Preconditions (guaranteed by the code before the loop):\n;   1. The path condition for reaching this signal is `contract.violations.length > 0`.\n;   2. The loop iterates over each element, so for some index i we must have\n;      0 ≤ i < len.\n;\n; Property to prove (P):  ∃ i . 0 ≤ i < len   (i.e. the loop body is only entered\n;                                            when there is at least one element).\n; To prove P we assert the negation ¬P together with the true preconditions\n; and expect Z3 to report `unsat`.\n;\n; ------------------------------------------------------------\n(declare-const len Int)          ; number of violations\n(declare-const i   Int)          ; current loop index (abstract)\n\n; --- Code guarantees (preconditions) --------------------------------\n; Path condition guarantees that there is at least one violation.\n(assert (> len 0))\n\n; The loop index must be a valid index into the array.\n; Negating the existence of a valid index means: for *all* i,\n; either i < 0 or i ≥ len.  We model the negation directly:\n; (not (and (<= 0 i) (< i len)))  ⇔  (or (< i 0) (>= i len))\n; This is the condition we will assert to show unsat.\n(assert (or (< i 0) (>= i len)))   ; ¬P\n\n; ------------------------------------------------------------\n(check-sat)\n; Expected result: unsat\n; ------------------------------------------------------------\n; Interpretation:\n; The only way to satisfy the code’s guarantee (> len 0) while also\n; violating the existence of a valid loop index is impossible.\n; Therefore the property “the loop body is entered only when there is at\n; least one violation” is mathematically guaranteed."
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1 – The `console.log` of a violation line is only reachable\n; when the surrounding contract actually has at least one violation.\n; ------------------------------------------------------------\n; Model the relevant state at the point just before line 384 is executed.\n;   len            – number of violations stored in `contract.violations`\n;   i              – index of the current iteration of the `for … of` loop\n;   smt2Line       – a concrete line extracted from the stored SMT‑LIB text\n;\n; Preconditions (guaranteed by the code before the loop):\n;   1. The path condition for reaching this signal is `contract.violations.length > 0`.\n;   2. The loop iterates over each element, so for some index i we must have\n;      0 ≤ i < len.\n;\n; Property to prove (P):  ∃ i . 0 ≤ i < len   (i.e. the loop body is only entered\n;                                            when there is at least one element).\n; To prove P we assert the negation ¬P together with the true preconditions\n; and expect Z3 to report `unsat`.\n;\n; ------------------------------------------------------------\n(declare-const len Int)          ; number of violations\n(declare-const i   Int)          ; current loop index (abstract)\n\n; --- Code guarantees (preconditions) --------------------------------\n; Path condition guarantees that there is at least one violation.\n(assert (> len 0))\n\n; The loop index must be a valid index into the array.\n; Negating the existence of a valid index means: for *all* i,\n; either i < 0 or i ≥ len.  We model the negation directly:\n; (not (and (<= 0 i) (< i len)))  ⇔  (or (< i 0) (>= i len))\n; This is the condition we will assert to show unsat.\n(assert (or (< i 0) (>= i len)))   ; ¬P\n\n; ------------------------------------------------------------\n(check-sat)\n; Expected result: unsat\n; ------------------------------------------------------------\n; Interpretation:\n; The only way to satisfy the code’s guarantee (> len 0) while also\n; violating the existence of a valid loop index is impossible.\n; Therefore the property “the loop body is entered only when there is at\n; least one violation” is mathematically guaranteed.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

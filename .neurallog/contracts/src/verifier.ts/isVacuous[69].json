@@ -1,0 +1,26 @@
+{
+  "key": "src/verifier.ts/isVacuous[69]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isVacuous",
+  "line": 69,
+  "signal_hash": "3570cbe39732fc77a3431e37d4aaeaddd69fe64b63b1a706a21fd497bc11e935",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "-------------------------------------------------",
+      "smt2": "; PRINCIPLE: P1  (Precondition Propagation)\n; -------------------------------------------------\n; Model of an SMT‑LIB block that has a genuine transition:\n;   - two declared constants a, b\n;   - one assertion that relates both (b = a - 1)\n; According to isVacuous’s algorithm this counts as a transition,\n; therefore the function must return false.\n; We prove that assuming the function returns true leads to contradiction.\n\n;--- declarations (the “code” that would be inside the block)\n(declare-const a Int)\n(declare-const b Int)\n\n;--- code‑model transition (the only assertion in the block)\n(assert (= b (- a 1)))   ; references both a and b → transitionCount ≥ 1\n\n;--- formalisation of the function’s result:\n; 0 = false, 1 = true  (we treat the boolean as an Int for SMT‑LIB)\n(declare-const result Int)\n\n; The function would set result = 0 when a transition is found.\n; Encode the *negated* property: assume result = 1 (i.e. the function claims\n; the block is vacuous) even though we have a transition.\n(assert (= result 1))\n\n; Check‑satisfiability:\n(check-sat)\n; Expected: unsat → the assumption that a block with a transition is\n; declared vacuous is impossible; thus the property “isVacuous returns false\n; whenever a transition exists” is proven."
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1  (Precondition Propagation)\n; -------------------------------------------------\n; Model of an SMT‑LIB block that has a genuine transition:\n;   - two declared constants a, b\n;   - one assertion that relates both (b = a - 1)\n; According to isVacuous’s algorithm this counts as a transition,\n; therefore the function must return false.\n; We prove that assuming the function returns true leads to contradiction.\n\n;--- declarations (the “code” that would be inside the block)\n(declare-const a Int)\n(declare-const b Int)\n\n;--- code‑model transition (the only assertion in the block)\n(assert (= b (- a 1)))   ; references both a and b → transitionCount ≥ 1\n\n;--- formalisation of the function’s result:\n; 0 = false, 1 = true  (we treat the boolean as an Int for SMT‑LIB)\n(declare-const result Int)\n\n; The function would set result = 0 when a transition is found.\n; Encode the *negated* property: assume result = 1 (i.e. the function claims\n; the block is vacuous) even though we have a transition.\n(assert (= result 1))\n\n; Check‑satisfiability:\n(check-sat)\n; Expected: unsat → the assumption that a block with a transition is\n; declared vacuous is impossible; thus the property “isVacuous returns false\n; whenever a transition exists” is proven.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "key": "src/contracts.ts/loadFromDisk[114]",
+  "file": "/Users/tsavo/Projects/neurallog/src/contracts.ts",
+  "function": "loadFromDisk",
+  "line": 114,
+  "signal_hash": "077e1351eb076244fbcf2b786f81f687fe8cedbf932aefb0acc3bd523ed7afd1",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "[NEW] REACHABLE: Silent JSON parse failure loses data",
+      "smt2": "; [NEW] REACHABLE: Silent JSON parse failure loses data\n; PRINCIPLE: P6 - Boundary/Degenerate Input\n(declare-const json_files Int)\n(declare-const loaded Int)\n(assert (> json_files 1))\n(assert (= loaded 1))\n(assert (= loaded (- json_files 1)))\n(check-sat)\n; EXPECTED: sat → malformed JSON silently skipped"
+    },
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "[NEW] REACHABLE: Key collision silently overwrites",
+      "smt2": "; [NEW] REACHABLE: Key collision silently overwrites\n; PRINCIPLE: P2 - State Mutation Analysis\n(declare-const key1 String)\n(declare-const key2 String)\n(declare-const final_size Int)\n(assert (= key1 key2))\n(assert (= final_size 1))\n(assert (= key1 key2))\n(check-sat)\n; EXPECTED: sat → duplicate keys overwrite without warning"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; [NEW] REACHABLE: Silent JSON parse failure loses data\n; PRINCIPLE: P6 - Boundary/Degenerate Input\n(declare-const json_files Int)\n(declare-const loaded Int)\n(assert (> json_files 1))\n(assert (= loaded 1))\n(assert (= loaded (- json_files 1)))\n(check-sat)\n; EXPECTED: sat → malformed JSON silently skipped",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; [NEW] REACHABLE: Key collision silently overwrites\n; PRINCIPLE: P2 - State Mutation Analysis\n(declare-const key1 String)\n(declare-const key2 String)\n(declare-const final_size Int)\n(assert (= key1 key2))\n(assert (= final_size 1))\n(assert (= key1 key2))\n(check-sat)\n; EXPECTED: sat → duplicate keys overwrite without warning",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

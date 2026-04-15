@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/runInit[110]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runInit",
+  "line": 110,
+  "signal_hash": "d00df6987d15ab27a67521328a347fe47f1c8e3d1f7f8e1d7c7e342fa8f4e9b8",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "-----------------------------------------------------------------",
+      "smt2": "; PRINCIPLE: P1 – Precondition Propagation for git‑repo check\n; -----------------------------------------------------------------\n; Model the result of DiffAnalyzer.isGitRepo() as an integer flag:\n;   repo = 1  ⇒ the current directory *is* a git repository\n;   repo = 0  ⇒ it is *not* a git repository\n; The code aborts (process.exit) when repo = 0, therefore the statement\n;   console.log(\"Next steps:\")\n; can only be reached when repo = 1.\n; We prove this by assuming the opposite (repo = 0) and also that the\n; line is reached (reached = 1).  The implication that a non‑git repo\n; forces reached = 0 makes the conjunction unsatisfiable.\n(declare-const repo Int)       ; 0 = not a git repo, 1 = git repo\n(declare-const reached Int)   ; 0 = line not reached, 1 = line reached\n\n; Code transition: the early‑exit guard forces `reached = 0` when `repo = 0`\n(assert (= (ite (= repo 0) 0 1) reached))\n\n; Negation of the property we want to prove:\n; Assume we are *not* in a git repo but still reach the line\n(assert (= repo 0))            ; precondition violation attempt\n(assert (= reached 1))         ; we claim the line is reached\n\n(check-sat)\n; Expected: unsat → the line cannot be reached if the repo check fails,\n;            i.e. the code correctly propagates the precondition."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1 – Precondition Propagation for git‑repo check\n; -----------------------------------------------------------------\n; Model the result of DiffAnalyzer.isGitRepo() as an integer flag:\n;   repo = 1  ⇒ the current directory *is* a git repository\n;   repo = 0  ⇒ it is *not* a git repository\n; The code aborts (process.exit) when repo = 0, therefore the statement\n;   console.log(\"Next steps:\")\n; can only be reached when repo = 1.\n; We prove this by assuming the opposite (repo = 0) and also that the\n; line is reached (reached = 1).  The implication that a non‑git repo\n; forces reached = 0 makes the conjunction unsatisfiable.\n(declare-const repo Int)       ; 0 = not a git repo, 1 = git repo\n(declare-const reached Int)   ; 0 = line not reached, 1 = line reached\n\n; Code transition: the early‑exit guard forces `reached = 0` when `repo = 0`\n(assert (= (ite (= repo 0) 0 1) reached))\n\n; Negation of the property we want to prove:\n; Assume we are *not* in a git repo but still reach the line\n(assert (= repo 0))            ; precondition violation attempt\n(assert (= reached 1))         ; we claim the line is reached\n\n(check-sat)\n; Expected: unsat → the line cannot be reached if the repo check fails,\n;            i.e. the code correctly propagates the precondition.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

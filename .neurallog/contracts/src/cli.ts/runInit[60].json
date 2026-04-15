@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/runInit[60]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runInit",
+  "line": 60,
+  "signal_hash": "33b82fe4725fde2f9ebfbe13bad6ef70cfd37016b84e90d26ed933e658728efa",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "Model: diff.isGitRepo() is represented as an integer (1 = true, 0 = false).",
+      "smt2": "; PRINCIPLE: P1 - Precondition Propagation (prove that the error is only reachable when the directory is not a git repository)\n; Model: diff.isGitRepo() is represented as an integer (1 = true, 0 = false).\n; The code executes `console.error(...)` exactly when (!diff.isGitRepo()).\n; We encode the transition and then assert the negation of the intended property:\n;   errorReached ⇒ diff_is_git_repo = 0\n; Negating gives: errorReached ∧ diff_is_git_repo = 1, which must be unsatisfiable.\n\n(declare-const diff_is_git_repo Int)   ; 1 = repository, 0 = not a repository\n(declare-const errorReached Int)       ; 1 = console.error executed, 0 = not executed\n\n; Transition: the program sets errorReached to true iff diff_is_git_repo is false.\n(assert (= errorReached (ite (= diff_is_git_repo 0) 1 0)))\n\n; Negated property (the bug we want to prove impossible):\n; error is executed while diff_is_git_repo is true.\n(assert (= errorReached 1))\n(assert (= diff_is_git_repo 1))\n\n(check-sat)\n; Expected result: unsat → the error cannot be reached when the directory *is* a git repo."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1 - Precondition Propagation (prove that the error is only reachable when the directory is not a git repository)\n; Model: diff.isGitRepo() is represented as an integer (1 = true, 0 = false).\n; The code executes `console.error(...)` exactly when (!diff.isGitRepo()).\n; We encode the transition and then assert the negation of the intended property:\n;   errorReached ⇒ diff_is_git_repo = 0\n; Negating gives: errorReached ∧ diff_is_git_repo = 1, which must be unsatisfiable.\n\n(declare-const diff_is_git_repo Int)   ; 1 = repository, 0 = not a repository\n(declare-const errorReached Int)       ; 1 = console.error executed, 0 = not executed\n\n; Transition: the program sets errorReached to true iff diff_is_git_repo is false.\n(assert (= errorReached (ite (= diff_is_git_repo 0) 1 0)))\n\n; Negated property (the bug we want to prove impossible):\n; error is executed while diff_is_git_repo is true.\n(assert (= errorReached 1))\n(assert (= diff_is_git_repo 1))\n\n(check-sat)\n; Expected result: unsat → the error cannot be reached when the directory *is* a git repo.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import { Contract, ContractStore, signalKey, ClauseHistory, ProvenProperty, Viol
 import { computeSignalHash } from "../signals";
 import { LLMProvider, createProvider } from "../llm";
 import { DagExecutor } from "./DagExecutor";
+import { buildSignalFrame } from "./PromptStrategy";
 
 export interface DerivationOutput {
   contracts: Contract[];
@@ -17,11 +18,11 @@ export interface DerivationOutput {
   derivedAt: string;
 }
 
-interface SignalNode {
-  callSite: CallSiteContext;
+interface FunctionNode {
+  functionName: string;
   filePath: string;
   relativePath: string;
-  key: string;
+  signals: { callSite: CallSiteContext; key: string }[];
 }
 
 export interface DerivationInput {
@@ -72,72 +73,83 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
     const principleStore = new PrincipleStore(options.projectRoot);
     const discoveredPrinciples = principleStore.formatForPrompt();
-    const principleHash = principleStore.computePrincipleHash();
 
     this.detail(`Model: ${model}`);
     this.detail(`Principles: 7 seed + ${principleStore.getAll().length} discovered`);
 
     const store = new ContractStore(options.projectRoot);
 
-    const signals: SignalNode[] = [];
+    const functionNodes = new Map<string, FunctionNode>();
+    let totalSignals = 0;
+
     for (const bundle of bundles) {
       for (const callSite of bundle.callSites) {
+        const fnKey = `${bundle.relativePath}/${callSite.functionName}`;
+        if (!functionNodes.has(fnKey)) {
+          functionNodes.set(fnKey, {
+            functionName: callSite.functionName,
+            filePath: bundle.filePath,
+            relativePath: bundle.relativePath,
+            signals: [],
+          });
+        }
         const key = signalKey(bundle.relativePath, callSite.functionName, callSite.line);
-        signals.push({ callSite, filePath: bundle.filePath, relativePath: bundle.relativePath, key });
+        functionNodes.get(fnKey)!.signals.push({ callSite, key });
+        totalSignals++;
       }
     }
 
-    this.detail(`Signals: ${signals.length} total`);
+    this.detail(`${totalSignals} signals in ${functionNodes.size} functions`);
 
-    const signalsByFunction = new Map<string, SignalNode[]>();
-    for (const s of signals) {
-      const fn = s.callSite.functionName;
-      if (!signalsByFunction.has(fn)) signalsByFunction.set(fn, []);
-      signalsByFunction.get(fn)!.push(s);
-    }
-
-    const dag = new DagExecutor<SignalNode, Contract>(maxConcurrency);
+    const dag = new DagExecutor<FunctionNode, Contract[]>(maxConcurrency);
     let depEdges = 0;
 
-    for (const signal of signals) {
-      const callees = signal.callSite.callees || [];
+    for (const [fnKey, node] of functionNodes) {
+      const calleesSet = new Set<string>();
+      for (const s of node.signals) {
+        for (const c of s.callSite.callees || []) calleesSet.add(c);
+      }
       const deps: string[] = [];
-      for (const calleeName of callees) {
-        const targets = signalsByFunction.get(calleeName);
-        if (targets) {
-          for (const target of targets) {
-            if (target.key !== signal.key) {
-              deps.push(target.key);
-            }
+      for (const calleeName of calleesSet) {
+        for (const [otherKey, otherNode] of functionNodes) {
+          if (otherKey !== fnKey && otherNode.functionName === calleeName) {
+            deps.push(otherKey);
           }
         }
       }
       depEdges += deps.length;
-      dag.add({ key: signal.key, data: signal, dependsOn: deps });
+      dag.add({ key: fnKey, data: node, dependsOn: deps });
     }
 
-    console.log(`  DAG: ${signals.length} signals, ${depEdges} call-graph edges, max ${maxConcurrency} concurrent`);
-    console.log(`  Each signal waits for signals in functions it calls to resolve`);
+    console.log(`  DAG: ${functionNodes.size} functions, ${totalSignals} signals, ${depEdges} call-graph edges, max ${maxConcurrency} concurrent`);
+    console.log(`  One LLM call per function. Each function waits for functions it calls to resolve.`);
     console.log();
 
     const allContracts: Contract[] = [];
     const allNewViolations: { violation: VerificationResult; context: string }[] = [];
-    let completed = 0;
+    let completedFunctions = 0;
     const startTime = Date.now();
-    const systemPrompt = `You are a formal verification engine. Produce SMT-LIB 2 formulas. Every block MUST use \`\`\`smt2 fences and include (check-sat). Tag every block with ; PRINCIPLE: P1-P7 or [NEW].`;
+    const systemPrompt = `You are a formal verification engine. Produce SMT-LIB 2 formulas. Every block MUST use \`\`\`smt2 fences and include (check-sat). Tag every block with ; PRINCIPLE: P1-P7 or [NEW]. Tag every block with ; LINE: <number> to identify which verification point it addresses.`;
 
     await dag.execute(async (node, resolvedDeps) => {
-      const { callSite, filePath, relativePath, key } = node.data;
-      completed++;
+      const fn = node.data;
+      completedFunctions++;
 
-      const depKeys = [...resolvedDeps.keys()];
-      const depContracts = [...resolvedDeps.values()];
+      const depContracts: Contract[] = [];
+      for (const [, contracts] of resolvedDeps) {
+        depContracts.push(...contracts);
+      }
+      const depKeys = depContracts.map((c) => c.key);
       const contextAccumulated = store.formatForPrompt(depKeys);
 
-      this.printProgress(completed, signals.length, callSite, startTime, maxConcurrency);
+      const pct = Math.round((completedFunctions / functionNodes.size) * 100);
+      console.log(`  [${completedFunctions}/${functionNodes.size}] (${pct}%) ${fn.relativePath}/${fn.functionName} — ${fn.signals.length} signals, ${resolvedDeps.size} deps`);
+
+      const callSites = fn.signals.map((s) => s.callSite);
+      const signalFrame = buildSignalFrame(callSites);
 
       const deriveStart = Date.now();
-      const prompt = this.buildPrompt(callSite, filePath, contextAccumulated, discoveredPrinciples);
+      const prompt = this.buildPrompt(callSites[0]!, fn.filePath, contextAccumulated, discoveredPrinciples, signalFrame);
       const response = await provider.complete(prompt, { model, systemPrompt });
       const deriveMs = Date.now() - deriveStart;
 
@@ -145,29 +157,28 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
       const verifications = verifyAll(response.text);
       const verifyMs = Date.now() - verifyStart;
 
-      const contract = this.buildContract(key, filePath, callSite, verifications, depKeys);
-      console.log(`      derived ${this.formatDuration(deriveMs)} -> verified ${this.formatDuration(verifyMs)} -> resolved (${contract.proven.length + contract.violations.length} proofs)`);
+      const contracts = this.buildContracts(fn, verifications, depKeys);
 
-      const newViolations = verifications
-        .filter((v) => v.z3Result === "sat" && v.principle?.toUpperCase().includes("NEW"))
-        .map((v) => ({ violation: v, context: key }));
+      for (const contract of contracts) {
+        store.put(contract);
+      }
 
-      this.printResult(verifications, newViolations.length);
+      const totalProofs = contracts.reduce((n, c) => n + c.proven.length + c.violations.length, 0);
+      console.log(`    derived ${this.formatDuration(deriveMs)} -> verified ${this.formatDuration(verifyMs)} -> ${contracts.length} contracts, ${totalProofs} proofs`);
 
-      return contract;
-    }, (key, contract) => {
-      allContracts.push(contract);
-      store.put(contract);
-
-      const newViolations = contract.violations
-        .filter((v) => v.principle?.toUpperCase().includes("NEW"))
-        .map((v) => ({ violation: { smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined }, context: key }));
-      allNewViolations.push(...newViolations);
-
-      const p = contract.proven.length;
-      const v = contract.violations.length;
+      return contracts;
+    }, (fnKey, contracts) => {
+      allContracts.push(...contracts);
+      for (const c of contracts) {
+        const newViolations = c.violations
+          .filter((v) => v.principle?.toUpperCase().includes("NEW"))
+          .map((v) => ({ violation: { smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined }, context: c.key }));
+        allNewViolations.push(...newViolations);
+      }
+      const p = contracts.reduce((n, c) => n + c.proven.length, 0);
+      const v = contracts.reduce((n, c) => n + c.violations.length, 0);
       if (p + v > 0) {
-        console.log(`  >> ${key} resolved: ${p} proven, ${v} violations`);
+        console.log(`    >> ${fnKey}: ${p} proven, ${v} violations`);
       }
     });
 
@@ -182,8 +193,8 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
     const totalProven = allContracts.reduce((n, c) => n + c.proven.length, 0);
     const totalViolations = allContracts.reduce((n, c) => n + c.violations.length, 0);
-    this.detail(`Derivation complete:`);
-    this.detail(`  ${allContracts.length} contracts`);
+    this.detail(`Derivation complete: ${this.formatDuration(Date.now() - startTime)}`);
+    this.detail(`  ${allContracts.length} contracts across ${functionNodes.size} functions`);
     this.detail(`  ${totalProven} proven (unsat) | ${totalViolations} violations (sat)`);
     this.detail(`  ${allNewViolations.length} [NEW] violations for Phase 4`);
     console.log();
@@ -192,35 +203,32 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
   }
 
   private buildPrompt(
-    callSite: CallSiteContext,
+    representative: CallSiteContext,
     filePath: string,
     accumulated: string,
-    discoveredPrinciples: string
+    discoveredPrinciples: string,
+    signalFrame: string
   ): string {
-    const importSources = callSite.importSources.length > 0
-      ? callSite.importSources
-          .map((imp) => `#### ${imp.path}\n\`\`\`typescript\n${imp.source}\n\`\`\``)
-          .join("\n\n")
+    const importSources = representative.importSources.length > 0
+      ? representative.importSources.map((imp) => `#### ${imp.path}\n\`\`\`typescript\n${imp.source}\n\`\`\``).join("\n\n")
       : "(no imports)";
 
-    let enrichedContext = callSite.callingContext;
-
-    if (callSite.typeContext && callSite.typeContext !== "(no type annotations found)") {
-      enrichedContext += `\n\nType information (from TypeScript AST):\n${callSite.typeContext}`;
+    let enrichedContext = representative.callingContext;
+    if (representative.typeContext && representative.typeContext !== "(no type annotations found)") {
+      enrichedContext += `\n\nType information (from TypeScript AST):\n${representative.typeContext}`;
+    }
+    if (representative.pathConditions && representative.pathConditions.length > 0) {
+      enrichedContext += `\n\nPath conditions:\n` + representative.pathConditions.map((c, i) => `  ${i + 1}. ${c}`).join("\n");
     }
 
-    if (callSite.pathConditions && callSite.pathConditions.length > 0) {
-      enrichedContext += `\n\nPath conditions (must be true for execution to reach this signal):\n`;
-      enrichedContext += callSite.pathConditions.map((c, i) => `  ${i + 1}. ${c}`).join("\n");
-      enrichedContext += `\nThese are KNOWN FACTS at this signal -- the code guarantees them.`;
-    }
+    enrichedContext += `\n\n${signalFrame}`;
 
     let prompt = this.compiledTemplate({
       TARGET_FILE: filePath,
-      TARGET_FUNCTION: callSite.functionName,
-      TARGET_LINE: String(callSite.line),
-      TARGET_STATEMENT: callSite.signalText,
-      TARGET_FILE_SOURCE: callSite.fileSource,
+      TARGET_FUNCTION: representative.functionName,
+      TARGET_LINE: String(representative.line),
+      TARGET_STATEMENT: signalFrame,
+      TARGET_FILE_SOURCE: representative.fileSource,
       IMPORT_SOURCES: importSources,
       EXISTING_CONTRACTS: accumulated,
       CALLING_CONTEXT: enrichedContext,
@@ -236,45 +244,56 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     return prompt;
   }
 
-  private buildContract(
-    key: string,
-    file: string,
-    callSite: CallSiteContext,
+  private buildContracts(
+    fn: FunctionNode,
     verifications: VerificationResult[],
     dependencyKeys: string[]
-  ): Contract {
-    const proven: ProvenProperty[] = [];
-    const violations: Violation[] = [];
+  ): Contract[] {
+    const contracts: Contract[] = [];
 
-    for (const v of verifications) {
-      const commentLines = v.smt2.split("\n")
-        .filter((l) => l.trim().startsWith(";"))
-        .map((l) => l.trim().replace(/^;\s*/, ""));
+    for (const { callSite, key } of fn.signals) {
+      const lineVerifications = verifications.filter((v) => {
+        const lineMatch = v.smt2.match(/;\s*LINE:\s*(\d+)/i);
+        if (lineMatch) return parseInt(lineMatch[1]!, 10) === callSite.line;
+        return false;
+      });
 
-      const claim = commentLines.find((l) => !l.startsWith("PRINCIPLE:") && l.length > 10) || "(no claim extracted)";
-      const pHash = v.principle ? this.resolvePrincipleHash(v.principle) : "";
+      const unmatched = lineVerifications.length === 0;
 
-      if (v.z3Result === "unsat") {
-        proven.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2 });
-      } else if (v.z3Result === "sat") {
-        violations.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2 });
+      const toUse = unmatched && fn.signals.length === 1 ? verifications : lineVerifications;
+
+      const proven: ProvenProperty[] = [];
+      const violations: Violation[] = [];
+
+      for (const v of toUse) {
+        const commentLines = v.smt2.split("\n").filter((l) => l.trim().startsWith(";")).map((l) => l.trim().replace(/^;\s*/, ""));
+        const claim = commentLines.find((l) => !l.startsWith("PRINCIPLE:") && !l.startsWith("LINE:") && l.length > 10) || "(no claim extracted)";
+        const pHash = v.principle ? this.resolvePrincipleHash(v.principle) : "";
+
+        if (v.z3Result === "unsat") {
+          proven.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2 });
+        } else if (v.z3Result === "sat") {
+          violations.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2 });
+        }
       }
+
+      contracts.push({
+        key,
+        file: fn.filePath,
+        function: callSite.functionName,
+        line: callSite.line,
+        signal_hash: callSite.signalHash,
+        proven,
+        violations,
+        depends_on: dependencyKeys,
+        clause_history: [
+          ...proven.map((p) => ({ clause: p.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
+          ...violations.map((v) => ({ clause: v.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
+        ],
+      });
     }
 
-    return {
-      key,
-      file,
-      function: callSite.functionName,
-      line: callSite.line,
-      signal_hash: callSite.signalHash,
-      proven,
-      violations,
-      depends_on: dependencyKeys,
-      clause_history: [
-        ...proven.map((p) => ({ clause: p.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
-        ...violations.map((v) => ({ clause: v.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
-      ],
-    };
+    return contracts;
   }
 
   private resolvePrincipleHash(principleTag: string): string {
@@ -286,32 +305,6 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     return combined.digest("hex");
   }
 
-  private etaBaseTime: number = 0;
-  private etaBaseCompleted: number = 0;
-
-  private printProgress(completed: number, total: number, callSite: CallSiteContext, startTime: number, concurrency: number = 1): void {
-    const pct = Math.round((completed / total) * 100);
-    const filled = Math.round((completed / total) * 20);
-    const bar = "\u2588".repeat(filled) + "\u2591".repeat(20 - filled);
-    if (this.etaBaseTime === 0 && completed > concurrency) {
-      this.etaBaseTime = Date.now();
-      this.etaBaseCompleted = completed;
-    }
-    let etaStr = "...";
-    if (this.etaBaseTime > 0 && completed > this.etaBaseCompleted) {
-      const since = Date.now() - this.etaBaseTime;
-      const done = completed - this.etaBaseCompleted;
-      etaStr = this.formatDuration(((total - completed) * since) / done);
-    }
-    process.stdout.write(`\r    [${bar}] ${completed}/${total} (${pct}%) ${callSite.functionName}:${callSite.line} ETA ${etaStr}    \n`);
-  }
-
-  private printResult(verifications: VerificationResult[], newCount: number): void {
-    const p = verifications.filter((v) => v.z3Result === "unsat").length;
-    const v = verifications.filter((v) => v.z3Result === "sat").length;
-    process.stdout.write(`      -> ${verifications.length} blocks: ${p} proven ${v} violations${newCount > 0 ? ` (${newCount} [NEW])` : ""}\n`);
-  }
-
   private formatDuration(ms: number): string {
     if (ms < 1000) return `${Math.round(ms)}ms`;
     const s = Math.floor(ms / 1000);
@@ -321,4 +314,3 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     return `${Math.floor(m / 60)}h ${m % 60}m`;
   }
 }
-

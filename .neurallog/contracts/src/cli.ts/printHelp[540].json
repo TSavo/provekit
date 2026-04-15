@@ -1,0 +1,11 @@
+{
+  "key": "src/cli.ts/printHelp[540]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printHelp",
+  "line": 540,
+  "signal_hash": "60a9315591ea70d6c3514043a6a323dd612fa79bc6235f27b0087ebcfb88feff",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

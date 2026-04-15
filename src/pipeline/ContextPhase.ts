@@ -20,6 +20,7 @@ export interface CallSiteContext {
   typeContext: string;
   pathConditions: string[];
   callees: string[];
+  calledBy: string[];
 }
 
 export interface ContextBundle {
@@ -143,6 +144,7 @@ export class ContextPhase extends Phase<ContextInput, ContextBundle[]> {
       typeContext: typeLines.length > 0 ? typeLines.join("\n") : "(no type annotations found)",
       pathConditions: signal.pathConditions,
       callees: signal.callees || [],
+      calledBy: signal.calledBy || [],
     };
   }
 

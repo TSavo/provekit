@@ -1,0 +1,26 @@
+{
+  "key": "src/verifier.ts/isVacuous[94]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isVacuous",
+  "line": 94,
+  "signal_hash": "4169123a3e959c0fb656cf3665c618e168d3af92e52c3b05c0d5082031461533",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "Model the core of isVacuous:",
+      "smt2": "; PRINCIPLE: P1  (Precondition Propagation)\n; Model the core of isVacuous:\n;  – declaredNames = set of declared variables\n;  – for each assert we count how many *distinct* declared variables appear\n;  – transitionCount is the number of asserts that reference ≥2 distinct vars\n; Goal: if every assert references ≤1 distinct var, then transitionCount = 0,\n;       and the function will return true.\n\n; Declare a small concrete example with two possible variables.\n(declare-const d1 Bool)   ; “x is declared”\n(declare-const d2 Bool)   ; “y is declared”\n\n; At least one variable is declared (otherwise isVacuous returns false early).\n(assert (or d1 d2))\n\n; For each possible assert we model whether it references each declared var.\n; We only need the abstract counts, not the concrete syntax.\n; a1_x = true  ⇔  assert #1 mentions variable x\n; a1_y = true  ⇔  assert #1 mentions variable y\n; a2_x, a2_y analogously for a second assert (could be absent).\n(declare-const a1_x Bool)\n(declare-const a1_y Bool)\n(declare-const a2_x Bool)\n(declare-const a2_y Bool)\n\n; **Assumption**: every assert mentions at most one *distinct* declared variable.\n; i.e., for each assert the conjunction of its two flags cannot be true.\n(assert (not (and a1_x a1_y)))   ; assert #1 does not mention both x and y\n(assert (not (and a2_x a2_y)))   ; assert #2 does not mention both x and y\n\n; Compute for each assert whether it references ≥2 distinct declared vars.\n; Since we have at most two vars, the condition “≥2 distinct” is exactly\n; (a?_x ∧ a?_y).\n(define-fun trans1 () Bool (and a1_x a1_y))\n(define-fun trans2 () Bool (and a2_x a2_y))\n\n; transitionCount is the sum of such booleans (as integers).\n(define-fun transitionCount () Int\n  (+ (ite trans1 1 0)\n     (ite trans2 1 0)))\n\n; **Property to prove**: transitionCount = 0 under the above assumptions.\n; We assert the *negation* of the property and expect UNSAT.\n(assert (not (= transitionCount 0)))\n\n(check-sat)\n; Expected result: unsat → the property holds."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1  (Precondition Propagation)\n; Model the core of isVacuous:\n;  – declaredNames = set of declared variables\n;  – for each assert we count how many *distinct* declared variables appear\n;  – transitionCount is the number of asserts that reference ≥2 distinct vars\n; Goal: if every assert references ≤1 distinct var, then transitionCount = 0,\n;       and the function will return true.\n\n; Declare a small concrete example with two possible variables.\n(declare-const d1 Bool)   ; “x is declared”\n(declare-const d2 Bool)   ; “y is declared”\n\n; At least one variable is declared (otherwise isVacuous returns false early).\n(assert (or d1 d2))\n\n; For each possible assert we model whether it references each declared var.\n; We only need the abstract counts, not the concrete syntax.\n; a1_x = true  ⇔  assert #1 mentions variable x\n; a1_y = true  ⇔  assert #1 mentions variable y\n; a2_x, a2_y analogously for a second assert (could be absent).\n(declare-const a1_x Bool)\n(declare-const a1_y Bool)\n(declare-const a2_x Bool)\n(declare-const a2_y Bool)\n\n; **Assumption**: every assert mentions at most one *distinct* declared variable.\n; i.e., for each assert the conjunction of its two flags cannot be true.\n(assert (not (and a1_x a1_y)))   ; assert #1 does not mention both x and y\n(assert (not (and a2_x a2_y)))   ; assert #2 does not mention both x and y\n\n; Compute for each assert whether it references ≥2 distinct declared vars.\n; Since we have at most two vars, the condition “≥2 distinct” is exactly\n; (a?_x ∧ a?_y).\n(define-fun trans1 () Bool (and a1_x a1_y))\n(define-fun trans2 () Bool (and a2_x a2_y))\n\n; transitionCount is the sum of such booleans (as integers).\n(define-fun transitionCount () Int\n  (+ (ite trans1 1 0)\n     (ite trans2 1 0)))\n\n; **Property to prove**: transitionCount = 0 under the above assumptions.\n; We assert the *negation* of the property and expect UNSAT.\n(assert (not (= transitionCount 0)))\n\n(check-sat)\n; Expected result: unsat → the property holds.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

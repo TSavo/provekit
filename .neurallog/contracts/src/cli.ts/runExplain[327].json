@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/runExplain[327]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runExplain",
+  "line": 327,
+  "signal_hash": "b09633ebb8c531757adc92a24104bf93a7263a87c51ffd61240f7263ab25cd57",
+  "proven": [],
+  "violations": [
+    {
+      "principle": null,
+      "principle_hash": "",
+      "claim": "[NEW] runExplain – line 327 – reachable when the argument lacks a ':' separator",
+      "smt2": "; [NEW] runExplain – line 327 – reachable when the argument lacks a ':' separator\n; After the first guard passes, the code does:\n;   const [filePart, linePart] = target.split(\":\");\n;   if (!filePart || !linePart) { console.error(...); }\n; The error is triggered when `linePart` is missing (i.e., the split yields only one piece).\n; We model a concrete `target` that does not contain a colon.\n; Expected result: sat (the error is reachable).\n\n(declare-const target String)          ; the raw argument string (simplified as an uninterpreted constant)\n(declare-const has_colon Int)          ; 1 if target contains ':', 0 otherwise\n(declare-const filePart_defined Int)   ; 1 if filePart is non‑empty, 0 otherwise\n(declare-const linePart_defined Int)   ; 1 if linePart is non‑empty, 0 otherwise\n\n; The code: const [filePart, linePart] = target.split(\":\");\n; If target does not contain ':', split returns an array of length 1.\n; We model that situation:\n(assert (= has_colon 0))\n\n; Consequently, filePart is the whole target, linePart is undefined.\n(assert (= filePart_defined 1))   ; filePart exists (non‑empty string)\n(assert (= linePart_defined 0))   ; linePart is missing\n\n; Guard that triggers the error:\n; if (!filePart || !linePart) → true because linePart is missing.\n(assert (or (= filePart_defined 0) (= linePart_defined 0)))\n\n; No further constraints are needed; the above reflects an actual execution path.\n(check-sat)\n; Expected: sat"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; [NEW] runExplain – line 327 – reachable when the argument lacks a ':' separator\n; After the first guard passes, the code does:\n;   const [filePart, linePart] = target.split(\":\");\n;   if (!filePart || !linePart) { console.error(...); }\n; The error is triggered when `linePart` is missing (i.e., the split yields only one piece).\n; We model a concrete `target` that does not contain a colon.\n; Expected result: sat (the error is reachable).\n\n(declare-const target String)          ; the raw argument string (simplified as an uninterpreted constant)\n(declare-const has_colon Int)          ; 1 if target contains ':', 0 otherwise\n(declare-const filePart_defined Int)   ; 1 if filePart is non‑empty, 0 otherwise\n(declare-const linePart_defined Int)   ; 1 if linePart is non‑empty, 0 otherwise\n\n; The code: const [filePart, linePart] = target.split(\":\");\n; If target does not contain ':', split returns an array of length 1.\n; We model that situation:\n(assert (= has_colon 0))\n\n; Consequently, filePart is the whole target, linePart is undefined.\n(assert (= filePart_defined 1))   ; filePart exists (non‑empty string)\n(assert (= linePart_defined 0))   ; linePart is missing\n\n; Guard that triggers the error:\n; if (!filePart || !linePart) → true because linePart is missing.\n(assert (or (= filePart_defined 0) (= linePart_defined 0)))\n\n; No further constraints are needed; the above reflects an actual execution path.\n(check-sat)\n; Expected: sat",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

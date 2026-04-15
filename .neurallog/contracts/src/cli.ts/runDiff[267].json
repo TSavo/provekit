@@ -1,0 +1,11 @@
+{
+  "key": "src/cli.ts/runDiff[267]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runDiff",
+  "line": 267,
+  "signal_hash": "f3f6bae038d03ab90b55aa6d69dfffaee8524b50aeb3ffcc9eaaed3146245fa2",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

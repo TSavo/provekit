@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/printSummary[484]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printSummary",
+  "line": 484,
+  "signal_hash": "b75c199c42130ff8ab0a6098acfeb89e89b8e6f8e9783e507a9261b09fe4f7b2",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Proven property: the length of any JavaScript array is ≥ 0.",
+      "smt2": "; PRINCIPLE: P5\n; Proven property: the length of any JavaScript array is ≥ 0.\n; We model the two lengths that the `printSummary` line reads.\n(declare-const files_len Int)        ; result.graph.files.length\n(declare-const contracts_len Int)    ; result.derivation.contracts.length\n\n; Transition: the code does NOT modify these values – they are given by the\n; runtime as the length of a concrete array.  By definition of an array length\n; we constrain them to be non‑negative.\n(assert (>= files_len 0))\n(assert (>= contracts_len 0))\n\n; Negate the property we want to prove (that a length could be negative).\n(assert (or (< files_len 0) (< contracts_len 0)))\n\n(check-sat)\n; Expected: unsat → a negative length is impossible, so the property is proven."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; Proven property: the length of any JavaScript array is ≥ 0.\n; We model the two lengths that the `printSummary` line reads.\n(declare-const files_len Int)        ; result.graph.files.length\n(declare-const contracts_len Int)    ; result.derivation.contracts.length\n\n; Transition: the code does NOT modify these values – they are given by the\n; runtime as the length of a concrete array.  By definition of an array length\n; we constrain them to be non‑negative.\n(assert (>= files_len 0))\n(assert (>= contracts_len 0))\n\n; Negate the property we want to prove (that a length could be negative).\n(assert (or (< files_len 0) (< contracts_len 0)))\n\n(check-sat)\n; Expected: unsat → a negative length is impossible, so the property is proven.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

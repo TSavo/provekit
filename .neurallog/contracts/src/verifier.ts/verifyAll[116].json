@@ -1,0 +1,11 @@
+{
+  "key": "src/verifier.ts/verifyAll[116]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "verifyAll",
+  "line": 116,
+  "signal_hash": "26f79abdcb7d10f65685f3672feaccb9ff6b80d9bf209305c3fa9a230062537f",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

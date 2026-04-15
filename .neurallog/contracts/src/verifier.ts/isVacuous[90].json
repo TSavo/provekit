@@ -1,0 +1,26 @@
+{
+  "key": "src/verifier.ts/isVacuous[90]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "isVacuous",
+  "line": 90,
+  "signal_hash": "93483b10ff610fe7a8c9955439bcaf4be77536644d04121ffed8a11b42eba526",
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVEN PROPERTY:",
+      "smt2": "; PRINCIPLE: P1\n; PROVEN PROPERTY:\n; If an SMT‑LIB block contains an assertion that mentions at least two declared\n; variables (a “transition”), then the heuristic `isVacuous` must evaluate to\n; false.  We encode the negation of this property (i.e. the block is considered\n; vacuous *and* it contains a two‑variable transition) and show that it is\n; unsatisfiable.\n(declare-const a Int)\n(declare-const b Int)\n; a transition that references both declared variables\n(assert (= a b))          ; ← two‑variable assertion\n; the heuristic would have to think the block is vacuous; that would mean\n; “no assertion references ≥2 variables”.  We model this by asserting that the\n; same two‑variable equality does **not** hold.\n(assert (not (= a b)))   ; ← contradicts the existence of a transition\n(check-sat)\n; The solver returns `unsat`, proving the property holds."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1\n; PROVEN PROPERTY:\n; If an SMT‑LIB block contains an assertion that mentions at least two declared\n; variables (a “transition”), then the heuristic `isVacuous` must evaluate to\n; false.  We encode the negation of this property (i.e. the block is considered\n; vacuous *and* it contains a two‑variable transition) and show that it is\n; unsatisfiable.\n(declare-const a Int)\n(declare-const b Int)\n; a transition that references both declared variables\n(assert (= a b))          ; ← two‑variable assertion\n; the heuristic would have to think the block is vacuous; that would mean\n; “no assertion references ≥2 variables”.  We model this by asserting that the\n; same two‑variable equality does **not** hold.\n(assert (not (= a b)))   ; ← contradicts the existence of a transition\n(check-sat)\n; The solver returns `unsat`, proving the property holds.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

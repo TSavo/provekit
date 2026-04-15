@@ -1,0 +1,26 @@
+{
+  "key": "src/issues.ts/issueExists[101]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "issueExists",
+  "line": 101,
+  "signal_hash": "c80300b00e962f90b5220652590ebbf53186807d6ddefd4d79e2e920a14ca9a6",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Preconditions: the function receives a title (string) and the",
+      "smt2": "; PRINCIPLE: P5 – Semantic Correctness\n; Preconditions: the function receives a title (string) and the\n;   execSync call succeeds, returning a JSON array of objects each\n;   having a `title` field.\n; Transition: the JSON is parsed and the function returns the result\n;   of “some element.title = title”.\n; Property to prove: ¬(return = true ∧ ¬(∃ e . e.title = title))\n\n(declare-const title String)               ; the title we are searching for\n; Model the JSON array as a list of two possible titles (we only need\n;   at least one element that could match)\n(declare-const t0 String)\n(declare-const t1 String)\n\n; The execSync call succeeded and produced a JSON array that, when\n; parsed, yields the two titles above.\n; (We do not need to model the parsing itself – we just assume the\n;   titles are the result of the parse.)\n; Transition: the function computes\n;   (or (= t0 title) (= t1 title))\n; and returns that boolean.\n; Encode the return value:\n(declare-const ret Bool)\n(assert (= ret (or (= t0 title) (= t1 title))))\n\n; Negate the property we want to prove:\n; “ret is true but no element matches”\n(assert ret)                               ; return = true\n(assert (not (or (= t0 title) (= t1 title)))) ; no matching title\n\n(check-sat)\n; Expected: unsat → the situation cannot occur, so the property holds."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5 – Semantic Correctness\n; Preconditions: the function receives a title (string) and the\n;   execSync call succeeds, returning a JSON array of objects each\n;   having a `title` field.\n; Transition: the JSON is parsed and the function returns the result\n;   of “some element.title = title”.\n; Property to prove: ¬(return = true ∧ ¬(∃ e . e.title = title))\n\n(declare-const title String)               ; the title we are searching for\n; Model the JSON array as a list of two possible titles (we only need\n;   at least one element that could match)\n(declare-const t0 String)\n(declare-const t1 String)\n\n; The execSync call succeeded and produced a JSON array that, when\n; parsed, yields the two titles above.\n; (We do not need to model the parsing itself – we just assume the\n;   titles are the result of the parse.)\n; Transition: the function computes\n;   (or (= t0 title) (= t1 title))\n; and returns that boolean.\n; Encode the return value:\n(declare-const ret Bool)\n(assert (= ret (or (= t0 title) (= t1 title))))\n\n; Negate the property we want to prove:\n; “ret is true but no element matches”\n(assert ret)                               ; return = true\n(assert (not (or (= t0 title) (= t1 title)))) ; no matching title\n\n(check-sat)\n; Expected: unsat → the situation cannot occur, so the property holds.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

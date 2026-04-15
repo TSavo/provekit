@@ -1,0 +1,11 @@
+{
+  "key": "src/cli.ts/runInit[97]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runInit",
+  "line": 97,
+  "signal_hash": "86e991d0266d04d732cd04bac0eb323b4ea703f58b16c27faf3c9a995d76be4e",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}
