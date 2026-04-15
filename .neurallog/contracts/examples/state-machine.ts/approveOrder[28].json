@@ -1,0 +1,40 @@
+{
+  "key": "examples/state-machine.ts/approveOrder[28]",
+  "file": "/Users/tsavo/Projects/neurallog/examples/state-machine.ts",
+  "function": "approveOrder",
+  "line": 28,
+  "signal_hash": "dd45e653bc1022afc912b92cda051f32928088d96fc1697081cdf4cc41f71266",
+  "proven": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Prove: after line 26, order.approvedBy is the value of the approver parameter",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 28\n; Prove: after line 26, order.approvedBy is the value of the approver parameter\n(declare-const approver_id Int)      ; models approver identity (abstracted)\n(declare-const approvedBy_stored Int)\n; Code transition (line 26): order.approvedBy = approver (direct assignment)\n(assert (= approvedBy_stored approver_id))\n; Negate: stored value differs from passed approver\n(assert (not (= approvedBy_stored approver_id)))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "approver is a caller-supplied string parameter with no non-empty validation.",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 28\n; approver is a caller-supplied string parameter with no non-empty validation.\n; TypeScript strict mode prevents null/undefined but permits empty string \"\".\n(declare-const approver_length Int)\n(declare-const approvedBy_length Int)\n; Code transition (line 26): order.approvedBy = approver (direct, unchecked assignment)\n(assert (= approvedBy_length approver_length))\n; Calling context: caller passes empty string — TypeScript string type permits this\n(assert (= approver_length 0))\n; Violation: empty string stored as approver identity and printed in the log\n(assert (= approvedBy_length 0))\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 28\n; Prove: after line 26, order.approvedBy is the value of the approver parameter\n(declare-const approver_id Int)      ; models approver identity (abstracted)\n(declare-const approvedBy_stored Int)\n; Code transition (line 26): order.approvedBy = approver (direct assignment)\n(assert (= approvedBy_stored approver_id))\n; Negate: stored value differs from passed approver\n(assert (not (= approvedBy_stored approver_id)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 28\n; approver is a caller-supplied string parameter with no non-empty validation.\n; TypeScript strict mode prevents null/undefined but permits empty string \"\".\n(declare-const approver_length Int)\n(declare-const approvedBy_length Int)\n; Code transition (line 26): order.approvedBy = approver (direct, unchecked assignment)\n(assert (= approvedBy_length approver_length))\n; Calling context: caller passes empty string — TypeScript string type permits this\n(assert (= approver_length 0))\n; Violation: empty string stored as approver identity and printed in the log\n(assert (= approvedBy_length 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -130,7 +130,16 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     const allNewViolations: { violation: VerificationResult; context: string }[] = [];
     let completedFunctions = 0;
     const startTime = Date.now();
-    const systemPrompt = `You are a formal verification engine. Produce SMT-LIB 2 formulas. Every block MUST use \`\`\`smt2 fences and include (check-sat). Tag every block with ; PRINCIPLE: P1-P7 or [NEW]. Tag every block with ; LINE: <number> to identify which verification point it addresses.`;
+    const principleCount = 7 + principleStore.getAll().length;
+    const systemPrompt = `You are a formal verification engine. Produce SMT-LIB 2 formulas.
+
+Every block MUST:
+- Use \`\`\`smt2 fences
+- Include (check-sat)
+- Tag with ; PRINCIPLE: <id> or [NEW]
+- Tag with ; LINE: <number>
+
+There are ${principleCount} known principles (P1-P${principleCount}). If a violation genuinely does not fit ANY existing principle — do NOT stretch a principle to fit. Tag it [NEW]. Novel patterns are valuable. Examples of [NEW]: resource lifecycle (open without close), state machine violations (invalid transitions), ordering constraints, information flow, idempotency failures. If you have to argue why a principle applies, it's [NEW].`;
 
     await dag.execute(async (node, resolvedDeps) => {
       const fn = node.data;

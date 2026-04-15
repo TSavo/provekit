@@ -1,137 +1,215 @@
 [
   {
-    "filePath": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
-    "relativePath": "src/verifier.ts",
+    "filePath": "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts",
+    "relativePath": "examples/resource-leak.ts",
     "callSites": [
       {
-        "line": 32,
-        "column": 7,
-        "functionName": "verifyBlock",
-        "signalText": "Function \"verifyBlock\" promises: must return true only when the condition actually holds",
-        "signalType": "name:verification",
-        "signalHash": "5dc874197d0e50108f667dd0fee0da0497fc845ec30acad8972d5ecc88ad4d29",
-        "functionSource": "function verifyBlock(smt2: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } {\n  const classify = (output: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } => {\n    const lines = output.trim().split(\"\\n\").map((l) => l.trim()).filter(Boolean);\n    for (let i = lines.length - 1; i >= 0; i--) {\n      if (lines[i] === \"sat\") return { result: \"sat\" };\n      if (lines[i] === \"unsat\") return { result: \"unsat\" };\n      if (lines[i] === \"unknown\") return { result: \"unknown\" };\n    }\n    return { result: \"error\", error: output.trim() || \"empty output\" };\n  };\n\n  try {\n    const output = execSync(\"z3 -in -T:5\", {\n      input: smt2,\n      encoding: \"utf-8\",\n      timeout: 10000,\n    });\n    return classify(output);\n  } catch (err: any) {\n    const stderr = err.stderr?.toString() || \"\";\n    const stdout = err.stdout?.toString() || \"\";\n    if (stdout.trim()) return classify(stdout);\n    if (stderr.includes(\"timeout\")) return { result: \"unknown\", error: \"Z3 timeout\" };\n    return { result: \"error\", error: stderr || err.message || \"Z3 process failed\" };\n  }\n}",
-        "fileSource": "import { execSync } from \"child_process\";\n\nexport interface VerificationResult {\n  smt2: string;\n  z3Result: \"sat\" | \"unsat\" | \"unknown\" | \"error\";\n  principle: string | null;\n  error?: string;\n  trivial?: boolean;\n}\n\nexport function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {\n  const blocks: { smt2: string; principle: string | null }[] = [];\n\n  const codeBlockRegex = /```(?:smt2|smt-lib|smtlib2|scheme)?\\s*\\n([\\s\\S]*?)```/g;\n  let match;\n\n  while ((match = codeBlockRegex.exec(response)) !== null) {\n    const content = match[1]!.trim();\n    if (!content.includes(\"(check-sat)\")) continue;\n\n    const principleMatch = content.match(/;\\s*PRINCIPLE:\\s*(P\\d+(?:\\s*[,+&]\\s*P\\d+)*|\\[NEW\\])/i);\n    const principle = principleMatch ? principleMatch[1]!.trim() : null;\n\n    const firstCheckSat = content.indexOf(\"(check-sat)\");\n    const truncated = content.slice(0, firstCheckSat + \"(check-sat)\".length);\n    blocks.push({ smt2: truncated, principle });\n  }\n\n  return blocks;\n}\n\nexport function verifyBlock(smt2: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } {\n  const classify = (output: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } => {\n    const lines = output.trim().split(\"\\n\").map((l) => l.trim()).filter(Boolean);\n    for (let i = lines.length - 1; i >= 0; i--) {\n      if (lines[i] === \"sat\") return { result: \"sat\" };\n      if (lines[i] === \"unsat\") return { result: \"unsat\" };\n      if (lines[i] === \"unknown\") return { result: \"unknown\" };\n    }\n    return { result: \"error\", error: output.trim() || \"empty output\" };\n  };\n\n  try {\n    const output = execSync(\"z3 -in -T:5\", {\n      input: smt2,\n      encoding: \"utf-8\",\n      timeout: 10000,\n    });\n    return classify(output);\n  } catch (err: any) {\n    const stderr = err.stderr?.toString() || \"\";\n    const stdout = err.stdout?.toString() || \"\";\n    if (stdout.trim()) return classify(stdout);\n    if (stderr.includes(\"timeout\")) return { result: \"unknown\", error: \"Z3 timeout\" };\n    return { result: \"error\", error: stderr || err.message || \"Z3 process failed\" };\n  }\n}\n\nexport function isVacuous(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const declares = lines.filter((l) => l.startsWith(\"(declare-const\"));\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n  const defineFuns = lines.filter((l) => l.startsWith(\"(define-fun\"));\n\n  if (declares.length === 0 && defineFuns.length === 0) return false;\n  if (asserts.length === 0) return true;\n\n  const declaredNames = new Set(\n    declares.map((d) => {\n      const m = d.match(/\\(declare-const\\s+(\\S+)/);\n      return m ? m[1]! : \"\";\n    }).filter(Boolean)\n  );\n\n  for (const df of defineFuns) {\n    const m = df.match(/\\(define-fun\\s+(\\S+)/);\n    if (m) declaredNames.add(m[1]!);\n  }\n\n  if (declaredNames.size < 2) return true;\n\n  let transitionCount = 0;\n  for (const a of asserts) {\n    let referencedVars = 0;\n    for (const name of declaredNames) {\n      if (new RegExp(`\\\\b${name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\")}\\\\b`).test(a)) referencedVars++;\n    }\n    if (referencedVars >= 2) transitionCount++;\n  }\n\n  return transitionCount === 0;\n}\n\nexport function isTrivialIdentity(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n\n  if (asserts.length < 2) return false;\n\n  const equalities: string[] = [];\n  const negations: string[] = [];\n\n  for (const a of asserts) {\n    const eqMatch = a.match(/^\\(assert\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)$/);\n    if (eqMatch) { equalities.push(`${eqMatch[1]} ${eqMatch[2]}`); continue; }\n    const negMatch = a.match(/^\\(assert\\s+\\(not\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)\\)$/);\n    if (negMatch) negations.push(`${negMatch[1]} ${negMatch[2]}`);\n  }\n\n  for (const eq of equalities) {\n    if (negations.includes(eq)) return true;\n    const [a, b] = eq.split(\" \");\n    if (negations.includes(`${b} ${a}`)) return true;\n  }\n\n  return false;\n}\n\nexport function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}\n",
-        "importSources": [],
-        "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "verifyBlock is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  smt2: string\nReturn type: { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string }",
-        "pathConditions": [],
-        "callees": [],
-        "calledBy": [
-          "verifyAll"
-        ]
-      },
-      {
-        "line": 59,
-        "column": 7,
-        "functionName": "isVacuous",
-        "signalText": "Function \"isVacuous\" promises: return value must accurately reflect the property being tested",
-        "signalType": "name:predicate",
-        "signalHash": "4483ffce4bb6ff40f98b7c620644bb38e46db75013c467fad558a64c60c973b7",
-        "functionSource": "function isVacuous(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const declares = lines.filter((l) => l.startsWith(\"(declare-const\"));\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n  const defineFuns = lines.filter((l) => l.startsWith(\"(define-fun\"));\n\n  if (declares.length === 0 && defineFuns.length === 0) return false;\n  if (asserts.length === 0) return true;\n\n  const declaredNames = new Set(\n    declares.map((d) => {\n      const m = d.match(/\\(declare-const\\s+(\\S+)/);\n      return m ? m[1]! : \"\";\n    }).filter(Boolean)\n  );\n\n  for (const df of defineFuns) {\n    const m = df.match(/\\(define-fun\\s+(\\S+)/);\n    if (m) declaredNames.add(m[1]!);\n  }\n\n  if (declaredNames.size < 2) return true;\n\n  let transitionCount = 0;\n  for (const a of asserts) {\n    let referencedVars = 0;\n    for (const name of declaredNames) {\n      if (new RegExp(`\\\\b${name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\")}\\\\b`).test(a)) referencedVars++;\n    }\n    if (referencedVars >= 2) transitionCount++;\n  }\n\n  return transitionCount === 0;\n}",
-        "fileSource": "import { execSync } from \"child_process\";\n\nexport interface VerificationResult {\n  smt2: string;\n  z3Result: \"sat\" | \"unsat\" | \"unknown\" | \"error\";\n  principle: string | null;\n  error?: string;\n  trivial?: boolean;\n}\n\nexport function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {\n  const blocks: { smt2: string; principle: string | null }[] = [];\n\n  const codeBlockRegex = /```(?:smt2|smt-lib|smtlib2|scheme)?\\s*\\n([\\s\\S]*?)```/g;\n  let match;\n\n  while ((match = codeBlockRegex.exec(response)) !== null) {\n    const content = match[1]!.trim();\n    if (!content.includes(\"(check-sat)\")) continue;\n\n    const principleMatch = content.match(/;\\s*PRINCIPLE:\\s*(P\\d+(?:\\s*[,+&]\\s*P\\d+)*|\\[NEW\\])/i);\n    const principle = principleMatch ? principleMatch[1]!.trim() : null;\n\n    const firstCheckSat = content.indexOf(\"(check-sat)\");\n    const truncated = content.slice(0, firstCheckSat + \"(check-sat)\".length);\n    blocks.push({ smt2: truncated, principle });\n  }\n\n  return blocks;\n}\n\nexport function verifyBlock(smt2: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } {\n  const classify = (output: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } => {\n    const lines = output.trim().split(\"\\n\").map((l) => l.trim()).filter(Boolean);\n    for (let i = lines.length - 1; i >= 0; i--) {\n      if (lines[i] === \"sat\") return { result: \"sat\" };\n      if (lines[i] === \"unsat\") return { result: \"unsat\" };\n      if (lines[i] === \"unknown\") return { result: \"unknown\" };\n    }\n    return { result: \"error\", error: output.trim() || \"empty output\" };\n  };\n\n  try {\n    const output = execSync(\"z3 -in -T:5\", {\n      input: smt2,\n      encoding: \"utf-8\",\n      timeout: 10000,\n    });\n    return classify(output);\n  } catch (err: any) {\n    const stderr = err.stderr?.toString() || \"\";\n    const stdout = err.stdout?.toString() || \"\";\n    if (stdout.trim()) return classify(stdout);\n    if (stderr.includes(\"timeout\")) return { result: \"unknown\", error: \"Z3 timeout\" };\n    return { result: \"error\", error: stderr || err.message || \"Z3 process failed\" };\n  }\n}\n\nexport function isVacuous(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const declares = lines.filter((l) => l.startsWith(\"(declare-const\"));\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n  const defineFuns = lines.filter((l) => l.startsWith(\"(define-fun\"));\n\n  if (declares.length === 0 && defineFuns.length === 0) return false;\n  if (asserts.length === 0) return true;\n\n  const declaredNames = new Set(\n    declares.map((d) => {\n      const m = d.match(/\\(declare-const\\s+(\\S+)/);\n      return m ? m[1]! : \"\";\n    }).filter(Boolean)\n  );\n\n  for (const df of defineFuns) {\n    const m = df.match(/\\(define-fun\\s+(\\S+)/);\n    if (m) declaredNames.add(m[1]!);\n  }\n\n  if (declaredNames.size < 2) return true;\n\n  let transitionCount = 0;\n  for (const a of asserts) {\n    let referencedVars = 0;\n    for (const name of declaredNames) {\n      if (new RegExp(`\\\\b${name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\")}\\\\b`).test(a)) referencedVars++;\n    }\n    if (referencedVars >= 2) transitionCount++;\n  }\n\n  return transitionCount === 0;\n}\n\nexport function isTrivialIdentity(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n\n  if (asserts.length < 2) return false;\n\n  const equalities: string[] = [];\n  const negations: string[] = [];\n\n  for (const a of asserts) {\n    const eqMatch = a.match(/^\\(assert\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)$/);\n    if (eqMatch) { equalities.push(`${eqMatch[1]} ${eqMatch[2]}`); continue; }\n    const negMatch = a.match(/^\\(assert\\s+\\(not\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)\\)$/);\n    if (negMatch) negations.push(`${negMatch[1]} ${negMatch[2]}`);\n  }\n\n  for (const eq of equalities) {\n    if (negations.includes(eq)) return true;\n    const [a, b] = eq.split(\" \");\n    if (negations.includes(`${b} ${a}`)) return true;\n  }\n\n  return false;\n}\n\nexport function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}\n",
-        "importSources": [],
-        "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "isVacuous is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  smt2: string\nReturn type: boolean",
-        "pathConditions": [],
-        "callees": [],
-        "calledBy": [
-          "verifyAll"
-        ]
-      },
-      {
-        "line": 94,
-        "column": 7,
-        "functionName": "isTrivialIdentity",
-        "signalText": "Function \"isTrivialIdentity\" promises: return value must accurately reflect the property being tested",
-        "signalType": "name:predicate",
-        "signalHash": "6bace2e7ffa32268fc8758b7082ee767ae70db6d5a30eea4f121ed8eff9581ce",
-        "functionSource": "function isTrivialIdentity(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n\n  if (asserts.length < 2) return false;\n\n  const equalities: string[] = [];\n  const negations: string[] = [];\n\n  for (const a of asserts) {\n    const eqMatch = a.match(/^\\(assert\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)$/);\n    if (eqMatch) { equalities.push(`${eqMatch[1]} ${eqMatch[2]}`); continue; }\n    const negMatch = a.match(/^\\(assert\\s+\\(not\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)\\)$/);\n    if (negMatch) negations.push(`${negMatch[1]} ${negMatch[2]}`);\n  }\n\n  for (const eq of equalities) {\n    if (negations.includes(eq)) return true;\n    const [a, b] = eq.split(\" \");\n    if (negations.includes(`${b} ${a}`)) return true;\n  }\n\n  return false;\n}",
-        "fileSource": "import { execSync } from \"child_process\";\n\nexport interface VerificationResult {\n  smt2: string;\n  z3Result: \"sat\" | \"unsat\" | \"unknown\" | \"error\";\n  principle: string | null;\n  error?: string;\n  trivial?: boolean;\n}\n\nexport function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {\n  const blocks: { smt2: string; principle: string | null }[] = [];\n\n  const codeBlockRegex = /```(?:smt2|smt-lib|smtlib2|scheme)?\\s*\\n([\\s\\S]*?)```/g;\n  let match;\n\n  while ((match = codeBlockRegex.exec(response)) !== null) {\n    const content = match[1]!.trim();\n    if (!content.includes(\"(check-sat)\")) continue;\n\n    const principleMatch = content.match(/;\\s*PRINCIPLE:\\s*(P\\d+(?:\\s*[,+&]\\s*P\\d+)*|\\[NEW\\])/i);\n    const principle = principleMatch ? principleMatch[1]!.trim() : null;\n\n    const firstCheckSat = content.indexOf(\"(check-sat)\");\n    const truncated = content.slice(0, firstCheckSat + \"(check-sat)\".length);\n    blocks.push({ smt2: truncated, principle });\n  }\n\n  return blocks;\n}\n\nexport function verifyBlock(smt2: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } {\n  const classify = (output: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } => {\n    const lines = output.trim().split(\"\\n\").map((l) => l.trim()).filter(Boolean);\n    for (let i = lines.length - 1; i >= 0; i--) {\n      if (lines[i] === \"sat\") return { result: \"sat\" };\n      if (lines[i] === \"unsat\") return { result: \"unsat\" };\n      if (lines[i] === \"unknown\") return { result: \"unknown\" };\n    }\n    return { result: \"error\", error: output.trim() || \"empty output\" };\n  };\n\n  try {\n    const output = execSync(\"z3 -in -T:5\", {\n      input: smt2,\n      encoding: \"utf-8\",\n      timeout: 10000,\n    });\n    return classify(output);\n  } catch (err: any) {\n    const stderr = err.stderr?.toString() || \"\";\n    const stdout = err.stdout?.toString() || \"\";\n    if (stdout.trim()) return classify(stdout);\n    if (stderr.includes(\"timeout\")) return { result: \"unknown\", error: \"Z3 timeout\" };\n    return { result: \"error\", error: stderr || err.message || \"Z3 process failed\" };\n  }\n}\n\nexport function isVacuous(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const declares = lines.filter((l) => l.startsWith(\"(declare-const\"));\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n  const defineFuns = lines.filter((l) => l.startsWith(\"(define-fun\"));\n\n  if (declares.length === 0 && defineFuns.length === 0) return false;\n  if (asserts.length === 0) return true;\n\n  const declaredNames = new Set(\n    declares.map((d) => {\n      const m = d.match(/\\(declare-const\\s+(\\S+)/);\n      return m ? m[1]! : \"\";\n    }).filter(Boolean)\n  );\n\n  for (const df of defineFuns) {\n    const m = df.match(/\\(define-fun\\s+(\\S+)/);\n    if (m) declaredNames.add(m[1]!);\n  }\n\n  if (declaredNames.size < 2) return true;\n\n  let transitionCount = 0;\n  for (const a of asserts) {\n    let referencedVars = 0;\n    for (const name of declaredNames) {\n      if (new RegExp(`\\\\b${name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\")}\\\\b`).test(a)) referencedVars++;\n    }\n    if (referencedVars >= 2) transitionCount++;\n  }\n\n  return transitionCount === 0;\n}\n\nexport function isTrivialIdentity(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n\n  if (asserts.length < 2) return false;\n\n  const equalities: string[] = [];\n  const negations: string[] = [];\n\n  for (const a of asserts) {\n    const eqMatch = a.match(/^\\(assert\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)$/);\n    if (eqMatch) { equalities.push(`${eqMatch[1]} ${eqMatch[2]}`); continue; }\n    const negMatch = a.match(/^\\(assert\\s+\\(not\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)\\)$/);\n    if (negMatch) negations.push(`${negMatch[1]} ${negMatch[2]}`);\n  }\n\n  for (const eq of equalities) {\n    if (negations.includes(eq)) return true;\n    const [a, b] = eq.split(\" \");\n    if (negations.includes(`${b} ${a}`)) return true;\n  }\n\n  return false;\n}\n\nexport function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}\n",
-        "importSources": [],
-        "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "isTrivialIdentity is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  smt2: string\nReturn type: boolean",
-        "pathConditions": [],
-        "callees": [],
-        "calledBy": [
-          "verifyAll"
-        ]
-      },
-      {
-        "line": 119,
-        "column": 7,
-        "functionName": "verifyAll",
-        "signalText": "Function \"verifyAll\" promises: must return true only when the condition actually holds",
-        "signalType": "name:verification",
-        "signalHash": "e8bcc203ff372e99c8dfcccb112e54744a7452b2494236904e86ff8e906c355d",
-        "functionSource": "function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}",
-        "fileSource": "import { execSync } from \"child_process\";\n\nexport interface VerificationResult {\n  smt2: string;\n  z3Result: \"sat\" | \"unsat\" | \"unknown\" | \"error\";\n  principle: string | null;\n  error?: string;\n  trivial?: boolean;\n}\n\nexport function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {\n  const blocks: { smt2: string; principle: string | null }[] = [];\n\n  const codeBlockRegex = /```(?:smt2|smt-lib|smtlib2|scheme)?\\s*\\n([\\s\\S]*?)```/g;\n  let match;\n\n  while ((match = codeBlockRegex.exec(response)) !== null) {\n    const content = match[1]!.trim();\n    if (!content.includes(\"(check-sat)\")) continue;\n\n    const principleMatch = content.match(/;\\s*PRINCIPLE:\\s*(P\\d+(?:\\s*[,+&]\\s*P\\d+)*|\\[NEW\\])/i);\n    const principle = principleMatch ? principleMatch[1]!.trim() : null;\n\n    const firstCheckSat = content.indexOf(\"(check-sat)\");\n    const truncated = content.slice(0, firstCheckSat + \"(check-sat)\".length);\n    blocks.push({ smt2: truncated, principle });\n  }\n\n  return blocks;\n}\n\nexport function verifyBlock(smt2: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } {\n  const classify = (output: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } => {\n    const lines = output.trim().split(\"\\n\").map((l) => l.trim()).filter(Boolean);\n    for (let i = lines.length - 1; i >= 0; i--) {\n      if (lines[i] === \"sat\") return { result: \"sat\" };\n      if (lines[i] === \"unsat\") return { result: \"unsat\" };\n      if (lines[i] === \"unknown\") return { result: \"unknown\" };\n    }\n    return { result: \"error\", error: output.trim() || \"empty output\" };\n  };\n\n  try {\n    const output = execSync(\"z3 -in -T:5\", {\n      input: smt2,\n      encoding: \"utf-8\",\n      timeout: 10000,\n    });\n    return classify(output);\n  } catch (err: any) {\n    const stderr = err.stderr?.toString() || \"\";\n    const stdout = err.stdout?.toString() || \"\";\n    if (stdout.trim()) return classify(stdout);\n    if (stderr.includes(\"timeout\")) return { result: \"unknown\", error: \"Z3 timeout\" };\n    return { result: \"error\", error: stderr || err.message || \"Z3 process failed\" };\n  }\n}\n\nexport function isVacuous(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const declares = lines.filter((l) => l.startsWith(\"(declare-const\"));\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n  const defineFuns = lines.filter((l) => l.startsWith(\"(define-fun\"));\n\n  if (declares.length === 0 && defineFuns.length === 0) return false;\n  if (asserts.length === 0) return true;\n\n  const declaredNames = new Set(\n    declares.map((d) => {\n      const m = d.match(/\\(declare-const\\s+(\\S+)/);\n      return m ? m[1]! : \"\";\n    }).filter(Boolean)\n  );\n\n  for (const df of defineFuns) {\n    const m = df.match(/\\(define-fun\\s+(\\S+)/);\n    if (m) declaredNames.add(m[1]!);\n  }\n\n  if (declaredNames.size < 2) return true;\n\n  let transitionCount = 0;\n  for (const a of asserts) {\n    let referencedVars = 0;\n    for (const name of declaredNames) {\n      if (new RegExp(`\\\\b${name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\")}\\\\b`).test(a)) referencedVars++;\n    }\n    if (referencedVars >= 2) transitionCount++;\n  }\n\n  return transitionCount === 0;\n}\n\nexport function isTrivialIdentity(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n\n  if (asserts.length < 2) return false;\n\n  const equalities: string[] = [];\n  const negations: string[] = [];\n\n  for (const a of asserts) {\n    const eqMatch = a.match(/^\\(assert\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)$/);\n    if (eqMatch) { equalities.push(`${eqMatch[1]} ${eqMatch[2]}`); continue; }\n    const negMatch = a.match(/^\\(assert\\s+\\(not\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)\\)$/);\n    if (negMatch) negations.push(`${negMatch[1]} ${negMatch[2]}`);\n  }\n\n  for (const eq of equalities) {\n    if (negations.includes(eq)) return true;\n    const [a, b] = eq.split(\" \");\n    if (negations.includes(`${b} ${a}`)) return true;\n  }\n\n  return false;\n}\n\nexport function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}\n",
-        "importSources": [],
-        "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "verifyAll is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  response: string\nReturn type: VerificationResult[]",
-        "pathConditions": [],
-        "callees": [],
-        "calledBy": []
-      },
-      {
-        "line": 126,
-        "column": 4,
-        "functionName": "verifyAll",
-        "signalText": "console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`)",
+        "line": 8,
+        "column": 2,
+        "functionName": "processFile",
+        "signalText": "console.log(`Processing file: ${path}, fd=${fd}`)",
         "signalType": "log",
-        "signalHash": "524cb8254d8e50dd429022f155deba01ec53cd115289a4782e50624ed8ca915c",
-        "functionSource": "function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}",
-        "fileSource": "import { execSync } from \"child_process\";\n\nexport interface VerificationResult {\n  smt2: string;\n  z3Result: \"sat\" | \"unsat\" | \"unknown\" | \"error\";\n  principle: string | null;\n  error?: string;\n  trivial?: boolean;\n}\n\nexport function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {\n  const blocks: { smt2: string; principle: string | null }[] = [];\n\n  const codeBlockRegex = /```(?:smt2|smt-lib|smtlib2|scheme)?\\s*\\n([\\s\\S]*?)```/g;\n  let match;\n\n  while ((match = codeBlockRegex.exec(response)) !== null) {\n    const content = match[1]!.trim();\n    if (!content.includes(\"(check-sat)\")) continue;\n\n    const principleMatch = content.match(/;\\s*PRINCIPLE:\\s*(P\\d+(?:\\s*[,+&]\\s*P\\d+)*|\\[NEW\\])/i);\n    const principle = principleMatch ? principleMatch[1]!.trim() : null;\n\n    const firstCheckSat = content.indexOf(\"(check-sat)\");\n    const truncated = content.slice(0, firstCheckSat + \"(check-sat)\".length);\n    blocks.push({ smt2: truncated, principle });\n  }\n\n  return blocks;\n}\n\nexport function verifyBlock(smt2: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } {\n  const classify = (output: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } => {\n    const lines = output.trim().split(\"\\n\").map((l) => l.trim()).filter(Boolean);\n    for (let i = lines.length - 1; i >= 0; i--) {\n      if (lines[i] === \"sat\") return { result: \"sat\" };\n      if (lines[i] === \"unsat\") return { result: \"unsat\" };\n      if (lines[i] === \"unknown\") return { result: \"unknown\" };\n    }\n    return { result: \"error\", error: output.trim() || \"empty output\" };\n  };\n\n  try {\n    const output = execSync(\"z3 -in -T:5\", {\n      input: smt2,\n      encoding: \"utf-8\",\n      timeout: 10000,\n    });\n    return classify(output);\n  } catch (err: any) {\n    const stderr = err.stderr?.toString() || \"\";\n    const stdout = err.stdout?.toString() || \"\";\n    if (stdout.trim()) return classify(stdout);\n    if (stderr.includes(\"timeout\")) return { result: \"unknown\", error: \"Z3 timeout\" };\n    return { result: \"error\", error: stderr || err.message || \"Z3 process failed\" };\n  }\n}\n\nexport function isVacuous(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const declares = lines.filter((l) => l.startsWith(\"(declare-const\"));\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n  const defineFuns = lines.filter((l) => l.startsWith(\"(define-fun\"));\n\n  if (declares.length === 0 && defineFuns.length === 0) return false;\n  if (asserts.length === 0) return true;\n\n  const declaredNames = new Set(\n    declares.map((d) => {\n      const m = d.match(/\\(declare-const\\s+(\\S+)/);\n      return m ? m[1]! : \"\";\n    }).filter(Boolean)\n  );\n\n  for (const df of defineFuns) {\n    const m = df.match(/\\(define-fun\\s+(\\S+)/);\n    if (m) declaredNames.add(m[1]!);\n  }\n\n  if (declaredNames.size < 2) return true;\n\n  let transitionCount = 0;\n  for (const a of asserts) {\n    let referencedVars = 0;\n    for (const name of declaredNames) {\n      if (new RegExp(`\\\\b${name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\")}\\\\b`).test(a)) referencedVars++;\n    }\n    if (referencedVars >= 2) transitionCount++;\n  }\n\n  return transitionCount === 0;\n}\n\nexport function isTrivialIdentity(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n\n  if (asserts.length < 2) return false;\n\n  const equalities: string[] = [];\n  const negations: string[] = [];\n\n  for (const a of asserts) {\n    const eqMatch = a.match(/^\\(assert\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)$/);\n    if (eqMatch) { equalities.push(`${eqMatch[1]} ${eqMatch[2]}`); continue; }\n    const negMatch = a.match(/^\\(assert\\s+\\(not\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)\\)$/);\n    if (negMatch) negations.push(`${negMatch[1]} ${negMatch[2]}`);\n  }\n\n  for (const eq of equalities) {\n    if (negations.includes(eq)) return true;\n    const [a, b] = eq.split(\" \");\n    if (negations.includes(`${b} ${a}`)) return true;\n  }\n\n  return false;\n}\n\nexport function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}\n",
+        "signalHash": "6ecba451c9f0f2472028ba632c799c785642f5acaa5ead382cdf4c0d1fe12958",
+        "functionSource": "function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}",
+        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
         "importSources": [],
         "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "verifyAll is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  response: string\nReturn type: VerificationResult[]",
-        "pathConditions": [
-          "(vacuousCount > 0)"
-        ],
+        "callingContext": "processFile is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  path: string\nReturn type: string[]\nLocal variables (before this signal):\n  results: string[]",
+        "pathConditions": [],
         "callees": [
-          "extractSmt2Blocks",
-          "filter",
-          "isTrivialIdentity",
-          "isVacuous",
+          "alloc",
+          "closeSync",
+          "includes",
           "log",
-          "map",
-          "verifyBlock"
+          "openSync",
+          "push",
+          "readSync",
+          "toString",
+          "trim"
         ],
         "calledBy": []
       },
       {
-        "line": 137,
-        "column": 4,
-        "functionName": "verifyAll",
-        "signalText": "console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`)",
+        "line": 14,
+        "column": 6,
+        "functionName": "processFile",
+        "signalText": "console.log(`Found error in ${path}: ${line}`)",
         "signalType": "log",
-        "signalHash": "fd265dcba3e13c555a47d0a7c83fbe3ddd70829f9fa26851f4b6545639908d2e",
-        "functionSource": "function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}",
-        "fileSource": "import { execSync } from \"child_process\";\n\nexport interface VerificationResult {\n  smt2: string;\n  z3Result: \"sat\" | \"unsat\" | \"unknown\" | \"error\";\n  principle: string | null;\n  error?: string;\n  trivial?: boolean;\n}\n\nexport function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {\n  const blocks: { smt2: string; principle: string | null }[] = [];\n\n  const codeBlockRegex = /```(?:smt2|smt-lib|smtlib2|scheme)?\\s*\\n([\\s\\S]*?)```/g;\n  let match;\n\n  while ((match = codeBlockRegex.exec(response)) !== null) {\n    const content = match[1]!.trim();\n    if (!content.includes(\"(check-sat)\")) continue;\n\n    const principleMatch = content.match(/;\\s*PRINCIPLE:\\s*(P\\d+(?:\\s*[,+&]\\s*P\\d+)*|\\[NEW\\])/i);\n    const principle = principleMatch ? principleMatch[1]!.trim() : null;\n\n    const firstCheckSat = content.indexOf(\"(check-sat)\");\n    const truncated = content.slice(0, firstCheckSat + \"(check-sat)\".length);\n    blocks.push({ smt2: truncated, principle });\n  }\n\n  return blocks;\n}\n\nexport function verifyBlock(smt2: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } {\n  const classify = (output: string): { result: \"sat\" | \"unsat\" | \"unknown\" | \"error\"; error?: string } => {\n    const lines = output.trim().split(\"\\n\").map((l) => l.trim()).filter(Boolean);\n    for (let i = lines.length - 1; i >= 0; i--) {\n      if (lines[i] === \"sat\") return { result: \"sat\" };\n      if (lines[i] === \"unsat\") return { result: \"unsat\" };\n      if (lines[i] === \"unknown\") return { result: \"unknown\" };\n    }\n    return { result: \"error\", error: output.trim() || \"empty output\" };\n  };\n\n  try {\n    const output = execSync(\"z3 -in -T:5\", {\n      input: smt2,\n      encoding: \"utf-8\",\n      timeout: 10000,\n    });\n    return classify(output);\n  } catch (err: any) {\n    const stderr = err.stderr?.toString() || \"\";\n    const stdout = err.stdout?.toString() || \"\";\n    if (stdout.trim()) return classify(stdout);\n    if (stderr.includes(\"timeout\")) return { result: \"unknown\", error: \"Z3 timeout\" };\n    return { result: \"error\", error: stderr || err.message || \"Z3 process failed\" };\n  }\n}\n\nexport function isVacuous(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const declares = lines.filter((l) => l.startsWith(\"(declare-const\"));\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n  const defineFuns = lines.filter((l) => l.startsWith(\"(define-fun\"));\n\n  if (declares.length === 0 && defineFuns.length === 0) return false;\n  if (asserts.length === 0) return true;\n\n  const declaredNames = new Set(\n    declares.map((d) => {\n      const m = d.match(/\\(declare-const\\s+(\\S+)/);\n      return m ? m[1]! : \"\";\n    }).filter(Boolean)\n  );\n\n  for (const df of defineFuns) {\n    const m = df.match(/\\(define-fun\\s+(\\S+)/);\n    if (m) declaredNames.add(m[1]!);\n  }\n\n  if (declaredNames.size < 2) return true;\n\n  let transitionCount = 0;\n  for (const a of asserts) {\n    let referencedVars = 0;\n    for (const name of declaredNames) {\n      if (new RegExp(`\\\\b${name.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\")}\\\\b`).test(a)) referencedVars++;\n    }\n    if (referencedVars >= 2) transitionCount++;\n  }\n\n  return transitionCount === 0;\n}\n\nexport function isTrivialIdentity(smt2: string): boolean {\n  const lines = smt2.split(\"\\n\").map((l) => l.trim());\n  const asserts = lines.filter((l) => l.startsWith(\"(assert\"));\n\n  if (asserts.length < 2) return false;\n\n  const equalities: string[] = [];\n  const negations: string[] = [];\n\n  for (const a of asserts) {\n    const eqMatch = a.match(/^\\(assert\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)$/);\n    if (eqMatch) { equalities.push(`${eqMatch[1]} ${eqMatch[2]}`); continue; }\n    const negMatch = a.match(/^\\(assert\\s+\\(not\\s+\\(=\\s+(\\S+)\\s+(\\S+)\\)\\)\\)$/);\n    if (negMatch) negations.push(`${negMatch[1]} ${negMatch[2]}`);\n  }\n\n  for (const eq of equalities) {\n    if (negations.includes(eq)) return true;\n    const [a, b] = eq.split(\" \");\n    if (negations.includes(`${b} ${a}`)) return true;\n  }\n\n  return false;\n}\n\nexport function verifyAll(response: string): VerificationResult[] {\n  const blocks = extractSmt2Blocks(response);\n\n  const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;\n  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));\n\n  if (vacuousCount > 0) {\n    console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? \"\" : \"s\"} filtered)`);\n  }\n\n  const results = nonVacuous.map(({ smt2, principle }) => {\n    const { result, error } = verifyBlock(smt2);\n    const trivial = isTrivialIdentity(smt2);\n    return { smt2, z3Result: result, principle, error, trivial };\n  });\n\n  const trivialCount = results.filter((r) => r.trivial).length;\n  if (trivialCount > 0) {\n    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? \"\" : \"s\"} flagged)`);\n  }\n\n  return results;\n}\n",
+        "signalHash": "b7803c6acd36b7af1ac31511b7bfd119213cb05fa91b26660f841f5a1d31f117",
+        "functionSource": "function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}",
+        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
         "importSources": [],
         "existingContracts": "(dependency contracts injected at derivation time)",
-        "callingContext": "verifyAll is module-private. Only called within this module.",
-        "typeContext": "Parameters:\n  response: string\nReturn type: VerificationResult[]",
+        "callingContext": "processFile is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  path: string\nReturn type: string[]\nLocal variables (before this signal):\n  results: string[]",
         "pathConditions": [
-          "(trivialCount > 0)"
+          "(line.includes(\"ERROR\"))"
         ],
         "callees": [
-          "extractSmt2Blocks",
-          "filter",
-          "isTrivialIdentity",
-          "isVacuous",
+          "alloc",
+          "closeSync",
+          "includes",
           "log",
-          "map",
-          "verifyBlock"
+          "openSync",
+          "push",
+          "readSync",
+          "toString",
+          "trim"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 15,
+        "column": 23,
+        "functionName": "processFile",
+        "signalText": "BUG: returns without closing fd",
+        "signalType": "comment",
+        "signalHash": "d532eca56de925dc3aacda71fef4c9761f8c8c4e60092848be7a9ce3aeddafd0",
+        "functionSource": "function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}",
+        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "processFile is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  path: string\nReturn type: string[]\nLocal variables (before this signal):\n  results: string[]",
+        "pathConditions": [
+          "(line.includes(\"ERROR\"))"
+        ],
+        "callees": [
+          "alloc",
+          "closeSync",
+          "includes",
+          "log",
+          "openSync",
+          "push",
+          "readSync",
+          "toString",
+          "trim"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 22,
+        "column": 2,
+        "functionName": "processFile",
+        "signalText": "console.log(`Finished processing ${path}, ${results.length} lines`)",
+        "signalType": "log",
+        "signalHash": "529aee5fdda943e076b74481f37286f567b323db6b93de2a1cabd027210f0119",
+        "functionSource": "function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}",
+        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "processFile is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  path: string\nReturn type: string[]\nLocal variables (before this signal):\n  results: string[]",
+        "pathConditions": [],
+        "callees": [
+          "alloc",
+          "closeSync",
+          "includes",
+          "log",
+          "openSync",
+          "push",
+          "readSync",
+          "toString",
+          "trim"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 28,
+        "column": 2,
+        "functionName": "connectAndQuery",
+        "signalText": "console.log(`Connected to ${host}, running query`)",
+        "signalType": "log",
+        "signalHash": "4c1ad07f8f56ee9544f0a4bfb3b3674dc76c2b5c71016d014803b3c93e03de52",
+        "functionSource": "function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}",
+        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "connectAndQuery is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  host: string\n  query: string\nReturn type: any",
+        "pathConditions": [],
+        "callees": [
+          "close",
+          "createConnection",
+          "execute",
+          "log"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 33,
+        "column": 4,
+        "functionName": "connectAndQuery",
+        "signalText": "console.log(`Query failed: ${result.error}`)",
+        "signalType": "log",
+        "signalHash": "249ad847c68ecb095b1c734f01dd9748715a059ccf9102d6cc86041cc289a850",
+        "functionSource": "function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}",
+        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "connectAndQuery is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  host: string\n  query: string\nReturn type: any",
+        "pathConditions": [
+          "(result.error)"
+        ],
+        "callees": [
+          "close",
+          "createConnection",
+          "execute",
+          "log"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 34,
+        "column": 18,
+        "functionName": "connectAndQuery",
+        "signalText": "BUG: connection never closed on error path",
+        "signalType": "comment",
+        "signalHash": "33c74ff44244e32a9a67ce2068a00fdd580ed04c23edec900d366625cc6751bc",
+        "functionSource": "function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}",
+        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "connectAndQuery is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  host: string\n  query: string\nReturn type: any",
+        "pathConditions": [
+          "(result.error)"
+        ],
+        "callees": [
+          "close",
+          "createConnection",
+          "execute",
+          "log"
+        ],
+        "calledBy": []
+      },
+      {
+        "line": 38,
+        "column": 2,
+        "functionName": "connectAndQuery",
+        "signalText": "console.log(`Query complete, ${result.rows.length} rows`)",
+        "signalType": "log",
+        "signalHash": "d5efde5f868172d06a79f9812dd428b2f1485ad12c48afc4c22514b562815986",
+        "functionSource": "function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}",
+        "fileSource": "import * as fs from \"fs\";\n\nexport function processFile(path: string): string[] {\n  const fd = fs.openSync(path, \"r\");\n  const buffer = Buffer.alloc(1024);\n  const results: string[] = [];\n\n  console.log(`Processing file: ${path}, fd=${fd}`);\n\n  let bytesRead = fs.readSync(fd, buffer);\n  while (bytesRead > 0) {\n    const line = buffer.toString(\"utf-8\", 0, bytesRead).trim();\n    if (line.includes(\"ERROR\")) {\n      console.log(`Found error in ${path}: ${line}`);\n      return results;  // BUG: returns without closing fd\n    }\n    results.push(line);\n    bytesRead = fs.readSync(fd, buffer);\n  }\n\n  fs.closeSync(fd);\n  console.log(`Finished processing ${path}, ${results.length} lines`);\n  return results;\n}\n\nexport function connectAndQuery(host: string, query: string): any {\n  const connection = createConnection(host);\n  console.log(`Connected to ${host}, running query`);\n\n  const result = connection.execute(query);\n\n  if (result.error) {\n    console.log(`Query failed: ${result.error}`);\n    return null;  // BUG: connection never closed on error path\n  }\n\n  connection.close();\n  console.log(`Query complete, ${result.rows.length} rows`);\n  return result.rows;\n}\n\nfunction createConnection(host: string): any {\n  return {\n    execute: (q: string) => ({ rows: [], error: null }),\n    close: () => {},\n  };\n}\n",
+        "importSources": [],
+        "existingContracts": "(dependency contracts injected at derivation time)",
+        "callingContext": "connectAndQuery is module-private. Only called within this module.",
+        "typeContext": "Parameters:\n  host: string\n  query: string\nReturn type: any",
+        "pathConditions": [
+          "!((result.error))"
+        ],
+        "callees": [
+          "close",
+          "createConnection",
+          "execute",
+          "log"
         ],
         "calledBy": []
       }
     ],
-    "builtAt": "2026-04-15T01:34:44.301Z"
+    "builtAt": "2026-04-15T02:12:44.541Z"
   }
 ]

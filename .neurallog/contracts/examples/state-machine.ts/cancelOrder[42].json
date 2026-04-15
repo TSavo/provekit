@@ -1,0 +1,11 @@
+{
+  "key": "examples/state-machine.ts/cancelOrder[42]",
+  "file": "/Users/tsavo/Projects/neurallog/examples/state-machine.ts",
+  "function": "cancelOrder",
+  "line": 42,
+  "signal_hash": "994611c7c4e23e0a7f91902f328e735851809346221acca51be23ba26e7b0a81",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

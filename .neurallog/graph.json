@@ -1,26 +1,26 @@
 {
-  "root": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "root": "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts",
   "projectRoot": "/Users/tsavo/Projects/neurallog",
   "files": [
     {
-      "path": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
-      "relativePath": "src/verifier.ts",
+      "path": "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts",
+      "relativePath": "examples/resource-leak.ts",
       "imports": [],
-      "signalCount": 6,
-      "hash": "913908d2093b043332697dde9a55ee6c385449753fd8b76ce73773d4fea4f05e"
+      "signalCount": 8,
+      "hash": "30edad58c576d2b51a887826c1144864c4c9fc0012a080e407ea6fee7fda1933"
     }
   ],
   "topologicalOrder": [
-    "/Users/tsavo/Projects/neurallog/src/verifier.ts"
+    "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts"
   ],
   "parallelGroups": [
     {
       "depth": 0,
       "files": [
-        "/Users/tsavo/Projects/neurallog/src/verifier.ts"
+        "/Users/tsavo/Projects/neurallog/examples/resource-leak.ts"
       ],
-      "signalCount": 6
+      "signalCount": 8
     }
   ],
-  "builtAt": "2026-04-15T01:34:44.275Z"
+  "builtAt": "2026-04-15T02:12:44.524Z"
 }

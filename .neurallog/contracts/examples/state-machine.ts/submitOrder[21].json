@@ -1,0 +1,11 @@
+{
+  "key": "examples/state-machine.ts/submitOrder[21]",
+  "file": "/Users/tsavo/Projects/neurallog/examples/state-machine.ts",
+  "function": "submitOrder",
+  "line": 21,
+  "signal_hash": "2b183bf8b31ccddfd04310c262d42dc405c504f0e9a34449f1c11de4314b6adb",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

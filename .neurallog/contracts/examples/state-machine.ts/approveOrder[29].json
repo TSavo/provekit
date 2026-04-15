@@ -1,0 +1,26 @@
+{
+  "key": "examples/state-machine.ts/approveOrder[29]",
+  "file": "/Users/tsavo/Projects/neurallog/examples/state-machine.ts",
+  "function": "approveOrder",
+  "line": 29,
+  "signal_hash": "f83cbdec04a508662e46253805d4147bf1b356d795450facccdda7d8f35fdb1b",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P4",
+      "principle_hash": "a1b5093df48e8e1f7473af05b14e02a6715311445690b006840d2fc640b4234d",
+      "claim": "Temporal violation: approveOrder called twice on the same order object.",
+      "smt2": "; PRINCIPLE: P4\n; LINE: 29\n; Temporal violation: approveOrder called twice on the same order object.\n; Second call changes approvedBy without any guard on current state.\n(declare-const state_after_call1 Int)\n(declare-const state_after_call2 Int)\n(declare-const approver1_id Int)\n(declare-const approver2_id Int)\n(declare-const approvedBy_after_call1 Int)\n(declare-const approvedBy_after_call2 Int)\n; First call preconditions hold: order was submitted\n; Code transition (call 1, line 27): state = approved (2)\n(assert (= state_after_call1 2))\n; Code transition (call 1, line 26): approvedBy = approver1\n(assert (= approvedBy_after_call1 approver1_id))\n; Second call: no guard checks that state_after_call1 != approved (2)\n; Code transition (call 2, line 27): state = approved again (2)\n(assert (= state_after_call2 2))\n; Code transition (call 2, line 26): approvedBy overwritten with approver2\n(assert (= approvedBy_after_call2 approver2_id))\n; approver2 is a different identity than approver1\n(assert (not (= approver2_id approver1_id)))\n; Violation: approvedBy silently changed; VALID_TRANSITIONS[approved] excludes \"approved\"\n(assert (= state_after_call1 2))\n(assert (not (= approver1_id approver2_id)))\n(check-sat)"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P4\n; LINE: 29\n; Temporal violation: approveOrder called twice on the same order object.\n; Second call changes approvedBy without any guard on current state.\n(declare-const state_after_call1 Int)\n(declare-const state_after_call2 Int)\n(declare-const approver1_id Int)\n(declare-const approver2_id Int)\n(declare-const approvedBy_after_call1 Int)\n(declare-const approvedBy_after_call2 Int)\n; First call preconditions hold: order was submitted\n; Code transition (call 1, line 27): state = approved (2)\n(assert (= state_after_call1 2))\n; Code transition (call 1, line 26): approvedBy = approver1\n(assert (= approvedBy_after_call1 approver1_id))\n; Second call: no guard checks that state_after_call1 != approved (2)\n; Code transition (call 2, line 27): state = approved again (2)\n(assert (= state_after_call2 2))\n; Code transition (call 2, line 26): approvedBy overwritten with approver2\n(assert (= approvedBy_after_call2 approver2_id))\n; approver2 is a different identity than approver1\n(assert (not (= approver2_id approver1_id)))\n; Violation: approvedBy silently changed; VALID_TRANSITIONS[approved] excludes \"approved\"\n(assert (= state_after_call1 2))\n(assert (not (= approver1_id approver2_id)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}
