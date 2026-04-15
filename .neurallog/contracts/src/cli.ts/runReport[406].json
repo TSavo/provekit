@@ -3,24 +3,9 @@
   "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
   "function": "runReport",
   "line": 406,
-  "signal_hash": "cd85ba70a25ef12911e34cab5b643bcf94fb9048299489e1b1e986d57ec44cae",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "------------------------------------------------------------",
-      "smt2": "; PRINCIPLE: P5 – Semantic Correctness (the “no contracts” message is guaranteed when there are none)\n; ------------------------------------------------------------\n; Model the relevant state:\n;   contracts_len – number of contracts returned by ContractStore.getAll()\n;   logged       – 1 if the “No contracts found …” line is executed, 0 otherwise\n(declare-const contracts_len Int)\n(declare-const logged Int)          ; 0 = not logged, 1 = logged\n\n; ------------------------------------------------------------------\n; Code guarantees (pre‑condition for reaching the signal):\n;   The signal is emitted only when contracts_len == 0\n(assert (= contracts_len 0))\n\n; ------------------------------------------------------------------\n; Transition imposed by the implementation:\n;   If there are no contracts then the log statement is executed,\n;   otherwise it is not.\n;   (=> condition (logged == 1))\n;   (=> not‑condition (logged == 0))\n(assert (=> (= contracts_len 0) (= logged 1)))\n(assert (=> (not (= contracts_len 0)) (= logged 0)))\n\n; ------------------------------------------------------------------\n; Negation of the desired property (i.e. “contracts_len == 0 but the\n; message is NOT printed”).  Proving unsat shows the property holds.\n(assert (= contracts_len 0))   ; condition holds\n(assert (= logged 0))          ; but the log did NOT happen\n\n; ------------------------------------------------------------\n; If Z3 returns unsat, the property is proven: the program cannot\n; reach a state where contracts_len is zero and the message is absent.\n(check-sat)"
-    }
-  ],
+  "signal_hash": "794766ea7840c152e7116da6c7ed8f92a85e5658c8629232b307dae93357c7a5",
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5 – Semantic Correctness (the “no contracts” message is guaranteed when there are none)\n; ------------------------------------------------------------\n; Model the relevant state:\n;   contracts_len – number of contracts returned by ContractStore.getAll()\n;   logged       – 1 if the “No contracts found …” line is executed, 0 otherwise\n(declare-const contracts_len Int)\n(declare-const logged Int)          ; 0 = not logged, 1 = logged\n\n; ------------------------------------------------------------------\n; Code guarantees (pre‑condition for reaching the signal):\n;   The signal is emitted only when contracts_len == 0\n(assert (= contracts_len 0))\n\n; ------------------------------------------------------------------\n; Transition imposed by the implementation:\n;   If there are no contracts then the log statement is executed,\n;   otherwise it is not.\n;   (=> condition (logged == 1))\n;   (=> not‑condition (logged == 0))\n(assert (=> (= contracts_len 0) (= logged 1)))\n(assert (=> (not (= contracts_len 0)) (= logged 0)))\n\n; ------------------------------------------------------------------\n; Negation of the desired property (i.e. “contracts_len == 0 but the\n; message is NOT printed”).  Proving unsat shows the property holds.\n(assert (= contracts_len 0))   ; condition holds\n(assert (= logged 0))          ; but the log did NOT happen\n\n; ------------------------------------------------------------\n; If Z3 returns unsat, the property is proven: the program cannot\n; reach a state where contracts_len is zero and the message is absent.\n(check-sat)",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

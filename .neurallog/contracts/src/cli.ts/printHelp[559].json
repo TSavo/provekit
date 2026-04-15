@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/printHelp[559]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printHelp",
+  "line": 559,
+  "signal_hash": "6ea884a80c81d76b2128e237c58b40b8df9276643aef4717448425c7b041c9c0",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Proven: \"--llm-signals\" is documented in help (line 559) and consumed by",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 559\n; Proven: \"--llm-signals\" is documented in help (line 559) and consumed by\n; args.includes(\"--llm-signals\") in buildSignalRegistry, which registers LLMSignalGenerator.\n(declare-const llmsignals_documented Int)\n(declare-const llmsignals_consumed Int)\n(assert (= llmsignals_documented 1))\n; if (args.includes(\"--llm-signals\")) { registry.register(new LLMSignalGenerator(...)); }\n(assert (= llmsignals_consumed 1))\n(assert (not (= llmsignals_documented llmsignals_consumed)))\n(check-sat)\n; Expected: unsat — --llm-signals is documented and enables signal generation"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 559\n; Proven: \"--llm-signals\" is documented in help (line 559) and consumed by\n; args.includes(\"--llm-signals\") in buildSignalRegistry, which registers LLMSignalGenerator.\n(declare-const llmsignals_documented Int)\n(declare-const llmsignals_consumed Int)\n(assert (= llmsignals_documented 1))\n; if (args.includes(\"--llm-signals\")) { registry.register(new LLMSignalGenerator(...)); }\n(assert (= llmsignals_consumed 1))\n(assert (not (= llmsignals_documented llmsignals_consumed)))\n(check-sat)\n; Expected: unsat — --llm-signals is documented and enables signal generation",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

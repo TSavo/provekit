@@ -4,8 +4,23 @@
   "function": "runInit",
   "line": 111,
   "signal_hash": "038d93444e3e223cb15b0f16fffbf4d05d158dff42565b7170ffd4b82710f480",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "(no claim extracted)",
+      "smt2": "; LINE: 111  ; PRINCIPLE: P5 – Semantic Correctness (fixed literal)\n(assert true)\n(assert false)\n(check-sat)            ; unsat"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; LINE: 111  ; PRINCIPLE: P5 – Semantic Correctness (fixed literal)\n(assert true)\n(assert false)\n(check-sat)            ; unsat",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

@@ -1,0 +1,11 @@
+{
+  "key": "src/cli.ts/runHook[471]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runHook",
+  "line": 471,
+  "signal_hash": "816373f9e82198f9cff845158e9c0caca3d8a54e1963281c50561b5eedeb2e24",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

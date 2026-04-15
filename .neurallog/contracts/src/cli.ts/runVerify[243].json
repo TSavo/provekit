@@ -1,0 +1,13 @@
+{
+  "key": "src/cli.ts/runVerify[243]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runVerify",
+  "line": 243,
+  "signal_hash": "bb3d00e35495ffb5f5cb6cc7a99b659b9936c863fa2ffe7ab096d110da7d63a8",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/cli.ts/buildSignalRegistry[529]"
+  ],
+  "clause_history": []
+}

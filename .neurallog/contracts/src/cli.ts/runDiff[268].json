@@ -4,23 +4,8 @@
   "function": "runDiff",
   "line": 268,
   "signal_hash": "159658a0aca3d69f5c9156e9d695fbaddfaa8cea01e21cbee25d524fb977ef0e",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "PROVEN: The call to console.log() at line 268 cannot raise a violation because the",
-      "smt2": "; PRINCIPLE: P5 – Semantic correctness (console.log has no domain constraints)\n; PROVEN: The call to console.log() at line 268 cannot raise a violation because the\n; function has no preconditions and the code performs no state‑changing computation\n; before the call.\n\n; No preconditions to satisfy\n; No state mutation that could affect the call\n; Negate the “violation” property (i.e., assert that a violation occurs)\n(assert false)   ; violation reachable?\n(check-sat)       ; unsat → the negated property is impossible, so the call is safe"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5 – Semantic correctness (console.log has no domain constraints)\n; PROVEN: The call to console.log() at line 268 cannot raise a violation because the\n; function has no preconditions and the code performs no state‑changing computation\n; before the call.\n\n; No preconditions to satisfy\n; No state mutation that could affect the call\n; Negate the “violation” property (i.e., assert that a violation occurs)\n(assert false)   ; violation reachable?\n(check-sat)       ; unsat → the negated property is impossible, so the call is safe",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

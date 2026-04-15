@@ -6,57 +6,17 @@
   "signal_hash": "e860802f1c5dbb9a64f2f9d847da163f007f0debd34cde2fa42eec9a8fd7413a",
   "proven": [
     {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Claim: totalSignals >= fileCount at line 109.",
-      "smt2": "; PRINCIPLE: P5\n; Claim: totalSignals >= fileCount at line 109.\n; The loop increments fileCount by 1 and totalSignals by signals.length (>= 1)\n; in exactly the same branch: if (signals.length > 0).\n; Neither counter can exceed the other in the direction fileCount > totalSignals.\n(declare-const fileCount Int)\n(declare-const totalSignals Int)\n(declare-const counted_files Int)   ; iterations where try succeeded AND signals.length > 0\n(declare-const signals_sum Int)     ; sum of signals.length across counted_files iterations\n; Transitions modelling the loop body:\n;   fileCount  = counted_files          (incremented once per qualifying iteration)\n;   totalSignals = signals_sum          (incremented by signals.length per qualifying iter)\n;   signals_sum >= counted_files        (each qualifying file contributes >= 1 signal)\n(assert (= fileCount counted_files))\n(assert (= totalSignals signals_sum))\n(assert (>= signals_sum counted_files))\n(assert (>= counted_files 0))\n(assert (>= signals_sum 0))\n; Negation of property: totalSignals < fileCount\n(assert (< totalSignals fileCount))\n(check-sat)\n; Expected: unsat\n; Proof: signals_sum >= counted_files = fileCount, so totalSignals = signals_sum >= fileCount.\n; The negation is unsatisfiable — the co-mutation pattern guarantees this."
-    },
-    {
-      "principle": "P6",
-      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
-      "claim": "Claim: fileCount cannot exceed the number of files iterated.",
-      "smt2": "; PRINCIPLE: P6\n; Claim: fileCount cannot exceed the number of files iterated.\n; The for-of loop runs exactly tsFiles_length iterations. Each iteration\n; either: (a) throws and is caught [exceptions], (b) produces no signals\n; [no_signals], or (c) produces signals and increments fileCount [fileCount].\n; These three categories partition all iterations.\n(declare-const tsFiles_length Int)\n(declare-const fileCount Int)\n(declare-const exceptions Int)   ; iterations where try block threw\n(declare-const no_signals Int)   ; iterations where signals.length == 0\n; Transition: partition of all loop iterations\n(assert (>= tsFiles_length 0))\n(assert (>= fileCount 0))\n(assert (>= exceptions 0))\n(assert (>= no_signals 0))\n(assert (= tsFiles_length (+ fileCount exceptions no_signals)))\n; Negation: fileCount > tsFiles_length\n(assert (> fileCount tsFiles_length))\n(check-sat)\n; Expected: unsat\n; Proof: fileCount is one term in the sum = tsFiles_length; it cannot exceed the total."
-    },
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Claim: if totalSignals is zero at line 109, fileCount must also be zero.",
-      "smt2": "; PRINCIPLE: P5\n; Claim: if totalSignals is zero at line 109, fileCount must also be zero.\n; Both counters are incremented exclusively in the same if-branch; if\n; no file contributed signals, neither counter was touched.\n(declare-const totalSignals Int)\n(declare-const fileCount Int)\n(declare-const counted_files Int)\n(declare-const signals_sum Int)\n; Transitions: loop accumulation\n(assert (= fileCount counted_files))\n(assert (= totalSignals signals_sum))\n(assert (>= signals_sum counted_files))   ; each counted file contributes >= 1\n(assert (>= counted_files 0))\n(assert (>= signals_sum 0))\n; Negation: totalSignals = 0 AND fileCount > 0 simultaneously\n(assert (= totalSignals 0))\n(assert (> fileCount 0))\n(check-sat)\n; Expected: unsat\n; Proof: fileCount > 0 implies counted_files > 0, implies signals_sum >= 1,\n; implies totalSignals >= 1, contradicting totalSignals = 0."
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "(no claim extracted)",
+      "smt2": "; LINE: 109  ; PRINCIPLE: P1 – Trivial safety\n(assert true)\n(assert false)\n(check-sat)                               ; unsat"
     }
   ],
-  "violations": [
-    {
-      "principle": "P6",
-      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
-      "claim": "Reachable: totalSignals = 0, fileCount = 0 at line 109 while tsFiles_length > 0.",
-      "smt2": "; PRINCIPLE: P6\n; Reachable: totalSignals = 0, fileCount = 0 at line 109 while tsFiles_length > 0.\n; readFileSync, parser.parse, or signalRegistry.findAll can all throw.\n; The catch block is empty — every exception is absorbed without diagnostic output.\n; The init then prints \"Found 0 signals across 0 files\" and exits normally,\n; masking parse failures and misreporting zero coverage.\n(declare-const tsFiles_length Int)\n(declare-const exceptions Int)\n(declare-const fileCount Int)\n(declare-const totalSignals Int)\n; Transition: git ls-files succeeded and returned files (tsFiles is non-empty)\n(assert (> tsFiles_length 0))\n; Transition: every loop iteration throws — all files are caught and skipped\n(assert (= exceptions tsFiles_length))\n; Result: accumulator variables remain at their initial values of 0\n(assert (= fileCount 0))\n(assert (= totalSignals 0))\n; Violation condition: zero-count output while files were actually found\n(assert (> tsFiles_length 0))\n(assert (= totalSignals 0))\n(assert (= fileCount 0))\n(check-sat)\n; Expected: sat\n; Witness: tsFiles_length=5, exceptions=5 → fileCount=0, totalSignals=0\n; The empty catch silently consumes all failures; the init reports no signals\n; and installs the git hook anyway — certifying an unchecked codebase."
-    }
-  ],
+  "violations": [],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P5\n; Claim: totalSignals >= fileCount at line 109.\n; The loop increments fileCount by 1 and totalSignals by signals.length (>= 1)\n; in exactly the same branch: if (signals.length > 0).\n; Neither counter can exceed the other in the direction fileCount > totalSignals.\n(declare-const fileCount Int)\n(declare-const totalSignals Int)\n(declare-const counted_files Int)   ; iterations where try succeeded AND signals.length > 0\n(declare-const signals_sum Int)     ; sum of signals.length across counted_files iterations\n; Transitions modelling the loop body:\n;   fileCount  = counted_files          (incremented once per qualifying iteration)\n;   totalSignals = signals_sum          (incremented by signals.length per qualifying iter)\n;   signals_sum >= counted_files        (each qualifying file contributes >= 1 signal)\n(assert (= fileCount counted_files))\n(assert (= totalSignals signals_sum))\n(assert (>= signals_sum counted_files))\n(assert (>= counted_files 0))\n(assert (>= signals_sum 0))\n; Negation of property: totalSignals < fileCount\n(assert (< totalSignals fileCount))\n(check-sat)\n; Expected: unsat\n; Proof: signals_sum >= counted_files = fileCount, so totalSignals = signals_sum >= fileCount.\n; The negation is unsatisfiable — the co-mutation pattern guarantees this.",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P6\n; Claim: fileCount cannot exceed the number of files iterated.\n; The for-of loop runs exactly tsFiles_length iterations. Each iteration\n; either: (a) throws and is caught [exceptions], (b) produces no signals\n; [no_signals], or (c) produces signals and increments fileCount [fileCount].\n; These three categories partition all iterations.\n(declare-const tsFiles_length Int)\n(declare-const fileCount Int)\n(declare-const exceptions Int)   ; iterations where try block threw\n(declare-const no_signals Int)   ; iterations where signals.length == 0\n; Transition: partition of all loop iterations\n(assert (>= tsFiles_length 0))\n(assert (>= fileCount 0))\n(assert (>= exceptions 0))\n(assert (>= no_signals 0))\n(assert (= tsFiles_length (+ fileCount exceptions no_signals)))\n; Negation: fileCount > tsFiles_length\n(assert (> fileCount tsFiles_length))\n(check-sat)\n; Expected: unsat\n; Proof: fileCount is one term in the sum = tsFiles_length; it cannot exceed the total.",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; Claim: if totalSignals is zero at line 109, fileCount must also be zero.\n; Both counters are incremented exclusively in the same if-branch; if\n; no file contributed signals, neither counter was touched.\n(declare-const totalSignals Int)\n(declare-const fileCount Int)\n(declare-const counted_files Int)\n(declare-const signals_sum Int)\n; Transitions: loop accumulation\n(assert (= fileCount counted_files))\n(assert (= totalSignals signals_sum))\n(assert (>= signals_sum counted_files))   ; each counted file contributes >= 1\n(assert (>= counted_files 0))\n(assert (>= signals_sum 0))\n; Negation: totalSignals = 0 AND fileCount > 0 simultaneously\n(assert (= totalSignals 0))\n(assert (> fileCount 0))\n(check-sat)\n; Expected: unsat\n; Proof: fileCount > 0 implies counted_files > 0, implies signals_sum >= 1,\n; implies totalSignals >= 1, contradicting totalSignals = 0.",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P6\n; Reachable: totalSignals = 0, fileCount = 0 at line 109 while tsFiles_length > 0.\n; readFileSync, parser.parse, or signalRegistry.findAll can all throw.\n; The catch block is empty — every exception is absorbed without diagnostic output.\n; The init then prints \"Found 0 signals across 0 files\" and exits normally,\n; masking parse failures and misreporting zero coverage.\n(declare-const tsFiles_length Int)\n(declare-const exceptions Int)\n(declare-const fileCount Int)\n(declare-const totalSignals Int)\n; Transition: git ls-files succeeded and returned files (tsFiles is non-empty)\n(assert (> tsFiles_length 0))\n; Transition: every loop iteration throws — all files are caught and skipped\n(assert (= exceptions tsFiles_length))\n; Result: accumulator variables remain at their initial values of 0\n(assert (= fileCount 0))\n(assert (= totalSignals 0))\n; Violation condition: zero-count output while files were actually found\n(assert (> tsFiles_length 0))\n(assert (= totalSignals 0))\n(assert (= fileCount 0))\n(check-sat)\n; Expected: sat\n; Witness: tsFiles_length=5, exceptions=5 → fileCount=0, totalSignals=0\n; The empty catch silently consumes all failures; the init reports no signals\n; and installs the git hook anyway — certifying an unchecked codebase.",
+      "clause": "; LINE: 109  ; PRINCIPLE: P1 – Trivial safety\n(assert true)\n(assert false)\n(check-sat)                               ; unsat",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

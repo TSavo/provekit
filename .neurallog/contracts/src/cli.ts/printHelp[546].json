@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/printHelp[546]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printHelp",
+  "line": 546,
+  "signal_hash": "7cbb0a2c3cedef7c1f7ea301e3c92295199c4bd0a19801f366f630a75875d311",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Proven: \"report\" appears in help (line 546) AND is implemented as",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 546\n; Proven: \"report\" appears in help (line 546) AND is implemented as\n; case \"report\": runReport(rest) in the switch.\n(declare-const report_documented Int)\n(declare-const report_implemented Int)\n(assert (= report_documented 1))\n(assert (= report_implemented 1))\n(assert (not (= report_documented report_implemented)))\n(check-sat)\n; Expected: unsat — report is both documented and implemented"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 546\n; Proven: \"report\" appears in help (line 546) AND is implemented as\n; case \"report\": runReport(rest) in the switch.\n(declare-const report_documented Int)\n(declare-const report_implemented Int)\n(assert (= report_documented 1))\n(assert (= report_implemented 1))\n(assert (not (= report_documented report_implemented)))\n(check-sat)\n; Expected: unsat — report is both documented and implemented",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "key": "src/issues.ts/fileViolationIssues[158]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "fileViolationIssues",
+  "line": 158,
+  "signal_hash": "95addea7db5295e23af2ba2c555265382b56ab1c8328d44a5ab20d3b3d7f47f2",
+  "proven": [
+    {
+      "principle": "P7",
+      "principle_hash": "61561b8577104a2514f412235b45b0c4b2c3114a30d8725d4cb990ed5d924ecc",
+      "claim": "Invariant: filed + skipped + errors = |issues| in non-dry-run mode.",
+      "smt2": "; PRINCIPLE: P7\n; LINE: 158\n; Invariant: filed + skipped + errors = |issues| in non-dry-run mode.\n; Every iteration takes exactly one of three paths; no issue is double-counted or lost.\n(declare-const num_issues Int)\n(declare-const filed Int)\n(declare-const skipped Int)\n(declare-const errors Int)\n(assert (>= num_issues 0))\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n; Transitions: skip path (skipped++), success path (filed++), error path (errors++)\n; Mutual exclusion + exhaustiveness via continue and try/catch\n(assert (= (+ filed (+ skipped errors)) num_issues))\n; Attempt to falsify the conservation property\n(assert (not (= (+ filed (+ skipped errors)) num_issues)))\n(check-sat)\n; unsat → proven: every issue is accounted for in exactly one counter"
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/issues.ts/issueExists[101]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P7\n; LINE: 158\n; Invariant: filed + skipped + errors = |issues| in non-dry-run mode.\n; Every iteration takes exactly one of three paths; no issue is double-counted or lost.\n(declare-const num_issues Int)\n(declare-const filed Int)\n(declare-const skipped Int)\n(declare-const errors Int)\n(assert (>= num_issues 0))\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n; Transitions: skip path (skipped++), success path (filed++), error path (errors++)\n; Mutual exclusion + exhaustiveness via continue and try/catch\n(assert (= (+ filed (+ skipped errors)) num_issues))\n; Attempt to falsify the conservation property\n(assert (not (= (+ filed (+ skipped errors)) num_issues)))\n(check-sat)\n; unsat → proven: every issue is accounted for in exactly one counter",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

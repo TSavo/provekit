@@ -1,0 +1,37 @@
+{
+  "key": "src/cli.ts/fileIssues[520]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "fileIssues",
+  "line": 520,
+  "signal_hash": "ca79d20ca7ff6882383bc795923a771248b7461f37501dc8674b2714bf931bbd",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "result returned by `fileViolationIssues`.  It is **not** guaranteed that every issue",
+      "smt2": "; LINE: 520\n; PRINCIPLE: P5  –  After filing issues the summary log must be consistent with the\n; result returned by `fileViolationIssues`.  It is **not** guaranteed that every issue\n; is actually filed (duplicate titles are skipped).  A reachable violation is that\n; the number of filed issues (`filed.filed`) is *strictly less* than the total\n; number of issues, while the total of filed, skipped and errors still equals the\n; original issue count.\n\n;--- Preconditions (state before the second log)\n(declare-const issues_len Int)          ; = issues.length  (≥ 0)\n(assert (>= issues_len 0))\n\n; Result returned by fileViolationIssues (see its implementation)\n(declare-const filed Int)               ; number of issues that were actually filed\n(declare-const skipped Int)             ; number of issues omitted because they already exist\n(declare-const errors Int)              ; number of filing errors\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n\n;--- Invariant that the helper maintains (proved elsewhere in the code):\n; the three counters partition the original set of issues.\n(assert (= (+ filed skipped errors) issues_len))\n\n;--- Violation condition we want to show is reachable:\n; the log claims “${filed.filed} ...” but this value is *not* equal to the total\n; number of issues (i.e. some issues were skipped or errored).\n(assert (not (= filed issues_len)))    ; filed < issues_len  (since all vars are non‑negative)\n\n;--- A concrete witness that satisfies the constraints:\n;   issues_len = 2, filed = 1, skipped = 1, errors = 0\n;   (this models a duplicate‑title situation that triggers the skip path)\n(assert (= issues_len 2))\n(assert (= filed 1))\n(assert (= skipped 1))\n(assert (= errors 0))\n\n(check-sat)\n; Expected result: sat  → the violation is reachable (the log can truthfully print a\n; smaller `filed` count, which is a legitimate behaviour according to the code)."
+    }
+  ],
+  "depends_on": [
+    "src/issues.ts/fileViolationIssues[139]",
+    "src/issues.ts/fileViolationIssues[140]",
+    "src/issues.ts/fileViolationIssues[141]",
+    "src/issues.ts/fileViolationIssues[142]",
+    "src/issues.ts/fileViolationIssues[143]",
+    "src/issues.ts/fileViolationIssues[144]",
+    "src/issues.ts/fileViolationIssues[149]",
+    "src/issues.ts/fileViolationIssues[151]",
+    "src/issues.ts/fileViolationIssues[158]",
+    "src/issues.ts/fileViolationIssues[161]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; LINE: 520\n; PRINCIPLE: P5  –  After filing issues the summary log must be consistent with the\n; result returned by `fileViolationIssues`.  It is **not** guaranteed that every issue\n; is actually filed (duplicate titles are skipped).  A reachable violation is that\n; the number of filed issues (`filed.filed`) is *strictly less* than the total\n; number of issues, while the total of filed, skipped and errors still equals the\n; original issue count.\n\n;--- Preconditions (state before the second log)\n(declare-const issues_len Int)          ; = issues.length  (≥ 0)\n(assert (>= issues_len 0))\n\n; Result returned by fileViolationIssues (see its implementation)\n(declare-const filed Int)               ; number of issues that were actually filed\n(declare-const skipped Int)             ; number of issues omitted because they already exist\n(declare-const errors Int)              ; number of filing errors\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n\n;--- Invariant that the helper maintains (proved elsewhere in the code):\n; the three counters partition the original set of issues.\n(assert (= (+ filed skipped errors) issues_len))\n\n;--- Violation condition we want to show is reachable:\n; the log claims “${filed.filed} ...” but this value is *not* equal to the total\n; number of issues (i.e. some issues were skipped or errored).\n(assert (not (= filed issues_len)))    ; filed < issues_len  (since all vars are non‑negative)\n\n;--- A concrete witness that satisfies the constraints:\n;   issues_len = 2, filed = 1, skipped = 1, errors = 0\n;   (this models a duplicate‑title situation that triggers the skip path)\n(assert (= issues_len 2))\n(assert (= filed 1))\n(assert (= skipped 1))\n(assert (= errors 0))\n\n(check-sat)\n; Expected result: sat  → the violation is reachable (the log can truthfully print a\n; smaller `filed` count, which is a legitimate behaviour according to the code).",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

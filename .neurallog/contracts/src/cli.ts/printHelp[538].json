@@ -3,9 +3,24 @@
   "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
   "function": "printHelp",
   "line": 538,
-  "signal_hash": "1b9f69e2b3124404439e5b5202802a3feb7a7538032f7b82c2222164dfb1cf13",
-  "proven": [],
+  "signal_hash": "0f37f79b5704d1be380c9b72a7d80073ae507f9b462f5ed2a077c4a91728c941",
+  "proven": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "Proven: empty-line separator (538) executes immediately after 537 —",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 538\n; Proven: empty-line separator (538) executes immediately after 537 —\n; no state mutation or branch lies between them.\n(declare-const stmt_537_fired Int)\n(declare-const stmt_538_fired Int)\n; Precondition: line 537 has executed\n(assert (= stmt_537_fired 1))\n; Transition: sequential code, no intervening branch → stmt_538 fires iff stmt_537 fired\n(assert (= stmt_538_fired stmt_537_fired))\n; NEGATE: 538 does not fire despite 537 having fired\n(assert (not (= stmt_538_fired 1)))\n(check-sat)\n; Expected: unsat — nothing between 537 and 538 can suppress 538"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 538\n; Proven: empty-line separator (538) executes immediately after 537 —\n; no state mutation or branch lies between them.\n(declare-const stmt_537_fired Int)\n(declare-const stmt_538_fired Int)\n; Precondition: line 537 has executed\n(assert (= stmt_537_fired 1))\n; Transition: sequential code, no intervening branch → stmt_538 fires iff stmt_537 fired\n(assert (= stmt_538_fired stmt_537_fired))\n; NEGATE: 538 does not fire despite 537 having fired\n(assert (not (= stmt_538_fired 1)))\n(check-sat)\n; Expected: unsat — nothing between 537 and 538 can suppress 538",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

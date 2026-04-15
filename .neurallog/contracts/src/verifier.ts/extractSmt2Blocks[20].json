@@ -4,63 +4,8 @@
   "function": "extractSmt2Blocks",
   "line": 20,
   "signal_hash": "ff04b3856591fc7fa259e378446882a57e574b31444e302f1fa99668cca9d383",
-  "proven": [
-    {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "At line 20, the while-loop invariant guarantees match !== null.",
-      "smt2": "; PRINCIPLE: P1\n; At line 20, the while-loop invariant guarantees match !== null.\n; Prove: match_is_null = 1 is unreachable when the loop body is executing.\n; Method: precondition (loop entered) + transition (loop condition semantics)\n;         + negation (match is null) → expect unsat.\n\n(declare-const loop_body_entered Int)\n(declare-const match_is_null Int)\n\n; Transition: while body is entered only when exec() returned non-null\n(assert (=> (= loop_body_entered 1) (= match_is_null 0)))\n\n; At line 20, the loop body is executing\n(assert (= loop_body_entered 1))\n\n; Negation of property: match is null at this point\n(assert (= match_is_null 1))\n\n(check-sat)\n; Expected: unsat — match_is_null=1 contradicts match_is_null=0 derived from loop entry"
-    },
-    {
-      "principle": "P6",
-      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
-      "claim": "\"(check-sat)\" has exactly 11 characters.",
-      "smt2": "; PRINCIPLE: P6\n; \"(check-sat)\" has exactly 11 characters.\n; content = match[1]!.trim(); for lazy [\\s\\S]*?, content may be \"\".\n; Prove: content_length < 11 → includes(\"(check-sat)\") = false → filter_passes = 0.\n; Method: transitions + negation of property → expect unsat.\n\n(declare-const content_length Int)\n(declare-const token_length Int)\n(declare-const filter_passes Int)\n\n; Transition: the target substring has exactly 11 characters\n(assert (= token_length 11))\n\n; Transition: includes() cannot return true when content is shorter than the token\n(assert (=> (< content_length token_length) (= filter_passes 0)))\n\n; Precondition: non-negative length, shorter than token\n(assert (>= content_length 0))\n(assert (< content_length token_length))\n\n; Negation: short content somehow passes the filter\n(assert (= filter_passes 1))\n\n(check-sat)\n; Expected: unsat — no string of length < 11 can contain an 11-character token"
-    }
-  ],
-  "violations": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "content.includes(\"(check-sat)\") is a substring match — it fires on",
-      "smt2": "; PRINCIPLE: P5\n; content.includes(\"(check-sat)\") is a substring match — it fires on\n; comment lines containing the token (\"; ... (check-sat) ...\") as well as\n; actual SMT commands. A block where (check-sat) is only in a comment passes\n; line 20 but contains no executable check-sat command.\n;\n; Model: total occurrences = comment occurrences + command occurrences.\n; Code checks total >= 1; it should check command_occurrences >= 1.\n\n(declare-const occurrences_in_comments Int)\n(declare-const occurrences_as_commands Int)\n(declare-const total_occurrences Int)\n\n; Transition: includes() observes the total across all positions in the string\n(assert (= total_occurrences (+ occurrences_in_comments occurrences_as_commands)))\n\n; Transition: includes() returns true when total >= 1 — the filter passes\n(assert (>= total_occurrences 1))\n\n; Domain constraints: counts are non-negative\n(assert (>= occurrences_in_comments 0))\n(assert (>= occurrences_as_commands 0))\n\n; Violation: block included but (check-sat) appears only inside comment lines\n(assert (>= occurrences_in_comments 1))\n(assert (= occurrences_as_commands 0))\n\n(check-sat)\n; Expected: sat — a block with (check-sat) only in comments passes line-20 filter\n; Witness: occurrences_in_comments=1, occurrences_as_commands=0, total_occurrences=1"
-    },
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "The filter at line 20 passes blocks with any number of (check-sat) occurrences.",
-      "smt2": "; PRINCIPLE: P5\n; The filter at line 20 passes blocks with any number of (check-sat) occurrences.\n; verifyBlock expects exactly one Z3 result token after trimming.\n; A block with N > 1 check-sat commands produces N output lines — verifyBlock errors.\n;\n; Model the chain: check_sat_count → z3_output_lines → result_matches_expected.\n\n(declare-const check_sat_count Int)\n(declare-const z3_output_lines Int)\n(declare-const result_matches_expected Int)\n\n; Transition: each (check-sat) in the block causes Z3 to emit one answer line\n(assert (= z3_output_lines check_sat_count))\n\n; Transition: verifyBlock compares trimmed output to three single-word constants;\n; multi-line output never equals a single word\n(assert (=> (> z3_output_lines 1) (= result_matches_expected 0)))\n\n; Code model: line-20 filter only requires count >= 1\n(assert (>= check_sat_count 1))\n\n; Violation: multiple (check-sat) pass line 20 but produce an error in verifyBlock\n(assert (> check_sat_count 1))\n(assert (= result_matches_expected 0))\n\n(check-sat)\n; Expected: sat — blocks with 2+ (check-sat) pass line 20 but error in verifyBlock\n; Witness: check_sat_count=2, z3_output_lines=2, result_matches_expected=0"
-    }
-  ],
+  "proven": [],
+  "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P1\n; At line 20, the while-loop invariant guarantees match !== null.\n; Prove: match_is_null = 1 is unreachable when the loop body is executing.\n; Method: precondition (loop entered) + transition (loop condition semantics)\n;         + negation (match is null) → expect unsat.\n\n(declare-const loop_body_entered Int)\n(declare-const match_is_null Int)\n\n; Transition: while body is entered only when exec() returned non-null\n(assert (=> (= loop_body_entered 1) (= match_is_null 0)))\n\n; At line 20, the loop body is executing\n(assert (= loop_body_entered 1))\n\n; Negation of property: match is null at this point\n(assert (= match_is_null 1))\n\n(check-sat)\n; Expected: unsat — match_is_null=1 contradicts match_is_null=0 derived from loop entry",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P6\n; \"(check-sat)\" has exactly 11 characters.\n; content = match[1]!.trim(); for lazy [\\s\\S]*?, content may be \"\".\n; Prove: content_length < 11 → includes(\"(check-sat)\") = false → filter_passes = 0.\n; Method: transitions + negation of property → expect unsat.\n\n(declare-const content_length Int)\n(declare-const token_length Int)\n(declare-const filter_passes Int)\n\n; Transition: the target substring has exactly 11 characters\n(assert (= token_length 11))\n\n; Transition: includes() cannot return true when content is shorter than the token\n(assert (=> (< content_length token_length) (= filter_passes 0)))\n\n; Precondition: non-negative length, shorter than token\n(assert (>= content_length 0))\n(assert (< content_length token_length))\n\n; Negation: short content somehow passes the filter\n(assert (= filter_passes 1))\n\n(check-sat)\n; Expected: unsat — no string of length < 11 can contain an 11-character token",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; content.includes(\"(check-sat)\") is a substring match — it fires on\n; comment lines containing the token (\"; ... (check-sat) ...\") as well as\n; actual SMT commands. A block where (check-sat) is only in a comment passes\n; line 20 but contains no executable check-sat command.\n;\n; Model: total occurrences = comment occurrences + command occurrences.\n; Code checks total >= 1; it should check command_occurrences >= 1.\n\n(declare-const occurrences_in_comments Int)\n(declare-const occurrences_as_commands Int)\n(declare-const total_occurrences Int)\n\n; Transition: includes() observes the total across all positions in the string\n(assert (= total_occurrences (+ occurrences_in_comments occurrences_as_commands)))\n\n; Transition: includes() returns true when total >= 1 — the filter passes\n(assert (>= total_occurrences 1))\n\n; Domain constraints: counts are non-negative\n(assert (>= occurrences_in_comments 0))\n(assert (>= occurrences_as_commands 0))\n\n; Violation: block included but (check-sat) appears only inside comment lines\n(assert (>= occurrences_in_comments 1))\n(assert (= occurrences_as_commands 0))\n\n(check-sat)\n; Expected: sat — a block with (check-sat) only in comments passes line-20 filter\n; Witness: occurrences_in_comments=1, occurrences_as_commands=0, total_occurrences=1",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; The filter at line 20 passes blocks with any number of (check-sat) occurrences.\n; verifyBlock expects exactly one Z3 result token after trimming.\n; A block with N > 1 check-sat commands produces N output lines — verifyBlock errors.\n;\n; Model the chain: check_sat_count → z3_output_lines → result_matches_expected.\n\n(declare-const check_sat_count Int)\n(declare-const z3_output_lines Int)\n(declare-const result_matches_expected Int)\n\n; Transition: each (check-sat) in the block causes Z3 to emit one answer line\n(assert (= z3_output_lines check_sat_count))\n\n; Transition: verifyBlock compares trimmed output to three single-word constants;\n; multi-line output never equals a single word\n(assert (=> (> z3_output_lines 1) (= result_matches_expected 0)))\n\n; Code model: line-20 filter only requires count >= 1\n(assert (>= check_sat_count 1))\n\n; Violation: multiple (check-sat) pass line 20 but produce an error in verifyBlock\n(assert (> check_sat_count 1))\n(assert (= result_matches_expected 0))\n\n(check-sat)\n; Expected: sat — blocks with 2+ (check-sat) pass line 20 but error in verifyBlock\n; Witness: check_sat_count=2, z3_output_lines=2, result_matches_expected=0",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

@@ -15,8 +15,8 @@
         "/Users/tsavo/Projects/neurallog/src/git",
         "/Users/tsavo/Projects/neurallog/src/issues.ts"
       ],
-      "signalCount": 126,
-      "hash": "de5e9ad5577fd0204d7768e5f9d77caf32ed619864642d1ee2ae066bb2ff5834"
+      "signalCount": 128,
+      "hash": "837c5f3cced92c511e1bd19120d3c3c4625d7adfcf7a75861e4d7b380dbd7021"
     },
     {
       "path": "/Users/tsavo/Projects/neurallog/src/contracts.ts",
@@ -104,8 +104,8 @@
       "files": [
         "/Users/tsavo/Projects/neurallog/src/cli.ts"
       ],
-      "signalCount": 126
+      "signalCount": 128
     }
   ],
-  "builtAt": "2026-04-15T00:26:39.103Z"
+  "builtAt": "2026-04-15T00:48:24.581Z"
 }

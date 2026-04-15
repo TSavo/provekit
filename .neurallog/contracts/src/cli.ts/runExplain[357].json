@@ -4,8 +4,23 @@
   "function": "runExplain",
   "line": 357,
   "signal_hash": "7252c58e4ab34cb049221c1173a0a9d21c6990a23e1315a6af6dbb09dd2cd0f0",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Claim: `contract.proven.length > 0` ⇔ header is printed.",
+      "smt2": "; LINE: 357\n; PRINCIPLE: P5  (Semantic Correctness – header printed only if there are proven properties)\n; Claim: `contract.proven.length > 0` ⇔ header is printed.\n\n; Model the list length\n(declare-const provenCount Int)\n(assert (>= provenCount 0))\n\n; Header printed flag\n(declare-const headerPrinted Bool)\n(assert (= headerPrinted (> provenCount 0)))\n\n; Negate: header printed while count is 0\n(assert (= provenCount 0))\n(assert headerPrinted)\n\n(check-sat)\n; sat → reachable bug (header could be printed with no proven properties)"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; LINE: 357\n; PRINCIPLE: P5  (Semantic Correctness – header printed only if there are proven properties)\n; Claim: `contract.proven.length > 0` ⇔ header is printed.\n\n; Model the list length\n(declare-const provenCount Int)\n(assert (>= provenCount 0))\n\n; Header printed flag\n(declare-const headerPrinted Bool)\n(assert (= headerPrinted (> provenCount 0)))\n\n; Negate: header printed while count is 0\n(assert (= provenCount 0))\n(assert headerPrinted)\n\n(check-sat)\n; sat → reachable bug (header could be printed with no proven properties)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

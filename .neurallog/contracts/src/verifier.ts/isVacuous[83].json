@@ -4,8 +4,37 @@
   "function": "isVacuous",
   "line": 83,
   "signal_hash": "374b91fe45b188c0bf19e89ccd346bf900bef793729bfeb1e3cdc93ac0acde21",
-  "proven": [],
-  "violations": [],
+  "proven": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "PROVEN: transitionCount >= 0.",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 83\n; PROVEN: transitionCount >= 0.\n; transitionCount starts at 0 and only increments (never decrements).\n; Model: sum of two binary contributions. Negation is unsat.\n(declare-const c1 Int)\n(declare-const c2 Int)\n(declare-const transition_count Int)\n; Code transitions: per-assertion contributions are in {0, 1}\n(assert (>= c1 0))\n(assert (<= c1 1))\n(assert (>= c2 0))\n(assert (<= c2 1))\n; Code transition: transitionCount accumulates contributions\n(assert (= transition_count (+ c1 c2)))\n; Negation: transition_count is negative\n(assert (< transition_count 0))\n(check-sat)\n; expect: unsat — sum of non-negative terms cannot be negative"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "REACHABLE VIOLATION: the 2-variable syntactic threshold does not guarantee",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 83\n; REACHABLE VIOLATION: the 2-variable syntactic threshold does not guarantee\n; semantic non-vacuousness. An assertion (= x y) references 2 declared vars,\n; meeting refs_in_assert >= 2, so transitionCount = 1 and isVacuous = false.\n; Yet (assert (= x y)) is trivially sat (x=0, y=0) with no code model present.\n(declare-const num_declares Int)\n(declare-const refs_in_only_assert Int)\n(declare-const transition_count Int)\n; Code transition: block declares 2 variables (e.g., x and y)\n(assert (= num_declares 2))\n; Code transition: the single assertion references both declared variables\n(assert (= refs_in_only_assert num_declares))\n; Code transition: refs_in_only_assert >= 2 fires the if-body → transition_count = 1\n(assert (= transition_count 1))\n; isVacuous = (transition_count == 0) = false → block is NOT filtered\n; Violation: transition_count = 1 yet the only assertion is a free-variable equality,\n; trivially sat — no code transition is modeled\n(assert (> transition_count 0))\n(check-sat)\n; sat — (= x y) passes the syntactic filter while remaining semantically vacuous"
+    }
+  ],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 83\n; PROVEN: transitionCount >= 0.\n; transitionCount starts at 0 and only increments (never decrements).\n; Model: sum of two binary contributions. Negation is unsat.\n(declare-const c1 Int)\n(declare-const c2 Int)\n(declare-const transition_count Int)\n; Code transitions: per-assertion contributions are in {0, 1}\n(assert (>= c1 0))\n(assert (<= c1 1))\n(assert (>= c2 0))\n(assert (<= c2 1))\n; Code transition: transitionCount accumulates contributions\n(assert (= transition_count (+ c1 c2)))\n; Negation: transition_count is negative\n(assert (< transition_count 0))\n(check-sat)\n; expect: unsat — sum of non-negative terms cannot be negative",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 83\n; REACHABLE VIOLATION: the 2-variable syntactic threshold does not guarantee\n; semantic non-vacuousness. An assertion (= x y) references 2 declared vars,\n; meeting refs_in_assert >= 2, so transitionCount = 1 and isVacuous = false.\n; Yet (assert (= x y)) is trivially sat (x=0, y=0) with no code model present.\n(declare-const num_declares Int)\n(declare-const refs_in_only_assert Int)\n(declare-const transition_count Int)\n; Code transition: block declares 2 variables (e.g., x and y)\n(assert (= num_declares 2))\n; Code transition: the single assertion references both declared variables\n(assert (= refs_in_only_assert num_declares))\n; Code transition: refs_in_only_assert >= 2 fires the if-body → transition_count = 1\n(assert (= transition_count 1))\n; isVacuous = (transition_count == 0) = false → block is NOT filtered\n; Violation: transition_count = 1 yet the only assertion is a free-variable equality,\n; trivially sat — no code transition is modeled\n(assert (> transition_count 0))\n(check-sat)\n; sat — (= x y) passes the syntactic filter while remaining semantically vacuous",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

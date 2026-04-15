@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/printHelp[560]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printHelp",
+  "line": 560,
+  "signal_hash": "2f9a7fee9efec98d67bbd6c639c15181236174df775111bf24289e1b0c2015e2",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Proven: \"--signal-model\" is documented in help (line 560) and consumed by",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 560\n; Proven: \"--signal-model\" is documented in help (line 560) and consumed by\n; getFlag(args, \"--signal-model\") in buildSignalRegistry; result sets LLMSignalGenerator model.\n(declare-const signalmodel_documented Int)\n(declare-const signalmodel_consumed Int)\n(assert (= signalmodel_documented 1))\n; const llmModel = getFlag(args, \"--signal-model\") || model; → new LLMSignalGenerator({ model: llmModel })\n(assert (= signalmodel_consumed 1))\n(assert (not (= signalmodel_documented signalmodel_consumed)))\n(check-sat)\n; Expected: unsat — --signal-model is documented and configures LLM signal generator"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 560\n; Proven: \"--signal-model\" is documented in help (line 560) and consumed by\n; getFlag(args, \"--signal-model\") in buildSignalRegistry; result sets LLMSignalGenerator model.\n(declare-const signalmodel_documented Int)\n(declare-const signalmodel_consumed Int)\n(assert (= signalmodel_documented 1))\n; const llmModel = getFlag(args, \"--signal-model\") || model; → new LLMSignalGenerator({ model: llmModel })\n(assert (= signalmodel_consumed 1))\n(assert (not (= signalmodel_documented signalmodel_consumed)))\n(check-sat)\n; Expected: unsat — --signal-model is documented and configures LLM signal generator",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

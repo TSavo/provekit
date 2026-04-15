@@ -1,0 +1,13 @@
+{
+  "key": "src/parser.ts/extractPathConditions[255]",
+  "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+  "function": "extractPathConditions",
+  "line": 255,
+  "signal_hash": "e4265eaef0cfb41dc47ae7405865f3c27f52137ecd5e5f9e1a395d575463f891",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/parser.ts/isDescendantOf[353]"
+  ],
+  "clause_history": []
+}

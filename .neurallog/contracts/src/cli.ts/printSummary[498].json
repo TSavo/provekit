@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/printSummary[498]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printSummary",
+  "line": 498,
+  "signal_hash": "7939a40e93d7f1ed9f6f9b9071c23f40cd6d9c735ef87c50ba2ddedf45df248f",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Claim: `result.report.proven`, `result.report.violations`, and `result.report.consistency`",
+      "smt2": "; PRINCIPLE: P5 – Semantic Correctness (report counts are non‑negative)\n; LINE: 498\n; Claim: `result.report.proven`, `result.report.violations`, and `result.report.consistency`\n;        are natural numbers.\n(declare-const proven Int)\n(declare-const violations Int)\n(declare-const consistency Int)\n\n; Code guarantees (numeric fields in a report object are counts):\n(assert (>= proven 0))\n(assert (>= violations 0))\n(assert (>= consistency 0))\n\n; Negate the invariant: at least one count is negative.\n(assert (or (< proven 0) (< violations 0) (< consistency 0)))\n\n(check-sat)   ; unsat → none of the counts can be negative."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5 – Semantic Correctness (report counts are non‑negative)\n; LINE: 498\n; Claim: `result.report.proven`, `result.report.violations`, and `result.report.consistency`\n;        are natural numbers.\n(declare-const proven Int)\n(declare-const violations Int)\n(declare-const consistency Int)\n\n; Code guarantees (numeric fields in a report object are counts):\n(assert (>= proven 0))\n(assert (>= violations 0))\n(assert (>= consistency 0))\n\n; Negate the invariant: at least one count is negative.\n(assert (or (< proven 0) (< violations 0) (< consistency 0)))\n\n(check-sat)   ; unsat → none of the counts can be negative.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

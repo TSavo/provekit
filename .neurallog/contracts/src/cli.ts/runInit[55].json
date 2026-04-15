@@ -4,63 +4,8 @@
   "function": "runInit",
   "line": 55,
   "signal_hash": "deba99cd9c773e01902726156e47c28aaa0e3b181e4aeba14cfcf49cda5d2ab4",
-  "proven": [
-    {
-      "principle": "P3",
-      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
-      "claim": "Claim: projectRoot is always a non-empty string at line 55.",
-      "smt2": "; PRINCIPLE: P3\n; Claim: projectRoot is always a non-empty string at line 55.\n; Branch A: path.resolve(explicit) returns an absolute path >= 1 char for any input.\n; Branch B: findProjectRoot(cwd) returns cwd or an ancestor — both non-empty absolute paths.\n(declare-const has_explicit_arg Int)    ; 1 = non-flag arg found in args, 0 = not\n(declare-const projectRoot_length Int)  ; string length of projectRoot\n\n; Transition (Branch A): explicit arg present → path.resolve(explicit) is called.\n; path.resolve() normalises to absolute; even resolve(\"\") = process.cwd() which is >= 1 char.\n(assert (=> (= has_explicit_arg 1) (>= projectRoot_length 1)))\n\n; Transition (Branch B): no explicit arg → findProjectRoot(process.cwd()) is called.\n; process.cwd() is an OS-guaranteed non-empty absolute path.\n; findProjectRoot returns cwd or a found ancestor — both satisfy length >= 1.\n(assert (=> (= has_explicit_arg 0) (>= projectRoot_length 1)))\n\n; Exhaustive case split over the two branches\n(assert (or (= has_explicit_arg 0) (= has_explicit_arg 1)))\n\n; Negate the property: can projectRoot_length be 0?\n(assert (= projectRoot_length 0))\n(check-sat)\n; Expected: unsat — projectRoot is always non-empty at line 55"
-    }
-  ],
-  "violations": [
-    {
-      "principle": "P6",
-      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
-      "claim": "findProjectRoot fallback: returns startDir when no marker found in any ancestor.",
-      "smt2": "; PRINCIPLE: P6\n; findProjectRoot fallback: returns startDir when no marker found in any ancestor.\n; projectRoot at line 55 can be a directory with no .git, .neurallog, or package.json.\n(declare-const explicit_provided Int)       ; 0 = no non-flag arg; Branch B taken\n(declare-const traversal_depth Int)         ; number of dirname() steps executed\n(declare-const marker_found Int)            ; 1 = .git/.neurallog/package.json found, 0 = not\n(declare-const projectRoot_has_structure Int) ; 1 = valid project root, 0 = bare directory\n\n; Transition: no explicit arg → resolveProjectRoot calls findProjectRoot(process.cwd())\n(assert (= explicit_provided 0))\n\n; Transition: loop ran at least one iteration (startDir was not filesystem root)\n(assert (> traversal_depth 0))\n\n; Transition: statSync threw ENOENT for all three candidate names at every level.\n; The catch block runs continue; no return statement was hit.\n(assert (= marker_found 0))\n\n; Transition: when marker_found = 0, findProjectRoot exits the while loop and executes\n;   return startDir;\n; startDir was already checked (first iteration) and had no markers → no project structure.\n(assert (=> (= marker_found 0) (= projectRoot_has_structure 0)))\n\n; Violation: line 55 logs startDir as \"projectRoot\" but it contains no project structure.\n(assert (= projectRoot_has_structure 0))\n(check-sat)\n; Expected: sat — projectRoot can be a bare directory at line 55"
-    },
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Semantic correctness violation: \"Initializing in X\" is logged before X is validated.",
-      "smt2": "; PRINCIPLE: P5\n; Semantic correctness violation: \"Initializing in X\" is logged before X is validated.\n; Transition: lines 52-54 execute before line 55 (resolveProjectRoot, createDefault, first log).\n; Transition: new DiffAnalyzer(projectRoot) is constructed at line 58, after line 55.\n; Transition: diff.isGitRepo() is called at line 59, after line 55.\n(declare-const log_executes_at_line Int)     ; = 55\n(declare-const git_check_executes_at_line Int) ; = 59\n(declare-const is_git_repo Int)              ; 1 = valid git repo, 0 = not\n\n; Transition: code ordering — log fires before the git guard\n(assert (= log_executes_at_line 55))\n(assert (= git_check_executes_at_line 59))\n(assert (< log_executes_at_line git_check_executes_at_line))\n\n; Consequence of ordering: at line 55, no code has yet evaluated is_git_repo.\n; is_git_repo is unconstrained by any executed transition.\n\n; Violation: line 55 executes even when projectRoot is not a git repository.\n(assert (= is_git_repo 0))\n(check-sat)\n; Expected: sat — \"Initializing in X\" prints unconditionally, even for non-git directories"
-    },
-    {
-      "principle": "P3",
-      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
-      "claim": "Reachable: multiple non-flag arguments are supplied; only the first is used.",
-      "smt2": "; PRINCIPLE: P3\n; Reachable: multiple non-flag arguments are supplied; only the first is used.\n; Transition: args.find(a => !a.startsWith(\"-\")) returns the FIRST matching element.\n; Transition: no validation of args.length or count of non-flag args occurs before line 55.\n(declare-const num_non_flag_args Int)  ; count of args without \"-\" prefix\n(declare-const args_used Int)          ; count of non-flag args actually consumed\n(declare-const args_silently_dropped Int) ; num_non_flag_args - args_used\n\n; Transition: user passes two non-flag args: neurallog init dir1 dir2\n(assert (= num_non_flag_args 2))\n\n; Transition: find() returns first match → exactly one non-flag arg is consumed\n(assert (= args_used 1))\n\n; Transition: args_silently_dropped = num_non_flag_args - args_used\n(assert (= args_silently_dropped (- num_non_flag_args args_used)))\n\n; Violation: at line 55, one or more user-supplied paths were dropped without error or warning.\n; The user intended multiple paths; only one was used; no diagnostic is emitted.\n(assert (> args_silently_dropped 0))\n(check-sat)\n; Expected: sat — extra non-flag args are silently ignored; line 55 gives no indication"
-    }
-  ],
+  "proven": [],
+  "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P3\n; Claim: projectRoot is always a non-empty string at line 55.\n; Branch A: path.resolve(explicit) returns an absolute path >= 1 char for any input.\n; Branch B: findProjectRoot(cwd) returns cwd or an ancestor — both non-empty absolute paths.\n(declare-const has_explicit_arg Int)    ; 1 = non-flag arg found in args, 0 = not\n(declare-const projectRoot_length Int)  ; string length of projectRoot\n\n; Transition (Branch A): explicit arg present → path.resolve(explicit) is called.\n; path.resolve() normalises to absolute; even resolve(\"\") = process.cwd() which is >= 1 char.\n(assert (=> (= has_explicit_arg 1) (>= projectRoot_length 1)))\n\n; Transition (Branch B): no explicit arg → findProjectRoot(process.cwd()) is called.\n; process.cwd() is an OS-guaranteed non-empty absolute path.\n; findProjectRoot returns cwd or a found ancestor — both satisfy length >= 1.\n(assert (=> (= has_explicit_arg 0) (>= projectRoot_length 1)))\n\n; Exhaustive case split over the two branches\n(assert (or (= has_explicit_arg 0) (= has_explicit_arg 1)))\n\n; Negate the property: can projectRoot_length be 0?\n(assert (= projectRoot_length 0))\n(check-sat)\n; Expected: unsat — projectRoot is always non-empty at line 55",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P6\n; findProjectRoot fallback: returns startDir when no marker found in any ancestor.\n; projectRoot at line 55 can be a directory with no .git, .neurallog, or package.json.\n(declare-const explicit_provided Int)       ; 0 = no non-flag arg; Branch B taken\n(declare-const traversal_depth Int)         ; number of dirname() steps executed\n(declare-const marker_found Int)            ; 1 = .git/.neurallog/package.json found, 0 = not\n(declare-const projectRoot_has_structure Int) ; 1 = valid project root, 0 = bare directory\n\n; Transition: no explicit arg → resolveProjectRoot calls findProjectRoot(process.cwd())\n(assert (= explicit_provided 0))\n\n; Transition: loop ran at least one iteration (startDir was not filesystem root)\n(assert (> traversal_depth 0))\n\n; Transition: statSync threw ENOENT for all three candidate names at every level.\n; The catch block runs continue; no return statement was hit.\n(assert (= marker_found 0))\n\n; Transition: when marker_found = 0, findProjectRoot exits the while loop and executes\n;   return startDir;\n; startDir was already checked (first iteration) and had no markers → no project structure.\n(assert (=> (= marker_found 0) (= projectRoot_has_structure 0)))\n\n; Violation: line 55 logs startDir as \"projectRoot\" but it contains no project structure.\n(assert (= projectRoot_has_structure 0))\n(check-sat)\n; Expected: sat — projectRoot can be a bare directory at line 55",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; Semantic correctness violation: \"Initializing in X\" is logged before X is validated.\n; Transition: lines 52-54 execute before line 55 (resolveProjectRoot, createDefault, first log).\n; Transition: new DiffAnalyzer(projectRoot) is constructed at line 58, after line 55.\n; Transition: diff.isGitRepo() is called at line 59, after line 55.\n(declare-const log_executes_at_line Int)     ; = 55\n(declare-const git_check_executes_at_line Int) ; = 59\n(declare-const is_git_repo Int)              ; 1 = valid git repo, 0 = not\n\n; Transition: code ordering — log fires before the git guard\n(assert (= log_executes_at_line 55))\n(assert (= git_check_executes_at_line 59))\n(assert (< log_executes_at_line git_check_executes_at_line))\n\n; Consequence of ordering: at line 55, no code has yet evaluated is_git_repo.\n; is_git_repo is unconstrained by any executed transition.\n\n; Violation: line 55 executes even when projectRoot is not a git repository.\n(assert (= is_git_repo 0))\n(check-sat)\n; Expected: sat — \"Initializing in X\" prints unconditionally, even for non-git directories",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P3\n; Reachable: multiple non-flag arguments are supplied; only the first is used.\n; Transition: args.find(a => !a.startsWith(\"-\")) returns the FIRST matching element.\n; Transition: no validation of args.length or count of non-flag args occurs before line 55.\n(declare-const num_non_flag_args Int)  ; count of args without \"-\" prefix\n(declare-const args_used Int)          ; count of non-flag args actually consumed\n(declare-const args_silently_dropped Int) ; num_non_flag_args - args_used\n\n; Transition: user passes two non-flag args: neurallog init dir1 dir2\n(assert (= num_non_flag_args 2))\n\n; Transition: find() returns first match → exactly one non-flag arg is consumed\n(assert (= args_used 1))\n\n; Transition: args_silently_dropped = num_non_flag_args - args_used\n(assert (= args_silently_dropped (- num_non_flag_args args_used)))\n\n; Violation: at line 55, one or more user-supplied paths were dropped without error or warning.\n; The user intended multiple paths; only one was used; no diagnostic is emitted.\n(assert (> args_silently_dropped 0))\n(check-sat)\n; Expected: sat — extra non-flag args are silently ignored; line 55 gives no indication",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

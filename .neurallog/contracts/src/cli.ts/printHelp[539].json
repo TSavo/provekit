@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/printHelp[539]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printHelp",
+  "line": 539,
+  "signal_hash": "343a67a5334500703566850a6d9e804aafb18f450b24365421e4f06d9ead4440",
+  "proven": [
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "Proven: \"Commands:\" header executes immediately after the first separator —",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 539\n; Proven: \"Commands:\" header executes immediately after the first separator —\n; sequential execution, no conditional between 538 and 539.\n(declare-const stmt_538_fired Int)\n(declare-const stmt_539_fired Int)\n(assert (= stmt_538_fired 1))\n(assert (= stmt_539_fired stmt_538_fired))\n(assert (not (= stmt_539_fired 1)))\n(check-sat)\n; Expected: unsat — \"Commands:\" header cannot be skipped"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 539\n; Proven: \"Commands:\" header executes immediately after the first separator —\n; sequential execution, no conditional between 538 and 539.\n(declare-const stmt_538_fired Int)\n(declare-const stmt_539_fired Int)\n(assert (= stmt_538_fired 1))\n(assert (= stmt_539_fired stmt_538_fired))\n(assert (not (= stmt_539_fired 1)))\n(check-sat)\n; Expected: unsat — \"Commands:\" header cannot be skipped",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

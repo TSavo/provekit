@@ -4,63 +4,8 @@
   "function": "runExplain",
   "line": 321,
   "signal_hash": "277a9601511d742633db10874c6afab97f9020484e55ad49216352c122ea2fa6",
-  "proven": [
-    {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "Proven: at line 321, args contains zero non-flag positional arguments",
-      "smt2": "; PRINCIPLE: P1\n; Proven: at line 321, args contains zero non-flag positional arguments\n; Transition: target = args.find((a) => !a.startsWith(\"-\"))\n; The path condition !target encodes: find() returned undefined\n; i.e., every element starts with \"-\" OR the array is empty\n(declare-const num_args Int)\n(declare-const num_non_flags Int)\n; args is a well-formed string array\n(assert (>= num_args 0))\n(assert (>= num_non_flags 0))\n(assert (<= num_non_flags num_args))\n; Path condition: !target → find() returned undefined → num_non_flags = 0\n(assert (= num_non_flags 0))\n; NEGATION: can a non-flag element exist at this point?\n(assert (> num_non_flags 0))\n(check-sat)\n; Expected: unsat\n; Interpretation: proven — at line 321 no positional argument was present in args"
-    },
-    {
-      "principle": "P3",
-      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
-      "claim": "Proven: at line 321, args length is either 0 OR all elements start with \"-\"",
-      "smt2": "; PRINCIPLE: P3\n; Proven: at line 321, args length is either 0 OR all elements start with \"-\"\n; These are the only two ways args.find((a) => !a.startsWith(\"-\")) returns undefined\n(declare-const num_args Int)\n(declare-const num_flags Int)\n(declare-const num_non_flags Int)\n; Transition: args.find partitions args into flags (start with \"-\") and non-flags\n(assert (>= num_args 0))\n(assert (>= num_flags 0))\n(assert (>= num_non_flags 0))\n(assert (= num_args (+ num_flags num_non_flags)))\n; Path condition: !target → num_non_flags = 0\n(assert (= num_non_flags 0))\n; Either args is empty or all elements are flags — which case?\n; Negation: can num_args > 0 AND num_non_flags > 0 simultaneously?\n(assert (> num_args 0))\n(assert (> num_non_flags 0))\n(check-sat)\n; Expected: unsat\n; Interpretation: proven — if args is non-empty, every element must start with \"-\""
-    }
-  ],
-  "violations": [
-    {
-      "principle": "P6",
-      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
-      "claim": "Reachable: line 321 triggered by boundary input — empty args",
-      "smt2": "; PRINCIPLE: P6\n; Reachable: line 321 triggered by boundary input — empty args\n; User invokes: neurallog explain   (no file argument)\n; process.argv.slice(2) = [\"explain\"]\n; rest = [\"explain\"].slice(1) = []\n; runExplain([]) → args.find(...) on empty array → undefined → !target → line 321\n(declare-const argv_len Int)\n(declare-const rest_len Int)\n(declare-const num_non_flags Int)\n; Transition: argv_len counts user args after \"node neurallog\"\n; Typing only the subcommand name → argv_len = 1\n(assert (= argv_len 1))\n; Transition: rest = args.slice(1) strips the \"explain\" command token\n(assert (= rest_len (- argv_len 1)))\n; Transition: args.find() on an array of length rest_len\n; num_non_flags is bounded by rest_len\n(assert (>= num_non_flags 0))\n(assert (<= num_non_flags rest_len))\n; Line 321 condition: num_non_flags = 0 (find returned undefined)\n(assert (= num_non_flags 0))\n(check-sat)\n; Expected: sat\n; Witness: argv_len=1, rest_len=0, num_non_flags=0\n; Interpretation: reachable — 'neurallog explain' with no file triggers the usage error"
-    },
-    {
-      "principle": "P3",
-      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
-      "claim": "Reachable: line 321 triggered by all-flag args (no positional argument)",
-      "smt2": "; PRINCIPLE: P3\n; Reachable: line 321 triggered by all-flag args (no positional argument)\n; User invokes: neurallog explain --verbose  (flag only, no file:line)\n; rest = [\"--verbose\"] — every element starts with \"-\"\n; args.find((a) => !a.startsWith(\"-\")) tests each element, all fail → returns undefined\n(declare-const rest_len Int)\n(declare-const num_flags Int)\n(declare-const num_non_flags Int)\n; Transition: caller provides at least one arg to runExplain\n(assert (> rest_len 0))\n; Transition: every element in rest starts with \"-\" (caller passes only flags)\n(assert (= num_flags rest_len))\n; Transition: num_non_flags = rest_len - num_flags\n(assert (= num_non_flags (- rest_len num_flags)))\n; Line 321 condition: num_non_flags = 0 (all args are flags, find returns undefined)\n(assert (= num_non_flags 0))\n(check-sat)\n; Expected: sat\n; Witness: rest_len=1, num_flags=1, num_non_flags=0\n; Interpretation: reachable — 'neurallog explain --verbose' with no file:line\n;   triggers the usage error even though args is non-empty"
-    }
-  ],
+  "proven": [],
+  "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P1\n; Proven: at line 321, args contains zero non-flag positional arguments\n; Transition: target = args.find((a) => !a.startsWith(\"-\"))\n; The path condition !target encodes: find() returned undefined\n; i.e., every element starts with \"-\" OR the array is empty\n(declare-const num_args Int)\n(declare-const num_non_flags Int)\n; args is a well-formed string array\n(assert (>= num_args 0))\n(assert (>= num_non_flags 0))\n(assert (<= num_non_flags num_args))\n; Path condition: !target → find() returned undefined → num_non_flags = 0\n(assert (= num_non_flags 0))\n; NEGATION: can a non-flag element exist at this point?\n(assert (> num_non_flags 0))\n(check-sat)\n; Expected: unsat\n; Interpretation: proven — at line 321 no positional argument was present in args",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P3\n; Proven: at line 321, args length is either 0 OR all elements start with \"-\"\n; These are the only two ways args.find((a) => !a.startsWith(\"-\")) returns undefined\n(declare-const num_args Int)\n(declare-const num_flags Int)\n(declare-const num_non_flags Int)\n; Transition: args.find partitions args into flags (start with \"-\") and non-flags\n(assert (>= num_args 0))\n(assert (>= num_flags 0))\n(assert (>= num_non_flags 0))\n(assert (= num_args (+ num_flags num_non_flags)))\n; Path condition: !target → num_non_flags = 0\n(assert (= num_non_flags 0))\n; Either args is empty or all elements are flags — which case?\n; Negation: can num_args > 0 AND num_non_flags > 0 simultaneously?\n(assert (> num_args 0))\n(assert (> num_non_flags 0))\n(check-sat)\n; Expected: unsat\n; Interpretation: proven — if args is non-empty, every element must start with \"-\"",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P6\n; Reachable: line 321 triggered by boundary input — empty args\n; User invokes: neurallog explain   (no file argument)\n; process.argv.slice(2) = [\"explain\"]\n; rest = [\"explain\"].slice(1) = []\n; runExplain([]) → args.find(...) on empty array → undefined → !target → line 321\n(declare-const argv_len Int)\n(declare-const rest_len Int)\n(declare-const num_non_flags Int)\n; Transition: argv_len counts user args after \"node neurallog\"\n; Typing only the subcommand name → argv_len = 1\n(assert (= argv_len 1))\n; Transition: rest = args.slice(1) strips the \"explain\" command token\n(assert (= rest_len (- argv_len 1)))\n; Transition: args.find() on an array of length rest_len\n; num_non_flags is bounded by rest_len\n(assert (>= num_non_flags 0))\n(assert (<= num_non_flags rest_len))\n; Line 321 condition: num_non_flags = 0 (find returned undefined)\n(assert (= num_non_flags 0))\n(check-sat)\n; Expected: sat\n; Witness: argv_len=1, rest_len=0, num_non_flags=0\n; Interpretation: reachable — 'neurallog explain' with no file triggers the usage error",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P3\n; Reachable: line 321 triggered by all-flag args (no positional argument)\n; User invokes: neurallog explain --verbose  (flag only, no file:line)\n; rest = [\"--verbose\"] — every element starts with \"-\"\n; args.find((a) => !a.startsWith(\"-\")) tests each element, all fail → returns undefined\n(declare-const rest_len Int)\n(declare-const num_flags Int)\n(declare-const num_non_flags Int)\n; Transition: caller provides at least one arg to runExplain\n(assert (> rest_len 0))\n; Transition: every element in rest starts with \"-\" (caller passes only flags)\n(assert (= num_flags rest_len))\n; Transition: num_non_flags = rest_len - num_flags\n(assert (= num_non_flags (- rest_len num_flags)))\n; Line 321 condition: num_non_flags = 0 (all args are flags, find returns undefined)\n(assert (= num_non_flags 0))\n(check-sat)\n; Expected: sat\n; Witness: rest_len=1, num_flags=1, num_non_flags=0\n; Interpretation: reachable — 'neurallog explain --verbose' with no file:line\n;   triggers the usage error even though args is non-empty",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

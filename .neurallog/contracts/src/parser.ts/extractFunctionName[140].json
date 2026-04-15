@@ -1,0 +1,11 @@
+{
+  "key": "src/parser.ts/extractFunctionName[140]",
+  "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+  "function": "extractFunctionName",
+  "line": 140,
+  "signal_hash": "2f93e183f28f458ead216c84e7325df932fe7d834362595b01fa28110be97d73",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

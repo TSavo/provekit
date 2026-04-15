@@ -4,36 +4,8 @@
   "function": "runExplain",
   "line": 349,
   "signal_hash": "fe01952fe5c92969bce5a4ac0ecf13b119ffd1571f4981b912a190ba938ac55e",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "------------------------------------------------------------",
-      "smt2": "; PRINCIPLE: P5 – Semantic Correctness (calling console.log() without arguments is always safe)\n; ------------------------------------------------------------\n; Preconditions: runExplain has no preconditions that affect this call.\n; Transition: the statement `console.log()` executes.  This has no\n;             effect on the program state that can cause a fault,\n;             so we model it as a no‑op (`true`).\n; Property to prove: the execution cannot raise an exception or\n;                    violate any safety condition.\n; Negation of the property (i.e., “an exception is raised”) is modeled\n; as `false`.\n(assert true)        ; model the successful execution of console.log()\n(assert false)       ; negated safety property – “an error occurs”\n(check-sat)          ; expecting UNSAT → the error condition is unreachable"
-    },
-    {
-      "principle": "P3",
-      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
-      "claim": "------------------------------------------------------------",
-      "smt2": "; PRINCIPLE: P3 – Precondition Propagation (no precondition is required for console.log)\n; ------------------------------------------------------------\n; The only “precondition” that could be relevant is that the JavaScript\n; runtime provides a `console` object with a `log` method.  This is\n; guaranteed by the host environment, so we treat it as true.\n; To show that a missing precondition is *not* reachable we assert the\n; precondition and then assert its violation; the conjunction is\n; unsatisfiable.\n(assert true)                ; console.log is available\n(assert (not true))          ; violation: console.log is unavailable\n(check-sat)                  ; expects UNSAT"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5 – Semantic Correctness (calling console.log() without arguments is always safe)\n; ------------------------------------------------------------\n; Preconditions: runExplain has no preconditions that affect this call.\n; Transition: the statement `console.log()` executes.  This has no\n;             effect on the program state that can cause a fault,\n;             so we model it as a no‑op (`true`).\n; Property to prove: the execution cannot raise an exception or\n;                    violate any safety condition.\n; Negation of the property (i.e., “an exception is raised”) is modeled\n; as `false`.\n(assert true)        ; model the successful execution of console.log()\n(assert false)       ; negated safety property – “an error occurs”\n(check-sat)          ; expecting UNSAT → the error condition is unreachable",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P3 – Precondition Propagation (no precondition is required for console.log)\n; ------------------------------------------------------------\n; The only “precondition” that could be relevant is that the JavaScript\n; runtime provides a `console` object with a `log` method.  This is\n; guaranteed by the host environment, so we treat it as true.\n; To show that a missing precondition is *not* reachable we assert the\n; precondition and then assert its violation; the conjunction is\n; unsatisfiable.\n(assert true)                ; console.log is available\n(assert (not true))          ; violation: console.log is unavailable\n(check-sat)                  ; expects UNSAT",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

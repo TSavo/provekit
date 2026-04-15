@@ -1,0 +1,13 @@
+{
+  "key": "src/issues.ts/fileViolationIssues[149]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "fileViolationIssues",
+  "line": 149,
+  "signal_hash": "9ab07fcd9a914de558555c076788537ac5639681891ab1c31e232137cf402ac6",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/issues.ts/issueExists[101]"
+  ],
+  "clause_history": []
+}

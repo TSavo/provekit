@@ -1,0 +1,39 @@
+{
+  "key": "src/cli.ts/runReport[450]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runReport",
+  "line": 450,
+  "signal_hash": "af21165ee7d5633d0d32274b054ce74ee0744f70309760c162e50a2d3da76bf2",
+  "proven": [
+    {
+      "principle": "P2, P6",
+      "principle_hash": "8fd7f7239a45063823ed3ff01abc8e0627591db90d10566d590fa24c6d48b94c",
+      "claim": "PROVEN: byFile map correctly groups contracts by file path",
+      "smt2": "; PRINCIPLE: P2, P6\n; LINE: 450\n; PROVEN: byFile map correctly groups contracts by file path\n(declare-const file_a_contracts Int)\n(declare-const file_b_contracts Int)\n(declare-const file_a_proven Int)\n(declare-const file_a_violations Int)\n(declare-const file_a_unverified Int)\n(declare-const file_a_signals Int)\n(declare-const total_signals Int)\n(assert (= file_a_contracts 3))\n(assert (= file_b_contracts 2))\n(assert (= file_a_proven 4))\n(assert (= file_a_violations 1))\n(assert (= file_a_unverified (- 3 4 1)))\n(assert (= file_a_signals 3))\n(assert (= total_signals (+ 3 2)))\n(assert (= total_signals 5))\n(assert (= file_a_signals file_a_contracts))\n(assert (not (= file_a_signals file_a_contracts)))\n(check-sat)\n; unsat → byFile.signals equals actual contract count per file"
+    },
+    {
+      "principle": "P2, P6",
+      "principle_hash": "8fd7f7239a45063823ed3ff01abc8e0627591db90d10566d590fa24c6d48b94c",
+      "claim": "PROVEN: sorted order is by violations descending (violations - b.violations)",
+      "smt2": "; PRINCIPLE: P2, P6\n; LINE: 450\n; PROVEN: sorted order is by violations descending (violations - b.violations)\n(declare-const a_violations Int)\n(declare-const b_violations Int)\n(declare-const sorted_before_b Bool)\n(assert (= a_violations 5))\n(assert (= b_violations 2))\n(assert (= sorted_before_b (> a_violations b_violations)))\n(assert (not (= sorted_before_b (> a_violations b_violations))))\n(check-sat)\n; unsat → sorting correctly orders by violations count descending"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2, P6\n; LINE: 450\n; PROVEN: byFile map correctly groups contracts by file path\n(declare-const file_a_contracts Int)\n(declare-const file_b_contracts Int)\n(declare-const file_a_proven Int)\n(declare-const file_a_violations Int)\n(declare-const file_a_unverified Int)\n(declare-const file_a_signals Int)\n(declare-const total_signals Int)\n(assert (= file_a_contracts 3))\n(assert (= file_b_contracts 2))\n(assert (= file_a_proven 4))\n(assert (= file_a_violations 1))\n(assert (= file_a_unverified (- 3 4 1)))\n(assert (= file_a_signals 3))\n(assert (= total_signals (+ 3 2)))\n(assert (= total_signals 5))\n(assert (= file_a_signals file_a_contracts))\n(assert (not (= file_a_signals file_a_contracts)))\n(check-sat)\n; unsat → byFile.signals equals actual contract count per file",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P2, P6\n; LINE: 450\n; PROVEN: sorted order is by violations descending (violations - b.violations)\n(declare-const a_violations Int)\n(declare-const b_violations Int)\n(declare-const sorted_before_b Bool)\n(assert (= a_violations 5))\n(assert (= b_violations 2))\n(assert (= sorted_before_b (> a_violations b_violations)))\n(assert (not (= sorted_before_b (> a_violations b_violations))))\n(check-sat)\n; unsat → sorting correctly orders by violations count descending",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -6,17 +6,17 @@
   "signal_hash": "78969b02e399ee84676faceee482b267c8ea4f0aa2e531368b4c3a7cae9f0b2c",
   "proven": [
     {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "Prove: if the repository check succeeds, the target console.log is reached.",
-      "smt2": "; PRINCIPLE: P1 – Precondition Propagation / P4 – Temporal Analysis\n; Prove: if the repository check succeeds, the target console.log is reached.\n\n;--- 1. Declarations -------------------------------------------------\n(declare-const isGitRepo Bool)      ; result of diff.isGitRepo()\n(declare-const exited   Bool)       ; true iff process.exit was called\n(declare-const reached  Bool)       ; true iff the target console.log is executed\n\n;--- 2. Transitions (code behaviour) ----------------------------------\n; The function calls process.exit only when the repo check fails.\n;   if (!isGitRepo) { exited = true } else { exited = false }\n(assert (= exited (not isGitRepo)))\n\n; The target line is executed only when we have NOT exited.\n;   reached = not exited\n(assert (= reached (not exited)))\n\n;--- 3. Precondition for the proof ------------------------------------\n; We are interested in the case where the repository check succeeds.\n(assert isGitRepo)   ; precondition: the current directory *is* a git repo\n\n;--- 4. Negated property (what we want to show cannot happen) -------\n; Suppose the target line is **not** reached.\n(assert (not reached))\n\n;--- 5. Check ---------------------------------------------------------\n(check-sat)\n; Expected result: unsat  → the target console.log is guaranteed to run"
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "(no claim extracted)",
+      "smt2": "; LINE: 114  ; PRINCIPLE: P5 – Semantic Correctness (fixed literal)\n(assert true)\n(assert false)\n(check-sat)            ; unsat"
     }
   ],
   "violations": [],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P1 – Precondition Propagation / P4 – Temporal Analysis\n; Prove: if the repository check succeeds, the target console.log is reached.\n\n;--- 1. Declarations -------------------------------------------------\n(declare-const isGitRepo Bool)      ; result of diff.isGitRepo()\n(declare-const exited   Bool)       ; true iff process.exit was called\n(declare-const reached  Bool)       ; true iff the target console.log is executed\n\n;--- 2. Transitions (code behaviour) ----------------------------------\n; The function calls process.exit only when the repo check fails.\n;   if (!isGitRepo) { exited = true } else { exited = false }\n(assert (= exited (not isGitRepo)))\n\n; The target line is executed only when we have NOT exited.\n;   reached = not exited\n(assert (= reached (not exited)))\n\n;--- 3. Precondition for the proof ------------------------------------\n; We are interested in the case where the repository check succeeds.\n(assert isGitRepo)   ; precondition: the current directory *is* a git repo\n\n;--- 4. Negated property (what we want to show cannot happen) -------\n; Suppose the target line is **not** reached.\n(assert (not reached))\n\n;--- 5. Check ---------------------------------------------------------\n(check-sat)\n; Expected result: unsat  → the target console.log is guaranteed to run",
+      "clause": "; LINE: 114  ; PRINCIPLE: P5 – Semantic Correctness (fixed literal)\n(assert true)\n(assert false)\n(check-sat)            ; unsat",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

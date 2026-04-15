@@ -1,0 +1,18 @@
+{
+  "key": "src/cli.ts/runDerive[188]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runDerive",
+  "line": 188,
+  "signal_hash": "826d5495a55c2dd67aefe78de8697ae7b4eaeff298e3eaba2d4d4fd85f4622b6",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/cli.ts/buildSignalRegistry[529]",
+    "src/cli.ts/printSummary[495]",
+    "src/cli.ts/printSummary[496]",
+    "src/cli.ts/printSummary[497]",
+    "src/cli.ts/printSummary[498]",
+    "src/cli.ts/printSummary[499]"
+  ],
+  "clause_history": []
+}

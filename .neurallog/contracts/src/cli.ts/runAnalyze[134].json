@@ -1,0 +1,35 @@
+{
+  "key": "src/cli.ts/runAnalyze[134]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runAnalyze",
+  "line": 134,
+  "signal_hash": "08febc2e5df930e460c476234601efe91deabaece047925efa688a6350b02721",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Claim: `projectRoot` is a directory that contains at least one of the marker",
+      "smt2": "; LINE: 134\n; PRINCIPLE: P5 – Project‑root discovery correctness\n; Claim: `projectRoot` is a directory that contains at least one of the marker\n;        files {\".neurallog\", \"package.json\", \".git\"}.\n;        We model the existence of a marker as a Boolean (1 = exists, 0 = absent).\n\n(declare-const has_neurallog Int)\n(declare-const has_package  Int)\n(declare-const has_git      Int)\n\n; Code: while climbing directories, return the first dir where any marker exists.\n; Therefore at least one of the three flags must be 1.\n(assert (or (= has_neurallog 1) (= has_package 1) (= has_git 1)))\n\n; Negated claim: the logged projectRoot contains none of the markers\n(assert (and (= has_neurallog 0) (= has_package 0) (= has_git 0)))\n(check-sat)\n; Expected: unsat   → the log always prints a valid project root."
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/cli.ts/buildSignalRegistry[529]",
+    "src/cli.ts/fileIssues[518]",
+    "src/cli.ts/fileIssues[520]",
+    "src/cli.ts/printSummary[495]",
+    "src/cli.ts/printSummary[496]",
+    "src/cli.ts/printSummary[497]",
+    "src/cli.ts/printSummary[498]",
+    "src/cli.ts/printSummary[499]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; LINE: 134\n; PRINCIPLE: P5 – Project‑root discovery correctness\n; Claim: `projectRoot` is a directory that contains at least one of the marker\n;        files {\".neurallog\", \"package.json\", \".git\"}.\n;        We model the existence of a marker as a Boolean (1 = exists, 0 = absent).\n\n(declare-const has_neurallog Int)\n(declare-const has_package  Int)\n(declare-const has_git      Int)\n\n; Code: while climbing directories, return the first dir where any marker exists.\n; Therefore at least one of the three flags must be 1.\n(assert (or (= has_neurallog 1) (= has_package 1) (= has_git 1)))\n\n; Negated claim: the logged projectRoot contains none of the markers\n(assert (and (= has_neurallog 0) (= has_package 0) (= has_git 0)))\n(check-sat)\n; Expected: unsat   → the log always prints a valid project root.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

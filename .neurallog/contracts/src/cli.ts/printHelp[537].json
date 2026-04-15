@@ -3,9 +3,51 @@
   "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
   "function": "printHelp",
   "line": 537,
-  "signal_hash": "0f37f79b5704d1be380c9b72a7d80073ae507f9b462f5ed2a077c4a91728c941",
-  "proven": [],
-  "violations": [],
+  "signal_hash": "90c11915f82feb25dff1f6b541aabf839467b719d06f4de1f0343d66bb97e589",
+  "proven": [
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "Proven: VERSION = \"0.3.0\" is a module-level constant (5 chars).",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 537\n; Proven: VERSION = \"0.3.0\" is a module-level constant (5 chars).\n; The interpolated banner is deterministic and always non-empty.\n(declare-const version_length Int)\n(declare-const banner_length Int)\n; const VERSION = \"0.3.0\" → length 5, initialized before main() runs\n(assert (= version_length 5))\n; banner = \"neurallog v\" (11) + VERSION (5) + \" — a logger that fixes your code\" (32)\n(assert (= banner_length (+ 11 (+ version_length 32))))\n; NEGATE: banner is empty (length <= 0)\n(assert (not (> banner_length 0)))\n(check-sat)\n; Expected: unsat — 11 + 5 + 32 = 48 > 0, proven by arithmetic"
+    },
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "Proven: the first statement executes unconditionally when printHelp() is entered;",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 537\n; Proven: the first statement executes unconditionally when printHelp() is entered;\n; no guard or branch can suppress it.\n(declare-const fn_entered Int)\n(declare-const stmt_537_fired Int)\n; Precondition: printHelp was called by main()\n(assert (= fn_entered 1))\n; Transition: no branch between function entry and line 537 → fires iff entered\n(assert (= stmt_537_fired fn_entered))\n; NEGATE: stmt_537 does not fire despite function being entered\n(assert (not (= stmt_537_fired 1)))\n(check-sat)\n; Expected: unsat — no path through printHelp skips the first statement"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "Reachable violation: printHelp() is invoked from two call sites in main() with",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 537\n; Reachable violation: printHelp() is invoked from two call sites in main() with\n; different exit codes following each invocation. The function cannot control or signal\n; which exit code applies, so help output is accompanied by exit(1) on unknown commands.\n(declare-const call_site Int)        ; 1 = help-check path, 2 = unknown-command default path\n(declare-const exit_code Int)\n; Call site 1: args.length===0 || --help || -h → printHelp() → process.exit(0)\n(assert (=> (= call_site 1) (= exit_code 0)))\n; Call site 2: default: case in switch → printHelp() → process.exit(1)\n(assert (=> (= call_site 2) (= exit_code 1)))\n; Both call sites are reachable (user can hit either)\n(assert (or (= call_site 1) (= call_site 2)))\n; Is exit(1) reachable after seeing the help output?\n(assert (= exit_code 1))\n(check-sat)\n; Expected: sat — unknown command prints help but exits 1; CI pipelines will see a failure\n; even though the user received the same output as a normal help request"
+    }
+  ],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P6\n; LINE: 537\n; Proven: VERSION = \"0.3.0\" is a module-level constant (5 chars).\n; The interpolated banner is deterministic and always non-empty.\n(declare-const version_length Int)\n(declare-const banner_length Int)\n; const VERSION = \"0.3.0\" → length 5, initialized before main() runs\n(assert (= version_length 5))\n; banner = \"neurallog v\" (11) + VERSION (5) + \" — a logger that fixes your code\" (32)\n(assert (= banner_length (+ 11 (+ version_length 32))))\n; NEGATE: banner is empty (length <= 0)\n(assert (not (> banner_length 0)))\n(check-sat)\n; Expected: unsat — 11 + 5 + 32 = 48 > 0, proven by arithmetic",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 537\n; Proven: the first statement executes unconditionally when printHelp() is entered;\n; no guard or branch can suppress it.\n(declare-const fn_entered Int)\n(declare-const stmt_537_fired Int)\n; Precondition: printHelp was called by main()\n(assert (= fn_entered 1))\n; Transition: no branch between function entry and line 537 → fires iff entered\n(assert (= stmt_537_fired fn_entered))\n; NEGATE: stmt_537 does not fire despite function being entered\n(assert (not (= stmt_537_fired 1)))\n(check-sat)\n; Expected: unsat — no path through printHelp skips the first statement",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 537\n; Reachable violation: printHelp() is invoked from two call sites in main() with\n; different exit codes following each invocation. The function cannot control or signal\n; which exit code applies, so help output is accompanied by exit(1) on unknown commands.\n(declare-const call_site Int)        ; 1 = help-check path, 2 = unknown-command default path\n(declare-const exit_code Int)\n; Call site 1: args.length===0 || --help || -h → printHelp() → process.exit(0)\n(assert (=> (= call_site 1) (= exit_code 0)))\n; Call site 2: default: case in switch → printHelp() → process.exit(1)\n(assert (=> (= call_site 2) (= exit_code 1)))\n; Both call sites are reachable (user can hit either)\n(assert (or (= call_site 1) (= call_site 2)))\n; Is exit(1) reachable after seeing the help output?\n(assert (= exit_code 1))\n(check-sat)\n; Expected: sat — unknown command prints help but exits 1; CI pipelines will see a failure\n; even though the user received the same output as a normal help request",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

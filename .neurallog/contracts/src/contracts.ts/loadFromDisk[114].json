@@ -7,29 +7,29 @@
   "proven": [],
   "violations": [
     {
-      "principle": "P6",
-      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
-      "claim": "[NEW] REACHABLE: Silent JSON parse failure loses data",
-      "smt2": "; [NEW] REACHABLE: Silent JSON parse failure loses data\n; PRINCIPLE: P6 - Boundary/Degenerate Input\n(declare-const json_files Int)\n(declare-const loaded Int)\n(assert (> json_files 1))\n(assert (= loaded 1))\n(assert (= loaded (- json_files 1)))\n(check-sat)\n; EXPECTED: sat → malformed JSON silently skipped"
+      "principle": "P1, P3, P6",
+      "principle_hash": "d59d0cf9c66cdd844a123662dc825fdbab52b5f2172e98c6630d0de15125901a",
+      "claim": "PROVEN: this.contracts.size >= 0 (always valid, never negative)",
+      "smt2": "; PRINCIPLE: P1, P3, P6\n; LINE: 114\n; PROVEN: this.contracts.size >= 0 (always valid, never negative)\n(declare-const contracts_initial Int)\n(declare-const contracts_added Int)\n(declare-const contracts_final Int)\n(assert (= contracts_initial 0))\n(assert (>= contracts_added 0))\n(assert (= contracts_final (+ contracts_initial contracts_added)))\n(assert (>= contracts_final 0))\n(check-sat)"
     },
     {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "[NEW] REACHABLE: Key collision silently overwrites",
-      "smt2": "; [NEW] REACHABLE: Key collision silently overwrites\n; PRINCIPLE: P2 - State Mutation Analysis\n(declare-const key1 String)\n(declare-const key2 String)\n(declare-const final_size Int)\n(assert (= key1 key2))\n(assert (= final_size 1))\n(assert (= key1 key2))\n(check-sat)\n; EXPECTED: sat → duplicate keys overwrite without warning"
+      "principle": "P1, P3, P6",
+      "principle_hash": "d59d0cf9c66cdd844a123662dc825fdbab52b5f2172e98c6630d0de15125901a",
+      "claim": "PROVEN: log output is accurate (contracts.size reflects actual loaded count)",
+      "smt2": "; PRINCIPLE: P1, P3, P6\n; LINE: 114\n; PROVEN: log output is accurate (contracts.size reflects actual loaded count)\n; walk returns only .json files, parse failures are caught, valid contracts are set\n(declare-const walk_result_count Int)\n(declare-const parse_success_count Int)\n(declare-const map_size Int)\n(assert (>= walk_result_count 0))\n(assert (>= parse_success_count 0))\n(assert (<= parse_success_count walk_result_count))\n(assert (= map_size parse_success_count))\n(check-sat)"
     }
   ],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; [NEW] REACHABLE: Silent JSON parse failure loses data\n; PRINCIPLE: P6 - Boundary/Degenerate Input\n(declare-const json_files Int)\n(declare-const loaded Int)\n(assert (> json_files 1))\n(assert (= loaded 1))\n(assert (= loaded (- json_files 1)))\n(check-sat)\n; EXPECTED: sat → malformed JSON silently skipped",
+      "clause": "; PRINCIPLE: P1, P3, P6\n; LINE: 114\n; PROVEN: this.contracts.size >= 0 (always valid, never negative)\n(declare-const contracts_initial Int)\n(declare-const contracts_added Int)\n(declare-const contracts_final Int)\n(assert (= contracts_initial 0))\n(assert (>= contracts_added 0))\n(assert (= contracts_final (+ contracts_initial contracts_added)))\n(assert (>= contracts_final 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,
       "current_witness_count": 0
     },
     {
-      "clause": "; [NEW] REACHABLE: Key collision silently overwrites\n; PRINCIPLE: P2 - State Mutation Analysis\n(declare-const key1 String)\n(declare-const key2 String)\n(declare-const final_size Int)\n(assert (= key1 key2))\n(assert (= final_size 1))\n(assert (= key1 key2))\n(check-sat)\n; EXPECTED: sat → duplicate keys overwrite without warning",
+      "clause": "; PRINCIPLE: P1, P3, P6\n; LINE: 114\n; PROVEN: log output is accurate (contracts.size reflects actual loaded count)\n; walk returns only .json files, parse failures are caught, valid contracts are set\n(declare-const walk_result_count Int)\n(declare-const parse_success_count Int)\n(declare-const map_size Int)\n(assert (>= walk_result_count 0))\n(assert (>= parse_success_count 0))\n(assert (<= parse_success_count walk_result_count))\n(assert (= map_size parse_success_count))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

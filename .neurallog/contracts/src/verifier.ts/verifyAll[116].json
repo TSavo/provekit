@@ -4,8 +4,60 @@
   "function": "verifyAll",
   "line": 116,
   "signal_hash": "26f79abdcb7d10f65685f3672feaccb9ff6b80d9bf209305c3fa9a230062537f",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P1, P2, P5",
+      "principle_hash": "49def03f8250bf257251bcb54e2fcb1aa32e7c4aba60c99b1a2a6c04f05f67c3",
+      "claim": "PROVEN: Return array has one VerificationResult per non-vacuous block",
+      "smt2": "; PRINCIPLE: P1, P2, P5\n; LINE: 116\n; PROVEN: Return array has one VerificationResult per non-vacuous block\n(declare-const total_blocks Int)\n(declare-const vacuous_blocks Int)\n(declare-const returned_results Int)\n(assert (= total_blocks 5))\n(assert (= vacuous_blocks 2))\n(assert (= returned_results (- total_blocks vacuous_blocks)))\n(assert (= returned_results 3))\n(assert (not (= returned_results 3)))\n(check-sat)\n; unsat → returned results count = non-vacuous blocks exactly"
+    },
+    {
+      "principle": "P1, P2, P4",
+      "principle_hash": "a23b0c96f7ad7248ce3b8c48f2cf0fe8248291a1f0356b6500c7c9b858a203b9",
+      "claim": "REACHABLE: Second call to verifyAll sees different z3 availability",
+      "smt2": "; PRINCIPLE: P1, P2, P4\n; LINE: 116\n; REACHABLE: Second call to verifyAll sees different z3 availability\n; First call: z3 installed, returns sat/unsat\n; Second call: z3 updated/broken, returns unknown/error\n(declare-const first_call_z3_works Bool)\n(declare-const second_call_z3_works Bool)\n(declare-const first_result String)\n(declare-const second_result String)\n(assert (= first_call_z3_works true))\n(assert (= first_result \"sat\"))\n(assert (= second_call_z3_works false))\n(assert (= second_result \"unknown\"))\n; Temporal: same input smt2, different results\n(assert (= first_result second_result))\n(check-sat)\n; sat → non-deterministic results across invocations if z3 state changes"
+    },
+    {
+      "principle": "P1, P2, P4",
+      "principle_hash": "a23b0c96f7ad7248ce3b8c48f2cf0fe8248291a1f0356b6500c7c9b858a203b9",
+      "claim": "REACHABLE: Race condition - isVacuous called multiple times, different results",
+      "smt2": "; PRINCIPLE: P1, P2, P4\n; LINE: 116\n; REACHABLE: Race condition - isVacuous called multiple times, different results\n; (in Node.js single-threaded this is theoretical, but same issue if cached results)\n(declare-const smt2_block String)\n(declare-const first_is_vacuous Bool)\n(declare-const second_is_vacuous Bool)\n(assert (= first_is_vacuous true))\n(assert (= second_is_vacuous false))\n; Same input, different results (e.g., regex state change, module reload)\n(assert (= first_is_vacuous second_is_vacuous))\n(check-sat)\n; sat → non-deterministic isVacuous can cause inconsistent filtering"
+    }
+  ],
   "violations": [],
-  "depends_on": [],
-  "clause_history": []
+  "depends_on": [
+    "src/verifier.ts/extractSmt2Blocks[14]",
+    "src/verifier.ts/extractSmt2Blocks[20]",
+    "src/verifier.ts/extractSmt2Blocks[22]",
+    "src/verifier.ts/isTrivialIdentity[103]",
+    "src/verifier.ts/isTrivialIdentity[109]",
+    "src/verifier.ts/isVacuous[69]",
+    "src/verifier.ts/isVacuous[83]",
+    "src/verifier.ts/isVacuous[90]",
+    "src/verifier.ts/isVacuous[94]",
+    "src/verifier.ts/verifyBlock[33]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1, P2, P5\n; LINE: 116\n; PROVEN: Return array has one VerificationResult per non-vacuous block\n(declare-const total_blocks Int)\n(declare-const vacuous_blocks Int)\n(declare-const returned_results Int)\n(assert (= total_blocks 5))\n(assert (= vacuous_blocks 2))\n(assert (= returned_results (- total_blocks vacuous_blocks)))\n(assert (= returned_results 3))\n(assert (not (= returned_results 3)))\n(check-sat)\n; unsat → returned results count = non-vacuous blocks exactly",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1, P2, P4\n; LINE: 116\n; REACHABLE: Second call to verifyAll sees different z3 availability\n; First call: z3 installed, returns sat/unsat\n; Second call: z3 updated/broken, returns unknown/error\n(declare-const first_call_z3_works Bool)\n(declare-const second_call_z3_works Bool)\n(declare-const first_result String)\n(declare-const second_result String)\n(assert (= first_call_z3_works true))\n(assert (= first_result \"sat\"))\n(assert (= second_call_z3_works false))\n(assert (= second_result \"unknown\"))\n; Temporal: same input smt2, different results\n(assert (= first_result second_result))\n(check-sat)\n; sat → non-deterministic results across invocations if z3 state changes",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1, P2, P4\n; LINE: 116\n; REACHABLE: Race condition - isVacuous called multiple times, different results\n; (in Node.js single-threaded this is theoretical, but same issue if cached results)\n(declare-const smt2_block String)\n(declare-const first_is_vacuous Bool)\n(declare-const second_is_vacuous Bool)\n(assert (= first_is_vacuous true))\n(assert (= second_is_vacuous false))\n; Same input, different results (e.g., regex state change, module reload)\n(assert (= first_is_vacuous second_is_vacuous))\n(check-sat)\n; sat → non-deterministic isVacuous can cause inconsistent filtering",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

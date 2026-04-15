@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/printSummary[497]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printSummary",
+  "line": 497,
+  "signal_hash": "c2655d1d88ca760c48efc570b684db133d31055c54e0a55c15cec25f19a381ff",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Claim: The sum of `c.proven.length` over all contracts is ≥ 0.",
+      "smt2": "; PRINCIPLE: P5 – Semantic Correctness (reduce sum is non‑negative)\n; LINE: 497\n; Claim: The sum of `c.proven.length` over all contracts is ≥ 0.\n(declare-const n_contracts Int)          ; number of contracts\n(declare-const sum_proven Int)           ; result of the reduce\n; Each contract’s proven array length is a natural number.\n(declare-const each_len Int)\n\n; Preconditions derived from the program:\n(assert (>= n_contracts 0))               ; length of contracts array\n(assert (>= each_len 0))                  ; each .proven.length ≥ 0\n; The reduce adds up n_contracts non‑negative numbers.\n(assert (= sum_proven (* each_len n_contracts)))\n(assert (>= sum_proven 0))\n\n; Negate the intended invariant:\n(assert (< sum_proven 0))\n\n(check-sat)   ; unsat → the sum cannot be negative."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5 – Semantic Correctness (reduce sum is non‑negative)\n; LINE: 497\n; Claim: The sum of `c.proven.length` over all contracts is ≥ 0.\n(declare-const n_contracts Int)          ; number of contracts\n(declare-const sum_proven Int)           ; result of the reduce\n; Each contract’s proven array length is a natural number.\n(declare-const each_len Int)\n\n; Preconditions derived from the program:\n(assert (>= n_contracts 0))               ; length of contracts array\n(assert (>= each_len 0))                  ; each .proven.length ≥ 0\n; The reduce adds up n_contracts non‑negative numbers.\n(assert (= sum_proven (* each_len n_contracts)))\n(assert (>= sum_proven 0))\n\n; Negate the intended invariant:\n(assert (< sum_proven 0))\n\n(check-sat)   ; unsat → the sum cannot be negative.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

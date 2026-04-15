@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/runReport[440]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runReport",
+  "line": 440,
+  "signal_hash": "790d23a62c46f6732d1aedc9d5a26d59fc2be79bf9ccb7a8473923f145f1bbb7",
+  "proven": [
+    {
+      "principle": "P2, P6",
+      "principle_hash": "8fd7f7239a45063823ed3ff01abc8e0627591db90d10566d590fa24c6d48b94c",
+      "claim": "PROVEN: totalUnverified = count of contracts where proven=0 AND violations=0",
+      "smt2": "; PRINCIPLE: P2, P6\n; LINE: 440\n; PROVEN: totalUnverified = count of contracts where proven=0 AND violations=0\n(declare-const c0_proven Int)\n(declare-const c0_violations Int)\n(declare-const c0_unverified Bool)\n(declare-const c1_proven Int)\n(declare-const c1_violations Int)\n(declare-const c1_unverified Bool)\n(declare-const total_unverified Int)\n(assert (= c0_proven 0))\n(assert (= c0_violations 0))\n(assert (= c0_unverified true))\n(assert (= c1_proven 1))\n(assert (= c1_violations 0))\n(assert (= c1_unverified false))\n(assert (= total_unverified (+ (ite c0_unverified 1 0) (ite c1_unverified 1 0))))\n(assert (= total_unverified 1))\n(assert (not (= total_unverified 1)))\n(check-sat)\n; unsat → total_unverified correctly counts only fully unverified contracts"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2, P6\n; LINE: 440\n; PROVEN: totalUnverified = count of contracts where proven=0 AND violations=0\n(declare-const c0_proven Int)\n(declare-const c0_violations Int)\n(declare-const c0_unverified Bool)\n(declare-const c1_proven Int)\n(declare-const c1_violations Int)\n(declare-const c1_unverified Bool)\n(declare-const total_unverified Int)\n(assert (= c0_proven 0))\n(assert (= c0_violations 0))\n(assert (= c0_unverified true))\n(assert (= c1_proven 1))\n(assert (= c1_violations 0))\n(assert (= c1_unverified false))\n(assert (= total_unverified (+ (ite c0_unverified 1 0) (ite c1_unverified 1 0))))\n(assert (= total_unverified 1))\n(assert (not (= total_unverified 1)))\n(check-sat)\n; unsat → total_unverified correctly counts only fully unverified contracts",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -3,9 +3,24 @@
   "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
   "function": "printHelp",
   "line": 541,
-  "signal_hash": "13a536a159dda65d94bb3646b2700327d67077313a64f294282f3d0c1ec4fbcc",
-  "proven": [],
+  "signal_hash": "41c039237d57cac7768099cedbb9807b6bafe74506266f80d4a2139a3b0dfd3f",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Proven: \"analyze\" appears in help (line 541) AND is implemented as",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 541\n; Proven: \"analyze\" appears in help (line 541) AND is implemented as\n; case \"analyze\": await runAnalyze(rest) in the switch.\n(declare-const analyze_documented Int)\n(declare-const analyze_implemented Int)\n(assert (= analyze_documented 1))\n(assert (= analyze_implemented 1))\n(assert (not (= analyze_documented analyze_implemented)))\n(check-sat)\n; Expected: unsat — analyze is both documented and implemented"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 541\n; Proven: \"analyze\" appears in help (line 541) AND is implemented as\n; case \"analyze\": await runAnalyze(rest) in the switch.\n(declare-const analyze_documented Int)\n(declare-const analyze_implemented Int)\n(assert (= analyze_documented 1))\n(assert (= analyze_implemented 1))\n(assert (not (= analyze_documented analyze_implemented)))\n(check-sat)\n; Expected: unsat — analyze is both documented and implemented",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

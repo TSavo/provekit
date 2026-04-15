@@ -1,0 +1,11 @@
+{
+  "key": "src/cli.ts/runOverride[482]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runOverride",
+  "line": 482,
+  "signal_hash": "7fd4a4435381e3f476fae7cd6a9b5cc756c0d1ab207ed112ad999d7c0ee9967b",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

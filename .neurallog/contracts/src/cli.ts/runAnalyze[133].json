@@ -1,0 +1,35 @@
+{
+  "key": "src/cli.ts/runAnalyze[133]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runAnalyze",
+  "line": 133,
+  "signal_hash": "e0292c5ff1ce45e1119313b04807b1493816fabfe4c60ea798c06f24b521d867",
+  "proven": [
+    {
+      "principle": "P4",
+      "principle_hash": "a1b5093df48e8e1f7473af05b14e02a6715311445690b006840d2fc640b4234d",
+      "claim": "Claim: `signalRegistry.getGeneratorNames()` returns a (possibly empty) list",
+      "smt2": "; LINE: 133\n; PRINCIPLE: P4 – Registry mutation soundness\n; Claim: `signalRegistry.getGeneratorNames()` returns a (possibly empty) list\n;        of generator names that have been registered by `buildSignalRegistry`.\n;        The list length is therefore ≥ 0 and equals the number of successful\n;        `registry.register(...)` calls inside `buildSignalRegistry`.\n\n(declare-const registered Int)   ; number of generators added by buildSignalRegistry\n(declare-const listed   Int)     ; length of the name list returned by getGeneratorNames()\n\n; Code effect: each successful register increments `registered` by 1.\n; For the purpose of this invariant we only need the relationship:\n(assert (= listed registered))\n\n; Negated claim: the logged list length differs from the number of registered generators\n(assert (not (= listed registered)))\n(check-sat)\n; Expected: unsat   → the log cannot mis‑report the number of generators."
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/cli.ts/buildSignalRegistry[529]",
+    "src/cli.ts/fileIssues[518]",
+    "src/cli.ts/fileIssues[520]",
+    "src/cli.ts/printSummary[495]",
+    "src/cli.ts/printSummary[496]",
+    "src/cli.ts/printSummary[497]",
+    "src/cli.ts/printSummary[498]",
+    "src/cli.ts/printSummary[499]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; LINE: 133\n; PRINCIPLE: P4 – Registry mutation soundness\n; Claim: `signalRegistry.getGeneratorNames()` returns a (possibly empty) list\n;        of generator names that have been registered by `buildSignalRegistry`.\n;        The list length is therefore ≥ 0 and equals the number of successful\n;        `registry.register(...)` calls inside `buildSignalRegistry`.\n\n(declare-const registered Int)   ; number of generators added by buildSignalRegistry\n(declare-const listed   Int)     ; length of the name list returned by getGeneratorNames()\n\n; Code effect: each successful register increments `registered` by 1.\n; For the purpose of this invariant we only need the relationship:\n(assert (= listed registered))\n\n; Negated claim: the logged list length differs from the number of registered generators\n(assert (not (= listed registered)))\n(check-sat)\n; Expected: unsat   → the log cannot mis‑report the number of generators.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

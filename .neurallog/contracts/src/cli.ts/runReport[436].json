@@ -1,0 +1,11 @@
+{
+  "key": "src/cli.ts/runReport[436]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runReport",
+  "line": 436,
+  "signal_hash": "5566631887c000c1e9a389a0235b533388c2698f8f34832ab71cd3bff3370fb9",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

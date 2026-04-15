@@ -1,0 +1,20 @@
+{
+  "key": "src/cli.ts/runAnalyze[130]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runAnalyze",
+  "line": 130,
+  "signal_hash": "2914ed52cd66edb5f325b5c7aaea41ec5313a8748c4e16d85c1bf9e963cb087a",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/cli.ts/buildSignalRegistry[529]",
+    "src/cli.ts/fileIssues[518]",
+    "src/cli.ts/fileIssues[520]",
+    "src/cli.ts/printSummary[495]",
+    "src/cli.ts/printSummary[496]",
+    "src/cli.ts/printSummary[497]",
+    "src/cli.ts/printSummary[498]",
+    "src/cli.ts/printSummary[499]"
+  ],
+  "clause_history": []
+}

@@ -1,0 +1,37 @@
+{
+  "key": "src/cli.ts/fileIssues[518]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "fileIssues",
+  "line": 518,
+  "signal_hash": "80ffab4b89ba248449a4efe2ba0b91c41dee79127f4d25a4e36f3631596e517c",
+  "proven": [
+    {
+      "principle": "P7",
+      "principle_hash": "61561b8577104a2514f412235b45b0c4b2c3114a30d8725d4cb990ed5d924ecc",
+      "claim": "Proven property: the value printed for “${issues.length}” is always equal to the actual length",
+      "smt2": "; LINE: 518\n; PRINCIPLE: P7  –  The log on line 518 must report the exact number of issues discovered.\n; Proven property: the value printed for “${issues.length}” is always equal to the actual length\n; of the `issues` array.  We prove the negation is UNSAT.\n\n;--- Preconditions (state before the log)\n(declare-const issues_len Int)          ; = issues.length\n(declare-const dryRunFlag Int)          ; 0 = false, 1 = true\n(assert (>= issues_len 0))              ; array length cannot be negative\n(assert (or (= dryRunFlag 0) (= dryRunFlag 1))) ; boolean encoded as 0/1\n\n;--- Transition (the code does not modify `issues_len` before the log)\n; (no state change – the log simply reads `issues_len`)\n\n;--- Log expression (what the log *claims* it prints)\n(declare-const loggedCount Int)         ; the number rendered in the message\n(assert (= loggedCount issues_len))      ; the implementation: console.log prints issues.length\n\n;--- Negated property we try to refute:\n; “the logged count differs from the real count”\n(assert (not (= loggedCount issues_len)))\n\n(check-sat)\n; Expected result: unsat  → the property holds for all reachable states."
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/issues.ts/fileViolationIssues[139]",
+    "src/issues.ts/fileViolationIssues[140]",
+    "src/issues.ts/fileViolationIssues[141]",
+    "src/issues.ts/fileViolationIssues[142]",
+    "src/issues.ts/fileViolationIssues[143]",
+    "src/issues.ts/fileViolationIssues[144]",
+    "src/issues.ts/fileViolationIssues[149]",
+    "src/issues.ts/fileViolationIssues[151]",
+    "src/issues.ts/fileViolationIssues[158]",
+    "src/issues.ts/fileViolationIssues[161]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; LINE: 518\n; PRINCIPLE: P7  –  The log on line 518 must report the exact number of issues discovered.\n; Proven property: the value printed for “${issues.length}” is always equal to the actual length\n; of the `issues` array.  We prove the negation is UNSAT.\n\n;--- Preconditions (state before the log)\n(declare-const issues_len Int)          ; = issues.length\n(declare-const dryRunFlag Int)          ; 0 = false, 1 = true\n(assert (>= issues_len 0))              ; array length cannot be negative\n(assert (or (= dryRunFlag 0) (= dryRunFlag 1))) ; boolean encoded as 0/1\n\n;--- Transition (the code does not modify `issues_len` before the log)\n; (no state change – the log simply reads `issues_len`)\n\n;--- Log expression (what the log *claims* it prints)\n(declare-const loggedCount Int)         ; the number rendered in the message\n(assert (= loggedCount issues_len))      ; the implementation: console.log prints issues.length\n\n;--- Negated property we try to refute:\n; “the logged count differs from the real count”\n(assert (not (= loggedCount issues_len)))\n\n(check-sat)\n; Expected result: unsat  → the property holds for all reachable states.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

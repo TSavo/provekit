@@ -4,8 +4,23 @@
   "function": "runDiff",
   "line": 267,
   "signal_hash": "f3f6bae038d03ab90b55aa6d69dfffaee8524b50aeb3ffcc9eaaed3146245fa2",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "Claim: When runDiff is entered, the log must contain the VERSION string and the reference `ref`.",
+      "smt2": "; LINE: 267\n; PRINCIPLE: P1 – Precondition Propagation\n; Claim: When runDiff is entered, the log must contain the VERSION string and the reference `ref`.\n;   console.log(`neurallog v${VERSION} — proof diff against ${ref}`)\n;   ⇒  VERSION is a non‑empty string and ref is a non‑empty string.\n; PROVEN: we show that the negation (VERSION empty ∨ ref empty) is impossible.\n\n(declare-const VERSION String)           ; from module constant\n(declare-const ref String)               ; computed from args (may be default)\n\n; The code guarantees both strings are non‑empty:\n;   - VERSION is a literal \"0.3.0\" in the source → non‑empty.\n;   - ref is either the user‑supplied argument or the default \"HEAD~1\" → non‑empty.\n(assert (> (str.len VERSION) 0))\n(assert (> (str.len ref) 0))\n\n; Negation of the claim: either VERSION empty or ref empty.\n(assert (or (= (str.len VERSION) 0) (= (str.len ref) 0)))\n\n(check-sat)   ; expected: unsat"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; LINE: 267\n; PRINCIPLE: P1 – Precondition Propagation\n; Claim: When runDiff is entered, the log must contain the VERSION string and the reference `ref`.\n;   console.log(`neurallog v${VERSION} — proof diff against ${ref}`)\n;   ⇒  VERSION is a non‑empty string and ref is a non‑empty string.\n; PROVEN: we show that the negation (VERSION empty ∨ ref empty) is impossible.\n\n(declare-const VERSION String)           ; from module constant\n(declare-const ref String)               ; computed from args (may be default)\n\n; The code guarantees both strings are non‑empty:\n;   - VERSION is a literal \"0.3.0\" in the source → non‑empty.\n;   - ref is either the user‑supplied argument or the default \"HEAD~1\" → non‑empty.\n(assert (> (str.len VERSION) 0))\n(assert (> (str.len ref) 0))\n\n; Negation of the claim: either VERSION empty or ref empty.\n(assert (or (= (str.len VERSION) 0) (= (str.len ref) 0)))\n\n(check-sat)   ; expected: unsat",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

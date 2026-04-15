@@ -4,23 +4,8 @@
   "function": "runExplain",
   "line": 387,
   "signal_hash": "621c0de25ac77d5df7179ce2488cffd4b7d02321374b7139f621a59dc5fb8d40",
-  "proven": [
-    {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "Proven: current iteration index i satisfies 0 <= i < contract.violations.length.",
-      "smt2": "; PRINCIPLE: P1\n; Proven: current iteration index i satisfies 0 <= i < contract.violations.length.\n; for-of initialises i = 0 and increments only while i < array.length.\n; Precondition + loop invariant + negation → expect unsat.\n(declare-const violations_length Int)\n(declare-const i Int)\n; Path condition\n(assert (> violations_length 0))\n; Loop invariant lower bound: i starts at 0\n(assert (>= i 0))\n; Loop invariant upper bound: loop exits when i reaches violations_length\n(assert (< i violations_length))\n; Negation: index is out of bounds\n(assert (or (< i 0) (>= i violations_length)))\n(check-sat)\n; Expected: unsat — index is always in bounds inside the for-of loop body"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P1\n; Proven: current iteration index i satisfies 0 <= i < contract.violations.length.\n; for-of initialises i = 0 and increments only while i < array.length.\n; Precondition + loop invariant + negation → expect unsat.\n(declare-const violations_length Int)\n(declare-const i Int)\n; Path condition\n(assert (> violations_length 0))\n; Loop invariant lower bound: i starts at 0\n(assert (>= i 0))\n; Loop invariant upper bound: loop exits when i reaches violations_length\n(assert (< i violations_length))\n; Negation: index is out of bounds\n(assert (or (< i 0) (>= i violations_length)))\n(check-sat)\n; Expected: unsat — index is always in bounds inside the for-of loop body",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

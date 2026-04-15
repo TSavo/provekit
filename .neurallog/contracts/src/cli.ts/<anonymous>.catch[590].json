@@ -1,0 +1,40 @@
+{
+  "key": "src/cli.ts/<anonymous>.catch[590]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "<anonymous>.catch",
+  "line": 590,
+  "signal_hash": "1e88935a4c07ab505fa3aeb57dc0affb16133601d14cfbbd9198ef91515cd344",
+  "proven": [
+    {
+      "principle": null,
+      "principle_hash": "",
+      "claim": "Preconditions establishing a safe logging situation",
+      "smt2": "; Preconditions establishing a safe logging situation\n(declare-const err_is_null Bool)\n(declare-const err_has_message Bool)\n(declare-const err_is_string Bool)        ; true ⇔ err (the object itself) is a string\n\n; Establish that we are in the safe regime:\n; 1. err is NOT null/undefined.\n; 2. err.message is a defined (non‑empty) string.\n; 3. If we ever fall back to `err`, then `err` is also a string.\n(assert (not err_is_null))\n(assert err_has_message)\n(assert (=> (and (not err_has_message) (not err_is_null)) err_is_string))\n\n; Negated property: the logged value is NOT a string.\n; We model the logged value as a boolean `log_is_string`.\n(declare-const log_is_string Bool)\n(assert (not log_is_string))\n\n; Relate `log_is_string` to the concrete flags:\n;   - If err_has_message then the log is a string (the message).\n;   - Otherwise (fallback) the log is a string exactly when err_is_string.\n(assert (= log_is_string (or err_has_message err_is_string)))\n\n; The conjunction of the above constraints is contradictory:\n(check-sat)\n; Expected result: unsat → under the stated preconditions the log is\n; guaranteed to be a string, so the claim is proven."
+    }
+  ],
+  "violations": [
+    {
+      "principle": null,
+      "principle_hash": "",
+      "claim": "-------------------- code transition --------------------",
+      "smt2": "(declare-const err_is_null Bool)        ; err is null/undefined\n(declare-const err_has_message Bool)    ; err.message is a defined non‑empty string\n\n; -------------------- code transition --------------------\n; The catch‑handler does NOT test `err` before using it, so the\n; state after the exception can be any combination of the two flags.\n; No additional constraints are added here (i.e., both flags are\n; completely unconstrained by the surrounding code).\n\n; -------------------- violation condition --------------------\n; Violation: either err is null (property access would throw) OR\n; err is non‑null but err.message is falsy (fallback to `err` may be non‑string).\n(assert (or err_is_null (and (not err_is_null) (not err_has_message))))\n\n(check-sat)\n; Expected result: sat → the unsafe situation is reachable because the\n; handler never validates `err` before accessing its `message` property."
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; Preconditions establishing a safe logging situation\n(declare-const err_is_null Bool)\n(declare-const err_has_message Bool)\n(declare-const err_is_string Bool)        ; true ⇔ err (the object itself) is a string\n\n; Establish that we are in the safe regime:\n; 1. err is NOT null/undefined.\n; 2. err.message is a defined (non‑empty) string.\n; 3. If we ever fall back to `err`, then `err` is also a string.\n(assert (not err_is_null))\n(assert err_has_message)\n(assert (=> (and (not err_has_message) (not err_is_null)) err_is_string))\n\n; Negated property: the logged value is NOT a string.\n; We model the logged value as a boolean `log_is_string`.\n(declare-const log_is_string Bool)\n(assert (not log_is_string))\n\n; Relate `log_is_string` to the concrete flags:\n;   - If err_has_message then the log is a string (the message).\n;   - Otherwise (fallback) the log is a string exactly when err_is_string.\n(assert (= log_is_string (or err_has_message err_is_string)))\n\n; The conjunction of the above constraints is contradictory:\n(check-sat)\n; Expected result: unsat → under the stated preconditions the log is\n; guaranteed to be a string, so the claim is proven.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "(declare-const err_is_null Bool)        ; err is null/undefined\n(declare-const err_has_message Bool)    ; err.message is a defined non‑empty string\n\n; -------------------- code transition --------------------\n; The catch‑handler does NOT test `err` before using it, so the\n; state after the exception can be any combination of the two flags.\n; No additional constraints are added here (i.e., both flags are\n; completely unconstrained by the surrounding code).\n\n; -------------------- violation condition --------------------\n; Violation: either err is null (property access would throw) OR\n; err is non‑null but err.message is falsy (fallback to `err` may be non‑string).\n(assert (or err_is_null (and (not err_is_null) (not err_has_message))))\n\n(check-sat)\n; Expected result: sat → the unsafe situation is reachable because the\n; handler never validates `err` before accessing its `message` property.",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

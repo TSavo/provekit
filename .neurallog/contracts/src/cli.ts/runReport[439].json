@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/runReport[439]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runReport",
+  "line": 439,
+  "signal_hash": "4fa695eb32db42f53c7f22364fd88a1a4190eae676434196dc400c80d8933ebd",
+  "proven": [
+    {
+      "principle": "P1, P2, P6",
+      "principle_hash": "f8b53fdc33db95cc98bdf78acda782c5d213d545bdaa45ec2f167a9a56e40dae",
+      "claim": "PROVEN: totalViolations = sum of all c.violations.length",
+      "smt2": "; PRINCIPLE: P1, P2, P6\n; LINE: 439\n; PROVEN: totalViolations = sum of all c.violations.length\n(declare-const num_contracts Int)\n(declare-const violations_0 Int)\n(declare-const violations_1 Int)\n(declare-const total_violations Int)\n(assert (= num_contracts 2))\n(assert (>= violations_0 0))\n(assert (>= violations_1 0))\n(assert (= total_violations (+ violations_0 violations_1)))\n(assert (not (= total_violations (+ violations_0 violations_1))))\n(check-sat)\n; unsat → total_violations is computed by summation, always consistent"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P1, P2, P6\n; LINE: 439\n; PROVEN: totalViolations = sum of all c.violations.length\n(declare-const num_contracts Int)\n(declare-const violations_0 Int)\n(declare-const violations_1 Int)\n(declare-const total_violations Int)\n(assert (= num_contracts 2))\n(assert (>= violations_0 0))\n(assert (>= violations_1 0))\n(assert (= total_violations (+ violations_0 violations_1)))\n(assert (not (= total_violations (+ violations_0 violations_1))))\n(check-sat)\n; unsat → total_violations is computed by summation, always consistent",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

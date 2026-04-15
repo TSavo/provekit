@@ -6,17 +6,17 @@
   "signal_hash": "93483b10ff610fe7a8c9955439bcaf4be77536644d04121ffed8a11b42eba526",
   "proven": [
     {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "PROVEN PROPERTY:",
-      "smt2": "; PRINCIPLE: P1\n; PROVEN PROPERTY:\n; If an SMT‑LIB block contains an assertion that mentions at least two declared\n; variables (a “transition”), then the heuristic `isVacuous` must evaluate to\n; false.  We encode the negation of this property (i.e. the block is considered\n; vacuous *and* it contains a two‑variable transition) and show that it is\n; unsatisfiable.\n(declare-const a Int)\n(declare-const b Int)\n; a transition that references both declared variables\n(assert (= a b))          ; ← two‑variable assertion\n; the heuristic would have to think the block is vacuous; that would mean\n; “no assertion references ≥2 variables”.  We model this by asserting that the\n; same two‑variable equality does **not** hold.\n(assert (not (= a b)))   ; ← contradicts the existence of a transition\n(check-sat)\n; The solver returns `unsat`, proving the property holds."
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "PROVEN: referencedVars < 2 implies contribution = 0.",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 90\n; PROVEN: referencedVars < 2 implies contribution = 0.\n; The if-guard `if (referencedVars >= 2)` is the exclusive entry to transitionCount++.\n; When the guard evaluates false, the body cannot fire.\n(declare-const refs_vars Int)\n(declare-const contribution Int)\n; Code: refs_vars is a non-negative count of distinct declared names in one assertion\n(assert (>= refs_vars 0))\n; Code transition: contribution is binary (if-body fires or not)\n(assert (>= contribution 0))\n(assert (<= contribution 1))\n; Code transition: the if-guard is the sole condition for incrementing\n(assert (=> (< refs_vars 2) (= contribution 0)))\n; Premise: assertion references fewer than 2 declared vars\n(assert (< refs_vars 2))\n; Negation: contribution > 0 despite guard being false\n(assert (> contribution 0))\n(check-sat)\n; expect: unsat — (refs_vars < 2) + the implication + (contribution > 0) is contradictory"
     }
   ],
   "violations": [],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P1\n; PROVEN PROPERTY:\n; If an SMT‑LIB block contains an assertion that mentions at least two declared\n; variables (a “transition”), then the heuristic `isVacuous` must evaluate to\n; false.  We encode the negation of this property (i.e. the block is considered\n; vacuous *and* it contains a two‑variable transition) and show that it is\n; unsatisfiable.\n(declare-const a Int)\n(declare-const b Int)\n; a transition that references both declared variables\n(assert (= a b))          ; ← two‑variable assertion\n; the heuristic would have to think the block is vacuous; that would mean\n; “no assertion references ≥2 variables”.  We model this by asserting that the\n; same two‑variable equality does **not** hold.\n(assert (not (= a b)))   ; ← contradicts the existence of a transition\n(check-sat)\n; The solver returns `unsat`, proving the property holds.",
+      "clause": "; PRINCIPLE: P2\n; LINE: 90\n; PROVEN: referencedVars < 2 implies contribution = 0.\n; The if-guard `if (referencedVars >= 2)` is the exclusive entry to transitionCount++.\n; When the guard evaluates false, the body cannot fire.\n(declare-const refs_vars Int)\n(declare-const contribution Int)\n; Code: refs_vars is a non-negative count of distinct declared names in one assertion\n(assert (>= refs_vars 0))\n; Code transition: contribution is binary (if-body fires or not)\n(assert (>= contribution 0))\n(assert (<= contribution 1))\n; Code transition: the if-guard is the sole condition for incrementing\n(assert (=> (< refs_vars 2) (= contribution 0)))\n; Premise: assertion references fewer than 2 declared vars\n(assert (< refs_vars 2))\n; Negation: contribution > 0 despite guard being false\n(assert (> contribution 0))\n(check-sat)\n; expect: unsat — (refs_vars < 2) + the implication + (contribution > 0) is contradictory",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

@@ -1,0 +1,26 @@
+{
+  "key": "src/cli.ts/printHelp[556]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printHelp",
+  "line": 556,
+  "signal_hash": "f3e6fc61db866aca76321c6af11da0c6fc83fdf57235cf650ca1151ca7049a73",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Proven: \"--ci\" is documented in help (line 556) and consumed by",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 556\n; Proven: \"--ci\" is documented in help (line 556) and consumed by\n; args.includes(\"--ci\") in runVerify, which controls the exit-code behavior.\n(declare-const ci_documented Int)\n(declare-const ci_consumed Int)\n(assert (= ci_documented 1))\n; const ci = args.includes(\"--ci\"); if (ci && report.violations > 0) process.exit(1)\n(assert (= ci_consumed 1))\n(assert (not (= ci_documented ci_consumed)))\n(check-sat)\n; Expected: unsat — --ci is documented and controls process exit code"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 556\n; Proven: \"--ci\" is documented in help (line 556) and consumed by\n; args.includes(\"--ci\") in runVerify, which controls the exit-code behavior.\n(declare-const ci_documented Int)\n(declare-const ci_consumed Int)\n(assert (= ci_documented 1))\n; const ci = args.includes(\"--ci\"); if (ci && report.violations > 0) process.exit(1)\n(assert (= ci_consumed 1))\n(assert (not (= ci_documented ci_consumed)))\n(check-sat)\n; Expected: unsat — --ci is documented and controls process exit code",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

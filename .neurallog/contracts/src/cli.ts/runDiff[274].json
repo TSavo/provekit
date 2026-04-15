@@ -4,23 +4,8 @@
   "function": "runDiff",
   "line": 274,
   "signal_hash": "86bddebbfdd42264c1f4dabdf7a212ca6da57bcd59c2655e2054e8d16ef4391f",
-  "proven": [
-    {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "--------------------------------------------------------------",
-      "smt2": "; PRINCIPLE: P2 – State Mutation Analysis (reachable violation if length could be negative)\n; --------------------------------------------------------------\n; Suppose a future change to `ProofDiff.diffAgainst` mistakenly returned a\n; value whose `.length` could be negative (e.g., a corrupted numeric field).\n; The `runDiff` function does *not* validate this length before using it.\n; We model the actual code transition (assignment of the length) and then\n; assert the unsafe condition that the branch is taken while the length is\n; negative.  Because the model includes the concrete transition\n; `changes_len = diffResultLength`, the SAT result shows the violation is\n; reachable under the flawed assumption.\n(declare-const diffResultLength Int)   ; value returned by ProofDiff.diffAgainst\n(declare-const changes_len Int)\n\n; transition: the function stores the returned length in `changes_len`\n(assert (= changes_len diffResultLength))\n\n; violation condition: branch is taken (changes_len = 0) but the underlying\n; length is actually negative (diffResultLength < 0).  This can happen only\n; if the assignment permits a negative source.\n(assert (= changes_len 0))\n(assert (< diffResultLength 0))\n\n(check-sat)\n; Expected result: sat → a negative length would let the guard succeed,\n; exposing a reachable bug if the callee ever produced a negative length.\n; The current implementation prevents this because array lengths are ≥0,\n; but the check documents the missing validation."
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P2 – State Mutation Analysis (reachable violation if length could be negative)\n; --------------------------------------------------------------\n; Suppose a future change to `ProofDiff.diffAgainst` mistakenly returned a\n; value whose `.length` could be negative (e.g., a corrupted numeric field).\n; The `runDiff` function does *not* validate this length before using it.\n; We model the actual code transition (assignment of the length) and then\n; assert the unsafe condition that the branch is taken while the length is\n; negative.  Because the model includes the concrete transition\n; `changes_len = diffResultLength`, the SAT result shows the violation is\n; reachable under the flawed assumption.\n(declare-const diffResultLength Int)   ; value returned by ProofDiff.diffAgainst\n(declare-const changes_len Int)\n\n; transition: the function stores the returned length in `changes_len`\n(assert (= changes_len diffResultLength))\n\n; violation condition: branch is taken (changes_len = 0) but the underlying\n; length is actually negative (diffResultLength < 0).  This can happen only\n; if the assignment permits a negative source.\n(assert (= changes_len 0))\n(assert (< diffResultLength 0))\n\n(check-sat)\n; Expected result: sat → a negative length would let the guard succeed,\n; exposing a reachable bug if the callee ever produced a negative length.\n; The current implementation prevents this because array lengths are ≥0,\n; but the check documents the missing validation.",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

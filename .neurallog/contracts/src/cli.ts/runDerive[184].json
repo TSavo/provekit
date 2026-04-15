@@ -1,0 +1,33 @@
+{
+  "key": "src/cli.ts/runDerive[184]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runDerive",
+  "line": 184,
+  "signal_hash": "ea8a9d5cc40acb758905627ba456e79ea0b4a31a07fd3ab8a2764dd6aa87b0ea",
+  "proven": [
+    {
+      "principle": "P2, P6",
+      "principle_hash": "8fd7f7239a45063823ed3ff01abc8e0627591db90d10566d590fa24c6d48b94c",
+      "claim": "PROVEN: changedFiles.length accurately reflects array size",
+      "smt2": "; PRINCIPLE: P2, P6\n; LINE: 184\n; PROVEN: changedFiles.length accurately reflects array size\n(declare-const changed_files_count Int)\n(declare-const logged_count Int)\n(assert (= changed_files_count 5))\n(assert (= logged_count changed_files_count))\n(assert (= logged_count 5))\n(assert (not (= logged_count changed_files_count)))\n(check-sat)\n; unsat → logged count matches array length exactly"
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/cli.ts/buildSignalRegistry[529]",
+    "src/cli.ts/printSummary[495]",
+    "src/cli.ts/printSummary[496]",
+    "src/cli.ts/printSummary[497]",
+    "src/cli.ts/printSummary[498]",
+    "src/cli.ts/printSummary[499]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P2, P6\n; LINE: 184\n; PROVEN: changedFiles.length accurately reflects array size\n(declare-const changed_files_count Int)\n(declare-const logged_count Int)\n(assert (= changed_files_count 5))\n(assert (= logged_count changed_files_count))\n(assert (= logged_count 5))\n(assert (not (= logged_count changed_files_count)))\n(check-sat)\n; unsat → logged count matches array length exactly",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

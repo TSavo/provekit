@@ -1,0 +1,28 @@
+{
+  "key": "src/issues.ts/fileViolationIssues[151]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "fileViolationIssues",
+  "line": 151,
+  "signal_hash": "ba42578323c98764e018ce483c8a02fdd1a1861d47d1c840b3c1d84182f97235",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "console.log(`  SKIP (duplicate): ${issue.title.slice(0, 80)}...`)",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 151\n; console.log(`  SKIP (duplicate): ${issue.title.slice(0, 80)}...`)\n; \"...\" is appended as a string literal regardless of whether slice truncated.\n; For titles with length <= 80, no truncation occurred but \"...\" implies it did.\n(declare-const title_len Int)\n(declare-const chars_shown Int)\n(declare-const truncation_occurred Int)   ; 1=yes, 0=no\n; Transition: slice(0,80) on a short title returns the full title\n(assert (> title_len 0))\n(assert (<= title_len 80))\n(assert (= chars_shown title_len))\n(assert (= truncation_occurred 0))\n; Transition: \"...\" is a hardcoded literal in the template string — always appended\n; Violation: log visually implies truncation (truncation_occurred=0 but \"...\" present)\n(assert (= truncation_occurred 0))\n(assert (not (= truncation_occurred 1)))\n(check-sat)\n; sat → title_len=25: log shows \"25-char-title...\" implying truncation that did not occur"
+    }
+  ],
+  "depends_on": [
+    "src/issues.ts/issueExists[101]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 151\n; console.log(`  SKIP (duplicate): ${issue.title.slice(0, 80)}...`)\n; \"...\" is appended as a string literal regardless of whether slice truncated.\n; For titles with length <= 80, no truncation occurred but \"...\" implies it did.\n(declare-const title_len Int)\n(declare-const chars_shown Int)\n(declare-const truncation_occurred Int)   ; 1=yes, 0=no\n; Transition: slice(0,80) on a short title returns the full title\n(assert (> title_len 0))\n(assert (<= title_len 80))\n(assert (= chars_shown title_len))\n(assert (= truncation_occurred 0))\n; Transition: \"...\" is a hardcoded literal in the template string — always appended\n; Violation: log visually implies truncation (truncation_occurred=0 but \"...\" present)\n(assert (= truncation_occurred 0))\n(assert (not (= truncation_occurred 1)))\n(check-sat)\n; sat → title_len=25: log shows \"25-char-title...\" implying truncation that did not occur",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

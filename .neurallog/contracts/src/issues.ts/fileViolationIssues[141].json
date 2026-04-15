@@ -1,0 +1,28 @@
+{
+  "key": "src/issues.ts/fileViolationIssues[141]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "fileViolationIssues",
+  "line": 141,
+  "signal_hash": "58b014672cfdd977ce897f532ab19a963e544d112fc583c4d405a5cbf6911626",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "console.log(`TITLE: ${issue.title}`) claims the title is meaningful.",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 141\n; console.log(`TITLE: ${issue.title}`) claims the title is meaningful.\n; IssueData.title is typed as string with no non-empty precondition enforced.\n; An empty title produces the degenerate output \"TITLE: \".\n(declare-const title_len Int)\n(declare-const log_chars_beyond_prefix Int)\n; Transition: log output length = len(\"TITLE: \") + title_len\n(assert (= title_len 0))\n(assert (= log_chars_beyond_prefix title_len))  ; template literal appends title\n; Violation: log implies meaningful title, but title_len = 0 is reachable\n(assert (= log_chars_beyond_prefix 0))\n(check-sat)\n; sat → title=\"\" passes TypeScript types; dry-run prints \"TITLE: \" with no content"
+    }
+  ],
+  "depends_on": [
+    "src/issues.ts/issueExists[101]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P6\n; LINE: 141\n; console.log(`TITLE: ${issue.title}`) claims the title is meaningful.\n; IssueData.title is typed as string with no non-empty precondition enforced.\n; An empty title produces the degenerate output \"TITLE: \".\n(declare-const title_len Int)\n(declare-const log_chars_beyond_prefix Int)\n; Transition: log output length = len(\"TITLE: \") + title_len\n(assert (= title_len 0))\n(assert (= log_chars_beyond_prefix title_len))  ; template literal appends title\n; Violation: log implies meaningful title, but title_len = 0 is reachable\n(assert (= log_chars_beyond_prefix 0))\n(check-sat)\n; sat → title=\"\" passes TypeScript types; dry-run prints \"TITLE: \" with no content",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

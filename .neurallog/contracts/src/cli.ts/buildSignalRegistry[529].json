@@ -1,0 +1,66 @@
+{
+  "key": "src/cli.ts/buildSignalRegistry[529]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "buildSignalRegistry",
+  "line": 529,
+  "signal_hash": "dd0996b3d3028ee7e9a10a301b78c1f872a62580d37e76751dacae2c4c0511c9",
+  "proven": [
+    {
+      "principle": "P3, P6",
+      "principle_hash": "d31dd4a2e3cae54aceaf5cc4351ce101dd13535c98d68462512246e4ac13e4af",
+      "claim": "PROVEN: When --signal-model flag is provided, llmModel equals that value",
+      "smt2": "; PRINCIPLE: P3, P6\n; LINE: 529\n; PROVEN: When --signal-model flag is provided, llmModel equals that value\n(declare-const signal_model_flag String)\n(declare-const default_model String)\n(declare-const llm_model String)\n(assert (= signal_model_flag \"claude-sonnet\"))\n(assert (= default_model \"sonnet\"))\n(assert (= llm_model signal_model_flag))\n(assert (= llm_model \"claude-sonnet\"))\n(assert (not (= llm_model \"claude-sonnet\")))\n(check-sat)\n; unsat → llmModel correctly uses --signal-model flag value"
+    },
+    {
+      "principle": "P1, P2, P4",
+      "principle_hash": "a23b0c96f7ad7248ce3b8c48f2cf0fe8248291a1f0356b6500c7c9b858a203b9",
+      "claim": "REACHABLE: Multiple calls accumulate generators instead of replacing",
+      "smt2": "; PRINCIPLE: P1, P2, P4\n; LINE: 529\n; REACHABLE: Multiple calls accumulate generators instead of replacing\n; Temporal analysis: first call registers generator A, second call adds generator B\n(declare-const generators_after_first Int)\n(declare-const generators_after_second Int)\n(declare-const model_first String)\n(declare-const model_second String)\n(assert (= generators_after_first 3))\n(assert (= model_first \"sonnet\"))\n(assert (= generators_after_second (+ generators_after_first 1)))\n(assert (= model_second \"claude\"))\n(assert (= generators_after_second 4))\n; Log from second call: \"LLM signal generator enabled (model: claude)\"\n; But registry now has BOTH sonnet AND claude generators\n(assert (= generators_after_second generators_after_first))\n(check-sat)\n; sat → both generators are accumulated, log only reports last model's generator"
+    },
+    {
+      "principle": "P2, P3",
+      "principle_hash": "f0e87613be4f75ae46183a4606c96786362e5bee91d0771979285e471e9d8413",
+      "claim": "PROVEN: registry.register() adds the LLMSignalGenerator to the registry",
+      "smt2": "; PRINCIPLE: P2, P3\n; LINE: 529\n; PROVEN: registry.register() adds the LLMSignalGenerator to the registry\n; State transition: initial generators + 1 = final generators\n(declare-const initial_generator_count Int)\n(declare-const generator_count_after_register Int)\n(assert (= initial_generator_count 3))\n(assert (= generator_count_after_register (+ initial_generator_count 1)))\n(assert (= generator_count_after_register 4))\n(assert (not (= generator_count_after_register 4)))\n(check-sat)\n; unsat → register() correctly adds the generator to the registry"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P1, P3, P5",
+      "principle_hash": "a597db988e2bb2f746b200749a23aa026412665d01b5ded1f77637a52b835beb",
+      "claim": "REACHABLE: --signal-model accepts any string without validation",
+      "smt2": "; PRINCIPLE: P1, P3, P5\n; LINE: 529\n; REACHABLE: --signal-model accepts any string without validation\n; No validation that model name is supported by any provider\n(declare-const signal_model_flag String)\n(declare-const llm_model String)\n(declare-const is_valid_provider_model Bool)\n(assert (= signal_model_flag \"nonexistent-model-xyz\"))\n(assert (= llm_model signal_model_flag))\n(assert (= is_valid_provider_model false))\n; Log accurately outputs the model name provided by user\n; But LLMSignalGenerator may fail at runtime when it tries to use invalid model\n(check-sat)\n; sat → invalid model names are accepted without validation, may cause downstream failures"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3, P6\n; LINE: 529\n; PROVEN: When --signal-model flag is provided, llmModel equals that value\n(declare-const signal_model_flag String)\n(declare-const default_model String)\n(declare-const llm_model String)\n(assert (= signal_model_flag \"claude-sonnet\"))\n(assert (= default_model \"sonnet\"))\n(assert (= llm_model signal_model_flag))\n(assert (= llm_model \"claude-sonnet\"))\n(assert (not (= llm_model \"claude-sonnet\")))\n(check-sat)\n; unsat → llmModel correctly uses --signal-model flag value",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1, P2, P4\n; LINE: 529\n; REACHABLE: Multiple calls accumulate generators instead of replacing\n; Temporal analysis: first call registers generator A, second call adds generator B\n(declare-const generators_after_first Int)\n(declare-const generators_after_second Int)\n(declare-const model_first String)\n(declare-const model_second String)\n(assert (= generators_after_first 3))\n(assert (= model_first \"sonnet\"))\n(assert (= generators_after_second (+ generators_after_first 1)))\n(assert (= model_second \"claude\"))\n(assert (= generators_after_second 4))\n; Log from second call: \"LLM signal generator enabled (model: claude)\"\n; But registry now has BOTH sonnet AND claude generators\n(assert (= generators_after_second generators_after_first))\n(check-sat)\n; sat → both generators are accumulated, log only reports last model's generator",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P2, P3\n; LINE: 529\n; PROVEN: registry.register() adds the LLMSignalGenerator to the registry\n; State transition: initial generators + 1 = final generators\n(declare-const initial_generator_count Int)\n(declare-const generator_count_after_register Int)\n(assert (= initial_generator_count 3))\n(assert (= generator_count_after_register (+ initial_generator_count 1)))\n(assert (= generator_count_after_register 4))\n(assert (not (= generator_count_after_register 4)))\n(check-sat)\n; unsat → register() correctly adds the generator to the registry",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1, P3, P5\n; LINE: 529\n; REACHABLE: --signal-model accepts any string without validation\n; No validation that model name is supported by any provider\n(declare-const signal_model_flag String)\n(declare-const llm_model String)\n(declare-const is_valid_provider_model Bool)\n(assert (= signal_model_flag \"nonexistent-model-xyz\"))\n(assert (= llm_model signal_model_flag))\n(assert (= is_valid_provider_model false))\n; Log accurately outputs the model name provided by user\n; But LLMSignalGenerator may fail at runtime when it tries to use invalid model\n(check-sat)\n; sat → invalid model names are accepted without validation, may cause downstream failures",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}
