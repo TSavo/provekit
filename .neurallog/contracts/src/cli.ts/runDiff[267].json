@@ -4,19 +4,32 @@
   "function": "runDiff",
   "line": 267,
   "signal_hash": "f3f6bae038d03ab90b55aa6d69dfffaee8524b50aeb3ffcc9eaaed3146245fa2",
-  "proven": [
+  "proven": [],
+  "violations": [
     {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "Claim: When runDiff is entered, the log must contain the VERSION string and the reference `ref`.",
-      "smt2": "; LINE: 267\n; PRINCIPLE: P1 – Precondition Propagation\n; Claim: When runDiff is entered, the log must contain the VERSION string and the reference `ref`.\n;   console.log(`neurallog v${VERSION} — proof diff against ${ref}`)\n;   ⇒  VERSION is a non‑empty string and ref is a non‑empty string.\n; PROVEN: we show that the negation (VERSION empty ∨ ref empty) is impossible.\n\n(declare-const VERSION String)           ; from module constant\n(declare-const ref String)               ; computed from args (may be default)\n\n; The code guarantees both strings are non‑empty:\n;   - VERSION is a literal \"0.3.0\" in the source → non‑empty.\n;   - ref is either the user‑supplied argument or the default \"HEAD~1\" → non‑empty.\n(assert (> (str.len VERSION) 0))\n(assert (> (str.len ref) 0))\n\n; Negation of the claim: either VERSION empty or ref empty.\n(assert (or (= (str.len VERSION) 0) (= (str.len ref) 0)))\n\n(check-sat)   ; expected: unsat"
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "Prove: ref is non-empty — code: const ref = args.find(...) || \"HEAD~1\"",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 267\n; Prove: ref is non-empty — code: const ref = args.find(...) || \"HEAD~1\"\n; find() returns undefined (no match) or a string; || \"HEAD~1\" covers all falsy cases\n\n(declare-const find_returned Int)    ; 0=undefined, 1=empty_string, 2=nonempty_string\n(declare-const ref_nonempty Int)     ; 1 = ref has at least one character\n\n; Transition: ref = find_result || \"HEAD~1\"\n; find returns undefined → ref = \"HEAD~1\" (non-empty)\n(assert (=> (= find_returned 0) (= ref_nonempty 1)))\n; find returns \"\" (falsy) → ref = \"HEAD~1\" (non-empty)\n(assert (=> (= find_returned 1) (= ref_nonempty 1)))\n; find returns non-empty string (truthy) → ref = that string (non-empty)\n(assert (=> (= find_returned 2) (= ref_nonempty 1)))\n\n; Attempt to falsify: ref is empty at line 267\n(assert (= ref_nonempty 0))\n(check-sat)"
+    },
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "args is user-supplied; ref = first non-flag arg with no format check",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 267\n; args is user-supplied; ref = first non-flag arg with no format check\n; diffAgainst(ref) requires a valid git ref as precondition\n; runDiff does not establish that precondition\n\n(declare-const user_provided_positional Int)  ; 1 = user gave a positional arg\n(declare-const user_ref_valid Int)            ; 1 = user's string is a valid git ref\n(declare-const ref_valid Int)                 ; 1 = ref reaching diffAgainst is valid\n\n; Transition: no positional arg → default \"HEAD~1\" (valid)\n(assert (=> (= user_provided_positional 0) (= ref_valid 1)))\n; Transition: positional arg present → ref = that arg, validity unconstrained by code\n(assert (=> (= user_provided_positional 1) (= ref_valid user_ref_valid)))\n\n; Violation: user passes an unrecognised string (e.g. \"not@@a//ref\")\n(assert (= user_provided_positional 1))\n(assert (= user_ref_valid 0))\n(assert (= ref_valid 0))\n(check-sat)"
     }
   ],
-  "violations": [],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; LINE: 267\n; PRINCIPLE: P1 – Precondition Propagation\n; Claim: When runDiff is entered, the log must contain the VERSION string and the reference `ref`.\n;   console.log(`neurallog v${VERSION} — proof diff against ${ref}`)\n;   ⇒  VERSION is a non‑empty string and ref is a non‑empty string.\n; PROVEN: we show that the negation (VERSION empty ∨ ref empty) is impossible.\n\n(declare-const VERSION String)           ; from module constant\n(declare-const ref String)               ; computed from args (may be default)\n\n; The code guarantees both strings are non‑empty:\n;   - VERSION is a literal \"0.3.0\" in the source → non‑empty.\n;   - ref is either the user‑supplied argument or the default \"HEAD~1\" → non‑empty.\n(assert (> (str.len VERSION) 0))\n(assert (> (str.len ref) 0))\n\n; Negation of the claim: either VERSION empty or ref empty.\n(assert (or (= (str.len VERSION) 0) (= (str.len ref) 0)))\n\n(check-sat)   ; expected: unsat",
+      "clause": "; PRINCIPLE: P3\n; LINE: 267\n; Prove: ref is non-empty — code: const ref = args.find(...) || \"HEAD~1\"\n; find() returns undefined (no match) or a string; || \"HEAD~1\" covers all falsy cases\n\n(declare-const find_returned Int)    ; 0=undefined, 1=empty_string, 2=nonempty_string\n(declare-const ref_nonempty Int)     ; 1 = ref has at least one character\n\n; Transition: ref = find_result || \"HEAD~1\"\n; find returns undefined → ref = \"HEAD~1\" (non-empty)\n(assert (=> (= find_returned 0) (= ref_nonempty 1)))\n; find returns \"\" (falsy) → ref = \"HEAD~1\" (non-empty)\n(assert (=> (= find_returned 1) (= ref_nonempty 1)))\n; find returns non-empty string (truthy) → ref = that string (non-empty)\n(assert (=> (= find_returned 2) (= ref_nonempty 1)))\n\n; Attempt to falsify: ref is empty at line 267\n(assert (= ref_nonempty 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 267\n; args is user-supplied; ref = first non-flag arg with no format check\n; diffAgainst(ref) requires a valid git ref as precondition\n; runDiff does not establish that precondition\n\n(declare-const user_provided_positional Int)  ; 1 = user gave a positional arg\n(declare-const user_ref_valid Int)            ; 1 = user's string is a valid git ref\n(declare-const ref_valid Int)                 ; 1 = ref reaching diffAgainst is valid\n\n; Transition: no positional arg → default \"HEAD~1\" (valid)\n(assert (=> (= user_provided_positional 0) (= ref_valid 1)))\n; Transition: positional arg present → ref = that arg, validity unconstrained by code\n(assert (=> (= user_provided_positional 1) (= ref_valid user_ref_valid)))\n\n; Violation: user passes an unrecognised string (e.g. \"not@@a//ref\")\n(assert (= user_provided_positional 1))\n(assert (= user_ref_valid 0))\n(assert (= ref_valid 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

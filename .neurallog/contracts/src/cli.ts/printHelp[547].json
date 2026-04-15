@@ -4,23 +4,8 @@
   "function": "printHelp",
   "line": 547,
   "signal_hash": "3090be93511c0ea6071495dfd39dbd2eada00893243d1e76d432fc1079835745",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Proven: \"hook\" appears in help (line 547) AND is implemented as",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 547\n; Proven: \"hook\" appears in help (line 547) AND is implemented as\n; case \"hook\": runHook(rest) in the switch.\n(declare-const hook_documented Int)\n(declare-const hook_implemented Int)\n(assert (= hook_documented 1))\n(assert (= hook_implemented 1))\n(assert (not (= hook_documented hook_implemented)))\n(check-sat)\n; Expected: unsat — hook is both documented and implemented"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 547\n; Proven: \"hook\" appears in help (line 547) AND is implemented as\n; case \"hook\": runHook(rest) in the switch.\n(declare-const hook_documented Int)\n(declare-const hook_implemented Int)\n(assert (= hook_documented 1))\n(assert (= hook_implemented 1))\n(assert (not (= hook_documented hook_implemented)))\n(check-sat)\n; Expected: unsat — hook is both documented and implemented",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

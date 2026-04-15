@@ -6,17 +6,17 @@
   "signal_hash": "343a67a5334500703566850a6d9e804aafb18f450b24365421e4f06d9ead4440",
   "proven": [
     {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "Proven: \"Commands:\" header executes immediately after the first separator —",
-      "smt2": "; PRINCIPLE: P2\n; LINE: 539\n; Proven: \"Commands:\" header executes immediately after the first separator —\n; sequential execution, no conditional between 538 and 539.\n(declare-const stmt_538_fired Int)\n(declare-const stmt_539_fired Int)\n(assert (= stmt_538_fired 1))\n(assert (= stmt_539_fired stmt_538_fired))\n(assert (not (= stmt_539_fired 1)))\n(check-sat)\n; Expected: unsat — \"Commands:\" header cannot be skipped"
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Documentation completeness: the number of commands printed in the",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 539\n; Documentation completeness: the number of commands printed in the\n; \"Commands:\" section must equal the number of cases in main's switch.\n(declare-const switch_cases Int)\n(declare-const documented_commands Int)\n; Code transition: main switch has 9 named cases:\n;   init, analyze, verify, derive, diff, explain, report, hook, override\n(assert (= switch_cases 9))\n; Code transition: printHelp lines 540-548 document exactly 9 commands:\n;   init, analyze, derive, verify, diff, explain, report, hook, override\n(assert (= documented_commands 9))\n; Negation: counts differ (undocumented or phantom command exists)\n(assert (not (= switch_cases documented_commands)))\n(check-sat)"
     }
   ],
   "violations": [],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P2\n; LINE: 539\n; Proven: \"Commands:\" header executes immediately after the first separator —\n; sequential execution, no conditional between 538 and 539.\n(declare-const stmt_538_fired Int)\n(declare-const stmt_539_fired Int)\n(assert (= stmt_538_fired 1))\n(assert (= stmt_539_fired stmt_538_fired))\n(assert (not (= stmt_539_fired 1)))\n(check-sat)\n; Expected: unsat — \"Commands:\" header cannot be skipped",
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 539\n; Documentation completeness: the number of commands printed in the\n; \"Commands:\" section must equal the number of cases in main's switch.\n(declare-const switch_cases Int)\n(declare-const documented_commands Int)\n; Code transition: main switch has 9 named cases:\n;   init, analyze, verify, derive, diff, explain, report, hook, override\n(assert (= switch_cases 9))\n; Code transition: printHelp lines 540-548 document exactly 9 commands:\n;   init, analyze, derive, verify, diff, explain, report, hook, override\n(assert (= documented_commands 9))\n; Negation: counts differ (undocumented or phantom command exists)\n(assert (not (= switch_cases documented_commands)))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

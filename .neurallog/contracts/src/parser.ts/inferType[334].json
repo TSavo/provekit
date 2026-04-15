@@ -4,36 +4,8 @@
   "function": "inferType",
   "line": 334,
   "signal_hash": "afdf09b53701d5f76404a8af24fe48ef80685f2f6f3e0e7e27b3a4a885b305a9",
-  "proven": [
-    {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "PROVEN: when childForFieldName(\"function\") returns null, optional chaining",
-      "smt2": "; PRINCIPLE: P1\n; LINE: 334\n; PROVEN: when childForFieldName(\"function\") returns null, optional chaining\n; prevents the member_expression check; the call_expression case returns null.\n\n(declare-const fn_is_null Int)  ; 1 = childForFieldName returned null, 0 = returned a node\n(declare-const result Int)       ; 0 = null, 1 = \"string\", 2 = \"number\"\n\n; Precondition: we are in the call_expression switch branch\n; Code transition: fn?.type === \"member_expression\" evaluates to undefined === ... → false\n;                  if-block is skipped → fall through → return null\n(assert (= fn_is_null 1))\n(assert (=> (= fn_is_null 1) (= result 0)))\n\n; Negation: result is not null (attempt to falsify the property)\n(assert (not (= result 0)))\n(check-sat)\n; expect: unsat — null fn forces result=0, contradicting result≠0"
-    },
-    {
-      "principle": "P3",
-      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
-      "claim": "PROVEN: only member_expression function types are recognized.",
-      "smt2": "; PRINCIPLE: P3\n; LINE: 334\n; PROVEN: only member_expression function types are recognized.\n; Identifier functions (parseInt, String, etc.) yield null — the if-block is guarded\n; by fn?.type === \"member_expression\" and no other branch exists.\n\n; fn_type: 0 = null, 1 = \"member_expression\", 2 = \"identifier\" or other\n(declare-const fn_type Int)\n(declare-const result Int)  ; 0 = null, 1 = \"string\", 2 = \"number\"\n\n; Precondition: fn is non-null but not a member_expression (e.g., parseInt(x))\n(assert (= fn_type 2))\n\n; Code transition: if (fn?.type === \"member_expression\") fails\n;                  → fall through to: return null\n(assert (=> (not (= fn_type 1)) (= result 0)))\n\n; Negation: result is not null\n(assert (not (= result 0)))\n(check-sat)\n; expect: unsat — non-member-expression fn always yields null, contradicting result≠0"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P1\n; LINE: 334\n; PROVEN: when childForFieldName(\"function\") returns null, optional chaining\n; prevents the member_expression check; the call_expression case returns null.\n\n(declare-const fn_is_null Int)  ; 1 = childForFieldName returned null, 0 = returned a node\n(declare-const result Int)       ; 0 = null, 1 = \"string\", 2 = \"number\"\n\n; Precondition: we are in the call_expression switch branch\n; Code transition: fn?.type === \"member_expression\" evaluates to undefined === ... → false\n;                  if-block is skipped → fall through → return null\n(assert (= fn_is_null 1))\n(assert (=> (= fn_is_null 1) (= result 0)))\n\n; Negation: result is not null (attempt to falsify the property)\n(assert (not (= result 0)))\n(check-sat)\n; expect: unsat — null fn forces result=0, contradicting result≠0",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P3\n; LINE: 334\n; PROVEN: only member_expression function types are recognized.\n; Identifier functions (parseInt, String, etc.) yield null — the if-block is guarded\n; by fn?.type === \"member_expression\" and no other branch exists.\n\n; fn_type: 0 = null, 1 = \"member_expression\", 2 = \"identifier\" or other\n(declare-const fn_type Int)\n(declare-const result Int)  ; 0 = null, 1 = \"string\", 2 = \"number\"\n\n; Precondition: fn is non-null but not a member_expression (e.g., parseInt(x))\n(assert (= fn_type 2))\n\n; Code transition: if (fn?.type === \"member_expression\") fails\n;                  → fall through to: return null\n(assert (=> (not (= fn_type 1)) (= result 0)))\n\n; Negation: result is not null\n(assert (not (= result 0)))\n(check-sat)\n; expect: unsat — non-member-expression fn always yields null, contradicting result≠0",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

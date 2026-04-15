@@ -4,8 +4,34 @@
   "function": "main",
   "line": 40,
   "signal_hash": "a0dc8ef0318e46be757b12dd50697a732331c8cb53d949023510a1bbb2527165",
-  "proven": [],
-  "violations": [],
+  "proven": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "command is provably defined (non-null) at line 40 — the non-null assertion args[0]! is safe.",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 40\n; command is provably defined (non-null) at line 40 — the non-null assertion args[0]! is safe.\n; PROVE: command_defined = 1 is invariant at line 40.\n(declare-const args_length Int)\n(declare-const command_defined Int)   ; 1 = args[0] is a defined string value\n; Code transition: guard at line 16 calls process.exit(0) when args.length === 0\n; Reaching line 40 means that guard was false → args_length > 0\n(assert (> args_length 0))\n; Code transition: command = args[0]! — TypeScript non-null assertion; args_length > 0 makes it safe\n(assert (=> (> args_length 0) (= command_defined 1)))\n; Negation: command is undefined at line 40\n(assert (= command_defined 0))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "command = args[0] is fully caller-supplied. The \"-v\" verbose flag is documented in --help",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 40\n; command = args[0] is fully caller-supplied. The \"-v\" verbose flag is documented in --help\n; but if passed as args[0], it is reported as \"Unknown command: -v\" instead of being recognized.\n(declare-const args_0_is_verbose_flag Int)  ; 1 = args[0] is \"-v\" (documented verbose flag)\n(declare-const is_help_flag Int)             ; 1 = args[0] is \"--help\" or \"-h\"\n(declare-const is_version_flag_present Int)  ; 1 = args.includes(\"--version\") anywhere\n(declare-const reaches_default Int)          ; 1 = switch default branch executes\n; Code transition: \"-v\" is not \"--help\" or \"-h\" → line 16 guard does NOT exit\n(assert (=> (= args_0_is_verbose_flag 1) (= is_help_flag 0)))\n; Code transition: \"-v\" is not \"--version\" → line 20 guard does NOT exit\n(assert (=> (= args_0_is_verbose_flag 1) (= is_version_flag_present 0)))\n; Code transition: switch has no case for \"-v\" → default executes\n(assert (=> (= args_0_is_verbose_flag 1) (= reaches_default 1)))\n; args[0] = \"-v\" (user ran \"neurallog -v analyze src/foo.ts\")\n(assert (= args_0_is_verbose_flag 1))\n; Violation: a documented option is reported as an unknown command\n(assert (= args_0_is_verbose_flag 1))\n(assert (= reaches_default 1))\n(check-sat)"
+    },
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "The error message claims \"Unknown command\" but command can start with \"-\" (be a flag).",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 40\n; The error message claims \"Unknown command\" but command can start with \"-\" (be a flag).\n; The semantic claim \"Unknown command\" is false when the token is a flag, not a subcommand.\n(declare-const command_starts_with_dash Int)  ; 1 = command[0] is '-'\n(declare-const is_actually_a_flag Int)         ; 1 = token is an option/flag, not a command\n(declare-const message_is_accurate Int)        ; 1 = \"Unknown command\" accurately describes token\n; Code transition: no format check on args[0] before switch dispatch\n; A flag like \"--output\" or \"-q\" passes all guards and reaches default\n(assert (= command_starts_with_dash 1))\n; Code transition: by convention, tokens starting with '-' are flags/options, not commands\n(assert (=> (= command_starts_with_dash 1) (= is_actually_a_flag 1)))\n; Code transition: the error message string is fixed as \"Unknown command: ${command}\"\n; \"Unknown command\" is semantically inaccurate when command is a flag\n(assert (=> (= is_actually_a_flag 1) (= message_is_accurate 0)))\n; Violation: message accuracy is 0 when a flag reaches the default case\n(assert (= command_starts_with_dash 1))\n(assert (= message_is_accurate 0))\n(check-sat)"
+    },
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "After console.error (stderr) at line 40, printHelp() at line 41 writes to stdout.",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 40\n; After console.error (stderr) at line 40, printHelp() at line 41 writes to stdout.\n; Error output and help output reach different file descriptors — interleaved in terminal.\n; The exit-code claim (process.exit(1)) is correct, but the dual-stream emission can produce\n; garbled terminal output when stdout is line-buffered and stderr is unbuffered.\n(declare-const error_fd Int)   ; file descriptor for console.error: 2 = stderr\n(declare-const help_fd Int)    ; file descriptor for printHelp's console.log: 1 = stdout\n(declare-const exit_code Int)\n; Code transition: console.error writes to fd 2 (stderr)\n(assert (= error_fd 2))\n; Code transition: printHelp calls console.log which writes to fd 1 (stdout)\n(assert (= help_fd 1))\n; Code transition: process.exit(1) at line 42\n(assert (= exit_code 1))\n; Violation: error and diagnostic help go to different streams\n(assert (not (= error_fd help_fd)))\n(check-sat)"
+    }
+  ],
   "depends_on": [
     "src/cli.ts/printHelp[537]",
     "src/cli.ts/printHelp[538]",
@@ -125,5 +151,34 @@
     "src/cli.ts/runVerify[251]",
     "src/cli.ts/runVerify[252]"
   ],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 40\n; command is provably defined (non-null) at line 40 — the non-null assertion args[0]! is safe.\n; PROVE: command_defined = 1 is invariant at line 40.\n(declare-const args_length Int)\n(declare-const command_defined Int)   ; 1 = args[0] is a defined string value\n; Code transition: guard at line 16 calls process.exit(0) when args.length === 0\n; Reaching line 40 means that guard was false → args_length > 0\n(assert (> args_length 0))\n; Code transition: command = args[0]! — TypeScript non-null assertion; args_length > 0 makes it safe\n(assert (=> (> args_length 0) (= command_defined 1)))\n; Negation: command is undefined at line 40\n(assert (= command_defined 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 40\n; command = args[0] is fully caller-supplied. The \"-v\" verbose flag is documented in --help\n; but if passed as args[0], it is reported as \"Unknown command: -v\" instead of being recognized.\n(declare-const args_0_is_verbose_flag Int)  ; 1 = args[0] is \"-v\" (documented verbose flag)\n(declare-const is_help_flag Int)             ; 1 = args[0] is \"--help\" or \"-h\"\n(declare-const is_version_flag_present Int)  ; 1 = args.includes(\"--version\") anywhere\n(declare-const reaches_default Int)          ; 1 = switch default branch executes\n; Code transition: \"-v\" is not \"--help\" or \"-h\" → line 16 guard does NOT exit\n(assert (=> (= args_0_is_verbose_flag 1) (= is_help_flag 0)))\n; Code transition: \"-v\" is not \"--version\" → line 20 guard does NOT exit\n(assert (=> (= args_0_is_verbose_flag 1) (= is_version_flag_present 0)))\n; Code transition: switch has no case for \"-v\" → default executes\n(assert (=> (= args_0_is_verbose_flag 1) (= reaches_default 1)))\n; args[0] = \"-v\" (user ran \"neurallog -v analyze src/foo.ts\")\n(assert (= args_0_is_verbose_flag 1))\n; Violation: a documented option is reported as an unknown command\n(assert (= args_0_is_verbose_flag 1))\n(assert (= reaches_default 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 40\n; The error message claims \"Unknown command\" but command can start with \"-\" (be a flag).\n; The semantic claim \"Unknown command\" is false when the token is a flag, not a subcommand.\n(declare-const command_starts_with_dash Int)  ; 1 = command[0] is '-'\n(declare-const is_actually_a_flag Int)         ; 1 = token is an option/flag, not a command\n(declare-const message_is_accurate Int)        ; 1 = \"Unknown command\" accurately describes token\n; Code transition: no format check on args[0] before switch dispatch\n; A flag like \"--output\" or \"-q\" passes all guards and reaches default\n(assert (= command_starts_with_dash 1))\n; Code transition: by convention, tokens starting with '-' are flags/options, not commands\n(assert (=> (= command_starts_with_dash 1) (= is_actually_a_flag 1)))\n; Code transition: the error message string is fixed as \"Unknown command: ${command}\"\n; \"Unknown command\" is semantically inaccurate when command is a flag\n(assert (=> (= is_actually_a_flag 1) (= message_is_accurate 0)))\n; Violation: message accuracy is 0 when a flag reaches the default case\n(assert (= command_starts_with_dash 1))\n(assert (= message_is_accurate 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 40\n; After console.error (stderr) at line 40, printHelp() at line 41 writes to stdout.\n; Error output and help output reach different file descriptors — interleaved in terminal.\n; The exit-code claim (process.exit(1)) is correct, but the dual-stream emission can produce\n; garbled terminal output when stdout is line-buffered and stderr is unbuffered.\n(declare-const error_fd Int)   ; file descriptor for console.error: 2 = stderr\n(declare-const help_fd Int)    ; file descriptor for printHelp's console.log: 1 = stdout\n(declare-const exit_code Int)\n; Code transition: console.error writes to fd 2 (stderr)\n(assert (= error_fd 2))\n; Code transition: printHelp calls console.log which writes to fd 1 (stdout)\n(assert (= help_fd 1))\n; Code transition: process.exit(1) at line 42\n(assert (= exit_code 1))\n; Violation: error and diagnostic help go to different streams\n(assert (not (= error_fd help_fd)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

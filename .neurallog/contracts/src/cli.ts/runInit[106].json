@@ -4,23 +4,8 @@
   "function": "runInit",
   "line": 106,
   "signal_hash": "fef76714662920d54e7c5ff40eeb1bd910316236739984fc4f3a9a9085134a44",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Transition: HookInstaller.install() sets `path` only when it can be",
-      "smt2": "; LINE: 106  ; PRINCIPLE: P5 – Semantic Correctness (hook path)\n(declare-const has_path Int)              ; 1 = result.path present\n(declare-const len_path Int)              ; length of the path string\n; Transition: HookInstaller.install() sets `path` only when it can be\n; written; in that case the string is a valid filesystem path (non‑empty).\n(assert (= has_path 1))\n(assert (> len_path 0))\n; Negated property: path present but empty\n(assert (and (= has_path 1) (<= len_path 0)))\n(check-sat)                               ; unsat → path non‑empty"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; LINE: 106  ; PRINCIPLE: P5 – Semantic Correctness (hook path)\n(declare-const has_path Int)              ; 1 = result.path present\n(declare-const len_path Int)              ; length of the path string\n; Transition: HookInstaller.install() sets `path` only when it can be\n; written; in that case the string is a valid filesystem path (non‑empty).\n(assert (= has_path 1))\n(assert (> len_path 0))\n; Negated property: path present but empty\n(assert (and (= has_path 1) (<= len_path 0)))\n(check-sat)                               ; unsat → path non‑empty",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

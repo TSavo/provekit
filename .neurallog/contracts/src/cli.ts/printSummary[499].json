@@ -5,7 +5,22 @@
   "line": 499,
   "signal_hash": "65a52b833f1e81b50e7e7e011b513e769a37f164ca444709a440fef662cf11cd",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "PROVEN: Line 499 logs a static string — no field dereference, unconditionally safe.",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 499\n; PROVEN: Line 499 logs a static string — no field dereference, unconditionally safe.\n; Reaching line 499 proves lines 495-498 completed without throwing.\n(declare-const lines_495_to_498_threw Int)  ; 1 = some prior line threw an exception\n(declare-const line_499_executes Int)       ; 1 = closing separator is printed\n; Code transition: line 499 executes only if no exception was raised on lines 495-498\n(assert (=> (= lines_495_to_498_threw 0) (= line_499_executes 1)))\n; Negated property: line 499 executes even though a prior line threw\n(assert (= lines_495_to_498_threw 1))\n(assert (= line_499_executes 1))\n(check-sat)"
+    }
+  ],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 499\n; PROVEN: Line 499 logs a static string — no field dereference, unconditionally safe.\n; Reaching line 499 proves lines 495-498 completed without throwing.\n(declare-const lines_495_to_498_threw Int)  ; 1 = some prior line threw an exception\n(declare-const line_499_executes Int)       ; 1 = closing separator is printed\n; Code transition: line 499 executes only if no exception was raised on lines 495-498\n(assert (=> (= lines_495_to_498_threw 0) (= line_499_executes 1)))\n; Negated property: line 499 executes even though a prior line threw\n(assert (= lines_495_to_498_threw 1))\n(assert (= line_499_executes 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

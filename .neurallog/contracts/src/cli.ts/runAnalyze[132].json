@@ -5,7 +5,20 @@
   "line": 132,
   "signal_hash": "0e47faf973f89e65f4c91ddb5ade5eaca453bbf81e8cd77f053712cd73c6b91d",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "PROVEN: model is always a non-empty string — || \"sonnet\" fallback covers all falsy returns",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 132\n; PROVEN: model is always a non-empty string — || \"sonnet\" fallback covers all falsy returns\n(declare-const getflag_return_length Int)  ; 0 = undefined/empty, >0 = non-empty value\n(declare-const model_length Int)           ; length of model string after || operator\n; Code transition: getFlag returns undefined when --model absent or is last element\n; Code transition: empty string is also falsy → || fires\n(assert (=> (= getflag_return_length 0) (= model_length 6)))  ; \"sonnet\" has length 6\n; Code transition: non-empty getFlag return → model = that return (same non-zero length)\n(assert (=> (> getflag_return_length 0) (= model_length getflag_return_length)))\n; Negation: model is empty (length 0)\n(assert (= model_length 0))\n(check-sat)"
+    },
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "VIOLATION: model can be any caller-supplied string — no allowlist check against valid model names",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 132\n; VIOLATION: model can be any caller-supplied string — no allowlist check against valid model names\n(declare-const flag_present Int)               ; 1 = --model flag appears in args\n(declare-const flag_next_value_is_valid Int)   ; 1 = value is \"sonnet\"/\"haiku\"/\"opus\"/known model\n(declare-const model_is_valid Int)             ; 1 = model is a recognized provider model name\n; Code transition: getFlag returns args[idx + 1] without any validation of the string content\n(assert (= flag_present 1))\n(assert (= flag_next_value_is_valid 0))     ; caller passed an unrecognized model name\n; Code transition: no allowlist; model = whatever the caller supplied\n(assert (= model_is_valid flag_next_value_is_valid))\n; Violation: model logged as fact, but its value is semantically invalid\n(assert (= model_is_valid 0))\n(check-sat)"
+    }
+  ],
   "depends_on": [
     "src/cli.ts/buildSignalRegistry[529]",
     "src/cli.ts/fileIssues[518]",
@@ -16,5 +29,20 @@
     "src/cli.ts/printSummary[498]",
     "src/cli.ts/printSummary[499]"
   ],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 132\n; PROVEN: model is always a non-empty string — || \"sonnet\" fallback covers all falsy returns\n(declare-const getflag_return_length Int)  ; 0 = undefined/empty, >0 = non-empty value\n(declare-const model_length Int)           ; length of model string after || operator\n; Code transition: getFlag returns undefined when --model absent or is last element\n; Code transition: empty string is also falsy → || fires\n(assert (=> (= getflag_return_length 0) (= model_length 6)))  ; \"sonnet\" has length 6\n; Code transition: non-empty getFlag return → model = that return (same non-zero length)\n(assert (=> (> getflag_return_length 0) (= model_length getflag_return_length)))\n; Negation: model is empty (length 0)\n(assert (= model_length 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 132\n; VIOLATION: model can be any caller-supplied string — no allowlist check against valid model names\n(declare-const flag_present Int)               ; 1 = --model flag appears in args\n(declare-const flag_next_value_is_valid Int)   ; 1 = value is \"sonnet\"/\"haiku\"/\"opus\"/known model\n(declare-const model_is_valid Int)             ; 1 = model is a recognized provider model name\n; Code transition: getFlag returns args[idx + 1] without any validation of the string content\n(assert (= flag_present 1))\n(assert (= flag_next_value_is_valid 0))     ; caller passed an unrecognized model name\n; Code transition: no allowlist; model = whatever the caller supplied\n(assert (= model_is_valid flag_next_value_is_valid))\n; Violation: model logged as fact, but its value is semantically invalid\n(assert (= model_is_valid 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

@@ -6,17 +6,17 @@
   "signal_hash": "e5d728d1f6c32127e8be39139a232254872a8ba3af659f5d19e7cde6efa14c44",
   "proven": [
     {
-      "principle": "P2, P6",
-      "principle_hash": "8fd7f7239a45063823ed3ff01abc8e0627591db90d10566d590fa24c6d48b94c",
-      "claim": "PROVEN: Signals count accurately reflects contracts.length",
-      "smt2": "; PRINCIPLE: P2, P6\n; LINE: 437\n; PROVEN: Signals count accurately reflects contracts.length\n(declare-const contracts_length Int)\n(declare-const logged_signals Int)\n(assert (>= contracts_length 0))\n(assert (= logged_signals contracts_length))\n(assert (not (= logged_signals contracts_length)))\n(check-sat)\n; unsat → log matches contracts.length exactly"
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "PROVEN: the logged Signals count equals contracts.length, which is > 0",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 437\n; PROVEN: the logged Signals count equals contracts.length, which is > 0\n(declare-const contracts_length Int)\n(declare-const signals_logged Int)\n; Code transition: contracts = store.getAll(); guard ensures contracts_length > 0\n(assert (> contracts_length 0))\n; Code transition: console.log(`Signals: ${contracts.length}`) — value is contracts_length\n(assert (= signals_logged contracts_length))\n; Negated property: signals_logged ≤ 0\n(assert (<= signals_logged 0))\n(check-sat)"
     }
   ],
   "violations": [],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P2, P6\n; LINE: 437\n; PROVEN: Signals count accurately reflects contracts.length\n(declare-const contracts_length Int)\n(declare-const logged_signals Int)\n(assert (>= contracts_length 0))\n(assert (= logged_signals contracts_length))\n(assert (not (= logged_signals contracts_length)))\n(check-sat)\n; unsat → log matches contracts.length exactly",
+      "clause": "; PRINCIPLE: P6\n; LINE: 437\n; PROVEN: the logged Signals count equals contracts.length, which is > 0\n(declare-const contracts_length Int)\n(declare-const signals_logged Int)\n; Code transition: contracts = store.getAll(); guard ensures contracts_length > 0\n(assert (> contracts_length 0))\n; Code transition: console.log(`Signals: ${contracts.length}`) — value is contracts_length\n(assert (= signals_logged contracts_length))\n; Negated property: signals_logged ≤ 0\n(assert (<= signals_logged 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

@@ -4,23 +4,8 @@
   "function": "printHelp",
   "line": 549,
   "signal_hash": "0f37f79b5704d1be380c9b72a7d80073ae507f9b462f5ed2a077c4a91728c941",
-  "proven": [
-    {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "Proven: second empty-line separator (549) executes after the last command",
-      "smt2": "; PRINCIPLE: P2\n; LINE: 549\n; Proven: second empty-line separator (549) executes after the last command\n; entry (548) — sequential code, no branch between them.\n(declare-const stmt_548_fired Int)\n(declare-const stmt_549_fired Int)\n(assert (= stmt_548_fired 1))\n(assert (= stmt_549_fired stmt_548_fired))\n(assert (not (= stmt_549_fired 1)))\n(check-sat)\n; Expected: unsat — second separator cannot be skipped"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P2\n; LINE: 549\n; Proven: second empty-line separator (549) executes after the last command\n; entry (548) — sequential code, no branch between them.\n(declare-const stmt_548_fired Int)\n(declare-const stmt_549_fired Int)\n(assert (= stmt_548_fired 1))\n(assert (= stmt_549_fired stmt_548_fired))\n(assert (not (= stmt_549_fired 1)))\n(check-sat)\n; Expected: unsat — second separator cannot be skipped",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

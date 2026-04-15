@@ -8,15 +8,55 @@
     {
       "principle": "P5",
       "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Transitions:",
-      "smt2": "; LINE: 97  ; PRINCIPLE: P5 – Arithmetic Safety (non‑negative counters)\n(declare-const totalSignals Int)\n(declare-const fileCount Int)\n; Transitions:\n;   totalSignals starts 0 and only ever adds signals.length (≥0)\n;   fileCount starts 0 and only increments by 1 when a file has ≥0 signals\n(assert (>= totalSignals 0))\n(assert (>= fileCount 0))\n; Negated property: a counter becomes negative\n(assert (or (< totalSignals 0) (< fileCount 0)))\n(check-sat)                               ; unsat → counters stay ≥0"
+      "claim": "PROVEN: totalSignals >= fileCount at the time of the log.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 97\n; PROVEN: totalSignals >= fileCount at the time of the log.\n; fileCount increments only when signals.length > 0, adding at least 1 to totalSignals.\n(declare-const total_signals Int)\n(declare-const file_count Int)\n(declare-const n Int)  ; number of counted files\n(declare-const s Int)  ; minimum signals per counted file\n; Code transition: s >= 1 (guard: `if (signals.length > 0)`)\n(assert (>= s 1))\n; Code transition: file_count = n; total_signals >= n * s (each counted file contributes >= 1)\n(assert (>= n 0))\n(assert (= file_count n))\n(assert (>= total_signals (* n s)))\n; Negated property: totalSignals < fileCount\n(assert (< total_signals file_count))\n(check-sat)"
+    },
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVEN: fileCount cannot exceed the number of files iterated",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 97\n; PROVEN: fileCount cannot exceed the number of files iterated\n(declare-const ts_files_len Int)\n(declare-const file_count Int)\n; Code transition: loop iterates exactly ts_files_len times; fileCount increments at most once per iteration\n(assert (>= ts_files_len 0))\n(assert (>= file_count 0))\n(assert (<= file_count ts_files_len))\n; Negated property: fileCount > tsFiles.length\n(assert (> file_count ts_files_len))\n(check-sat)"
     }
   ],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "VIOLATION: fileCount counts only files where signals.length > 0, not total files scanned.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 97\n; VIOLATION: fileCount counts only files where signals.length > 0, not total files scanned.\n; \"Found X signals across Y files\" is semantically misleading — Y undercounts coverage.\n(declare-const files_scanned Int)\n(declare-const files_with_signals Int)\n(declare-const files_without_signals Int)\n; Code transition: files_scanned = files_with_signals + files_without_signals\n(assert (= files_scanned (+ files_with_signals files_without_signals)))\n(assert (>= files_with_signals 0))\n(assert (>= files_without_signals 0))\n; Code transition: fileCount = files_with_signals (guard: signals.length > 0)\n; Violation: files_without_signals > 0 → \"Y files\" < actual scanned file count\n(assert (> files_without_signals 0))\n(assert (> files_scanned files_with_signals))\n(check-sat)"
+    },
+    {
+      "principle": "P2",
+      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
+      "claim": "VIOLATION: tsFiles has no deduplication. If the same resolved path appears twice",
+      "smt2": "; PRINCIPLE: P2\n; LINE: 97\n; VIOLATION: tsFiles has no deduplication. If the same resolved path appears twice\n; (e.g., from symlinks or overlapping git-ls-files matches), both iterations fire,\n; and both totalSignals and fileCount are inflated.\n(declare-const path_a Int)              ; symbolic ID for first occurrence\n(declare-const path_b Int)              ; symbolic ID for second occurrence\n(declare-const signals_per_file Int)\n(declare-const total_signals Int)\n(declare-const file_count Int)\n; Code transition: both array entries resolve to the same absolute path\n(assert (= path_a path_b))\n; Code transition: both iterations succeed and pass the signals.length > 0 guard\n(assert (> signals_per_file 0))\n; Code transition: totalSignals and fileCount incremented for each occurrence independently\n(assert (= total_signals (* 2 signals_per_file)))\n(assert (= file_count 2))\n; Violation: totalSignals and fileCount are both inflated — same file counted twice\n(assert (> total_signals signals_per_file))\n(check-sat)"
+    }
+  ],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; LINE: 97  ; PRINCIPLE: P5 – Arithmetic Safety (non‑negative counters)\n(declare-const totalSignals Int)\n(declare-const fileCount Int)\n; Transitions:\n;   totalSignals starts 0 and only ever adds signals.length (≥0)\n;   fileCount starts 0 and only increments by 1 when a file has ≥0 signals\n(assert (>= totalSignals 0))\n(assert (>= fileCount 0))\n; Negated property: a counter becomes negative\n(assert (or (< totalSignals 0) (< fileCount 0)))\n(check-sat)                               ; unsat → counters stay ≥0",
+      "clause": "; PRINCIPLE: P5\n; LINE: 97\n; PROVEN: totalSignals >= fileCount at the time of the log.\n; fileCount increments only when signals.length > 0, adding at least 1 to totalSignals.\n(declare-const total_signals Int)\n(declare-const file_count Int)\n(declare-const n Int)  ; number of counted files\n(declare-const s Int)  ; minimum signals per counted file\n; Code transition: s >= 1 (guard: `if (signals.length > 0)`)\n(assert (>= s 1))\n; Code transition: file_count = n; total_signals >= n * s (each counted file contributes >= 1)\n(assert (>= n 0))\n(assert (= file_count n))\n(assert (>= total_signals (* n s)))\n; Negated property: totalSignals < fileCount\n(assert (< total_signals file_count))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 97\n; PROVEN: fileCount cannot exceed the number of files iterated\n(declare-const ts_files_len Int)\n(declare-const file_count Int)\n; Code transition: loop iterates exactly ts_files_len times; fileCount increments at most once per iteration\n(assert (>= ts_files_len 0))\n(assert (>= file_count 0))\n(assert (<= file_count ts_files_len))\n; Negated property: fileCount > tsFiles.length\n(assert (> file_count ts_files_len))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 97\n; VIOLATION: fileCount counts only files where signals.length > 0, not total files scanned.\n; \"Found X signals across Y files\" is semantically misleading — Y undercounts coverage.\n(declare-const files_scanned Int)\n(declare-const files_with_signals Int)\n(declare-const files_without_signals Int)\n; Code transition: files_scanned = files_with_signals + files_without_signals\n(assert (= files_scanned (+ files_with_signals files_without_signals)))\n(assert (>= files_with_signals 0))\n(assert (>= files_without_signals 0))\n; Code transition: fileCount = files_with_signals (guard: signals.length > 0)\n; Violation: files_without_signals > 0 → \"Y files\" < actual scanned file count\n(assert (> files_without_signals 0))\n(assert (> files_scanned files_with_signals))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P2\n; LINE: 97\n; VIOLATION: tsFiles has no deduplication. If the same resolved path appears twice\n; (e.g., from symlinks or overlapping git-ls-files matches), both iterations fire,\n; and both totalSignals and fileCount are inflated.\n(declare-const path_a Int)              ; symbolic ID for first occurrence\n(declare-const path_b Int)              ; symbolic ID for second occurrence\n(declare-const signals_per_file Int)\n(declare-const total_signals Int)\n(declare-const file_count Int)\n; Code transition: both array entries resolve to the same absolute path\n(assert (= path_a path_b))\n; Code transition: both iterations succeed and pass the signals.length > 0 guard\n(assert (> signals_per_file 0))\n; Code transition: totalSignals and fileCount incremented for each occurrence independently\n(assert (= total_signals (* 2 signals_per_file)))\n(assert (= file_count 2))\n; Violation: totalSignals and fileCount are both inflated — same file counted twice\n(assert (> total_signals signals_per_file))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

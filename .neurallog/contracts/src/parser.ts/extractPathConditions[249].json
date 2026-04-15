@@ -4,10 +4,25 @@
   "function": "extractPathConditions",
   "line": 249,
   "signal_hash": "2a956f8ba1ed41c4d86755f68eec59c8d74d885cb77e747b47c7b0be375542d0",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "PROVEN: negated condition added only when alternative exists and logNode is inside it",
+      "smt2": "; PROVEN: negated condition added only when alternative exists and logNode is inside it\n; PRINCIPLE: P5\n; LINE: 249\n(declare-const alternative_is_nonnull Int)  ; 1 = alternative node exists\n(declare-const in_alternative Int)          ; 1 = isDescendantOf(logNode, alternative)\n(declare-const neg_condition_added Int)     ; 1 = !(condition.text) added\n\n; Code transition: guarded by (alternative && ...) — null alternative short-circuits\n(assert (=> (= alternative_is_nonnull 0) (= in_alternative 0)))\n\n; Code transition: !(condition) only added when both guards pass\n(assert (=> (= neg_condition_added 1) (= alternative_is_nonnull 1)))\n(assert (=> (= neg_condition_added 1) (= in_alternative 1)))\n\n; Negation: !(condition) added without a valid alternative node\n(assert (= alternative_is_nonnull 0))\n(assert (= neg_condition_added 1))\n(check-sat)"
+    }
+  ],
   "violations": [],
   "depends_on": [
     "src/parser.ts/isDescendantOf[353]"
   ],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PROVEN: negated condition added only when alternative exists and logNode is inside it\n; PRINCIPLE: P5\n; LINE: 249\n(declare-const alternative_is_nonnull Int)  ; 1 = alternative node exists\n(declare-const in_alternative Int)          ; 1 = isDescendantOf(logNode, alternative)\n(declare-const neg_condition_added Int)     ; 1 = !(condition.text) added\n\n; Code transition: guarded by (alternative && ...) — null alternative short-circuits\n(assert (=> (= alternative_is_nonnull 0) (= in_alternative 0)))\n\n; Code transition: !(condition) only added when both guards pass\n(assert (=> (= neg_condition_added 1) (= alternative_is_nonnull 1)))\n(assert (=> (= neg_condition_added 1) (= in_alternative 1)))\n\n; Negation: !(condition) added without a valid alternative node\n(assert (= alternative_is_nonnull 0))\n(assert (= neg_condition_added 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

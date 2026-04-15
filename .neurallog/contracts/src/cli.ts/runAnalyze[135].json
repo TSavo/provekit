@@ -6,10 +6,10 @@
   "signal_hash": "280317f996ff54afad7d39495cc98bcb63522f4f366d1d4228883799c06bfb0f",
   "proven": [
     {
-      "principle": "P6",
-      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
-      "claim": "Claim: The final `console.log()` emits a newline **without** altering any",
-      "smt2": "; LINE: 135\n; PRINCIPLE: P6 – Empty‑line logging side‑effect freedom\n; Claim: The final `console.log()` emits a newline **without** altering any\n;        program state that subsequent code depends on.  We model the\n;        observable state as a single integer `state_version` that increments\n;        on any state‑changing operation.  The log statement does **not**\n;        perform such an operation.\n\n(declare-const state_version_before Int)\n(declare-const state_version_after  Int)\n\n; Code before the log – no mutation performed here, so versions are equal.\n(assert (= state_version_before state_version_after))\n\n; Negated claim: the empty‑line log changes the state version\n(assert (not (= state_version_before state_version_after)))\n(check-sat)\n; Expected: unsat   → the empty log is side‑effect‑free."
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "PROVEN: console.log() with no arguments is unconditionally safe",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 135\n; PROVEN: console.log() with no arguments is unconditionally safe\n(declare-const argument_count Int)    ; number of arguments passed to console.log\n(declare-const call_can_throw Int)    ; 1 = invocation can raise an exception\n; Code transition: console.log() — zero arguments in the call expression\n(assert (= argument_count 0))\n; Code transition: console.log() with no args prints a newline; no field access, no coercion\n(assert (=> (= argument_count 0) (= call_can_throw 0)))\n; Negation: call throws\n(assert (= call_can_throw 1))\n(check-sat)"
     }
   ],
   "violations": [],
@@ -25,7 +25,7 @@
   ],
   "clause_history": [
     {
-      "clause": "; LINE: 135\n; PRINCIPLE: P6 – Empty‑line logging side‑effect freedom\n; Claim: The final `console.log()` emits a newline **without** altering any\n;        program state that subsequent code depends on.  We model the\n;        observable state as a single integer `state_version` that increments\n;        on any state‑changing operation.  The log statement does **not**\n;        perform such an operation.\n\n(declare-const state_version_before Int)\n(declare-const state_version_after  Int)\n\n; Code before the log – no mutation performed here, so versions are equal.\n(assert (= state_version_before state_version_after))\n\n; Negated claim: the empty‑line log changes the state version\n(assert (not (= state_version_before state_version_after)))\n(check-sat)\n; Expected: unsat   → the empty log is side‑effect‑free.",
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 135\n; PROVEN: console.log() with no arguments is unconditionally safe\n(declare-const argument_count Int)    ; number of arguments passed to console.log\n(declare-const call_can_throw Int)    ; 1 = invocation can raise an exception\n; Code transition: console.log() — zero arguments in the call expression\n(assert (= argument_count 0))\n; Code transition: console.log() with no args prints a newline; no field access, no coercion\n(assert (=> (= argument_count 0) (= call_can_throw 0)))\n; Negation: call throws\n(assert (= call_can_throw 1))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

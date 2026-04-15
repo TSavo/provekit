@@ -10,6 +10,7 @@ import { Contract, ContractStore, signalKey, ClauseHistory, ProvenProperty, Viol
 import { computeSignalHash } from "../signals";
 import { LLMProvider, createProvider } from "../llm";
 import { classifyAndGeneralize } from "../principles";
+import { ObservationStore } from "../observations";
 import { DagExecutor } from "./DagExecutor";
 import { buildSignalFrame } from "./PromptStrategy";
 import { assembleDossier, formatDossier } from "./Dossier";
@@ -75,9 +76,10 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
     const principleStore = new PrincipleStore(options.projectRoot);
     let discoveredPrinciples = principleStore.formatForPrompt();
+    const observationStore = new ObservationStore(options.projectRoot);
 
     this.detail(`Model: ${model}`);
-    this.detail(`Principles: 7 seed + ${principleStore.getAll().length} discovered`);
+    this.detail(`Principles: 7 seed + ${principleStore.getAll().length} discovered, ${observationStore.getAll().length} observations`);
 
     const store = new ContractStore(options.projectRoot);
 
@@ -181,7 +183,19 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
         for (const v of contract.violations) {
           if (!v.principle?.toUpperCase().includes("NEW")) continue;
 
-          console.log(`    [NEW] found in ${contract.key} — classifying inline...`);
+          const obsId = observationStore.nextId();
+          observationStore.add({
+            id: obsId,
+            signalKey: contract.key,
+            claim: v.claim,
+            smt2: v.smt2,
+            rejectedPrincipleName: "",
+            rejectedPrincipleDescription: "",
+            adversaryFeedback: "",
+            observedAt: new Date().toISOString(),
+          });
+          console.log(`    [NEW] observation ${obsId} in ${contract.key} — attempting to generalize into principle...`);
+
           const violation = { smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined };
           const principle = await classifyAndGeneralize(
             violation, contract.key, principleStore.getAll(), model, provider
@@ -192,13 +206,11 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
             if (principle.validated) {
               principleStore.add(principle);
               discoveredPrinciples = principleStore.formatForPrompt();
-              console.log(`    VALIDATED: ${principle.id} — ${principle.name}`);
+              console.log(`    PROMOTED: observation ${obsId} → ${principle.id} — ${principle.name}`);
               console.log(`    Subsequent derivations will use this principle.`);
             } else {
-              console.log(`    REJECTED: ${principle.id} — ${principle.name}`);
-              if (principle.validationFailure) {
-                console.log(`      Reason: ${principle.validationFailure}`);
-              }
+              console.log(`    REJECTED as principle: ${principle.name}`);
+              console.log(`    Observation ${obsId} remains (the bug is real, the generalization didn't survive)`);
             }
           }
         }

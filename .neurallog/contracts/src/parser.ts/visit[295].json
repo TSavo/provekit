@@ -1,0 +1,56 @@
+{
+  "key": "src/parser.ts/visit[295]",
+  "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+  "function": "visit",
+  "line": 295,
+  "signal_hash": "68c5ad5d0f9ed3e08acb6008c9bbe278312c886a09f5cdabb6cd73787ab5f6cc",
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "PROVEN: >= guard is sound — no node at or after logLine is ever processed.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 295\n; PROVEN: >= guard is sound — no node at or after logLine is ever processed.\n; Frame: preconditions + transition + negation of property → expect unsat.\n\n(declare-const node_row Int)\n(declare-const log_line Int)\n(declare-const node_processed Int)  ; 1 = variable_declarator data written into types\n\n; Precondition: log_line is a valid source row\n(assert (>= log_line 0))\n\n; Code transition: visit() guard — if (node.startPosition.row >= logLine) return\n; Models: node_processed = 0 whenever the guard fires\n(assert (=> (>= node_row log_line) (= node_processed 0)))\n\n; Negation of property: a node at or after logLine IS processed\n(assert (>= node_row log_line))\n(assert (= node_processed 1))\n\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "REACHABLE: const x = 5; console.log(x) on one line — x's declarator excluded by >= guard",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 295\n; REACHABLE: const x = 5; console.log(x) on one line — x's declarator excluded by >= guard\n; despite x being bound before the log call in execution order.\n\n(declare-const decl_row Int)\n(declare-const decl_col Int)\n(declare-const log_row Int)\n(declare-const log_col Int)\n(declare-const decl_processed Int)  ; 1 = written into types, 0 = skipped\n\n; Code transition: logLine = logNode.startPosition.row\n(assert (>= log_row 0))\n\n; Code transition: declaration is on the same row as the log (same-line declaration)\n(assert (= decl_row log_row))\n\n; Code transition: declaration column precedes log column — it IS before the log\n(assert (>= log_col 1))\n(assert (< decl_col log_col))\n\n; Code transition: guard in visit() — if (node.startPosition.row >= logLine) return\n(assert (=> (>= decl_row log_row) (= decl_processed 0)))\n\n; Violation: declaration precedes the log in column order yet is not processed\n(assert (= decl_processed 0))\n\n(check-sat)"
+    },
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "REACHABLE: Single-line function → body_start_row = log_line → visit(body) returns immediately.",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 295\n; REACHABLE: Single-line function → body_start_row = log_line → visit(body) returns immediately.\n; The entire local-type inference pass produces an empty map despite declarations existing.\n\n(declare-const body_start_row Int)\n(declare-const log_line Int)\n(declare-const num_decls_in_body Int)   ; declarations present in the function body\n(declare-const types_entry_count Int)   ; entries written into the types map\n\n; Code transition: logLine = logNode.startPosition.row (single-line function body)\n(assert (= log_line 0))\n\n; Code transition: body node starts on same row (opening brace on same line as log)\n(assert (= body_start_row log_line))\n\n; Code transition: body contains at least one declaration that could be typed\n(assert (> num_decls_in_body 0))\n\n; Code transition: visit(body) fires guard immediately — no children visited, no entries written\n(assert (=> (>= body_start_row log_line) (= types_entry_count 0)))\n\n; Violation: types is empty even though declarations exist\n(assert (= types_entry_count 0))\n\n(check-sat)"
+    }
+  ],
+  "depends_on": [
+    "src/parser.ts/inferType[334]",
+    "src/parser.ts/inferType[338]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 295\n; PROVEN: >= guard is sound — no node at or after logLine is ever processed.\n; Frame: preconditions + transition + negation of property → expect unsat.\n\n(declare-const node_row Int)\n(declare-const log_line Int)\n(declare-const node_processed Int)  ; 1 = variable_declarator data written into types\n\n; Precondition: log_line is a valid source row\n(assert (>= log_line 0))\n\n; Code transition: visit() guard — if (node.startPosition.row >= logLine) return\n; Models: node_processed = 0 whenever the guard fires\n(assert (=> (>= node_row log_line) (= node_processed 0)))\n\n; Negation of property: a node at or after logLine IS processed\n(assert (>= node_row log_line))\n(assert (= node_processed 1))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 295\n; REACHABLE: const x = 5; console.log(x) on one line — x's declarator excluded by >= guard\n; despite x being bound before the log call in execution order.\n\n(declare-const decl_row Int)\n(declare-const decl_col Int)\n(declare-const log_row Int)\n(declare-const log_col Int)\n(declare-const decl_processed Int)  ; 1 = written into types, 0 = skipped\n\n; Code transition: logLine = logNode.startPosition.row\n(assert (>= log_row 0))\n\n; Code transition: declaration is on the same row as the log (same-line declaration)\n(assert (= decl_row log_row))\n\n; Code transition: declaration column precedes log column — it IS before the log\n(assert (>= log_col 1))\n(assert (< decl_col log_col))\n\n; Code transition: guard in visit() — if (node.startPosition.row >= logLine) return\n(assert (=> (>= decl_row log_row) (= decl_processed 0)))\n\n; Violation: declaration precedes the log in column order yet is not processed\n(assert (= decl_processed 0))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P6\n; LINE: 295\n; REACHABLE: Single-line function → body_start_row = log_line → visit(body) returns immediately.\n; The entire local-type inference pass produces an empty map despite declarations existing.\n\n(declare-const body_start_row Int)\n(declare-const log_line Int)\n(declare-const num_decls_in_body Int)   ; declarations present in the function body\n(declare-const types_entry_count Int)   ; entries written into the types map\n\n; Code transition: logLine = logNode.startPosition.row (single-line function body)\n(assert (= log_line 0))\n\n; Code transition: body node starts on same row (opening brace on same line as log)\n(assert (= body_start_row log_line))\n\n; Code transition: body contains at least one declaration that could be typed\n(assert (> num_decls_in_body 0))\n\n; Code transition: visit(body) fires guard immediately — no children visited, no entries written\n(assert (=> (>= body_start_row log_line) (= types_entry_count 0)))\n\n; Violation: types is empty even though declarations exist\n(assert (= types_entry_count 0))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

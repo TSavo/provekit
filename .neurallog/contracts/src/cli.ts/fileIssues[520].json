@@ -4,30 +4,43 @@
   "function": "fileIssues",
   "line": 520,
   "signal_hash": "ca79d20ca7ff6882383bc795923a771248b7461f37501dc8674b2714bf931bbd",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Conservation law: every issue in issues[] contributes exactly once to",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 520\n; Conservation law: every issue in issues[] contributes exactly once to\n; filed, skipped, or errors. Loop in fileViolationIssues has five branches:\n;   A: seen.has(title) → skipped++, continue\n;   B: dryRun         → filed++, continue\n;   C: issueExists()  → skipped++, continue\n;   D: fileIssue ok   → filed++\n;   E: fileIssue err  → errors++\n; Each branch increments exactly one counter. No branch is skipped entirely.\n\n(declare-const issues_length Int)\n(declare-const filed Int)\n(declare-const skipped Int)\n(declare-const errors Int)\n\n; Code transition: issues_length items enter the loop\n(assert (>= issues_length 0))\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n\n; Code transition: every loop iteration takes exactly one branch (above)\n(assert (= (+ filed skipped errors) issues_length))\n\n; Negate the conservation law\n(assert (not (= (+ filed skipped errors) issues_length)))\n(check-sat)"
+    }
+  ],
   "violations": [
     {
       "principle": "P5",
       "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "result returned by `fileViolationIssues`.  It is **not** guaranteed that every issue",
-      "smt2": "; LINE: 520\n; PRINCIPLE: P5  –  After filing issues the summary log must be consistent with the\n; result returned by `fileViolationIssues`.  It is **not** guaranteed that every issue\n; is actually filed (duplicate titles are skipped).  A reachable violation is that\n; the number of filed issues (`filed.filed`) is *strictly less* than the total\n; number of issues, while the total of filed, skipped and errors still equals the\n; original issue count.\n\n;--- Preconditions (state before the second log)\n(declare-const issues_len Int)          ; = issues.length  (≥ 0)\n(assert (>= issues_len 0))\n\n; Result returned by fileViolationIssues (see its implementation)\n(declare-const filed Int)               ; number of issues that were actually filed\n(declare-const skipped Int)             ; number of issues omitted because they already exist\n(declare-const errors Int)              ; number of filing errors\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n\n;--- Invariant that the helper maintains (proved elsewhere in the code):\n; the three counters partition the original set of issues.\n(assert (= (+ filed skipped errors) issues_len))\n\n;--- Violation condition we want to show is reachable:\n; the log claims “${filed.filed} ...” but this value is *not* equal to the total\n; number of issues (i.e. some issues were skipped or errored).\n(assert (not (= filed issues_len)))    ; filed < issues_len  (since all vars are non‑negative)\n\n;--- A concrete witness that satisfies the constraints:\n;   issues_len = 2, filed = 1, skipped = 1, errors = 0\n;   (this models a duplicate‑title situation that triggers the skip path)\n(assert (= issues_len 2))\n(assert (= filed 1))\n(assert (= skipped 1))\n(assert (= errors 0))\n\n(check-sat)\n; Expected result: sat  → the violation is reachable (the log can truthfully print a\n; smaller `filed` count, which is a legitimate behaviour according to the code)."
+      "claim": "Line 518 announced \"Filing N issues\" (N > 0, path condition).",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 520\n; Line 518 announced \"Filing N issues\" (N > 0, path condition).\n; Line 520 reports filed.filed — but filed can be 0 when all issues are\n; deduplicated or errored. The upfront announcement is semantically false\n; when the final outcome is 0 actually filed/previewed.\n\n(declare-const issues_length Int)\n(declare-const filed Int)\n(declare-const skipped Int)\n(declare-const errors Int)\n\n; Code transition: path condition — issues_length > 0 at both log sites\n(assert (> issues_length 0))\n\n; Code transition: conservation law holds (proven above)\n(assert (= (+ filed skipped errors) issues_length))\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n\n; Code transition: all issues are duplicate-titled or all calls error out\n; (e.g., gh CLI not installed → every fileIssue() throws, or every title\n;  already in `seen` from a previous call in the same batch)\n(assert (= filed 0))\n(assert (> (+ skipped errors) 0))\n\n; Violation: \"Filing N issues\" at 518 claimed action, but filed=0 at 520\n(assert (> issues_length 0))\n(check-sat)"
     }
   ],
   "depends_on": [
-    "src/issues.ts/fileViolationIssues[139]",
-    "src/issues.ts/fileViolationIssues[140]",
-    "src/issues.ts/fileViolationIssues[141]",
-    "src/issues.ts/fileViolationIssues[142]",
-    "src/issues.ts/fileViolationIssues[143]",
-    "src/issues.ts/fileViolationIssues[144]",
+    "src/issues.ts/fileViolationIssues[147]",
+    "src/issues.ts/fileViolationIssues[148]",
     "src/issues.ts/fileViolationIssues[149]",
+    "src/issues.ts/fileViolationIssues[150]",
     "src/issues.ts/fileViolationIssues[151]",
+    "src/issues.ts/fileViolationIssues[152]",
     "src/issues.ts/fileViolationIssues[158]",
-    "src/issues.ts/fileViolationIssues[161]"
+    "src/issues.ts/fileViolationIssues[165]",
+    "src/issues.ts/fileViolationIssues[168]"
   ],
   "clause_history": [
     {
-      "clause": "; LINE: 520\n; PRINCIPLE: P5  –  After filing issues the summary log must be consistent with the\n; result returned by `fileViolationIssues`.  It is **not** guaranteed that every issue\n; is actually filed (duplicate titles are skipped).  A reachable violation is that\n; the number of filed issues (`filed.filed`) is *strictly less* than the total\n; number of issues, while the total of filed, skipped and errors still equals the\n; original issue count.\n\n;--- Preconditions (state before the second log)\n(declare-const issues_len Int)          ; = issues.length  (≥ 0)\n(assert (>= issues_len 0))\n\n; Result returned by fileViolationIssues (see its implementation)\n(declare-const filed Int)               ; number of issues that were actually filed\n(declare-const skipped Int)             ; number of issues omitted because they already exist\n(declare-const errors Int)              ; number of filing errors\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n\n;--- Invariant that the helper maintains (proved elsewhere in the code):\n; the three counters partition the original set of issues.\n(assert (= (+ filed skipped errors) issues_len))\n\n;--- Violation condition we want to show is reachable:\n; the log claims “${filed.filed} ...” but this value is *not* equal to the total\n; number of issues (i.e. some issues were skipped or errored).\n(assert (not (= filed issues_len)))    ; filed < issues_len  (since all vars are non‑negative)\n\n;--- A concrete witness that satisfies the constraints:\n;   issues_len = 2, filed = 1, skipped = 1, errors = 0\n;   (this models a duplicate‑title situation that triggers the skip path)\n(assert (= issues_len 2))\n(assert (= filed 1))\n(assert (= skipped 1))\n(assert (= errors 0))\n\n(check-sat)\n; Expected result: sat  → the violation is reachable (the log can truthfully print a\n; smaller `filed` count, which is a legitimate behaviour according to the code).",
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 520\n; Conservation law: every issue in issues[] contributes exactly once to\n; filed, skipped, or errors. Loop in fileViolationIssues has five branches:\n;   A: seen.has(title) → skipped++, continue\n;   B: dryRun         → filed++, continue\n;   C: issueExists()  → skipped++, continue\n;   D: fileIssue ok   → filed++\n;   E: fileIssue err  → errors++\n; Each branch increments exactly one counter. No branch is skipped entirely.\n\n(declare-const issues_length Int)\n(declare-const filed Int)\n(declare-const skipped Int)\n(declare-const errors Int)\n\n; Code transition: issues_length items enter the loop\n(assert (>= issues_length 0))\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n\n; Code transition: every loop iteration takes exactly one branch (above)\n(assert (= (+ filed skipped errors) issues_length))\n\n; Negate the conservation law\n(assert (not (= (+ filed skipped errors) issues_length)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 520\n; Line 518 announced \"Filing N issues\" (N > 0, path condition).\n; Line 520 reports filed.filed — but filed can be 0 when all issues are\n; deduplicated or errored. The upfront announcement is semantically false\n; when the final outcome is 0 actually filed/previewed.\n\n(declare-const issues_length Int)\n(declare-const filed Int)\n(declare-const skipped Int)\n(declare-const errors Int)\n\n; Code transition: path condition — issues_length > 0 at both log sites\n(assert (> issues_length 0))\n\n; Code transition: conservation law holds (proven above)\n(assert (= (+ filed skipped errors) issues_length))\n(assert (>= filed 0))\n(assert (>= skipped 0))\n(assert (>= errors 0))\n\n; Code transition: all issues are duplicate-titled or all calls error out\n; (e.g., gh CLI not installed → every fileIssue() throws, or every title\n;  already in `seen` from a previous call in the same batch)\n(assert (= filed 0))\n(assert (> (+ skipped errors) 0))\n\n; Violation: \"Filing N issues\" at 518 claimed action, but filed=0 at 520\n(assert (> issues_length 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

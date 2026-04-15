@@ -4,23 +4,8 @@
   "function": "runInit",
   "line": 109,
   "signal_hash": "e860802f1c5dbb9a64f2f9d847da163f007f0debd34cde2fa42eec9a8fd7413a",
-  "proven": [
-    {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "(no claim extracted)",
-      "smt2": "; LINE: 109  ; PRINCIPLE: P1 – Trivial safety\n(assert true)\n(assert false)\n(check-sat)                               ; unsat"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; LINE: 109  ; PRINCIPLE: P1 – Trivial safety\n(assert true)\n(assert false)\n(check-sat)                               ; unsat",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

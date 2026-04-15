@@ -4,63 +4,8 @@
   "function": "isDescendantOf",
   "line": 353,
   "signal_hash": "3d1326ece1150bfc29ea838e9afa24bf3a543651c9b010d14e338fc81196e341",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "PROVEN: algorithm returns true when ancestor is exactly 1 hop above node",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 353\n; PROVEN: algorithm returns true when ancestor is exactly 1 hop above node\n; Transition: iteration 1 checks node_id==ancestor_id → miss;\n;             iteration 2 checks parent_id==ancestor_id → hit → return true\n\n(declare-const node_id Int)\n(declare-const parent_id Int)\n(declare-const ancestor_id Int)\n\n; Well-formed AST: unique IDs per node\n(assert (not (= node_id parent_id)))\n\n; ancestor IS the parent of node\n(assert (= parent_id ancestor_id))\n\n; Algorithm result: loop fires on iteration 2 → returns true\n(declare-const result Int) ; 1=true 0=false\n(assert (= result 1))\n\n; Negate the property to prove it\n(assert (not (= result 1)))\n(check-sat)\n; Expected: unsat — proves correct true-positive for 1-hop ancestry"
-    },
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "PROVEN: algorithm returns false when ancestor ID appears in no node in the chain",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 353\n; PROVEN: algorithm returns false when ancestor ID appears in no node in the chain\n; Transition: 2-hop chain [node → root]; ancestor_id matches neither\n\n(declare-const node_id Int)\n(declare-const root_id Int)\n(declare-const ancestor_id Int)\n\n; Unique IDs; ancestor not in chain\n(assert (not (= node_id root_id)))\n(assert (not (= node_id ancestor_id)))\n(assert (not (= root_id ancestor_id)))\n\n; Algorithm: node → miss, root → miss, null → return false\n(declare-const result Int)\n(assert (= result 0))\n\n; Negate the property\n(assert (not (= result 0)))\n(check-sat)\n; Expected: unsat — proves correct false for non-ancestors"
-    },
-    {
-      "principle": "P7",
-      "principle_hash": "61561b8577104a2514f412235b45b0c4b2c3114a30d8725d4cb990ed5d924ecc",
-      "claim": "PROVEN: loop terminates — depth strictly decreases by 1 each iteration",
-      "smt2": "; PRINCIPLE: P7\n; LINE: 353\n; PROVEN: loop terminates — depth strictly decreases by 1 each iteration\n; Transition: current = current.parent reduces depth by exactly 1\n\n(declare-const depth_initial Int)\n(declare-const k Int)\n(declare-const depth_at_step_k Int)\n\n; Preconditions: non-negative depth; k steps taken within valid range\n(assert (>= depth_initial 0))\n(assert (>= k 0))\n(assert (<= k depth_initial))\n\n; Transition: after k parent-pointer advances, depth = depth_initial - k\n(assert (= depth_at_step_k (- depth_initial k)))\n\n; Property: depth never goes negative while k ≤ depth_initial\n(assert (< depth_at_step_k 0))\n(check-sat)\n; Expected: unsat — loop terminates after at most depth_initial+1 iterations"
-    }
-  ],
-  "violations": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "REACHABLE VIOLATION: isDescendantOf(x, x) returns true,",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 353\n; REACHABLE VIOLATION: isDescendantOf(x, x) returns true,\n; contradicting strict \"isDescendantOf\" semantics\n; (a node is NOT its own descendant under strict tree ancestry)\n;\n; Code transition: current starts at node; first check is current.id === ancestor.id.\n; When both arguments refer to the same node (same id), this fires immediately.\n\n(declare-const node_id Int)\n(declare-const ancestor_id Int)\n\n; Code path: same AST node passed as both arguments\n(assert (= node_id ancestor_id))\n\n; Algorithm transition: iteration 1 — current.id = node_id = ancestor_id → match → return true\n(declare-const algorithm_result Int)\n(assert (= algorithm_result 1))\n\n; Strict \"isDescendantOf\" contract: self is NOT a descendant of self → must return 0\n(declare-const strict_expected Int)\n(assert (= strict_expected 0))\n\n; Violation: implementation returns 1, strict contract demands 0\n(assert (not (= algorithm_result strict_expected)))\n(check-sat)\n; Expected: sat — confirms semantic mismatch is reachable\n; Witness: any node_id s.t. node_id = ancestor_id\n;          algorithm_result=1, strict_expected=0, (not (= 1 0)) holds"
-    }
-  ],
+  "proven": [],
+  "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 353\n; PROVEN: algorithm returns true when ancestor is exactly 1 hop above node\n; Transition: iteration 1 checks node_id==ancestor_id → miss;\n;             iteration 2 checks parent_id==ancestor_id → hit → return true\n\n(declare-const node_id Int)\n(declare-const parent_id Int)\n(declare-const ancestor_id Int)\n\n; Well-formed AST: unique IDs per node\n(assert (not (= node_id parent_id)))\n\n; ancestor IS the parent of node\n(assert (= parent_id ancestor_id))\n\n; Algorithm result: loop fires on iteration 2 → returns true\n(declare-const result Int) ; 1=true 0=false\n(assert (= result 1))\n\n; Negate the property to prove it\n(assert (not (= result 1)))\n(check-sat)\n; Expected: unsat — proves correct true-positive for 1-hop ancestry",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 353\n; PROVEN: algorithm returns false when ancestor ID appears in no node in the chain\n; Transition: 2-hop chain [node → root]; ancestor_id matches neither\n\n(declare-const node_id Int)\n(declare-const root_id Int)\n(declare-const ancestor_id Int)\n\n; Unique IDs; ancestor not in chain\n(assert (not (= node_id root_id)))\n(assert (not (= node_id ancestor_id)))\n(assert (not (= root_id ancestor_id)))\n\n; Algorithm: node → miss, root → miss, null → return false\n(declare-const result Int)\n(assert (= result 0))\n\n; Negate the property\n(assert (not (= result 0)))\n(check-sat)\n; Expected: unsat — proves correct false for non-ancestors",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P7\n; LINE: 353\n; PROVEN: loop terminates — depth strictly decreases by 1 each iteration\n; Transition: current = current.parent reduces depth by exactly 1\n\n(declare-const depth_initial Int)\n(declare-const k Int)\n(declare-const depth_at_step_k Int)\n\n; Preconditions: non-negative depth; k steps taken within valid range\n(assert (>= depth_initial 0))\n(assert (>= k 0))\n(assert (<= k depth_initial))\n\n; Transition: after k parent-pointer advances, depth = depth_initial - k\n(assert (= depth_at_step_k (- depth_initial k)))\n\n; Property: depth never goes negative while k ≤ depth_initial\n(assert (< depth_at_step_k 0))\n(check-sat)\n; Expected: unsat — loop terminates after at most depth_initial+1 iterations",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 353\n; REACHABLE VIOLATION: isDescendantOf(x, x) returns true,\n; contradicting strict \"isDescendantOf\" semantics\n; (a node is NOT its own descendant under strict tree ancestry)\n;\n; Code transition: current starts at node; first check is current.id === ancestor.id.\n; When both arguments refer to the same node (same id), this fires immediately.\n\n(declare-const node_id Int)\n(declare-const ancestor_id Int)\n\n; Code path: same AST node passed as both arguments\n(assert (= node_id ancestor_id))\n\n; Algorithm transition: iteration 1 — current.id = node_id = ancestor_id → match → return true\n(declare-const algorithm_result Int)\n(assert (= algorithm_result 1))\n\n; Strict \"isDescendantOf\" contract: self is NOT a descendant of self → must return 0\n(declare-const strict_expected Int)\n(assert (= strict_expected 0))\n\n; Violation: implementation returns 1, strict contract demands 0\n(assert (not (= algorithm_result strict_expected)))\n(check-sat)\n; Expected: sat — confirms semantic mismatch is reachable\n; Witness: any node_id s.t. node_id = ancestor_id\n;          algorithm_result=1, strict_expected=0, (not (= 1 0)) holds",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

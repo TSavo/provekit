@@ -4,19 +4,46 @@
   "function": "runDiff",
   "line": 298,
   "signal_hash": "876ff81ac14edecc6c55e406ed0de3229b310a508d7c51461a3b0112c156e636",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "Early return at line 275 exits when changes is empty",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 298\n; Early return at line 275 exits when changes is empty\n; Prove: reaching this log requires changes.length > 0\n\n(declare-const changes_length Int)\n(declare-const returned_early Int)   ; 1 = early return at line 275 fired\n(declare-const line_298_executes Int)\n\n; Transition: early return fires iff changes_length == 0\n(assert (>= changes_length 0))\n(assert (=> (= changes_length 0) (= returned_early 1)))\n; Transition: this log is only reachable if early return did not fire\n(assert (=> (= line_298_executes 1) (= returned_early 0)))\n\n; Attempt to falsify: per-change log runs with empty changes\n(assert (= line_298_executes 1))\n(assert (= changes_length 0))\n(check-sat)"
+    }
+  ],
   "violations": [
     {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "Claim: For every `change` iterated, the symbols and labels maps contain an entry for `change.type`.",
-      "smt2": "; LINE: 298\n; PRINCIPLE: P2 – State Mutation / Alias Analysis\n; Claim: For every `change` iterated, the symbols and labels maps contain an entry for `change.type`.\n;   sym = symbols[change.type]; label = labels[change.type];\n;   ⇒  change.type ∈ {\"added\",\"removed\",\"regressed\",\"fixed\",\"unchanged\"}.\n; REACHABLE VIOLATION: a `change.type` outside the known keys would produce `sym = \"?\"` and `label = change.type`.\n;   This violates the programmer’s intent that every type be mapped.\n\n; Model a single change object:\n(declare-const change_type String)\n\n; The symbols/labels tables (explicitly enumerated by the source):\n; we assert that the lookup returns “?” only when the key is unknown.\n(define-fun sym ((t String)) String\n  (ite (or (= t \"added\") (= t \"removed\") (= t \"regressed\") (= t \"fixed\") (= t \"unchanged\"))\n       \"known\"\n       \"?\"))\n\n(define-fun label ((t String)) String\n  (ite (or (= t \"added\") (= t \"removed\") (= t \"regressed\") (= t \"fixed\") (= t \"unchanged\"))\n       \"KNOWN\"\n       t))\n\n; Assume the change type is *not* one of the known keys (bug scenario):\n(assert (not (or (= change_type \"added\")\n                 (= change_type \"removed\")\n                 (= change_type \"regressed\")\n                 (= change_type \"fixed\")\n                 (= change_type \"unchanged\"))))\n\n; The code would compute:\n(declare-const symVal String)\n(declare-const labelVal String)\n(assert (= symVal (sym change_type)))\n(assert (= labelVal (label change_type)))\n\n; Violation condition: symVal = \"?\"  (means unmapped)  OR labelVal = change_type (raw, not a friendly label)\n(assert (or (= symVal \"?\") (= labelVal change_type)))\n\n(check-sat)   ; expected: sat"
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "sym = symbols[change.type] || \"?\"",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 298\n; sym = symbols[change.type] || \"?\"\n; symbols defines exactly: added, removed, regressed, fixed, unchanged\n; An unrecognised type produces sym = \"?\" — semantically meaningless in output\n\n(declare-const change_type_in_symbols Int)  ; 1 = one of 5 defined types\n(declare-const sym_meaningful Int)          ; 1 = sym is one of +/-/!/~/space\n\n; Transition: lookup returns undefined for unknown type → undefined || \"?\" = \"?\"\n(assert (=> (= change_type_in_symbols 1) (= sym_meaningful 1)))\n(assert (=> (= change_type_in_symbols 0) (= sym_meaningful 0)))\n\n; Transition: runDiff does not validate change.type before indexing into symbols\n; diffAgainst return value is unconstrained with respect to the 5 defined types\n(assert (= change_type_in_symbols 0))\n(assert (= sym_meaningful 0))\n(check-sat)"
+    },
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "change.claim.slice(0, 70): if claim == \"\", result is \"\" — no crash, but no content",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 298\n; change.claim.slice(0, 70): if claim == \"\", result is \"\" — no crash, but no content\n; Output: \"  + file:line  LABEL:  [principle]\" — claim section invisible\n\n(declare-const claim_length Int)\n(declare-const slice_length Int)\n\n; Transition: String.prototype.slice(0, 70) returns first min(len, 70) chars\n(assert (>= claim_length 0))\n(assert (>= slice_length 0))\n(assert (<= slice_length 70))\n(assert (<= slice_length claim_length))\n(assert (=> (< claim_length 70) (= slice_length claim_length)))\n(assert (=> (>= claim_length 70) (= slice_length 70)))\n\n; Boundary: diffAgainst returns a change where claim is the empty string\n(assert (= claim_length 0))\n(assert (= slice_length 0))\n(check-sat)"
     }
   ],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; LINE: 298\n; PRINCIPLE: P2 – State Mutation / Alias Analysis\n; Claim: For every `change` iterated, the symbols and labels maps contain an entry for `change.type`.\n;   sym = symbols[change.type]; label = labels[change.type];\n;   ⇒  change.type ∈ {\"added\",\"removed\",\"regressed\",\"fixed\",\"unchanged\"}.\n; REACHABLE VIOLATION: a `change.type` outside the known keys would produce `sym = \"?\"` and `label = change.type`.\n;   This violates the programmer’s intent that every type be mapped.\n\n; Model a single change object:\n(declare-const change_type String)\n\n; The symbols/labels tables (explicitly enumerated by the source):\n; we assert that the lookup returns “?” only when the key is unknown.\n(define-fun sym ((t String)) String\n  (ite (or (= t \"added\") (= t \"removed\") (= t \"regressed\") (= t \"fixed\") (= t \"unchanged\"))\n       \"known\"\n       \"?\"))\n\n(define-fun label ((t String)) String\n  (ite (or (= t \"added\") (= t \"removed\") (= t \"regressed\") (= t \"fixed\") (= t \"unchanged\"))\n       \"KNOWN\"\n       t))\n\n; Assume the change type is *not* one of the known keys (bug scenario):\n(assert (not (or (= change_type \"added\")\n                 (= change_type \"removed\")\n                 (= change_type \"regressed\")\n                 (= change_type \"fixed\")\n                 (= change_type \"unchanged\"))))\n\n; The code would compute:\n(declare-const symVal String)\n(declare-const labelVal String)\n(assert (= symVal (sym change_type)))\n(assert (= labelVal (label change_type)))\n\n; Violation condition: symVal = \"?\"  (means unmapped)  OR labelVal = change_type (raw, not a friendly label)\n(assert (or (= symVal \"?\") (= labelVal change_type)))\n\n(check-sat)   ; expected: sat",
+      "clause": "; PRINCIPLE: P3\n; LINE: 298\n; Early return at line 275 exits when changes is empty\n; Prove: reaching this log requires changes.length > 0\n\n(declare-const changes_length Int)\n(declare-const returned_early Int)   ; 1 = early return at line 275 fired\n(declare-const line_298_executes Int)\n\n; Transition: early return fires iff changes_length == 0\n(assert (>= changes_length 0))\n(assert (=> (= changes_length 0) (= returned_early 1)))\n; Transition: this log is only reachable if early return did not fire\n(assert (=> (= line_298_executes 1) (= returned_early 0)))\n\n; Attempt to falsify: per-change log runs with empty changes\n(assert (= line_298_executes 1))\n(assert (= changes_length 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 298\n; sym = symbols[change.type] || \"?\"\n; symbols defines exactly: added, removed, regressed, fixed, unchanged\n; An unrecognised type produces sym = \"?\" — semantically meaningless in output\n\n(declare-const change_type_in_symbols Int)  ; 1 = one of 5 defined types\n(declare-const sym_meaningful Int)          ; 1 = sym is one of +/-/!/~/space\n\n; Transition: lookup returns undefined for unknown type → undefined || \"?\" = \"?\"\n(assert (=> (= change_type_in_symbols 1) (= sym_meaningful 1)))\n(assert (=> (= change_type_in_symbols 0) (= sym_meaningful 0)))\n\n; Transition: runDiff does not validate change.type before indexing into symbols\n; diffAgainst return value is unconstrained with respect to the 5 defined types\n(assert (= change_type_in_symbols 0))\n(assert (= sym_meaningful 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P6\n; LINE: 298\n; change.claim.slice(0, 70): if claim == \"\", result is \"\" — no crash, but no content\n; Output: \"  + file:line  LABEL:  [principle]\" — claim section invisible\n\n(declare-const claim_length Int)\n(declare-const slice_length Int)\n\n; Transition: String.prototype.slice(0, 70) returns first min(len, 70) chars\n(assert (>= claim_length 0))\n(assert (>= slice_length 0))\n(assert (<= slice_length 70))\n(assert (<= slice_length claim_length))\n(assert (=> (< claim_length 70) (= slice_length claim_length)))\n(assert (=> (>= claim_length 70) (= slice_length 70)))\n\n; Boundary: diffAgainst returns a change where claim is the empty string\n(assert (= claim_length 0))\n(assert (= slice_length 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

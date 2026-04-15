@@ -4,8 +4,23 @@
   "function": "runHook",
   "line": 470,
   "signal_hash": "d5f1d968f8026f96e7fffa3057bc68eb4857d4f384c99c8f580944b192872af9",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "PROVEN: line 470 (default/install branch) executes only when --uninstall, --remove,",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 470\n; PROVEN: line 470 (default/install branch) executes only when --uninstall, --remove,\n; and --status are all absent. Negate → expect unsat.\n\n(declare-const flag_uninstall  Int)\n(declare-const flag_remove     Int)\n(declare-const flag_status     Int)\n(declare-const line470_reached Int)\n\n; Code transition: else (default) arm fires only when both prior guards fail\n(assert (= line470_reached\n           (ite (and (= flag_uninstall 0)\n                     (= flag_remove   0)\n                     (= flag_status   0))\n                1 0)))\n\n; Negation: line 470 reached but at least one flag is present\n(assert (= line470_reached 1))\n(assert (or (= flag_uninstall 1) (= flag_remove 1) (= flag_status 1)))\n\n(check-sat)"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 470\n; PROVEN: line 470 (default/install branch) executes only when --uninstall, --remove,\n; and --status are all absent. Negate → expect unsat.\n\n(declare-const flag_uninstall  Int)\n(declare-const flag_remove     Int)\n(declare-const flag_status     Int)\n(declare-const line470_reached Int)\n\n; Code transition: else (default) arm fires only when both prior guards fail\n(assert (= line470_reached\n           (ite (and (= flag_uninstall 0)\n                     (= flag_remove   0)\n                     (= flag_status   0))\n                1 0)))\n\n; Negation: line 470 reached but at least one flag is present\n(assert (= line470_reached 1))\n(assert (or (= flag_uninstall 1) (= flag_remove 1) (= flag_status 1)))\n\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

@@ -4,33 +4,19 @@
   "function": "printHelp",
   "line": 543,
   "signal_hash": "c4d8c5999b5b70987797835f026f405890fcf5f8233d092774f8df556bb403f2",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Proven: \"verify\" appears in help (line 543) AND is implemented as",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 543\n; Proven: \"verify\" appears in help (line 543) AND is implemented as\n; case \"verify\": await runVerify(rest) in the switch.\n(declare-const verify_documented Int)\n(declare-const verify_implemented Int)\n(assert (= verify_documented 1))\n(assert (= verify_implemented 1))\n(assert (not (= verify_documented verify_implemented)))\n(check-sat)\n; Expected: unsat — verify is both documented and implemented"
-    }
-  ],
+  "proven": [],
   "violations": [
     {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Reachable violation: runVerify has TWO distinct behavioral modes, but printHelp",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 543\n; Reachable violation: runVerify has TWO distinct behavioral modes, but printHelp\n; documents only ONE (\"Phase 5 only, no LLM, just Z3\").\n; The undocumented mode: when --hook is passed, runVerify calls pipeline.runIncremental()\n; (a full LLM pipeline) and exits 0/1 based on violation count.\n; This directly contradicts the documented \"no LLM\" claim when --hook is active.\n(declare-const verify_modes_documented Int)\n(declare-const verify_modes_implemented Int)\n; Help documents exactly 1 mode for verify: Phase 5 only\n(assert (= verify_modes_documented 1))\n; Transition: if (isHook) { pipeline.runIncremental(...) } else { pipeline.runVerifyOnly(...) }\n; Two structurally distinct code paths: isHook = true (undocumented) vs isHook = false (documented)\n(assert (= verify_modes_implemented 2))\n; Is an implemented mode undocumented?\n(assert (> verify_modes_implemented verify_modes_documented))\n(check-sat)\n; Expected: sat — --hook mode runs runIncremental (uses LLM), contradicting \"no LLM, just Z3\""
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Help text: \"verify [project]   Phase 5 only (no LLM, just Z3)\"",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 543\n; Help text: \"verify [project]   Phase 5 only (no LLM, just Z3)\"\n; runVerify: if (isHook) { pipeline.runIncremental({ model, ... }) }\n; runIncremental is a full LLM-powered derivation pass, not Phase 5 only.\n(declare-const hook_flag_present Int)    ; 1 = --hook passed to verify\n(declare-const llm_model_used Int)       ; 1 = a model string is passed to the pipeline\n(declare-const is_phase5_only Int)       ; 1 = only Z3 verification runs (no LLM)\n; Code transition: runVerify calls pipeline.runIncremental({ model, ... }) when --hook\n(assert (= hook_flag_present 1))\n(assert (=> (= hook_flag_present 1) (= llm_model_used 1)))\n; Code transition: runIncremental is NOT the phase-5-only path\n(assert (=> (= llm_model_used 1) (= is_phase5_only 0)))\n; Violation: \"no LLM\" claim is false in hook mode\n(assert (= hook_flag_present 1))\n(assert (= is_phase5_only 0))\n(check-sat)"
     }
   ],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P5\n; LINE: 543\n; Proven: \"verify\" appears in help (line 543) AND is implemented as\n; case \"verify\": await runVerify(rest) in the switch.\n(declare-const verify_documented Int)\n(declare-const verify_implemented Int)\n(assert (= verify_documented 1))\n(assert (= verify_implemented 1))\n(assert (not (= verify_documented verify_implemented)))\n(check-sat)\n; Expected: unsat — verify is both documented and implemented",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 543\n; Reachable violation: runVerify has TWO distinct behavioral modes, but printHelp\n; documents only ONE (\"Phase 5 only, no LLM, just Z3\").\n; The undocumented mode: when --hook is passed, runVerify calls pipeline.runIncremental()\n; (a full LLM pipeline) and exits 0/1 based on violation count.\n; This directly contradicts the documented \"no LLM\" claim when --hook is active.\n(declare-const verify_modes_documented Int)\n(declare-const verify_modes_implemented Int)\n; Help documents exactly 1 mode for verify: Phase 5 only\n(assert (= verify_modes_documented 1))\n; Transition: if (isHook) { pipeline.runIncremental(...) } else { pipeline.runVerifyOnly(...) }\n; Two structurally distinct code paths: isHook = true (undocumented) vs isHook = false (documented)\n(assert (= verify_modes_implemented 2))\n; Is an implemented mode undocumented?\n(assert (> verify_modes_implemented verify_modes_documented))\n(check-sat)\n; Expected: sat — --hook mode runs runIncremental (uses LLM), contradicting \"no LLM, just Z3\"",
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 543\n; Help text: \"verify [project]   Phase 5 only (no LLM, just Z3)\"\n; runVerify: if (isHook) { pipeline.runIncremental({ model, ... }) }\n; runIncremental is a full LLM-powered derivation pass, not Phase 5 only.\n(declare-const hook_flag_present Int)    ; 1 = --hook passed to verify\n(declare-const llm_model_used Int)       ; 1 = a model string is passed to the pipeline\n(declare-const is_phase5_only Int)       ; 1 = only Z3 verification runs (no LLM)\n; Code transition: runVerify calls pipeline.runIncremental({ model, ... }) when --hook\n(assert (= hook_flag_present 1))\n(assert (=> (= hook_flag_present 1) (= llm_model_used 1)))\n; Code transition: runIncremental is NOT the phase-5-only path\n(assert (=> (= llm_model_used 1) (= is_phase5_only 0)))\n; Violation: \"no LLM\" claim is false in hook mode\n(assert (= hook_flag_present 1))\n(assert (= is_phase5_only 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

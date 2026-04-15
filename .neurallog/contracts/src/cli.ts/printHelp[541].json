@@ -4,19 +4,19 @@
   "function": "printHelp",
   "line": 541,
   "signal_hash": "41c039237d57cac7768099cedbb9807b6bafe74506266f80d4a2139a3b0dfd3f",
-  "proven": [
+  "proven": [],
+  "violations": [
     {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Proven: \"analyze\" appears in help (line 541) AND is implemented as",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 541\n; Proven: \"analyze\" appears in help (line 541) AND is implemented as\n; case \"analyze\": await runAnalyze(rest) in the switch.\n(declare-const analyze_documented Int)\n(declare-const analyze_implemented Int)\n(assert (= analyze_documented 1))\n(assert (= analyze_implemented 1))\n(assert (not (= analyze_documented analyze_implemented)))\n(check-sat)\n; Expected: unsat — analyze is both documented and implemented"
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Help text: \"analyze <file.ts>   Full pipeline (phases 1-5)\"",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 541\n; Help text: \"analyze <file.ts>   Full pipeline (phases 1-5)\"\n; Angle-bracket convention signals a REQUIRED argument.\n; But runAnalyze: filePath = resolve(args.find(a => !a.startsWith(\"-\")) || \".\")\n; If no file is given, it silently falls back to process.cwd() and runs anyway.\n(declare-const file_arg_provided Int)   ; 1 = user supplies a file argument\n(declare-const pipeline_aborts Int)     ; 1 = runAnalyze exits with an error\n(declare-const fallback_used Int)       ; 1 = \".\" is used as the resolved path\n; Code transition: runAnalyze does not validate presence of file arg; uses || \".\" fallback\n(assert (= file_arg_provided 0))\n(assert (=> (= file_arg_provided 0) (= fallback_used 1)))\n; Code transition: no guard exists to abort before pipeline.runFull when filePath = \".\"\n(assert (=> (= fallback_used 1) (= pipeline_aborts 0)))\n; Violation: pipeline runs on \".\" with no file argument and no error\n(assert (= file_arg_provided 0))\n(assert (= pipeline_aborts 0))\n(check-sat)"
     }
   ],
-  "violations": [],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P5\n; LINE: 541\n; Proven: \"analyze\" appears in help (line 541) AND is implemented as\n; case \"analyze\": await runAnalyze(rest) in the switch.\n(declare-const analyze_documented Int)\n(declare-const analyze_implemented Int)\n(assert (= analyze_documented 1))\n(assert (= analyze_implemented 1))\n(assert (not (= analyze_documented analyze_implemented)))\n(check-sat)\n; Expected: unsat — analyze is both documented and implemented",
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 541\n; Help text: \"analyze <file.ts>   Full pipeline (phases 1-5)\"\n; Angle-bracket convention signals a REQUIRED argument.\n; But runAnalyze: filePath = resolve(args.find(a => !a.startsWith(\"-\")) || \".\")\n; If no file is given, it silently falls back to process.cwd() and runs anyway.\n(declare-const file_arg_provided Int)   ; 1 = user supplies a file argument\n(declare-const pipeline_aborts Int)     ; 1 = runAnalyze exits with an error\n(declare-const fallback_used Int)       ; 1 = \".\" is used as the resolved path\n; Code transition: runAnalyze does not validate presence of file arg; uses || \".\" fallback\n(assert (= file_arg_provided 0))\n(assert (=> (= file_arg_provided 0) (= fallback_used 1)))\n; Code transition: no guard exists to abort before pipeline.runFull when filePath = \".\"\n(assert (=> (= fallback_used 1) (= pipeline_aborts 0)))\n; Violation: pipeline runs on \".\" with no file argument and no error\n(assert (= file_arg_provided 0))\n(assert (= pipeline_aborts 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

@@ -4,10 +4,25 @@
   "function": "extractPathConditions",
   "line": 237,
   "signal_hash": "bf6c83fba2beb0bd6b97b12121163a7a30025dc367e73a3815da06c0dd00bec1",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "PROVEN: condition.text not added when logNode is in condition expression of if_statement",
+      "smt2": "; PROVEN: condition.text not added when logNode is in condition expression of if_statement\n; PRINCIPLE: P1\n; LINE: 237\n(declare-const current_is_condition_child Int)   ; 1 = current IS the condition node\n(declare-const log_in_condition Int)             ; 1 = logNode is inside condition subtree\n(declare-const isDescendant_consequence Int)     ; result of isDescendantOf(logNode,consequence)\n(declare-const condition_text_added Int)         ; 1 = condition.text pushed into conditions\n\n; Code transition: if current is the condition child, logNode is in condition subtree\n(assert (= current_is_condition_child 1))\n(assert (=> (= current_is_condition_child 1) (= log_in_condition 1)))\n\n; Structural invariant: condition and consequence are disjoint subtrees\n; logNode in condition => logNode NOT in consequence\n(assert (=> (= log_in_condition 1) (= isDescendant_consequence 0)))\n\n; Code transition: condition.text only added when isDescendantOf returns true\n(assert (=> (= isDescendant_consequence 0) (= condition_text_added 0)))\n\n; Negation: can condition.text be added when logNode is in condition expression?\n(assert (= current_is_condition_child 1))\n(assert (= condition_text_added 1))\n(check-sat)"
+    }
+  ],
   "violations": [],
   "depends_on": [
     "src/parser.ts/isDescendantOf[353]"
   ],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PROVEN: condition.text not added when logNode is in condition expression of if_statement\n; PRINCIPLE: P1\n; LINE: 237\n(declare-const current_is_condition_child Int)   ; 1 = current IS the condition node\n(declare-const log_in_condition Int)             ; 1 = logNode is inside condition subtree\n(declare-const isDescendant_consequence Int)     ; result of isDescendantOf(logNode,consequence)\n(declare-const condition_text_added Int)         ; 1 = condition.text pushed into conditions\n\n; Code transition: if current is the condition child, logNode is in condition subtree\n(assert (= current_is_condition_child 1))\n(assert (=> (= current_is_condition_child 1) (= log_in_condition 1)))\n\n; Structural invariant: condition and consequence are disjoint subtrees\n; logNode in condition => logNode NOT in consequence\n(assert (=> (= log_in_condition 1) (= isDescendant_consequence 0)))\n\n; Code transition: condition.text only added when isDescendantOf returns true\n(assert (=> (= isDescendant_consequence 0) (= condition_text_added 0)))\n\n; Negation: can condition.text be added when logNode is in condition expression?\n(assert (= current_is_condition_child 1))\n(assert (= condition_text_added 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

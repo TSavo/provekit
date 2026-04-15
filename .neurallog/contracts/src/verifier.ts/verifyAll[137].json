@@ -5,11 +5,39 @@
   "line": 137,
   "signal_hash": "fd265dcba3e13c555a47d0a7c83fbe3ddd70829f9fa26851f4b6545639908d2e",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "REACHABLE: trivialCount understates true count of trivial identity proofs",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 137\n; REACHABLE: trivialCount understates true count of trivial identity proofs\n(declare-const non_vacuous_count Int)\n(declare-const truly_trivial_non_vacuous Int)\n(declare-const is_trivial_detected Int)\n(declare-const trivial_count Int)\n; Transition: results contains non_vacuous_count entries (vacuous blocks already dropped)\n(assert (>= non_vacuous_count 1))\n; Transition: truly_trivial_non_vacuous blocks have the form (assert (= A B)) + (assert (not (= A B)))\n(assert (>= truly_trivial_non_vacuous 1))\n(assert (<= truly_trivial_non_vacuous non_vacuous_count))\n; From existing violation: isTrivialIdentity regex matches only atomic equalities of the form\n; (assert (= <atom> <atom>)) — compound expressions like (assert (= (+ a b) c)) are missed\n(assert (>= is_trivial_detected 0))\n(assert (< is_trivial_detected truly_trivial_non_vacuous))\n; Transition: trivial_count = results.filter(r => r.trivial).length = is_trivial_detected\n(assert (= trivial_count is_trivial_detected))\n; Violation: log \"N trivial identity proofs flagged\" understates actual trivial count\n(assert (< trivial_count truly_trivial_non_vacuous))\n(check-sat)"
+    },
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "REACHABLE: return value [] is ambiguous between \"no SMT2 blocks\" and \"all blocks vacuous\"",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 137\n; REACHABLE: return value [] is ambiguous between \"no SMT2 blocks\" and \"all blocks vacuous\"\n(declare-const scenario_a_results Int)   ; Scenario A: extractSmt2Blocks returned []\n(declare-const scenario_b_total Int)     ; Scenario B: N blocks all vacuous\n(declare-const scenario_b_vacuous Int)\n(declare-const scenario_b_results Int)\n; Scenario A transition: response contains no fenced SMT2 blocks → results = []\n(assert (= scenario_a_results 0))\n; Scenario B transition: response contains N genuine SMT2 blocks, all vacuous\n(assert (>= scenario_b_total 1))\n(assert (= scenario_b_vacuous scenario_b_total))\n; Transition: nonVacuous = [] → results = [] in Scenario B\n(assert (= scenario_b_results (- scenario_b_total scenario_b_vacuous)))\n; Violation: both scenarios produce identical return values\n; caller cannot distinguish \"nothing to verify\" from \"everything was garbage\"\n(assert (= scenario_a_results scenario_b_results))\n(check-sat)"
+    }
+  ],
   "depends_on": [
     "src/verifier.ts/isTrivialIdentity[94]",
     "src/verifier.ts/isVacuous[59]",
     "src/verifier.ts/verifyBlock[32]"
   ],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 137\n; REACHABLE: trivialCount understates true count of trivial identity proofs\n(declare-const non_vacuous_count Int)\n(declare-const truly_trivial_non_vacuous Int)\n(declare-const is_trivial_detected Int)\n(declare-const trivial_count Int)\n; Transition: results contains non_vacuous_count entries (vacuous blocks already dropped)\n(assert (>= non_vacuous_count 1))\n; Transition: truly_trivial_non_vacuous blocks have the form (assert (= A B)) + (assert (not (= A B)))\n(assert (>= truly_trivial_non_vacuous 1))\n(assert (<= truly_trivial_non_vacuous non_vacuous_count))\n; From existing violation: isTrivialIdentity regex matches only atomic equalities of the form\n; (assert (= <atom> <atom>)) — compound expressions like (assert (= (+ a b) c)) are missed\n(assert (>= is_trivial_detected 0))\n(assert (< is_trivial_detected truly_trivial_non_vacuous))\n; Transition: trivial_count = results.filter(r => r.trivial).length = is_trivial_detected\n(assert (= trivial_count is_trivial_detected))\n; Violation: log \"N trivial identity proofs flagged\" understates actual trivial count\n(assert (< trivial_count truly_trivial_non_vacuous))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 137\n; REACHABLE: return value [] is ambiguous between \"no SMT2 blocks\" and \"all blocks vacuous\"\n(declare-const scenario_a_results Int)   ; Scenario A: extractSmt2Blocks returned []\n(declare-const scenario_b_total Int)     ; Scenario B: N blocks all vacuous\n(declare-const scenario_b_vacuous Int)\n(declare-const scenario_b_results Int)\n; Scenario A transition: response contains no fenced SMT2 blocks → results = []\n(assert (= scenario_a_results 0))\n; Scenario B transition: response contains N genuine SMT2 blocks, all vacuous\n(assert (>= scenario_b_total 1))\n(assert (= scenario_b_vacuous scenario_b_total))\n; Transition: nonVacuous = [] → results = [] in Scenario B\n(assert (= scenario_b_results (- scenario_b_total scenario_b_vacuous)))\n; Violation: both scenarios produce identical return values\n; caller cannot distinguish \"nothing to verify\" from \"everything was garbage\"\n(assert (= scenario_a_results scenario_b_results))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

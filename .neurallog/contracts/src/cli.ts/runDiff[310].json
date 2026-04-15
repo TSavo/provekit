@@ -4,8 +4,36 @@
   "function": "runDiff",
   "line": 310,
   "signal_hash": "059f0221c717865054f5203a1da7cf610aa50d9a0e17597abdb0a2b14f6b5a11",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "regressions is a .length count (non-negative integer)",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 310\n; regressions is a .length count (non-negative integer)\n; Guard: if (regressions > 0) — integer > 0 implies >= 1\n; Prove: regressions >= 1 at this line\n\n(declare-const regressions Int)\n(declare-const line_310_executes Int)\n\n; Transition: regressions = changes.filter(c => c.type === \"regressed\").length >= 0\n(assert (>= regressions 0))\n; Transition: guarded by if (regressions > 0)\n(assert (=> (= line_310_executes 1) (> regressions 0)))\n\n; Attempt to falsify: regression message fires with regressions < 1\n(assert (= line_310_executes 1))\n(assert (< regressions 1))\n(check-sat)"
+    },
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "ternary: regressions === 1 ? \"\" : \"s\"",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 310\n; ternary: regressions === 1 ? \"\" : \"s\"\n; Prove: suffix is \"\" iff regressions == 1; suffix is \"s\" iff regressions > 1\n; (regressions < 1 is ruled out by the path-condition proof above)\n\n(declare-const regressions Int)\n(declare-const suffix_is_plural Int)  ; 1 = \"s\" appended, 0 = \"\" appended\n\n; Transition: path condition guarantees regressions >= 1\n(assert (>= regressions 1))\n; Transition: ternary selects suffix\n(assert (=> (= regressions 1) (= suffix_is_plural 0)))\n(assert (=> (> regressions 1) (= suffix_is_plural 1)))\n\n; Attempt to falsify: singular suffix used while regressions > 1\n(assert (= suffix_is_plural 0))\n(assert (> regressions 1))\n(check-sat)"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 310\n; regressions is a .length count (non-negative integer)\n; Guard: if (regressions > 0) — integer > 0 implies >= 1\n; Prove: regressions >= 1 at this line\n\n(declare-const regressions Int)\n(declare-const line_310_executes Int)\n\n; Transition: regressions = changes.filter(c => c.type === \"regressed\").length >= 0\n(assert (>= regressions 0))\n; Transition: guarded by if (regressions > 0)\n(assert (=> (= line_310_executes 1) (> regressions 0)))\n\n; Attempt to falsify: regression message fires with regressions < 1\n(assert (= line_310_executes 1))\n(assert (< regressions 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 310\n; ternary: regressions === 1 ? \"\" : \"s\"\n; Prove: suffix is \"\" iff regressions == 1; suffix is \"s\" iff regressions > 1\n; (regressions < 1 is ruled out by the path-condition proof above)\n\n(declare-const regressions Int)\n(declare-const suffix_is_plural Int)  ; 1 = \"s\" appended, 0 = \"\" appended\n\n; Transition: path condition guarantees regressions >= 1\n(assert (>= regressions 1))\n; Transition: ternary selects suffix\n(assert (=> (= regressions 1) (= suffix_is_plural 0)))\n(assert (=> (> regressions 1) (= suffix_is_plural 1)))\n\n; Attempt to falsify: singular suffix used while regressions > 1\n(assert (= suffix_is_plural 0))\n(assert (> regressions 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

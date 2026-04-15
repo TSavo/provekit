@@ -6,13 +6,26 @@
   "signal_hash": "e0292c5ff1ce45e1119313b04807b1493816fabfe4c60ea798c06f24b521d867",
   "proven": [
     {
-      "principle": "P4",
-      "principle_hash": "a1b5093df48e8e1f7473af05b14e02a6715311445690b006840d2fc640b4234d",
-      "claim": "Claim: `signalRegistry.getGeneratorNames()` returns a (possibly empty) list",
-      "smt2": "; LINE: 133\n; PRINCIPLE: P4 – Registry mutation soundness\n; Claim: `signalRegistry.getGeneratorNames()` returns a (possibly empty) list\n;        of generator names that have been registered by `buildSignalRegistry`.\n;        The list length is therefore ≥ 0 and equals the number of successful\n;        `registry.register(...)` calls inside `buildSignalRegistry`.\n\n(declare-const registered Int)   ; number of generators added by buildSignalRegistry\n(declare-const listed   Int)     ; length of the name list returned by getGeneratorNames()\n\n; Code effect: each successful register increments `registered` by 1.\n; For the purpose of this invariant we only need the relationship:\n(assert (= listed registered))\n\n; Negated claim: the logged list length differs from the number of registered generators\n(assert (not (= listed registered)))\n(check-sat)\n; Expected: unsat   → the log cannot mis‑report the number of generators."
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "PROVEN: getGeneratorNames().join(\", \") always produces a string — join() is total over arrays",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 133\n; PROVEN: getGeneratorNames().join(\", \") always produces a string — join() is total over arrays\n(declare-const names_array_is_defined Int)  ; 1 = getGeneratorNames() returns a value (not throws)\n(declare-const join_result_is_string Int)   ; 1 = join() returned a string value\n; Code transition: TypeScript return type of getGeneratorNames() is string[]\n; a typed method cannot return undefined without a type error under strict mode\n(assert (= names_array_is_defined 1))\n; Code transition: Array.prototype.join is defined for all arrays including []\n; join([]) = \"\", join([\"a\",\"b\"]) = \"a, b\" — never throws, always returns string\n(assert (=> (= names_array_is_defined 1) (= join_result_is_string 1)))\n; Negation: join throws or returns non-string\n(assert (= join_result_is_string 0))\n(check-sat)"
     }
   ],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "P6",
+      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
+      "claim": "VIOLATION: if createDefault() registers 0 generators, join(\"\") → \"Signals: \" (degenerate empty)",
+      "smt2": "; PRINCIPLE: P6\n; LINE: 133\n; VIOLATION: if createDefault() registers 0 generators, join(\"\") → \"Signals: \" (degenerate empty)\n(declare-const default_generator_count Int)    ; generators registered by createDefault()\n(declare-const llm_signals_flag Int)           ; 1 = --llm-signals in args\n(declare-const total_generator_count Int)      ; total after buildSignalRegistry completes\n(declare-const signals_output_length Int)      ; byte length of the join result\n; Code transition: buildSignalRegistry calls SignalRegistry.createDefault()\n; count is non-negative (registry can hold 0 generators)\n(assert (>= default_generator_count 0))\n; Code transition: --llm-signals absent → no additional generator registered\n(assert (= llm_signals_flag 0))\n(assert (= total_generator_count default_generator_count))\n; Code transition: join([]) = \"\" when generator_count = 0\n(assert (= default_generator_count 0))\n(assert (=> (= total_generator_count 0) (= signals_output_length 0)))\n; Degenerate: log prints \"Signals: \" — empty string where signal names are expected\n(assert (= signals_output_length 0))\n(check-sat)"
+    },
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "VIOLATION: buildSignalRegistry passes unvalidated model to LLMSignalGenerator",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 133\n; VIOLATION: buildSignalRegistry passes unvalidated model to LLMSignalGenerator\n; when --llm-signals set and --signal-model absent, llmModel falls back to model (unchecked)\n(declare-const llm_signals_flag Int)          ; 1 = --llm-signals in args\n(declare-const signal_model_flag_present Int) ; 1 = --signal-model in args\n(declare-const model_is_valid Int)            ; 1 = model is a recognized model name\n(declare-const llm_generator_model_valid Int) ; 1 = LLMSignalGenerator receives valid model\n; Code transition: --llm-signals set, --signal-model absent → getFlag returns undefined\n; Code transition: undefined || model fires → llmModel = model (unvalidated, from line 132)\n(assert (= llm_signals_flag 1))\n(assert (= signal_model_flag_present 0))\n(assert (= model_is_valid 0))               ; caller passed invalid --model (P3 violation above)\n; Code transition: llmModel = model → LLMSignalGenerator({model: llmModel}) uses bad value\n(assert (=> (and (= llm_signals_flag 1) (= signal_model_flag_present 0))\n            (= llm_generator_model_valid model_is_valid)))\n; Violation: LLMSignalGenerator precondition (valid model name) is not established\n(assert (= llm_generator_model_valid 0))\n(check-sat)"
+    }
+  ],
   "depends_on": [
     "src/cli.ts/buildSignalRegistry[529]",
     "src/cli.ts/fileIssues[518]",
@@ -25,7 +38,21 @@
   ],
   "clause_history": [
     {
-      "clause": "; LINE: 133\n; PRINCIPLE: P4 – Registry mutation soundness\n; Claim: `signalRegistry.getGeneratorNames()` returns a (possibly empty) list\n;        of generator names that have been registered by `buildSignalRegistry`.\n;        The list length is therefore ≥ 0 and equals the number of successful\n;        `registry.register(...)` calls inside `buildSignalRegistry`.\n\n(declare-const registered Int)   ; number of generators added by buildSignalRegistry\n(declare-const listed   Int)     ; length of the name list returned by getGeneratorNames()\n\n; Code effect: each successful register increments `registered` by 1.\n; For the purpose of this invariant we only need the relationship:\n(assert (= listed registered))\n\n; Negated claim: the logged list length differs from the number of registered generators\n(assert (not (= listed registered)))\n(check-sat)\n; Expected: unsat   → the log cannot mis‑report the number of generators.",
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 133\n; PROVEN: getGeneratorNames().join(\", \") always produces a string — join() is total over arrays\n(declare-const names_array_is_defined Int)  ; 1 = getGeneratorNames() returns a value (not throws)\n(declare-const join_result_is_string Int)   ; 1 = join() returned a string value\n; Code transition: TypeScript return type of getGeneratorNames() is string[]\n; a typed method cannot return undefined without a type error under strict mode\n(assert (= names_array_is_defined 1))\n; Code transition: Array.prototype.join is defined for all arrays including []\n; join([]) = \"\", join([\"a\",\"b\"]) = \"a, b\" — never throws, always returns string\n(assert (=> (= names_array_is_defined 1) (= join_result_is_string 1)))\n; Negation: join throws or returns non-string\n(assert (= join_result_is_string 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P6\n; LINE: 133\n; VIOLATION: if createDefault() registers 0 generators, join(\"\") → \"Signals: \" (degenerate empty)\n(declare-const default_generator_count Int)    ; generators registered by createDefault()\n(declare-const llm_signals_flag Int)           ; 1 = --llm-signals in args\n(declare-const total_generator_count Int)      ; total after buildSignalRegistry completes\n(declare-const signals_output_length Int)      ; byte length of the join result\n; Code transition: buildSignalRegistry calls SignalRegistry.createDefault()\n; count is non-negative (registry can hold 0 generators)\n(assert (>= default_generator_count 0))\n; Code transition: --llm-signals absent → no additional generator registered\n(assert (= llm_signals_flag 0))\n(assert (= total_generator_count default_generator_count))\n; Code transition: join([]) = \"\" when generator_count = 0\n(assert (= default_generator_count 0))\n(assert (=> (= total_generator_count 0) (= signals_output_length 0)))\n; Degenerate: log prints \"Signals: \" — empty string where signal names are expected\n(assert (= signals_output_length 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 133\n; VIOLATION: buildSignalRegistry passes unvalidated model to LLMSignalGenerator\n; when --llm-signals set and --signal-model absent, llmModel falls back to model (unchecked)\n(declare-const llm_signals_flag Int)          ; 1 = --llm-signals in args\n(declare-const signal_model_flag_present Int) ; 1 = --signal-model in args\n(declare-const model_is_valid Int)            ; 1 = model is a recognized model name\n(declare-const llm_generator_model_valid Int) ; 1 = LLMSignalGenerator receives valid model\n; Code transition: --llm-signals set, --signal-model absent → getFlag returns undefined\n; Code transition: undefined || model fires → llmModel = model (unvalidated, from line 132)\n(assert (= llm_signals_flag 1))\n(assert (= signal_model_flag_present 0))\n(assert (= model_is_valid 0))               ; caller passed invalid --model (P3 violation above)\n; Code transition: llmModel = model → LLMSignalGenerator({model: llmModel}) uses bad value\n(assert (=> (and (= llm_signals_flag 1) (= signal_model_flag_present 0))\n            (= llm_generator_model_valid model_is_valid)))\n; Violation: LLMSignalGenerator precondition (valid model name) is not established\n(assert (= llm_generator_model_valid 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

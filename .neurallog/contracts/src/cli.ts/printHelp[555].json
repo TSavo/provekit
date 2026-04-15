@@ -4,23 +4,8 @@
   "function": "printHelp",
   "line": 555,
   "signal_hash": "1eebffdc72ec035c808ea5a84608dcc7bacdcd2dc900b8f401213c362a3e6b5c",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Proven: \"--dry-run\" is documented in help (line 555) and consumed by",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 555\n; Proven: \"--dry-run\" is documented in help (line 555) and consumed by\n; args.includes(\"--dry-run\") in runAnalyze, which passes dryRun to fileIssues().\n(declare-const dryrun_documented Int)\n(declare-const dryrun_consumed Int)\n(assert (= dryrun_documented 1))\n; const dryRun = args.includes(\"--dry-run\"); used to control fileIssues behavior\n(assert (= dryrun_consumed 1))\n(assert (not (= dryrun_documented dryrun_consumed)))\n(check-sat)\n; Expected: unsat — --dry-run is documented and controls filing behavior"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 555\n; Proven: \"--dry-run\" is documented in help (line 555) and consumed by\n; args.includes(\"--dry-run\") in runAnalyze, which passes dryRun to fileIssues().\n(declare-const dryrun_documented Int)\n(declare-const dryrun_consumed Int)\n(assert (= dryrun_documented 1))\n; const dryRun = args.includes(\"--dry-run\"); used to control fileIssues behavior\n(assert (= dryrun_consumed 1))\n(assert (not (= dryrun_documented dryrun_consumed)))\n(check-sat)\n; Expected: unsat — --dry-run is documented and controls filing behavior",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

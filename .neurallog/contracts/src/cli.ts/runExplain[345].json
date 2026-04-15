@@ -5,22 +5,7 @@
   "line": 345,
   "signal_hash": "034b4a203b86f4153a84feb0a33f26e62344ebbc7cd24a2ffb0fa7a13fba3af6",
   "proven": [],
-  "violations": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Claim: The advice is printed **iff** the contract lookup failed.",
-      "smt2": "; LINE: 345\n; PRINCIPLE: P5  (Semantic Correctness – advice should only appear when a contract is truly missing)\n; Claim: The advice is printed **iff** the contract lookup failed.\n\n; Re‑use the same facts as line 344\n(declare-const relPath String)\n(declare-const line Int)\n(declare-fun hasContract (String Int) Bool)\n\n; Advice printed ⇔ hasContract is false\n; Model the printing as a Boolean flag\n(declare-const advicePrinted Bool)\n(assert (= advicePrinted (not (hasContract relPath line))))\n\n; Negate the claim (i.e., advice printed while contract actually exists)\n(assert (hasContract relPath line))\n\n(check-sat)\n; sat → reachable inconsistency (advice could be printed even though a contract exists)"
-    }
-  ],
+  "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; LINE: 345\n; PRINCIPLE: P5  (Semantic Correctness – advice should only appear when a contract is truly missing)\n; Claim: The advice is printed **iff** the contract lookup failed.\n\n; Re‑use the same facts as line 344\n(declare-const relPath String)\n(declare-const line Int)\n(declare-fun hasContract (String Int) Bool)\n\n; Advice printed ⇔ hasContract is false\n; Model the printing as a Boolean flag\n(declare-const advicePrinted Bool)\n(assert (= advicePrinted (not (hasContract relPath line))))\n\n; Negate the claim (i.e., advice printed while contract actually exists)\n(assert (hasContract relPath line))\n\n(check-sat)\n; sat → reachable inconsistency (advice could be printed even though a contract exists)",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

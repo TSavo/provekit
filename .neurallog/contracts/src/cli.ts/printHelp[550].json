@@ -4,23 +4,8 @@
   "function": "printHelp",
   "line": 550,
   "signal_hash": "1b9f69e2b3124404439e5b5202802a3feb7a7538032f7b82c2222164dfb1cf13",
-  "proven": [
-    {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "Proven: \"Options:\" header (550) executes immediately after the second",
-      "smt2": "; PRINCIPLE: P2\n; LINE: 550\n; Proven: \"Options:\" header (550) executes immediately after the second\n; separator (549) — sequential, no intervening branch.\n(declare-const stmt_549_fired Int)\n(declare-const stmt_550_fired Int)\n(assert (= stmt_549_fired 1))\n(assert (= stmt_550_fired stmt_549_fired))\n(assert (not (= stmt_550_fired 1)))\n(check-sat)\n; Expected: unsat — \"Options:\" header cannot be skipped"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P2\n; LINE: 550\n; Proven: \"Options:\" header (550) executes immediately after the second\n; separator (549) — sequential, no intervening branch.\n(declare-const stmt_549_fired Int)\n(declare-const stmt_550_fired Int)\n(assert (= stmt_549_fired 1))\n(assert (= stmt_550_fired stmt_549_fired))\n(assert (not (= stmt_550_fired 1)))\n(check-sat)\n; Expected: unsat — \"Options:\" header cannot be skipped",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

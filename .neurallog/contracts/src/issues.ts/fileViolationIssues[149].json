@@ -5,7 +5,24 @@
   "line": 149,
   "signal_hash": "db1feb342a62a4f7cdd348b7d9031d85d84fddb4eccef1d6c28ca7034dec0312",
   "proven": [],
-  "violations": [],
-  "depends_on": [],
-  "clause_history": []
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "VIOLATION: [DRY RUN] output is a false preview — dry-run path skips issueExists(),",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 149\n; VIOLATION: [DRY RUN] output is a false preview — dry-run path skips issueExists(),\n; so it prints and counts issues the non-dry-run path would silently skip as duplicates.\n; This is an ordering constraint violation: the full skip logic is not applied uniformly.\n(declare-const issue_already_on_github Int)\n(declare-const is_dry_run Int)\n(declare-const printed_as_dry_run_candidate Int)\n(declare-const non_dry_run_would_file Int)\n; Code transition: dry-run path unconditionally prints without calling issueExists()\n(assert (= is_dry_run 1))\n(assert (= printed_as_dry_run_candidate 1))\n; Code transition: non-dry-run path calls issueExists() and skips on true return\n; If the issue exists on GitHub, non-dry-run would enter the SKIP branch, not file\n(assert (=> (= issue_already_on_github 1) (= non_dry_run_would_file 0)))\n; Issue genuinely exists on GitHub\n(assert (= issue_already_on_github 1))\n; Violation: shown as [DRY RUN] candidate but real path would skip it\n(assert (= printed_as_dry_run_candidate 1))\n(assert (= non_dry_run_would_file 0))\n(check-sat)"
+    }
+  ],
+  "depends_on": [
+    "src/issues.ts/issueExists[101]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 149\n; VIOLATION: [DRY RUN] output is a false preview — dry-run path skips issueExists(),\n; so it prints and counts issues the non-dry-run path would silently skip as duplicates.\n; This is an ordering constraint violation: the full skip logic is not applied uniformly.\n(declare-const issue_already_on_github Int)\n(declare-const is_dry_run Int)\n(declare-const printed_as_dry_run_candidate Int)\n(declare-const non_dry_run_would_file Int)\n; Code transition: dry-run path unconditionally prints without calling issueExists()\n(assert (= is_dry_run 1))\n(assert (= printed_as_dry_run_candidate 1))\n; Code transition: non-dry-run path calls issueExists() and skips on true return\n; If the issue exists on GitHub, non-dry-run would enter the SKIP branch, not file\n(assert (=> (= issue_already_on_github 1) (= non_dry_run_would_file 0)))\n; Issue genuinely exists on GitHub\n(assert (= issue_already_on_github 1))\n; Violation: shown as [DRY RUN] candidate but real path would skip it\n(assert (= printed_as_dry_run_candidate 1))\n(assert (= non_dry_run_would_file 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

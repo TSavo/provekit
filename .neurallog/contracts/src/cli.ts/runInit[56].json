@@ -4,23 +4,8 @@
   "function": "runInit",
   "line": 56,
   "signal_hash": "fb01f54c51637069bf30bcb0b650e1f71699f6c9c47b804e5409a50e2f474fa3",
-  "proven": [
-    {
-      "principle": "P1",
-      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
-      "claim": "PROVEN: the blank‑line log never fails",
-      "smt2": "; LINE: 56  ; PRINCIPLE: P1 – Precondition Propagation (trivial)\n; PROVEN: the blank‑line log never fails\n(assert true)          ; the program does nothing special here\n(assert false)         ; negated property: “blank line log fails”\n(check-sat)            ; unsat → property holds"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; LINE: 56  ; PRINCIPLE: P1 – Precondition Propagation (trivial)\n; PROVEN: the blank‑line log never fails\n(assert true)          ; the program does nothing special here\n(assert false)         ; negated property: “blank line log fails”\n(check-sat)            ; unsat → property holds",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

@@ -4,23 +4,8 @@
   "function": "runInit",
   "line": 114,
   "signal_hash": "78969b02e399ee84676faceee482b267c8ea4f0aa2e531368b4c3a7cae9f0b2c",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "(no claim extracted)",
-      "smt2": "; LINE: 114  ; PRINCIPLE: P5 – Semantic Correctness (fixed literal)\n(assert true)\n(assert false)\n(check-sat)            ; unsat"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; LINE: 114  ; PRINCIPLE: P5 – Semantic Correctness (fixed literal)\n(assert true)\n(assert false)\n(check-sat)            ; unsat",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

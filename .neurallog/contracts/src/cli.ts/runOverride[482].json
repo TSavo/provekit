@@ -5,7 +5,22 @@
   "line": 482,
   "signal_hash": "7fd4a4435381e3f476fae7cd6a9b5cc756c0d1ab207ed112ad999d7c0ee9967b",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "Violation: empty string from getFlag is falsy — flag present, error fires anyway",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 482\n; Violation: empty string from getFlag is falsy — flag present, error fires anyway\n(declare-const flag_present Int)      ; 1 = \"--reason\" exists in args\n(declare-const next_arg_length Int)   ; character length of args[idx+1]\n(declare-const reason_truthy Int)     ; 1 = passes !reason guard\n; Code transition: getFlag returns args[idx+1] when flag found and idx+1 < length\n(assert (= flag_present 1))\n; Code transition: caller passed --reason \"\" → next arg is empty string\n(assert (= next_arg_length 0))\n; Code transition: empty string is falsy in JavaScript (!(\"\") === true)\n(assert (=> (= next_arg_length 0) (= reason_truthy 0)))\n; Violation: flag was explicitly provided, yet the usage error fires\n(assert (= reason_truthy 0))\n(check-sat)"
+    }
+  ],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 482\n; Violation: empty string from getFlag is falsy — flag present, error fires anyway\n(declare-const flag_present Int)      ; 1 = \"--reason\" exists in args\n(declare-const next_arg_length Int)   ; character length of args[idx+1]\n(declare-const reason_truthy Int)     ; 1 = passes !reason guard\n; Code transition: getFlag returns args[idx+1] when flag found and idx+1 < length\n(assert (= flag_present 1))\n; Code transition: caller passed --reason \"\" → next arg is empty string\n(assert (= next_arg_length 0))\n; Code transition: empty string is falsy in JavaScript (!(\"\") === true)\n(assert (=> (= next_arg_length 0) (= reason_truthy 0)))\n; Violation: flag was explicitly provided, yet the usage error fires\n(assert (= reason_truthy 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

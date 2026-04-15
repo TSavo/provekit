@@ -6,17 +6,19 @@
   "signal_hash": "7731e8b8f9bb91833da4133a4029774e4ad39bb37e9438b66d7bbb5687afa4a2",
   "proven": [
     {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "When `fileIssue` throws, the `catch` block logs an error and increments `errors`.",
-      "smt2": "; PRINCIPLE: P2\n; LINE: 168\n; When `fileIssue` throws, the `catch` block logs an error and increments `errors`.\n; Prove that if an exception occurs, `errors` must be incremented.\n(declare-const errors_before Int)\n(declare-const errors_after Int)\n(declare-const filing_throws Bool)\n\n; pre‑condition: an exception is thrown\n(assert (= filing_throws true))\n; transition: error branch increments `errors`\n(assert (= errors_after (+ errors_before 1)))\n\n; negated property: errors stay the same despite the exception\n(assert (not (= errors_after (+ errors_before 1))))\n\n(check-sat)"
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "PROVEN: At line 168, fileIssue() threw an exception",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 168\n; PROVEN: At line 168, fileIssue() threw an exception\n(declare-const file_issue_threw Int)\n(declare-const reached_line_168 Int)\n; Code transition: line 168 is inside catch{} — only reachable if fileIssue threw\n(assert (=> (= reached_line_168 1) (= file_issue_threw 1)))\n; Code transition: we are executing line 168\n(assert (= reached_line_168 1))\n; Negation: fileIssue did not throw but line 168 was still reached\n(assert (= file_issue_threw 0))\n(check-sat)"
     }
   ],
   "violations": [],
-  "depends_on": [],
+  "depends_on": [
+    "src/issues.ts/issueExists[101]"
+  ],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P2\n; LINE: 168\n; When `fileIssue` throws, the `catch` block logs an error and increments `errors`.\n; Prove that if an exception occurs, `errors` must be incremented.\n(declare-const errors_before Int)\n(declare-const errors_after Int)\n(declare-const filing_throws Bool)\n\n; pre‑condition: an exception is thrown\n(assert (= filing_throws true))\n; transition: error branch increments `errors`\n(assert (= errors_after (+ errors_before 1)))\n\n; negated property: errors stay the same despite the exception\n(assert (not (= errors_after (+ errors_before 1))))\n\n(check-sat)",
+      "clause": "; PRINCIPLE: P3\n; LINE: 168\n; PROVEN: At line 168, fileIssue() threw an exception\n(declare-const file_issue_threw Int)\n(declare-const reached_line_168 Int)\n; Code transition: line 168 is inside catch{} — only reachable if fileIssue threw\n(assert (=> (= reached_line_168 1) (= file_issue_threw 1)))\n; Code transition: we are executing line 168\n(assert (= reached_line_168 1))\n; Negation: fileIssue did not throw but line 168 was still reached\n(assert (= file_issue_threw 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

@@ -4,8 +4,37 @@
   "function": "runOverride",
   "line": 486,
   "signal_hash": "0db30cedbb222f992a92c6828f5baa860e412c47d5653d4d849d6a13eb5e52df",
-  "proven": [],
-  "violations": [],
+  "proven": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "Proven: reason is truthy and process.exit was not called",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 486\n; Proven: reason is truthy and process.exit was not called\n(declare-const reason_truthy Int)\n(declare-const process_exited Int)\n; Code transition: process.exit(1) is called exactly when !reason\n(assert (=> (= reason_truthy 0) (= process_exited 1)))\n; Code transition: line 486 only executes when process has not exited\n(assert (= process_exited 0))\n; Negated property: reason is falsy at line 486\n(assert (= reason_truthy 0))\n(check-sat)"
+    }
+  ],
+  "violations": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "Violation: \"Override recorded\" is semantically false — no fs write occurs",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 486\n; Violation: \"Override recorded\" is semantically false — no fs write occurs\n(declare-const reason_truthy Int)\n(declare-const fs_write_calls Int)     ; count of writeFileSync/appendFileSync in runOverride\n(declare-const override_persisted Int) ; 1 = override data actually saved to disk\n; Code transition: runOverride contains zero filesystem write operations\n(assert (= fs_write_calls 0))\n; Code transition: persistence requires at least one write\n(assert (=> (= fs_write_calls 0) (= override_persisted 0)))\n; Code transition: reason is truthy, execution reaches line 486\n(assert (= reason_truthy 1))\n; Violation: log says \"Override recorded\" but override_persisted = 0\n(assert (= override_persisted 0))\n(check-sat)"
+    }
+  ],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 486\n; Proven: reason is truthy and process.exit was not called\n(declare-const reason_truthy Int)\n(declare-const process_exited Int)\n; Code transition: process.exit(1) is called exactly when !reason\n(assert (=> (= reason_truthy 0) (= process_exited 1)))\n; Code transition: line 486 only executes when process has not exited\n(assert (= process_exited 0))\n; Negated property: reason is falsy at line 486\n(assert (= reason_truthy 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 486\n; Violation: \"Override recorded\" is semantically false — no fs write occurs\n(declare-const reason_truthy Int)\n(declare-const fs_write_calls Int)     ; count of writeFileSync/appendFileSync in runOverride\n(declare-const override_persisted Int) ; 1 = override data actually saved to disk\n; Code transition: runOverride contains zero filesystem write operations\n(assert (= fs_write_calls 0))\n; Code transition: persistence requires at least one write\n(assert (=> (= fs_write_calls 0) (= override_persisted 0)))\n; Code transition: reason is truthy, execution reaches line 486\n(assert (= reason_truthy 1))\n; Violation: log says \"Override recorded\" but override_persisted = 0\n(assert (= override_persisted 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

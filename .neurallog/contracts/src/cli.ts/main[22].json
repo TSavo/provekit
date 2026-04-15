@@ -6,13 +6,20 @@
   "signal_hash": "f6a29604800a0bebc8f864e7059e44a30bf6c54bc4823c4903983f296401e060",
   "proven": [
     {
-      "principle": "P1, P3",
-      "principle_hash": "4e92224535f06e86c93621ed685b0ad691512d2a6be7a68a8064f924136b7729",
-      "claim": "REACHABLE: --version flag returns exit(0), same as --help",
-      "smt2": "; PRINCIPLE: P1, P3\n; LINE: 22\n; REACHABLE: --version flag returns exit(0), same as --help\n; Both paths exit cleanly but for different reasons\n(declare-const args_contains_version Bool)\n(declare-const args_contains_help Bool)\n(declare-const exit_code Int)\n(assert (= args_contains_version true))\n(assert (= args_contains_help false))\n(assert (= exit_code 0))\n(assert (= args_contains_help true))\n(assert (= exit_code 0))\n; Exit codes indistinguishable for different reasons\n(assert (= args_contains_version args_contains_help))\n(check-sat)\n; sat → both exit 0, caller cannot determine which was triggered"
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Ordering constraint: args is provably non-empty at line 22.",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 22\n; Ordering constraint: args is provably non-empty at line 22.\n; The help guard at line 16 exits when args.length === 0; since we reached line 22 that guard was false.\n; PROVE: args_length > 0 AND includes_version = 1 are both true at line 22.\n(declare-const args_length Int)\n(declare-const includes_version Int)   ; 1 = true, 0 = false\n; Code transition: guard at line 16 exits when args.length === 0; we passed it → args_length > 0\n(assert (> args_length 0))\n; Code transition: line 20 checks args.includes(\"--version\"); we entered the branch → true\n(assert (= includes_version 1))\n; Negation: either args is empty or --version absent at line 22\n(assert (or (<= args_length 0) (= includes_version 0)))\n(check-sat)"
     }
   ],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "--version is checked via Array.includes(), which scans ALL positions, not just args[0].",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 22\n; --version is checked via Array.includes(), which scans ALL positions, not just args[0].\n; A user who passes \"neurallog analyze src/foo.ts --version\" intends to run analyze,\n; but the version flag at position 2 short-circuits dispatch entirely and silently discards the command.\n(declare-const version_flag_position Int)    ; 0-indexed position of \"--version\" in args\n(declare-const command_position Int)         ; position of command name — always 0\n(declare-const a_valid_command_present Int)  ; 1 = args[0] is a known command like \"analyze\"\n(declare-const command_dispatched Int)       ; 1 = the switch arm executed\n; Code transition: command_position is always 0 (args[0] is the dispatch token)\n(assert (= command_position 0))\n; Code transition: includes(\"--version\") fires regardless of flag position\n; version flag is after the command (user passed \"analyze src/foo.ts --version\")\n(assert (> version_flag_position command_position))\n; Code transition: args[0] = \"analyze\" → a valid command is present\n(assert (= a_valid_command_present 1))\n; Code transition: line 20 guard fires because includes(\"--version\") = true → process.exit(0)\n; The switch is never reached → command_dispatched = 0\n(assert (= command_dispatched 0))\n; Violation: a valid command was present but was never executed\n(assert (= a_valid_command_present 1))\n(assert (= command_dispatched 0))\n(check-sat)"
+    }
+  ],
   "depends_on": [
     "src/cli.ts/printHelp[537]",
     "src/cli.ts/printHelp[538]",
@@ -134,7 +141,14 @@
   ],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P1, P3\n; LINE: 22\n; REACHABLE: --version flag returns exit(0), same as --help\n; Both paths exit cleanly but for different reasons\n(declare-const args_contains_version Bool)\n(declare-const args_contains_help Bool)\n(declare-const exit_code Int)\n(assert (= args_contains_version true))\n(assert (= args_contains_help false))\n(assert (= exit_code 0))\n(assert (= args_contains_help true))\n(assert (= exit_code 0))\n; Exit codes indistinguishable for different reasons\n(assert (= args_contains_version args_contains_help))\n(check-sat)\n; sat → both exit 0, caller cannot determine which was triggered",
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 22\n; Ordering constraint: args is provably non-empty at line 22.\n; The help guard at line 16 exits when args.length === 0; since we reached line 22 that guard was false.\n; PROVE: args_length > 0 AND includes_version = 1 are both true at line 22.\n(declare-const args_length Int)\n(declare-const includes_version Int)   ; 1 = true, 0 = false\n; Code transition: guard at line 16 exits when args.length === 0; we passed it → args_length > 0\n(assert (> args_length 0))\n; Code transition: line 20 checks args.includes(\"--version\"); we entered the branch → true\n(assert (= includes_version 1))\n; Negation: either args is empty or --version absent at line 22\n(assert (or (<= args_length 0) (= includes_version 0)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 22\n; --version is checked via Array.includes(), which scans ALL positions, not just args[0].\n; A user who passes \"neurallog analyze src/foo.ts --version\" intends to run analyze,\n; but the version flag at position 2 short-circuits dispatch entirely and silently discards the command.\n(declare-const version_flag_position Int)    ; 0-indexed position of \"--version\" in args\n(declare-const command_position Int)         ; position of command name — always 0\n(declare-const a_valid_command_present Int)  ; 1 = args[0] is a known command like \"analyze\"\n(declare-const command_dispatched Int)       ; 1 = the switch arm executed\n; Code transition: command_position is always 0 (args[0] is the dispatch token)\n(assert (= command_position 0))\n; Code transition: includes(\"--version\") fires regardless of flag position\n; version flag is after the command (user passed \"analyze src/foo.ts --version\")\n(assert (> version_flag_position command_position))\n; Code transition: args[0] = \"analyze\" → a valid command is present\n(assert (= a_valid_command_present 1))\n; Code transition: line 20 guard fires because includes(\"--version\") = true → process.exit(0)\n; The switch is never reached → command_dispatched = 0\n(assert (= command_dispatched 0))\n; Violation: a valid command was present but was never executed\n(assert (= a_valid_command_present 1))\n(assert (= command_dispatched 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

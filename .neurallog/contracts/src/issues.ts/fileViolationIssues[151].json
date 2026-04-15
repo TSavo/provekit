@@ -6,6 +6,8 @@
   "signal_hash": "9e5c132b043d096e200bd8d2c86c84a8906bb316674eae8029cd77554ae484aa",
   "proven": [],
   "violations": [],
-  "depends_on": [],
+  "depends_on": [
+    "src/issues.ts/issueExists[101]"
+  ],
   "clause_history": []
 }

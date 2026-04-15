@@ -4,7 +4,14 @@
   "function": "runAnalyze",
   "line": 130,
   "signal_hash": "2914ed52cd66edb5f325b5c7aaea41ec5313a8748c4e16d85c1bf9e963cb087a",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "PROVEN: VERSION is a compile-time constant \"0.3.0\" — always semantically correct",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 130\n; PROVEN: VERSION is a compile-time constant \"0.3.0\" — always semantically correct\n(declare-const version_major Int)\n(declare-const version_minor Int)\n(declare-const version_patch Int)\n; Code transition: const VERSION = \"0.3.0\" — module-scope immutable string\n(assert (= version_major 0))\n(assert (= version_minor 3))\n(assert (= version_patch 0))\n; Negation: version is NOT \"0.3.0\"\n(assert (not (and (= version_major 0) (= version_minor 3) (= version_patch 0))))\n(check-sat)"
+    }
+  ],
   "violations": [],
   "depends_on": [
     "src/cli.ts/buildSignalRegistry[529]",
@@ -16,5 +23,13 @@
     "src/cli.ts/printSummary[498]",
     "src/cli.ts/printSummary[499]"
   ],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P5\n; LINE: 130\n; PROVEN: VERSION is a compile-time constant \"0.3.0\" — always semantically correct\n(declare-const version_major Int)\n(declare-const version_minor Int)\n(declare-const version_patch Int)\n; Code transition: const VERSION = \"0.3.0\" — module-scope immutable string\n(assert (= version_major 0))\n(assert (= version_minor 3))\n(assert (= version_patch 0))\n; Negation: version is NOT \"0.3.0\"\n(assert (not (and (= version_major 0) (= version_minor 3) (= version_patch 0))))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

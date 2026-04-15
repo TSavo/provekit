@@ -4,8 +4,23 @@
   "function": "runDiff",
   "line": 301,
   "signal_hash": "9db929bc3e68f1b84a75bf78ae01615678f47deac11690234fcc1ccbdfe5c25c",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "Ordering constraint: blank log at 301 executes only after for-of loop exhausts changes",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 301\n; Ordering constraint: blank log at 301 executes only after for-of loop exhausts changes\n; Prove: iterations_completed == changes_length when line 301 executes\n\n(declare-const changes_length Int)\n(declare-const iterations_completed Int)\n(declare-const line_301_executes Int)\n\n; Transition: for-of over an array completes all iterations before continuing\n(assert (>= changes_length 1))\n(assert (=> (= line_301_executes 1) (= iterations_completed changes_length)))\n\n; Attempt to falsify: blank log fires before loop fully completes\n(assert (= line_301_executes 1))\n(assert (< iterations_completed changes_length))\n(check-sat)"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 301\n; Ordering constraint: blank log at 301 executes only after for-of loop exhausts changes\n; Prove: iterations_completed == changes_length when line 301 executes\n\n(declare-const changes_length Int)\n(declare-const iterations_completed Int)\n(declare-const line_301_executes Int)\n\n; Transition: for-of over an array completes all iterations before continuing\n(assert (>= changes_length 1))\n(assert (=> (= line_301_executes 1) (= iterations_completed changes_length)))\n\n; Attempt to falsify: blank log fires before loop fully completes\n(assert (= line_301_executes 1))\n(assert (< iterations_completed changes_length))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

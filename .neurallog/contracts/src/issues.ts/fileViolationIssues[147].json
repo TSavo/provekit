@@ -6,30 +6,19 @@
   "signal_hash": "87a19b497b6de8ff27b1ce3a8201e542da0faca82cd9bb15caafc0605e9740df",
   "proven": [
     {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "In dry‑run mode the function only logs; it must NOT modify any counters.",
-      "smt2": "; PRINCIPLE: P2\n; LINE: 147\n; In dry‑run mode the function only logs; it must NOT modify any counters.\n; Prove: if dryRun = true then filed, skipped and errors stay 0.\n(declare-const dryRun Bool)\n(declare-const filed_before Int)\n(declare-const skipped_before Int)\n(declare-const errors_before Int)\n\n; pre‑condition: counters start at zero\n(assert (= filed_before 0))\n(assert (= skipped_before 0))\n(assert (= errors_before 0))\n\n; transition: the dry‑run branch only prints, no counter update\n; (no assignment to filed, skipped, errors)\n\n; negated property: at least one counter changes\n(assert (or (distinct filed_before 0) (distinct skipped_before 0) (distinct errors_before 0)))\n\n(check-sat)"
-    },
-    {
-      "principle": "P2",
-      "principle_hash": "b6bcdb379fa9609c091376cd36cd3c5c46b093744550405ebe8f9f30215016df",
-      "claim": "All five dry‑run logs are executed only when `dryRun` is true.",
-      "smt2": "; PRINCIPLE: P2\n; LINE: 147‑152 (dry‑run logs)\n; All five dry‑run logs are executed only when `dryRun` is true.\n; Prove that in that case the function returns without touching the counters.\n(declare-const dryRun Bool)\n(declare-const filed_before Int)\n(declare-const skipped_before Int)\n(declare-const errors_before Int)\n\n; assume dry‑run mode\n(assert (= dryRun true))\n\n; counters before entering the dry‑run block\n(assert (= filed_before 0))\n(assert (= skipped_before 0))\n(assert (= errors_before 0))\n\n; transition: no assignments to any counter inside the dry‑run block\n; (nothing to assert)\n\n; negated property: at least one counter differs after the block\n(assert (or (distinct filed_before 0) (distinct skipped_before 0) (distinct errors_before 0)))\n\n(check-sat)"
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "PROVEN: At line 147, dryRun is true AND issue.title was not in seen set",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 147\n; PROVEN: At line 147, dryRun is true AND issue.title was not in seen set\n(declare-const dry_run Int)\n(declare-const title_in_seen Int)\n; Code transition: seen.has(issue.title) returned false — loop body was not skipped\n(assert (= title_in_seen 0))\n; Code transition: if (dryRun) branch was entered — this is the dry-run path\n(assert (= dry_run 1))\n; Negation: either dryRun is false OR title was already in seen\n(assert (or (= dry_run 0) (= title_in_seen 1)))\n(check-sat)"
     }
   ],
   "violations": [],
-  "depends_on": [],
+  "depends_on": [
+    "src/issues.ts/issueExists[101]"
+  ],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P2\n; LINE: 147\n; In dry‑run mode the function only logs; it must NOT modify any counters.\n; Prove: if dryRun = true then filed, skipped and errors stay 0.\n(declare-const dryRun Bool)\n(declare-const filed_before Int)\n(declare-const skipped_before Int)\n(declare-const errors_before Int)\n\n; pre‑condition: counters start at zero\n(assert (= filed_before 0))\n(assert (= skipped_before 0))\n(assert (= errors_before 0))\n\n; transition: the dry‑run branch only prints, no counter update\n; (no assignment to filed, skipped, errors)\n\n; negated property: at least one counter changes\n(assert (or (distinct filed_before 0) (distinct skipped_before 0) (distinct errors_before 0)))\n\n(check-sat)",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P2\n; LINE: 147‑152 (dry‑run logs)\n; All five dry‑run logs are executed only when `dryRun` is true.\n; Prove that in that case the function returns without touching the counters.\n(declare-const dryRun Bool)\n(declare-const filed_before Int)\n(declare-const skipped_before Int)\n(declare-const errors_before Int)\n\n; assume dry‑run mode\n(assert (= dryRun true))\n\n; counters before entering the dry‑run block\n(assert (= filed_before 0))\n(assert (= skipped_before 0))\n(assert (= errors_before 0))\n\n; transition: no assignments to any counter inside the dry‑run block\n; (nothing to assert)\n\n; negated property: at least one counter differs after the block\n(assert (or (distinct filed_before 0) (distinct skipped_before 0) (distinct errors_before 0)))\n\n(check-sat)",
+      "clause": "; PRINCIPLE: P3\n; LINE: 147\n; PROVEN: At line 147, dryRun is true AND issue.title was not in seen set\n(declare-const dry_run Int)\n(declare-const title_in_seen Int)\n; Code transition: seen.has(issue.title) returned false — loop body was not skipped\n(assert (= title_in_seen 0))\n; Code transition: if (dryRun) branch was entered — this is the dry-run path\n(assert (= dry_run 1))\n; Negation: either dryRun is false OR title was already in seen\n(assert (or (= dry_run 0) (= title_in_seen 1)))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

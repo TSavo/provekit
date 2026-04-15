@@ -4,19 +4,59 @@
   "function": "verifyBlock",
   "line": 32,
   "signal_hash": "5dc874197d0e50108f667dd0fee0da0497fc845ec30acad8972d5ecc88ad4d29",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "PROVEN: classify() correctly identifies \"sat\" when z3 output is exactly one \"sat\" line.",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 32\n; PROVEN: classify() correctly identifies \"sat\" when z3 output is exactly one \"sat\" line.\n; Assert preconditions + code transitions + NEGATION of property → expect unsat.\n(declare-const output_line_count Int)\n(declare-const output_line_content Int)   ; 0=sat  1=unsat  2=unknown  3=other\n(declare-const classify_result Int)       ; 0=sat  1=unsat  2=unknown  3=error\n\n; Precondition: z3 emits a single line containing \"sat\"\n(assert (= output_line_count 1))\n(assert (= output_line_content 0))\n\n; Code transition: classify scans backward; single-line output whose content=sat → returns sat\n(assert (=> (and (= output_line_count 1) (= output_line_content 0))\n            (= classify_result 0)))\n\n; Negation of property: classify does NOT return sat\n(assert (not (= classify_result 0)))\n(check-sat)"
+    }
+  ],
   "violations": [
     {
       "principle": "P3",
       "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
-      "claim": "Bug: classify() searches backward: sat → unsat → unknown",
-      "smt2": "; PRINCIPLE: P3 - Calling Context Analysis\n; LINE: 32\n; Bug: classify() searches backward: sat → unsat → unknown\n; If output has \"unsat\" on line 1 and \"sat\" on line 2, backward search finds \"sat\" first\n; Model: Last line index where each keyword appears\n\n(declare-const sat_line Int)\n(declare-const unsat_line Int)\n; Z3 output: \"unsat\" appears at line index 1, \"sat\" appears at line index 2\n(assert (= sat_line 2))\n(assert (= unsat_line 1))\n; backward loop: for (i = lines.length - 1; i >= 0; i--)\n; At i=2: lines[2] == \"sat\" → returns \"sat\" immediately\n; But Z3 actually said UNSAT - this is a violation misclassification\n(assert (> sat_line unsat_line))\n(check-sat)"
+      "claim": "VIOLATION: verifyBlock passes smt2 directly to execSync with no input validation.",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 32\n; VIOLATION: verifyBlock passes smt2 directly to execSync with no input validation.\n; An empty (assertionless) string makes z3 output \"sat\" (empty theory is trivially satisfiable).\n; verifyBlock then returns { result: \"sat\" } having verified nothing.\n(declare-const assert_count Int)          ; (assert ...) forms present in smt2\n(declare-const z3_outputs_sat Int)        ; 1 = z3 stdout line is \"sat\"\n(declare-const classify_returns_sat Int)  ; 1 = classify() resolves to sat\n\n; Code transition: no guard on assert_count in verifyBlock — any value accepted\n; Code transition: z3 on assertionless input → trivially satisfiable → outputs \"sat\"\n(assert (= assert_count 0))\n(assert (= z3_outputs_sat 1))\n\n; Code transition: classify backward scan matches \"sat\" line → returns sat\n(assert (=> (= z3_outputs_sat 1) (= classify_returns_sat 1)))\n\n; Violation: function reports sat while zero assertions were evaluated\n(assert (= classify_returns_sat 1))\n(assert (= assert_count 0))\n(check-sat)"
+    },
+    {
+      "principle": "P1",
+      "principle_hash": "138e06d613db8a80e6577a005303964a5c090ddb6401198a9e1b7faff4b74e07",
+      "claim": "VIOLATION: execSync(\"z3 -in -T:5\", ...) requires the z3 binary to be in PATH.",
+      "smt2": "; PRINCIPLE: P1\n; LINE: 32\n; VIOLATION: execSync(\"z3 -in -T:5\", ...) requires the z3 binary to be in PATH.\n; verifyBlock establishes no such precondition before invoking execSync.\n; Missing z3 → execSync throws ENOENT → catch block returns { result: \"error\" }.\n(declare-const z3_available Int)    ; 1 = z3 found in PATH\n(declare-const exec_throws Int)     ; 1 = execSync throws on spawn failure\n(declare-const function_result Int) ; 0=sat  1=unsat  2=unknown  3=error\n\n; Code: verifyBlock has no guard checking z3_available before calling execSync\n; Code transition: absent binary → execSync throws ENOENT\n(assert (= z3_available 0))\n(assert (=> (= z3_available 0) (= exec_throws 1)))\n\n; Code transition: catch block — no stdout, stderr omits \"timeout\" → falls through to error\n(assert (=> (= exec_throws 1) (= function_result 3)))\n\n; Violation: verifyBlock returns \"error\" without Z3 ever running — verification promised, not delivered\n(assert (= function_result 3))\n(assert (= z3_available 0))\n(check-sat)"
+    },
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "VIOLATION: Two independent timeout mechanisms produce divergent error classifications.",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 32\n; VIOLATION: Two independent timeout mechanisms produce divergent error classifications.\n; Z3 internal timeout (-T:5 = 5 000 ms): z3 outputs \"unknown\" to stdout, exits 0.\n;   → execSync succeeds → classify(\"unknown\") → { result: \"unknown\" }  ✓\n; execSync timeout (10 000 ms, fires if z3 internal timer fails): sends SIGTERM, process killed.\n;   → execSync throws; stdout may be empty; stderr contains \"Killed\" not \"timeout\"\n;   → catch: stderr.includes(\"timeout\") is FALSE → returns { result: \"error\" }  ✗\n; A genuine timeout is misclassified as an execution error.\n(declare-const z3_internal_timeout Int)    ; 1 = z3 -T:5 fired\n(declare-const exec_sigterm_fired Int)     ; 1 = execSync 10 000ms SIGTERM fired\n(declare-const stderr_has_timeout_str Int) ; 1 = catch sees \"timeout\" in stderr\n(declare-const returned_result Int)        ; 2=unknown  3=error\n\n; Scenario: execSync timeout fires before z3's internal timer\n(assert (= exec_sigterm_fired 1))\n(assert (= z3_internal_timeout 0))\n\n; Code transition: SIGTERM from Node.js child_process does not write \"timeout\" to stderr\n(assert (=> (= exec_sigterm_fired 1) (= stderr_has_timeout_str 0)))\n\n; Code transition: catch block — stdout empty (killed mid-run), stderr lacks \"timeout\"\n;   → falls through to final return { result: \"error\" }\n(assert (=> (and (= exec_sigterm_fired 1) (= stderr_has_timeout_str 0))\n            (= returned_result 3)))\n\n; Violation: a legitimate timeout is reported as \"error\" instead of \"unknown\"\n(assert (= returned_result 3))\n(assert (= exec_sigterm_fired 1))\n(check-sat)"
     }
   ],
   "depends_on": [],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P3 - Calling Context Analysis\n; LINE: 32\n; Bug: classify() searches backward: sat → unsat → unknown\n; If output has \"unsat\" on line 1 and \"sat\" on line 2, backward search finds \"sat\" first\n; Model: Last line index where each keyword appears\n\n(declare-const sat_line Int)\n(declare-const unsat_line Int)\n; Z3 output: \"unsat\" appears at line index 1, \"sat\" appears at line index 2\n(assert (= sat_line 2))\n(assert (= unsat_line 1))\n; backward loop: for (i = lines.length - 1; i >= 0; i--)\n; At i=2: lines[2] == \"sat\" → returns \"sat\" immediately\n; But Z3 actually said UNSAT - this is a violation misclassification\n(assert (> sat_line unsat_line))\n(check-sat)",
+      "clause": "; PRINCIPLE: P5\n; LINE: 32\n; PROVEN: classify() correctly identifies \"sat\" when z3 output is exactly one \"sat\" line.\n; Assert preconditions + code transitions + NEGATION of property → expect unsat.\n(declare-const output_line_count Int)\n(declare-const output_line_content Int)   ; 0=sat  1=unsat  2=unknown  3=other\n(declare-const classify_result Int)       ; 0=sat  1=unsat  2=unknown  3=error\n\n; Precondition: z3 emits a single line containing \"sat\"\n(assert (= output_line_count 1))\n(assert (= output_line_content 0))\n\n; Code transition: classify scans backward; single-line output whose content=sat → returns sat\n(assert (=> (and (= output_line_count 1) (= output_line_content 0))\n            (= classify_result 0)))\n\n; Negation of property: classify does NOT return sat\n(assert (not (= classify_result 0)))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 32\n; VIOLATION: verifyBlock passes smt2 directly to execSync with no input validation.\n; An empty (assertionless) string makes z3 output \"sat\" (empty theory is trivially satisfiable).\n; verifyBlock then returns { result: \"sat\" } having verified nothing.\n(declare-const assert_count Int)          ; (assert ...) forms present in smt2\n(declare-const z3_outputs_sat Int)        ; 1 = z3 stdout line is \"sat\"\n(declare-const classify_returns_sat Int)  ; 1 = classify() resolves to sat\n\n; Code transition: no guard on assert_count in verifyBlock — any value accepted\n; Code transition: z3 on assertionless input → trivially satisfiable → outputs \"sat\"\n(assert (= assert_count 0))\n(assert (= z3_outputs_sat 1))\n\n; Code transition: classify backward scan matches \"sat\" line → returns sat\n(assert (=> (= z3_outputs_sat 1) (= classify_returns_sat 1)))\n\n; Violation: function reports sat while zero assertions were evaluated\n(assert (= classify_returns_sat 1))\n(assert (= assert_count 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P1\n; LINE: 32\n; VIOLATION: execSync(\"z3 -in -T:5\", ...) requires the z3 binary to be in PATH.\n; verifyBlock establishes no such precondition before invoking execSync.\n; Missing z3 → execSync throws ENOENT → catch block returns { result: \"error\" }.\n(declare-const z3_available Int)    ; 1 = z3 found in PATH\n(declare-const exec_throws Int)     ; 1 = execSync throws on spawn failure\n(declare-const function_result Int) ; 0=sat  1=unsat  2=unknown  3=error\n\n; Code: verifyBlock has no guard checking z3_available before calling execSync\n; Code transition: absent binary → execSync throws ENOENT\n(assert (= z3_available 0))\n(assert (=> (= z3_available 0) (= exec_throws 1)))\n\n; Code transition: catch block — no stdout, stderr omits \"timeout\" → falls through to error\n(assert (=> (= exec_throws 1) (= function_result 3)))\n\n; Violation: verifyBlock returns \"error\" without Z3 ever running — verification promised, not delivered\n(assert (= function_result 3))\n(assert (= z3_available 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 32\n; VIOLATION: Two independent timeout mechanisms produce divergent error classifications.\n; Z3 internal timeout (-T:5 = 5 000 ms): z3 outputs \"unknown\" to stdout, exits 0.\n;   → execSync succeeds → classify(\"unknown\") → { result: \"unknown\" }  ✓\n; execSync timeout (10 000 ms, fires if z3 internal timer fails): sends SIGTERM, process killed.\n;   → execSync throws; stdout may be empty; stderr contains \"Killed\" not \"timeout\"\n;   → catch: stderr.includes(\"timeout\") is FALSE → returns { result: \"error\" }  ✗\n; A genuine timeout is misclassified as an execution error.\n(declare-const z3_internal_timeout Int)    ; 1 = z3 -T:5 fired\n(declare-const exec_sigterm_fired Int)     ; 1 = execSync 10 000ms SIGTERM fired\n(declare-const stderr_has_timeout_str Int) ; 1 = catch sees \"timeout\" in stderr\n(declare-const returned_result Int)        ; 2=unknown  3=error\n\n; Scenario: execSync timeout fires before z3's internal timer\n(assert (= exec_sigterm_fired 1))\n(assert (= z3_internal_timeout 0))\n\n; Code transition: SIGTERM from Node.js child_process does not write \"timeout\" to stderr\n(assert (=> (= exec_sigterm_fired 1) (= stderr_has_timeout_str 0)))\n\n; Code transition: catch block — stdout empty (killed mid-run), stderr lacks \"timeout\"\n;   → falls through to final return { result: \"error\" }\n(assert (=> (and (= exec_sigterm_fired 1) (= stderr_has_timeout_str 0))\n            (= returned_result 3)))\n\n; Violation: a legitimate timeout is reported as \"error\" instead of \"unknown\"\n(assert (= returned_result 3))\n(assert (= exec_sigterm_fired 1))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

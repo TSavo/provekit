@@ -4,8 +4,23 @@
   "function": "runDiff",
   "line": 274,
   "signal_hash": "86bddebbfdd42264c1f4dabdf7a212ca6da57bcd59c2655e2054e8d16ef4391f",
-  "proven": [],
+  "proven": [
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "Path condition: if (changes.length === 0) { console.log(\"No proof changes.\"); return; }",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 274\n; Path condition: if (changes.length === 0) { console.log(\"No proof changes.\"); return; }\n; Prove: this log implies an empty changes array\n\n(declare-const changes_length Int)\n(declare-const line_274_executes Int)  ; 1 = this log statement runs\n\n; Transition: guard evaluates changes.length === 0 before entering the block\n(assert (>= changes_length 0))\n(assert (=> (= line_274_executes 1) (= changes_length 0)))\n\n; Attempt to falsify: log fires despite non-empty changes\n(assert (= line_274_executes 1))\n(assert (> changes_length 0))\n(check-sat)"
+    }
+  ],
   "violations": [],
   "depends_on": [],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 274\n; Path condition: if (changes.length === 0) { console.log(\"No proof changes.\"); return; }\n; Prove: this log implies an empty changes array\n\n(declare-const changes_length Int)\n(declare-const line_274_executes Int)  ; 1 = this log statement runs\n\n; Transition: guard evaluates changes.length === 0 before entering the block\n(assert (>= changes_length 0))\n(assert (=> (= line_274_executes 1) (= changes_length 0)))\n\n; Attempt to falsify: log fires despite non-empty changes\n(assert (= line_274_executes 1))\n(assert (> changes_length 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

@@ -4,23 +4,8 @@
   "function": "printHelp",
   "line": 545,
   "signal_hash": "97204df12a7e1c7da6c795cabfcf7186b8df8046994147c15321d3ffb5c9c984",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Proven: \"explain\" appears in help (line 545) AND is implemented as",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 545\n; Proven: \"explain\" appears in help (line 545) AND is implemented as\n; case \"explain\": runExplain(rest) in the switch.\n(declare-const explain_documented Int)\n(declare-const explain_implemented Int)\n(assert (= explain_documented 1))\n(assert (= explain_implemented 1))\n(assert (not (= explain_documented explain_implemented)))\n(check-sat)\n; Expected: unsat — explain is both documented and implemented"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 545\n; Proven: \"explain\" appears in help (line 545) AND is implemented as\n; case \"explain\": runExplain(rest) in the switch.\n(declare-const explain_documented Int)\n(declare-const explain_implemented Int)\n(assert (= explain_documented 1))\n(assert (= explain_implemented 1))\n(assert (not (= explain_documented explain_implemented)))\n(check-sat)\n; Expected: unsat — explain is both documented and implemented",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

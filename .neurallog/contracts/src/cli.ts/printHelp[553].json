@@ -4,23 +4,8 @@
   "function": "printHelp",
   "line": 553,
   "signal_hash": "13a536a159dda65d94bb3646b2700327d67077313a64f294282f3d0c1ec4fbcc",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Proven: \"--verbose\"/\"-v\" is documented in help (line 553) and consumed by",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 553\n; Proven: \"--verbose\"/\"-v\" is documented in help (line 553) and consumed by\n; args.includes(\"--verbose\") || args.includes(\"-v\") in runAnalyze, runDerive, runVerify.\n(declare-const verbose_documented Int)\n(declare-const verbose_consumed_count Int)\n(assert (= verbose_documented 1))\n; Appears in 3 subcommand functions\n(assert (= verbose_consumed_count 3))\n(assert (not (and (= verbose_documented 1) (> verbose_consumed_count 0))))\n(check-sat)\n; Expected: unsat — --verbose is documented and consumed in 3 functions"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 553\n; Proven: \"--verbose\"/\"-v\" is documented in help (line 553) and consumed by\n; args.includes(\"--verbose\") || args.includes(\"-v\") in runAnalyze, runDerive, runVerify.\n(declare-const verbose_documented Int)\n(declare-const verbose_consumed_count Int)\n(assert (= verbose_documented 1))\n; Appears in 3 subcommand functions\n(assert (= verbose_consumed_count 3))\n(assert (not (and (= verbose_documented 1) (> verbose_consumed_count 0))))\n(check-sat)\n; Expected: unsat — --verbose is documented and consumed in 3 functions",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

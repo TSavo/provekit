@@ -4,23 +4,8 @@
   "function": "printHelp",
   "line": 551,
   "signal_hash": "69d88811b7c9e94b5d86477fa8db58f420ad55ada57fa363ed0f30f165279b0e",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Proven: \"--model\" is documented in help (line 551) and consumed by",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 551\n; Proven: \"--model\" is documented in help (line 551) and consumed by\n; getFlag(args, \"--model\") in runAnalyze, runDerive, runVerify, and buildSignalRegistry.\n(declare-const model_documented Int)\n(declare-const model_consumed_count Int)\n; Line 551 documents --model → documented = 1\n(assert (= model_documented 1))\n; getFlag(args, \"--model\") appears in 4 subcommand functions\n(assert (= model_consumed_count 4))\n; Prove: model IS documented (documented = 1) AND is actively consumed (count > 0)\n(assert (not (and (= model_documented 1) (> model_consumed_count 0))))\n(check-sat)\n; Expected: unsat — --model is documented and consumed in 4 functions"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 551\n; Proven: \"--model\" is documented in help (line 551) and consumed by\n; getFlag(args, \"--model\") in runAnalyze, runDerive, runVerify, and buildSignalRegistry.\n(declare-const model_documented Int)\n(declare-const model_consumed_count Int)\n; Line 551 documents --model → documented = 1\n(assert (= model_documented 1))\n; getFlag(args, \"--model\") appears in 4 subcommand functions\n(assert (= model_consumed_count 4))\n; Prove: model IS documented (documented = 1) AND is actively consumed (count > 0)\n(assert (not (and (= model_documented 1) (> model_consumed_count 0))))\n(check-sat)\n; Expected: unsat — --model is documented and consumed in 4 functions",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

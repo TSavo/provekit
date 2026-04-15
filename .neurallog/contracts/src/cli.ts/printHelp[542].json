@@ -4,37 +4,8 @@
   "function": "printHelp",
   "line": 542,
   "signal_hash": "aa6dde7b0eea9955511c8467bfeab38e02bc630c0139c0a17e51aa2dc91be4ac",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Proven: \"derive\" appears in help (line 542) AND is implemented as",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 542\n; Proven: \"derive\" appears in help (line 542) AND is implemented as\n; case \"derive\": await runDerive(rest) in the switch.\n(declare-const derive_documented Int)\n(declare-const derive_implemented Int)\n(assert (= derive_documented 1))\n(assert (= derive_implemented 1))\n(assert (not (= derive_documented derive_implemented)))\n(check-sat)\n; Expected: unsat — derive is both documented and implemented"
-    }
-  ],
-  "violations": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "Reachable violation: the relative order of \"derive\" and \"verify\" is INVERTED",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 542\n; Reachable violation: the relative order of \"derive\" and \"verify\" is INVERTED\n; between the switch statement and the help text.\n; Switch order (by case appearance): analyze(2) → verify(3) → derive(4)\n; Help order (by line appearance): analyze(541) → derive(542) → verify(543)\n; This inconsistency means the implicit priority/grouping signaled by ordering differs.\n(declare-const verify_switch_pos Int)\n(declare-const derive_switch_pos  Int)\n(declare-const verify_help_pos    Int)\n(declare-const derive_help_pos    Int)\n; Switch: case \"verify\" is the 3rd case, case \"derive\" is the 4th\n(assert (= verify_switch_pos 3))\n(assert (= derive_switch_pos  4))\n; Help: derive is on line 542, verify is on line 543\n(assert (= derive_help_pos  542))\n(assert (= verify_help_pos  543))\n; Transition (switch): verify comes BEFORE derive (verify_pos < derive_pos)\n(assert (< verify_switch_pos derive_switch_pos))\n; Transition (help): derive comes BEFORE verify (derive_pos < verify_pos)\n(assert (< derive_help_pos verify_help_pos))\n; Is the ordering inconsistent? (relative order differs in switch vs help)\n(assert (and (< verify_switch_pos derive_switch_pos)\n             (< derive_help_pos   verify_help_pos)))\n(check-sat)\n; Expected: sat — verify precedes derive in the switch but follows it in help;\n; the two orderings are mutually inconsistent"
-    }
-  ],
+  "proven": [],
+  "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 542\n; Proven: \"derive\" appears in help (line 542) AND is implemented as\n; case \"derive\": await runDerive(rest) in the switch.\n(declare-const derive_documented Int)\n(declare-const derive_implemented Int)\n(assert (= derive_documented 1))\n(assert (= derive_implemented 1))\n(assert (not (= derive_documented derive_implemented)))\n(check-sat)\n; Expected: unsat — derive is both documented and implemented",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 542\n; Reachable violation: the relative order of \"derive\" and \"verify\" is INVERTED\n; between the switch statement and the help text.\n; Switch order (by case appearance): analyze(2) → verify(3) → derive(4)\n; Help order (by line appearance): analyze(541) → derive(542) → verify(543)\n; This inconsistency means the implicit priority/grouping signaled by ordering differs.\n(declare-const verify_switch_pos Int)\n(declare-const derive_switch_pos  Int)\n(declare-const verify_help_pos    Int)\n(declare-const derive_help_pos    Int)\n; Switch: case \"verify\" is the 3rd case, case \"derive\" is the 4th\n(assert (= verify_switch_pos 3))\n(assert (= derive_switch_pos  4))\n; Help: derive is on line 542, verify is on line 543\n(assert (= derive_help_pos  542))\n(assert (= verify_help_pos  543))\n; Transition (switch): verify comes BEFORE derive (verify_pos < derive_pos)\n(assert (< verify_switch_pos derive_switch_pos))\n; Transition (help): derive comes BEFORE verify (derive_pos < verify_pos)\n(assert (< derive_help_pos verify_help_pos))\n; Is the ordering inconsistent? (relative order differs in switch vs help)\n(assert (and (< verify_switch_pos derive_switch_pos)\n             (< derive_help_pos   verify_help_pos)))\n(check-sat)\n; Expected: sat — verify precedes derive in the switch but follows it in help;\n; the two orderings are mutually inconsistent",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

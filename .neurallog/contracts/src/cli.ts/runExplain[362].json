@@ -4,23 +4,8 @@
   "function": "runExplain",
   "line": 362,
   "signal_hash": "17310cddd1d6233827c4e4c80ebdb7a19d768bf02f45ecb044d3de5e8d13e44f",
-  "proven": [
-    {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "The proof string is printed iff `p.smt2` is non‑empty.",
-      "smt2": "; LINE: 362\n; PRINCIPLE: P5  (Semantic Correctness – header printed only if a proof exists)\n; The proof string is printed iff `p.smt2` is non‑empty.\n\n(declare-const smt2 String)\n(declare-const headerPrinted Bool)\n(assert (= headerPrinted (not (= smt2 \"\"))))\n\n; Violation: header printed while proof is empty\n(assert (= smt2 \"\"))\n(assert headerPrinted)\n\n(check-sat)\n; sat → reachable bug (header without proof)"
-    }
-  ],
+  "proven": [],
   "violations": [],
   "depends_on": [],
-  "clause_history": [
-    {
-      "clause": "; LINE: 362\n; PRINCIPLE: P5  (Semantic Correctness – header printed only if a proof exists)\n; The proof string is printed iff `p.smt2` is non‑empty.\n\n(declare-const smt2 String)\n(declare-const headerPrinted Bool)\n(assert (= headerPrinted (not (= smt2 \"\"))))\n\n; Violation: header printed while proof is empty\n(assert (= smt2 \"\"))\n(assert headerPrinted)\n\n(check-sat)\n; sat → reachable bug (header without proof)",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    }
-  ]
+  "clause_history": []
 }

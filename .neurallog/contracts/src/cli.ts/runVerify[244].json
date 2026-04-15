@@ -5,9 +5,24 @@
   "line": 244,
   "signal_hash": "4e0155db9eea0cf64b5e4a9c3156fe99f0c61c6d4ad70d245486b205499429aa",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "REACHABLE: At line 244, execution has irrevocably committed to calling runVerifyOnly.",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 244\n; REACHABLE: At line 244, execution has irrevocably committed to calling runVerifyOnly.\n; The only violation output path (lines 251-252) is inside if(ci).\n; For interactive users (ci = false), runVerifyOnly is called but its results\n; are never printed and process.exit(1) is never called.\n(declare-const ci Int)                ; 1 = args.includes(\"--ci\"), 0 = not set\n(declare-const violations Int)        ; report.violations returned by runVerifyOnly\n(declare-const violations_printed Int) ; 1 = violation count was written to stdout\n(declare-const exit1_called Int)      ; 1 = process.exit(1) was called\n; Code transition: runVerifyOnly is called after line 244 regardless of ci value\n; (it is unconditional, before the if(ci) block)\n(assert (> violations 0))\n; Code transition: lines 251-252 and process.exit(1) are inside if(ci) block\n(assert (=> (= ci 0) (= violations_printed 0)))\n(assert (=> (= ci 0) (= exit1_called 0)))\n; Interactive user: ci = false\n(assert (= ci 0))\n; Violation: violations found, nothing communicated, process exits 0\n(assert (= violations_printed 0))\n(assert (= exit1_called 0))\n(check-sat)"
+    }
+  ],
   "depends_on": [
     "src/cli.ts/buildSignalRegistry[529]"
   ],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 244\n; REACHABLE: At line 244, execution has irrevocably committed to calling runVerifyOnly.\n; The only violation output path (lines 251-252) is inside if(ci).\n; For interactive users (ci = false), runVerifyOnly is called but its results\n; are never printed and process.exit(1) is never called.\n(declare-const ci Int)                ; 1 = args.includes(\"--ci\"), 0 = not set\n(declare-const violations Int)        ; report.violations returned by runVerifyOnly\n(declare-const violations_printed Int) ; 1 = violation count was written to stdout\n(declare-const exit1_called Int)      ; 1 = process.exit(1) was called\n; Code transition: runVerifyOnly is called after line 244 regardless of ci value\n; (it is unconditional, before the if(ci) block)\n(assert (> violations 0))\n; Code transition: lines 251-252 and process.exit(1) are inside if(ci) block\n(assert (=> (= ci 0) (= violations_printed 0)))\n(assert (=> (= ci 0) (= exit1_called 0)))\n; Interactive user: ci = false\n(assert (= ci 0))\n; Violation: violations found, nothing communicated, process exits 0\n(assert (= violations_printed 0))\n(assert (= exit1_called 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

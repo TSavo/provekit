@@ -5,7 +5,20 @@
   "line": 131,
   "signal_hash": "f632652a24b31558e0900db91a9c507de5edba5c5d6aa893f40cafa01c593858",
   "proven": [],
-  "violations": [],
+  "violations": [
+    {
+      "principle": "[NEW]",
+      "principle_hash": "",
+      "claim": "PROVEN: filePath is always an absolute path — resolve() is total over absolute outputs",
+      "smt2": "; PRINCIPLE: [NEW]\n; LINE: 131\n; PROVEN: filePath is always an absolute path — resolve() is total over absolute outputs\n(declare-const args_has_positional Int)   ; 1 = args contains a non-flag element\n(declare-const filePath_is_absolute Int)  ; 1 = filePath is an absolute path\n; Code transition: branch 1 — no positional arg → || \".\" → resolve(\".\") → cwd (absolute)\n(assert (=> (= args_has_positional 0) (= filePath_is_absolute 1)))\n; Code transition: branch 2 — positional arg found → resolve(arg) → absolute (even if relative input)\n(assert (=> (= args_has_positional 1) (= filePath_is_absolute 1)))\n; Negation: filePath is not absolute\n(assert (= filePath_is_absolute 0))\n(check-sat)"
+    },
+    {
+      "principle": "P3",
+      "principle_hash": "0212e3106762d5b7c254fe979052d87423e3bdad07475e4be473fb2f33a0f0b8",
+      "claim": "VIOLATION: \"File: X\" — X can be the current working directory when args has no positional arg",
+      "smt2": "; PRINCIPLE: P3\n; LINE: 131\n; VIOLATION: \"File: X\" — X can be the current working directory when args has no positional arg\n(declare-const positional_arg_count Int)    ; number of args not starting with \"-\"\n(declare-const filePath_is_directory Int)   ; 1 = filePath is a directory, not a TS file\n; Code transition: args.find(a => !a.startsWith(\"-\")) returns undefined when count = 0\n(assert (= positional_arg_count 0))\n; Code transition: undefined || \".\" fires → resolve(\".\") = cwd = a directory\n(assert (=> (= positional_arg_count 0) (= filePath_is_directory 1)))\n; Violation: log says \"File:\" but value is a directory\n(assert (= filePath_is_directory 1))\n(check-sat)"
+    }
+  ],
   "depends_on": [
     "src/cli.ts/buildSignalRegistry[529]",
     "src/cli.ts/fileIssues[518]",
@@ -16,5 +29,20 @@
     "src/cli.ts/printSummary[498]",
     "src/cli.ts/printSummary[499]"
   ],
-  "clause_history": []
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: [NEW]\n; LINE: 131\n; PROVEN: filePath is always an absolute path — resolve() is total over absolute outputs\n(declare-const args_has_positional Int)   ; 1 = args contains a non-flag element\n(declare-const filePath_is_absolute Int)  ; 1 = filePath is an absolute path\n; Code transition: branch 1 — no positional arg → || \".\" → resolve(\".\") → cwd (absolute)\n(assert (=> (= args_has_positional 0) (= filePath_is_absolute 1)))\n; Code transition: branch 2 — positional arg found → resolve(arg) → absolute (even if relative input)\n(assert (=> (= args_has_positional 1) (= filePath_is_absolute 1)))\n; Negation: filePath is not absolute\n(assert (= filePath_is_absolute 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    },
+    {
+      "clause": "; PRINCIPLE: P3\n; LINE: 131\n; VIOLATION: \"File: X\" — X can be the current working directory when args has no positional arg\n(declare-const positional_arg_count Int)    ; number of args not starting with \"-\"\n(declare-const filePath_is_directory Int)   ; 1 = filePath is a directory, not a TS file\n; Code transition: args.find(a => !a.startsWith(\"-\")) returns undefined when count = 0\n(assert (= positional_arg_count 0))\n; Code transition: undefined || \".\" fires → resolve(\".\") = cwd = a directory\n(assert (=> (= positional_arg_count 0) (= filePath_is_directory 1)))\n; Violation: log says \"File:\" but value is a directory\n(assert (= filePath_is_directory 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
 }

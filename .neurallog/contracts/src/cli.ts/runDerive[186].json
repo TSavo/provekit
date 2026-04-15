@@ -4,20 +4,13 @@
   "function": "runDerive",
   "line": 186,
   "signal_hash": "165ad9a7b415aa9960536681de9d84e89fe61236d537efbcd2760b753a6725e9",
-  "proven": [
-    {
-      "principle": "P2, P4",
-      "principle_hash": "a8cc8fc856575f0681aa88dcbf966f3026ad7efe3476be9d2ff900f9f0336440",
-      "claim": "REACHABLE: changedFiles array can contain duplicates (race condition in git)",
-      "smt2": "; PRINCIPLE: P2, P4\n; LINE: 186\n; REACHABLE: changedFiles array can contain duplicates (race condition in git)\n(declare-const file_1 String)\n(declare-const file_2 String)\n(declare-const file_count Int)\n(declare-const unique_count Int)\n(assert (= file_1 \"src/cli.ts\"))\n(assert (= file_2 \"src/cli.ts\"))\n(assert (= file_count 2))\n(assert (= unique_count 1))\n; Loop logs file_1 then file_2 (same file twice)\n(assert (= file_count unique_count))\n(check-sat)\n; sat → duplicate entries cause same file to be logged multiple times"
-    }
-  ],
+  "proven": [],
   "violations": [
     {
-      "principle": "P1, P2, P3",
-      "principle_hash": "f44c8070dc55ab540fa0bcad5ba9953e27e82067ac950db696cdf00a111335e0",
-      "claim": "REACHABLE: f can be absolute path if git returns absolute paths",
-      "smt2": "; PRINCIPLE: P1, P2, P3\n; LINE: 186\n; REACHABLE: f can be absolute path if git returns absolute paths\n(declare-const project_root String)\n(declare-const changed_file String)\n(declare-const relative_result String)\n(assert (= project_root \"/home/user/project\"))\n(assert (= changed_file \"/home/user/project/src/cli.ts\"))\n(assert (= relative_result \"/home/user/project/src/cli.ts\"))\n; relative() returns unchanged path if no common prefix removal\n(assert (= relative_result changed_file))\n(check-sat)\n; sat → absolute paths pass through relative() unchanged"
+      "principle": "P5",
+      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
+      "claim": "VIOLATION: relative(projectRoot, f) is logged as the file's project path,",
+      "smt2": "; PRINCIPLE: P5\n; LINE: 186\n; VIOLATION: relative(projectRoot, f) is logged as the file's project path,\n; but produces \"../\" segments when f lies outside the projectRoot subtree\n(declare-const project_root_depth Int)   ; number of segments in projectRoot\n(declare-const shared_prefix_depth Int)  ; depth of deepest common ancestor of projectRoot and f\n; Code transition: relative() computes (project_root_depth - shared_prefix_depth) \"..\" steps\n(assert (> project_root_depth 0))\n; Code transition: DiffAnalyzer may return files from symlinked or worktree paths outside projectRoot\n(assert (< shared_prefix_depth project_root_depth))\n; Code transition: each step above the shared prefix contributes one \"..\" segment\n(declare-const dotdot_count Int)\n(assert (= dotdot_count (- project_root_depth shared_prefix_depth)))\n; Violation: dotdot_count > 0 means the logged path starts with \"../\"\n(assert (> dotdot_count 0))\n(check-sat)"
     }
   ],
   "depends_on": [
@@ -30,14 +23,7 @@
   ],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P2, P4\n; LINE: 186\n; REACHABLE: changedFiles array can contain duplicates (race condition in git)\n(declare-const file_1 String)\n(declare-const file_2 String)\n(declare-const file_count Int)\n(declare-const unique_count Int)\n(assert (= file_1 \"src/cli.ts\"))\n(assert (= file_2 \"src/cli.ts\"))\n(assert (= file_count 2))\n(assert (= unique_count 1))\n; Loop logs file_1 then file_2 (same file twice)\n(assert (= file_count unique_count))\n(check-sat)\n; sat → duplicate entries cause same file to be logged multiple times",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P1, P2, P3\n; LINE: 186\n; REACHABLE: f can be absolute path if git returns absolute paths\n(declare-const project_root String)\n(declare-const changed_file String)\n(declare-const relative_result String)\n(assert (= project_root \"/home/user/project\"))\n(assert (= changed_file \"/home/user/project/src/cli.ts\"))\n(assert (= relative_result \"/home/user/project/src/cli.ts\"))\n; relative() returns unchanged path if no common prefix removal\n(assert (= relative_result changed_file))\n(check-sat)\n; sat → absolute paths pass through relative() unchanged",
+      "clause": "; PRINCIPLE: P5\n; LINE: 186\n; VIOLATION: relative(projectRoot, f) is logged as the file's project path,\n; but produces \"../\" segments when f lies outside the projectRoot subtree\n(declare-const project_root_depth Int)   ; number of segments in projectRoot\n(declare-const shared_prefix_depth Int)  ; depth of deepest common ancestor of projectRoot and f\n; Code transition: relative() computes (project_root_depth - shared_prefix_depth) \"..\" steps\n(assert (> project_root_depth 0))\n; Code transition: DiffAnalyzer may return files from symlinked or worktree paths outside projectRoot\n(assert (< shared_prefix_depth project_root_depth))\n; Code transition: each step above the shared prefix contributes one \"..\" segment\n(declare-const dotdot_count Int)\n(assert (= dotdot_count (- project_root_depth shared_prefix_depth)))\n; Violation: dotdot_count > 0 means the logged path starts with \"../\"\n(assert (> dotdot_count 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,
