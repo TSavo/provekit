@@ -11,20 +11,19 @@ export interface VerificationResult {
 export function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {
   const blocks: { smt2: string; principle: string | null }[] = [];
 
-  // Match ```smt2 or ```smt-lib or ```smtlib2 or ``` followed by SMT content
   const codeBlockRegex = /```(?:smt2|smt-lib|smtlib2|scheme)?\s*\n([\s\S]*?)```/g;
   let match;
 
   while ((match = codeBlockRegex.exec(response)) !== null) {
     const content = match[1]!.trim();
-    if (content.includes("(check-sat)")) {
-      const principleMatch = content.match(/;\s*PRINCIPLE:\s*(P\d+(?:\s*[,+&]\s*P\d+)*|\[NEW\])/i);
-      const principle = principleMatch ? principleMatch[1]!.trim() : null;
+    if (!content.includes("(check-sat)")) continue;
 
-      const firstCheckSat = content.indexOf("(check-sat)");
-      const truncated = content.slice(0, firstCheckSat + "(check-sat)".length);
-      blocks.push({ smt2: truncated, principle });
-    }
+    const principleMatch = content.match(/;\s*PRINCIPLE:\s*(P\d+(?:\s*[,+&]\s*P\d+)*|\[NEW\])/i);
+    const principle = principleMatch ? principleMatch[1]!.trim() : null;
+
+    const firstCheckSat = content.indexOf("(check-sat)");
+    const truncated = content.slice(0, firstCheckSat + "(check-sat)".length);
+    blocks.push({ smt2: truncated, principle });
   }
 
   return blocks;
@@ -32,11 +31,13 @@ export function extractSmt2Blocks(response: string): { smt2: string; principle: 
 
 export function verifyBlock(smt2: string): { result: "sat" | "unsat" | "unknown" | "error"; error?: string } {
   const classify = (output: string): { result: "sat" | "unsat" | "unknown" | "error"; error?: string } => {
-    const lastLine = output.trim().split("\n").pop()?.trim() || "";
-    if (lastLine === "sat") return { result: "sat" };
-    if (lastLine === "unsat") return { result: "unsat" };
-    if (lastLine === "unknown") return { result: "unknown" };
-    return { result: "error", error: output };
+    const lines = output.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i] === "sat") return { result: "sat" };
+      if (lines[i] === "unsat") return { result: "unsat" };
+      if (lines[i] === "unknown") return { result: "unknown" };
+    }
+    return { result: "error", error: output.trim() || "empty output" };
   };
 
   try {
@@ -50,31 +51,19 @@ export function verifyBlock(smt2: string): { result: "sat" | "unsat" | "unknown"
     const stderr = err.stderr?.toString() || "";
     const stdout = err.stdout?.toString() || "";
     if (stdout.trim()) return classify(stdout);
-    return { result: "error", error: stderr || err.message };
+    if (stderr.includes("timeout")) return { result: "unknown", error: "Z3 timeout" };
+    return { result: "error", error: stderr || err.message || "Z3 process failed" };
   }
 }
 
-/**
- * Detect vacuous SMT-LIB blocks — those that are trivially satisfiable
- * because they assert a condition on an unconstrained variable with no
- * code-model transitions.
- *
- * A vacuous block has:
- * - declare-const variables
- * - assertion(s) that are ONLY the violation condition
- * - NO transitional assertions (= new_x (- old_x quantity)), etc.
- *
- * The heuristic: if the only non-comment, non-declare, non-check-sat
- * assertions are simple comparisons on single variables (< x 0), (= x 0),
- * (> x CONST) with no binary operations referencing other declared vars,
- * the block is vacuous.
- */
 export function isVacuous(smt2: string): boolean {
   const lines = smt2.split("\n").map((l) => l.trim());
   const declares = lines.filter((l) => l.startsWith("(declare-const"));
   const asserts = lines.filter((l) => l.startsWith("(assert"));
+  const defineFuns = lines.filter((l) => l.startsWith("(define-fun"));
 
-  if (declares.length === 0 || asserts.length === 0) return false;
+  if (declares.length === 0 && defineFuns.length === 0) return false;
+  if (asserts.length === 0) return true;
 
   const declaredNames = new Set(
     declares.map((d) => {
@@ -83,50 +72,70 @@ export function isVacuous(smt2: string): boolean {
     }).filter(Boolean)
   );
 
-  // Count assertions that reference multiple declared variables (transitions)
+  for (const df of defineFuns) {
+    const m = df.match(/\(define-fun\s+(\S+)/);
+    if (m) declaredNames.add(m[1]!);
+  }
+
+  if (declaredNames.size < 2) return true;
+
   let transitionCount = 0;
   for (const a of asserts) {
     let referencedVars = 0;
     for (const name of declaredNames) {
       if (new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(a)) referencedVars++;
     }
-    // A transition references at least 2 declared variables (e.g., new_x = old_x - quantity)
     if (referencedVars >= 2) transitionCount++;
   }
 
-  // If no assertions reference multiple variables, this is likely vacuous
   return transitionCount === 0;
 }
 
-/**
- * Detect trivial identity proofs — blocks that assert (= x y) and then
- * assert (not (= x y)). These are tautologically unsat and prove nothing
- * beyond the identity of an assignment.
- */
 export function isTrivialIdentity(smt2: string): boolean {
   const lines = smt2.split("\n").map((l) => l.trim());
   const asserts = lines.filter((l) => l.startsWith("(assert"));
 
-  if (asserts.length !== 2) return false;
+  if (asserts.length < 2) return false;
 
-  // Pattern: one assert is (= A B), the other is (not (= A B))
-  const hasEquality = asserts.some((a) => /^\(assert\s+\(=\s+\S+\s+\S+\)\)$/.test(a));
-  const hasNegation = asserts.some((a) => /^\(assert\s+\(not\s+\(=\s+\S+\s+\S+\)\)\)$/.test(a));
+  const equalities: string[] = [];
+  const negations: string[] = [];
 
-  return hasEquality && hasNegation;
+  for (const a of asserts) {
+    const eqMatch = a.match(/^\(assert\s+\(=\s+(\S+)\s+(\S+)\)\)$/);
+    if (eqMatch) { equalities.push(`${eqMatch[1]} ${eqMatch[2]}`); continue; }
+    const negMatch = a.match(/^\(assert\s+\(not\s+\(=\s+(\S+)\s+(\S+)\)\)\)$/);
+    if (negMatch) negations.push(`${negMatch[1]} ${negMatch[2]}`);
+  }
+
+  for (const eq of equalities) {
+    if (negations.includes(eq)) return true;
+    const [a, b] = eq.split(" ");
+    if (negations.includes(`${b} ${a}`)) return true;
+  }
+
+  return false;
 }
 
 export function verifyAll(response: string): VerificationResult[] {
   const blocks = extractSmt2Blocks(response);
+
   const vacuousCount = blocks.filter(({ smt2 }) => isVacuous(smt2)).length;
+  const nonVacuous = blocks.filter(({ smt2 }) => !isVacuous(smt2));
+
   if (vacuousCount > 0) {
     console.log(`      (${vacuousCount} vacuous block${vacuousCount === 1 ? "" : "s"} filtered)`);
   }
-  return blocks
-    .filter(({ smt2 }) => !isVacuous(smt2))
-    .map(({ smt2, principle }) => {
-      const { result, error } = verifyBlock(smt2);
-      const trivial = isTrivialIdentity(smt2);
-      return { smt2, z3Result: result, principle, error, trivial };
-    });
+
+  const results = nonVacuous.map(({ smt2, principle }) => {
+    const { result, error } = verifyBlock(smt2);
+    const trivial = isTrivialIdentity(smt2);
+    return { smt2, z3Result: result, principle, error, trivial };
+  });
+
+  const trivialCount = results.filter((r) => r.trivial).length;
+  if (trivialCount > 0) {
+    console.log(`      (${trivialCount} trivial identity proof${trivialCount === 1 ? "" : "s"} flagged)`);
+  }
+
+  return results;
 }

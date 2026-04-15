@@ -134,11 +134,19 @@ export function fileViolationIssues(
   let skipped = 0;
   let errors = 0;
 
+  const seen = new Set<string>();
+
   for (const issue of issues) {
+    if (seen.has(issue.title)) {
+      skipped++;
+      continue;
+    }
+    seen.add(issue.title);
+
     if (dryRun) {
       console.log();
       console.log("────────────────────────────────────────────");
-      console.log(`TITLE: ${issue.title}`);
+      console.log(`[DRY RUN] ${issue.title}`);
       console.log("────────────────────────────────────────────");
       console.log(issue.body);
       console.log();
@@ -146,7 +154,6 @@ export function fileViolationIssues(
       continue;
     }
 
-    // Deduplicate: skip if an issue with this title already exists
     if (issueExists(issue.title)) {
       console.log(`  SKIP (duplicate): ${issue.title.slice(0, 80)}...`);
       skipped++;
@@ -158,7 +165,7 @@ export function fileViolationIssues(
       console.log(`  FILED: ${url}`);
       filed++;
     } catch (err: any) {
-      console.error(`  ERROR filing issue: ${err.message || err}`);
+      console.error(`  ERROR filing: ${issue.title.slice(0, 60)}: ${err.message || err}`);
       errors++;
     }
   }
