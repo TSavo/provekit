@@ -44,15 +44,12 @@ export class ContextPhase extends Phase<ContextInput, ContextBundle[]> {
     this.log("Assembling context bundles...");
     this.detail(`Processing ${graph.topologicalOrder.length} files in dependency order`);
 
-    const bundles: ContextBundle[] = [];
+    const allSignals: { filePath: string; fileNode: any; source: string; signals: Signal[] }[] = [];
 
     for (const filePath of graph.topologicalOrder) {
       const fileNode = graph.files.find((f) => f.path === filePath);
       if (!fileNode) continue;
-      if (fileNode.signalCount === 0) {
-        this.detail(`${fileNode.relativePath}: no signals, skipping`);
-        continue;
-      }
+      if (fileNode.signalCount === 0) continue;
 
       const source = readFileSync(filePath, "utf-8");
       const tree = parseFile(source);
@@ -60,13 +57,22 @@ export class ContextPhase extends Phase<ContextInput, ContextBundle[]> {
         ? await signalRegistry.findAllAsync(filePath, source, tree)
         : signalRegistry.findAll(filePath, source, tree);
 
-      if (signals.length === 0) continue;
+      if (signals.length > 0) {
+        allSignals.push({ filePath, fileNode, source, signals });
+      }
+    }
 
+    const flatSignals = allSignals.flatMap((s) => s.signals);
+    SignalRegistry.resolveCalledBy(flatSignals);
+    this.detail(`${flatSignals.length} signals across ${allSignals.length} files, call graph resolved`);
+
+    const bundles: ContextBundle[] = [];
+
+    for (const { filePath, fileNode, source, signals } of allSignals) {
       const importSources = this.gatherImportSources(fileNode, graph.projectRoot);
-      const existingContracts = this.loadExistingContracts(options.projectRoot, fileNode.imports);
 
       const callSiteContexts = signals.map((signal) =>
-        this.buildCallSiteContext(signal, source, importSources, existingContracts)
+        this.buildCallSiteContext(signal, source, importSources, "(dependency contracts injected at derivation time)")
       );
 
       const bundle: ContextBundle = {
@@ -77,11 +83,7 @@ export class ContextPhase extends Phase<ContextInput, ContextBundle[]> {
       };
 
       bundles.push(bundle);
-
-      const importContractCount = existingContracts === "(no existing contracts for imports)" ? 0 : existingContracts.split("###").length - 1;
-      this.detail(
-        `${bundle.relativePath}: ${callSiteContexts.length} signals, ${importSources.length} imports, ${importContractCount} dependency contracts`
-      );
+      this.detail(`${bundle.relativePath}: ${callSiteContexts.length} signals, ${importSources.length} imports`);
     }
 
     const outDir = join(options.projectRoot, ".neurallog", "contexts");
@@ -158,42 +160,4 @@ export class ContextPhase extends Phase<ContextInput, ContextBundle[]> {
     return sources;
   }
 
-  private loadExistingContracts(projectRoot: string, importPaths: string[]): string {
-    const sections: string[] = [];
-
-    for (const impPath of importPaths) {
-      const relPath = relative(projectRoot, impPath);
-      const contractPath = join(projectRoot, ".neurallog", "contracts", relPath + ".json");
-
-      try {
-        const data = JSON.parse(readFileSync(contractPath, "utf-8"));
-        for (const contract of data.contracts) {
-          const lines: string[] = [];
-          lines.push(`### ${contract.file}:${contract.function} (line ${contract.line})`);
-
-          if (contract.proven?.length > 0) {
-            lines.push("\nProven properties (Z3 confirmed unsat):");
-            for (const p of contract.proven) {
-              const tag = p.principle ? `[${p.principle}]` : "";
-              lines.push(`  ${tag} ${p.claim}`);
-            }
-          }
-
-          if (contract.violations?.length > 0) {
-            lines.push("\nKnown violations (Z3 confirmed sat):");
-            for (const v of contract.violations) {
-              const tag = v.principle ? `[${v.principle}]` : "";
-              lines.push(`  ${tag} ${v.claim}`);
-            }
-          }
-
-          sections.push(lines.join("\n"));
-        }
-      } catch { /* no contracts yet */ }
-    }
-
-    return sections.length > 0
-      ? sections.join("\n\n")
-      : "(no existing contracts for imports)";
-  }
 }

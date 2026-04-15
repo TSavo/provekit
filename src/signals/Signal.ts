@@ -35,6 +35,7 @@ export function computeSignalHash(signal: Signal): string {
     ...signal.parameters.map((p) => `${p.name}:${p.type}`),
     signal.returnType,
     ...Object.entries(signal.localTypes).map(([k, v]) => `${k}:${v}`),
+    ...signal.callees.sort(),
   ].join("\n");
   return createHash("sha256").update(content).digest("hex");
 }

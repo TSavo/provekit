@@ -90,8 +90,7 @@ type ContractIndex = Map<string, Contract>;
 function buildContractIndex(contracts: Contract[]): ContractIndex {
   const index: ContractIndex = new Map();
   for (const c of contracts) {
-    // Key by file:line. The contract's `file` field may be absolute or
-    // relative — we store both forms to maximise hit rate.
+    index.set(c.key, c);
     index.set(`${c.file}:${c.line}`, c);
   }
   return index;

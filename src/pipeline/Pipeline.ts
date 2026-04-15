@@ -19,6 +19,7 @@ export interface PipelineConfig {
   maxConcurrency?: number;
   changedFiles?: string[];
   signalRegistry?: SignalRegistry;
+  provider?: import("../llm").LLMProvider;
 }
 
 export interface PipelineResult {
@@ -82,7 +83,7 @@ export class Pipeline {
     }
 
     const { data: derivation } = await this.derivationPhase.execute(
-      { bundles: staleBundles, model: config.model, maxConcurrency: config.maxConcurrency },
+      { bundles: staleBundles, model: config.model, maxConcurrency: config.maxConcurrency, provider: config.provider },
       options
     );
 
@@ -139,7 +140,7 @@ export class Pipeline {
     let freshCount = 0;
     let staleProofCount = 0;
 
-    // Pass 1: signal-level staleness (code changed around the verification point)
+    // Pass 1: signal-level staleness
     for (const filePath of changedFiles) {
       if (!existsSync(filePath)) continue;
 
@@ -149,65 +150,48 @@ export class Pipeline {
         ? await signalRegistry.findAllAsync(filePath, source, tree)
         : signalRegistry.findAll(filePath, source, tree);
 
+      const relPath = relative(config.projectRoot, filePath);
       for (const signal of signals) {
         const currentHash = computeSignalHash(signal);
-        const key = `${signal.file}:${signal.functionName}:${signal.line}`;
-
-        const existing = existingContracts.find(
-          (c) => c.file === filePath && c.function === signal.functionName && Math.abs(c.line - signal.line) <= 2
-        );
+        const key = signalKey(relPath, signal.functionName, signal.line);
+        const existing = store.get(key);
 
         if (existing && existing.signal_hash === currentHash) {
           freshCount++;
         } else {
           staleContracts.add(key);
-          if (existing) {
-            console.log(`  STALE: ${relative(config.projectRoot, filePath)}:${signal.functionName}:${signal.line} — signal changed`);
-          } else {
-            console.log(`  NEW:   ${relative(config.projectRoot, filePath)}:${signal.functionName}:${signal.line} — no existing contract`);
-          }
+          console.log(`  ${existing ? "STALE" : "NEW"}:   ${key}`);
         }
       }
     }
 
-    // Pass 2: principle-level staleness (a principle changed, proofs tagged with it are stale)
+    // Pass 2: principle-level staleness
     for (const c of existingContracts) {
-      const key = `${c.file}:${c.function}:${c.line}`;
-      if (staleContracts.has(key)) continue;
-
-      const allProofs = [...c.proven, ...c.violations];
-      for (const proof of allProofs) {
+      if (staleContracts.has(c.key)) continue;
+      for (const proof of [...c.proven, ...c.violations]) {
         if (!proof.principle || !proof.principle_hash) continue;
         const currentPHash = principleStore.hashForPrinciple(proof.principle);
         if (currentPHash && proof.principle_hash !== currentPHash) {
-          staleContracts.add(key);
+          staleContracts.add(c.key);
           staleProofCount++;
-          console.log(`  STALE: ${relative(config.projectRoot, c.file)}:${c.function}:${c.line} — principle ${proof.principle} changed`);
+          console.log(`  STALE: ${c.key} — principle ${proof.principle} changed`);
           break;
         }
       }
     }
 
-    // Pass 3: cascade through depends_on
+    // Pass 3: cascade through depends_on (signal keys)
     let cascaded = true;
     while (cascaded) {
       cascaded = false;
       for (const c of existingContracts) {
-        const key = `${c.file}:${c.function}:${c.line}`;
-        if (staleContracts.has(key)) continue;
-
-        for (const depHash of c.depends_on) {
-          const depContract = existingContracts.find(
-            (d) => contractHash(d) === depHash
-          );
-          if (depContract) {
-            const depKey = `${depContract.file}:${depContract.function}:${depContract.line}`;
-            if (staleContracts.has(depKey)) {
-              staleContracts.add(key);
-              console.log(`  CASCADE: ${relative(config.projectRoot, c.file)}:${c.function}:${c.line} — depends on stale contract`);
-              cascaded = true;
-              break;
-            }
+        if (staleContracts.has(c.key)) continue;
+        for (const dep of c.depends_on) {
+          if (staleContracts.has(dep)) {
+            staleContracts.add(c.key);
+            console.log(`  CASCADE: ${c.key} — depends on ${dep}`);
+            cascaded = true;
+            break;
           }
         }
       }

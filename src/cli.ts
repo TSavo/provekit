@@ -5,7 +5,8 @@ import { resolve, dirname, relative } from "path";
 import { Pipeline } from "./pipeline";
 import { SignalRegistry, LLMSignalGenerator } from "./signals";
 import { DiffAnalyzer, HookInstaller, ProofDiff } from "./git";
-import { ContractStore } from "./contracts";
+import { ContractStore, signalKey } from "./contracts";
+import { createProvider } from "./llm";
 
 const VERSION = "0.3.0";
 
@@ -134,6 +135,8 @@ async function runAnalyze(args: string[]): Promise<void> {
   console.log();
 
   const concurrency = parseInt(getFlag(args, "--concurrency") || "5", 10);
+  const providerName = getFlag(args, "--provider");
+  const provider = providerName ? createProvider(providerName) : undefined;
 
   const pipeline = new Pipeline();
   const result = await pipeline.runFull({
@@ -143,6 +146,7 @@ async function runAnalyze(args: string[]): Promise<void> {
     verbose,
     signalRegistry,
     maxConcurrency: concurrency,
+    provider,
   });
 
   printSummary(result);
@@ -332,11 +336,9 @@ function runExplain(args: string[]): void {
   const contracts = store.getAll();
 
   const relPath = relative(projectRoot, filePath);
-  const contract = contracts.find(
-    (c) => (c.file === filePath || c.file === relPath) && c.line === line
-  ) || contracts.find(
-    (c) => (c.file === filePath || c.file === relPath) && Math.abs(c.line - line) <= 2
-  );
+  const contract = contracts.find((c) => c.key.includes(relPath) && c.line === line)
+    || contracts.find((c) => c.key.includes(relPath) && Math.abs(c.line - line) <= 2)
+    || contracts.find((c) => c.file === filePath && c.line === line);
 
   if (!contract) {
     console.error(`No contract found for ${relPath}:${line}`);
@@ -346,8 +348,8 @@ function runExplain(args: string[]): void {
 
   console.log();
   console.log("┌─────────────────────────────────────────────────────┐");
-  console.log(`│  ${contract.function}:${contract.line}`);
-  console.log(`│  File: ${contract.file}`);
+  console.log(`│  ${contract.key}`);
+  console.log(`│  Signal hash: ${contract.signal_hash}`);
   console.log("└─────────────────────────────────────────────────────┘");
   console.log();
 
@@ -490,13 +492,12 @@ async function fileIssues(result: { derivation: any }, dryRun: boolean): Promise
 
   const fakeResults = result.derivation.contracts.map((c: any) => ({
     derivation: {
-      callSite: { line: c.line, column: 0, logText: "", functionName: c.function, functionSource: "", functionStartLine: c.line, functionEndLine: c.line },
+      callSite: { line: c.line, column: 0, logText: c.key, functionName: c.function },
       filePath: c.file,
-      rawResponse: "",
     },
     verifications: [
-      ...c.proven.map((p: any) => ({ smt2: p.smt2, z3Result: "unsat" as const, principle: p.principle, error: undefined })),
-      ...c.violations.map((v: any) => ({ smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined })),
+      ...c.proven.map((p: any) => ({ smt2: p.smt2, z3Result: "unsat" as const, principle: p.principle })),
+      ...c.violations.map((v: any) => ({ smt2: v.smt2, z3Result: "sat" as const, principle: v.principle })),
     ],
   }));
 
@@ -536,6 +537,7 @@ function printHelp(): void {
   console.log();
   console.log("Options:");
   console.log("  --model <name>       LLM model (default: sonnet)");
+  console.log("  --provider <name>    LLM provider (claude-agent, opencode, openai, openrouter, pool)");
   console.log("  --verbose, -v        Stream LLM reasoning");
   console.log("  --issues             File GitHub issues for violations");
   console.log("  --dry-run            Preview issues without filing");
