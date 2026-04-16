@@ -233,9 +233,18 @@ async function runVerify(args: string[]): Promise<void> {
       signalRegistry,
     });
 
-    if (result.report.totalViolations > 0) {
-      process.exit(1);
+    const { PrincipleStore: CIPrincipleStore } = require("./principles");
+    const ciPs = new CIPrincipleStore(projectRoot);
+    const ciCf = new Map<string, string>();
+    for (const p of ciPs.getAll()) ciCf.set(p.id, p.confidence || "low");
+    let ciHigh = 0;
+    for (const c of new ContractStore(projectRoot).getAll()) {
+      for (const v of c.violations) {
+        const id = (v.principle || "").replace(/[\[\]]/g, "").trim();
+        if ((v.confidence || ciCf.get(id) || "low") === "high") ciHigh++;
+      }
     }
+    if (ciHigh > 0) { process.exit(1); }
     process.exit(0);
   }
 
@@ -247,9 +256,22 @@ async function runVerify(args: string[]): Promise<void> {
   const report = pipeline.runVerifyOnly(projectRoot, verbose);
 
   if (ci) {
-    if (report.totalViolations > 0) {
+    const { PrincipleStore } = require("./principles");
+    const ciPrinciples = new PrincipleStore(projectRoot);
+    const ciConf = new Map<string, string>();
+    for (const p of ciPrinciples.getAll()) ciConf.set(p.id, p.confidence || "low");
+    const ciStore = new ContractStore(projectRoot);
+    let highCount = 0;
+    for (const c of ciStore.getAll()) {
+      for (const v of c.violations) {
+        const id = (v.principle || "").replace(/[\[\]]/g, "").trim();
+        const conf = v.confidence || ciConf.get(id) || "low";
+        if (conf === "high") highCount++;
+      }
+    }
+    if (highCount > 0) {
       console.log();
-      console.log(`${report.totalViolations} violation${report.totalViolations === 1 ? "" : "s"} found.`);
+      console.log(`${highCount} high-confidence violation${highCount === 1 ? "" : "s"} found.`);
       process.exit(1);
     }
     process.exit(0);

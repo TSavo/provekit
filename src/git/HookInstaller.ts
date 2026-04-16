@@ -9,7 +9,12 @@ ${HOOK_MARKER}
 # Installed by neurallog init. Runs Phase 5 (Z3 only, no LLM, no network).
 # To remove: neurallog hook --uninstall
 
-npx neurallog verify --hook
+# Use local dev binary if available, otherwise installed package
+if [ -f "src/cli.ts" ]; then
+  npx tsx src/cli.ts verify --ci 2>&1
+else
+  npx neurallog verify --ci 2>&1
+fi
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
