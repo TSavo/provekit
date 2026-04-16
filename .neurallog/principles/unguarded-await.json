@@ -1,0 +1,23 @@
+{
+  "id": "unguarded-await",
+  "name": "Unguarded Await",
+  "description": "Await expression not inside a try/catch. Promise rejection propagates uncaught to the caller.",
+  "astPatterns": [
+    {
+      "nodeType": "await_expression"
+    }
+  ],
+  "smt2Template": "(declare-const promise_rejects Int)\n(declare-const rejection_caught Int)\n(assert (= promise_rejects 1))\n(assert (= rejection_caught 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "microservices",
+    "explanation": "HTTP client await without try/catch — network failure crashes the handler",
+    "smt2": "(declare-const request_fails Int)\n(declare-const caught Int)\n(assert (= request_fails 1))\n(assert (= caught 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "high"
+}

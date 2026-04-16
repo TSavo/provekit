@@ -1,0 +1,11 @@
+{
+  "key": "src/pipeline/Dossier.ts/buildPriorContract[103]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Dossier.ts",
+  "function": "buildPriorContract",
+  "line": 103,
+  "signal_hash": "017451032f13e196f58f98436aa29ad31e04bca79d951341baed8b9bda367e15",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

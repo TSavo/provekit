@@ -1,0 +1,13 @@
+{
+  "key": "src/signals/LLMSignalGenerator.ts/constructor[266]",
+  "file": "/Users/tsavo/Projects/neurallog/src/signals/LLMSignalGenerator.ts",
+  "function": "constructor",
+  "line": 266,
+  "signal_hash": "ee61203f93bd849105eb199d32d5e8129b8fc65f619e6330932c3658c7680e3f",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": []
+}

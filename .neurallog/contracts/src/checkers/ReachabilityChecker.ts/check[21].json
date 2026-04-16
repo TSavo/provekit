@@ -1,0 +1,35 @@
+{
+  "key": "src/checkers/ReachabilityChecker.ts/check[21]",
+  "file": "/Users/tsavo/Projects/neurallog/src/checkers/ReachabilityChecker.ts",
+  "function": "check",
+  "line": 21,
+  "signal_hash": "76cfad9caa8f68467491d8d53518713771d5ad9b0c17e3b933c17e84733cd153",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at check",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 21\n; PROVEN: Unguarded Non-Null Assertion at check\n(declare-const expr_20_8_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_20_8_is_null 0))\n; Can value still be null?\n(assert (= expr_20_8_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/checkers/Checker.ts/extractDeclaredVars[52]",
+    "src/checkers/Checker.ts/extractDeclaredVars[54]",
+    "src/checkers/Checker.ts/extractDeclaredVars[56]",
+    "src/checkers/Checker.ts/extractPreconditions[41]",
+    "src/checkers/Checker.ts/extractPreconditions[46]",
+    "src/checkers/Checker.ts/namespaceBlock[63]",
+    "src/checkers/Checker.ts/runCheck[33]",
+    "src/checkers/Checker.ts/runCheck[35]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 21\n; PROVEN: Unguarded Non-Null Assertion at check\n(declare-const expr_20_8_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_20_8_is_null 0))\n; Can value still be null?\n(assert (= expr_20_8_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

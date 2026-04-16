@@ -1,0 +1,38 @@
+{
+  "key": "src/checkers/EntailmentChecker.ts/check[32]",
+  "file": "/Users/tsavo/Projects/neurallog/src/checkers/EntailmentChecker.ts",
+  "function": "check",
+  "line": 32,
+  "signal_hash": "301b7fa709a98f9b9fe8430171f918f1752f1d2915caf3fe9988eec8128db02b",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at check",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 32\n; VIOLATION: Empty Collection Loop at check\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/checkers/Checker.ts/extractDeclaredVars[52]",
+    "src/checkers/Checker.ts/extractDeclaredVars[54]",
+    "src/checkers/Checker.ts/extractDeclaredVars[56]",
+    "src/checkers/Checker.ts/extractPreconditions[41]",
+    "src/checkers/Checker.ts/extractPreconditions[46]",
+    "src/checkers/Checker.ts/namespaceBlock[63]",
+    "src/checkers/Checker.ts/runCheck[33]",
+    "src/checkers/Checker.ts/runCheck[35]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 32\n; VIOLATION: Empty Collection Loop at check\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

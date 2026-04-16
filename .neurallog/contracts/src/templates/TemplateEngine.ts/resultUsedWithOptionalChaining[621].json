@@ -1,0 +1,31 @@
+{
+  "key": "src/templates/TemplateEngine.ts/resultUsedWithOptionalChaining[621]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "resultUsedWithOptionalChaining",
+  "line": 621,
+  "signal_hash": "8a78d022c626ca367cd1563b1134dfcdb15f22132ca692057330272b779f354f",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "loop-accumulator-overflow",
+      "principle_hash": "",
+      "claim": "VIOLATION: Loop Accumulator Overflow at resultUsedWithOptionalChaining",
+      "smt2": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 621\n; VIOLATION: Loop Accumulator Overflow at resultUsedWithOptionalChaining\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_621 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_621 (* iterations per_iteration)))\n(assert (> accumulator_621 9007199254740991))\n(check-sat)",
+      "witness": "(\n  (define-fun iterations () Int\n    9229268391297023)\n  (define-fun accumulator_621 () Int\n    9229268391297023)\n  (define-fun per_iteration () Int\n    1)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/templates/TemplateEngine.ts/isDescendant[354]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 621\n; VIOLATION: Loop Accumulator Overflow at resultUsedWithOptionalChaining\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_621 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_621 (* iterations per_iteration)))\n(assert (> accumulator_621 9007199254740991))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

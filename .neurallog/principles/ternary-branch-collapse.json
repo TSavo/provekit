@@ -1,0 +1,30 @@
+{
+  "id": "ternary-branch-collapse",
+  "name": "ternary-branch-collapse",
+  "description": "Ternary expression where one branch silently produces an empty or identity-value result (e.g. empty string \"\") that collapses meaningful output to a no-op, making the condition effectively untestable and the branch semantically dead under certain input ranges.",
+  "astPatterns": [
+    {
+      "nodeType": "ternary_expression",
+      "consequentIsEmptyOrIdentity": true,
+      "alternateIsEmptyOrIdentity": true,
+      "pathConditions": [
+        "({{counter}} > 0)"
+      ],
+      "parentType": "expression_statement",
+      "insideTryCatch": false
+    }
+  ],
+  "smt2Template": "(declare-const {{counter}} Int)\n(declare-const branch_taken Int)\n(declare-const output_meaningful Int)\n(assert (>= {{counter}} 0))\n; branch_taken = 1 when counter == 1 (consequent), 0 otherwise (alternate)\n(assert (= branch_taken (ite (= {{counter}} 1) 1 0)))\n; both branches emit empty string — output is never meaningful\n(assert (= output_meaningful 0))\n; can we reach the plural branch with a non-trivial counter and still get no useful output?\n(assert (> {{counter}} 1))\n(check-sat)",
+  "teachingExample": {
+    "domain": "medical-records",
+    "explanation": "A patient summary renderer formats a count of flagged lab results: `flaggedCount === 1 ? 'result' : 'results'`. When flaggedCount is 0 the guard path is taken and the whole phrase is suppressed — but both the singular and plural branch produce only a grammatical suffix with no numeric value attached. If the caller expects a non-empty confirmation string to trigger a downstream alert, both branches silently satisfy the check while the alert is never fired because the guard condition `flaggedCount > 0` is never verified to be strictly enforced before the ternary is evaluated, leaving a window where 0 flags still enter the branch and emit the empty alternate.",
+    "smt2": "(declare-const flaggedCount Int)\n(declare-const alert_fired Int)\n(declare-const suffix_length Int)\n(assert (>= flaggedCount 0))\n; suffix is non-empty only when count > 0 according to caller assumption\n(assert (= suffix_length (ite (> flaggedCount 0) 1 0)))\n; alert fires only when suffix_length > 0 (caller's flawed invariant)\n(assert (= alert_fired suffix_length))\n; show: flaggedCount=0 yet alert_fired=0 is satisfiable — no alert despite evaluation\n(assert (= flaggedCount 0))\n(assert (= alert_fired 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "src/verifier.ts/extractWitness[101], src/verifier.ts/verifyAll[198], src/verifier.ts/verifyAll[217]",
+    "violation": "Discovered from 3 unverified signals",
+    "generalizedAt": "2026-04-15T21:23:31.552Z"
+  },
+  "validated": true,
+  "confidence": "low"
+}

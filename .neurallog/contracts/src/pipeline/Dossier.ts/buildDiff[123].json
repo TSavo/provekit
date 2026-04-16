@@ -1,0 +1,11 @@
+{
+  "key": "src/pipeline/Dossier.ts/buildDiff[123]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Dossier.ts",
+  "function": "buildDiff",
+  "line": 123,
+  "signal_hash": "49bc9ce530f7c8677a04a798c0bb39cc4f7909874f9dfe0373498589da65e529",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

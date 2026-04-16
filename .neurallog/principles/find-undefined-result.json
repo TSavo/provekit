@@ -1,0 +1,32 @@
+{
+  "id": "find-undefined-result",
+  "name": "Find Returns Undefined",
+  "description": "Array.find() result used without undefined check. Returns undefined when no element matches the predicate.",
+  "astPatterns": [
+    {
+      "nodeType": "call_expression",
+      "method": "find",
+      "requiresParamRef": true,
+      "guardPatterns": [
+        "!== undefined",
+        "!= undefined",
+        "!== null",
+        "!= null"
+      ]
+    }
+  ],
+  "smt2Template": "(declare-const match_found Int)\n(declare-const result_accessed Int)\n(assert (= match_found 0))\n(assert (= result_accessed 1))\n(check-sat)",
+  "teachingExample": {
+    "domain": "HR",
+    "explanation": "find employee by ID returns undefined for terminated employees — property access crashes",
+    "smt2": "(declare-const employee_exists Int)\n(declare-const accessed Int)\n(assert (= employee_exists 0))\n(assert (= accessed 1))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "smt2ProofTemplate": "(declare-const match_found Int)\n; Guard: undefined check before access\n(assert (not (= match_found 0)))\n; Can result be undefined?\n(assert (= match_found 0))\n(check-sat)\n; unsat → proven: undefined check guards find result",
+  "confidence": "high"
+}

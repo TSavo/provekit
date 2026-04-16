@@ -3,7 +3,7 @@
 import { statSync, readFileSync, existsSync } from "fs";
 import { resolve, dirname, relative } from "path";
 import { Pipeline } from "./pipeline";
-import { SignalRegistry, LLMSignalGenerator } from "./signals";
+import { SignalRegistry } from "./signals";
 import { DiffAnalyzer, HookInstaller, ProofDiff } from "./git";
 import { ContractStore, signalKey } from "./contracts";
 import { createProvider } from "./llm";
@@ -233,7 +233,7 @@ async function runVerify(args: string[]): Promise<void> {
       signalRegistry,
     });
 
-    if (result.report.violations > 0) {
+    if (result.report.totalViolations > 0) {
       process.exit(1);
     }
     process.exit(0);
@@ -247,9 +247,9 @@ async function runVerify(args: string[]): Promise<void> {
   const report = pipeline.runVerifyOnly(projectRoot, verbose);
 
   if (ci) {
-    if (report.violations > 0) {
+    if (report.totalViolations > 0) {
       console.log();
-      console.log(`${report.violations} violation${report.violations === 1 ? "" : "s"} found.`);
+      console.log(`${report.totalViolations} violation${report.totalViolations === 1 ? "" : "s"} found.`);
       process.exit(1);
     }
     process.exit(0);
@@ -407,11 +407,29 @@ function runReport(args: string[]): void {
     process.exit(0);
   }
 
+  const { PrincipleStore } = require("./principles");
+  const principleStore = new PrincipleStore(projectRoot);
+  const principleConfidence = new Map<string, string>();
+  for (const p of principleStore.getAll()) {
+    principleConfidence.set(p.id, p.confidence || "low");
+  }
+
+  const getConfidence = (v: any): string => {
+    if (v.confidence) return v.confidence;
+    if (v.principle) {
+      const id = v.principle.replace(/[\[\]]/g, "").trim();
+      return principleConfidence.get(id) || "low";
+    }
+    return "low";
+  };
+
   let totalProven = 0;
   let totalViolations = 0;
   let totalUnverified = 0;
+  let highConfidence = 0;
+  let lowConfidence = 0;
 
-  const byFile = new Map<string, { proven: number; violations: number; unverified: number; signals: number }>();
+  const byFile = new Map<string, { proven: number; violations: number; unverified: number; signals: number; high: number }>();
 
   for (const c of contracts) {
     totalProven += c.proven.length;
@@ -419,10 +437,16 @@ function runReport(args: string[]): void {
     const isUnverified = c.proven.length === 0 && c.violations.length === 0;
     if (isUnverified) totalUnverified++;
 
+    for (const v of c.violations) {
+      if (getConfidence(v) === "high") highConfidence++;
+      else lowConfidence++;
+    }
+
     const key = c.file;
-    const entry = byFile.get(key) || { proven: 0, violations: 0, unverified: 0, signals: 0 };
+    const entry = byFile.get(key) || { proven: 0, violations: 0, unverified: 0, signals: 0, high: 0 };
     entry.proven += c.proven.length;
     entry.violations += c.violations.length;
+    entry.high += c.violations.filter((v) => getConfidence(v) === "high").length;
     if (isUnverified) entry.unverified++;
     entry.signals++;
     byFile.set(key, entry);
@@ -436,7 +460,7 @@ function runReport(args: string[]): void {
   console.log("──────────────────────────────────────────");
   console.log(`Signals:       ${contracts.length}`);
   console.log(`  Proven:      ${totalProven}`);
-  console.log(`  Violations:  ${totalViolations}`);
+  console.log(`  Violations:  ${totalViolations} (${highConfidence} high confidence, ${lowConfidence} structural)`);
   console.log(`  Unverified:  ${totalUnverified}`);
   console.log(`  Coverage:    ${coveragePct}% (${contracts.length - totalUnverified}/${contracts.length} signals have proofs)`);
   console.log();
@@ -495,7 +519,9 @@ function printSummary(result: { graph: any; derivation: any; report: any }): voi
   console.log("═══════════════════════════════════════════════════════════");
   console.log(`  ${result.graph.files.length} files | ${result.derivation.contracts.length} contracts`);
   console.log(`  Phase 3: ${result.derivation.contracts.reduce((n: number, c: any) => n + c.proven.length, 0)} proven | ${result.derivation.contracts.reduce((n: number, c: any) => n + c.violations.length, 0)} violations`);
-  console.log(`  Phase 5: ${result.report.proven} proven | ${result.report.violations} violations | ${result.report.consistency} consistency`);
+  const consistencyResult = result.report.checkerResults.find((cr: any) => cr.checker === "consistency");
+  const consistencyVerdict = consistencyResult?.results[0]?.verdict ?? "n/a";
+  console.log(`  Phase 5: ${result.report.totalProven} proven | ${result.report.totalViolations} violations | ${consistencyVerdict} consistency`);
   console.log("═══════════════════════════════════════════════════════════");
 }
 
@@ -522,15 +548,19 @@ async function fileIssues(result: { derivation: any }, dryRun: boolean): Promise
 }
 
 function buildSignalRegistry(args: string[], model: string): SignalRegistry {
-  const registry = SignalRegistry.createDefault();
-
   if (args.includes("--llm-signals")) {
-    const llmModel = getFlag(args, "--signal-model") || model;
-    console.log(`LLM signal generator enabled (model: ${llmModel})`);
-    registry.register(new LLMSignalGenerator({ model: llmModel }));
+    const llmModel = getFlag(args, "--signal-model") ?? model;
+    console.log(`LLM signal generator (model: ${llmModel})`);
+    return SignalRegistry.createLLM({ model: llmModel });
   }
 
-  return registry;
+  if (args.includes("--rule-based")) {
+    console.log("Rule-based signal generators (log, comment, function-name)");
+    return SignalRegistry.createRuleBased();
+  }
+
+  console.log("AST signal generator");
+  return SignalRegistry.createDefault();
 }
 
 function printHelp(): void {
@@ -556,7 +586,8 @@ function printHelp(): void {
   console.log("  --ci                 Exit 1 on violations (for CI pipelines)");
   console.log("  --since <ref>        Git ref to diff against (for derive)");
   console.log("  --no-hook            Skip hook installation during init");
-  console.log("  --llm-signals        Enable LLM signal generator (finds invariant points beyond logs)");
+  console.log("  --llm-signals        Use LLM for signal generation (slower, costs API calls)");
+  console.log("  --rule-based         Use rule-based signal generators (log, comment, function-name)");
   console.log("  --signal-model <m>   Model for LLM signal generator (default: same as --model)");
 }
 

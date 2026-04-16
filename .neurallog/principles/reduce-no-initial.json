@@ -1,0 +1,25 @@
+{
+  "id": "reduce-no-initial",
+  "name": "Reduce Without Initial Value",
+  "description": "Array.reduce() called without a second argument (initial value). Throws TypeError on empty arrays.",
+  "astPatterns": [
+    {
+      "nodeType": "call_expression",
+      "method": "reduce",
+      "requiresParamRef": true
+    }
+  ],
+  "smt2Template": "(declare-const array_length Int)\n(declare-const has_initial_value Int)\n(assert (= array_length 0))\n(assert (= has_initial_value 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "statistics",
+    "explanation": "reduce to sum scores throws on empty class roster",
+    "smt2": "(declare-const students Int)\n(declare-const initial Int)\n(assert (= students 0))\n(assert (= initial 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "high"
+}

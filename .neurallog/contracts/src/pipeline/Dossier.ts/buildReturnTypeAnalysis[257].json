@@ -1,0 +1,29 @@
+{
+  "key": "src/pipeline/Dossier.ts/buildReturnTypeAnalysis[257]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Dossier.ts",
+  "function": "buildReturnTypeAnalysis",
+  "line": 257,
+  "signal_hash": "03b7260cdb83d20a1a39d4b2b48156bc14310f8575a7f3b6ab0537e38f66c27f",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "VIOLATION: Guard Narrowing at buildReturnTypeAnalysis",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 257\n; VIOLATION: Guard Narrowing at buildReturnTypeAnalysis\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "witness": "(\n  (define-fun code_after_reached () Int\n    1)\n  (define-fun guard_condition () Int\n    0)\n  (define-fun guard_returns () Int\n    0)\n)",
+      "complexity": 2,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 257\n; VIOLATION: Guard Narrowing at buildReturnTypeAnalysis\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

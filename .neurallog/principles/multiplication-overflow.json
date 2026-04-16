@@ -1,0 +1,25 @@
+{
+  "id": "multiplication-overflow",
+  "name": "Multiplication Overflow",
+  "description": "Multiplication of two positive values where the result can exceed JavaScript's MAX_SAFE_INTEGER.",
+  "astPatterns": [
+    {
+      "nodeType": "binary_expression",
+      "operator": "*",
+      "requiresParamRef": true
+    }
+  ],
+  "smt2Template": "(declare-const {{left}} Int)\n(declare-const {{right}} Int)\n(declare-const result Int)\n(assert (= result (* {{left}} {{right}})))\n(assert (> {{left}} 0))\n(assert (> {{right}} 0))\n(assert (> result 9007199254740991))\n(check-sat)",
+  "teachingExample": {
+    "domain": "inventory",
+    "explanation": "total_cost multiplies quantity by price with no overflow guard",
+    "smt2": "(declare-const qty Int)\n(declare-const price Int)\n(declare-const total Int)\n(assert (= total (* qty price)))\n(assert (> qty 0))\n(assert (> price 0))\n(assert (> total 9007199254740991))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "low"
+}

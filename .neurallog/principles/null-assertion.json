@@ -1,0 +1,30 @@
+{
+  "id": "null-assertion",
+  "name": "Unguarded Non-Null Assertion",
+  "description": "TypeScript non-null assertion operator (!) used without a preceding null/undefined check in the path conditions.",
+  "astPatterns": [
+    {
+      "nodeType": "non_null_expression",
+      "guardPatterns": [
+        "!== null",
+        "!= null",
+        "!== undefined",
+        "!= undefined"
+      ]
+    }
+  ],
+  "smt2Template": "(declare-const {{value}}_is_null Int)\n(declare-const {{value}}_checked Int)\n(assert (= {{value}}_checked 0))\n(assert (= {{value}}_is_null 1))\n(check-sat)",
+  "teachingExample": {
+    "domain": "parsing",
+    "explanation": "regex match result indexed with ! but match can return null",
+    "smt2": "(declare-const match_is_null Int)\n(declare-const checked Int)\n(assert (= checked 0))\n(assert (= match_is_null 1))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "smt2ProofTemplate": "(declare-const {{value}}_is_null Int)\n; Guard: path condition checks for null\n(assert (= {{value}}_is_null 0))\n; Can value still be null?\n(assert (= {{value}}_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+  "confidence": "high"
+}

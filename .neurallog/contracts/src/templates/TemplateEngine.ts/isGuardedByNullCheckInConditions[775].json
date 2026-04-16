@@ -1,0 +1,26 @@
+{
+  "key": "src/templates/TemplateEngine.ts/isGuardedByNullCheckInConditions[775]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "isGuardedByNullCheckInConditions",
+  "line": 775,
+  "signal_hash": "a03dfc45be7b59ae4e65229fa7e8f373680b382ec60706ac9a0500d3c23685d6",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at isGuardedByNullCheckInConditions",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 775\n; PROVEN: Unguarded Non-Null Assertion at isGuardedByNullCheckInConditions\n(declare-const expr_774_17_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_774_17_is_null 0))\n; Can value still be null?\n(assert (= expr_774_17_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 775\n; PROVEN: Unguarded Non-Null Assertion at isGuardedByNullCheckInConditions\n(declare-const expr_774_17_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_774_17_is_null 0))\n; Can value still be null?\n(assert (= expr_774_17_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

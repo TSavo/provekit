@@ -1,0 +1,14 @@
+{
+  "key": "src/llm/OpenRouterProvider.ts/complete[37]",
+  "file": "/Users/tsavo/Projects/neurallog/src/llm/OpenRouterProvider.ts",
+  "function": "complete",
+  "line": 37,
+  "signal_hash": "de162d66d557c2a209892582fb07a64a4fccdc25f13ae2a573c20cd16d7023e6",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]",
+    "src/pipeline/Phase.ts/log[19]"
+  ],
+  "clause_history": []
+}

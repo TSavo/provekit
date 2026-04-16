@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { resolve, relative } from "path";
 
 export interface DiffResult {
@@ -16,15 +16,15 @@ export class DiffAnalyzer {
   }
 
   getStagedChanges(): DiffResult {
-    return this.parseDiff("git diff --cached --name-status");
+    return this.parseDiff(["diff", "--cached", "--name-status"]);
   }
 
   getUnstagedChanges(): DiffResult {
-    return this.parseDiff("git diff --name-status");
+    return this.parseDiff(["diff", "--name-status"]);
   }
 
   getChangesSince(ref: string): DiffResult {
-    return this.parseDiff(`git diff ${ref} --name-status`);
+    return this.parseDiff(["diff", ref, "--name-status"]);
   }
 
   getChangedTypeScriptFiles(): string[] {
@@ -55,7 +55,7 @@ export class DiffAnalyzer {
 
   isGitRepo(): boolean {
     try {
-      const output = execSync("git rev-parse --is-inside-work-tree", {
+      const output = execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
         cwd: this.projectRoot,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
@@ -68,7 +68,7 @@ export class DiffAnalyzer {
 
   getHead(): string | null {
     try {
-      return execSync("git rev-parse HEAD", {
+      return execFileSync("git", ["rev-parse", "HEAD"], {
         cwd: this.projectRoot,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
@@ -78,7 +78,7 @@ export class DiffAnalyzer {
     }
   }
 
-  private parseDiff(command: string): DiffResult {
+  private parseDiff(args: string[]): DiffResult {
     const result: DiffResult = {
       changedFiles: [],
       addedFiles: [],
@@ -88,7 +88,7 @@ export class DiffAnalyzer {
 
     let output: string;
     try {
-      output = execSync(command, {
+      output = execFileSync("git", args, {
         cwd: this.projectRoot,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
@@ -106,7 +106,6 @@ export class DiffAnalyzer {
       const file = parts[parts.length - 1]!.trim();
 
       result.changedFiles.push(file);
-
       if (status.startsWith("A")) result.addedFiles.push(file);
       else if (status.startsWith("D")) result.deletedFiles.push(file);
       else if (status.startsWith("M") || status.startsWith("R")) result.modifiedFiles.push(file);

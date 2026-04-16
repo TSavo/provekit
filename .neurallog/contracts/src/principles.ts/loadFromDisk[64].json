@@ -1,0 +1,31 @@
+{
+  "key": "src/principles.ts/loadFromDisk[64]",
+  "file": "/Users/tsavo/Projects/neurallog/src/principles.ts",
+  "function": "loadFromDisk",
+  "line": 64,
+  "signal_hash": "66a2be69308021c728b826dbb7092e9d67497115c52303a2ea568cc7e6eeb201",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at loadFromDisk",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 64\n; VIOLATION: Empty Collection Loop at loadFromDisk\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 64\n; VIOLATION: Empty Collection Loop at loadFromDisk\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

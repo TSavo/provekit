@@ -1,0 +1,28 @@
+{
+  "key": "src/issues.ts/buildIssue[37]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "buildIssue",
+  "line": 37,
+  "signal_hash": "61773fa01605e7fd71979efe652b6236c19110f51c1a846115b913cd3c168ac3",
+  "proven": [
+    {
+      "principle": "falsy-default",
+      "principle_hash": "",
+      "claim": "PROVEN: Falsy Default Trap at buildIssue",
+      "smt2": "; PRINCIPLE: falsy-default\n; LINE: 37\n; PROVEN: Falsy Default Trap at buildIssue\n(declare-const v_value Int)\n(declare-const result Int)\n; Guard: ?? used instead of || (nullish coalescing preserves falsy values)\n(assert (= result v_value))\n; Can result differ from input?\n(assert (not (= result v_value)))\n(check-sat)\n; unsat → proven: falsy values preserved"
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/issues.ts/extractClaim[15]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: falsy-default\n; LINE: 37\n; PROVEN: Falsy Default Trap at buildIssue\n(declare-const v_value Int)\n(declare-const result Int)\n; Guard: ?? used instead of || (nullish coalescing preserves falsy values)\n(assert (= result v_value))\n; Can result differ from input?\n(assert (not (= result v_value)))\n(check-sat)\n; unsat → proven: falsy values preserved",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "key": "src/git/IgnoreFilter.ts/isIgnored[31]",
+  "file": "/Users/tsavo/Projects/neurallog/src/git/IgnoreFilter.ts",
+  "function": "isIgnored",
+  "line": 31,
+  "signal_hash": "3e53b7a12b8023829df616af960cf58d43fa12da12dd8767e1d2e99d4df0b19a",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "ternary-branch-collapse",
+      "principle_hash": "",
+      "claim": "VIOLATION: ternary-branch-collapse at isIgnored",
+      "smt2": "; PRINCIPLE: ternary-branch-collapse\n; LINE: 31\n; VIOLATION: ternary-branch-collapse at isIgnored\n(declare-const counter_31 Int)\n(declare-const branch_taken Int)\n(declare-const output_meaningful Int)\n(assert (>= counter_31 0))\n; branch_taken = 1 when counter == 1 (consequent), 0 otherwise (alternate)\n(assert (= branch_taken (ite (= counter_31 1) 1 0)))\n; both branches emit empty string — output is never meaningful\n(assert (= output_meaningful 0))\n; can we reach the plural branch with a non-trivial counter and still get no useful output?\n(assert (> counter_31 1))\n(check-sat)",
+      "witness": "(\n  (define-fun counter_31 () Int\n    2)\n  (define-fun branch_taken () Int\n    0)\n  (define-fun output_meaningful () Int\n    0)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/git/IgnoreFilter.ts/matches[44]",
+    "src/git/IgnoreFilter.ts/matches[51]",
+    "src/git/IgnoreFilter.ts/matches[52]",
+    "src/git/IgnoreFilter.ts/matches[53]",
+    "src/git/IgnoreFilter.ts/matches[54]",
+    "src/git/IgnoreFilter.ts/matches[55]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: ternary-branch-collapse\n; LINE: 31\n; VIOLATION: ternary-branch-collapse at isIgnored\n(declare-const counter_31 Int)\n(declare-const branch_taken Int)\n(declare-const output_meaningful Int)\n(assert (>= counter_31 0))\n; branch_taken = 1 when counter == 1 (consequent), 0 otherwise (alternate)\n(assert (= branch_taken (ite (= counter_31 1) 1 0)))\n; both branches emit empty string — output is never meaningful\n(assert (= output_meaningful 0))\n; can we reach the plural branch with a non-trivial counter and still get no useful output?\n(assert (> counter_31 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

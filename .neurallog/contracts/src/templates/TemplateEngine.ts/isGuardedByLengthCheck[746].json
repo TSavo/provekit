@@ -1,0 +1,11 @@
+{
+  "key": "src/templates/TemplateEngine.ts/isGuardedByLengthCheck[746]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "isGuardedByLengthCheck",
+  "line": 746,
+  "signal_hash": "12207c90dab746ecb7851886892a79ef97fdef92129e6b83c274f74478f82c14",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

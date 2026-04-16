@@ -1,0 +1,35 @@
+{
+  "key": "src/pipeline/Pipeline.ts/filterStaleBundles[227]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Pipeline.ts",
+  "function": "filterStaleBundles",
+  "line": 227,
+  "signal_hash": "7f2ef4960bf10bf0c6f0d504802f0384e9f66785a245fc4323b06b7a8deb94f2",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at filterStaleBundles",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 227\n; VIOLATION: Empty Collection Loop at filterStaleBundles\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/principles.ts/hashForPrinciple[81]",
+    "src/principles.ts/hashForPrinciple[84]",
+    "src/principles.ts/hashForPrinciple[91]",
+    "src/principles.ts/hashForPrinciple[92]",
+    "src/principles.ts/hashForPrinciple[93]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 227\n; VIOLATION: Empty Collection Loop at filterStaleBundles\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

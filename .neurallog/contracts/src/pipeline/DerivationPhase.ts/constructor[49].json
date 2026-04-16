@@ -1,0 +1,17 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/constructor[49]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "constructor",
+  "line": 49,
+  "signal_hash": "30ab05b4a8fb317b19f7a2c312aaea899a929841468417fbf9018630ab5915fa",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/DerivationPhase.ts/loadTemplate[58]",
+    "src/pipeline/DerivationPhase.ts/loadTemplate[59]",
+    "src/pipeline/DerivationPhase.ts/loadTemplate[60]",
+    "src/pipeline/DerivationPhase.ts/loadTemplate[62]",
+    "src/pipeline/DerivationPhase.ts/loadTemplate[69]"
+  ],
+  "clause_history": []
+}

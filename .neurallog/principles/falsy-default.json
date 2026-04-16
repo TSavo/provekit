@@ -1,0 +1,26 @@
+{
+  "id": "falsy-default",
+  "name": "Falsy Default Trap",
+  "description": "Logical OR (||) used as a default where the left operand derives from a parameter. Valid falsy values (0, empty string, false) are silently replaced by the default.",
+  "astPatterns": [
+    {
+      "nodeType": "binary_expression",
+      "operator": "||",
+      "requiresParamRef": true
+    }
+  ],
+  "smt2Template": "(declare-const {{param}}_value Int)\n(declare-const result Int)\n(declare-const default_value Int)\n(assert (= {{param}}_value 0))\n(assert (= result default_value))\n(assert (not (= result {{param}}_value)))\n(check-sat)",
+  "teachingExample": {
+    "domain": "networking",
+    "explanation": "config.port || 3000 silently discards port=0",
+    "smt2": "(declare-const port Int)\n(declare-const result Int)\n(assert (= port 0))\n(assert (= result 3000))\n(assert (not (= result port)))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "smt2ProofTemplate": "(declare-const {{param}}_value Int)\n(declare-const result Int)\n; Guard: ?? used instead of || (nullish coalescing preserves falsy values)\n(assert (= result {{param}}_value))\n; Can result differ from input?\n(assert (not (= result {{param}}_value)))\n(check-sat)\n; unsat → proven: falsy values preserved",
+  "confidence": "high"
+}

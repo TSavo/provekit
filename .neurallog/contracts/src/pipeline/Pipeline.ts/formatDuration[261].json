@@ -1,0 +1,26 @@
+{
+  "key": "src/pipeline/Pipeline.ts/formatDuration[261]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Pipeline.ts",
+  "function": "formatDuration",
+  "line": 261,
+  "signal_hash": "158a83ef7f9246982973d987be050cff90a905b2268f86a54fa88604eb91c850",
+  "proven": [
+    {
+      "principle": "division-by-zero",
+      "principle_hash": "",
+      "claim": "PROVEN: Division by Zero at formatDuration",
+      "smt2": "; PRINCIPLE: division-by-zero\n; LINE: 261\n; PROVEN: Division by Zero at formatDuration\n(declare-const ms Int)\n(declare-const expr_260_34 Int)\n; Guard: path condition ensures expr_260_34 != 0\n(assert (not (= expr_260_34 0)))\n; Can expr_260_34 still be zero?\n(assert (= expr_260_34 0))\n(check-sat)\n; unsat → proven: guard prevents division by zero"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: division-by-zero\n; LINE: 261\n; PROVEN: Division by Zero at formatDuration\n(declare-const ms Int)\n(declare-const expr_260_34 Int)\n; Guard: path condition ensures expr_260_34 != 0\n(assert (not (= expr_260_34 0)))\n; Can expr_260_34 still be zero?\n(assert (= expr_260_34 0))\n(check-sat)\n; unsat → proven: guard prevents division by zero",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

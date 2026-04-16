@@ -1,0 +1,11 @@
+{
+  "key": "src/issues.ts/issueExists[116]",
+  "file": "/Users/tsavo/Projects/neurallog/src/issues.ts",
+  "function": "issueExists",
+  "line": 116,
+  "signal_hash": "ddc7ec0d793cdc7e2fead6ab41f73fe1f0ebd69f26572d4db0ce8f7c1d6f6a94",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

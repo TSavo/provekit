@@ -18,7 +18,7 @@ export abstract class Phase<TInput, TOutput> {
     if (this.phaseNumber < 1 || this.phaseNumber > 10) {
       throw new Error(`Invalid phaseNumber: ${this.phaseNumber}`);
     }
-    console.log(`Phase ${this.phaseNumber}: ${message || this.name}`);
+    console.log(`Phase ${this.phaseNumber}: ${message ?? this.name}`);
   }
 
   protected detail(message: string): void {

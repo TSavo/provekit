@@ -1,0 +1,31 @@
+{
+  "key": "src/signals/LLMSignalGenerator.ts/constructor[257]",
+  "file": "/Users/tsavo/Projects/neurallog/src/signals/LLMSignalGenerator.ts",
+  "function": "constructor",
+  "line": 257,
+  "signal_hash": "77085aaa2c40fbebce29e9bf8cfdfb04bc7f4cbf7873cffa3214c869b186b798",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "param-mutation",
+      "principle_hash": "",
+      "claim": "VIOLATION: Parameter Object Mutation at constructor",
+      "smt2": "; PRINCIPLE: param-mutation\n; LINE: 257\n; VIOLATION: Parameter Object Mutation at constructor\n(declare-const maxConcurrency_before Int)\n(declare-const maxConcurrency_after Int)\n(declare-const caller_expects_mutation Int)\n(assert (not (= maxConcurrency_after maxConcurrency_before)))\n(assert (= caller_expects_mutation 0))\n(check-sat)",
+      "witness": "(\n  (define-fun maxConcurrency_after () Int\n    1)\n  (define-fun maxConcurrency_before () Int\n    0)\n  (define-fun caller_expects_mutation () Int\n    0)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: param-mutation\n; LINE: 257\n; VIOLATION: Parameter Object Mutation at constructor\n(declare-const maxConcurrency_before Int)\n(declare-const maxConcurrency_after Int)\n(declare-const caller_expects_mutation Int)\n(assert (not (= maxConcurrency_after maxConcurrency_before)))\n(assert (= caller_expects_mutation 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "key": "src/cli.ts/runHook[487]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runHook",
+  "line": 487,
+  "signal_hash": "375e831633103309dacbb420f43b0be6b0e5b3e11bfabfac3bcda0d53addd1d9",
+  "proven": [
+    {
+      "principle": "falsy-default",
+      "principle_hash": "",
+      "claim": "PROVEN: Falsy Default Trap at runHook",
+      "smt2": "; PRINCIPLE: falsy-default\n; LINE: 487\n; PROVEN: Falsy Default Trap at runHook\n(declare-const args_value Int)\n(declare-const result Int)\n; Guard: ?? used instead of || (nullish coalescing preserves falsy values)\n(assert (= result args_value))\n; Can result differ from input?\n(assert (not (= result args_value)))\n(check-sat)\n; unsat → proven: falsy values preserved"
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/git/HookInstaller.ts/install[35]",
+    "src/git/HookInstaller.ts/install[42]",
+    "src/git/HookInstaller.ts/install[44]",
+    "src/git/HookInstaller.ts/isInstalled[95]",
+    "src/git/HookInstaller.ts/isInstalled[98]",
+    "src/pipeline/Phase.ts/log[18]",
+    "src/cli.ts/resolveProjectRoot[600]",
+    "src/cli.ts/resolveProjectRoot[601]",
+    "src/git/HookInstaller.ts/uninstall[61]",
+    "src/git/HookInstaller.ts/uninstall[66]",
+    "src/git/HookInstaller.ts/uninstall[71]",
+    "src/git/HookInstaller.ts/uninstall[78]",
+    "src/git/HookInstaller.ts/uninstall[86]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: falsy-default\n; LINE: 487\n; PROVEN: Falsy Default Trap at runHook\n(declare-const args_value Int)\n(declare-const result Int)\n; Guard: ?? used instead of || (nullish coalescing preserves falsy values)\n(assert (= result args_value))\n; Can result differ from input?\n(assert (not (= result args_value)))\n(check-sat)\n; unsat → proven: falsy values preserved",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

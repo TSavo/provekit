@@ -1,0 +1,11 @@
+{
+  "key": "src/pipeline/Dossier.ts/buildTestCoverage[284]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Dossier.ts",
+  "function": "buildTestCoverage",
+  "line": 284,
+  "signal_hash": "ef6393da5e57a60aa5d0b92a59fa577d83a43fbb203f5663bbf7453590e44577",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

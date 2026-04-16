@@ -1,0 +1,11 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/findEnclosingFunction[651]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "findEnclosingFunction",
+  "line": 651,
+  "signal_hash": "af8bf3264ae81d90740cadcc621a10617899817b960a34d3577f3f7a496834fe",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

@@ -31,5 +31,5 @@ export function buildSignalFrame(signals: CallSiteContext[]): string {
 ${lines}
 ${callGraph}
 
-Every log statement is a claim about program state. Every comment is programmer intent. Every function name is a contract. For EACH verification point, derive formal invariants. Tag each SMT-LIB block with the line number it verifies.`;
+For EACH verification point above, derive formal invariants as SMT-LIB 2 blocks. Tag each block with \`; LINE: <number>\` matching the verification point it addresses.`;
 }

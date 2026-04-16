@@ -1,0 +1,29 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/nodeReferencesParam[660]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "nodeReferencesParam",
+  "line": 660,
+  "signal_hash": "d77e03984ac03fcacd3f155196719c28bc781d7a2940f89ba9e7cdca3b654638",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at nodeReferencesParam",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 660\n; VIOLATION: Empty Collection Loop at nodeReferencesParam\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 660\n; VIOLATION: Empty Collection Loop at nodeReferencesParam\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

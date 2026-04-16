@@ -1,0 +1,39 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/extractASTContext[576]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "extractASTContext",
+  "line": 576,
+  "signal_hash": "6036e8f793dbbbf727e0b8aa18c63eae62bb041a69c29a1419118ee8ee3d75da",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at extractASTContext",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 576\n; VIOLATION: Empty Collection Loop at extractASTContext\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/parser.ts/findEnclosingFunction[111]",
+    "src/parser.ts/findEnclosingFunction[120]",
+    "src/pipeline/DerivationPhase.ts/findEnclosingFunction[651]",
+    "src/pipeline/DerivationPhase.ts/findEnclosingFunction[652]",
+    "src/pipeline/DerivationPhase.ts/findNode[574]",
+    "src/pipeline/DerivationPhase.ts/findNode[576]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[659]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[660]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[661]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 576\n; VIOLATION: Empty Collection Loop at extractASTContext\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "key": "src/pipeline/PromptStrategy.ts/buildSignalFrame[14]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/PromptStrategy.ts",
+  "function": "buildSignalFrame",
+  "line": 14,
+  "signal_hash": "77fa2844fa90a235b2a68a1ac5fbf46f8393b1fd67b256163720367f10ff11b8",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at buildSignalFrame",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 14\n; VIOLATION: Empty Collection Loop at buildSignalFrame\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 14\n; VIOLATION: Empty Collection Loop at buildSignalFrame\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -33,8 +33,10 @@ export class Pipeline {
   private contextPhase = new ContextPhase();
   private derivationPhase = new DerivationPhase();
   private axiomPhase = new AxiomPhase();
+  private config?: PipelineConfig;
 
   async runFull(config: PipelineConfig): Promise<PipelineResult> {
+    this.config = config;
     const signalRegistry = config.signalRegistry || SignalRegistry.createDefault();
     const options: PhaseOptions = {
       projectRoot: config.projectRoot,
@@ -220,12 +222,23 @@ export class Pipeline {
 
   private filterStaleBundles(bundles: ContextBundle[], store: ContractStore): ContextBundle[] {
     const filtered: ContextBundle[] = [];
+    const principleStore = new PrincipleStore(this.config?.projectRoot || process.cwd());
 
     for (const bundle of bundles) {
       const staleSites = bundle.callSites.filter((callSite) => {
         const key = signalKey(bundle.relativePath, callSite.functionName, callSite.line);
         const existing = store.get(key);
-        return !existing || existing.signal_hash !== callSite.signalHash;
+        if (!existing) return true;
+        if (existing.signal_hash !== callSite.signalHash) return true;
+
+        for (const proof of [...existing.proven, ...existing.violations]) {
+          if (!proof.principle) continue;
+          const currentHash = principleStore.hashForPrinciple(proof.principle);
+          if (currentHash && proof.principle_hash !== currentHash) return true;
+          if (!proof.principle_hash && currentHash) return true;
+        }
+
+        return false;
       });
 
       if (staleSites.length > 0) {

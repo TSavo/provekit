@@ -1,0 +1,28 @@
+{
+  "key": "src/templates/TemplateEngine.ts/resultUsedWithOptionalChaining[622]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "resultUsedWithOptionalChaining",
+  "line": 622,
+  "signal_hash": "2d0b446adcd23720ccfc562ebbc1515a095c7823f9bbdad636eb5cade25e1f42",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at resultUsedWithOptionalChaining",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 622\n; PROVEN: Unguarded Non-Null Assertion at resultUsedWithOptionalChaining\n(declare-const expr_621_21_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_621_21_is_null 0))\n; Can value still be null?\n(assert (= expr_621_21_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/templates/TemplateEngine.ts/isDescendant[354]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 622\n; PROVEN: Unguarded Non-Null Assertion at resultUsedWithOptionalChaining\n(declare-const expr_621_21_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_621_21_is_null 0))\n; Can value still be null?\n(assert (= expr_621_21_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "split-empty-string",
+  "name": "Split on Empty String",
+  "description": "String.split() called on a parameter that could be empty. ''.split(x) returns [''] (array with one empty string), not [] (empty array).",
+  "astPatterns": [
+    {
+      "nodeType": "call_expression",
+      "method": "split",
+      "requiresParamRef": true
+    }
+  ],
+  "smt2Template": "(declare-const input_length Int)\n(declare-const result_length Int)\n(assert (= input_length 0))\n(assert (= result_length 1))\n(assert (> result_length 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "csv parsing",
+    "explanation": "splitting empty CSV line returns [''] not [] — loop processes phantom empty field",
+    "smt2": "(declare-const line_length Int)\n(declare-const fields Int)\n(assert (= line_length 0))\n(assert (= fields 1))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "low"
+}

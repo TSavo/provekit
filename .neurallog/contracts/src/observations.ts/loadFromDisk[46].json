@@ -1,0 +1,13 @@
+{
+  "key": "src/observations.ts/loadFromDisk[46]",
+  "file": "/Users/tsavo/Projects/neurallog/src/observations.ts",
+  "function": "loadFromDisk",
+  "line": 46,
+  "signal_hash": "a8a55d4fb9e44b06cd566602da7e2d02195a4175830e68d059827aa2fc75dc30",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": []
+}

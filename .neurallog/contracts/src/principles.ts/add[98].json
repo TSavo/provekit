@@ -1,0 +1,11 @@
+{
+  "key": "src/principles.ts/add[98]",
+  "file": "/Users/tsavo/Projects/neurallog/src/principles.ts",
+  "function": "add",
+  "line": 98,
+  "signal_hash": "3ad6b4160a4237219b0fceac6944ef286e85da67fffd4744e1c426e9a021c5dc",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

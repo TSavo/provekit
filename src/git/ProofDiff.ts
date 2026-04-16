@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import { join, relative } from "path";
 import { ContractStore, Contract } from "../contracts";
@@ -104,7 +104,7 @@ export class ProofDiff {
     const contracts: Contract[] = [];
 
     try {
-      const files = execSync(`git ls-tree -r --name-only ${ref} -- .neurallog/contracts/`, {
+      const files = execFileSync("git", ["ls-tree", "-r", "--name-only", ref, "--", ".neurallog/contracts/"], {
         cwd: this.projectRoot,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
@@ -113,7 +113,7 @@ export class ProofDiff {
       for (const file of files) {
         if (!file.endsWith(".json")) continue;
         try {
-          const content = execSync(`git show ${ref}:${file}`, {
+          const content = execFileSync("git", ["show", `${ref}:${file}`], {
             cwd: this.projectRoot,
             encoding: "utf-8",
             stdio: ["pipe", "pipe", "pipe"],

@@ -1,0 +1,36 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/extractASTContext[570]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "extractASTContext",
+  "line": 570,
+  "signal_hash": "71ee852baa38a07642c7c84a5903916a00d7167bfbc31dd14ea65154a2ac260a",
+  "proven": [
+    {
+      "principle": "subtraction-underflow",
+      "principle_hash": "",
+      "claim": "PROVEN: Subtraction Underflow at extractASTContext",
+      "smt2": "; PRINCIPLE: subtraction-underflow\n; LINE: 570\n; PROVEN: Subtraction Underflow at extractASTContext\n(declare-const line Int)\n(declare-const expr_569_31 Int)\n; Guard: path condition ensures expr_569_31 <= line\n(assert (<= expr_569_31 line))\n; Can expr_569_31 exceed line?\n(assert (> expr_569_31 line))\n(check-sat)\n; unsat → proven: guard prevents underflow"
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/parser.ts/findEnclosingFunction[111]",
+    "src/parser.ts/findEnclosingFunction[120]",
+    "src/pipeline/DerivationPhase.ts/findEnclosingFunction[651]",
+    "src/pipeline/DerivationPhase.ts/findEnclosingFunction[652]",
+    "src/pipeline/DerivationPhase.ts/findNode[574]",
+    "src/pipeline/DerivationPhase.ts/findNode[576]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[659]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[660]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[661]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: subtraction-underflow\n; LINE: 570\n; PROVEN: Subtraction Underflow at extractASTContext\n(declare-const line Int)\n(declare-const expr_569_31 Int)\n; Guard: path condition ensures expr_569_31 <= line\n(assert (<= expr_569_31 line))\n; Can expr_569_31 exceed line?\n(assert (> expr_569_31 line))\n(check-sat)\n; unsat → proven: guard prevents underflow",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

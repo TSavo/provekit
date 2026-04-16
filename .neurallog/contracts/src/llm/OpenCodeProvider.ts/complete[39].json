@@ -1,0 +1,55 @@
+{
+  "key": "src/llm/OpenCodeProvider.ts/complete[39]",
+  "file": "/Users/tsavo/Projects/neurallog/src/llm/OpenCodeProvider.ts",
+  "function": "complete",
+  "line": 39,
+  "signal_hash": "1fcb300c57703ff97dcf447259bda34c99a0b0b3483413eb02e93f5f0078c35c",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "VIOLATION: Guard Narrowing at complete",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 39\n; VIOLATION: Guard Narrowing at complete\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "witness": "(\n  (define-fun code_after_reached () Int\n    1)\n  (define-fun guard_condition () Int\n    0)\n  (define-fun guard_returns () Int\n    0)\n)",
+      "complexity": 2,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/llm/OpenCodeProvider.ts/ensureClient[117]",
+    "src/llm/OpenCodeProvider.ts/ensureClient[119]",
+    "src/llm/OpenCodeProvider.ts/ensureSession[125]",
+    "src/llm/OpenCodeProvider.ts/ensureSession[127]",
+    "src/llm/OpenCodeProvider.ts/ensureSession[128]",
+    "src/llm/OpenCodeProvider.ts/extractText[137]",
+    "src/llm/OpenCodeProvider.ts/extractText[138]",
+    "src/llm/OpenCodeProvider.ts/extractText[141]",
+    "src/llm/OpenCodeProvider.ts/extractText[142]",
+    "src/llm/OpenCodeProvider.ts/extractText[143]",
+    "src/llm/OpenCodeProvider.ts/formatDuration[151]",
+    "src/llm/OpenCodeProvider.ts/formatDuration[152]",
+    "src/llm/OpenCodeProvider.ts/formatDuration[153]",
+    "src/pipeline/DerivationPhase.ts/formatDuration[699]",
+    "src/pipeline/DerivationPhase.ts/formatDuration[700]",
+    "src/pipeline/DerivationPhase.ts/formatDuration[701]",
+    "src/pipeline/DerivationPhase.ts/formatDuration[703]",
+    "src/pipeline/AxiomPhase.ts/formatDuration[165]",
+    "src/pipeline/AxiomPhase.ts/formatDuration[166]",
+    "src/pipeline/AxiomPhase.ts/formatDuration[167]",
+    "src/pipeline/Pipeline.ts/formatDuration[260]",
+    "src/pipeline/Pipeline.ts/formatDuration[261]",
+    "src/pipeline/Pipeline.ts/formatDuration[262]",
+    "src/pipeline/Pipeline.ts/formatDuration[265]",
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 39\n; VIOLATION: Guard Narrowing at complete\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

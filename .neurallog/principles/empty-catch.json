@@ -1,0 +1,23 @@
+{
+  "id": "empty-catch",
+  "name": "Silent Exception Swallowing",
+  "description": "Try/catch with an empty catch block. Exceptions are silently swallowed — caller cannot distinguish success from failure.",
+  "astPatterns": [
+    {
+      "nodeType": "try_statement"
+    }
+  ],
+  "smt2Template": "(declare-const exception_thrown Int)\n(declare-const exception_logged Int)\n(declare-const exception_rethrown Int)\n(declare-const caller_notified Int)\n(assert (= exception_thrown 1))\n(assert (= exception_logged 0))\n(assert (= exception_rethrown 0))\n(assert (= caller_notified 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "data pipeline",
+    "explanation": "JSON parse in try/catch with empty catch — corrupt records vanish silently",
+    "smt2": "(declare-const parse_throws Int)\n(declare-const error_logged Int)\n(assert (= parse_throws 1))\n(assert (= error_logged 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "high"
+}

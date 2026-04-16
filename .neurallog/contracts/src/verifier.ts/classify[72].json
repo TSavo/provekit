@@ -1,0 +1,26 @@
+{
+  "key": "src/verifier.ts/classify[72]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "classify",
+  "line": 72,
+  "signal_hash": "0bf177407b7d7fde19c276c1dc2a862fd69aeda1eed79f12aa9ec0e93cbe0293",
+  "proven": [
+    {
+      "principle": "falsy-default",
+      "principle_hash": "",
+      "claim": "PROVEN: Falsy Default Trap at classify",
+      "smt2": "; PRINCIPLE: falsy-default\n; LINE: 72\n; PROVEN: Falsy Default Trap at classify\n(declare-const output_value Int)\n(declare-const result Int)\n; Guard: ?? used instead of || (nullish coalescing preserves falsy values)\n(assert (= result output_value))\n; Can result differ from input?\n(assert (not (= result output_value)))\n(check-sat)\n; unsat → proven: falsy values preserved"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: falsy-default\n; LINE: 72\n; PROVEN: Falsy Default Trap at classify\n(declare-const output_value Int)\n(declare-const result Int)\n; Guard: ?? used instead of || (nullish coalescing preserves falsy values)\n(assert (= result output_value))\n; Can result differ from input?\n(assert (not (= result output_value)))\n(check-sat)\n; unsat → proven: falsy values preserved",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

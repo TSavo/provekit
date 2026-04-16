@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync, chmodSync, mkdirSync } from "fs";
 import { join } from "path";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 
 const HOOK_MARKER = "# neurallog pre-commit hook";
 
@@ -102,7 +102,7 @@ export class HookInstaller {
 
   private getHooksDir(): string | null {
     try {
-      const gitDir = execSync("git rev-parse --git-dir", {
+      const gitDir = execFileSync("git", ["rev-parse", "--git-dir"], {
         cwd: this.projectRoot,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],

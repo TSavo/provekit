@@ -19,97 +19,98 @@ export class OpenCodeProvider implements LLMProvider {
     console.log(`[llm:${this.name}] Sending ${prompt.length} chars (model managed by OpenCode server)`);
     const startTime = Date.now();
 
-    const client = await this.ensureClient();
-    const sessionID = await this.ensureSession(client);
+    try {
+      const client = await this.ensureClient();
+      const sessionID = await this.ensureSession(client);
+      const eventStream = await client.event.subscribe();
+      let fullText = "";
+      let done = false;
 
-    const eventStream = await client.event.subscribe();
-    let fullText = "";
-    let done = false;
+      const promptPromise = client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          parts: [{ type: "text", text: `${options.systemPrompt}\n\n${prompt}` }],
+        },
+      });
 
-    const promptPromise = client.session.prompt({
-      path: { id: sessionID },
-      body: {
-        parts: [{ type: "text", text: `${options.systemPrompt}\n\n${prompt}` }],
-      },
-    });
-
-    const eventPromise = (async () => {
-      try {
-        for await (const event of eventStream) {
-          if (done) break;
-
-          if (event.type === "message.part.updated") {
-            const part = event.properties?.part;
-            if (part?.type === "text" && part.text) {
-              fullText = part.text;
-              process.stdout.write(".");
+      const eventPromise = (async () => {
+        try {
+          for await (const event of eventStream) {
+            if (done) break;
+            if (event.type === "message.part.updated") {
+              const part = event.properties?.part;
+              if (part?.type === "text" && part.text) {
+                fullText = part.text;
+                process.stdout.write(".");
+              }
+            }
+            if (event.type === "session.idle") break;
+            if (event.type === "session.error") {
+              console.log(`\n[llm:${this.name}] Session error: ${event.properties?.error}`);
+              break;
             }
           }
-
-          if (event.type === "session.idle") {
-            break;
-          }
-
-          if (event.type === "session.error") {
-            console.log(`\n[llm:${this.name}] Session error: ${event.properties?.error}`);
-            break;
-          }
+        } catch (e: any) {
+          console.log(`[llm:${this.name}] Event stream ended: ${e?.message?.slice(0, 60) || "closed"}`);
         }
-      } catch {
-        // Stream ended or aborted
+      })();
+
+      const result = await promptPromise;
+      done = true;
+
+      try { eventStream.controller?.abort(); } catch (e: any) {
+        console.log(`[llm:${this.name}] Abort cleanup: ${e?.message?.slice(0, 40) || "ok"}`);
       }
-    })();
 
-    const result = await promptPromise;
-    done = true;
-
-    try {
-      eventStream.controller?.abort();
-    } catch {}
-
-    const text = this.extractText(result) || fullText;
-    const elapsed = Date.now() - startTime;
-    console.log(`\n[llm:${this.name}] Response in ${this.formatDuration(elapsed)} (${text.length} chars)`);
-    return { text };
+      const text = this.extractText(result) || fullText;
+      const elapsed = Date.now() - startTime;
+      console.log(`\n[llm:${this.name}] Response in ${this.formatDuration(elapsed)} (${text.length} chars)`);
+      return { text };
+    } catch (err: any) {
+      throw new Error(`[llm:${this.name}] complete() failed: ${err?.message || err}`);
+    }
   }
 
   async *stream(prompt: string, options: LLMRequestOptions): AsyncIterable<LLMStreamEvent> {
-    const client = await this.ensureClient();
-    const sessionID = await this.ensureSession(client);
-
-    const eventStream = await client.event.subscribe();
-    let done = false;
-
-    const promptPromise = client.session.prompt({
-      path: { id: sessionID },
-      body: {
-        parts: [{ type: "text", text: `${options.systemPrompt}\n\n${prompt}` }],
-      },
-    });
-
     try {
-      for await (const event of eventStream) {
-        if (done) break;
+      const client = await this.ensureClient();
+      const sessionID = await this.ensureSession(client);
+      const eventStream = await client.event.subscribe();
+      let done = false;
 
-        if (event.type === "message.part.updated") {
-          const part = event.properties?.part;
-          if (part?.type === "text" && part.text) {
-            yield { type: "text_delta", text: part.text };
+      const promptPromise = client.session.prompt({
+        path: { id: sessionID },
+        body: {
+          parts: [{ type: "text", text: `${options.systemPrompt}\n\n${prompt}` }],
+        },
+      });
+
+      try {
+        for await (const event of eventStream) {
+          if (done) break;
+          if (event.type === "message.part.updated") {
+            const part = event.properties?.part;
+            if (part?.type === "text" && part.text) {
+              yield { type: "text_delta", text: part.text };
+            }
           }
+          if (event.type === "session.idle" || event.type === "session.error") break;
         }
-
-        if (event.type === "session.idle" || event.type === "session.error") {
-          break;
-        }
+      } catch (e: any) {
+        console.log(`[llm:${this.name}] Stream ended: ${e?.message?.slice(0, 60) || "closed"}`);
       }
-    } catch {}
 
-    const result = await promptPromise;
-    done = true;
-    try { eventStream.controller?.abort(); } catch {}
+      const result = await promptPromise;
+      done = true;
+      try { eventStream.controller?.abort(); } catch (e: any) {
+        console.log(`[llm:${this.name}] Abort cleanup: ${e?.message?.slice(0, 40) || "ok"}`);
+      }
 
-    const text = this.extractText(result);
-    yield { type: "done", text };
+      const text = this.extractText(result);
+      yield { type: "done", text };
+    } catch (err: any) {
+      throw new Error(`[llm:${this.name}] stream() failed: ${err?.message || err}`);
+    }
   }
 
   private async ensureClient(): Promise<any> {
@@ -122,7 +123,6 @@ export class OpenCodeProvider implements LLMProvider {
 
   private async ensureSession(client: any): Promise<string> {
     if (this.sessionID) return this.sessionID;
-
     const result = await client.session.create();
     this.sessionID = result.data?.id;
     if (!this.sessionID) {
@@ -135,24 +135,15 @@ export class OpenCodeProvider implements LLMProvider {
   private extractText(result: any): string {
     const data = result?.data;
     if (!data) return "";
-
     if (data.parts) {
-      return data.parts
-        .filter((p: any) => p.type === "text")
-        .map((p: any) => p.text)
-        .join("");
+      return data.parts.filter((p: any) => p.type === "text").map((p: any) => p.text).join("");
     }
-
     if (data.content) {
       if (typeof data.content === "string") return data.content;
       if (Array.isArray(data.content)) {
-        return data.content
-          .filter((b: any) => b.type === "text")
-          .map((b: any) => b.text)
-          .join("");
+        return data.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
       }
     }
-
     return "";
   }
 

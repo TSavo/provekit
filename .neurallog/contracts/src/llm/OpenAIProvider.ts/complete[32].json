@@ -1,0 +1,14 @@
+{
+  "key": "src/llm/OpenAIProvider.ts/complete[32]",
+  "file": "/Users/tsavo/Projects/neurallog/src/llm/OpenAIProvider.ts",
+  "function": "complete",
+  "line": 32,
+  "signal_hash": "e2294183a75bbbed782ee5eff260387226093673aa8a1f2d3f5a3f914e73fcdb",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]",
+    "src/pipeline/Phase.ts/log[19]"
+  ],
+  "clause_history": []
+}

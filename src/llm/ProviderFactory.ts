@@ -8,7 +8,7 @@ import { ProviderPool, PooledProvider } from "./ProviderPool";
 export type ProviderName = "claude-agent" | "opencode" | "openai" | "openrouter" | "pool";
 
 export function createProvider(name?: ProviderName | string): LLMProvider {
-  const resolved = name || detectProvider();
+  const resolved = name ?? detectProvider();
 
   console.log(`[llm] Creating provider: ${resolved}`);
 

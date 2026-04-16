@@ -1,0 +1,26 @@
+{
+  "key": "src/templates/TemplateEngine.ts/commandIsStaticString[735]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "commandIsStaticString",
+  "line": 735,
+  "signal_hash": "afa896aaa305694296bfaa0a91d2f595594d5f9f7820a1039d158e2f40e61d85",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at commandIsStaticString",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 735\n; PROVEN: Unguarded Non-Null Assertion at commandIsStaticString\n(declare-const expr_734_21_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_734_21_is_null 0))\n; Can value still be null?\n(assert (= expr_734_21_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 735\n; PROVEN: Unguarded Non-Null Assertion at commandIsStaticString\n(declare-const expr_734_21_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_734_21_is_null 0))\n; Can value still be null?\n(assert (= expr_734_21_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "guard-narrowing",
+  "name": "Guard Narrowing",
+  "description": "If-statement with return/throw in the consequence and no else. Code after the if implicitly assumes the condition's negation holds, but this may not be checked.",
+  "astPatterns": [
+    {
+      "nodeType": "if_statement"
+    }
+  ],
+  "smt2Template": "(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+  "teachingExample": {
+    "domain": "authentication",
+    "explanation": "if (!token) return 401 — code after assumes token exists but doesn't re-check",
+    "smt2": "(declare-const token_null Int)\n(declare-const guard_fires Int)\n(declare-const code_reached Int)\n(assert (=> (= token_null 1) (= guard_fires 1)))\n(assert (= token_null 0))\n(assert (= code_reached 1))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "low"
+}

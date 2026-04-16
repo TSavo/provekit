@@ -22,6 +22,9 @@ export interface Violation {
   principle_hash: string;
   claim: string;
   smt2: string;
+  witness?: string;
+  complexity?: number;
+  confidence?: "high" | "low";
 }
 
 export interface Contract {
@@ -131,7 +134,7 @@ export class ContractStore {
   remove(key: string): void {
     this.contracts.delete(key);
     const filePath = join(this.contractsDir, signalKeyToPath(key));
-    try { unlinkSync(filePath); } catch {}
+    try { unlinkSync(filePath); } catch (e: any) { console.log(`[contracts] remove ${key}: ${e?.message?.slice(0, 40) || "ok"}`); }
   }
 
   getAll(): Contract[] {

@@ -1,0 +1,23 @@
+{
+  "id": "while-loop-termination",
+  "name": "While Loop Non-Termination",
+  "description": "While loop whose body does not modify any variable referenced in the loop condition. If the condition is true on entry, it stays true forever.",
+  "astPatterns": [
+    {
+      "nodeType": "while_statement"
+    }
+  ],
+  "smt2Template": "(declare-const condition_before Int)\n(declare-const condition_after Int)\n(assert (= condition_before 1))\n(assert (= condition_after condition_before))\n(check-sat)",
+  "teachingExample": {
+    "domain": "embedded",
+    "explanation": "sensor polling loop checks flag but loop body never updates it",
+    "smt2": "(declare-const flag Int)\n(declare-const flag_after Int)\n(assert (= flag 1))\n(assert (= flag_after flag))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "high"
+}

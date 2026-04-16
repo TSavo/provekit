@@ -34,9 +34,13 @@ export class OpenRouterProvider implements LLMProvider {
       ],
     });
 
-    const text = await this.post(body);
-    console.log(`[llm:${this.name}] Response received in ${Date.now() - startTime}ms (${text.length} chars)`);
-    return { text };
+    try {
+      const text = await this.post(body);
+      console.log(`[llm:${this.name}] Response received in ${Date.now() - startTime}ms (${text.length} chars)`);
+      return { text };
+    } catch (err: any) {
+      throw new Error(`[llm:${this.name}] complete() failed: ${err?.message || err}`);
+    }
   }
 
   async *stream(prompt: string, options: LLMRequestOptions): AsyncIterable<LLMStreamEvent> {

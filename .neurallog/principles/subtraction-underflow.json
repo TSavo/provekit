@@ -1,0 +1,30 @@
+{
+  "id": "subtraction-underflow",
+  "name": "Subtraction Underflow",
+  "description": "Subtraction where the right operand can exceed the left, producing a negative result when a non-negative result is expected.",
+  "astPatterns": [
+    {
+      "nodeType": "binary_expression",
+      "operator": "-",
+      "requiresParamRef": true,
+      "guardPatterns": [
+        "<=",
+        "<"
+      ]
+    }
+  ],
+  "smt2Template": "(declare-const {{left}} Int)\n(declare-const {{right}} Int)\n(declare-const result Int)\n(assert (= result (- {{left}} {{right}})))\n(assert (>= {{left}} 0))\n(assert (>= {{right}} 0))\n(assert (> {{right}} {{left}}))\n(assert (< result 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "banking",
+    "explanation": "withdraw subtracts amount from balance with no underflow guard",
+    "smt2": "(declare-const balance Int)\n(declare-const amount Int)\n(declare-const result Int)\n(assert (= result (- balance amount)))\n(assert (>= balance 0))\n(assert (> amount balance))\n(assert (< result 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "smt2ProofTemplate": "(declare-const {{left}} Int)\n(declare-const {{right}} Int)\n; Guard: path condition ensures {{right}} <= {{left}}\n(assert (<= {{right}} {{left}}))\n; Can {{right}} exceed {{left}}?\n(assert (> {{right}} {{left}}))\n(check-sat)\n; unsat → proven: guard prevents underflow",
+  "confidence": "high"
+}

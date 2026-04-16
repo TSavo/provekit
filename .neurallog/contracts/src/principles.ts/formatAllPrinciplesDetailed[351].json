@@ -1,0 +1,29 @@
+{
+  "key": "src/principles.ts/formatAllPrinciplesDetailed[351]",
+  "file": "/Users/tsavo/Projects/neurallog/src/principles.ts",
+  "function": "formatAllPrinciplesDetailed",
+  "line": 351,
+  "signal_hash": "b4d60afefe0641eb2405cce7457d2384af5dc4bb9ba6c7b6122da00fb7fc8c72",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at formatAllPrinciplesDetailed",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 351\n; VIOLATION: Empty Collection Loop at formatAllPrinciplesDetailed\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 351\n; VIOLATION: Empty Collection Loop at formatAllPrinciplesDetailed\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

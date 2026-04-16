@@ -1,0 +1,29 @@
+{
+  "key": "src/pipeline/PromptStrategy.ts/buildSignalFrame[5]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/PromptStrategy.ts",
+  "function": "buildSignalFrame",
+  "line": 5,
+  "signal_hash": "96f3bf18c8b1d05c2c2fe8cbccfbbf7cbbd130321eb98b817402f5917d552ba4",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "ternary-branch-collapse",
+      "principle_hash": "",
+      "claim": "VIOLATION: ternary-branch-collapse at buildSignalFrame",
+      "smt2": "; PRINCIPLE: ternary-branch-collapse\n; LINE: 5\n; VIOLATION: ternary-branch-collapse at buildSignalFrame\n(declare-const counter_5 Int)\n(declare-const branch_taken Int)\n(declare-const output_meaningful Int)\n(assert (>= counter_5 0))\n; branch_taken = 1 when counter == 1 (consequent), 0 otherwise (alternate)\n(assert (= branch_taken (ite (= counter_5 1) 1 0)))\n; both branches emit empty string — output is never meaningful\n(assert (= output_meaningful 0))\n; can we reach the plural branch with a non-trivial counter and still get no useful output?\n(assert (> counter_5 1))\n(check-sat)",
+      "witness": "(\n  (define-fun counter_5 () Int\n    2)\n  (define-fun branch_taken () Int\n    0)\n  (define-fun output_meaningful () Int\n    0)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: ternary-branch-collapse\n; LINE: 5\n; VIOLATION: ternary-branch-collapse at buildSignalFrame\n(declare-const counter_5 Int)\n(declare-const branch_taken Int)\n(declare-const output_meaningful Int)\n(assert (>= counter_5 0))\n; branch_taken = 1 when counter == 1 (consequent), 0 otherwise (alternate)\n(assert (= branch_taken (ite (= counter_5 1) 1 0)))\n; both branches emit empty string — output is never meaningful\n(assert (= output_meaningful 0))\n; can we reach the plural branch with a non-trivial counter and still get no useful output?\n(assert (> counter_5 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

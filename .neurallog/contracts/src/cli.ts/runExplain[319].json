@@ -1,0 +1,30 @@
+{
+  "key": "src/cli.ts/runExplain[319]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runExplain",
+  "line": 319,
+  "signal_hash": "4578aaad3e5d13bc743c3202d8f45abfc31ae678978c3b02dc4d6c2fabbe5ea3",
+  "proven": [
+    {
+      "principle": "find-undefined-result",
+      "principle_hash": "",
+      "claim": "PROVEN: Find Returns Undefined at runExplain",
+      "smt2": "; PRINCIPLE: find-undefined-result\n; LINE: 319\n; PROVEN: Find Returns Undefined at runExplain\n(declare-const match_found Int)\n; Guard: undefined check before access\n(assert (not (= match_found 0)))\n; Can result be undefined?\n(assert (= match_found 0))\n(check-sat)\n; unsat → proven: undefined check guards find result"
+    }
+  ],
+  "violations": [],
+  "depends_on": [
+    "src/cli.ts/findProjectRoot[608]",
+    "src/cli.ts/findProjectRoot[610]",
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: find-undefined-result\n; LINE: 319\n; PROVEN: Find Returns Undefined at runExplain\n(declare-const match_found Int)\n; Guard: undefined check before access\n(assert (not (= match_found 0)))\n; Can result be undefined?\n(assert (= match_found 0))\n(check-sat)\n; unsat → proven: undefined check guards find result",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

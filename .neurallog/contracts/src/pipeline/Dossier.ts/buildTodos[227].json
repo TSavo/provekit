@@ -1,0 +1,29 @@
+{
+  "key": "src/pipeline/Dossier.ts/buildTodos[227]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Dossier.ts",
+  "function": "buildTodos",
+  "line": 227,
+  "signal_hash": "893a7377310c493a20ac55d89400306b337c63ffe4b428c433c332080ed50b2e",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "loop-accumulator-overflow",
+      "principle_hash": "",
+      "claim": "VIOLATION: Loop Accumulator Overflow at buildTodos",
+      "smt2": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 227\n; VIOLATION: Loop Accumulator Overflow at buildTodos\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_227 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_227 (* iterations per_iteration)))\n(assert (> accumulator_227 9007199254740991))\n(check-sat)",
+      "witness": "(\n  (define-fun accumulator_227 () Int\n    9229268391297023)\n  (define-fun per_iteration () Int\n    1)\n  (define-fun iterations () Int\n    9229268391297023)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 227\n; VIOLATION: Loop Accumulator Overflow at buildTodos\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_227 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_227 (* iterations per_iteration)))\n(assert (> accumulator_227 9007199254740991))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

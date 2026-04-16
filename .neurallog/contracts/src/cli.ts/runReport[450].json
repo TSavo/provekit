@@ -3,34 +3,29 @@
   "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
   "function": "runReport",
   "line": 450,
-  "signal_hash": "af21165ee7d5633d0d32274b054ce74ee0744f70309760c162e50a2d3da76bf2",
-  "proven": [
-    {
-      "principle": "P7",
-      "principle_hash": "61561b8577104a2514f412235b45b0c4b2c3114a30d8725d4cb990ed5d924ecc",
-      "claim": "PROVEN: fileCoverage in [0, 100] for every file entry",
-      "smt2": "; PRINCIPLE: P7\n; LINE: 450\n; PROVEN: fileCoverage in [0, 100] for every file entry\n(declare-const signals Int)\n(declare-const unverified Int)\n(declare-const numerator Int)\n; Code transition: signals >= 1 — every contract adds 1 to entry.signals\n; entries only exist because at least one contract mapped to this file\n(assert (>= signals 1))\n; Code transition: 0 <= unverified <= signals (boolean increment, once per contract)\n(assert (>= unverified 0))\n(assert (<= unverified signals))\n; Code transition: numerator = signals - unverified\n(assert (= numerator (- signals unverified)))\n; Negated property: numerator < 0 (would produce negative fileCoverage)\n(assert (< numerator 0))\n(check-sat)"
-    }
-  ],
+  "signal_hash": "6518b003c7b4585ce139955b5ac2190b4272ddea898c8d776ca2b0adc675cc61",
+  "proven": [],
   "violations": [
     {
-      "principle": "P5",
-      "principle_hash": "4bded803ae68a50cd50b79c414cf78674a825ce4d673c75f0f239c13046e184a",
-      "claim": "VIOLATION: variable relPath is labelled \"relative\" but is an absolute (possibly truncated) path",
-      "smt2": "; PRINCIPLE: P5\n; LINE: 450\n; VIOLATION: variable relPath is labelled \"relative\" but is an absolute (possibly truncated) path\n; runReport's call list: entries, exit, get, getAll, log, padEnd, resolveProjectRoot, round, set, slice, sort\n; The function relative() is NOT in the call list — it is never invoked in runReport\n; Compare: runExplain calls relative(projectRoot, filePath) to produce a true relative path\n(declare-const file_is_absolute Int)    ; 1 = c.file starts with / (pipeline uses resolve())\n(declare-const relative_fn_called Int)  ; 1 = relative() was called\n(declare-const relpath_is_relative Int) ; 1 = displayed path is relative to projectRoot\n; Code transition: c.file stores absolute paths (ContractStore pipeline uses resolve())\n(assert (= file_is_absolute 1))\n; Code transition: relative() absent from runReport call list — never called\n(assert (= relative_fn_called 0))\n; Code transition: slice(-57) and \"...\" prefix preserve the absolute nature of the path\n; without relative(), relPath remains absolute\n(assert (=> (= relative_fn_called 0) (= relpath_is_relative 0)))\n; Violation: relPath is not actually relative to projectRoot\n(assert (= relpath_is_relative 0))\n(assert (= file_is_absolute 1))\n(check-sat)"
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "VIOLATION: Guard Narrowing at runReport",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 450\n; VIOLATION: Guard Narrowing at runReport\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "witness": "(\n  (define-fun code_after_reached () Int\n    1)\n  (define-fun guard_condition () Int\n    0)\n  (define-fun guard_returns () Int\n    0)\n)",
+      "complexity": 2,
+      "confidence": "low"
     }
   ],
-  "depends_on": [],
+  "depends_on": [
+    "src/cli.ts/getConfidence[418]",
+    "src/cli.ts/getConfidence[419]",
+    "src/pipeline/Phase.ts/log[18]",
+    "src/cli.ts/resolveProjectRoot[600]",
+    "src/cli.ts/resolveProjectRoot[601]"
+  ],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P7\n; LINE: 450\n; PROVEN: fileCoverage in [0, 100] for every file entry\n(declare-const signals Int)\n(declare-const unverified Int)\n(declare-const numerator Int)\n; Code transition: signals >= 1 — every contract adds 1 to entry.signals\n; entries only exist because at least one contract mapped to this file\n(assert (>= signals 1))\n; Code transition: 0 <= unverified <= signals (boolean increment, once per contract)\n(assert (>= unverified 0))\n(assert (<= unverified signals))\n; Code transition: numerator = signals - unverified\n(assert (= numerator (- signals unverified)))\n; Negated property: numerator < 0 (would produce negative fileCoverage)\n(assert (< numerator 0))\n(check-sat)",
-      "status": "active",
-      "weaken_step": 0,
-      "witness_count_at_last_weaken": 0,
-      "current_witness_count": 0
-    },
-    {
-      "clause": "; PRINCIPLE: P5\n; LINE: 450\n; VIOLATION: variable relPath is labelled \"relative\" but is an absolute (possibly truncated) path\n; runReport's call list: entries, exit, get, getAll, log, padEnd, resolveProjectRoot, round, set, slice, sort\n; The function relative() is NOT in the call list — it is never invoked in runReport\n; Compare: runExplain calls relative(projectRoot, filePath) to produce a true relative path\n(declare-const file_is_absolute Int)    ; 1 = c.file starts with / (pipeline uses resolve())\n(declare-const relative_fn_called Int)  ; 1 = relative() was called\n(declare-const relpath_is_relative Int) ; 1 = displayed path is relative to projectRoot\n; Code transition: c.file stores absolute paths (ContractStore pipeline uses resolve())\n(assert (= file_is_absolute 1))\n; Code transition: relative() absent from runReport call list — never called\n(assert (= relative_fn_called 0))\n; Code transition: slice(-57) and \"...\" prefix preserve the absolute nature of the path\n; without relative(), relPath remains absolute\n(assert (=> (= relative_fn_called 0) (= relpath_is_relative 0)))\n; Violation: relPath is not actually relative to projectRoot\n(assert (= relpath_is_relative 0))\n(assert (= file_is_absolute 1))\n(check-sat)",
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 450\n; VIOLATION: Guard Narrowing at runReport\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

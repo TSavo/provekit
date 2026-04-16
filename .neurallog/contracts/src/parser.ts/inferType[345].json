@@ -1,0 +1,26 @@
+{
+  "key": "src/parser.ts/inferType[345]",
+  "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+  "function": "inferType",
+  "line": 345,
+  "signal_hash": "702442fb9567df452edf5251d2ddc6835b6d58c79b50b8a68798a691450effc6",
+  "proven": [
+    {
+      "principle": "find-undefined-result",
+      "principle_hash": "",
+      "claim": "PROVEN: Find Returns Undefined at inferType",
+      "smt2": "; PRINCIPLE: find-undefined-result\n; LINE: 345\n; PROVEN: Find Returns Undefined at inferType\n(declare-const match_found Int)\n; Guard: undefined check before access\n(assert (not (= match_found 0)))\n; Can result be undefined?\n(assert (= match_found 0))\n(check-sat)\n; unsat → proven: undefined check guards find result"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: find-undefined-result\n; LINE: 345\n; PROVEN: Find Returns Undefined at inferType\n(declare-const match_found Int)\n; Guard: undefined check before access\n(assert (not (= match_found 0)))\n; Can result be undefined?\n(assert (= match_found 0))\n(check-sat)\n; unsat → proven: undefined check guards find result",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

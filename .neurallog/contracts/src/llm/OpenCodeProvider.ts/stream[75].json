@@ -1,0 +1,23 @@
+{
+  "key": "src/llm/OpenCodeProvider.ts/stream[75]",
+  "file": "/Users/tsavo/Projects/neurallog/src/llm/OpenCodeProvider.ts",
+  "function": "stream",
+  "line": 75,
+  "signal_hash": "3a5ed12ea56ee021f95921869ffb4f1337e095b5145e786409086d1a23f8669d",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/llm/OpenCodeProvider.ts/ensureClient[117]",
+    "src/llm/OpenCodeProvider.ts/ensureClient[119]",
+    "src/llm/OpenCodeProvider.ts/ensureSession[125]",
+    "src/llm/OpenCodeProvider.ts/ensureSession[127]",
+    "src/llm/OpenCodeProvider.ts/ensureSession[128]",
+    "src/llm/OpenCodeProvider.ts/extractText[137]",
+    "src/llm/OpenCodeProvider.ts/extractText[138]",
+    "src/llm/OpenCodeProvider.ts/extractText[141]",
+    "src/llm/OpenCodeProvider.ts/extractText[142]",
+    "src/llm/OpenCodeProvider.ts/extractText[143]",
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": []
+}

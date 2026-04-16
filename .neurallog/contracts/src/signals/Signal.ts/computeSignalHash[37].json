@@ -1,0 +1,11 @@
+{
+  "key": "src/signals/Signal.ts/computeSignalHash[37]",
+  "file": "/Users/tsavo/Projects/neurallog/src/signals/Signal.ts",
+  "function": "computeSignalHash",
+  "line": 37,
+  "signal_hash": "3730c5191d2593e0221a1dccf834e5915dc698284ae670630df553dfb1ab2b34",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

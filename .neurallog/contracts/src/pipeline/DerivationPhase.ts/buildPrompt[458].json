@@ -1,0 +1,11 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/buildPrompt[458]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "buildPrompt",
+  "line": 458,
+  "signal_hash": "24f6c6e6486c62eac7a8b2211897a881f559b3ac2e8d73300472607f163ec0de",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

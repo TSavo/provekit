@@ -1,0 +1,13 @@
+{
+  "key": "src/contracts.ts/writeSingle[216]",
+  "file": "/Users/tsavo/Projects/neurallog/src/contracts.ts",
+  "function": "writeSingle",
+  "line": 216,
+  "signal_hash": "d52aafc3e936e329fc17b552c7e869a400954604c7a4e5f762da60b38610a2cc",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/contracts.ts/signalKeyToPath[48]"
+  ],
+  "clause_history": []
+}

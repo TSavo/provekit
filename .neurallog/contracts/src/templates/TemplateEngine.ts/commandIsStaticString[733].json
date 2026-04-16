@@ -1,0 +1,11 @@
+{
+  "key": "src/templates/TemplateEngine.ts/commandIsStaticString[733]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "commandIsStaticString",
+  "line": 733,
+  "signal_hash": "9d19fa4773653615556385d33900368aecc0c4fb921bface9b472635c26c0057",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

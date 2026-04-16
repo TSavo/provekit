@@ -1,0 +1,26 @@
+{
+  "key": "src/pipeline/Dossier.ts/buildSiblingFunctions[240]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Dossier.ts",
+  "function": "buildSiblingFunctions",
+  "line": 240,
+  "signal_hash": "ebe4623989352fb367dd6fd33f381324e276996350e1d0ca09ffa2095e74e067",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at buildSiblingFunctions",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 240\n; PROVEN: Unguarded Non-Null Assertion at buildSiblingFunctions\n(declare-const expr_239_20_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_239_20_is_null 0))\n; Can value still be null?\n(assert (= expr_239_20_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 240\n; PROVEN: Unguarded Non-Null Assertion at buildSiblingFunctions\n(declare-const expr_239_20_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_239_20_is_null 0))\n; Can value still be null?\n(assert (= expr_239_20_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

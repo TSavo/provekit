@@ -1,0 +1,31 @@
+{
+  "key": "src/llm/OpenCodeProvider.ts/constructor[14]",
+  "file": "/Users/tsavo/Projects/neurallog/src/llm/OpenCodeProvider.ts",
+  "function": "constructor",
+  "line": 14,
+  "signal_hash": "2cf4e98f070c995c7ca6fe50eec3f0fd947ab4c66b44b35292dd5181c4bbb56b",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "param-mutation",
+      "principle_hash": "",
+      "claim": "VIOLATION: Parameter Object Mutation at constructor",
+      "smt2": "; PRINCIPLE: param-mutation\n; LINE: 14\n; VIOLATION: Parameter Object Mutation at constructor\n(declare-const baseUrl_before Int)\n(declare-const baseUrl_after Int)\n(declare-const caller_expects_mutation Int)\n(assert (not (= baseUrl_after baseUrl_before)))\n(assert (= caller_expects_mutation 0))\n(check-sat)",
+      "witness": "(\n  (define-fun baseUrl_after () Int\n    1)\n  (define-fun baseUrl_before () Int\n    0)\n  (define-fun caller_expects_mutation () Int\n    0)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: param-mutation\n; LINE: 14\n; VIOLATION: Parameter Object Mutation at constructor\n(declare-const baseUrl_before Int)\n(declare-const baseUrl_after Int)\n(declare-const caller_expects_mutation Int)\n(assert (not (= baseUrl_after baseUrl_before)))\n(assert (= caller_expects_mutation 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "key": "src/templates/TemplateEngine.ts/isArrayIndexGuardedByLoop[824]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "isArrayIndexGuardedByLoop",
+  "line": 824,
+  "signal_hash": "0e11a2e1144ffb3b689a359a0e8845deca9b1fac43d6e9b5b3ceb345790a9690",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

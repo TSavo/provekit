@@ -1,0 +1,31 @@
+{
+  "id": "modulo-by-zero",
+  "name": "Modulo by Zero",
+  "description": "Modulo operation where the divisor derives from a parameter and no guard ensures it is non-zero.",
+  "astPatterns": [
+    {
+      "nodeType": "binary_expression",
+      "operator": "%",
+      "requiresParamRef": true,
+      "guardPatterns": [
+        "!= 0",
+        "!== 0",
+        "> 0"
+      ]
+    }
+  ],
+  "smt2Template": "(declare-const {{left}} Int)\n(declare-const {{right}} Int)\n(assert (= {{right}} 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "scheduling",
+    "explanation": "round-robin index uses modulo with no zero guard on pool size",
+    "smt2": "(declare-const index Int)\n(declare-const pool_size Int)\n(assert (= pool_size 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "smt2ProofTemplate": "(declare-const {{left}} Int)\n(declare-const {{right}} Int)\n; Guard: path condition ensures {{right}} != 0\n(assert (not (= {{right}} 0)))\n; Can {{right}} still be zero?\n(assert (= {{right}} 0))\n(check-sat)\n; unsat → proven: guard prevents modulo by zero",
+  "confidence": "high"
+}

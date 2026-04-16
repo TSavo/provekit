@@ -28,6 +28,7 @@ export function computeSignalHash(signal: Signal): string {
   const content = [
     signal.file,
     signal.functionName,
+    String(signal.line),
     signal.functionSource,
     signal.text,
     signal.type,

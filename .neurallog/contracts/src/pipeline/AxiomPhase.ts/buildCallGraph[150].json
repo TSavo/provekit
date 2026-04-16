@@ -1,0 +1,29 @@
+{
+  "key": "src/pipeline/AxiomPhase.ts/buildCallGraph[150]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/AxiomPhase.ts",
+  "function": "buildCallGraph",
+  "line": 150,
+  "signal_hash": "3cac5166d263c4a2cdb9e44e03b8b0c6a7fa71e3512a7b6436b96357ef71cfb0",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at buildCallGraph",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 150\n; VIOLATION: Empty Collection Loop at buildCallGraph\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 150\n; VIOLATION: Empty Collection Loop at buildCallGraph\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/buildContracts[525]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "buildContracts",
+  "line": 525,
+  "signal_hash": "5e420369d3321325babf1672de07b407ab1f3f4b1cf2dad5858d9497047a5752",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at buildContracts",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 525\n; VIOLATION: Empty Collection Loop at buildContracts\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[557]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[558]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[559]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[561]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 525\n; VIOLATION: Empty Collection Loop at buildContracts\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

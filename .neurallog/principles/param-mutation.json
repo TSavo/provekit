@@ -1,0 +1,24 @@
+{
+  "id": "param-mutation",
+  "name": "Parameter Object Mutation",
+  "description": "Property assignment on a parameter-derived object. The mutation is a side effect visible to the caller, who may not expect it.",
+  "astPatterns": [
+    {
+      "nodeType": "assignment_expression",
+      "requiresParamRef": true
+    }
+  ],
+  "smt2Template": "(declare-const {{prop}}_before Int)\n(declare-const {{prop}}_after Int)\n(declare-const caller_expects_mutation Int)\n(assert (not (= {{prop}}_after {{prop}}_before)))\n(assert (= caller_expects_mutation 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "gaming",
+    "explanation": "applyDamage modifies player.health — caller doesn't expect the object to change",
+    "smt2": "(declare-const health_before Int)\n(declare-const health_after Int)\n(declare-const expected Int)\n(assert (not (= health_after health_before)))\n(assert (= expected 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "low"
+}

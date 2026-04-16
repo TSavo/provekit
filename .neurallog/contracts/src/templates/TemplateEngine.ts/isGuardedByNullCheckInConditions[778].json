@@ -1,0 +1,29 @@
+{
+  "key": "src/templates/TemplateEngine.ts/isGuardedByNullCheckInConditions[778]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "isGuardedByNullCheckInConditions",
+  "line": 778,
+  "signal_hash": "a3e4af8580b19c20c9cff5f0a1effcd9aa17786e61ae14fbf4656511e961e01a",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at isGuardedByNullCheckInConditions",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 778\n; VIOLATION: Empty Collection Loop at isGuardedByNullCheckInConditions\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 778\n; VIOLATION: Empty Collection Loop at isGuardedByNullCheckInConditions\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "key": "src/cli.ts/runReport[471]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "runReport",
+  "line": 471,
+  "signal_hash": "f585198bc99024bae4f94a48765042a11516ce297c5009e9ecca241779dc984d",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at runReport",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 471\n; VIOLATION: Empty Collection Loop at runReport\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/cli.ts/getConfidence[418]",
+    "src/cli.ts/getConfidence[419]",
+    "src/pipeline/Phase.ts/log[18]",
+    "src/cli.ts/resolveProjectRoot[600]",
+    "src/cli.ts/resolveProjectRoot[601]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 471\n; VIOLATION: Empty Collection Loop at runReport\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

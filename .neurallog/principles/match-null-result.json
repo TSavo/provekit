@@ -1,0 +1,30 @@
+{
+  "id": "match-null-result",
+  "name": "Regex Match Null Result",
+  "description": "String.match() or RegExp.exec() result accessed without null check. Returns null when no match found.",
+  "astPatterns": [
+    {
+      "nodeType": "call_expression",
+      "method": "match",
+      "requiresParamRef": true,
+      "guardPatterns": [
+        "!== null",
+        "!= null"
+      ]
+    }
+  ],
+  "smt2Template": "(declare-const match_found Int)\n(declare-const result_accessed Int)\n(assert (= match_found 0))\n(assert (= result_accessed 1))\n(check-sat)",
+  "teachingExample": {
+    "domain": "log parsing",
+    "explanation": "log line match result indexed without null check — crashes on non-matching lines",
+    "smt2": "(declare-const line_matches Int)\n(declare-const index_accessed Int)\n(assert (= line_matches 0))\n(assert (= index_accessed 1))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "smt2ProofTemplate": "(declare-const match_found Int)\n; Guard: null check before access\n(assert (not (= match_found 0)))\n; Can match be null?\n(assert (= match_found 0))\n(check-sat)\n; unsat → proven: null check guards match result",
+  "confidence": "high"
+}

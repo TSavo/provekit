@@ -1,0 +1,29 @@
+{
+  "key": "src/checkers/Checker.ts/namespaceBlock[63]",
+  "file": "/Users/tsavo/Projects/neurallog/src/checkers/Checker.ts",
+  "function": "namespaceBlock",
+  "line": 63,
+  "signal_hash": "36ce33f8b384faf961556e2dbf6b3075303f3c92767e92ea9c70ca392eee6151",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at namespaceBlock",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 63\n; VIOLATION: Empty Collection Loop at namespaceBlock\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 63\n; VIOLATION: Empty Collection Loop at namespaceBlock\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

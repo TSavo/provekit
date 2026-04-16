@@ -1,0 +1,11 @@
+{
+  "key": "src/contracts.ts/signalKeyToPath[46]",
+  "file": "/Users/tsavo/Projects/neurallog/src/contracts.ts",
+  "function": "signalKeyToPath",
+  "line": 46,
+  "signal_hash": "1b6d5dae1cc905aa7555853beb7ed56db5be3e82178cff0e06359342b31ae7b8",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

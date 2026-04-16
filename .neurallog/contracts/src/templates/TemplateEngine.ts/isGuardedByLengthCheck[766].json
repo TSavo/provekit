@@ -1,0 +1,29 @@
+{
+  "key": "src/templates/TemplateEngine.ts/isGuardedByLengthCheck[766]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "isGuardedByLengthCheck",
+  "line": 766,
+  "signal_hash": "dd84541df49f9bfa20ae48aaea1b5116cacec46937270aed1e576d0dca3a3a49",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at isGuardedByLengthCheck",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 766\n; VIOLATION: Empty Collection Loop at isGuardedByLengthCheck\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 766\n; VIOLATION: Empty Collection Loop at isGuardedByLengthCheck\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

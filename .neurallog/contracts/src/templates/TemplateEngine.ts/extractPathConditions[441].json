@@ -1,0 +1,37 @@
+{
+  "key": "src/templates/TemplateEngine.ts/extractPathConditions[441]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "extractPathConditions",
+  "line": 441,
+  "signal_hash": "a8defa117c94c744c20dad8959ba289977647f80dd97a265d29571ff6184a799",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at extractPathConditions",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; VIOLATION: Empty Collection Loop at extractPathConditions\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/templates/TemplateEngine.ts/blockReturnsOrThrows[842]",
+    "src/templates/TemplateEngine.ts/blockReturnsOrThrows[843]",
+    "src/templates/TemplateEngine.ts/blockReturnsOrThrows[844]",
+    "src/templates/TemplateEngine.ts/blockReturnsOrThrows[845]",
+    "src/templates/TemplateEngine.ts/blockReturnsOrThrows[847]",
+    "src/templates/TemplateEngine.ts/blockReturnsOrThrows[849]",
+    "src/templates/TemplateEngine.ts/isDescendant[354]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; VIOLATION: Empty Collection Loop at extractPathConditions\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

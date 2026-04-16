@@ -1,0 +1,32 @@
+{
+  "id": "division-by-zero",
+  "name": "Division by Zero",
+  "description": "Division where the denominator derives from a parameter or external input and no guard ensures it is non-zero.",
+  "astPatterns": [
+    {
+      "nodeType": "binary_expression",
+      "operator": "/",
+      "requiresParamRef": true,
+      "guardPatterns": [
+        "!= 0",
+        "!== 0",
+        "> 0",
+        ">= 1"
+      ]
+    }
+  ],
+  "smt2Template": "(declare-const {{numerator}} Int)\n(declare-const {{denominator}} Int)\n(assert (= {{denominator}} 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "analytics",
+    "explanation": "compute_average divides total by count with no zero guard",
+    "smt2": "(declare-const total Int)\n(declare-const count Int)\n(assert (= count 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "smt2ProofTemplate": "(declare-const {{numerator}} Int)\n(declare-const {{denominator}} Int)\n; Guard: path condition ensures {{denominator}} != 0\n(assert (not (= {{denominator}} 0)))\n; Can {{denominator}} still be zero?\n(assert (= {{denominator}} 0))\n(check-sat)\n; unsat → proven: guard prevents division by zero",
+  "confidence": "high"
+}

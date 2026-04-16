@@ -1,22 +1,26 @@
 import { writeFileSync } from "fs";
 import { join } from "path";
 import { Phase, PhaseResult, PhaseOptions } from "./Phase";
-import { applyAxioms, checkConsistency, AxiomResult } from "../axiom-engine";
 import { ContractStore, Contract } from "../contracts";
 import { IgnoreFilter } from "../git";
+import {
+  Checker, CheckResult,
+  ConsistencyChecker,
+  EntailmentChecker,
+  ReachabilityChecker,
+  StrengtheningChecker,
+  IndependenceChecker,
+  TemplateChecker,
+} from "../checkers";
 
 export interface AxiomReport {
   contractCount: number;
-  axiomChecks: number;
-  proven: number;
-  violations: number;
-  errors: number;
-  unverified: number;
+  checkerResults: { checker: string; proven: number; violations: number; errors: number; results: CheckResult[] }[];
+  totalProven: number;
+  totalViolations: number;
+  totalErrors: number;
   ignored: number;
-  consistency: string;
-  consistencyDetail: string;
   staleContracts: number;
-  results: AxiomResult[];
   reportedAt: string;
 }
 
@@ -25,7 +29,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
   readonly phaseNumber = 5;
 
   execute(_input: void, options: PhaseOptions): PhaseResult<AxiomReport> {
-    this.log("Mechanical axiom application (no LLM, no network, pure Z3)...");
+    this.log("Mechanical verification (no LLM, no network, pure Z3)...");
 
     const store = new ContractStore(options.projectRoot);
     const allContracts = store.getAll();
@@ -49,62 +53,59 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
       this.detail("No contracts to verify.");
       console.log();
       const report: AxiomReport = {
-        contractCount: 0, axiomChecks: 0, proven: 0, violations: 0,
-        errors: 0, unverified: 0, ignored, consistency: "n/a", consistencyDetail: "",
-        staleContracts: 0, results: [],
-        reportedAt: new Date().toISOString(),
+        contractCount: 0, checkerResults: [], totalProven: 0, totalViolations: 0,
+        totalErrors: 0, ignored, staleContracts: 0, reportedAt: new Date().toISOString(),
       };
       const outPath = join(options.projectRoot, ".neurallog", "report.json");
       writeFileSync(outPath, JSON.stringify(report, null, 2));
       return { data: report, writtenTo: outPath };
     }
 
-    this.detail(`Running axiom templates against ${contracts.length} contracts...`);
-    const axiomStart = Date.now();
-    const results = applyAxioms(contracts);
+    const callGraph = this.buildCallGraph(contracts);
 
-    let proven = 0;
-    let violations = 0;
-    let errors = 0;
+    const checkers: Checker[] = [
+      new TemplateChecker(),
+      new ConsistencyChecker(),
+      new EntailmentChecker(),
+      new ReachabilityChecker(),
+      new StrengtheningChecker(),
+      new IndependenceChecker(),
+    ];
 
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i]!;
-      if (i % 500 === 0 && i > 0 && results.length > 100) {
-        const pct = Math.round((i / results.length) * 100);
-        console.log(`  Checking... ${i}/${results.length} (${pct}%)`);
+    const checkerResults: AxiomReport["checkerResults"] = [];
+    let totalProven = 0;
+    let totalViolations = 0;
+    let totalErrors = 0;
+
+    for (const checker of checkers) {
+      const startTime = Date.now();
+      console.log(`  [${checker.name}] running...`);
+
+      const results = checker.check(contracts, callGraph);
+      const elapsed = Date.now() - startTime;
+
+      let proven = 0;
+      let violations = 0;
+      let errors = 0;
+
+      for (const r of results) {
+        if (r.verdict === "proven") {
+          proven++;
+        } else if (r.verdict === "violation") {
+          violations++;
+          this.detail(`  ✗ [${checker.name}] ${r.description}`);
+        } else {
+          errors++;
+        }
       }
-      if (r.verdict === "proven") {
-        proven++;
-      } else if (r.verdict === "violation") {
-        violations++;
-        this.detail(`✗ [${r.axiom}] ${r.description}`);
-      } else {
-        errors++;
-        this.detail(`⚠ [${r.axiom}] ${r.description} -- ${r.error?.slice(0, 60)}`);
-      }
-    }
-    if (results.length > 100) {
-      process.stdout.write(`\r  ${results.length} checks complete in ${this.formatDuration(Date.now() - axiomStart)}                    \n`);
-    }
 
-    console.log();
+      console.log(`  [${checker.name}] ${this.formatDuration(elapsed)}: ${proven} proven, ${violations} violations, ${errors} errors`);
 
-    const unverified = results.filter((r) => r.z3Result === "unknown").length;
+      totalProven += proven;
+      totalViolations += violations;
+      totalErrors += errors;
 
-    this.detail("Checking consistency...");
-    const consistency = checkConsistency(contracts);
-    const consistencyResult = consistency[0]?.verdict || "n/a";
-    let consistencyDetail = "";
-    for (const c of consistency) {
-      if (c.verdict === "proven") {
-        this.detail(`✓ ${c.description}`);
-      } else if (c.verdict === "violation") {
-        this.detail(`✗ INCONSISTENCY: ${c.description}`);
-        consistencyDetail = c.error || c.smt2?.slice(0, 500) || c.description;
-      } else {
-        this.detail(`⚠ ${c.description} -- ${c.error?.slice(0, 120)}`);
-        if (!consistencyDetail) consistencyDetail = c.error || "";
-      }
+      checkerResults.push({ checker: checker.name, proven, violations, errors, results });
     }
 
     this.detail("Checking dependency chain...");
@@ -118,27 +119,20 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
     }
 
     console.log();
-    this.detail(`${contracts.length} contracts, ${results.length} checks`);
-    this.detail(`${proven} proven | ${violations} violations | ${unverified} unverified | ${errors} errors${ignored > 0 ? ` | ${ignored} ignored` : ""}`);
-    this.detail(`Consistency: ${consistencyResult} | Stale: ${stale.length}`);
-    if (consistencyDetail) {
-      this.detail(`Consistency detail: ${consistencyDetail.slice(0, 200)}`);
-    }
+    this.detail(`${contracts.length} contracts, ${checkers.length} checkers`);
+    this.detail(`${totalProven} proven | ${totalViolations} violations | ${totalErrors} errors${ignored > 0 ? ` | ${ignored} ignored` : ""}`);
+    this.detail(`Stale: ${stale.length}`);
     this.detail("No LLM was used.");
     console.log();
 
     const report: AxiomReport = {
       contractCount: contracts.length,
-      axiomChecks: results.length,
-      proven,
-      violations,
-      errors,
-      unverified,
+      checkerResults,
+      totalProven,
+      totalViolations,
+      totalErrors,
       ignored,
-      consistency: consistencyResult,
-      consistencyDetail,
       staleContracts: stale.length,
-      results,
       reportedAt: new Date().toISOString(),
     };
 
@@ -146,6 +140,25 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
     writeFileSync(outPath, JSON.stringify(report, null, 2));
 
     return { data: report, writtenTo: outPath };
+  }
+
+  private buildCallGraph(contracts: Contract[]): Map<string, string[]> {
+    const graph = new Map<string, string[]>();
+    for (const c of contracts) {
+      const fnKey = `${c.file}/${c.function}`;
+      if (!graph.has(fnKey)) graph.set(fnKey, []);
+      for (const dep of c.depends_on) {
+        const depParts = dep.match(/^(.+)\/([^/]+)\[\d+\]$/);
+        if (depParts && depParts[2]) {
+          const depFn = depParts[2];
+          const fnList = graph.get(fnKey);
+          if (fnList && !fnList.includes(depFn)) {
+            fnList.push(depFn);
+          }
+        }
+      }
+    }
+    return graph;
   }
 
   private formatDuration(ms: number): string {

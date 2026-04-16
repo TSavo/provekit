@@ -1,0 +1,34 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/buildContracts[513]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "buildContracts",
+  "line": 513,
+  "signal_hash": "218508ef6fe32352aa5dcc87ba4f678467d7cc072a837ebcc984e33eb58b4317",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "ternary-branch-collapse",
+      "principle_hash": "",
+      "claim": "VIOLATION: ternary-branch-collapse at buildContracts",
+      "smt2": "; PRINCIPLE: ternary-branch-collapse\n; LINE: 513\n; VIOLATION: ternary-branch-collapse at buildContracts\n(declare-const counter_513 Int)\n(declare-const branch_taken Int)\n(declare-const output_meaningful Int)\n(assert (>= counter_513 0))\n; branch_taken = 1 when counter == 1 (consequent), 0 otherwise (alternate)\n(assert (= branch_taken (ite (= counter_513 1) 1 0)))\n; both branches emit empty string — output is never meaningful\n(assert (= output_meaningful 0))\n; can we reach the plural branch with a non-trivial counter and still get no useful output?\n(assert (> counter_513 1))\n(check-sat)",
+      "witness": "(\n  (define-fun counter_513 () Int\n    2)\n  (define-fun branch_taken () Int\n    0)\n  (define-fun output_meaningful () Int\n    0)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[557]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[558]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[559]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[561]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: ternary-branch-collapse\n; LINE: 513\n; VIOLATION: ternary-branch-collapse at buildContracts\n(declare-const counter_513 Int)\n(declare-const branch_taken Int)\n(declare-const output_meaningful Int)\n(assert (>= counter_513 0))\n; branch_taken = 1 when counter == 1 (consequent), 0 otherwise (alternate)\n(assert (= branch_taken (ite (= counter_513 1) 1 0)))\n; both branches emit empty string — output is never meaningful\n(assert (= output_meaningful 0))\n; can we reach the plural branch with a non-trivial counter and still get no useful output?\n(assert (> counter_513 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

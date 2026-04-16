@@ -1,0 +1,26 @@
+{
+  "key": "src/git/DiffAnalyzer.ts/parseDiff[105]",
+  "file": "/Users/tsavo/Projects/neurallog/src/git/DiffAnalyzer.ts",
+  "function": "parseDiff",
+  "line": 105,
+  "signal_hash": "b58398e1bc0879b102e2aa037b399cb18ec660b6d1a6c1457d00fbc209c2df9c",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at parseDiff",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 105\n; PROVEN: Unguarded Non-Null Assertion at parseDiff\n(declare-const expr_104_21_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_104_21_is_null 0))\n; Can value still be null?\n(assert (= expr_104_21_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 105\n; PROVEN: Unguarded Non-Null Assertion at parseDiff\n(declare-const expr_104_21_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_104_21_is_null 0))\n; Can value still be null?\n(assert (= expr_104_21_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

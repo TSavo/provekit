@@ -1,0 +1,21 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/extractASTContext[596]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "extractASTContext",
+  "line": 596,
+  "signal_hash": "532c10a48d20adc5633532300c704921fd75ddd1dfa3c0d6095bb5819164bf04",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/parser.ts/findEnclosingFunction[111]",
+    "src/parser.ts/findEnclosingFunction[120]",
+    "src/pipeline/DerivationPhase.ts/findEnclosingFunction[651]",
+    "src/pipeline/DerivationPhase.ts/findEnclosingFunction[652]",
+    "src/pipeline/DerivationPhase.ts/findNode[574]",
+    "src/pipeline/DerivationPhase.ts/findNode[576]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[659]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[660]",
+    "src/pipeline/DerivationPhase.ts/nodeReferencesParam[661]"
+  ],
+  "clause_history": []
+}

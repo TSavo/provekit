@@ -1,0 +1,29 @@
+{
+  "key": "src/cli.ts/findProjectRoot[608]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "findProjectRoot",
+  "line": 608,
+  "signal_hash": "9c4c74228a9bffde3de1f672bfab76af06f76d661affc599f171d59ece29cbf5",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at findProjectRoot",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 608\n; VIOLATION: Empty Collection Loop at findProjectRoot\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 608\n; VIOLATION: Empty Collection Loop at findProjectRoot\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

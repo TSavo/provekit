@@ -3,20 +3,29 @@
   "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
   "function": "runReport",
   "line": 440,
-  "signal_hash": "790d23a62c46f6732d1aedc9d5a26d59fc2be79bf9ccb7a8473923f145f1bbb7",
-  "proven": [
+  "signal_hash": "348118af24a4335503e42e850c37144eedfa8ff2f7550ebc9c844548566b993d",
+  "proven": [],
+  "violations": [
     {
-      "principle": "P6",
-      "principle_hash": "c58bc6f165c116c7ffcc8d10caa4b94ce965a05ff0a4b2965f316ee4b5a058be",
-      "claim": "PROVEN: 0 <= totalUnverified <= contracts.length",
-      "smt2": "; PRINCIPLE: P6\n; LINE: 440\n; PROVEN: 0 <= totalUnverified <= contracts.length\n; Each contract contributes at most 1 to totalUnverified (boolean increment)\n(declare-const contracts_length Int)\n(declare-const total_unverified Int)\n(declare-const increment_count Int)  ; number of contracts where isUnverified = true\n; Code transition: contracts_length > 0 (guard passed)\n(assert (> contracts_length 0))\n; Code transition: each loop iteration contributes 0 or 1 to totalUnverified\n; so increment_count is bounded by the number of iterations\n(assert (>= increment_count 0))\n(assert (<= increment_count contracts_length))\n; Code transition: totalUnverified = increment_count\n(assert (= total_unverified increment_count))\n; Negated property: total_unverified > contracts_length\n(assert (> total_unverified contracts_length))\n(check-sat)"
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at runReport",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 440\n; VIOLATION: Empty Collection Loop at runReport\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
     }
   ],
-  "violations": [],
-  "depends_on": [],
+  "depends_on": [
+    "src/cli.ts/getConfidence[418]",
+    "src/cli.ts/getConfidence[419]",
+    "src/pipeline/Phase.ts/log[18]",
+    "src/cli.ts/resolveProjectRoot[600]",
+    "src/cli.ts/resolveProjectRoot[601]"
+  ],
   "clause_history": [
     {
-      "clause": "; PRINCIPLE: P6\n; LINE: 440\n; PROVEN: 0 <= totalUnverified <= contracts.length\n; Each contract contributes at most 1 to totalUnverified (boolean increment)\n(declare-const contracts_length Int)\n(declare-const total_unverified Int)\n(declare-const increment_count Int)  ; number of contracts where isUnverified = true\n; Code transition: contracts_length > 0 (guard passed)\n(assert (> contracts_length 0))\n; Code transition: each loop iteration contributes 0 or 1 to totalUnverified\n; so increment_count is bounded by the number of iterations\n(assert (>= increment_count 0))\n(assert (<= increment_count contracts_length))\n; Code transition: totalUnverified = increment_count\n(assert (= total_unverified increment_count))\n; Negated property: total_unverified > contracts_length\n(assert (> total_unverified contracts_length))\n(check-sat)",
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 440\n; VIOLATION: Empty Collection Loop at runReport\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
       "status": "active",
       "weaken_step": 0,
       "witness_count_at_last_weaken": 0,

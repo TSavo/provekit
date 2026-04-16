@@ -1,6 +1,6 @@
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "fs";
 import { resolve, dirname, join, relative } from "path";
 import { createHash } from "crypto";
 import { Phase, PhaseResult, PhaseOptions } from "./Phase";
@@ -120,13 +120,21 @@ export class DependencyPhase extends Phase<DependencyInput, DependencyGraph> {
     const tree = parser.parse(source);
 
     const imports = this.findImports(tree, filePath);
-    const signals = signalRegistry.findAll(filePath, source, tree);
+
+    let signalCount: number;
+    if (signalRegistry.hasAsyncGenerators()) {
+      const fnCount = this.countFunctions(tree.rootNode);
+      signalCount = fnCount;
+    } else {
+      const signals = signalRegistry.findAll(filePath, source, tree);
+      signalCount = signals.length;
+    }
 
     const node: FileNode = {
       path: filePath,
       relativePath: relative(projectRoot, filePath),
       imports: imports.map((i) => i.resolvedPath),
-      signalCount: signals.length,
+      signalCount,
       hash,
     };
 
@@ -137,12 +145,29 @@ export class DependencyPhase extends Phase<DependencyInput, DependencyGraph> {
     }
   }
 
+  private countFunctions(root: Parser.SyntaxNode): number {
+    let count = 0;
+    const visit = (node: Parser.SyntaxNode): void => {
+      if (
+        node.type === "function_declaration" ||
+        node.type === "method_definition" ||
+        node.type === "arrow_function" ||
+        node.type === "function_expression"
+      ) {
+        count++;
+      }
+      for (const child of node.children) visit(child);
+    };
+    visit(root);
+    return count;
+  }
+
   private findImports(tree: Parser.Tree, filePath: string): { specifier: string; resolvedPath: string }[] {
     const imports: { specifier: string; resolvedPath: string }[] = [];
     const dir = dirname(filePath);
 
     const visit = (node: Parser.SyntaxNode): void => {
-      if (node.type === "import_statement") {
+      if (node.type === "import_statement" || node.type === "export_statement") {
         const source = node.childForFieldName("source");
         if (source) {
           const specifier = source.text.replace(/^['"`]|['"`]$/g, "");
@@ -177,7 +202,11 @@ export class DependencyPhase extends Phase<DependencyInput, DependencyGraph> {
     if (!specifier.startsWith(".") && !specifier.startsWith("/")) return null;
 
     const base = resolve(fromDir, specifier);
-    const extensions = ["", ".ts", ".tsx", ".js", ".jsx"];
+    const extensions = [".ts", ".tsx", ".js", ".jsx"];
+
+    try {
+      if (existsSync(base) && statSync(base).isFile()) return base;
+    } catch (e: any) { console.log(`[deps] stat ${base}: ${e?.message?.slice(0, 40)}`); }
 
     for (const ext of extensions) {
       const candidate = base + ext;

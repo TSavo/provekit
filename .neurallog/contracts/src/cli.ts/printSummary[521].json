@@ -1,0 +1,13 @@
+{
+  "key": "src/cli.ts/printSummary[521]",
+  "file": "/Users/tsavo/Projects/neurallog/src/cli.ts",
+  "function": "printSummary",
+  "line": 521,
+  "signal_hash": "cbf12d540ec192fddd8474fcd4022993fde687e71885c7d2c9a8ce160ff695b6",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]"
+  ],
+  "clause_history": []
+}

@@ -1,0 +1,16 @@
+{
+  "key": "src/pipeline/DerivationPhase.ts/buildContracts[504]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DerivationPhase.ts",
+  "function": "buildContracts",
+  "line": 504,
+  "signal_hash": "921b60450baf182d2009c8856774d0e54c174594947e2860e4b2fcca8d42cb00",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[557]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[558]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[559]",
+    "src/pipeline/DerivationPhase.ts/resolvePrincipleHash[561]"
+  ],
+  "clause_history": []
+}

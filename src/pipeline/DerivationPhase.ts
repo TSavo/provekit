@@ -1,19 +1,22 @@
+import Parser from "tree-sitter";
 import { writeFileSync, mkdirSync, readFileSync } from "fs";
 import { join, dirname, relative } from "path";
 import { createHash } from "crypto";
 import Handlebars from "handlebars";
 import { Phase, PhaseResult, PhaseOptions } from "./Phase";
 import { ContextBundle, CallSiteContext } from "./ContextPhase";
-import { verifyAll, VerificationResult } from "../verifier";
+import { verifyAll, verifyBlock, VerificationResult, proofComplexity } from "../verifier";
 import { PrincipleStore } from "../principles";
 import { Contract, ContractStore, signalKey, ClauseHistory, ProvenProperty, Violation } from "../contracts";
 import { computeSignalHash } from "../signals";
+import { parseFile } from "../parser";
 import { LLMProvider, createProvider } from "../llm";
 import { classifyAndGeneralize } from "../principles";
-import { ObservationStore } from "../observations";
+import { ObservationStore, ASTContext } from "../observations";
 import { DagExecutor } from "./DagExecutor";
 import { buildSignalFrame } from "./PromptStrategy";
 import { assembleDossier, formatDossier } from "./Dossier";
+import { TemplateEngine } from "../templates";
 
 export interface DerivationOutput {
   contracts: Contract[];
@@ -129,11 +132,18 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
     console.log(`  One LLM call per function. Each function waits for functions it calls to resolve.`);
     console.log();
 
+    const templateEngine = new TemplateEngine(options.projectRoot);
     const allContracts: Contract[] = [];
     const allNewViolations: { violation: VerificationResult; context: string }[] = [];
+    const allUnverifiedSignals: {
+      signalKey: string; line: number; signalType: string; signalText: string;
+      astContext: ASTContext; functionName: string; filePath: string;
+    }[] = [];
     let completedFunctions = 0;
+    let totalTemplateProofs = 0;
     const startTime = Date.now();
-    const principleCount = principleStore.getPrincipleCount();
+    const allPrinciples = principleStore.getAll();
+    const principleList = allPrinciples.map((p) => `- ${p.id}: ${p.name}`).join("\n");
     const systemPrompt = `You are a formal verification engine. Produce SMT-LIB 2 formulas.
 
 Every block MUST:
@@ -142,7 +152,18 @@ Every block MUST:
 - Tag with ; PRINCIPLE: <id> or [NEW]
 - Tag with ; LINE: <number>
 
-There are ${principleCount} known principles (P1-P${principleCount}). If a violation genuinely does not fit ANY existing principle — do NOT stretch a principle to fit. Tag it [NEW]. Novel patterns are valuable. Examples of [NEW]: resource lifecycle (open without close), state machine violations (invalid transitions), ordering constraints, information flow, idempotency failures. If you have to argue why a principle applies, it's [NEW].`;
+Known principles:
+${principleList}
+
+Tag each block with the principle ID it matches. If a violation genuinely does not fit ANY known principle — do NOT stretch a principle to fit. Tag it [NEW]. Novel patterns are valuable — they become new principles automatically.
+
+When you tag [NEW], the system will:
+1. Save it as an observation with its AST context
+2. Look for similar observations across other functions
+3. When enough cluster, extract the common pattern into a new principle
+4. That principle becomes a mechanical template — no LLM needed next time
+
+So every [NEW] tag teaches the system something it will remember forever. Be eager to tag [NEW] when the pattern is genuinely novel.`;
 
     await dag.execute(async (node, resolvedDeps) => {
       const fn = node.data;
@@ -159,22 +180,75 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
       console.log(`  [${completedFunctions}/${functionNodes.size}] (${pct}%) ${fn.relativePath}/${fn.functionName} — ${fn.signals.length} signals, ${resolvedDeps.size} deps`);
 
       const callSites = fn.signals.map((s) => s.callSite);
-      const signalFrame = buildSignalFrame(callSites);
-      const dossier = assembleDossier(callSites, fn.filePath, options.projectRoot, store);
-      const dossierText = formatDossier(dossier);
 
-      const observationsContext = observationStore.formatForPrompt();
+      // Step 1: Run mechanical templates — instant, no LLM
+      const fnNode = this.findFunctionNode(fn, options.projectRoot);
+      const templateResults = fnNode
+        ? templateEngine.generateProofs(fnNode, fn.functionName, fn.relativePath)
+        : [];
 
-      const deriveStart = Date.now();
-      const prompt = this.buildPrompt(callSites[0]!, fn.filePath, contextAccumulated, discoveredPrinciples + observationsContext, signalFrame, dossierText);
-      const response = await provider.complete(prompt, { model, systemPrompt });
-      const deriveMs = Date.now() - deriveStart;
+      const templateVerifications: VerificationResult[] = [];
+      for (const tr of templateResults) {
+        const { result, error, witness } = verifyBlock(tr.smt2);
+        templateVerifications.push({
+          smt2: tr.smt2,
+          z3Result: result,
+          principle: tr.principle,
+          error,
+          witness,
+          complexity: proofComplexity(tr.smt2),
+          confidence: tr.confidence,
+        });
+      }
+      totalTemplateProofs += templateVerifications.filter((v) => v.z3Result === "sat" || v.z3Result === "unsat").length;
 
-      const verifyStart = Date.now();
-      const verifications = verifyAll(response.text);
-      const verifyMs = Date.now() - verifyStart;
+      // Step 2: Build template context for the LLM — show what's already proven
+      const templateContext = templateVerifications.length > 0
+        ? "\n\n#### Mechanical proofs (already verified by Z3 — do NOT re-derive these):\n" +
+          templateVerifications.map((v) => {
+            const claim = v.smt2.split("\n").find((l) => l.startsWith("; ") && !l.startsWith("; PRINCIPLE") && !l.startsWith("; LINE"))?.replace(/^;\s*/, "") || "";
+            return `  ${v.z3Result}: ${claim.slice(0, 80)}`;
+          }).join("\n")
+        : "";
+
+      // Step 3: Record uncovered signals for pattern-gap discovery
+      const templateCoveredLines = new Set(templateVerifications.filter((v) => v.z3Result === "sat" || v.z3Result === "unsat").map((v) => {
+        const lineMatch = v.smt2.match(/;\s*LINE:\s*(\d+)/i);
+        return lineMatch ? parseInt(lineMatch[1]!, 10) : -1;
+      }));
+      const uncoveredSignals = callSites.filter((cs) => !templateCoveredLines.has(cs.line));
+
+      if (uncoveredSignals.length > 0) {
+        for (const cs of uncoveredSignals) {
+          const astCtx = this.extractASTContext(fn.filePath, cs.line, fnNode);
+          if (astCtx) {
+            allUnverifiedSignals.push({
+              signalKey: `${fn.relativePath}/${fn.functionName}[${cs.line}]`,
+              line: cs.line,
+              signalType: cs.signalType,
+              signalText: cs.signalText,
+              astContext: astCtx,
+              functionName: fn.functionName,
+              filePath: fn.filePath,
+            });
+          }
+        }
+        console.log(`    ${templateVerifications.length} template, ${uncoveredSignals.length} uncovered (queued for pattern-gap analysis)`);
+      } else {
+        console.log(`    ${templateVerifications.length} template, all signals covered`);
+      }
+
+      const verifications = [...templateVerifications];
 
       const contracts = this.buildContracts(fn, verifications, depKeys, principleStore);
+
+      const newKeys = new Set(contracts.map((c) => c.key));
+      const existingForFn = store.getAll().filter((c) =>
+        c.file === fn.filePath && c.function === fn.functionName && !newKeys.has(c.key)
+      );
+      for (const stale of existingForFn) {
+        store.remove(stale.key);
+      }
 
       for (const contract of contracts) {
         store.put(contract);
@@ -185,12 +259,14 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
         for (const v of contract.violations) {
           if (!v.principle?.toUpperCase().includes("NEW")) continue;
 
+          const astContext = this.extractASTContext(fn.filePath, contract.line, fnNode);
           const obsId = observationStore.nextId();
           observationStore.add({
             id: obsId,
             signalKey: contract.key,
             claim: v.claim,
             smt2: v.smt2,
+            astContext,
             rejectedPrincipleName: "",
             rejectedPrincipleDescription: "",
             adversaryFeedback: "",
@@ -198,7 +274,7 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
           });
           console.log(`    [NEW] observation ${obsId} in ${contract.key} — attempting to generalize into principle...`);
 
-          const violation = { smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined };
+          const violation = { smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined, complexity: 0 };
           const principle = await classifyAndGeneralize(
             violation, contract.key, principleStore.getAll(), model, provider
           );
@@ -219,7 +295,8 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
       }
 
       const totalProofs = contracts.reduce((n, c) => n + c.proven.length + c.violations.length, 0);
-      console.log(`    derived ${this.formatDuration(deriveMs)} -> verified ${this.formatDuration(verifyMs)} -> ${contracts.length} contracts, ${totalProofs} proofs`);
+      const tpCount = templateVerifications.filter((v) => v.z3Result === "sat" || v.z3Result === "unsat").length;
+      console.log(`    ${tpCount} template -> ${contracts.length} contracts, ${totalProofs} proofs`);
 
       return contracts;
     }, (fnKey, contracts) => {
@@ -227,7 +304,7 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
       for (const c of contracts) {
         const newViolations = c.violations
           .filter((v) => v.principle?.toUpperCase().includes("NEW"))
-          .map((v) => ({ violation: { smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined }, context: c.key }));
+          .map((v) => ({ violation: { smt2: v.smt2, z3Result: "sat" as const, principle: v.principle, error: undefined, complexity: 0 }, context: c.key }));
         allNewViolations.push(...newViolations);
       }
       const p = contracts.reduce((n, c) => n + c.proven.length, 0);
@@ -236,6 +313,114 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
         console.log(`    >> ${fnKey}: ${p} proven, ${v} violations`);
       }
     });
+
+    // Pattern-gap discovery: cluster unverified signals by AST shape
+    if (allUnverifiedSignals.length > 0) {
+      console.log(`  Pattern gaps: ${allUnverifiedSignals.length} unverified signals across ${functionNodes.size} functions`);
+
+      const gaps = new Map<string, typeof allUnverifiedSignals>();
+      for (const sig of allUnverifiedSignals) {
+        const key = `${sig.astContext.nodeType}:${sig.astContext.operator || ""}:${sig.astContext.method || ""}`;
+        if (!gaps.has(key)) gaps.set(key, []);
+        gaps.get(key)!.push(sig);
+      }
+
+      const MIN_CLUSTER = 3;
+      for (const [gapKey, signals] of gaps) {
+        if (signals.length < MIN_CLUSTER) {
+          console.log(`    gap ${gapKey}: ${signals.length} signals (below threshold ${MIN_CLUSTER}, accumulating)`);
+          for (const sig of signals) {
+            observationStore.add({
+              id: observationStore.nextId(),
+              signalKey: sig.signalKey,
+              claim: `Unverified: ${sig.signalText.slice(0, 80)}`,
+              smt2: "",
+              astContext: sig.astContext,
+              rejectedPrincipleName: "",
+              rejectedPrincipleDescription: "",
+              adversaryFeedback: "",
+              observedAt: new Date().toISOString(),
+            });
+          }
+          continue;
+        }
+
+        console.log(`    gap ${gapKey}: ${signals.length} signals — triggering LLM for new principle...`);
+
+        const examples = signals.slice(0, 5).map((s, i) =>
+          `${i + 1}. ${s.signalKey} [${s.signalType}]: ${s.signalText.slice(0, 100)}\n   AST: ${JSON.stringify(s.astContext)}`
+        ).join("\n");
+
+        const existingList = principleStore.getAll().map((p) =>
+          `- ${p.id}: ${p.name}`
+        ).join("\n");
+
+        const exemplars = principleStore.getAll().filter((p) => p.astPatterns && p.smt2Template).slice(0, 3);
+        const exemplarText = exemplars.map((p) =>
+          `### ${p.id}: ${p.name}\nDescription: ${p.description}\nastPatterns: ${JSON.stringify(p.astPatterns, null, 2)}\nsmt2Template: ${p.smt2Template}\nTeaching example (${p.teachingExample.domain}): ${p.teachingExample.explanation}\nTeaching SMT-LIB:\n${p.teachingExample.smt2}`
+        ).join("\n\n");
+
+        try {
+          const response = await provider.complete(`You are discovering a new atomic verification principle.
+
+## Pattern gap
+
+${signals.length} code locations share the same AST shape but no existing principle covers them:
+
+${examples}
+
+Common AST shape: ${gapKey}
+
+## Existing principles (yours must be DIFFERENT)
+${existingList}
+
+## Examples of existing principle structure
+${exemplarText}
+
+## Your task
+
+Produce ONE atomic principle for this pattern gap. It must have:
+- A short name (2-4 words)
+- A description stating the exact bug pattern
+- An astPatterns array matching the AST shape above
+- An smt2Template with {{variable}} holes that Z3 can check after filling
+- A teachingExample in a completely different domain
+
+\`\`\`json
+{
+  "name": "...",
+  "description": "...",
+  "astPatterns": [{"nodeType": "...", ...}],
+  "smt2Template": "...",
+  "teachingExample": {"domain": "...", "explanation": "...", "smt2": "..."}
+}
+\`\`\``, { model, systemPrompt: "You produce atomic verification principles — one AST pattern, one Z3 template, one bug. Respond with JSON only." });
+
+          const jsonMatch = response.text.match(/```json\s*([\s\S]*?)```/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[1]!.trim());
+            const newPrinciple = {
+              id: parsed.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
+              name: parsed.name,
+              description: parsed.description,
+              astPatterns: parsed.astPatterns,
+              smt2Template: parsed.smt2Template,
+              teachingExample: parsed.teachingExample,
+              provenance: {
+                discoveredIn: signals.map((s) => s.signalKey).slice(0, 5).join(", "),
+                violation: `Discovered from ${signals.length} unverified signals`,
+                generalizedAt: new Date().toISOString(),
+              },
+              validated: true,
+            };
+            principleStore.add(newPrinciple);
+            console.log(`    DISCOVERED: ${newPrinciple.id} — ${newPrinciple.name} (from ${signals.length} signals)`);
+          }
+        } catch (err: any) {
+          console.log(`    ERROR discovering principle for ${gapKey}: ${err.message?.slice(0, 60)}`);
+        }
+      }
+    }
 
     const output: DerivationOutput = {
       contracts: allContracts,
@@ -316,11 +501,18 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
   ): Contract[] {
     const contracts: Contract[] = [];
 
+    const signalLines = fn.signals.map((s) => s.callSite.line);
+
     for (const { callSite, key } of fn.signals) {
       const lineVerifications = verifications.filter((v) => {
         const lineMatch = v.smt2.match(/;\s*LINE:\s*(\d+)/i);
-        if (lineMatch) return parseInt(lineMatch[1]!, 10) === callSite.line;
-        return false;
+        if (!lineMatch || !lineMatch[1]) return false;
+        const taggedLine = parseInt(lineMatch[1], 10);
+        if (taggedLine === callSite.line) return true;
+        const nearest = signalLines.reduce((best, sl) =>
+          Math.abs(sl - taggedLine) < Math.abs(best - taggedLine) ? sl : best
+        );
+        return nearest === callSite.line;
       });
 
       const unmatched = lineVerifications.length === 0;
@@ -338,7 +530,7 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
         if (v.z3Result === "unsat") {
           proven.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2 });
         } else if (v.z3Result === "sat") {
-          violations.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2 });
+          violations.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2, witness: v.witness, complexity: v.complexity, confidence: v.confidence });
         }
       }
 
@@ -368,6 +560,139 @@ There are ${principleCount} known principles (P1-P${principleCount}). If a viola
     const combined = createHash("sha256");
     for (const id of ids.sort()) { combined.update(id); combined.update(store.hashForPrinciple(id)); }
     return combined.digest("hex");
+  }
+
+  private extractASTContext(filePath: string, line: number, fnNode: Parser.SyntaxNode | null): ASTContext | undefined {
+    try {
+      const source = readFileSync(filePath, "utf-8");
+      const tree = parseFile(source);
+      if (line < 1) return undefined;
+      const targetRow = line - 1;
+
+      let bestNode: Parser.SyntaxNode | null = null;
+      const findNode = (node: Parser.SyntaxNode): void => {
+        if (node.startPosition.row <= targetRow && node.endPosition.row >= targetRow) {
+          bestNode = node;
+          for (const child of node.children) findNode(child);
+        }
+      };
+      findNode(tree.rootNode);
+      if (!bestNode) return undefined;
+
+      const node: Parser.SyntaxNode = bestNode;
+      let operator: string | undefined;
+      let method: string | undefined;
+
+      if (node.type === "binary_expression") {
+        for (const child of node.children) {
+          if (["+", "-", "*", "/", "%", "||", "&&", "??"].includes(child.type)) {
+            operator = child.type;
+          }
+        }
+      }
+
+      if (node.type === "call_expression") {
+        const fn = node.childForFieldName("function");
+        if (fn?.type === "member_expression") {
+          method = fn.childForFieldName("property")?.text;
+        } else if (fn?.type === "identifier") {
+          method = fn.text;
+        }
+      }
+
+      const paramNames = new Set<string>();
+      const enclosing = this.findEnclosingFunction(node);
+      if (enclosing) {
+        const params = enclosing.childForFieldName("parameters");
+        if (params) {
+          for (const child of params.namedChildren) {
+            const nameNode = child.childForFieldName("pattern") || child.childForFieldName("name");
+            if (nameNode) paramNames.add(nameNode.text);
+          }
+        }
+      }
+
+      const referencesParam = this.nodeReferencesParam(node, paramNames);
+
+      const pathConditions: string[] = [];
+      let current: Parser.SyntaxNode | null = node.parent;
+      const fnBound = enclosing || tree.rootNode;
+      while (current && current.id !== fnBound.id) {
+        if (current.parent?.type === "if_statement") {
+          const cond = current.parent.childForFieldName("condition");
+          if (cond) pathConditions.unshift(cond.text);
+        }
+        current = current.parent;
+      }
+
+      let insideTryCatch = false;
+      current = node.parent;
+      while (current && current.id !== fnBound.id) {
+        if (current.type === "try_statement") { insideTryCatch = true; break; }
+        current = current.parent;
+      }
+
+      return {
+        nodeType: node.type,
+        operator,
+        method,
+        referencesParam,
+        pathConditions,
+        parentType: node.parent?.type,
+        insideTryCatch,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private findEnclosingFunction(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+    let current: Parser.SyntaxNode | null = node.parent;
+    while (current) {
+      if (["function_declaration", "method_definition", "arrow_function", "function_expression"].includes(current.type)) return current;
+      current = current.parent;
+    }
+    return null;
+  }
+
+  private nodeReferencesParam(node: Parser.SyntaxNode, params: Set<string>): boolean {
+    if (node.type === "identifier" && params.has(node.text)) return true;
+    for (const child of node.children) {
+      if (this.nodeReferencesParam(child, params)) return true;
+    }
+    return false;
+  }
+
+  private findFunctionNode(fn: FunctionNode, projectRoot: string): Parser.SyntaxNode | null {
+    try {
+      const source = readFileSync(fn.filePath, "utf-8");
+      const tree = parseFile(source);
+      const targetLine = fn.signals[0]?.callSite.line || 0;
+
+      let bestFn: Parser.SyntaxNode | null = null;
+      const visit = (node: Parser.SyntaxNode): void => {
+        if (node.type === "function_declaration" || node.type === "method_definition" ||
+            node.type === "arrow_function" || node.type === "function_expression") {
+          const nameNode = node.childForFieldName("name");
+          const name = nameNode?.text || "";
+          if (name === fn.functionName || (node.parent?.type === "variable_declarator" &&
+              node.parent.childForFieldName("name")?.text === fn.functionName)) {
+            bestFn = node;
+          }
+        }
+        if (node.type === "export_statement" && node.firstNamedChild?.type === "function_declaration") {
+          const inner = node.firstNamedChild;
+          if (inner.childForFieldName("name")?.text === fn.functionName) {
+            bestFn = inner;
+          }
+        }
+        for (const child of node.children) visit(child);
+      };
+      visit(tree.rootNode);
+      return bestFn;
+    } catch {
+      return null;
+    }
   }
 
   private formatDuration(ms: number): string {

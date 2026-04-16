@@ -1,0 +1,23 @@
+{
+  "id": "empty-collection-loop",
+  "name": "Empty Collection Loop",
+  "description": "For-of/for-in loop over a collection that could be empty. Loop body never executes, leaving accumulators and state unchanged.",
+  "astPatterns": [
+    {
+      "nodeType": "for_in_statement"
+    }
+  ],
+  "smt2Template": "(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "e-commerce",
+    "explanation": "sum of line items is 0 when cart is empty — invoice finalized with $0 total",
+    "smt2": "(declare-const num_items Int)\n(declare-const total Int)\n(assert (= num_items 0))\n(assert (= total 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "low"
+}

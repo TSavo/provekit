@@ -1,0 +1,45 @@
+{
+  "key": "src/checkers/IndependenceChecker.ts/check[18]",
+  "file": "/Users/tsavo/Projects/neurallog/src/checkers/IndependenceChecker.ts",
+  "function": "check",
+  "line": 18,
+  "signal_hash": "f3d3fd6fa0148a9c05431d2dbf9d453aaa7c6c03099b32ab0d4ddea6a1dde89a",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "VIOLATION: Guard Narrowing at check",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 18\n; VIOLATION: Guard Narrowing at check\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "witness": "(\n  (define-fun code_after_reached () Int\n    1)\n  (define-fun guard_condition () Int\n    0)\n  (define-fun guard_returns () Int\n    0)\n)",
+      "complexity": 2,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/checkers/Checker.ts/extractDeclaredVars[52]",
+    "src/checkers/Checker.ts/extractDeclaredVars[54]",
+    "src/checkers/Checker.ts/extractDeclaredVars[56]",
+    "src/checkers/Checker.ts/extractPreconditions[41]",
+    "src/checkers/Checker.ts/extractPreconditions[46]",
+    "src/checkers/Checker.ts/namespaceBlock[63]",
+    "src/verifier.ts/verifyBlock[66]",
+    "src/verifier.ts/verifyBlock[68]",
+    "src/verifier.ts/verifyBlock[69]",
+    "src/verifier.ts/verifyBlock[70]",
+    "src/verifier.ts/verifyBlock[76]",
+    "src/verifier.ts/verifyBlock[82]",
+    "src/verifier.ts/verifyBlock[89]",
+    "src/verifier.ts/verifyBlock[91]",
+    "src/verifier.ts/verifyBlock[96]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 18\n; VIOLATION: Guard Narrowing at check\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

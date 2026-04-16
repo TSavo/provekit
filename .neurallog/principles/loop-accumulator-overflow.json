@@ -1,0 +1,29 @@
+{
+  "id": "loop-accumulator-overflow",
+  "name": "Loop Accumulator Overflow",
+  "description": "Augmented assignment (+=, *=) inside a loop body. Unbounded iteration count can overflow the accumulator.",
+  "astPatterns": [
+    {
+      "nodeType": "for_statement"
+    },
+    {
+      "nodeType": "for_in_statement"
+    },
+    {
+      "nodeType": "while_statement"
+    }
+  ],
+  "smt2Template": "(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const {{accumulator}} Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= {{accumulator}} (* iterations per_iteration)))\n(assert (> {{accumulator}} 9007199254740991))\n(check-sat)",
+  "teachingExample": {
+    "domain": "telemetry",
+    "explanation": "metric counter incremented per request with no reset — overflows after months",
+    "smt2": "(declare-const requests Int)\n(declare-const counter Int)\n(assert (> requests 0))\n(assert (= counter requests))\n(assert (> counter 9007199254740991))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "low"
+}

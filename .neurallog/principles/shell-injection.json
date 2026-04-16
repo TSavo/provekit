@@ -1,0 +1,33 @@
+{
+  "id": "shell-injection",
+  "name": "Shell Injection",
+  "description": "Parameter-derived value interpolated into a string passed to a shell execution function (execSync, exec, spawn) without sanitization.",
+  "astPatterns": [
+    {
+      "nodeType": "call_expression",
+      "method": "execSync"
+    },
+    {
+      "nodeType": "call_expression",
+      "method": "exec"
+    },
+    {
+      "nodeType": "call_expression",
+      "method": "spawn"
+    }
+  ],
+  "smt2Template": "(declare-const input_has_metachar Int)\n(declare-const input_sanitized Int)\n(declare-const shell_expands Int)\n(assert (= input_sanitized 0))\n(assert (= input_has_metachar 1))\n(assert (=> (and (= input_has_metachar 1) (= input_sanitized 0)) (= shell_expands 1)))\n(assert (= shell_expands 1))\n(check-sat)",
+  "teachingExample": {
+    "domain": "devops",
+    "explanation": "deploy script interpolates branch name into exec without escaping",
+    "smt2": "(declare-const branch_has_metachar Int)\n(declare-const sanitized Int)\n(assert (= sanitized 0))\n(assert (= branch_has_metachar 1))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "smt2ProofTemplate": "(declare-const input_has_metachar Int)\n(declare-const input_sanitized Int)\n; Guard: sanitization function called before exec\n(assert (= input_sanitized 1))\n; Can unsanitized input reach shell?\n(assert (and (= input_has_metachar 1) (= input_sanitized 1)))\n(assert (= input_sanitized 0))\n(check-sat)\n; unsat → proven: sanitization prevents injection",
+  "confidence": "high"
+}

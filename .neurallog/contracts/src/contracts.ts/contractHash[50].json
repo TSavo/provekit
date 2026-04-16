@@ -1,0 +1,11 @@
+{
+  "key": "src/contracts.ts/contractHash[50]",
+  "file": "/Users/tsavo/Projects/neurallog/src/contracts.ts",
+  "function": "contractHash",
+  "line": 50,
+  "signal_hash": "b03c0c7ec98d4093cf3f5cb5194054c7a5223433e04c917a1ba35f7043209111",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

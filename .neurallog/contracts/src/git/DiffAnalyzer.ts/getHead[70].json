@@ -1,0 +1,11 @@
+{
+  "key": "src/git/DiffAnalyzer.ts/getHead[70]",
+  "file": "/Users/tsavo/Projects/neurallog/src/git/DiffAnalyzer.ts",
+  "function": "getHead",
+  "line": 70,
+  "signal_hash": "080eeb6b0e07876eb9a5adbe87de1d555ee0c35930313735589b921b3d953893",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

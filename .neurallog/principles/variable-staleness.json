@@ -1,0 +1,23 @@
+{
+  "id": "variable-staleness",
+  "name": "Variable Staleness on Fall-Through",
+  "description": "Variable modified inside an if-block but used after it. On the fall-through path (condition false), the code uses the unmodified value.",
+  "astPatterns": [
+    {
+      "nodeType": "if_statement"
+    }
+  ],
+  "smt2Template": "(declare-const condition_true Int)\n(declare-const {{var}}_before Int)\n(declare-const {{var}}_after Int)\n(assert (=> (= condition_true 0) (= {{var}}_after {{var}}_before)))\n(assert (= condition_true 0))\n(assert (= {{var}}_after {{var}}_before))\n(check-sat)",
+  "teachingExample": {
+    "domain": "shipping",
+    "explanation": "discount applied in if-block but total calculated after — fall-through uses undiscounted total",
+    "smt2": "(declare-const has_coupon Int)\n(declare-const discount Int)\n(declare-const total Int)\n(assert (=> (= has_coupon 0) (= discount 0)))\n(assert (= has_coupon 0))\n(assert (= discount 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "high"
+}

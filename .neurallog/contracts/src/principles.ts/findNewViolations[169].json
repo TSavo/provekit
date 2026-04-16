@@ -1,0 +1,11 @@
+{
+  "key": "src/principles.ts/findNewViolations[169]",
+  "file": "/Users/tsavo/Projects/neurallog/src/principles.ts",
+  "function": "findNewViolations",
+  "line": 169,
+  "signal_hash": "ab06639e20f73e45d39f6d5543c0d8a7d4abcaab43f7de629ea3b7e010d89281",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

@@ -1,0 +1,29 @@
+{
+  "key": "src/signals/CommentSignalGenerator.ts/extractParameters[89]",
+  "file": "/Users/tsavo/Projects/neurallog/src/signals/CommentSignalGenerator.ts",
+  "function": "extractParameters",
+  "line": 89,
+  "signal_hash": "c5efe62fb642b17b8483972dcf8633cb05168c7ccd38c3621e3f55d45f17db41",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "VIOLATION: Guard Narrowing at extractParameters",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 89\n; VIOLATION: Guard Narrowing at extractParameters\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "witness": "(\n  (define-fun code_after_reached () Int\n    1)\n  (define-fun guard_condition () Int\n    0)\n  (define-fun guard_returns () Int\n    0)\n)",
+      "complexity": 2,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 89\n; VIOLATION: Guard Narrowing at extractParameters\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

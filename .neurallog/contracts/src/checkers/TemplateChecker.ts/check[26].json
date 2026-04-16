@@ -1,0 +1,45 @@
+{
+  "key": "src/checkers/TemplateChecker.ts/check[26]",
+  "file": "/Users/tsavo/Projects/neurallog/src/checkers/TemplateChecker.ts",
+  "function": "check",
+  "line": 26,
+  "signal_hash": "09e74aee7177b703a30b864b396bfbe17cc73998f78812e3f3d50349bf2445a6",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at check",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 26\n; VIOLATION: Empty Collection Loop at check\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/checkers/TemplateChecker.ts/checkStateMutation[55]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[57]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[58]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[61]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[62]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[65]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[66]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[67]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[69]",
+    "src/checkers/TemplateChecker.ts/checkStateMutation[71]",
+    "src/checkers/Checker.ts/extractDeclaredVars[52]",
+    "src/checkers/Checker.ts/extractDeclaredVars[54]",
+    "src/checkers/Checker.ts/extractDeclaredVars[56]",
+    "src/checkers/Checker.ts/runCheck[33]",
+    "src/checkers/Checker.ts/runCheck[35]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 26\n; VIOLATION: Empty Collection Loop at check\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

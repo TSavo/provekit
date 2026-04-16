@@ -1,0 +1,29 @@
+{
+  "key": "src/signals/LLMSignalGenerator.ts/extractReturnType[485]",
+  "file": "/Users/tsavo/Projects/neurallog/src/signals/LLMSignalGenerator.ts",
+  "function": "extractReturnType",
+  "line": 485,
+  "signal_hash": "b841c1cc7bcac49bc2172e721493af8a49f48ed06dfe6f0144dc0999b81abc90",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "VIOLATION: Guard Narrowing at extractReturnType",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 485\n; VIOLATION: Guard Narrowing at extractReturnType\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "witness": "(\n  (define-fun code_after_reached () Int\n    1)\n  (define-fun guard_condition () Int\n    0)\n  (define-fun guard_returns () Int\n    0)\n)",
+      "complexity": 2,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 485\n; VIOLATION: Guard Narrowing at extractReturnType\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

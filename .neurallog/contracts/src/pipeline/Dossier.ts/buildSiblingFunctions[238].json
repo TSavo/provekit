@@ -1,0 +1,29 @@
+{
+  "key": "src/pipeline/Dossier.ts/buildSiblingFunctions[238]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/Dossier.ts",
+  "function": "buildSiblingFunctions",
+  "line": 238,
+  "signal_hash": "163f780632da6403500c1e984c1993074779e4ff5fa829b8cb7cb772b3beea9d",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "loop-accumulator-overflow",
+      "principle_hash": "",
+      "claim": "VIOLATION: Loop Accumulator Overflow at buildSiblingFunctions",
+      "smt2": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 238\n; VIOLATION: Loop Accumulator Overflow at buildSiblingFunctions\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_238 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_238 (* iterations per_iteration)))\n(assert (> accumulator_238 9007199254740991))\n(check-sat)",
+      "witness": "(\n  (define-fun iterations () Int\n    9229268391297023)\n  (define-fun accumulator_238 () Int\n    9229268391297023)\n  (define-fun per_iteration () Int\n    1)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 238\n; VIOLATION: Loop Accumulator Overflow at buildSiblingFunctions\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_238 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_238 (* iterations per_iteration)))\n(assert (> accumulator_238 9007199254740991))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

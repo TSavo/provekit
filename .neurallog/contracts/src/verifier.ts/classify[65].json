@@ -1,0 +1,29 @@
+{
+  "key": "src/verifier.ts/classify[65]",
+  "file": "/Users/tsavo/Projects/neurallog/src/verifier.ts",
+  "function": "classify",
+  "line": 65,
+  "signal_hash": "1d504be347a796f26988130adab7d51184fae2219fcc22a84e0da0ab1dcf10a0",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "split-empty-string",
+      "principle_hash": "",
+      "claim": "VIOLATION: Split on Empty String at classify",
+      "smt2": "; PRINCIPLE: split-empty-string\n; LINE: 65\n; VIOLATION: Split on Empty String at classify\n(declare-const input_length Int)\n(declare-const result_length Int)\n(assert (= input_length 0))\n(assert (= result_length 1))\n(assert (> result_length 0))\n(check-sat)",
+      "witness": "(\n  (define-fun input_length () Int\n    0)\n  (define-fun result_length () Int\n    1)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: split-empty-string\n; LINE: 65\n; VIOLATION: Split on Empty String at classify\n(declare-const input_length Int)\n(declare-const result_length Int)\n(assert (= input_length 0))\n(assert (= result_length 1))\n(assert (> result_length 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

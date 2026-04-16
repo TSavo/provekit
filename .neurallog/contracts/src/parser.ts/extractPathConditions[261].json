@@ -1,0 +1,37 @@
+{
+  "key": "src/parser.ts/extractPathConditions[261]",
+  "file": "/Users/tsavo/Projects/neurallog/src/parser.ts",
+  "function": "extractPathConditions",
+  "line": 261,
+  "signal_hash": "b2729eed1b49d157322cd801a56dfb23d5e196d8882cae6a17f9d70e5ff14f5d",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "loop-accumulator-overflow",
+      "principle_hash": "",
+      "claim": "VIOLATION: Loop Accumulator Overflow at extractPathConditions",
+      "smt2": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 261\n; VIOLATION: Loop Accumulator Overflow at extractPathConditions\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_261 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_261 (* iterations per_iteration)))\n(assert (> accumulator_261 9007199254740991))\n(check-sat)",
+      "witness": "(\n  (define-fun accumulator_261 () Int\n    9229268391297023)\n  (define-fun iterations () Int\n    9229268391297023)\n  (define-fun per_iteration () Int\n    1)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/parser.ts/containsReturn[363]",
+    "src/parser.ts/containsReturn[364]",
+    "src/parser.ts/containsReturn[365]",
+    "src/parser.ts/isDescendantOf[356]",
+    "src/signals/ASTSignalGenerator.ts/isDescendantOf[302]",
+    "src/signals/CommentSignalGenerator.ts/isDescendantOf[156]",
+    "src/signals/LLMSignalGenerator.ts/isDescendantOf[533]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 261\n; VIOLATION: Loop Accumulator Overflow at extractPathConditions\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_261 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_261 (* iterations per_iteration)))\n(assert (> accumulator_261 9007199254740991))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

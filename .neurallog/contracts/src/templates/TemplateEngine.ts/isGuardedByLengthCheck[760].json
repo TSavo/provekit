@@ -1,0 +1,26 @@
+{
+  "key": "src/templates/TemplateEngine.ts/isGuardedByLengthCheck[760]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "isGuardedByLengthCheck",
+  "line": 760,
+  "signal_hash": "fadb84e7bc3efaaffccf7e7e1d55ac9b082e5be1a8834a87cb38f729b103821b",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at isGuardedByLengthCheck",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 760\n; PROVEN: Unguarded Non-Null Assertion at isGuardedByLengthCheck\n(declare-const expr_759_19_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_759_19_is_null 0))\n; Can value still be null?\n(assert (= expr_759_19_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 760\n; PROVEN: Unguarded Non-Null Assertion at isGuardedByLengthCheck\n(declare-const expr_759_19_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_759_19_is_null 0))\n; Can value still be null?\n(assert (= expr_759_19_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

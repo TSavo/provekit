@@ -1,8 +1,10 @@
 import Parser from "tree-sitter";
 import { Signal, SignalGenerator } from "./Signal";
+import { ASTSignalGenerator } from "./ASTSignalGenerator";
 import { LogSignalGenerator } from "./LogSignalGenerator";
 import { CommentSignalGenerator } from "./CommentSignalGenerator";
 import { FunctionNameSignalGenerator } from "./FunctionNameSignalGenerator";
+import { LLMSignalGenerator, LLMSignalConfig } from "./LLMSignalGenerator";
 
 export class SignalRegistry {
   private generators: SignalGenerator[] = [];
@@ -70,6 +72,18 @@ export class SignalRegistry {
   }
 
   static createDefault(): SignalRegistry {
+    const registry = new SignalRegistry();
+    registry.register(new ASTSignalGenerator());
+    return registry;
+  }
+
+  static createLLM(config?: LLMSignalConfig): SignalRegistry {
+    const registry = new SignalRegistry();
+    registry.register(new LLMSignalGenerator(config));
+    return registry;
+  }
+
+  static createRuleBased(): SignalRegistry {
     const registry = new SignalRegistry();
     registry.register(new LogSignalGenerator());
     registry.register(new CommentSignalGenerator());

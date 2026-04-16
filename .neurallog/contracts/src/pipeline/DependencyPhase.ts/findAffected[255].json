@@ -1,0 +1,26 @@
+{
+  "key": "src/pipeline/DependencyPhase.ts/findAffected[255]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DependencyPhase.ts",
+  "function": "findAffected",
+  "line": 255,
+  "signal_hash": "46d3aedce0e3a1d0347b522624f8f36095874eab4f8a5c3080ca5e3d12d01da4",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at findAffected",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 255\n; PROVEN: Unguarded Non-Null Assertion at findAffected\n(declare-const expr_254_22_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_254_22_is_null 0))\n; Can value still be null?\n(assert (= expr_254_22_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 255\n; PROVEN: Unguarded Non-Null Assertion at findAffected\n(declare-const expr_254_22_is_null Int)\n; Guard: path condition checks for null\n(assert (= expr_254_22_is_null 0))\n; Can value still be null?\n(assert (= expr_254_22_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

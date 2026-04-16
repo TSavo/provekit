@@ -1,0 +1,26 @@
+{
+  "key": "src/observations.ts/extractCommonASTPattern[141]",
+  "file": "/Users/tsavo/Projects/neurallog/src/observations.ts",
+  "function": "extractCommonASTPattern",
+  "line": 141,
+  "signal_hash": "c244723fcb694514ad76b73113da663611ee7b1c15dd409873ad515892be480e",
+  "proven": [
+    {
+      "principle": "null-assertion",
+      "principle_hash": "",
+      "claim": "PROVEN: Unguarded Non-Null Assertion at extractCommonASTPattern",
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 141\n; PROVEN: Unguarded Non-Null Assertion at extractCommonASTPattern\n(declare-const o_astContext_is_null Int)\n; Guard: path condition checks for null\n(assert (= o_astContext_is_null 0))\n; Can value still be null?\n(assert (= o_astContext_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: null-assertion\n; LINE: 141\n; PROVEN: Unguarded Non-Null Assertion at extractCommonASTPattern\n(declare-const o_astContext_is_null Int)\n; Guard: path condition checks for null\n(assert (= o_astContext_is_null 0))\n; Can value still be null?\n(assert (= o_astContext_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

@@ -4,10 +4,23 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join } from "path";
 import { createHash } from "crypto";
 
+export interface ASTPattern {
+  nodeType: string;
+  operator?: string;
+  method?: string;
+  requiresParamRef?: boolean;
+  guardPatterns?: string[];
+  pairMethod?: string;
+  checkPaths?: string[];
+}
+
 export interface Principle {
   id: string;
   name: string;
   description: string;
+  astPatterns?: ASTPattern[];
+  smt2Template?: string;
+  smt2ProofTemplate?: string;
   teachingExample: {
     domain: string;
     explanation: string;
@@ -18,6 +31,7 @@ export interface Principle {
     violation: string;
     generalizedAt: string;
   };
+  confidence?: "high" | "low";
   validated: boolean;
   validationFailure?: string;
 }
@@ -54,7 +68,7 @@ export class PrincipleStore {
           readFileSync(join(this.principlesDir, entry), "utf-8")
         );
         this.principles.push(data);
-      } catch {}
+      } catch (e: any) { console.log(`[principles] Failed to load ${entry}: ${e?.message?.slice(0, 40)}`); }
     }
   }
 
@@ -68,12 +82,16 @@ export class PrincipleStore {
 
     const discovered = this.principles.find((p) => p.id === id);
     if (discovered) {
-      return createHash("sha256")
-        .update(discovered.id)
-        .update(discovered.name)
-        .update(discovered.description)
-        .update(discovered.teachingExample.smt2)
-        .digest("hex");
+      const hash = createHash("sha256");
+      hash.update(PrincipleStore.ENGINE_VERSION);
+      hash.update(discovered.id);
+      hash.update(discovered.name);
+      hash.update(discovered.description);
+      hash.update(discovered.teachingExample.smt2);
+      if (discovered.smt2Template) hash.update(discovered.smt2Template);
+      if (discovered.smt2ProofTemplate) hash.update(discovered.smt2ProofTemplate);
+      if (discovered.astPatterns) hash.update(JSON.stringify(discovered.astPatterns));
+      return hash.digest("hex");
     }
 
     return "";
@@ -93,8 +111,11 @@ export class PrincipleStore {
    * Compute a hash of all principle files on disk. Used as part of the
    * contract cache key so contracts are invalidated when principles change.
    */
+  static readonly ENGINE_VERSION = "15";
+
   computePrincipleHash(): string {
     const hash = createHash("sha256");
+    hash.update(PrincipleStore.ENGINE_VERSION);
 
     if (!existsSync(this.principlesDir)) return "";
 

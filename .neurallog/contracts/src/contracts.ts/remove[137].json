@@ -1,0 +1,15 @@
+{
+  "key": "src/contracts.ts/remove[137]",
+  "file": "/Users/tsavo/Projects/neurallog/src/contracts.ts",
+  "function": "remove",
+  "line": 137,
+  "signal_hash": "8a20937be8078f7526af73be2990f09a23adec0857f4c52824961ad2161c7f05",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]",
+    "src/pipeline/Phase.ts/log[19]",
+    "src/pipeline/Phase.ts/log[21]"
+  ],
+  "clause_history": []
+}

@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { VerificationResult } from "./verifier";
 import { AnalysisResult } from "./types";
 
@@ -41,6 +41,20 @@ function buildIssue(
 
   const smt2Escaped = v.smt2.replace(/'/g, "'\\''");
 
+  let witnessSection = "";
+  if (v.witness) {
+    witnessSection = `
+### Witness (Z3 counterexample)
+Z3 produced this concrete assignment proving the bug is reachable:
+
+\`\`\`smt2
+${v.witness}
+\`\`\`
+
+Each \`define-fun\` is a variable and the input value that triggers the violation.
+`;
+  }
+
   const body = `## Formal Verification Violation
 
 **File:** \`${filePath}\`
@@ -58,7 +72,7 @@ The following SMT-LIB formula was verified by Z3 to be **satisfiable**, meaning 
 \`\`\`smt2
 ${v.smt2}
 \`\`\`
-
+${witnessSection}
 ### How to verify independently
 \`\`\`bash
 echo '${smt2Escaped}' | z3 -in
@@ -100,10 +114,10 @@ export function collectViolationIssues(results: AnalysisResult[]): IssueData[] {
  */
 function issueExists(title: string): boolean {
   try {
-    const output = execSync(
-      `gh issue list --state all --search ${JSON.stringify(title)} --json title --limit 50`,
-      { encoding: "utf-8", timeout: 15000 }
-    );
+    const output = execFileSync("gh", [
+      "issue", "list", "--state", "all", "--search", title,
+      "--json", "title", "--limit", "50",
+    ], { encoding: "utf-8", timeout: 15000 });
     const existing: { title: string }[] = JSON.parse(output);
     return existing.some((issue) => issue.title === title);
   } catch {
@@ -111,14 +125,11 @@ function issueExists(title: string): boolean {
   }
 }
 
-/**
- * File a single GitHub issue via `gh` CLI. Returns the issue URL.
- */
 function fileIssue(issue: IssueData): string {
-  const result = execSync(
-    `gh issue create --title ${JSON.stringify(issue.title)} --body ${JSON.stringify(issue.body)} --label neurallog`,
-    { encoding: "utf-8", timeout: 30000 }
-  ).trim();
+  const result = execFileSync("gh", [
+    "issue", "create", "--title", issue.title,
+    "--body", issue.body, "--label", "neurallog",
+  ], { encoding: "utf-8", timeout: 30000 }).trim();
   return result;
 }
 

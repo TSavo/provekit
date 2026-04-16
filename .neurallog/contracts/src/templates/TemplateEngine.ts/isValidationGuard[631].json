@@ -1,0 +1,13 @@
+{
+  "key": "src/templates/TemplateEngine.ts/isValidationGuard[631]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "isValidationGuard",
+  "line": 631,
+  "signal_hash": "3ea6c981652e8c22acc23f9661e091496e8407818f1e6a3dd3cc9318b4416708",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/templates/TemplateEngine.ts/isDescendant[354]"
+  ],
+  "clause_history": []
+}

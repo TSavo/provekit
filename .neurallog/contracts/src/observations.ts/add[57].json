@@ -1,0 +1,15 @@
+{
+  "key": "src/observations.ts/add[57]",
+  "file": "/Users/tsavo/Projects/neurallog/src/observations.ts",
+  "function": "add",
+  "line": 57,
+  "signal_hash": "4f9fbe3009ee83fffad141e6e218c2d3004054df0bd0d943a297b420823a29b6",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]",
+    "src/pipeline/Phase.ts/log[19]",
+    "src/pipeline/Phase.ts/log[21]"
+  ],
+  "clause_history": []
+}

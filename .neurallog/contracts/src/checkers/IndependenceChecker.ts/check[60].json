@@ -1,0 +1,45 @@
+{
+  "key": "src/checkers/IndependenceChecker.ts/check[60]",
+  "file": "/Users/tsavo/Projects/neurallog/src/checkers/IndependenceChecker.ts",
+  "function": "check",
+  "line": 60,
+  "signal_hash": "9b3518f212cf57941d995056dd17956c84b58d65fbbf80d45e123b0eabddffe5",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "loop-accumulator-overflow",
+      "principle_hash": "",
+      "claim": "VIOLATION: Loop Accumulator Overflow at check",
+      "smt2": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 60\n; VIOLATION: Loop Accumulator Overflow at check\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_60 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_60 (* iterations per_iteration)))\n(assert (> accumulator_60 9007199254740991))\n(check-sat)",
+      "witness": "(\n  (define-fun iterations () Int\n    9229268391297023)\n  (define-fun accumulator_60 () Int\n    9229268391297023)\n  (define-fun per_iteration () Int\n    1)\n)",
+      "complexity": 1,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/checkers/Checker.ts/extractDeclaredVars[52]",
+    "src/checkers/Checker.ts/extractDeclaredVars[54]",
+    "src/checkers/Checker.ts/extractDeclaredVars[56]",
+    "src/checkers/Checker.ts/extractPreconditions[41]",
+    "src/checkers/Checker.ts/extractPreconditions[46]",
+    "src/checkers/Checker.ts/namespaceBlock[63]",
+    "src/verifier.ts/verifyBlock[66]",
+    "src/verifier.ts/verifyBlock[68]",
+    "src/verifier.ts/verifyBlock[69]",
+    "src/verifier.ts/verifyBlock[70]",
+    "src/verifier.ts/verifyBlock[76]",
+    "src/verifier.ts/verifyBlock[82]",
+    "src/verifier.ts/verifyBlock[89]",
+    "src/verifier.ts/verifyBlock[91]",
+    "src/verifier.ts/verifyBlock[96]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: loop-accumulator-overflow\n; LINE: 60\n; VIOLATION: Loop Accumulator Overflow at check\n(declare-const iterations Int)\n(declare-const per_iteration Int)\n(declare-const accumulator_60 Int)\n(assert (> iterations 0))\n(assert (> per_iteration 0))\n(assert (= accumulator_60 (* iterations per_iteration)))\n(assert (> accumulator_60 9007199254740991))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

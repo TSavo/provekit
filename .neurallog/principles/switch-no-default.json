@@ -1,0 +1,23 @@
+{
+  "id": "switch-no-default",
+  "name": "Switch Without Default",
+  "description": "Switch statement with no default case. Unmatched values fall through silently with no handling.",
+  "astPatterns": [
+    {
+      "nodeType": "switch_statement"
+    }
+  ],
+  "smt2Template": "(declare-const switch_value Int)\n(declare-const case_matched Int)\n(assert (= case_matched 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "state machine",
+    "explanation": "order state switch has no default — unknown states pass through silently",
+    "smt2": "(declare-const state Int)\n(declare-const handled Int)\n(assert (= handled 0))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "seed",
+    "violation": "",
+    "generalizedAt": "2026-04-14T00:00:00.000Z"
+  },
+  "validated": true,
+  "confidence": "high"
+}

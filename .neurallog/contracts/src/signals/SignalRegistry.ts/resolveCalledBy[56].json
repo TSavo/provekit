@@ -1,0 +1,29 @@
+{
+  "key": "src/signals/SignalRegistry.ts/resolveCalledBy[56]",
+  "file": "/Users/tsavo/Projects/neurallog/src/signals/SignalRegistry.ts",
+  "function": "resolveCalledBy",
+  "line": 56,
+  "signal_hash": "4eb8d66581b59ed76f1d2862f21382b0e6e7659051e59f76c8ce5eca5046d63c",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at resolveCalledBy",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 56\n; VIOLATION: Empty Collection Loop at resolveCalledBy\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 56\n; VIOLATION: Empty Collection Loop at resolveCalledBy\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

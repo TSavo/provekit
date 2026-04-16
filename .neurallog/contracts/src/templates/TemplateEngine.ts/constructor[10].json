@@ -1,0 +1,15 @@
+{
+  "key": "src/templates/TemplateEngine.ts/constructor[10]",
+  "file": "/Users/tsavo/Projects/neurallog/src/templates/TemplateEngine.ts",
+  "function": "constructor",
+  "line": 10,
+  "signal_hash": "96a980a75abe7f40c5e3a13e7be7f35383bcde6ffd8d65f971b5bdbfdbad6bc3",
+  "proven": [],
+  "violations": [],
+  "depends_on": [
+    "src/pipeline/Phase.ts/log[18]",
+    "src/pipeline/Phase.ts/log[19]",
+    "src/pipeline/Phase.ts/log[21]"
+  ],
+  "clause_history": []
+}

@@ -1,10 +1,17 @@
 {
   "id": "obs-5",
-  "signalKey": "src/axiom-engine.ts/applyP2[113]",
-  "claim": "VIOLATION: Two contracts at the same line produce a P2 check with no temporal gap",
-  "smt2": "; PRINCIPLE: [NEW]\n; LINE: 113\n; VIOLATION: Two contracts at the same line produce a P2 check with no temporal gap\n\n(declare-const line_a Int)\n(declare-const line_b Int)\n(declare-const earlier_line Int)\n(declare-const later_line Int)\n(declare-const temporal_gap Int)   ; = later_line - earlier_line; must be > 0 for P2 to be meaningful\n\n; Transition: both contracts are in the same function group\n(assert (= line_a line_b))\n\n; Transition: sort comparator returns 0 for equal lines → either ordering is valid\n(assert (= earlier_line line_a))\n(assert (= later_line line_b))\n\n; Transition: temporal_gap computed from assigned ordering\n(assert (= temporal_gap (- later_line earlier_line)))\n\n; Violation: gap is zero → no mutation can have occurred between the two \"points\"\n(assert (= temporal_gap 0))\n\n(check-sat)",
+  "signalKey": "src/verifier.ts/verifyBlock[75]",
+  "claim": "Unverified: try/catch — error handling correctness, exception types",
+  "smt2": "",
+  "astContext": {
+    "nodeType": "{",
+    "referencesParam": false,
+    "pathConditions": [],
+    "parentType": "statement_block",
+    "insideTryCatch": true
+  },
   "rejectedPrincipleName": "",
   "rejectedPrincipleDescription": "",
   "adversaryFeedback": "",
-  "observedAt": "2026-04-15T03:42:57.580Z"
+  "observedAt": "2026-04-15T21:29:48.472Z"
 }

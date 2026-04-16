@@ -1,0 +1,33 @@
+{
+  "key": "src/pipeline/DependencyPhase.ts/topoSort[239]",
+  "file": "/Users/tsavo/Projects/neurallog/src/pipeline/DependencyPhase.ts",
+  "function": "topoSort",
+  "line": 239,
+  "signal_hash": "ad19d351dbbde8513f970d6bcee76a7d8253a75eca2af7c27860a9282f000dc7",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "VIOLATION: Empty Collection Loop at topoSort",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 239\n; VIOLATION: Empty Collection Loop at topoSort\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "witness": "(\n  (define-fun loop_body_executed () Int\n    0)\n  (define-fun collection_size () Int\n    0)\n)",
+      "complexity": 0,
+      "confidence": "low"
+    }
+  ],
+  "depends_on": [
+    "src/pipeline/DependencyPhase.ts/dfs[230]",
+    "src/pipeline/DependencyPhase.ts/dfs[233]",
+    "src/pipeline/DependencyPhase.ts/dfs[234]"
+  ],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 239\n; VIOLATION: Empty Collection Loop at topoSort\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

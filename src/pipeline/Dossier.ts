@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import { join, relative } from "path";
 import { CallSiteContext } from "./ContextPhase";
@@ -24,7 +24,8 @@ export function assembleDossier(
   projectRoot: string,
   store: ContractStore
 ): FunctionDossier {
-  const representative = signals[0]!;
+  const representative = signals[0];
+  if (!representative) return { priorContract: "(no signals)", diff: "", callerContracts: "", blame: "", runtimeWitnesses: "", todos: "", siblingFunctions: "", returnTypeAnalysis: "", testCoverage: "", tsconfigContext: "", errorHandling: "" };
   const relPath = relative(projectRoot, filePath);
   const fnName = representative.functionName;
 
@@ -119,7 +120,7 @@ function buildPriorContract(signals: CallSiteContext[], relPath: string, store: 
 
 function buildDiff(filePath: string, fnName: string, projectRoot: string): string {
   try {
-    const diff = execSync(`git diff HEAD -- "${filePath}"`, {
+    const diff = execFileSync("git", ["diff", "HEAD", "--", filePath], {
       cwd: projectRoot,
       encoding: "utf-8",
       timeout: 5000,
@@ -175,10 +176,14 @@ function buildBlame(filePath: string, representative: CallSiteContext, projectRo
     const startLine = representative.line;
     const endLine = representative.line + fnLines;
 
-    const blame = execSync(
-      `git blame -L ${startLine},${endLine} --porcelain "${filePath}" 2>/dev/null | grep -E "^(author |author-time |summary )" | head -9`,
-      { cwd: projectRoot, encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] }
-    ).trim();
+    const rawBlame = execFileSync("git", [
+      "blame", "-L", `${startLine},${endLine}`, "--porcelain", filePath,
+    ], { cwd: projectRoot, encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] });
+    const blame = rawBlame.split("\n")
+      .filter((l) => l.startsWith("author ") || l.startsWith("author-time ") || l.startsWith("summary "))
+      .slice(0, 9)
+      .join("\n")
+      .trim();
 
     if (!blame) return "(unavailable)";
 
