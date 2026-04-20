@@ -1,7 +1,7 @@
 import { LLMProvider, createProvider } from "./llm";
 import { VerificationResult } from "./verifier";
 import { judgeTeachingExample } from "./judge";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { createHash } from "crypto";
 
@@ -200,7 +200,7 @@ export class PrincipleStore {
     try {
       writeFileSync(join(retiredDir, filename), JSON.stringify(p, null, 2));
       try {
-        require("fs").unlinkSync(join(this.principlesDir, filename));
+        unlinkSync(join(this.principlesDir, filename));
       } catch {}
     } catch (e: any) {
       console.log(`[principles] retire ${id}: ${e?.message?.slice(0, 40) || "ok"}`);
