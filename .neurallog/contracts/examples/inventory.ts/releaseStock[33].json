@@ -1,0 +1,11 @@
+{
+  "key": "examples/inventory.ts/releaseStock[33]",
+  "file": "/Users/tsavo/provekit/.worktrees/refinements/examples/inventory.ts",
+  "function": "releaseStock",
+  "line": 33,
+  "signal_hash": "368c7285a96551dc0459e7639edb8ffb65a47bacd0595ff8fc5eee8993a041e1",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

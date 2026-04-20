@@ -1,4 +1,5 @@
 import { execSync } from "child_process";
+import { isAbsolute, resolve as resolvePath } from "path";
 import Parser from "tree-sitter";
 import { Contract, ProvenProperty } from "../contracts";
 import { Checker, CheckResult } from "./Checker";
@@ -28,11 +29,12 @@ export class PropertyTestChecker implements Checker {
 
   private tsNodeLoaded = false;
   private fnCache = new Map<string, ExtractedFn | null>();
+  private fileRequireFailures = new Set<string>();
   private limit: number;
-  private used = 0;
+  private attempted = 0;
   lastRun: PropertyTestContext[] = [];
 
-  constructor() {
+  constructor(private projectRoot: string = process.cwd()) {
     const raw = process.env.NEURALLOG_PROPERTY_TEST_LIMIT;
     this.limit = raw ? Math.max(1, parseInt(raw, 10) || 10) : 10;
   }
@@ -43,22 +45,23 @@ export class PropertyTestChecker implements Checker {
     if (!this.ensureTsNode()) return [];
 
     const results: CheckResult[] = [];
-    this.used = 0;
+    this.attempted = 0;
     this.lastRun = [];
 
     for (const contract of contracts) {
-      if (this.used >= this.limit) break;
+      if (this.attempted >= this.limit) break;
       for (const proven of contract.proven) {
-        if (this.used >= this.limit) break;
+        if (this.attempted >= this.limit) break;
+        this.attempted++;
         const r = this.runOne(contract, proven);
         if (r) {
           results.push(r.result);
           this.lastRun.push(r);
-          this.used++;
         }
       }
     }
 
+    console.log(`[property-test] attempted ${this.attempted}, ran ${this.lastRun.length}, skipped ${this.attempted - this.lastRun.length}`);
     return results;
   }
 
@@ -75,11 +78,14 @@ export class PropertyTestChecker implements Checker {
   }
 
   private runOne(contract: Contract, proven: ProvenProperty): PropertyTestContext | null {
+    const absPath = this.resolvePath(contract.file);
+    if (this.fileRequireFailures.has(absPath)) return null;
+
+    const extracted = this.loadFunction(absPath, contract.function);
+    if (!extracted) return null;
+
     const model = this.extractModel(proven.smt2);
     if (!model || Object.keys(model).length === 0) return null;
-
-    const extracted = this.loadFunction(contract.file, contract.function);
-    if (!extracted) return null;
 
     const args: any[] = [];
     for (const name of extracted.paramNames) {
@@ -129,6 +135,10 @@ export class PropertyTestChecker implements Checker {
       inputsSummary: argSummary,
       outcome,
     };
+  }
+
+  private resolvePath(file: string): string {
+    return isAbsolute(file) ? file : resolvePath(this.projectRoot, file);
   }
 
   async judgeResults(model?: string): Promise<{ judged: number; flipped: number; confirmed: number }> {
@@ -257,6 +267,7 @@ export class PropertyTestChecker implements Checker {
     } catch (e: any) {
       console.log(`[property-test] require failed for ${filePath}: ${e?.message?.slice(0, 60) || "unknown"}`);
       this.fnCache.set(cacheKey, null);
+      this.fileRequireFailures.add(filePath);
       return null;
     }
 

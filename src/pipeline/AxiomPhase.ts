@@ -73,7 +73,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
       new StrengtheningChecker(),
       new IndependenceChecker(),
       new StrengthChecker(),
-      new PropertyTestChecker(),
+      new PropertyTestChecker(options.projectRoot),
     ];
 
     const checkerResults: AxiomReport["checkerResults"] = [];

@@ -1,0 +1,30 @@
+{
+  "key": "examples/inventory.ts/reserveStock[20]",
+  "file": "/Users/tsavo/provekit/.worktrees/refinements/examples/inventory.ts",
+  "function": "reserveStock",
+  "line": 20,
+  "signal_hash": "f399443a7c0a681393ccc0f2d0cc58c3ea83155a3a917bbc477391bcb3293025",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "subtraction-underflow",
+      "principle_hash": "",
+      "claim": "VIOLATION: Subtraction Underflow at reserveStock",
+      "smt2": "; PRINCIPLE: subtraction-underflow\n; LINE: 20\n; VIOLATION: Subtraction Underflow at reserveStock\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const result Int)\n(assert (= result (- available quantity)))\n(assert (>= available 0))\n(assert (>= quantity 0))\n(assert (> quantity available))\n(assert (< result 0))\n(check-sat)",
+      "witness": "(\n  (define-fun quantity () Int\n    1)\n  (define-fun result () Int\n    (- 1))\n  (define-fun available () Int\n    0)\n)",
+      "complexity": 2,
+      "confidence": "high",
+      "judge_note": "cegar-confirmed: A caller can invoke `reserveStock(productId, 1)` when `db.getAvailable(productId)` returns 0, causing `available - quantity` to equal -1 and setting available stock to a negative value with no guard c"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: subtraction-underflow\n; LINE: 20\n; VIOLATION: Subtraction Underflow at reserveStock\n(declare-const available Int)\n(declare-const quantity Int)\n(declare-const result Int)\n(assert (= result (- available quantity)))\n(assert (>= available 0))\n(assert (>= quantity 0))\n(assert (> quantity available))\n(assert (< result 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

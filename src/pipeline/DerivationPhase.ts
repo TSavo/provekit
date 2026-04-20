@@ -607,7 +607,7 @@ Produce ONE atomic principle for this pattern gap. It must have:
 
       contracts.push({
         key,
-        file: fn.filePath,
+        file: fn.relativePath,
         function: callSite.functionName,
         line: callSite.line,
         signal_hash: callSite.signalHash,

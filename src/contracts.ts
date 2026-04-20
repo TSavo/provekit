@@ -1,6 +1,17 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "fs";
-import { join, dirname, relative } from "path";
+import { join, dirname, relative, isAbsolute } from "path";
 import { createHash } from "crypto";
+
+export function normalizeContractFile(file: string, projectRoot: string): string {
+  if (!isAbsolute(file)) return file;
+  const rel = relative(projectRoot, file);
+  if (!rel.startsWith("..") && !isAbsolute(rel)) return rel;
+  for (const marker of ["/src/", "/examples/", "/lib/", "/app/", "/packages/"]) {
+    const idx = file.indexOf(marker);
+    if (idx >= 0) return file.slice(idx + 1);
+  }
+  return file;
+}
 
 export interface ClauseHistory {
   clause: string;
@@ -97,6 +108,7 @@ export class ContractStore {
 
         if (data.key) {
           const contract: Contract = data;
+          contract.file = normalizeContractFile(contract.file, this.projectRoot);
           if (!contract.clause_history) {
             contract.clause_history = [
               ...contract.proven.map((p) => ({ clause: p.smt2, status: "active" as const, weaken_step: 0, witness_count_at_last_weaken: 0, current_witness_count: 0 })),
@@ -106,6 +118,7 @@ export class ContractStore {
           this.contracts.set(contract.key, contract);
         } else if (data.contracts) {
           for (const contract of data.contracts) {
+            contract.file = normalizeContractFile(contract.file, this.projectRoot);
             const key = contract.key || signalKey(contract.file, contract.function, contract.line);
             contract.key = key;
             if (!contract.clause_history) {

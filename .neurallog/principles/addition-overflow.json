@@ -1,0 +1,35 @@
+{
+  "id": "addition-overflow",
+  "name": "addition-overflow",
+  "description": "Integer addition where one or both operands derive from external input and no guard ensures the result stays within safe bounds, risking silent overflow into unexpected negative values or exceeding maximum capacity.",
+  "astPatterns": [
+    {
+      "nodeType": ";",
+      "operator": "+",
+      "requiresParamRef": true,
+      "parentTypes": [
+        "expression_statement",
+        "lexical_declaration"
+      ],
+      "guardPatterns": [
+        "< MAX",
+        "<= MAX",
+        "Number.MAX_SAFE_INTEGER",
+        "overflow",
+        "capacity"
+      ]
+    }
+  ],
+  "smt2Template": "(declare-const {{base}} Int)\n(declare-const {{delta}} Int)\n(declare-const {{max_safe}} Int)\n(declare-const {{result}} Int)\n(assert (= {{result}} (+ {{base}} {{delta}})))\n(assert (> {{delta}} 0))\n(assert (> {{base}} 0))\n(assert (= {{max_safe}} 9007199254740991))\n(assert (> {{result}} {{max_safe}}))\n(check-sat)",
+  "teachingExample": {
+    "domain": "airline seat reservation",
+    "explanation": "A flight booking system tracks bookedSeats per flight. When a batch reservation arrives, it adds the requested seats directly: bookedSeats += batchSize. With no guard checking that bookedSeats + batchSize <= totalCapacity, a large batch can push bookedSeats beyond the plane's physical seat count, overbooking the flight silently.",
+    "smt2": "(declare-const booked_seats Int)\n(declare-const batch_size Int)\n(declare-const total_capacity Int)\n(declare-const new_total Int)\n(assert (= new_total (+ booked_seats batch_size)))\n(assert (= total_capacity 180))\n(assert (>= booked_seats 0))\n(assert (> batch_size 0))\n(assert (> new_total total_capacity))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "examples/inventory.ts/reserveStock[21], examples/inventory.ts/reserveStock[24], examples/inventory.ts/releaseStock[33]",
+    "violation": "Discovered from 3 unverified signals",
+    "generalizedAt": "2026-04-20T23:07:28.653Z"
+  },
+  "validated": true
+}

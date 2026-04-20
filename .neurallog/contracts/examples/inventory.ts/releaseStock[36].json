@@ -1,0 +1,30 @@
+{
+  "key": "examples/inventory.ts/releaseStock[36]",
+  "file": "/Users/tsavo/provekit/.worktrees/refinements/examples/inventory.ts",
+  "function": "releaseStock",
+  "line": 36,
+  "signal_hash": "c994fd243ab848d16d44b6725adc77e4e44947335f21417681718c0693793859",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "subtraction-underflow",
+      "principle_hash": "",
+      "claim": "VIOLATION: Subtraction Underflow at releaseStock",
+      "smt2": "; PRINCIPLE: subtraction-underflow\n; LINE: 36\n; VIOLATION: Subtraction Underflow at releaseStock\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const result Int)\n(assert (= result (- reserved quantity)))\n(assert (>= reserved 0))\n(assert (>= quantity 0))\n(assert (> quantity reserved))\n(assert (< result 0))\n(check-sat)",
+      "witness": "(\n  (define-fun quantity () Int\n    1)\n  (define-fun result () Int\n    (- 1))\n  (define-fun reserved () Int\n    0)\n)",
+      "complexity": 2,
+      "confidence": "high",
+      "judge_note": "cegar-confirmed: A caller invoking `releaseStock(productId, 1)` when `db.getReserved(productId)` returns `0` (e.g., due to a double-release or a race condition) will compute `reserved - quantity = -1`, driving the res"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: subtraction-underflow\n; LINE: 36\n; VIOLATION: Subtraction Underflow at releaseStock\n(declare-const reserved Int)\n(declare-const quantity Int)\n(declare-const result Int)\n(assert (= result (- reserved quantity)))\n(assert (>= reserved 0))\n(assert (>= quantity 0))\n(assert (> quantity reserved))\n(assert (< result 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}
