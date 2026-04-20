@@ -47,6 +47,7 @@ export class PropertyTestChecker implements Checker {
     const results: CheckResult[] = [];
     this.attempted = 0;
     this.lastRun = [];
+    this.skipReasons = [];
 
     for (const contract of contracts) {
       if (this.attempted >= this.limit) break;
@@ -62,8 +63,17 @@ export class PropertyTestChecker implements Checker {
     }
 
     console.log(`[property-test] attempted ${this.attempted}, ran ${this.lastRun.length}, skipped ${this.attempted - this.lastRun.length}`);
+    if (this.lastRun.length === 0 && this.attempted > 0) {
+      const reasons = new Map<string, number>();
+      for (const r of this.skipReasons) reasons.set(r, (reasons.get(r) || 0) + 1);
+      for (const [reason, n] of reasons) {
+        console.log(`[property-test]   skipped ${n}: ${reason}`);
+      }
+    }
     return results;
   }
+
+  private skipReasons: string[] = [];
 
   private ensureTsNode(): boolean {
     if (this.tsNodeLoaded) return true;
@@ -79,20 +89,35 @@ export class PropertyTestChecker implements Checker {
 
   private runOne(contract: Contract, proven: ProvenProperty): PropertyTestContext | null {
     const absPath = this.resolvePath(contract.file);
-    if (this.fileRequireFailures.has(absPath)) return null;
+    if (this.fileRequireFailures.has(absPath)) {
+      this.skipReasons.push("require() previously failed for file");
+      return null;
+    }
 
     const extracted = this.loadFunction(absPath, contract.function);
-    if (!extracted) return null;
+    if (!extracted) {
+      this.skipReasons.push(`could not load ${contract.function} from ${contract.file}`);
+      return null;
+    }
 
     const model = this.extractModel(proven.smt2);
-    if (!model || Object.keys(model).length === 0) return null;
+    if (!model || Object.keys(model).length === 0) {
+      this.skipReasons.push("no Z3 model (preconditions unsat or malformed)");
+      return null;
+    }
 
     const args: any[] = [];
     for (const name of extracted.paramNames) {
-      if (!(name in model)) return null;
+      if (!(name in model)) {
+        this.skipReasons.push(`SMT model missing param "${name}" for ${contract.function}`);
+        return null;
+      }
       args.push(model[name]);
     }
-    if (args.length === 0) return null;
+    if (args.length === 0) {
+      this.skipReasons.push(`${contract.function} has no parameters`);
+      return null;
+    }
 
     let outcome: { kind: "returned"; value: string } | { kind: "threw"; error: string };
     try {
@@ -271,15 +296,43 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
-    const fn = mod?.[fnName] || mod?.default?.[fnName];
-    if (typeof fn !== "function") {
-      this.fnCache.set(cacheKey, null);
-      return null;
+    const topLevel = mod?.[fnName] || mod?.default?.[fnName];
+    if (typeof topLevel === "function") {
+      const result = { fn: topLevel, paramNames: extracted.paramNames, source: extracted.source };
+      this.fnCache.set(cacheKey, result);
+      return result;
     }
 
-    const result = { fn, paramNames: extracted.paramNames, source: extracted.source };
-    this.fnCache.set(cacheKey, result);
-    return result;
+    const methodOwner = this.findMethodOwner(mod, fnName);
+    if (methodOwner) {
+      const result = { fn: methodOwner, paramNames: extracted.paramNames, source: extracted.source };
+      this.fnCache.set(cacheKey, result);
+      return result;
+    }
+
+    this.fnCache.set(cacheKey, null);
+    return null;
+  }
+
+  private findMethodOwner(mod: any, fnName: string): ((...args: any[]) => any) | null {
+    const scan = (obj: any): ((...args: any[]) => any) | null => {
+      if (!obj) return null;
+      for (const key of Object.keys(obj)) {
+        const val = obj[key];
+        if (typeof val !== "function") continue;
+        if (val.prototype && typeof val.prototype[fnName] === "function") {
+          let instance;
+          try {
+            instance = new val();
+          } catch {
+            continue;
+          }
+          return (val.prototype[fnName] as Function).bind(instance);
+        }
+      }
+      return null;
+    };
+    return scan(mod) || scan(mod?.default);
   }
 
   private extractParamNamesAndSource(

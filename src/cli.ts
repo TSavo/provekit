@@ -639,7 +639,9 @@ function findProjectRoot(startDir: string): string {
   return startDir;
 }
 
-main().catch((err) => {
-  console.error("Fatal:", err.message || err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("Fatal:", err.message || err);
+    process.exit(1);
+  });
+}
