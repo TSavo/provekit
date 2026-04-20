@@ -1,5 +1,6 @@
 import { LLMProvider, createProvider } from "./llm";
 import { VerificationResult } from "./verifier";
+import { judgeTeachingExample } from "./judge";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { createHash } from "crypto";
@@ -12,6 +13,16 @@ export interface ASTPattern {
   guardPatterns?: string[];
   pairMethod?: string;
   checkPaths?: string[];
+}
+
+export interface PrincipleStats {
+  uses: number;
+  proven: number;
+  violations: number;
+  errors: number;
+  lastUsedAt?: string;
+  retiredAt?: string;
+  retiredReason?: string;
 }
 
 export interface Principle {
@@ -34,6 +45,7 @@ export interface Principle {
   confidence?: "high" | "low";
   validated: boolean;
   validationFailure?: string;
+  stats?: PrincipleStats;
 }
 
 
@@ -105,6 +117,96 @@ export class PrincipleStore {
       join(this.principlesDir, filename),
       JSON.stringify(principle, null, 2)
     );
+  }
+
+  private dirtyStats: Set<string> = new Set();
+
+  recordUse(principleTag: string | null, verdict: "proven" | "violation" | "error"): void {
+    if (!principleTag) return;
+    const ids = principleTag
+      .replace(/\[NEW\]/gi, "")
+      .split(/[,+&\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => /^P\d+$/i.test(s));
+    if (ids.length === 0) return;
+
+    const nowIso = new Date().toISOString();
+    for (const id of ids) {
+      const p = this.principles.find((x) => x.id === id);
+      if (!p) continue;
+      if (!p.stats) p.stats = { uses: 0, proven: 0, violations: 0, errors: 0 };
+      p.stats.uses++;
+      p.stats.lastUsedAt = nowIso;
+      if (verdict === "proven") p.stats.proven++;
+      else if (verdict === "violation") p.stats.violations++;
+      else p.stats.errors++;
+      this.dirtyStats.add(id);
+    }
+  }
+
+  persistStats(): void {
+    if (this.dirtyStats.size === 0) return;
+    mkdirSync(this.principlesDir, { recursive: true });
+    for (const id of this.dirtyStats) {
+      const p = this.principles.find((x) => x.id === id);
+      if (!p) continue;
+      const filename = `${id}.json`;
+      try {
+        writeFileSync(
+          join(this.principlesDir, filename),
+          JSON.stringify(p, null, 2)
+        );
+      } catch (e: any) {
+        console.log(`[principles] persistStats ${id}: ${e?.message?.slice(0, 40) || "ok"}`);
+      }
+    }
+    this.dirtyStats.clear();
+  }
+
+  private shouldRetire(p: Principle): { retire: boolean; reason?: string } {
+    const s = p.stats;
+    if (!s) return { retire: false };
+    if (s.retiredAt) return { retire: false };
+    if (s.uses < 20) return { retire: false };
+    const errorRate = s.errors / s.uses;
+    if (errorRate > 0.5 && s.proven === 0) {
+      return { retire: true, reason: `error-rate ${(errorRate * 100).toFixed(0)}% over ${s.uses} uses, 0 proofs` };
+    }
+    return { retire: false };
+  }
+
+  evaluateRetirements(): { id: string; reason: string }[] {
+    const retired: { id: string; reason: string }[] = [];
+    for (const p of this.principles) {
+      const v = this.shouldRetire(p);
+      if (v.retire && v.reason) {
+        retired.push({ id: p.id, reason: v.reason });
+        this.retire(p.id, v.reason);
+      }
+    }
+    return retired;
+  }
+
+  retire(id: string, reason: string): void {
+    const p = this.principles.find((x) => x.id === id);
+    if (!p) return;
+    if (!p.stats) p.stats = { uses: 0, proven: 0, violations: 0, errors: 0 };
+    p.stats.retiredAt = new Date().toISOString();
+    p.stats.retiredReason = reason;
+
+    const retiredDir = join(this.principlesDir, "retired");
+    mkdirSync(retiredDir, { recursive: true });
+    const filename = `${id}.json`;
+    try {
+      writeFileSync(join(retiredDir, filename), JSON.stringify(p, null, 2));
+      try {
+        require("fs").unlinkSync(join(this.principlesDir, filename));
+      } catch {}
+    } catch (e: any) {
+      console.log(`[principles] retire ${id}: ${e?.message?.slice(0, 40) || "ok"}`);
+    }
+
+    this.principles = this.principles.filter((x) => x.id !== id);
   }
 
   /**
@@ -494,6 +596,28 @@ Respond with a JSON object:
     );
 
     if (adversarialResult.passed) {
+      const judge = await judgeTeachingExample(
+        {
+          name: current.name,
+          description: current.description,
+          explanation: current.teachingExample.explanation,
+          smt2: current.teachingExample.smt2,
+        },
+        llm,
+        model
+      );
+      if (!judge.valid) {
+        console.log(`      Judge rejected teaching example: ${judge.note}`);
+        return {
+          id: "",
+          name: current.name,
+          description: current.description,
+          teachingExample: current.teachingExample,
+          provenance: { discoveredIn: context, violation: violation.smt2.slice(0, 200), generalizedAt: new Date().toISOString() },
+          validated: false,
+          validationFailure: `judge-rejected: ${judge.note}`,
+        };
+      }
       return {
         id: "",
         name: current.name,

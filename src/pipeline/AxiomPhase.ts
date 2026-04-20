@@ -11,6 +11,7 @@ import {
   StrengtheningChecker,
   IndependenceChecker,
   TemplateChecker,
+  StrengthChecker,
 } from "../checkers";
 
 export interface AxiomReport {
@@ -70,6 +71,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
       new ReachabilityChecker(),
       new StrengtheningChecker(),
       new IndependenceChecker(),
+      new StrengthChecker(),
     ];
 
     const checkerResults: AxiomReport["checkerResults"] = [];

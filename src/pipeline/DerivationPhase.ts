@@ -5,7 +5,7 @@ import { createHash } from "crypto";
 import Handlebars from "handlebars";
 import { Phase, PhaseResult, PhaseOptions } from "./Phase";
 import { ContextBundle, CallSiteContext } from "./ContextPhase";
-import { verifyAll, verifyBlock, VerificationResult, proofComplexity } from "../verifier";
+import { verifyAll, verifyBlock, VerificationResult, proofComplexity, extractReason } from "../verifier";
 import { PrincipleStore } from "../principles";
 import { Contract, ContractStore, signalKey, ClauseHistory, ProvenProperty, Violation } from "../contracts";
 import { computeSignalHash } from "../signals";
@@ -17,6 +17,8 @@ import { DagExecutor } from "./DagExecutor";
 import { buildSignalFrame } from "./PromptStrategy";
 import { assembleDossier, formatDossier } from "./Dossier";
 import { TemplateEngine } from "../templates";
+import { judgeTeachingExample } from "../judge";
+import { refineErrorBlock } from "../refiner";
 
 export interface DerivationOutput {
   contracts: Contract[];
@@ -134,6 +136,7 @@ export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
 
     const templateEngine = new TemplateEngine(options.projectRoot);
     const allContracts: Contract[] = [];
+    const functionSources = new Map<string, string>();
     const allNewViolations: { violation: VerificationResult; context: string }[] = [];
     const allUnverifiedSignals: {
       signalKey: string; line: number; signalType: string; signalText: string;
@@ -180,6 +183,10 @@ So every [NEW] tag teaches the system something it will remember forever. Be eag
       console.log(`  [${completedFunctions}/${functionNodes.size}] (${pct}%) ${fn.relativePath}/${fn.functionName} — ${fn.signals.length} signals, ${resolvedDeps.size} deps`);
 
       const callSites = fn.signals.map((s) => s.callSite);
+      const fnKey = `${fn.relativePath}/${fn.functionName}`;
+      if (callSites[0]?.functionSource) {
+        functionSources.set(fnKey, callSites[0].functionSource);
+      }
 
       // Step 1: Run mechanical templates — instant, no LLM
       const fnNode = this.findFunctionNode(fn, options.projectRoot);
@@ -200,7 +207,37 @@ So every [NEW] tag teaches the system something it will remember forever. Be eag
           confidence: tr.confidence,
         });
       }
+      let retryBudget = 2;
+      for (const tv of templateVerifications) {
+        if (retryBudget <= 0) break;
+        if (tv.z3Result !== "error" && tv.z3Result !== "unknown") continue;
+        retryBudget--;
+        const claim = tv.smt2.split("\n").find((l) => l.trim().startsWith(";") && !/^;\s*(PRINCIPLE|LINE|REASON):/i.test(l.trim().replace(/^;\s*/, "")))?.trim().replace(/^;\s*/, "") || "(no claim)";
+        const refined = await refineErrorBlock({
+          smt2: tv.smt2,
+          z3Error: tv.error || "",
+          claim,
+          provider,
+          model,
+        });
+        if (refined && (refined.result === "sat" || refined.result === "unsat")) {
+          tv.smt2 = refined.smt2;
+          tv.z3Result = refined.result;
+          tv.error = undefined;
+          tv.judgeNote = (tv.judgeNote ? tv.judgeNote + "; " : "") + "retry-refined after Z3 error";
+          console.log(`    retry: recovered ${refined.result} for ${tv.principle || "?"}`);
+        }
+      }
+
       totalTemplateProofs += templateVerifications.filter((v) => v.z3Result === "sat" || v.z3Result === "unsat").length;
+
+      for (const tv of templateVerifications) {
+        if (!tv.principle) continue;
+        const verdict: "proven" | "violation" | "error" =
+          tv.z3Result === "unsat" ? "proven" :
+          tv.z3Result === "sat" ? "violation" : "error";
+        principleStore.recordUse(tv.principle, verdict);
+      }
 
       // Step 2: Build template context for the LLM — show what's already proven
       const templateContext = templateVerifications.length > 0
@@ -399,6 +436,16 @@ Produce ONE atomic principle for this pattern gap. It must have:
           const jsonMatch = response.text.match(/```json\s*([\s\S]*?)```/);
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[1]!.trim());
+            const judge = await judgeTeachingExample(
+              {
+                name: parsed.name,
+                description: parsed.description,
+                explanation: parsed.teachingExample.explanation,
+                smt2: parsed.teachingExample.smt2,
+              },
+              provider,
+              model
+            );
             const newPrinciple = {
               id: parsed.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
               name: parsed.name,
@@ -411,15 +458,39 @@ Produce ONE atomic principle for this pattern gap. It must have:
                 violation: `Discovered from ${signals.length} unverified signals`,
                 generalizedAt: new Date().toISOString(),
               },
-              validated: true,
+              validated: judge.valid,
+              ...(judge.valid ? {} : { validationFailure: `judge-rejected: ${judge.note}` }),
             };
-            principleStore.add(newPrinciple);
-            console.log(`    DISCOVERED: ${newPrinciple.id} — ${newPrinciple.name} (from ${signals.length} signals)`);
+            if (judge.valid) {
+              principleStore.add(newPrinciple);
+              console.log(`    DISCOVERED: ${newPrinciple.id} — ${newPrinciple.name} (from ${signals.length} signals)`);
+            } else {
+              console.log(`    REJECTED (judge): ${newPrinciple.name} — ${judge.note}`);
+            }
           }
         } catch (err: any) {
           console.log(`    ERROR discovering principle for ${gapKey}: ${err.message?.slice(0, 60)}`);
         }
       }
+    }
+
+    principleStore.persistStats();
+    const retired = principleStore.evaluateRetirements();
+    if (retired.length > 0) {
+      for (const r of retired) {
+        console.log(`  RETIRED: ${r.id} — ${r.reason}`);
+      }
+    }
+
+    const cegarStats = await this.cegarRefineViolations(
+      allContracts,
+      functionSources,
+      provider,
+      model,
+      store
+    );
+    if (cegarStats.total > 0) {
+      this.detail(`CEGAR: ${cegarStats.confirmed} confirmed | ${cegarStats.refined} refined | ${cegarStats.flipped} flipped to proven | ${cegarStats.skipped} skipped`);
     }
 
     const output: DerivationOutput = {
@@ -702,5 +773,128 @@ Produce ONE atomic principle for this pattern gap. It must have:
     const m = Math.floor(s / 60);
     if (m < 60) return `${m}m ${s % 60}s`;
     return `${Math.floor(m / 60)}h ${m % 60}m`;
+  }
+
+  private async cegarRefineViolations(
+    contracts: Contract[],
+    functionSources: Map<string, string>,
+    provider: LLMProvider,
+    model: string,
+    store: ContractStore,
+    maxCalls: number = 10
+  ): Promise<{ total: number; confirmed: number; refined: number; flipped: number; skipped: number }> {
+    let confirmed = 0, refined = 0, flipped = 0, skipped = 0, used = 0;
+
+    for (const contract of contracts) {
+      if (used >= maxCalls) {
+        skipped += contract.violations.filter((v) => v.witness).length;
+        continue;
+      }
+
+      const relPath = contract.key.split("/").slice(0, -1).join("/");
+      const fnKey = `${relPath}/${contract.function}`;
+      const source = functionSources.get(fnKey) || "(source unavailable)";
+      let mutated = false;
+
+      for (let i = 0; i < contract.violations.length; i++) {
+        if (used >= maxCalls) { skipped++; continue; }
+        const v = contract.violations[i]!;
+        if (!v.witness) continue;
+        if (v.judge_note?.startsWith("cegar-")) continue;
+        used++;
+
+        const prompt = `Z3 reports a violation. Decide whether the counterexample is a real reachable bug or an artifact of an incomplete SMT encoding.
+
+## Code
+\`\`\`typescript
+${source}
+\`\`\`
+
+## Claim
+${v.claim}
+
+## SMT-LIB encoding
+\`\`\`smt2
+${v.smt2}
+\`\`\`
+
+## Z3 counterexample
+\`\`\`
+${v.witness}
+\`\`\`
+
+## Your task
+
+Reply with exactly one of:
+
+(1) If the counterexample is reachable from real code execution, reply on ONE line:
+REACHABLE: <one-sentence attack path that a reader can verify by reading the code>
+
+(2) If the counterexample is spurious — Z3 invented values the code actually rules out — emit a revised SMT-LIB block that adds the missing precondition, keeps \`; PRINCIPLE:\` and \`; LINE:\` tags, and adds \`; REASON:\` stating what was missing:
+\`\`\`smt2
+<revised block>
+(check-sat)
+\`\`\`
+
+Do not restate the original block unchanged. Do not emit both a REACHABLE line and a block — pick one.`;
+
+        let response;
+        try {
+          response = await provider.complete(prompt, {
+            model,
+            systemPrompt: "You refine SMT-LIB encodings based on Z3 counterexamples. Reply with REACHABLE: <path> on one line OR a single revised smt2 block. Nothing else.",
+          });
+        } catch {
+          continue;
+        }
+
+        const text = response.text.trim();
+        const firstLine = text.split("\n")[0] || "";
+        if (/^REACHABLE\b/i.test(firstLine)) {
+          v.confidence = "high";
+          v.judge_note = `cegar-confirmed: ${firstLine.replace(/^REACHABLE:?\s*/i, "").trim().slice(0, 200)}`;
+          confirmed++;
+          mutated = true;
+          continue;
+        }
+
+        const smtMatch = text.match(/```(?:smt2|smt-lib|smtlib2)?\s*\n([\s\S]*?)```/i);
+        if (!smtMatch) continue;
+        const revisedSmt = smtMatch[1]!.trim();
+        if (!revisedSmt.includes("(check-sat)")) continue;
+        if (revisedSmt === v.smt2) continue;
+
+        const { result, witness: newWitness } = verifyBlock(revisedSmt);
+        if (result === "unsat") {
+          contract.proven.push({
+            principle: v.principle,
+            principle_hash: v.principle_hash,
+            claim: v.claim,
+            smt2: revisedSmt,
+            reason: extractReason(revisedSmt) || "cegar-refined precondition added",
+            confidence: "high",
+            judge_note: "cegar-flipped: violation became proof after tightening encoding",
+          });
+          contract.violations.splice(i, 1);
+          i--;
+          flipped++;
+          mutated = true;
+        } else if (result === "sat") {
+          v.smt2 = revisedSmt;
+          v.witness = newWitness || v.witness;
+          v.reason = extractReason(revisedSmt) || v.reason;
+          v.confidence = "high";
+          v.judge_note = "cegar-refined: bug persists after tightened encoding";
+          refined++;
+          mutated = true;
+        }
+      }
+
+      if (mutated) {
+        store.put(contract);
+      }
+    }
+
+    return { total: confirmed + refined + flipped, confirmed, refined, flipped, skipped };
   }
 }

@@ -509,6 +509,7 @@ Every SMT-LIB block must:
 - Include `(check-sat)` at the end
 - Tag with `; PRINCIPLE: P<N>` or `; PRINCIPLE: [NEW]`
 - Tag with `; LINE: <number>` matching the signal's line number
+- Tag with `; REASON: <one or two short sentences>` that states WHY this invariant should hold, referencing specific lines/variables in the code — not a restatement of the claim, not a paraphrase of the SMT-LIB. If you cannot state a reason that cites the code, do not emit the block.
 - Include a comment explaining what it checks and what sat/unsat means
 - Be self-contained — Z3 can run it independently without any other block
 

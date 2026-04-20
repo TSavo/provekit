@@ -15,6 +15,9 @@ export interface ProvenProperty {
   principle_hash: string;
   claim: string;
   smt2: string;
+  reason?: string;
+  confidence?: "high" | "low";
+  judge_note?: string;
 }
 
 export interface Violation {
@@ -25,6 +28,8 @@ export interface Violation {
   witness?: string;
   complexity?: number;
   confidence?: "high" | "low";
+  reason?: string;
+  judge_note?: string;
 }
 
 export interface Contract {

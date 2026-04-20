@@ -9,6 +9,9 @@ export interface VerificationResult {
   witness?: string;
   complexity: number;
   confidence?: "high" | "low";
+  reason?: string;
+  judgeRejected?: boolean;
+  judgeNote?: string;
 }
 
 export function proofComplexity(smt2: string): number {
@@ -38,8 +41,33 @@ export function proofComplexity(smt2: string): number {
   return transitions;
 }
 
-export function extractSmt2Blocks(response: string): { smt2: string; principle: string | null }[] {
-  const blocks: { smt2: string; principle: string | null }[] = [];
+export function extractReason(smt2: string): string | null {
+  const lines = smt2.split("\n");
+  const reasonLines: string[] = [];
+  let inReason = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line.startsWith(";")) {
+      if (inReason) break;
+      continue;
+    }
+    const stripped = line.replace(/^;\s*/, "");
+    const m = stripped.match(/^REASON:\s*(.*)$/i);
+    if (m) {
+      inReason = true;
+      if (m[1]!.trim()) reasonLines.push(m[1]!.trim());
+      continue;
+    }
+    if (inReason) {
+      if (/^(PRINCIPLE|LINE):/i.test(stripped)) break;
+      reasonLines.push(stripped);
+    }
+  }
+  return reasonLines.length > 0 ? reasonLines.join(" ").trim() : null;
+}
+
+export function extractSmt2Blocks(response: string): { smt2: string; principle: string | null; reason: string | null }[] {
+  const blocks: { smt2: string; principle: string | null; reason: string | null }[] = [];
 
   const codeBlockRegex = /```(?:smt2|smt-lib|smtlib2|scheme)?\s*\n([\s\S]*?)```/g;
   let match;
@@ -54,7 +82,8 @@ export function extractSmt2Blocks(response: string): { smt2: string; principle: 
 
     const firstCheckSat = trimmed.indexOf("(check-sat)");
     const truncated = trimmed.slice(0, firstCheckSat + "(check-sat)".length);
-    blocks.push({ smt2: truncated, principle });
+    const reason = extractReason(truncated);
+    blocks.push({ smt2: truncated, principle, reason });
   }
 
   return blocks;
@@ -205,11 +234,11 @@ export function verifyAll(response: string): VerificationResult[] {
   }
 
   const results: VerificationResult[] = [];
-  for (const { smt2, principle } of nonVacuous) {
+  for (const { smt2, principle, reason } of nonVacuous) {
     const { result, error, witness } = verifyBlock(smt2);
     const trivial = isTrivialIdentity(smt2);
     if (!trivial) {
-      results.push({ smt2, z3Result: result, principle, error, witness, complexity: proofComplexity(smt2) });
+      results.push({ smt2, z3Result: result, principle, error, witness, complexity: proofComplexity(smt2), reason: reason || undefined });
     }
   }
 

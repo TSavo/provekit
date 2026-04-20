@@ -5,3 +5,4 @@ export { ReachabilityChecker } from "./ReachabilityChecker";
 export { StrengtheningChecker } from "./StrengtheningChecker";
 export { IndependenceChecker } from "./IndependenceChecker";
 export { TemplateChecker } from "./TemplateChecker";
+export { StrengthChecker } from "./StrengthChecker";
