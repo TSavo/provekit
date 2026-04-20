@@ -253,7 +253,7 @@ async function runVerify(args: string[]): Promise<void> {
   console.log();
 
   const pipeline = new Pipeline();
-  const report = pipeline.runVerifyOnly(projectRoot, verbose);
+  const report = await pipeline.runVerifyOnly(projectRoot, verbose);
 
   if (ci) {
     const { PrincipleStore } = require("./principles");

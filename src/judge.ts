@@ -96,3 +96,76 @@ export async function judgeTeachingExample(
     model
   );
 }
+
+export interface RuntimeOutcomeInput {
+  functionSource: string;
+  claim: string;
+  smt2: string;
+  inputsSummary: string;
+  outcome:
+    | { kind: "returned"; value: string }
+    | { kind: "threw"; error: string };
+}
+
+export async function judgeRuntimeOutcome(
+  input: RuntimeOutcomeInput,
+  provider: LLMProvider,
+  model: string
+): Promise<JudgeVerdict> {
+  const outcomeDesc =
+    input.outcome.kind === "returned"
+      ? `returned ${input.outcome.value}`
+      : `threw: ${input.outcome.error}`;
+
+  const prompt = `Z3 proved a claim about this function (unsat on the negated goal). We then executed the function with concrete inputs sampled from Z3's own model of the preconditions. Your job is to decide whether the runtime outcome is consistent with the claim, or whether it reveals an encoding inconsistency — i.e. Z3 said "proven" but the actual code disagrees with the claim.
+
+## Function source
+\`\`\`typescript
+${input.functionSource}
+\`\`\`
+
+## Claim Z3 proved
+${input.claim}
+
+## SMT-LIB encoding Z3 evaluated
+\`\`\`smt2
+${input.smt2}
+\`\`\`
+
+## Concrete inputs (extracted from Z3's model of the preconditions)
+${input.inputsSummary}
+
+## Observed runtime outcome
+${outcomeDesc}
+
+## Your task
+
+Decide:
+
+- VALID — the observed runtime outcome is consistent with what the claim says should happen for these inputs. The claim is a faithful statement about the code.
+- INVALID — the outcome contradicts the claim. Either the SMT-LIB encoding doesn't model the code, or the claim as stated isn't actually true at runtime.
+
+Specifically, INVALID applies when the function threw on an input the claim says should succeed, when it returned a value the claim says was impossible, or when Z3 proved a property that real execution falsifies.
+
+Reply with exactly one line, starting VALID or INVALID followed by a colon and a single short sentence of justification.`;
+
+  let resp;
+  try {
+    resp = await provider.complete(prompt, {
+      model,
+      systemPrompt:
+        "You judge whether runtime behaviour is consistent with a Z3-proven claim about a function. Reply with one line starting VALID: or INVALID:.",
+    });
+  } catch (err: any) {
+    return { valid: true, note: `judge-error: ${err?.message?.slice(0, 80) || "unknown"}` };
+  }
+
+  const first = resp.text.trim().split("\n")[0] || "";
+  const m = first.match(/^(VALID|INVALID)\s*[:\-]\s*(.*)$/i);
+  if (!m) {
+    return { valid: true, note: `judge-unparseable: ${first.slice(0, 80)}` };
+  }
+  const valid = m[1]!.toUpperCase() === "VALID";
+  const note = m[2]!.trim().slice(0, 200);
+  return { valid, note };
+}

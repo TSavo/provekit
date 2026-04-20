@@ -30,7 +30,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
   readonly name = "Axiom Application";
   readonly phaseNumber = 5;
 
-  execute(_input: void, options: PhaseOptions): PhaseResult<AxiomReport> {
+  async execute(_input: void, options: PhaseOptions): Promise<PhaseResult<AxiomReport>> {
     this.log("Mechanical verification (no LLM, no network, pure Z3)...");
 
     const store = new ContractStore(options.projectRoot);
@@ -112,6 +112,30 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
       checkerResults.push({ checker: checker.name, proven, violations, errors, results });
     }
 
+    let judgeRan = false;
+    const pChecker = checkers.find((c) => c.name === "property-test") as PropertyTestChecker | undefined;
+    if (pChecker && process.env.NEURALLOG_PROPERTY_TEST_JUDGE === "1") {
+      const stats = await pChecker.judgeResults();
+      if (stats.judged > 0) {
+        judgeRan = true;
+        const pEntry = checkerResults.find((r) => r.checker === "property-test");
+        if (pEntry) {
+          pEntry.proven = 0;
+          pEntry.violations = 0;
+          pEntry.errors = 0;
+          for (const r of pEntry.results) {
+            if (r.verdict === "proven") pEntry.proven++;
+            else if (r.verdict === "violation") pEntry.violations++;
+            else pEntry.errors++;
+          }
+          totalProven = checkerResults.reduce((n, x) => n + x.proven, 0);
+          totalViolations = checkerResults.reduce((n, x) => n + x.violations, 0);
+          totalErrors = checkerResults.reduce((n, x) => n + x.errors, 0);
+          this.detail(`property-test judge: ${stats.judged} judged, ${stats.flipped} verdict flips, ${stats.confirmed} violations confirmed`);
+        }
+      }
+    }
+
     this.detail("Checking dependency chain...");
     const stale = store.findStale();
     if (stale.length === 0) {
@@ -126,7 +150,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
     this.detail(`${contracts.length} contracts, ${checkers.length} checkers`);
     this.detail(`${totalProven} proven | ${totalViolations} violations | ${totalErrors} errors${ignored > 0 ? ` | ${ignored} ignored` : ""}`);
     this.detail(`Stale: ${stale.length}`);
-    this.detail("No LLM was used.");
+    this.detail(judgeRan ? "Property-test judge used the LLM; all other checkers were mechanical." : "No LLM was used.");
     console.log();
 
     const report: AxiomReport = {
