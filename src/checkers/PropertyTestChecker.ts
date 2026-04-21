@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import { isAbsolute, resolve as resolvePath } from "path";
 import Parser from "tree-sitter";
-import { Contract, ProvenProperty } from "../contracts";
+import { Contract, ProvenProperty, Violation } from "../contracts";
 import { Checker, CheckResult } from "./Checker";
 import { parseFile } from "../parser";
 import { createProvider } from "../llm";
@@ -13,6 +13,13 @@ interface ExtractedFn {
   source: string;
 }
 
+interface FunctionInfo {
+  paramNames: string[];
+  source: string;
+  isStatic: boolean;
+  className: string | null;
+}
+
 interface PropertyTestContext {
   result: CheckResult;
   claim: string;
@@ -22,6 +29,7 @@ interface PropertyTestContext {
   outcome:
     | { kind: "returned"; value: string }
     | { kind: "threw"; error: string };
+  source: "proven" | "violation";
 }
 
 export class PropertyTestChecker implements Checker {
@@ -54,7 +62,21 @@ export class PropertyTestChecker implements Checker {
       for (const proven of contract.proven) {
         if (this.attempted >= this.limit) break;
         this.attempted++;
-        const r = this.runOne(contract, proven);
+        const r = this.runOne(contract, proven, "proven");
+        if (r) {
+          results.push(r.result);
+          this.lastRun.push(r);
+        }
+      }
+    }
+
+    for (const contract of contracts) {
+      if (this.attempted >= this.limit) break;
+      for (const violation of contract.violations) {
+        if (this.attempted >= this.limit) break;
+        if (!violation.witness) continue;
+        this.attempted++;
+        const r = this.runOne(contract, violation, "violation");
         if (r) {
           results.push(r.result);
           this.lastRun.push(r);
@@ -63,10 +85,14 @@ export class PropertyTestChecker implements Checker {
     }
 
     console.log(`[property-test] attempted ${this.attempted}, ran ${this.lastRun.length}, skipped ${this.attempted - this.lastRun.length}`);
-    if (this.lastRun.length === 0 && this.attempted > 0) {
+    if (this.skipReasons.length > 0) {
       const reasons = new Map<string, number>();
-      for (const r of this.skipReasons) reasons.set(r, (reasons.get(r) || 0) + 1);
-      for (const [reason, n] of reasons) {
+      for (const r of this.skipReasons) {
+        const bucket = r.replace(/"[^"]+"/g, '"..."').replace(/\b\S+\.ts\b/g, "<file>").replace(/[A-Za-z_][A-Za-z0-9_]*:\s*\d+/g, "<key>");
+        reasons.set(bucket, (reasons.get(bucket) || 0) + 1);
+      }
+      const sorted = [...reasons.entries()].sort((a, b) => b[1] - a[1]);
+      for (const [reason, n] of sorted) {
         console.log(`[property-test]   skipped ${n}: ${reason}`);
       }
     }
@@ -87,7 +113,11 @@ export class PropertyTestChecker implements Checker {
     }
   }
 
-  private runOne(contract: Contract, proven: ProvenProperty): PropertyTestContext | null {
+  private runOne(
+    contract: Contract,
+    prop: ProvenProperty | Violation,
+    source: "proven" | "violation"
+  ): PropertyTestContext | null {
     const absPath = this.resolvePath(contract.file);
     if (this.fileRequireFailures.has(absPath)) {
       this.skipReasons.push("require() previously failed for file");
@@ -100,9 +130,13 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
-    const model = this.extractModel(proven.smt2);
+    const witness = (prop as Violation).witness;
+    const model = source === "violation" && witness
+      ? this.parseZ3Model(witness)
+      : this.extractModel(prop.smt2);
+
     if (!model || Object.keys(model).length === 0) {
-      this.skipReasons.push("no Z3 model (preconditions unsat or malformed)");
+      this.skipReasons.push(source === "violation" ? "witness empty / unparseable" : "no Z3 model (preconditions unsat or malformed)");
       return null;
     }
 
@@ -135,30 +169,40 @@ export class PropertyTestChecker implements Checker {
         ? `returned ${outcome.value}`
         : `threw: ${outcome.error}`;
 
-    const verdict: "proven" | "violation" | "error" =
-      outcome.kind === "threw" ? "violation" : "proven";
+    let verdict: "proven" | "violation" | "error";
+    let error: string | undefined;
+    if (source === "proven") {
+      verdict = outcome.kind === "threw" ? "violation" : "proven";
+      error = outcome.kind === "threw"
+        ? "runtime disagreement: Z3 said unsat (proven) but function threw on Z3-model input"
+        : undefined;
+    } else {
+      verdict = outcome.kind === "threw" ? "violation" : "proven";
+      error = outcome.kind === "threw"
+        ? "violation reproduced: function threw on the Z3 witness — bug confirmed"
+        : "violation did not reproduce: function ran cleanly on the Z3 witness — possible false positive";
+    }
 
+    const prefix = source === "violation" ? "VIOLATION-REPLAY " : "";
     const result: CheckResult = {
       checker: this.name,
-      description: `[${proven.principle || "?"}] ${contract.function}:${contract.line} — with ${argSummary} → ${outcomeSummary}`,
+      description: `[${prop.principle || "?"}] ${prefix}${contract.function}:${contract.line} — with ${argSummary} → ${outcomeSummary}`,
       sourceContract: `${contract.function}:${contract.line}`,
-      smt2: proven.smt2,
-      expected: "unsat",
-      z3Result: "unsat",
+      smt2: prop.smt2,
+      expected: source === "violation" ? "sat" : "unsat",
+      z3Result: source === "violation" ? "sat" : "unsat",
       verdict,
-      error:
-        outcome.kind === "threw"
-          ? `runtime disagreement: Z3 said unsat but function threw on Z3-model input`
-          : undefined,
+      error,
     };
 
     return {
       result,
-      claim: proven.claim,
-      smt2: proven.smt2,
+      claim: prop.claim,
+      smt2: prop.smt2,
       functionSource: extracted.source,
       inputsSummary: argSummary,
       outcome,
+      source,
     };
   }
 
@@ -235,23 +279,24 @@ export class PropertyTestChecker implements Checker {
     }
 
     if (!/\bsat\b/.test(output)) return null;
+    return this.parseZ3Model(output);
+  }
 
+  private parseZ3Model(text: string): Record<string, number | boolean> {
     const model: Record<string, number | boolean> = {};
     const modelRegex = /\(define-fun\s+(\S+)\s+\(\)\s+(Int|Real|Bool)\s+([^\s)]+(?:\s+[\d.\-]+)?)\s*\)/g;
     let m;
-    while ((m = modelRegex.exec(output)) !== null) {
+    while ((m = modelRegex.exec(text)) !== null) {
       const [, name, sort, rawValue] = m;
       const parsed = this.parseValue(sort!, rawValue!);
       if (parsed !== undefined) model[name!] = parsed;
     }
-
     const negRegex = /\(define-fun\s+(\S+)\s+\(\)\s+(Int|Real)\s+\(-\s+([\d.]+)\)\s*\)/g;
-    while ((m = negRegex.exec(output)) !== null) {
+    while ((m = negRegex.exec(text)) !== null) {
       const [, name, sort, rawValue] = m;
       const parsed = this.parseValue(sort!, `-${rawValue!}`);
       if (parsed !== undefined) model[name!] = parsed;
     }
-
     return model;
   }
 
@@ -279,8 +324,8 @@ export class PropertyTestChecker implements Checker {
     const cacheKey = `${filePath}::${fnName}`;
     if (this.fnCache.has(cacheKey)) return this.fnCache.get(cacheKey)!;
 
-    const extracted = this.extractParamNamesAndSource(filePath, fnName);
-    if (!extracted) {
+    const info = this.extractFunctionInfo(filePath, fnName);
+    if (!info) {
       this.fnCache.set(cacheKey, null);
       return null;
     }
@@ -296,16 +341,9 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
-    const topLevel = mod?.[fnName] || mod?.default?.[fnName];
-    if (typeof topLevel === "function") {
-      const result = { fn: topLevel, paramNames: extracted.paramNames, source: extracted.source };
-      this.fnCache.set(cacheKey, result);
-      return result;
-    }
-
-    const methodOwner = this.findMethodOwner(mod, fnName);
-    if (methodOwner) {
-      const result = { fn: methodOwner, paramNames: extracted.paramNames, source: extracted.source };
+    const fn = this.resolveCallable(mod, fnName, info);
+    if (fn) {
+      const result = { fn, paramNames: info.paramNames, source: info.source };
       this.fnCache.set(cacheKey, result);
       return result;
     }
@@ -314,31 +352,47 @@ export class PropertyTestChecker implements Checker {
     return null;
   }
 
-  private findMethodOwner(mod: any, fnName: string): ((...args: any[]) => any) | null {
-    const scan = (obj: any): ((...args: any[]) => any) | null => {
-      if (!obj) return null;
-      for (const key of Object.keys(obj)) {
-        const val = obj[key];
-        if (typeof val !== "function") continue;
-        if (val.prototype && typeof val.prototype[fnName] === "function") {
-          let instance;
-          try {
-            instance = new val();
-          } catch {
-            continue;
-          }
-          return (val.prototype[fnName] as Function).bind(instance);
-        }
+  private resolveCallable(
+    mod: any,
+    fnName: string,
+    info: FunctionInfo
+  ): ((...args: any[]) => any) | null {
+    if (!info.className) {
+      const fn = mod?.[fnName] || mod?.default?.[fnName];
+      return typeof fn === "function" ? fn : null;
+    }
+
+    const cls = mod?.[info.className] || mod?.default?.[info.className];
+    if (typeof cls !== "function") return null;
+
+    if (info.isStatic) {
+      const fn = cls[fnName];
+      return typeof fn === "function" ? fn.bind(cls) : null;
+    }
+
+    if (typeof cls.prototype?.[fnName] !== "function") return null;
+
+    const ctorAttempts: any[][] = [
+      [],
+      [this.projectRoot],
+      [{}],
+      [{ projectRoot: this.projectRoot }],
+      [this.projectRoot, false],
+      [{ projectRoot: this.projectRoot, verbose: false }],
+    ];
+
+    for (const args of ctorAttempts) {
+      try {
+        const instance = new cls(...args);
+        return (cls.prototype[fnName] as Function).bind(instance);
+      } catch {
+        continue;
       }
-      return null;
-    };
-    return scan(mod) || scan(mod?.default);
+    }
+    return null;
   }
 
-  private extractParamNamesAndSource(
-    filePath: string,
-    fnName: string
-  ): { paramNames: string[]; source: string } | null {
+  private extractFunctionInfo(filePath: string, fnName: string): FunctionInfo | null {
     try {
       const source = require("fs").readFileSync(filePath, "utf-8");
       const tree = parseFile(source);
@@ -380,10 +434,26 @@ export class PropertyTestChecker implements Checker {
           return null;
         }
       }
-      return { paramNames: names, source: node.text };
+
+      const isStatic = node.children.some((c) => c.text === "static" && c.type === "static");
+      const className = this.findEnclosingClassName(node);
+
+      return { paramNames: names, source: node.text, isStatic, className };
     } catch {
       return null;
     }
+  }
+
+  private findEnclosingClassName(node: Parser.SyntaxNode): string | null {
+    let current: Parser.SyntaxNode | null = node.parent;
+    while (current) {
+      if (current.type === "class_declaration" || current.type === "class") {
+        const nameNode = current.childForFieldName("name");
+        if (nameNode) return nameNode.text;
+      }
+      current = current.parent;
+    }
+    return null;
   }
 
   private formatValue(v: any): string {

@@ -1,2 +1,9 @@
 # Files with intentional violations (example/test code)
-examples/**
+# arithmetic.ts is pure-primitive demos for PropertyTestChecker — NOT ignored
+examples/cache.ts
+examples/harness.ts
+examples/inventory.ts
+examples/orders.ts
+examples/payments.ts
+examples/resource-leak.ts
+examples/state-machine.ts
