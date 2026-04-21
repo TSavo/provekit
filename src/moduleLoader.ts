@@ -73,7 +73,7 @@ export function collectTopLevelNames(source: string): string[] {
 
   const addName = (node: Parser.SyntaxNode | null | undefined) => {
     if (!node) return;
-    if (node.type === "identifier" || node.type === "property_identifier") {
+    if (node.type === "identifier" || node.type === "property_identifier" || node.type === "type_identifier") {
       names.add(node.text);
     }
   };
