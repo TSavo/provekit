@@ -11,6 +11,7 @@ dist/
 .neurallog/harnesses/
 .neurallog/judge-cache/
 .neurallog/lessons/
+.neurallog/witnesses/
 .neurallog/graph.json
 .neurallog/report.json
 .neurallog/derivation.json

@@ -26,6 +26,7 @@ export interface SynthesisInput {
   contractKey: string;
   functionName: string;
   importedTypes?: string;
+  testOracleContext?: string;
 }
 
 const PROMPT_CACHE: { template: string | null } = { template: null };
@@ -74,6 +75,11 @@ function buildSynthesisPrompt(template: string, input: SynthesisInput): string {
     task.push("```typescript");
     task.push(input.importedTypes);
     task.push("```");
+  }
+
+  if (input.testOracleContext) {
+    task.push("");
+    task.push(input.testOracleContext);
   }
 
   task.push("");

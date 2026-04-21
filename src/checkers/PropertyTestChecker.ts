@@ -11,6 +11,8 @@ import { judgeHarnessCode } from "../judge";
 import { JudgeCache } from "../judgeCache";
 import { loadModuleWithPrivates, collectTransitiveSource } from "../moduleLoader";
 import { LessonStore } from "../lessons";
+import { readObservations } from "../runtime";
+import { findTestsForFunction, formatForPrompt as formatTestOracleForPrompt } from "../testOracle";
 
 interface ExtractedFn {
   fn: (...args: any[]) => any;
@@ -90,12 +92,29 @@ export class PropertyTestChecker implements Checker {
     this.harnessResults = [];
 
     const sampleCount = Math.max(1, parseInt(process.env.NEURALLOG_Z3_SAMPLES || "1", 10) || 1);
+    const useObservations = process.env.NEURALLOG_USE_RUNTIME_OBSERVATIONS === "1";
 
     for (const contract of contracts) {
       if (this.attempted >= this.limit) break;
       for (const proven of contract.proven) {
         if (this.attempted >= this.limit) break;
-        const models = sampleCount === 1 ? [null] : this.extractModels(proven.smt2, sampleCount);
+
+        const models: Array<Record<string, number | boolean> | null> = [];
+        if (useObservations) {
+          const obs = readObservations(contract.function, this.projectRoot);
+          for (const o of obs.slice(0, sampleCount)) {
+            const primitive: Record<string, number | boolean> = {};
+            for (const [k, v] of Object.entries(o.values)) {
+              if (typeof v === "number" || typeof v === "boolean") primitive[k] = v;
+            }
+            if (Object.keys(primitive).length > 0) models.push(primitive);
+          }
+        }
+        if (models.length === 0) {
+          if (sampleCount === 1) models.push(null);
+          else for (const m of this.extractModels(proven.smt2, sampleCount)) models.push(m);
+        }
+
         for (const modelOverride of models) {
           if (this.attempted >= this.limit) break;
           this.attempted++;
@@ -637,6 +656,8 @@ export class PropertyTestChecker implements Checker {
       let untestable: string | null = cached?.untestable || null;
 
       if (!cached) {
+        const testRefs = findTestsForFunction(this.projectRoot, cand.contract.function);
+        const testOracleContext = testRefs.length > 0 ? formatTestOracleForPrompt(testRefs) : undefined;
         const result = await synthesizeHarness(
           {
             functionSource: info.source,
@@ -644,6 +665,7 @@ export class PropertyTestChecker implements Checker {
             smt2: cand.prop.smt2,
             contractKey: cand.contract.key,
             functionName: cand.contract.function,
+            testOracleContext,
           },
           provider,
           synthModel,
