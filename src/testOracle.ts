@@ -1,20 +1,21 @@
 /**
  * Triangle oracle: user's existing test suite as a third verification oracle.
  *
- * Clover's architecture insight: when the project has unit tests, those tests
- * are an independent source of truth alongside the Z3 proof and the runtime
- * harness. This module detects the test framework, finds tests referencing
- * a target function, and exposes their source so harness synthesis can use
- * them as reference.
- *
- * v1 scope: detection + source extraction for prompt injection. Actual test
- * *execution* as a runtime oracle (invoking the test runner with specific
- * inputs and cross-referencing outcomes) is a larger architectural step and
- * left as followup.
+ * Two modes:
+ *   1. Advisory: detect the framework, find tests referencing the target
+ *      function, and expose their source for prompt injection so harness
+ *      synthesis can align with existing test conventions.
+ *   2. Executing: actually invoke the test runner (via a framework-specific
+ *      adapter in ./testAdapters/) against those tests and return
+ *      structured outcomes. Enables cross-referencing test pass/fail with
+ *      harness pass/encoding-gap for a true three-oracle triangulation.
  */
 
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
-import { join, relative } from "path";
+import { join, relative, isAbsolute, resolve as resolvePath } from "path";
+import { getAdapter } from "./testAdapters";
+import { TestCache } from "./testCache";
+import type { TestOutcome } from "./testAdapters/Adapter";
 
 export type TestFramework = "vitest" | "jest" | "mocha" | "ava" | "tap" | "node-test" | "unknown";
 
@@ -151,4 +152,171 @@ export function formatForPrompt(refs: TestReference[]): string {
     lines.push("");
   }
   return lines.join("\n");
+}
+
+export interface ExecutedOracleResult {
+  reference: TestReference;
+  outcome: TestOutcome;
+  cached: boolean;
+}
+
+/**
+ * Run a single test reference via the framework-appropriate adapter.
+ * Consults the TestCache first; on miss, spawns the runner, stores the
+ * outcome. Returns adapter-error if no adapter is registered for the
+ * detected framework.
+ */
+export async function runTest(
+  projectRoot: string,
+  framework: TestFramework,
+  reference: TestReference,
+  sourceFile: string,
+  timeoutMs: number = 30000
+): Promise<ExecutedOracleResult> {
+  const cache = new TestCache(projectRoot);
+  const testFile = isAbsolute(reference.file) ? reference.file : resolvePath(projectRoot, reference.file);
+  const sourceAbs = isAbsolute(sourceFile) ? sourceFile : resolvePath(projectRoot, sourceFile);
+
+  const cached = cache.get(framework, testFile, reference.testName, sourceAbs);
+  if (cached) return { reference, outcome: cached, cached: true };
+
+  const adapter = getAdapter(framework);
+  if (!adapter) {
+    return {
+      reference,
+      outcome: { kind: "adapter-error", message: `no adapter registered for framework "${framework}"`, durationMs: 0 },
+      cached: false,
+    };
+  }
+
+  let outcome;
+  try {
+    outcome = await adapter.runTest({
+      projectRoot,
+      testFile,
+      testName: reference.testName,
+      timeoutMs,
+    });
+  } catch (e: any) {
+    // Adapters are documented to never throw — they should convert
+    // errors into adapter-error outcomes themselves. If one escapes
+    // anyway, we must normalize here so the checker never sees a
+    // rejected promise from a call it assumed was safe.
+    return {
+      reference,
+      outcome: {
+        kind: "adapter-error",
+        message: `adapter threw (contract violation): ${String(e?.message || e).slice(0, 160)}`,
+        durationMs: 0,
+      },
+      cached: false,
+    };
+  }
+
+  if (outcome.kind !== "adapter-error" && outcome.kind !== "timeout") {
+    cache.put(framework, testFile, reference.testName, sourceAbs, outcome);
+  }
+
+  return { reference, outcome, cached: false };
+}
+
+/**
+ * Run every test reference for a function, bounded by maxTests to keep
+ * total runtime predictable. Excess references (beyond maxTests) are
+ * returned with outcome { kind: "skipped", message: "... (over cap) ..." }
+ * so the caller sees that references existed but weren't executed.
+ */
+export async function runTestsForReferences(
+  projectRoot: string,
+  framework: TestFramework,
+  references: TestReference[],
+  sourceFile: string,
+  opts: { maxTests?: number; timeoutMsEach?: number } = {}
+): Promise<ExecutedOracleResult[]> {
+  const maxTests = opts.maxTests ?? 3;
+  const timeoutMsEach = opts.timeoutMsEach ?? 30000;
+  const results: ExecutedOracleResult[] = [];
+  for (const ref of references.slice(0, maxTests)) {
+    results.push(await runTest(projectRoot, framework, ref, sourceFile, timeoutMsEach));
+  }
+  for (const ref of references.slice(maxTests)) {
+    results.push({
+      reference: ref,
+      outcome: {
+        kind: "skipped",
+        message: `reference skipped — exceeds maxTests=${maxTests} cap (${references.length} total references)`,
+        durationMs: 0,
+      },
+      cached: false,
+    });
+  }
+  return results;
+}
+
+/**
+ * Summarise a triangle (harness outcome vs test-oracle outcomes) into a
+ * single diagnostic string suitable for the CheckResult.error field.
+ * The caller still decides the verdict; this just renders the signal.
+ */
+export function summarizeTriangle(
+  harnessKind: string,
+  oracleResults: ExecutedOracleResult[]
+): { note: string; hasAgreement: boolean; hasDisagreement: boolean } {
+  if (oracleResults.length === 0) {
+    return { note: "", hasAgreement: false, hasDisagreement: false };
+  }
+
+  const passes = oracleResults.filter((r) => r.outcome.kind === "pass");
+  const fails = oracleResults.filter((r) => r.outcome.kind === "fail" || r.outcome.kind === "error");
+  const skipped = oracleResults.filter((r) => r.outcome.kind === "skipped");
+  const errors = oracleResults.filter((r) => r.outcome.kind === "adapter-error" || r.outcome.kind === "timeout");
+
+  // harnessKind classification:
+  //   suggests-problem:  encoding-gap, fail, violation
+  //   suggests-ok:       pass
+  //   neutral:           harness-error, timeout, synthesis-failed, untestable — the harness
+  //                      itself didn't provide a verdict about the claim, so we don't
+  //                      infer agreement or disagreement from the tests.
+  const harnessSuggestsProblem = harnessKind === "encoding-gap" || harnessKind === "fail" || harnessKind === "violation";
+  const harnessSuggestsOk = harnessKind === "pass";
+  const harnessNeutral = !harnessSuggestsProblem && !harnessSuggestsOk;
+
+  const fragments: string[] = [];
+  if (passes.length > 0) fragments.push(`${passes.length} test(s) pass`);
+  if (fails.length > 0) fragments.push(`${fails.length} test(s) fail`);
+  if (skipped.length > 0) fragments.push(`${skipped.length} skipped`);
+  if (errors.length > 0) fragments.push(`${errors.length} could not run`);
+
+  // If no test actually produced a verdict (everything skipped/errored), there's nothing
+  // to agree or disagree with.
+  const actionableOutcomes = passes.length + fails.length;
+  if (actionableOutcomes === 0) {
+    return {
+      note: `triangle: harness=${harnessKind}, ${fragments.join(", ")} (no actionable oracle verdicts)`,
+      hasAgreement: false,
+      hasDisagreement: false,
+    };
+  }
+
+  const note = `triangle: harness=${harnessKind}, ${fragments.join(", ")}`;
+  if (harnessNeutral) {
+    return { note, hasAgreement: false, hasDisagreement: false };
+  }
+
+  // Only declare agreement when the oracle outcomes are uniform and point
+  // the same direction as the harness. Mixed pass+fail is intrinsically
+  // ambiguous — some tests exercise the claim's input region and agree,
+  // others exercise different regions and disagree — neither "agree" nor
+  // "disagree" cleanly applies, so we return both false and let callers
+  // surface the mixed state via the note string.
+  const uniformPass = passes.length > 0 && fails.length === 0;
+  const uniformFail = fails.length > 0 && passes.length === 0;
+  const hasAgreement =
+    (harnessSuggestsProblem && uniformFail) ||
+    (harnessSuggestsOk && uniformPass);
+  const hasDisagreement =
+    (harnessSuggestsProblem && uniformPass) ||
+    (harnessSuggestsOk && uniformFail);
+
+  return { note, hasAgreement, hasDisagreement };
 }
