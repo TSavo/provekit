@@ -766,6 +766,17 @@ Produce ONE atomic principle for this pattern gap. It must have:
     }
   }
 
+  private stripNegatedGoal(smt2: string): string {
+    const lines = smt2.split("\n");
+    const assertIndices: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]!.trim().startsWith("(assert")) assertIndices.push(i);
+    }
+    if (assertIndices.length === 0) return smt2;
+    const goalIdx = assertIndices[assertIndices.length - 1]!;
+    return lines.filter((_, i) => i !== goalIdx).join("\n");
+  }
+
   private formatDuration(ms: number): string {
     if (ms < 1000) return `${Math.round(ms)}ms`;
     const s = Math.floor(ms / 1000);
@@ -866,6 +877,13 @@ Do not restate the original block unchanged. Do not emit both a REACHABLE line a
 
         const { result, witness: newWitness } = verifyBlock(revisedSmt);
         if (result === "unsat") {
+          const premisesOnly = this.stripNegatedGoal(revisedSmt);
+          const { result: premisesResult } = verifyBlock(premisesOnly);
+          if (premisesResult !== "sat") {
+            console.log(`    cegar-refined block is vacuously unsat (premises alone are ${premisesResult}); keeping original violation`);
+            continue;
+          }
+
           const bare = v.claim.replace(/^VIOLATION:\s*/i, "").trim();
           const flippedClaim = `PROVEN: ${bare} is prevented (CEGAR-refined encoding)`;
           contract.proven.push({
@@ -875,7 +893,7 @@ Do not restate the original block unchanged. Do not emit both a REACHABLE line a
             smt2: revisedSmt,
             reason: extractReason(revisedSmt) || "cegar-refined precondition added",
             confidence: "high",
-            judge_note: "cegar-flipped: violation became proof after tightening encoding",
+            judge_note: "cegar-flipped: violation became proof after tightening encoding (premises verified consistent)",
           });
           contract.violations.splice(i, 1);
           i--;

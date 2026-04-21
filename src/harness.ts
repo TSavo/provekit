@@ -121,6 +121,17 @@ export async function synthesizeHarness(
   return { ...parsed, raw: response.text.slice(0, 2000) };
 }
 
+// vm.createContext here is a containment mechanism, not a security boundary.
+// The sandbox holds host-realm function references (functionUnderTest,
+// functionUnderTestClass) that a sufficiently motivated adversarial harness
+// could walk back into the host realm via prototype-chain escapes. That is
+// acceptable in this pipeline because the code being exercised is the user's
+// own project source, loaded via the user's own require resolver — the trust
+// boundary is "same as running `node dist/cli.js` directly," which already
+// runs arbitrary project code. The vm.context exists to (a) give the harness
+// a curated set of globals it can reason about, (b) enforce the timeout, and
+// (c) prevent accidental global-namespace pollution between contracts — not
+// to contain deliberate abuse.
 export async function runHarness(
   harnessCode: string,
   fn: (...args: any[]) => any,

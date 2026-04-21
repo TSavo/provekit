@@ -5,7 +5,9 @@ import { verifyBlock } from "../verifier";
 export class StrengthChecker implements Checker {
   readonly name = "strength";
 
-  check(contracts: Contract[]): CheckResult[] {
+  check(contracts: Contract[], _callGraph: Map<string, string[]>): CheckResult[] {
+    if (process.env.NEURALLOG_STRENGTH_CHECK !== "1") return [];
+
     const results: CheckResult[] = [];
 
     for (const contract of contracts) {

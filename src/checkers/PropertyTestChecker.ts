@@ -74,7 +74,7 @@ export class PropertyTestChecker implements Checker {
     this.limit = raw ? Math.max(1, parseInt(raw, 10) || 10) : 10;
   }
 
-  check(contracts: Contract[]): CheckResult[] {
+  check(contracts: Contract[], _callGraph: Map<string, string[]>): CheckResult[] {
     if (process.env.NEURALLOG_PROPERTY_TEST !== "1") return [];
 
     if (!this.ensureTsNode()) return [];
@@ -246,10 +246,13 @@ export class PropertyTestChecker implements Checker {
         error = undefined;
       }
     } else {
-      verdict = outcome.kind === "threw" ? "violation" : "proven";
-      error = outcome.kind === "threw"
-        ? "violation reproduced: function threw on the Z3 witness — bug confirmed"
-        : "violation did not reproduce: function ran cleanly on the Z3 witness — possible false positive";
+      if (outcome.kind === "threw") {
+        verdict = "violation";
+        error = "violation reproduced: function threw on the Z3 witness — bug confirmed";
+      } else {
+        verdict = "error";
+        error = `violation did not reproduce on witness — function returned cleanly where Z3 predicted a fault; needs judge to decide if the claim is a false positive or if the runtime behaviour still contradicts the claim's semantics`;
+      }
     }
 
     const prefix = source === "violation" ? "VIOLATION-REPLAY " : "";
@@ -709,20 +712,78 @@ export class PropertyTestChecker implements Checker {
 
   private parseZ3Model(text: string): Record<string, number | boolean> {
     const model: Record<string, number | boolean> = {};
-    const modelRegex = /\(define-fun\s+(\S+)\s+\(\)\s+(Int|Real|Bool)\s+([^\s)]+(?:\s+[\d.\-]+)?)\s*\)/g;
+
+    // Matches (define-fun NAME () SORT <value>) and captures the value payload
+    // (which may be a plain literal or a parenthesized sexp like (- 5) or (/ 5 2)).
+    const defRegex = /\(define-fun\s+(\S+)\s+\(\)\s+(Int|Real|Bool)\s+([\s\S]*?)\)\s*(?=\(define-fun|\)\s*$|\n\s*\))/g;
     let m;
-    while ((m = modelRegex.exec(text)) !== null) {
+    while ((m = defRegex.exec(text)) !== null) {
       const [, name, sort, rawValue] = m;
-      const parsed = this.parseValue(sort!, rawValue!);
+      const parsed = this.parseSexpValue(sort!, rawValue!.trim());
       if (parsed !== undefined) model[name!] = parsed;
     }
-    const negRegex = /\(define-fun\s+(\S+)\s+\(\)\s+(Int|Real)\s+\(-\s+([\d.]+)\)\s*\)/g;
-    while ((m = negRegex.exec(text)) !== null) {
+
+    // Simpler fallback regex catches values that didn't match the lookahead form
+    // (last binding in the model, for instance).
+    const simpleRegex = /\(define-fun\s+(\S+)\s+\(\)\s+(Int|Real|Bool)\s+([^)\n]+)\)/g;
+    while ((m = simpleRegex.exec(text)) !== null) {
       const [, name, sort, rawValue] = m;
-      const parsed = this.parseValue(sort!, `-${rawValue!}`);
+      if (model[name!] !== undefined) continue;
+      const parsed = this.parseSexpValue(sort!, rawValue!.trim());
       if (parsed !== undefined) model[name!] = parsed;
     }
+
     return model;
+  }
+
+  private parseSexpValue(sort: string, raw: string): number | boolean | undefined {
+    const trimmed = raw.trim();
+    if (sort === "Bool") {
+      if (trimmed === "true") return true;
+      if (trimmed === "false") return false;
+      return undefined;
+    }
+
+    if (!trimmed.startsWith("(")) {
+      return this.parseValue(sort, trimmed);
+    }
+
+    // Strip outer parens, tokenize head
+    const inner = trimmed.slice(1, -1).trim();
+    const headMatch = inner.match(/^(\S+)\s+([\s\S]+)$/);
+    if (!headMatch) return undefined;
+    const [, op, rest] = headMatch;
+
+    if (op === "-") {
+      const sub = this.parseSexpValue(sort, rest!.trim());
+      return sub === undefined ? undefined : (sub as number) * -1;
+    }
+    if (op === "/") {
+      const parts = this.splitSexpArgs(rest!);
+      if (parts.length !== 2) return undefined;
+      const num = this.parseSexpValue(sort, parts[0]!);
+      const den = this.parseSexpValue(sort, parts[1]!);
+      if (typeof num !== "number" || typeof den !== "number" || den === 0) return undefined;
+      return num / den;
+    }
+    return undefined;
+  }
+
+  private splitSexpArgs(s: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let current = "";
+    for (const ch of s) {
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      if (depth === 0 && /\s/.test(ch)) {
+        if (current.length > 0) { parts.push(current); current = ""; }
+        continue;
+      }
+      current += ch;
+    }
+    if (current.length > 0) parts.push(current);
+    return parts;
   }
 
   private parseValue(sort: string, raw: string): number | boolean | undefined {
