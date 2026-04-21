@@ -10,6 +10,7 @@ import { synthesizeHarness, runHarness, HarnessCache, HarnessOutcome } from "../
 import { judgeHarnessCode } from "../judge";
 import { JudgeCache } from "../judgeCache";
 import { loadModuleWithPrivates, collectTransitiveSource } from "../moduleLoader";
+import { LessonStore } from "../lessons";
 
 interface ExtractedFn {
   fn: (...args: any[]) => any;
@@ -535,6 +536,14 @@ export class PropertyTestChecker implements Checker {
         ctx.result.verdict = "violation";
         ctx.result.error = `encoding-inconsistent — ${verdict.note}`;
         flipped++;
+        const lessons = new LessonStore(this.projectRoot);
+        const principleMatch = ctx.claim.match(/^PROVEN: (\S+)/);
+        lessons.add({
+          contractKey: ctx.contractKey,
+          claim: ctx.claim,
+          judgeNote: verdict.note,
+          principleId: principleMatch ? principleMatch[1]! : null,
+        });
       } else if (!verdict.valid && ctx.result.verdict === "violation") {
         ctx.result.error = ctx.result.error ? `${ctx.result.error}; ${note}` : note;
         confirmed++;

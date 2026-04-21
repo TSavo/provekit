@@ -397,6 +397,9 @@ So every [NEW] tag teaches the system something it will remember forever. Be eag
           `### ${p.id}: ${p.name}\nDescription: ${p.description}\nastPatterns: ${JSON.stringify(p.astPatterns, null, 2)}\nsmt2Template: ${p.smt2Template}\nTeaching example (${p.teachingExample.domain}): ${p.teachingExample.explanation}\nTeaching SMT-LIB:\n${p.teachingExample.smt2}`
         ).join("\n\n");
 
+        const { LessonStore } = require("../lessons");
+        const lessonsText = new LessonStore(options.projectRoot).formatForPrompt(8);
+
         try {
           const response = await provider.complete(`You are discovering a new atomic verification principle.
 
@@ -413,7 +416,7 @@ ${existingList}
 
 ## Examples of existing principle structure
 ${exemplarText}
-
+${lessonsText}
 ## Your task
 
 Produce ONE atomic principle for this pattern gap. It must have:

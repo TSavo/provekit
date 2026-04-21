@@ -534,11 +534,15 @@ export async function classifyAndGeneralize(
   context: string,
   existingPrinciples: Principle[],
   model: string,
-  provider?: LLMProvider
+  provider?: LLMProvider,
+  projectRoot: string = process.cwd()
 ): Promise<Principle | null> {
   const llm = provider || createProvider();
   // Build detailed principle list with full descriptions and teaching examples
   const detailedPrinciples = formatAllPrinciplesDetailed(existingPrinciples);
+
+  const { LessonStore } = require("./lessons");
+  const lessonsText = new LessonStore(projectRoot).formatForPrompt(8);
 
   // The derivation engine tagged this [NEW]. Trust that judgment.
   // Generalize it into a principle, then let the adversary try to break it.
@@ -553,7 +557,7 @@ ${violation.smt2}
 
 ## Existing Principles (for reference — do NOT map to these)
 ${detailedPrinciples}
-
+${lessonsText}
 ## Your Task
 
 This violation was tagged [NEW] because it doesn't fit the existing principles. Your job is to GENERALIZE it — extract the abstract pattern so it can find similar bugs in other codebases.
