@@ -7,6 +7,7 @@ import { parseFile } from "../parser";
 import { createProvider } from "../llm";
 import { judgeRuntimeOutcome } from "../judge";
 import { synthesizeHarness, runHarness, HarnessCache, HarnessOutcome } from "../harness";
+import { loadModuleWithPrivates } from "../moduleLoader";
 
 interface ExtractedFn {
   fn: (...args: any[]) => any;
@@ -726,11 +727,23 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
-    const fn = this.resolveCallable(mod, fnName, info, filePath);
+    let fn = this.resolveCallable(mod, fnName, info, filePath);
     if (fn) {
       const result = { fn, paramNames: info.paramNames, source: info.source };
       this.fnCache.set(cacheKey, result);
       return result;
+    }
+
+    try {
+      const modWithPrivates = loadModuleWithPrivates(filePath, require.main || undefined);
+      fn = this.resolveCallable(modWithPrivates, fnName, info, filePath);
+      if (fn) {
+        const result = { fn, paramNames: info.paramNames, source: info.source };
+        this.fnCache.set(cacheKey, result);
+        return result;
+      }
+    } catch (e: any) {
+      console.log(`[property-test] privates loader failed for ${filePath}: ${e?.message?.slice(0, 80) || "unknown"}`);
     }
 
     this.fnCache.set(cacheKey, null);

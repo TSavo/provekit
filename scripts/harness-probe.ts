@@ -4,6 +4,7 @@ import { ContractStore } from "../src/contracts";
 import { createProvider } from "../src/llm";
 import { synthesizeHarness, runHarness, HarnessCache } from "../src/harness";
 import { parseFile } from "../src/parser";
+import { loadModuleWithPrivates } from "../src/moduleLoader";
 import Parser from "tree-sitter";
 
 async function main() {
@@ -207,6 +208,19 @@ function loadCallable(filePath: string, fnName: string, info: { className: strin
   } catch (e: any) {
     console.log(`require failed for ${filePath}: ${e?.message?.slice(0, 120)}`);
     return { fn: null, fnClass: null };
+  }
+
+  const hasFn = typeof mod?.[fnName] === "function" ||
+    typeof mod?.default?.[fnName] === "function" ||
+    (info.className && typeof mod?.[info.className] === "function") ||
+    (info.className && typeof mod?.default?.[info.className] === "function");
+  if (!hasFn) {
+    try {
+      mod = loadModuleWithPrivates(filePath, require.main || undefined);
+      console.log(`[loader] fell back to with-privates loader, found ${Object.keys(mod).length} bindings`);
+    } catch (e: any) {
+      console.log(`with-privates loader failed for ${filePath}: ${e?.message?.slice(0, 120)}`);
+    }
   }
 
   const top = mod?.[fnName] || mod?.default?.[fnName];
