@@ -131,6 +131,11 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
+    if (contract.function === "constructor") {
+      this.skipReasons.push("constructor — property test needs new-invocation protocol, skipped");
+      return null;
+    }
+
     const extracted = this.loadFunction(absPath, contract.function);
     if (!extracted) {
       this.skipReasons.push(`could not load ${contract.function} from ${contract.file}`);
@@ -147,13 +152,19 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
+    if (this.isControlFlowModel(model, extracted.paramNames)) {
+      this.skipReasons.push(`control-flow principle (guard/branch abstraction) — not runnable via property test for ${contract.function}`);
+      return null;
+    }
+
     const args: any[] = [];
     for (const name of extracted.paramNames) {
-      if (!(name in model)) {
+      const matched = this.matchParamToModel(name, model);
+      if (matched === undefined) {
         this.skipReasons.push(`SMT model missing param "${name}" for ${contract.function}`);
         return null;
       }
-      args.push(model[name]);
+      args.push(matched);
     }
     if (args.length === 0) {
       this.skipReasons.push(`${contract.function} has no parameters`);
@@ -215,6 +226,62 @@ export class PropertyTestChecker implements Checker {
 
   private resolvePath(file: string): string {
     return isAbsolute(file) ? file : resolvePath(this.projectRoot, file);
+  }
+
+  private isControlFlowModel(
+    model: Record<string, number | boolean>,
+    paramNames: string[]
+  ): boolean {
+    const keys = Object.keys(model);
+    if (keys.length === 0) return false;
+    const controlPrefixSet = new Set([
+      "guard_condition", "guard_returns", "guard_value",
+      "code_after_reached", "code_after_reached_flag",
+      "branch_reached", "branch_taken", "branch_active",
+      "result_consequent", "result_alternate", "result_true", "result_false",
+      "cond", "condition_true", "condition_false",
+    ]);
+    const paramSet = new Set(paramNames);
+    const looksControl = (k: string): boolean => {
+      if (controlPrefixSet.has(k)) return true;
+      if (/^(guard|branch|result|cond|code_after|path)[_-]/.test(k)) return true;
+      return false;
+    };
+    if (!keys.every(looksControl)) return false;
+    return !keys.some((k) => paramSet.has(k));
+  }
+
+  private matchParamToModel(
+    param: string,
+    model: Record<string, number | boolean>
+  ): number | boolean | undefined {
+    if (param in model) return model[param];
+
+    const target = param.toLowerCase().replace(/_/g, "");
+    const keys = Object.keys(model);
+
+    const exactNorm = keys.find((k) => k.toLowerCase().replace(/_/g, "") === target);
+    if (exactNorm) return model[exactNorm];
+
+    const suffixes = ["_condition", "_value", "_returns", "_guard", "_consequent", "_alternate", "_old", "_new", "_var"];
+    for (const k of keys) {
+      for (const sfx of suffixes) {
+        if (k.toLowerCase().endsWith(sfx)) {
+          const stripped = k.slice(0, -sfx.length).toLowerCase().replace(/_/g, "");
+          if (stripped === target) return model[k];
+        }
+      }
+    }
+
+    const substringMatch = keys.find(
+      (k) => {
+        const n = k.toLowerCase().replace(/_/g, "");
+        return n.includes(target) || target.includes(n);
+      }
+    );
+    if (substringMatch) return model[substringMatch];
+
+    return undefined;
   }
 
   async judgeResults(model?: string): Promise<{ judged: number; flipped: number; confirmed: number }> {
