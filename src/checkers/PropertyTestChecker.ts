@@ -6,6 +6,7 @@ import { Checker, CheckResult } from "./Checker";
 import { parseFile } from "../parser";
 import { createProvider } from "../llm";
 import { judgeRuntimeOutcome } from "../judge";
+import { synthesizeHarness, runHarness, HarnessCache, HarnessOutcome } from "../harness";
 
 interface ExtractedFn {
   fn: (...args: any[]) => any;
@@ -57,6 +58,13 @@ export class PropertyTestChecker implements Checker {
   private limit: number;
   private attempted = 0;
   lastRun: PropertyTestContext[] = [];
+  private harnessCandidates: Array<{
+    contract: Contract;
+    prop: ProvenProperty | Violation;
+    source: "proven" | "violation";
+    skipReason: string;
+  }> = [];
+  harnessResults: CheckResult[] = [];
 
   constructor(private projectRoot: string = process.cwd()) {
     const raw = process.env.NEURALLOG_PROPERTY_TEST_LIMIT;
@@ -72,6 +80,8 @@ export class PropertyTestChecker implements Checker {
     this.attempted = 0;
     this.lastRun = [];
     this.skipReasons = [];
+    this.harnessCandidates = [];
+    this.harnessResults = [];
 
     for (const contract of contracts) {
       if (this.attempted >= this.limit) break;
@@ -170,7 +180,9 @@ export class PropertyTestChecker implements Checker {
     for (const name of extracted.paramNames) {
       const matched = this.matchParamToModel(name, model);
       if (matched === undefined) {
-        this.skipReasons.push(`SMT model missing param "${name}" for ${contract.function}`);
+        const reason = `SMT model missing param "${name}" for ${contract.function}`;
+        this.skipReasons.push(reason);
+        this.harnessCandidates.push({ contract, prop, source, skipReason: reason });
         return null;
       }
       args.push(matched);
@@ -452,6 +464,176 @@ export class PropertyTestChecker implements Checker {
     }
 
     return { judged, flipped, confirmed };
+  }
+
+  async synthesizeAndRunHarnesses(model?: string): Promise<{
+    attempted: number;
+    pass: number;
+    encodingGap: number;
+    harnessError: number;
+    untestable: number;
+    synthesisFailed: number;
+    timeout: number;
+  }> {
+    const stats = { attempted: 0, pass: 0, encodingGap: 0, harnessError: 0, untestable: 0, synthesisFailed: 0, timeout: 0 };
+    if (process.env.NEURALLOG_HARNESS_SYNTHESIS !== "1") return stats;
+    if (this.harnessCandidates.length === 0) return stats;
+
+    const rawLimit = process.env.NEURALLOG_HARNESS_LIMIT;
+    const limit = rawLimit ? Math.max(1, parseInt(rawLimit, 10) || 5) : 5;
+    const timeoutMs = parseInt(process.env.NEURALLOG_HARNESS_TIMEOUT_MS || "3000", 10) || 3000;
+
+    const provider = createProvider();
+    const synthModel = model || process.env.NEURALLOG_HARNESS_MODEL || "claude-sonnet-4-6";
+    const cache = new HarnessCache(this.projectRoot);
+    const store = new ContractStore(this.projectRoot);
+    const touched = new Set<string>();
+
+    const candidates = this.harnessCandidates.slice(0, limit);
+    console.log(`[harness] ${candidates.length} candidate contracts (of ${this.harnessCandidates.length}); synthesizing with ${synthModel}`);
+
+    for (const cand of candidates) {
+      stats.attempted++;
+      const absPath = this.resolvePath(cand.contract.file);
+
+      const info = this.extractFunctionInfo(absPath, cand.contract.function);
+      if (!info) {
+        this.harnessResults.push(this.harnessCheckResult(cand, "synthesis-failed", "could not extract function source"));
+        stats.synthesisFailed++;
+        continue;
+      }
+
+      let cached = cache.get(cand.prop.smt2, info.source);
+      let harness: string | null = cached?.harness || null;
+      let untestable: string | null = cached?.untestable || null;
+
+      if (!cached) {
+        const result = await synthesizeHarness(
+          {
+            functionSource: info.source,
+            claim: cand.prop.claim,
+            smt2: cand.prop.smt2,
+            contractKey: cand.contract.key,
+            functionName: cand.contract.function,
+          },
+          provider,
+          synthModel,
+          this.projectRoot
+        );
+        harness = result.harness;
+        untestable = result.untestable;
+        cache.put(cand.prop.smt2, info.source, { harness, untestable });
+      }
+
+      if (untestable) {
+        this.harnessResults.push(this.harnessCheckResult(cand, "untestable", untestable));
+        stats.untestable++;
+        this.applyHarnessVerdict(store, touched, cand, "untestable", untestable);
+        continue;
+      }
+
+      if (!harness) {
+        this.harnessResults.push(this.harnessCheckResult(cand, "synthesis-failed", "LLM did not emit a valid harness or UNTESTABLE line"));
+        stats.synthesisFailed++;
+        continue;
+      }
+
+      const extracted = this.loadFunction(absPath, cand.contract.function);
+      if (!extracted) {
+        this.harnessResults.push(this.harnessCheckResult(cand, "harness-error", "could not load function for harness execution"));
+        stats.harnessError++;
+        continue;
+      }
+
+      const fnClass = this.resolveClassFor(absPath, info.className);
+      let outcome: HarnessOutcome;
+      try {
+        outcome = await runHarness(harness!, extracted.fn, fnClass, timeoutMs);
+      } catch (e: any) {
+        outcome = { kind: "harness-error", message: String(e?.message || e).slice(0, 200), harnessCode: harness! };
+      }
+
+      this.harnessResults.push(this.harnessOutcomeToCheckResult(cand, outcome));
+
+      if (outcome.kind === "pass") stats.pass++;
+      else if (outcome.kind === "encoding-gap") stats.encodingGap++;
+      else if (outcome.kind === "harness-error") stats.harnessError++;
+      else if (outcome.kind === "timeout") stats.timeout++;
+
+      this.applyHarnessVerdict(store, touched, cand, outcome.kind, outcome.message);
+    }
+
+    for (const key of touched) {
+      const c = store.get(key);
+      if (c) store.put(c);
+    }
+
+    return stats;
+  }
+
+  private harnessCheckResult(
+    cand: { contract: Contract; prop: ProvenProperty | Violation; source: "proven" | "violation" },
+    kind: HarnessOutcome["kind"],
+    message: string
+  ): CheckResult {
+    const verdict: "proven" | "violation" | "error" =
+      kind === "pass" ? "proven" :
+      kind === "encoding-gap" ? "violation" :
+      "error";
+    return {
+      checker: "property-test",
+      description: `[${cand.prop.principle || "?"}] synth-harness ${cand.contract.function}:${cand.contract.line} — ${kind}: ${message.slice(0, 160)}`,
+      sourceContract: `${cand.contract.function}:${cand.contract.line}`,
+      smt2: cand.prop.smt2,
+      expected: cand.source === "violation" ? "sat" : "unsat",
+      z3Result: cand.source === "violation" ? "sat" : "unsat",
+      verdict,
+      error: kind === "pass" ? undefined : message,
+    };
+  }
+
+  private harnessOutcomeToCheckResult(
+    cand: { contract: Contract; prop: ProvenProperty | Violation; source: "proven" | "violation" },
+    outcome: HarnessOutcome
+  ): CheckResult {
+    return this.harnessCheckResult(cand, outcome.kind, outcome.message);
+  }
+
+  private applyHarnessVerdict(
+    store: ContractStore,
+    touched: Set<string>,
+    cand: { contract: Contract; prop: ProvenProperty | Violation; source: "proven" | "violation" },
+    kind: HarnessOutcome["kind"],
+    message: string
+  ): void {
+    const contract = store.get(cand.contract.key);
+    if (!contract) return;
+    const target = cand.source === "proven" ? contract.proven : contract.violations;
+    for (const p of target) {
+      if (p.smt2 !== cand.prop.smt2) continue;
+      if (kind === "pass" && cand.source === "proven") {
+        p.confidence = "high";
+        p.judge_note = `harness-pass: ${message}`;
+      } else if (kind === "encoding-gap") {
+        p.confidence = "low";
+        p.judge_note = `harness-encoding-gap: ${message.slice(0, 200)}`;
+      } else if (kind === "untestable") {
+        p.judge_note = `harness-untestable: ${message.slice(0, 200)}`;
+      } else {
+        p.judge_note = `harness-${kind}: ${message.slice(0, 200)}`;
+      }
+    }
+    touched.add(cand.contract.key);
+  }
+
+  private resolveClassFor(filePath: string, className: string | null): any {
+    if (!className) return null;
+    try {
+      const mod = require(filePath);
+      return mod?.[className] || mod?.default?.[className] || null;
+    } catch {
+      return null;
+    }
   }
 
   private extractModel(smt2: string): Record<string, number | boolean> | null {
