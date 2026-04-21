@@ -1,0 +1,29 @@
+{
+  "key": "examples/arithmetic.ts/absDiff[18]",
+  "file": "examples/arithmetic.ts",
+  "function": "absDiff",
+  "line": 18,
+  "signal_hash": "3126b80f6b3b0cf2f43c28e5f9f93c23174b6762de29e4cf67afaa2f21f1e3d8",
+  "proven": [
+    {
+      "principle": "subtraction-underflow",
+      "principle_hash": "",
+      "claim": "PROVEN: Subtraction Underflow at absDiff is prevented (CEGAR-refined encoding)",
+      "smt2": "; PRINCIPLE: subtraction-underflow\n; LINE: 18\n; REASON: The original encoding omitted the absolute-value branch (d < 0 ? -d : d);\n;         the function always returns |x - y|, so result is always >= 0.\n;         The revised encoding models the true return value and checks whether\n;         it can still be negative — it cannot (UNSAT).\n(declare-const x Int)\n(declare-const y Int)\n(declare-const d Int)\n(declare-const result Int)\n(assert (= d (- x y)))\n(assert (= result (ite (< d 0) (- d) d)))\n(assert (>= x 0))\n(assert (>= y 0))\n(assert (< result 0))\n(check-sat)",
+      "reason": "The original encoding omitted the absolute-value branch (d < 0 ? -d : d); the function always returns |x - y|, so result is always >= 0. The revised encoding models the true return value and checks whether it can still be negative — it cannot (UNSAT).",
+      "confidence": "high",
+      "judge_note": "property-judge VALID: The function returned 0 with inputs x=0, y=0, which is non-negative and consistent with Z3's proof that the absolute-value computation prevents the result from ever going negative."
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: subtraction-underflow\n; LINE: 18\n; VIOLATION: Subtraction Underflow at absDiff\n(declare-const x Int)\n(declare-const y Int)\n(declare-const result Int)\n(assert (= result (- x y)))\n(assert (>= x 0))\n(assert (>= y 0))\n(assert (> y x))\n(assert (< result 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

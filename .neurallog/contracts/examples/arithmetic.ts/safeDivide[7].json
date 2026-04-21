@@ -1,0 +1,29 @@
+{
+  "key": "examples/arithmetic.ts/safeDivide[7]",
+  "file": "examples/arithmetic.ts",
+  "function": "safeDivide",
+  "line": 7,
+  "signal_hash": "092d4fec2dc46a687bc887ea30d8867f4c51cb9893abcf647fa679f38b1742ee",
+  "proven": [
+    {
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "PROVEN: Guard Narrowing at safeDivide is prevented (CEGAR-refined encoding)",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 7\n; VIOLATION: Guard Narrowing at safeDivide\n; REASON: Two missing constraints made the encoding spurious.\n; First, the link between guard_returns=1 and code_after_reached=0 was absent \u2014\n; an early return must prevent downstream code from executing, but the original\n; encoding never expressed that. Second, guard_condition was asserted to 0\n; (the normal b\u22600 path), so Z3 trivially satisfied the system via the normal\n; fall-through \u2014 this is not a violation. The check should assert\n; guard_condition=1 (b===0 branch taken) and test whether code_after_reached=1\n; is still possible; with the added exclusion constraint it becomes UNSAT,\n; confirming the guard correctly narrows execution.\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 1) (= code_after_reached 0)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 1))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "reason": "Two missing constraints made the encoding spurious. First, the link between guard_returns=1 and code_after_reached=0 was absent \u2014 an early return must prevent downstream code from executing, but the original encoding never expressed that. Second, guard_condition was asserted to 0 (the normal b\u22600 path), so Z3 trivially satisfied the system via the normal fall-through \u2014 this is not a violation. The check should assert guard_condition=1 (b===0 branch taken) and test whether code_after_reached=1 is still possible; with the added exclusion constraint it becomes UNSAT, confirming the guard correctly narrows execution.",
+      "confidence": "high",
+      "judge_note": "cegar-flipped: violation became proof after tightening encoding"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 7\n; VIOLATION: Guard Narrowing at safeDivide\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

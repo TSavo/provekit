@@ -1,6 +1,6 @@
 {
   "key": "src/observations.ts/findSimilarByAST[77]",
-  "file": "/Users/tsavo/Projects/neurallog/src/observations.ts",
+  "file": "src/observations.ts",
   "function": "findSimilarByAST",
   "line": 77,
   "signal_hash": "70047d356ab16d79247d12f57e438cb37ea78deab9366c1a884553ddb14eff56",
@@ -9,7 +9,9 @@
       "principle": "null-assertion",
       "principle_hash": "",
       "claim": "PROVEN: Unguarded Non-Null Assertion at findSimilarByAST",
-      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 77\n; PROVEN: Unguarded Non-Null Assertion at findSimilarByAST\n(declare-const obs_astContext_is_null Int)\n; Guard: path condition checks for null\n(assert (= obs_astContext_is_null 0))\n; Can value still be null?\n(assert (= obs_astContext_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion"
+      "smt2": "; PRINCIPLE: null-assertion\n; LINE: 77\n; PROVEN: Unguarded Non-Null Assertion at findSimilarByAST\n(declare-const obs_astContext_is_null Int)\n; Guard: path condition checks for null\n(assert (= obs_astContext_is_null 0))\n; Can value still be null?\n(assert (= obs_astContext_is_null 1))\n(check-sat)\n; unsat → proven: null check guards the assertion",
+      "confidence": "low",
+      "judge_note": "property-judge INVALID (encoding-inconsistent): The runtime outcome contradicts the claim. The function returned `[]` by hitting the guard at line 1 (`if (!obs.astContext) return []`), demonstrating that the non-null assertions at line 4 are actual"
     }
   ],
   "violations": [],

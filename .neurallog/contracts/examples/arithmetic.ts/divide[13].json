@@ -1,0 +1,30 @@
+{
+  "key": "examples/arithmetic.ts/divide[13]",
+  "file": "examples/arithmetic.ts",
+  "function": "divide",
+  "line": 13,
+  "signal_hash": "e0dd51fc6ddd67de0f71b79b19b81ddf3f571ef2812f6ea812485b6ff86a6978",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "division-by-zero",
+      "principle_hash": "",
+      "claim": "VIOLATION: Division by Zero at divide",
+      "smt2": "; PRINCIPLE: division-by-zero\n; LINE: 13\n; VIOLATION: Division by Zero at divide\n(declare-const a Int)\n(declare-const b Int)\n(assert (= b 0))\n(check-sat)",
+      "witness": "(\n  (define-fun b () Int\n    0)\n  (define-fun a () Int\n    0)\n)",
+      "complexity": 1,
+      "confidence": "high",
+      "judge_note": "property-judge confirmed bug: In JavaScript/TypeScript, `a / b` with `b = 0` returns `NaN` (not an error), but the claim treats division by zero as a runtime violation like a compiled language would."
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: division-by-zero\n; LINE: 13\n; VIOLATION: Division by Zero at divide\n(declare-const a Int)\n(declare-const b Int)\n(assert (= b 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

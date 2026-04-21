@@ -866,10 +866,12 @@ Do not restate the original block unchanged. Do not emit both a REACHABLE line a
 
         const { result, witness: newWitness } = verifyBlock(revisedSmt);
         if (result === "unsat") {
+          const bare = v.claim.replace(/^VIOLATION:\s*/i, "").trim();
+          const flippedClaim = `PROVEN: ${bare} is prevented (CEGAR-refined encoding)`;
           contract.proven.push({
             principle: v.principle,
             principle_hash: v.principle_hash,
-            claim: v.claim,
+            claim: flippedClaim,
             smt2: revisedSmt,
             reason: extractReason(revisedSmt) || "cegar-refined precondition added",
             confidence: "high",

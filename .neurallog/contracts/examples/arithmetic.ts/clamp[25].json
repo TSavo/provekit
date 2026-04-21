@@ -1,0 +1,29 @@
+{
+  "key": "examples/arithmetic.ts/clamp[25]",
+  "file": "examples/arithmetic.ts",
+  "function": "clamp",
+  "line": 25,
+  "signal_hash": "6b8af64adc906a4034a9138d3514e5f26aa7997a7e157b73ba376cbf8d476eb2",
+  "proven": [
+    {
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "PROVEN: Guard Narrowing at clamp is prevented (CEGAR-refined encoding)",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 25\n; VIOLATION: Guard Narrowing at clamp\n; REASON: The original encoding was missing two constraints: (1) an early return must\n; prevent code_after from being reached (guard_returns=1 => code_after_reached=0),\n; and (2) the violation scenario requires the guard to actually fire (guard_condition=1).\n; Without these, Z3 satisfied the query via the benign normal path (guard_condition=0,\n; code falls through to `return value`), which is not a bug at all.\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (=> (= guard_returns 1) (= code_after_reached 0)))\n(assert (= guard_condition 1))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "reason": "The original encoding was missing two constraints: (1) an early return must prevent code_after from being reached (guard_returns=1 => code_after_reached=0), and (2) the violation scenario requires the guard to actually fire (guard_condition=1). Without these, Z3 satisfied the query via the benign normal path (guard_condition=0, code falls through to `return value`), which is not a bug at all.",
+      "confidence": "high",
+      "judge_note": "cegar-flipped: violation became proof after tightening encoding"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 25\n; VIOLATION: Guard Narrowing at clamp\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}
