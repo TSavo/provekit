@@ -12,7 +12,7 @@ import { JudgeCache } from "../judgeCache";
 import { loadModuleWithPrivates, collectTransitiveSource } from "../moduleLoader";
 import { LessonStore } from "../lessons";
 import { readObservations } from "../runtime";
-import { findTestsForFunction, formatForPrompt as formatTestOracleForPrompt } from "../testOracle";
+import { findTestsForFunction, formatForPrompt as formatTestOracleForPrompt, detectTestFramework, runTestsForReferences, summarizeTriangle } from "../testOracle";
 
 interface ExtractedFn {
   fn: (...args: any[]) => any;
@@ -736,7 +736,32 @@ export class PropertyTestChecker implements Checker {
         outcome = { kind: "harness-error", message: String(e?.message || e).slice(0, 200), harnessCode: harness };
       }
 
-      this.harnessResults.push(this.harnessOutcomeToCheckResult(cand, outcome));
+      const result = this.harnessOutcomeToCheckResult(cand, outcome);
+
+      if (process.env.NEURALLOG_RUN_ORACLE_TESTS === "1") {
+        const framework = detectTestFramework(this.projectRoot);
+        if (framework) {
+          const refs = findTestsForFunction(this.projectRoot, cand.contract.function);
+          if (refs.length > 0) {
+            const oracleResults = await runTestsForReferences(
+              this.projectRoot,
+              framework,
+              refs,
+              absPath,
+              { maxTests: 3, timeoutMsEach: 30000 }
+            );
+            const triangle = summarizeTriangle(outcome.kind, oracleResults);
+            if (triangle.note) {
+              result.error = result.error ? `${result.error}; ${triangle.note}` : triangle.note;
+              if (triangle.hasDisagreement) {
+                result.error = `triangle-disagreement: ${result.error}`;
+              }
+            }
+          }
+        }
+      }
+
+      this.harnessResults.push(result);
 
       if (outcome.kind === "pass") stats.pass++;
       else if (outcome.kind === "encoding-gap") stats.encodingGap++;

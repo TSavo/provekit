@@ -1,20 +1,21 @@
 /**
  * Triangle oracle: user's existing test suite as a third verification oracle.
  *
- * Clover's architecture insight: when the project has unit tests, those tests
- * are an independent source of truth alongside the Z3 proof and the runtime
- * harness. This module detects the test framework, finds tests referencing
- * a target function, and exposes their source so harness synthesis can use
- * them as reference.
- *
- * v1 scope: detection + source extraction for prompt injection. Actual test
- * *execution* as a runtime oracle (invoking the test runner with specific
- * inputs and cross-referencing outcomes) is a larger architectural step and
- * left as followup.
+ * Two modes:
+ *   1. Advisory: detect the framework, find tests referencing the target
+ *      function, and expose their source for prompt injection so harness
+ *      synthesis can align with existing test conventions.
+ *   2. Executing: actually invoke the test runner (via a framework-specific
+ *      adapter in ./testAdapters/) against those tests and return
+ *      structured outcomes. Enables cross-referencing test pass/fail with
+ *      harness pass/encoding-gap for a true three-oracle triangulation.
  */
 
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
-import { join, relative } from "path";
+import { join, relative, isAbsolute, resolve as resolvePath } from "path";
+import { getAdapter } from "./testAdapters";
+import { TestCache } from "./testCache";
+import type { TestOutcome } from "./testAdapters/Adapter";
 
 export type TestFramework = "vitest" | "jest" | "mocha" | "ava" | "tap" | "node-test" | "unknown";
 
@@ -151,4 +152,107 @@ export function formatForPrompt(refs: TestReference[]): string {
     lines.push("");
   }
   return lines.join("\n");
+}
+
+export interface ExecutedOracleResult {
+  reference: TestReference;
+  outcome: TestOutcome;
+  cached: boolean;
+}
+
+/**
+ * Run a single test reference via the framework-appropriate adapter.
+ * Consults the TestCache first; on miss, spawns the runner, stores the
+ * outcome. Returns adapter-error if no adapter is registered for the
+ * detected framework.
+ */
+export async function runTest(
+  projectRoot: string,
+  framework: TestFramework,
+  reference: TestReference,
+  sourceFile: string,
+  timeoutMs: number = 30000
+): Promise<ExecutedOracleResult> {
+  const cache = new TestCache(projectRoot);
+  const testFile = isAbsolute(reference.file) ? reference.file : resolvePath(projectRoot, reference.file);
+  const sourceAbs = isAbsolute(sourceFile) ? sourceFile : resolvePath(projectRoot, sourceFile);
+
+  const cached = cache.get(testFile, reference.testName, sourceAbs);
+  if (cached) return { reference, outcome: cached, cached: true };
+
+  const adapter = getAdapter(framework);
+  if (!adapter) {
+    return {
+      reference,
+      outcome: { kind: "adapter-error", message: `no adapter registered for framework "${framework}"`, durationMs: 0 },
+      cached: false,
+    };
+  }
+
+  const outcome = await adapter.runTest({
+    projectRoot,
+    testFile,
+    testName: reference.testName,
+    timeoutMs,
+  });
+
+  if (outcome.kind !== "adapter-error" && outcome.kind !== "timeout") {
+    cache.put(testFile, reference.testName, sourceAbs, outcome);
+  }
+
+  return { reference, outcome, cached: false };
+}
+
+/**
+ * Run every test reference for a function. Bounded by maxTests to keep
+ * total runtime predictable — excess references are skipped with a note.
+ */
+export async function runTestsForReferences(
+  projectRoot: string,
+  framework: TestFramework,
+  references: TestReference[],
+  sourceFile: string,
+  opts: { maxTests?: number; timeoutMsEach?: number } = {}
+): Promise<ExecutedOracleResult[]> {
+  const maxTests = opts.maxTests ?? 5;
+  const timeoutMsEach = opts.timeoutMsEach ?? 30000;
+  const results: ExecutedOracleResult[] = [];
+  for (const ref of references.slice(0, maxTests)) {
+    results.push(await runTest(projectRoot, framework, ref, sourceFile, timeoutMsEach));
+  }
+  return results;
+}
+
+/**
+ * Summarise a triangle (harness outcome vs test-oracle outcomes) into a
+ * single diagnostic string suitable for the CheckResult.error field.
+ * The caller still decides the verdict; this just renders the signal.
+ */
+export function summarizeTriangle(
+  harnessKind: string,
+  oracleResults: ExecutedOracleResult[]
+): { note: string; hasAgreement: boolean; hasDisagreement: boolean } {
+  if (oracleResults.length === 0) {
+    return { note: "", hasAgreement: false, hasDisagreement: false };
+  }
+
+  const passes = oracleResults.filter((r) => r.outcome.kind === "pass");
+  const fails = oracleResults.filter((r) => r.outcome.kind === "fail" || r.outcome.kind === "error");
+  const errors = oracleResults.filter((r) => r.outcome.kind === "adapter-error" || r.outcome.kind === "timeout");
+  const harnessSuggestsProblem = harnessKind === "encoding-gap" || harnessKind === "fail" || harnessKind === "violation";
+
+  const agreementFragments: string[] = [];
+  if (passes.length > 0) agreementFragments.push(`${passes.length} test(s) pass`);
+  if (fails.length > 0) agreementFragments.push(`${fails.length} test(s) fail`);
+  if (errors.length > 0) agreementFragments.push(`${errors.length} test(s) could not run`);
+
+  const note = `triangle: harness=${harnessKind}, ${agreementFragments.join(", ")}`;
+  const hasAgreement =
+    (harnessSuggestsProblem && fails.length > 0) ||
+    (!harnessSuggestsProblem && passes.length > 0 && fails.length === 0);
+  const hasDisagreement =
+    (harnessSuggestsProblem && passes.length > 0 && fails.length === 0) ||
+    (!harnessSuggestsProblem && fails.length > 0);
+
+  return { note, hasAgreement, hasDisagreement };
 }
