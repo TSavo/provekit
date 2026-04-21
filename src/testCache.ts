@@ -4,10 +4,18 @@ import { createHash } from "crypto";
 import type { TestOutcome } from "./testAdapters/Adapter";
 
 /**
- * Cache for test-adapter outcomes. Keyed by (test file mtime-ns,
- * test name, source file hash) so that unchanged code + unchanged
- * tests skips re-invocation. Source file hash is included because
- * the outcome depends on the implementation the test is exercising.
+ * Cache for test-adapter outcomes. Keyed by (test file path + mtimeMs,
+ * test name, source file path + mtimeMs) so that unchanged code +
+ * unchanged tests skip re-invocation. Source mtime is included because
+ * the outcome depends on the implementation the test is exercising;
+ * if the source file is touched, the cached outcome is invalidated.
+ *
+ * Uses mtimeMs (millisecond resolution) rather than content hashing
+ * because mtimes are fast to read and practically identical to content
+ * hashes for the "has this file changed since cached" question. If
+ * content-addressing becomes required later (e.g. to handle git
+ * checkouts that preserve content but reset mtime), switch to sha256
+ * of file contents here.
  */
 
 export class TestCache {

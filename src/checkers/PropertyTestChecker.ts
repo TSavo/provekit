@@ -73,6 +73,15 @@ export class PropertyTestChecker implements Checker {
     skipReason: string;
   }> = [];
   harnessResults: CheckResult[] = [];
+  private oracleRefCache = new Map<string, ReturnType<typeof findTestsForFunction>>();
+
+  private getOracleRefsCached(fnName: string): ReturnType<typeof findTestsForFunction> {
+    const hit = this.oracleRefCache.get(fnName);
+    if (hit) return hit;
+    const refs = findTestsForFunction(this.projectRoot, fnName);
+    this.oracleRefCache.set(fnName, refs);
+    return refs;
+  }
 
   constructor(private projectRoot: string = process.cwd()) {
     const raw = process.env.NEURALLOG_PROPERTY_TEST_LIMIT;
@@ -629,6 +638,15 @@ export class PropertyTestChecker implements Checker {
     const store = new ContractStore(this.projectRoot);
     const touched = new Set<string>();
 
+    // Oracle-test discovery, hoisted so framework detection + the per-function test
+    // lookup happen at most once per run. "unknown" frameworks have no adapter and
+    // would only produce adapter-error outcomes, so we short-circuit by treating
+    // them as no-oracle.
+    const oracleEnabled = process.env.NEURALLOG_RUN_ORACLE_TESTS === "1";
+    const detectedFramework = oracleEnabled ? detectTestFramework(this.projectRoot) : null;
+    const oracleFramework = detectedFramework && detectedFramework !== "unknown" ? detectedFramework : null;
+    this.oracleRefCache.clear();
+
     const candidates = this.harnessCandidates.slice(0, limit);
     const concurrency = Math.max(1, parseInt(process.env.NEURALLOG_HARNESS_CONCURRENCY || "3", 10) || 3);
     console.log(`[harness] ${candidates.length} candidate contracts (of ${this.harnessCandidates.length}); synthesizing with ${synthModel} at concurrency ${concurrency}`);
@@ -738,24 +756,21 @@ export class PropertyTestChecker implements Checker {
 
       const result = this.harnessOutcomeToCheckResult(cand, outcome);
 
-      if (process.env.NEURALLOG_RUN_ORACLE_TESTS === "1") {
-        const framework = detectTestFramework(this.projectRoot);
-        if (framework) {
-          const refs = findTestsForFunction(this.projectRoot, cand.contract.function);
-          if (refs.length > 0) {
-            const oracleResults = await runTestsForReferences(
-              this.projectRoot,
-              framework,
-              refs,
-              absPath,
-              { maxTests: 3, timeoutMsEach: 30000 }
-            );
-            const triangle = summarizeTriangle(outcome.kind, oracleResults);
-            if (triangle.note) {
-              result.error = result.error ? `${result.error}; ${triangle.note}` : triangle.note;
-              if (triangle.hasDisagreement) {
-                result.error = `triangle-disagreement: ${result.error}`;
-              }
+      if (oracleFramework) {
+        const refs = this.getOracleRefsCached(cand.contract.function);
+        if (refs.length > 0) {
+          const oracleResults = await runTestsForReferences(
+            this.projectRoot,
+            oracleFramework,
+            refs,
+            absPath,
+            { maxTests: 3, timeoutMsEach: 30000 }
+          );
+          const triangle = summarizeTriangle(outcome.kind, oracleResults);
+          if (triangle.note) {
+            result.error = result.error ? `${result.error}; ${triangle.note}` : triangle.note;
+            if (triangle.hasDisagreement) {
+              result.error = `triangle-disagreement: ${result.error}`;
             }
           }
         }

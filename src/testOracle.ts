@@ -204,8 +204,10 @@ export async function runTest(
 }
 
 /**
- * Run every test reference for a function. Bounded by maxTests to keep
- * total runtime predictable — excess references are skipped with a note.
+ * Run every test reference for a function, bounded by maxTests to keep
+ * total runtime predictable. Excess references (beyond maxTests) are
+ * returned with outcome { kind: "skipped", message: "... (over cap) ..." }
+ * so the caller sees that references existed but weren't executed.
  */
 export async function runTestsForReferences(
   projectRoot: string,
@@ -219,6 +221,17 @@ export async function runTestsForReferences(
   const results: ExecutedOracleResult[] = [];
   for (const ref of references.slice(0, maxTests)) {
     results.push(await runTest(projectRoot, framework, ref, sourceFile, timeoutMsEach));
+  }
+  for (const ref of references.slice(maxTests)) {
+    results.push({
+      reference: ref,
+      outcome: {
+        kind: "skipped",
+        message: `reference skipped — exceeds maxTests=${maxTests} cap (${references.length} total references)`,
+        durationMs: 0,
+      },
+      cached: false,
+    });
   }
   return results;
 }
@@ -238,21 +251,47 @@ export function summarizeTriangle(
 
   const passes = oracleResults.filter((r) => r.outcome.kind === "pass");
   const fails = oracleResults.filter((r) => r.outcome.kind === "fail" || r.outcome.kind === "error");
+  const skipped = oracleResults.filter((r) => r.outcome.kind === "skipped");
   const errors = oracleResults.filter((r) => r.outcome.kind === "adapter-error" || r.outcome.kind === "timeout");
+
+  // harnessKind classification:
+  //   suggests-problem:  encoding-gap, fail, violation
+  //   suggests-ok:       pass
+  //   neutral:           harness-error, timeout, synthesis-failed, untestable — the harness
+  //                      itself didn't provide a verdict about the claim, so we don't
+  //                      infer agreement or disagreement from the tests.
   const harnessSuggestsProblem = harnessKind === "encoding-gap" || harnessKind === "fail" || harnessKind === "violation";
+  const harnessSuggestsOk = harnessKind === "pass";
+  const harnessNeutral = !harnessSuggestsProblem && !harnessSuggestsOk;
 
-  const agreementFragments: string[] = [];
-  if (passes.length > 0) agreementFragments.push(`${passes.length} test(s) pass`);
-  if (fails.length > 0) agreementFragments.push(`${fails.length} test(s) fail`);
-  if (errors.length > 0) agreementFragments.push(`${errors.length} test(s) could not run`);
+  const fragments: string[] = [];
+  if (passes.length > 0) fragments.push(`${passes.length} test(s) pass`);
+  if (fails.length > 0) fragments.push(`${fails.length} test(s) fail`);
+  if (skipped.length > 0) fragments.push(`${skipped.length} skipped`);
+  if (errors.length > 0) fragments.push(`${errors.length} could not run`);
 
-  const note = `triangle: harness=${harnessKind}, ${agreementFragments.join(", ")}`;
+  // If no test actually produced a verdict (everything skipped/errored), there's nothing
+  // to agree or disagree with.
+  const actionableOutcomes = passes.length + fails.length;
+  if (actionableOutcomes === 0) {
+    return {
+      note: `triangle: harness=${harnessKind}, ${fragments.join(", ")} (no actionable oracle verdicts)`,
+      hasAgreement: false,
+      hasDisagreement: false,
+    };
+  }
+
+  const note = `triangle: harness=${harnessKind}, ${fragments.join(", ")}`;
+  if (harnessNeutral) {
+    return { note, hasAgreement: false, hasDisagreement: false };
+  }
+
   const hasAgreement =
     (harnessSuggestsProblem && fails.length > 0) ||
-    (!harnessSuggestsProblem && passes.length > 0 && fails.length === 0);
+    (harnessSuggestsOk && passes.length > 0 && fails.length === 0);
   const hasDisagreement =
     (harnessSuggestsProblem && passes.length > 0 && fails.length === 0) ||
-    (!harnessSuggestsProblem && fails.length > 0);
+    (harnessSuggestsOk && fails.length > 0);
 
   return { note, hasAgreement, hasDisagreement };
 }

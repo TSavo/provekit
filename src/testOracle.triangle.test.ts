@@ -61,7 +61,20 @@ describe("summarizeTriangle", () => {
     const r = summarizeTriangle("pass", [errorResult, errorResult]);
     expect(r.hasAgreement).toBe(false);
     expect(r.hasDisagreement).toBe(false);
-    expect(r.note).toContain("2 test(s) could not run");
+    expect(r.note).toContain("2 could not run");
+  });
+
+  it("neutral harness kinds (harness-error, timeout) produce no agreement/disagreement", () => {
+    expect(summarizeTriangle("harness-error", [passResult])).toMatchObject({ hasAgreement: false, hasDisagreement: false });
+    expect(summarizeTriangle("timeout", [failResult])).toMatchObject({ hasAgreement: false, hasDisagreement: false });
+    expect(summarizeTriangle("synthesis-failed", [passResult, failResult])).toMatchObject({ hasAgreement: false, hasDisagreement: false });
+  });
+
+  it("note does not end with a trailing comma when only skipped/errored outcomes are present", () => {
+    const skippedResult = { reference: any("s"), outcome: { kind: "skipped" as const, message: "over cap", durationMs: 0 }, cached: false };
+    const r = summarizeTriangle("pass", [skippedResult, errorResult]);
+    expect(r.note).not.toMatch(/,\s*$/);
+    expect(r.note).toContain("no actionable oracle verdicts");
   });
 });
 
