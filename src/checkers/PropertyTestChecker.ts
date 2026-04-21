@@ -130,12 +130,18 @@ export class PropertyTestChecker implements Checker {
   private ensureTsNode(): boolean {
     if (this.tsNodeLoaded) return true;
     try {
-      require("ts-node/register");
+      require("ts-node").register({ transpileOnly: true, compilerOptions: { module: "commonjs" } });
       this.tsNodeLoaded = true;
       return true;
     } catch {
-      console.log(`[property-test] ts-node/register unavailable; skipping`);
-      return false;
+      try {
+        require("ts-node/register/transpile-only");
+        this.tsNodeLoaded = true;
+        return true;
+      } catch {
+        console.log(`[property-test] ts-node unavailable; skipping`);
+        return false;
+      }
     }
   }
 
