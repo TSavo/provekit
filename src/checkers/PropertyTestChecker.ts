@@ -12,11 +12,13 @@ import { loadModuleWithPrivates } from "../moduleLoader";
 interface ExtractedFn {
   fn: (...args: any[]) => any;
   paramNames: string[];
+  paramTypes: string[];
   source: string;
 }
 
 interface FunctionInfo {
   paramNames: string[];
+  paramTypes: string[];
   source: string;
   isStatic: boolean;
   className: string | null;
@@ -183,11 +185,20 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
+    const paramTypes = extracted.paramTypes || extracted.paramNames.map(() => "unknown");
     const args: any[] = [];
-    for (const name of extracted.paramNames) {
+    for (let i = 0; i < extracted.paramNames.length; i++) {
+      const name = extracted.paramNames[i]!;
+      const tsType = paramTypes[i] || "unknown";
       const matched = this.matchParamToModel(name, model);
       if (matched === undefined) {
         const reason = `SMT model missing param "${name}" for ${contract.function}`;
+        this.skipReasons.push(reason);
+        this.harnessCandidates.push({ contract, prop, source, skipReason: reason });
+        return null;
+      }
+      if (!this.isCompatibleWithTsType(tsType, matched)) {
+        const reason = `SMT value ${typeof matched} for param "${name}" incompatible with declared type "${tsType}" in ${contract.function}`;
         this.skipReasons.push(reason);
         this.harnessCandidates.push({ contract, prop, source, skipReason: reason });
         return null;
@@ -338,6 +349,34 @@ export class PropertyTestChecker implements Checker {
 
   private resolvePath(file: string): string {
     return isAbsolute(file) ? file : resolvePath(this.projectRoot, file);
+  }
+
+  private isCompatibleWithTsType(tsType: string, value: unknown): boolean {
+    if (!tsType || tsType === "unknown" || tsType === "any") return true;
+    const t = tsType.trim();
+    const jsType = typeof value;
+
+    if (t.includes("|")) {
+      return t.split("|").some((part) => this.isCompatibleWithTsType(part.trim(), value));
+    }
+
+    if (t === "undefined") return jsType === "undefined";
+    if (t === "null") return value === null;
+
+    if (jsType === "number") {
+      if (/^(number|Number)$/.test(t)) return true;
+      if (/^-?\d+(\.\d+)?$/.test(t)) return true;
+      if (/^bigint$/i.test(t)) return false;
+    }
+    if (jsType === "boolean") {
+      if (/^(boolean|Boolean|true|false)$/.test(t)) return true;
+    }
+    if (jsType === "string") {
+      if (/^(string|String)$/.test(t)) return true;
+      if (/^".*"$/.test(t) || /^'.*'$/.test(t)) return true;
+    }
+
+    return false;
   }
 
   private isControlFlowModel(
@@ -729,7 +768,7 @@ export class PropertyTestChecker implements Checker {
 
     let fn = this.resolveCallable(mod, fnName, info, filePath);
     if (fn) {
-      const result = { fn, paramNames: info.paramNames, source: info.source };
+      const result = { fn, paramNames: info.paramNames, paramTypes: info.paramTypes, source: info.source };
       this.fnCache.set(cacheKey, result);
       return result;
     }
@@ -738,7 +777,7 @@ export class PropertyTestChecker implements Checker {
       const modWithPrivates = loadModuleWithPrivates(filePath, require.main || undefined);
       fn = this.resolveCallable(modWithPrivates, fnName, info, filePath);
       if (fn) {
-        const result = { fn, paramNames: info.paramNames, source: info.source };
+        const result = { fn, paramNames: info.paramNames, paramTypes: info.paramTypes, source: info.source };
         this.fnCache.set(cacheKey, result);
         return result;
       }
@@ -1142,10 +1181,13 @@ export class PropertyTestChecker implements Checker {
       if (!paramsNode) return null;
 
       const names: string[] = [];
+      const types: string[] = [];
       for (const child of paramsNode.namedChildren) {
         const patternNode = child.childForFieldName("pattern") || child.childForFieldName("name");
+        const typeNode = child.childForFieldName("type");
         if (patternNode?.type === "identifier") {
           names.push(patternNode.text);
+          types.push(typeNode ? typeNode.text.replace(/^:\s*/, "").trim() : "unknown");
         } else {
           return null;
         }
@@ -1154,7 +1196,7 @@ export class PropertyTestChecker implements Checker {
       const isStatic = node.children.some((c) => c.text === "static" && c.type === "static");
       const className = this.findEnclosingClassName(node);
 
-      return { paramNames: names, source: node.text, isStatic, className };
+      return { paramNames: names, paramTypes: types, source: node.text, isStatic, className };
     } catch {
       return null;
     }
