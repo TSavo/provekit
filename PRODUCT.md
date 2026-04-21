@@ -2,7 +2,7 @@
 
 ## What It Is
 
-A CLI tool that formally verifies your code from the specifications you already wrote — in your log statements, type annotations, function names, and comments.
+A CLI tool that derives SMT-LIB claims from the informal specifications already in your code — log statements, type annotations, function names, comments — and checks them with Z3, a runtime harness, and (when available) your existing test suite. Findings are calibrated by how many of the three oracles agree; "proven by Z3 alone" is a weaker signal than "proven by Z3, corroborated by runtime, corroborated by existing tests." The UX surface is designed around that calibration.
 
 ## Installation
 
@@ -31,28 +31,36 @@ What would you like to do?
 
 > 3
 
-Deriving contracts for 34 files in dependency order...
-  src/utils/validate.ts ............ 12 proofs, 3 violations
-  src/db/queries.ts ................ 8 proofs, 5 violations
-  src/api/billing.ts ............... 27 proofs, 14 violations
-  src/api/orders.ts ................ 18 proofs, 9 violations
+Deriving contracts for 34 files in dependency order (this step calls the
+configured LLM and will cost tokens)...
+  src/utils/validate.ts ............ 12 Z3-proven, 3 violations, 2 encoding-gaps
+  src/db/queries.ts ................ 8 Z3-proven, 5 violations
+  src/api/billing.ts ............... 27 Z3-proven, 14 violations, 1 encoding-gap
+  src/api/orders.ts ................ 18 Z3-proven, 9 violations
   ...
 
-Done. 187 proofs verified. 43 violations found.
+Done. 187 Z3 verdicts, 43 violations, 3 encoding-gaps flagged for review.
 
-Top findings:
+Top findings (high-confidence — corroborated by runtime harness):
   1. src/billing.ts:602  credential exposure in token hint [P6]
   2. src/orders.ts:47    discount can exceed order total [P5]
   3. src/inventory.ts:18 stock can go negative [P1]
 
-Git hook installed. Commits will be verified automatically.
-Contracts saved to .neurallog/ — commit this directory.
+Encoding-gap findings (Z3 said safe, runtime disagreed — encoder bug):
+  1. src/math.ts:44      0/0 claim proves unsat, runtime returns NaN [P2]
+
+Git hook installed. Commits will be verified against cached contracts
+(no LLM, Z3 only).
+Contracts saved to .neurallog/ — commit principles; artifacts are ignored.
 
 Run  neurallog report               for the full coverage report
 Run  neurallog explain src/billing.ts:602  for any finding
 ```
 
-That's it. The developer now has formal verification. They didn't write a spec. They didn't learn a tool. They ran one command.
+The developer ran one command and got a pipeline output calibrated to
+how much they should trust each finding. They didn't write a spec. They
+didn't learn the tool. They didn't get the word "formal" attached to
+their code without qualification.
 
 ## Daily Use
 
@@ -70,26 +78,29 @@ neurallog: verifying 2 changed files...
 
 The commit lands. The developer didn't think about neurallog.
 
-### When a proof regresses:
+### When a verdict regresses:
 
 ```
 $ git commit -m "add bulk discount"
 
 neurallog: verifying 2 changed files...
-  ✓ src/pricing.ts: 11 proofs hold
-  ✗ src/orders.ts:47 — proof regressed
+  ✓ src/pricing.ts: 11 Z3-verified contracts hold
+  ✗ src/orders.ts:47 — Z3-verified claim regressed
 
-  discount can exceed order total
-  Previously proven safe. Your change made it reachable.
+  discount can exceed order total (high-confidence violation —
+  runtime harness reproduces the arithmetic path).
+  Previously Z3 proved this unreachable under the existing code.
+  Your change made the counterexample reachable.
 
-  Verify: echo '(declare-const discount Real)
+  Verify the Z3 verdict yourself: echo '(declare-const discount Real)
   (declare-const total Real)
   (assert (> discount total))
   (check-sat)' | z3 -in
+  ; sat
 
-  Run  neurallog explain src/orders.ts:47  for details
+  Run  neurallog explain src/orders.ts:47  for the full harness output
 
-Commit blocked. Fix the issue or: neurallog override --reason "intentional"
+Commit blocked. Fix, or: neurallog override --reason "intentional"
 ```
 
 The developer sees:
@@ -143,10 +154,14 @@ Suggested: add guard at line 46
 ```
 
 The explain command gives the developer everything:
-- What's wrong (one paragraph, plain english)
-- What the code guarantees (path conditions from AST)
-- What it doesn't guarantee (the gap)
-- The proof (SMT-LIB they can run)
+- What's wrong (one paragraph, plain English)
+- What the code guarantees at the signal point (path conditions from AST)
+- What Z3 says is not guaranteed (the gap)
+- The SMT block Z3 ran on (re-runnable via `echo ... | z3 -in`)
+- The runtime harness outcome (whether runtime reproduces or refutes
+  the counterexample — a refuted counterexample means the SMT encoded
+  a gap that doesn't exist in the actual code)
+- The test-oracle outcome if your project has tests for this function
 - A suggested fix
 
 ### The report command:
@@ -288,19 +303,18 @@ The tool is invisible infrastructure. Like a compiler warning system that gets s
 
 ## What Makes It Different
 
-- **No specs to write.** The specs are already in your code.
-- **No tests to maintain.** The proofs are derived automatically.
-- **No new workflow.** You commit. It verifies.
-- **No opinions.** Every finding has a mathematical proof.
-- **No trust required.** `echo '...' | z3 -in`. Verify it yourself.
-- **No cloud required.** Runs on your machine. Z3 is local.
-- **Gets smarter.** New signal layers activate over time. New axioms discovered from your bugs.
-- **Exit code.** 0 or 1. That's the API.
+- **No specs to write.** The informal specs are already in your code — logs, type annotations, function names, comments. neurallog extracts and formalises them. The formalisation is LLM-produced, which means it can be wrong, which is why the tool runs a harness and a test oracle to check.
+- **No tests to maintain.** Contracts re-derive on code change. Contract derivation uses an LLM and costs money. Verification against already-derived contracts is free.
+- **No new workflow.** You commit. The hook runs Z3 against cached contracts (no LLM at commit-time). Derivation happens on demand or in CI.
+- **Every finding is a re-runnable Z3 verdict.** `echo '...' | z3 -in` verifies the math Z3 did. It does not verify that the SMT block faithfully models your TypeScript — that's the harness's job. The difference matters; the tool's UX labels it.
+- **Verify step runs locally.** Z3 is local, offline, deterministic. Derivation and harness synthesis call the configured LLM provider; your code does leave your machine for those steps.
+- **Gets more efficient over time.** New AST-pattern principles are synthesised from recurring bugs under adversarial validation. Once a principle is in the library, its future matches are mechanical — no LLM — which means per-contract cost drops as the library matures.
+- **Exit code.** 0 or 1. That's the CI API. The confidence-tier information is in the JSON artifacts for tooling that wants finer distinctions.
 
 ## The Pitch
 
-Your log statements already describe your system's behavior. Every one of them is a claim about what's happening. You just never enforced them.
+Your log statements, type annotations, function names, and TODO comments describe the behaviour your code is supposed to have. neurallog turns that informal specification into a checkable one — an LLM writes the SMT encoding, Z3 checks it, a runtime harness tests whether the encoding faithfully models your code, and your existing tests cross-validate when available.
 
-What if you did?
+The central honesty: the LLM's encoding can be wrong, and the tool actively looks for the cases where it is. You don't get mathematical certainty. You get calibrated confidence with the disagreements surfaced rather than hidden.
 
 `npm install -D neurallog && npx neurallog init`

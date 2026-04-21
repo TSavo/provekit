@@ -1,84 +1,84 @@
 # The Thesis
 
-## Logging is assertions made by eyeballs after the fact.
+## Programmer intent is everywhere in code. Most of it is informal.
 
-Every `printf`, every `console.log`, every `logger.info` — going back to the earliest programs that ever printed a value to check if it was right — was an implicit formal claim about what should be true at that moment.
+Every `printf`, every `console.log`, every `logger.info` — going back to the earliest programs that ever printed a value to check if it was right — is an implicit claim about what should be true at that moment. The programmer wrote it because they had a belief about the code. They just lacked the tools to express that belief formally, so they expressed it informally. They logged it, and they trusted their eyeballs.
 
-The programmer wrote it because they had a belief about their code. They just lacked the tools to express that belief formally. So they expressed it informally. They logged it. And they trusted their eyeballs to notice if something was wrong.
+The same is true of variable names like `safeBalance` and `validatedInput`, function names like `sanitizeHtml` and `ensureAuthenticated`, type annotations, assertion-style error messages, and TODO comments. The code contains a distributed, informal specification of how it's supposed to behave. Formalising that specification — or, more honestly, *attempting* to formalise it, with calibrated confidence about how faithful the formalisation is — is what neurallog does.
 
-## The specification was always there.
+## The fundamental problem of formal verification was "how do we get the specifications?"
 
-The entire history of software contains a distributed, informal, human-generated formal specification embedded across billions of log statements in millions of codebases.
+For fifty years the answer was "convince developers to write them." That never worked at scale. Specifications are expensive, tedious, separate from the code. They drift. They get abandoned.
 
-Nobody could read it because we thought logging was about debugging.
+The LLM-plus-SMT genre — Lemur, SpecGen, Clover, and neurallog among them — proposes a different answer. An LLM reads the code, extracts the implicit specification, translates it into SMT-LIB, and a solver checks it. The cost of writing a spec goes from "expensive developer time" to "one LLM call per signal."
 
-It was never about debugging. It was always about correctness.
+This solves one problem and introduces another.
 
-## Every log statement was a lemma. We just didn't have the theorem prover listening.
+## The new problem: the LLM can be wrong, and when it is, the solver proves nothing useful.
 
-neurallog reads the specifications that programmers already wrote. It doesn't create them. It extracts them. It formalizes what the programmer meant, not what they said. And it proves them with Z3 — a theorem prover that produces mathematical certificates, not opinions.
+An LLM translating TypeScript to SMT can miss — and routinely does miss — things like:
 
-The proofs are independently verifiable. `echo '...' | z3 -in`. There's nothing to argue about. It's math.
+- JavaScript numbers are IEEE 754, not integers or reals. `Math.MAX_VALUE + 1 === Math.MAX_VALUE`. `0.1 + 0.2 !== 0.3`. Two "mathematically distinct" values can have identical bit patterns.
+- JavaScript division by zero returns `Infinity`, `-Infinity`, or `NaN`. It does not throw. Z3 might prove "division by zero prevented" and the runtime will hand your code a `NaN` anyway.
+- `||` replaces any falsy value with the default. `??` replaces only `null`/`undefined`. An encoder picking the wrong one produces a semantically different proof.
+- `typeof null === "object"`. `NaN !== NaN`. Sparse arrays skip indices in `map` but not in `for` loops.
 
-## The fundamental problem of formal verification was never "how do we verify code."
+Every item above is a category where Z3 will happily prove things about the LLM's idealised abstraction while the actual code does something different. The central weakness of LLM-plus-SMT tools is that they have no layer that notices when the abstraction and the runtime disagree. "Proven by Z3" sounds authoritative; it means the encoding is internally consistent, which is a much weaker claim than "the code is correct."
 
-It was "how do we get the specifications?"
+This is where most tools in the genre stop. neurallog doesn't stop here.
 
-For fifty years, the answer was "convince developers to write them." That never worked. The specifications were too expensive, too tedious, too separate from the code. They drifted. They were abandoned.
+## The answer isn't to abandon the approach. The answer is to check the encoding.
 
-The answer was there all along: the developers already wrote the specifications. They called them log statements.
+neurallog adds two oracles beyond the solver:
 
-## The axioms aren't invented. They're discovered.
+**Runtime harness.** For each claim Z3 proves, a second LLM writes a JavaScript test harness. The harness constructs concrete input from Z3's witness, loads the real function, executes it, and observes. If the observation contradicts Z3's verdict, the encoding was lossy. The LLM judge then audits the harness itself (did the harness actually test the claim, or did it rig the test?) before the cross-reference counts as evidence.
 
-neurallog's self-growing axiom library is not designed. It emerges from real bugs in real code. Every violation the system finds that doesn't match an existing principle becomes a new axiom — if it survives adversarial validation.
+**Existing test suite.** When the project has tests, neurallog invokes the ones that reference the target function and compares their outcomes to the harness verdict. If Z3 said unsat, the harness ran clean, and the user's own pre-existing tests also pass, the claim has agreement from three independent sources.
 
-The axiom library is a collectively-built mathematical theory of what can go wrong in software. It grows with every codebase. It's portable across languages. It's append-only. It compounds.
+Three oracles. Agreement at the intersection is high-confidence. Disagreement is a finding — sometimes about the code, sometimes about the encoding, and neurallog surfaces both.
 
-Like mathematics itself: the truths were always there. We're uncovering them.
+## The principle library grows from real bugs, under adversarial validation.
 
-## Software stops being empirical and becomes mathematical.
+When a signal pattern recurs enough times and the existing principle catalogue doesn't cover it, the tool generates a new principle — an AST pattern plus SMT template — via LLM synthesis. Before it enters the library, a different model runs an adversarial pass trying to construct false-positive and false-negative examples. Only principles that survive are added.
 
-Not because we made programmers into mathematicians.
+This is not the algorithmic induction of a mathematical theory. It's a validated, LLM-produced extension of a pattern library, gated by adversarial testing. The library grows, and the mechanical-template coverage increases over time, which reduces the per-contract LLM cost. The growth is real; the framing as "discovering mathematical truths" would be hubris.
 
-Because we realized they always were.
+## What you actually get, honestly.
 
-## Proof as the unit of trust.
+You don't get "mathematical certainty about your code." You get:
 
-Bug bounty platforms shut down because of AI slop — LLMs generating reports that sound right but aren't grounded. The problem isn't AI. The problem is that the reports are opinions, not proofs.
+- A calibrated confidence level per claim (three oracles, their agreements, their disagreements)
+- A re-runnable SMT block for every verdict Z3 produced (`echo '...' | z3 -in` is real — it verifies Z3's math, not the encoder's faithfulness)
+- A runtime harness for every proven property where the function is executable
+- A list of encoding gaps: places where Z3 was confident but runtime refuted
+- A principle library that accumulates validated patterns from your code's real bugs
 
-The fix isn't "ban AI." The fix is "require proofs."
+You don't get:
 
-The submission form isn't "describe the vulnerability." It's "upload the SMT-LIB." The triage isn't a human reading a report. It's `z3 -in`. sat or unsat. The cost of triage goes to zero. The signal is the math.
+- Proof that your code is correct. You get proof that your code, *as the LLM translated it*, is consistent with a property. The harness tries to close that gap empirically and often does; sometimes it can't.
+- Regulator-accepted certification. If a compliance framework requires formal verification, it almost certainly requires a tool whose soundness is itself certified — Coq, Isabelle, Dafny, TLA+, maybe F*. neurallog's three-oracle architecture is better evidence than raw test coverage but not a replacement for those.
+- A world where software becomes mathematical. Software stays empirical. We add a verification layer that catches a class of bugs current tools miss. That's enough.
 
-This extends beyond bounties. Supply chain audits: every package ships with a proof log. Compliance: the regulator runs `z3 -in`, not a checklist. Insurance: the proof log coverage percentage IS the risk metric. Liability: the proof is admissible evidence.
+## Proof as one unit of trust among several.
 
-The unit of trust in software shifts from "someone tested it" to "here's the proof." And the proofs come from log statements that already exist.
+Bug bounty platforms have been overwhelmed by LLM-generated reports that sound plausible but don't hold up. "Require a Z3 proof" is one response, and it's a good one — but it's only a complete response if triage also runs the harness and checks the encoding. A proof-required bounty program that accepts every `unsat` verdict without running the harness layer would trade plausibility-based slop for proof-shaped slop.
 
-## Beyond log statements.
+neurallog's architecture is a concrete proposal for what that second layer looks like in practice. The submission form accepts SMT-LIB; the triage also runs the harness and cross-references tests; the signal is the intersection of three oracles' agreement, not just one's verdict.
 
-The log statement is the lowest-friction entry point — every codebase has thousands and they require zero code changes. But the methodology generalizes.
+## Beyond log statements: signals everywhere.
 
-Programmer intent is everywhere in the code, expressed informally:
-- **Comments:** `// this should never be null`
-- **Variable names:** `safeBalance`, `validatedInput`, `sanitizedHtml`
-- **Function names:** `validateOrder`, `ensureAuthenticated`
-- **Type annotations:** `quantity: PositiveInteger`
-- **Test assertions:** `expect(result).toBeGreaterThan(0)`
-- **Error messages:** `throw new Error("balance cannot be negative")`
-- **TODO comments:** `// TODO: handle the race condition here`
+Log statements are a rich entry point — every codebase has thousands and they require zero code changes. They're not the only signal the tool reads. AST patterns (branches, loops, dangerous calls, arithmetic on parameters), type annotations, function names, comments, error messages, existing test assertions — all are informal expressions of programmer intent, and all feed the same five-phase pipeline.
 
-The real insight isn't "log statements are assertions." It's: programmer intent is embedded throughout the code, expressed informally, and can be formalized and proven.
+Phase 1 finds signals. Phases 2–5 don't care where they came from. Adding a new signal generator is one file implementing a tree-sitter AST walk.
 
-The log statement is the Trojan horse. The methodology is the payload.
+The log statement was a wedge, not the thesis. The thesis is this: **programmer intent is expressed informally throughout the code, and a carefully calibrated LLM-Z3-runtime loop can turn some of it into checkable claims about real behaviour.**
 
-The product roadmap: start with loggers (richest runtime signal, zero friction, every codebase has thousands). Then expand to comments, function names, types, tests, error messages. Each is a new signal source feeding the same pipeline — derive what should be true, prove it with Z3. The five-phase architecture is signal-agnostic. Phase 1 finds signals. Phases 2-5 don't care where they came from.
+## The unfashionable commitment.
 
-Think in terms of signal, not logger. Logger is an opportunity — especially a runtime opportunity. But the code is full of other opportunities. Every informal expression of programmer intent is a candidate for formalization.
+Most tools in this space optimise for the compelling demo: "watch us prove your code correct in thirty seconds." The compelling demos skip the soundness question because showing the gap feels like admitting the tool is weaker than it is.
 
-## Your log statements already describe your system's behavior.
+neurallog optimises for the honest demo: here's the SMT, here's the harness, here's whether your tests agree. Sometimes the answer is "Z3 proved a property but the harness says runtime disagrees and your tests back up the harness — the encoder got it wrong, here's the specific mismatch."
 
-Every one of them is a claim about what's happening.
+A tool that tells you when its own verdict is wrong is more trustworthy than a tool that doesn't — even when the first one reports fewer green checkmarks.
 
-You just never enforced them.
-
-What if you did?
+That's the thesis.
