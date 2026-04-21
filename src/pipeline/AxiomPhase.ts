@@ -119,7 +119,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
       const stats = await pChecker.judgeResults();
       if (stats.judged > 0) {
         judgeRan = true;
-        this.detail(`property-test judge: ${stats.judged} judged, ${stats.flipped} verdict flips, ${stats.confirmed} violations confirmed`);
+        this.detail(`property-test judge: ${stats.judged} judged (${stats.cacheHits} cache hits), ${stats.flipped} verdict flips, ${stats.confirmed} violations confirmed`);
       }
     }
 

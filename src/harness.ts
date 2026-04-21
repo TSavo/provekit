@@ -241,7 +241,7 @@ export class HarnessCache {
     return h.digest("hex").slice(0, 16);
   }
 
-  get(smt2: string, functionSource: string): { harness?: string; untestable?: string } | null {
+  get(smt2: string, functionSource: string): { harness?: string; untestable?: string; auditValid?: boolean; auditNote?: string } | null {
     const key = this.cacheKey(smt2, functionSource);
     const path = join(this.cacheDir, `${key}.json`);
     if (!existsSync(path)) return null;
@@ -249,6 +249,34 @@ export class HarnessCache {
       return JSON.parse(readFileSync(path, "utf-8"));
     } catch {
       return null;
+    }
+  }
+
+  putAudit(
+    smt2: string,
+    functionSource: string,
+    audit: { valid: boolean; note: string }
+  ): void {
+    const existing = this.get(smt2, functionSource) || {};
+    const key = this.cacheKey(smt2, functionSource);
+    mkdirSync(this.cacheDir, { recursive: true });
+    const path = join(this.cacheDir, `${key}.json`);
+    try {
+      writeFileSync(
+        path,
+        JSON.stringify(
+          {
+            ...existing,
+            auditValid: audit.valid,
+            auditNote: audit.note,
+            auditedAt: new Date().toISOString(),
+          },
+          null,
+          2
+        )
+      );
+    } catch (e: any) {
+      console.log(`[harness-cache] putAudit failed: ${e?.message?.slice(0, 60) || "unknown"}`);
     }
   }
 

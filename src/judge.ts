@@ -76,6 +76,81 @@ export interface TeachingExampleInput {
   smt2: string;
 }
 
+export interface HarnessAuditInput {
+  harnessCode: string;
+  claim: string;
+  smt2: string;
+  functionSource: string;
+}
+
+export async function judgeHarnessCode(
+  input: HarnessAuditInput,
+  provider: LLMProvider,
+  model: string
+): Promise<JudgeVerdict> {
+  const prompt = `You are auditing a test harness that another LLM just wrote. The harness will be executed to empirically test whether runtime behaviour matches a formally-proven claim. Your job is to decide whether the harness is a genuine empirical test or whether it rigs the outcome by construction.
+
+A harness is rigged when any of the following hold. Reject (INVALID) if you see any of them:
+
+1. **Function re-implementation.** The harness re-implements the function body inline (e.g. \`const expression = (args) => ...\`) and tests the re-implementation instead of calling \`functionUnderTest\`. The harness is then testing its own copy, not the real code.
+
+2. **Tautological assertion.** \`expect(typeof result).toBe('object')\`, \`if (result !== result) throw\`, \`assert(true)\`. Any execution satisfies these. They provide no falsification power.
+
+3. **Claim-restated expected value.** The \`expected\` value in the assertion is a direct transliteration of the claim (e.g. claim says "returns ok", harness has \`const expected = 'ok'\`). The harness then verifies its own translation agrees with itself.
+
+4. **Fixture contains the answer.** The input fixture carries the value the function is supposed to compute (e.g. claim says "maximum of array", fixture is \`{ data: [1,2,3], max: 3 }\`). The function can read \`.max\` and pass through.
+
+5. **encoding-gap thrown on conditions orthogonal to the claim.** The harness throws \`encoding-gap:\` on a TypeError, a null dereference, or a coincidental runtime failure that doesn't falsify the claim. The prefix should only be used when the observation specifically contradicts what the claim promises.
+
+6. **Hypothesis-assertion drift.** If the harness has a \`// falsification:\` comment naming a specific runtime observation, the assertions below must test for that observation. If the comment says "function mutates X" but assertions only check the return value, the harness is incoherent.
+
+## Claim
+${input.claim}
+
+## SMT-LIB (what was formally proven)
+\`\`\`smt2
+${input.smt2}
+\`\`\`
+
+## Function source
+\`\`\`typescript
+${input.functionSource}
+\`\`\`
+
+## Harness to audit
+\`\`\`javascript
+${input.harnessCode}
+\`\`\`
+
+## Your output
+
+Reply with exactly one line, starting VALID or INVALID:
+
+- \`VALID: <one-sentence confirmation that the harness is a genuine empirical test>\`
+- \`INVALID: <one-sentence specific critique naming the rigging mechanism — cite which of the six categories above, with a short quote from the harness>\`
+
+Bias toward INVALID. A falsely-validated rigged harness poisons the pipeline's trust signal; a falsely-rejected legitimate harness just means we lose one data point and synthesis is retried.`;
+
+  let resp;
+  try {
+    resp = await provider.complete(prompt, {
+      model,
+      systemPrompt:
+        "You audit synthesized test harnesses for rigging and tautology. Reply with one line starting VALID: or INVALID:, citing the specific rigging mechanism when rejecting.",
+    });
+  } catch (err: any) {
+    return { valid: true, note: `audit-error: ${err?.message?.slice(0, 80) || "unknown"}` };
+  }
+
+  const first = resp.text.trim().split("\n")[0] || "";
+  const m = first.match(/^(VALID|INVALID)\s*[:\-]\s*(.*)$/i);
+  if (!m) return { valid: true, note: `audit-unparseable: ${first.slice(0, 80)}` };
+
+  const valid = m[1]!.toUpperCase() === "VALID";
+  const note = m[2]!.trim().slice(0, 200);
+  return { valid, note };
+}
+
 export async function judgeTeachingExample(
   ex: TeachingExampleInput,
   provider: LLMProvider,

@@ -7,6 +7,8 @@ import { parseFile } from "../parser";
 import { createProvider } from "../llm";
 import { judgeRuntimeOutcome } from "../judge";
 import { synthesizeHarness, runHarness, HarnessCache, HarnessOutcome } from "../harness";
+import { judgeHarnessCode } from "../judge";
+import { JudgeCache } from "../judgeCache";
 import { loadModuleWithPrivates } from "../moduleLoader";
 
 interface ExtractedFn {
@@ -86,15 +88,21 @@ export class PropertyTestChecker implements Checker {
     this.harnessCandidates = [];
     this.harnessResults = [];
 
+    const sampleCount = Math.max(1, parseInt(process.env.NEURALLOG_Z3_SAMPLES || "1", 10) || 1);
+
     for (const contract of contracts) {
       if (this.attempted >= this.limit) break;
       for (const proven of contract.proven) {
         if (this.attempted >= this.limit) break;
-        this.attempted++;
-        const r = this.runOne(contract, proven, "proven");
-        if (r) {
-          results.push(r.result);
-          this.lastRun.push(r);
+        const models = sampleCount === 1 ? [null] : this.extractModels(proven.smt2, sampleCount);
+        for (const modelOverride of models) {
+          if (this.attempted >= this.limit) break;
+          this.attempted++;
+          const r = this.runOne(contract, proven, "proven", modelOverride || undefined);
+          if (r) {
+            results.push(r.result);
+            this.lastRun.push(r);
+          }
         }
       }
     }
@@ -151,7 +159,8 @@ export class PropertyTestChecker implements Checker {
   private runOne(
     contract: Contract,
     prop: ProvenProperty | Violation,
-    source: "proven" | "violation"
+    source: "proven" | "violation",
+    modelOverride?: Record<string, number | boolean>
   ): PropertyTestContext | null {
     const absPath = this.resolvePath(contract.file);
     if (this.fileRequireFailures.has(absPath)) {
@@ -171,9 +180,11 @@ export class PropertyTestChecker implements Checker {
     }
 
     const witness = (prop as Violation).witness;
-    const model = source === "violation" && witness
-      ? this.parseZ3Model(witness)
-      : this.extractModel(prop.smt2);
+    const model = modelOverride
+      ? modelOverride
+      : source === "violation" && witness
+        ? this.parseZ3Model(witness)
+        : this.extractModel(prop.smt2);
 
     if (!model || Object.keys(model).length === 0) {
       this.skipReasons.push(source === "violation" ? "witness empty / unparseable" : "no Z3 model (preconditions unsat or malformed)");
@@ -354,6 +365,20 @@ export class PropertyTestChecker implements Checker {
     return isAbsolute(file) ? file : resolvePath(this.projectRoot, file);
   }
 
+  private async parallelMap<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let idx = 0;
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (true) {
+        const i = idx++;
+        if (i >= items.length) return;
+        results[i] = await fn(items[i]!);
+      }
+    });
+    await Promise.all(workers);
+    return results;
+  }
+
   private isCompatibleWithTsType(tsType: string, value: unknown): boolean {
     if (!tsType || tsType === "unknown" || tsType === "any") return true;
     const t = tsType.trim();
@@ -438,33 +463,48 @@ export class PropertyTestChecker implements Checker {
     return undefined;
   }
 
-  async judgeResults(model?: string): Promise<{ judged: number; flipped: number; confirmed: number }> {
+  async judgeResults(model?: string): Promise<{ judged: number; flipped: number; confirmed: number; cacheHits: number }> {
     if (process.env.NEURALLOG_PROPERTY_TEST_JUDGE !== "1") {
-      return { judged: 0, flipped: 0, confirmed: 0 };
+      return { judged: 0, flipped: 0, confirmed: 0, cacheHits: 0 };
     }
     if (this.lastRun.length === 0) {
-      return { judged: 0, flipped: 0, confirmed: 0 };
+      return { judged: 0, flipped: 0, confirmed: 0, cacheHits: 0 };
     }
 
     const provider = createProvider();
     const judgeModel = model || process.env.NEURALLOG_JUDGE_MODEL || "claude-haiku-4-5-20251001";
+    const judgeCache = new JudgeCache(this.projectRoot);
 
     let judged = 0, flipped = 0, confirmed = 0;
+    let cacheHits = 0;
     const store = new ContractStore(this.projectRoot);
     const touched = new Set<string>();
 
     for (const ctx of this.lastRun) {
-      const verdict = await judgeRuntimeOutcome(
-        {
-          functionSource: ctx.functionSource,
-          claim: ctx.claim,
-          smt2: ctx.smt2,
-          inputsSummary: ctx.inputsSummary,
-          outcome: ctx.outcome,
-        },
-        provider,
-        judgeModel
-      );
+      const outcomeSig = ctx.outcome.kind === "returned"
+        ? `returned:${ctx.outcome.value}`
+        : `threw:${ctx.outcome.error}`;
+      const cacheParts = [ctx.smt2, ctx.functionSource, ctx.inputsSummary, outcomeSig, ctx.source];
+
+      const cached = judgeCache.get(...cacheParts);
+      let verdict: { valid: boolean; note: string };
+      if (cached) {
+        verdict = { valid: cached.valid, note: cached.note };
+        cacheHits++;
+      } else {
+        verdict = await judgeRuntimeOutcome(
+          {
+            functionSource: ctx.functionSource,
+            claim: ctx.claim,
+            smt2: ctx.smt2,
+            inputsSummary: ctx.inputsSummary,
+            outcome: ctx.outcome,
+          },
+          provider,
+          judgeModel
+        );
+        judgeCache.put({ valid: verdict.valid, note: verdict.note }, ...cacheParts);
+      }
       judged++;
 
       const note = `property-judge: ${verdict.note}`;
@@ -512,7 +552,7 @@ export class PropertyTestChecker implements Checker {
       if (c) store.put(c);
     }
 
-    return { judged, flipped, confirmed };
+    return { judged, flipped, confirmed, cacheHits };
   }
 
   async synthesizeAndRunHarnesses(model?: string): Promise<{
@@ -539,18 +579,17 @@ export class PropertyTestChecker implements Checker {
     const touched = new Set<string>();
 
     const candidates = this.harnessCandidates.slice(0, limit);
-    console.log(`[harness] ${candidates.length} candidate contracts (of ${this.harnessCandidates.length}); synthesizing with ${synthModel}`);
+    const concurrency = Math.max(1, parseInt(process.env.NEURALLOG_HARNESS_CONCURRENCY || "3", 10) || 3);
+    console.log(`[harness] ${candidates.length} candidate contracts (of ${this.harnessCandidates.length}); synthesizing with ${synthModel} at concurrency ${concurrency}`);
 
-    for (const cand of candidates) {
-      stats.attempted++;
+    type Prepared =
+      | { cand: typeof candidates[number]; kind: "skip"; outcomeKind: HarnessOutcome["kind"]; message: string }
+      | { cand: typeof candidates[number]; kind: "ready"; harness: string; info: FunctionInfo; absPath: string };
+
+    const prepare = async (cand: typeof candidates[number]): Promise<Prepared> => {
       const absPath = this.resolvePath(cand.contract.file);
-
       const info = this.extractFunctionInfo(absPath, cand.contract.function);
-      if (!info) {
-        this.harnessResults.push(this.harnessCheckResult(cand, "synthesis-failed", "could not extract function source"));
-        stats.synthesisFailed++;
-        continue;
-      }
+      if (!info) return { cand, kind: "skip", outcomeKind: "synthesis-failed", message: "could not extract function source" };
 
       let cached = cache.get(cand.prop.smt2, info.source);
       let harness: string | null = cached?.harness || null;
@@ -574,19 +613,51 @@ export class PropertyTestChecker implements Checker {
         cache.put(cand.prop.smt2, info.source, { harness, untestable });
       }
 
-      if (untestable) {
-        this.harnessResults.push(this.harnessCheckResult(cand, "untestable", untestable));
-        stats.untestable++;
-        this.applyHarnessVerdict(store, touched, cand, "untestable", untestable);
+      if (untestable) return { cand, kind: "skip", outcomeKind: "untestable", message: untestable };
+      if (!harness) return { cand, kind: "skip", outcomeKind: "synthesis-failed", message: "LLM did not emit a valid harness or UNTESTABLE line" };
+
+      if (process.env.NEURALLOG_HARNESS_AUDIT !== "0") {
+        const auditModel = process.env.NEURALLOG_AUDIT_MODEL || process.env.NEURALLOG_JUDGE_MODEL || "claude-haiku-4-5-20251001";
+        let auditValid = cached?.auditValid;
+        let auditNote = cached?.auditNote || "";
+        if (auditValid === undefined) {
+          const verdict = await judgeHarnessCode(
+            {
+              harnessCode: harness,
+              claim: cand.prop.claim,
+              smt2: cand.prop.smt2,
+              functionSource: info.source,
+            },
+            provider,
+            auditModel
+          );
+          auditValid = verdict.valid;
+          auditNote = verdict.note;
+          cache.putAudit(cand.prop.smt2, info.source, verdict);
+        }
+        if (!auditValid) {
+          return { cand, kind: "skip", outcomeKind: "harness-error", message: `audit rejected: ${auditNote}` };
+        }
+      }
+
+      return { cand, kind: "ready", harness, info, absPath };
+    };
+
+    const prepared = await this.parallelMap(candidates, concurrency, prepare);
+
+    for (const p of prepared) {
+      stats.attempted++;
+
+      if (p.kind === "skip") {
+        this.harnessResults.push(this.harnessCheckResult(p.cand, p.outcomeKind, p.message));
+        if (p.outcomeKind === "untestable") stats.untestable++;
+        else if (p.outcomeKind === "synthesis-failed") stats.synthesisFailed++;
+        else if (p.outcomeKind === "harness-error") stats.harnessError++;
+        this.applyHarnessVerdict(store, touched, p.cand, p.outcomeKind, p.message);
         continue;
       }
 
-      if (!harness) {
-        this.harnessResults.push(this.harnessCheckResult(cand, "synthesis-failed", "LLM did not emit a valid harness or UNTESTABLE line"));
-        stats.synthesisFailed++;
-        continue;
-      }
-
+      const { cand, harness, info, absPath } = p;
       const extracted = this.loadFunction(absPath, cand.contract.function);
       if (!extracted) {
         this.harnessResults.push(this.harnessCheckResult(cand, "harness-error", "could not load function for harness execution"));
@@ -597,9 +668,9 @@ export class PropertyTestChecker implements Checker {
       const fnClass = this.resolveClassFor(absPath, info.className);
       let outcome: HarnessOutcome;
       try {
-        outcome = await runHarness(harness!, extracted.fn, fnClass, timeoutMs);
+        outcome = await runHarness(harness, extracted.fn, fnClass, timeoutMs);
       } catch (e: any) {
-        outcome = { kind: "harness-error", message: String(e?.message || e).slice(0, 200), harnessCode: harness! };
+        outcome = { kind: "harness-error", message: String(e?.message || e).slice(0, 200), harnessCode: harness };
       }
 
       this.harnessResults.push(this.harnessOutcomeToCheckResult(cand, outcome));
@@ -708,6 +779,63 @@ export class PropertyTestChecker implements Checker {
 
     if (!/\bsat\b/.test(output)) return null;
     return this.parseZ3Model(output);
+  }
+
+  private extractModels(smt2: string, k: number): Array<Record<string, number | boolean>> {
+    const results: Array<Record<string, number | boolean>> = [];
+    const first = this.extractModel(smt2);
+    if (!first || Object.keys(first).length === 0) return results;
+    results.push(first);
+
+    if (k <= 1) return results;
+
+    const lines = smt2.split("\n");
+    const assertIndices: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]!.trim().startsWith("(assert")) assertIndices.push(i);
+    }
+    if (assertIndices.length === 0) return results;
+
+    const goalIdx = assertIndices[assertIndices.length - 1]!;
+    const baseLines = lines.filter((_, i) => i !== goalIdx).filter((l) => !l.includes("(check-sat)"));
+
+    for (let iter = 1; iter < k; iter++) {
+      const exclusions: string[] = [];
+      for (const prev of results) {
+        const disjuncts: string[] = [];
+        for (const [name, val] of Object.entries(prev)) {
+          if (typeof val === "number") {
+            const lit = val < 0 ? `(- ${-val})` : String(val);
+            disjuncts.push(`(not (= ${name} ${lit}))`);
+          } else {
+            disjuncts.push(`(not (= ${name} ${val}))`);
+          }
+        }
+        if (disjuncts.length === 0) continue;
+        exclusions.push(disjuncts.length === 1 ? `(assert ${disjuncts[0]})` : `(assert (or ${disjuncts.join(" ")}))`);
+      }
+
+      const query = [...baseLines, ...exclusions, "(check-sat)", "(get-model)"].join("\n");
+      let output: string;
+      try {
+        output = execSync("z3 -in -T:5", { input: query, encoding: "utf-8", timeout: 6000 });
+      } catch {
+        return results;
+      }
+      if (!/\bsat\b/.test(output) || /\bunsat\b/.test(output)) return results;
+
+      const nextModel = this.parseZ3Model(output);
+      if (Object.keys(nextModel).length === 0) return results;
+
+      const isDuplicate = results.some((prev) =>
+        Object.keys(nextModel).every((k) => nextModel[k] === prev[k])
+      );
+      if (isDuplicate) return results;
+
+      results.push(nextModel);
+    }
+
+    return results;
   }
 
   private parseZ3Model(text: string): Record<string, number | boolean> {
