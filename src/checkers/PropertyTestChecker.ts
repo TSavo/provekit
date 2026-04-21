@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import { isAbsolute, resolve as resolvePath } from "path";
 import Parser from "tree-sitter";
-import { Contract, ProvenProperty, Violation } from "../contracts";
+import { Contract, ContractStore, ProvenProperty, Violation } from "../contracts";
 import { Checker, CheckResult } from "./Checker";
 import { parseFile } from "../parser";
 import { createProvider } from "../llm";
@@ -25,6 +25,13 @@ interface CtorParamInfo {
   type: string;
 }
 
+interface BoundaryRun {
+  args: any[];
+  outcome:
+    | { kind: "returned"; value: string }
+    | { kind: "threw"; error: string };
+}
+
 interface PropertyTestContext {
   result: CheckResult;
   claim: string;
@@ -35,6 +42,8 @@ interface PropertyTestContext {
     | { kind: "returned"; value: string }
     | { kind: "threw"; error: string };
   source: "proven" | "violation";
+  contractKey: string;
+  boundaryRuns: BoundaryRun[];
 }
 
 export class PropertyTestChecker implements Checker {
@@ -171,13 +180,8 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
-    let outcome: { kind: "returned"; value: string } | { kind: "threw"; error: string };
-    try {
-      const value = extracted.fn(...args);
-      outcome = { kind: "returned", value: this.formatValue(value) };
-    } catch (e: any) {
-      outcome = { kind: "threw", error: String(e?.message || e).slice(0, 200) };
-    }
+    const outcome = this.callFunction(extracted.fn, args);
+    const boundaryRuns = this.runBoundarySamples(extracted.fn, extracted.paramNames, args, prop.smt2);
 
     const argSummary = args
       .map((a, i) => `${extracted.paramNames[i]}=${this.formatValue(a)}`)
@@ -187,13 +191,30 @@ export class PropertyTestChecker implements Checker {
         ? `returned ${outcome.value}`
         : `threw: ${outcome.error}`;
 
+    const boundaryThrows = boundaryRuns.filter((b) => b.outcome.kind === "threw").length;
+    const boundaryReturns = boundaryRuns.length - boundaryThrows;
+    const boundarySummary = boundaryRuns.length === 0
+      ? ""
+      : boundaryThrows === 0
+        ? ` [+${boundaryRuns.length} boundary cases all clean]`
+        : boundaryThrows === boundaryRuns.length
+          ? ` [+${boundaryRuns.length} boundary cases all threw]`
+          : ` [+${boundaryRuns.length} boundary cases: ${boundaryReturns} clean, ${boundaryThrows} threw]`;
+
     let verdict: "proven" | "violation" | "error";
     let error: string | undefined;
     if (source === "proven") {
-      verdict = outcome.kind === "threw" ? "violation" : "proven";
-      error = outcome.kind === "threw"
-        ? "runtime disagreement: Z3 said unsat (proven) but function threw on Z3-model input"
-        : undefined;
+      const anyBoundaryThrew = boundaryThrows > 0;
+      if (outcome.kind === "threw") {
+        verdict = "violation";
+        error = "runtime disagreement: Z3 said unsat (proven) but function threw on Z3-model input";
+      } else if (anyBoundaryThrew) {
+        verdict = "violation";
+        error = `runtime disagreement on boundary input: function threw on ${boundaryThrows}/${boundaryRuns.length} boundary variants that still satisfied preconditions`;
+      } else {
+        verdict = "proven";
+        error = undefined;
+      }
     } else {
       verdict = outcome.kind === "threw" ? "violation" : "proven";
       error = outcome.kind === "threw"
@@ -204,7 +225,7 @@ export class PropertyTestChecker implements Checker {
     const prefix = source === "violation" ? "VIOLATION-REPLAY " : "";
     const result: CheckResult = {
       checker: this.name,
-      description: `[${prop.principle || "?"}] ${prefix}${contract.function}:${contract.line} — with ${argSummary} → ${outcomeSummary}`,
+      description: `[${prop.principle || "?"}] ${prefix}${contract.function}:${contract.line} — with ${argSummary} → ${outcomeSummary}${boundarySummary}`,
       sourceContract: `${contract.function}:${contract.line}`,
       smt2: prop.smt2,
       expected: source === "violation" ? "sat" : "unsat",
@@ -221,7 +242,79 @@ export class PropertyTestChecker implements Checker {
       inputsSummary: argSummary,
       outcome,
       source,
+      contractKey: contract.key,
+      boundaryRuns,
     };
+  }
+
+  private callFunction(fn: (...args: any[]) => any, args: any[]): { kind: "returned"; value: string } | { kind: "threw"; error: string } {
+    try {
+      const value = fn(...args);
+      return { kind: "returned", value: this.formatValue(value) };
+    } catch (e: any) {
+      return { kind: "threw", error: String(e?.message || e).slice(0, 200) };
+    }
+  }
+
+  private runBoundarySamples(
+    fn: (...args: any[]) => any,
+    paramNames: string[],
+    primaryArgs: any[],
+    smt2: string
+  ): BoundaryRun[] {
+    const runs: BoundaryRun[] = [];
+    const candidates = [0, 1, -1];
+
+    for (let i = 0; i < primaryArgs.length; i++) {
+      const primary = primaryArgs[i];
+      if (typeof primary !== "number") continue;
+
+      for (const cand of candidates) {
+        if (cand === primary) continue;
+        const variantArgs = primaryArgs.slice();
+        variantArgs[i] = cand;
+
+        if (!this.isConsistentWithPreconditions(smt2, paramNames, variantArgs)) continue;
+
+        const outcome = this.callFunction(fn, variantArgs);
+        runs.push({ args: variantArgs, outcome });
+
+        if (runs.length >= 8) return runs;
+      }
+    }
+    return runs;
+  }
+
+  private isConsistentWithPreconditions(smt2: string, paramNames: string[], args: any[]): boolean {
+    const lines = smt2.split("\n");
+    const assertIndices: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]!.trim().startsWith("(assert")) assertIndices.push(i);
+    }
+    if (assertIndices.length === 0) return true;
+
+    const goalIdx = assertIndices[assertIndices.length - 1]!;
+    const pinnings: string[] = [];
+    for (let i = 0; i < paramNames.length; i++) {
+      const v = args[i];
+      if (typeof v === "number") {
+        const lit = v < 0 ? `(- ${-v})` : String(v);
+        pinnings.push(`(assert (= ${paramNames[i]} ${lit}))`);
+      } else if (typeof v === "boolean") {
+        pinnings.push(`(assert (= ${paramNames[i]} ${v}))`);
+      }
+    }
+    const block = lines
+      .filter((_, i) => i !== goalIdx)
+      .concat(pinnings)
+      .join("\n");
+
+    try {
+      const output = execSync("z3 -in -T:3", { input: block, encoding: "utf-8", timeout: 4000 });
+      return /\bsat\b/.test(output) && !/\bunsat\b/.test(output);
+    } catch {
+      return false;
+    }
   }
 
   private resolvePath(file: string): string {
@@ -296,6 +389,8 @@ export class PropertyTestChecker implements Checker {
     const judgeModel = model || process.env.NEURALLOG_JUDGE_MODEL || "claude-haiku-4-5-20251001";
 
     let judged = 0, flipped = 0, confirmed = 0;
+    const store = new ContractStore(this.projectRoot);
+    const touched = new Set<string>();
 
     for (const ctx of this.lastRun) {
       const verdict = await judgeRuntimeOutcome(
@@ -326,6 +421,34 @@ export class PropertyTestChecker implements Checker {
       } else {
         ctx.result.error = ctx.result.error ? `${ctx.result.error}; ${note}` : note;
       }
+
+      const contract = store.get(ctx.contractKey);
+      if (contract) {
+        const propagate = (p: ProvenProperty | Violation) => {
+          if (p.smt2 !== ctx.smt2) return;
+          if (ctx.source === "proven" && verdict.valid) {
+            p.confidence = "high";
+            p.judge_note = `property-judge VALID: ${verdict.note}`;
+          } else if (ctx.source === "proven" && !verdict.valid) {
+            p.confidence = "low";
+            p.judge_note = `property-judge INVALID (encoding-inconsistent): ${verdict.note}`;
+          } else if (ctx.source === "violation" && !verdict.valid) {
+            p.confidence = "high";
+            p.judge_note = `property-judge confirmed bug: ${verdict.note}`;
+          } else if (ctx.source === "violation" && verdict.valid) {
+            p.confidence = "low";
+            p.judge_note = `property-judge false positive: ${verdict.note}`;
+          }
+        };
+        const target = ctx.source === "proven" ? contract.proven : contract.violations;
+        target.forEach(propagate);
+        touched.add(ctx.contractKey);
+      }
+    }
+
+    for (const key of touched) {
+      const c = store.get(key);
+      if (c) store.put(c);
     }
 
     return { judged, flipped, confirmed };
