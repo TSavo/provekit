@@ -9,7 +9,7 @@ import { judgeRuntimeOutcome } from "../judge";
 import { synthesizeHarness, runHarness, HarnessCache, HarnessOutcome } from "../harness";
 import { judgeHarnessCode } from "../judge";
 import { JudgeCache } from "../judgeCache";
-import { loadModuleWithPrivates } from "../moduleLoader";
+import { loadModuleWithPrivates, collectTransitiveSource } from "../moduleLoader";
 
 interface ExtractedFn {
   fn: (...args: any[]) => any;
@@ -196,6 +196,14 @@ export class PropertyTestChecker implements Checker {
       return null;
     }
 
+    const nonDet = this.detectsNonDeterminism(extracted.source);
+    if (nonDet) {
+      const reason = `${contract.function} references ${nonDet} (non-deterministic) — primitive path cannot stub; routed to harness synthesis`;
+      this.skipReasons.push(reason);
+      this.harnessCandidates.push({ contract, prop, source, skipReason: reason });
+      return null;
+    }
+
     const paramTypes = extracted.paramTypes || extracted.paramNames.map(() => "unknown");
     const args: any[] = [];
     for (let i = 0; i < extracted.paramNames.length; i++) {
@@ -377,6 +385,21 @@ export class PropertyTestChecker implements Checker {
     });
     await Promise.all(workers);
     return results;
+  }
+
+  private detectsNonDeterminism(source: string): string | null {
+    const patterns: [RegExp, string][] = [
+      [/\bMath\.random\b/, "Math.random"],
+      [/\bDate\.now\b/, "Date.now"],
+      [/\bperformance\.now\b/, "performance.now"],
+      [/\bnew\s+Date\s*\(\s*\)/, "new Date()"],
+      [/\bprocess\.hrtime\b/, "process.hrtime"],
+      [/\bcrypto\.(?:randomUUID|randomBytes|getRandomValues)\b/, "crypto random"],
+    ];
+    for (const [re, name] of patterns) {
+      if (re.test(source)) return name;
+    }
+    return null;
   }
 
   private isCompatibleWithTsType(tsType: string, value: unknown): boolean {
@@ -586,12 +609,21 @@ export class PropertyTestChecker implements Checker {
       | { cand: typeof candidates[number]; kind: "skip"; outcomeKind: HarnessOutcome["kind"]; message: string }
       | { cand: typeof candidates[number]; kind: "ready"; harness: string; info: FunctionInfo; absPath: string };
 
+    const depsSourceCache = new Map<string, string>();
+    const getDepsSource = (filePath: string): string => {
+      if (depsSourceCache.has(filePath)) return depsSourceCache.get(filePath)!;
+      const src = collectTransitiveSource(filePath, this.projectRoot, 1);
+      depsSourceCache.set(filePath, src);
+      return src;
+    };
+
     const prepare = async (cand: typeof candidates[number]): Promise<Prepared> => {
       const absPath = this.resolvePath(cand.contract.file);
       const info = this.extractFunctionInfo(absPath, cand.contract.function);
       if (!info) return { cand, kind: "skip", outcomeKind: "synthesis-failed", message: "could not extract function source" };
 
-      let cached = cache.get(cand.prop.smt2, info.source);
+      const depsSource = getDepsSource(absPath);
+      let cached = cache.get(cand.prop.smt2, info.source, depsSource);
       let harness: string | null = cached?.harness || null;
       let untestable: string | null = cached?.untestable || null;
 
@@ -610,7 +642,7 @@ export class PropertyTestChecker implements Checker {
         );
         harness = result.harness;
         untestable = result.untestable;
-        cache.put(cand.prop.smt2, info.source, { harness, untestable });
+        cache.put(cand.prop.smt2, info.source, { harness, untestable }, depsSource);
       }
 
       if (untestable) return { cand, kind: "skip", outcomeKind: "untestable", message: untestable };
@@ -633,7 +665,7 @@ export class PropertyTestChecker implements Checker {
           );
           auditValid = verdict.valid;
           auditNote = verdict.note;
-          cache.putAudit(cand.prop.smt2, info.source, verdict);
+          cache.putAudit(cand.prop.smt2, info.source, verdict, depsSource);
         }
         if (!auditValid) {
           return { cand, kind: "skip", outcomeKind: "harness-error", message: `audit rejected: ${auditNote}` };

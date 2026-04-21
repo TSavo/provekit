@@ -15,6 +15,58 @@ function getTs(): typeof import("typescript") | null {
   }
 }
 
+export function collectTransitiveSource(filePath: string, projectRoot: string, depth: number = 1): string {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+
+  const visit = (abs: string, remaining: number) => {
+    if (seen.has(abs)) return;
+    seen.add(abs);
+    let src: string;
+    try {
+      src = readFileSync(abs, "utf-8");
+    } catch {
+      return;
+    }
+    parts.push(`// === ${abs.replace(projectRoot, "").replace(/^\/+/, "")} ===`);
+    parts.push(src);
+
+    if (remaining <= 0) return;
+
+    const importRe = /(?:^|\n)\s*import\s+(?:.+?\s+from\s+)?["']([^"']+)["']/g;
+    let m;
+    while ((m = importRe.exec(src)) !== null) {
+      const spec = m[1]!;
+      if (!spec.startsWith(".")) continue;
+      const candidates = [
+        spec,
+        spec + ".ts",
+        spec + ".tsx",
+        spec + ".js",
+        spec + "/index.ts",
+        spec + "/index.js",
+      ];
+      const dir = dirname(abs);
+      for (const c of candidates) {
+        try {
+          const Module = require("module");
+          const resolved = require("path").resolve(dir, c);
+          const { existsSync } = require("fs");
+          if (existsSync(resolved)) {
+            visit(resolved, remaining - 1);
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+  };
+
+  visit(filePath, depth);
+  return parts.join("\n");
+}
+
 export function collectTopLevelNames(source: string): string[] {
   const tree = parseFile(source);
   const names = new Set<string>();

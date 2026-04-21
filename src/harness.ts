@@ -138,6 +138,20 @@ export async function runHarness(
   fnClass: any,
   timeoutMs: number = 3000
 ): Promise<HarnessOutcome> {
+  // Deterministic stubs for sources of nondeterminism. Harnesses testing
+  // claims about pure logic shouldn't see different outputs across runs;
+  // the clock and RNG should be pinned. Harnesses that specifically need
+  // to test time or random behaviour can override these in their own
+  // code — the stubs just establish a default.
+  const stubbedMath = Object.create(Math);
+  Object.defineProperty(stubbedMath, "random", { value: () => 0.5, writable: true, configurable: true });
+  const stubbedDate = new Proxy(Date, {
+    get(target, prop, receiver) {
+      if (prop === "now") return () => 0;
+      return Reflect.get(target, prop, target);
+    },
+  });
+
   const sandbox: any = {
     functionUnderTest: fn,
     functionUnderTestClass: fnClass,
@@ -161,8 +175,8 @@ export async function runHarness(
     String,
     Boolean,
     JSON,
-    Math,
-    Date,
+    Math: stubbedMath,
+    Date: stubbedDate,
     Symbol,
     Map,
     Set,
@@ -233,16 +247,20 @@ export class HarnessCache {
     this.cacheDir = join(projectRoot, ".neurallog", "harnesses");
   }
 
-  private cacheKey(smt2: string, functionSource: string): string {
+  private cacheKey(smt2: string, functionSource: string, depsSource?: string): string {
     const h = createHash("sha256");
     h.update(smt2);
     h.update("\n---\n");
     h.update(functionSource);
+    if (depsSource) {
+      h.update("\n---deps---\n");
+      h.update(depsSource);
+    }
     return h.digest("hex").slice(0, 16);
   }
 
-  get(smt2: string, functionSource: string): { harness?: string; untestable?: string; auditValid?: boolean; auditNote?: string } | null {
-    const key = this.cacheKey(smt2, functionSource);
+  get(smt2: string, functionSource: string, depsSource?: string): { harness?: string; untestable?: string; auditValid?: boolean; auditNote?: string } | null {
+    const key = this.cacheKey(smt2, functionSource, depsSource);
     const path = join(this.cacheDir, `${key}.json`);
     if (!existsSync(path)) return null;
     try {
@@ -255,10 +273,11 @@ export class HarnessCache {
   putAudit(
     smt2: string,
     functionSource: string,
-    audit: { valid: boolean; note: string }
+    audit: { valid: boolean; note: string },
+    depsSource?: string
   ): void {
-    const existing = this.get(smt2, functionSource) || {};
-    const key = this.cacheKey(smt2, functionSource);
+    const existing = this.get(smt2, functionSource, depsSource) || {};
+    const key = this.cacheKey(smt2, functionSource, depsSource);
     mkdirSync(this.cacheDir, { recursive: true });
     const path = join(this.cacheDir, `${key}.json`);
     try {
@@ -283,9 +302,10 @@ export class HarnessCache {
   put(
     smt2: string,
     functionSource: string,
-    value: { harness?: string | null; untestable?: string | null }
+    value: { harness?: string | null; untestable?: string | null },
+    depsSource?: string
   ): void {
-    const key = this.cacheKey(smt2, functionSource);
+    const key = this.cacheKey(smt2, functionSource, depsSource);
     mkdirSync(this.cacheDir, { recursive: true });
     const path = join(this.cacheDir, `${key}.json`);
     try {
