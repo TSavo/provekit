@@ -56,7 +56,7 @@ export class Pipeline {
     if (bundles.length === 0) {
       console.log("No signals found in the dependency graph.");
       const emptyDerivation: DerivationOutput = { contracts: [], newViolations: [], derivedAt: new Date().toISOString() };
-      const { data: report } = this.axiomPhase.execute(undefined, options);
+      const { data: report } = await this.axiomPhase.execute(undefined, options);
       return { graph, bundles, derivation: emptyDerivation, report };
     }
 
@@ -66,7 +66,7 @@ export class Pipeline {
     if (staleBundles.length === 0) {
       console.log("All signal hashes current. No derivation needed.");
       const emptyDerivation: DerivationOutput = { contracts: [], newViolations: [], derivedAt: new Date().toISOString() };
-      const { data: report } = this.axiomPhase.execute(undefined, options);
+      const { data: report } = await this.axiomPhase.execute(undefined, options);
       return { graph, bundles, derivation: emptyDerivation, report };
     }
 
@@ -84,7 +84,7 @@ export class Pipeline {
       options
     );
 
-    const { data: report } = this.axiomPhase.execute(undefined, options);
+    const { data: report } = await this.axiomPhase.execute(undefined, options);
 
     return { graph, bundles, derivation, report };
   }
@@ -104,7 +104,7 @@ export class Pipeline {
     if (changedFiles.length === 0) {
       console.log("  No changed TypeScript files in staging area.");
       console.log("  Running Phase 5 against cached contracts...");
-      const { data: report } = this.axiomPhase.execute(undefined, options);
+      const { data: report } = await this.axiomPhase.execute(undefined, options);
       console.log(`  Completed in ${Date.now() - startTime}ms`);
       return {
         graph: { root: "", projectRoot: config.projectRoot, files: [], topologicalOrder: [], parallelGroups: [], builtAt: new Date().toISOString() },
@@ -197,7 +197,7 @@ export class Pipeline {
     if (staleContracts.size === 0) {
       console.log("  All contracts current. Running Phase 5...");
       console.log();
-      const { data: report } = this.axiomPhase.execute(undefined, options);
+      const { data: report } = await this.axiomPhase.execute(undefined, options);
       console.log(`  Completed in ${formatDuration(Date.now() - startTime)}`);
       return {
         graph: { root: "", projectRoot: config.projectRoot, files: [], topologicalOrder: [], parallelGroups: [], builtAt: new Date().toISOString() },
@@ -249,9 +249,9 @@ export class Pipeline {
     return filtered;
   }
 
-  runVerifyOnly(projectRoot: string, verbose: boolean = false): AxiomReport {
+  async runVerifyOnly(projectRoot: string, verbose: boolean = false): Promise<AxiomReport> {
     const options: PhaseOptions = { projectRoot, verbose };
-    const { data: report } = this.axiomPhase.execute(undefined, options);
+    const { data: report } = await this.axiomPhase.execute(undefined, options);
     return report;
   }
 }

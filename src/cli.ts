@@ -253,7 +253,7 @@ async function runVerify(args: string[]): Promise<void> {
   console.log();
 
   const pipeline = new Pipeline();
-  const report = pipeline.runVerifyOnly(projectRoot, verbose);
+  const report = await pipeline.runVerifyOnly(projectRoot, verbose);
 
   if (ci) {
     const { PrincipleStore } = require("./principles");
@@ -284,7 +284,7 @@ async function runVerify(args: string[]): Promise<void> {
 
 function runDiff(args: string[]): void {
   const projectRoot = resolveProjectRoot(args);
-  const ref = args.find((a) => !a.startsWith("-")) || "HEAD~1";
+  const ref = args.find((a) => !a.startsWith("-")) ?? "HEAD~1";
 
   console.log(`neurallog v${VERSION} — proof diff against ${ref}`);
   console.log();
@@ -639,7 +639,9 @@ function findProjectRoot(startDir: string): string {
   return startDir;
 }
 
-main().catch((err) => {
-  console.error("Fatal:", err.message || err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("Fatal:", err.message || err);
+    process.exit(1);
+  });
+}
