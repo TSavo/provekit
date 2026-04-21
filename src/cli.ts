@@ -284,7 +284,7 @@ async function runVerify(args: string[]): Promise<void> {
 
 function runDiff(args: string[]): void {
   const projectRoot = resolveProjectRoot(args);
-  const ref = args.find((a) => !a.startsWith("-")) || "HEAD~1";
+  const ref = args.find((a) => !a.startsWith("-")) ?? "HEAD~1";
 
   console.log(`neurallog v${VERSION} — proof diff against ${ref}`);
   console.log();
