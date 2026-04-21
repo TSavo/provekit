@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { summarizeTriangle } from "./testOracle";
 import { TestCache } from "./testCache";
 import { getAdapter, listAdapters } from "./testAdapters";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdirSync, writeFileSync, rmSync, utimesSync, statSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -39,9 +39,18 @@ describe("summarizeTriangle", () => {
     expect(r.note).toContain("2 test(s) pass");
   });
 
-  it("harness=pass + tests fail → disagreement", () => {
-    const r = summarizeTriangle("pass", [passResult, failResult]);
+  it("harness=pass + uniformly failing tests → disagreement", () => {
+    const r = summarizeTriangle("pass", [failResult, failResult]);
     expect(r.hasDisagreement).toBe(true);
+    expect(r.hasAgreement).toBe(false);
+    expect(r.note).toContain("2 test(s) fail");
+  });
+
+  it("harness=pass + mixed pass/fail oracles → neither agreement nor disagreement (ambiguous)", () => {
+    const r = summarizeTriangle("pass", [passResult, failResult]);
+    expect(r.hasAgreement).toBe(false);
+    expect(r.hasDisagreement).toBe(false);
+    expect(r.note).toContain("1 test(s) pass");
     expect(r.note).toContain("1 test(s) fail");
   });
 
@@ -81,7 +90,7 @@ describe("summarizeTriangle", () => {
 describe("TestCache", () => {
   it("returns null on miss", () => {
     const cache = new TestCache(tmpRoot);
-    expect(cache.get("nonexistent.ts", "some test", "src/foo.ts")).toBeNull();
+    expect(cache.get("vitest", "nonexistent.ts", "some test", "src/foo.ts")).toBeNull();
   });
 
   it("round-trips an outcome", () => {
@@ -90,26 +99,39 @@ describe("TestCache", () => {
     writeFileSync(testFile, "// test");
     writeFileSync(sourceFile, "// source");
     const cache = new TestCache(tmpRoot);
-    cache.put(testFile, "my test", sourceFile, { kind: "pass", message: "ok", durationMs: 50 });
-    const got = cache.get(testFile, "my test", sourceFile);
+    cache.put("vitest", testFile, "my test", sourceFile, { kind: "pass", message: "ok", durationMs: 50 });
+    const got = cache.get("vitest", testFile, "my test", sourceFile);
     expect(got).not.toBeNull();
     expect(got!.kind).toBe("pass");
     expect(got!.durationMs).toBe(50);
   });
 
-  it("invalidates on source file mtime change", async () => {
+  it("invalidates on source file mtime change (via utimes — deterministic)", () => {
     const testFile = join(tmpRoot, "b.test.ts");
     const sourceFile = join(tmpRoot, "b.ts");
     writeFileSync(testFile, "// test");
     writeFileSync(sourceFile, "// v1");
     const cache = new TestCache(tmpRoot);
-    cache.put(testFile, "t", sourceFile, { kind: "pass", message: "ok", durationMs: 1 });
-    expect(cache.get(testFile, "t", sourceFile)).not.toBeNull();
+    cache.put("vitest", testFile, "t", sourceFile, { kind: "pass", message: "ok", durationMs: 1 });
+    expect(cache.get("vitest", testFile, "t", sourceFile)).not.toBeNull();
 
-    // Bump source mtime
-    await new Promise((r) => setTimeout(r, 10));
-    writeFileSync(sourceFile, "// v2");
-    expect(cache.get(testFile, "t", sourceFile)).toBeNull();
+    // Force mtime forward by 10 seconds regardless of filesystem granularity.
+    const now = statSync(sourceFile).mtime;
+    const future = new Date(now.getTime() + 10_000);
+    utimesSync(sourceFile, future, future);
+    expect(cache.get("vitest", testFile, "t", sourceFile)).toBeNull();
+  });
+
+  it("different frameworks are cached independently", () => {
+    const testFile = join(tmpRoot, "c.test.ts");
+    const sourceFile = join(tmpRoot, "c.ts");
+    writeFileSync(testFile, "// test");
+    writeFileSync(sourceFile, "// source");
+    const cache = new TestCache(tmpRoot);
+    cache.put("vitest", testFile, "t", sourceFile, { kind: "pass", message: "via vitest", durationMs: 1 });
+    expect(cache.get("vitest", testFile, "t", sourceFile)!.message).toBe("via vitest");
+    // Same file/test/source under a different framework: should be a miss
+    expect(cache.get("jest", testFile, "t", sourceFile)).toBeNull();
   });
 });
 

@@ -2,10 +2,11 @@ import { spawn } from "child_process";
 import type { TestAdapter, TestInvocation, TestOutcome, TestOutcomeKind } from "./Adapter";
 
 /**
- * Vitest adapter. Invokes `vitest run <file> [-t name] --reporter=json`
+ * Vitest adapter. Invokes `vitest run <file> [-t regex] --reporter=json`
  * and parses the JSON reporter's `testResults[].assertionResults[]` to
- * determine per-test outcomes. Filters by testName via vitest's
- * substring match semantics.
+ * determine per-test outcomes. Note: vitest's -t (--testNamePattern) is
+ * interpreted as a regex, so we escape the caller's testName before
+ * passing it to get predictable substring-style matching.
  */
 export class VitestAdapter implements TestAdapter {
   readonly framework = "vitest";
@@ -15,17 +16,18 @@ export class VitestAdapter implements TestAdapter {
     const start = Date.now();
     const args = ["vitest", "run", inv.testFile, "--reporter=json"];
     if (inv.testName) {
-      args.push("-t", inv.testName);
+      const escaped = inv.testName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      args.push("-t", escaped);
     }
 
     return runCommand("npx", args, inv.projectRoot, inv.timeoutMs, start, (stdout) => {
-      const jsonMatch = stdout.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
+      const jsonBlock = extractLastJsonBlock(stdout);
+      if (!jsonBlock) {
         return { kind: "adapter-error" as const, message: "no JSON block in vitest output" };
       }
       let report: any;
       try {
-        report = JSON.parse(jsonMatch[0]);
+        report = JSON.parse(jsonBlock);
       } catch (e: any) {
         return { kind: "adapter-error" as const, message: `could not parse vitest JSON: ${e?.message?.slice(0, 80)}` };
       }
@@ -62,6 +64,28 @@ export class VitestAdapter implements TestAdapter {
   }
 }
 
+/**
+ * Extracts the last balanced-braces JSON object from a stdout stream.
+ * Test frameworks can log objects to stdout before or after the reporter's
+ * JSON output, so matching the first brace greedily is fragile. This
+ * scans from the end backwards for the matching open-brace that contains
+ * a complete object, tolerating pre- and post-reporter log noise.
+ */
+export function extractLastJsonBlock(stdout: string): string | null {
+  const lastBrace = stdout.lastIndexOf("}");
+  if (lastBrace < 0) return null;
+  let depth = 0;
+  for (let i = lastBrace; i >= 0; i--) {
+    const ch = stdout[i];
+    if (ch === "}") depth++;
+    else if (ch === "{") {
+      depth--;
+      if (depth === 0) return stdout.slice(i, lastBrace + 1);
+    }
+  }
+  return null;
+}
+
 export async function runCommand(
   cmd: string,
   args: string[],
@@ -75,11 +99,34 @@ export async function runCommand(
     let stderr = "";
     let settled = false;
 
-    const child = spawn(cmd, args, { cwd, env: process.env });
+    // detached: true on POSIX puts the child in its own process group, so
+    // we can SIGKILL the whole group (including npx's grandchild vitest
+    // process) via a negative PID. On Windows we can't do this; fall back
+    // to the single-process kill.
+    const isPosix = process.platform !== "win32";
+    let child;
+    try {
+      child = spawn(cmd, args, { cwd, env: process.env, detached: isPosix });
+    } catch (err: any) {
+      resolve({
+        kind: "adapter-error",
+        message: `spawn synchronously failed: ${err?.message?.slice(0, 120) || "unknown"}`,
+        durationMs: Date.now() - start,
+      });
+      return;
+    }
+
+    const killTree = () => {
+      try {
+        if (isPosix && child.pid) process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {}
+    };
+
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      try { child.kill("SIGKILL"); } catch {}
+      killTree();
       resolve({
         kind: "timeout",
         message: `adapter killed process after ${timeoutMs}ms`,
@@ -106,7 +153,17 @@ export async function runCommand(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      const parsed = parse(stdout, stderr, exitCode);
+
+      let parsed: { kind: TestOutcomeKind; message: string };
+      try {
+        parsed = parse(stdout, stderr, exitCode);
+      } catch (e: any) {
+        parsed = {
+          kind: "adapter-error",
+          message: `parse threw: ${e?.message?.slice(0, 160) || "unknown"}`,
+        };
+      }
+
       resolve({
         ...parsed,
         durationMs: Date.now() - start,

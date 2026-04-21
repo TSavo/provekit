@@ -2,13 +2,17 @@ import type { TestAdapter, TestInvocation, TestOutcome } from "./Adapter";
 import { runCommand } from "./vitest";
 
 /**
- * Node built-in test runner adapter. Invokes `node --test <file>` and
- * parses the TAP output. Node's test runner doesn't have a name-filter
- * CLI flag equivalent to -t/--grep, so when testName is provided we
- * run the whole file and filter the results by test name afterwards.
+ * Node built-in test runner adapter. Invokes
+ *   node --test --test-reporter=tap [--test-name-pattern=...] <file>
  *
- * Detects the TAP summary (# tests, # pass, # fail) for an overall
- * verdict and scans individual test lines for name-specific outcomes.
+ * Two notes:
+ *   1. Node 23+ changed the default reporter to `spec`; TAP is no
+ *      longer the default, so we request it explicitly.
+ *   2. Node's runner supports --test-name-pattern (added in 18.17 /
+ *      20.0) with regex semantics. We escape the caller's testName
+ *      to get substring behaviour predictable across versions; the
+ *      fallback post-hoc TAP-line filter still runs for older Node
+ *      versions that ignore the flag.
  */
 export class NodeTestAdapter implements TestAdapter {
   readonly framework = "node-test";
@@ -16,7 +20,12 @@ export class NodeTestAdapter implements TestAdapter {
 
   async runTest(inv: TestInvocation): Promise<TestOutcome> {
     const start = Date.now();
-    const args = ["--test", inv.testFile];
+    const args = ["--test", "--test-reporter=tap"];
+    if (inv.testName) {
+      const escaped = inv.testName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      args.push(`--test-name-pattern=${escaped}`);
+    }
+    args.push(inv.testFile);
 
     return runCommand("node", args, inv.projectRoot, inv.timeoutMs, start, (stdout, _stderr, exitCode) => {
       const lines = stdout.split("\n");

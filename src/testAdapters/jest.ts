@@ -1,5 +1,5 @@
 import type { TestAdapter, TestInvocation, TestOutcome } from "./Adapter";
-import { runCommand } from "./vitest";
+import { runCommand, extractLastJsonBlock } from "./vitest";
 
 /**
  * Jest adapter. Invokes `npx jest <file> [-t name] --json --silent` and
@@ -21,13 +21,13 @@ export class JestAdapter implements TestAdapter {
     }
 
     return runCommand("npx", args, inv.projectRoot, inv.timeoutMs, start, (stdout) => {
-      const jsonMatch = stdout.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
+      const jsonBlock = extractLastJsonBlock(stdout);
+      if (!jsonBlock) {
         return { kind: "adapter-error" as const, message: "no JSON block in jest output" };
       }
       let report: any;
       try {
-        report = JSON.parse(jsonMatch[0]);
+        report = JSON.parse(jsonBlock);
       } catch (e: any) {
         return { kind: "adapter-error" as const, message: `could not parse jest JSON: ${e?.message?.slice(0, 80)}` };
       }

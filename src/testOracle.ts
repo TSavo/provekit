@@ -177,7 +177,7 @@ export async function runTest(
   const testFile = isAbsolute(reference.file) ? reference.file : resolvePath(projectRoot, reference.file);
   const sourceAbs = isAbsolute(sourceFile) ? sourceFile : resolvePath(projectRoot, sourceFile);
 
-  const cached = cache.get(testFile, reference.testName, sourceAbs);
+  const cached = cache.get(framework, testFile, reference.testName, sourceAbs);
   if (cached) return { reference, outcome: cached, cached: true };
 
   const adapter = getAdapter(framework);
@@ -189,15 +189,32 @@ export async function runTest(
     };
   }
 
-  const outcome = await adapter.runTest({
-    projectRoot,
-    testFile,
-    testName: reference.testName,
-    timeoutMs,
-  });
+  let outcome;
+  try {
+    outcome = await adapter.runTest({
+      projectRoot,
+      testFile,
+      testName: reference.testName,
+      timeoutMs,
+    });
+  } catch (e: any) {
+    // Adapters are documented to never throw — they should convert
+    // errors into adapter-error outcomes themselves. If one escapes
+    // anyway, we must normalize here so the checker never sees a
+    // rejected promise from a call it assumed was safe.
+    return {
+      reference,
+      outcome: {
+        kind: "adapter-error",
+        message: `adapter threw (contract violation): ${String(e?.message || e).slice(0, 160)}`,
+        durationMs: 0,
+      },
+      cached: false,
+    };
+  }
 
   if (outcome.kind !== "adapter-error" && outcome.kind !== "timeout") {
-    cache.put(testFile, reference.testName, sourceAbs, outcome);
+    cache.put(framework, testFile, reference.testName, sourceAbs, outcome);
   }
 
   return { reference, outcome, cached: false };
@@ -216,7 +233,7 @@ export async function runTestsForReferences(
   sourceFile: string,
   opts: { maxTests?: number; timeoutMsEach?: number } = {}
 ): Promise<ExecutedOracleResult[]> {
-  const maxTests = opts.maxTests ?? 5;
+  const maxTests = opts.maxTests ?? 3;
   const timeoutMsEach = opts.timeoutMsEach ?? 30000;
   const results: ExecutedOracleResult[] = [];
   for (const ref of references.slice(0, maxTests)) {
@@ -286,12 +303,20 @@ export function summarizeTriangle(
     return { note, hasAgreement: false, hasDisagreement: false };
   }
 
+  // Only declare agreement when the oracle outcomes are uniform and point
+  // the same direction as the harness. Mixed pass+fail is intrinsically
+  // ambiguous — some tests exercise the claim's input region and agree,
+  // others exercise different regions and disagree — neither "agree" nor
+  // "disagree" cleanly applies, so we return both false and let callers
+  // surface the mixed state via the note string.
+  const uniformPass = passes.length > 0 && fails.length === 0;
+  const uniformFail = fails.length > 0 && passes.length === 0;
   const hasAgreement =
-    (harnessSuggestsProblem && fails.length > 0) ||
-    (harnessSuggestsOk && passes.length > 0 && fails.length === 0);
+    (harnessSuggestsProblem && uniformFail) ||
+    (harnessSuggestsOk && uniformPass);
   const hasDisagreement =
-    (harnessSuggestsProblem && passes.length > 0 && fails.length === 0) ||
-    (harnessSuggestsOk && fails.length > 0);
+    (harnessSuggestsProblem && uniformPass) ||
+    (harnessSuggestsOk && uniformFail);
 
   return { note, hasAgreement, hasDisagreement };
 }
