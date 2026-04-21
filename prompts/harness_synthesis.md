@@ -51,7 +51,7 @@ Read the full SMT block, not just the last assert. Look at every `declare-const`
 
 Where the claim is written colloquially — "precondition propagation holds," "division by zero is prevented" — rephrase it for yourself into a form that mentions a specific input and a specific output behaviour. If you cannot rephrase it into input-output language, the claim is likely about control-flow state that no external observation can reach. Flag it (see *Permission to Say Untestable*) rather than rigging.
 
-**Critical: read the negation direction.** SMT-LIB proofs of correctness are conventionally encoded by asserting the *negation* of the thing you want proven, then checking `unsat`. The logic is: if the negation is unsatisfiable, no counterexample exists, so the original statement holds. This means the claim you are testing is the *opposite* of the last assert in the block, not the assert itself. If the block ends with `(assert (not (>= balance 0)))` and Z3 returns `unsat`, the proved claim is `balance >= 0`. If you write a harness that probes "is `balance` ever negative" — you are probing the negated direction, and your harness will almost always pass vacuously (preconditions rule out the negated case, Z3 already knew that, and the runtime will agree with Z3's knowing). The question your harness must answer is: "does the original un-negated statement actually hold at runtime?" Not "can I reproduce the counterexample Z3 said does not exist?" Those are opposite harnesses. Build the first.
+**Critical: read the negation direction.** SMT-LIB proofs of correctness are conventionally encoded by asserting the *negation* of the thing you want proven, then checking `unsat`. The logic is: if the negation is unsatisfiable, no counterexample exists, so the original statement holds. This means the claim you are testing is the *opposite* of the last assert in the block, not the assert itself. If the block ends with `(assert (not (>= balance 0)))` and Z3 returns `unsat`, the proved claim is `balance >= 0`. If you write a harness that probes "is `balance` ever negative" — you are probing the negated direction, and your harness will almost always pass vacuously: you are trying to reproduce the counterexample Z3 already said does not exist, and when you fail to reproduce it (of course), you conclude wrongly that the proof is corroborated. What the harness must actually answer is: "does the original un-negated statement (here, `balance >= 0`) hold at runtime for inputs that satisfy the preconditions?" Those are opposite harnesses. Build the first.
 
 This move is subtle enough that it is worth stopping and writing out, on paper or in a comment, both the negated form (what is asserted) and the un-negated form (what is claimed). Then build the harness against the un-negated form. When in doubt, ask yourself: "if this runs without throwing, what am I concluding?" The answer must be "the claim holds on this fixture" — not "the counterexample does not exist," which is a tautology relative to Z3's own verdict.
 
@@ -78,7 +78,7 @@ Examples of malformed hypotheses — not falsifications, but restatements:
 
 A good hypothesis names a runtime event — a mutation, a return value, a thrown exception, an observed ordering — that is in principle *observable* and whose occurrence would mean the claim does not hold. Writing this hypothesis forces you to commit to what the claim *means at runtime*, which is exactly the translation step where most harnesses go wrong.
 
-Keep the hypothesis as a comment in the final harness; the downstream judge reads it and uses it to audit whether your assertions actually check for what you hypothesised. A harness whose hypothesis says "function throws on input X" but whose code checks the return value of an input Y is self-inconsistent and the judge will flag it.
+Keep the hypothesis as a comment in the final harness. You are writing it for two readers: yourself, so that the later steps have something concrete to serve; and the human who will eventually read the harness and its outcome to decide whether a flagged encoding-gap is real. A harness whose hypothesis reads "function throws on input X" but whose code only checks a return value on an input Y is self-inconsistent on its face, and the inconsistency is your warning sign that you drifted from the claim somewhere between the hypothesis and the assertions.
 
 The failure mode when this step is skipped: you construct a fixture, call the function, write an assertion that feels right, and declare victory. The assertion may or may not actually check anything related to the claim; without a committed hypothesis, you have nothing to audit it against.
 
@@ -91,6 +91,8 @@ Do not pick a "representative" input in the casual sense. Pick the input that mo
 Read the SMT preconditions. If the preconditions say `(assert (> x 0))`, any `x > 0` works, but a harness using `x = 1` is more diagnostic than one using `x = 42`: it tests the edge closer to the forbidden region, where bugs hide. When the claim concerns numeric overflow, pick values near `Number.MAX_SAFE_INTEGER`. When the claim concerns emptiness, use empty collections explicitly rather than "small" ones.
 
 The failure mode when this step is skipped: you pick a comfortable input that happens to work and say "see, the claim holds," missing the corner of the input space where the encoding actually diverges from runtime.
+
+**Precondition checks in-line.** After you have chosen a fixture, re-read the SMT preconditions (every `(assert ...)` before the goal) and write a short `harness-error:` guard for each precondition you can cheaply verify at runtime. If the preconditions say `(> x 0)` and you picked `x = 1`, your harness should contain `if (!(x > 0)) throw new Error("harness-error: precondition x > 0 violated, got " + x);`. This looks redundant and it is — it is also the only defence against a silent drift where an off-by-one or a type coercion produces a fixture that violates a precondition and therefore lies outside the claim's scope. A harness that runs without throwing on a precondition-violating fixture has proven nothing and the pipeline will falsely upgrade confidence. The in-line check converts that silent failure into a visible `harness-error:`.
 
 ### Step 3. Construct the minimum concrete fixture.
 
@@ -348,7 +350,7 @@ const Cls = functionUnderTestClass ?? functionUnderTest;
 const d = new Cls();
 d.transition("seal");
 if (d.state !== "sealed") {
-  throw new Error("fixture error: expected sealed after 'seal' event, got " + d.state);
+  throw new Error("harness-error: expected sealed after 'seal' event, got " + d.state);
 }
 let threw = false;
 let caught;
