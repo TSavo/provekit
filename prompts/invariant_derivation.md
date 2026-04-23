@@ -513,6 +513,91 @@ Every SMT-LIB block must:
 - Include a comment explaining what it checks and what sat/unsat means
 - Be self-contained — Z3 can run it independently without any other block
 
+### Binding Metadata
+
+An SMT-LIB block is a proof about symbols. Z3 proves or refutes the block,
+but Z3 does not know what those symbols are in the underlying TypeScript.
+The downstream gap detector needs that mapping: for every constant you
+declare, it must know which line and which expression in the source file
+the constant stands for. Without this mapping, Z3's verdict cannot be
+checked against runtime behaviour, and the proof is unactionable.
+
+After each `smt2` block, emit a `bindings` block — one JSON record per
+declared constant:
+
+```bindings
+[
+  { "smt_constant": "den", "source_line": 14, "source_expr": "b",     "sort": "Real" },
+  { "smt_constant": "q",   "source_line": 15, "source_expr": "a / b", "sort": "Real" }
+]
+```
+
+Field by field:
+
+- `smt_constant` — exactly the name you used in `(declare-const X ...)`.
+  No renaming, no close-enough. If your block says
+  `(declare-const netAmount Real)`, the binding's `smt_constant` is
+  `netAmount`.
+- `source_line` — the 1-indexed line in the target file where the value
+  appears. Line 1 is the first line of the file. The validator checks
+  this against the file's length and will reject lines out of range.
+- `source_expr` — a substring of the source that appears on `source_line`.
+  This is a sanity-check hint, not an AST node. `a / b` matches
+  `const q = a / b;` after whitespace normalization. `orderTotal` matches
+  a line that declares `const orderTotal = items.sum(...)`. Short
+  fragments are fine — you're proving to the validator that you know
+  which line, not writing a parser.
+- `sort` — the sort string you used in `(declare-const X SORT)`. Must
+  match exactly (`Int`, `Real`).
+
+**Abstract constants.** Sometimes a constant doesn't correspond to any
+single source line — you introduced it to reason about a derived quantity,
+a phantom witness, or a loop iteration counter that exists only in the
+model. For these, emit `"source_line": 0, "source_expr": "<abstract>"`.
+The validator treats abstracts as untestable and skips them rather than
+rejecting them.
+
+**One binding record per declared constant. No duplicates. No omissions.**
+A constant without a binding gets no gap-detection coverage; a binding
+without a constant is a parsing error downstream.
+
+**Per-block pairing.** If a signal produces multiple `smt2` blocks
+(say, one proven property and two reachable violations), each block gets
+its own `bindings` block immediately following it. Blocks are paired by
+position, not by label.
+
+Worked example — a proven property and its bindings, together:
+
+```smt2
+; PRINCIPLE: P2
+; LINE: 47
+; REASON: orderTotal from line 44 is always positive; discount from line 45 is bounded by orderTotal; netAmount on line 47 can therefore never be negative.
+(declare-const orderTotal Real)
+(declare-const discount Real)
+(declare-const netAmount Real)
+(assert (> orderTotal 0))
+(assert (and (>= discount 0) (<= discount orderTotal)))
+(assert (= netAmount (- orderTotal discount)))
+(assert (< netAmount 0))
+(check-sat)
+; unsat → netAmount cannot be negative; property holds
+```
+
+```bindings
+[
+  { "smt_constant": "orderTotal", "source_line": 44, "source_expr": "orderTotal",            "sort": "Real" },
+  { "smt_constant": "discount",   "source_line": 45, "source_expr": "discount",              "sort": "Real" },
+  { "smt_constant": "netAmount",  "source_line": 47, "source_expr": "orderTotal - discount", "sort": "Real" }
+]
+```
+
+The binding for `netAmount` on line 47 uses `orderTotal - discount` as its
+expression because that's the right-hand-side the variable was assigned
+from on that line. A binding's expression should describe the
+expression-in-source that produced the value the constant represents, not
+the variable name alone. This gives the validator enough signal to catch
+the common failure mode: an LLM hallucinating a line number.
+
 ### The Target Line
 
 File: {{TARGET_FILE}}, function: {{TARGET_FUNCTION}}, line {{TARGET_LINE}}:
