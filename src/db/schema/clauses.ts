@@ -1,4 +1,4 @@
-import { sqliteTable, integer, text, index, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, text, index, primaryKey, foreignKey } from "drizzle-orm/sqlite-core";
 import { runtimeValues } from "./runtimeValues.js";
 
 // Phase A-thin: contractKey is a free-form text reference to the v1 JSON contract
@@ -47,17 +47,18 @@ export const clauseBindings = sqliteTable(
 export const clauseWitnesses = sqliteTable(
   "clause_witnesses",
   {
-    clauseId: integer("clause_id")
-      .notNull()
-      .references(() => clauses.id, { onDelete: "cascade" }),
+    clauseId: integer("clause_id").notNull(),
     smtConstant: text("smt_constant").notNull(),
     modelValueId: integer("model_value_id")
       .notNull()
       .references(() => runtimeValues.id),
-    sort: text("sort").notNull(),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.clauseId, t.smtConstant] }),
     byValue: index("cw_by_value").on(t.modelValueId),
+    bindingFk: foreignKey({
+      columns: [t.clauseId, t.smtConstant],
+      foreignColumns: [clauseBindings.clauseId, clauseBindings.smtConstant],
+    }).onDelete("cascade"),
   }),
 );
