@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { createHash } from "crypto";
 import * as vm from "vm";
@@ -331,4 +331,142 @@ export class HarnessCache {
       console.log(`[harness-cache] put failed: ${e?.message?.slice(0, 60) || "unknown"}`);
     }
   }
+}
+
+import { instrumentForSnapshot } from "./runtime/snapshotInstrumentation.js";
+import { serializeValue } from "./runtime/valueSerializer.js";
+import { loadModuleWithPrivates } from "./moduleLoader.js";
+import { traces, traceValues } from "./db/schema/index.js";
+import type { Db } from "./db/index.js";
+
+export interface RunHarnessWithTraceArgs {
+  db: Db;
+  clauseId: number;
+  sourcePath: string;
+  functionName: string;
+  signalLine: number;
+  captureNames: string[];
+  inputs: Record<string, unknown>;
+  timeoutMs?: number;
+}
+
+export interface RunHarnessWithTraceResult {
+  outcomeKind: "returned" | "threw" | "untestable";
+  returnValue?: unknown;
+  error?: string;
+  traceId: number;
+}
+
+export async function runHarnessWithTrace(args: RunHarnessWithTraceArgs): Promise<RunHarnessWithTraceResult> {
+  const {
+    db,
+    clauseId,
+    sourcePath,
+    functionName,
+    signalLine,
+    captureNames,
+    inputs,
+    timeoutMs = 3000,
+  } = args;
+
+  const originalSource = readFileSync(sourcePath, "utf-8");
+  const instrumented = instrumentForSnapshot(originalSource, { signalLine, captureNames });
+
+  const instrumentedPath = sourcePath.replace(/\.ts$/, ".__instrumented__.ts");
+  writeFileSync(instrumentedPath, instrumented);
+
+  const capturedSnapshots: { fnName: string; line: number; locals: Record<string, unknown> }[] = [];
+
+  (globalThis as any).__neurallog_snapshot__ = (fnName: string, line: number, locals: Record<string, unknown>) => {
+    capturedSnapshots.push({ fnName, line, locals: { ...locals } });
+  };
+
+  const origRandom = Math.random;
+  const origNow = Date.now;
+  Math.random = () => 0.5;
+  Date.now = () => 0;
+
+  const inputsHash = createHash("sha256")
+    .update(JSON.stringify(inputs))
+    .digest("hex")
+    .slice(0, 16);
+
+  let outcome: RunHarnessWithTraceResult = {
+    outcomeKind: "threw",
+    error: "not executed",
+    traceId: -1,
+  };
+
+  try {
+    const mod = loadModuleWithPrivates(instrumentedPath);
+    const fn = mod[functionName];
+    if (typeof fn !== "function") {
+      outcome = {
+        outcomeKind: "untestable",
+        error: `export ${functionName} not a function`,
+        traceId: -1,
+      };
+    } else {
+      const callArgs = Object.values(inputs);
+      let result: unknown;
+      try {
+        result = await Promise.race([
+          (async () => fn(...callArgs))(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("__TIMEOUT__")), timeoutMs)),
+        ]);
+        outcome = {
+          outcomeKind: "returned",
+          returnValue: result,
+          traceId: -1,
+        };
+      } catch (err: any) {
+        outcome = {
+          outcomeKind: "threw",
+          error: String(err?.message || err).slice(0, 500),
+          traceId: -1,
+        };
+      }
+    }
+  } finally {
+    Math.random = origRandom;
+    Date.now = origNow;
+    delete (globalThis as any).__neurallog_snapshot__;
+    try {
+      unlinkSync(instrumentedPath);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Persist — runs AFTER Date.now stub is restored, so capturedAt uses real time.
+  const outcomeValueId =
+    outcome.outcomeKind === "returned"
+      ? serializeValue(db, outcome.returnValue)
+      : outcome.outcomeKind === "threw"
+        ? serializeValue(db, outcome.error)
+        : null;
+
+  const traceRow = db.insert(traces).values({
+    clauseId,
+    capturedAt: Date.now(),
+    outcomeKind: outcome.outcomeKind,
+    outcomeValueId: outcomeValueId ?? undefined,
+    untestableReason: outcome.outcomeKind === "untestable" ? outcome.error : undefined,
+    inputsHash,
+  }).returning().get();
+
+  for (const snap of capturedSnapshots) {
+    for (const [name, value] of Object.entries(snap.locals)) {
+      const valueId = serializeValue(db, value);
+      db.insert(traceValues).values({
+        traceId: traceRow.id,
+        nodeId: `${sourcePath}:${snap.line}:${name}`,
+        iterationIndex: null,
+        rootValueId: valueId,
+      }).run();
+    }
+  }
+
+  outcome.traceId = traceRow.id;
+  return outcome;
 }
