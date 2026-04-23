@@ -3,9 +3,36 @@ import { Project, SyntaxKind, Node, SourceFile, FunctionLikeDeclaration, Block }
 export interface InstrumentOptions {
   signalLine: number;
   captureNames: string[];
+  /**
+   * Name of the sandbox-global function the inserted snapshot call invokes.
+   * The harness installs a function under this name and reads captures back.
+   *
+   * Must be unique per concurrent harness run. Two concurrent runs that
+   * share a global-scope name clobber each other's snapshot arrays — one
+   * run's instrumented code will call the other run's function, and the
+   * first run sees zero snapshots.
+   *
+   * Optional. Default `__neurallog_snapshot__` is only safe for single-
+   * instance synchronous tests of this module itself.
+   */
+  snapshotFnName?: string;
+}
+
+const DEFAULT_SNAPSHOT_FN = "__neurallog_snapshot__";
+
+function isValidIdentifier(name: string): boolean {
+  // Conservative: ASCII letters, digits, underscore; can't start with digit.
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
 }
 
 export function instrumentForSnapshot(source: string, opts: InstrumentOptions): string {
+  const snapshotFnName = opts.snapshotFnName ?? DEFAULT_SNAPSHOT_FN;
+  if (!isValidIdentifier(snapshotFnName)) {
+    throw new Error(
+      `snapshotFnName must be a valid JS identifier; got ${JSON.stringify(snapshotFnName)}`,
+    );
+  }
+
   const project = new Project({ useInMemoryFileSystem: true });
   const file = project.createSourceFile("input.ts", source);
 
@@ -20,7 +47,7 @@ export function instrumentForSnapshot(source: string, opts: InstrumentOptions): 
   if (!stmt) return source;
 
   const capturesObj = `{ ${opts.captureNames.join(", ")} }`;
-  const snapshotCall = `__neurallog_snapshot__(${JSON.stringify(fnName)}, ${opts.signalLine}, ${capturesObj});`;
+  const snapshotCall = `${snapshotFnName}(${JSON.stringify(fnName)}, ${opts.signalLine}, ${capturesObj});`;
 
   stmt.replaceWithText((writer) => {
     writer.writeLine(snapshotCall);

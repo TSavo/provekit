@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import * as vm from "vm";
 import { LLMProvider } from "./llm";
 
@@ -369,15 +369,27 @@ export async function runHarnessWithTrace(args: RunHarnessWithTraceArgs): Promis
     timeoutMs = 3000,
   } = args;
 
-  const originalSource = readFileSync(sourcePath, "utf-8");
-  const instrumented = instrumentForSnapshot(originalSource, { signalLine, captureNames });
+  // Unique suffix per call. Two runs sharing a globalThis name clobber each
+  // other's snapshot arrays — one run's instrumented code calls the other
+  // run's function and writes into the wrong array, leaving the first run's
+  // trace empty. Same reasoning applies to the on-disk instrumented file:
+  // two concurrent runs against the same source would race on the path.
+  const callId = randomBytes(8).toString("hex");
+  const snapshotFnName = `__neurallog_snapshot_${callId}__`;
+  const instrumentedPath = sourcePath.replace(/\.ts$/, `.__instrumented_${callId}__.ts`);
 
-  const instrumentedPath = sourcePath.replace(/\.ts$/, ".__instrumented__.ts");
+  const originalSource = readFileSync(sourcePath, "utf-8");
+  const instrumented = instrumentForSnapshot(originalSource, {
+    signalLine,
+    captureNames,
+    snapshotFnName,
+  });
+
   writeFileSync(instrumentedPath, instrumented);
 
   const capturedSnapshots: { fnName: string; line: number; locals: Record<string, unknown> }[] = [];
 
-  (globalThis as any).__neurallog_snapshot__ = (fnName: string, line: number, locals: Record<string, unknown>) => {
+  (globalThis as any)[snapshotFnName] = (fnName: string, line: number, locals: Record<string, unknown>) => {
     capturedSnapshots.push({ fnName, line, locals: { ...locals } });
   };
 
@@ -430,7 +442,7 @@ export async function runHarnessWithTrace(args: RunHarnessWithTraceArgs): Promis
   } finally {
     Math.random = origRandom;
     Date.now = origNow;
-    delete (globalThis as any).__neurallog_snapshot__;
+    delete (globalThis as any)[snapshotFnName];
     try {
       unlinkSync(instrumentedPath);
     } catch {
