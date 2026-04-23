@@ -49,4 +49,38 @@ describe("traces schema", () => {
       .all();
     expect(rows).toEqual([{ kind: "number", value: 5 }]);
   });
+
+  it("tv_single_point_unique: rejects duplicate (traceId, nodeId, null) but allows distinct iterationIndex", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    const db = openDb(join(tmpDir, "test.db"));
+    migrate(db, { migrationsFolder: "./drizzle" });
+
+    // Seed a runtime_value and a trace to reference
+    const rv = db.insert(runtimeValues).values({ kind: "number", numberValue: 1 }).returning().get();
+    const trace = db
+      .insert(traces)
+      .values({
+        clauseId: 1,
+        capturedAt: Date.now(),
+        outcomeKind: "returned",
+        inputsHash: "hashA",
+      })
+      .returning()
+      .get();
+
+    const nodeId = "src/foo.ts:10:5";
+
+    // First insert with null iterationIndex — must succeed
+    db.insert(traceValues).values({ traceId: trace.id, nodeId, iterationIndex: null, rootValueId: rv.id }).run();
+
+    // Second insert with same (traceId, nodeId, null) — must throw UNIQUE constraint
+    expect(() =>
+      db.insert(traceValues).values({ traceId: trace.id, nodeId, iterationIndex: null, rootValueId: rv.id }).run(),
+    ).toThrow(/UNIQUE constraint failed/);
+
+    // Inserts with non-null iterationIndex on the same (traceId, nodeId) — must succeed
+    // (partial index only fires for NULL; composite PK handles uniqueness for non-null rows)
+    db.insert(traceValues).values({ traceId: trace.id, nodeId, iterationIndex: 0, rootValueId: rv.id }).run();
+    db.insert(traceValues).values({ traceId: trace.id, nodeId, iterationIndex: 1, rootValueId: rv.id }).run();
+  });
 });

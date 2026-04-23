@@ -1,4 +1,5 @@
-import { sqliteTable, integer, text, index, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, text, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 import { runtimeValues } from "./runtimeValues.js";
 
 // NB: Phase A-thin keeps node_id as a TEXT source reference.
@@ -38,5 +39,8 @@ export const traceValues = sqliteTable(
     pk: primaryKey({ columns: [t.traceId, t.nodeId, t.iterationIndex] }),
     byNode: index("tv_by_node").on(t.nodeId),
     byRoot: index("tv_by_root").on(t.rootValueId),
+    singlePointUnique: uniqueIndex("tv_single_point_unique")
+      .on(t.traceId, t.nodeId)
+      .where(sql`iteration_index IS NULL`),
   }),
 );
