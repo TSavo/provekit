@@ -17,3 +17,7 @@ dist/
 .neurallog/report.json
 .neurallog/derivation.json
 .neurallog/classification.json
+.neurallog/neurallog.db
+.neurallog/neurallog.db-journal
+.neurallog/neurallog.db-wal
+.neurallog/neurallog.db-shm
