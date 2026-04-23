@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
 import { statSync, readFileSync, existsSync } from "fs";
-import { resolve, dirname, relative } from "path";
+import { resolve, dirname, relative, join } from "path";
 import { Pipeline } from "./pipeline";
 import { SignalRegistry } from "./signals";
 import { DiffAnalyzer, HookInstaller, ProofDiff } from "./git";
 import { ContractStore, signalKey } from "./contracts";
 import { createProvider } from "./llm";
+import { openDb, type Db } from "./db/index.js";
+import { gapReports, clauses, runtimeValues } from "./db/schema/index.js";
+import { eq } from "drizzle-orm";
 
 const VERSION = "0.3.0";
 
@@ -340,13 +343,13 @@ function runDiff(args: string[]): void {
 function runExplain(args: string[]): void {
   const target = args.find((a) => !a.startsWith("-"));
   if (!target) {
-    console.error("Usage: neurallog explain <file>:<line>");
+    console.error("Usage: neurallog explain <file>:<line> [--gaps]");
     process.exit(1);
   }
 
   const [filePart, linePart] = target.split(":");
   if (!filePart || !linePart) {
-    console.error("Usage: neurallog explain <file>:<line>");
+    console.error("Usage: neurallog explain <file>:<line> [--gaps]");
     process.exit(1);
   }
 
@@ -366,6 +369,15 @@ function runExplain(args: string[]): void {
     console.error(`No contract found for ${relPath}:${line}`);
     console.error("Run 'neurallog analyze' first.");
     process.exit(1);
+  }
+
+  if (args.includes("--gaps")) {
+    // Encoding-gap output is separate from v1 contract explain. It reads the
+    // SQLite gap_reports table populated by the Phase D gap detector.
+    const db = openDb(join(projectRoot, ".neurallog", "neurallog.db"));
+    process.stdout.write(explainGaps(db, contract.key));
+    db.$client.close();
+    return;
   }
 
   console.log();
@@ -637,6 +649,81 @@ function findProjectRoot(startDir: string): string {
     dir = dirname(dir);
   }
   return startDir;
+}
+
+// ---------------------------------------------------------------------------
+// explainGaps — render encoding-gap rows for a contract key
+// ---------------------------------------------------------------------------
+
+// Returns a string (not console.log'd) so the test can assert against it
+// without touching stdout. The CLI handler writes it directly to stdout.
+
+export function explainGaps(db: Db, contractKey: string): string {
+  const rows = db
+    .select({
+      kind: gapReports.kind,
+      smtConstant: gapReports.smtConstant,
+      atNodeRef: gapReports.atNodeRef,
+      explanation: gapReports.explanation,
+      smtValueId: gapReports.smtValueId,
+      runtimeValueId: gapReports.runtimeValueId,
+    })
+    .from(gapReports)
+    .innerJoin(clauses, eq(clauses.id, gapReports.clauseId))
+    .where(eq(clauses.contractKey, contractKey))
+    .all();
+
+  if (rows.length === 0) {
+    return `No encoding gaps reported for ${contractKey}.\n`;
+  }
+
+  const lines: string[] = [];
+  for (const row of rows) {
+    const header = row.atNodeRef ? `encoding-gap at ${row.atNodeRef}` : `encoding-gap`;
+    const constName = row.smtConstant ? ` — ${row.smtConstant}` : "";
+    lines.push(`${header}${constName}`);
+
+    if (row.smtValueId) {
+      const smtVal = db
+        .select()
+        .from(runtimeValues)
+        .where(eq(runtimeValues.id, row.smtValueId))
+        .get();
+      if (smtVal) lines.push(`  Z3 modeled:        ${formatRuntimeValue(smtVal)}`);
+    }
+    if (row.runtimeValueId) {
+      const rtVal = db
+        .select()
+        .from(runtimeValues)
+        .where(eq(runtimeValues.id, row.runtimeValueId))
+        .get();
+      if (rtVal) lines.push(`  Runtime returned:  ${formatRuntimeValue(rtVal)}`);
+    }
+    lines.push(`  Cause:             ${row.explanation ?? "(no explanation)"}`);
+    lines.push(`  Kind:              ${row.kind}`);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+function formatRuntimeValue(row: {
+  kind: string;
+  numberValue: number | null;
+  stringValue: string | null;
+  boolValue: boolean | null;
+}): string {
+  switch (row.kind) {
+    case "number":      return String(row.numberValue);
+    case "string":      return JSON.stringify(row.stringValue);
+    case "bool":        return String(row.boolValue);
+    case "nan":         return "NaN";
+    case "infinity":    return "Infinity";
+    case "neg_infinity": return "-Infinity";
+    case "null":        return "null";
+    case "undefined":   return "undefined";
+    default:            return `<${row.kind}>`;
+  }
 }
 
 if (require.main === module) {
