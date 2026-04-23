@@ -3,6 +3,8 @@
 **Date:** 2026-04-23
 **Status:** Accepted, pending implementation plan
 **Scope:** Architectural rebuild. Months of work, not a feature add.
+**Revision:** Initial spec revised against capability, DSL, phasing, and
+  index-discipline reviews (see commit history).
 
 ## What this is
 
@@ -18,63 +20,47 @@ query-and-write transactions against a Drizzle-managed SQLite store instead
 of file reads and writes. All downstream consumers (explain, report, diff,
 watch, runtime transport) become queries.
 
-This design replaces an earlier draft that scoped the work as a narrow
-feature. On review the real architectural shift is foundational; pretending
-otherwise wastes effort.
-
 ## Motivation
 
 Three capabilities the v1 pipeline cannot support well:
 
 1. **Encoding-gap localization.** The distinctive thesis capability per
    THESIS.md: report *where* Z3's abstraction diverged from runtime reality
-   and in what specific way. Requires SMT-binding metadata that the
-   JSON-file contract format doesn't carry, runtime snapshots the harness
-   doesn't capture, and a domain-aware comparator that doesn't exist.
-2. **Principle discovery with adversarial validation.** POSTMORTEM.md names
-   this and specs a four-stage validation pipeline. Running it against a
-   growing principle corpus, with historical queries and cross-codebase
-   learning, needs a queryable store. File-per-principle breaks at scale.
-3. **Incremental re-derivation.** The v1 hash-based dependency tracking is
-   coarse (file-level) and ad hoc. Edits in an unrelated function
-   invalidate contracts they shouldn't. Multi-level structural hashes +
-   relational staleness queries give exact incremental invalidation.
+   and in what specific way.
+2. **Principle discovery with adversarial validation.** POSTMORTEM.md specs a
+   four-stage validation pipeline. A growing principle corpus with historical
+   queries and cross-codebase learning needs a queryable store.
+3. **Incremental re-derivation.** v1's hash-based dependency tracking is
+   file-level. Multi-level structural hashes + relational staleness queries
+   give exact incremental invalidation.
 
 ## Goals
 
-- Persistent, queryable data layer (SQLite via Drizzle) for every phase's
+- Persistent queryable data layer (SQLite via Drizzle) for every phase's
   inputs and outputs.
 - Shadow AST (SAST) with capability tables: each semantic fact about a node
-  is a typed row in a dedicated table, not a discriminated union field or a
-  JSON blob.
-- First-class dependency relations via join tables, not arrays on parent
-  rows.
-- Multi-level structural hashes: file content, node subtree, contract
-  derivation, clause SMT, principle source. Each hash enables a different
-  granularity of invalidation query.
-- Principle DSL (Datalog-flavored) that compiles to Drizzle query-builder
-  calls. Principles are data, not code.
+  is a typed row in a dedicated table.
+- First-class relationships via join tables (no JSON arrays on parent rows
+  where relationships are the point).
+- Multi-level structural hashes enabling exact incremental invalidation.
+- Datalog-flavored principle DSL with reusable predicates and taint
+  abstractions that compiles to Drizzle query-builder calls.
 - Instrumented execution capturing a snapshot at the signal point,
-  binding-aware for granularity (single-point or per-iteration).
-- Domain-aware encoding-gap detector with independent sort-specific agents
-  (IEEE specials, integer overflow, boolean coercion, null/undefined).
-- Line-attributed encoding-gap output of the form THESIS.md requires.
+  binding-aware for granularity.
+- Domain-aware encoding-gap detector with independent sort-specific agents.
+- Line-attributed encoding-gap output matching THESIS.md's commitment.
 
 ## Non-goals
 
 - **Prettier-neutrality on hashes.** Whitespace/formatting edits re-derive.
   Canonicalization complexity is not on the list.
-- **Transitive instrumentation into callees.** The target function only.
-  Callee disagreements surface at the boundary.
-- **Production runtime concurrency gap detection.** POSTMORTEM's P8-P10
-  axiom family. The SAST admits a future `concurrency` capability; not
-  spec'd here.
+- **Transitive instrumentation into callees.** Target function only.
+- **Concurrency gap detection.** POSTMORTEM's P8-P10 axiom family; defer.
 - **Classes beyond methods-as-functions, eval, new Function, dynamic
   property access in trace-critical paths, generators, symbol-keyed
-  properties.** Each marked explicitly as future work.
+  properties.** Future work.
 - **Python language adapter.** Separate project.
-- **Replacing Z3.** Z3 remains the proof oracle. The encoding-gap detector
-  is the second oracle. Existing tests are the third.
+- **Replacing Z3.** Z3 remains the proof oracle.
 
 ## Architecture Overview
 
@@ -89,46 +75,40 @@ Three capabilities the v1 pipeline cannot support well:
 
 ### Shadow AST (SAST)
 
-Per source file: a set of rows across `nodes` and capability tables
-representing the semantic structure of that file's code. Capability tables
-are typed (no JSON blobs for structural metadata). Edge tables (children,
-data flow, dominance) are first-class joins.
-
-Build pipeline runs after the current dependency-graph phase; produces SAST
-tables in topological file order.
+Per source file: rows across `nodes` and capability tables representing the
+semantic structure of that file's code. Capability tables are typed. Edge
+tables (children, data flow, dominance, post-dominance) are first-class
+joins. Transitive closures (dominance, post-dominance, transitive data
+flow) are materialized at SAST build time, not computed on demand.
 
 ### Principle DSL
 
-Datalog-flavored query language. Principles live in files
-(`.neurallog/principles/*.dsl` — existing JSON principles migrate to this
-format). Each principle compiles to a Drizzle query that inserts into
-`principle_matches` and `principle_match_captures`. Running all principles
-is running N compiled queries in a transaction.
+Datalog-flavored query language with reusable predicate definitions and
+taint-config abstractions. Principles live in `.neurallog/principles/*.dsl`.
+Each principle compiles to Drizzle calls that insert into `principle_matches`
+and `principle_match_captures`.
 
 ### Instrumented execution
 
-When a contract is validated against runtime, the harness runs an
-AST-instrumented version of the target function. Snapshot capture is
-binding-aware — it reads the contract's `clause_bindings` to decide whether
-to record single-point locals, per-iteration values, or captured free
-variables. Snapshots land in `traces` and `trace_values`.
+The harness runs an AST-instrumented version of the target function.
+Snapshot capture is binding-aware — reads the contract's `clause_bindings`
+to decide single-point vs per-iteration vs free-variable recording.
 
 ### Encoding-gap detection
 
-After a trace completes, the gap detector joins the clause's bindings,
-Z3's parsed witness, and the trace's values; runs sort-specific agents;
-produces rows in `gap_reports`.
+After a trace, the gap detector joins the clause's bindings, Z3's parsed
+witness, and the trace's values; runs sort-specific agents; produces rows
+in `gap_reports`.
 
 ### Consumer layer
 
-`neurallog explain`, `neurallog report`, `neurallog diff`, `neurallog
-watch`: each collapses to one or two Drizzle queries against the store.
+`neurallog explain`, `report`, `diff`, `watch`: each is one or two Drizzle
+queries against the store.
 
 ## Data Model
 
-All tables below are SQLite, defined via Drizzle schema files. FK cascades
-are specified explicitly; indexes are declared where a query needs them
-(not as general hygiene).
+All tables below defined via Drizzle schema files. FK cascades specified
+explicitly. Indexes declared where a query needs them, not as hygiene.
 
 ### Structural tables
 
@@ -136,18 +116,18 @@ are specified explicitly; indexes are declared where a query needs them
 files
   id INTEGER PK
   path TEXT UNIQUE
-  content_hash TEXT          // sha256 of file bytes
+  content_hash TEXT             // sha256 of file bytes
   parsed_at INTEGER
   INDEX (content_hash)
 
 nodes
-  id TEXT PK                  // stable across rebuilds of the same subtree
+  id TEXT PK                     // stable across rebuilds of same subtree
   file_id INTEGER FK files(id) ON DELETE CASCADE
   source_start INTEGER
   source_end INTEGER
   source_line INTEGER
   source_col INTEGER
-  subtree_hash TEXT           // sha256(node.getText()); deterministic, not canonicalized
+  subtree_hash TEXT              // sha256(node.getText()); not canonicalized
   INDEX (file_id)
   INDEX (subtree_hash)
 
@@ -161,9 +141,15 @@ node_children
 data_flow
   to_node TEXT FK nodes(id) ON DELETE CASCADE
   from_node TEXT FK nodes(id) ON DELETE CASCADE
-  slot TEXT                   // 'lhs' | 'rhs' | 'denominator' | 'arg[0]' | ...
+  slot TEXT                      // see slot vocabulary below
   PK (to_node, from_node, slot)
   INDEX (to_node, slot, from_node)
+  INDEX (from_node, to_node)
+
+data_flow_transitive            // MATERIALIZED at SAST build; symmetric with dominance
+  to_node TEXT FK nodes(id) ON DELETE CASCADE
+  from_node TEXT FK nodes(id) ON DELETE CASCADE
+  PK (to_node, from_node)
   INDEX (from_node, to_node)
 
 dominance
@@ -171,80 +157,204 @@ dominance
   dominated TEXT FK nodes(id) ON DELETE CASCADE
   PK (dominator, dominated)
   INDEX (dominated, dominator)
+
+post_dominance                   // NEW: "every exit path passes through X"
+  post_dominator TEXT FK nodes(id) ON DELETE CASCADE
+  post_dominated TEXT FK nodes(id) ON DELETE CASCADE
+  PK (post_dominator, post_dominated)
+  INDEX (post_dominated, post_dominator)
 ```
+
+**`data_flow.slot` vocabulary** (closed set; compiler checks against it):
+`'lhs' | 'rhs' | 'operand' | 'denominator' | 'condition' | 'callee' |
+ 'arg[0]' | 'arg[1]' | 'arg[2]' | 'arg[n]' | 'return' | 'iterable' |
+ 'element' | 'property' | 'index' | 'throws' | 'captures'`
 
 ### Capability tables
 
-One table per semantic capability. A node's "kind" is inferred from which
-capability tables reference it. Adding a new capability = one new table + a
-migration, not an edit to existing tables.
+One table per semantic capability. Node "kind" is inferred from which
+tables reference it. Adding a capability = CREATE TABLE + migration.
 
 ```
-node_decides          (node_id PK, condition_node, decision_kind)
-  decision_kind ∈ { 'if', 'ternary', 'short_circuit_and', 'short_circuit_or',
-                    'nullish', 'optional_chain', 'switch_case', 'try_handler' }
+node_arithmetic                   // NEW (was missing; flagship DSL example depends on this)
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  op TEXT                         // '+' | '-' | '*' | '/' | '%' | '**' |
+                                  // '<<' | '>>' | '>>>' | '&' | '|' | '^'
+  lhs_node TEXT FK nodes(id)
+  rhs_node TEXT FK nodes(id)
+  result_sort TEXT                // 'Real' | 'Int' | ...
+  INDEX (op, node_id)
 
-node_iterates         (node_id PK, init_node?, condition_node?, update_node?,
-                       body_node, loop_kind)
-  loop_kind ∈ { 'for', 'while', 'do_while', 'for_of', 'for_in' }
+node_assigns                      // NEW: mutation distinct from node_binding declaration
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  target_node TEXT FK nodes(id)
+  rhs_node TEXT FK nodes(id)?
+  assign_kind TEXT                // '=' | '+=' | '-=' | '*=' | '/=' | '%=' |
+                                  // '**=' | '<<=' | '>>=' | '&=' | '|=' |
+                                  // '^=' | '&&=' | '||=' | '??=' | 'delete'
+  INDEX (assign_kind, node_id)
 
-node_yields           (node_id PK, yield_kind, source_call_node?)
-  yield_kind ∈ { 'await', 'yield' }
+node_returns                      // NEW: function-exit sites
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  exit_kind TEXT                  // 'return' | 'throw' | 'process_exit'
+  value_node TEXT FK nodes(id)?
+  INDEX (exit_kind, node_id)
 
-node_throws           (node_id PK, handler_node?)
+node_member_access                // NEW: property reads/writes
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  object_node TEXT FK nodes(id)
+  property_name TEXT?             // null when computed
+  computed BOOLEAN                // true for obj[k], false for obj.k
+  INDEX (property_name, object_node)
 
-node_calls            (node_id PK, callee_node, is_async)
+node_non_null_assertion           // NEW: x! operator
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  operand_node TEXT FK nodes(id)
 
-node_captures         (node_id, captured_name, declared_in_node?, mutable)
-                      PK (node_id, captured_name)
-                      INDEX (captured_name)
+node_truthiness                   // NEW: boolean-context coercion
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  coercion_kind TEXT              // 'truthy_test' | 'falsy_default' |
+                                  // 'nullish_coalesce' | 'strict_eq_null'
+  operand_node TEXT FK nodes(id)
+  INDEX (coercion_kind, node_id)
 
-node_pattern          (node_id PK, pattern_kind, slot_key?, rename_to?, default_smt?)
-  pattern_kind ∈ { 'object', 'array', 'rest', 'identifier' }
+node_narrows                      // NEW: type-guard narrowing
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  target_node TEXT FK nodes(id)
+  narrowing_kind TEXT             // 'typeof' | 'instanceof' | 'in' |
+                                  // 'null_check' | 'undefined_check' |
+                                  // 'literal_eq' | 'tag_check'
+  narrowed_type TEXT?
+  INDEX (narrowing_kind, node_id)
 
-node_binding          (node_id PK, name, declared_type?)
-                      INDEX (name)
+node_decides
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  condition_node TEXT FK nodes(id)
+  consequent_node TEXT FK nodes(id)?    // NEW column
+  alternate_node TEXT FK nodes(id)?     // NEW column
+  decision_kind TEXT              // 'if' | 'ternary' | 'short_circuit_and' |
+                                  // 'short_circuit_or' | 'nullish' |
+                                  // 'optional_chain' | 'switch_case'
+                                  // ('try_handler' collapsed into node_throws)
 
-node_signal           (node_id PK, signal_kind, signal_payload)
-  signal_kind ∈ { 'log', 'type_annotation', 'error_throw', 'todo_comment',
-                  'error_message' }
+node_iterates
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  init_node TEXT FK nodes(id)?
+  condition_node TEXT FK nodes(id)?
+  update_node TEXT FK nodes(id)?
+  body_node TEXT FK nodes(id)
+  loop_kind TEXT                  // 'for' | 'while' | 'do_while' | 'for_of' | 'for_in'
+  executes_at_least_once BOOLEAN  // NEW column (true for do_while)
+  collection_source_node TEXT FK nodes(id)?  // NEW column; for for_of/for_in
 
-node_smt              (node_id PK, constant_name, sort, smt_expression?,
-                       universal_over_input)
-                      INDEX (constant_name)
+node_yields
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  yield_kind TEXT                 // 'await' | 'yield'
+  source_call_node TEXT FK nodes(id)?
 
-node_path_condition   (node_id PK, smt_expression)
+node_throws
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  handler_node TEXT FK nodes(id)?
+  is_inside_handler BOOLEAN       // NEW: denormalized for throw-uncaught principle
+
+node_calls
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  callee_node TEXT FK nodes(id)
+  callee_name TEXT?               // NEW: denormalized method/function name
+  arg_count INTEGER               // NEW
+  is_method_call BOOLEAN          // NEW
+  callee_is_async BOOLEAN         // renamed from 'is_async' for clarity
+                                  // (node_yields is the sole authority
+                                  //  on "this call site is awaited")
+  INDEX (callee_name, node_id)
+
+node_captures
+  node_id TEXT FK nodes(id) ON DELETE CASCADE
+  captured_name TEXT
+  declared_in_node TEXT FK nodes(id)?
+  mutable BOOLEAN
+  PK (node_id, captured_name)
+  INDEX (captured_name)
+
+node_pattern
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  pattern_kind TEXT               // 'object' | 'array' | 'rest' | 'identifier'
+  slot_key TEXT?
+  rename_to TEXT?
+  default_smt TEXT?
+
+node_binding
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  name TEXT
+  declared_type TEXT?
+  binding_kind TEXT               // NEW: 'const' | 'let' | 'var' | 'param' | 'function' | 'class'
+  INDEX (name)
+  INDEX (binding_kind, node_id)
+
+node_signal
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  signal_kind TEXT                // 'log' | 'type_annotation' | 'throw_message' |
+                                  // 'todo_comment' | 'error_message'
+                                  // (NB: 'error_throw' renamed to 'throw_message';
+                                  //  non_null_assertion is its own capability)
+  signal_payload TEXT
+  INDEX (signal_kind, node_id)
+
+signal_interpolations             // NEW edge table: log/error-message interpolation graph
+  signal_node TEXT FK nodes(id) ON DELETE CASCADE
+  slot_index INTEGER              // position in template literal / format string
+  interpolated_node TEXT FK nodes(id)
+  PK (signal_node, slot_index)
+  INDEX (interpolated_node)
+
+node_smt
+  node_id TEXT PK FK nodes(id) ON DELETE CASCADE
+  constant_name TEXT
+  sort TEXT                       // 'Real' | 'Int' | 'Bool' | 'String' | 'Array' | 'BitVec'
+  smt_expression TEXT?
+  universal_over_input BOOLEAN
+  INDEX (constant_name)
+  INDEX (sort, node_id)           // NEW index
+
+node_path_condition
+  node_id TEXT FK nodes(id) ON DELETE CASCADE
+  along_node TEXT FK nodes(id)    // which decision this condition came from
+  smt_expression TEXT
+  PK (node_id, along_node)
 ```
 
 ### Contract tables
 
 ```
 contracts
-  key TEXT PK                 // content-addressed: file/fn/<signal_subtree_hash>
+  key TEXT PK                     // content-addressed: file/fn/<signal_subtree_hash>
   file_id INTEGER FK files(id) ON DELETE CASCADE
   function_name TEXT
   signal_node_id TEXT FK nodes(id)
-  signal_subtree_hash TEXT    // denormalized; staleness check is indexed comparison
-  derivation_hash TEXT        // hash of the bundle fed to the LLM; cache key
+  signal_subtree_hash TEXT        // denormalized; staleness is indexed comparison
+  derivation_hash TEXT            // hash of LLM bundle; cache key
+  stale_flag BOOLEAN              // NEW: true when signal's subtree_hash no longer matches
   derived_at INTEGER
   derivation_model TEXT
   INDEX (file_id)
   INDEX (signal_subtree_hash)
   INDEX (derivation_hash)
+  INDEX (signal_node_id)          // NEW: FK cascade + invalidation seed
+  INDEX (stale_flag)              // NEW: invalidation seed query
 
 contract_dependencies
   contract_key TEXT FK contracts(key) ON DELETE CASCADE
   depends_on_key TEXT FK contracts(key)
-  dependency_kind TEXT        // 'import' | 'call' | 'shared_binding'
+  dependency_kind TEXT            // 'import' | 'call' | 'shared_binding'
   PK (contract_key, depends_on_key, dependency_kind)
   INDEX (depends_on_key)
 
 clauses
   id INTEGER PK
   contract_key TEXT FK contracts(key) ON DELETE CASCADE
-  verdict TEXT                // 'proven' | 'violation' | 'unknown' | 'vacuous'
+  verdict TEXT                    // 'proven' | 'violation' | 'unknown' | 'vacuous'
   smt2 TEXT
-  clause_hash TEXT            // hash of normalized smt2
+  clause_hash TEXT
   principle_name TEXT FK principles(name)?
   complexity INTEGER
   confidence TEXT
@@ -263,9 +373,68 @@ clause_bindings
 clause_witnesses
   clause_id INTEGER FK clauses(id) ON DELETE CASCADE
   smt_constant TEXT
-  model_value TEXT            // parsed Z3 model value; string form
-  sort TEXT
+  model_value_id INTEGER FK runtime_values(id)   // Z3's witness value, structured
+  sort TEXT                       // the SMT sort Z3 used; not a runtime JS type
   PK (clause_id, smt_constant)
+  INDEX (model_value_id)
+```
+
+### Runtime value graph
+
+JavaScript runtime values are heterogeneous and often compound (objects,
+arrays, nested). They are NOT stored as JSON. Every captured value is a
+node in a relational graph. Consumers query the graph — "find all traces
+where `result.ok` was false" is a join, not a JSON-path filter.
+
+```
+runtime_values
+  id INTEGER PK
+  kind TEXT                       // 'number' | 'string' | 'bool' | 'null' |
+                                  // 'undefined' | 'object' | 'array' | 'function' |
+                                  // 'bigint' | 'symbol' | 'nan' | 'infinity' |
+                                  // 'neg_infinity' | 'circular' | 'truncated'
+  number_value REAL?              // populated for kind='number'
+  string_value TEXT?              // populated for kind='string' | 'bigint' | 'symbol' | 'function'
+  bool_value BOOLEAN?             // populated for kind='bool'
+  circular_target_id INTEGER FK runtime_values(id)?  // populated for kind='circular'
+  truncation_note TEXT?           // populated for kind='truncated'
+  INDEX (kind)
+  INDEX (kind, number_value)      // for "find NaN", "find <0", etc.
+  INDEX (kind, string_value)      // for "find string matching"
+  INDEX (kind, bool_value)
+
+runtime_value_object_members      // populated for kind='object'
+  parent_value_id INTEGER FK runtime_values(id) ON DELETE CASCADE
+  key TEXT
+  child_value_id INTEGER FK runtime_values(id)
+  PK (parent_value_id, key)
+  INDEX (child_value_id)          // for reverse lookups
+
+runtime_value_array_elements      // populated for kind='array'
+  parent_value_id INTEGER FK runtime_values(id) ON DELETE CASCADE
+  element_index INTEGER
+  child_value_id INTEGER FK runtime_values(id)
+  PK (parent_value_id, element_index)
+  INDEX (child_value_id)
+```
+
+Values are structurally-shared where possible (a literal `0` value row
+can be referenced by many traces). Circular references resolve to a
+`circular` kind with `circular_target_id` pointing at the ancestor. Values
+exceeding a size budget (configurable; default 1KB per primitive string,
+100 elements per array, 100 keys per object) are truncated with the
+`truncated` kind carrying a note.
+
+Example query — "all traces where the signal captured `result.ok = false`":
+```sql
+SELECT t.* FROM traces t
+JOIN trace_values tv ON tv.trace_id = t.id
+JOIN runtime_value_object_members m ON m.parent_value_id = tv.root_value_id
+  AND m.key = 'result'
+JOIN runtime_value_object_members m2 ON m2.parent_value_id = m.child_value_id
+  AND m2.key = 'ok'
+JOIN runtime_values v ON v.id = m2.child_value_id
+WHERE v.kind = 'bool' AND v.bool_value = false;
 ```
 
 ### Trace and gap tables
@@ -275,32 +444,36 @@ traces
   id INTEGER PK
   clause_id INTEGER FK clauses(id) ON DELETE CASCADE
   captured_at INTEGER
-  outcome_kind TEXT           // 'returned' | 'threw' | 'untestable'
-  outcome_payload TEXT
+  outcome_kind TEXT               // 'returned' | 'threw' | 'untestable'
+  outcome_value_id INTEGER FK runtime_values(id)?  // return value or thrown value, structured
+  untestable_reason TEXT?         // for outcome_kind='untestable'
   inputs_hash TEXT
   INDEX (clause_id)
 
 trace_values
   trace_id INTEGER FK traces(id) ON DELETE CASCADE
   node_id TEXT FK nodes(id)
-  iteration_index INTEGER?    // null for single-point
-  value_json TEXT             // JSON: runtime values are genuinely heterogeneous
+  iteration_index INTEGER?
+  root_value_id INTEGER FK runtime_values(id)   // structured value, not JSON
   PK (trace_id, node_id, iteration_index)
   INDEX (node_id)
+  INDEX (root_value_id)           // for "find traces containing this value"
 
 gap_reports
   id INTEGER PK
   clause_id INTEGER FK clauses(id) ON DELETE CASCADE
   trace_id INTEGER FK traces(id)?
-  kind TEXT                   // 'ieee_specials' | 'int_overflow' | 'bool_coercion' |
-                              // 'null_undefined' | 'path_not_taken' | 'outcome_mismatch'
+  kind TEXT                       // 'ieee_specials' | 'int_overflow' | 'bool_coercion' |
+                                  // 'null_undefined' | 'path_not_taken' |
+                                  // 'outcome_mismatch' | 'invalid_binding'
   smt_constant TEXT?
   at_node_id TEXT FK nodes(id)?
-  smt_value TEXT?
-  runtime_value TEXT?
+  smt_value_id INTEGER FK runtime_values(id)?   // structured; the Z3-witness-projected value
+  runtime_value_id INTEGER FK runtime_values(id)?  // structured; the observed runtime value
   explanation TEXT
   INDEX (clause_id)
   INDEX (kind)
+  INDEX (at_node_id)              // FK cascade + by-node explain
 ```
 
 ### Principle tables
@@ -308,22 +481,47 @@ gap_reports
 ```
 principles
   name TEXT PK
-  source TEXT                 // 'seed' | 'discovered' | 'imported'
+  source TEXT                     // 'seed' | 'discovered' | 'imported'
   validated BOOLEAN DEFAULT FALSE
   dsl_source TEXT
   source_hash TEXT
-  compiled_query_ref TEXT     // identifier for the in-memory compiled Drizzle query
-  confidence_tier TEXT        // 'blocking' | 'warning' | 'advisory'
+  compiled_query_ref TEXT
+  confidence_tier TEXT            // 'blocking' | 'warning' | 'advisory'
   created_at INTEGER
 
 principle_validations
   id INTEGER PK
   principle_name TEXT FK principles(name) ON DELETE CASCADE
-  validator TEXT              // 'semantic_classifier' | 'semantic_diff' | 'adversarial'
+  validator TEXT                  // 'semantic_classifier' | 'semantic_diff' | 'adversarial'
   validator_model TEXT
-  result TEXT                 // 'pass' | 'fail'
-  evidence JSON
+  result TEXT                     // 'pass' | 'fail'
   validated_at INTEGER
+  INDEX (principle_name)
+
+// Evidence is structured per validator kind, NOT JSON.
+
+principle_classifier_evidence     // validator='semantic_classifier'
+  validation_id INTEGER PK FK principle_validations(id) ON DELETE CASCADE
+  stage TEXT                      // 'forward' | 'reverse'
+  verdict TEXT                    // 'NEW' | 'EXISTING' | 'UNCLEAR'
+  reasoning TEXT
+
+principle_diff_overlaps           // validator='semantic_diff'
+  validation_id INTEGER FK principle_validations(id) ON DELETE CASCADE
+  compared_principle TEXT FK principles(name)
+  overlap_score REAL
+  PK (validation_id, compared_principle)
+
+principle_adversarial_attempts    // validator='adversarial'
+  id INTEGER PK
+  validation_id INTEGER FK principle_validations(id) ON DELETE CASCADE
+  attempt_number INTEGER
+  attempt_kind TEXT               // 'false_positive' | 'false_negative'
+  generated_source TEXT           // adversarially-generated code
+  expected TEXT                   // 'should_match' | 'should_not_match'
+  actual TEXT
+  passed BOOLEAN
+  INDEX (validation_id)
 
 principle_matches
   id INTEGER PK
@@ -339,6 +537,7 @@ principle_match_captures
   capture_name TEXT
   captured_node_id TEXT FK nodes(id)
   PK (match_id, capture_name)
+  INDEX (captured_node_id)        // NEW: FK cascade
 ```
 
 ### Runtime transport tables
@@ -348,7 +547,8 @@ runtime_observations
   id INTEGER PK
   signal_node_id TEXT FK nodes(id)
   observed_at INTEGER
-  environment TEXT            // 'production' | 'staging' | ...
+  environment TEXT
+  INDEX (signal_node_id)          // NEW: FK cascade
 
 runtime_observation_values
   observation_id INTEGER FK runtime_observations(id) ON DELETE CASCADE
@@ -361,84 +561,74 @@ runtime_observation_values
 
 | Hash | Where | What it enables |
 |---|---|---|
-| `files.content_hash` | per file | fast "file changed at all" check |
-| `nodes.subtree_hash` | per node | fine-grained change detection below file level |
+| `files.content_hash` | per file | "file changed at all" check |
+| `nodes.subtree_hash` | per node | sub-file change detection |
 | `contracts.signal_subtree_hash` | denormalized on contract | indexed staleness comparison |
 | `contracts.derivation_hash` | per contract | LLM-derivation cache key |
 | `clauses.clause_hash` | per clause | Z3-verification cache key |
-| `principles.source_hash` | per principle | re-evaluation gate on principle edits |
+| `principles.source_hash` | per principle | re-evaluation gate on DSL edits |
 | `traces.inputs_hash` | per trace | harness-run cache key |
 
-All hashes are sha256 of deterministic serialized inputs. Not
-canonicalized — cosmetic edits invalidate and re-derive. The trade-off is
-accepted: operational simplicity over prettier-cost-freeness.
+All hashes are sha256 of deterministic serialized inputs. Not canonicalized.
 
 ## The SAST Build Pipeline
 
-### Integration with v1 pipeline
+### Integration
 
-The v1 pipeline is:
-
-```
-Phase 1: dependency graph
-Phase 2: context bundles
-Phase 3: contract derivation
-Phase 4: principle classification
-Phase 5: axiom application (report)
-```
-
-v2 inserts SAST build between Phase 1 and Phase 2:
+v2 inserts SAST build after file parsing, before context bundles:
 
 ```
-Phase 1: dependency graph    (produces graph rows in files/imports tables)
-Phase 1b: SAST build         (produces nodes + capabilities + edges per file)
-Phase 2: context bundles     (now SAST-node-aware)
-Phase 3: contract derivation (bindings reference node IDs; LLM emits structured bindings)
-Phase 3b: binding validation (via ts-morph checks against SAST)
+Phase 1a: file parse + content_hash
+Phase 1b: SAST build per file (nodes, capabilities, edges, hashes)
+  1b.1: emit nodes + subtree_hash
+  1b.2: emit node_children
+  1b.3: classify capabilities (one pass per capability category)
+  1b.4: compute data_flow (syntactic def-use heuristic)
+  1b.5: compute dominance (transitive)
+  1b.6: compute post_dominance (transitive)
+  1b.7: compute data_flow_transitive (materialized)
+  1b.8: compute path conditions per signal-carrying node
+Phase 2: context bundles (SAST-node-aware)
+Phase 3: contract derivation (bindings reference node IDs)
+Phase 3b: binding validation via ts-morph against SAST
 Phase 3c: instrumented execution + gap detection
-Phase 4: principle classification (via DSL evaluator, all principles as queries)
-Phase 5: report (queries across the store)
+Phase 4: principle evaluation (DSL queries; incremental)
+Phase 5: report queries
 ```
 
-### SAST build steps per file
+All SAST computation is deterministic, cacheable by subtree_hash, per-file
+transactional. Transitive closures are materialized at build time to avoid
+per-query recursive CTE cost (and to handle cyclic data-flow without depth
+caps or divergence risk).
 
-1. **Parse.** Use existing `parser.ts` / tree-sitter for the initial parse
-   (structural). Use ts-morph for type-aware and semantic analysis.
-2. **Emit nodes.** One row per syntactically relevant node (statements,
-   expressions, identifiers inside patterns).
-3. **Compute subtree_hash.** `sha256(node.getText())`.
-4. **Emit children edges.** Populate `node_children` with parent-child
-   ordering.
-5. **Classify capabilities.** Walk the tree; for each node, check semantic
-   rules and insert rows into the appropriate capability tables. Short-
-   circuit booleans get `node_decides` rows; `await` expressions get
-   `node_yields` rows; etc.
-6. **Compute data-flow edges.** Phase 1 uses a syntactic def-use heuristic:
-   resolve each identifier to its most-recent in-scope assignment. Populate
-   `data_flow`. Full type-checker-based def-use analysis is deferred.
-7. **Compute dominance.** Standard control-flow dominance algorithm over
-   the function's CFG (reconstructed from `node_decides`, `node_iterates`,
-   `node_throws` capabilities). Populate `dominance` transitively.
-8. **Compute path conditions.** Walk from each signal-carrying node back
-   through decision ancestors, conjoining their conditions. Populate
-   `node_path_condition`.
+### Data-flow heuristic
 
-All steps are deterministic, cacheable by subtree_hash, and run in a
-transaction per file.
+Phase 1 uses a syntactic def-use resolver: for each identifier reference,
+the most-recent in-scope assignment (or parameter / declaration) is its
+data source. Scope resolution via ts-morph's scope API. Full type-checker-
+based alias analysis is deferred to a later phase; the current heuristic
+handles ~80% of straight-line JavaScript correctly.
 
 ## The Principle DSL
 
 ### Surface syntax
 
 ```
+predicate zero_guard($var: node) {
+  match
+    $guard: node where narrows.narrowing_kind == "literal_eq"
+                    and narrows.target == $var
+    // OR a comparison-to-zero form
+    $cmp: node where arithmetic.op in {"==","===","!=","!=="}
+                  and (arithmetic.lhs == $var or arithmetic.rhs == $var)
+                  and (lhs is literal "0" or rhs is literal "0")
+}
+
 principle division-by-zero {
   match
-    $div: node where decides.kind == "division"
-    $den: data_source($div) where role == "denominator"
-  require no $guard: node where
-    decides.kind == "comparison"
-    and operands contains $den
-    and dominates($guard, $div)
+    $div: node where arithmetic.op == "/"
+    $den: node where arithmetic.rhs_of($div) == $den
+  require no $guard: zero_guard($den) before $div
   report violation {
     at $div
     captures { division: $div, denominator: $den }
@@ -449,288 +639,339 @@ principle division-by-zero {
 
 ### DSL elements
 
-- **`match`**: binds named variables (`$div`, `$den`) to nodes satisfying
-  predicates. Multiple match clauses compose via join.
-- **`where` clauses**: capability predicates (`decides.kind == "division"`),
-  relational predicates (`dominates($a, $b)`), comparisons, boolean
-  composition.
-- **`require no`**: negation-as-failure; compiles to `NOT EXISTS`.
-- **`require`**: positive assertion; compiles to `EXISTS` or inner join.
-- **Predicates over slots**: `operands contains $x` maps to
-  `data_flow(from_node=guard, to_node=x, slot IN ('lhs','rhs','operand',...))`.
-- **`report`**: target table insertion. `violation` is a kind; the match's
-  captures become rows in `principle_match_captures`.
+- **`predicate <name>($args)`**: reusable query fragment. Compiles to a
+  view or an inlined subquery. Predicates may reference other predicates
+  (stratified; compiler checks for cycles).
+- **`match`**: binds named variables to nodes satisfying capability
+  predicates. Multiple clauses compose via join.
+- **`where`**: capability predicates (`arithmetic.op == "/"`), relational
+  predicates (`$a before $b`), comparisons, boolean composition with `and`
+  / `or` / `not`.
+- **`require no`** / **`require not`** / **`require not exists`** (synonyms):
+  negation-as-failure; compiles to `NOT EXISTS`.
+- **`require`**: positive assertion; compiles to `EXISTS`.
+- **Directional relations**: `$a before $b` means `$a` dominates (or
+  post-dominates, context-dependent) `$b`. Reads unambiguously in either
+  direction. `dominates($a, $b)` also accepted as a synonym with explicit
+  arg order.
+- **`$var` binders mandatory** — parser rejects bare `var` in binder
+  position (prevents LLM slipping identifier-vs-binder). Inside predicates,
+  `$args` are scoped.
+- **Whitespace tolerance**: newlines or `and` between predicates both
+  accepted; linter canonicalizes on save.
+
+### Built-in relations
+
+The compiler recognizes these; users cannot redefine:
+
+- `$a before $b` — `$a` dominates `$b`
+- `$a after $b` — `$b` dominates `$a`
+- `$a post_gates $b` — `$a` post-dominates `$b` (every exit from `$b`
+  passes through `$a`)
+- `data_source($a) where role == <slot>` — query `data_flow`
+- `data_flow_reaches($a, $b)` — transitive; compiles against
+  `data_flow_transitive`
+- `encloses($outer, $inner)` — `$outer` is a lexical ancestor of `$inner`
+  (via `node_children` transitive)
+- `always_exits($block)` — `$block` contains a node with `returns.exit_kind`
+  in {`'return'`, `'throw'`} that post-dominates the block's entry
+- `branch_reaches($node, $decision, <then|else>)` — `$node` is reachable
+  only through the named branch of `$decision`
+- `mutates($target)` — there exists a `node_assigns` with `target_node ==
+  $target`
+- `literal_value($node) == <value>` — the node is a literal with the given
+  textual value
+- `call_arity($call) == <n>` — `node_calls.arg_count == n`
+- `method_name($call) == "<name>"` — `node_calls.callee_name == "<name>"`
+- `compound_assignment($node)` — `node_assigns.assign_kind != '='` and
+  `!= 'delete'`
+
+### Taint abstractions
+
+```
+source division-by-zero {
+  $denominator: node where arithmetic.op in {"/","%"} and arithmetic.rhs_of
+}
+
+sink user-input {
+  $x: node where binding.binding_kind == "param"
+}
+
+sanitizer null-check($x) {
+  $guard: node where narrows.narrowing_kind in {"null_check","undefined_check"}
+                  and narrows.target == $x
+}
+
+principle shell-injection {
+  taint
+    source: user-input
+    sink: node where calls.callee_name in {"exec","execSync","spawn"}
+                  and data_flow_reaches(any source, arg[0] of sink)
+    sanitizer: escape-shell-arg($x) || quote-arg($x)
+  report violation { ... }
+}
+```
+
+Taint configs compile to recursive CTEs over `data_flow_transitive` with
+negation over sanitizer predicates. The compiler reifies common patterns
+rather than synthesizing fresh CTEs per principle.
 
 ### Compiler
 
-Tree-walker over the DSL AST. Each `match` clause becomes a Drizzle
-`innerJoin`. `where` predicates become `and(eq(...), ...)` expressions.
-`require no` wraps a subquery in `notExists`. Recursive relations
-(`dominates`, transitive data-flow) use Drizzle's `withRecursive`.
+Tree-walk over the DSL AST. Each `match` clause becomes a Drizzle inner
+join. Predicate invocations become joined subqueries (or inlined views if
+the predicate is small). `where` predicates become `and(eq(...), ...)`
+expressions. `require no` wraps subqueries in `notExists`. Transitive
+relations reference materialized tables; fall-back to `withRecursive` only
+when a non-materialized transitive relation is used.
 
-Output: a typed function `(db: DB, principleName: string) => Promise<void>`
-that executes the inserts inside a transaction.
+Compile-time checks:
+- Enum values validated against schema (`arithmetic.op == "spaceship"` →
+  compile error; "valid values: ...")
+- Capability columns validated (typo detection)
+- Missing-index analysis against declared index set; warning with
+  suggested index
+- Stratification: predicate dependency graph acyclic through negations
+- Binder-type inference: `captures { x: $foo }` requires `$foo` to be
+  node-typed
+- Relation arity checked for built-ins
 
-### Index discipline
+### LLM-generation discipline
 
-The compiler requires the following indexes for acceptable plans:
+Principles are LLM-generated in Phase 4. The syntax is optimized for
+lenient parsing + strict linting:
 
-- `node_decides(decision_kind, node_id)`
-- `data_flow(to_node, slot, from_node)`
-- `data_flow(from_node, to_node)`
-- `dominance(dominated, dominator)`
-- `node_yields(yield_kind, node_id)`
-- `node_iterates(loop_kind, node_id)`
+- Accept `no` / `not` / `not exists` as synonyms
+- Accept `$var` (required) and reject bare `var`
+- Accept `and` or newlines between predicates
+- Suggest fuzzy corrections on unknown capability/column names
 
-The schema declares these explicitly. Future principles that need new
-predicates may require new indexes; the compiler flags missing indexes at
-compile time (static analysis of the emitted query against the declared
-index set).
+**LLM-generation test (required before v2 freeze):** a fresh Claude
+instance given 5 principle examples must successfully write at least 20/23
+seed principles in the DSL. Below that threshold, the syntax gets another
+revision pass. Test fixture: `tests/dsl/llm-generation.test.ts`.
+
+### Index discipline (declared in schema)
+
+Required indexes for acceptable plans:
+- `node_arithmetic(op, node_id)`, `node_assigns(assign_kind, node_id)`,
+  `node_returns(exit_kind, node_id)`, `node_narrows(narrowing_kind, node_id)`,
+  `node_decides(decision_kind, node_id)`, `node_signal(signal_kind, node_id)`,
+  `node_smt(sort, node_id)`, `node_yields(yield_kind, node_id)`,
+  `node_iterates(loop_kind, node_id)`, `node_binding(binding_kind, node_id)`,
+  `node_truthiness(coercion_kind, node_id)`
+- `data_flow(to_node, slot, from_node)`, `data_flow(from_node, to_node)`
+- `data_flow_transitive(to_node, from_node)`, `data_flow_transitive(from_node, to_node)`
+- `dominance(dominated, dominator)`, PK `(dominator, dominated)`
+- `post_dominance(post_dominated, post_dominator)`, PK `(post_dominator, post_dominated)`
+- `node_calls(callee_name, node_id)`
+
+FK cascade indexes: `principle_match_captures(captured_node_id)`,
+`gap_reports(at_node_id)`, `contracts(signal_node_id)`,
+`runtime_observations(signal_node_id)`.
+
+Invalidation seed: `contracts(stale_flag)`.
 
 ### Principles-as-data
 
-Seed principles migrate from `.neurallog/principles/*.json` to
-`.neurallog/principles/*.dsl`. Discovered principles (Phase 4 of POSTMORTEM's
-classification pipeline) are stored in the `principles` table. The
-adversarial validator mutates DSL source strings and runs them; results land
-in `principle_validations`.
+23 seed principles translate from `.neurallog/principles/*.json` to
+`.neurallog/principles/*.dsl` manually. Discovered principles land in the
+`principles` table via the classification pipeline. Adversarial validator
+mutates DSL source strings and runs them; results in
+`principle_validations`.
+
+**DSL JSON-path filtering forbidden.** Principles MUST NOT filter on
+`json_extract(...)`. If a future principle needs to, the relevant data is
+promoted to a structured column.
 
 ## Instrumented Execution
 
 ### Entry point
 
-`runHarness` grows a `captureTrace` option (default: false). When true, it:
+`runHarness` grows a `captureTrace` option. When true:
 
-1. Reads the clause's `clause_bindings` to determine snapshot granularity.
-2. AST-rewrites the target function's source via ts-morph: inserts a single
-   snapshot hook at the signal node's line for simple cases; inserts
-   per-iteration hooks inside loop bodies if any binding has
-   `iteration.which === "per_iteration"`; instruments free-variable reads
-   if any binding has a `capture` annotation.
-3. Runs the function via the existing `loadModuleWithPrivates` with
-   determinism stubs (`Math.random` → 0.5, `Date.now` → 0).
-4. Writes captured values to `traces` + `trace_values`.
+1. Reads clause_bindings to determine snapshot granularity.
+2. AST-rewrites the target function via ts-morph: single snapshot at
+   signal line for simple cases; per-iteration hooks inside loop bodies if
+   any binding has per-iteration semantics; free-variable reads if any
+   binding has `capture` annotation.
+3. Runs via existing `loadModuleWithPrivates` with determinism stubs.
+4. Writes to `traces` + `trace_values`.
 
 ### Determinism
 
-Stubs for `Math.random`, `Date.now`. These are injected at the top of the
-rewritten function body (via a wrapping IIFE), not the vm sandbox — so any
-code path the harness takes is deterministic, not only code executed in a
-specific sandbox.
+`Math.random` → 0.5, `Date.now` → 0. Injected at top of rewritten function
+body, not the vm sandbox.
 
 ### Degradation
 
-Non-executable targets (DB, network, auth-context) reuse the existing
-`HarnessOutcome.untestableReason` path. The trace is written as
-`outcome_kind = 'untestable'` with the reason in `outcome_payload`.
-Comparator skips these clauses.
+Non-executable targets reuse `HarnessOutcome.untestableReason`. Trace
+written as `outcome_kind = 'untestable'`.
 
 ## Encoding-Gap Detector
 
 ### Binding validation
 
-Before any comparator runs, each `clause_bindings` row is validated:
-ts-morph queries the SAST to confirm that the declared `bound_to_node` is
-(a) reachable from the signal node, (b) carries a semantic that plausibly
-matches the SMT constant's declared sort, (c) is in scope at the signal
-line. Invalid bindings are flagged and the clause's comparator is skipped
-with a `gap_reports` row of kind `'invalid_binding'`.
+Before comparator runs: for each `clause_bindings` row, ts-morph verifies
+the `bound_to_node` is (a) reachable from the signal, (b) semantically
+plausible for the SMT sort, (c) in scope. Invalid bindings → `gap_reports`
+row of kind `'invalid_binding'`.
 
 ### Z3 model parser
 
-Parse Z3's `(model (define-fun x () Sort value))` output into a typed
-discriminated union (`Real`, `Int`, `Bool`, `String`, `Array`, `BitVec`).
-Handles special values: `-infinity`, `+infinity`, `NaN` (Z3 Real convention).
-Lives in `src/z3Model.ts`. Stores parsed values in `clause_witnesses`.
+Parses `(model (define-fun x () Sort value))` into a typed discriminated
+union. Handles `-infinity`, `+infinity`, `NaN` per Z3 Real conventions.
 
 ### Domain comparator
 
-One file per sort-specific agent. Each agent is a pure function:
+One file per sort-specific agent. Phase 1 agents:
 
-```typescript
-function ieeeSpecialsAgent(
-  binding: SmtBinding,
-  witness: Z3Value,
-  runtimeValue: unknown,
-): GapReport | null
-```
-
-Agents are independent. Adding a new one = adding a new file; no coupling
-to existing agents. Phase 1 agents:
-
-- **ieee-specials**: Real sort. Detects NaN/Infinity/-Infinity/signed-zero
-  gaps against Z3's Real model values.
-- **int-overflow**: Int sort. Detects `Number.MAX_SAFE_INTEGER` gaps.
-- **bool-coercion**: Bool sort. Detects truthy/falsy JS coercion mismatches
-  vs Z3's strict boolean.
-- **null-undefined**: any sort. Detects `null` vs `undefined` vs absent
-  property mismatches.
-- **path-not-taken**: any. Detects when Z3's witness path didn't execute
-  in the trace (e.g., Z3 assumed `if (x > 0)` but trace took the else).
-- **outcome-mismatch**: any. Detects when Z3 modeled return-value but
-  runtime threw, or vice versa.
+- **ieee-specials** (Real sort)
+- **int-overflow** (Int sort)
+- **bool-coercion** (Bool sort)
+- **null-undefined** (any sort)
+- **path-not-taken** (any)
+- **outcome-mismatch** (any)
 
 ### Gap report output
 
-Each gap produces a `gap_reports` row. The explain command renders rows as:
-
-```
-encoding-gap at src/math.ts:44 — netAmount
-  Z3 modeled:        (/ orderTotal 0) = 0.0   [sort: Real]
-  Runtime returned:  NaN
-  Cause:             IEEE 754 division by zero produces NaN, not 0.
-  Sort mismatch:     SMT Real does not model IEEE's special values.
-```
+Rows in `gap_reports`; `explain` renders as THESIS.md-style line-attributed
+output.
 
 ## Consumer Implementations
 
-Each consumer is implemented as Drizzle queries against the store.
-
 ### Data-flow tracing
 
-Given a signal node, walk `data_flow` upstream via recursive CTE. Return
-the ordered chain of nodes whose values contributed to the signal. Used by
-`neurallog explain` and by principle matching.
+Joined query over `data_flow_transitive` (materialized) from signal node.
 
 ### Path-condition rendering
 
-Given a signal node, read its `node_path_condition`, walk the path from the
-function entry node via `node_children`, filter to decision nodes via
-`node_decides`, render each decision's condition. Fully driven by SAST
-data; no static analysis at explain-time.
+Read `node_path_condition` rows for the signal, walk parents via
+`node_children`, filter to nodes in `node_decides`.
 
 ### Principle matching
 
-Running all validated principles: load each principle's compiled query,
-execute inside one transaction. Incremental re-match: filter to principles
-whose `source_hash` changed OR contracts whose `signal_subtree_hash`
-changed. Results in `principle_matches` + `principle_match_captures`.
+Load each validated principle's compiled query, execute in a transaction.
+Incremental: filter to principles with changed `source_hash` or contracts
+with `stale_flag = true`.
 
 ### Dependency invalidation
 
-Recursive CTE over `contract_dependencies` starting from contracts with
-`signal_subtree_hash != nodes.subtree_hash`. Returns the transitive closure
-of stale contracts. Re-derivation is scheduled against this set.
+Drizzle recursive CTE over `contract_dependencies` seeded from
+`contracts(stale_flag = true)`.
 
 ## Pipeline Integration
 
-### New phase boundaries
+### Phase boundaries
 
-Each phase is a transaction (usually large) or a series of transactions
-(one per contract) against the store.
-
-1. **Phase 1a: File parse.** For each changed file, recompute
-   `content_hash`. If unchanged, skip.
-2. **Phase 1b: SAST build.** Per file in topological import order.
-   Transaction per file.
-3. **Phase 2: Context bundle assembly.** Queries SAST + prior contracts for
-   each signal. No materialized bundles table — bundles are ephemeral
-   assemble-and-call structures; their hash (`derivation_hash`) is stored
-   on the resulting contract.
-4. **Phase 3: Contract derivation.** Per signal, transaction per signal.
-   LLM call + SMT verification + binding validation + trace capture + gap
-   detection all inside the transaction. On crash, that signal rolls back;
-   prior signals persist.
-5. **Phase 4: Principle evaluation.** One transaction wrapping all
-   principle queries. Incremental: only re-run queries for principles with
-   changed source_hash or contracts with changed signal_subtree_hash.
-6. **Phase 5: Report queries.** Read-only.
+Each phase is a transaction or per-unit transactions. Contracts derive
+atomically (bindings, clauses, traces, gap reports commit together; crash
+rolls back one contract).
 
 ### Resume semantics
 
-On restart: query contracts with `derived_at IS NULL` (or equivalent
-marker) to find interrupted runs. Re-derive those. Contracts with
-`derived_at` set are trusted.
+On restart: query contracts with `derived_at IS NULL`. Re-derive.
 
 ## Testing
 
-- **Schema tests** (Drizzle): migrations apply cleanly on an empty DB;
-  migrations are append-only; seed data round-trips.
-- **SAST builder tests**: fixture source files produce expected node sets,
-  capability rows, edge rows. Tests per capability class (one fixture per
-  `decides.kind` value, etc.).
-- **DSL compiler tests**: hand-written DSL sources compile to expected
-  Drizzle query shapes; generated SQL produces expected plans against a
-  populated fixture DB.
-- **Instrumented execution tests**: AST-rewrite fixtures; one test per
-  instrumentation hook type.
-- **Comparator tests**: one fixture per sort-specific agent, covering the
-  THESIS.md examples (division-by-zero, NaN, MAX_SAFE_INTEGER, etc.) as
-  golden outputs.
-- **End-to-end tests**: source file + expected contracts + expected gap
-  reports committed under `examples/` with a regression script that
-  exercises the full pipeline.
-
-Golden DB fixtures: committed `.db` files for regression-test determinism.
+- Schema tests (migrations apply cleanly, append-only, seed round-trips)
+- SAST builder tests (one fixture per capability class)
+- DSL compiler tests (hand-written principles compile to expected queries;
+  SQL plans against populated fixture DB)
+- **DSL LLM-generation test** (20/23 threshold, see above)
+- Instrumented execution tests (AST-rewrite fixtures)
+- Comparator tests (one fixture per sort agent; golden outputs from
+  THESIS.md examples)
+- End-to-end tests under `examples/` with committed `.db` fixtures
 
 ## Phasing
 
-Honest timeline. Each phase ships something inspectable.
+Re-sequenced to land thesis-distinctive capability early. Same total
+elapsed time (~4–6 months) but value lands week 3, not month 3.
 
-- **Phase A — Data layer migration.** Drizzle schema, drizzle-kit
-  migrations, SQLite storage. Port `ContractStore` off JSON files. Existing
-  contracts are **deleted**, not migrated — they lack the new schema's
-  required fields (binding metadata, subtree hashes) and re-deriving them
-  under the new prompt is cheaper than back-parsing. Principles are
-  translated from JSON to the new DSL format manually (23 seed principles,
-  one-time translation). Pipeline continues to work end-to-end, writing to
-  DB instead of filesystem. *Timeline: ~2 weeks.*
+- **Phase A-thin** (~1 week). Add `gap_reports`, `traces`, `trace_values`
+  tables to SQLite via Drizzle. Keep existing JSON contract format intact.
+  Purely additive; existing pipeline unaffected.
 
-- **Phase B — SAST builder.** Parse, emit nodes + capabilities + edges +
-  hashes. No consumers yet. Integration test: round-trip known source file
-  to DB rows and back. *Timeline: ~1 month.*
+- **Phase D-core** (~2–3 weeks). Z3 model parser + three sort agents
+  (ieee-specials, outcome-mismatch, path-not-taken) + `explain --gaps`
+  wired to the existing v1 harness. Binding format: inline JSON on the
+  existing `Violation.witness` field, extended with `smt_bindings`. **Ships
+  the thesis-distinctive capability for dogfooding (and Inception demo).**
+  This phase exercises the binding-and-gap machinery on v1 contracts
+  before the SAST is built.
 
-- **Phase C — Principle DSL.** Parser, compiler to Drizzle, evaluator,
-  migrate seed principles from JSON to DSL. Run against SAST from phase B.
-  *Timeline: ~1 month.*
+- **Phase A-full** (~1–2 weeks). Migrate contracts/principles to DB. Delete
+  legacy JSON files. `ContractStore` ported off filesystem. Pipeline end-
+  to-end against DB.
 
-- **Phase D — Instrumented execution + gap detector.** Binding validation,
-  snapshot capture, Z3 model parser, comparator core, IEEE-specials agent.
-  This is the thesis-distinctive deliverable. *Timeline: ~1 month.*
+- **Phase B** (~1 month). SAST builder. Nodes, capabilities, edges,
+  hashes, materialized transitive closures. No consumers yet. Integration
+  test: round-trip known source file to DB rows.
 
-- **Phase E — Additional comparator agents.** int-overflow, bool-coercion,
-  null-undefined, path-not-taken, outcome-mismatch. Independent, can ship
-  incrementally. *Timeline: ~2 weeks.*
+- **Phase D-validation** (~3 days). Binding validation ride-along on B:
+  when SAST exists for a file, binding validation checks against it; gap
+  detection upgrades from inline-JSON bindings to node-referenced
+  bindings.
 
-- **Phase F — Consumer migration.** Explain, report, diff, watch all
-  rewritten as Drizzle queries. *Timeline: ~2 weeks.*
+- **Phase C** (~1 month). Principle DSL: parser, compiler to Drizzle,
+  evaluator, predicate definitions, taint abstractions. Migrate 23 seed
+  principles from JSON to DSL. LLM-generation test runs here.
 
-- **Phase G — Runtime transport on new model.** Log-fire observations
-  insert into `runtime_observations`; principle checks run on insert via
-  in-process evaluation. *Timeline: ~2 weeks.*
+- **Phases E, F, G in parallel** (~2–3 weeks total):
+  - **E**: additional comparator agents (int-overflow, bool-coercion,
+    null-undefined). Independent files; ship incrementally.
+  - **F**: consumer migration — `explain`, `report`, `diff`, `watch`
+    rewritten as Drizzle queries.
+  - **G**: runtime transport backed by `runtime_observations` +
+    `runtime_observation_values`.
 
-**Total: 4–6 months focused work.** Phases A–C are the foundation; D–G are
-where user-visible value lands.
+**Total: 4–6 months focused work. Thesis-distinctive capability shipped
+week 3.**
+
+### Why D-core before B
+
+D-core's runtime dependencies (harness, instrumented execution,
+moduleLoader) are already in v1 per commits `5afc4d1`, `f59e528`,
+`0779f5e`, `0329f59`. The spec treats them as greenfield in the original
+foundation-first ordering; they're not. Shipping gap detection on those
+existing pieces retires low-uncertainty high-value work first. SAST then
+has an exercised binding model to slot into, rather than being built on
+speculation.
+
+Half-built-state risk: A-thin + D-core keeps v1 fully functional; the new
+gap output is additive. A-full's "delete legacy contracts" window is the
+riskiest reversal point, so it runs after D-core's feedback cycles have
+validated the schema direction.
 
 ## Open questions for the writing-plans phase
 
-1. **Exact capability table list may evolve.** Starting set documented
-   above; implementation may reveal additional capabilities (e.g., for
-   type-guard narrowing, for generator semantics). Each addition is a
-   migration, not a refactor.
-2. **Index tuning after benchmarking.** Indexes declared in schema are
-   best-guess from the division-by-zero pressure test. Benchmark after
-   SAST is populated for real projects; add/drop indexes based on measured
-   plans.
-3. **DSL error message ergonomics.** Parser and compiler need good error
-   messages; exact ergonomics to design when the DSL is real.
-4. **Principle scheduling.** All-at-once vs per-file-touch re-evaluation of
-   principles. Default: incremental via changed source_hash + changed
-   signal_subtree_hash. Policy for full-scan on demand TBD.
-5. **Cross-codebase corpus format.** Shared principle library sync across
-   projects — out of scope for v2 internal work, but the schema should
-   support exporting a subset of tables as a portable corpus file. Specify
-   the export shape when cross-codebase sync is on the roadmap.
-6. **SAST for TypeScript constructs not yet designed.** Classes, getters/
-   setters, decorators, generics: spec'd out of scope for v2 but the SAST
-   schema must not foreclose them. Capability tables compose; new
-   capabilities slot in. Explicit acknowledgment that these exist and are
-   deferred.
+1. **Capability table list may continue to evolve.** Current set addresses
+   the 23 seed principles. Future principles may reveal further gaps; each
+   is additive via migration.
+2. **Index tuning after benchmarking.** Declared indexes from pressure
+   tests. Benchmark after real data populates.
+3. **DSL error-message ergonomics.** Exact ergonomics to design during
+   Phase C implementation.
+4. **Principle scheduling.** Default: incremental via changed source_hash +
+   stale_flag. On-demand full scan policy TBD.
+5. **Cross-codebase corpus format.** Specify when cross-codebase sync is
+   on the roadmap.
+6. **SAST for TypeScript constructs not yet designed.** Classes,
+   getters/setters, decorators, generics: out of scope for v2 but the SAST
+   schema must not foreclose. Capability tables compose; new capabilities
+   slot in.
+7. **Data-flow heuristic vs full analysis.** Phase 1 is syntactic def-use.
+   If accuracy drops in practice, upgrade to ts-morph's symbol-based
+   analysis.
+8. **Predicate composition across principles.** v2 forbids principle-in-
+   principle references. If/when that lands (for principle library reuse),
+   stratification check must be added.
 
 ## Explicitly out of scope
 
 - Python or any non-TypeScript language adapter
-- Concurrency gap detection (P8-P10 from POSTMORTEM)
+- Concurrency gap detection (POSTMORTEM P8-P10)
 - Generators, async iterators
 - Classes beyond methods-as-functions
 - Dynamic property access, `eval`, `new Function`
@@ -738,26 +979,43 @@ where user-visible value lands.
 - Prototype pollution, symbol-keyed properties
 - Visualization beyond CLI text
 - Cross-process distributed tracing
+- Type-checker-based alias analysis (phase-1 uses syntactic heuristic)
 
-## Design Decisions Worth Naming
+## Design decisions worth naming
 
-1. **Filesystem-as-bus → database-as-bus.** Same philosophy (immutable,
-   phased, inspectable) richer access pattern.
+1. **Filesystem-as-bus → database-as-bus.** Same philosophy, richer access.
 2. **Capability tables over discriminated union.** Orthogonal facts stay
    orthogonal; adding a new one is a migration, not an edit.
 3. **Hashes at multiple granularities.** File, subtree, derivation, clause,
-   principle, inputs. Each enables a different invalidation query.
+   principle, inputs.
 4. **No canonicalization.** `sha256(node.getText())`. Cosmetic edits
    re-derive. Not a problem we're solving.
-5. **Content-addressed contract keys.** `file/fn/<signal_subtree_hash>`
-   replaces line-based keys.
-6. **DSL is data; compiles to Drizzle.** Principles are first-class
-   persistable queryable entities, not code.
-7. **SAST justified by DSL expressiveness.** Other consumers benefit but
-   don't force it; principle matching does.
-8. **SQLite + Drizzle + JSON1.** Local, offline, deterministic; relational
-   where relational, document where document; type-safe data access.
-9. **Per-contract transactions.** Crash mid-derivation rolls back one
-   contract; prior work persists.
-10. **No raw SQL outside migrations.** Drizzle's builder for everything;
-    the one violation is the red flag that something's misdesigned.
+5. **Content-addressed contract keys.** `file/fn/<signal_subtree_hash>`.
+6. **DSL is data, compiles to Drizzle.** Principles are first-class.
+7. **Reusable predicates and taint abstractions.** Avoid repeating zero-
+   guard logic across 5+ arithmetic principles; avoid repeating sanitizer
+   logic across taint principles. Borrowed from CodeQL.
+8. **Directional relations read unambiguously.** `$a before $b` instead of
+   `dominates($a, $b)` to prevent LLM arg-flip bugs.
+9. **Lenient parser + strict linter.** Accept synonyms; canonicalize on
+   save. Principles are LLM-generated at scale; a forgiving parser pays
+   for itself.
+10. **Transitive closures materialized at SAST build.** Dominance, post-
+    dominance, data-flow-transitive stored as tables, not computed on
+    demand. Avoids recursive-CTE depth concerns on cyclic inputs.
+11. **SQLite + Drizzle, no JSON columns anywhere.** Every structural
+    fact — including compound runtime values, adversarial validation
+    evidence, taint propagation graphs — is relational. Runtime values
+    become a `runtime_values` graph with object-member and array-element
+    edge tables. Validator evidence splits by validator kind into
+    structured tables. Nothing gets stuffed into a JSON blob because it
+    "feels heterogeneous." The data model is the queryable interface; the
+    moment we stuff something into JSON we've admitted the schema is
+    wrong and deferred the cost.
+12. **Per-contract transactions.** Crash mid-derivation rolls back one
+    contract.
+13. **No raw SQL outside migrations.** Drizzle's builder for everything.
+14. **Thesis capability ships week 3, not month 3.** D-core rides on v1's
+    existing harness; SAST is built with the binding model already
+    validated.
+15. **LLM-generation test gates DSL freeze.** 20/23 threshold.
