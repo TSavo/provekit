@@ -12,7 +12,10 @@
 // pending semantic variable tracking.
 //
 // FIXME(capability-gap): no requiresParamRef equivalent — over-matches non-param cases.
-// Guard suppression non-functional. See capability-gaps.md.
+// Guard suppression non-functional. The same_value relation (A8b) is now registered
+// and correctly identifies semantic variable identity via shared from_node in data_flow.
+// Full migration blocked on parser enhancement: DSL grammar does not yet expose relation
+// calls in predicate where bodies. See capability-gaps.md.
 // FIXME(extractor gap): callee_name is full expr text, not just method name.
 
 principle find-undefined-result {

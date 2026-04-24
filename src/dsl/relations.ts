@@ -6,9 +6,16 @@
  * sufficient to populate the registry.
  *
  * MVP implements: before, dominates.
+ * A8b adds: same_value (semantic variable identity via data_flow).
  * Reserved (not implemented): post_dominates, data_source, data_flow_reaches,
  * encloses, always_exits, branch_reaches, mutates, literal_value, call_arity,
  * method_name, compound_assignment.
+ *
+ * NOTE: same_value is registered in the relation registry but the DSL parser
+ * does not yet accept relation calls in predicate where clauses (the parser
+ * grammar only allows builtinRel in the requireClause position: "before" |
+ * "dominates"). Principle migrations that need same_value are blocked until
+ * the parser is extended. See docs/plans/2026-04-23-fix-loop/capability-gaps.md.
  */
 
 import { registerRelation } from "./relationRegistry.js";
@@ -46,6 +53,28 @@ export function registerBuiltinRelations(): void {
       const b = args[1]?.kind === "node" ? args[1].alias : null;
       if (!a || !b) throw new Error("dominates: both args must be node");
       return `EXISTS (SELECT 1 FROM dominance WHERE dominator = ${a}.id AND dominated = ${b}.id)`;
+    },
+  });
+
+  // A8b: same_value — holds iff two nodes reference the same declared variable.
+  // Two use-site nodes share a semantic variable when they share a from_node in
+  // the data_flow table (the declaration node is the common ancestor).
+  // Self-identity (a === b) is covered: a node shares its own from_node with itself.
+  registerRelation({
+    name: "same_value",
+    paramCount: 2,
+    paramTypes: ["node", "node"],
+    compile: ({ args }) => {
+      const a = args[0]?.kind === "node" ? args[0].alias : null;
+      const b = args[1]?.kind === "node" ? args[1].alias : null;
+      if (!a || !b) throw new Error("same_value: both args must be node");
+      return (
+        `EXISTS (` +
+        `SELECT 1 FROM data_flow df1 ` +
+        `JOIN data_flow df2 ON df1.from_node = df2.from_node ` +
+        `WHERE df1.to_node = ${a}.id AND df2.to_node = ${b}.id` +
+        `)`
+      );
     },
   });
 }
