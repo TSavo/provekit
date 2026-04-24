@@ -111,11 +111,34 @@ export interface CodePatch {
   description: string;
 }
 
-/** Result of applying a bundle (D2). stub — D2 will refine. */
+/** Draft artifacts produced by D2 in prDraftMode. */
+export interface PrDraftArtifacts {
+  /** Unified diff of the worktree commit vs its base. */
+  patch: string;
+  /** Markdown PR body derived from bundle metadata. */
+  prBody: string;
+}
+
+/** Rollback audit for substrate bundles. */
+export interface RollbackAudit {
+  attempted: boolean;
+  succeeded: boolean;
+  detail: string;
+}
+
+/** Result of applying a bundle (D2). */
 export interface ApplyResult {
   applied: boolean;
   failureReason?: string;
   prUrl?: string;
+  /** SHA of the commit created in the apply worktree (or cherry-picked). */
+  commitSha?: string;
+  /** Gap IDs that were verified closed. Empty for non-gap-sourced signals. */
+  closedGaps?: number[];
+  /** Present in prDraftMode. */
+  prDraft?: PrDraftArtifacts;
+  /** Rollback status for substrate bundles. Only set when migration was attempted. */
+  rollback?: RollbackAudit;
 }
 
 /** Fix bundle assembled by D1. stub shape — D1 will populate all fields. */
