@@ -85,6 +85,13 @@
       "when": 1777200000000,
       "tag": "0011_principle_matches",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1777060637459,
+      "tag": "0012_military_luminals",
+      "breakpoints": true
     }
   ]
 }
