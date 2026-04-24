@@ -1,4 +1,5 @@
 import Parser from "tree-sitter";
+import { SmtBinding } from "../contracts";
 
 export interface TemplateResult {
   signalLine: number;
@@ -7,6 +8,7 @@ export interface TemplateResult {
   claim: string;
   principle: string;
   confidence: "high" | "low";
+  bindings: SmtBinding[];
 }
 
 export interface TemplateContext {

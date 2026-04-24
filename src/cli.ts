@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
 import { statSync, readFileSync, existsSync } from "fs";
-import { resolve, dirname, relative } from "path";
+import { resolve, dirname, relative, join } from "path";
 import { Pipeline } from "./pipeline";
 import { SignalRegistry } from "./signals";
 import { DiffAnalyzer, HookInstaller, ProofDiff } from "./git";
 import { ContractStore, signalKey } from "./contracts";
 import { createProvider } from "./llm";
+import { openDb, type Db } from "./db/index.js";
+import { gapReports, clauses, runtimeValues } from "./db/schema/index.js";
+import { eq } from "drizzle-orm";
+import { runFix } from "./cli.fix.js";
 
 const VERSION = "0.3.0";
 
@@ -19,7 +23,8 @@ async function main(): Promise<void> {
   }
 
   if (args.includes("--version")) {
-    console.log(`neurallog v${VERSION}`);
+    console.log(`provekit v${VERSION}`);
+    console.log("The Kit to Prove It's Fixed.");
     process.exit(0);
   }
 
@@ -36,6 +41,7 @@ async function main(): Promise<void> {
     case "report":   runReport(rest); break;
     case "hook":     runHook(rest); break;
     case "override": runOverride(rest); break;
+    case "fix":     await runFix(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
       printHelp();
@@ -51,13 +57,14 @@ async function runInit(args: string[]): Promise<void> {
   const projectRoot = resolveProjectRoot(args);
   const signalRegistry = SignalRegistry.createDefault();
 
-  console.log(`neurallog v${VERSION}`);
+  console.log(`provekit v${VERSION}`);
+  console.log("The Kit to Prove It's Fixed.");
   console.log(`Initializing in ${projectRoot}`);
   console.log();
 
   const diff = new DiffAnalyzer(projectRoot);
   if (!diff.isGitRepo()) {
-    console.error("Not a git repository. neurallog requires git.");
+    console.error("Not a git repository. provekit requires git.");
     process.exit(1);
   }
 
@@ -108,10 +115,10 @@ async function runInit(args: string[]): Promise<void> {
 
   console.log();
   console.log("Next steps:");
-  console.log("  neurallog analyze <file.ts>   Derive proofs for a file");
-  console.log("  neurallog derive              Derive proofs for changed files");
-  console.log("  neurallog verify              Run Z3 against cached proofs");
-  console.log("  neurallog report              Show coverage summary");
+  console.log("  provekit analyze <file.ts>   Derive proofs for a file");
+  console.log("  provekit derive              Derive proofs for changed files");
+  console.log("  provekit verify              Run Z3 against cached proofs");
+  console.log("  provekit report              Show coverage summary");
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +134,7 @@ async function runAnalyze(args: string[]): Promise<void> {
 
   const signalRegistry = buildSignalRegistry(args, model);
 
-  console.log(`neurallog v${VERSION}`);
+  console.log(`provekit v${VERSION}`);
   console.log(`File:    ${filePath}`);
   console.log(`Model:   ${model}`);
   console.log(`Signals: ${signalRegistry.getGeneratorNames().join(", ")}`);
@@ -166,7 +173,7 @@ async function runDerive(args: string[]): Promise<void> {
   const verbose = args.includes("--verbose") || args.includes("-v");
   const ref = getFlag(args, "--since") || "HEAD";
 
-  console.log(`neurallog v${VERSION} — derive (diff-powered)`);
+  console.log(`provekit v${VERSION} — derive (diff-powered)`);
   console.log(`Project: ${projectRoot}`);
   console.log(`Model:   ${model}`);
   console.log();
@@ -248,7 +255,7 @@ async function runVerify(args: string[]): Promise<void> {
     process.exit(0);
   }
 
-  console.log(`neurallog v${VERSION} — verify (Phase 5 only, no LLM, pure Z3)`);
+  console.log(`provekit v${VERSION} — verify (Phase 5 only, no LLM, pure Z3)`);
   console.log(`Project: ${projectRoot}`);
   console.log();
 
@@ -286,7 +293,7 @@ function runDiff(args: string[]): void {
   const projectRoot = resolveProjectRoot(args);
   const ref = args.find((a) => !a.startsWith("-")) ?? "HEAD~1";
 
-  console.log(`neurallog v${VERSION} — proof diff against ${ref}`);
+  console.log(`provekit v${VERSION} — proof diff against ${ref}`);
   console.log();
 
   const proofDiff = new ProofDiff(projectRoot);
@@ -340,13 +347,13 @@ function runDiff(args: string[]): void {
 function runExplain(args: string[]): void {
   const target = args.find((a) => !a.startsWith("-"));
   if (!target) {
-    console.error("Usage: neurallog explain <file>:<line>");
+    console.error("Usage: provekit explain <file>:<line> [--gaps]");
     process.exit(1);
   }
 
   const [filePart, linePart] = target.split(":");
   if (!filePart || !linePart) {
-    console.error("Usage: neurallog explain <file>:<line>");
+    console.error("Usage: provekit explain <file>:<line> [--gaps]");
     process.exit(1);
   }
 
@@ -364,8 +371,17 @@ function runExplain(args: string[]): void {
 
   if (!contract) {
     console.error(`No contract found for ${relPath}:${line}`);
-    console.error("Run 'neurallog analyze' first.");
+    console.error("Run 'provekit analyze' first.");
     process.exit(1);
+  }
+
+  if (args.includes("--gaps")) {
+    // Encoding-gap output is separate from v1 contract explain. It reads the
+    // SQLite gap_reports table populated by the Phase D gap detector.
+    const db = openDb(join(projectRoot, ".provekit", "provekit.db"));
+    process.stdout.write(explainGaps(db, contract.key));
+    db.$client.close();
+    return;
   }
 
   console.log();
@@ -425,7 +441,7 @@ function runReport(args: string[]): void {
   const contracts = store.getAll();
 
   if (contracts.length === 0) {
-    console.log("No contracts found. Run 'neurallog analyze' first.");
+    console.log("No contracts found. Run 'provekit analyze' first.");
     process.exit(0);
   }
 
@@ -478,7 +494,7 @@ function runReport(args: string[]): void {
     ? Math.round(((contracts.length - totalUnverified) / contracts.length) * 100)
     : 0;
 
-  console.log(`neurallog v${VERSION} — coverage report`);
+  console.log(`provekit v${VERSION} — coverage report`);
   console.log("──────────────────────────────────────────");
   console.log(`Signals:       ${contracts.length}`);
   console.log(`  Proven:      ${totalProven}`);
@@ -525,7 +541,7 @@ function runHook(args: string[]): void {
 function runOverride(args: string[]): void {
   const reason = getFlag(args, "--reason");
   if (!reason) {
-    console.error("Usage: neurallog override --reason \"why this is intentional\"");
+    console.error("Usage: provekit override --reason \"why this is intentional\"");
     process.exit(1);
   }
 
@@ -586,7 +602,8 @@ function buildSignalRegistry(args: string[], model: string): SignalRegistry {
 }
 
 function printHelp(): void {
-  console.log(`neurallog v${VERSION} — a logger that fixes your code`);
+  console.log(`provekit v${VERSION}`);
+  console.log("The Kit to Prove It's Fixed.");
   console.log();
   console.log("Commands:");
   console.log("  init [project]              Scan codebase, install git hook");
@@ -598,6 +615,19 @@ function printHelp(): void {
   console.log("  report [project]            Coverage summary");
   console.log("  hook [--uninstall]          Install/remove git hook");
   console.log("  override --reason \"...\"      Record override for --no-verify");
+  console.log("  fix <ref>               Run the fix loop on a bug report.");
+  console.log("                          <ref> can be:");
+  console.log("                            gap_report:<id>      — reference a gap_reports row");
+  console.log("                            <file-path>          — path to a bug report file");
+  console.log("                            gh:<number>          — GitHub issue shorthand (v1: treated as text)");
+  console.log("                            http(s)://...        — URL (v1: treated as text)");
+  console.log("                            -                    — read from stdin");
+  console.log("                            <plain text>         — bug report text directly");
+  console.log("                          Options:");
+  console.log("                            --no-confirm         Skip the \"Proceed?\" prompt");
+  console.log("                            --dry-run            Print the plan as JSON and exit");
+  console.log("                            --apply              Cherry-pick fix onto target branch (autoApply mode)");
+  console.log("                            --max-sites N        Override max complementary sites (default 10)");
   console.log();
   console.log("Options:");
   console.log("  --model <name>       LLM model (default: sonnet)");
@@ -627,7 +657,7 @@ function resolveProjectRoot(args: string[]): string {
 function findProjectRoot(startDir: string): string {
   let dir = startDir;
   while (dir !== dirname(dir)) {
-    for (const c of [".neurallog", "package.json", ".git"]) {
+    for (const c of [".provekit", "package.json", ".git"]) {
       try {
         if (statSync(resolve(dir, c)).isDirectory() || statSync(resolve(dir, c)).isFile()) {
           return dir;
@@ -637,6 +667,81 @@ function findProjectRoot(startDir: string): string {
     dir = dirname(dir);
   }
   return startDir;
+}
+
+// ---------------------------------------------------------------------------
+// explainGaps — render encoding-gap rows for a contract key
+// ---------------------------------------------------------------------------
+
+// Returns a string (not console.log'd) so the test can assert against it
+// without touching stdout. The CLI handler writes it directly to stdout.
+
+export function explainGaps(db: Db, contractKey: string): string {
+  const rows = db
+    .select({
+      kind: gapReports.kind,
+      smtConstant: gapReports.smtConstant,
+      atNodeRef: gapReports.atNodeRef,
+      explanation: gapReports.explanation,
+      smtValueId: gapReports.smtValueId,
+      runtimeValueId: gapReports.runtimeValueId,
+    })
+    .from(gapReports)
+    .innerJoin(clauses, eq(clauses.id, gapReports.clauseId))
+    .where(eq(clauses.contractKey, contractKey))
+    .all();
+
+  if (rows.length === 0) {
+    return `No encoding gaps reported for ${contractKey}.\n`;
+  }
+
+  const lines: string[] = [];
+  for (const row of rows) {
+    const header = row.atNodeRef ? `encoding-gap at ${row.atNodeRef}` : `encoding-gap`;
+    const constName = row.smtConstant ? ` — ${row.smtConstant}` : "";
+    lines.push(`${header}${constName}`);
+
+    if (row.smtValueId) {
+      const smtVal = db
+        .select()
+        .from(runtimeValues)
+        .where(eq(runtimeValues.id, row.smtValueId))
+        .get();
+      if (smtVal) lines.push(`  Z3 modeled:        ${formatRuntimeValue(smtVal)}`);
+    }
+    if (row.runtimeValueId) {
+      const rtVal = db
+        .select()
+        .from(runtimeValues)
+        .where(eq(runtimeValues.id, row.runtimeValueId))
+        .get();
+      if (rtVal) lines.push(`  Runtime returned:  ${formatRuntimeValue(rtVal)}`);
+    }
+    lines.push(`  Cause:             ${row.explanation ?? "(no explanation)"}`);
+    lines.push(`  Kind:              ${row.kind}`);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+function formatRuntimeValue(row: {
+  kind: string;
+  numberValue: number | null;
+  stringValue: string | null;
+  boolValue: boolean | null;
+}): string {
+  switch (row.kind) {
+    case "number":      return String(row.numberValue);
+    case "string":      return JSON.stringify(row.stringValue);
+    case "bool":        return String(row.boolValue);
+    case "nan":         return "NaN";
+    case "infinity":    return "Infinity";
+    case "neg_infinity": return "-Infinity";
+    case "null":        return "null";
+    case "undefined":   return "undefined";
+    default:            return `<${row.kind}>`;
+  }
 }
 
 if (require.main === module) {

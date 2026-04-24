@@ -4,13 +4,13 @@
 
 Every `printf`, every `console.log`, every `logger.info` — going back to the earliest programs that ever printed a value to check if it was right — is an implicit claim about what should be true at that moment. The programmer wrote it because they had a belief about the code. They just lacked the tools to express that belief formally, so they expressed it informally. They logged it, and they trusted their eyeballs.
 
-The same is true of variable names like `safeBalance` and `validatedInput`, function names like `sanitizeHtml` and `ensureAuthenticated`, type annotations, assertion-style error messages, and TODO comments. The code contains a distributed, informal specification of how it's supposed to behave. Formalising that specification — or, more honestly, *attempting* to formalise it, with calibrated confidence about how faithful the formalisation is — is what neurallog does.
+The same is true of variable names like `safeBalance` and `validatedInput`, function names like `sanitizeHtml` and `ensureAuthenticated`, type annotations, assertion-style error messages, and TODO comments. The code contains a distributed, informal specification of how it's supposed to behave. Formalising that specification — or, more honestly, *attempting* to formalise it, with calibrated confidence about how faithful the formalisation is — is what provekit does.
 
 ## The fundamental problem of formal verification was "how do we get the specifications?"
 
 For fifty years the answer was "convince developers to write them." That never worked at scale. Specifications are expensive, tedious, separate from the code. They drift. They get abandoned.
 
-The LLM-plus-SMT genre — Lemur, SpecGen, Clover, and neurallog among them — proposes a different answer. An LLM reads the code, extracts the implicit specification, translates it into SMT-LIB, and a solver checks it. The cost of writing a spec goes from "expensive developer time" to "one LLM call per signal."
+The LLM-plus-SMT genre — Lemur, SpecGen, Clover, and provekit among them — proposes a different answer. An LLM reads the code, extracts the implicit specification, translates it into SMT-LIB, and a solver checks it. The cost of writing a spec goes from "expensive developer time" to "one LLM call per signal."
 
 This solves one problem and introduces another.
 
@@ -25,17 +25,17 @@ An LLM translating TypeScript to SMT can miss — and routinely does miss — th
 
 Every item above is a category where Z3 will happily prove things about the LLM's idealised abstraction while the actual code does something different. The central weakness of LLM-plus-SMT tools is that they have no layer that notices when the abstraction and the runtime disagree. "Proven by Z3" sounds authoritative; it means the encoding is internally consistent, which is a much weaker claim than "the code is correct."
 
-This is where most tools in the genre stop. neurallog doesn't stop here.
+This is where most tools in the genre stop. provekit doesn't stop here.
 
 ## The answer isn't to abandon the approach. The answer is to check the encoding.
 
-neurallog adds two oracles beyond the solver:
+provekit adds two oracles beyond the solver:
 
 **Runtime harness.** For each claim Z3 proves, a second LLM writes a JavaScript test harness. The harness constructs concrete input from Z3's witness, loads the real function, executes it, and observes. If the observation contradicts Z3's verdict, the encoding was lossy. The LLM judge then audits the harness itself (did the harness actually test the claim, or did it rig the test?) before the cross-reference counts as evidence.
 
-**Existing test suite.** When the project has tests, neurallog invokes the ones that reference the target function and compares their outcomes to the harness verdict. If Z3 said unsat, the harness ran clean, and the user's own pre-existing tests also pass, the claim has agreement from three independent sources.
+**Existing test suite.** When the project has tests, provekit invokes the ones that reference the target function and compares their outcomes to the harness verdict. If Z3 said unsat, the harness ran clean, and the user's own pre-existing tests also pass, the claim has agreement from three independent sources.
 
-Three oracles. Agreement at the intersection is high-confidence. Disagreement is a finding — sometimes about the code, sometimes about the encoding, and neurallog surfaces both.
+Three oracles. Agreement at the intersection is high-confidence. Disagreement is a finding — sometimes about the code, sometimes about the encoding, and provekit surfaces both.
 
 ## The principle library grows from real bugs, under adversarial validation.
 
@@ -56,14 +56,14 @@ You don't get "mathematical certainty about your code." You get:
 You don't get:
 
 - Proof that your code is correct. You get proof that your code, *as the LLM translated it*, is consistent with a property. The harness tries to close that gap empirically and often does; sometimes it can't.
-- Regulator-accepted certification. If a compliance framework requires formal verification, it almost certainly requires a tool whose soundness is itself certified — Coq, Isabelle, Dafny, TLA+, maybe F*. neurallog's three-oracle architecture is better evidence than raw test coverage but not a replacement for those.
+- Regulator-accepted certification. If a compliance framework requires formal verification, it almost certainly requires a tool whose soundness is itself certified — Coq, Isabelle, Dafny, TLA+, maybe F*. provekit's three-oracle architecture is better evidence than raw test coverage but not a replacement for those.
 - A world where software becomes mathematical. Software stays empirical. We add a verification layer that catches a class of bugs current tools miss. That's enough.
 
 ## Proof as one unit of trust among several.
 
 Bug bounty platforms have been overwhelmed by LLM-generated reports that sound plausible but don't hold up. "Require a Z3 proof" is one response, and it's a good one — but it's only a complete response if triage also runs the harness and checks the encoding. A proof-required bounty program that accepts every `unsat` verdict without running the harness layer would trade plausibility-based slop for proof-shaped slop.
 
-neurallog's architecture is a concrete proposal for what that second layer looks like in practice. The submission form accepts SMT-LIB; the triage also runs the harness and cross-references tests; the signal is the intersection of three oracles' agreement, not just one's verdict.
+provekit's architecture is a concrete proposal for what that second layer looks like in practice. The submission form accepts SMT-LIB; the triage also runs the harness and cross-references tests; the signal is the intersection of three oracles' agreement, not just one's verdict.
 
 ## Beyond log statements: signals everywhere.
 
@@ -77,7 +77,7 @@ The log statement was a wedge, not the thesis. The thesis is this: **programmer 
 
 Most tools in this space optimise for the compelling demo: "watch us prove your code correct in thirty seconds." The compelling demos skip the soundness question because showing the gap feels like admitting the tool is weaker than it is.
 
-neurallog optimises for the honest demo: here's the SMT, here's the harness, here's whether your tests agree. Sometimes the answer is "Z3 proved a property but the harness says runtime disagrees and your tests back up the harness — the encoder got it wrong, here's the specific mismatch."
+provekit optimises for the honest demo: here's the SMT, here's the harness, here's whether your tests agree. Sometimes the answer is "Z3 proved a property but the harness says runtime disagrees and your tests back up the harness — the encoder got it wrong, here's the specific mismatch."
 
 A tool that tells you when its own verdict is wrong is more trustworthy than a tool that doesn't — even when the first one reports fewer green checkmarks.
 

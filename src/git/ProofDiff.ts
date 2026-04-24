@@ -104,7 +104,7 @@ export class ProofDiff {
     const contracts: Contract[] = [];
 
     try {
-      const files = execFileSync("git", ["ls-tree", "-r", "--name-only", ref, "--", ".neurallog/contracts/"], {
+      const files = execFileSync("git", ["ls-tree", "-r", "--name-only", ref, "--", ".provekit/contracts/"], {
         cwd: this.projectRoot,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],

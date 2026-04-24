@@ -2,11 +2,11 @@
  * Runtime mode harness test.
  *
  * Prerequisites:
- *   1. Run `neurallog analyze examples/inventory.ts` first to generate contracts
+ *   1. Run `provekit analyze examples/inventory.ts` first to generate contracts
  *   2. Then run this: `npx ts-node examples/harness.ts`
  *
  * What it does:
- *   - Creates a pino logger with the neurallog transport
+ *   - Creates a pino logger with the provekit transport
  *   - Simulates inventory operations with real values
  *   - The transport intercepts each log, matches it to a contract,
  *     evaluates the contract against live values with Z3,
@@ -14,10 +14,10 @@
  */
 
 import pino from "pino";
-import { createNeurallogTransport } from "../src/transport";
+import { createProvekitTransport } from "../src/transport";
 
-// Create logger with neurallog transport
-const transport = createNeurallogTransport({
+// Create logger with provekit transport
+const transport = createProvekitTransport({
   projectRoot: __dirname + "/..",
 });
 

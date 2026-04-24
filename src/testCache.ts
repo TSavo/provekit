@@ -24,7 +24,7 @@ export class TestCache {
 
   constructor(projectRoot: string) {
     this.projectRoot = projectRoot;
-    this.dir = join(projectRoot, ".neurallog", "test-cache");
+    this.dir = join(projectRoot, ".provekit", "test-cache");
   }
 
   private resolve(p: string): string {

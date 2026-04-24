@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `tv_single_point_unique` ON `trace_values` (`trace_id`,`node_id`) WHERE iteration_index IS NULL;

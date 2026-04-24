@@ -2,20 +2,20 @@
  * Runtime observation API for capturing real values at signal points.
  *
  * Users wrap important call sites with `observe(signalKey, values)`. The
- * values are appended as NDJSON to `.neurallog/witnesses/<slug>.ndjson`.
+ * values are appended as NDJSON to `.provekit/witnesses/<slug>.ndjson`.
  * PropertyTestChecker can later read these and use them as alternative
  * inputs alongside (or instead of) Z3-generated models — a Daikon-style
  * runtime-seeded verification input source.
  *
  * Usage:
- *   import { observe } from "neurallog/runtime";
+ *   import { observe } from "provekit/runtime";
  *
  *   function transfer(from, to, amount) {
  *     observe("transfer", { from, to, amount });
  *     // ... real implementation
  *   }
  *
- * Observations are only written when NEURALLOG_OBSERVE=1 is set in the
+ * Observations are only written when PROVEKIT_OBSERVE=1 is set in the
  * environment. This keeps the API zero-cost when running in production
  * without observability enabled.
  */
@@ -31,7 +31,7 @@ function slugify(key: string): string {
 }
 
 function witnessPath(root: string, signalKey: string): string {
-  return join(root, ".neurallog", "witnesses", slugify(signalKey) + ".ndjson");
+  return join(root, ".provekit", "witnesses", slugify(signalKey) + ".ndjson");
 }
 
 function sanitizeForSerialization(v: any, depth: number = 0): any {
@@ -151,7 +151,7 @@ export function readObservations(signalKey: string, projectRoot: string = proces
  * only observed via static analysis.
  */
 export function listObservedSignals(projectRoot: string = process.cwd()): string[] {
-  const dir = join(projectRoot, ".neurallog", "witnesses");
+  const dir = join(projectRoot, ".provekit", "witnesses");
   if (!existsSync(dir)) return [];
   try {
     return readdirSync(dir)

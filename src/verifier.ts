@@ -1,4 +1,5 @@
 import { execSync } from "child_process";
+import type { SmtBinding } from "./contracts.js";
 
 export interface VerificationResult {
   smt2: string;
@@ -12,6 +13,7 @@ export interface VerificationResult {
   reason?: string;
   judgeRejected?: boolean;
   judgeNote?: string;
+  bindings?: SmtBinding[];
 }
 
 export function proofComplexity(smt2: string): number {

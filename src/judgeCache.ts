@@ -12,7 +12,7 @@ export class JudgeCache {
   private cacheDir: string;
 
   constructor(projectRoot: string) {
-    this.cacheDir = join(projectRoot, ".neurallog", "judge-cache");
+    this.cacheDir = join(projectRoot, ".provekit", "judge-cache");
   }
 
   private key(...parts: string[]): string {

@@ -1,4 +1,4 @@
-# neurallog: Session Postmortem
+# provekit: Session Postmortem
 
 **Date:** 2026-04-13 to 2026-04-14
 **Duration:** Single continuous session
@@ -9,7 +9,7 @@
 
 "Logging is assertions made by eyeballs after the fact."
 
-Every `console.log` and `logger.info` a programmer writes is an implicit assertion — an `assert()` the programmer was too busy to formalize. neurallog reads the surrounding code, derives what the programmer meant, expresses it as SMT-LIB, and proves it with Z3.
+Every `console.log` and `logger.info` a programmer writes is an implicit assertion — an `assert()` the programmer was too busy to formalize. provekit reads the surrounding code, derives what the programmer meant, expresses it as SMT-LIB, and proves it with Z3.
 
 The insight came in layers:
 
@@ -27,7 +27,7 @@ The pipeline evolved from a monolithic script to five phases with immutable outp
 
 ### Phase 1: Dependency Graph
 **Input:** source file path
-**Output:** `.neurallog/graph.json`
+**Output:** `.provekit/graph.json`
 
 Tree-sitter parses the entry file. Import statements are resolved to source files (relative imports only, depth-1). A topological sort determines the derivation order: leaves first (files with no imports), root last (the file that imports everything). This ensures each file's contracts are derived with its dependencies' contracts already available.
 
@@ -35,7 +35,7 @@ Tree-sitter parses the entry file. Import statements are resolved to source file
 
 ### Phase 2: Context Assembly
 **Input:** `graph.json`
-**Output:** `.neurallog/contexts/bundles.json`
+**Output:** `.provekit/contexts/bundles.json`
 
 For each file in topological order, assembles a context bundle per log statement: the file source, import sources, existing contracts from dependencies, calling context. Each bundle is everything the LLM needs for one derivation call.
 
@@ -43,7 +43,7 @@ For each file in topological order, assembles a context bundle per log statement
 
 ### Phase 3: Contract Derivation
 **Input:** `bundles.json`
-**Output:** `.neurallog/contracts/*.json`, `.neurallog/derivation.json`
+**Output:** `.provekit/contracts/*.json`, `.provekit/derivation.json`
 
 For each call site in each bundle, sends the prompt to the LLM via Claude Agent SDK. Gets back SMT-LIB blocks. Feeds each to Z3. Writes contracts to disk. Contracts accumulate sequentially — derivation #N sees contracts #1 through #N-1.
 
@@ -54,7 +54,7 @@ For each call site in each bundle, sends the prompt to the LLM via Claude Agent 
 
 ### Phase 4: Principle Classification
 **Input:** `derivation.json` (specifically, `[NEW]`-tagged violations)
-**Output:** `.neurallog/principles/*.json`, `.neurallog/classification.json`
+**Output:** `.provekit/principles/*.json`, `.provekit/classification.json`
 
 Violations tagged `[NEW]` by the LLM go through a four-stage validation pipeline:
 1. **Two-stage semantic classifier.** Stage 1: full principle descriptions + teaching examples. Stage 2: reverse framing ("could any existing principle have caught this?"). Both must say NEW.
@@ -66,7 +66,7 @@ Violations tagged `[NEW]` by the LLM go through a four-stage validation pipeline
 
 ### Phase 5: Axiom Application
 **Input:** `contracts/*.json`, `principles/*.json`
-**Output:** `.neurallog/report.json`
+**Output:** `.provekit/report.json`
 
 Mechanical axiom application. No LLM. No network. Pure Z3 against cached contracts. Applies P1-P7 templates, checks cross-contract consistency, detects stale dependencies. Runs in seconds.
 
@@ -92,7 +92,7 @@ The prompt template lives at `prompts/invariant_derivation.md` and is assembled 
 
 ### inventory.ts (verified, on disk)
 
-`.neurallog/contracts/examples/inventory.ts.json`
+`.provekit/contracts/examples/inventory.ts.json`
 
 | Metric | Count | Breakdown |
 |---|---|---|
@@ -215,7 +215,7 @@ a989d7f New CLI with five-phase pipeline and cross-file analysis
 
 ## The Thesis Revisited
 
-Logging is assertions made by eyeballs after the fact. neurallog gives the eyeballs to a theorem prover.
+Logging is assertions made by eyeballs after the fact. provekit gives the eyeballs to a theorem prover.
 
 A programmer writes `console.log`. The system derives what they meant. Z3 proves whether it's true. The proof log records the evidence. The axioms grow. The system gets smarter.
 

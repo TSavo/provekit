@@ -87,7 +87,7 @@ export class ContextPhase extends Phase<ContextInput, ContextBundle[]> {
       this.detail(`${bundle.relativePath}: ${callSiteContexts.length} signals, ${importSources.length} imports`);
     }
 
-    const outDir = join(options.projectRoot, ".neurallog", "contexts");
+    const outDir = join(options.projectRoot, ".provekit", "contexts");
     mkdirSync(outDir, { recursive: true });
     const bundlePath = join(outDir, "bundles.json");
     writeFileSync(bundlePath, JSON.stringify(bundles, null, 2));

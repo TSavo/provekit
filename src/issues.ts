@@ -37,7 +37,7 @@ function buildIssue(
   const principle = v.principle || "UNKNOWN";
   const claim = extractClaim(v.smt2);
 
-  const title = `[neurallog] ${principle}: ${claim.slice(0, 80)} — ${filePath}:${line}`;
+  const title = `[provekit] ${principle}: ${claim.slice(0, 80)} — ${filePath}:${line}`;
 
   const smt2Escaped = v.smt2.replace(/'/g, "'\\''");
 
@@ -80,7 +80,7 @@ echo '${smt2Escaped}' | z3 -in
 \`\`\`
 
 ---
-*Filed by [neurallog](https://neurallog.app) — a logger that fixes your code.*`;
+*Filed by [provekit](https://provekit.app) — The Kit to Prove It's Fixed.*`;
 
   return { title, body };
 }
@@ -128,7 +128,7 @@ function issueExists(title: string): boolean {
 function fileIssue(issue: IssueData): string {
   const result = execFileSync("gh", [
     "issue", "create", "--title", issue.title,
-    "--body", issue.body, "--label", "neurallog",
+    "--body", issue.body, "--label", "provekit",
   ], { encoding: "utf-8", timeout: 30000 }).trim();
   return result;
 }

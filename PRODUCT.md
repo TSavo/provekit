@@ -1,4 +1,4 @@
-# neurallog: Product Spec
+# provekit: Product Spec
 
 ## What It Is
 
@@ -7,13 +7,13 @@ A CLI tool that derives SMT-LIB claims from the informal specifications already 
 ## Installation
 
 ```
-npm install -D neurallog
+npm install -D provekit
 ```
 
 ## First Run
 
 ```
-$ npx neurallog init
+$ npx provekit init
 
 Scanning your codebase...
 
@@ -51,10 +51,10 @@ Encoding-gap findings (Z3 said safe, runtime disagreed — encoder bug):
 
 Git hook installed. Commits will be verified against cached contracts
 (no LLM, Z3 only).
-Contracts saved to .neurallog/ — commit principles; artifacts are ignored.
+Contracts saved to .provekit/ — commit principles; artifacts are ignored.
 
-Run  neurallog report               for the full coverage report
-Run  neurallog explain src/billing.ts:602  for any finding
+Run  provekit report               for the full coverage report
+Run  provekit explain src/billing.ts:602  for any finding
 ```
 
 The developer ran one command and got a pipeline output calibrated to
@@ -71,19 +71,19 @@ The developer writes code. They commit. The hook runs.
 ```
 $ git commit -m "refactor pricing logic"
 
-neurallog: verifying 2 changed files...
+provekit: verifying 2 changed files...
   ✓ src/pricing.ts: 11 proofs hold
   ✓ src/utils/math.ts: 4 proofs hold
 ```
 
-The commit lands. The developer didn't think about neurallog.
+The commit lands. The developer didn't think about provekit.
 
 ### When a verdict regresses:
 
 ```
 $ git commit -m "add bulk discount"
 
-neurallog: verifying 2 changed files...
+provekit: verifying 2 changed files...
   ✓ src/pricing.ts: 11 Z3-verified contracts hold
   ✗ src/orders.ts:47 — Z3-verified claim regressed
 
@@ -98,9 +98,9 @@ neurallog: verifying 2 changed files...
   (check-sat)' | z3 -in
   ; sat
 
-  Run  neurallog explain src/orders.ts:47  for the full harness output
+  Run  provekit explain src/orders.ts:47  for the full harness output
 
-Commit blocked. Fix, or: neurallog override --reason "intentional"
+Commit blocked. Fix, or: provekit override --reason "intentional"
 ```
 
 The developer sees:
@@ -113,7 +113,7 @@ The developer sees:
 ### The explain command:
 
 ```
-$ neurallog explain src/orders.ts:47
+$ provekit explain src/orders.ts:47
 
 ┌─────────────────────────────────────────────────┐
 │  discount can exceed order total                │
@@ -167,9 +167,9 @@ The explain command gives the developer everything:
 ### The report command:
 
 ```
-$ neurallog report
+$ provekit report
 
-neurallog coverage: src/
+provekit coverage: src/
 ──────────────────────────────────────────
 Signals found:              247
   ├─ Strong proofs:         143  (58%)
@@ -195,7 +195,7 @@ Since last week:   12 new proofs, 4 violations fixed, 1 regression
 ### The diff command:
 
 ```
-$ neurallog diff HEAD~5
+$ provekit diff HEAD~5
 
 Proof changes since HEAD~5:
 
@@ -213,7 +213,7 @@ Code diff shows what changed. Proof diff shows what it means for correctness.
 ```yaml
 # GitHub Actions
 - name: Verify proofs
-  run: npx neurallog verify --ci
+  run: npx provekit verify --ci
 
 # That's it. Exit 0 or exit 1.
 ```
@@ -222,7 +222,7 @@ Optional: file issues for violations
 
 ```yaml
 - name: Verify and file issues
-  run: npx neurallog verify --ci --issues
+  run: npx provekit verify --ci --issues
 ```
 
 ## Runtime Mode (Optional)
@@ -231,12 +231,12 @@ For production monitoring. Add the transport to your logger:
 
 ```typescript
 import pino from 'pino';
-import { neurallog } from 'neurallog/transport';
+import { provekit } from 'provekit/transport';
 
-const logger = pino({}, neurallog());
+const logger = pino({}, provekit());
 ```
 
-Normal logging works exactly as before. Behind the scenes, neurallog evaluates contracts against live values. Proof entries stream alongside log lines.
+Normal logging works exactly as before. Behind the scenes, provekit evaluates contracts against live values. Proof entries stream alongside log lines.
 
 When a violation fires in production:
 - The proof entry includes the values that triggered it
@@ -251,10 +251,10 @@ The developer sees exactly as much as they need:
 |---|---|---|
 | Nothing | ✓ after commit | Everything's fine |
 | One line | ✗ proof regressed at file:line | Something broke |
-| One paragraph | `neurallog explain` | They want to understand |
+| One paragraph | `provekit explain` | They want to understand |
 | Full proof | The SMT-LIB block | They want to verify |
 | `echo \| z3 -in` | sat or unsat | They trust nothing |
-| `.neurallog/` | All artifacts | They're a power user |
+| `.provekit/` | All artifacts | They're a power user |
 | SIGNALS.md | Six signal layers | They want the theory |
 
 Most developers never go past level 2. The tool is invisible when it passes and clear when it fails.
@@ -262,7 +262,7 @@ Most developers never go past level 2. The tool is invisible when it passes and 
 ## Configuration
 
 ```json
-// .neurallog/config.json (created by init)
+// .provekit/config.json (created by init)
 {
   "signals": ["logs", "types"],          // which signal layers to analyze
   "hook": "pre-commit",                   // when to verify
@@ -296,14 +296,14 @@ The user turns up enforcement gradually. They never see the word "dial."
 - Hoare logic (implementation detail)
 - The five-phase pipeline (implementation detail)
 - The LLM's reasoning (unless --verbose)
-- The dependency graph (unless they inspect .neurallog/)
+- The dependency graph (unless they inspect .provekit/)
 - Signal layers by name (the tool just "finds more things" over time)
 
 The tool is invisible infrastructure. Like a compiler warning system that gets smarter.
 
 ## What Makes It Different
 
-- **No specs to write.** The informal specs are already in your code — logs, type annotations, function names, comments. neurallog extracts and formalises them. The formalisation is LLM-produced, which means it can be wrong, which is why the tool runs a harness and a test oracle to check.
+- **No specs to write.** The informal specs are already in your code — logs, type annotations, function names, comments. provekit extracts and formalises them. The formalisation is LLM-produced, which means it can be wrong, which is why the tool runs a harness and a test oracle to check.
 - **No tests to maintain.** Contracts re-derive on code change. Contract derivation uses an LLM and costs money. Verification against already-derived contracts is free.
 - **No new workflow.** You commit. The hook runs Z3 against cached contracts (no LLM at commit-time). Derivation happens on demand or in CI.
 - **Every finding is a re-runnable Z3 verdict.** `echo '...' | z3 -in` verifies the math Z3 did. It does not verify that the SMT block faithfully models your TypeScript — that's the harness's job. The difference matters; the tool's UX labels it.
@@ -313,8 +313,8 @@ The tool is invisible infrastructure. Like a compiler warning system that gets s
 
 ## The Pitch
 
-Your log statements, type annotations, function names, and TODO comments describe the behaviour your code is supposed to have. neurallog turns that informal specification into a checkable one — an LLM writes the SMT encoding, Z3 checks it, a runtime harness tests whether the encoding faithfully models your code, and your existing tests cross-validate when available.
+Your log statements, type annotations, function names, and TODO comments describe the behaviour your code is supposed to have. provekit turns that informal specification into a checkable one — an LLM writes the SMT encoding, Z3 checks it, a runtime harness tests whether the encoding faithfully models your code, and your existing tests cross-validate when available.
 
 The central honesty: the LLM's encoding can be wrong, and the tool actively looks for the cases where it is. You don't get mathematical certainty. You get calibrated confidence with the disagreements surfaced rather than hidden.
 
-`npm install -D neurallog && npx neurallog init`
+`npm install -D provekit && npx provekit init`

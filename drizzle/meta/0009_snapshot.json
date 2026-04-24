@@ -1,0 +1,2516 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "8e148f10-baea-4161-a19d-0b3254d97bd3",
+  "prevId": "a1ab5959-d182-4caa-90d8-a38ac594dba9",
+  "tables": {
+    "runtime_value_array_elements": {
+      "name": "runtime_value_array_elements",
+      "columns": {
+        "parent_value_id": {
+          "name": "parent_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "element_index": {
+          "name": "element_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "child_value_id": {
+          "name": "child_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "rvae_by_child": {
+          "name": "rvae_by_child",
+          "columns": [
+            "child_value_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "runtime_value_array_elements_parent_value_id_runtime_values_id_fk": {
+          "name": "runtime_value_array_elements_parent_value_id_runtime_values_id_fk",
+          "tableFrom": "runtime_value_array_elements",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "parent_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "runtime_value_array_elements_child_value_id_runtime_values_id_fk": {
+          "name": "runtime_value_array_elements_child_value_id_runtime_values_id_fk",
+          "tableFrom": "runtime_value_array_elements",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "child_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "runtime_value_array_elements_parent_value_id_element_index_pk": {
+          "columns": [
+            "parent_value_id",
+            "element_index"
+          ],
+          "name": "runtime_value_array_elements_parent_value_id_element_index_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "runtime_value_object_members": {
+      "name": "runtime_value_object_members",
+      "columns": {
+        "parent_value_id": {
+          "name": "parent_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "child_value_id": {
+          "name": "child_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "rvom_by_child": {
+          "name": "rvom_by_child",
+          "columns": [
+            "child_value_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "runtime_value_object_members_parent_value_id_runtime_values_id_fk": {
+          "name": "runtime_value_object_members_parent_value_id_runtime_values_id_fk",
+          "tableFrom": "runtime_value_object_members",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "parent_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "runtime_value_object_members_child_value_id_runtime_values_id_fk": {
+          "name": "runtime_value_object_members_child_value_id_runtime_values_id_fk",
+          "tableFrom": "runtime_value_object_members",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "child_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "runtime_value_object_members_parent_value_id_key_pk": {
+          "columns": [
+            "parent_value_id",
+            "key"
+          ],
+          "name": "runtime_value_object_members_parent_value_id_key_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "runtime_values": {
+      "name": "runtime_values",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "number_value": {
+          "name": "number_value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "string_value": {
+          "name": "string_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "bool_value": {
+          "name": "bool_value",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "circular_target_id": {
+          "name": "circular_target_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "truncation_note": {
+          "name": "truncation_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "rv_by_kind": {
+          "name": "rv_by_kind",
+          "columns": [
+            "kind"
+          ],
+          "isUnique": false
+        },
+        "rv_by_kind_number": {
+          "name": "rv_by_kind_number",
+          "columns": [
+            "kind",
+            "number_value"
+          ],
+          "isUnique": false
+        },
+        "rv_by_kind_string": {
+          "name": "rv_by_kind_string",
+          "columns": [
+            "kind",
+            "string_value"
+          ],
+          "isUnique": false
+        },
+        "rv_by_kind_bool": {
+          "name": "rv_by_kind_bool",
+          "columns": [
+            "kind",
+            "bool_value"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "runtime_values_circular_target_id_runtime_values_id_fk": {
+          "name": "runtime_values_circular_target_id_runtime_values_id_fk",
+          "tableFrom": "runtime_values",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "circular_target_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "trace_values": {
+      "name": "trace_values",
+      "columns": {
+        "trace_id": {
+          "name": "trace_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "iteration_index": {
+          "name": "iteration_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "root_value_id": {
+          "name": "root_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "tv_by_node": {
+          "name": "tv_by_node",
+          "columns": [
+            "node_id"
+          ],
+          "isUnique": false
+        },
+        "tv_by_root": {
+          "name": "tv_by_root",
+          "columns": [
+            "root_value_id"
+          ],
+          "isUnique": false
+        },
+        "tv_single_point_unique": {
+          "name": "tv_single_point_unique",
+          "columns": [
+            "trace_id",
+            "node_id"
+          ],
+          "isUnique": true,
+          "where": "iteration_index IS NULL"
+        }
+      },
+      "foreignKeys": {
+        "trace_values_trace_id_traces_id_fk": {
+          "name": "trace_values_trace_id_traces_id_fk",
+          "tableFrom": "trace_values",
+          "tableTo": "traces",
+          "columnsFrom": [
+            "trace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "trace_values_root_value_id_runtime_values_id_fk": {
+          "name": "trace_values_root_value_id_runtime_values_id_fk",
+          "tableFrom": "trace_values",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "root_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "trace_values_trace_id_node_id_iteration_index_pk": {
+          "columns": [
+            "trace_id",
+            "node_id",
+            "iteration_index"
+          ],
+          "name": "trace_values_trace_id_node_id_iteration_index_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "traces": {
+      "name": "traces",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "clause_id": {
+          "name": "clause_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "outcome_kind": {
+          "name": "outcome_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "outcome_value_id": {
+          "name": "outcome_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "untestable_reason": {
+          "name": "untestable_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "inputs_hash": {
+          "name": "inputs_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "traces_by_clause": {
+          "name": "traces_by_clause",
+          "columns": [
+            "clause_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "traces_outcome_value_id_runtime_values_id_fk": {
+          "name": "traces_outcome_value_id_runtime_values_id_fk",
+          "tableFrom": "traces",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "outcome_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "clause_bindings": {
+      "name": "clause_bindings",
+      "columns": {
+        "clause_id": {
+          "name": "clause_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "smt_constant": {
+          "name": "smt_constant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_line": {
+          "name": "source_line",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_expr": {
+          "name": "source_expr",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sort": {
+          "name": "sort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "clause_bindings_clause_id_clauses_id_fk": {
+          "name": "clause_bindings_clause_id_clauses_id_fk",
+          "tableFrom": "clause_bindings",
+          "tableTo": "clauses",
+          "columnsFrom": [
+            "clause_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "clause_bindings_clause_id_smt_constant_pk": {
+          "columns": [
+            "clause_id",
+            "smt_constant"
+          ],
+          "name": "clause_bindings_clause_id_smt_constant_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "clause_witnesses": {
+      "name": "clause_witnesses",
+      "columns": {
+        "clause_id": {
+          "name": "clause_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "smt_constant": {
+          "name": "smt_constant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_value_id": {
+          "name": "model_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "cw_by_value": {
+          "name": "cw_by_value",
+          "columns": [
+            "model_value_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "clause_witnesses_model_value_id_runtime_values_id_fk": {
+          "name": "clause_witnesses_model_value_id_runtime_values_id_fk",
+          "tableFrom": "clause_witnesses",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "model_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "clause_witnesses_clause_id_smt_constant_clause_bindings_clause_id_smt_constant_fk": {
+          "name": "clause_witnesses_clause_id_smt_constant_clause_bindings_clause_id_smt_constant_fk",
+          "tableFrom": "clause_witnesses",
+          "tableTo": "clause_bindings",
+          "columnsFrom": [
+            "clause_id",
+            "smt_constant"
+          ],
+          "columnsTo": [
+            "clause_id",
+            "smt_constant"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "clause_witnesses_clause_id_smt_constant_pk": {
+          "columns": [
+            "clause_id",
+            "smt_constant"
+          ],
+          "name": "clause_witnesses_clause_id_smt_constant_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "clauses": {
+      "name": "clauses",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "contract_key": {
+          "name": "contract_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "verdict": {
+          "name": "verdict",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "smt2": {
+          "name": "smt2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "clause_hash": {
+          "name": "clause_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "principle_name": {
+          "name": "principle_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "complexity": {
+          "name": "complexity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "judge_note": {
+          "name": "judge_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "vacuous_reason": {
+          "name": "vacuous_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "clauses_by_contract": {
+          "name": "clauses_by_contract",
+          "columns": [
+            "contract_key"
+          ],
+          "isUnique": false
+        },
+        "clauses_by_hash": {
+          "name": "clauses_by_hash",
+          "columns": [
+            "clause_hash"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "gap_reports": {
+      "name": "gap_reports",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "clause_id": {
+          "name": "clause_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trace_id": {
+          "name": "trace_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "smt_constant": {
+          "name": "smt_constant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "at_node_ref": {
+          "name": "at_node_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "smt_value_id": {
+          "name": "smt_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "runtime_value_id": {
+          "name": "runtime_value_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "explanation": {
+          "name": "explanation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "gr_by_clause": {
+          "name": "gr_by_clause",
+          "columns": [
+            "clause_id"
+          ],
+          "isUnique": false
+        },
+        "gr_by_kind": {
+          "name": "gr_by_kind",
+          "columns": [
+            "kind"
+          ],
+          "isUnique": false
+        },
+        "gr_by_node_ref": {
+          "name": "gr_by_node_ref",
+          "columns": [
+            "at_node_ref"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "gap_reports_clause_id_clauses_id_fk": {
+          "name": "gap_reports_clause_id_clauses_id_fk",
+          "tableFrom": "gap_reports",
+          "tableTo": "clauses",
+          "columnsFrom": [
+            "clause_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "gap_reports_trace_id_traces_id_fk": {
+          "name": "gap_reports_trace_id_traces_id_fk",
+          "tableFrom": "gap_reports",
+          "tableTo": "traces",
+          "columnsFrom": [
+            "trace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "gap_reports_smt_value_id_runtime_values_id_fk": {
+          "name": "gap_reports_smt_value_id_runtime_values_id_fk",
+          "tableFrom": "gap_reports",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "smt_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "gap_reports_runtime_value_id_runtime_values_id_fk": {
+          "name": "gap_reports_runtime_value_id_runtime_values_id_fk",
+          "tableFrom": "gap_reports",
+          "tableTo": "runtime_values",
+          "columnsFrom": [
+            "runtime_value_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "files": {
+      "name": "files",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parsed_at": {
+          "name": "parsed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "root_node_id": {
+          "name": "root_node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        }
+      },
+      "indexes": {
+        "files_path_unique": {
+          "name": "files_path_unique",
+          "columns": [
+            "path"
+          ],
+          "isUnique": true
+        },
+        "files_by_content_hash": {
+          "name": "files_by_content_hash",
+          "columns": [
+            "content_hash"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "nodes": {
+      "name": "nodes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_id": {
+          "name": "file_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_start": {
+          "name": "source_start",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_end": {
+          "name": "source_end",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_line": {
+          "name": "source_line",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_col": {
+          "name": "source_col",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subtree_hash": {
+          "name": "subtree_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "nodes_by_file_id": {
+          "name": "nodes_by_file_id",
+          "columns": [
+            "file_id"
+          ],
+          "isUnique": false
+        },
+        "nodes_by_subtree_hash": {
+          "name": "nodes_by_subtree_hash",
+          "columns": [
+            "subtree_hash"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "nodes_file_id_files_id_fk": {
+          "name": "nodes_file_id_files_id_fk",
+          "tableFrom": "nodes",
+          "tableTo": "files",
+          "columnsFrom": [
+            "file_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_children": {
+      "name": "node_children",
+      "columns": {
+        "parent_id": {
+          "name": "parent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "child_id": {
+          "name": "child_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "child_order": {
+          "name": "child_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "nc_by_child_id": {
+          "name": "nc_by_child_id",
+          "columns": [
+            "child_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_children_parent_id_nodes_id_fk": {
+          "name": "node_children_parent_id_nodes_id_fk",
+          "tableFrom": "node_children",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_children_child_id_nodes_id_fk": {
+          "name": "node_children_child_id_nodes_id_fk",
+          "tableFrom": "node_children",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "child_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "node_children_parent_id_child_id_pk": {
+          "columns": [
+            "parent_id",
+            "child_id"
+          ],
+          "name": "node_children_parent_id_child_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_arithmetic": {
+      "name": "node_arithmetic",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "op": {
+          "name": "op",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "lhs_node": {
+          "name": "lhs_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rhs_node": {
+          "name": "rhs_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "result_sort": {
+          "name": "result_sort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_arithmetic_by_op_node_id": {
+          "name": "node_arithmetic_by_op_node_id",
+          "columns": [
+            "op",
+            "node_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_arithmetic_node_id_nodes_id_fk": {
+          "name": "node_arithmetic_node_id_nodes_id_fk",
+          "tableFrom": "node_arithmetic",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_arithmetic_lhs_node_nodes_id_fk": {
+          "name": "node_arithmetic_lhs_node_nodes_id_fk",
+          "tableFrom": "node_arithmetic",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "lhs_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_arithmetic_rhs_node_nodes_id_fk": {
+          "name": "node_arithmetic_rhs_node_nodes_id_fk",
+          "tableFrom": "node_arithmetic",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "rhs_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_assigns": {
+      "name": "node_assigns",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_node": {
+          "name": "target_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rhs_node": {
+          "name": "rhs_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "assign_kind": {
+          "name": "assign_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_assigns_by_assign_kind_node_id": {
+          "name": "node_assigns_by_assign_kind_node_id",
+          "columns": [
+            "assign_kind",
+            "node_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_assigns_node_id_nodes_id_fk": {
+          "name": "node_assigns_node_id_nodes_id_fk",
+          "tableFrom": "node_assigns",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_assigns_target_node_nodes_id_fk": {
+          "name": "node_assigns_target_node_nodes_id_fk",
+          "tableFrom": "node_assigns",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "target_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_assigns_rhs_node_nodes_id_fk": {
+          "name": "node_assigns_rhs_node_nodes_id_fk",
+          "tableFrom": "node_assigns",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "rhs_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_returns": {
+      "name": "node_returns",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exit_kind": {
+          "name": "exit_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value_node": {
+          "name": "value_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_returns_by_exit_kind_node_id": {
+          "name": "node_returns_by_exit_kind_node_id",
+          "columns": [
+            "exit_kind",
+            "node_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_returns_node_id_nodes_id_fk": {
+          "name": "node_returns_node_id_nodes_id_fk",
+          "tableFrom": "node_returns",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_returns_value_node_nodes_id_fk": {
+          "name": "node_returns_value_node_nodes_id_fk",
+          "tableFrom": "node_returns",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "value_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_member_access": {
+      "name": "node_member_access",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "object_node": {
+          "name": "object_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "property_name": {
+          "name": "property_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "computed": {
+          "name": "computed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_member_access_by_property_name_object_node": {
+          "name": "node_member_access_by_property_name_object_node",
+          "columns": [
+            "property_name",
+            "object_node"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_member_access_node_id_nodes_id_fk": {
+          "name": "node_member_access_node_id_nodes_id_fk",
+          "tableFrom": "node_member_access",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_member_access_object_node_nodes_id_fk": {
+          "name": "node_member_access_object_node_nodes_id_fk",
+          "tableFrom": "node_member_access",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "object_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_non_null_assertion": {
+      "name": "node_non_null_assertion",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operand_node": {
+          "name": "operand_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "node_non_null_assertion_node_id_nodes_id_fk": {
+          "name": "node_non_null_assertion_node_id_nodes_id_fk",
+          "tableFrom": "node_non_null_assertion",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_non_null_assertion_operand_node_nodes_id_fk": {
+          "name": "node_non_null_assertion_operand_node_nodes_id_fk",
+          "tableFrom": "node_non_null_assertion",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "operand_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_truthiness": {
+      "name": "node_truthiness",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "coercion_kind": {
+          "name": "coercion_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operand_node": {
+          "name": "operand_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_truthiness_by_coercion_kind_node_id": {
+          "name": "node_truthiness_by_coercion_kind_node_id",
+          "columns": [
+            "coercion_kind",
+            "node_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_truthiness_node_id_nodes_id_fk": {
+          "name": "node_truthiness_node_id_nodes_id_fk",
+          "tableFrom": "node_truthiness",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_truthiness_operand_node_nodes_id_fk": {
+          "name": "node_truthiness_operand_node_nodes_id_fk",
+          "tableFrom": "node_truthiness",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "operand_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_narrows": {
+      "name": "node_narrows",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "target_node": {
+          "name": "target_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "narrowing_kind": {
+          "name": "narrowing_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "narrowed_type": {
+          "name": "narrowed_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_narrows_by_narrowing_kind_node_id": {
+          "name": "node_narrows_by_narrowing_kind_node_id",
+          "columns": [
+            "narrowing_kind",
+            "node_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_narrows_node_id_nodes_id_fk": {
+          "name": "node_narrows_node_id_nodes_id_fk",
+          "tableFrom": "node_narrows",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_narrows_target_node_nodes_id_fk": {
+          "name": "node_narrows_target_node_nodes_id_fk",
+          "tableFrom": "node_narrows",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "target_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_decides": {
+      "name": "node_decides",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "condition_node": {
+          "name": "condition_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "consequent_node": {
+          "name": "consequent_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "alternate_node": {
+          "name": "alternate_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "decision_kind": {
+          "name": "decision_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "node_decides_node_id_nodes_id_fk": {
+          "name": "node_decides_node_id_nodes_id_fk",
+          "tableFrom": "node_decides",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_decides_condition_node_nodes_id_fk": {
+          "name": "node_decides_condition_node_nodes_id_fk",
+          "tableFrom": "node_decides",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "condition_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_decides_consequent_node_nodes_id_fk": {
+          "name": "node_decides_consequent_node_nodes_id_fk",
+          "tableFrom": "node_decides",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "consequent_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_decides_alternate_node_nodes_id_fk": {
+          "name": "node_decides_alternate_node_nodes_id_fk",
+          "tableFrom": "node_decides",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "alternate_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_iterates": {
+      "name": "node_iterates",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "init_node": {
+          "name": "init_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "condition_node": {
+          "name": "condition_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "update_node": {
+          "name": "update_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "body_node": {
+          "name": "body_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "loop_kind": {
+          "name": "loop_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "executes_at_least_once": {
+          "name": "executes_at_least_once",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "collection_source_node": {
+          "name": "collection_source_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "node_iterates_node_id_nodes_id_fk": {
+          "name": "node_iterates_node_id_nodes_id_fk",
+          "tableFrom": "node_iterates",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_iterates_init_node_nodes_id_fk": {
+          "name": "node_iterates_init_node_nodes_id_fk",
+          "tableFrom": "node_iterates",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "init_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_iterates_condition_node_nodes_id_fk": {
+          "name": "node_iterates_condition_node_nodes_id_fk",
+          "tableFrom": "node_iterates",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "condition_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_iterates_update_node_nodes_id_fk": {
+          "name": "node_iterates_update_node_nodes_id_fk",
+          "tableFrom": "node_iterates",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "update_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_iterates_body_node_nodes_id_fk": {
+          "name": "node_iterates_body_node_nodes_id_fk",
+          "tableFrom": "node_iterates",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "body_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_iterates_collection_source_node_nodes_id_fk": {
+          "name": "node_iterates_collection_source_node_nodes_id_fk",
+          "tableFrom": "node_iterates",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "collection_source_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_yields": {
+      "name": "node_yields",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "yield_kind": {
+          "name": "yield_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_call_node": {
+          "name": "source_call_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "node_yields_node_id_nodes_id_fk": {
+          "name": "node_yields_node_id_nodes_id_fk",
+          "tableFrom": "node_yields",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_yields_source_call_node_nodes_id_fk": {
+          "name": "node_yields_source_call_node_nodes_id_fk",
+          "tableFrom": "node_yields",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "source_call_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_throws": {
+      "name": "node_throws",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "handler_node": {
+          "name": "handler_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "is_inside_handler": {
+          "name": "is_inside_handler",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "node_throws_node_id_nodes_id_fk": {
+          "name": "node_throws_node_id_nodes_id_fk",
+          "tableFrom": "node_throws",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_throws_handler_node_nodes_id_fk": {
+          "name": "node_throws_handler_node_nodes_id_fk",
+          "tableFrom": "node_throws",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "handler_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_calls": {
+      "name": "node_calls",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "callee_node": {
+          "name": "callee_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "callee_name": {
+          "name": "callee_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "arg_count": {
+          "name": "arg_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_method_call": {
+          "name": "is_method_call",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "callee_is_async": {
+          "name": "callee_is_async",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_calls_by_callee_name_node_id": {
+          "name": "node_calls_by_callee_name_node_id",
+          "columns": [
+            "callee_name",
+            "node_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_calls_node_id_nodes_id_fk": {
+          "name": "node_calls_node_id_nodes_id_fk",
+          "tableFrom": "node_calls",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_calls_callee_node_nodes_id_fk": {
+          "name": "node_calls_callee_node_nodes_id_fk",
+          "tableFrom": "node_calls",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "callee_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_captures": {
+      "name": "node_captures",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "captured_name": {
+          "name": "captured_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "declared_in_node": {
+          "name": "declared_in_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mutable": {
+          "name": "mutable",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_captures_by_captured_name": {
+          "name": "node_captures_by_captured_name",
+          "columns": [
+            "captured_name"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_captures_node_id_nodes_id_fk": {
+          "name": "node_captures_node_id_nodes_id_fk",
+          "tableFrom": "node_captures",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "node_captures_declared_in_node_nodes_id_fk": {
+          "name": "node_captures_declared_in_node_nodes_id_fk",
+          "tableFrom": "node_captures",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "declared_in_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "node_captures_node_id_captured_name_pk": {
+          "columns": [
+            "node_id",
+            "captured_name"
+          ],
+          "name": "node_captures_node_id_captured_name_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_pattern": {
+      "name": "node_pattern",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pattern_kind": {
+          "name": "pattern_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "slot_key": {
+          "name": "slot_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rename_to": {
+          "name": "rename_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "default_smt": {
+          "name": "default_smt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "node_pattern_node_id_nodes_id_fk": {
+          "name": "node_pattern_node_id_nodes_id_fk",
+          "tableFrom": "node_pattern",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_binding": {
+      "name": "node_binding",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "declared_type": {
+          "name": "declared_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "binding_kind": {
+          "name": "binding_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_binding_by_name": {
+          "name": "node_binding_by_name",
+          "columns": [
+            "name"
+          ],
+          "isUnique": false
+        },
+        "node_binding_by_binding_kind_node_id": {
+          "name": "node_binding_by_binding_kind_node_id",
+          "columns": [
+            "binding_kind",
+            "node_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_binding_node_id_nodes_id_fk": {
+          "name": "node_binding_node_id_nodes_id_fk",
+          "tableFrom": "node_binding",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "node_signal": {
+      "name": "node_signal",
+      "columns": {
+        "node_id": {
+          "name": "node_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "signal_kind": {
+          "name": "signal_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "signal_payload": {
+          "name": "signal_payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "node_signal_by_signal_kind_node_id": {
+          "name": "node_signal_by_signal_kind_node_id",
+          "columns": [
+            "signal_kind",
+            "node_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "node_signal_node_id_nodes_id_fk": {
+          "name": "node_signal_node_id_nodes_id_fk",
+          "tableFrom": "node_signal",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "signal_interpolations": {
+      "name": "signal_interpolations",
+      "columns": {
+        "signal_node": {
+          "name": "signal_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "slot_index": {
+          "name": "slot_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "interpolated_node": {
+          "name": "interpolated_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "signal_interpolations_by_interpolated_node": {
+          "name": "signal_interpolations_by_interpolated_node",
+          "columns": [
+            "interpolated_node"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "signal_interpolations_signal_node_nodes_id_fk": {
+          "name": "signal_interpolations_signal_node_nodes_id_fk",
+          "tableFrom": "signal_interpolations",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "signal_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "signal_interpolations_interpolated_node_nodes_id_fk": {
+          "name": "signal_interpolations_interpolated_node_nodes_id_fk",
+          "tableFrom": "signal_interpolations",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "interpolated_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "signal_interpolations_signal_node_slot_index_pk": {
+          "columns": [
+            "signal_node",
+            "slot_index"
+          ],
+          "name": "signal_interpolations_signal_node_slot_index_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "data_flow": {
+      "name": "data_flow",
+      "columns": {
+        "to_node": {
+          "name": "to_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_node": {
+          "name": "from_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "slot": {
+          "name": "slot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "data_flow_by_to_node_slot_from_node": {
+          "name": "data_flow_by_to_node_slot_from_node",
+          "columns": [
+            "to_node",
+            "slot",
+            "from_node"
+          ],
+          "isUnique": false
+        },
+        "data_flow_by_from_node_to_node": {
+          "name": "data_flow_by_from_node_to_node",
+          "columns": [
+            "from_node",
+            "to_node"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "data_flow_to_node_nodes_id_fk": {
+          "name": "data_flow_to_node_nodes_id_fk",
+          "tableFrom": "data_flow",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "to_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "data_flow_from_node_nodes_id_fk": {
+          "name": "data_flow_from_node_nodes_id_fk",
+          "tableFrom": "data_flow",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "from_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "data_flow_to_node_from_node_slot_pk": {
+          "columns": [
+            "to_node",
+            "from_node",
+            "slot"
+          ],
+          "name": "data_flow_to_node_from_node_slot_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "data_flow_transitive": {
+      "name": "data_flow_transitive",
+      "columns": {
+        "to_node": {
+          "name": "to_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_node": {
+          "name": "from_node",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "data_flow_transitive_by_from_node_to_node": {
+          "name": "data_flow_transitive_by_from_node_to_node",
+          "columns": [
+            "from_node",
+            "to_node"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "data_flow_transitive_to_node_nodes_id_fk": {
+          "name": "data_flow_transitive_to_node_nodes_id_fk",
+          "tableFrom": "data_flow_transitive",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "to_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "data_flow_transitive_from_node_nodes_id_fk": {
+          "name": "data_flow_transitive_from_node_nodes_id_fk",
+          "tableFrom": "data_flow_transitive",
+          "tableTo": "nodes",
+          "columnsFrom": [
+            "from_node"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "data_flow_transitive_to_node_from_node_pk": {
+          "columns": [
+            "to_node",
+            "from_node"
+          ],
+          "name": "data_flow_transitive_to_node_from_node_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

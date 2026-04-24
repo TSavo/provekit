@@ -1,6 +1,6 @@
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import * as vm from "vm";
 import { LLMProvider } from "./llm";
 
@@ -250,7 +250,7 @@ export class HarnessCache {
   private cacheDir: string;
 
   constructor(projectRoot: string) {
-    this.cacheDir = join(projectRoot, ".neurallog", "harnesses");
+    this.cacheDir = join(projectRoot, ".provekit", "harnesses");
   }
 
   private cacheKey(smt2: string, functionSource: string, depsSource?: string): string {
@@ -331,4 +331,182 @@ export class HarnessCache {
       console.log(`[harness-cache] put failed: ${e?.message?.slice(0, 60) || "unknown"}`);
     }
   }
+}
+
+import { instrumentForSnapshot } from "./runtime/snapshotInstrumentation.js";
+import { serializeValue } from "./runtime/valueSerializer.js";
+import { loadModuleWithPrivates } from "./moduleLoader.js";
+import { traces, traceValues } from "./db/schema/index.js";
+import type { Db } from "./db/index.js";
+
+// Module-level ref-counted stubs so concurrent runHarnessWithTrace calls
+// don't race on Math.random / Date.now. Each call pushes the stubs on entry
+// (0→1 installs, >1 is a no-op). The finally block pops them (N→0 restores).
+// This keeps every caller's instrumented code seeing deterministic values,
+// and leaves the real globals intact outside the active window.
+let stubRefCount = 0;
+let origRandom: typeof Math.random | null = null;
+let origNow: typeof Date.now | null = null;
+
+function pushDeterminismStubs(): void {
+  if (stubRefCount === 0) {
+    origRandom = Math.random;
+    origNow = Date.now;
+    Math.random = () => 0.5;
+    Date.now = () => 0;
+  }
+  stubRefCount++;
+}
+
+function popDeterminismStubs(): void {
+  stubRefCount--;
+  if (stubRefCount === 0 && origRandom && origNow) {
+    Math.random = origRandom;
+    Date.now = origNow;
+    origRandom = null;
+    origNow = null;
+  }
+}
+
+export interface RunHarnessWithTraceArgs {
+  db: Db;
+  clauseId: number;
+  sourcePath: string;
+  functionName: string;
+  signalLine: number;
+  captureNames: string[];
+  inputs: Record<string, unknown>;
+  timeoutMs?: number;
+}
+
+export interface RunHarnessWithTraceResult {
+  outcomeKind: "returned" | "threw" | "untestable";
+  returnValue?: unknown;
+  error?: string;
+  traceId: number;
+}
+
+export async function runHarnessWithTrace(args: RunHarnessWithTraceArgs): Promise<RunHarnessWithTraceResult> {
+  const {
+    db,
+    clauseId,
+    sourcePath,
+    functionName,
+    signalLine,
+    captureNames,
+    inputs,
+    timeoutMs = 3000,
+  } = args;
+
+  // Unique suffix per call. Two runs sharing a globalThis name clobber each
+  // other's snapshot arrays — one run's instrumented code calls the other
+  // run's function and writes into the wrong array, leaving the first run's
+  // trace empty. Same reasoning applies to the on-disk instrumented file:
+  // two concurrent runs against the same source would race on the path.
+  const callId = randomBytes(8).toString("hex");
+  const snapshotFnName = `__provekit_snapshot_${callId}__`;
+  const instrumentedPath = sourcePath.replace(/\.ts$/, `.__instrumented_${callId}__.ts`);
+
+  const originalSource = readFileSync(sourcePath, "utf-8");
+  const instrumented = instrumentForSnapshot(originalSource, {
+    signalLine,
+    captureNames,
+    snapshotFnName,
+  });
+
+  writeFileSync(instrumentedPath, instrumented);
+
+  const capturedSnapshots: { fnName: string; line: number; locals: Record<string, unknown> }[] = [];
+
+  (globalThis as any)[snapshotFnName] = (fnName: string, line: number, locals: Record<string, unknown>) => {
+    capturedSnapshots.push({ fnName, line, locals: { ...locals } });
+  };
+
+  // Stub Math.random / Date.now under a ref count so concurrent runs don't
+  // race: first active run installs the stubs, last run restores. Each run
+  // still gets deterministic values for its instrumented execution.
+  pushDeterminismStubs();
+
+  const inputsHash = createHash("sha256")
+    .update(JSON.stringify(inputs))
+    .digest("hex")
+    .slice(0, 16);
+
+  let outcome: RunHarnessWithTraceResult = {
+    outcomeKind: "threw",
+    error: "not executed",
+    traceId: -1,
+  };
+
+  try {
+    const mod = loadModuleWithPrivates(instrumentedPath);
+    const fn = mod[functionName];
+    if (typeof fn !== "function") {
+      outcome = {
+        outcomeKind: "untestable",
+        error: `export ${functionName} not a function`,
+        traceId: -1,
+      };
+    } else {
+      const callArgs = Object.values(inputs);
+      let result: unknown;
+      try {
+        result = await Promise.race([
+          (async () => fn(...callArgs))(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("__TIMEOUT__")), timeoutMs)),
+        ]);
+        outcome = {
+          outcomeKind: "returned",
+          returnValue: result,
+          traceId: -1,
+        };
+      } catch (err: any) {
+        outcome = {
+          outcomeKind: "threw",
+          error: String(err?.message || err).slice(0, 500),
+          traceId: -1,
+        };
+      }
+    }
+  } finally {
+    popDeterminismStubs();
+    delete (globalThis as any)[snapshotFnName];
+    try {
+      unlinkSync(instrumentedPath);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Persist — runs AFTER Date.now stub is restored, so capturedAt uses real time.
+  const outcomeValueId =
+    outcome.outcomeKind === "returned"
+      ? serializeValue(db, outcome.returnValue)
+      : outcome.outcomeKind === "threw"
+        ? serializeValue(db, outcome.error)
+        : null;
+
+  const traceRow = db.insert(traces).values({
+    clauseId,
+    capturedAt: Date.now(),
+    outcomeKind: outcome.outcomeKind,
+    outcomeValueId: outcomeValueId ?? undefined,
+    untestableReason: outcome.outcomeKind === "untestable" ? outcome.error : undefined,
+    inputsHash,
+  }).returning().get();
+
+  for (const snap of capturedSnapshots) {
+    for (const [name, value] of Object.entries(snap.locals)) {
+      const valueId = serializeValue(db, value);
+      db.insert(traceValues).values({
+        traceId: traceRow.id,
+        nodeId: `${sourcePath}:${snap.line}:${name}`,
+        iterationIndex: null,
+        rootValueId: valueId,
+      }).run();
+    }
+  }
+
+  outcome.traceId = traceRow.id;
+  return outcome;
 }

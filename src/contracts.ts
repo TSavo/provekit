@@ -31,12 +31,23 @@ export interface ProvenProperty {
   judge_note?: string;
 }
 
+export interface SmtBinding {
+  smt_constant: string;
+  source_line: number;
+  source_expr: string;
+  sort: string;
+}
+
 export interface Violation {
   principle: string | null;
   principle_hash: string;
   claim: string;
   smt2: string;
   witness?: string;
+  // Per-constant binding metadata emitted by the LLM alongside the smt2 block.
+  // Absent on legacy contracts derived before the binding prompt shipped; the
+  // gap detector skips violations without bindings.
+  smt_bindings?: SmtBinding[];
   complexity?: number;
   confidence?: "high" | "low";
   reason?: string;
@@ -80,7 +91,7 @@ export class ContractStore {
   }
 
   private get contractsDir(): string {
-    return join(this.projectRoot, ".neurallog", "contracts");
+    return join(this.projectRoot, ".provekit", "contracts");
   }
 
   private loadFromDisk(): void {

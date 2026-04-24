@@ -1,0 +1,104 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1776976319182,
+      "tag": "0000_handy_captain_midlands",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776981681325,
+      "tag": "0001_rainy_old_lace",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1776981899004,
+      "tag": "0002_even_talos",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1776982071998,
+      "tag": "0003_workable_zarek",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1776982340934,
+      "tag": "0004_misty_punisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1776982505870,
+      "tag": "0005_lyrical_nicolaos",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1777010379866,
+      "tag": "0006_wandering_salo",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1777011435291,
+      "tag": "0007_add_files_root_node_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1777012106841,
+      "tag": "0008_slimy_fallen_one",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1777037706556,
+      "tag": "0009_slimy_james_howlett",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1777100000000,
+      "tag": "0010_dominance",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1777200000000,
+      "tag": "0011_principle_matches",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1777060637459,
+      "tag": "0012_military_luminals",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1777300000000,
+      "tag": "0013_principles_library",
+      "breakpoints": true
+    }
+  ]
+}

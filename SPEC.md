@@ -1,3 +1,5 @@
+<!-- This spec was written under the product's old name (neurallog); the implemented system is ProveKit. -->
+
 # neurallog
 
 **A logger that fixes your code.**

@@ -58,8 +58,8 @@ export class OpenRouterProvider implements LLMProvider {
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${this.apiKey}`,
-            "HTTP-Referer": "https://neurallog.app",
-            "X-Title": "neurallog",
+            "HTTP-Referer": "https://provekit.app",
+            "X-Title": "provekit",
           },
         },
         (res) => {

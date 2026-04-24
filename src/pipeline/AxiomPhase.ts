@@ -35,7 +35,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
 
     const store = new ContractStore(options.projectRoot);
     const allContracts = store.getAll();
-    this.detail(`Loaded ${allContracts.length} contracts from .neurallog/contracts/`);
+    this.detail(`Loaded ${allContracts.length} contracts from .provekit/contracts/`);
 
     const ignoreFilter = new IgnoreFilter(options.projectRoot);
     const contracts: Contract[] = [];
@@ -48,7 +48,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
       }
     }
     if (ignored > 0) {
-      this.detail(`${ignored} contracts ignored via .neurallogignore, ${contracts.length} active`);
+      this.detail(`${ignored} contracts ignored via .provekitignore, ${contracts.length} active`);
     }
 
     if (contracts.length === 0) {
@@ -58,7 +58,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
         contractCount: 0, checkerResults: [], totalProven: 0, totalViolations: 0,
         totalErrors: 0, ignored, staleContracts: 0, reportedAt: new Date().toISOString(),
       };
-      const outPath = join(options.projectRoot, ".neurallog", "report.json");
+      const outPath = join(options.projectRoot, ".provekit", "report.json");
       writeFileSync(outPath, JSON.stringify(report, null, 2));
       return { data: report, writtenTo: outPath };
     }
@@ -184,7 +184,7 @@ export class AxiomPhase extends Phase<void, AxiomReport> {
       reportedAt: new Date().toISOString(),
     };
 
-    const outPath = join(options.projectRoot, ".neurallog", "report.json");
+    const outPath = join(options.projectRoot, ".provekit", "report.json");
     writeFileSync(outPath, JSON.stringify(report, null, 2));
 
     return { data: report, writtenTo: outPath };

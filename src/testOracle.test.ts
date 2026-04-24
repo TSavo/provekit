@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-const tmpRoot = join(tmpdir(), `neurallog-oracle-test-${Date.now()}`);
+const tmpRoot = join(tmpdir(), `provekit-oracle-test-${Date.now()}`);
 
 beforeAll(() => {
   mkdirSync(tmpRoot, { recursive: true });
