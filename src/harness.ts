@@ -339,6 +339,35 @@ import { loadModuleWithPrivates } from "./moduleLoader.js";
 import { traces, traceValues } from "./db/schema/index.js";
 import type { Db } from "./db/index.js";
 
+// Module-level ref-counted stubs so concurrent runHarnessWithTrace calls
+// don't race on Math.random / Date.now. Each call pushes the stubs on entry
+// (0→1 installs, >1 is a no-op). The finally block pops them (N→0 restores).
+// This keeps every caller's instrumented code seeing deterministic values,
+// and leaves the real globals intact outside the active window.
+let stubRefCount = 0;
+let origRandom: typeof Math.random | null = null;
+let origNow: typeof Date.now | null = null;
+
+function pushDeterminismStubs(): void {
+  if (stubRefCount === 0) {
+    origRandom = Math.random;
+    origNow = Date.now;
+    Math.random = () => 0.5;
+    Date.now = () => 0;
+  }
+  stubRefCount++;
+}
+
+function popDeterminismStubs(): void {
+  stubRefCount--;
+  if (stubRefCount === 0 && origRandom && origNow) {
+    Math.random = origRandom;
+    Date.now = origNow;
+    origRandom = null;
+    origNow = null;
+  }
+}
+
 export interface RunHarnessWithTraceArgs {
   db: Db;
   clauseId: number;
@@ -393,10 +422,10 @@ export async function runHarnessWithTrace(args: RunHarnessWithTraceArgs): Promis
     capturedSnapshots.push({ fnName, line, locals: { ...locals } });
   };
 
-  const origRandom = Math.random;
-  const origNow = Date.now;
-  Math.random = () => 0.5;
-  Date.now = () => 0;
+  // Stub Math.random / Date.now under a ref count so concurrent runs don't
+  // race: first active run installs the stubs, last run restores. Each run
+  // still gets deterministic values for its instrumented execution.
+  pushDeterminismStubs();
 
   const inputsHash = createHash("sha256")
     .update(JSON.stringify(inputs))
@@ -440,8 +469,7 @@ export async function runHarnessWithTrace(args: RunHarnessWithTraceArgs): Promis
       }
     }
   } finally {
-    Math.random = origRandom;
-    Date.now = origNow;
+    popDeterminismStubs();
     delete (globalThis as any)[snapshotFnName];
     try {
       unlinkSync(instrumentedPath);
