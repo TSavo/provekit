@@ -8,6 +8,15 @@
  *
  * Pass 2: Compute transitive closure (DFS backward) and insert into
  * data_flow_transitive. O(N²) is fine for file-sized graphs.
+ *
+ * KNOWN LIMITATION (surfaced during A4 review): the current edge shape
+ * produces a bipartite graph — declarations are only from_nodes, use-site
+ * identifiers are only to_nodes. Transitive closure therefore equals direct
+ * edges; no chains form. If A7 DSL or C4 complementary-site discovery needs
+ * chained reachability ("param a ultimately flows into y/b via x and y"),
+ * the edge shape needs redesign — either (a) emit def→binding→use triples
+ * so chains form, or (b) populate data_flow_transitive by joining through
+ * node_binding name. Revisit when a consumer needs it.
  */
 
 import {
