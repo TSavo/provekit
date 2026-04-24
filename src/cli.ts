@@ -10,6 +10,7 @@ import { createProvider } from "./llm";
 import { openDb, type Db } from "./db/index.js";
 import { gapReports, clauses, runtimeValues } from "./db/schema/index.js";
 import { eq } from "drizzle-orm";
+import { runFix } from "./cli.fix.js";
 
 const VERSION = "0.3.0";
 
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
     case "report":   runReport(rest); break;
     case "hook":     runHook(rest); break;
     case "override": runOverride(rest); break;
+    case "fix":     await runFix(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
       printHelp();
@@ -610,6 +612,17 @@ function printHelp(): void {
   console.log("  report [project]            Coverage summary");
   console.log("  hook [--uninstall]          Install/remove git hook");
   console.log("  override --reason \"...\"      Record override for --no-verify");
+  console.log("  fix <ref>               Run the fix loop on a bug report.");
+  console.log("                          <ref> can be:");
+  console.log("                            gap_report:<id>      — reference a gap_reports row");
+  console.log("                            <file-path>          — path to a bug report file");
+  console.log("                            gh:<number>          — GitHub issue shorthand (v1: treated as text)");
+  console.log("                            http(s)://...        — URL (v1: treated as text)");
+  console.log("                            -                    — read from stdin");
+  console.log("                            <plain text>         — bug report text directly");
+  console.log("                          Options:");
+  console.log("                            --no-confirm         Skip the \"Proceed?\" prompt");
+  console.log("                            --dry-run            Print the plan as JSON and exit");
   console.log();
   console.log("Options:");
   console.log("  --model <name>       LLM model (default: sonnet)");
