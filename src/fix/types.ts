@@ -334,11 +334,46 @@ export interface TestArtifact {
   body: string;
 }
 
-/** A complementary change that should accompany the primary fix. B5 fills this in. */
+/**
+ * C4: Kinds of complementary changes.
+ *
+ * This is a CLOSED set for v1. If new kinds are needed, they should go through
+ * a registry similar to the intake adapter registry (see intakeRegistry.ts).
+ * Registry migration is deferred to D1 per the artifact-kind registry plan.
+ *
+ * NOTE: "dominated_strip" (removing redundant checks in the dominance region) is
+ * intentionally excluded from MVP per the C4 cut list.
+ */
+export type ComplementarySiteKind =
+  | "adjacent_site_fix"   // same bug pattern at a different SAST node
+  | "caller_update"       // call sites of the fixed function now need error handling
+  | "data_flow_guard"     // a node feeding into the fix site lacks a guard upstream
+  | "observability"       // add a metric/log at the site
+  | "startup_assert";     // precondition guard at program boot
+
+/** A complementary change that should accompany the primary fix. C4 fills this in. */
 export interface ComplementaryChange {
-  description: string;
-  file?: string;
-  patch?: string;
+  kind: ComplementarySiteKind;
+  /** SAST node ID of the target site. */
+  targetNodeId: string;
+  /** The patch that implements the change. */
+  patch: CodePatch;
+  /** LLM's rationale. */
+  rationale: string;
+  /** Oracle #3 result: invariant holds at THIS site under the overlay. */
+  verifiedAgainstOverlay: boolean;
+  /** Z3 verdict from the overlay run for this specific site. */
+  overlayZ3Verdict: "sat" | "unsat" | "unknown" | "error" | "bug_site_removed";
+  /**
+   * Priority bucket for sort order when the bundle assembles.
+   * Lower number = higher priority. Caller updates ship first; observability last.
+   */
+  priority: number;
+  audit: {
+    siteKind: ComplementarySiteKind;
+    discoveredVia: "principle_match" | "calls_table" | "data_flow_table" | "llm_reflection";
+    z3RunMs: number;
+  };
 }
 
 /**
