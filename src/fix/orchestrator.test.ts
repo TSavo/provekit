@@ -208,6 +208,10 @@ describe("orchestrator.runFixLoop", () => {
     const mockInvariant: InvariantClaim = {
       principleId: "null-deref",
       description: "Value must be non-null before dereference",
+      formalExpression: "(declare-const x Int)\n(assert (= x 0))\n(check-sat)",
+      bindings: [],
+      complexity: 0,
+      witness: null,
     };
     const mockOverlay: OverlayHandle = {
       worktreePath: "/tmp/overlay",

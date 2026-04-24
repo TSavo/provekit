@@ -218,14 +218,51 @@ export interface BugLocus {
 }
 
 /**
+ * Thrown by formulateInvariant (C1) when it cannot produce a valid, Z3-sat-checked invariant.
+ * The orchestrator catches this and records a graceful skip.
+ */
+export class InvariantFormulationFailed extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvariantFormulationFailed";
+  }
+}
+
+/**
  * A formal claim about what invariant the code is violating.
- * B3 (classify) populates this from DSL principles.
+ * C1 (formulateInvariant) produces this; oracle #1 has already confirmed SAT before returning.
  */
 export interface InvariantClaim {
-  principleId: string;
+  /**
+   * The principle this invariant was derived from, or null for LLM-generated novel invariants.
+   */
+  principleId: string | null;
+  /** Human-readable description of what property must hold. */
   description: string;
-  /** Optional SMT/DSL expression encoding the invariant. */
-  formalExpression?: string;
+  /**
+   * The concrete SMT-LIB assertion expressing the NEGATION of the goal (the violation state).
+   * Must be check-sat-able by Z3 directly.
+   * Pre-fix: check-sat returns "sat" (bug is reachable).
+   * Post-fix: check-sat returns "unsat" (bug is unreachable).
+   */
+  formalExpression: string;
+  /** Per-constant bindings mapping SMT variables to source positions. */
+  bindings: SmtBindingRef[];
+  /** Complexity score for downstream ranking. Computed by proofComplexity() from verifier.ts. */
+  complexity: number;
+  /** Z3 witness from oracle #1 run (the sat-ness proves the bug is real). */
+  witness: string | null;
+}
+
+/**
+ * Re-export SmtBinding shape inline (avoids circular import with contracts.ts).
+ * Matches SmtBinding from src/contracts.ts exactly.
+ */
+export interface SmtBindingRef {
+  smt_constant: string;
+  source_line: number;
+  source_expr: string;
+  sort: string;
 }
 
 /** A concrete code change proposed to fix the bug. B5 fills this in. */
