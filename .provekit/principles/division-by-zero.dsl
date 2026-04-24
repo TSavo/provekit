@@ -6,11 +6,11 @@
 // need data_flow_reaches (capability-gap). Over-matches guarded sites at present.
 //
 // FIXME(capability-gap): guard suppression currently non-functional. The same_value
-// relation (A8b) is now registered and correctly identifies that two uses of the same
-// variable share a from_node in data_flow. However the DSL parser grammar only admits
-// "before" | "dominates" in the builtinRel position of a requireClause, and does not
-// yet expose relation calls inside predicate where bodies. Migration to same_value is
-// pending a parser enhancement. See capability-gaps.md.
+// relation (A8b) is registered and the parser now accepts any relation name (not just
+// "before" | "dominates"). However the requireClause grammar only allows whole-node
+// variable args: "pred($arg) RELATION $targetVar". The needed form puts same_value
+// inside a predicate where-clause atom — not yet supported. A grammar extension for
+// relation atoms in where predicates is required. See capability-gaps.md.
 
 predicate zero_guard($var: node) {
   match $g: node where narrows.target_node == $var and narrows.narrowing_kind == "literal_eq"

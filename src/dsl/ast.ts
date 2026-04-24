@@ -29,10 +29,10 @@
  *                 | "$" IDENT                         -- direct var ref (node id comparison)
  *   literal       = STRING | NUMBER | "true" | "false" | "null"
  *
- *   requireClause = "require" "no" "$" IDENT ":" predCall builtinRel "$" IDENT
+ *   requireClause = "require" "no" "$" IDENT ":" predCall relationName "$" IDENT
  *   predCall      = IDENT "(" varRef ")"
  *   varRef        = "$" IDENT
- *   builtinRel    = "before" | "dominates"
+ *   relationName  = IDENT   -- any registered relation name; validated at compile time
  *
  *   reportBlock   = "report" severity "{" "at" varRef capturesBlock messageLine "}"
  *   severity      = "violation" | "warning" | "info"
@@ -51,10 +51,15 @@
 
 export type Severity = "violation" | "warning" | "info";
 
-export type BuiltinRelation = "before" | "dominates";
-// Reserved for future: "post_dominates" | "data_source" | "data_flow_reaches"
-// | "encloses" | "always_exits" | "branch_reaches" | "mutates"
-// | "literal_value" | "call_arity" | "method_name" | "compound_assignment"
+/**
+ * Relation name in a require-clause. Accepts any identifier; the compiler
+ * validates against the relation registry (getRelation) at compile time and
+ * throws CompileError with the list of registered names on a miss.
+ *
+ * Previously "before" | "dominates" — opened to string so the registry-based
+ * architecture is symmetric with how capability column references work.
+ */
+export type BuiltinRelation = string;
 
 export interface SourceLoc {
   line: number;

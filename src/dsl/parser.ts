@@ -430,16 +430,16 @@ class Parser {
     }
     this.expect("RPAREN");
 
-    // built-in relation
+    // relation name — any IDENT; compiler validates against registry
     const relTok = this.peek();
-    if (relTok.type !== "IDENT" || (relTok.value !== "before" && relTok.value !== "dominates")) {
+    if (relTok.type !== "IDENT") {
       throw new ParseError(
-        `Expected built-in relation ('before' or 'dominates') but got '${relTok.value}'`,
+        `Expected relation name (identifier) but got '${relTok.value}'`,
         relTok.line, relTok.col,
       );
     }
     this.consume();
-    const relation = relTok.value as BuiltinRelation;
+    const relation: BuiltinRelation = relTok.value;
 
     const targetVarTok = this.expectVar();
     const targetVar = targetVarTok.value;

@@ -231,10 +231,10 @@ describe("same_value relation — semantic (SAST DB)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Suite 3: Guarded division equivalence test (blocked on DSL parser)
+// Suite 3: Guarded division equivalence test (blocked on grammar, not parser)
 // ---------------------------------------------------------------------------
 
-describe("same_value relation — guarded division equivalence (DSL parser blocked)", () => {
+describe("same_value relation — guarded division equivalence (grammar limitation)", () => {
   let tmpDir: string;
   let db: ReturnType<typeof openDb>;
 
@@ -243,11 +243,13 @@ describe("same_value relation — guarded division equivalence (DSL parser block
     if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  // This test is skipped because the DSL parser does not yet accept relation
-  // calls in predicate where bodies. Once the parser is extended to support:
-  //   match $target: node where same_value($target, $div.arithmetic.rhs_node)
-  // inside a predicate definition, this test can be un-skipped and the
-  // division-by-zero.dsl principle body updated accordingly.
+  // Skipped: the parser now accepts any relation name in the requireClause position,
+  // but the grammar still only allows whole-node variable arguments there. The form
+  // needed for this predicate is:
+  //   match $target: node where same_value($target, $var)
+  // which puts a relation call inside a match where-clause atom — not the requireClause.
+  // Predicate where-clause atoms are currently only capCol == rhs expressions.
+  // This requires a grammar extension to support relation atoms in where predicates.
   it.skip("guarded division: division-by-zero DSL principle should NOT fire when guard present", () => {
     ({ db, tmpDir } = openTestDb());
     writeFixture(tmpDir, "function f(a: number, b: number) { if (b !== 0) return a / b; return 0; }");

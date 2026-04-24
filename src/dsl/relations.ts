@@ -5,27 +5,24 @@
  * Importing this module (or calling registerBuiltinRelations()) is
  * sufficient to populate the registry.
  *
- * MVP implements: before, dominates.
- * A8b adds: same_value (semantic variable identity via data_flow).
+ * Current relations: before, dominates, same_value.
  * Reserved (not implemented): post_dominates, data_source, data_flow_reaches,
  * encloses, always_exits, branch_reaches, mutates, literal_value, call_arity,
  * method_name, compound_assignment.
  *
- * NOTE: same_value is registered in the relation registry but the DSL parser
- * does not yet accept relation calls in predicate where clauses (the parser
- * grammar only allows builtinRel in the requireClause position: "before" |
- * "dominates"). Principle migrations that need same_value are blocked until
- * the parser is extended. See docs/plans/2026-04-23-fix-loop/capability-gaps.md.
+ * The DSL parser now accepts any IDENT as a relation name in the requireClause
+ * position ("require no $g: pred($arg) RELATION_NAME $var"). Validation is
+ * deferred to compile time via getRelation(). Principle migrations that need
+ * same_value are unblocked at the parser layer.
+ *
+ * Remaining grammar limitation: relations can only appear in the requireClause
+ * position — both arguments must be whole-node variables. Relations on column
+ * dereferences (e.g. same_value(narrows.target_node, $den)) or inside predicate
+ * where-clause atoms are not yet supported. That is a grammar extension for a
+ * future iteration.
  */
 
 import { registerRelation } from "./relationRegistry.js";
-import type { BuiltinRelation } from "./ast.js";
-
-export const BUILTIN_RELATIONS = new Set<BuiltinRelation>(["before", "dominates"]);
-
-export function isBuiltinRelation(name: string): name is BuiltinRelation {
-  return BUILTIN_RELATIONS.has(name as BuiltinRelation);
-}
 
 /**
  * Register all built-in relations. Called automatically on module import.

@@ -157,6 +157,27 @@ principle simple {
     }
   });
 
+  it("parses arbitrary relation name in require clause (same_value)", () => {
+    const src = `
+principle test-same-value {
+  match $div: node where arithmetic.op == "/"
+  require no $guard: zero_guard($div.arithmetic.rhs_node) same_value $div
+  report violation { at $div captures { div: $div } message "test" }
+}
+    `.trim();
+    const program = parseDSL(src);
+    expect(program.nodes).toHaveLength(1);
+    const p = program.nodes[0];
+    expect(p.kind).toBe("principle");
+    if (p.kind !== "principle") throw new Error("expected principle");
+    const req = p.requireClause;
+    expect(req).not.toBeNull();
+    if (!req) throw new Error("expected requireClause");
+    expect(req.relation).toBe("same_value");
+    expect(req.predName).toBe("zero_guard");
+    expect(req.targetVar).toBe("div");
+  });
+
   it("parses varDeref RHS in match clause", () => {
     const src = `
 principle cross-ref {

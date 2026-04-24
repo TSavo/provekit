@@ -165,6 +165,33 @@ principle test {
     }
   });
 
+  it("compile-time error: unknown relation name lists registered relations", () => {
+    const src = `
+predicate zg($var: node) {
+  match $g: node where narrows.target_node == $var
+}
+
+principle test {
+  match $div: node where arithmetic.op == "/"
+  require no $guard: zg($div.arithmetic.rhs_node) reaches $div
+  report violation { at $div captures { div: $div } message "test" }
+}
+    `.trim();
+    const program = parseDSL(src);
+    expect(() => compileProgram(program.nodes)).toThrow(CompileError);
+    try {
+      compileProgram(program.nodes);
+    } catch (e) {
+      expect(e).toBeInstanceOf(CompileError);
+      const msg = (e as CompileError).message;
+      expect(msg).toContain("reaches");
+      // Registered names should be listed in the error.
+      expect(msg).toContain("before");
+      expect(msg).toContain("dominates");
+      expect(msg).toContain("same_value");
+    }
+  });
+
   it("compileProgram: returns empty map for source with only predicates", () => {
     const src = `
 predicate only_pred($var: node) {
