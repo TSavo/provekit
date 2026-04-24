@@ -5,7 +5,7 @@
  * the same pattern as locate.test.ts. Mocks stdin/stdout via Readable/Writable.
  */
 
-import { describe, it, expect, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
   mkdtempSync,
   mkdirSync,
@@ -29,8 +29,10 @@ import {
 import { registerAll as registerAllAdapters } from "./fix/intakeAdapters/index.js";
 import { registerAll as registerAllLayers } from "./fix/remediationLayers/index.js";
 import { StubLLMProvider } from "./fix/types.js";
+import type { FixLoopResult } from "./fix/types.js";
 import { runFixLoopCli } from "./cli.fix.js";
 import type { RunFixArgs } from "./cli.fix.js";
+import type { RunFixLoopArgs } from "./fix/orchestrator.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,6 +115,59 @@ function makeStubLLM(overrides?: {
   );
 }
 
+/**
+ * Build a stub FixLoopResult for tests that don't care about orchestrator internals.
+ * Returns a successful result with a minimal FixBundle.
+ */
+function makeStubFixLoopResult(overrides?: Partial<FixLoopResult>): FixLoopResult {
+  const bundle: FixLoopResult["bundle"] = overrides?.bundle !== undefined
+    ? overrides.bundle
+    : {
+        bundleId: 1,
+        bundleType: "fix",
+        bugSignal: {} as never,
+        plan: {} as never,
+        artifacts: {
+          primaryFix: null,
+          complementary: [],
+          test: null,
+          principle: null,
+          capabilitySpec: null,
+        },
+        coherence: {
+          sastStructural: true,
+          z3SemanticConsistency: true,
+          fullSuiteGreen: true,
+          noNewGapsIntroduced: true,
+          migrationSafe: null,
+          crossCodebaseRegression: null,
+          extractorCoverage: null,
+          substrateConsistency: null,
+          principleNeedsCapability: null,
+        },
+        confidence: 0.9,
+        auditTrail: [],
+      };
+
+  return {
+    bundle,
+    applied: overrides?.applied ?? true,
+    auditTrail: overrides?.auditTrail ?? [],
+    reason: overrides?.reason,
+    applyResult: overrides?.applyResult,
+  };
+}
+
+/**
+ * A no-op runFixLoopFn stub. Returns a successful result without running any stages.
+ * Used as the default in makeArgs() so existing tests aren't affected by the new wiring.
+ */
+function makeNoOpFixLoopFn() {
+  return vi.fn(async (_args: RunFixLoopArgs): Promise<FixLoopResult> => {
+    return makeStubFixLoopResult();
+  });
+}
+
 /** Args builder with sensible defaults */
 function makeArgs(
   overrides: Partial<RunFixArgs> & { ref: string; db: ReturnType<typeof openDb> },
@@ -125,9 +180,13 @@ function makeArgs(
     llm: overrides.llm ?? makeStubLLM(),
     confirm: overrides.confirm ?? false, // default: --no-confirm
     dryRun: overrides.dryRun ?? false,
+    apply: overrides.apply ?? false,
+    maxSites: overrides.maxSites ?? 10,
     stdout: overrides.stdout ?? out.stream,
     stderr: overrides.stderr ?? err.stream,
     stdin: overrides.stdin ?? makeStdin(""),
+    // Default: no-op stub so tests don't invoke real orchestrator stages
+    runFixLoopFn: overrides.runFixLoopFn ?? makeNoOpFixLoopFn(),
   };
 }
 
@@ -210,6 +269,7 @@ describe("runFixLoopCli()", () => {
       stdout: out.stream,
       stderr: err.stream,
       stdin: makeStdin(""),
+      runFixLoopFn: makeNoOpFixLoopFn(),
     });
 
     expect(exitCode).toBe(0);
@@ -531,9 +591,9 @@ describe("runFixLoopCli()", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 11: Confirmation "y" response → exit 0
+  // Test 11: Confirmation "y" response → runs orchestrator, exits 0
   // -------------------------------------------------------------------------
-  it("confirmation 'y': user confirms, exits 0, output includes B5 note", async () => {
+  it("confirmation 'y': user confirms, runFixLoopFn called, exits 0", async () => {
     ({ db, tmpDir } = openTestDb());
 
     const source = "function signup(token: string) { return token; }\n";
@@ -556,6 +616,7 @@ describe("runFixLoopCli()", () => {
 
     const out = makeCapture();
     const stdin = Readable.from(["y\n"]);
+    const runFixLoopFn = makeNoOpFixLoopFn();
 
     const exitCode = await runFixLoopCli({
       ref: "signup fails",
@@ -566,9 +627,213 @@ describe("runFixLoopCli()", () => {
       stdout: out.stream,
       stderr: makeCapture().stream,
       stdin,
+      runFixLoopFn,
     });
 
     expect(exitCode).toBe(0);
-    expect(out.text).toContain("orchestrator wiring lands in B5");
+    expect(runFixLoopFn).toHaveBeenCalledOnce();
+    expect(out.text).toContain("Running fix loop");
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 12: confirm y, orchestrator succeeds — bundle summary in stdout
+  // -------------------------------------------------------------------------
+  it("confirm y, orchestrator succeeds: stdout includes bundle summary, exits 0", async () => {
+    ({ db, tmpDir } = openTestDb());
+
+    const source = "function signup(token: string) { return token; }\n";
+    const fixturePath = writeFixture(tmpDir, "src/auth/signup.ts", source);
+    buildSASTForFile(db, fixturePath);
+
+    const llm = new StubLLMProvider(new Map([
+      ["Bug report", JSON.stringify({
+        summary: "signup fails",
+        failureDescription: "crashes",
+        codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
+      })],
+      ["classifying a bug report", JSON.stringify({
+        primaryLayer: "code_invariant",
+        secondaryLayers: [],
+        artifacts: [],
+        rationale: "logic bug",
+      })],
+    ]));
+
+    const out = makeCapture();
+    const stdin = Readable.from(["y\n"]);
+    const runFixLoopFn = vi.fn(async (): Promise<FixLoopResult> =>
+      makeStubFixLoopResult({ confidence: 0.87 } as Partial<FixLoopResult>),
+    );
+
+    const exitCode = await runFixLoopCli({
+      ref: "signup fails",
+      db,
+      llm,
+      confirm: true,
+      dryRun: false,
+      stdout: out.stream,
+      stderr: makeCapture().stream,
+      stdin,
+      runFixLoopFn,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(out.text).toContain("Bundle type:");
+    expect(out.text).toContain("Confidence:");
+    expect(out.text).toContain("Coherence:");
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 13: confirm y, orchestrator fails (null bundle) → exit 5
+  // -------------------------------------------------------------------------
+  it("confirm y, orchestrator fails: null bundle → exit 5", async () => {
+    ({ db, tmpDir } = openTestDb());
+
+    const source = "function signup(token: string) { return token; }\n";
+    const fixturePath = writeFixture(tmpDir, "src/auth/signup.ts", source);
+    buildSASTForFile(db, fixturePath);
+
+    const llm = new StubLLMProvider(new Map([
+      ["Bug report", JSON.stringify({
+        summary: "signup fails",
+        failureDescription: "crashes",
+        codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
+      })],
+      ["classifying a bug report", JSON.stringify({
+        primaryLayer: "code_invariant",
+        secondaryLayers: [],
+        artifacts: [],
+        rationale: "logic bug",
+      })],
+    ]));
+
+    const err = makeCapture();
+    const stdin = Readable.from(["y\n"]);
+    const runFixLoopFn = vi.fn(async (): Promise<FixLoopResult> => ({
+      bundle: null,
+      applied: false,
+      auditTrail: [
+        { stage: "C3", kind: "error", detail: "generateFixCandidate blew up", timestamp: Date.now() },
+      ],
+      reason: "aborted at C3",
+    }));
+
+    const exitCode = await runFixLoopCli({
+      ref: "signup fails",
+      db,
+      llm,
+      confirm: true,
+      dryRun: false,
+      stdout: makeCapture().stream,
+      stderr: err.stream,
+      stdin,
+      runFixLoopFn,
+    });
+
+    expect(exitCode).toBe(5);
+    expect(err.text).toContain("Fix loop failed");
+    expect(err.text).toContain("C3");
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 14: --apply flag routes autoApply: true to runFixLoopFn
+  // -------------------------------------------------------------------------
+  it("--apply flag: runFixLoopFn receives options.autoApply: true", async () => {
+    ({ db, tmpDir } = openTestDb());
+
+    const source = "function signup(token: string) { return token; }\n";
+    const fixturePath = writeFixture(tmpDir, "src/auth/signup.ts", source);
+    buildSASTForFile(db, fixturePath);
+
+    const llm = new StubLLMProvider(new Map([
+      ["Bug report", JSON.stringify({
+        summary: "signup fails",
+        failureDescription: "crashes",
+        codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
+      })],
+      ["classifying a bug report", JSON.stringify({
+        primaryLayer: "code_invariant",
+        secondaryLayers: [],
+        artifacts: [],
+        rationale: "logic bug",
+      })],
+    ]));
+
+    const runFixLoopFn = makeNoOpFixLoopFn();
+
+    const exitCode = await runFixLoopCli(
+      makeArgs({
+        ref: "signup fails",
+        db,
+        llm,
+        confirm: false,
+        apply: true,
+        runFixLoopFn,
+      }),
+    );
+
+    expect(exitCode).toBe(0);
+    expect(runFixLoopFn).toHaveBeenCalledOnce();
+    const callArgs = runFixLoopFn.mock.calls[0][0] as RunFixLoopArgs;
+    expect(callArgs.options.autoApply).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 15: prDraft mode writes patch + body files to cwd
+  // -------------------------------------------------------------------------
+  it("prDraft mode: writes neurallog-fix.patch and neurallog-fix.md to cwd", async () => {
+    ({ db, tmpDir } = openTestDb());
+
+    const source = "function signup(token: string) { return token; }\n";
+    const fixturePath = writeFixture(tmpDir, "src/auth/signup.ts", source);
+    buildSASTForFile(db, fixturePath);
+
+    const llm = new StubLLMProvider(new Map([
+      ["Bug report", JSON.stringify({
+        summary: "signup fails",
+        failureDescription: "crashes",
+        codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
+      })],
+      ["classifying a bug report", JSON.stringify({
+        primaryLayer: "code_invariant",
+        secondaryLayers: [],
+        artifacts: [],
+        rationale: "logic bug",
+      })],
+    ]));
+
+    const runFixLoopFn = vi.fn(async (): Promise<FixLoopResult> =>
+      makeStubFixLoopResult({
+        applyResult: {
+          applied: false,
+          prDraft: {
+            patch: "--- a/signup.ts\n+++ b/signup.ts\n",
+            prBody: "## Fix\nApplied invariant check.",
+          },
+        },
+      }),
+    );
+
+    // Use tmpDir as cwd for file writes
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      const exitCode = await runFixLoopCli(
+        makeArgs({
+          ref: "signup fails",
+          db,
+          llm,
+          confirm: false,
+          apply: false,
+          runFixLoopFn,
+        }),
+      );
+
+      expect(exitCode).toBe(0);
+      expect(existsSync(join(tmpDir, "neurallog-fix.patch"))).toBe(true);
+      expect(existsSync(join(tmpDir, "neurallog-fix.md"))).toBe(true);
+    } finally {
+      process.chdir(origCwd);
+    }
   });
 });

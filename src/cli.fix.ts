@@ -28,7 +28,10 @@ import { nodes, nodeBinding } from "./sast/schema/index.js";
 import { createProvider } from "./llm/index.js";
 import type { LLMProvider as RealLLMProvider } from "./llm/index.js";
 import { resolve, join } from "path";
+import { writeFileSync } from "fs";
 import type { LLMProvider, RemediationPlan, BugLocus, BugSignal } from "./fix/types.js";
+import { runFixLoop } from "./fix/orchestrator.js";
+import type { RunFixLoopArgs } from "./fix/orchestrator.js";
 
 export { ClassifyError };
 
@@ -46,10 +49,19 @@ export interface RunFixArgs {
   confirm: boolean;
   /** true when --dry-run */
   dryRun: boolean;
+  /** true when --apply flag is passed; enables autoApply (cherry-pick) mode */
+  apply?: boolean;
+  /** override maxComplementarySites (default 10) */
+  maxSites?: number;
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
   /** for reading from - or for confirmation prompt */
   stdin: NodeJS.ReadableStream;
+  /**
+   * Optional override for testing. Defaults to importing runFixLoop from orchestrator.
+   * Inject a stub here to avoid running all stages in CLI unit tests.
+   */
+  runFixLoopFn?: typeof runFixLoop;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,9 +264,13 @@ function formatClassifySection(plan: RemediationPlan, out: NodeJS.WritableStream
  *   2 — locate failure (null)
  *   3 — classify failure
  *   4 — user declined confirmation
+ *   5 — orchestrator returned null bundle (fix loop failed)
  */
 export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
   const { ref, db, llm, confirm, dryRun, stdout, stderr } = args;
+  const autoApply = args.apply ?? false;
+  const maxSites = args.maxSites ?? 10;
+  const fixLoopFn = args.runFixLoopFn ?? runFixLoop;
 
   const w = (s: string) => stdout.write(s + "\n");
   const e = (s: string) => stderr.write(s + "\n");
@@ -329,23 +345,77 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
   formatClassifySection(plan, stdout);
   w("");
   w("━━━ Plan ready ━━━");
-  w("Next: invoke orchestrator to generate fix bundle (not yet wired — see B5).");
   w("");
 
-  if (!confirm) {
-    // --no-confirm: skip prompt
-    return 0;
+  // 6. Confirmation prompt (or auto-run)
+  if (confirm) {
+    const answer = await askYN(args.stdin, stdout);
+    if (!answer) {
+      w("Aborted.");
+      return 4;
+    }
   }
 
-  // 6. Confirmation prompt
-  const answer = await askYN(args.stdin, stdout);
-  if (answer) {
-    w("plan confirmed; orchestrator wiring lands in B5.");
-    return 0;
-  } else {
-    w("Aborted.");
-    return 4;
+  // 7. Run orchestrator
+  w("Running fix loop...");
+
+  const fixLoopArgs: RunFixLoopArgs = {
+    signal,
+    locus,
+    plan,
+    db,
+    llm,
+    options: {
+      autoApply,
+      maxComplementarySites: maxSites,
+      confidenceThreshold: 0.5,
+    },
+  };
+
+  const result = await fixLoopFn(fixLoopArgs);
+
+  if (result.bundle === null) {
+    e(`Fix loop failed: ${result.reason ?? "unknown reason"}`);
+    // One-line audit summary: last error or skipped stage
+    const lastFault = [...result.auditTrail]
+      .reverse()
+      .find((entry) => entry.kind === "error" || entry.kind === "skipped");
+    if (lastFault) {
+      e(`  ${lastFault.stage}: ${lastFault.detail}`);
+    }
+    return 5;
   }
+
+  // 8. Print bundle summary
+  const bundle = result.bundle;
+  w(`Bundle type: ${bundle.bundleType}`);
+  w(`Artifacts:`);
+  w(`  primaryFix: ${bundle.artifacts.primaryFix !== null ? "yes" : "none"}`);
+  w(`  complementary: ${bundle.artifacts.complementary.length}`);
+  w(`  test: ${bundle.artifacts.test !== null ? "yes" : "none"}`);
+  w(`  principle: ${bundle.artifacts.principle !== null ? "yes" : "none"}`);
+  w(`Confidence: ${bundle.confidence.toFixed(2)}`);
+  w(`Coherence:`);
+  for (const [key, val] of Object.entries(bundle.coherence)) {
+    if (val !== null) {
+      w(`  ${key}: ${val}`);
+    }
+  }
+
+  if (autoApply && result.applyResult?.commitSha) {
+    w(`Committed: ${result.applyResult.commitSha}`);
+  }
+
+  if (!autoApply && result.applyResult?.prDraft) {
+    const patchPath = join(process.cwd(), "neurallog-fix.patch");
+    const mdPath = join(process.cwd(), "neurallog-fix.md");
+    writeFileSync(patchPath, result.applyResult.prDraft.patch, "utf-8");
+    writeFileSync(mdPath, result.applyResult.prDraft.prBody, "utf-8");
+    w(`Patch written to: ${patchPath}`);
+    w(`PR body written to: ${mdPath}`);
+  }
+
+  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,12 +464,19 @@ async function askYN(
 export async function runFix(argv: string[]): Promise<void> {
   const noConfirm = argv.includes("--no-confirm");
   const dryRun = argv.includes("--dry-run");
+  const apply = argv.includes("--apply");
+
+  // --max-sites N
+  const maxSitesIdx = argv.indexOf("--max-sites");
+  const maxSites = maxSitesIdx !== -1 && maxSitesIdx + 1 < argv.length
+    ? parseInt(argv[maxSitesIdx + 1], 10)
+    : 10;
 
   const positionals = argv.filter((a) => !a.startsWith("-"));
   const ref = positionals[0];
 
   if (!ref) {
-    process.stderr.write("Usage: neurallog fix <ref> [--no-confirm] [--dry-run]\n");
+    process.stderr.write("Usage: neurallog fix <ref> [--no-confirm] [--dry-run] [--apply] [--max-sites N]\n");
     process.exit(1);
   }
 
@@ -453,6 +530,8 @@ export async function runFix(argv: string[]): Promise<void> {
     llm,
     confirm: !noConfirm,
     dryRun,
+    apply,
+    maxSites,
     stdout: process.stdout,
     stderr: process.stderr,
     stdin: process.stdin,

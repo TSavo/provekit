@@ -132,6 +132,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
       applied: applyResult.applied,
       auditTrail: audit,
       reason: applyResult.applied ? undefined : applyResult.failureReason,
+      applyResult,
     };
   } catch (err) {
     if (err instanceof NotImplementedError) {

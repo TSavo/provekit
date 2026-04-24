@@ -623,6 +623,8 @@ function printHelp(): void {
   console.log("                          Options:");
   console.log("                            --no-confirm         Skip the \"Proceed?\" prompt");
   console.log("                            --dry-run            Print the plan as JSON and exit");
+  console.log("                            --apply              Cherry-pick fix onto target branch (autoApply mode)");
+  console.log("                            --max-sites N        Override max complementary sites (default 10)");
   console.log();
   console.log("Options:");
   console.log("  --model <name>       LLM model (default: sonnet)");

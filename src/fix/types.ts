@@ -175,6 +175,8 @@ export interface FixLoopResult {
   applied: boolean;
   auditTrail: AuditEntry[];
   reason?: string;
+  /** Present when D2 ran. Exposes commitSha, prDraft, etc. */
+  applyResult?: ApplyResult;
 }
 
 // ---------------------------------------------------------------------------
