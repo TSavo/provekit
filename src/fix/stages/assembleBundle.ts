@@ -1,4 +1,9 @@
-// D1 stub — landing zone for bundle assembly.
+/**
+ * D1b: assembleBundle stage — delegates to bundleAssembly.ts.
+ *
+ * Previously a stub that threw NotImplementedError. Now routes to the real
+ * bundle coherence oracle runner.
+ */
 import type {
   BugSignal,
   RemediationPlan,
@@ -10,8 +15,10 @@ import type {
   OverlayHandle,
   FixBundle,
 } from "../types.js";
-import { NotImplementedError } from "../types.js";
 import type { Db } from "../../db/index.js";
+import { assembleBundle as _assembleBundle } from "../bundleAssembly.js";
+
+export { BundleCoherenceFailed } from "../bundleAssembly.js";
 
 export async function assembleBundle(args: {
   signal: BugSignal;
@@ -19,14 +26,10 @@ export async function assembleBundle(args: {
   locus: BugLocus;
   fix: FixCandidate;
   complementary: ComplementaryChange[];
-  test: TestArtifact;
+  test: TestArtifact | null;
   principle: PrincipleCandidate | null;
   overlay: OverlayHandle;
   db: Db;
 }): Promise<FixBundle> {
-  void args;
-  throw new NotImplementedError(
-    "D1",
-    "assembleBundle (D1) not yet implemented — B5 orchestrator will route around it when D1 lands",
-  );
+  return _assembleBundle(args);
 }
