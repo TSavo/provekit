@@ -68,11 +68,43 @@ export interface BugSignal {
 
 /** A precise location in source code where a bug is likely manifesting. B2 fills this in. */
 export interface BugLocus {
+  // Human-readable position (from B1's stub)
   file: string;
   line: number;
   function?: string;
   /** Confidence 0..1 that this locus is the root cause. */
   confidence: number;
+
+  // SAST-structural fields (new in B2)
+  /** Node ID most likely to be the bug site — a concrete SAST node. */
+  primaryNode: string;
+  /** Node ID of the enclosing function-like node (FunctionDeclaration / ArrowFunction / etc.).
+   * If the bug site is at module top-level, this equals the file's root node ID. */
+  containingFunction: string;
+  /**
+   * Node IDs of callers and callees of the containing function.
+   * V1: intra-file only. Cross-file resolution requires joining across multiple SAST builds
+   * which we defer until C4 needs it. Cap: 50 entries max.
+   */
+  relatedFunctions: string[];
+  /**
+   * Node IDs whose values flow INTO primaryNode (one-hop, via data_flow table).
+   *
+   * KNOWN LIMITATION: data_flow_transitive is bipartite (decls as from_node, use-site
+   * identifiers as to_node). Transitive closure equals direct edges — no chains form.
+   * When C4 (complementary-site discovery) needs chained reachability, revisit the
+   * edge-shape redesign described in src/sast/dataFlow.ts (commit 9f4c220).
+   */
+  dataFlowAncestors: string[];
+  /**
+   * Node IDs consuming primaryNode's output (one-hop, via data_flow table).
+   * Same bipartite limitation as dataFlowAncestors above.
+   */
+  dataFlowDescendants: string[];
+  /** Node IDs of everything primaryNode dominates (via dominance table). */
+  dominanceRegion: string[];
+  /** Node IDs of everything primaryNode post-dominates (via post_dominance table). */
+  postDominanceRegion: string[];
 }
 
 /**
