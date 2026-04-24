@@ -58,6 +58,7 @@ function walkIterative(
     const start = node.getFullStart();
     const end = node.getEnd();
     const kind = node.getKind();
+    const kindName = node.getKindName();
     const text = node.getFullText();
     const hash = subtreeHash(text);
     const id = nodeId(fileId, kind, start, end, hash);
@@ -73,6 +74,7 @@ function walkIterative(
       sourceLine: pos.line,
       sourceCol: pos.column,
       subtreeHash: hash,
+      kind: kindName,
     }).run();
 
     count += 1;

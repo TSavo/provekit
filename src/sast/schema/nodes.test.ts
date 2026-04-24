@@ -64,6 +64,7 @@ describe("SAST core tables", () => {
         sourceLine: 1,
         sourceCol: 0,
         subtreeHash: hash,
+        kind: "SourceFile",
       })
       .run();
 
@@ -89,9 +90,9 @@ describe("SAST core tables", () => {
 
     db.insert(nodes)
       .values([
-        { id: parentId, fileId: fileRow.id, sourceStart: 0, sourceEnd: 100, sourceLine: 1, sourceCol: 0, subtreeHash: "h1" },
-        { id: childId1, fileId: fileRow.id, sourceStart: 10, sourceEnd: 40, sourceLine: 2, sourceCol: 2, subtreeHash: "h2" },
-        { id: childId2, fileId: fileRow.id, sourceStart: 50, sourceEnd: 90, sourceLine: 5, sourceCol: 2, subtreeHash: "h3" },
+        { id: parentId, fileId: fileRow.id, sourceStart: 0, sourceEnd: 100, sourceLine: 1, sourceCol: 0, subtreeHash: "h1", kind: "SourceFile" },
+        { id: childId1, fileId: fileRow.id, sourceStart: 10, sourceEnd: 40, sourceLine: 2, sourceCol: 2, subtreeHash: "h2", kind: "FunctionDeclaration" },
+        { id: childId2, fileId: fileRow.id, sourceStart: 50, sourceEnd: 90, sourceLine: 5, sourceCol: 2, subtreeHash: "h3", kind: "VariableStatement" },
       ])
       .run();
 
@@ -125,7 +126,7 @@ describe("SAST core tables", () => {
       .get();
 
     db.insert(nodes)
-      .values({ id: "cascade-node-1", fileId: fileRow.id, sourceStart: 0, sourceEnd: 5, sourceLine: 1, sourceCol: 0, subtreeHash: "hx" })
+      .values({ id: "cascade-node-1", fileId: fileRow.id, sourceStart: 0, sourceEnd: 5, sourceLine: 1, sourceCol: 0, subtreeHash: "hx", kind: "SourceFile" })
       .run();
 
     db.delete(files).where(eq(files.id, fileRow.id)).run();
@@ -147,8 +148,8 @@ describe("SAST core tables", () => {
 
     db.insert(nodes)
       .values([
-        { id: parentId, fileId: fileRow.id, sourceStart: 0, sourceEnd: 50, sourceLine: 1, sourceCol: 0, subtreeHash: "hp" },
-        { id: childId, fileId: fileRow.id, sourceStart: 5, sourceEnd: 20, sourceLine: 2, sourceCol: 2, subtreeHash: "hc" },
+        { id: parentId, fileId: fileRow.id, sourceStart: 0, sourceEnd: 50, sourceLine: 1, sourceCol: 0, subtreeHash: "hp", kind: "SourceFile" },
+        { id: childId, fileId: fileRow.id, sourceStart: 5, sourceEnd: 20, sourceLine: 2, sourceCol: 2, subtreeHash: "hc", kind: "FunctionDeclaration" },
       ])
       .run();
 

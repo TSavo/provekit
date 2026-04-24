@@ -30,6 +30,7 @@ export const nodes = sqliteTable(
     sourceLine: integer("source_line").notNull(),
     sourceCol: integer("source_col").notNull(),
     subtreeHash: text("subtree_hash").notNull(),
+    kind: text("kind").notNull(),
   },
   (t) => ({
     byFileId: index("nodes_by_file_id").on(t.fileId),
