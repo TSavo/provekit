@@ -107,14 +107,14 @@ function walkIterative(
   return { rootNodeId, count, nodeIdByNode };
 }
 
-export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
+function buildInternal(db: Db, filePath: string, force: boolean): SASTBuildResult {
   // Read file bytes and compute content hash
   const bytes = readFileSync(filePath);
   const contentHash = sha256hex(bytes.toString("utf8"));
 
   // Check for existing row with matching content_hash
   const existing = db.select().from(files).where(eq(files.path, filePath)).get();
-  if (existing && existing.contentHash === contentHash) {
+  if (!force && existing && existing.contentHash === contentHash) {
     // Cache hit: rootNodeId is stored directly on the files row (O(1), file-scoped)
     const nodeCount = db.select().from(nodes).where(eq(nodes.fileId, existing.id)).all().length;
     return {
@@ -136,7 +136,7 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
   let nodeCount: number;
 
   db.transaction((tx) => {
-    // If there's an existing row with a different hash, delete it (cascades nodes + edges)
+    // If there's an existing row (different hash, or force=true), delete it (cascades nodes + edges)
     if (existing) {
       tx.delete(files).where(eq(files.id, existing.id)).run();
     }
@@ -172,4 +172,22 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
     nodeCount: nodeCount!,
     rebuilt: true,
   };
+}
+
+export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
+  return buildInternal(db, filePath, false);
+}
+
+/**
+ * Force a full re-parse and re-index of a file regardless of whether its
+ * content_hash has changed. Used by the fix loop after overlay/mutation
+ * edits that might leave the file bytes equal but the in-memory AST stale,
+ * and as a clean entry point for "I know this needs to be re-indexed."
+ *
+ * Behavior: deletes the existing files row (cascading nodes + edges +
+ * capability rows + data_flow + dominance via FK) and inserts fresh.
+ * Returns rebuilt: true unconditionally.
+ */
+export function reindexFile(db: Db, filePath: string): SASTBuildResult {
+  return buildInternal(db, filePath, true);
 }
