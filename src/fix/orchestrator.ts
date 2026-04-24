@@ -95,7 +95,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
 
     // Stage C6: generate principle candidate (may be plain or with capability spec)
     const principle = await runStage("C6", "generatePrincipleCandidate", audit, () =>
-      generatePrincipleCandidate({ signal: args.signal, invariant, fixCandidate: fix, db: args.db, llm: args.llm }),
+      generatePrincipleCandidate({ signal: args.signal, invariant, fixCandidate: fix, db: args.db, llm: args.llm, overlay }),
     );
 
     // Stage D1: assemble bundle

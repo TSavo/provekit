@@ -32,6 +32,7 @@ import type {
   FixCandidate,
   PrincipleCandidate,
   LLMProvider,
+  OverlayHandle,
 } from "./types.js";
 import type { CapabilitySpec } from "./types.js";
 import { proposeCapabilitySpec, runSubstrateOracles } from "./capabilityGen.js";
@@ -698,6 +699,7 @@ export async function proposeWithCapability(args: {
   db: Db;
   llm: LLMProvider;
   gap: string;
+  overlay?: OverlayHandle;
 }): Promise<PrincipleCandidate | null> {
   const { signal, invariant, fixCandidate, db, llm, gap } = args;
 
@@ -708,6 +710,7 @@ export async function proposeWithCapability(args: {
     fixCandidate,
     gap,
     llm,
+    overlay: args.overlay,
   });
 
   if (!proposal) {

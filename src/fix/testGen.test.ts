@@ -18,6 +18,7 @@ import {
   extractWitnessInputs,
   chooseTestFilePath,
   generateTestCode,
+  generateTestCodeViaAgent,
   revertFixInOverlay,
   restoreFixInOverlay,
 } from "./testGen.js";
@@ -554,6 +555,92 @@ describe("C5: generateRegressionTest (oracle #9, stubbed test execution)", () =>
       // After success, overlay must reflect the FIXED source (C3's patch restored)
       const content = readFileSync(join(repoDir, "src", "divide.ts"), "utf8");
       expect(content).toBe(FIXED_SOURCE);
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests for C5 agent path: generateTestCodeViaAgent
+// ---------------------------------------------------------------------------
+
+describe("C5: generateTestCodeViaAgent (agent path)", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("agent path: StubLLMProvider with agentResponses writes test file → returned as testCode", async () => {
+    const repoDir = mkdtempSync(join(tmpdir(), "provekit-c5-agent-"));
+    try {
+      execFileSync("git", [...GIT_ID, "init", repoDir]);
+      mkdirSync(join(repoDir, "src"), { recursive: true });
+      writeFileSync(join(repoDir, "src", "divide.ts"), FIXED_SOURCE, "utf8");
+      execFileSync("git", [...GIT_ID, "add", "."], { cwd: repoDir });
+      execFileSync("git", [...GIT_ID, "commit", "-m", "init"], { cwd: repoDir });
+
+      const overlay = makeMinimalOverlay(repoDir);
+
+      // The stub agent writes the test file at src/divide.regression.test.ts.
+      const testFilePath = "src/divide.regression.test.ts";
+      const llm = new StubLLMProvider(
+        new Map(), // no complete() responses needed
+        [{ matchPrompt: "regression", fileEdits: [{ file: testFilePath, newContent: CANNED_TEST_CODE }], text: "Wrote regression test" }],
+      );
+      expect(llm.agent).toBeDefined();
+
+      const code = await generateTestCodeViaAgent({
+        signal: makeSignal(join(repoDir, "src", "divide.ts")),
+        locus: makeLocus(join(repoDir, "src", "divide.ts")),
+        invariant: makeDivInvariant(),
+        inputs: { a: 5, b: 0 },
+        testFilePath,
+        testName: "regression: divide(a, b) crashes when b is zero",
+        llm,
+        overlay,
+      });
+
+      expect(code).toBe(CANNED_TEST_CODE.trim());
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("backward compat: generateRegressionTest uses JSON path when LLM has no agent()", async () => {
+    const repoDir = mkdtempSync(join(tmpdir(), "provekit-c5-agent-compat-"));
+    try {
+      execFileSync("git", [...GIT_ID, "init", repoDir]);
+      mkdirSync(join(repoDir, "src"), { recursive: true });
+      writeFileSync(join(repoDir, "src", "divide.ts"), BUGGY_SOURCE, "utf8");
+      execFileSync("git", [...GIT_ID, "add", "."], { cwd: repoDir });
+      execFileSync("git", [...GIT_ID, "commit", "-m", "init"], { cwd: repoDir });
+      writeFileSync(join(repoDir, "src", "divide.ts"), FIXED_SOURCE, "utf8");
+
+      const overlay = makeMinimalOverlay(repoDir);
+      overlay.modifiedFiles.add("src/divide.ts");
+
+      vi.mocked(testGenMod.runTestInOverlay)
+        .mockReturnValueOnce({ exitCode: 0, stdout: "✓", stderr: "" })
+        .mockReturnValueOnce({ exitCode: 1, stdout: "✗", stderr: "" });
+
+      // No agentResponses — stub has no agent() → JSON path.
+      const stub = new StubLLMProvider(
+        new Map([["Z3 WITNESS INPUTS", CANNED_TEST_CODE]]),
+      );
+      expect(stub.agent).toBeUndefined();
+
+      const artifact = await generateRegressionTest({
+        fix: makeFixCandidate(),
+        signal: makeSignal(join(repoDir, "src", "divide.ts")),
+        locus: makeLocus(join(repoDir, "src", "divide.ts")),
+        overlay,
+        invariant: makeDivInvariant(),
+        llm: stub,
+      });
+
+      expect(artifact.passesOnFixedCode).toBe(true);
+      expect(artifact.failsOnOriginalCode).toBe(true);
+      expect(artifact.testCode).toBe(CANNED_TEST_CODE.trim());
     } finally {
       rmSync(repoDir, { recursive: true, force: true });
     }

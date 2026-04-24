@@ -24,6 +24,7 @@ import { readFileSync, writeFileSync, existsSync, realpathSync } from "fs"; // r
 import { join, relative, dirname } from "path";
 import { execFileSync } from "child_process";
 import { eq } from "drizzle-orm";
+import { runAgentInOverlay, getChangedFiles, getUntrackedFiles } from "./captureChange.js";
 import { principleMatches, principleMatchCaptures } from "../db/schema/principleMatches.js";
 import { nodeCalls } from "../sast/schema/capabilities/calls.js";
 import { nodeBinding } from "../sast/schema/capabilities/index.js";
@@ -462,6 +463,178 @@ Rules:
   return {
     patch: best.patch,
     rationale: best.rationale,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Agent path: propose changes for all sites via runAgentInOverlay
+// ---------------------------------------------------------------------------
+
+/**
+ * Agent-path equivalent of proposeChangeForSite for a single site.
+ *
+ * Strategy:
+ *   1. Snapshot all files currently modified vs HEAD (git diff + untracked) BEFORE this agent call.
+ *   2. Run the agent to edit the site file in place.
+ *   3. After the agent returns, identify which files changed NEW in this agent run
+ *      (post-agent content differs from pre-site baseline content).
+ *   4. Revert those new changes to pre-site baseline so verifySiteChange can apply
+ *      the patch from scratch.
+ *   5. Return a ProposedSiteChange with the filtered patch.
+ */
+export async function proposeChangeForSiteViaAgent(
+  site: ComplementarySite,
+  fix: FixCandidate,
+  locus: BugLocus,
+  invariant: InvariantClaim | undefined,
+  llm: LLMProvider,
+  overlay: OverlayHandle,
+): Promise<ProposedSiteChange | null> {
+  // Step 1: Snapshot all files currently changed vs HEAD before this agent call.
+  // This captures accepted patches from earlier sites so we can diff them out.
+  const isOverlayInternal = (f: string) => f.startsWith(".neurallog/") || f === ".neurallog";
+  const preTracked = getChangedFiles(overlay.worktreePath).filter((f) => !isOverlayInternal(f));
+  const preUntracked = getUntrackedFiles(overlay.worktreePath).filter((f) => !isOverlayInternal(f));
+  const preAllFiles = [...new Set([...preTracked, ...preUntracked])];
+
+  // Read the current on-disk content of each pre-existing change for comparison.
+  const baselineContents = new Map<string, string>();
+  for (const f of preAllFiles) {
+    const absPath = join(overlay.worktreePath, f);
+    try {
+      baselineContents.set(f, readFileSync(absPath, "utf-8"));
+    } catch {
+      baselineContents.set(f, "");
+    }
+  }
+
+  // Build the agent prompt.
+  let siteSourceContext = "(source not available)";
+  try {
+    if (site.fileRelPath) {
+      const sitePath = join(overlay.worktreePath, site.fileRelPath);
+      if (existsSync(sitePath)) {
+        siteSourceContext = readFileSync(sitePath, "utf-8");
+      } else if (existsSync(site.filePath)) {
+        siteSourceContext = readFileSync(site.filePath, "utf-8");
+      }
+    } else if (existsSync(site.filePath)) {
+      siteSourceContext = readFileSync(site.filePath, "utf-8");
+    }
+  } catch {
+    siteSourceContext = site.reason;
+  }
+
+  const prompt = `You are a code-repair expert. A bug was just fixed at one site in a codebase.
+Apply a complementary change at the adjacent site described below to prevent the same bug class.
+
+== Primary fix ==
+Fixed at node: ${locus.primaryNode} (containing function: ${locus.containingFunction})
+File: ${locus.file}:${locus.line}
+Patch applied:
+${JSON.stringify(fix.patch, null, 2)}
+
+== Adjacent site to fix ==
+Site kind: ${site.kind}
+Site node ID: ${site.nodeId}
+File: ${site.fileRelPath ?? site.filePath}
+Discovery reason: ${site.reason}
+Source:
+\`\`\`
+${siteSourceContext.slice(0, 2000)}
+\`\`\`
+${invariant ? `\nInvariant violated at primary: ${invariant.description}` : ""}
+
+Apply the complementary fix directly to the file using your tools.
+If no change is needed at this site, write a file named .neurallog/c4-skip.txt containing "skip".
+Otherwise, edit the file at ${site.fileRelPath ?? site.filePath} to apply the complementary fix.`;
+
+  // Step 2: Run the agent.
+  let agentResult: Awaited<ReturnType<typeof runAgentInOverlay>>;
+  try {
+    agentResult = await runAgentInOverlay({
+      overlay,
+      llm,
+      prompt,
+      allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+    });
+  } catch (err) {
+    // Agent threw (e.g. no agent method). Caller should handle.
+    throw err;
+  }
+
+  // Check for explicit skip signal.
+  const skipPath = join(overlay.worktreePath, ".neurallog", "c4-skip.txt");
+  if (existsSync(skipPath)) {
+    // Clean up skip file.
+    try { writeFileSync(skipPath, "", "utf-8"); } catch { /* ignore */ }
+    return null;
+  }
+
+  // Step 3: Identify which files changed NEW in this agent run.
+  const postTracked = getChangedFiles(overlay.worktreePath).filter((f) => !isOverlayInternal(f));
+  const postUntracked = getUntrackedFiles(overlay.worktreePath).filter((f) => !isOverlayInternal(f));
+  const postAllFiles = [...new Set([...postTracked, ...postUntracked])];
+
+  const newFileEdits: { file: string; newContent: string }[] = [];
+  for (const f of postAllFiles) {
+    const absPath = join(overlay.worktreePath, f);
+    let postContent: string;
+    try {
+      postContent = readFileSync(absPath, "utf-8");
+    } catch {
+      continue;
+    }
+
+    const baselineContent = baselineContents.get(f);
+    if (baselineContent === undefined || postContent !== baselineContent) {
+      // This file was not in baseline OR content changed since baseline.
+      newFileEdits.push({ file: f, newContent: postContent });
+    }
+  }
+
+  if (newFileEdits.length === 0) {
+    return null;
+  }
+
+  // Step 4: Revert those files to pre-site baseline so verifySiteChange can apply normally.
+  for (const edit of newFileEdits) {
+    const absPath = join(overlay.worktreePath, edit.file);
+    const baseline = baselineContents.get(edit.file);
+    if (baseline !== undefined) {
+      // File existed in baseline (from a prior accepted site) — restore to that content.
+      writeFileSync(absPath, baseline, "utf-8");
+    } else {
+      // File was not in the baseline snapshot. It could be:
+      //   (a) A committed tracked file that wasn't changed before this agent run.
+      //       → Restore from git HEAD.
+      //   (b) Truly new file added by this agent.
+      //       → Delete it.
+      // Try to restore from HEAD; if that fails (file doesn't exist at HEAD), delete.
+      try {
+        const headContent = execFileSync(
+          "git",
+          ["show", `HEAD:${edit.file}`],
+          { cwd: overlay.worktreePath, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+        );
+        writeFileSync(absPath, headContent, "utf-8");
+      } catch {
+        // File doesn't exist at HEAD — truly new — delete it.
+        try {
+          const { unlinkSync } = require("fs") as typeof import("fs");
+          if (existsSync(absPath)) unlinkSync(absPath);
+        } catch { /* best effort */ }
+      }
+    }
+  }
+
+  // Step 5: Return the filtered patch.
+  return {
+    patch: {
+      fileEdits: newFileEdits,
+      description: `complementary fix at ${site.fileRelPath ?? site.filePath} (agent)`,
+    },
+    rationale: agentResult.rationale || site.reason,
   };
 }
 

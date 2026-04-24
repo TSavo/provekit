@@ -27,6 +27,7 @@ import type { Db } from "../../db/index.js";
 import {
   discoverComplementarySites,
   proposeChangeForSite,
+  proposeChangeForSiteViaAgent,
   verifySiteChange,
   priorityOf,
 } from "../complementary.js";
@@ -55,10 +56,16 @@ export async function generateComplementary(args: {
   const accepted: ComplementaryChange[] = [];
 
   for (const site of sites) {
-    // 2a. LLM proposes a patch for this site.
+    // 2a. LLM proposes a patch for this site (agent path or JSON path).
     let proposed;
     try {
-      proposed = await proposeChangeForSite(site, fix, locus, invariant, llm);
+      if (llm.agent) {
+        // Agent path: Claude edits files directly; we capture via git diff.
+        proposed = await proposeChangeForSiteViaAgent(site, fix, locus, invariant, llm, overlay);
+      } else {
+        // JSON path: LLM returns a JSON candidates array.
+        proposed = await proposeChangeForSite(site, fix, locus, invariant, llm);
+      }
     } catch {
       // LLM error — skip this site.
       continue;

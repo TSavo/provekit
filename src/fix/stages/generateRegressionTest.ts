@@ -13,6 +13,7 @@ import { applyPatchToOverlay, reindexOverlay } from "../overlay.js";
 import {
   extractWitnessInputs,
   generateTestCode,
+  generateTestCodeViaAgent,
   chooseTestFilePath,
   runTestInOverlay,
   revertFixInOverlay,
@@ -57,18 +58,29 @@ export async function generateRegressionTest(args: {
   const testName = `regression: ${signal.summary.slice(0, 80)}`;
 
   // -------------------------------------------------------------------------
-  // Step 3: LLM generates a vitest test using those inputs
+  // Step 3: LLM generates a vitest test using those inputs (agent path or JSON path)
   // -------------------------------------------------------------------------
-  const testCode = await generateTestCode({
-    signal,
-    locus,
-    invariant,
-    inputs: witnessInputs,
-    testFilePath,
-    testName,
-    llm,
-    overlay,
-  });
+  const testCode = llm.agent
+    ? await generateTestCodeViaAgent({
+        signal,
+        locus,
+        invariant,
+        inputs: witnessInputs,
+        testFilePath,
+        testName,
+        llm,
+        overlay,
+      })
+    : await generateTestCode({
+        signal,
+        locus,
+        invariant,
+        inputs: witnessInputs,
+        testFilePath,
+        testName,
+        llm,
+        overlay,
+      });
 
   // -------------------------------------------------------------------------
   // Step 4: Write the test file into the overlay (C3's fix is already applied)

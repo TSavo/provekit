@@ -9,15 +9,19 @@
  */
 
 import { Project } from "ts-morph";
+import { readFileSync, existsSync, mkdirSync } from "fs";
+import { join } from "path";
 import type {
   BugSignal,
   InvariantClaim,
   FixCandidate,
   LLMProvider,
+  OverlayHandle,
 } from "./types.js";
 import type { CapabilitySpec } from "./types.js";
 import { listCapabilities } from "../sast/capabilityRegistry.js";
 import { executeExtractorSpec } from "./capabilityExecutor.js";
+import { runAgentInOverlay } from "./captureChange.js";
 
 // ---------------------------------------------------------------------------
 // Substrate oracle result
@@ -169,6 +173,190 @@ function parseCapabilitySpecResponse(raw: string): CapabilitySpecProposal | null
 }
 
 // ---------------------------------------------------------------------------
+// Agent path: proposeCapabilitySpecViaAgent
+// ---------------------------------------------------------------------------
+
+/**
+ * Agent path for C6: prompts the LLM agent to write capability spec files
+ * under .neurallog/capability-proposal/<name>/ in the overlay worktree.
+ *
+ * Convention (all paths relative to overlay.worktreePath):
+ *   .neurallog/capability-proposal/<name>/schema.ts
+ *   .neurallog/capability-proposal/<name>/migration.sql
+ *   .neurallog/capability-proposal/<name>/extractor.ts
+ *   .neurallog/capability-proposal/<name>/extractor.test.ts
+ *   .neurallog/capability-proposal/<name>/registry.ts
+ *   .neurallog/capability-proposal/<name>/fixtures.json
+ *   .neurallog/capability-proposal/<name>/meta.json
+ *   .neurallog/principles/<name>.dsl
+ *
+ * meta.json format:
+ *   { "capabilityName": "...", "rationale": "...", "dslSource": "...",
+ *     "name": "...", "smtTemplate": "...",
+ *     "teachingExample": { "domain": "...", "explanation": "...", "smt2": "..." } }
+ *
+ * fixtures.json format:
+ *   { "positiveFixtures": [...], "negativeFixtures": [...] }
+ */
+async function proposeCapabilitySpecViaAgent(args: {
+  signal: BugSignal;
+  invariant: InvariantClaim;
+  fixCandidate: FixCandidate;
+  gap: string;
+  llm: LLMProvider;
+  overlay: OverlayHandle;
+}): Promise<CapabilitySpecProposal | null> {
+  const { signal, invariant, fixCandidate, gap, overlay } = args;
+  const llm = args.llm;
+
+  const existingTables = listCapabilities().map((c) => c.dslName).join(", ") || "(none)";
+
+  const prompt = `You are a static-analysis substrate architect. A new capability is needed to express an invariant.
+
+Bug summary: ${signal.summary}
+Invariant: ${invariant.description}
+Fix description: ${fixCandidate.patch.description}
+Missing predicate: ${gap}
+
+Existing capability tables: ${existingTables}
+
+Design a new capability. Write these files to the worktree:
+
+1. .neurallog/capability-proposal/<capabilityName>/schema.ts — TypeScript schema with sqliteTable
+2. .neurallog/capability-proposal/<capabilityName>/migration.sql — CREATE TABLE or ALTER TABLE ADD COLUMN only
+3. .neurallog/capability-proposal/<capabilityName>/extractor.ts — exported function with tx.insert(<table>).values(...)
+4. .neurallog/capability-proposal/<capabilityName>/extractor.test.ts — vitest tests
+5. .neurallog/capability-proposal/<capabilityName>/registry.ts — registerCapability(...) call
+6. .neurallog/capability-proposal/<capabilityName>/fixtures.json — JSON: { "positiveFixtures": [{"source": "...", "expectedRowCount": N}], "negativeFixtures": [{"source": "...", "expectedRowCount": 0}] }
+7. .neurallog/capability-proposal/<capabilityName>/meta.json — JSON: { "capabilityName": "...", "rationale": "...", "dslSource": "...", "name": "...", "smtTemplate": "...", "teachingExample": { "domain": "...", "explanation": "...", "smt2": "..." } }
+8. .neurallog/principles/<name>.dsl — the DSL principle using the new capability
+
+Rules:
+- capabilityName must be a valid camelCase identifier
+- migrationSql must be CREATE TABLE or ALTER TABLE ADD COLUMN only — no DROPs
+- extractor.ts MUST contain tx.insert(<table>).values(...) pattern
+- dslSource must reference ONLY the new capabilityName (and existing ones if needed)
+- positiveFixtures: TypeScript code that SHOULD match the principle
+- negativeFixtures: TypeScript code that should NOT match
+- All files must be valid, complete, and self-consistent
+
+Write all files now using your tools.`;
+
+  try {
+    await runAgentInOverlay({
+      overlay,
+      llm,
+      prompt,
+      allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+    });
+  } catch (err) {
+    console.warn(`[C6/cap/agent] Agent call failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+
+  // Read back the files the agent wrote.
+  const proposalDir = join(overlay.worktreePath, ".neurallog", "capability-proposal");
+
+  // Find the first subdirectory (the capability name directory).
+  let capabilityName: string | null = null;
+  try {
+    const { readdirSync, statSync } = require("fs") as typeof import("fs");
+    if (existsSync(proposalDir)) {
+      const entries = readdirSync(proposalDir);
+      for (const entry of entries) {
+        const entryPath = join(proposalDir, entry);
+        if (statSync(entryPath).isDirectory()) {
+          capabilityName = entry;
+          break;
+        }
+      }
+    }
+  } catch {
+    console.warn(`[C6/cap/agent] Could not read capability-proposal directory`);
+    return null;
+  }
+
+  if (!capabilityName) {
+    console.warn(`[C6/cap/agent] Agent did not create a capability subdirectory`);
+    return null;
+  }
+
+  const capDir = join(proposalDir, capabilityName);
+  const readFile = (name: string): string | null => {
+    const p = join(capDir, name);
+    if (!existsSync(p)) return null;
+    try { return readFileSync(p, "utf-8"); } catch { return null; }
+  };
+
+  const schemaTs = readFile("schema.ts");
+  const migrationSql = readFile("migration.sql");
+  const extractorTs = readFile("extractor.ts");
+  const extractorTestsTs = readFile("extractor.test.ts");
+  const registryTs = readFile("registry.ts");
+  const fixturesJson = readFile("fixtures.json");
+  const metaJson = readFile("meta.json");
+
+  if (!schemaTs || !migrationSql || !extractorTs || !extractorTestsTs || !registryTs || !fixturesJson || !metaJson) {
+    console.warn(`[C6/cap/agent] Agent did not write all required capability files for '${capabilityName}'`);
+    return null;
+  }
+
+  // Parse meta.json
+  let meta: Record<string, unknown>;
+  try {
+    meta = JSON.parse(metaJson) as Record<string, unknown>;
+  } catch {
+    console.warn(`[C6/cap/agent] meta.json is not valid JSON`);
+    return null;
+  }
+
+  // Parse fixtures.json
+  let fixtures: { positiveFixtures: { source: string; expectedRowCount: number }[]; negativeFixtures: { source: string }[] };
+  try {
+    fixtures = JSON.parse(fixturesJson) as typeof fixtures;
+  } catch {
+    console.warn(`[C6/cap/agent] fixtures.json is not valid JSON`);
+    return null;
+  }
+
+  const resolvedCapabilityName = (typeof meta["capabilityName"] === "string" ? meta["capabilityName"] : capabilityName);
+  const rationale = typeof meta["rationale"] === "string" ? meta["rationale"] : "";
+  const dslSource = typeof meta["dslSource"] === "string" ? meta["dslSource"] : "";
+  const name = typeof meta["name"] === "string" ? meta["name"] : resolvedCapabilityName;
+  const smtTemplate = typeof meta["smtTemplate"] === "string" ? meta["smtTemplate"] : "";
+  const teachingExample = (meta["teachingExample"] as { domain: string; explanation: string; smt2: string } | undefined) ?? {
+    domain: "unknown",
+    explanation: "",
+    smt2: "(check-sat)",
+  };
+
+  if (!dslSource || !smtTemplate) {
+    console.warn(`[C6/cap/agent] meta.json missing required fields (dslSource, smtTemplate)`);
+    return null;
+  }
+
+  const capabilitySpec: CapabilitySpec = {
+    capabilityName: resolvedCapabilityName,
+    schemaTs,
+    migrationSql,
+    extractorTs,
+    extractorTestsTs,
+    registryRegistration: registryTs,
+    positiveFixtures: (fixtures.positiveFixtures ?? []).map((f) => ({
+      source: String(f.source ?? ""),
+      expectedRowCount: Number(f.expectedRowCount ?? 1),
+    })),
+    negativeFixtures: (fixtures.negativeFixtures ?? []).map((f) => ({
+      source: String(f.source ?? ""),
+      expectedRowCount: 0 as const,
+    })),
+    rationale,
+  };
+
+  return { capabilitySpec, dslSource, name, smtTemplate, teachingExample };
+}
+
+// ---------------------------------------------------------------------------
 // Main export: proposeCapabilitySpec
 // ---------------------------------------------------------------------------
 
@@ -178,9 +366,16 @@ export async function proposeCapabilitySpec(args: {
   fixCandidate: FixCandidate;
   gap: string;
   llm: LLMProvider;
+  overlay?: OverlayHandle;
 }): Promise<CapabilitySpecProposal | null> {
   const { signal, invariant, fixCandidate, gap, llm } = args;
 
+  // Agent path: if LLM supports agent() and an overlay is provided.
+  if (llm.agent && args.overlay) {
+    return proposeCapabilitySpecViaAgent({ signal, invariant, fixCandidate, gap, llm, overlay: args.overlay });
+  }
+
+  // JSON path (existing behavior).
   let raw: string;
   try {
     raw = await llm.complete({

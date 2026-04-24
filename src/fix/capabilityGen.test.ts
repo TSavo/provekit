@@ -7,11 +7,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+import { execFileSync } from "child_process";
 import {
   runOracle14,
   runOracle16,
   runOracle16Structural,
   runOracle17,
+  proposeCapabilitySpec,
 } from "./capabilityGen.js";
 import {
   listCapabilities,
@@ -20,7 +25,8 @@ import {
 } from "../sast/capabilityRegistry.js";
 import { generatePrincipleCandidate } from "./stages/generatePrincipleCandidate.js";
 import { StubLLMProvider } from "./types.js";
-import type { BugSignal, InvariantClaim, FixCandidate, CapabilitySpec } from "./types.js";
+import type { BugSignal, InvariantClaim, FixCandidate, CapabilitySpec, OverlayHandle } from "./types.js";
+import type { Db } from "../db/index.js";
 
 // ---------------------------------------------------------------------------
 // Registry snapshot/restore
@@ -382,5 +388,147 @@ describe("oracle #18 — principle-needs-capability (via generatePrincipleCandid
 
     const after = listCapabilities().map((c) => c.dslName).sort();
     expect(after).toEqual(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C6 agent path: proposeCapabilitySpec via StubLLMProvider with agentResponses
+// ---------------------------------------------------------------------------
+
+const GIT_ID = ["-c", "user.name=test", "-c", "user.email=test@test"];
+
+function makeMinimalOverlay(worktreePath: string): OverlayHandle {
+  return {
+    worktreePath,
+    sastDbPath: join(worktreePath, ".neurallog", "scratch.db"),
+    sastDb: {} as unknown as Db,
+    baseRef: "HEAD",
+    modifiedFiles: new Set<string>(),
+    closed: false,
+  };
+}
+
+describe("C6: proposeCapabilitySpec — agent path", () => {
+  it("agent path: StubLLMProvider with agentResponses writes meta.json + all files → proposal returned", async () => {
+    const repoDir = mkdtempSync(join(tmpdir(), "provekit-c6-agent-"));
+    try {
+      // Init a git repo (runAgentInOverlay needs a git repo in worktree).
+      execFileSync("git", [...GIT_ID, "init", repoDir]);
+      writeFileSync(join(repoDir, "README.md"), "hello\n", "utf8");
+      execFileSync("git", [...GIT_ID, "add", "."], { cwd: repoDir });
+      execFileSync("git", [...GIT_ID, "commit", "-m", "init"], { cwd: repoDir });
+
+      const overlay = makeMinimalOverlay(repoDir);
+
+      // The agent writes all required files.
+      const capabilityName = "divisionCap";
+      const capDir = `.neurallog/capability-proposal/${capabilityName}`;
+      const schemaTs = `import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+export const nodeDivisionCap = sqliteTable("node_division_cap", {
+  nodeId: text("node_id").notNull(),
+});`;
+      const migrationSql = "CREATE TABLE node_division_cap (node_id TEXT NOT NULL)";
+      const extractorTs = `export function extractDivisionCap(tx: any, fileId: number): void {
+  tx.insert(nodeDivisionCap).values({ nodeId: "x" });
+}`;
+      const extractorTestsTs = "import { it, expect } from 'vitest';\nit('works', () => { expect(true).toBe(true); });";
+      const registryTs = "registerCapability({ dslName: 'divisionCap' });";
+      const fixtures = JSON.stringify({
+        positiveFixtures: [{ source: "function bad() { return 1 / 0; }", expectedRowCount: 1 }],
+        negativeFixtures: [{ source: "function ok() { return 1; }", expectedRowCount: 0 }],
+      });
+      const dslSource = `principle DivisionPrinciple {
+  match $x: node where divisionCap.node_id == "x"
+  report violation {
+    at $x
+    captures { site: $x }
+    message "division by zero"
+  }
+}`;
+      const meta = JSON.stringify({
+        capabilityName,
+        rationale: "Tracks division nodes",
+        dslSource,
+        name: "DivisionPrinciple",
+        smtTemplate: "(declare-const x Int)\n(assert (= x 0))\n(check-sat)",
+        teachingExample: { domain: "arithmetic", explanation: "test", smt2: "(check-sat)" },
+      });
+
+      const llm = new StubLLMProvider(
+        new Map(), // no complete() responses needed
+        [{
+          matchPrompt: "capability",
+          fileEdits: [
+            { file: `${capDir}/schema.ts`, newContent: schemaTs },
+            { file: `${capDir}/migration.sql`, newContent: migrationSql },
+            { file: `${capDir}/extractor.ts`, newContent: extractorTs },
+            { file: `${capDir}/extractor.test.ts`, newContent: extractorTestsTs },
+            { file: `${capDir}/registry.ts`, newContent: registryTs },
+            { file: `${capDir}/fixtures.json`, newContent: fixtures },
+            { file: `${capDir}/meta.json`, newContent: meta },
+            { file: `.neurallog/principles/DivisionPrinciple.dsl`, newContent: dslSource },
+          ],
+          text: "Wrote capability proposal",
+        }],
+      );
+      expect(llm.agent).toBeDefined();
+
+      const proposal = await proposeCapabilitySpec({
+        signal: makeSignal(),
+        invariant: makeInvariant(),
+        fixCandidate: makeFixCandidate(),
+        gap: "missing division detector",
+        llm,
+        overlay,
+      });
+
+      expect(proposal).not.toBeNull();
+      expect(proposal!.capabilitySpec.capabilityName).toBe(capabilityName);
+      expect(proposal!.capabilitySpec.schemaTs).toBe(schemaTs);
+      expect(proposal!.capabilitySpec.migrationSql).toBe(migrationSql);
+      expect(proposal!.capabilitySpec.extractorTs).toBe(extractorTs);
+      expect(proposal!.dslSource).toBe(dslSource);
+      expect(proposal!.name).toBe("DivisionPrinciple");
+      expect(proposal!.capabilitySpec.positiveFixtures).toHaveLength(1);
+      expect(proposal!.capabilitySpec.negativeFixtures).toHaveLength(1);
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("backward compat: JSON path used when LLM has no agent()", async () => {
+    const capabilityName = "myCapability";
+    const capSpec = makeCapabilitySpec({ capabilityName });
+    const llmResponse = JSON.stringify({
+      capabilityName: capSpec.capabilityName,
+      schemaTs: capSpec.schemaTs,
+      migrationSql: capSpec.migrationSql,
+      extractorTs: capSpec.extractorTs,
+      extractorTestsTs: capSpec.extractorTestsTs,
+      registryRegistration: capSpec.registryRegistration,
+      positiveFixtures: capSpec.positiveFixtures,
+      negativeFixtures: capSpec.negativeFixtures,
+      rationale: capSpec.rationale,
+      dslSource: `principle TestP { match $x: node where myCapability.node_id == "x" report violation { at $x captures { site: $x } message "test" } }`,
+      name: "TestP",
+      smtTemplate: "(declare-const x Int)\n(assert (= x 0))\n(check-sat)",
+      teachingExample: { domain: "test", explanation: "test", smt2: "(check-sat)" },
+    });
+
+    // No agentResponses → no agent() → JSON path.
+    const llm = new StubLLMProvider(new Map([["Missing predicate", llmResponse]]));
+    expect(llm.agent).toBeUndefined();
+
+    const proposal = await proposeCapabilitySpec({
+      signal: makeSignal(),
+      invariant: makeInvariant(),
+      fixCandidate: makeFixCandidate(),
+      gap: "Missing predicate",
+      llm,
+      // No overlay → JSON path even if agent existed.
+    });
+
+    expect(proposal).not.toBeNull();
+    expect(proposal!.capabilitySpec.capabilityName).toBe(capabilityName);
   });
 });

@@ -744,4 +744,130 @@ describe("C4: generateComplementary", () => {
     // No sites to process means no LLM calls.
     expect(llmCallCount).toBe(0);
   }, 60_000);
+
+  // -------------------------------------------------------------------------
+  // Test 8: Agent path — stub agent edits the site file directly
+  // -------------------------------------------------------------------------
+  it("agent path: StubLLMProvider with agentResponses edits site file → accepted by oracle #3", async () => {
+    const source1 = "export function divide(a: number, b: number) { return a / b; }\n";
+    const source2 = "export function compute(x: number, y: number) { return x / y; }\n";
+
+    const { repoDir, filePaths } = makeTestRepo({
+      "divide.ts": source1,
+      "compute.ts": source2,
+    });
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    seedPrinciples(repoDir);
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-c4-maindb8-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePaths["divide.ts"]!);
+    buildSASTForFile(mainDb, filePaths["compute.ts"]!);
+
+    const divMatches = evaluatePrinciple(mainDb, DIVISION_BY_ZERO_DSL);
+    expect(divMatches.length).toBeGreaterThanOrEqual(2);
+
+    const primaryNodeId = divMatches[0]!.captures["division"] ?? divMatches[0]!.rootNodeId;
+    const locus = makeLocus(filePaths["divide.ts"]!, primaryNodeId, primaryNodeId);
+    const invariant = makeDivInvariant();
+
+    const fixedDivideContent = "export function divide(_a: number, _b: number) { return 0; }\n";
+    const fix = makeFixCandidate({
+      description: "remove division from divide.ts",
+      fileEdits: [{ file: "divide.ts", newContent: fixedDivideContent }],
+    });
+
+    // Agent writes the fix for compute.ts (removes the division).
+    const fixedComputeContent = "export function compute(_x: number, _y: number) { return 0; }\n";
+    const llm = new StubLLMProvider(
+      new Map(), // no complete() responses needed — agent path only
+      [{ matchPrompt: "compute", fileEdits: [{ file: "compute.ts", newContent: fixedComputeContent }], text: "Removed division from compute.ts" }],
+    );
+
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const changes = await generateComplementary({
+      fix,
+      locus,
+      overlay,
+      db: mainDb,
+      llm,
+      maxSites: 10,
+      invariant,
+    });
+
+    // Should have at least one adjacent_site_fix accepted.
+    const adjacentChanges = changes.filter((c) => c.kind === "adjacent_site_fix");
+    expect(adjacentChanges.length).toBeGreaterThan(0);
+    expect(changes.every((c) => c.verifiedAgainstOverlay)).toBe(true);
+    // The compute.ts edit should be captured.
+    const computeChange = changes.find((c) => c.patch.fileEdits.some((e) => e.file === "compute.ts"));
+    expect(computeChange).toBeDefined();
+    expect(computeChange?.patch.fileEdits[0]?.newContent).toBe(fixedComputeContent);
+  }, 120_000);
+
+  // -------------------------------------------------------------------------
+  // Test 9: JSON path still works when no agentResponses provided
+  // -------------------------------------------------------------------------
+  it("backward compat: JSON path still works when StubLLMProvider has no agentResponses", async () => {
+    const source1 = "export function divide(a: number, b: number) { return a / b; }\n";
+    const source2 = "export function compute(x: number, y: number) { return x / y; }\n";
+
+    const { repoDir, filePaths } = makeTestRepo({
+      "divide.ts": source1,
+      "compute.ts": source2,
+    });
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    seedPrinciples(repoDir);
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-c4-maindb9-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePaths["divide.ts"]!);
+    buildSASTForFile(mainDb, filePaths["compute.ts"]!);
+
+    const divMatches = evaluatePrinciple(mainDb, DIVISION_BY_ZERO_DSL);
+    const primaryNodeId = divMatches[0]!.captures["division"] ?? divMatches[0]!.rootNodeId;
+    const locus = makeLocus(filePaths["divide.ts"]!, primaryNodeId, primaryNodeId);
+    const invariant = makeDivInvariant();
+
+    const fixedDivideContent = "export function divide(_a: number, _b: number) { return 0; }\n";
+    const fix = makeFixCandidate({
+      description: "remove division from divide.ts",
+      fileEdits: [{ file: "divide.ts", newContent: fixedDivideContent }],
+    });
+
+    const fixedComputeContent = "export function compute(_x: number, _y: number) { return 0; }\n";
+    const computePatchJson = makeDivFixPatchJson("compute.ts", fixedComputeContent);
+    // No agentResponses — uses JSON path.
+    const llm = new StubLLMProvider(new Map([["compute", computePatchJson]]));
+    expect(llm.agent).toBeUndefined();
+
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const changes = await generateComplementary({
+      fix,
+      locus,
+      overlay,
+      db: mainDb,
+      llm,
+      maxSites: 10,
+      invariant,
+    });
+
+    const adjacentChanges = changes.filter((c) => c.kind === "adjacent_site_fix");
+    expect(adjacentChanges.length).toBeGreaterThan(0);
+    expect(changes.every((c) => c.verifiedAgainstOverlay)).toBe(true);
+  }, 120_000);
 });

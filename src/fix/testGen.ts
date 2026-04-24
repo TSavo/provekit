@@ -19,6 +19,7 @@ import { execFileSync } from "child_process";
 import { parseZ3Model } from "../z3/modelParser.js";
 import { materializeZ3Value } from "../inputs/synthesizer.js";
 import { applyPatchToOverlay, reindexOverlay } from "./overlay.js";
+import { runAgentInOverlay } from "./captureChange.js";
 import type { InvariantClaim, BugLocus, BugSignal, OverlayHandle, CodePatch, LLMProvider } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -220,6 +221,137 @@ it("${testName}", () => {
   if (!code.includes("vitest")) {
     throw new Error(
       `C5: LLM-generated test code does not import from vitest. Raw response: ${raw.slice(0, 300)}`,
+    );
+  }
+
+  return code;
+}
+
+// ---------------------------------------------------------------------------
+// generateTestCodeViaAgent
+// ---------------------------------------------------------------------------
+
+/**
+ * Agent path for C5: prompts the LLM agent to write the test file directly
+ * to testFilePath within the overlay worktree.
+ *
+ * Returns the test file source code that the agent wrote.
+ * Throws if the agent didn't produce a valid test file.
+ */
+export async function generateTestCodeViaAgent(args: {
+  signal: BugSignal;
+  locus: BugLocus;
+  invariant: InvariantClaim;
+  inputs: Record<string, unknown>;
+  testFilePath: string;
+  testName: string;
+  llm: LLMProvider;
+  overlay: OverlayHandle;
+}): Promise<string> {
+  const { signal, locus, invariant, inputs, testFilePath, testName, llm, overlay } = args;
+
+  // Read the locus file source from the overlay (it's already been patched by C3)
+  let functionSource = "(source unavailable)";
+  try {
+    const locusRel = relative(overlay.worktreePath, locus.file);
+    const overlayLocusPath = join(overlay.worktreePath, locusRel);
+    if (existsSync(overlayLocusPath)) {
+      functionSource = readFileSync(overlayLocusPath, "utf8");
+    } else if (existsSync(locus.file)) {
+      functionSource = readFileSync(locus.file, "utf8");
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // Derive the relative import path from the test file to the module under test.
+  const testDir = dirname(testFilePath);
+  const locusRelToWorktree = (() => {
+    try {
+      const r = relative(overlay.worktreePath, locus.file);
+      return r.startsWith("..") ? null : r;
+    } catch {
+      return null;
+    }
+  })();
+
+  let importPath = "./fixture";
+  if (locusRelToWorktree) {
+    const rel = relative(testDir, locusRelToWorktree.replace(/\.(ts|tsx)$/, ""));
+    importPath = rel.startsWith(".") ? rel : `./${rel}`;
+  }
+
+  const inputsJson = JSON.stringify(inputs, (_k, v) =>
+    typeof v === "bigint" ? v.toString() : v
+  , 2);
+
+  const prompt = `You are a TypeScript testing expert. Generate a complete vitest regression test file.
+
+TASK: Write a vitest regression test to the file at path: ${testFilePath}
+
+The test should:
+1. Import the buggy function from the module under test
+2. Call the function with the exact Z3 witness inputs provided
+3. Assert the invariant holds (the function should NOT exhibit the bug)
+
+INVARIANT VIOLATED: ${invariant.description}
+
+BUG SUMMARY: ${signal.summary}
+
+Z3 WITNESS INPUTS (values that trigger the bug before the fix):
+${inputsJson}
+
+MODULE UNDER TEST (locus file): ${locus.file}
+FUNCTION/LINE: ${locus.function ?? "(unknown)"} at line ${locus.line}
+
+SOURCE CODE (post-fix, in overlay):
+\`\`\`typescript
+${functionSource.slice(0, 2000)}
+\`\`\`
+
+IMPORT PATH (from test file to module): ${importPath}
+
+TEST FILE PATH: ${testFilePath}
+TEST NAME: ${testName}
+
+REQUIREMENTS:
+- Use vitest (import { it, expect, describe } from "vitest")
+- Import the function by name from the module (named import preferred)
+- Call the function with the exact Z3 witness input values
+- Assert the function either: (a) does not throw, OR (b) returns a value that satisfies the invariant
+- Use the test name exactly: "${testName}"
+- Write the complete TypeScript test file to: ${testFilePath}
+
+Write the test file using your file editing tools now.`;
+
+  await runAgentInOverlay({
+    overlay,
+    llm,
+    prompt,
+    allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+  });
+
+  // Read back the file the agent wrote.
+  const absTestPath = join(overlay.worktreePath, testFilePath);
+  if (!existsSync(absTestPath)) {
+    throw new Error(
+      `C5 agent: agent did not write test file at ${testFilePath}`,
+    );
+  }
+
+  const code = readFileSync(absTestPath, "utf8").trim();
+
+  // Validate: must have at least one it() call.
+  if (!code.includes("it(") && !code.includes("it.")) {
+    throw new Error(
+      `C5 agent: LLM-generated test code has no it() call. Cannot use as regression test.`,
+    );
+  }
+
+  // Validate: must import from vitest.
+  if (!code.includes("vitest")) {
+    throw new Error(
+      `C5 agent: LLM-generated test code does not import from vitest.`,
     );
   }
 
