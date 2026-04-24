@@ -14,6 +14,9 @@ export interface SASTBuildResult {
   rebuilt: boolean; // false if content_hash matched existing — skipped
 }
 
+// Transaction type used inside db.transaction() callbacks
+type SastTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 function sha256hex(str: string): string {
   return createHash("sha256").update(str).digest("hex");
 }
@@ -30,53 +33,68 @@ function nodeId(fileId: number, kind: number, start: number, end: number, hash: 
 }
 
 /**
- * Recursively walk all concrete children, inserting nodes + edges.
- * Returns node count inserted (including root).
+ * Iterative DFS walk (pre-order) over all concrete children.
+ * Inserts nodes + edges into the transaction.
+ * Returns [rootNodeId, nodeCount].
  */
-function walkNode(
-  tx: Db,
+function walkIterative(
+  tx: SastTx,
   fileId: number,
-  node: Node,
-  parentId: string | null,
-  childOrder: number,
-  count: { value: number },
-): string {
-  const start = node.getFullStart();
-  const end = node.getEnd();
-  const kind = node.getKind();
-  const text = node.getFullText();
-  const hash = subtreeHash(text);
-  const id = nodeId(fileId, kind, start, end, hash);
+  root: Node,
+): [string, number] {
+  interface Frame {
+    node: Node;
+    parentId: string | null;
+    childOrder: number;
+  }
 
-  // line/col from start position
-  const pos = node.getSourceFile().getLineAndColumnAtPos(start);
+  const stack: Frame[] = [{ node: root, parentId: null, childOrder: 0 }];
+  let rootNodeId = "";
+  let count = 0;
 
-  tx.insert(nodes).values({
-    id,
-    fileId,
-    sourceStart: start,
-    sourceEnd: end,
-    sourceLine: pos.line,
-    sourceCol: pos.column,
-    subtreeHash: hash,
-  }).run();
+  while (stack.length > 0) {
+    const { node, parentId, childOrder } = stack.pop()!;
 
-  count.value += 1;
+    const start = node.getFullStart();
+    const end = node.getEnd();
+    const kind = node.getKind();
+    const text = node.getFullText();
+    const hash = subtreeHash(text);
+    const id = nodeId(fileId, kind, start, end, hash);
 
-  if (parentId !== null) {
-    tx.insert(nodeChildren).values({
-      parentId,
-      childId: id,
-      childOrder,
+    // line/col from start position
+    const pos = node.getSourceFile().getLineAndColumnAtPos(start);
+
+    tx.insert(nodes).values({
+      id,
+      fileId,
+      sourceStart: start,
+      sourceEnd: end,
+      sourceLine: pos.line,
+      sourceCol: pos.column,
+      subtreeHash: hash,
     }).run();
+
+    count += 1;
+
+    if (parentId === null) {
+      rootNodeId = id;
+    } else {
+      tx.insert(nodeChildren).values({
+        parentId,
+        childId: id,
+        childOrder,
+      }).run();
+    }
+
+    // Push children in reverse so leftmost child is popped first (pre-order)
+    const children = node.getChildren();
+    for (let i = children.length - 1; i >= 0; i--) {
+      stack.push({ node: children[i], parentId: id, childOrder: i });
+    }
   }
 
-  const children = node.getChildren();
-  for (let i = 0; i < children.length; i++) {
-    walkNode(tx, fileId, children[i], id, i, count);
-  }
-
-  return id;
+  return [rootNodeId, count];
 }
 
 export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
@@ -87,17 +105,12 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
   // Check for existing row with matching content_hash
   const existing = db.select().from(files).where(eq(files.path, filePath)).get();
   if (existing && existing.contentHash === contentHash) {
-    // Count existing nodes for this file
-    const existingNodes = db.select().from(nodes).where(eq(nodes.fileId, existing.id)).all();
-    // Find root: node that is not a child
-    const childIds = new Set(
-      db.select({ childId: nodeChildren.childId }).from(nodeChildren).all().map((r) => r.childId),
-    );
-    const rootNode = existingNodes.find((n) => !childIds.has(n.id));
+    // Cache hit: rootNodeId is stored directly on the files row (O(1), file-scoped)
+    const nodeCount = db.select().from(nodes).where(eq(nodes.fileId, existing.id)).all().length;
     return {
       fileId: existing.id,
-      rootNodeId: rootNode?.id ?? existingNodes[0]?.id ?? "",
-      nodeCount: existingNodes.length,
+      rootNodeId: existing.rootNodeId,
+      nodeCount,
       rebuilt: false,
     };
   }
@@ -110,7 +123,7 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
 
   let fileId: number;
   let rootNodeId: string;
-  const count = { value: 0 };
+  let nodeCount: number;
 
   db.transaction((tx) => {
     // If there's an existing row with a different hash, delete it (cascades nodes + edges)
@@ -126,13 +139,18 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
 
     fileId = fileRow.id;
 
-    rootNodeId = walkNode(tx, fileId, sourceFile, null, 0, count);
+    const [rootId, count] = walkIterative(tx, fileId, sourceFile);
+    rootNodeId = rootId;
+    nodeCount = count;
+
+    // Store root node id on the files row for O(1) cache-hit lookup
+    tx.update(files).set({ rootNodeId }).where(eq(files.id, fileId)).run();
   });
 
   return {
     fileId: fileId!,
     rootNodeId: rootNodeId!,
-    nodeCount: count.value,
+    nodeCount: nodeCount!,
     rebuilt: true,
   };
 }

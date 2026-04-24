@@ -13,6 +13,7 @@ export const files = sqliteTable(
     path: text("path").notNull().unique(),
     contentHash: text("content_hash").notNull(),
     parsedAt: integer("parsed_at").notNull(),
+    rootNodeId: text("root_node_id").notNull().default(""),
   },
   (t) => ({
     byContentHash: index("files_by_content_hash").on(t.contentHash),

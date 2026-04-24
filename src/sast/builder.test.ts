@@ -177,4 +177,54 @@ describe("buildSASTForFile", () => {
     const rootRow = db.select().from(nodes).where(eq(nodes.id, result.rootNodeId)).get();
     expect(rootRow!.subtreeHash).toBe(sha256hex(source));
   });
+
+  // -------------------------------------------------------------------------
+  // Test 7: cache-hit rootNodeId is scoped to the correct file
+  //         Build file A, build file B (different source, same db), re-build
+  //         file A. rootNodeId on the second A call must equal the first A's.
+  // -------------------------------------------------------------------------
+  it("cache-hit returns rootNodeId scoped to the cached file, not another file", () => {
+    ({ db, tmpDir } = openTestDb());
+
+    const sourceA = "export const fileA = 'alpha';";
+    const sourceB = "export const fileB = 'beta'; export function extra() {}";
+    const filePathA = writeFixture(tmpDir, "fileA.ts", sourceA);
+    const filePathB = writeFixture(tmpDir, "fileB.ts", sourceB);
+
+    const firstA = buildSASTForFile(db, filePathA);
+    expect(firstA.rebuilt).toBe(true);
+
+    // Build a different file into the same db
+    const firstB = buildSASTForFile(db, filePathB);
+    expect(firstB.rebuilt).toBe(true);
+    expect(firstB.rootNodeId).not.toBe(firstA.rootNodeId);
+
+    // Re-build file A — should be a cache hit
+    const secondA = buildSASTForFile(db, filePathA);
+    expect(secondA.rebuilt).toBe(false);
+    expect(secondA.rootNodeId).toBe(firstA.rootNodeId);
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 8: iterative DFS handles moderately deep trees without stack overflow
+  //         Uses deeply nested parenthesised expressions to force depth.
+  // -------------------------------------------------------------------------
+  it("iterative walk completes for a 60-deep nested expression", () => {
+    ({ db, tmpDir } = openTestDb());
+
+    // Build source like: const x = (((((...1...)))))
+    const depth = 60;
+    const inner = "1";
+    const source = "const x = " + "(".repeat(depth) + inner + ")".repeat(depth) + ";";
+    const filePath = writeFixture(tmpDir, "deep.ts", source);
+
+    const result = buildSASTForFile(db, filePath);
+    expect(result.rebuilt).toBe(true);
+    expect(result.nodeCount).toBeGreaterThan(depth);
+    expect(result.rootNodeId).toBeTruthy();
+
+    // Verify root node actually exists in db
+    const rootRow = db.select().from(nodes).where(eq(nodes.id, result.rootNodeId)).get();
+    expect(rootRow).toBeDefined();
+  });
 });
