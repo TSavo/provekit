@@ -92,6 +92,13 @@
       "when": 1777060637459,
       "tag": "0012_military_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1777300000000,
+      "tag": "0013_principles_library",
+      "breakpoints": true
     }
   ]
 }
