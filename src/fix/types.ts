@@ -141,14 +141,43 @@ export interface ComplementaryChange {
 }
 
 /**
+ * Artifact descriptor. kind is a plain string resolved downstream (in B5/D1).
+ * No closed union — artifact kinds will migrate to their own registry at D1.
+ * For now, extra fields are optional and untyped beyond what B3 emits.
+ */
+export interface PlannedArtifact {
+  kind: string;              // code_patch, regression_test, startup_assert, etc.
+  envVar?: string;           // for startup_assert
+  site?: string;             // for error_handler
+  bugClassName?: string;     // for principle_candidate
+  rationale?: string;
+}
+
+/**
  * Top-level container returned by the full fix loop.
- * B2/B3/B5 each add their sections; this stub defines the shape.
+ * B3 fills primaryLayer, secondaryLayers, artifacts, rationale.
+ * B5 fills candidates, tests, complementary.
  */
 export interface RemediationPlan {
   signal: BugSignal;
-  loci: BugLocus[];
-  claims: InvariantClaim[];
-  candidates: FixCandidate[];
-  tests: TestArtifact[];
-  complementary: ComplementaryChange[];
+  locus: BugLocus | null;
+
+  /** Primary layer name — resolved via registry; no closed union. */
+  primaryLayer: string;
+
+  /** Additional layers the fix may need. */
+  secondaryLayers: string[];
+
+  /** Proposed artifacts by kind. */
+  artifacts: PlannedArtifact[];
+
+  /** LLM's rationale for this plan. Audit log. */
+  rationale: string;
+
+  // Legacy fields from B1 stub — kept for backward compat with B5's eventual use
+  loci?: BugLocus[];
+  claims?: InvariantClaim[];
+  candidates?: FixCandidate[];
+  tests?: TestArtifact[];
+  complementary?: ComplementaryChange[];
 }
