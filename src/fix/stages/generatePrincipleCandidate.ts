@@ -1,8 +1,8 @@
-// C6 stub — landing zone for principle candidate generation.
-// May return a plain principle OR a principle_with_capability (substrate-extension path).
+// C6: Principle candidate generation.
+// May return a plain principle, a principle_with_capability (substrate-extension path), or null.
 import type { BugSignal, InvariantClaim, FixCandidate, PrincipleCandidate, LLMProvider } from "../types.js";
-import { NotImplementedError } from "../types.js";
 import type { Db } from "../../db/index.js";
+import { tryExistingCapabilities, proposeWithCapability } from "../principleGen.js";
 
 export async function generatePrincipleCandidate(args: {
   signal: BugSignal;
@@ -10,10 +10,15 @@ export async function generatePrincipleCandidate(args: {
   fixCandidate: FixCandidate;
   db: Db;
   llm: LLMProvider;
-}): Promise<PrincipleCandidate> {
-  void args;
-  throw new NotImplementedError(
-    "C6",
-    "generatePrincipleCandidate (C6) not yet implemented — B5 orchestrator will route around it when C6 lands",
-  );
+}): Promise<PrincipleCandidate | null> {
+  // 1. If invariant came from an existing principle → no learning needed.
+  if (args.invariant.principleId !== null) return null;
+
+  // 2. Try existing capabilities first.
+  const attempt = await tryExistingCapabilities(args);
+  if (attempt.kind === "ok") return attempt.principle;
+  if (attempt.kind === "non_codifiable") return null;
+
+  // 3. Capability gap → propose new capability.
+  return await proposeWithCapability({ ...args, gap: attempt.gap });
 }

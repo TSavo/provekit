@@ -55,6 +55,11 @@ export function listCapabilities(): readonly CapabilityDescriptor[] {
   return Array.from(registry.values());
 }
 
+/** Unregister a capability by DSL name. No-op if not registered. */
+export function unregisterCapability(name: string): void {
+  registry.delete(name);
+}
+
 /** Clear the registry. ONLY for tests. */
 export function _clearRegistry(): void {
   registry.clear();

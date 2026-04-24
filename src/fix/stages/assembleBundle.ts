@@ -20,7 +20,7 @@ export async function assembleBundle(args: {
   fix: FixCandidate;
   complementary: ComplementaryChange[];
   test: TestArtifact;
-  principle: PrincipleCandidate;
+  principle: PrincipleCandidate | null;
   overlay: OverlayHandle;
   db: Db;
 }): Promise<FixBundle> {
