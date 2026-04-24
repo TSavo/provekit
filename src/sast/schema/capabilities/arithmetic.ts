@@ -1,9 +1,4 @@
-import {
-  sqliteTable,
-  text,
-  index,
-  foreignKey,
-} from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, index } from "drizzle-orm/sqlite-core";
 import { nodes } from "../nodes.js";
 
 export const nodeArithmetic = sqliteTable(
