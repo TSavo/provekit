@@ -22,6 +22,7 @@ import type { CapabilitySpec } from "./types.js";
 import { listCapabilities } from "../sast/capabilityRegistry.js";
 import { executeExtractorSpec } from "./capabilityExecutor.js";
 import { runAgentInOverlay } from "./captureChange.js";
+import { parseJsonFromLlm } from "./llmJson.js";
 
 // ---------------------------------------------------------------------------
 // Substrate oracle result
@@ -106,12 +107,8 @@ interface CapabilitySpecProposal {
 }
 
 function parseCapabilitySpecResponse(raw: string): CapabilitySpecProposal | null {
-  let cleaned = raw.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/```\s*$/, "").trim();
-  }
   try {
-    const p = JSON.parse(cleaned) as Record<string, unknown>;
+    const p = parseJsonFromLlm<Record<string, unknown>>(raw, "capabilitySpec");
 
     const capabilityName = p["capabilityName"];
     const schemaTs = p["schemaTs"];

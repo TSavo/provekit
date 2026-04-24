@@ -13,6 +13,7 @@
 import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
+import { parseJsonFromLlm } from "../llmJson.js";
 
 /**
  * Detect stack-trace-style lines:
@@ -70,7 +71,7 @@ const adapter: IntakeAdapter = {
 
     let parsed: { summary: string; failureDescription: string; bugClassHint?: string | null };
     try {
-      parsed = JSON.parse(raw) as typeof parsed;
+      parsed = parseJsonFromLlm(raw, "runtimeLog");
     } catch {
       parsed = {
         summary: input.text.split("\n")[0] ?? input.text.slice(0, 120),

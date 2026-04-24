@@ -12,6 +12,7 @@ import {
   listRemediationLayers,
   getRemediationLayer,
 } from "./remediationLayerRegistry.js";
+import { parseJsonFromLlm } from "./llmJson.js";
 import type {
   RemediationLayerDescriptor,
 } from "./remediationLayerRegistry.js";
@@ -117,11 +118,9 @@ interface ParsedResponse {
 function parseResponse(raw: string): ParsedResponse {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as unknown;
-  } catch {
-    throw new ClassifyError(
-      `classify: LLM returned non-JSON response: ${raw.slice(0, 200)}`,
-    );
+    parsed = parseJsonFromLlm(raw, "classify");
+  } catch (e) {
+    throw new ClassifyError(e instanceof Error ? e.message : String(e));
   }
 
   if (typeof parsed !== "object" || parsed === null) {

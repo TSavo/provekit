@@ -25,6 +25,7 @@
 import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
+import { parseJsonFromLlm } from "../llmJson.js";
 
 interface GapReportContext {
   gapReportId: string | number;
@@ -100,7 +101,7 @@ const adapter: IntakeAdapter = {
 
     let prose: { summary: string; failureDescription: string };
     try {
-      prose = JSON.parse(raw) as typeof prose;
+      prose = parseJsonFromLlm(raw, "gapReport");
     } catch {
       // Fallback: use raw reason text.
       prose = {

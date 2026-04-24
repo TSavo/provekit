@@ -36,6 +36,7 @@ import type {
 } from "./types.js";
 import type { CapabilitySpec } from "./types.js";
 import { proposeCapabilitySpec, runSubstrateOracles } from "./capabilityGen.js";
+import { parseJsonFromLlm } from "./llmJson.js";
 
 // ---------------------------------------------------------------------------
 // Internal result shape for tryExistingCapabilities
@@ -205,15 +206,11 @@ function parseAdversarialFixtures(raw: string): {
   falsePositives: { source: string }[];
   falseNegatives: { source: string }[];
 } | null {
-  let cleaned = raw.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/```\s*$/, "").trim();
-  }
   try {
-    const parsed = JSON.parse(cleaned) as {
+    const parsed = parseJsonFromLlm<{
       false_positives?: { source: string }[];
       false_negatives?: { source: string }[];
-    };
+    }>(raw, "adversarialFixtures");
     const fps = parsed.false_positives;
     const fns = parsed.false_negatives;
     if (!Array.isArray(fps) || !Array.isArray(fns)) return null;
@@ -454,12 +451,8 @@ type PrincipleProposalResponse =
   | { kind: "non_codifiable"; reason?: string };
 
 function parsePrincipleProposal(raw: string): PrincipleProposalResponse | null {
-  let cleaned = raw.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/```\s*$/, "").trim();
-  }
   try {
-    const p = JSON.parse(cleaned) as Record<string, unknown>;
+    const p = parseJsonFromLlm<Record<string, unknown>>(raw, "principleProposal");
     const kind = p["kind"];
     if (kind === "principle") {
       const name = p["name"];

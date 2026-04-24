@@ -35,6 +35,7 @@ import type {
   CodePatch,
   FixCandidate,
 } from "./types.js";
+import { parseJsonFromLlm } from "./llmJson.js";
 
 // ---------------------------------------------------------------------------
 // Internal shape for a proposed fix from the LLM
@@ -151,19 +152,11 @@ Read the relevant files, understand the bug, and edit the file(s) to fix it. Do 
  * Throws if the response is not JSON or has zero valid candidates.
  */
 export function parseProposedFixes(raw: string): ProposedFix[] {
-  // Strip markdown fences if present.
-  let cleaned = raw.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/```\s*$/, "").trim();
-  }
-
   let parsed: unknown;
   try {
-    parsed = JSON.parse(cleaned);
-  } catch (err) {
-    throw new Error(
-      `parseProposedFixes: LLM response is not valid JSON: ${cleaned.slice(0, 200)}`,
-    );
+    parsed = parseJsonFromLlm(raw, "parseProposedFixes");
+  } catch (e) {
+    throw new Error(e instanceof Error ? e.message : String(e));
   }
 
   if (
@@ -172,7 +165,7 @@ export function parseProposedFixes(raw: string): ProposedFix[] {
     !Array.isArray((parsed as Record<string, unknown>)["candidates"])
   ) {
     throw new Error(
-      `parseProposedFixes: expected {"candidates": [...]} but got: ${cleaned.slice(0, 200)}`,
+      `parseProposedFixes: expected {"candidates": [...]} but got: ${raw.slice(0, 200)}`,
     );
   }
 

@@ -12,6 +12,7 @@ import { eq, or, and, lte, gte } from "drizzle-orm";
 import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef } from "../types.js";
 import { InvariantFormulationFailed } from "../types.js";
 import { createNoopLogger, loggedComplete, type FixLoopLogger } from "../logger.js";
+import { parseJsonFromLlm } from "../llmJson.js";
 import type { Db } from "../../db/index.js";
 import { principleMatches, principleMatchCaptures } from "../../db/schema/principleMatches.js";
 import { nodes, files as filesTable } from "../../sast/schema/index.js";
@@ -311,19 +312,11 @@ function parseLlmResponse(raw: string): {
   bindings: SmtBindingRef[];
   description: string;
 } {
-  // Strip markdown fences if present.
-  let cleaned = raw.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/```\s*$/, "").trim();
-  }
-
   let parsed: LlmInvariantResponse;
   try {
-    parsed = JSON.parse(cleaned) as LlmInvariantResponse;
-  } catch {
-    throw new InvariantFormulationFailed(
-      `LLM response is not valid JSON: ${cleaned.slice(0, 100)}`,
-    );
+    parsed = parseJsonFromLlm<LlmInvariantResponse>(raw, "formulateInvariant");
+  } catch (e) {
+    throw new InvariantFormulationFailed(e instanceof Error ? e.message : String(e));
   }
 
   if (!parsed.description || typeof parsed.description !== "string") {

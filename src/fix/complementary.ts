@@ -34,6 +34,7 @@ import { evaluatePrinciple } from "../dsl/evaluator.js";
 import { buildSASTForFile, reindexFile } from "../sast/builder.js";
 import { applyPatchToOverlay, reindexOverlay } from "./overlay.js";
 import { parseProposedFixes } from "./candidateGen.js";
+import { parseJsonFromLlm } from "./llmJson.js";
 import type { Db } from "../db/index.js";
 import type {
   BugLocus,
@@ -430,18 +431,11 @@ Rules:
   const rawResponse = await llm.complete({ prompt });
 
   // Check for explicit skip.
-  let cleaned = rawResponse.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/```\s*$/, "").trim();
-  }
-
   let parsed: unknown;
   try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    throw new Error(
-      `proposeChangeForSite: LLM response is not valid JSON: ${cleaned.slice(0, 200)}`,
-    );
+    parsed = parseJsonFromLlm(rawResponse, "complementary");
+  } catch (e) {
+    throw new Error(e instanceof Error ? e.message : String(e));
   }
 
   if (

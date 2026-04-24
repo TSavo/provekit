@@ -19,6 +19,7 @@
 import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
+import { parseJsonFromLlm } from "../llmJson.js";
 
 interface TestFailureContext {
   testName: string;
@@ -91,7 +92,7 @@ const adapter: IntakeAdapter = {
 
     let prose: { summary: string; failureDescription: string };
     try {
-      prose = JSON.parse(raw) as typeof prose;
+      prose = parseJsonFromLlm(raw, "testFailure");
     } catch {
       prose = {
         summary: `Test "${ctx.testName}" failed: ${ctx.errorMessage}`,

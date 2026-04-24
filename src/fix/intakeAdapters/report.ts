@@ -14,6 +14,7 @@
 import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, LLMProvider } from "../types.js";
+import { parseJsonFromLlm } from "../llmJson.js";
 
 function buildPrompt(text: string): string {
   return (
@@ -50,9 +51,9 @@ const adapter: IntakeAdapter = {
       bugClassHint?: string | null;
     };
     try {
-      parsed = JSON.parse(raw) as typeof parsed;
-    } catch {
-      throw new Error(`report adapter: LLM returned non-JSON response: ${raw.slice(0, 200)}`);
+      parsed = parseJsonFromLlm(raw, "report");
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : String(e));
     }
 
     return {
