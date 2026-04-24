@@ -6,6 +6,7 @@ import {
   primaryKey,
 } from "drizzle-orm/sqlite-core";
 import { nodes } from "../nodes.js";
+import { registerCapability } from "../../capabilityRegistry.js";
 
 export const nodeSignal = sqliteTable(
   "node_signal",
@@ -31,3 +32,31 @@ export const signalInterpolations = sqliteTable(
     byInterpolatedNode: index("signal_interpolations_by_interpolated_node").on(t.interpolatedNode),
   }),
 );
+
+export function registerSignal(): void {
+  registerCapability({
+    dslName: "signal",
+    table: nodeSignal,
+    columns: {
+      node_id:        { dslName: "node_id",        drizzleColumn: nodeSignal.nodeId,        isNodeRef: true,  nullable: false },
+      signal_kind:    { dslName: "signal_kind",    drizzleColumn: nodeSignal.signalKind,    sort: "Text",     isNodeRef: false, nullable: false,
+                        kindEnum: ["log", "type_annotation", "throw_message", "todo_comment", "error_message"] },
+      signal_payload: { dslName: "signal_payload", drizzleColumn: nodeSignal.signalPayload, sort: "Text",     isNodeRef: false, nullable: false },
+    },
+  });
+}
+
+export function registerSignalInterpolations(): void {
+  registerCapability({
+    dslName: "signal_interpolations",
+    table: signalInterpolations,
+    columns: {
+      signal_node:       { dslName: "signal_node",       drizzleColumn: signalInterpolations.signalNode,       isNodeRef: true,  nullable: false },
+      slot_index:        { dslName: "slot_index",        drizzleColumn: signalInterpolations.slotIndex,        sort: "Int",      isNodeRef: false, nullable: false },
+      interpolated_node: { dslName: "interpolated_node", drizzleColumn: signalInterpolations.interpolatedNode, isNodeRef: true,  nullable: false },
+    },
+  });
+}
+
+registerSignal();
+registerSignalInterpolations();

@@ -6,6 +6,7 @@ import {
   primaryKey,
 } from "drizzle-orm/sqlite-core";
 import { nodes } from "../nodes.js";
+import { registerCapability } from "../../capabilityRegistry.js";
 
 export const nodeCaptures = sqliteTable(
   "node_captures",
@@ -20,3 +21,18 @@ export const nodeCaptures = sqliteTable(
     byCapturedName: index("node_captures_by_captured_name").on(t.capturedName),
   }),
 );
+
+export function registerCaptures(): void {
+  registerCapability({
+    dslName: "captures",
+    table: nodeCaptures,
+    columns: {
+      node_id:         { dslName: "node_id",         drizzleColumn: nodeCaptures.nodeId,         isNodeRef: true,  nullable: false },
+      captured_name:   { dslName: "captured_name",   drizzleColumn: nodeCaptures.capturedName,   sort: "Text",     isNodeRef: false, nullable: false },
+      declared_in_node: { dslName: "declared_in_node", drizzleColumn: nodeCaptures.declaredInNode, isNodeRef: true, nullable: true },
+      mutable:         { dslName: "mutable",         drizzleColumn: nodeCaptures.mutable,         sort: "Bool",     isNodeRef: false, nullable: false },
+    },
+  });
+}
+
+registerCaptures();
