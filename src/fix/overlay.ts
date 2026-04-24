@@ -12,10 +12,11 @@ import { buildSASTForFile, reindexFile } from "../sast/builder.js";
 import type { OverlayHandle, CodePatch } from "./types.js";
 
 /**
- * Apply a whole-file patch to the overlay's scratch worktree.
+ * Apply a multi-file patch to the overlay's scratch worktree.
  *
- * Writes patch.newContent to <worktreePath>/<patch.file> and records the
- * relative path in overlay.modifiedFiles. Never touches the original repo.
+ * Iterates over patch.fileEdits and writes each file's newContent to
+ * <worktreePath>/<edit.file>, recording relative paths in overlay.modifiedFiles.
+ * Never touches the original repo.
  *
  * Throws if the overlay is closed.
  */
@@ -23,9 +24,11 @@ export function applyPatchToOverlay(overlay: OverlayHandle, patch: CodePatch): v
   if (overlay.closed) {
     throw new Error("applyPatchToOverlay: overlay is already closed");
   }
-  const absPath = join(overlay.worktreePath, patch.file);
-  writeFileSync(absPath, patch.newContent, "utf8");
-  overlay.modifiedFiles.add(patch.file);
+  for (const edit of patch.fileEdits) {
+    const absPath = join(overlay.worktreePath, edit.file);
+    writeFileSync(absPath, edit.newContent, "utf8");
+    overlay.modifiedFiles.add(edit.file);
+  }
 }
 
 /**

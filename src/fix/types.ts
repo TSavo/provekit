@@ -87,18 +87,28 @@ export interface OverlayHandle {
 }
 
 /**
- * A code patch to apply to an overlay.
- *
- * v1 MVP: whole-file rewrite. Patch format (unified diff) may be added later.
- * C3 produces CodePatch objects; overlay.ts consumes them.
+ * One file edit within a CodePatch.
+ * C3 produces these; overlay.ts consumes them.
  */
-export interface CodePatch {
+export interface CodePatchFileEdit {
   /** Path relative to the overlay's worktreePath. */
   file: string;
   /** NEW FULL file contents after the patch. (v1 MVP: whole-file rewrite; diff/unified-format come later.) */
   newContent: string;
-  /** Optional description for audit trail. */
-  rationale?: string;
+}
+
+/**
+ * A code patch to apply to an overlay.
+ *
+ * v1.1 multi-file: each CodePatch carries one or more file edits.
+ * Single-file patches have exactly one entry in fileEdits.
+ * C3 produces CodePatch objects; overlay.ts consumes them.
+ */
+export interface CodePatch {
+  /** The files this patch modifies. A single-file patch has one entry. */
+  fileEdits: CodePatchFileEdit[];
+  /** Human-readable description of what the patch does. */
+  description: string;
 }
 
 /** Result of applying a bundle (D2). stub — D2 will refine. */
@@ -291,12 +301,30 @@ export interface InvariantClaim {
   witness: string | null;
 }
 
-/** A concrete code change proposed to fix the bug. B5 fills this in. */
+/** A concrete code change proposed to fix the bug. C3 fills this in. */
 export interface FixCandidate {
-  file: string;
-  patch: string;
-  rationale: string;
-  confidence: number;
+  /** The patch (CodePatch). v1 MVP allows multi-file via fileEdits. */
+  patch: CodePatch;
+  /** LLM's rationale for why this patch fixes the bug. */
+  llmRationale: string;
+  /** LLM self-reported confidence 0..1. */
+  llmConfidence: number;
+  /** Oracle #2 result: does C1's invariant now hold under the overlay? (Z3 negated-goal unsat.) */
+  invariantHoldsUnderOverlay: boolean;
+  /** Z3 verdict from the overlay run — "unsat" means invariant holds (fix is real). */
+  overlayZ3Verdict: "sat" | "unsat" | "unknown" | "error";
+  /**
+   * Audit of the C3 run: what the LLM said, what Z3 said, what the overlay contained.
+   * Note: overlayClosed is always false when C3 returns — the orchestrator owns the overlay lifecycle.
+   */
+  audit: {
+    overlayCreated: boolean;
+    patchApplied: boolean;
+    overlayReindexed: boolean;
+    z3RunMs: number;
+    /** Always false from C3's perspective — orchestrator closes the overlay after C3 returns. */
+    overlayClosed: boolean;
+  };
 }
 
 /** A test artifact (new test or modified test) that validates the fix. B5 fills this in. */

@@ -142,9 +142,8 @@ describe("C2 overlay lifecycle", () => {
     cleanups.push(() => { try { overlay.sastDb.$client.close(); } catch { /* ignore */ } });
 
     applyPatchToOverlay(overlay, {
-      file: "fixture.ts",
-      newContent: "export function add(a: number, b: number) { return a + b + 1; }",
-      rationale: "test patch",
+      fileEdits: [{ file: "fixture.ts", newContent: "export function add(a: number, b: number) { return a + b + 1; }" }],
+      description: "test patch",
     });
 
     const scratchFixture = join(overlay.worktreePath, "fixture.ts");
@@ -183,7 +182,7 @@ export function sub(a: number, b: number) { return a - b; }
 export function mul(a: number, b: number) { return a * b; }
 `.trim();
 
-    applyPatchToOverlay(overlay, { file: "fixture.ts", newContent });
+    applyPatchToOverlay(overlay, { fileEdits: [{ file: "fixture.ts", newContent }], description: "add sub and mul" });
     await reindexOverlay(overlay);
 
     // Scratch DB has nodes for the new content.
@@ -214,10 +213,10 @@ export function mul(a: number, b: number) { return a * b; }
     const overlay = await openOverlay({ locus, db: mainDb });
     cleanups.push(() => { try { overlay.sastDb.$client.close(); } catch { /* ignore */ } });
 
-    applyPatchToOverlay(overlay, { file: "fixture.ts", newContent: "// patch A\nexport const x = 1;" });
+    applyPatchToOverlay(overlay, { fileEdits: [{ file: "fixture.ts", newContent: "// patch A\nexport const x = 1;" }], description: "patch A" });
     await reindexOverlay(overlay);
 
-    applyPatchToOverlay(overlay, { file: "fixture.ts", newContent: "// patch B\nexport const x = 2;" });
+    applyPatchToOverlay(overlay, { fileEdits: [{ file: "fixture.ts", newContent: "// patch B\nexport const x = 2;" }], description: "patch B" });
     await reindexOverlay(overlay);
 
     // Set deduplicates: only one entry for fixture.ts.
@@ -274,8 +273,8 @@ export function mul(a: number, b: number) { return a * b; }
     cleanups.push(() => { try { overlay.sastDb.$client.close(); } catch { /* ignore */ } });
 
     applyPatchToOverlay(overlay, {
-      file: "fixture.ts",
-      newContent: "export function changed() { return 42; }",
+      fileEdits: [{ file: "fixture.ts", newContent: "export function changed() { return 42; }" }],
+      description: "changed function",
     });
     await reindexOverlay(overlay);
 
@@ -306,15 +305,25 @@ export function mul(a: number, b: number) { return a * b; }
     cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
 
     const locus = makeLocus(fakePath);
+
+    // Snapshot overlay dirs that exist BEFORE the call (concurrent test files may have
+    // live overlays; we only care that THIS failed call adds none).
+    const { readdirSync } = await import("fs");
+    const overlaysBefore = new Set(
+      readdirSync(tmpdir()).filter((n) =>
+        n.startsWith("provekit-overlay-") && !n.startsWith("provekit-overlay-nongit") && !n.startsWith("provekit-overlay-test"),
+      ),
+    );
+
     await expect(openOverlay({ locus, db: mainDb })).rejects.toThrow(
       /not inside a git repository/,
     );
 
-    // No scratch directories should have been created.
-    const { readdirSync } = await import("fs");
-    const strayDirs = readdirSync(tmpdir()).filter((n) =>
+    // No NEW scratch directories should have been created by the failed call.
+    const overlaysAfter = readdirSync(tmpdir()).filter((n) =>
       n.startsWith("provekit-overlay-") && !n.startsWith("provekit-overlay-nongit") && !n.startsWith("provekit-overlay-test"),
     );
-    expect(strayDirs).toHaveLength(0);
+    const newDirs = overlaysAfter.filter((n) => !overlaysBefore.has(n));
+    expect(newDirs).toHaveLength(0);
   });
 });

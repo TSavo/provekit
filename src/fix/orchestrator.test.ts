@@ -222,10 +222,21 @@ describe("orchestrator.runFixLoop", () => {
       closed: false,
     };
     const mockFix: FixCandidate = {
-      file: "src/processData.ts",
-      patch: "diff...",
-      rationale: "Add null guard",
-      confidence: 0.9,
+      patch: {
+        fileEdits: [{ file: "src/processData.ts", newContent: "// fixed" }],
+        description: "Add null guard",
+      },
+      llmRationale: "Add null guard",
+      llmConfidence: 0.9,
+      invariantHoldsUnderOverlay: true,
+      overlayZ3Verdict: "unsat",
+      audit: {
+        overlayCreated: true,
+        patchApplied: true,
+        overlayReindexed: true,
+        z3RunMs: 10,
+        overlayClosed: false,
+      },
     };
 
     vi.mocked(formulateInvariant).mockImplementationOnce(async () => mockInvariant);

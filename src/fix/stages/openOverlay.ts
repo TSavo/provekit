@@ -6,7 +6,7 @@
  * The overlay is torn down by closeOverlay() in overlay.ts.
  */
 
-import { mkdtempSync, mkdirSync, cpSync, existsSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, cpSync, existsSync, rmSync, realpathSync } from "fs";
 import { join, relative, dirname } from "path";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
@@ -102,8 +102,16 @@ export async function openOverlay(args: {
 
   // ------------------------------------------------------------------
   // Step 6: Pre-index the locus file in the scratch DB.
+  //
+  // IMPORTANT: realpathSync both paths before computing relative().
+  // On macOS, git rev-parse --show-toplevel resolves /var → /private/var
+  // while mkdtempSync returns /var paths. Without normalization, relative()
+  // produces a deep ../../ escape that resolves back to the original repo
+  // file rather than the overlay copy.
   // ------------------------------------------------------------------
-  const relPath = relative(repoRoot, locus.file);
+  const repoRootReal = realpathSync(repoRoot);
+  const locusFileReal = realpathSync(locus.file);
+  const relPath = relative(repoRootReal, locusFileReal);
   const scratchFilePath = join(scratchPath, relPath);
   if (existsSync(scratchFilePath)) {
     buildSASTForFile(sastDb, scratchFilePath);
