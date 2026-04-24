@@ -1,7 +1,7 @@
 /**
- * D1a: Artifact kind index.
+ * D1a/D1b: Artifact kind index.
  *
- * Imports all eight artifact kind descriptors (triggering their self-registration
+ * Imports all fourteen artifact kind descriptors (triggering their self-registration
  * side effects) and exports a registerAll() function for test beforeEach() blocks
  * that need to re-populate the registry after _clearArtifactKindRegistry().
  *
@@ -16,6 +16,12 @@ import { registerComplementaryChange } from "./complementary_change.js";
 import { registerStartupAssert } from "./startup_assert.js";
 import { registerDocumentation } from "./documentation.js";
 import { registerObservabilityHook } from "./observability_hook.js";
+import { registerTestFix } from "./test_fix.js";
+import { registerConfigUpdate } from "./config_update.js";
+import { registerDependencyUpdate } from "./dependency_update.js";
+import { registerPromptUpdate } from "./prompt_update.js";
+import { registerLintRule } from "./lint_rule.js";
+import { registerMigrationFix } from "./migration_fix.js";
 
 export function registerAll(): void {
   registerCodePatch();
@@ -26,4 +32,10 @@ export function registerAll(): void {
   registerStartupAssert();
   registerDocumentation();
   registerObservabilityHook();
+  registerTestFix();
+  registerConfigUpdate();
+  registerDependencyUpdate();
+  registerPromptUpdate();
+  registerLintRule();
+  registerMigrationFix();
 }
