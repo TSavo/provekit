@@ -157,13 +157,13 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
     tx.update(files).set({ rootNodeId }).where(eq(files.id, fileId)).run();
 
     // Populate capability tables
-    extractAllCapabilities(tx, fileId, sourceFile, nodeIdByNode);
+    extractAllCapabilities(tx, sourceFile, nodeIdByNode);
 
     // Populate data-flow tables (def-use edges + transitive closure)
     extractDataFlow(tx, fileId, sourceFile, nodeIdByNode);
 
     // Populate dominance + post-dominance tables (CFG-based, per-function)
-    extractDominance(tx, fileId, sourceFile, nodeIdByNode);
+    extractDominance(tx, sourceFile, nodeIdByNode);
   });
 
   return {

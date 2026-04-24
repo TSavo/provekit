@@ -107,7 +107,6 @@ const ASSIGNMENT_OPS = new Set([
 
 export function extractArithmetic(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -138,7 +137,6 @@ export function extractArithmetic(
 
 export function extractAssigns(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -182,7 +180,6 @@ export function extractAssigns(
 
 export function extractReturns(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -236,7 +233,6 @@ export function extractReturns(
 
 export function extractMemberAccess(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -276,7 +272,6 @@ export function extractMemberAccess(
 
 export function extractNonNullAssertion(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -298,7 +293,6 @@ export function extractNonNullAssertion(
 
 export function extractTruthiness(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -398,7 +392,6 @@ export function extractTruthiness(
 
 export function extractNarrows(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -564,7 +557,6 @@ export function extractNarrows(
 
 export function extractDecides(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -663,7 +655,6 @@ export function extractDecides(
 
 export function extractIterates(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -769,7 +760,6 @@ export function extractIterates(
 
 export function extractYields(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -816,7 +806,6 @@ export function extractYields(
 
 export function extractThrows(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -856,7 +845,6 @@ export function extractThrows(
 
 export function extractCalls(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -897,7 +885,6 @@ export function extractCalls(
 
 export function extractCaptures(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -976,7 +963,6 @@ export function extractCaptures(
 
 export function extractPattern(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -1048,7 +1034,6 @@ export function extractPattern(
 
 export function extractBinding(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -1137,7 +1122,6 @@ const CONSOLE_METHODS = new Set(["console.log", "console.warn", "console.error",
 
 export function extractSignal(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -1207,7 +1191,6 @@ export function extractSignal(
 
 export function extractSignalInterpolations(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
@@ -1237,25 +1220,24 @@ export function extractSignalInterpolations(
 
 export function extractAllCapabilities(
   tx: SastTx,
-  fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
-  extractArithmetic(tx, fileId, sourceFile, nodeIdByNode);
-  extractAssigns(tx, fileId, sourceFile, nodeIdByNode);
-  extractReturns(tx, fileId, sourceFile, nodeIdByNode);
-  extractMemberAccess(tx, fileId, sourceFile, nodeIdByNode);
-  extractNonNullAssertion(tx, fileId, sourceFile, nodeIdByNode);
-  extractTruthiness(tx, fileId, sourceFile, nodeIdByNode);
-  extractNarrows(tx, fileId, sourceFile, nodeIdByNode);
-  extractDecides(tx, fileId, sourceFile, nodeIdByNode);
-  extractIterates(tx, fileId, sourceFile, nodeIdByNode);
-  extractYields(tx, fileId, sourceFile, nodeIdByNode);
-  extractThrows(tx, fileId, sourceFile, nodeIdByNode);
-  extractCalls(tx, fileId, sourceFile, nodeIdByNode);
-  extractCaptures(tx, fileId, sourceFile, nodeIdByNode);
-  extractPattern(tx, fileId, sourceFile, nodeIdByNode);
-  extractBinding(tx, fileId, sourceFile, nodeIdByNode);
-  extractSignal(tx, fileId, sourceFile, nodeIdByNode);
-  extractSignalInterpolations(tx, fileId, sourceFile, nodeIdByNode);
+  extractArithmetic(tx, sourceFile, nodeIdByNode);
+  extractAssigns(tx, sourceFile, nodeIdByNode);
+  extractReturns(tx, sourceFile, nodeIdByNode);
+  extractMemberAccess(tx, sourceFile, nodeIdByNode);
+  extractNonNullAssertion(tx, sourceFile, nodeIdByNode);
+  extractTruthiness(tx, sourceFile, nodeIdByNode);
+  extractNarrows(tx, sourceFile, nodeIdByNode);
+  extractDecides(tx, sourceFile, nodeIdByNode);
+  extractIterates(tx, sourceFile, nodeIdByNode);
+  extractYields(tx, sourceFile, nodeIdByNode);
+  extractThrows(tx, sourceFile, nodeIdByNode);
+  extractCalls(tx, sourceFile, nodeIdByNode);
+  extractCaptures(tx, sourceFile, nodeIdByNode);
+  extractPattern(tx, sourceFile, nodeIdByNode);
+  extractBinding(tx, sourceFile, nodeIdByNode);
+  extractSignal(tx, sourceFile, nodeIdByNode);
+  extractSignalInterpolations(tx, sourceFile, nodeIdByNode);
 }

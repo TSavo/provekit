@@ -815,7 +815,6 @@ function processFunction(
 
 export function extractDominance(
   tx: SastTx,
-  _fileId: number,
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
