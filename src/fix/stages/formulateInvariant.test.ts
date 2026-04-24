@@ -174,7 +174,7 @@ describe("formulateInvariant (C1)", () => {
     const primaryNodeId = result.rootNodeId;
 
     // Write a fake principle JSON with a always-unsat template.
-    const principlesDir = join(process.cwd(), ".neurallog", "principles");
+    const principlesDir = join(process.cwd(), ".provekit", "principles");
     const fakePrincipleId = "test-vacuous-principle";
     const fakePrinciplePath = join(principlesDir, `${fakePrincipleId}.json`);
     let createdFake = false;

@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync, rmSync, utimesSync, statSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-const tmpRoot = join(tmpdir(), `neurallog-triangle-test-${Date.now()}`);
+const tmpRoot = join(tmpdir(), `provekit-triangle-test-${Date.now()}`);
 
 beforeAll(() => {
   mkdirSync(tmpRoot, { recursive: true });

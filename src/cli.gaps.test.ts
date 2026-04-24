@@ -15,7 +15,7 @@ describe("explainGaps", () => {
   });
 
   it("renders gap reports for a given contract key with Z3 vs runtime values", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 
@@ -59,7 +59,7 @@ describe("explainGaps", () => {
   });
 
   it("reports no gaps when none are stored for the given contract", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 
@@ -70,7 +70,7 @@ describe("explainGaps", () => {
   });
 
   it("handles a gap with no smt/runtime values (e.g., invalid_binding)", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 

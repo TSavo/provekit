@@ -6,7 +6,7 @@
  *
  * MVP simplifications documented inline:
  * - Confidence-update loop (false-negative detection) is deferred. The spec
- *   notes that full match-set comparison belongs to a separate `neurallog review`
+ *   notes that full match-set comparison belongs to a separate `provekit review`
  *   CLI command. Here we only set confidenceUpdates = [].
  * - Capability registration logging is minimal: we record the name so callers
  *   can verify it, but no additional registry mutation is needed — D2 already
@@ -29,7 +29,7 @@ export interface LearnResult {
   principleFilesWritten: { dslPath: string; jsonPath: string } | null;
   /** substrate bundles only — the capabilityName that was registered */
   capabilityRegistered: string | null;
-  /** MVP: always empty — deferred to `neurallog review` CLI */
+  /** MVP: always empty — deferred to `provekit review` CLI */
   confidenceUpdates: {
     principleName: string;
     prevTier: string;
@@ -45,7 +45,7 @@ export interface LearnResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Reject principle names that could escape the `.neurallog/principles/`
+ * Reject principle names that could escape the `.provekit/principles/`
  * directory via path traversal.
  */
 function assertSafePrincipleName(name: string): void {
@@ -69,7 +69,7 @@ export async function learnFromBundle(args: {
   bundle: FixBundle;
   applyResult: ApplyResult;
   db: Db;
-  /** Root of the repo being analysed. Principle files go to <projectRoot>/.neurallog/principles/. Defaults to process.cwd(). */
+  /** Root of the repo being analysed. Principle files go to <projectRoot>/.provekit/principles/. Defaults to process.cwd(). */
   projectRoot?: string;
 }): Promise<LearnResult> {
   // Fast-path: nothing to do when apply did not succeed.
@@ -103,7 +103,7 @@ export async function learnFromBundle(args: {
   if (principle !== null) {
     assertSafePrincipleName(principle.name);
 
-    const principlesDir = join(projectRoot, ".neurallog", "principles");
+    const principlesDir = join(projectRoot, ".provekit", "principles");
     mkdirSync(principlesDir, { recursive: true });
 
     const dslPath = join(principlesDir, `${principle.name}.dsl`);
@@ -168,7 +168,7 @@ export async function learnFromBundle(args: {
   // 3. Confidence updates — deferred (MVP)
   //
   // Full match-set comparison (which existing principles should have caught
-  // this bug but didn't) belongs to a separate `neurallog review` CLI command.
+  // this bug but didn't) belongs to a separate `provekit review` CLI command.
   // We log the intent but do not compute anything here.
   // -------------------------------------------------------------------------
   result.confidenceUpdates = [];

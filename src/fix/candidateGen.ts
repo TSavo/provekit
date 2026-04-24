@@ -258,14 +258,14 @@ export function parseProposedFixes(raw: string): ProposedFix[] {
 export type OracleTwoVerdict = "sat" | "unsat" | "unknown" | "error" | "bug_site_removed";
 
 /**
- * Load the DSL source for a principle from the overlay's .neurallog/principles/ dir.
+ * Load the DSL source for a principle from the overlay's .provekit/principles/ dir.
  * Returns null if not found.
  */
 function loadPrincipleDslFromOverlay(
   overlay: OverlayHandle,
   principleId: string,
 ): string | null {
-  const dslPath = join(overlay.worktreePath, ".neurallog", "principles", `${principleId}.dsl`);
+  const dslPath = join(overlay.worktreePath, ".provekit", "principles", `${principleId}.dsl`);
   if (!existsSync(dslPath)) return null;
   try {
     return readFileSync(dslPath, "utf-8");

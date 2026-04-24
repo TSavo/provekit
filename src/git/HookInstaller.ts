@@ -2,25 +2,25 @@ import { writeFileSync, readFileSync, existsSync, chmodSync, mkdirSync } from "f
 import { join } from "path";
 import { execFileSync } from "child_process";
 
-const HOOK_MARKER = "# neurallog pre-commit hook";
+const HOOK_MARKER = "# provekit pre-commit hook";
 
 const HOOK_SCRIPT = `#!/bin/sh
 ${HOOK_MARKER}
-# Installed by neurallog init. Runs Phase 5 (Z3 only, no LLM, no network).
-# To remove: neurallog hook --uninstall
+# Installed by provekit init. Runs Phase 5 (Z3 only, no LLM, no network).
+# To remove: provekit hook --uninstall
 
 # Use local dev binary if available, otherwise installed package
 if [ -f "src/cli.ts" ]; then
   npx tsx src/cli.ts verify --ci 2>&1
 else
-  npx neurallog verify --ci 2>&1
+  npx provekit verify --ci 2>&1
 fi
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
   echo ""
-  echo "neurallog: commit blocked. Fix violations or override:"
-  echo "  neurallog override --reason \\"intentional\\""
+  echo "provekit: commit blocked. Fix violations or override:"
+  echo "  provekit override --reason \\"intentional\\""
   echo "  git commit --no-verify"
   echo ""
 fi
@@ -74,7 +74,7 @@ export class HookInstaller {
 
     const content = readFileSync(hookPath, "utf-8");
     if (!content.includes(HOOK_MARKER)) {
-      return { removed: false, message: "Pre-commit hook exists but was not installed by neurallog" };
+      return { removed: false, message: "Pre-commit hook exists but was not installed by provekit" };
     }
 
     const lines = content.split("\n");
@@ -92,7 +92,7 @@ export class HookInstaller {
     const cleaned = (before + "\n" + after).trim() + "\n";
     writeFileSync(hookPath, cleaned);
     chmodSync(hookPath, 0o755);
-    return { removed: true, message: "neurallog hook removed, other hooks preserved" };
+    return { removed: true, message: "provekit hook removed, other hooks preserved" };
   }
 
   isInstalled(): boolean {

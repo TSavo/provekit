@@ -16,7 +16,7 @@ describe("runHarnessWithTrace", () => {
   });
 
   it("executes the target function, captures locals at signal line, persists as trace + trace_values", async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     mkdirSync(join(tmpDir, "src"));
     const srcPath = join(tmpDir, "src", "divide.ts");
     writeFileSync(srcPath, `
@@ -70,9 +70,9 @@ export function divide(a: number, b: number): number {
   it("runs two harnesses concurrently without snapshot cross-contamination", async () => {
     // Regression test for the global-state race: before the unique-per-call
     // snapshot fn name was introduced, two parallel runHarnessWithTrace calls
-    // clobbered each other's capture arrays via globalThis.__neurallog_snapshot__.
+    // clobbered each other's capture arrays via globalThis.__provekit_snapshot__.
     // Each run here returns a distinct value and should see its own captures.
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     mkdirSync(join(tmpDir, "src"));
 
     const pathA = join(tmpDir, "src", "addA.ts");

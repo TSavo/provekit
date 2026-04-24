@@ -1,12 +1,12 @@
-# neurallog.app
+# provekit.app
 
-## Your code already has informal specifications scattered through it. neurallog finds them, formalises them, and checks them — and tells you when the formalisation was wrong.
+## Your code already has informal specifications scattered through it. provekit finds them, formalises them, and checks them — and tells you when the formalisation was wrong.
 
-Every `console.log`, every `// TODO: handle the race`, every `validateOrder` function name, every type annotation — these are claims you've written about what's supposed to be true. neurallog extracts them, translates them to SMT-LIB via an LLM, checks them with Z3, and then runs the real code against Z3's witnesses to catch the cases where the translation was lossy.
+Every `console.log`, every `// TODO: handle the race`, every `validateOrder` function name, every type annotation — these are claims you've written about what's supposed to be true. provekit extracts them, translates them to SMT-LIB via an LLM, checks them with Z3, and then runs the real code against Z3's witnesses to catch the cases where the translation was lossy.
 
 ```
-npm install -D neurallog
-npx neurallog init
+npm install -D provekit
+npx provekit init
 ```
 
 One command. No specs to write. The mechanism is LLM-plus-Z3-plus-runtime — described honestly below so you know what you're getting.
@@ -21,13 +21,13 @@ You write code the way you always have:
 logger.info(`Reserving ${quantity} of ${productId}`);
 ```
 
-neurallog runs five phases:
+provekit runs five phases:
 
 1. **Signals.** Tree-sitter parses your source and extracts signal points — logs, type annotations, function names with semantic patterns (`^validate`, `^sanitize`), comments.
 2. **Contract derivation.** An LLM reads each signal's code context and emits an SMT-LIB encoding of the property that should hold. This step uses an LLM and costs money.
 3. **Z3 check.** Z3 verifies the SMT block. `unsat` on the negated goal means the property is consistent with the LLM's model of the code. Fast, deterministic, offline.
-4. **Runtime harness.** For each proven property, neurallog takes Z3's witness (the concrete input Z3 used), loads the real function, and executes it. If the function's runtime behaviour contradicts the property, that's an **encoding gap** — the LLM's translation of your code was wrong.
-5. **Test-suite cross-reference.** When your project has existing tests, neurallog invokes the ones that reference the target function via your test runner (vitest, jest, mocha, node --test) and compares their outcomes to the harness verdict.
+4. **Runtime harness.** For each proven property, provekit takes Z3's witness (the concrete input Z3 used), loads the real function, and executes it. If the function's runtime behaviour contradicts the property, that's an **encoding gap** — the LLM's translation of your code was wrong.
+5. **Test-suite cross-reference.** When your project has existing tests, provekit invokes the ones that reference the target function via your test runner (vitest, jest, mocha, node --test) and compares their outcomes to the harness verdict.
 
 A claim Z3 proves, the harness confirms, and existing tests corroborate is filed as **high-confidence proven**. A claim Z3 proves but the harness refutes is filed as an **encoding gap** — a bug in the formalisation, not the code. Disagreements are annotated, not hidden.
 
@@ -37,13 +37,13 @@ A claim Z3 proves, the harness confirms, and existing tests corroborate is filed
 
 The Z3 verdict is a proof about the SMT-LIB encoding. The encoding was produced by an LLM. The LLM can be wrong. When it is, Z3 will happily prove a property about a function that doesn't exist in your codebase.
 
-This is the central, unsolved problem in the LLM-plus-SMT verification genre. Most tools pretend it isn't there. neurallog is built around catching it.
+This is the central, unsolved problem in the LLM-plus-SMT verification genre. Most tools pretend it isn't there. provekit is built around catching it.
 
 **What's true:** If Z3 says `unsat`, no counterexample exists *within the SMT-LIB block the LLM wrote*. You can re-run it yourself with `echo '...' | z3 -in`. The math is checkable.
 
 **What's not true:** That the block faithfully models your TypeScript. That's the runtime harness's job to empirically test.
 
-**What happens when the encoding is wrong:** neurallog's runtime harness executes the real function with Z3's witness inputs. If the function does something different from what Z3 predicted, you get a finding labelled `encoding-gap` with:
+**What happens when the encoding is wrong:** provekit's runtime harness executes the real function with Z3's witness inputs. If the function does something different from what Z3 predicted, you get a finding labelled `encoding-gap` with:
 
 - the claim Z3 proved
 - the concrete input used
@@ -61,7 +61,7 @@ This is the signal we sell you. The "mathematical certainty" pitch in most LLM-p
 ```
 $ git commit -m "add bulk discount"
 
-neurallog: verifying...
+provekit: verifying...
   [template] 23 mechanical proofs (no LLM) in 4s
   [entailment] ✓ preconditions propagate
   [strength] 18/23 claims load-bearing, 5 vacuous flagged
@@ -70,7 +70,7 @@ neurallog: verifying...
 
 The git hook runs the mechanical `verify` phase against already-derived contracts on disk. **This path does not call an LLM.** Z3 is all that runs: milliseconds to seconds, offline, deterministic.
 
-Contract derivation — the LLM-costly part — runs on demand (`neurallog derive`, or in CI), not on every commit. Your hook-time experience is local, fast, and free.
+Contract derivation — the LLM-costly part — runs on demand (`provekit derive`, or in CI), not on every commit. Your hook-time experience is local, fast, and free.
 
 ---
 
@@ -93,7 +93,7 @@ The harness and test-oracle layers shipped after this run. A re-run with those l
 
 ## What makes it different
 
-**No tests to maintain — but the proofs derive via an LLM.** We won't pretend the LLM is free. Derivation costs money. Steady-state verification (`neurallog verify`) doesn't.
+**No tests to maintain — but the proofs derive via an LLM.** We won't pretend the LLM is free. Derivation costs money. Steady-state verification (`provekit verify`) doesn't.
 
 **No certainty claims.** Most tools in this genre advertise "mathematical proof of correctness." Z3 proves the SMT-LIB encoding is consistent. The encoding is LLM-produced. We say this out loud instead of hoping you won't ask.
 
@@ -120,7 +120,7 @@ You can gate high-confidence violations separately from low-confidence ones. Con
 
 ## Signal plugins
 
-neurallog reads your code through signal generators — plugins that find points where invariants should exist.
+provekit reads your code through signal generators — plugins that find points where invariants should exist.
 
 **Built-in signals:**
 - AST patterns — branches, loops, try/catches, dangerous calls, arithmetic on parameters, falsy-default traps, non-null assertions, mutations, throws
@@ -152,7 +152,7 @@ What this is **not**: a replacement for a dedicated SAST tool that has been tune
 
 ## For compliance
 
-neurallog produces a verifiable audit trail: for each contract, the SMT-LIB block, Z3's verdict, the runtime harness outcome, and the judge's verdict are all stored under `.neurallog/`. An auditor can re-run `z3 -in` against any specific block, replay a harness against the current code, and see the full history of contract evolution in git.
+provekit produces a verifiable audit trail: for each contract, the SMT-LIB block, Z3's verdict, the runtime harness outcome, and the judge's verdict are all stored under `.provekit/`. An auditor can re-run `z3 -in` against any specific block, replay a harness against the current code, and see the full history of contract evolution in git.
 
 What this is **not**: a regulator-accepted formal-methods certification. Compliance frameworks that require formal verification usually require a specific tool chain (Coq, Isabelle, Dafny, TLA+) whose soundness is itself certified — not an LLM-plus-SMT loop whose central honesty is that the LLM can be wrong.
 
@@ -162,9 +162,9 @@ What this **is**: higher-quality evidence than raw test coverage. "These 847 con
 
 ## Pricing
 
-**Free forever:** `neurallog verify`. Z3 runs on your machine against already-derived contracts. The git hook and local development cost nothing after initial derivation.
+**Free forever:** `provekit verify`. Z3 runs on your machine against already-derived contracts. The git hook and local development cost nothing after initial derivation.
 
-**Pay for derivation:** `neurallog derive` and the harness-synthesis layer use LLMs. You pay per run, or bring your own model keys. Contract derivation is the expensive step; once derived, verification is free forever until the code changes.
+**Pay for derivation:** `provekit derive` and the harness-synthesis layer use LLMs. You pay per run, or bring your own model keys. Contract derivation is the expensive step; once derived, verification is free forever until the code changes.
 
 **What you're paying for when you pay:** the LLM work that reads your code and emits SMT encodings, the LLM work that synthesizes runtime harnesses, the LLM judge that audits those harnesses and cross-references outcomes. Our margin is on making the LLM calls efficient — caches at every layer, hashes that invalidate only on real change, parallel synthesis — not on your per-contract cost.
 
@@ -176,11 +176,11 @@ Every programmer who has written a log statement, named a function `validateOrde
 
 The core weakness of that approach is that LLM translations can be lossy. We agree with the critique. We built the tool around catching the lossy cases rather than hiding behind the mathematics of the solver.
 
-If that's the verification tradeoff you're willing to live with — three calibrated oracles instead of one advertised certainty — neurallog is for you.
+If that's the verification tradeoff you're willing to live with — three calibrated oracles instead of one advertised certainty — provekit is for you.
 
 ```
-npm install -D neurallog
-npx neurallog init
+npm install -D provekit
+npx provekit init
 ```
 
-neurallog.app
+provekit.app

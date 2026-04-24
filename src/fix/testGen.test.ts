@@ -62,7 +62,7 @@ vi.mock("./overlay.js", async (importOriginal) => {
 function makeMinimalOverlay(worktreePath: string): OverlayHandle {
   return {
     worktreePath,
-    sastDbPath: join(worktreePath, ".neurallog", "scratch.db"),
+    sastDbPath: join(worktreePath, ".provekit", "scratch.db"),
     sastDb: {} as unknown as Db,
     baseRef: "HEAD",
     modifiedFiles: new Set<string>(),

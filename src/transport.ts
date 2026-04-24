@@ -3,7 +3,7 @@ import { execFile } from "child_process";
 import { Contract, ContractStore, ProvenProperty } from "./contracts";
 
 /**
- * A pino destination stream that evaluates cached neurallog contracts
+ * A pino destination stream that evaluates cached provekit contracts
  * against live log data at runtime. Normal log output always passes
  * through; proof entries are interleaved as additional JSON lines.
  */
@@ -13,7 +13,7 @@ import { Contract, ContractStore, ProvenProperty } from "./contracts";
 // ---------------------------------------------------------------------------
 
 export interface TransportOptions {
-  /** Absolute or relative path to the project root (contains .neurallog/) */
+  /** Absolute or relative path to the project root (contains .provekit/) */
   projectRoot: string;
   /** Where to write normal log output. Defaults to process.stdout. */
   destination?: NodeJS.WritableStream;
@@ -25,7 +25,7 @@ interface CallSiteKey {
 }
 
 interface ProofEntry {
-  neurallog: true;
+  provekit: true;
   ts: string;
   callSite: { file: string; line: number; function: string };
   property: string;
@@ -43,8 +43,8 @@ interface ProofEntry {
  *
  * We walk the stack looking for frames that are NOT inside:
  *   - node_modules/pino
- *   - neurallog/dist/transport
- *   - neurallog/src/transport
+ *   - provekit/dist/transport
+ *   - provekit/src/transport
  *   - node:internal
  */
 function parseCallSite(): CallSiteKey | null {
@@ -58,10 +58,10 @@ function parseCallSite(): CallSiteKey | null {
     if (
       line.includes("node_modules/pino") ||
       line.includes("node_modules\\pino") ||
-      line.includes("neurallog/dist/transport") ||
-      line.includes("neurallog/src/transport") ||
-      line.includes("neurallog\\dist\\transport") ||
-      line.includes("neurallog\\src\\transport") ||
+      line.includes("provekit/dist/transport") ||
+      line.includes("provekit/src/transport") ||
+      line.includes("provekit\\dist\\transport") ||
+      line.includes("provekit\\src\\transport") ||
       line.includes("node:internal") ||
       line.includes("node:events")
     ) {
@@ -234,7 +234,7 @@ async function evaluateContract(
     else proofResult = "error";
 
     const entry: ProofEntry = {
-      neurallog: true,
+      provekit: true,
       ts: now,
       callSite,
       property: prop.claim,
@@ -262,7 +262,7 @@ async function evaluateContract(
     else proofResult = "error";
 
     const entry: ProofEntry = {
-      neurallog: true,
+      provekit: true,
       ts: now,
       callSite,
       property: `VIOLATION CHECK: ${violation.claim}`,
@@ -279,7 +279,7 @@ async function evaluateContract(
 // Transport stream
 // ---------------------------------------------------------------------------
 
-class NeurallogTransform extends Transform {
+class ProvekitTransform extends Transform {
   private contractIndex: ContractIndex;
   private contractStore: ContractStore;
   private projectRoot: string;
@@ -293,7 +293,7 @@ class NeurallogTransform extends Transform {
     this.contractStore = new ContractStore(this.projectRoot);
     const contracts = this.contractStore.getAll();
     this.contractIndex = buildContractIndex(contracts);
-    console.log(`[neurallog] Transport loaded: ${contracts.length} contracts, ${this.contractIndex.size} indexed call sites`);
+    console.log(`[provekit] Transport loaded: ${contracts.length} contracts, ${this.contractIndex.size} indexed call sites`);
   }
 
   _transform(chunk: Buffer, _encoding: string, callback: TransformCallback): void {
@@ -315,7 +315,7 @@ class NeurallogTransform extends Transform {
     // Attempt to identify the call site.
     // In pino transport mode the stack trace won't point back to the
     // original logger.info() call. Instead we look for a `caller` or
-    // `src` field that pino can add (when callers: true), or a neurallog-
+    // `src` field that pino can add (when callers: true), or a provekit-
     // specific field.
     const callSite = this.extractCallSite(logObj);
 
@@ -344,7 +344,7 @@ class NeurallogTransform extends Transform {
         }
       })
       .catch(() => {
-        // Swallow errors — neurallog must never break the app
+        // Swallow errors — provekit must never break the app
       })
       .finally(() => {
         callback();
@@ -355,12 +355,12 @@ class NeurallogTransform extends Transform {
    * Extract call site info from the log object.
    *
    * Strategy (in priority order):
-   * 1. Explicit neurallog metadata: { _nl: { file, line } }
+   * 1. Explicit provekit metadata: { _nl: { file, line } }
    * 2. Pino caller info (requires callers: true): { caller: "file:line" }
    * 3. Pino src field: { src: { file, line } }
    */
   private extractCallSite(logObj: Record<string, unknown>): CallSiteKey | null {
-    // 1. Explicit neurallog metadata
+    // 1. Explicit provekit metadata
     const nl = logObj._nl as Record<string, unknown> | undefined;
     if (nl && typeof nl.file === "string" && typeof nl.line === "number") {
       return { file: nl.file, line: nl.line };
@@ -391,20 +391,20 @@ class NeurallogTransform extends Transform {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a neurallog pino destination stream.
+ * Create a provekit pino destination stream.
  *
  * Usage:
  * ```ts
  * import pino from 'pino';
- * import { createNeurallogTransport } from 'neurallog';
- * const logger = pino({}, createNeurallogTransport({ projectRoot: '.' }));
+ * import { createProvekitTransport } from 'provekit';
+ * const logger = pino({}, createProvekitTransport({ projectRoot: '.' }));
  * ```
  *
  * For call-site identification to work, configure pino with caller info:
  * ```ts
  * const logger = pino(
  *   { transport: undefined },  // use destination mode, not transport mode
- *   createNeurallogTransport({ projectRoot: '.' })
+ *   createProvekitTransport({ projectRoot: '.' })
  * );
  * ```
  *
@@ -413,14 +413,14 @@ class NeurallogTransform extends Transform {
  * logger.info({ _nl: { file: __filename, line: __LINE__ }, userId: 42 }, 'login');
  * ```
  */
-export function createNeurallogTransport(opts: TransportOptions): NeurallogTransform {
-  return new NeurallogTransform(opts);
+export function createProvekitTransport(opts: TransportOptions): ProvekitTransform {
+  return new ProvekitTransform(opts);
 }
 
 /**
  * Pino transport entry point — used when configured as:
  * ```ts
- * pino({ transport: { target: 'neurallog/dist/transport' } })
+ * pino({ transport: { target: 'provekit/dist/transport' } })
  * ```
  *
  * Pino transports receive newline-delimited JSON on stdin-like readable.
@@ -457,7 +457,7 @@ export default async function pinoTransport(opts: { projectRoot?: string } = {})
             }
           })
           .catch(() => {
-            // Swallow — neurallog must never break the app
+            // Swallow — provekit must never break the app
           });
       }
     },

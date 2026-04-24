@@ -15,7 +15,7 @@ describe("runtime_values schema", () => {
   });
 
   it("inserts a primitive number value and reads it back", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 
@@ -36,7 +36,7 @@ describe("runtime_values schema", () => {
   });
 
   it("inserts an object with a member and joins through the edge table", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 

@@ -91,7 +91,7 @@ export class ContractStore {
   }
 
   private get contractsDir(): string {
-    return join(this.projectRoot, ".neurallog", "contracts");
+    return join(this.projectRoot, ".provekit", "contracts");
   }
 
   private loadFromDisk(): void {

@@ -16,7 +16,7 @@ describe("serializeValue", () => {
   });
 
   function freshDb() {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
     return db;

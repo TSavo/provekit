@@ -106,7 +106,7 @@ export class Pipeline {
     };
 
     const startTime = Date.now();
-    console.log("neurallog: incremental verification...");
+    console.log("provekit: incremental verification...");
     console.log(`  Signals: ${signalRegistry.getGeneratorNames().join(", ")}`);
 
     const changedFiles = config.changedFiles || [];

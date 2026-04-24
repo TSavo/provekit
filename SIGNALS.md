@@ -1,6 +1,6 @@
 # Signal-Driven Formal Verification
 
-neurallog's architecture is signal-agnostic. The five-phase pipeline — dependency graph, context assembly, derivation, classification, axiom application — works against any signal of programmer intent. The log statement is the first signal source. It is not the only one.
+provekit's architecture is signal-agnostic. The five-phase pipeline — dependency graph, context assembly, derivation, classification, axiom application — works against any signal of programmer intent. The log statement is the first signal source. It is not the only one.
 
 ## Signal Layers
 
@@ -12,7 +12,7 @@ neurallog's architecture is signal-agnostic. The five-phase pipeline — depende
 **Runtime opportunity:** Yes — stack frame inspection gives live values for Z3 evaluation.
 **Friction:** Zero. Every codebase has thousands. No code changes required.
 
-This is where neurallog starts. It's the Trojan horse.
+This is where provekit starts. It's the Trojan horse.
 
 ### Layer 2: Type System (Language Signals)
 
@@ -27,7 +27,7 @@ The key insight: TypeScript types are compile-time only. They are erased at runt
 `function validate(x: string): never` — can execution return from a function declared `never`?
 `readonly balance: number` — can `balance` change after construction?
 
-Each of these is a programmer-written specification. TypeScript partially enforces them. neurallog fully proves them. The Z3 check:
+Each of these is a programmer-written specification. TypeScript partially enforces them. provekit fully proves them. The Z3 check:
 
 ```smt2
 ; Can a const be mutated?
@@ -88,7 +88,7 @@ An exhaustive `switch` in TypeScript with a `default: never` is a specification:
 
 A `try { ... } catch (err) { logger.error(err) }` is a specification: "I handle errors on this path." If the catch block re-throws, swallows, or handles only a subset of possible errors, the invariant may be incomplete.
 
-An early return `if (!isValid) return null;` is a path condition (already extracted by neurallog). Everything after it assumes `isValid === true`. If `isValid` can be circumvented, the assumption breaks.
+An early return `if (!isValid) return null;` is a path condition (already extracted by provekit). Everything after it assumes `isValid === true`. If `isValid` can be circumvented, the assumption breaks.
 
 ### Layer 5: Naming (Semantic Signals)
 
@@ -112,7 +112,7 @@ An early return `if (!isValid) return null;` is a path condition (already extrac
 `// TODO: handle race condition` → the programmer KNOWS about the bug. Derive the race condition formally, prove it's reachable. The TODO becomes a filed issue with a proof.
 `// FIXME: potential overflow` → derive the overflow condition, prove whether it's reachable.
 
-TODOs are the most honest signals in code. The programmer already identified the problem. neurallog formalizes it and proves it.
+TODOs are the most honest signals in code. The programmer already identified the problem. provekit formalizes it and proves it.
 
 ## The Architecture Supports All Layers
 

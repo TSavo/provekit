@@ -475,7 +475,7 @@ Produce ONE atomic principle for this pattern gap. It must have:
       derivedAt: new Date().toISOString(),
     };
 
-    const outPath = join(options.projectRoot, ".neurallog", "derivation.json");
+    const outPath = join(options.projectRoot, ".provekit", "derivation.json");
     writeFileSync(outPath, JSON.stringify({ derivedAt: output.derivedAt, contractCount: allContracts.length }, null, 2));
 
     const totalProven = allContracts.reduce((n, c) => n + c.proven.length, 0);

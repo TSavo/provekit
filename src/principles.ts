@@ -67,7 +67,7 @@ export class PrincipleStore {
   }
 
   private get principlesDir(): string {
-    return join(this.projectRoot, ".neurallog", "principles");
+    return join(this.projectRoot, ".provekit", "principles");
   }
 
   private loadFromDisk(): void {

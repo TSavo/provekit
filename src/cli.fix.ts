@@ -1,5 +1,5 @@
 /**
- * B4: CLI entry point for `neurallog fix <ref>`.
+ * B4: CLI entry point for `provekit fix <ref>`.
  *
  * Resolves a <ref> into raw text + source kind, runs intake → locate →
  * classify, pretty-prints the plan, and prompts for confirmation.
@@ -276,7 +276,7 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
   const e = (s: string) => stderr.write(s + "\n");
 
   if (!dryRun) {
-    w(`neurallog fix loop · v${VERSION}`);
+    w(`provekit fix loop · v${VERSION}`);
     w("");
   }
 
@@ -407,8 +407,8 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
   }
 
   if (!autoApply && result.applyResult?.prDraft) {
-    const patchPath = join(process.cwd(), "neurallog-fix.patch");
-    const mdPath = join(process.cwd(), "neurallog-fix.md");
+    const patchPath = join(process.cwd(), "provekit-fix.patch");
+    const mdPath = join(process.cwd(), "provekit-fix.md");
     writeFileSync(patchPath, result.applyResult.prDraft.patch, "utf-8");
     writeFileSync(mdPath, result.applyResult.prDraft.prBody, "utf-8");
     w(`Patch written to: ${patchPath}`);
@@ -476,7 +476,7 @@ export async function runFix(argv: string[]): Promise<void> {
   const ref = positionals[0];
 
   if (!ref) {
-    process.stderr.write("Usage: neurallog fix <ref> [--no-confirm] [--dry-run] [--apply] [--max-sites N]\n");
+    process.stderr.write("Usage: provekit fix <ref> [--no-confirm] [--dry-run] [--apply] [--max-sites N]\n");
     process.exit(1);
   }
 
@@ -487,7 +487,7 @@ export async function runFix(argv: string[]): Promise<void> {
   function findProjectRoot(startDir: string): string {
     let dir = startDir;
     while (dir !== pathDirname(dir)) {
-      for (const c of [".neurallog", "package.json", ".git"]) {
+      for (const c of [".provekit", "package.json", ".git"]) {
         try {
           const p = pathResolve(dir, c);
           const s = statSync(p);
@@ -500,10 +500,10 @@ export async function runFix(argv: string[]): Promise<void> {
   }
 
   const projectRoot = findProjectRoot(process.cwd());
-  const dbPath = join(projectRoot, ".neurallog", "neurallog.db");
+  const dbPath = join(projectRoot, ".provekit", "provekit.db");
 
   if (!fsExistsSync(dbPath)) {
-    process.stderr.write(`No database found at ${dbPath}. Run 'neurallog analyze' first.\n`);
+    process.stderr.write(`No database found at ${dbPath}. Run 'provekit analyze' first.\n`);
     process.exit(1);
   }
 

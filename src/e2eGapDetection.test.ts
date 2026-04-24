@@ -27,7 +27,7 @@ describe("e2e: division-by-zero fixture produces IEEE gap end-to-end", () => {
   it("runs the full pipeline and reports an IEEE NaN gap via explainGaps", async () => {
     // Copy the committed fixture into a scratch dir so the instrumented
     // sibling file doesn't pollute the repo.
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-e2e-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-e2e-"));
     mkdirSync(join(tmpDir, "src"));
     const srcPath = join(tmpDir, "src", "divide.ts");
     copyFileSync(join(__dirname, "..", "examples", "division-by-zero.ts"), srcPath);

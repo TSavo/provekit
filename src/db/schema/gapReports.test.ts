@@ -17,7 +17,7 @@ describe("gap_reports schema", () => {
   });
 
   it("inserts a gap_report referencing a clause + two runtime_values", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 

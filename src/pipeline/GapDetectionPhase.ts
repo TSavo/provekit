@@ -43,7 +43,7 @@ export class GapDetectionPhase extends Phase<GapDetectionInput, GapDetectionOutp
   ): Promise<PhaseResult<GapDetectionOutput>> {
     const { projectRoot, contracts } = input;
 
-    const dbPath = join(projectRoot, ".neurallog", "neurallog.db");
+    const dbPath = join(projectRoot, ".provekit", "provekit.db");
     const db = openDb(dbPath);
 
     const migrationsFolder = join(__dirname, "..", "..", "drizzle");

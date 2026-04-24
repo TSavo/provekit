@@ -336,9 +336,9 @@ describe("learnFromBundle (D3)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 7: File writes go to .neurallog/principles/
+  // Test 7: File writes go to .provekit/principles/
   // -------------------------------------------------------------------------
-  it("writes principle files under <projectRoot>/.neurallog/principles/", async () => {
+  it("writes principle files under <projectRoot>/.provekit/principles/", async () => {
     const bundleId = seedBundleRow(db);
     const principle = makePrinciple({ name: "my-safe-principle" });
     const bundle = makeBundle({
@@ -353,8 +353,8 @@ describe("learnFromBundle (D3)", () => {
       projectRoot: tmpDir,
     });
 
-    const expectedDsl = join(tmpDir, ".neurallog", "principles", "my-safe-principle.dsl");
-    const expectedJson = join(tmpDir, ".neurallog", "principles", "my-safe-principle.json");
+    const expectedDsl = join(tmpDir, ".provekit", "principles", "my-safe-principle.dsl");
+    const expectedJson = join(tmpDir, ".provekit", "principles", "my-safe-principle.json");
 
     expect(result.principleFilesWritten!.dslPath).toBe(expectedDsl);
     expect(result.principleFilesWritten!.jsonPath).toBe(expectedJson);

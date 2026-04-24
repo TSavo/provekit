@@ -400,7 +400,7 @@ const GIT_ID = ["-c", "user.name=test", "-c", "user.email=test@test"];
 function makeMinimalOverlay(worktreePath: string): OverlayHandle {
   return {
     worktreePath,
-    sastDbPath: join(worktreePath, ".neurallog", "scratch.db"),
+    sastDbPath: join(worktreePath, ".provekit", "scratch.db"),
     sastDb: {} as unknown as Db,
     baseRef: "HEAD",
     modifiedFiles: new Set<string>(),
@@ -422,7 +422,7 @@ describe("C6: proposeCapabilitySpec — agent path", () => {
 
       // The agent writes all required files.
       const capabilityName = "divisionCap";
-      const capDir = `.neurallog/capability-proposal/${capabilityName}`;
+      const capDir = `.provekit/capability-proposal/${capabilityName}`;
       const schemaTs = `import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 export const nodeDivisionCap = sqliteTable("node_division_cap", {
   nodeId: text("node_id").notNull(),
@@ -466,7 +466,7 @@ export const nodeDivisionCap = sqliteTable("node_division_cap", {
             { file: `${capDir}/registry.ts`, newContent: registryTs },
             { file: `${capDir}/fixtures.json`, newContent: fixtures },
             { file: `${capDir}/meta.json`, newContent: meta },
-            { file: `.neurallog/principles/DivisionPrinciple.dsl`, newContent: dslSource },
+            { file: `.provekit/principles/DivisionPrinciple.dsl`, newContent: dslSource },
           ],
           text: "Wrote capability proposal",
         }],

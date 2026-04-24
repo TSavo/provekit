@@ -5,6 +5,6 @@ export default {
   out: "./drizzle",
   dialect: "sqlite",
   dbCredentials: {
-    url: ".neurallog/neurallog.db",
+    url: ".provekit/provekit.db",
   },
 } satisfies Config;

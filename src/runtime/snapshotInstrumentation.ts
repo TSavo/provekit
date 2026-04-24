@@ -12,13 +12,13 @@ export interface InstrumentOptions {
    * run's instrumented code will call the other run's function, and the
    * first run sees zero snapshots.
    *
-   * Optional. Default `__neurallog_snapshot__` is only safe for single-
+   * Optional. Default `__provekit_snapshot__` is only safe for single-
    * instance synchronous tests of this module itself.
    */
   snapshotFnName?: string;
 }
 
-const DEFAULT_SNAPSHOT_FN = "__neurallog_snapshot__";
+const DEFAULT_SNAPSHOT_FN = "__provekit_snapshot__";
 
 function isValidIdentifier(name: string): boolean {
   // Conservative: ASCII letters, digits, underscore; can't start with digit.

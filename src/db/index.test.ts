@@ -12,7 +12,7 @@ describe("openDb", () => {
   });
 
   it("opens a connection against a new sqlite file and runs a trivial query", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const dbPath = join(tmpDir, "test.db");
     const db = openDb(dbPath);
     const result = db.$client.prepare("select 1 as x").get() as { x: number };

@@ -80,20 +80,20 @@ describe("e2e: Pipeline.runFull — division-by-zero.ts → gap_reports, rendere
     }
 
     // 1. Create scratch project root
-    scratchRoot = mkdtempSync(join(tmpdir(), "neurallog-e2e-analyze-"));
+    scratchRoot = mkdtempSync(join(tmpdir(), "provekit-e2e-analyze-"));
 
-    // 2. Create src/ and .neurallog/ directories
+    // 2. Create src/ and .provekit/ directories
     mkdirSync(join(scratchRoot, "src"), { recursive: true });
-    mkdirSync(join(scratchRoot, ".neurallog"), { recursive: true });
+    mkdirSync(join(scratchRoot, ".provekit"), { recursive: true });
 
     // 3. Copy the division-by-zero fixture into scratch/src/divide.ts
     const fixtureSrc = join(WORKTREE_ROOT, "examples", "division-by-zero.ts");
     const fixtureDst = join(scratchRoot, "src", "divide.ts");
     copyFileSync(fixtureSrc, fixtureDst);
 
-    // 4. Copy the 23 seed principles into scratch/.neurallog/principles/
-    const principlesSrc = join(WORKTREE_ROOT, ".neurallog", "principles");
-    const principlesDst = join(scratchRoot, ".neurallog", "principles");
+    // 4. Copy the 23 seed principles into scratch/.provekit/principles/
+    const principlesSrc = join(WORKTREE_ROOT, ".provekit", "principles");
+    const principlesDst = join(scratchRoot, ".provekit", "principles");
     cpSync(principlesSrc, principlesDst, { recursive: true });
 
     // 5. Run the pipeline
@@ -141,7 +141,7 @@ describe("e2e: Pipeline.runFull — division-by-zero.ts → gap_reports, rendere
     expect(result.gapDetection!.reportsWritten).toBeGreaterThanOrEqual(1);
 
     // 9. gap_reports has at least one ieee_specials row for this contract.
-    const dbPath = join(scratchRoot, ".neurallog", "neurallog.db");
+    const dbPath = join(scratchRoot, ".provekit", "provekit.db");
     expect(existsSync(dbPath)).toBe(true);
     const db = openDb(dbPath);
     const allGapRows = db.select().from(gapReports).all();

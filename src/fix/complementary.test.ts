@@ -155,8 +155,8 @@ principle division-by-zero {
 `;
 
 function seedPrinciples(repoDir: string): void {
-  const src = join(process.cwd(), ".neurallog", "principles");
-  const dst = join(repoDir, ".neurallog", "principles");
+  const src = join(process.cwd(), ".provekit", "principles");
+  const dst = join(repoDir, ".provekit", "principles");
   mkdirSync(dst, { recursive: true });
   if (existsSync(src)) {
     cpSync(src, dst, { recursive: true });

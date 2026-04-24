@@ -11,7 +11,7 @@ export class IgnoreFilter {
   }
 
   private load(): void {
-    const ignorePath = join(this.projectRoot, ".neurallogignore");
+    const ignorePath = join(this.projectRoot, ".provekitignore");
     if (!existsSync(ignorePath)) return;
 
     const content = readFileSync(ignorePath, "utf-8");
@@ -21,7 +21,7 @@ export class IgnoreFilter {
       .filter((l) => l.length > 0 && !l.startsWith("#"));
 
     if (this.patterns.length > 0) {
-      console.log(`[neurallog] Loaded ${this.patterns.length} ignore patterns from .neurallogignore`);
+      console.log(`[provekit] Loaded ${this.patterns.length} ignore patterns from .provekitignore`);
     }
   }
 

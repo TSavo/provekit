@@ -250,7 +250,7 @@ export class HarnessCache {
   private cacheDir: string;
 
   constructor(projectRoot: string) {
-    this.cacheDir = join(projectRoot, ".neurallog", "harnesses");
+    this.cacheDir = join(projectRoot, ".provekit", "harnesses");
   }
 
   private cacheKey(smt2: string, functionSource: string, depsSource?: string): string {
@@ -404,7 +404,7 @@ export async function runHarnessWithTrace(args: RunHarnessWithTraceArgs): Promis
   // trace empty. Same reasoning applies to the on-disk instrumented file:
   // two concurrent runs against the same source would race on the path.
   const callId = randomBytes(8).toString("hex");
-  const snapshotFnName = `__neurallog_snapshot_${callId}__`;
+  const snapshotFnName = `__provekit_snapshot_${callId}__`;
   const instrumentedPath = sourcePath.replace(/\.ts$/, `.__instrumented_${callId}__.ts`);
 
   const originalSource = readFileSync(sourcePath, "utf-8");

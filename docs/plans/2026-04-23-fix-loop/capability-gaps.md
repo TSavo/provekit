@@ -1,3 +1,5 @@
+<!-- This plan was written under the product's old name (neurallog); the implemented system is ProveKit. -->
+
 # A8: Capability Gaps — Seed Principles DSL Migration
 
 **Date:** 2026-04-23

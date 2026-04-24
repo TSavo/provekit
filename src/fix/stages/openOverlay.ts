@@ -81,7 +81,7 @@ export async function openOverlay(args: {
   // ------------------------------------------------------------------
   // Step 4: Open and migrate a scratch SAST DB inside the worktree.
   // ------------------------------------------------------------------
-  const sastDbDir = join(scratchPath, ".neurallog");
+  const sastDbDir = join(scratchPath, ".provekit");
   mkdirSync(sastDbDir, { recursive: true });
   const sastDbPath = join(sastDbDir, "scratch-sast.db");
   const sastDb = openDb(sastDbPath);
@@ -90,8 +90,8 @@ export async function openOverlay(args: {
   // ------------------------------------------------------------------
   // Step 5: Copy principles library (best-effort).
   // ------------------------------------------------------------------
-  const principlesSrc = join(repoRoot, ".neurallog", "principles");
-  const principlesDst = join(scratchPath, ".neurallog", "principles");
+  const principlesSrc = join(repoRoot, ".provekit", "principles");
+  const principlesDst = join(scratchPath, ".provekit", "principles");
   if (existsSync(principlesSrc)) {
     try {
       cpSync(principlesSrc, principlesDst, { recursive: true });

@@ -35,7 +35,7 @@ export class ObservationStore {
   }
 
   private get observationsDir(): string {
-    return join(this.projectRoot, ".neurallog", "observations");
+    return join(this.projectRoot, ".provekit", "observations");
   }
 
   private loadFromDisk(): void {

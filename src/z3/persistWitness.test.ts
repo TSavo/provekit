@@ -16,7 +16,7 @@ describe("persistWitness", () => {
   });
 
   it("writes parsed witness values to clause_witnesses and runtime_values", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 

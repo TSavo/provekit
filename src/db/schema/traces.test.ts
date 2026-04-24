@@ -16,7 +16,7 @@ describe("traces schema", () => {
   });
 
   it("inserts a trace and a trace_value referencing a runtime_value", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 
@@ -51,7 +51,7 @@ describe("traces schema", () => {
   });
 
   it("tv_single_point_unique: rejects duplicate (traceId, nodeId, null) but allows distinct iterationIndex", () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     const db = openDb(join(tmpDir, "test.db"));
     migrate(db, { migrationsFolder: "./drizzle" });
 

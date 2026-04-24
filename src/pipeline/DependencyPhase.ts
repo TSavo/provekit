@@ -83,7 +83,7 @@ export class DependencyPhase extends Phase<DependencyInput, DependencyGraph> {
       builtAt: new Date().toISOString(),
     };
 
-    const outDir = join(options.projectRoot, ".neurallog");
+    const outDir = join(options.projectRoot, ".provekit");
     mkdirSync(outDir, { recursive: true });
     const graphPath = join(outDir, "graph.json");
     writeFileSync(graphPath, JSON.stringify(graph, null, 2));

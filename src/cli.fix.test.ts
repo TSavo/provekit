@@ -781,7 +781,7 @@ describe("runFixLoopCli()", () => {
   // -------------------------------------------------------------------------
   // Test 15: prDraft mode writes patch + body files to cwd
   // -------------------------------------------------------------------------
-  it("prDraft mode: writes neurallog-fix.patch and neurallog-fix.md to cwd", async () => {
+  it("prDraft mode: writes provekit-fix.patch and provekit-fix.md to cwd", async () => {
     ({ db, tmpDir } = openTestDb());
 
     const source = "function signup(token: string) { return token; }\n";
@@ -830,8 +830,8 @@ describe("runFixLoopCli()", () => {
       );
 
       expect(exitCode).toBe(0);
-      expect(existsSync(join(tmpDir, "neurallog-fix.patch"))).toBe(true);
-      expect(existsSync(join(tmpDir, "neurallog-fix.md"))).toBe(true);
+      expect(existsSync(join(tmpDir, "provekit-fix.patch"))).toBe(true);
+      expect(existsSync(join(tmpDir, "provekit-fix.md"))).toBe(true);
     } finally {
       process.chdir(origCwd);
     }

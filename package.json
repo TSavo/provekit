@@ -1,10 +1,10 @@
 {
-  "name": "neurallog",
+  "name": "provekit",
   "version": "0.3.0",
   "description": "A logger that fixes your code.",
   "main": "dist/index.js",
   "bin": {
-    "neurallog": "dist/cli.js"
+    "provekit": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

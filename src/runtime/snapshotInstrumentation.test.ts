@@ -11,16 +11,16 @@ export function divide(a: number, b: number): number {
 }
     `.trim();
     const result = instrumentForSnapshot(source, { signalLine: 3, captureNames: ["a", "b", "q"] });
-    expect(result).toContain("__neurallog_snapshot__");
+    expect(result).toContain("__provekit_snapshot__");
     expect(result).toContain('"divide"');
-    expect(result).toMatch(/__neurallog_snapshot__\(\s*"divide"\s*,\s*3\s*,\s*\{\s*a\s*,\s*b\s*,\s*q\s*\}\s*\)/);
+    expect(result).toMatch(/__provekit_snapshot__\(\s*"divide"\s*,\s*3\s*,\s*\{\s*a\s*,\s*b\s*,\s*q\s*\}\s*\)/);
     expect(result).toContain('console.log("result", q)');
   });
 
   it("handles functions with expression-body arrow", () => {
     const source = `export const f = (x: number) => x + 1;`;
     const result = instrumentForSnapshot(source, { signalLine: 1, captureNames: ["x"] });
-    expect(result).toContain("__neurallog_snapshot__");
+    expect(result).toContain("__provekit_snapshot__");
     expect(result).toContain("return");
   });
 

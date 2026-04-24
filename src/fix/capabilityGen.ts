@@ -178,17 +178,17 @@ function parseCapabilitySpecResponse(raw: string): CapabilitySpecProposal | null
 
 /**
  * Agent path for C6: prompts the LLM agent to write capability spec files
- * under .neurallog/capability-proposal/<name>/ in the overlay worktree.
+ * under .provekit/capability-proposal/<name>/ in the overlay worktree.
  *
  * Convention (all paths relative to overlay.worktreePath):
- *   .neurallog/capability-proposal/<name>/schema.ts
- *   .neurallog/capability-proposal/<name>/migration.sql
- *   .neurallog/capability-proposal/<name>/extractor.ts
- *   .neurallog/capability-proposal/<name>/extractor.test.ts
- *   .neurallog/capability-proposal/<name>/registry.ts
- *   .neurallog/capability-proposal/<name>/fixtures.json
- *   .neurallog/capability-proposal/<name>/meta.json
- *   .neurallog/principles/<name>.dsl
+ *   .provekit/capability-proposal/<name>/schema.ts
+ *   .provekit/capability-proposal/<name>/migration.sql
+ *   .provekit/capability-proposal/<name>/extractor.ts
+ *   .provekit/capability-proposal/<name>/extractor.test.ts
+ *   .provekit/capability-proposal/<name>/registry.ts
+ *   .provekit/capability-proposal/<name>/fixtures.json
+ *   .provekit/capability-proposal/<name>/meta.json
+ *   .provekit/principles/<name>.dsl
  *
  * meta.json format:
  *   { "capabilityName": "...", "rationale": "...", "dslSource": "...",
@@ -222,14 +222,14 @@ Existing capability tables: ${existingTables}
 
 Design a new capability. Write these files to the worktree:
 
-1. .neurallog/capability-proposal/<capabilityName>/schema.ts — TypeScript schema with sqliteTable
-2. .neurallog/capability-proposal/<capabilityName>/migration.sql — CREATE TABLE or ALTER TABLE ADD COLUMN only
-3. .neurallog/capability-proposal/<capabilityName>/extractor.ts — exported function with tx.insert(<table>).values(...)
-4. .neurallog/capability-proposal/<capabilityName>/extractor.test.ts — vitest tests
-5. .neurallog/capability-proposal/<capabilityName>/registry.ts — registerCapability(...) call
-6. .neurallog/capability-proposal/<capabilityName>/fixtures.json — JSON: { "positiveFixtures": [{"source": "...", "expectedRowCount": N}], "negativeFixtures": [{"source": "...", "expectedRowCount": 0}] }
-7. .neurallog/capability-proposal/<capabilityName>/meta.json — JSON: { "capabilityName": "...", "rationale": "...", "dslSource": "...", "name": "...", "smtTemplate": "...", "teachingExample": { "domain": "...", "explanation": "...", "smt2": "..." } }
-8. .neurallog/principles/<name>.dsl — the DSL principle using the new capability
+1. .provekit/capability-proposal/<capabilityName>/schema.ts — TypeScript schema with sqliteTable
+2. .provekit/capability-proposal/<capabilityName>/migration.sql — CREATE TABLE or ALTER TABLE ADD COLUMN only
+3. .provekit/capability-proposal/<capabilityName>/extractor.ts — exported function with tx.insert(<table>).values(...)
+4. .provekit/capability-proposal/<capabilityName>/extractor.test.ts — vitest tests
+5. .provekit/capability-proposal/<capabilityName>/registry.ts — registerCapability(...) call
+6. .provekit/capability-proposal/<capabilityName>/fixtures.json — JSON: { "positiveFixtures": [{"source": "...", "expectedRowCount": N}], "negativeFixtures": [{"source": "...", "expectedRowCount": 0}] }
+7. .provekit/capability-proposal/<capabilityName>/meta.json — JSON: { "capabilityName": "...", "rationale": "...", "dslSource": "...", "name": "...", "smtTemplate": "...", "teachingExample": { "domain": "...", "explanation": "...", "smt2": "..." } }
+8. .provekit/principles/<name>.dsl — the DSL principle using the new capability
 
 Rules:
 - capabilityName must be a valid camelCase identifier
@@ -255,7 +255,7 @@ Write all files now using your tools.`;
   }
 
   // Read back the files the agent wrote.
-  const proposalDir = join(overlay.worktreePath, ".neurallog", "capability-proposal");
+  const proposalDir = join(overlay.worktreePath, ".provekit", "capability-proposal");
 
   // Find the first subdirectory (the capability name directory).
   let capabilityName: string | null = null;

@@ -14,7 +14,7 @@ export class LessonStore {
   private dir: string;
 
   constructor(projectRoot: string) {
-    this.dir = join(projectRoot, ".neurallog", "lessons");
+    this.dir = join(projectRoot, ".provekit", "lessons");
   }
 
   add(lesson: Omit<Lesson, "addedAt">): void {

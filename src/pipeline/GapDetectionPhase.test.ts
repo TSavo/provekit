@@ -107,7 +107,7 @@ describe("GapDetectionPhase", () => {
     expect(result.data.reportsWritten).toBeGreaterThan(0);
 
     // Verify gap_reports row exists in the DB
-    const dbPath = join(tempRoot, ".neurallog", "neurallog.db");
+    const dbPath = join(tempRoot, ".provekit", "provekit.db");
     expect(existsSync(dbPath)).toBe(true);
     const db = openDb(dbPath);
     const rows = db.select().from(gapReports).all();
@@ -177,7 +177,7 @@ describe("GapDetectionPhase", () => {
 
     await phase.execute(input, options);
 
-    const dbPath = join(tempRoot, ".neurallog", "neurallog.db");
+    const dbPath = join(tempRoot, ".provekit", "provekit.db");
     expect(existsSync(dbPath)).toBe(true);
 
     // Verify gap_reports table exists by querying it

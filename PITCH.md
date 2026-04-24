@@ -1,10 +1,10 @@
-# neurallog
+# provekit
 
-Your log statements, type annotations, function names, and TODO comments are informal assertions about how your code is supposed to behave. neurallog turns them into checkable ones.
+Your log statements, type annotations, function names, and TODO comments are informal assertions about how your code is supposed to behave. provekit turns them into checkable ones.
 
 ```
-npm install -D neurallog
-npx neurallog init
+npm install -D provekit
+npx provekit init
 ```
 
 Here's what actually happens, end to end:
@@ -19,4 +19,4 @@ What you get is three independent signals — a Z3 proof, a runtime execution, a
 
 The install is one command. The machinery is LLM-plus-Z3-plus-runtime. The output is a verification dial you control, not a compliance certificate we hand you.
 
-neurallog.app
+provekit.app

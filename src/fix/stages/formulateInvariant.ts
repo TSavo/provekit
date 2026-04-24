@@ -34,21 +34,21 @@ interface PrincipleJson {
 // Principle loader
 // ---------------------------------------------------------------------------
 
-/** Resolve the .neurallog/principles/ directory relative to the project root. */
+/** Resolve the .provekit/principles/ directory relative to the project root. */
 function findPrinciplesDir(): string {
-  // Walk up from __dirname (CJS) until we find .neurallog/.
+  // Walk up from __dirname (CJS) until we find .provekit/.
   // In source, __dirname is src/fix/stages.
   // In dist, __dirname is dist/fix/stages.
   let dir = __dirname;
   for (let i = 0; i < 10; i++) {
-    const candidate = join(dir, ".neurallog", "principles");
+    const candidate = join(dir, ".provekit", "principles");
     if (existsSync(candidate)) return candidate;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   // Last-resort: cwd-relative (e.g. when running from project root via ts-node/vitest).
-  return join(process.cwd(), ".neurallog", "principles");
+  return join(process.cwd(), ".provekit", "principles");
 }
 
 function loadPrincipleJson(principleName: string): PrincipleJson | null {
@@ -464,7 +464,7 @@ export async function formulateInvariant(args: {
     const principle = loadPrincipleJson(match.principleName);
     if (!principle) {
       throw new InvariantFormulationFailed(
-        `principle '${match.principleName}' has a DB match but no JSON file in .neurallog/principles/`,
+        `principle '${match.principleName}' has a DB match but no JSON file in .provekit/principles/`,
       );
     }
 

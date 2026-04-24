@@ -18,10 +18,10 @@ import type { Violation } from "../contracts";
 function findProjectRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   while (dir !== dirname(dir)) {
-    if (existsSync(join(dir, ".neurallog", "principles"))) return dir;
+    if (existsSync(join(dir, ".provekit", "principles"))) return dir;
     dir = dirname(dir);
   }
-  throw new Error("could not locate project root with .neurallog/principles/");
+  throw new Error("could not locate project root with .provekit/principles/");
 }
 const PROJECT_ROOT = findProjectRoot();
 

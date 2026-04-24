@@ -42,7 +42,7 @@ import { evaluatePrinciple } from "../dsl/evaluator.js";
 
 // ---------------------------------------------------------------------------
 // DSL source strings for each translatable principle.
-// Keep in sync with .neurallog/principles/*.dsl
+// Keep in sync with .provekit/principles/*.dsl
 // ---------------------------------------------------------------------------
 
 const DIVISION_BY_ZERO = `

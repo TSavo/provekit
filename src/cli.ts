@@ -23,7 +23,8 @@ async function main(): Promise<void> {
   }
 
   if (args.includes("--version")) {
-    console.log(`neurallog v${VERSION}`);
+    console.log(`provekit v${VERSION}`);
+    console.log("The Kit to Prove It's Fixed.");
     process.exit(0);
   }
 
@@ -56,13 +57,14 @@ async function runInit(args: string[]): Promise<void> {
   const projectRoot = resolveProjectRoot(args);
   const signalRegistry = SignalRegistry.createDefault();
 
-  console.log(`neurallog v${VERSION}`);
+  console.log(`provekit v${VERSION}`);
+  console.log("The Kit to Prove It's Fixed.");
   console.log(`Initializing in ${projectRoot}`);
   console.log();
 
   const diff = new DiffAnalyzer(projectRoot);
   if (!diff.isGitRepo()) {
-    console.error("Not a git repository. neurallog requires git.");
+    console.error("Not a git repository. provekit requires git.");
     process.exit(1);
   }
 
@@ -113,10 +115,10 @@ async function runInit(args: string[]): Promise<void> {
 
   console.log();
   console.log("Next steps:");
-  console.log("  neurallog analyze <file.ts>   Derive proofs for a file");
-  console.log("  neurallog derive              Derive proofs for changed files");
-  console.log("  neurallog verify              Run Z3 against cached proofs");
-  console.log("  neurallog report              Show coverage summary");
+  console.log("  provekit analyze <file.ts>   Derive proofs for a file");
+  console.log("  provekit derive              Derive proofs for changed files");
+  console.log("  provekit verify              Run Z3 against cached proofs");
+  console.log("  provekit report              Show coverage summary");
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +134,7 @@ async function runAnalyze(args: string[]): Promise<void> {
 
   const signalRegistry = buildSignalRegistry(args, model);
 
-  console.log(`neurallog v${VERSION}`);
+  console.log(`provekit v${VERSION}`);
   console.log(`File:    ${filePath}`);
   console.log(`Model:   ${model}`);
   console.log(`Signals: ${signalRegistry.getGeneratorNames().join(", ")}`);
@@ -171,7 +173,7 @@ async function runDerive(args: string[]): Promise<void> {
   const verbose = args.includes("--verbose") || args.includes("-v");
   const ref = getFlag(args, "--since") || "HEAD";
 
-  console.log(`neurallog v${VERSION} — derive (diff-powered)`);
+  console.log(`provekit v${VERSION} — derive (diff-powered)`);
   console.log(`Project: ${projectRoot}`);
   console.log(`Model:   ${model}`);
   console.log();
@@ -253,7 +255,7 @@ async function runVerify(args: string[]): Promise<void> {
     process.exit(0);
   }
 
-  console.log(`neurallog v${VERSION} — verify (Phase 5 only, no LLM, pure Z3)`);
+  console.log(`provekit v${VERSION} — verify (Phase 5 only, no LLM, pure Z3)`);
   console.log(`Project: ${projectRoot}`);
   console.log();
 
@@ -291,7 +293,7 @@ function runDiff(args: string[]): void {
   const projectRoot = resolveProjectRoot(args);
   const ref = args.find((a) => !a.startsWith("-")) ?? "HEAD~1";
 
-  console.log(`neurallog v${VERSION} — proof diff against ${ref}`);
+  console.log(`provekit v${VERSION} — proof diff against ${ref}`);
   console.log();
 
   const proofDiff = new ProofDiff(projectRoot);
@@ -345,13 +347,13 @@ function runDiff(args: string[]): void {
 function runExplain(args: string[]): void {
   const target = args.find((a) => !a.startsWith("-"));
   if (!target) {
-    console.error("Usage: neurallog explain <file>:<line> [--gaps]");
+    console.error("Usage: provekit explain <file>:<line> [--gaps]");
     process.exit(1);
   }
 
   const [filePart, linePart] = target.split(":");
   if (!filePart || !linePart) {
-    console.error("Usage: neurallog explain <file>:<line> [--gaps]");
+    console.error("Usage: provekit explain <file>:<line> [--gaps]");
     process.exit(1);
   }
 
@@ -369,14 +371,14 @@ function runExplain(args: string[]): void {
 
   if (!contract) {
     console.error(`No contract found for ${relPath}:${line}`);
-    console.error("Run 'neurallog analyze' first.");
+    console.error("Run 'provekit analyze' first.");
     process.exit(1);
   }
 
   if (args.includes("--gaps")) {
     // Encoding-gap output is separate from v1 contract explain. It reads the
     // SQLite gap_reports table populated by the Phase D gap detector.
-    const db = openDb(join(projectRoot, ".neurallog", "neurallog.db"));
+    const db = openDb(join(projectRoot, ".provekit", "provekit.db"));
     process.stdout.write(explainGaps(db, contract.key));
     db.$client.close();
     return;
@@ -439,7 +441,7 @@ function runReport(args: string[]): void {
   const contracts = store.getAll();
 
   if (contracts.length === 0) {
-    console.log("No contracts found. Run 'neurallog analyze' first.");
+    console.log("No contracts found. Run 'provekit analyze' first.");
     process.exit(0);
   }
 
@@ -492,7 +494,7 @@ function runReport(args: string[]): void {
     ? Math.round(((contracts.length - totalUnverified) / contracts.length) * 100)
     : 0;
 
-  console.log(`neurallog v${VERSION} — coverage report`);
+  console.log(`provekit v${VERSION} — coverage report`);
   console.log("──────────────────────────────────────────");
   console.log(`Signals:       ${contracts.length}`);
   console.log(`  Proven:      ${totalProven}`);
@@ -539,7 +541,7 @@ function runHook(args: string[]): void {
 function runOverride(args: string[]): void {
   const reason = getFlag(args, "--reason");
   if (!reason) {
-    console.error("Usage: neurallog override --reason \"why this is intentional\"");
+    console.error("Usage: provekit override --reason \"why this is intentional\"");
     process.exit(1);
   }
 
@@ -600,7 +602,8 @@ function buildSignalRegistry(args: string[], model: string): SignalRegistry {
 }
 
 function printHelp(): void {
-  console.log(`neurallog v${VERSION} — a logger that fixes your code`);
+  console.log(`provekit v${VERSION}`);
+  console.log("The Kit to Prove It's Fixed.");
   console.log();
   console.log("Commands:");
   console.log("  init [project]              Scan codebase, install git hook");
@@ -654,7 +657,7 @@ function resolveProjectRoot(args: string[]): string {
 function findProjectRoot(startDir: string): string {
   let dir = startDir;
   while (dir !== dirname(dir)) {
-    for (const c of [".neurallog", "package.json", ".git"]) {
+    for (const c of [".provekit", "package.json", ".git"]) {
       try {
         if (statSync(resolve(dir, c)).isDirectory() || statSync(resolve(dir, c)).isFile()) {
           return dir;

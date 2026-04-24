@@ -492,7 +492,7 @@ export async function proposeChangeForSiteViaAgent(
 ): Promise<ProposedSiteChange | null> {
   // Step 1: Snapshot all files currently changed vs HEAD before this agent call.
   // This captures accepted patches from earlier sites so we can diff them out.
-  const isOverlayInternal = (f: string) => f.startsWith(".neurallog/") || f === ".neurallog";
+  const isOverlayInternal = (f: string) => f.startsWith(".provekit/") || f === ".provekit";
   const preTracked = getChangedFiles(overlay.worktreePath).filter((f) => !isOverlayInternal(f));
   const preUntracked = getUntrackedFiles(overlay.worktreePath).filter((f) => !isOverlayInternal(f));
   const preAllFiles = [...new Set([...preTracked, ...preUntracked])];
@@ -546,7 +546,7 @@ ${siteSourceContext.slice(0, 2000)}
 ${invariant ? `\nInvariant violated at primary: ${invariant.description}` : ""}
 
 Apply the complementary fix directly to the file using your tools.
-If no change is needed at this site, write a file named .neurallog/c4-skip.txt containing "skip".
+If no change is needed at this site, write a file named .provekit/c4-skip.txt containing "skip".
 Otherwise, edit the file at ${site.fileRelPath ?? site.filePath} to apply the complementary fix.`;
 
   // Step 2: Run the agent.
@@ -564,7 +564,7 @@ Otherwise, edit the file at ${site.fileRelPath ?? site.filePath} to apply the co
   }
 
   // Check for explicit skip signal.
-  const skipPath = join(overlay.worktreePath, ".neurallog", "c4-skip.txt");
+  const skipPath = join(overlay.worktreePath, ".provekit", "c4-skip.txt");
   if (existsSync(skipPath)) {
     // Clean up skip file.
     try { writeFileSync(skipPath, "", "utf-8"); } catch { /* ignore */ }
@@ -691,7 +691,7 @@ export async function verifySiteChange(
   if (invariant?.principleId) {
     const dslPath = join(
       overlay.worktreePath,
-      ".neurallog",
+      ".provekit",
       "principles",
       `${invariant.principleId}.dsl`,
     );

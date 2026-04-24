@@ -16,7 +16,7 @@ describe("detectGaps", () => {
   });
 
   it("detects IEEE NaN gap when SMT models finite result but runtime produces NaN", async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "neurallog-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "provekit-test-"));
     mkdirSync(join(tmpDir, "src"));
     const srcPath = join(tmpDir, "src", "divide.ts");
     writeFileSync(srcPath, `

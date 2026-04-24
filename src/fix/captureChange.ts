@@ -42,8 +42,8 @@ export async function runAgentInOverlay(args: {
   });
 
   // Reconstruct CodePatch: modified tracked files from git diff + new untracked files.
-  // Exclude .neurallog/ — it contains the scratch SAST DB which must not be overwritten.
-  const isOverlayInternal = (f: string) => f.startsWith(".neurallog/") || f === ".neurallog";
+  // Exclude .provekit/ — it contains the scratch SAST DB which must not be overwritten.
+  const isOverlayInternal = (f: string) => f.startsWith(".provekit/") || f === ".provekit";
   const modifiedFiles = getChangedFiles(cwd).filter((f) => !isOverlayInternal(f));
   const newFiles = getUntrackedFiles(cwd).filter((f) => !isOverlayInternal(f));
   const allFiles = [...new Set([...modifiedFiles, ...newFiles])];
