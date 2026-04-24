@@ -1,6 +1,7 @@
 import Parser from "tree-sitter";
 import { TemplateResult } from "./Template";
 import { PrincipleStore, Principle, ASTPattern } from "../principles";
+import { SmtBinding } from "../contracts";
 
 export class TemplateEngine {
   private principles: Principle[];
@@ -58,6 +59,7 @@ export class TemplateEngine {
             claim: `${principle.name}: ${principle.description.slice(0, 100)}`,
             principle: principle.id,
             confidence: principle.confidence || "low",
+            bindings: this.extractBindings(node, match, smt2, line),
           });
         }
       }
@@ -836,6 +838,87 @@ export class TemplateEngine {
     }
 
     return false;
+  }
+
+  private extractBindings(
+    node: Parser.SyntaxNode,
+    vars: Record<string, string>,
+    smt2: string,
+    line: number
+  ): SmtBinding[] {
+    // Build map of smt_constant -> sort from declare-const lines in the emitted smt2.
+    const declareMap = new Map<string, string>();
+    const declareRe = /\(declare-const\s+(\S+)\s+([A-Za-z][A-Za-z0-9]*)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = declareRe.exec(smt2)) !== null) {
+      declareMap.set(m[1]!, m[2]!);
+    }
+
+    if (declareMap.size === 0) return [];
+
+    // Build a lookup from safeName -> AST child node for binary_expression vars.
+    // Keys produced by matchPattern for binary_expression: left, right, numerator, denominator, param.
+    // numerator/denominator alias left/right, param aliases findParamRef result.
+    // We resolve each to an AST child node (or null = use match node as fallback).
+    const nodeForKey: Record<string, Parser.SyntaxNode | null> = {};
+    if (node.type === "binary_expression") {
+      const leftNode = node.childForFieldName("left") ?? null;
+      const rightNode = node.childForFieldName("right") ?? null;
+      nodeForKey["left"] = leftNode;
+      nodeForKey["right"] = rightNode;
+      nodeForKey["numerator"] = leftNode;
+      nodeForKey["denominator"] = rightNode;
+      // param: find the first identifier that is a param reference
+      nodeForKey["param"] = null; // fallback to match node
+    }
+
+    const bindings: SmtBinding[] = [];
+    const boundConstants = new Set<string>();
+
+    // Process in a stable order: field-specific names first (numerator/denominator),
+    // then generics (left/right/param), so dedup keeps the more meaningful entry.
+    const orderedKeys = ["numerator", "denominator", "left", "right", "param"];
+    const otherKeys = Object.keys(vars).filter(
+      (k) => !k.startsWith("_") && !orderedKeys.includes(k)
+    );
+    const keysToProcess = [...orderedKeys, ...otherKeys].filter((k) => k in vars);
+
+    for (const key of keysToProcess) {
+      if (key.startsWith("_")) continue;
+      const rawValue = vars[key];
+      if (rawValue === undefined) continue;
+      const safeName = rawValue.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 30) || key;
+      if (!declareMap.has(safeName)) continue;
+      if (boundConstants.has(safeName)) continue; // deduplicate
+      boundConstants.add(safeName);
+
+      const sort = declareMap.get(safeName)!;
+      const childNode = nodeForKey[key] ?? null;
+      const sourceNode = childNode ?? node;
+
+      bindings.push({
+        smt_constant: safeName,
+        source_line: sourceNode.startPosition.row + 1,
+        source_expr: sourceNode.text.slice(0, 80),
+        sort,
+      });
+    }
+
+    // Emit abstract bindings for synthetic constants (name_<line>) not covered above.
+    const syntheticPattern = new RegExp(`^[a-zA-Z_][a-zA-Z0-9_]*_${line}$`);
+    for (const [smtName, sort] of declareMap.entries()) {
+      if (boundConstants.has(smtName)) continue;
+      if (syntheticPattern.test(smtName)) {
+        bindings.push({
+          smt_constant: smtName,
+          source_line: 0,
+          source_expr: "<abstract>",
+          sort,
+        });
+      }
+    }
+
+    return bindings;
   }
 
   private blockReturnsOrThrows(block: Parser.SyntaxNode): boolean {
