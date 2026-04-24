@@ -139,6 +139,8 @@ interface VarBinding {
 export interface MatchRow {
   /** Node id for the `at $var` in the report block */
   atNodeId: string;
+  /** file_id from the nodes table for the `at $var` node */
+  fileId: number;
   /** Map from capture name to node id */
   captures: Record<string, string>;
 }
@@ -700,6 +702,7 @@ export function compilePrinciple(
       }
       return {
         atNodeId: row["__at"] ?? "",
+        fileId: Number(row["__file_id"] ?? 0),
         captures,
         message,
       };

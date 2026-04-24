@@ -57,7 +57,7 @@ export function evaluatePrinciple(
       // Insert into principle_matches.
       const inserted = db.insert(principleMatches).values({
         principleName,
-        fileId: 0, // file_id not reliably available in match row without extra join; stored as 0 for now
+        fileId: row.fileId,
         rootMatchNodeId: row.atNodeId,
         severity,
         message,
