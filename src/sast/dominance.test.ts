@@ -415,7 +415,7 @@ describe("dominance extractor", () => {
   // from the SwitchStatement node, so the dominator computation never records the
   // edge SwitchStatement → CaseClause. Fix requires adding CaseClause to the CFG
   // walk inside processFunction(). Tracked as a known v1 limitation.
-  it.skip("switch: SwitchStatement dominates each CaseClause", () => {
+  it("switch: SwitchStatement dominates each CaseClause", () => {
     ({ db, tmpDir } = openTestDb());
     const filePath = writeFixture(
       tmpDir,
@@ -492,7 +492,7 @@ describe("dominance extractor", () => {
   // records 0 dominated Block nodes. Fix requires adding TryStatement → try-
   // block and TryStatement → finally-block edges to processFunction(). Tracked
   // as a known v1 limitation.
-  it.skip("try/finally: TryStatement dominates try-block and finally-block", () => {
+  it("try/finally: TryStatement dominates try-block and finally-block", () => {
     ({ db, tmpDir } = openTestDb());
     const filePath = writeFixture(
       tmpDir,
@@ -654,7 +654,7 @@ describe("dominance extractor", () => {
   // dominating the return even though it always executes at least once. Fix
   // requires adding the correct back-edge / exit-edge wiring for DoStatement
   // in processFunction(). Tracked as a known v1 limitation.
-  it.skip("do-while: body ExpressionStatement dominates return (body always runs at least once)", () => {
+  it("do-while: body ExpressionStatement dominates return (body always runs at least once)", () => {
     ({ db, tmpDir } = openTestDb());
     const filePath = writeFixture(
       tmpDir,

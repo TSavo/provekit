@@ -262,21 +262,36 @@ function addStmtEdges(
     const body = ds.getStatement();
     const bodyStmts = statementsOf(body);
 
-    // do-header → first body statement (body runs at least once)
-    if (bodyStmts.length > 0) {
-      const firstBody = nodeIdByNode.get(bodyStmts[0]);
-      if (firstBody) adj.get(id)!.add(firstBody);
+    // do-while: body always executes at least once.
+    // do-header → first body statement (NO zero-iteration path to exit)
+    if (bodyStmts.length === 0) {
+      // Degenerate empty body — fall through to exit
+      adj.get(id)!.add(nextTarget);
+      return;
     }
-    // do-header → exit (condition check can fail)
-    adj.get(id)!.add(nextTarget);
 
-    // body last → header (backedge, for re-checking condition)
+    const firstBody = nodeIdByNode.get(bodyStmts[0]);
+    if (firstBody) adj.get(id)!.add(firstBody);
+
+    // Wire body statements; last stmt loops back to header (backedge)
     for (let i = 0; i < bodyStmts.length; i++) {
       const s = bodyStmts[i];
       const nxt = i + 1 < bodyStmts.length
         ? (nodeIdByNode.get(bodyStmts[i + 1]) ?? id)
-        : id;
+        : id; // last body stmt → header (backedge)
       addStmtEdges(s, nxt, adj, nodeIdByNode);
+    }
+
+    // Also wire last body stmt → nextTarget (exit after condition fails)
+    // but only if last stmt is not a terminal (terminal already → EXIT)
+    const lastBodyStmt = bodyStmts[bodyStmts.length - 1];
+    const lastBodyKind = lastBodyStmt.getKind();
+    if (!TERMINAL_KINDS.has(lastBodyKind)) {
+      const lastBodyId = nodeIdByNode.get(lastBodyStmt);
+      if (lastBodyId) {
+        if (!adj.has(lastBodyId)) adj.set(lastBodyId, new Set());
+        adj.get(lastBodyId)!.add(nextTarget);
+      }
     }
     return;
   }
@@ -291,19 +306,32 @@ function addStmtEdges(
 
     for (let ci = 0; ci < clauses.length; ci++) {
       const clause = clauses[ci];
+      const clauseId = nodeIdByNode.get(clause);
       const clauseStmts = clause.getStatements();
 
+      // switch → CaseClause node (so CaseClause is reachable from switch and dominated by it)
+      if (clauseId) {
+        adj.get(id)!.add(clauseId);
+        if (!adj.has(clauseId)) adj.set(clauseId, new Set());
+      }
+
       if (clauseStmts.length === 0) {
-        // Empty clause — fallthrough directly
-        // No node to add — mark for fallthrough
+        // Empty clause — no first stmt to wire, just mark fallthrough
         prevHasFallthrough = true;
+        // If previous clause fell through, connect prevLastId → clauseId (both empty)
+        // but there's nothing in this clause to connect to; handled when next non-empty found
         continue;
       }
 
       const firstClauseId = nodeIdByNode.get(clauseStmts[0]);
       if (firstClauseId) {
-        // switch → this case's first stmt
-        adj.get(id)!.add(firstClauseId);
+        // CaseClause → first stmt inside clause
+        if (clauseId) {
+          adj.get(clauseId)!.add(firstClauseId);
+        } else {
+          // Fallback: switch directly → first stmt (clause not in nodeIdByNode)
+          adj.get(id)!.add(firstClauseId);
+        }
 
         // if previous clause had fallthrough, connect it here
         if (prevHasFallthrough && prevLastId) {
@@ -353,24 +381,47 @@ function addStmtEdges(
     const finallyBlock = ts.getFinallyBlock();
     // Catch is unreachable in v1 — skip it
 
+    const tryBlockId = nodeIdByNode.get(tryBlock);
     const tryStmts = tryBlock.getStatements();
 
-    // After the try block, either go to finally or nextTarget
-    const afterTryTarget = finallyBlock
+    // Resolve finally-block node and its entry point
+    const finallyBlockId = finallyBlock ? nodeIdByNode.get(finallyBlock) : undefined;
+    const finallyFirstId = finallyBlock
       ? (() => {
-          const finallyStmts = finallyBlock.getStatements();
-          if (finallyStmts.length > 0) {
-            return nodeIdByNode.get(finallyStmts[0]) ?? nextTarget;
-          }
-          return nextTarget;
+          if (finallyBlockId) return finallyBlockId;
+          const fs = finallyBlock.getStatements();
+          return fs.length > 0 ? (nodeIdByNode.get(fs[0]) ?? nextTarget) : nextTarget;
         })()
-      : nextTarget;
+      : undefined;
 
-    // try → first stmt in try-block
+    // TryStatement → try-block node (establishes TryStatement dominating tryBlock)
+    if (tryBlockId) {
+      adj.get(id)!.add(tryBlockId);
+      if (!adj.has(tryBlockId)) adj.set(tryBlockId, new Set());
+    }
+
+    // TryStatement → finally-block node (finally always runs; establishes TryStatement dominating finallyBlock)
+    // This is a "semantic must-execute" edge: even if the try body terminates early (return/throw),
+    // finally still executes. We add this edge directly from TryStatement so the finally Block
+    // is reachable (and thus dominated) by TryStatement.
+    if (finallyFirstId) {
+      adj.get(id)!.add(finallyFirstId);
+    }
+
+    // After the try block, flow to finally-block (or nextTarget if no finally)
+    const afterTryTarget = finallyFirstId ?? nextTarget;
+
+    // try-block node → first stmt in try-block
     if (tryStmts.length > 0) {
       const firstTry = nodeIdByNode.get(tryStmts[0]);
-      if (firstTry) adj.get(id)!.add(firstTry);
-      // Wire try block statements
+      if (firstTry) {
+        if (tryBlockId) {
+          adj.get(tryBlockId)!.add(firstTry);
+        } else {
+          adj.get(id)!.add(firstTry);
+        }
+      }
+      // Wire try block statements; last stmt flows to afterTryTarget
       for (let i = 0; i < tryStmts.length; i++) {
         const s = tryStmts[i];
         const nxt = i + 1 < tryStmts.length
@@ -379,12 +430,27 @@ function addStmtEdges(
         addStmtEdges(s, nxt, adj, nodeIdByNode);
       }
     } else {
-      adj.get(id)!.add(afterTryTarget);
+      // Empty try block — try-block node flows to afterTryTarget
+      if (tryBlockId) {
+        adj.get(tryBlockId)!.add(afterTryTarget);
+      } else {
+        adj.get(id)!.add(afterTryTarget);
+      }
     }
 
     // Wire finally block if present
     if (finallyBlock) {
       const finallyStmts = finallyBlock.getStatements();
+      if (finallyBlockId) {
+        if (!adj.has(finallyBlockId)) adj.set(finallyBlockId, new Set());
+        // finally-block node → first finally stmt
+        if (finallyStmts.length > 0) {
+          const firstFinally = nodeIdByNode.get(finallyStmts[0]);
+          if (firstFinally) adj.get(finallyBlockId)!.add(firstFinally);
+        } else {
+          adj.get(finallyBlockId)!.add(nextTarget);
+        }
+      }
       for (let i = 0; i < finallyStmts.length; i++) {
         const s = finallyStmts[i];
         const nxt = i + 1 < finallyStmts.length
