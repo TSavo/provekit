@@ -7,6 +7,7 @@ import type { Db } from "../db/index.js";
 import { files, nodes, nodeChildren } from "./schema/index.js";
 import { subtreeHash } from "./subtreeHash.js";
 import { extractAllCapabilities } from "./capabilities/extractor.js";
+import { extractDataFlow } from "./dataFlow.js";
 
 export interface SASTBuildResult {
   fileId: number;
@@ -156,6 +157,9 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
 
     // Populate capability tables
     extractAllCapabilities(tx, fileId, sourceFile, nodeIdByNode);
+
+    // Populate data-flow tables (def-use edges + transitive closure)
+    extractDataFlow(tx, fileId, sourceFile, nodeIdByNode);
   });
 
   return {
