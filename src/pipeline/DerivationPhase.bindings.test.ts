@@ -7,14 +7,23 @@
  * inspect smt_bindings without touching the private buildContracts method.
  */
 import { describe, it, expect } from "vitest";
-import { join } from "path";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import { parseFile } from "../parser";
 import { TemplateEngine } from "../templates";
 import { verifyBlock, proofComplexity } from "../verifier";
 import type { Violation } from "../contracts";
 
-const PROJECT_ROOT = join(fileURLToPath(import.meta.url), "../../../../..");
+function findProjectRoot(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (dir !== dirname(dir)) {
+    if (existsSync(join(dir, ".neurallog", "principles"))) return dir;
+    dir = dirname(dir);
+  }
+  throw new Error("could not locate project root with .neurallog/principles/");
+}
+const PROJECT_ROOT = findProjectRoot();
 
 const FIXTURE = `function divide(a: number, b: number): number {
   const q = a / b;
