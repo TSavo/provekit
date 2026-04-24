@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Db } from "../db/index.js";
 import { files, nodes, nodeChildren } from "./schema/index.js";
 import { subtreeHash } from "./subtreeHash.js";
+import { extractAllCapabilities } from "./capabilities/extractor.js";
 
 export interface SASTBuildResult {
   fileId: number;
@@ -15,7 +16,7 @@ export interface SASTBuildResult {
 }
 
 // Transaction type used inside db.transaction() callbacks
-type SastTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type SastTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 function sha256hex(str: string): string {
   return createHash("sha256").update(str).digest("hex");
@@ -35,13 +36,14 @@ function nodeId(fileId: number, kind: number, start: number, end: number, hash: 
 /**
  * Iterative DFS walk (pre-order) over all concrete children.
  * Inserts nodes + edges into the transaction.
- * Returns [rootNodeId, nodeCount].
+ * Returns { rootNodeId, count, nodeIdByNode } where nodeIdByNode maps
+ * ts-morph Node references to their computed node IDs for capability extractors.
  */
 function walkIterative(
   tx: SastTx,
   fileId: number,
   root: Node,
-): [string, number] {
+): { rootNodeId: string; count: number; nodeIdByNode: Map<Node, string> } {
   interface Frame {
     node: Node;
     parentId: string | null;
@@ -51,6 +53,7 @@ function walkIterative(
   const stack: Frame[] = [{ node: root, parentId: null, childOrder: 0 }];
   let rootNodeId = "";
   let count = 0;
+  const nodeIdByNode = new Map<Node, string>();
 
   while (stack.length > 0) {
     const { node, parentId, childOrder } = stack.pop()!;
@@ -62,6 +65,9 @@ function walkIterative(
     const text = node.getFullText();
     const hash = subtreeHash(text);
     const id = nodeId(fileId, kind, start, end, hash);
+
+    // Store mapping for capability extractors
+    nodeIdByNode.set(node, id);
 
     // line/col from start position
     const pos = node.getSourceFile().getLineAndColumnAtPos(start);
@@ -96,7 +102,7 @@ function walkIterative(
     }
   }
 
-  return [rootNodeId, count];
+  return { rootNodeId, count, nodeIdByNode };
 }
 
 export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
@@ -141,12 +147,15 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
 
     fileId = fileRow.id;
 
-    const [rootId, count] = walkIterative(tx, fileId, sourceFile);
+    const { rootNodeId: rootId, count, nodeIdByNode } = walkIterative(tx, fileId, sourceFile);
     rootNodeId = rootId;
     nodeCount = count;
 
     // Store root node id on the files row for O(1) cache-hit lookup
     tx.update(files).set({ rootNodeId }).where(eq(files.id, fileId)).run();
+
+    // Populate capability tables
+    extractAllCapabilities(tx, fileId, sourceFile, nodeIdByNode);
   });
 
   return {
