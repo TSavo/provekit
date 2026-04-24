@@ -30,9 +30,11 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { and, eq } from "drizzle-orm";
 import { openDb } from "../db/index.js";
 import { buildSASTForFile } from "../sast/builder.js";
 import { evaluatePrinciple } from "../dsl/evaluator.js";
+import { nodeBinding } from "../sast/schema/capabilities/index.js";
 import { openOverlay } from "./stages/openOverlay.js";
 import { closeOverlay } from "./overlay.js";
 import { generateComplementary } from "./stages/generateComplementary.js";
@@ -295,7 +297,20 @@ describe("C4: generateComplementary", () => {
     expect(divMatches.length).toBeGreaterThan(0);
 
     const primaryNodeId = divMatches[0]!.captures["division"] ?? divMatches[0]!.rootNodeId;
-    const locus = makeLocus(filePaths["fixture.ts"]!, primaryNodeId, primaryNodeId);
+
+    // Look up the FunctionDeclaration node for "divide" via nodeBinding.
+    // Using the BinaryExpression node as containingFunction would yield no callers
+    // (nodeBinding has no row for BinaryExpression nodes). We must use the
+    // FunctionDeclaration node so Strategy B can find callers via calls_table.
+    const divBindingRow = mainDb
+      .select({ nodeId: nodeBinding.nodeId })
+      .from(nodeBinding)
+      .where(and(eq(nodeBinding.name, "divide"), eq(nodeBinding.bindingKind, "function")))
+      .get();
+    expect(divBindingRow).toBeDefined();
+    const containingFnId = divBindingRow!.nodeId;
+
+    const locus = makeLocus(filePaths["fixture.ts"]!, primaryNodeId, containingFnId);
     const invariant = makeDivInvariant();
 
     // Primary fix: removes division from fixture.ts.
@@ -346,9 +361,9 @@ describe("C4: generateComplementary", () => {
 
     // All accepted changes are verified.
     expect(changes.every((c) => c.verifiedAgainstOverlay)).toBe(true);
-    // Since the fix already removes the division, adjacent sites may or may not pass.
-    // But we should get at least zero (no crash).
-    expect(Array.isArray(changes)).toBe(true);
+    // The caller (main()) should be discovered via calls_table strategy.
+    // The patch removes the division from the callee; caller strategy B found it.
+    expect(changes.some((c) => c.kind === "caller_update")).toBe(true);
   }, 120_000);
 
   // -------------------------------------------------------------------------
