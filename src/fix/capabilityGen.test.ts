@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   runOracle14,
   runOracle16,
+  runOracle16Structural,
   runOracle17,
 } from "./capabilityGen.js";
 import {
@@ -168,13 +169,13 @@ describe("oracle #14 — migration safety", () => {
 // Oracle #16: extractor coverage
 // ---------------------------------------------------------------------------
 
-describe("oracle #16 — extractor coverage (structural)", () => {
+describe("oracle #16 — extractor coverage (structural pre-check)", () => {
   it("accepts valid extractor with exported function + insert", () => {
     const extractorTs = `
-export function extractFoo(tx: any, fileId: number): void {
+export function extractFoo(tx: any, sourceFile: any, nodeIdByNode: any): void {
   tx.insert(nodeFoo).values({ nodeId: "x", foo: "y" });
 }`;
-    const result = runOracle16(extractorTs);
+    const result = runOracle16Structural(extractorTs);
     expect(result.passed).toBe(true);
   });
 
@@ -183,7 +184,7 @@ export function extractFoo(tx: any, fileId: number): void {
 function extractFoo(tx: any): void {
   tx.insert(nodeFoo).values({ nodeId: "x" });
 }`;
-    const result = runOracle16(extractorTs);
+    const result = runOracle16Structural(extractorTs);
     expect(result.passed).toBe(false);
     expect(result.reason).toContain("Oracle #16");
     expect(result.reason).toContain("export");
@@ -191,14 +192,48 @@ function extractFoo(tx: any): void {
 
   it("rejects extractor without tx.insert().values() pattern", () => {
     const extractorTs = `
-export function extractFoo(tx: any, fileId: number): void {
+export function extractFoo(tx: any, sourceFile: any, nodeIdByNode: any): void {
   const rows = tx.select().from(nodeFoo).all();
 }`;
-    const result = runOracle16(extractorTs);
+    const result = runOracle16Structural(extractorTs);
     expect(result.passed).toBe(false);
     expect(result.reason).toContain("Oracle #16");
     expect(result.reason).toContain("insert");
   });
+});
+
+describe("oracle #16 — full execution (via runOracle16)", () => {
+  it("accepts spec with realistic extractor + fixtures", async () => {
+    // Extractor: detect BinaryExpression nodes, insert into node_test_binary_cap.
+    // The TS source gets transpiled to CJS by the executor — imports become requires.
+    const spec = makeCapabilitySpec({
+      capabilityName: "testBinaryCap",
+      migrationSql: "CREATE TABLE node_test_binary_cap (node_id TEXT NOT NULL)",
+      extractorTs: `
+import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { SyntaxKind } from "ts-morph";
+const nodeTestBinaryCap = sqliteTable("node_test_binary_cap", {
+  nodeId: text("node_id").notNull(),
+});
+export function extractTestBinaryCap(tx: any, sourceFile: any, nodeIdByNode: any): void {
+  sourceFile.forEachDescendant((node: any) => {
+    if (node.getKind() === SyntaxKind.BinaryExpression) {
+      const nid = nodeIdByNode.get(node);
+      if (nid) tx.insert(nodeTestBinaryCap).values({ nodeId: nid }).run();
+    }
+  });
+}`,
+      positiveFixtures: [
+        { source: "const z = 1 + 2;", expectedRowCount: 1 },
+      ],
+      negativeFixtures: [
+        { source: "const z = 1;", expectedRowCount: 0 },
+      ],
+    });
+
+    const result = await runOracle16(spec);
+    expect(result.passed).toBe(true);
+  }, 30000);
 });
 
 // ---------------------------------------------------------------------------

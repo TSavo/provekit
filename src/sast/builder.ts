@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { createHash } from "crypto";
-import { Project } from "ts-morph";
+import { Project, type SourceFile } from "ts-morph";
 import type { Node } from "ts-morph";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/index.js";
@@ -15,6 +15,14 @@ export interface SASTBuildResult {
   rootNodeId: string;
   nodeCount: number;
   rebuilt: boolean; // false if content_hash matched existing — skipped
+}
+
+/** Extended result that also exposes the ts-morph handles. Used by oracle #16. */
+export interface SASTBuildResultWithHandles extends SASTBuildResult {
+  /** The ts-morph SourceFile for the parsed file. */
+  sourceFile: SourceFile;
+  /** Maps ts-morph Node references to their computed SAST node IDs. */
+  nodeIdByNode: Map<Node, string>;
 }
 
 // Transaction type used inside db.transaction() callbacks
@@ -107,23 +115,10 @@ function walkIterative(
   return { rootNodeId, count, nodeIdByNode };
 }
 
-function buildInternal(db: Db, filePath: string, force: boolean): SASTBuildResult {
+function buildInternal(db: Db, filePath: string, force: boolean): SASTBuildResultWithHandles {
   // Read file bytes and compute content hash
   const bytes = readFileSync(filePath);
   const contentHash = sha256hex(bytes.toString("utf8"));
-
-  // Check for existing row with matching content_hash
-  const existing = db.select().from(files).where(eq(files.path, filePath)).get();
-  if (!force && existing && existing.contentHash === contentHash) {
-    // Cache hit: rootNodeId is stored directly on the files row (O(1), file-scoped)
-    const nodeCount = db.select().from(nodes).where(eq(nodes.fileId, existing.id)).all().length;
-    return {
-      fileId: existing.id,
-      rootNodeId: existing.rootNodeId,
-      nodeCount,
-      rebuilt: false,
-    };
-  }
 
   const source = bytes.toString("utf8");
 
@@ -131,9 +126,29 @@ function buildInternal(db: Db, filePath: string, force: boolean): SASTBuildResul
   const project = new Project({ useInMemoryFileSystem: true });
   const sourceFile = project.createSourceFile(filePath, source);
 
+  // Check for existing row with matching content_hash
+  const existing = db.select().from(files).where(eq(files.path, filePath)).get();
+  if (!force && existing && existing.contentHash === contentHash) {
+    // Cache hit: rootNodeId is stored directly on the files row (O(1), file-scoped)
+    const nodeCount = db.select().from(nodes).where(eq(nodes.fileId, existing.id)).all().length;
+    // Re-build nodeIdByNode in-memory (no DB writes) so callers get fresh Node references.
+    // We can't return the original nodeIdByNode (it was discarded on the prior build).
+    // A lightweight re-walk without DB inserts gives a valid map for this source.
+    const nodeIdByNode = walkForMap(existing.id, sourceFile);
+    return {
+      fileId: existing.id,
+      rootNodeId: existing.rootNodeId,
+      nodeCount,
+      rebuilt: false,
+      sourceFile,
+      nodeIdByNode,
+    };
+  }
+
   let fileId: number;
   let rootNodeId: string;
   let nodeCount: number;
+  let nodeIdByNode!: Map<Node, string>;
 
   db.transaction((tx) => {
     // If there's an existing row (different hash, or force=true), delete it (cascades nodes + edges)
@@ -149,9 +164,10 @@ function buildInternal(db: Db, filePath: string, force: boolean): SASTBuildResul
 
     fileId = fileRow.id;
 
-    const { rootNodeId: rootId, count, nodeIdByNode } = walkIterative(tx, fileId, sourceFile);
+    const { rootNodeId: rootId, count, nodeIdByNode: idMap } = walkIterative(tx, fileId, sourceFile);
     rootNodeId = rootId;
     nodeCount = count;
+    nodeIdByNode = idMap;
 
     // Store root node id on the files row for O(1) cache-hit lookup
     tx.update(files).set({ rootNodeId }).where(eq(files.id, fileId)).run();
@@ -171,10 +187,52 @@ function buildInternal(db: Db, filePath: string, force: boolean): SASTBuildResul
     rootNodeId: rootNodeId!,
     nodeCount: nodeCount!,
     rebuilt: true,
+    sourceFile,
+    nodeIdByNode,
   };
 }
 
+/**
+ * Walk the AST without writing to the DB — builds nodeIdByNode map only.
+ * Used on cache-hit paths where we still need fresh Node references.
+ */
+function walkForMap(fileId: number, root: SourceFile): Map<Node, string> {
+  interface Frame {
+    node: Node;
+  }
+  const stack: Frame[] = [{ node: root }];
+  const nodeIdByNode = new Map<Node, string>();
+
+  while (stack.length > 0) {
+    const { node } = stack.pop()!;
+    const start = node.getFullStart();
+    const end = node.getEnd();
+    const kind = node.getKind();
+    const text = node.getFullText();
+    const hash = subtreeHash(text);
+    const id = sha256hex(`${fileId}:${kind}:${start}:${end}:${hash}`).slice(0, 16);
+    nodeIdByNode.set(node, id);
+    const children = node.getChildren();
+    for (let i = children.length - 1; i >= 0; i--) {
+      stack.push({ node: children[i] });
+    }
+  }
+
+  return nodeIdByNode;
+}
+
 export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
+  return buildInternal(db, filePath, false);
+}
+
+/**
+ * Build SAST for a file AND return the ts-morph SourceFile + nodeIdByNode map.
+ * Used by oracle #16 (capability executor) to invoke LLM-generated extractors
+ * against fixture source files.
+ *
+ * Additive helper — `buildSASTForFile` continues to work unchanged.
+ */
+export function buildSASTAndReturnHandles(db: Db, filePath: string): SASTBuildResultWithHandles {
   return buildInternal(db, filePath, false);
 }
 

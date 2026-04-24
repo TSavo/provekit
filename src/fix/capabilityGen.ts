@@ -17,6 +17,7 @@ import type {
 } from "./types.js";
 import type { CapabilitySpec } from "./types.js";
 import { listCapabilities } from "../sast/capabilityRegistry.js";
+import { executeExtractorSpec } from "./capabilityExecutor.js";
 
 // ---------------------------------------------------------------------------
 // Substrate oracle result
@@ -246,18 +247,18 @@ export function runOracle14(migrationSql: string): { passed: boolean; reason: st
 }
 
 // ---------------------------------------------------------------------------
-// Oracle #16: extractor coverage (MVP — structural only)
+// Oracle #16: extractor coverage — structural pre-check + full execution
 // ---------------------------------------------------------------------------
 
 /**
- * Oracle #16 (MVP — structural only):
+ * Oracle #16 structural pre-check (fast-fail):
  * Parse extractorTs via ts-morph. Confirm it:
  * 1. Exports at least one function.
  * 2. That function's body contains a call matching tx.insert(<table>).values(...) pattern.
  *
- * Full execution runs in D1; C6 validates structure only.
+ * Called before the expensive transpile + execution path.
  */
-export function runOracle16(extractorTs: string): { passed: boolean; reason: string } {
+function runOracle16Structural(extractorTs: string): { passed: boolean; reason: string } {
   const project = new Project({ useInMemoryFileSystem: true });
   const sourceFile = project.createSourceFile("extractor.ts", extractorTs);
 
@@ -272,9 +273,8 @@ export function runOracle16(extractorTs: string): { passed: boolean; reason: str
   }
 
   // Check that at least one function body contains a tx.insert(...).values(...) call.
-  const fullText = extractorTs;
   const insertPattern = /tx\s*\.\s*insert\s*\([^)]*\)\s*\.\s*values\s*\(/;
-  if (!insertPattern.test(fullText)) {
+  if (!insertPattern.test(extractorTs)) {
     return {
       passed: false,
       reason: "Oracle #16: extractorTs must contain a tx.insert(<table>).values(...) call",
@@ -283,6 +283,36 @@ export function runOracle16(extractorTs: string): { passed: boolean; reason: str
 
   return { passed: true, reason: "extractor structure valid" };
 }
+
+/**
+ * Oracle #16 full execution:
+ * 1. Structural pre-check (fast-fail before expensive transpile).
+ * 2. Transpile extractorTs + execute against scratch DB with fixtures.
+ * 3. Verify positive fixtures emit >= expectedRowCount rows.
+ * 4. Verify negative fixtures emit 0 rows.
+ *
+ * Returns { passed, reason } to match the existing oracle contract.
+ */
+export async function runOracle16(
+  spec: CapabilitySpec,
+): Promise<{ passed: boolean; reason: string }> {
+  // Fast structural pre-check
+  const structural = runOracle16Structural(spec.extractorTs);
+  if (!structural.passed) return structural;
+
+  // Full execution
+  const result = await executeExtractorSpec(spec);
+  return {
+    passed: result.passed,
+    reason: result.passed ? "extractor execution passed" : result.detail,
+  };
+}
+
+/**
+ * runOracle16Structural is exported for tests that only want the fast-fail
+ * structural check without spinning up a scratch DB.
+ */
+export { runOracle16Structural };
 
 // ---------------------------------------------------------------------------
 // Oracle #17: substrate consistency
@@ -362,8 +392,8 @@ export async function runSubstrateOracles(
     return result;
   }
 
-  // Oracle #16: extractor coverage (structural only)
-  const o16 = runOracle16(spec.extractorTs);
+  // Oracle #16: extractor coverage (structural pre-check + full execution)
+  const o16 = await runOracle16(spec);
   result.oracleResults.oracle16_extractorCoverage = o16.passed;
   if (!o16.passed) {
     result.reason = o16.reason;
