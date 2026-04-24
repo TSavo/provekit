@@ -76,7 +76,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
 
     // Stage C5: generate regression test
     const test = await runStage("C5", "generateRegressionTest", audit, () =>
-      generateRegressionTest({ fix, signal: args.signal, locus: args.locus, overlay, llm: args.llm }),
+      generateRegressionTest({ fix, signal: args.signal, locus: args.locus, overlay, invariant, llm: args.llm }),
     );
 
     // Stage C6: generate principle candidate (may be plain or with capability spec)

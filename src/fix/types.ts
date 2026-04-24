@@ -327,11 +327,29 @@ export interface FixCandidate {
   };
 }
 
-/** A test artifact (new test or modified test) that validates the fix. B5 fills this in. */
+/** A test artifact (new test or modified test) that validates the fix. C5 fills this in. */
 export interface TestArtifact {
-  file: string;
+  /** Path of the new test file inside the overlay worktree (e.g., "src/divide.regression.test.ts"). */
+  testFilePath: string;
+  /** Name of the vitest it(...) case. Stable, derived from signal + timestamp. */
   testName: string;
-  body: string;
+  /** The test source code (full file contents — the regression test standalone). */
+  testCode: string;
+  /** The Z3-witness-derived inputs that trigger the bug (materialized JS values). */
+  witnessInputs: Record<string, unknown>;
+  /** Oracle #9 lower half: test PASSED against the fixed code (in overlay). */
+  passesOnFixedCode: boolean;
+  /** Oracle #9 upper half: test FAILED against the original code (mutation check). */
+  failsOnOriginalCode: boolean;
+  /** Per-direction verdict detail (stdout/stderr, exit code) for the audit trail. */
+  audit: {
+    fixedRunStdout: string;
+    fixedRunExitCode: number;
+    originalRunStdout: string;
+    originalRunExitCode: number;
+    mutationApplied: boolean;
+    mutationReverted: boolean;
+  };
 }
 
 /**
