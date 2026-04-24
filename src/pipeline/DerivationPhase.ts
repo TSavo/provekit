@@ -834,6 +834,13 @@ Do not restate the original block unchanged. Do not emit both a REACHABLE line a
           v.reason = extractReason(revisedSmt) || v.reason;
           v.confidence = "high";
           v.judge_note = "cegar-refined: bug persists after tightened encoding";
+          // CEGAR rewrote the SMT; the template's bindings referenced the
+          // original constant layout and no longer match. Mark stale so
+          // GapDetectionPhase skips rather than running the detector on
+          // misaligned bindings. Re-deriving bindings from a refined SMT
+          // would require re-matching against the AST, deferred to a
+          // later phase if CEGAR-refined gap detection proves valuable.
+          v.smt_bindings = undefined;
           refined++;
           mutated = true;
         }
