@@ -2,7 +2,6 @@ import Parser from "tree-sitter";
 import { writeFileSync, mkdirSync, readFileSync } from "fs";
 import { join, dirname, relative } from "path";
 import { createHash } from "crypto";
-import Handlebars from "handlebars";
 import { Phase, PhaseResult, PhaseOptions } from "./Phase";
 import { ContextBundle, CallSiteContext } from "./ContextPhase";
 import { verifyAll, verifyBlock, VerificationResult, proofComplexity, extractReason } from "../verifier";
@@ -43,33 +42,6 @@ export interface DerivationInput {
 export class DerivationPhase extends Phase<DerivationInput, DerivationOutput> {
   readonly name = "Contract Derivation";
   readonly phaseNumber = 3;
-
-  private compiledTemplate: HandlebarsTemplateDelegate;
-
-  constructor() {
-    super();
-    this.compiledTemplate = this.loadTemplate();
-  }
-
-  private loadTemplate(): HandlebarsTemplateDelegate {
-    const candidates = [
-      join(__dirname, "..", "..", "prompts", "invariant_derivation.md"),
-      join(process.cwd(), "prompts", "invariant_derivation.md"),
-    ];
-
-    for (const path of candidates) {
-      try {
-        const raw = readFileSync(path, "utf-8");
-        const promptStart = raw.indexOf("## Prompt\n");
-        const template = promptStart !== -1
-          ? raw.slice(promptStart + "## Prompt\n\n".length)
-          : raw;
-        return Handlebars.compile(template, { noEscape: true });
-      } catch { continue; }
-    }
-
-    throw new Error("Could not find prompts/invariant_derivation.md");
-  }
 
   async execute(input: DerivationInput, options: PhaseOptions): Promise<PhaseResult<DerivationOutput>> {
     const { bundles, model } = input;
@@ -518,53 +490,6 @@ Produce ONE atomic principle for this pattern gap. It must have:
     console.log();
 
     return { data: output, writtenTo: outPath };
-  }
-
-  private buildPrompt(
-    representative: CallSiteContext,
-    filePath: string,
-    accumulated: string,
-    discoveredPrinciples: string,
-    signalFrame: string,
-    dossierText: string
-  ): string {
-    const importSources = representative.importSources.length > 0
-      ? representative.importSources.map((imp) => `#### ${imp.path}\n\`\`\`typescript\n${imp.source}\n\`\`\``).join("\n\n")
-      : "(no imports)";
-
-    let enrichedContext = representative.callingContext;
-    if (representative.typeContext && representative.typeContext !== "(no type annotations found)") {
-      enrichedContext += `\n\nType information (from TypeScript AST):\n${representative.typeContext}`;
-    }
-    if (representative.pathConditions && representative.pathConditions.length > 0) {
-      enrichedContext += `\n\nPath conditions:\n` + representative.pathConditions.map((c, i) => `  ${i + 1}. ${c}`).join("\n");
-    }
-
-    enrichedContext += `\n\n${signalFrame}`;
-
-    if (dossierText) {
-      enrichedContext += `\n\n${dossierText}`;
-    }
-
-    let prompt = this.compiledTemplate({
-      TARGET_FILE: filePath,
-      TARGET_FUNCTION: representative.functionName,
-      TARGET_LINE: String(representative.line),
-      TARGET_STATEMENT: signalFrame,
-      TARGET_FILE_SOURCE: representative.fileSource,
-      IMPORT_SOURCES: importSources,
-      EXISTING_CONTRACTS: accumulated,
-      CALLING_CONTEXT: enrichedContext,
-    });
-
-    if (discoveredPrinciples) {
-      const insertPoint = prompt.indexOf("### SMT-LIB 2 Grammar");
-      if (insertPoint !== -1) {
-        prompt = prompt.slice(0, insertPoint) + discoveredPrinciples + "\n\n" + prompt.slice(insertPoint);
-      }
-    }
-
-    return prompt;
   }
 
   private buildContracts(
