@@ -8,7 +8,7 @@
 
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
-import { eq } from "drizzle-orm";
+import { eq, or, and, lte, gte } from "drizzle-orm";
 import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef } from "../types.js";
 import { InvariantFormulationFailed } from "../types.js";
 import type { Db } from "../../db/index.js";
@@ -403,7 +403,8 @@ export async function formulateInvariant(args: {
   // Path 1: existing principle match at locus
   // -------------------------------------------------------------------------
 
-  const allMatches = db
+  // Exact match: principle matched exactly at locus.primaryNode.
+  let allMatches = db
     .select({
       id: principleMatches.id,
       principleName: principleMatches.principleName,
@@ -413,6 +414,48 @@ export async function formulateInvariant(args: {
     .from(principleMatches)
     .where(eq(principleMatches.rootMatchNodeId, locus.primaryNode))
     .all();
+
+  // Span-containment fallback: locate() can pick a child node while the DSL
+  // captures a parent (e.g. the full BinaryExpression vs. just the operator).
+  // If no exact match, look for a principle match whose rootMatchNode's span
+  // CONTAINS locus.primaryNode's span — i.e. the locus is inside the match.
+  if (allMatches.length === 0) {
+    const locusNode = db
+      .select({ sourceStart: nodes.sourceStart, sourceEnd: nodes.sourceEnd, fileId: nodes.fileId })
+      .from(nodes)
+      .where(eq(nodes.id, locus.primaryNode))
+      .get();
+
+    if (locusNode) {
+      // Alias principleMatches root node to get its span.
+      const matchNodes = db
+        .select({
+          id: principleMatches.id,
+          principleName: principleMatches.principleName,
+          rootMatchNodeId: principleMatches.rootMatchNodeId,
+          message: principleMatches.message,
+          matchNodeStart: nodes.sourceStart,
+          matchNodeEnd: nodes.sourceEnd,
+        })
+        .from(principleMatches)
+        .innerJoin(nodes, eq(nodes.id, principleMatches.rootMatchNodeId))
+        .where(
+          and(
+            eq(nodes.fileId, locusNode.fileId),
+            lte(nodes.sourceStart, locusNode.sourceStart),
+            gte(nodes.sourceEnd, locusNode.sourceEnd),
+          ),
+        )
+        .all();
+
+      allMatches = matchNodes.map((r) => ({
+        id: r.id,
+        principleName: r.principleName,
+        rootMatchNodeId: r.rootMatchNodeId,
+        message: r.message,
+      }));
+    }
+  }
 
   if (allMatches.length > 0) {
     const match = allMatches[0]!;

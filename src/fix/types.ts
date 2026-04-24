@@ -229,6 +229,13 @@ export class InvariantFormulationFailed extends Error {
 }
 
 /**
+ * Re-export SmtBinding from contracts.ts for use in InvariantClaim.
+ * Contracts.ts only imports fs/path/crypto — no circular risk.
+ */
+import type { SmtBinding } from "../contracts.js";
+export type SmtBindingRef = SmtBinding;
+
+/**
  * A formal claim about what invariant the code is violating.
  * C1 (formulateInvariant) produces this; oracle #1 has already confirmed SAT before returning.
  */
@@ -252,17 +259,6 @@ export interface InvariantClaim {
   complexity: number;
   /** Z3 witness from oracle #1 run (the sat-ness proves the bug is real). */
   witness: string | null;
-}
-
-/**
- * Re-export SmtBinding shape inline (avoids circular import with contracts.ts).
- * Matches SmtBinding from src/contracts.ts exactly.
- */
-export interface SmtBindingRef {
-  smt_constant: string;
-  source_line: number;
-  source_expr: string;
-  sort: string;
 }
 
 /** A concrete code change proposed to fix the bug. B5 fills this in. */

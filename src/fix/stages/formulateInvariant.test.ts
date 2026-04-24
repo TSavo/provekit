@@ -310,6 +310,9 @@ describe("formulateInvariant (C1)", () => {
     ).rejects.toThrow(InvariantFormulationFailed);
   });
 
+  // Note: "unknown" verdict path is covered by runOracleOne's switch statement;
+  // no separate test — Z3-backed timeout injection is fragile in CI.
+
   // -------------------------------------------------------------------------
   // Test 6: Novel LLM path — LLM returns unsat SMT → InvariantFormulationFailed
   // -------------------------------------------------------------------------
