@@ -177,6 +177,7 @@ So every [NEW] tag teaches the system something it will remember forever. Be eag
           witness,
           complexity: proofComplexity(tr.smt2),
           confidence: tr.confidence,
+          bindings: tr.bindings,
         });
       }
       let retryBudget = 2;
@@ -529,7 +530,7 @@ Produce ONE atomic principle for this pattern gap. It must have:
         if (v.z3Result === "unsat") {
           proven.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2 });
         } else if (v.z3Result === "sat") {
-          violations.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2, witness: v.witness, complexity: v.complexity, confidence: v.confidence });
+          violations.push({ principle: v.principle, principle_hash: pHash, claim, smt2: v.smt2, witness: v.witness, complexity: v.complexity, confidence: v.confidence, smt_bindings: v.bindings });
         }
       }
 
