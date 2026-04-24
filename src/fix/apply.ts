@@ -71,17 +71,46 @@ export function createApplyWorktree(
 // ---------------------------------------------------------------------------
 
 export function removeApplyWorktree(handle: ApplyWorktreeHandle): void {
+  // Try the git command first — it cleans both the filesystem directory
+  // AND the .git/worktrees/ admin entry. We ignore its failure (captured
+  // in gitErr only for diagnostics if everything else also fails).
+  let gitErr: unknown = null;
   try {
     execFileSync("git", ["worktree", "remove", "--force", handle.worktreePath], {
       cwd: handle.repoRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     });
-  } catch {
-    // Best-effort: try rmSync as fallback.
-    if (existsSync(handle.worktreePath)) {
+  } catch (e) {
+    gitErr = e;
+  }
+
+  // REGARDLESS of git's outcome, make sure the filesystem directory is gone.
+  // Under parallel-test load, git's admin lock can race and the --force command
+  // can silently half-succeed (admin removed, FS kept or vice versa). The
+  // filesystem cleanup here is the definitive step.
+  if (existsSync(handle.worktreePath)) {
+    try {
       rmSync(handle.worktreePath, { recursive: true, force: true });
+    } catch (e) {
+      // Genuinely broken — surface both failure modes together.
+      throw new Error(
+        `removeApplyWorktree failed: rmSync on ${handle.worktreePath} → ${e instanceof Error ? e.message : String(e)}` +
+          (gitErr ? ` (git worktree remove also failed: ${gitErr instanceof Error ? gitErr.message : String(gitErr)})` : ""),
+      );
     }
+  }
+
+  // Prune any stale admin entry the git command may have left behind.
+  // Safe to run even when nothing's stale; errors here are non-fatal.
+  try {
+    execFileSync("git", ["worktree", "prune"], {
+      cwd: handle.repoRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch {
+    // Pruning is hygiene; not worth blocking cleanup on.
   }
 }
 
