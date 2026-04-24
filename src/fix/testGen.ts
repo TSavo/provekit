@@ -13,7 +13,7 @@
  */
 
 import { readFileSync, writeFileSync, symlinkSync, existsSync } from "fs";
-import { join, relative, dirname, basename } from "path";
+import { join, relative, dirname, basename, resolve } from "path";
 import { spawnSync } from "child_process";
 import { execFileSync } from "child_process";
 import { parseZ3Model } from "../z3/modelParser.js";
@@ -404,9 +404,9 @@ export function resolveMainRepoRoot(overlay: OverlayHandle): string {
       { cwd: overlay.worktreePath, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
 
-    // commonDir is typically <mainRepo>/.git
-    // So the main repo root is dirname(commonDir)
-    const resolvedCommon = join(overlay.worktreePath, commonDir);
+    // commonDir may be relative (e.g. "../../.git") or absolute.
+    // Use path.resolve — unlike path.join it handles absolute second args correctly.
+    const resolvedCommon = resolve(overlay.worktreePath, commonDir);
     return dirname(resolvedCommon);
   } catch {
     // Fallback: use process.cwd() — this works when C5 is called from the main repo
