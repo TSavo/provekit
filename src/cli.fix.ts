@@ -626,7 +626,9 @@ export async function runFix(argv: string[]): Promise<void> {
 
   const db = openDb(dbPath);
   const realProvider: RealLLMProvider = createProvider();
-  // Bridge: wrap the real LLM provider to match the fix-layer interface
+  // Bridge: wrap the real LLM provider to match the fix-layer interface.
+  // Forward agent() when the underlying provider implements it — this is how
+  // the capture-the-change pipeline (C3-C6) gets activated.
   const llm: LLMProvider = {
     complete: async (params) => {
       const resp = await realProvider.complete(params.prompt, {
@@ -635,6 +637,11 @@ export async function runFix(argv: string[]): Promise<void> {
       });
       return resp.text;
     },
+    ...(realProvider.agent
+      ? {
+          agent: (prompt, options) => realProvider.agent!(prompt, options),
+        }
+      : {}),
   };
 
   // Register all intake adapters + remediation layers (side-effects via imports)
