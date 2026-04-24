@@ -11,6 +11,7 @@ import { openDb, type Db } from "./db/index.js";
 import { gapReports, clauses, runtimeValues } from "./db/schema/index.js";
 import { eq } from "drizzle-orm";
 import { runFix } from "./cli.fix.js";
+import { buildSASTForFile } from "./sast/builder.js";
 
 const VERSION = "0.3.0";
 
@@ -157,6 +158,25 @@ async function runAnalyze(args: string[]): Promise<void> {
   });
 
   printSummary(result);
+
+  // Populate SAST substrate tables (files/nodes/capabilities/data_flow/dominance)
+  // so the fix loop's Locate step can find code sites.
+  const dbPath = join(projectRoot, ".provekit", "provekit.db");
+  const db = openDb(dbPath);
+  try {
+    const tsExtensions = new Set([".ts", ".tsx"]);
+    for (const fileNode of result.graph.files) {
+      const ext = fileNode.path.slice(fileNode.path.lastIndexOf("."));
+      if (!tsExtensions.has(ext)) continue;
+      try {
+        buildSASTForFile(db, fileNode.path);
+      } catch (err: any) {
+        console.warn(`SAST index skipped for ${fileNode.path}: ${err?.message ?? err}`);
+      }
+    }
+  } finally {
+    db.$client.close();
+  }
 
   if (args.includes("--issues") || dryRun) {
     await fileIssues(result, dryRun);
