@@ -1,6 +1,7 @@
 import Parser from "tree-sitter";
 import { TemplateResult } from "./Template";
 import { PrincipleStore, Principle, ASTPattern } from "../principles";
+import { SmtBinding } from "../contracts";
 
 export class TemplateEngine {
   private principles: Principle[];
@@ -58,6 +59,7 @@ export class TemplateEngine {
             claim: `${principle.name}: ${principle.description.slice(0, 100)}`,
             principle: principle.id,
             confidence: principle.confidence || "low",
+            bindings: this.extractBindings(node, pattern, match, smt2, line),
           });
         }
       }
@@ -371,11 +373,14 @@ export class TemplateEngine {
   }
 
   private findAccumulator(body: Parser.SyntaxNode): string | null {
+    // Return the FIRST augmented-assignment or update LHS found — matches the
+    // "first interesting site" semantics expected by downstream readers.
     let found: string | null = null;
     const visit = (node: Parser.SyntaxNode): void => {
+      if (found) return; // stop after first match
       if (node.type === "augmented_assignment_expression" || node.type === "update_expression") {
         const left = node.childForFieldName("left") || node.firstNamedChild;
-        if (left?.type === "identifier") found = left.text;
+        if (left?.type === "identifier") { found = left.text; return; }
       }
       for (const child of node.children) visit(child);
     };
@@ -836,6 +841,232 @@ export class TemplateEngine {
     }
 
     return false;
+  }
+
+  /**
+   * Given the AST node that matched, the pattern that produced it, the variable
+   * name (e.g. "prop"), and the variable value (the string stored in vars),
+   * return the specific child node whose text was used to produce that value.
+   *
+   * Returns null when the var isn't backed by a single unambiguous node (e.g.
+   * `condition` for if_statement is a text slice, not a node). The caller falls
+   * back to the match node itself.
+   */
+  private astNodeForVar(
+    matchNode: Parser.SyntaxNode,
+    pattern: ASTPattern,
+    varName: string,
+    varValue: string
+  ): Parser.SyntaxNode | null {
+    switch (pattern.nodeType) {
+      case "binary_expression": {
+        if (varName === "left" || varName === "numerator") {
+          return matchNode.childForFieldName("left") ?? null;
+        }
+        if (varName === "right" || varName === "denominator") {
+          return matchNode.childForFieldName("right") ?? null;
+        }
+        if (varName === "param") {
+          // param came from findParamRef — re-scan for first identifier with matching text.
+          // Take the FIRST candidate to honour "first interesting site" semantics.
+          return this.findFirstNodeByName(matchNode, varValue, "identifier");
+        }
+        return null;
+      }
+      case "non_null_expression": {
+        if (varName === "value") {
+          return matchNode.firstNamedChild ?? null;
+        }
+        return null;
+      }
+      case "assignment_expression": {
+        if (varName === "prop") {
+          const left = matchNode.childForFieldName("left");
+          return left?.childForFieldName("property") ?? null;
+        }
+        return null;
+      }
+      case "if_statement": {
+        if (varName === "condition") {
+          // condition was stored as a text slice — no single node maps cleanly.
+          // Return null; caller falls back to the match node.
+          return null;
+        }
+        if (varName === "var") {
+          // var came from findModifiedVars — re-scan consequence for the first
+          // assignment_expression whose LHS identifier text equals varValue.
+          // Take the FIRST match ("first interesting site" semantics).
+          const consequence = matchNode.childForFieldName("consequence");
+          if (!consequence) return null;
+          const assignNode = this.findFirstAssignmentLhsNamed(consequence, varValue);
+          return assignNode ?? matchNode;
+        }
+        return null;
+      }
+      case "for_statement":
+      case "for_in_statement":
+      case "while_statement": {
+        if (varName === "accumulator") {
+          // accumulator came from findAccumulator — re-scan loop body for the
+          // first augmented_assignment or update_expression whose LHS matches.
+          // Take the FIRST candidate ("first interesting site" semantics).
+          const body = matchNode.childForFieldName("body");
+          if (!body) return null;
+          return this.findFirstAccumulatorNode(body, varValue) ?? matchNode;
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Scan subtree depth-first and return the first node of `nodeType` whose
+   * text equals `name`. Returns null if not found.
+   */
+  private findFirstNodeByName(
+    subtree: Parser.SyntaxNode,
+    name: string,
+    nodeType: string
+  ): Parser.SyntaxNode | null {
+    if (subtree.type === nodeType && subtree.text === name) return subtree;
+    for (const child of subtree.children) {
+      const found = this.findFirstNodeByName(child, name, nodeType);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  /**
+   * Scan subtree depth-first and return the LHS node of the first
+   * assignment_expression or augmented_assignment_expression whose LHS
+   * identifier text equals `name`.
+   */
+  private findFirstAssignmentLhsNamed(
+    subtree: Parser.SyntaxNode,
+    name: string
+  ): Parser.SyntaxNode | null {
+    if (
+      subtree.type === "assignment_expression" ||
+      subtree.type === "augmented_assignment_expression"
+    ) {
+      const left = subtree.childForFieldName("left");
+      if (left?.type === "identifier" && left.text === name) return left;
+    }
+    for (const child of subtree.children) {
+      const found = this.findFirstAssignmentLhsNamed(child, name);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  /**
+   * Scan subtree depth-first and return the LHS node of the first
+   * augmented_assignment_expression or update_expression whose LHS identifier
+   * text equals `name`.
+   */
+  private findFirstAccumulatorNode(
+    subtree: Parser.SyntaxNode,
+    name: string
+  ): Parser.SyntaxNode | null {
+    if (subtree.type === "augmented_assignment_expression" || subtree.type === "update_expression") {
+      const left = subtree.childForFieldName("left") || subtree.firstNamedChild;
+      if (left?.type === "identifier" && left.text === name) return left;
+    }
+    for (const child of subtree.children) {
+      const found = this.findFirstAccumulatorNode(child, name);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  private extractBindings(
+    node: Parser.SyntaxNode,
+    pattern: ASTPattern,
+    vars: Record<string, string>,
+    smt2: string,
+    line: number
+  ): SmtBinding[] {
+    // Build map of smt_constant -> sort from declare-const lines in the emitted smt2.
+    const declareMap = new Map<string, string>();
+    const declareRe = /\(declare-const\s+(\S+)\s+([A-Za-z][A-Za-z0-9]*)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = declareRe.exec(smt2)) !== null) {
+      declareMap.set(m[1]!, m[2]!);
+    }
+
+    if (declareMap.size === 0) return [];
+
+    const bindings: SmtBinding[] = [];
+    const boundConstants = new Set<string>();
+
+    // Process binary_expression aliases first so dedup keeps the more specific name
+    // (numerator/denominator before left/right). Other pattern types don't have
+    // colliding keys so ordering doesn't matter for them.
+    const orderedKeys = ["numerator", "denominator", "left", "right", "param"];
+    const otherKeys = Object.keys(vars).filter(
+      (k) => !k.startsWith("_") && !orderedKeys.includes(k)
+    );
+    const keysToProcess = [...orderedKeys, ...otherKeys].filter((k) => k in vars);
+
+    for (const key of keysToProcess) {
+      if (key.startsWith("_")) continue;
+      const rawValue = vars[key];
+      if (rawValue === undefined) continue;
+      const safeName = rawValue.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 30) || key;
+
+      // Find the SMT constant(s) that this var contributes to.
+      // Templates may use {{var}} verbatim (exact match: constant IS safeName) or
+      // as a prefix in compound forms like {{var}}_is_null or {{var}}_before.
+      // Collect all such constants in declaration order; emit each once.
+      const matchedConstants: Array<[string, string]> = [];
+      if (declareMap.has(safeName)) {
+        matchedConstants.push([safeName, declareMap.get(safeName)!]);
+      } else {
+        // Compound prefix match: find all declared constants that start with safeName + "_"
+        const prefix = safeName + "_";
+        for (const [smtName, sort] of declareMap.entries()) {
+          if (smtName.startsWith(prefix)) {
+            matchedConstants.push([smtName, sort]);
+          }
+        }
+      }
+
+      if (matchedConstants.length === 0) continue;
+
+      const childNode = this.astNodeForVar(node, pattern, key, rawValue);
+      const sourceNode = childNode ?? node;
+      const sourceLine = sourceNode.startPosition.row + 1;
+      const sourceExpr = sourceNode.text.slice(0, 80);
+
+      for (const [smtName, sort] of matchedConstants) {
+        if (boundConstants.has(smtName)) continue; // deduplicate
+        boundConstants.add(smtName);
+        bindings.push({
+          smt_constant: smtName,
+          source_line: sourceLine,
+          source_expr: sourceExpr,
+          sort,
+        });
+      }
+    }
+
+    // Emit abstract bindings for synthetic constants (name_<line>) not covered above.
+    const syntheticPattern = new RegExp(`^[a-zA-Z_][a-zA-Z0-9_]*_${line}$`);
+    for (const [smtName, sort] of declareMap.entries()) {
+      if (boundConstants.has(smtName)) continue;
+      if (syntheticPattern.test(smtName)) {
+        bindings.push({
+          smt_constant: smtName,
+          source_line: 0,
+          source_expr: "<abstract>",
+          sort,
+        });
+      }
+    }
+
+    return bindings;
   }
 
   private blockReturnsOrThrows(block: Parser.SyntaxNode): boolean {
