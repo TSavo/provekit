@@ -8,6 +8,7 @@ import { files, nodes, nodeChildren } from "./schema/index.js";
 import { subtreeHash } from "./subtreeHash.js";
 import { extractAllCapabilities } from "./capabilities/extractor.js";
 import { extractDataFlow } from "./dataFlow.js";
+import { extractDominance } from "./dominance.js";
 
 export interface SASTBuildResult {
   fileId: number;
@@ -160,6 +161,9 @@ export function buildSASTForFile(db: Db, filePath: string): SASTBuildResult {
 
     // Populate data-flow tables (def-use edges + transitive closure)
     extractDataFlow(tx, fileId, sourceFile, nodeIdByNode);
+
+    // Populate dominance + post-dominance tables (CFG-based, per-function)
+    extractDominance(tx, fileId, sourceFile, nodeIdByNode);
   });
 
   return {
