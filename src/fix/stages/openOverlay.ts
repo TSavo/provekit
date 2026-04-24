@@ -8,6 +8,7 @@
 
 import { mkdtempSync, mkdirSync, cpSync, existsSync, rmSync, realpathSync } from "fs";
 import { join, relative, dirname } from "path";
+import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -15,6 +16,10 @@ import { openDb } from "../../db/index.js";
 import { buildSASTForFile } from "../../sast/builder.js";
 import type { BugLocus, OverlayHandle } from "../types.js";
 import type { Db } from "../../db/index.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const DRIZZLE_FOLDER = join(__dirname, "..", "..", "..", "drizzle");
 
 export async function openOverlay(args: {
   locus: BugLocus;
@@ -85,7 +90,7 @@ export async function openOverlay(args: {
   mkdirSync(sastDbDir, { recursive: true });
   const sastDbPath = join(sastDbDir, "scratch-sast.db");
   const sastDb = openDb(sastDbPath);
-  migrate(sastDb, { migrationsFolder: "./drizzle" });
+  migrate(sastDb, { migrationsFolder: DRIZZLE_FOLDER });
 
   // ------------------------------------------------------------------
   // Step 5: Copy principles library (best-effort).

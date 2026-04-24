@@ -8,10 +8,15 @@
  */
 
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const DRIZZLE_FOLDER = join(__dirname, "..", "..", "drizzle");
 import * as ts from "typescript";
 import { openDb } from "../db/index.js";
 import { buildSASTAndReturnHandles, buildSASTForFile } from "../sast/builder.js";
@@ -192,9 +197,8 @@ Rules:
 /** Migrate a fresh DB. Reuses the same migrations path as other tests. */
 function openFreshDb(dbPath: string): Db {
   const db = openDb(dbPath);
-  const migrationsFolder = join(process.cwd(), "drizzle");
   try {
-    migrate(db, { migrationsFolder });
+    migrate(db, { migrationsFolder: DRIZZLE_FOLDER });
   } catch {
     // migrations may already be applied
   }
