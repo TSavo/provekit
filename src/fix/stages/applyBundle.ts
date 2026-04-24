@@ -15,6 +15,7 @@ import { execFileSync } from "child_process";
 import { dirname } from "path";
 import type { FixBundle, ApplyResult } from "../types.js";
 import type { Db } from "../../db/index.js";
+import type { FixLoopLogger } from "../logger.js";
 import {
   createApplyWorktree,
   removeApplyWorktree,
@@ -77,6 +78,7 @@ export async function applyBundle(args: {
   reindexFn?: (db: Db, absPath: string) => void;
   /** Injectable repo root for testing. */
   repoRoot?: string;
+  logger?: FixLoopLogger;
 }): Promise<ApplyResult> {
   const { bundle, options, db } = args;
   const isSubstrate = bundle.bundleType === "substrate";

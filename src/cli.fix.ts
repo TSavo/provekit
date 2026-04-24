@@ -24,7 +24,7 @@ import { locate } from "./fix/locate.js";
 import { classify, ClassifyError } from "./fix/classify.js";
 import { openDb, type Db } from "./db/index.js";
 import { gapReports, clauses } from "./db/schema/index.js";
-import { nodes, nodeBinding } from "./sast/schema/index.js";
+import { nodes, nodeBinding, files as sastFiles } from "./sast/schema/index.js";
 import { createProvider } from "./llm/index.js";
 import type { LLMProvider as RealLLMProvider } from "./llm/index.js";
 import { resolve, join } from "path";
@@ -32,6 +32,12 @@ import { writeFileSync } from "fs";
 import type { LLMProvider, RemediationPlan, BugLocus, BugSignal } from "./fix/types.js";
 import { runFixLoop } from "./fix/orchestrator.js";
 import type { RunFixLoopArgs } from "./fix/orchestrator.js";
+import {
+  createFixLoopLogger,
+  createNoopLogger,
+  loggedComplete,
+  type FixLoopLogger,
+} from "./fix/logger.js";
 
 export { ClassifyError };
 
@@ -62,6 +68,12 @@ export interface RunFixArgs {
    * Inject a stub here to avoid running all stages in CLI unit tests.
    */
   runFixLoopFn?: typeof runFixLoop;
+  /** Enable verbose logging (full prompts + responses). Default false. */
+  verbose?: boolean;
+  /** Pre-constructed logger. When omitted, createFixLoopLogger is used (or noop for dryRun). */
+  logger?: FixLoopLogger;
+  /** Override the log file path. Defaults to .provekit/fix-loop-<timestamp>.log */
+  logFilePath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,151 +283,255 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
   const autoApply = args.apply ?? false;
   const maxSites = args.maxSites ?? 10;
   const fixLoopFn = args.runFixLoopFn ?? runFixLoop;
+  const verbose = args.verbose ?? false;
 
   const w = (s: string) => stdout.write(s + "\n");
   const e = (s: string) => stderr.write(s + "\n");
 
-  if (!dryRun) {
-    w(`provekit fix loop · v${VERSION}`);
-    w("");
-  }
-
-  // 1. Resolve ref → text + source
-  let resolved: ResolvedRef;
-  try {
-    resolved = await resolveRef(ref, db, args.stdin);
-  } catch (err) {
-    e(`Intake error: ${(err as Error).message}`);
-    return 1;
-  }
-
-  // 2. Parse bug signal via intake adapter
-  let signal: BugSignal;
-  try {
-    signal = await parseBugSignal(
-      { text: resolved.text, source: resolved.source, context: resolved.context },
-      llm,
+  // Build log file path: .provekit/fix-loop-<timestamp>.log
+  const logFilePath = args.logFilePath ??
+    join(
+      process.cwd(),
+      ".provekit",
+      `fix-loop-${new Date().toISOString().replace(/[:.]/g, "-")}.log`,
     );
-  } catch (err) {
-    e(`Intake error: ${(err as Error).message}`);
-    // List registered adapters
-    const { listIntakeAdapters } = await import("./fix/intake.js");
-    const names = listIntakeAdapters()
-      .map((a) => a.name)
-      .join(", ");
-    e(`Registered adapters: ${names}`);
-    return 1;
-  }
 
-  // 3. Locate
-  let locus: BugLocus | null;
+  // Logger: use injected logger (tests), or build real one if not dryRun, else noop.
+  const logger: FixLoopLogger = args.logger ??
+    (dryRun
+      ? createNoopLogger()
+      : createFixLoopLogger({ stdout, verbose, logFilePath }));
+
   try {
-    locus = locate(db, signal);
-  } catch (err) {
-    e(`Locate error: ${(err as Error).message}`);
-    return 2;
-  }
+    if (!dryRun) {
+      w(`provekit fix loop · v${VERSION}`);
+      w("");
+      logger.info(`Log file: ${logFilePath}`);
+    }
 
-  if (locus === null) {
-    e("Unable to resolve code references in report. Cannot continue.");
-    return 2;
-  }
+    // ── Intake ──────────────────────────────────────────────────────────────
+    logger.stage("Intake");
+    const t0Intake = Date.now();
 
-  // 4. Classify
-  let plan: RemediationPlan;
-  try {
-    plan = await classify(signal, locus, llm);
-  } catch (err) {
-    e(`Classify error: ${(err as Error).message}`);
-    return 3;
-  }
+    // 1. Resolve ref → text + source
+    let resolved: ResolvedRef;
+    try {
+      resolved = await resolveRef(ref, db, args.stdin);
+      logger.info(`  ref source: ${resolved.source}  text length: ${resolved.text.length} chars`);
+    } catch (err) {
+      logger.error(`resolveRef failed`, { ref, message: (err as Error).message });
+      e(`Intake error: ${(err as Error).message}`);
+      return 1;
+    }
 
-  // 5. Output
-  if (dryRun) {
-    // JSON output for scripting
-    stdout.write(JSON.stringify({ signal, locus, plan }, null, 2) + "\n");
+    // 2. Parse bug signal via intake adapter
+    let signal: BugSignal;
+    try {
+      // Wrap the LLM call with timing + logging
+      const wrappedLlm: LLMProvider = {
+        ...llm,
+        complete: (params) => loggedComplete(logger, "Intake", llm, params),
+      };
+      signal = await parseBugSignal(
+        { text: resolved.text, source: resolved.source, context: resolved.context },
+        wrappedLlm,
+      );
+      logger.info(`  signal summary: ${signal.summary.slice(0, 120)}`);
+      logger.info(`  code references: ${signal.codeReferences.length}`);
+      for (const cr of signal.codeReferences) {
+        const loc = cr.line !== undefined ? `${cr.file}:${cr.line}` : cr.file;
+        const fn = cr.function ? ` (${cr.function})` : "";
+        logger.info(`    - ${loc}${fn}`);
+      }
+      logger.info(`  Intake stage OK in ${Date.now() - t0Intake}ms`);
+    } catch (err) {
+      logger.error(`parseBugSignal failed`, {
+        source: resolved.source,
+        textLen: resolved.text.length,
+        message: (err as Error).message,
+      });
+      e(`Intake error: ${(err as Error).message}`);
+      // List registered adapters
+      const { listIntakeAdapters } = await import("./fix/intake.js");
+      const names = listIntakeAdapters()
+        .map((a) => a.name)
+        .join(", ");
+      e(`Registered adapters: ${names}`);
+      return 1;
+    }
+
+    // ── Locate ───────────────────────────────────────────────────────────────
+    logger.stage("Locate");
+    const t0Locate = Date.now();
+    let locus: BugLocus | null;
+    try {
+      locus = locate(db, signal);
+    } catch (err) {
+      logger.error(`locate threw`, { message: (err as Error).message });
+      e(`Locate error: ${(err as Error).message}`);
+      return 2;
+    }
+
+    if (locus === null) {
+      // Detailed error: dump codeReferences and DB files that were searched
+      const allFilePaths = db
+        .select({ path: sastFiles.path })
+        .from(sastFiles)
+        .all()
+        .map((r) => r.path);
+
+      const refs = signal.codeReferences;
+      const refFiles = refs.map((r) => r.file);
+
+      // Which refs had any DB file match (exact or suffix)?
+      const matchedFiles: Record<string, string[]> = {};
+      for (const refFile of refFiles) {
+        const suffix = refFile.startsWith("/") ? refFile : `/${refFile}`;
+        const matched = allFilePaths.filter(
+          (p) => p === refFile || p.endsWith(suffix),
+        );
+        matchedFiles[refFile] = matched;
+      }
+
+      logger.error("locate: no candidates matched — locus is null", {
+        codeReferences: refs,
+        dbFileCount: allFilePaths.length,
+        matchedByRef: matchedFiles,
+        searchedBy: "exact match then suffix match then function name binding",
+      });
+
+      e("Unable to resolve code references in report. Cannot continue.");
+      return 2;
+    }
+
+    logger.info(`  locus resolved: ${locus.file}:${locus.line} confidence=${locus.confidence.toFixed(2)}`);
+    logger.info(`  primary node: ${locus.primaryNode}`);
+    logger.info(`  containing function: ${locus.containingFunction}`);
+    logger.info(`  related: ${locus.relatedFunctions.length} df-ancestors: ${locus.dataFlowAncestors.length} df-desc: ${locus.dataFlowDescendants.length}`);
+    logger.info(`  Locate stage OK in ${Date.now() - t0Locate}ms`);
+
+    // ── Classify ─────────────────────────────────────────────────────────────
+    logger.stage("Classify");
+    const t0Classify = Date.now();
+    let plan: RemediationPlan;
+    try {
+      const wrappedLlm: LLMProvider = {
+        ...llm,
+        complete: (params) => loggedComplete(logger, "Classify", llm, params),
+      };
+      plan = await classify(signal, locus, wrappedLlm);
+      logger.info(`  primary layer: ${plan.primaryLayer}`);
+      if (plan.secondaryLayers.length) {
+        logger.info(`  secondary: ${plan.secondaryLayers.join(", ")}`);
+      }
+      logger.info(`  artifacts: ${plan.artifacts.map((a) => a.kind).join(", ") || "(none)"}`);
+      logger.info(`  Classify stage OK in ${Date.now() - t0Classify}ms`);
+    } catch (err) {
+      logger.error(`classify failed`, { message: (err as Error).message });
+      e(`Classify error: ${(err as Error).message}`);
+      return 3;
+    }
+
+    // ── Output ───────────────────────────────────────────────────────────────
+    if (dryRun) {
+      // JSON output for scripting
+      stdout.write(JSON.stringify({ signal, locus, plan }, null, 2) + "\n");
+      return 0;
+    }
+
+    // Pretty-print the three sections
+    formatIntakeSection(signal, stdout);
+    w("");
+    formatLocateSection(locus, db, stdout);
+    w("");
+    formatClassifySection(plan, stdout);
+    w("");
+    w("━━━ Plan ready ━━━");
+    w("");
+
+    // 6. Confirmation prompt (or auto-run)
+    if (confirm) {
+      const answer = await askYN(args.stdin, stdout);
+      if (!answer) {
+        w("Aborted.");
+        return 4;
+      }
+    }
+
+    // ── Orchestrator ─────────────────────────────────────────────────────────
+    logger.stage("Orchestrator");
+    w("Running fix loop...");
+
+    const fixLoopArgs: RunFixLoopArgs = {
+      signal,
+      locus,
+      plan,
+      db,
+      llm,
+      options: {
+        autoApply,
+        maxComplementarySites: maxSites,
+        confidenceThreshold: 0.5,
+      },
+      logger,
+    };
+
+    const result = await fixLoopFn(fixLoopArgs);
+
+    if (result.bundle === null) {
+      logger.error(`fix loop returned null bundle`, {
+        reason: result.reason,
+        auditTrail: result.auditTrail,
+      });
+      e(`Fix loop failed: ${result.reason ?? "unknown reason"}`);
+      // One-line audit summary: last error or skipped stage
+      const lastFault = [...result.auditTrail]
+        .reverse()
+        .find((entry) => entry.kind === "error" || entry.kind === "skipped");
+      if (lastFault) {
+        e(`  ${lastFault.stage}: ${lastFault.detail}`);
+      }
+      return 5;
+    }
+
+    logger.stage("Bundle");
+
+    // 8. Print bundle summary
+    const bundle = result.bundle;
+    w(`Bundle type: ${bundle.bundleType}`);
+    w(`Artifacts:`);
+    w(`  primaryFix: ${bundle.artifacts.primaryFix !== null ? "yes" : "none"}`);
+    w(`  complementary: ${bundle.artifacts.complementary.length}`);
+    w(`  test: ${bundle.artifacts.test !== null ? "yes" : "none"}`);
+    w(`  principle: ${bundle.artifacts.principle !== null ? "yes" : "none"}`);
+    w(`Confidence: ${bundle.confidence.toFixed(2)}`);
+    w(`Coherence:`);
+    for (const [key, val] of Object.entries(bundle.coherence)) {
+      if (val !== null) {
+        w(`  ${key}: ${val}`);
+      }
+    }
+
+    logger.info(`  bundle type: ${bundle.bundleType} confidence: ${bundle.confidence.toFixed(2)}`);
+
+    if (autoApply && result.applyResult?.commitSha) {
+      w(`Committed: ${result.applyResult.commitSha}`);
+      logger.info(`  committed: ${result.applyResult.commitSha}`);
+    }
+
+    if (!autoApply && result.applyResult?.prDraft) {
+      const patchPath = join(process.cwd(), "provekit-fix.patch");
+      const mdPath = join(process.cwd(), "provekit-fix.md");
+      writeFileSync(patchPath, result.applyResult.prDraft.patch, "utf-8");
+      writeFileSync(mdPath, result.applyResult.prDraft.prBody, "utf-8");
+      w(`Patch written to: ${patchPath}`);
+      w(`PR body written to: ${mdPath}`);
+    }
+
     return 0;
+  } finally {
+    logger.close();
   }
-
-  // Pretty-print the three sections
-  formatIntakeSection(signal, stdout);
-  w("");
-  formatLocateSection(locus, db, stdout);
-  w("");
-  formatClassifySection(plan, stdout);
-  w("");
-  w("━━━ Plan ready ━━━");
-  w("");
-
-  // 6. Confirmation prompt (or auto-run)
-  if (confirm) {
-    const answer = await askYN(args.stdin, stdout);
-    if (!answer) {
-      w("Aborted.");
-      return 4;
-    }
-  }
-
-  // 7. Run orchestrator
-  w("Running fix loop...");
-
-  const fixLoopArgs: RunFixLoopArgs = {
-    signal,
-    locus,
-    plan,
-    db,
-    llm,
-    options: {
-      autoApply,
-      maxComplementarySites: maxSites,
-      confidenceThreshold: 0.5,
-    },
-  };
-
-  const result = await fixLoopFn(fixLoopArgs);
-
-  if (result.bundle === null) {
-    e(`Fix loop failed: ${result.reason ?? "unknown reason"}`);
-    // One-line audit summary: last error or skipped stage
-    const lastFault = [...result.auditTrail]
-      .reverse()
-      .find((entry) => entry.kind === "error" || entry.kind === "skipped");
-    if (lastFault) {
-      e(`  ${lastFault.stage}: ${lastFault.detail}`);
-    }
-    return 5;
-  }
-
-  // 8. Print bundle summary
-  const bundle = result.bundle;
-  w(`Bundle type: ${bundle.bundleType}`);
-  w(`Artifacts:`);
-  w(`  primaryFix: ${bundle.artifacts.primaryFix !== null ? "yes" : "none"}`);
-  w(`  complementary: ${bundle.artifacts.complementary.length}`);
-  w(`  test: ${bundle.artifacts.test !== null ? "yes" : "none"}`);
-  w(`  principle: ${bundle.artifacts.principle !== null ? "yes" : "none"}`);
-  w(`Confidence: ${bundle.confidence.toFixed(2)}`);
-  w(`Coherence:`);
-  for (const [key, val] of Object.entries(bundle.coherence)) {
-    if (val !== null) {
-      w(`  ${key}: ${val}`);
-    }
-  }
-
-  if (autoApply && result.applyResult?.commitSha) {
-    w(`Committed: ${result.applyResult.commitSha}`);
-  }
-
-  if (!autoApply && result.applyResult?.prDraft) {
-    const patchPath = join(process.cwd(), "provekit-fix.patch");
-    const mdPath = join(process.cwd(), "provekit-fix.md");
-    writeFileSync(patchPath, result.applyResult.prDraft.patch, "utf-8");
-    writeFileSync(mdPath, result.applyResult.prDraft.prBody, "utf-8");
-    w(`Patch written to: ${patchPath}`);
-    w(`PR body written to: ${mdPath}`);
-  }
-
-  return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +581,7 @@ export async function runFix(argv: string[]): Promise<void> {
   const noConfirm = argv.includes("--no-confirm");
   const dryRun = argv.includes("--dry-run");
   const apply = argv.includes("--apply");
+  const verbose = argv.includes("--verbose") || argv.includes("-v");
 
   // --max-sites N
   const maxSitesIdx = argv.indexOf("--max-sites");
@@ -476,7 +593,7 @@ export async function runFix(argv: string[]): Promise<void> {
   const ref = positionals[0];
 
   if (!ref) {
-    process.stderr.write("Usage: provekit fix <ref> [--no-confirm] [--dry-run] [--apply] [--max-sites N]\n");
+    process.stderr.write("Usage: provekit fix <ref> [--no-confirm] [--dry-run] [--apply] [--max-sites N] [--verbose]\n");
     process.exit(1);
   }
 
@@ -532,6 +649,7 @@ export async function runFix(argv: string[]): Promise<void> {
     dryRun,
     apply,
     maxSites,
+    verbose,
     stdout: process.stdout,
     stderr: process.stderr,
     stdin: process.stdin,

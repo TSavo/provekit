@@ -29,6 +29,7 @@ import type {
   LLMProvider,
   InvariantClaim,
 } from "../types.js";
+import type { FixLoopLogger } from "../logger.js";
 
 export async function generateRegressionTest(args: {
   fix: FixCandidate;
@@ -43,6 +44,7 @@ export async function generateRegressionTest(args: {
    * Receives the overlay and test file path; returns { exitCode, stdout, stderr }.
    */
   testRunner?: (overlay: OverlayHandle, testFilePath: string, mainRepoRoot: string) => { exitCode: number; stdout: string; stderr: string };
+  logger?: FixLoopLogger;
 }): Promise<TestArtifact> {
   const { fix, signal, locus, overlay, invariant, llm } = args;
 

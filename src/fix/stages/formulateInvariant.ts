@@ -11,6 +11,7 @@ import { join, dirname } from "path";
 import { eq, or, and, lte, gte } from "drizzle-orm";
 import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef } from "../types.js";
 import { InvariantFormulationFailed } from "../types.js";
+import { createNoopLogger, loggedComplete, type FixLoopLogger } from "../logger.js";
 import type { Db } from "../../db/index.js";
 import { principleMatches, principleMatchCaptures } from "../../db/schema/principleMatches.js";
 import { nodes, files as filesTable } from "../../sast/schema/index.js";
@@ -396,8 +397,10 @@ export async function formulateInvariant(args: {
   locus: BugLocus;
   db: Db;
   llm: LLMProvider;
+  logger?: FixLoopLogger;
 }): Promise<InvariantClaim> {
   const { signal, locus, db, llm } = args;
+  const logger = args.logger ?? createNoopLogger();
 
   // -------------------------------------------------------------------------
   // Path 1: existing principle match at locus
@@ -503,6 +506,7 @@ export async function formulateInvariant(args: {
 
     // Oracle #1: must return SAT.
     const { witness } = runOracleOne(formalExpression);
+    logger.oracle({ id: 1, name: "Z3 SAT check (principle)", passed: witness !== null, detail: `principle=${match.principleName}` });
 
     return {
       principleId: match.principleName,
@@ -519,11 +523,13 @@ export async function formulateInvariant(args: {
   // -------------------------------------------------------------------------
 
   const prompt = buildLlmPrompt(signal, locus, db);
-  const rawResponse = await llm.complete({ prompt });
+  logger.detail(`C1 LLM prompt (novel path): ${prompt.slice(0, 200)}...`);
+  const rawResponse = await loggedComplete(logger, "C1", llm, { prompt });
   const { formalExpression, bindings, description } = parseLlmResponse(rawResponse);
 
   // Oracle #1: must return SAT.
   const { witness } = runOracleOne(formalExpression);
+  logger.oracle({ id: 1, name: "Z3 SAT check (novel)", passed: witness !== null, detail: witness ? `witness obtained` : "SAT returned no witness" });
 
   return {
     principleId: null,

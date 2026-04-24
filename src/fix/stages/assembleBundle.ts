@@ -17,6 +17,7 @@ import type {
   AuditEntry,
 } from "../types.js";
 import type { Db } from "../../db/index.js";
+import type { FixLoopLogger } from "../logger.js";
 import { assembleBundle as _assembleBundle } from "../bundleAssembly.js";
 
 export { BundleCoherenceFailed } from "../bundleAssembly.js";
@@ -35,6 +36,7 @@ export async function assembleBundle(args: {
   existingAuditTrail?: AuditEntry[];
   /** Optional oracle #10 runner injection (for tests). */
   vitestRunner?: (overlay: OverlayHandle) => { exitCode: number; stdout: string; stderr: string };
+  logger?: FixLoopLogger;
 }): Promise<FixBundle> {
   return _assembleBundle(args);
 }

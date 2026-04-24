@@ -23,6 +23,7 @@ import type {
   LLMProvider,
   InvariantClaim,
 } from "../types.js";
+import type { FixLoopLogger } from "../logger.js";
 import type { Db } from "../../db/index.js";
 import {
   discoverComplementarySites,
@@ -40,6 +41,7 @@ export async function generateComplementary(args: {
   llm: LLMProvider;
   maxSites: number;
   invariant?: InvariantClaim;
+  logger?: FixLoopLogger;
 }): Promise<ComplementaryChange[]> {
   const { fix, locus, overlay, db, llm, maxSites, invariant } = args;
 

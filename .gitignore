@@ -21,3 +21,6 @@ dist/
 .neurallog/neurallog.db-journal
 .neurallog/neurallog.db-wal
 .neurallog/neurallog.db-shm
+
+# Fix-loop run artifacts — per-run log files (debug output, not versioned knowledge)
+.provekit/fix-loop-*.log

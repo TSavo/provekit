@@ -23,6 +23,7 @@ import type {
   FixCandidate,
   LLMProvider,
 } from "../types.js";
+import type { FixLoopLogger } from "../logger.js";
 import { buildFixPrompt, parseProposedFixes, verifyCandidate, buildAgentFixPrompt } from "../candidateGen.js";
 import { runAgentInOverlay } from "../captureChange.js";
 
@@ -33,6 +34,7 @@ export async function generateFixCandidate(args: {
   overlay: OverlayHandle;
   llm: LLMProvider;
   options?: { maxCandidates?: number; minConfidence?: number };
+  logger?: FixLoopLogger;
 }): Promise<FixCandidate> {
   // Agent path: if the LLM provider supports agent(), use capture-the-change.
   if (args.llm.agent) {

@@ -8,12 +8,14 @@
 
 import type { FixBundle, ApplyResult } from "../types.js";
 import type { Db } from "../../db/index.js";
+import type { FixLoopLogger } from "../logger.js";
 import { learnFromBundle as _learnFromBundle } from "../learn.js";
 
 export async function learnFromBundle(args: {
   bundle: FixBundle;
   applyResult: ApplyResult;
   db: Db;
+  logger?: FixLoopLogger;
 }): Promise<void> {
   // Orchestrator does not use the LearnResult — it only cares that D3
   // completes without throwing. Return value is intentionally dropped.
