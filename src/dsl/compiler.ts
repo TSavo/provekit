@@ -40,6 +40,9 @@ import {
   getCapability,
   listCapabilities,
 } from "../sast/capabilityRegistry.js";
+import { getRelation, listRelations } from "./relationRegistry.js";
+// Side-effect import: registers built-in relations (before, dominates) into the registry.
+import "./relations.js";
 import type {
   PrincipleNode,
   PredicateDef,
@@ -618,19 +621,20 @@ export function compilePrinciple(
       throw new CompileError(`No nodes alias for '$${req.targetVar}' in require clause`);
     }
 
-    if (req.relation === "before") {
-      // guard.source_start < target.source_start AND same file_id
-      subWheres.push(
-        `${guardNodeAlias}.source_start < ${targetNodeAlias}.source_start`,
-      );
-      subWheres.push(
-        `${guardNodeAlias}.file_id = ${targetNodeAlias}.file_id`,
-      );
-    } else if (req.relation === "dominates") {
-      // EXISTS (SELECT 1 FROM dominance WHERE dominator = guard.id AND dominated = target.id)
-      subWheres.push(
-        `EXISTS (SELECT 1 FROM dominance WHERE dominator = ${guardNodeAlias}.id AND dominated = ${targetNodeAlias}.id)`,
-      );
+    {
+      const descriptor = getRelation(req.relation);
+      if (!descriptor) {
+        throw new CompileError(
+          `unknown relation '${req.relation}'. Registered: ${listRelations().map((r) => r.name).join(", ")}`,
+        );
+      }
+      const fragment = descriptor.compile({
+        args: [
+          { kind: "node", alias: guardNodeAlias },
+          { kind: "node", alias: targetNodeAlias },
+        ],
+      });
+      subWheres.push(fragment);
     }
 
     void 0; // nothing to do here
