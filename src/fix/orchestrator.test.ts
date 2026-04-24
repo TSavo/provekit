@@ -216,6 +216,10 @@ describe("orchestrator.runFixLoop", () => {
     const mockOverlay: OverlayHandle = {
       worktreePath: "/tmp/overlay",
       sastDbPath: "/tmp/overlay/sast.db",
+      sastDb: {} as import("../db/index.js").Db,
+      baseRef: "HEAD",
+      modifiedFiles: new Set(),
+      closed: false,
     };
     const mockFix: FixCandidate = {
       file: "src/processData.ts",

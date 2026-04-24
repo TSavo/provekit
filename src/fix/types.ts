@@ -66,10 +66,39 @@ export type PrincipleCandidate =
       capabilitySpec: CapabilitySpec;
     };
 
-/** Overlay handle returned by openOverlay (C2). stub — C2 will refine. */
+/**
+ * A scratch-worktree overlay. Created from a git ref. Has its own SAST
+ * DB. Supports patch application + selective re-index. Closed via
+ * closeOverlay() (removes the worktree + deletes the scratch DB).
+ */
 export interface OverlayHandle {
+  /** Absolute filesystem path to the scratch worktree. */
   worktreePath: string;
+  /** Absolute path to the scratch SAST DB (a separate sqlite file — NOT the main DB). */
   sastDbPath: string;
+  /** Open Drizzle Db handle against the scratch SAST DB. */
+  sastDb: Db;
+  /** Git ref the overlay was created from (branch name, commit SHA, or "HEAD"). */
+  baseRef: string;
+  /** Files that have been modified in the overlay, relative to worktreePath. */
+  modifiedFiles: Set<string>;
+  /** Whether the overlay has been closed (subsequent operations throw). */
+  closed: boolean;
+}
+
+/**
+ * A code patch to apply to an overlay.
+ *
+ * v1 MVP: whole-file rewrite. Patch format (unified diff) may be added later.
+ * C3 produces CodePatch objects; overlay.ts consumes them.
+ */
+export interface CodePatch {
+  /** Path relative to the overlay's worktreePath. */
+  file: string;
+  /** NEW FULL file contents after the patch. (v1 MVP: whole-file rewrite; diff/unified-format come later.) */
+  newContent: string;
+  /** Optional description for audit trail. */
+  rationale?: string;
 }
 
 /** Result of applying a bundle (D2). stub — D2 will refine. */
@@ -233,6 +262,7 @@ export class InvariantFormulationFailed extends Error {
  * Contracts.ts only imports fs/path/crypto — no circular risk.
  */
 import type { SmtBinding } from "../contracts.js";
+import type { Db } from "../db/index.js";
 export type SmtBindingRef = SmtBinding;
 
 /**
