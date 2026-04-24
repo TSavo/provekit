@@ -7,6 +7,7 @@ import { DependencyPhase, DependencyGraph } from "./DependencyPhase";
 import { ContextPhase, ContextBundle, CallSiteContext } from "./ContextPhase";
 import { DerivationPhase, DerivationOutput } from "./DerivationPhase";
 import { AxiomPhase, AxiomReport } from "./AxiomPhase";
+import { GapDetectionPhase, GapDetectionOutput } from "./GapDetectionPhase";
 import { PhaseOptions } from "./Phase";
 import { parseFile } from "../parser";
 
@@ -26,6 +27,7 @@ export interface PipelineResult {
   bundles: ContextBundle[];
   derivation: DerivationOutput;
   report: AxiomReport;
+  gapDetection?: GapDetectionOutput;
 }
 
 export class Pipeline {
@@ -33,6 +35,7 @@ export class Pipeline {
   private contextPhase = new ContextPhase();
   private derivationPhase = new DerivationPhase();
   private axiomPhase = new AxiomPhase();
+  private gapDetectionPhase = new GapDetectionPhase();
   private config?: PipelineConfig;
 
   async runFull(config: PipelineConfig): Promise<PipelineResult> {
@@ -84,9 +87,15 @@ export class Pipeline {
       options
     );
 
+    const contracts = new ContractStore(config.projectRoot).getAll();
+    const { data: gapDetection } = await this.gapDetectionPhase.execute(
+      { derivation, projectRoot: config.projectRoot, contracts },
+      options,
+    );
+
     const { data: report } = await this.axiomPhase.execute(undefined, options);
 
-    return { graph, bundles, derivation, report };
+    return { graph, bundles, derivation, report, gapDetection };
   }
 
   async runIncremental(config: PipelineConfig): Promise<PipelineResult> {
