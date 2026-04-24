@@ -6,6 +6,116 @@
  */
 
 // ---------------------------------------------------------------------------
+// B5: NotImplemented marker, audit trail, orchestrator result types
+// ---------------------------------------------------------------------------
+
+/** Thrown by stage stubs. Orchestrator catches this to record a graceful skip. */
+export class NotImplementedError extends Error {
+  constructor(
+    public readonly stageId: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "NotImplementedError";
+  }
+}
+
+/** One entry in the orchestrator's audit trail. */
+export interface AuditEntry {
+  /** Stage label: "C1", "C2", ..., "D3", or "orchestrator". */
+  stage: string;
+  kind: "start" | "complete" | "error" | "skipped";
+  detail: string;
+  timestamp: number;
+  /** Each stage may attach its own extra data. */
+  metadata?: Record<string, unknown>;
+}
+
+/** Capability spec for substrate-extension bundles (C6 → D1). stub — D1 will refine. */
+export interface CapabilitySpec {
+  capabilityName: string;
+  schemaTs: string;
+  migrationSql: string;
+  extractorTs: string;
+  extractorTestsTs: string;
+  registryRegistration: string;
+  positiveFixtures: { source: string; expectedRowCount: number }[];
+  negativeFixtures: { source: string; expectedRowCount: 0 }[];
+  rationale: string;
+}
+
+/** Principle candidate — tagged union per substrate-extension path (C6 output). */
+export type PrincipleCandidate =
+  | {
+      kind: "principle";
+      name: string;
+      dslSource: string;
+      smtTemplate: string;
+      teachingExample: { domain: string; explanation: string; smt2: string };
+      adversarialValidation: { validatorModel: string; result: "pass" | "fail"; evidence: string }[];
+      latentSiteMatches: { nodeId: string; file: string; line: number }[];
+    }
+  | {
+      kind: "principle_with_capability";
+      name: string;
+      dslSource: string;
+      smtTemplate: string;
+      teachingExample: { domain: string; explanation: string; smt2: string };
+      adversarialValidation: { validatorModel: string; result: "pass" | "fail"; evidence: string }[];
+      latentSiteMatches: { nodeId: string; file: string; line: number }[];
+      capabilitySpec: CapabilitySpec;
+    };
+
+/** Overlay handle returned by openOverlay (C2). stub — C2 will refine. */
+export interface OverlayHandle {
+  worktreePath: string;
+  sastDbPath: string;
+}
+
+/** Result of applying a bundle (D2). stub — D2 will refine. */
+export interface ApplyResult {
+  applied: boolean;
+  failureReason?: string;
+  prUrl?: string;
+}
+
+/** Fix bundle assembled by D1. stub shape — D1 will populate all fields. */
+export interface FixBundle {
+  bundleId: number;
+  bundleType: "fix" | "substrate";
+  bugSignal: BugSignal;
+  plan: RemediationPlan;
+  artifacts: {
+    primaryFix: FixCandidate | null;
+    complementary: ComplementaryChange[];
+    test: TestArtifact | null;
+    principle: PrincipleCandidate | null;
+    capabilitySpec: CapabilitySpec | null;
+  };
+  coherence: {
+    sastStructural: boolean;
+    z3SemanticConsistency: boolean;
+    fullSuiteGreen: boolean;
+    noNewGapsIntroduced: boolean;
+    migrationSafe: boolean | null;
+    crossCodebaseRegression: boolean | null;
+    extractorCoverage: boolean | null;
+    substrateConsistency: boolean | null;
+    principleNeedsCapability: boolean | null;
+  };
+  confidence: number;
+  auditTrail: AuditEntry[];
+}
+
+/** Orchestrator top-level result (B5 output). */
+export interface FixLoopResult {
+  bundle: FixBundle | null;
+  applied: boolean;
+  auditTrail: AuditEntry[];
+  reason?: string;
+}
+
+// ---------------------------------------------------------------------------
 // LLM provider
 // ---------------------------------------------------------------------------
 
