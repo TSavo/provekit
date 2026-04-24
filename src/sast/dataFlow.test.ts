@@ -292,4 +292,24 @@ describe("data-flow extractor", () => {
     const edges = db.select().from(dataFlow).all();
     expect(edges.length, "at least one data-flow edge emitted").toBeGreaterThan(0);
   });
+
+  // -----------------------------------------------------------------------
+  // 10. Multi-file build does not re-process prior files' transitive edges
+  // -----------------------------------------------------------------------
+  it("multi-file build: second file does not re-insert prior file's transitive rows", () => {
+    ({ db, tmpDir } = openTestDb());
+    const file1 = writeFixture(tmpDir, "function f(a: number, b: number) { return a / b; }", "one.ts");
+    buildSASTForFile(db, file1);
+    const transitiveAfter1 = db.select().from(dataFlowTransitive).all().length;
+
+    const file2 = writeFixture(tmpDir, "function g(x: number) { return x + 1; }", "two.ts");
+    // Must not throw on PK conflict from re-inserting file1's transitive rows
+    expect(() => buildSASTForFile(db, file2)).not.toThrow();
+
+    const transitiveAfter2 = db.select().from(dataFlowTransitive).all().length;
+    expect(
+      transitiveAfter2,
+      "transitive rows grow with each file; prior rows remain intact",
+    ).toBeGreaterThan(transitiveAfter1);
+  });
 });

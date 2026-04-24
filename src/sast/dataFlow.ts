@@ -168,7 +168,6 @@ function resolveSlot(ident: Identifier): Slot {
       const opKind = bin.getOperatorToken().getKind();
       const left = bin.getLeft();
       const right = bin.getRight();
-      const isLeft = node === left || left.getDescendantsOfKind(SyntaxKind.Identifier).includes(ident as Identifier) && !right.getDescendantsOfKind(SyntaxKind.Identifier).includes(ident as Identifier);
 
       // For immediate children only: check if node is directly left or right
       const directlyLeft = node === left;
@@ -436,9 +435,16 @@ function emitDirectEdges(
 // Pass 2 — transitive closure
 // ---------------------------------------------------------------------------
 
-function emitTransitiveClosure(tx: SastTx): void {
-  // Load all direct edges
-  const direct = tx.select({ toNode: dataFlow.toNode, fromNode: dataFlow.fromNode }).from(dataFlow).all();
+function emitTransitiveClosure(tx: SastTx, fileId: number): void {
+  // Load direct edges scoped to this file (no cross-file edges are emitted,
+  // so filtering on toNode's fileId is sufficient). Multi-file builds would
+  // otherwise re-process edges from prior files and hit PK conflicts.
+  const direct = tx
+    .select({ toNode: dataFlow.toNode, fromNode: dataFlow.fromNode })
+    .from(dataFlow)
+    .innerJoin(nodesTable, eq(nodesTable.id, dataFlow.toNode))
+    .where(eq(nodesTable.fileId, fileId))
+    .all();
 
   // Build adjacency: for each to_node, what are its from_nodes?
   const predecessors = new Map<string, Set<string>>();
@@ -495,5 +501,5 @@ export function extractDataFlow(
   nodeIdByNode: NodeIdMap,
 ): void {
   emitDirectEdges(tx, fileId, sourceFile, nodeIdByNode);
-  emitTransitiveClosure(tx);
+  emitTransitiveClosure(tx, fileId);
 }
