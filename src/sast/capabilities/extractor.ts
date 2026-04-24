@@ -145,9 +145,8 @@ export function extractAssigns(
   sourceFile.forEachDescendant((node) => {
     if (node.getKind() === SyntaxKind.DeleteExpression) {
       const nodeId = nodeIdByNode.get(node);
-      const operand = node.getFirstChildByKind(SyntaxKind.Identifier) ??
-        node.getChildren()[1]; // delete <expr>
-      const targetId = operand ? id(nodeIdByNode, operand) : undefined;
+      const operand = (node as import("ts-morph").DeleteExpression).getExpression();
+      const targetId = id(nodeIdByNode, operand);
       if (!nodeId || !targetId) return;
       tx.insert(nodeAssigns).values({
         nodeId,
