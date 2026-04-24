@@ -9,20 +9,7 @@
  *  2. Phase 4: GapDetectionPhase runs against the contract and writes gap_reports
  *     rows (ieee_specials) via detectGaps.
  *  3. explainGaps renders the expected tokens: "encoding-gap", "NaN",
- *     "ieee_specials", and the function name.
- *
- * REAL INTEGRATION FINDING (recorded here, not papered over):
- * The division-by-zero principle's smt2Template uses Int sort
- * ("(declare-const {{denominator}} Int)"). The ieeeSpecialsAgent only fires
- * when witness.sort === "Real". As a result, the production pipeline path
- * (template → Int witness) does NOT write ieee_specials rows.
- *
- * The fixture's header comment says "Z3's Real arithmetic and IEEE 754 disagree"
- * — that premise requires Real sort in the principle template. Fixing the
- * template to use Real sort (or extending ieeeSpecialsAgent to handle Int sort
- * for NaN/Infinity runtime values) is the production change needed to make
- * T8 fully green. That is out of scope for T8 ("no new production code"), so
- * the ieee_specials assertions are marked TODO below.
+ *     "ieee_specials", and the SMT constant name.
  *
  * Z3 must be installed. The test is skipped (not failed) if z3 is absent.
  */
@@ -143,52 +130,30 @@ describe("e2e: Pipeline.runFull — division-by-zero.ts → gap_reports, rendere
     expect(denomBinding).toBeDefined();
     expect(denomBinding!.sort).toBe("Int");
 
-    // 8. Phase 4: GapDetectionPhase ran (result present, no crash)
+    // 8. Phase 4: GapDetectionPhase ran and produced at least one report.
     expect(result.gapDetection).toBeDefined();
 
-    // REAL INTEGRATION FINDING:
-    // The division-by-zero template uses Int sort; ieeeSpecialsAgent only fires
-    // on Real sort. Therefore reportsWritten == 0 on this production path.
-    //
-    // What does fire: the harness executes divide(0, 0) → NaN (logged above as
-    // "q NaN"), but because the witness sort is Int (not Real), the agent skips
-    // the binding. This is the gap between the fixture's stated intent ("Z3 Real
-    // vs IEEE 754") and the current template/agent wiring.
-    //
-    // The lines below document the current (failing) state. To make them green:
-    //   • Change division-by-zero.json smt2Template to use Real sort, OR
-    //   • Extend ieeeSpecialsAgent to also handle Int witnesses when runtime
-    //     returns NaN/Infinity.
-    // Either fix is a production-code change, out of scope for T8.
-
     const skipped = result.gapDetection!.skipped;
-    // No bindings missing (template produced bindings), no witness missing
-    // (Z3 found sat + witness), no untestable (file exists and harness ran).
     expect(skipped.missingBindings).toBe(0);
     expect(skipped.missingWitness).toBe(0);
     expect(skipped.untestable).toBe(0);
 
-    // Gap reports DB exists
+    expect(result.gapDetection!.reportsWritten).toBeGreaterThanOrEqual(1);
+
+    // 9. gap_reports has at least one ieee_specials row for this contract.
     const dbPath = join(scratchRoot, ".neurallog", "neurallog.db");
     expect(existsSync(dbPath)).toBe(true);
-
     const db = openDb(dbPath);
     const allGapRows = db.select().from(gapReports).all();
+    const ieeeRows = allGapRows.filter((r) => r.kind === "ieee_specials");
+    expect(ieeeRows.length).toBeGreaterThanOrEqual(1);
 
-    // TODO (production fix needed): expect at least one ieee_specials row.
-    // Currently 0 because Int sort bypasses ieeeSpecialsAgent.
-    // expect(allGapRows.length).toBeGreaterThanOrEqual(1);
-    // const ieeeRows = allGapRows.filter((r) => r.kind === "ieee_specials");
-    // expect(ieeeRows.length).toBeGreaterThanOrEqual(1);
-    //
-    // Documenting actual state:
-    expect(result.gapDetection!.reportsWritten).toBe(0);
-    expect(allGapRows.length).toBe(0);
-
-    // explainGaps returns "no gaps" because no rows exist. Documented here:
+    // 10. explainGaps renders the expected tokens for the contract.
     const contractKey = contractWithViolation!.key;
     const explained = explainGaps(db, contractKey);
-    expect(explained).toContain(`No encoding gaps reported for ${contractKey}`);
+    expect(explained).toContain("encoding-gap");
+    expect(explained).toContain("ieee_specials");
+    expect(explained).toContain("NaN");
 
     db.$client.close();
   });
