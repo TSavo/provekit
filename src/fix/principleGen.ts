@@ -12,8 +12,9 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import * as ts from "typescript";
 import { openDb } from "../db/index.js";
-import { buildSASTForFile } from "../sast/builder.js";
+import { buildSASTAndReturnHandles, buildSASTForFile } from "../sast/builder.js";
 import { parseDSL } from "../dsl/parser.js";
 import { compileProgram, CompileError } from "../dsl/compiler.js";
 import {
@@ -230,6 +231,11 @@ function parseAdversarialFixtures(raw: string): {
  *
  * Pass threshold: at least passThreshold of each set behaves correctly.
  * Default: 2/3.
+ *
+ * For substrate-extension principles, the capability table is empty unless
+ * the extractor runs. Provide `preRunExtractor` to populate the capability
+ * table after buildSASTForFile and before DSL evaluation. The callback
+ * receives the fixture Db and source file path.
  */
 export async function runAdversarialValidation(
   dslSource: string,
@@ -240,6 +246,13 @@ export async function runAdversarialValidation(
     proposerModel?: "haiku" | "sonnet" | "opus";
     /** Minimum fraction of each direction that must pass. Default: 0.667 (2/3). */
     passThreshold?: number;
+    /**
+     * Optional extractor callback for substrate-extension principles.
+     * Called after buildSASTForFile on the fixture DB to populate the
+     * new capability table before DSL evaluation.
+     * Receives (fixtureDb, srcPath) — same DB that was passed to buildSASTForFile.
+     */
+    preRunExtractor?: (fixtureDb: Db, srcPath: string) => void;
   } = {},
 ): Promise<{
   passed: boolean;
@@ -322,6 +335,16 @@ export async function runAdversarialValidation(
       const dbPath = join(tmpDir, "sast.db");
       const fixtureDb = openFreshDb(dbPath);
       buildSASTForFile(fixtureDb, srcPath);
+
+      // For substrate-extension principles: run the extractor to populate the
+      // capability table before evaluating the DSL.
+      if (opts.preRunExtractor) {
+        try {
+          opts.preRunExtractor(fixtureDb, srcPath);
+        } catch {
+          // Extractor errors don't fail the fixture — the DSL will just return 0 matches.
+        }
+      }
 
       let totalMatches = 0;
       for (const [, queryFn] of queryFns) {
@@ -573,6 +596,93 @@ export async function tryExistingCapabilities(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Substrate extractor builder for adversarial validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a `preRunExtractor` callback from a CapabilitySpec.extractorTs.
+ * The callback is used by runAdversarialValidation to populate the capability
+ * table after building SAST for each fixture.
+ *
+ * The extractor is transpiled to CJS (same as capabilityExecutor.ts), written
+ * to node_modules/.cache/, and async-imported. The result is a synchronous
+ * callback that calls the pre-loaded extractor function.
+ *
+ * Returns null if transpile or import fails.
+ */
+async function buildSubstrateAdversarialExtractor(
+  spec: CapabilitySpec,
+): Promise<((fixtureDb: Db, srcPath: string) => void) | null> {
+  // Transpile extractorTs to CJS
+  let transpiled: string;
+  try {
+    const result = ts.transpileModule(spec.extractorTs, {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+        esModuleInterop: true,
+        skipLibCheck: true,
+      },
+    });
+    transpiled = result.outputText;
+  } catch {
+    return null;
+  }
+
+  // Determine cache dir. Use process.cwd() which is the project root when
+  // running under vitest (same assumption as capabilityExecutor.ts resolveProjectRoot).
+  const cacheDir = join(process.cwd(), "node_modules", ".cache");
+
+  // Write transpiled JS to a stable path (not tmpdir — adversarial runs many fixtures)
+  const jsPath = join(cacheDir, `provekit-adversarial-extractor-${spec.capabilityName}.cjs`);
+  try {
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(jsPath, transpiled);
+  } catch {
+    return null;
+  }
+
+  // Detect extractor function name
+  const fnMatch = /export\s+function\s+(\w+)\s*\(/.exec(spec.extractorTs);
+  const fnName = fnMatch?.[1] ?? ("extract" + spec.capabilityName.charAt(0).toUpperCase() + spec.capabilityName.slice(1));
+
+  // Async import (dynamic import works in both CJS and ESM contexts)
+  let extractorFn: ((...args: unknown[]) => void) | undefined;
+  try {
+    const { pathToFileURL } = await import("url");
+    const mod = await import(pathToFileURL(jsPath).href) as Record<string, unknown>;
+    const candidate = mod[fnName] ?? mod["default"];
+    if (typeof candidate !== "function") return null;
+    extractorFn = candidate as (...args: unknown[]) => void;
+  } catch {
+    return null;
+  }
+
+  const capturedExtractorFn = extractorFn;
+
+  return (fixtureDb: Db, srcPath: string): void => {
+    // Apply the migration (create capability table in fixtureDb) if needed
+    try {
+      const stmts = spec.migrationSql
+        .split(";")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      for (const stmt of stmts) {
+        try { fixtureDb.$client.exec(stmt); } catch { /* table may already exist */ }
+      }
+    } catch { /* ignore */ }
+
+    // Build SAST handles for the extractor
+    try {
+      const { sourceFile, nodeIdByNode } = buildSASTAndReturnHandles(fixtureDb, srcPath);
+      fixtureDb.transaction((tx) => {
+        capturedExtractorFn(tx, sourceFile, nodeIdByNode);
+      });
+    } catch { /* extractor errors don't fail adversarial — DSL will return 0 matches */ }
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Substrate-extension path: proposeWithCapability
 // ---------------------------------------------------------------------------
 
@@ -654,12 +764,18 @@ export async function proposeWithCapability(args: {
     }
 
     // Oracle #6: adversarial validation WITH the capability temporarily registered.
+    // For substrate-extension principles: also run the extractor against each fixture
+    // so the capability table is populated before DSL evaluation.
+    const substrateExtractor = await buildSubstrateAdversarialExtractor(capabilitySpec);
     const adversarial = await runAdversarialValidation(
       dslSource,
       invariant.description,
       llm,
       db,
-      { proposerModel: "sonnet" },
+      {
+        proposerModel: "sonnet",
+        preRunExtractor: substrateExtractor ?? undefined,
+      },
     );
 
     if (!adversarial.passed) {

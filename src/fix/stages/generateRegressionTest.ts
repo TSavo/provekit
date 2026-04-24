@@ -36,6 +36,12 @@ export async function generateRegressionTest(args: {
   overlay: OverlayHandle;
   invariant: InvariantClaim;
   llm: LLMProvider;
+  /**
+   * Injectable test runner for the overlay. When provided, replaces real vitest
+   * execution (for integration tests that must not spawn vitest-inside-vitest).
+   * Receives the overlay and test file path; returns { exitCode, stdout, stderr }.
+   */
+  testRunner?: (overlay: OverlayHandle, testFilePath: string, mainRepoRoot: string) => { exitCode: number; stdout: string; stderr: string };
 }): Promise<TestArtifact> {
   const { fix, signal, locus, overlay, invariant, llm } = args;
 
@@ -76,7 +82,8 @@ export async function generateRegressionTest(args: {
   // Step 5: Oracle #9a — run test against FIXED code
   // -------------------------------------------------------------------------
   const mainRepoRoot = resolveMainRepoRoot(overlay);
-  const fixedRun = runTestInOverlay(overlay, testFilePath, mainRepoRoot);
+  const runTest = args.testRunner ?? runTestInOverlay;
+  const fixedRun = runTest(overlay, testFilePath, mainRepoRoot);
 
   if (fixedRun.exitCode !== 0) {
     throw new Error(
@@ -96,7 +103,7 @@ export async function generateRegressionTest(args: {
   // -------------------------------------------------------------------------
   // Step 7: Oracle #9b — run test against ORIGINAL (unfixed) code
   // -------------------------------------------------------------------------
-  const originalRun = runTestInOverlay(overlay, testFilePath, mainRepoRoot);
+  const originalRun = runTest(overlay, testFilePath, mainRepoRoot);
 
   if (originalRun.exitCode === 0) {
     // Test passed against unfixed code — not mutation-verified.

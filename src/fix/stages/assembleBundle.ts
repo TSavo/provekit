@@ -14,6 +14,7 @@ import type {
   PrincipleCandidate,
   OverlayHandle,
   FixBundle,
+  AuditEntry,
 } from "../types.js";
 import type { Db } from "../../db/index.js";
 import { assembleBundle as _assembleBundle } from "../bundleAssembly.js";
@@ -30,6 +31,10 @@ export async function assembleBundle(args: {
   principle: PrincipleCandidate | null;
   overlay: OverlayHandle;
   db: Db;
+  /** Optional pre-seeded audit trail from the orchestrator. */
+  existingAuditTrail?: AuditEntry[];
+  /** Optional oracle #10 runner injection (for tests). */
+  vitestRunner?: (overlay: OverlayHandle) => { exitCode: number; stdout: string; stderr: string };
 }): Promise<FixBundle> {
   return _assembleBundle(args);
 }

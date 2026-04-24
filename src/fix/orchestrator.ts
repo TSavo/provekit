@@ -15,6 +15,7 @@ import type {
   FixLoopResult,
   FixBundle,
   AuditEntry,
+  OverlayHandle,
 } from "./types.js";
 import { NotImplementedError } from "./types.js";
 import type { Db } from "../db/index.js";
@@ -41,6 +42,19 @@ export interface RunFixLoopArgs {
     /** Minimum confidence to proceed through bundle assembly. Default 0.8. */
     confidenceThreshold: number;
   };
+  /**
+   * Injectable vitest runner for D1b oracle #10.
+   * When provided, replaces real full-suite vitest in assembleBundle.
+   * Signature: (overlay) → { exitCode, stdout, stderr }.
+   */
+  vitestRunner?: (overlay: OverlayHandle) => { exitCode: number; stdout: string; stderr: string };
+  /**
+   * Injectable test runner for C5 (oracle #9).
+   * When provided, replaces real vitest-in-overlay for single-test regression runs.
+   * Signature: (overlay, testFilePath, mainRepoRoot) → { exitCode, stdout, stderr }.
+   * Called twice per C5 run: once against fixed code (expect 0), once against original (expect non-0).
+   */
+  c5TestRunner?: (overlay: OverlayHandle, testFilePath: string, mainRepoRoot: string) => { exitCode: number; stdout: string; stderr: string };
 }
 
 export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
@@ -76,7 +90,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
 
     // Stage C5: generate regression test
     const test = await runStage("C5", "generateRegressionTest", audit, () =>
-      generateRegressionTest({ fix, signal: args.signal, locus: args.locus, overlay, invariant, llm: args.llm }),
+      generateRegressionTest({ fix, signal: args.signal, locus: args.locus, overlay, invariant, llm: args.llm, testRunner: args.c5TestRunner }),
     );
 
     // Stage C6: generate principle candidate (may be plain or with capability spec)
@@ -96,6 +110,8 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
         principle,
         overlay,
         db: args.db,
+        existingAuditTrail: audit,
+        vitestRunner: args.vitestRunner,
       }),
     );
 
