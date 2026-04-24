@@ -653,4 +653,99 @@ describe("C3: candidateGen", () => {
     // formalExpression is "(assert (= x 0))" which is always sat.
     expect(verdict).toBe("sat");
   }, 30_000);
+
+  // -------------------------------------------------------------------------
+  // 14. Agent path: StubLLMProvider with agentResponses → agent path runs
+  // -------------------------------------------------------------------------
+  it("agent path: StubLLM with agentResponses configured → generateFixCandidate uses agent path", async () => {
+    const source = "export function divide(a: number, b: number) { return a / b; }\n";
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    seedPrinciples(repoDir);
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-c3-maindb9-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePath);
+    const matches = evaluatePrinciple(mainDb, DIVISION_BY_ZERO_DSL);
+    expect(matches.length).toBeGreaterThan(0);
+
+    const divNodeId = matches[0]!.captures["division"] ?? matches[0]!.rootNodeId;
+    const signal = makeDivSignal(filePath);
+    const locus = makeLocus(filePath, divNodeId);
+    const invariant = makeDivInvariant();
+
+    const fixedContent = "export function divide(_a: number, _b: number) { return 0; }\n";
+
+    // StubLLMProvider with agentResponses → agent field will be defined.
+    const llm = new StubLLMProvider(
+      new Map(),
+      [{ matchPrompt: "divide", fileEdits: [{ file: "fixture.ts", newContent: fixedContent }], text: "Removed division" }],
+    );
+    expect(typeof llm.agent).toBe("function");
+
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const candidate = await generateFixCandidate({ signal, locus, invariant, overlay, llm });
+
+    expect(candidate.invariantHoldsUnderOverlay).toBe(true);
+    expect(candidate.overlayZ3Verdict).toBe("unsat");
+    expect(candidate.patch.fileEdits[0]!.newContent).toContain("return 0");
+  }, 60_000);
+
+  // -------------------------------------------------------------------------
+  // 15. Backward compat: StubLLMProvider without agentResponses → JSON path
+  // -------------------------------------------------------------------------
+  it("backward compat: StubLLMProvider without agentResponses → falls through to JSON patch path", async () => {
+    const source = "export function divide(a: number, b: number) { return a / b; }\n";
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    seedPrinciples(repoDir);
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-c3-maindb10-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePath);
+    const matches = evaluatePrinciple(mainDb, DIVISION_BY_ZERO_DSL);
+    const divNodeId = matches[0]!.captures["division"] ?? matches[0]!.rootNodeId;
+    const signal = makeDivSignal(filePath);
+    const locus = makeLocus(filePath, divNodeId);
+    const invariant = makeDivInvariant();
+
+    const fixedContent = "export function divide(_a: number, _b: number) { return 0; }\n";
+    const patchJson = JSON.stringify({
+      candidates: [
+        {
+          rationale: "Remove division (JSON path)",
+          confidence: 0.95,
+          patch: {
+            description: "remove division",
+            fileEdits: [{ file: "fixture.ts", newContent: fixedContent }],
+          },
+        },
+      ],
+    });
+
+    // No agentResponses → agent field is undefined → JSON path.
+    const llm = new StubLLMProvider(new Map([["divide", patchJson]]));
+    expect(llm.agent).toBeUndefined();
+
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const candidate = await generateFixCandidate({ signal, locus, invariant, overlay, llm });
+
+    expect(candidate.invariantHoldsUnderOverlay).toBe(true);
+    expect(candidate.overlayZ3Verdict).toBe("unsat");
+    expect(candidate.llmRationale).toContain("JSON path");
+  }, 60_000);
 });

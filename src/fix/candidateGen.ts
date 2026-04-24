@@ -115,6 +115,33 @@ Rules:
 }
 
 // ---------------------------------------------------------------------------
+// Agent-mode prompt builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a concise prompt for the agent path (capture-the-change).
+ * The agent edits files directly in its cwd — no JSON response schema required.
+ */
+export function buildAgentFixPrompt(
+  signal: BugSignal,
+  locus: BugLocus,
+  invariant: InvariantClaim,
+): string {
+  return `You are a code-repair expert. A bug has been identified in the codebase in your current working directory.
+
+Bug summary: ${signal.summary}
+Failure description: ${signal.failureDescription}${signal.fixHint ? `\nFix hint: ${signal.fixHint}` : ""}
+
+Location: ${locus.file}:${locus.line}${locus.function ? ` in ${locus.function}` : ""}
+
+Invariant violated: ${invariant.description}
+Formal expression (SMT, violation state — must become unsat after fix):
+${invariant.formalExpression}
+
+Read the relevant files, understand the bug, and edit the file(s) to fix it. Do NOT run tests — just make the minimal change to fix the invariant violation. After making your changes, briefly explain what you changed and why.`;
+}
+
+// ---------------------------------------------------------------------------
 // Response parser
 // ---------------------------------------------------------------------------
 

@@ -23,9 +23,102 @@ import type {
   FixCandidate,
   LLMProvider,
 } from "../types.js";
-import { buildFixPrompt, parseProposedFixes, verifyCandidate } from "../candidateGen.js";
+import { buildFixPrompt, parseProposedFixes, verifyCandidate, buildAgentFixPrompt } from "../candidateGen.js";
+import { runAgentInOverlay } from "../captureChange.js";
 
 export async function generateFixCandidate(args: {
+  signal: BugSignal;
+  locus: BugLocus;
+  invariant: InvariantClaim;
+  overlay: OverlayHandle;
+  llm: LLMProvider;
+  options?: { maxCandidates?: number; minConfidence?: number };
+}): Promise<FixCandidate> {
+  // Agent path: if the LLM provider supports agent(), use capture-the-change.
+  if (args.llm.agent) {
+    return generateFixCandidateViaAgent(args);
+  }
+  // Legacy JSON-patch path.
+  return generateFixCandidateViaJson(args);
+}
+
+// ---------------------------------------------------------------------------
+// Agent path (new C3 default when provider supports agent())
+// ---------------------------------------------------------------------------
+
+async function generateFixCandidateViaAgent(args: {
+  signal: BugSignal;
+  locus: BugLocus;
+  invariant: InvariantClaim;
+  overlay: OverlayHandle;
+  llm: LLMProvider;
+  options?: { maxCandidates?: number; minConfidence?: number };
+}): Promise<FixCandidate> {
+  const { signal, locus, invariant, overlay } = args;
+
+  const prompt = buildAgentFixPrompt(signal, locus, invariant);
+
+  // First attempt.
+  const { patch, rationale } = await runAgentInOverlay({
+    overlay,
+    llm: args.llm,
+    prompt,
+    maxTurns: 20,
+  });
+
+  // verifyCandidate applies the patch to the overlay (idempotent rewrite),
+  // re-indexes, and runs oracle #2.
+  const proposed = { patch, rationale, confidence: 1.0 };
+  const result = await verifyCandidate(proposed, overlay, invariant);
+
+  if (result.invariantHoldsUnderOverlay) {
+    return {
+      patch,
+      llmRationale: rationale,
+      llmConfidence: 1.0,
+      invariantHoldsUnderOverlay: true,
+      overlayZ3Verdict: result.z3Verdict,
+      audit: result.audit,
+    };
+  }
+
+  // ONE retry with feedback about oracle #2 failure.
+  const retryPrompt =
+    `${prompt}\n\nYour previous fix attempt did not satisfy the invariant. ` +
+    `Oracle #2 returned: ${result.z3Verdict}. Please revise the fix.`;
+
+  const { patch: retryPatch, rationale: retryRationale } = await runAgentInOverlay({
+    overlay,
+    llm: args.llm,
+    prompt: retryPrompt,
+    maxTurns: 20,
+  });
+
+  const proposed2 = { patch: retryPatch, rationale: retryRationale, confidence: 1.0 };
+  const result2 = await verifyCandidate(proposed2, overlay, invariant);
+
+  if (result2.invariantHoldsUnderOverlay) {
+    return {
+      patch: retryPatch,
+      llmRationale: retryRationale,
+      llmConfidence: 1.0,
+      invariantHoldsUnderOverlay: true,
+      overlayZ3Verdict: result2.z3Verdict,
+      audit: result2.audit,
+    };
+  }
+
+  throw new Error(
+    `generateFixCandidate (agent path): both attempts failed oracle #2. ` +
+    `Invariant '${invariant.description}' could not be satisfied.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Legacy JSON-patch path (backward compat for providers without agent())
+// ---------------------------------------------------------------------------
+
+async function generateFixCandidateViaJson(args: {
   signal: BugSignal;
   locus: BugLocus;
   invariant: InvariantClaim;

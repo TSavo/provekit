@@ -183,6 +183,12 @@ export interface FixLoopResult {
 // LLM provider
 // ---------------------------------------------------------------------------
 
+export type { AgentRequestOptions, AgentResult } from "../llm/Provider.js";
+import type { AgentRequestOptions, AgentResult } from "../llm/Provider.js";
+import { mkdirSync, writeFileSync } from "fs";
+import { dirname, join as pathJoin } from "path";
+import { execFileSync as _execFileSync } from "child_process";
+
 export interface LLMProvider {
   /**
    * Send a prompt; get a string response.
@@ -193,11 +199,92 @@ export interface LLMProvider {
     model?: "haiku" | "sonnet" | "opus";
     schema?: object;
   }): Promise<string>;
+  /** Optional: agent-mode execution where the LLM edits files directly in cwd. */
+  agent?(prompt: string, options: AgentRequestOptions): Promise<AgentResult>;
+}
+
+/** Canned agent response for StubLLMProvider. */
+export interface StubAgentResponse {
+  /** Prompt substring to match against. */
+  matchPrompt: string;
+  /** File edits the stub agent should apply to cwd. */
+  fileEdits: { file: string; newContent: string }[];
+  /** Optional final text response. */
+  text?: string;
 }
 
 /** In-memory stub for tests. Caller supplies canned responses keyed by substring. */
 export class StubLLMProvider implements LLMProvider {
-  constructor(private readonly responses: Map<string, string>) {}
+  // Optional agent field — only assigned when agentResponses were provided.
+  // Absence of the field is how candidateGen detects "no agent support."
+  agent?: (prompt: string, options: AgentRequestOptions) => Promise<AgentResult>;
+
+  constructor(
+    private readonly responses: Map<string, string>,
+    agentResponses?: StubAgentResponse[],
+  ) {
+    if (agentResponses && agentResponses.length > 0) {
+      const cannedResponses = agentResponses;
+      this.agent = async (prompt: string, options: AgentRequestOptions): Promise<AgentResult> => {
+        const cannedResult = cannedResponses.find((r) => prompt.includes(r.matchPrompt));
+        if (!cannedResult) {
+          throw new Error(
+            `StubLLMProvider.agent: no canned response for prompt. Registered match keys: ${cannedResponses.map((r) => r.matchPrompt).join(", ")}`,
+          );
+        }
+
+        // Apply the canned file writes to cwd.
+        for (const edit of cannedResult.fileEdits) {
+          const absPath = pathJoin(options.cwd, edit.file);
+          mkdirSync(dirname(absPath), { recursive: true });
+          writeFileSync(absPath, edit.newContent, "utf-8");
+        }
+
+        // Collect modified tracked files.
+        const changedTracked = (() => {
+          try {
+            return _execFileSync("git", ["diff", "--name-only"], { cwd: options.cwd, encoding: "utf-8" })
+              .split("\n")
+              .filter(Boolean);
+          } catch {
+            return [] as string[];
+          }
+        })();
+
+        // Collect new untracked files the agent wrote.
+        const newUntracked = (() => {
+          try {
+            return _execFileSync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: options.cwd, encoding: "utf-8" })
+              .split("\n")
+              .filter(Boolean);
+          } catch {
+            return [] as string[];
+          }
+        })();
+
+        const filesChanged = [...new Set([...changedTracked, ...newUntracked])];
+
+        // Build the diff (use git add -N only for genuinely new files).
+        const diff = (() => {
+          try {
+            if (newUntracked.length > 0) {
+              _execFileSync("git", ["add", "-N", ...newUntracked], { cwd: options.cwd, stdio: "pipe" });
+            }
+            return _execFileSync("git", ["diff"], { cwd: options.cwd, encoding: "utf-8" });
+          } catch {
+            return "";
+          }
+        })();
+
+        return {
+          filesChanged,
+          diff,
+          text: cannedResult.text ?? "stub agent completed",
+          turnsUsed: 1,
+        };
+      };
+    }
+  }
 
   async complete(params: { prompt: string; model?: string }): Promise<string> {
     for (const [key, value] of this.responses) {
