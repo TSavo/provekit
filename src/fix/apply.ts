@@ -66,7 +66,25 @@ export function createApplyWorktree(
     throw new Error(`createApplyWorktree: git worktree add failed: ${msg}`);
   }
 
-  return { worktreePath, baseRef: ref, repoRoot };
+  // Pin baseRef to the SHA the worktree was created at. If we kept the
+  // symbolic ref (`ref` may be "HEAD" when the apply target is a detached
+  // worktree), `git diff baseRef..HEAD` later resolves both ends to the
+  // same (new) commit after commitInWorktree advances HEAD — producing an
+  // empty diff and a 0-byte exported patch. Surfaced by Bug-1 v13.
+  let baseSha: string;
+  try {
+    baseSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: worktreePath,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    // Defensive fallback; if rev-parse fails the worktree itself is broken
+    // and downstream commit will fail loudly.
+    baseSha = ref;
+  }
+
+  return { worktreePath, baseRef: baseSha, repoRoot };
 }
 
 // ---------------------------------------------------------------------------

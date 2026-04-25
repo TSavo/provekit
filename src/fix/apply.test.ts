@@ -567,9 +567,33 @@ describe("produceDraftArtifacts", () => {
 
       const bundle = makeFixBundle();
       const draft = produceDraftArtifacts(handle, bundle);
-      expect(typeof draft.patch).toBe("string");
+      // Patch must be non-empty AND contain the diff for the change committed
+      // in this worktree. An empty string passes typeof but ships a 0-byte
+      // .patch file to the user — the v13 regression.
+      expect(draft.patch.length).toBeGreaterThan(0);
+      expect(draft.patch).toContain("out.ts");
+      expect(draft.patch).toContain("// output");
       expect(draft.prBody).toContain("Fix Bundle #1");
       expect(draft.prBody).toContain("division by zero");
+    } finally {
+      removeApplyWorktree(handle);
+    }
+  });
+
+  it("produces a real diff when target ref was the symbolic 'HEAD' (detached worktree case)", () => {
+    // Bug-1 v13 regression: when the bug repo is itself a detached-HEAD
+    // worktree, applyBundle's targetRef falls back to the literal "HEAD".
+    // If baseRef is stored as the symbolic ref, `git diff baseRef..HEAD`
+    // resolves both ends to the same commit after commit, and the exported
+    // patch is 0 bytes despite all oracles green.
+    const handle = createApplyWorktree("HEAD", repoRoot);
+    try {
+      writeFileSync(join(handle.worktreePath, "fix.ts"), "// the actual fix\n");
+      commitInWorktree(handle, { bundleId: 42, bundleType: "fix", summary: "regression check" });
+
+      const draft = produceDraftArtifacts(handle, makeFixBundle());
+      expect(draft.patch.length).toBeGreaterThan(0);
+      expect(draft.patch).toContain("the actual fix");
     } finally {
       removeApplyWorktree(handle);
     }
