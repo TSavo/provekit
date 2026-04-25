@@ -1,15 +1,23 @@
 /**
  * Fix-loop logger: structured, stage-aware, dual-output (stdout + file).
  *
- * - info/stage/llmCall/oracle/error always go to stdout and log file.
- * - detail goes to stdout only when verbose=true, always to log file.
- * - Log file gets full --verbose output regardless of stdout setting.
- * - close() must be called at the end of runFixLoopCli (use try/finally).
+ * Architecture:
+ *   - Single pino root logger, level=trace.
+ *   - File stream  (.provekit/fix-loop-<ts>.log): NDJSON, level=trace — EVERYTHING, no truncation.
+ *   - Stdout stream (pino-pretty): level=info normally, level=debug when verbose=true.
+ *
+ * Rule: the file stream receives every event. The stdout stream is a filtered human-readable view.
+ * Never truncate in the file stream. See docs/LOGGING.md.
+ *
+ * pino-roll is imported but rotation is not configured yet (placeholder for future use).
  */
 
-import { mkdirSync, createWriteStream } from "fs";
+import { mkdirSync } from "fs";
 import { dirname } from "path";
-import type { WriteStream } from "fs";
+import pino from "pino";
+// pino-roll imported as placeholder — rotation not yet configured
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+require("pino-roll"); // side-effect import to verify the dep is present
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -38,6 +46,13 @@ export interface FixLoopLogger {
   oracle(args: OracleArgs): void;
   error(msg: string, context?: Record<string, unknown>): void;
   close(): void;
+
+  // Full LLM data — file only (trace level). Stdout never sees these payloads.
+  prompt(stage: string, model: string, text: string): void;
+  response(stage: string, model: string, text: string): void;
+  toolUse(stage: string, tool: string, input: unknown): void;
+  toolResult(stage: string, toolUseId: string, result: string): void;
+  thinking(stage: string, content: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -53,6 +68,11 @@ export function createNoopLogger(): FixLoopLogger {
     oracle: () => {},
     error: () => {},
     close: () => {},
+    prompt: () => {},
+    response: () => {},
+    toolUse: () => {},
+    toolResult: () => {},
+    thinking: () => {},
   };
 }
 
@@ -67,82 +87,181 @@ export function createFixLoopLogger(args: {
 }): FixLoopLogger {
   const { stdout, verbose, logFilePath } = args;
 
-  // fileStreamActive lets writeFile check if the stream is still usable after open errors
-  let fileStreamActive = false;
-  let fileStream: WriteStream | null = null;
+  // ── File destination ──────────────────────────────────────────────────────
+  // We use sync: true so the fd is open immediately — this eliminates the
+  // "sonic boom is not ready yet" race on close(), makes flushSync() safe to
+  // call at any time, and guarantees that readFileSync() after close() sees all
+  // entries. The fix loop is I/O-bound by LLM calls anyway so synchronous
+  // log writes don't measurably affect throughput.
+  //
+  // pino-roll is the rotation mechanism (imported above as placeholder).
+  let fileStream: ReturnType<typeof pino.destination> | null = null;
+
   if (logFilePath) {
     try {
       mkdirSync(dirname(logFilePath), { recursive: true });
-      fileStream = createWriteStream(logFilePath, { encoding: "utf-8", flags: "w" });
-      fileStreamActive = true;
-      // Swallow stream errors silently — log file is best-effort for debugging
-      fileStream.on("error", () => { fileStreamActive = false; });
+      fileStream = pino.destination({ dest: logFilePath, sync: true });
     } catch {
-      // If we can't create the log dir/file, continue without file logging
+      // If we can't create the log dir/file, continue without file logging.
       fileStream = null;
     }
   }
 
-  const ts = () => new Date().toISOString();
+  // ── Stdout destination (pino-pretty) ──────────────────────────────────────
+  // Use pino-pretty as a synchronous stream factory (NOT pino.transport worker
+  // thread) so tests can inject a stub Writable via the stdout param.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const PinoPretty = require("pino-pretty") as (opts: Record<string, unknown>) => NodeJS.WritableStream;
 
-  function writeStdout(line: string): void {
-    stdout.write(line + "\n");
+  const stdoutLevel: pino.LevelWithSilent = verbose ? "debug" : "info";
+  // Colorize only when the destination is a real TTY.
+  const colorize = Boolean((stdout as { isTTY?: boolean }).isTTY);
+
+  const prettyStream = PinoPretty({
+    destination: stdout,
+    colorize,
+    singleLine: true,
+    // Suppress structural pino fields — our messageFormat rebuilds the human line.
+    ignore: [
+      "pid", "hostname", "time", "level",
+      // Event-specific fields consumed by messageFormat:
+      "event", "stage",
+      "id", "name", "passed", "detail",
+      "model", "promptLen", "responseLen", "durationMs",
+      "context",
+      "tool", "input",
+      "toolUseId", "result",
+      "content",
+    ].join(","),
+    messageFormat: (
+      log: Record<string, unknown>,
+      msgKey: string,
+    ): string => {
+      switch (log["event"]) {
+        case "stage":
+          return `\n━━━ ${String(log["stage"] ?? "")} ━━━`;
+        case "llmCall":
+          return (
+            `  [llm:${String(log["stage"] ?? "")}] ` +
+            `model=${String(log["model"] ?? "")} ` +
+            `prompt=${String(log["promptLen"] ?? "")}chars ` +
+            `response=${String(log["responseLen"] ?? "")}chars ` +
+            `duration=${String(log["durationMs"] ?? "")}ms`
+          );
+        case "oracle": {
+          const passed = log["passed"] ? "PASS" : "FAIL";
+          return `  [oracle #${String(log["id"] ?? "")} ${String(log["name"] ?? "")}] ${passed}: ${String(log["detail"] ?? "")}`;
+        }
+        case "toolUse":
+          return `  [tool:${String(log["tool"] ?? "")}] (input logged to file)`;
+        case "toolResult":
+          return `  [tool-result:${String(log["toolUseId"] ?? "")}] (result logged to file)`;
+        default:
+          return String(log[msgKey] ?? "");
+      }
+    },
+  });
+
+  // ── Root pino instance ────────────────────────────────────────────────────
+  // stdoutLevel is info or debug (never trace or silent), so it fits pino.Level.
+  const stdoutStreamLevel: pino.Level = stdoutLevel as pino.Level;
+  const streams: pino.StreamEntry[] = [
+    { level: stdoutStreamLevel, stream: prettyStream },
+  ];
+  if (fileStream) {
+    streams.unshift({ level: "trace" as pino.Level, stream: fileStream });
   }
 
-  function writeFile(line: string): void {
-    if (fileStream && fileStreamActive) {
-      fileStream.write(line + "\n");
-    }
-  }
+  // Set the root logger level to 'trace' so every child call reaches the
+  // multistream router; individual stream entries control what gets emitted.
+  const root = pino(
+    { level: "trace" },
+    pino.multistream(streams),
+  );
 
-  function writeBoth(line: string): void {
-    writeStdout(line);
-    writeFile(line);
-  }
+  // Override prettyStream's effective level at the router level.
+  // pino.multistream respects each entry's .level so we're good.
+
+  // ── Impl ──────────────────────────────────────────────────────────────────
+
+  // Build a child logger so each record can carry a "component" tag.
+  const log = root.child({ component: "fix-loop" });
 
   return {
     stage(name: string): void {
-      const line = `\n━━━ ${name} ━━━`;
-      writeBoth(line);
-      writeFile(`[${ts()}]`);
+      log.info({ event: "stage", stage: name }, "");
     },
 
     info(msg: string): void {
-      writeBoth(msg);
+      log.info({ event: "info" }, msg);
     },
 
     detail(msg: string): void {
-      if (verbose) {
-        writeStdout(`  ${msg}`);
-      }
-      writeFile(`  [detail] ${msg}`);
+      // debug → stdout only when verbose. Always in file (trace ≤ debug ≤ info).
+      log.debug({ event: "detail" }, msg);
     },
 
     llmCall(a: LLMCallArgs): void {
-      const summary = `  [llm:${a.stage}] model=${a.model} prompt=${a.promptLen}chars response=${a.responseLen}chars duration=${a.durationMs}ms`;
-      writeBoth(summary);
+      log.info(
+        {
+          event: "llmCall",
+          stage: a.stage,
+          model: a.model,
+          promptLen: a.promptLen,
+          responseLen: a.responseLen,
+          durationMs: a.durationMs,
+        },
+        "",
+      );
     },
 
     oracle(a: OracleArgs): void {
-      const icon = a.passed ? "PASS" : "FAIL";
-      const line = `  [oracle #${a.id} ${a.name}] ${icon}: ${a.detail}`;
-      writeBoth(line);
+      log.info(
+        {
+          event: "oracle",
+          id: a.id,
+          name: a.name,
+          passed: a.passed,
+          detail: a.detail,
+        },
+        "",
+      );
     },
 
     error(msg: string, context?: Record<string, unknown>): void {
-      writeBoth(`  [ERROR] ${msg}`);
-      if (context) {
-        const json = JSON.stringify(context, null, 2);
-        if (verbose) {
-          writeStdout(json);
-        }
-        writeFile(json);
-      }
+      log.error({ event: "error", context: context ?? {} }, msg);
+    },
+
+    // ── Full-payload methods — file only (trace), stdout never ──────────────
+
+    prompt(stage: string, model: string, text: string): void {
+      // Emitted at trace level: reaches file stream but NOT stdout (stdout min is info/debug).
+      log.trace({ event: "prompt", stage, model, prompt: text }, "");
+    },
+
+    response(stage: string, model: string, text: string): void {
+      log.trace({ event: "response", stage, model, response: text }, "");
+    },
+
+    toolUse(stage: string, tool: string, input: unknown): void {
+      // trace → file only. debug → stdout summary line when verbose.
+      log.trace({ event: "toolUsePayload", stage, tool, input }, "");
+      log.debug({ event: "toolUse", stage, tool }, "");
+    },
+
+    toolResult(stage: string, toolUseId: string, result: string): void {
+      log.trace({ event: "toolResultPayload", stage, toolUseId, result }, "");
+      log.debug({ event: "toolResult", stage, toolUseId }, "");
+    },
+
+    thinking(stage: string, content: string): void {
+      log.trace({ event: "thinking", stage, content }, "");
     },
 
     close(): void {
-      if (fileStream && fileStreamActive) {
-        fileStreamActive = false;
+      if (fileStream) {
+        // sync:true means the fd is open immediately, so flushSync() is always safe.
+        fileStream.flushSync();
         fileStream.end();
         fileStream = null;
       }
@@ -163,7 +282,12 @@ export async function loggedComplete(
   params: Parameters<LLMProvider["complete"]>[0],
 ): Promise<string> {
   const t0 = Date.now();
+
+  // Log the full prompt to file (trace) before the call.
+  logger.prompt(stage, params.model ?? "sonnet", params.prompt);
+
   const response = await llm.complete(params);
+
   logger.llmCall({
     stage,
     model: params.model ?? "sonnet",
@@ -171,8 +295,9 @@ export async function loggedComplete(
     responseLen: response.length,
     durationMs: Date.now() - t0,
   });
-  // Log full prompt/response to file via detail (always written to file)
-  logger.detail(`[prompt]\n${"─".repeat(60)}\n${params.prompt}\n${"─".repeat(60)}`);
-  logger.detail(`[response]\n${"─".repeat(60)}\n${response}\n${"─".repeat(60)}`);
+
+  // Log the full response to file (trace).
+  logger.response(stage, params.model ?? "sonnet", response);
+
   return response;
 }
