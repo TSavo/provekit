@@ -210,7 +210,8 @@ async function proposeCapabilitySpecViaAgent(args: {
 
   const existingTables = listCapabilities().map((c) => c.dslName).join(", ") || "(none)";
 
-  const prompt = `You are a static-analysis substrate architect. A new capability is needed to express an invariant.
+  const prompt = `[STAGE:C6-capability] proposeCapabilitySpec
+You are a static-analysis substrate architect. A new capability is needed to express an invariant.
 
 Bug summary: ${signal.summary}
 Invariant: ${invariant.description}
@@ -219,25 +220,169 @@ Missing predicate: ${gap}
 
 Existing capability tables: ${existingTables}
 
-Design a new capability. Write these files to the worktree:
+# How your capability will be validated
 
-1. .provekit/capability-proposal/<capabilityName>/schema.ts — TypeScript schema with sqliteTable
-2. .provekit/capability-proposal/<capabilityName>/migration.sql — CREATE TABLE or ALTER TABLE ADD COLUMN only
-3. .provekit/capability-proposal/<capabilityName>/extractor.ts — exported function with tx.insert(<table>).values(...)
-4. .provekit/capability-proposal/<capabilityName>/extractor.test.ts — vitest tests
-5. .provekit/capability-proposal/<capabilityName>/registry.ts — registerCapability(...) call
-6. .provekit/capability-proposal/<capabilityName>/fixtures.json — JSON: { "positiveFixtures": [{"source": "...", "expectedRowCount": N}], "negativeFixtures": [{"source": "...", "expectedRowCount": 0}] }
-7. .provekit/capability-proposal/<capabilityName>/meta.json — JSON: { "capabilityName": "...", "rationale": "...", "dslSource": "...", "name": "...", "smtTemplate": "...", "teachingExample": { "domain": "...", "explanation": "...", "smt2": "..." } }
-8. .provekit/principles/<name>.dsl — the DSL principle using the new capability
+After you produce the spec, oracle #16 will:
+1. Migrate your schema into a fresh DB.
+2. Transpile schema.ts and extractor.ts to JS, place them next to a scratch DB.
+3. For each POSITIVE fixture: build SAST, call your extractor, count rows in
+   your new table. Must be >= positiveFixtures[i].expectedRowCount.
+4. For each NEGATIVE fixture: same, but row count must be exactly 0.
 
-Rules:
-- capabilityName must be a valid camelCase identifier
-- migrationSql must be CREATE TABLE or ALTER TABLE ADD COLUMN only — no DROPs
-- extractor.ts MUST contain tx.insert(<table>).values(...) pattern
-- dslSource must reference ONLY the new capabilityName (and existing ones if needed)
-- positiveFixtures: TypeScript code that SHOULD match the principle
-- negativeFixtures: TypeScript code that should NOT match
-- All files must be valid, complete, and self-consistent
+The most common failure is "positive fixtures: 0/N" — your extractor walked
+the AST but never matched anything. Read the extractor pattern below carefully.
+
+# Canonical extractor pattern (copy this shape)
+
+\`\`\`ts
+import { SyntaxKind, type SourceFile, type BinaryExpression } from "ts-morph";
+import type { SastTx, NodeIdMap } from "../../sast/types.js";  // path adjusted at integration time
+import { nodeMyCapability } from "./schema.js";
+
+export function extractMyCapability(
+  tx: SastTx,
+  sourceFile: SourceFile,
+  nodeIdByNode: NodeIdMap,
+): void {
+  sourceFile.forEachDescendant((node) => {
+    // 1. Filter by node kind first — fast.
+    if (node.getKind() !== SyntaxKind.BinaryExpression) return;
+    const bin = node as BinaryExpression;
+
+    // 2. Apply load-bearing condition. THIS IS WHERE EXTRACTORS GO WRONG.
+    //    Match the pattern your principle cares about. Don't be too narrow
+    //    (you'll miss positive fixtures) or too broad (you'll match negatives).
+    const opKind = bin.getOperatorToken().getKind();
+    if (opKind !== SyntaxKind.SlashToken) return;  // example: only divisions
+
+    // 3. Resolve node IDs. nodeIdByNode is the key fact — it maps every
+    //    AST node ts-morph produced to its row in the SAST nodes table.
+    //    If a node isn't in the map, skip it (don't crash).
+    const nodeId = nodeIdByNode.get(bin);
+    const lhsId = nodeIdByNode.get(bin.getLeft());
+    const rhsId = nodeIdByNode.get(bin.getRight());
+    if (!nodeId || !lhsId || !rhsId) return;
+
+    // 4. Insert the row. tx.insert returns a builder; .run() executes it.
+    tx.insert(nodeMyCapability).values({
+      nodeId,
+      lhsNode: lhsId,
+      rhsNode: rhsId,
+      // ... any other columns your schema declared
+    }).run();
+  });
+}
+\`\`\`
+
+# How to design YOUR extractor
+
+1. **Identify the load-bearing AST shape.** What specifically marks code as
+   matching the bug class? For Bug-1 duplicate-methods, the load-bearing
+   shape is "an Array.prototype.push.apply call where the LHS is consumed
+   as a set" (joined into a comma-string, etc.). For division-by-zero, it's
+   "a / b BinaryExpression where rhs isn't dominated by a guard."
+
+2. **Walk every node of the relevant kind.** \`forEachDescendant\` visits
+   every node in the file. Filter by kind FIRST (\`node.getKind()\`), then
+   refine.
+
+3. **Cast to the specific node type AFTER the kind check.** ts-morph's
+   types are guarded — do \`if (node.getKind() === SyntaxKind.X) { const x =
+   node as X; ... }\`.
+
+4. **Always look up node IDs from nodeIdByNode.** Never invent IDs. If a
+   lookup returns undefined (rare, but possible for synthetic nodes),
+   return early — don't crash.
+
+5. **Test your design against your fixtures BEFORE submitting.** Mentally
+   walk through one positive fixture: would your code emit >= the expected
+   row count? Mentally walk through one negative: would your code emit 0?
+
+# Anti-patterns
+
+\`\`\`ts
+// TOO NARROW — matches only the EXACT shape "a / 2", misses every parameterized division
+sourceFile.forEachDescendant((node) => {
+  if (node.getKind() !== SyntaxKind.BinaryExpression) return;
+  const bin = node as BinaryExpression;
+  if (bin.getRight().getText() !== "2") return;  // only matches /2
+  if (!nodeIdByNode.get(bin)) return;
+  tx.insert(...).values(...).run();
+});
+\`\`\`
+
+\`\`\`ts
+// TOO BROAD — matches any binary expression
+sourceFile.forEachDescendant((node) => {
+  if (node.getKind() !== SyntaxKind.BinaryExpression) return;
+  // no further check — emits a row for every +, -, *, /, ==, =, etc.
+  tx.insert(...).values(...).run();
+});
+\`\`\`
+
+\`\`\`ts
+// VACUOUS — has the right shape but never emits because it filters on
+// something that's always false. The most common form of "0 positives".
+sourceFile.forEachDescendant((node) => {
+  if (node.getKind() !== SyntaxKind.CallExpression) return;
+  const call = node as CallExpression;
+  if (call.getExpression().getText() !== "push.apply") return;  // text() is "options.push.apply", never matches "push.apply"
+  tx.insert(...).values(...).run();
+});
+\`\`\`
+
+# Files to write (all paths relative to overlay root)
+
+1. .provekit/capability-proposal/<capabilityName>/schema.ts — TypeScript
+   schema with sqliteTable. Use \`drizzle-orm/sqlite-core\` imports.
+
+2. .provekit/capability-proposal/<capabilityName>/migration.sql —
+   CREATE TABLE for your capability. CREATE INDEX is also allowed (and
+   recommended for any column the principle queries on). NO DROPs, NO
+   destructive ALTERs.
+
+3. .provekit/capability-proposal/<capabilityName>/extractor.ts — the
+   ts-morph walker that emits rows. Follows the canonical shape above.
+   Imports schema from \`./schema\` (oracle #16 transpiles both).
+
+4. .provekit/capability-proposal/<capabilityName>/extractor.test.ts —
+   vitest tests asserting your extractor emits the right rows for at
+   least one positive fixture and zero rows for one negative.
+
+5. .provekit/capability-proposal/<capabilityName>/registry.ts —
+   registerCapability call.
+
+6. .provekit/capability-proposal/<capabilityName>/fixtures.json —
+   { "positiveFixtures": [{"source": "<TS code>", "expectedRowCount": N}, ...],
+     "negativeFixtures": [{"source": "<TS code>", "expectedRowCount": 0}, ...] }
+
+   Each positive fixture's \`source\` must be a self-contained TS snippet
+   that exhibits the pattern; expectedRowCount is HOW MANY rows your
+   extractor should emit for it (typically 1, possibly more for fixtures
+   with multiple instances).
+
+   Negative fixtures should be structurally similar but lacking the
+   load-bearing element. Do not use empty / unrelated code as negatives —
+   the extractor would trivially emit 0 for those without exercising
+   discrimination.
+
+7. .provekit/capability-proposal/<capabilityName>/meta.json —
+   { "capabilityName": "...", "rationale": "...", "dslSource": "...",
+     "name": "...", "smtTemplate": "...",
+     "teachingExample": { "domain": "...", "explanation": "...", "smt2": "..." } }
+
+8. .provekit/principles/<name>.dsl — DSL principle using the new capability.
+
+# Universal rules
+
+- capabilityName must be valid camelCase
+- All files self-consistent: schema's table name matches migration's CREATE
+  TABLE, matches extractor's import + insert, matches registry's
+  registerCapability call
+- expectedRowCount values in fixtures must MATCH what your extractor will
+  actually emit — write the extractor first, count rows mentally, set
+  expected values to match
+- No DROPs, no destructive ops in migration.sql
 
 Write all files now using your tools.`;
 
