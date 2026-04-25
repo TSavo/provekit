@@ -78,6 +78,13 @@ export async function applyBundle(args: {
   reindexFn?: (db: Db, absPath: string) => void;
   /** Injectable repo root for testing. */
   repoRoot?: string;
+  /**
+   * Injectable scratch parent dir for testing. When set, the worktree is
+   * created under this directory instead of tmpdir(). Tests use this to
+   * scope worktree creation to a per-test directory so their cleanup
+   * verification isn't poisoned by concurrent runs of other tests.
+   */
+  worktreeParentDir?: string;
   logger?: FixLoopLogger;
 }): Promise<ApplyResult> {
   const { bundle, options, db } = args;
@@ -106,7 +113,7 @@ export async function applyBundle(args: {
   // 1. Create fresh worktree off targetRef.
   let applyHandle: ApplyWorktreeHandle;
   try {
-    applyHandle = createApplyWorktree(targetRef, repoRoot);
+    applyHandle = createApplyWorktree(targetRef, repoRoot, args.worktreeParentDir);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { applied: false, closedGaps: [], failureReason: `worktree creation failed: ${msg}` };

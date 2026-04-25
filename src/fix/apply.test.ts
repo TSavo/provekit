@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
@@ -793,30 +793,29 @@ describe("applyBundle (integration)", () => {
 
   it("test 6: worktree cleanup on success — worktree path doesn't exist after apply", async () => {
     const bundle = makeFixBundle();
-    let capturedWorktreePath: string | undefined;
 
-    // We can't easily capture the internal worktree path, but we can verify
-    // the tmp dir count doesn't grow. Instead, check that no provekit-apply-* dirs remain.
-    const before = (execFileSync("ls", [tmpdir()], { encoding: "utf-8" }) as string)
-      .split("\n")
-      .filter((n) => n.startsWith("provekit-apply-"));
+    // Per-test scratch dir scopes the cleanup-verification to ONLY this test's
+    // worktree creations. Without this, parallel test runs of other apply.test
+    // cases creating their own provekit-apply-* dirs in tmpdir() would leak
+    // into the count and produce a racy assertion.
+    const scratchDir = mkdtempSync(join(tmpdir(), "apply-test6-scratch-"));
 
-    await applyBundle({
-      bundle,
-      options: { autoApply: true, prDraftMode: false },
-      db,
-      targetBranch,
-      reindexFn: noopReindex,
-      repoRoot,
-    });
+    try {
+      await applyBundle({
+        bundle,
+        options: { autoApply: true, prDraftMode: false },
+        db,
+        targetBranch,
+        reindexFn: noopReindex,
+        repoRoot,
+        worktreeParentDir: scratchDir,
+      });
 
-    const after = (execFileSync("ls", [tmpdir()], { encoding: "utf-8" }) as string)
-      .split("\n")
-      .filter((n) => n.startsWith("provekit-apply-"));
-
-    // No new worktrees should be left behind.
-    const newOnes = after.filter((n) => !before.includes(n));
-    expect(newOnes).toHaveLength(0);
+      const remaining = readdirSync(scratchDir).filter((n) => n.startsWith("provekit-apply-"));
+      expect(remaining).toHaveLength(0);
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
   });
 
   it("test 7: worktree cleanup on failure — finally block still removes worktree", async () => {
@@ -835,25 +834,25 @@ describe("applyBundle (integration)", () => {
       throw new Error("simulated failure for cleanup test");
     };
 
-    const before = (execFileSync("ls", [tmpdir()], { encoding: "utf-8" }) as string)
-      .split("\n")
-      .filter((n) => n.startsWith("provekit-apply-"));
+    // Per-test scratch dir — see test 6 for rationale.
+    const scratchDir = mkdtempSync(join(tmpdir(), "apply-test7-scratch-"));
 
-    await applyBundle({
-      bundle: badBundle,
-      options: { autoApply: true, prDraftMode: false },
-      db,
-      targetBranch,
-      reindexFn: throwingReindex,
-      repoRoot,
-    });
+    try {
+      await applyBundle({
+        bundle: badBundle,
+        options: { autoApply: true, prDraftMode: false },
+        db,
+        targetBranch,
+        reindexFn: throwingReindex,
+        repoRoot,
+        worktreeParentDir: scratchDir,
+      });
 
-    const after = (execFileSync("ls", [tmpdir()], { encoding: "utf-8" }) as string)
-      .split("\n")
-      .filter((n) => n.startsWith("provekit-apply-"));
-
-    const newOnes = after.filter((n) => !before.includes(n));
-    expect(newOnes).toHaveLength(0);
+      const remaining = readdirSync(scratchDir).filter((n) => n.startsWith("provekit-apply-"));
+      expect(remaining).toHaveLength(0);
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
   });
 
   it("test 8: cherry-pick conflict — apply returns failed with conflict in reason", async () => {

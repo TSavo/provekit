@@ -2,12 +2,32 @@
  * Centralized model-tier selection for the fix loop.
  *
  * Each LLM-calling stage looks up its model tier via getModelTier(stageName).
- * The default mapping in MODEL_TIERS calibrates cost/latency:
  *
- *   - haiku: short-text parsing (intake adapters, classify); opus is overkill.
- *   - sonnet: code generation + diffing (C3, C4, C5, C6 principle proposal)
- *             where we need quality but not the load-bearing reasoning of opus.
- *   - opus: load-bearing reasoning (C1 invariant, C6 capability spec).
+ * Tier philosophy (post Bug-1 v5 calibration):
+ *
+ *   - sonnet: the default. Reliable instruction-following, including the
+ *             tool-use contract that requestStructuredJson depends on
+ *             ("write JSON to {path}, do not return inline"). Cost
+ *             difference vs haiku is pennies per call; reliability
+ *             difference is whole runs aborting on tool-use violations.
+ *   - opus: load-bearing reasoning where invariant correctness or
+ *           substrate design rides on the output.
+ *   - haiku: NOT used by default. Reserve for explicit cost-conscious
+ *           runs via PROVEKIT_MODEL_OVERRIDE=haiku, accepting the
+ *           reliability trade-off.
+ *
+ * Why no haiku in the default mapping:
+ *
+ * Bug-1 v5 aborted at Classify because haiku ignored the "use the Write
+ * tool" instruction and dumped JSON inline as text. The structuredOutput
+ * helper expected the file at the scratch path; missing file → throw →
+ * whole loop aborts (~6 minutes of compute wasted). This was the SECOND
+ * occurrence of haiku skipping the Write contract in our staging.
+ *
+ * Cost math: a classify call is ~3 KB in, ~1 KB out. Haiku ~$0.005,
+ * sonnet ~$0.05. Per-call delta ~5 cents. A failed run wastes 6 minutes
+ * + the LLM tokens already spent on intake + the user's time. The
+ * sonnet upgrade is the right trade-off without ambiguity.
  *
  * Override modes (in priority order):
  *
@@ -18,15 +38,17 @@
  *
  *   2. Global override:     PROVEKIT_MODEL_OVERRIDE=opus
  *      Forces every stage to the named tier. Useful for debugging when you
- *      want apples-to-apples comparison across the loop.
+ *      want apples-to-apples comparison across the loop, OR for
+ *      cost-conscious runs (PROVEKIT_MODEL_OVERRIDE=haiku) accepting the
+ *      reliability trade-off.
  *
  *   3. Default tier from MODEL_TIERS below.
  *
  * Adding a new stage:
- *   - Pick a tier that matches the call's reasoning load.
- *   - Add an entry to MODEL_TIERS keyed by the stage string the call site
- *     passes to requestStructuredJson / runAgentInOverlay.
- *   - When in doubt, sonnet is the safe middle.
+ *   - Default to sonnet unless the call's reasoning load is clearly
+ *     load-bearing (invariant correctness, substrate design) — then opus.
+ *   - Don't pick haiku for any stage that uses the Write tool or any
+ *     other structured-output contract.
  */
 
 export type ModelTier = "haiku" | "sonnet" | "opus";
@@ -41,17 +63,20 @@ export type ModelTier = "haiku" | "sonnet" | "opus";
 export const MODEL_TIERS: Record<string, ModelTier> = {
   // -------------------------------------------------------------------------
   // B1: intake. Short-text parsing, structured-extraction prompts.
-  // Opus is overkill; haiku handles these in <1s.
+  // Was haiku in earlier versions for "speed"; upgraded to sonnet after
+  // Bug-1 v5 showed haiku occasionally ignoring the Write-tool contract,
+  // which aborts whole runs. Sonnet is reliable on tool use and the cost
+  // delta is pennies per call.
   // -------------------------------------------------------------------------
-  "intake-report": "haiku",
-  "intake-testFailure": "haiku",
-  "intake-gapReport": "haiku",
-  "intake-runtimeLog": "haiku",
+  "intake-report": "sonnet",
+  "intake-testFailure": "sonnet",
+  "intake-gapReport": "sonnet",
+  "intake-runtimeLog": "sonnet",
 
   // -------------------------------------------------------------------------
-  // B2: classify. Short categorization.
+  // B2: classify. Short categorization. Sonnet for tool-use reliability.
   // -------------------------------------------------------------------------
-  classify: "haiku",
+  classify: "sonnet",
 
   // -------------------------------------------------------------------------
   // C1: formulateInvariant. Load-bearing; whole correctness story rides on

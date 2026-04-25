@@ -48,8 +48,13 @@ export interface ApplyWorktreeHandle {
 export function createApplyWorktree(
   ref: string,
   repoRoot: string,
+  parentDir?: string,
 ): ApplyWorktreeHandle {
-  const worktreePath = mkdtempSync(join(tmpdir(), "provekit-apply-"));
+  // parentDir lets tests scope worktrees to a per-test scratch directory so
+  // their cleanup-verification assertions aren't poisoned by concurrent runs
+  // of other apply.test cases that also create provekit-apply-* dirs in
+  // tmpdir(). Production callers omit it and get the default tmpdir().
+  const worktreePath = mkdtempSync(join(parentDir ?? tmpdir(), "provekit-apply-"));
 
   try {
     execFileSync("git", ["worktree", "add", "--detach", worktreePath, ref], {
