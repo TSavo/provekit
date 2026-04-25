@@ -692,22 +692,28 @@ export type InvariantKind = "concrete" | "abstract";
 /**
  * Classify an invariant by its SMT formalization.
  *
- * ABSTRACT: Bool-only bindings OR no Int/Real declarations. These are
- * taint-style invariants ("X flows to Y", "input is sanitized") where the SMT
- * encoding is structurally meaningless without a concrete principle.
+ * ABSTRACT: no actual numeric Int/Real declarations in the SMT. These are
+ * taint-style invariants ("X flows to Y", "input is sanitized") where Z3
+ * has nothing useful to evaluate; the body is shaped like (assert tainted)
+ * or (assert (and tainted (not sanitized))) with Bool-only declarations.
  *
- * CONCRETE: at least one Int or Real binding. Arithmetic-style invariants
- * (division-by-zero, off-by-one, integer overflow) where SMT has canonical
- * numerical shapes and fixture-classification works.
+ * CONCRETE: at least one (declare-const ... Int) or (declare-const ... Real)
+ * in the SMT body. Arithmetic-style invariants (division-by-zero,
+ * off-by-one, integer overflow) where SMT has canonical numerical shapes
+ * and fixture-classification works.
  *
- * Either condition flips to abstract; this is intentionally permissive so
- * that mixed-bool-and-string bindings are routed to the cheaper path.
+ * The ground truth is the actual SMT body, not the bindings list. The
+ * formulateInvariant parser defaults missing `sort` fields to "Int" (line
+ * 403 of stages/formulateInvariant.ts), so LLM-omitted sort metadata cannot
+ * be trusted to distinguish a Bool-encoded taint invariant from a real Int
+ * arithmetic one. The declare-const lines never lie because Z3 must parse
+ * them to run check-sat at all.
  */
 export function classifyInvariantKind(invariant: InvariantClaim): InvariantKind {
-  const allBool = invariant.bindings.length > 0
-    && invariant.bindings.every((b) => b.sort === "Bool");
-  const hasNumeric = /\b(Int|Real)\b/.test(invariant.formalExpression);
-  if (allBool || !hasNumeric) return "abstract";
+  // Match (declare-const NAME Int) or (declare-const NAME Real) in the SMT body.
+  const numericDeclRe = /\(declare-const\s+\S+\s+(Int|Real)\b/;
+  const hasNumericDecl = numericDeclRe.test(invariant.formalExpression);
+  if (!hasNumericDecl) return "abstract";
   return "concrete";
 }
 

@@ -421,6 +421,44 @@ describe("classifyInvariantKind", () => {
     };
     expect(classifyInvariantKind(mixedClaim)).toBe("abstract");
   });
+
+  it("classifies Bool-only SMT as abstract even when bindings claim Int (v4-dogfood regression)", () => {
+    // formulateInvariant.ts:403 defaults missing sort fields to "Int"; the
+    // proposer LLM may emit Bool-only SMT with no `sort` in bindings, leaving
+    // the bindings array claiming Int while the actual SMT is Bool. The
+    // classifier must trust the SMT body, not the bindings.
+    const v4Regression: InvariantClaim = {
+      ...VALID_CLAIM,
+      formalExpression: [
+        "(declare-const tainted Bool)",
+        "(declare-const sanitized Bool)",
+        "(assert (and tainted (not sanitized)))",
+        "(check-sat)",
+      ].join("\n"),
+      bindings: [
+        // Defaulted to Int by formulateInvariant parser when LLM omitted sort
+        { smt_constant: "tainted", source_expr: "input", source_line: 3, sort: "Int" },
+        { smt_constant: "sanitized", source_expr: "input", source_line: 3, sort: "Int" },
+      ],
+    };
+    expect(classifyInvariantKind(v4Regression)).toBe("abstract");
+  });
+
+  it("requires actual (declare-const ... Int) decl, not just the word 'Int' in a comment", () => {
+    const commentNoDecl: InvariantClaim = {
+      ...VALID_CLAIM,
+      formalExpression: [
+        "; This invariant tracks Int taintedness (no actual Int decl)",
+        "(declare-const x Bool)",
+        "(assert x)",
+        "(check-sat)",
+      ].join("\n"),
+      bindings: [
+        { smt_constant: "x", source_expr: "x", source_line: 1, sort: "Bool" },
+      ],
+    };
+    expect(classifyInvariantKind(commentNoDecl)).toBe("abstract");
+  });
 });
 
 // ---------------------------------------------------------------------------
