@@ -25,6 +25,11 @@ import type {
 import type { Db } from "../db/index.js";
 import { oraclesPassedFromAudit, persistBundle } from "./bundlePersistence.js";
 import { listArtifactKinds } from "./artifactKindRegistry.js";
+// Side-effect import: registers all artifact kind descriptors so that
+// listArtifactKinds() is populated on the production path (not only in tests
+// that call registerAll() in beforeEach). Without this, the registry is empty,
+// allApplicableOracles is empty, newOracles is empty, and no oracle ever runs.
+import "./artifactKinds/index.js";
 import {
   runOracle4,
   runOracle5,
@@ -268,6 +273,20 @@ export async function assembleBundle(args: {
     }
   }
 
+  // For substrate bundles, the C6-stage oracles (#14, #16, #17, #18) must all
+  // be in alreadyFired (meaning C6 completed and they passed). If any required
+  // substrate oracle never fired, the bundle is incoherent.
+  if (bundleType === "substrate") {
+    for (const substrateOracleId of [14, 16, 17, 18]) {
+      if (allApplicableOracles.has(substrateOracleId) && !alreadyFired.has(substrateOracleId)) {
+        throw new BundleCoherenceFailed(
+          substrateOracleId,
+          `oracle #${substrateOracleId} is required for substrate bundle but was not confirmed via C6 audit trail`,
+        );
+      }
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Step 6: Build coherence summary + confidence
   // -------------------------------------------------------------------------
@@ -276,11 +295,15 @@ export async function assembleBundle(args: {
     z3SemanticConsistency: newOracles.has(5) ? (checks.find((c) => c.oracleId === 5)?.result.passed ?? false) : alreadyFired.has(5),
     fullSuiteGreen: newOracles.has(10) ? (checks.find((c) => c.oracleId === 10)?.result.passed ?? false) : alreadyFired.has(10),
     noNewGapsIntroduced: newOracles.has(8) ? (checks.find((c) => c.oracleId === 8)?.result.passed ?? false) : alreadyFired.has(8),
-    migrationSafe: bundleType === "substrate" ? true : null,
-    crossCodebaseRegression: newOracles.has(15) ? (checks.find((c) => c.oracleId === 15)?.result.passed ?? null) : null,
-    extractorCoverage: bundleType === "substrate" ? true : null,
-    substrateConsistency: bundleType === "substrate" ? true : null,
-    principleNeedsCapability: principle?.kind === "principle_with_capability" ? true : null,
+    // migrationSafe, extractorCoverage, substrateConsistency, principleNeedsCapability:
+    // these are "already-fired" oracles (#14,#16,#17,#18) verified via C6 audit trail.
+    // Report true only when C6 completed (i.e., oracle #14/#16/#17/#18 are in alreadyFired).
+    // For non-substrate bundles, the flags are null (not applicable).
+    migrationSafe: bundleType === "substrate" ? alreadyFired.has(14) : null,
+    crossCodebaseRegression: newOracles.has(15) ? (checks.find((c) => c.oracleId === 15)?.result.passed ?? null) : (bundleType === "substrate" ? alreadyFired.has(15) : null),
+    extractorCoverage: bundleType === "substrate" ? alreadyFired.has(16) : null,
+    substrateConsistency: bundleType === "substrate" ? alreadyFired.has(17) : null,
+    principleNeedsCapability: principle?.kind === "principle_with_capability" ? alreadyFired.has(18) : null,
   };
 
   // Aggregate confidence: simple average of fix confidence components.

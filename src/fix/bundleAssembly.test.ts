@@ -368,4 +368,191 @@ describe("assembleBundle", () => {
     expect(rows.length).toBe(1);
     expect(rows[0]!.id).toBe(bundle.bundleId);
   });
+
+  // Test 7: all coherence flags true when all oracles pass
+  it("all required oracles pass → bundle coherence flags all true", async () => {
+    const overlay = makeOverlay(sastDb);
+    const fix = makeFix();
+    const test = makeTest();
+
+    // Supply a C6 audit trail entry so substrate-style oracles are considered already-fired.
+    // For a fix bundle (no principle), C6-fired oracles (#6,#14,#16,#17,#18) are N/A.
+    const bundle = await assembleBundle({
+      signal: SIGNAL,
+      plan: PLAN,
+      locus: LOCUS,
+      fix,
+      complementary: [],
+      test,
+      principle: null,
+      overlay,
+      db,
+      vitestRunner: passingRunner,
+    });
+
+    expect(bundle.coherence.sastStructural).toBe(true);
+    expect(bundle.coherence.fullSuiteGreen).toBe(true);
+    expect(bundle.coherence.noNewGapsIntroduced).toBe(true);
+    // z3SemanticConsistency: oracle #5 is trivially true with no invariants
+    expect(bundle.coherence.z3SemanticConsistency).toBe(true);
+    // Substrate flags are null for a fix bundle
+    expect(bundle.coherence.migrationSafe).toBeNull();
+    expect(bundle.coherence.extractorCoverage).toBeNull();
+    expect(bundle.coherence.substrateConsistency).toBeNull();
+  });
+
+  // Test 8: oracle #11 (SAST coherence) fails → throws BundleCoherenceFailed naming oracle #11
+  it("oracle #11 (SAST structural) fails → throws BundleCoherenceFailed", async () => {
+    // Create an empty SAST DB so oracle #11 sees 0 nodes → fails
+    const emptySastDb = openDb(":memory:");
+    emptySastDb.$client.exec("CREATE TABLE nodes (id TEXT PRIMARY KEY)");
+    emptySastDb.$client.exec("CREATE TABLE node_children (parent_id TEXT, child_id TEXT)");
+    // Insert ZERO rows — oracle #11 requires count > 0
+    const overlay = makeOverlay(emptySastDb);
+    const fix = makeFix();
+
+    await expect(
+      assembleBundle({
+        signal: SIGNAL,
+        plan: PLAN,
+        locus: LOCUS,
+        fix,
+        complementary: [],
+        test: null,
+        principle: null,
+        overlay,
+        db,
+        vitestRunner: passingRunner,
+      }),
+    ).rejects.toThrow(BundleCoherenceFailed);
+
+    await expect(
+      assembleBundle({
+        signal: SIGNAL,
+        plan: PLAN,
+        locus: LOCUS,
+        fix,
+        complementary: [],
+        test: null,
+        principle: null,
+        overlay,
+        db,
+        vitestRunner: passingRunner,
+      }),
+    ).rejects.toMatchObject({ oracleId: 11 });
+
+    emptySastDb.$client.close();
+  });
+
+  // Test 9: oracle #10 (full suite) fails → throws BundleCoherenceFailed
+  it("oracle #10 (full suite) fails → throws BundleCoherenceFailed", async () => {
+    const overlay = makeOverlay(sastDb);
+    const fix = makeFix();
+
+    await expect(
+      assembleBundle({
+        signal: SIGNAL,
+        plan: PLAN,
+        locus: LOCUS,
+        fix,
+        complementary: [],
+        test: null,
+        principle: null,
+        overlay,
+        db,
+        vitestRunner: failingRunner,
+      }),
+    ).rejects.toThrow(BundleCoherenceFailed);
+
+    await expect(
+      assembleBundle({
+        signal: SIGNAL,
+        plan: PLAN,
+        locus: LOCUS,
+        fix,
+        complementary: [],
+        test: null,
+        principle: null,
+        overlay,
+        db,
+        vitestRunner: failingRunner,
+      }),
+    ).rejects.toMatchObject({ oracleId: 10 });
+  });
+
+  // Test 10: substrate bundle, oracle #14 not confirmed via C6 → throws BundleCoherenceFailed
+  it("substrate bundle: oracle #14 not confirmed (C6 errored) → throws BundleCoherenceFailed", async () => {
+    const overlay = makeOverlay(sastDb);
+    const fix = makeFix();
+    const principle = makePrincipleWithCapability();
+
+    // Inject a C6 ERROR entry in the existing audit trail. The reconstructed trail
+    // will also have a C6 complete (because principle !== null), but the error entry
+    // causes oraclesPassedFromAudit to skip C6 → oracle #14 not in alreadyFired.
+    const existingAuditTrail = [
+      { stage: "C6", kind: "error" as const, detail: "C6 failed — runOracle14 rejected DROP TABLE", timestamp: Date.now() },
+    ];
+
+    await expect(
+      assembleBundle({
+        signal: SIGNAL,
+        plan: PLAN,
+        locus: LOCUS,
+        fix,
+        complementary: [],
+        test: null,
+        principle,
+        overlay,
+        db,
+        existingAuditTrail,
+        vitestRunner: passingRunner,
+      }),
+    ).rejects.toThrow(BundleCoherenceFailed);
+
+    await expect(
+      assembleBundle({
+        signal: SIGNAL,
+        plan: PLAN,
+        locus: LOCUS,
+        fix,
+        complementary: [],
+        test: null,
+        principle,
+        overlay,
+        db,
+        existingAuditTrail,
+        vitestRunner: passingRunner,
+      }),
+    ).rejects.toMatchObject({ oracleId: 14 });
+  });
+
+  // Test 11: oracle runners are actually invoked (smoke check against empty-registry regression)
+  it("oracle #10 runner is invoked at least once — guards against empty-registry no-op path", async () => {
+    const overlay = makeOverlay(sastDb);
+    const fix = makeFix();
+
+    let runnerInvokeCount = 0;
+    const countingPassingRunner = () => {
+      runnerInvokeCount++;
+      return { exitCode: 0, stdout: "all tests passed", stderr: "" };
+    };
+
+    await assembleBundle({
+      signal: SIGNAL,
+      plan: PLAN,
+      locus: LOCUS,
+      fix,
+      complementary: [],
+      test: null,
+      principle: null,
+      overlay,
+      db,
+      vitestRunner: countingPassingRunner,
+    });
+
+    // If the artifact kind registry was empty, newOracles would be empty, and
+    // the vitestRunner (oracle #10) would never be called. Asserting > 0 proves
+    // that the registry was populated and oracles actually ran.
+    expect(runnerInvokeCount).toBeGreaterThan(0);
+  });
 });
