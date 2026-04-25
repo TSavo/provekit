@@ -28,25 +28,54 @@ Test files in `src/fix/`: 17 (each stage has a unit test; the dogfood test cover
 
 ## What the dogfood proved
 
+### Substrate path (stub LLM)
+
 The concrete proof is `src/fix/dogfood.empty-catch.test.ts`.
 
-The test exercises the full substrate-extension path using the `empty-catch` capability gap. The fixture is a TypeScript function whose catch block is empty. The stub LLM provides canned responses that mimic what a real LLM would produce. The test has two cases:
+The test exercises the full substrate-extension path using the `empty-catch` capability gap. The fixture is a TypeScript function whose catch block is empty. The stub LLM provides canned responses that mimic what a real LLM would produce. Two cases:
 
 **Case 1 (happy path).** The loop runs intake through D1. C6 determines that no existing capability can express "catch handler is empty," proposes a `try_catch_block` capability with a `handler_stmt_count` column, and passes oracles 14, 16, 17, 18. The assembled bundle has `bundleType: "substrate"`, `coherence.migrationSafe: true`, `coherence.extractorCoverage: true`, `coherence.substrateConsistency: true`, `coherence.principleNeedsCapability: true`. The audit trail shows C1 through D1 all completing.
 
 **Case 2 (safety gate).** The stub LLM proposes a migration that contains `DROP TABLE IF EXISTS`. Oracle 14 rejects it. The bundle is either null or `bundleType: "fix"` (not `"substrate"`). A substrate bundle with a destructive migration is never assembled.
 
-Both cases pass. The architecture held under first real-LLM-style load (stub, but with realistic prompt matching and full code execution paths).
+Both cases pass.
 
-## Eight remaining A8 capability gaps
+### First real-LLM closed loop (2026-04-24)
+
+On 2026-04-24, the full pipeline ran end-to-end on a real bug using the Claude Agent SDK with Opus 4.7 as the default model throughout. The input was `dogfood-scratch/divide.ts` (`function divide(a, b) { return a / b; }`) plus a prose bug report. All stages ran: Intake through D2.
+
+Stage log:
+
+```
+C1 ✅ formulateInvariant     (Z3 oracle #1 PASS, 12s)
+C2 ✅ openOverlay             (scratch worktree, 0.6s)
+C3 ✅ generateFixCandidate    (Read + Edit, oracle #2 PASS via path-condition extraction, 20s)
+C4 ✅ generateComplementary   (Read + Edit; pruned by oracle #3)
+C5 ✅ generateRegressionTest  (Write + Edit; mutation-verified)
+C6 ✅ generatePrincipleCandidate
+D1 ✅ assembleBundle
+D2 ✅ applyBundle (prDraft mode)
+```
+
+The patch was a clean guard. The regression test encoded the Z3 witness directly (`b = 0, a = 1`), tolerated either fix shape, and exhaustively rejected `Infinity`, `NaN`, and `-Infinity`. The PR body was auto-generated and written to disk.
+
+The dogfood surfaced five integration gaps that stub-LLM tests could not reach. All five were closed:
+
+1. `provekit analyze` was not populating the SAST tables the fix loop queries. Closed by wiring `buildSASTForFile` into the analyze per-file walk.
+2. LLM JSON responses were wrapped in markdown code-fences; `JSON.parse` failed at every call site. Closed by a shared `parseJsonFromLlm()` helper that strips fences. Ten call sites updated.
+3. The CLI bridge (`cli.fix.ts`) forwarded `complete()` but not `agent()`. Every C-stage's `if (llm.agent)` dispatch fell back to JSON even though the Claude Agent SDK's `agent()` was wired. Closed by adding the conditional `agent()` forward.
+4. Oracle #2 was a proxy (re-evaluate principle, reject if matches remain). Guard-based fixes still match the division pattern after the guard lands; the proxy rejected correct fixes. Closed by path-condition extraction + augmented Z3 (see ARCHITECTURE.md).
+5. The overlay was not enforced at the tool level. Prompts containing absolute paths let Claude edit files outside the worktree via Edit directly. Closed by sanitized prompts (overlay-relative paths only) and post-validation throwing `OverlayBypassError` on any path that escapes.
+
+## Seven remaining A8 capability gaps
 
 From `docs/plans/2026-04-23-fix-loop/capability-gaps.md`. These are the bug classes that cannot yet be expressed in the ProveKit DSL because required capabilities or relations are missing. Each is dogfood fuel for the next sprint.
 
 | Gap | Status | What it needs |
 |-----|--------|---------------|
 | shell-injection | Open | `string_composition.has_interpolation` capability + `data_flow_reaches` relation |
-| empty-catch | **Done** | `try_catch_block` capability (landed via dogfood) |
-| guard-narrowing | Open | `always_exits` relation or `consequent_always_exits` column on `decides` |
+| empty-catch | **Done** | `try_catch_block` capability (landed via substrate dogfood) |
+| guard-narrowing | **Done** | `same_value` relation (#66) + parser opens for arbitrary relation names (#67), varDeref in target position (#68), explicit `where RELATION(LHS, RHS)` syntax (#69) |
 | loop-accumulator-overflow | Open | `encloses($outer, $inner)` relation (AST ancestor check) |
 | param-mutation | Open | `mutates_param` capability column or `assigns_to_param` relation |
 | switch-no-default | Open | `has_default` column on `switches` capability |
@@ -74,9 +103,23 @@ The artifact-kind registry (`src/fix/artifactKindRegistry.ts`) expanded in commi
 
 ## What is deferred
 
-**Real-LLM dogfood.** Everything in the system uses stub LLMs for testing. The `ClaudeAgentProvider` (`src/llm/ClaudeAgentProvider.ts`) is fully implemented and wires into the `@anthropic-ai/claude-agent-sdk`. What is missing is environment configuration: setting `ANTHROPIC_API_KEY` and pointing the provider factory at Claude. Not hard, just not done. The `ProviderFactory` and `ProviderPool` in `src/llm/` are ready.
+The real-LLM loop is closed. Remaining work is engineering toward production:
 
-Once a real LLM is wired, the eight remaining gaps become runnable dogfood: submit a bug report for each gap, watch C6 propose a new capability, verify oracles 14-18 pass, apply the substrate bundle, and confirm the new capability detects the pattern across the full codebase.
+1. **C5 robustness for arbitrary projects.** The vitest-in-overlay path symlinks the user's `node_modules` into the scratch worktree. Real projects have monorepo workspaces, custom test runners, and varied module systems. Each shape needs explicit handling.
+
+2. **`autoApply` end-to-end.** Every dogfood run used `prDraft` mode (writes patch + PR body to disk). The cherry-pick path with substrate rollback needs end-to-end testing against a clean target branch.
+
+3. **Oracle #15 (cross-codebase regression).** MVP pass-through. Real implementation runs every existing principle across `examples/` (or a designated corpus) post-substrate-migration; any verdict shift rejects the bundle. Required before substrate bundles can land in production.
+
+4. **Oracle #7 (witness replay) and #12 (DSL no-regressions).** Same MVP-stub pattern. Scoped, not yet built.
+
+5. **Seven remaining A8 capability gaps.** Some closed in #66-69 (`same_value` relation, parser opens for arbitrary relation names, varDeref in target position, explicit `where RELATION(LHS, RHS)` syntax). The remainder (shell-injection, loop-accumulator, param-mutation, switch-no-default, ternary-branch-collapse, variable-staleness, while-loop-termination) are queued as substrate bundles.
+
+6. **Multi-language support.** Currently TypeScript-only via ts-morph. Tree-sitter wiring exists for the analyze layer; the fix-loop's SAST builder is TS-specific.
+
+7. **Concurrency.** Single-user, single-process, single-worktree. The capability registry is a process-local Map. Multi-user setups need either a shared registry or per-tenant isolation.
+
+8. **Performance.** Each dogfood run takes 2-8 minutes on Opus 4.7 (LLM-latency-bound). Tiered model selection (haiku for intake/classify, sonnet for proposals, opus for invariant formulation) would reduce this. Opus 4.7 everywhere is conservative; Opus 4.7 is now the default tier but production wants tiered selection per stage.
 
 ## What the architecture is ready for
 
@@ -88,3 +131,5 @@ The gap list is a work queue. Each item that closes:
 4. Proves the architecture can handle a new class of structural complexity.
 
 The system gets strictly smarter with every bundle applied. That is the intended invariant.
+
+The default model is Opus 4.7 (`claude-opus-4-7`). Intake adapters and the CLI bridge default to it. Tiered selection per stage (cheaper model for intake/classify, Opus for invariant formulation) is a deferred optimization.

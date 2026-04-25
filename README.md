@@ -19,7 +19,24 @@ The result is not a suggested edit. It is a commit-ready artifact with a machine
 - Not a coding agent with guardrails. The LLM is fungible at every stage boundary. The oracles are not. The pipeline is the product.
 - Captures institutional knowledge. Every applied bundle updates the principles library and the SAST substrate. The system is strictly smarter after every fix.
 - Substrate self-extends. When a bug shape cannot be expressed in the current DSL, ProveKit proposes a new capability, gates it through oracles 14-18, and lands it atomically with the fix. The floor rises with each gap closed.
-- Compounds. Eight remaining capability gaps are dogfood fuel. Each one that closes adds a new detection column to the substrate that runs on every future analysis.
+- Compounds. Seven remaining capability gaps are dogfood fuel. Each one that closes adds a new detection column to the substrate that runs on every future analysis.
+
+## From bug report to verified bundle
+
+On 2026-04-24, the full pipeline ran end-to-end on a real bug using Claude Agent SDK with Opus 4.7. The input was a TypeScript file containing `function divide(a, b) { return a / b; }` and a prose bug report. ProveKit produced a verified patch, a mutation-verified vitest regression test, and a PR body. All stages (Intake through D2) executed. Z3 and the runtime harness both cleared their oracles.
+
+The patch:
+
+```diff
+ export function divide(a: number, b: number): number {
++  if (b === 0) {
++    throw new Error("Division by zero: denominator must be non-zero");
++  }
+   return a / b;
+ }
+```
+
+The regression test encoded the Z3 witness directly (`const b = 0; const a = 1`), tolerated either fix shape (throw or return finite), and exhaustively rejected `Infinity`, `NaN`, and `-Infinity`. The PR body was auto-generated and written to the working directory in `prDraft` mode.
 
 ## Quick start
 
@@ -28,7 +45,7 @@ npm install
 provekit init             # scan codebase, build SAST index, wire commit hook
 provekit analyze          # find proven clauses and gap violations across the tree
 provekit fix gap_report:42             # close a specific gap report
-provekit fix bug-report.md --apply     # run fix loop and apply autonomously
+provekit fix bug-report.md --apply     # run fix loop on a file-based bug report and apply autonomously
 ```
 
 The `--apply` flag cherry-picks the resulting commit onto the target branch. Without it, ProveKit writes a patch file and PR draft to the working directory for human review.
@@ -39,6 +56,12 @@ The pipeline runs in nine stages: Intake parses the bug signal, Locate finds the
 
 ## Status
 
-See [RETROSPECTIVE.md](./RETROSPECTIVE.md) for what is built, what the dogfood proved, what the eight remaining capability gaps are, and what is deferred.
+See [RETROSPECTIVE.md](./RETROSPECTIVE.md) for what is built, what the dogfood proved, what the seven remaining capability gaps are, and what is deferred.
 
 The historical implementation plan lives at [docs/plans/2026-04-23-fix-loop.md](./docs/plans/2026-04-23-fix-loop.md).
+
+## Documentation
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md): pipeline walkthrough, all five registries, 18 oracles, overlay isolation, logging architecture.
+- [RETROSPECTIVE.md](./RETROSPECTIVE.md): what shipped, what the dogfood proved, remaining gaps, deferred work.
+- [docs/LOGGING.md](./docs/LOGGING.md): logging conventions, the no-truncation rule, and the rationale behind it.

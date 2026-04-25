@@ -18,7 +18,7 @@ A bug report enters. A mechanically-verified fix bundle exits. The LLM is a part
 
 **C2: Open overlay.** A scratch git worktree is created from HEAD. A separate SAST database is built for it. All subsequent stages that touch code operate inside this overlay. The main repository and its SAST database are never modified during generation.
 
-**C3: Generate fix candidate.** The LLM proposes code patches inside the overlay. The preferred path uses `agent()` mode: the LLM edits files directly in the overlay worktree, then `git diff` captures the structured change as a `CodePatch`. A JSON-patch fallback exists for providers that do not implement `agent()`. Oracle 2 runs Z3 against the overlay's re-indexed SAST to verify the invariant holds under the proposed fix. If oracle 2 fails, the LLM gets one retry with the failure details. If both attempts fail, the pipeline stops.
+**C3: Generate fix candidate.** The LLM proposes code patches inside the overlay. The preferred path uses `agent()` mode: the LLM edits files directly in the overlay worktree, then `git diff` captures the structured change as a `CodePatch`. A JSON-patch fallback exists for providers that do not implement `agent()`. Oracle 2 uses path-condition extraction: `extractGuardConditions()` walks dominance, decides, and node_returns to extract path conditions at the fix site, conjoins them with the original violation SMT, and passes the augmented SMT to Z3. Augmented SMT unsat means the invariant holds under the proposed fix. A proxy-match approach (re-evaluating the principle and checking for remaining matches) was the original implementation but rejected correct guard-based fixes; path-condition extraction replaced it. If oracle 2 fails, the LLM gets one retry with the failure details. If both attempts fail, the pipeline stops.
 
 **C4: Generate complementary changes.** The SAST is queried for adjacent sites with the same bug pattern: callers that need updating, missing guards upstream, observability hooks, startup assertions. Each proposed complementary change is verified by oracle 3 (Z3 re-verification at that site under the overlay).
 
@@ -32,7 +32,7 @@ A bug report enters. A mechanically-verified fix bundle exits. The LLM is a part
 
 **D3: Learn from bundle.** After a successful apply, the principles library is updated with the new principle, the capability registry is updated with the new capability (for substrate bundles), and any closed gap reports are marked resolved.
 
-## The four primitive registries
+## The five primitive registries
 
 **Capability registry** (`src/sast/capabilityRegistry.ts`). The SAST substrate's vocabulary. Each capability is a SQLite table that the AST extractor populates: node IDs and structured properties extracted from the syntax tree. Today the registry contains capabilities for divisions, function calls, try-catch blocks (added by the empty-catch dogfood), assignments, and others. A new capability lands here when C6 proposes one and oracles 14-18 pass. Extension requires: a schema TypeScript file, a migration SQL file, an extractor TypeScript file, and a registry registration call.
 
@@ -92,6 +92,34 @@ The compound effect: every substrate bundle applied makes the system strictly mo
 The LLM does not produce JSON patches. In agent mode, it edits files directly inside the overlay worktree using the same tools a human would: Read, Edit, Write, Bash. After the agent call returns, `captureChange.ts` runs `git diff --name-only` and `git ls-files --others --exclude-standard` to find every file the agent touched, reads each file's current content, and assembles a `CodePatch`. The oracles verify the result, not the prompt. If `git diff` shows the wrong change, the oracle fails.
 
 The JSON-patch path is a fallback for providers that do not implement `agent()`. `StubLLMProvider` in tests can provide either canned JSON responses or canned agent responses (pre-specified file edits) depending on what the test needs.
+
+The `agent()` call goes through the CLI bridge (`cli.fix.ts`). Early in development the bridge only forwarded `complete()`, so every C-stage's `if (llm.agent) { ... }` dispatch silently fell back to the JSON path even though the Claude Agent SDK's `agent()` was wired at the provider level. The bridge now conditionally forwards `agent()` when the underlying provider implements it.
+
+## Overlay isolation
+
+The overlay is a scratch git worktree created from HEAD. Its purpose is to contain all code changes during generation so the main repository is never touched during a fix run.
+
+The worktree boundary must be enforced at the tool level, not just by instruction. Early real-LLM runs showed that C-stage prompts that contained absolute paths (e.g. `/Users/tsavo/dogfood-scratch/src/divide.ts`) allowed Claude to edit files in the user's actual source directory via Edit and Write, bypassing the overlay completely. The fix was architectural, not a prompt tweak.
+
+Overlay isolation now has two layers:
+
+1. **Sanitized prompts.** Every C-stage prompt uses overlay-relative paths only. Absolute paths to source files are never included in LLM-visible context.
+
+2. **Post-validation.** After each tool call that touches the filesystem, the path is checked against `overlay.worktreePath`. A path that escapes throws `OverlayBypassError` immediately, before the tool result is processed. This is the hard stop; the sanitized prompt is defense in depth.
+
+`OverlayBypassError` is not a retryable failure. It terminates the current stage and surfaces as a pipeline error so the operator can inspect the tool calls that escaped. The dual-layer design follows the principle that trust boundaries must be enforced at the boundary, not by assuming inputs will be well-formed.
+
+## Logging architecture
+
+ProveKit uses Pino with dual output streams.
+
+**The log file** (`.provekit/fix-loop-<ts>.log`) captures the full NDJSON transcript of every fix run: every LLM prompt, every LLM response, every thinking block the SDK exposes, every tool call with full parameters, every tool result, and every oracle verdict. Truncation in log files is forbidden. The convention and rationale are documented in `docs/LOGGING.md`.
+
+**Stdout** receives a pretty-printed summary: stage markers, timing, pass/fail verdicts, and error context. It is a UX view of the same events, not the record of them.
+
+The separation is load-bearing. During real-LLM dogfood, an overlay-bypass bug (Claude writing to absolute paths outside the worktree) was invisible for an afternoon because the SDK's default summary elided tool inputs. Once tool inputs were captured in full in the log file, the bypass was immediately visible in post-hoc replay.
+
+Disk pressure is managed by capping the count of retained log files, not by truncating individual entries. Sensitive fields (API keys, secrets) are redacted at the named field level, not by lopping surrounding content.
 
 ## What is in code vs data
 
