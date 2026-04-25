@@ -163,6 +163,52 @@ Sometimes the customer wants a specific fix that differs from the library's cano
 - Existing dogfood tests still pass (the LLM-mode path is unchanged for novel bugs)
 - New test: a synthetic project with a known bug class produces a fix via the recognized path with zero LLM calls (verify by stub LLM that asserts complete() is never called)
 
+## Self-Bootstrapping: Every Novel Fix Becomes Future Recognition
+
+The LLM-driven path doesn't just fix a bug — it produces all four pieces of a library template by construction:
+
+| Bundle artifact | Becomes library field |
+|---|---|
+| C1's invariant | `smtTemplate` (already stored) |
+| C3's fix diff | `fixTemplate` (parameterize and store) |
+| C5's regression test | `testTemplate` (parameterize and store) |
+| C6's DSL principle | `dslSource` (already stored) |
+
+After D2 applies the fix, **harvest captures the full set** into a new `LibraryPrinciple` and adds it to the library.
+
+### BugsJS harvest is a strict subset
+
+BugsJS already provides the diff and the test from production-merged tags. There is nothing to generate.
+
+| Source | C1 (invariant) | C3 (fix) | C5 (test) | C6 (principle) |
+|---|---|---|---|---|
+| Customer novel bug | LLM | LLM (produces diff) | LLM (produces test) | LLM |
+| **BugsJS bug** | (derived from diff, no LLM needed) | **diff already exists in `Bug-N-fix` tag** | **test already exists in `Bug-N-test` tag** | LLM (one call per bug class) |
+
+For BugsJS bootstrap, the LLM is only needed for C6 — and even C6 drops out for cluster members once the first-of-class is harvested and recognition fires.
+
+### Bootstrap cost model
+
+For 452 BugsJS bugs assuming ~100 unique classes with average cluster size 4-5:
+- **~100 first-of-class bugs**: one LLM call each (C6 principle derivation from diff). At ~$0.10/call = **~$10**
+- **~350 cluster members**: zero LLM calls (recognition fires, existing principle matches, append provenance)
+- **Total: ~$10 in compute** to bootstrap a ~150-principle library from 452 production-merged fixes
+
+This is dramatically cheaper than the naive "452 LLM calls" plan because:
+1. Recognition mode collapses cluster members to zero LLM cost
+2. C3 and C5 are skipped for BugsJS entirely (we already have the diff and test)
+3. Only C6's principle-derivation step needs the LLM, and only once per class
+
+### The customer fix-loop completes the cycle
+
+Customer fixes work the same way. After a novel-bug fix completes:
+- C3's diff IS the new principle's fix template
+- C5's test IS the new principle's test template
+- C6's DSL IS the new principle's match query
+- All four get stored in the library
+
+Future recognition of the same class fires the recognized path. Customer use grows the library; the library accelerates customer use. The system is self-bootstrapping — every customer fix is a learning event, every BugsJS bug is a learning event, and the LLM-driven path becomes asymptotically rare as the library matures.
+
 ## Why This Is The Architecture We Were Already Pointing At
 
 Every layer was building toward this:
