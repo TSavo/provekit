@@ -2,6 +2,7 @@
  * Scenario dbz-001: division-by-zero — basic guard pattern.
  */
 import type { CorpusScenario } from "../../scenarios.js";
+import { intZeroFixtureStub } from "../../commonStubs.js";
 
 export const scenario: CorpusScenario = {
   id: "dbz-001",
@@ -53,8 +54,15 @@ export const scenario: CorpusScenario = {
         bindings: [
           { smt_constant: "b", source_expr: "b", sort: "Int" },
         ],
+        citations: [
+          {
+            smt_clause: "(= b 0)",
+            source_quote: "calling divide(x, 0) returns Infinity",
+          },
+        ],
       }),
     },
+    intZeroFixtureStub("b"),
     {
       matchPrompt: "propose up to",
       response: JSON.stringify({

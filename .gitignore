@@ -24,3 +24,4 @@ dist/
 
 # Fix-loop run artifacts — per-run log files (debug output, not versioned knowledge)
 .provekit/fix-loop-*.log
+.provekit/fuzz-runs/

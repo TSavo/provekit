@@ -4,6 +4,7 @@
  * C4 complementary changes should fire on both.
  */
 import type { CorpusScenario } from "../../scenarios.js";
+import { intZeroFixtureStub } from "../../commonStubs.js";
 
 export const scenario: CorpusScenario = {
   id: "multi-001",
@@ -56,8 +57,15 @@ export const scenario: CorpusScenario = {
         smt_declarations: ["(declare-const b Int)"],
         smt_violation_assertion: "(assert (= b 0))",
         bindings: [{ smt_constant: "b", source_expr: "b", sort: "Int" }],
+        citations: [
+          {
+            smt_clause: "(= b 0)",
+            source_quote: "calling divide(x, 0) produces Infinity/NaN",
+          },
+        ],
       }),
     },
+    intZeroFixtureStub("b"),
     {
       matchPrompt: "propose up to",
       response: JSON.stringify({

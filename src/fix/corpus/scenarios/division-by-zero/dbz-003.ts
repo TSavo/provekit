@@ -2,6 +2,7 @@
  * Scenario dbz-003: division-by-zero — class method variant.
  */
 import type { CorpusScenario } from "../../scenarios.js";
+import { intZeroFixtureStub } from "../../commonStubs.js";
 
 export const scenario: CorpusScenario = {
   id: "dbz-003",
@@ -51,8 +52,15 @@ export const scenario: CorpusScenario = {
         smt_declarations: ["(declare-const count Int)"],
         smt_violation_assertion: "(assert (= count 0))",
         bindings: [{ smt_constant: "count", source_expr: "count", sort: "Int" }],
+        citations: [
+          {
+            smt_clause: "(= count 0)",
+            source_quote: "Stats.mean() divides sum by count without checking count === 0",
+          },
+        ],
       }),
     },
+    intZeroFixtureStub("count"),
     {
       matchPrompt: "propose up to",
       response: JSON.stringify({

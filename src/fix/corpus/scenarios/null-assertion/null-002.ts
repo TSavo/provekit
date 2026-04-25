@@ -2,6 +2,7 @@
  * Scenario null-002: null-assertion — optional chain missing on deep access.
  */
 import type { CorpusScenario } from "../../scenarios.js";
+import { boolFixtureStub } from "../../commonStubs.js";
 
 export const scenario: CorpusScenario = {
   id: "null-002",
@@ -49,8 +50,15 @@ export const scenario: CorpusScenario = {
         smt_declarations: ["(declare-const serverDefined Bool)"],
         smt_violation_assertion: "(assert (= serverDefined false))",
         bindings: [{ smt_constant: "serverDefined", source_expr: "config.server !== undefined", sort: "Bool" }],
+        citations: [
+          {
+            smt_clause: "(= serverDefined false)",
+            source_quote: "getPort() accesses config.server.port without checking config or config.server",
+          },
+        ],
       }),
     },
+    boolFixtureStub("serverDefined", false),
     {
       matchPrompt: "propose up to",
       response: JSON.stringify({

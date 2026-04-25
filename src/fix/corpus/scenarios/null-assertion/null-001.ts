@@ -2,6 +2,7 @@
  * Scenario null-001: null-assertion — dereference without null check.
  */
 import type { CorpusScenario } from "../../scenarios.js";
+import { boolFixtureStub } from "../../commonStubs.js";
 
 export const scenario: CorpusScenario = {
   id: "null-001",
@@ -44,13 +45,28 @@ export const scenario: CorpusScenario = {
     },
     {
       matchPrompt: "formal verification expert",
+      // source_expr is the GUARD expression that must be PRESENT pre-fix-removal
+      // (i.e. absent from the patched file) for oracle #2 to declare the bug
+      // removed. candidateGen.ts ~line 397 does a string-search: it considers
+      // the bug removed when source_expr is no longer in any modified file.
+      // A null-check fix adds `if (user === null) throw`, so we must use the
+      // negated form here so the substring is absent post-fix. null-002 worked
+      // by accident because its source_expr already used the guard form
+      // (`config.server !== undefined`, while the patch installs `===`).
       response: JSON.stringify({
         description: "user may be null at dereference site",
         smt_declarations: ["(declare-const userIsNull Bool)"],
         smt_violation_assertion: "(assert (= userIsNull true))",
-        bindings: [{ smt_constant: "userIsNull", source_expr: "user === null", sort: "Bool" }],
+        bindings: [{ smt_constant: "userIsNull", source_expr: "user !== null", sort: "Bool" }],
+        citations: [
+          {
+            smt_clause: "(= userIsNull true)",
+            source_quote: "getDisplayName() accesses user.name without checking user !== null",
+          },
+        ],
       }),
     },
+    boolFixtureStub("userIsNull", true),
     {
       matchPrompt: "propose up to",
       response: JSON.stringify({

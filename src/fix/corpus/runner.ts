@@ -30,6 +30,7 @@ import { createFixLoopLogger } from "../logger.js";
 import type { AuditEntry } from "../types.js";
 import type { CorpusScenario } from "./scenarios.js";
 import { buildResponseMap } from "./scenarios.js";
+import { INVARIANT_FIDELITY_STUBS } from "./commonStubs.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -149,7 +150,13 @@ export async function runScenarioIsolated(
   mkdirSync(logDir, { recursive: true });
   const logFilePath = join(logDir, `${scenario.id}.log`);
 
-  const responseMap = buildResponseMap(scenario.llmResponses);
+  // Merge scenario-specific stubs with common C1.5 fidelity stubs.
+  // Scenario stubs come FIRST so they win on overlapping keys (StubLLMProvider
+  // returns the first matching key; insertion order is preserved by Map).
+  const responseMap = buildResponseMap([
+    ...scenario.llmResponses,
+    ...INVARIANT_FIDELITY_STUBS,
+  ]);
   const llm = new StubLLMProvider(responseMap);
 
   let scratchDir: string | null = null;

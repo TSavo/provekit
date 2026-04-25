@@ -2,6 +2,7 @@
  * Scenario ternary-002: ternary-branch-collapse — condition is always true.
  */
 import type { CorpusScenario } from "../../scenarios.js";
+import { intEqualityFixtureStub } from "../../commonStubs.js";
 
 export const scenario: CorpusScenario = {
   id: "ternary-002",
@@ -45,18 +46,27 @@ export const scenario: CorpusScenario = {
     {
       matchPrompt: "formal verification expert",
       response: JSON.stringify({
+        // Encode each branch literal as an Int identity hash. Int sort is
+        // required so the C1.5 fixture pre-validator can pin values.
         description: "both branches of ternary return same literal",
         smt_declarations: [
-          "(declare-const trueResult String)",
-          "(declare-const falseResult String)",
+          "(declare-const trueResult Int)",
+          "(declare-const falseResult Int)",
         ],
         smt_violation_assertion: "(assert (= trueResult falseResult))",
         bindings: [
-          { smt_constant: "trueResult", source_expr: "? branch", sort: "String" },
-          { smt_constant: "falseResult", source_expr: ": branch", sort: "String" },
+          { smt_constant: "trueResult", source_expr: "? branch", sort: "Int" },
+          { smt_constant: "falseResult", source_expr: ": branch", sort: "Int" },
+        ],
+        citations: [
+          {
+            smt_clause: "(= trueResult falseResult)",
+            source_quote: "getStatus() returns 'ok' regardless of code",
+          },
         ],
       }),
     },
+    intEqualityFixtureStub("trueResult", "falseResult"),
     {
       matchPrompt: "propose up to",
       response: JSON.stringify({

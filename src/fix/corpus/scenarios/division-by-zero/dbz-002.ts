@@ -2,6 +2,7 @@
  * Scenario dbz-002: division-by-zero — variant with named function expression.
  */
 import type { CorpusScenario } from "../../scenarios.js";
+import { intZeroFixtureStub } from "../../commonStubs.js";
 
 export const scenario: CorpusScenario = {
   id: "dbz-002",
@@ -47,8 +48,15 @@ export const scenario: CorpusScenario = {
         smt_declarations: ["(declare-const y Int)"],
         smt_violation_assertion: "(assert (= y 0))",
         bindings: [{ smt_constant: "y", source_expr: "y", sort: "Int" }],
+        citations: [
+          {
+            smt_clause: "(= y 0)",
+            source_quote: "ratio() divides x by y without checking y",
+          },
+        ],
       }),
     },
+    intZeroFixtureStub("y"),
     {
       matchPrompt: "propose up to",
       response: JSON.stringify({

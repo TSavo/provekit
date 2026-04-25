@@ -7,6 +7,7 @@
  * the division still occurs with no guard.
  */
 import type { CorpusScenario } from "../../scenarios.js";
+import { intZeroFixtureStub } from "../../commonStubs.js";
 
 export const scenario: CorpusScenario = {
   id: "adv-fix-fails-oracle2",
@@ -54,8 +55,15 @@ export const scenario: CorpusScenario = {
         smt_declarations: ["(declare-const b Int)"],
         smt_violation_assertion: "(assert (= b 0))",
         bindings: [{ smt_constant: "b", source_expr: "b", sort: "Int" }],
+        citations: [
+          {
+            smt_clause: "(= b 0)",
+            source_quote: "divide() doesn't guard b",
+          },
+        ],
       }),
     },
+    intZeroFixtureStub("b"),
     {
       // Patch does NOT add a guard — bug still present after applying.
       matchPrompt: "propose up to",
