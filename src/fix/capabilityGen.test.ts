@@ -164,8 +164,8 @@ describe("oracle #14 — migration safety", () => {
     expect(result.reason).toContain("Oracle #14");
   });
 
-  it("rejects CREATE INDEX (not allowed)", () => {
-    const result = runOracle14("CREATE INDEX idx ON foo (bar)");
+  it("rejects CREATE VIEW (still not allowed; only TABLE + INDEX permitted)", () => {
+    const result = runOracle14("CREATE VIEW v AS SELECT * FROM foo");
     expect(result.passed).toBe(false);
     expect(result.reason).toContain("Oracle #14");
   });
@@ -192,6 +192,30 @@ describe("oracle #14 — migration safety", () => {
     const result = runOracle14(sql);
     expect(result.passed).toBe(false);
     expect(result.reason).toContain("DROP");
+  });
+
+  it("accepts CREATE INDEX (non-destructive performance index)", () => {
+    const result = runOracle14("CREATE INDEX idx_foo_bar ON foo (bar)");
+    expect(result.passed).toBe(true);
+  });
+
+  it("accepts CREATE INDEX IF NOT EXISTS", () => {
+    const result = runOracle14("CREATE INDEX IF NOT EXISTS idx_foo_bar ON foo (bar)");
+    expect(result.passed).toBe(true);
+  });
+
+  it("accepts CREATE UNIQUE INDEX", () => {
+    const result = runOracle14("CREATE UNIQUE INDEX idx_foo_bar ON foo (bar, baz)");
+    expect(result.passed).toBe(true);
+  });
+
+  it("accepts mixed CREATE TABLE + CREATE INDEX migration", () => {
+    const sql = [
+      "CREATE TABLE collection_dedup (node_id TEXT PRIMARY KEY, input TEXT)",
+      "CREATE INDEX IF NOT EXISTS idx_collection_dedup_input ON collection_dedup (input)",
+    ].join(";");
+    const result = runOracle14(sql);
+    expect(result.passed).toBe(true);
   });
 });
 
