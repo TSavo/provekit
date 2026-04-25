@@ -1,24 +1,40 @@
 /**
  * Oracle #1.5 — Invariant Fidelity Check.
  *
- * Three independent mechanical verifiers that confirm an LLM-proposed
- * InvariantClaim is faithful to the prose bug report BEFORE C1 returns it.
+ * Mechanical verifiers that confirm an LLM-proposed InvariantClaim is faithful
+ * to the prose bug report BEFORE C1 returns it.
  *
  * Fires ONLY on the novel-LLM path (principleId === null). Principle-match
- * invariants are skipped — they were adversarially validated at C6 generation
+ * invariants are skipped, they were adversarially validated at C6 generation
  * time (oracle #6). Trust inheritance from the principle library is the
- * architectural symmetry that avoids 3 extra LLM calls per already-vetted match.
+ * architectural symmetry that avoids extra LLM calls per already-vetted match.
  *
- * The three verifiers:
- *  1. crossLlmAgreement  — second LLM derives its own invariant from the same
- *                          prose; Z3 implication checks confirm semantic equivalence.
- *  2. traceabilityCheck  — each SMT clause must be cited to a source quote;
- *                          a verifier LLM confirms grounding.
- *  3. adversarialFixturePreValidation — 5 positive + 5 negative TS fixtures;
- *                          SMT classification must hit ≥4/5 in each category.
+ * Adaptive routing by invariant kind:
+ *  - CONCRETE (arithmetic-style: Int/Real bindings, division-by-zero, off-by-one)
+ *      runs three verifiers:
+ *       1. crossLlmAgreement, second LLM derives its own invariant; Z3
+ *          implication checks confirm semantic equivalence.
+ *       2. traceabilityCheck, verifier LLM confirms each SMT clause is grounded
+ *          in a source quote.
+ *       3. adversarialFixturePreValidation, 5 positive + 5 negative TS fixtures;
+ *          SMT classification must hit at least 4/5 in each category.
+ *  - ABSTRACT (taint-style: only Bool bindings, no Int/Real; "X flows to Y"
+ *      where Z3 has no canonical numerical shape)
+ *      runs:
+ *       1. proseJaccardAgreement, adversary still derives prose for the same
+ *          bug; Jaccard similarity over content words must be at least 0.3.
+ *          SMT cross-LLM is skipped because Bool-only formalizations are not
+ *          structurally meaningful (sonnet wrote (and X (not X) X) for shell
+ *          injection; Z3 correctly flagged false but the prose was sound).
+ *       2. traceabilityCheck (unchanged).
+ *       3. fixtures are skipped, classification without a real taint principle
+ *          is meaningless because clean and buggy code share the same Bool shape.
  *
- * Cost per C1 novel-path call: +25–45 s (adversary derivation ~10–15 s,
- * traceability verifier ~5–10 s, fixture generation ~10–15 s, Z3 ~0.3 s).
+ * Kind detection: see classifyInvariantKind() below.
+ *
+ * Cost per C1 novel-path call:
+ *   concrete: +25-45s (adversary ~10-15s, traceability ~5-10s, fixtures ~10-15s)
+ *   abstract: +15-25s (adversary ~10-15s, traceability ~5-10s)
  */
 
 import type { InvariantClaim, BugSignal, LLMProvider, InvariantCitation } from "./types.js";
@@ -492,12 +508,164 @@ Rules:
 }
 
 // ---------------------------------------------------------------------------
+// 4. Prose Jaccard Agreement (abstract-invariant path)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stop-words filtered out before Jaccard similarity. Conservative list:
+ * grammatical articles, auxiliaries, prepositions, plus the AI-prose filler
+ * ("must", "violated", "input", "passed", "before", "after", "should") that
+ * appears in nearly every invariant description regardless of semantic
+ * content. The signal lives in the domain nouns ("shell", "metacharacters",
+ * "command", "sanitization") that survive the filter.
+ */
+const STOP_WORDS = new Set<string>([
+  "a", "an", "and", "are", "as", "at", "be", "been", "before", "being",
+  "by", "for", "from", "had", "has", "have", "in", "is", "it", "its",
+  "may", "must", "not", "of", "on", "or", "should", "so", "that", "the",
+  "this", "to", "violated", "violation", "was", "were", "will", "with",
+  "would", "after", "any", "but", "do", "does", "did", "if", "into",
+  "such", "than", "then", "there", "these", "those", "when", "where",
+  "which", "who", "whom", "whose", "why", "passed", "input", "value",
+  "values", "code", "without", "via",
+]);
+
+function tokenizeContentWords(text: string): Set<string> {
+  const words = text.toLowerCase().split(/\W+/).filter(Boolean);
+  return new Set(words.filter((w) => w.length > 1 && !STOP_WORDS.has(w)));
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 0;
+  let intersection = 0;
+  for (const w of a) if (b.has(w)) intersection++;
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Abstract-invariant analog of crossLlmAgreement. Asks the adversary LLM to
+ * derive its own invariant prose from the same bug report, then compares
+ * content-word sets via Jaccard similarity. Threshold: 0.3 (empirically
+ * separates "they're talking about the same bug" from "they're talking about
+ * different bugs"; verified on shell-injection and division-by-zero cases).
+ *
+ * Skips the SMT round-trip entirely. For Bool-only formalizations Z3 has
+ * nothing useful to say, sonnet's (and X (not X) X) was tautologically false
+ * not because the invariant was wrong but because Bool-encoding of taint flow
+ * is shapeless without a concrete principle to anchor it.
+ */
+export async function proseJaccardAgreement(args: {
+  invariant: InvariantClaim;
+  signal: BugSignal;
+  llm: LLMProvider;
+  logger?: FixLoopLogger;
+}): Promise<FidelityCheckResult> {
+  const { invariant, signal, llm, logger = createNoopLogger() } = args;
+
+  const adversaryPrompt = `You are a formal verification expert. Given a bug report, describe in prose
+the invariant that the buggy code violates. Focus on the property that, if held,
+would prevent the bug.
+
+Bug summary: ${signal.summary}
+Failure description: ${signal.failureDescription}
+
+IMPORTANT: Derive the invariant INDEPENDENTLY from the prose above.
+Do NOT adjust to match any other invariant you may have seen.
+
+Respond with ONLY a JSON object (no markdown fences):
+{
+  "description": "one to three sentences describing the invariant in plain English"
+}`;
+
+  const proposerModel = "opus";
+  const adModel = adversaryModel(proposerModel);
+
+  interface ProseResponse {
+    description: string;
+  }
+
+  let adversary: ProseResponse;
+  try {
+    adversary = await requestStructuredJson<ProseResponse>({
+      prompt: adversaryPrompt,
+      llm,
+      stage: "C1.5-proseJaccard",
+      model: adModel,
+      logger,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { passed: false, detail: `prose Jaccard: adversary call/parse failed (skipped SMT cross-LLM for abstract invariant): ${msg}` };
+  }
+
+  if (!adversary.description) {
+    return {
+      passed: false,
+      detail: `prose Jaccard: adversary response missing description (skipped SMT cross-LLM for abstract invariant)`,
+    };
+  }
+
+  const proposerWords = tokenizeContentWords(invariant.description);
+  const adversaryWords = tokenizeContentWords(adversary.description);
+  const ratio = jaccard(proposerWords, adversaryWords);
+  const ratioStr = ratio.toFixed(2);
+  const THRESHOLD = 0.3;
+
+  logger.detail(
+    `C1.5 proseJaccard: proposer=${[...proposerWords].join(",")} adversary=${[...adversaryWords].join(",")} jaccard=${ratioStr}`,
+  );
+
+  if (ratio >= THRESHOLD) {
+    return {
+      passed: true,
+      detail: `prose Jaccard: PASS (skipped SMT cross-LLM for abstract invariant). jaccard=${ratioStr} >= ${THRESHOLD}. proposer="${invariant.description}" adversary="${adversary.description}"`,
+    };
+  }
+
+  return {
+    passed: false,
+    detail: `prose Jaccard: FAIL (skipped SMT cross-LLM for abstract invariant). jaccard=${ratioStr} < ${THRESHOLD}. LLMs disagree on what the bug is. proposer="${invariant.description}" adversary="${adversary.description}"`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Invariant kind classification
+// ---------------------------------------------------------------------------
+
+export type InvariantKind = "concrete" | "abstract";
+
+/**
+ * Classify an invariant by its SMT formalization.
+ *
+ * ABSTRACT: Bool-only bindings OR no Int/Real declarations. These are
+ * taint-style invariants ("X flows to Y", "input is sanitized") where the SMT
+ * encoding is structurally meaningless without a concrete principle.
+ *
+ * CONCRETE: at least one Int or Real binding. Arithmetic-style invariants
+ * (division-by-zero, off-by-one, integer overflow) where SMT has canonical
+ * numerical shapes and fixture-classification works.
+ *
+ * Either condition flips to abstract; this is intentionally permissive so
+ * that mixed-bool-and-string bindings are routed to the cheaper path.
+ */
+export function classifyInvariantKind(invariant: InvariantClaim): InvariantKind {
+  const allBool = invariant.bindings.length > 0
+    && invariant.bindings.every((b) => b.sort === "Bool");
+  const hasNumeric = /\b(Int|Real)\b/.test(invariant.formalExpression);
+  if (allBool || !hasNumeric) return "abstract";
+  return "concrete";
+}
+
+// ---------------------------------------------------------------------------
 // runInvariantFidelity orchestration
 // ---------------------------------------------------------------------------
 
 export interface InvariantFidelityResult {
   passed: boolean;
   failures: string[];
+  /** Which routing path was taken; surfaced for debugging visibility. */
+  invariantKind?: InvariantKind;
 }
 
 /** Dependency-injected verifiers for testing. Default to the real implementations. */
@@ -505,11 +673,20 @@ export interface FidelityVerifiers {
   crossLlmAgreement?: typeof crossLlmAgreement;
   traceabilityCheck?: typeof traceabilityCheck;
   adversarialFixturePreValidation?: typeof adversarialFixturePreValidation;
+  proseJaccardAgreement?: typeof proseJaccardAgreement;
 }
 
 /**
- * Run all three fidelity verifiers. Never short-circuits — full audit trail
- * even on partial failures so the retry prompt has concrete detail.
+ * Run fidelity verifiers, routed by invariant kind. Never short-circuits.
+ * Full audit trail even on partial failures so the retry prompt has concrete
+ * detail.
+ *
+ * Routing:
+ *   concrete → [crossLlmAgreement, traceabilityCheck, adversarialFixturePreValidation]
+ *   abstract → [proseJaccardAgreement, traceabilityCheck]
+ *              (SMT cross-LLM and adversarial fixtures skipped, both are
+ *               structurally meaningless for Bool-only / non-numeric
+ *               formalizations of taint-style invariants.)
  *
  * Only runs on novel-LLM-path invariants (principleId === null).
  * Returns { passed: true, failures: [] } immediately for principle-match invariants.
@@ -535,33 +712,50 @@ export async function runInvariantFidelity(args: {
     return { passed: true, failures: [] };
   }
 
-  const failures: string[] = [];
-
   // Resolve verifiers (DI for tests, real implementations by default)
   const crossLlmFn = _verifiers?.crossLlmAgreement ?? crossLlmAgreement;
   const traceabilityFn = _verifiers?.traceabilityCheck ?? traceabilityCheck;
   const fixtureFn = _verifiers?.adversarialFixturePreValidation ?? adversarialFixturePreValidation;
+  const proseJaccardFn = _verifiers?.proseJaccardAgreement ?? proseJaccardAgreement;
 
-  // Run all three — don't short-circuit — full audit trail
-  const [a, b, c] = await Promise.all([
-    crossLlmFn({ invariant, signal, llm, logger }),
-    traceabilityFn({ invariant, signal, llm, logger }),
-    fixtureFn({ invariant, signal, llm, logger }),
-  ]);
+  const kind = classifyInvariantKind(invariant);
+  logger.detail(`C1.5 routing: invariantKind=${kind}`);
 
-  if (!a.passed) failures.push(`cross-LLM agreement: ${a.detail}`);
-  if (!b.passed) failures.push(`traceability: ${b.detail}`);
-  if (!c.passed) failures.push(`adversarial fixtures: ${c.detail}`);
+  const failures: string[] = [];
+
+  if (kind === "concrete") {
+    // Existing three-check path for arithmetic-style invariants.
+    const [a, b, c] = await Promise.all([
+      crossLlmFn({ invariant, signal, llm, logger }),
+      traceabilityFn({ invariant, signal, llm, logger }),
+      fixtureFn({ invariant, signal, llm, logger }),
+    ]);
+
+    if (!a.passed) failures.push(`cross-LLM agreement: ${a.detail}`);
+    if (!b.passed) failures.push(`traceability: ${b.detail}`);
+    if (!c.passed) failures.push(`adversarial fixtures: ${c.detail}`);
+  } else {
+    // Abstract path: prose Jaccard + traceability only. SMT cross-LLM and
+    // fixtures are intentionally skipped (see header doc).
+    const [a, b] = await Promise.all([
+      proseJaccardFn({ invariant, signal, llm, logger }),
+      traceabilityFn({ invariant, signal, llm, logger }),
+    ]);
+
+    if (!a.passed) failures.push(`prose Jaccard: ${a.detail}`);
+    if (!b.passed) failures.push(`traceability: ${b.detail}`);
+  }
 
   const passed = failures.length === 0;
+  const checksRun = kind === "concrete" ? "three verifiers" : "prose-Jaccard + traceability (skipped SMT cross-LLM for abstract invariant; skipped fixtures)";
   logger.oracle({
     id: 1.5,
     name: "invariant fidelity",
     passed,
     detail: passed
-      ? "all three verifiers passed"
-      : `${failures.length} failure(s): ${failures.join(" | ")}`,
+      ? `all checks passed (kind=${kind}, ran ${checksRun})`
+      : `${failures.length} failure(s) (kind=${kind}, ran ${checksRun}): ${failures.join(" | ")}`,
   });
 
-  return { passed, failures };
+  return { passed, failures, invariantKind: kind };
 }

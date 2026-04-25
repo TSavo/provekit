@@ -21,6 +21,8 @@ import {
   crossLlmAgreement,
   traceabilityCheck,
   adversarialFixturePreValidation,
+  proseJaccardAgreement,
+  classifyInvariantKind,
   runInvariantFidelity,
 } from "./invariantFidelity.js";
 import { formulateInvariant } from "./stages/formulateInvariant.js";
@@ -379,6 +381,232 @@ describe("runInvariantFidelity", () => {
     expect(callLog).toContain("cross");
     expect(callLog).toContain("trace");
     expect(callLog).toContain("fixture");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4b. classifyInvariantKind
+// ---------------------------------------------------------------------------
+
+describe("classifyInvariantKind", () => {
+  it("classifies Int-binding arithmetic invariant as concrete", () => {
+    expect(classifyInvariantKind(VALID_CLAIM)).toBe("concrete");
+  });
+
+  it("classifies Bool-only-binding invariant as abstract", () => {
+    const boolClaim: InvariantClaim = {
+      ...VALID_CLAIM,
+      formalExpression: [
+        "(declare-const tainted Bool)",
+        "(declare-const sanitized Bool)",
+        "(assert (and tainted (not sanitized)))",
+        "(check-sat)",
+      ].join("\n"),
+      bindings: [
+        { smt_constant: "tainted", source_expr: "input", source_line: 1, sort: "Bool" },
+        { smt_constant: "sanitized", source_expr: "input", source_line: 1, sort: "Bool" },
+      ],
+    };
+    expect(classifyInvariantKind(boolClaim)).toBe("abstract");
+  });
+
+  it("classifies invariant with no Int/Real declarations as abstract", () => {
+    // Mixed bindings but no Int/Real in the SMT body
+    const mixedClaim: InvariantClaim = {
+      ...VALID_CLAIM,
+      formalExpression: "(declare-const x Bool)\n(assert x)\n(check-sat)",
+      bindings: [
+        { smt_constant: "x", source_expr: "x", source_line: 1, sort: "Bool" },
+      ],
+    };
+    expect(classifyInvariantKind(mixedClaim)).toBe("abstract");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4c. proseJaccardAgreement
+// ---------------------------------------------------------------------------
+
+describe("proseJaccardAgreement", () => {
+  // The adversary prose prompt contains "INDEPENDENTLY" as a distinctive substring,
+  // same as crossLlmAgreement. Distinguish by the sentinel "describe in prose"
+  // or by overall text shape; here we just rely on the proseJaccard stage marker.
+
+  const SHELL_INJECTION_SIGNAL: BugSignal = {
+    source: "test",
+    rawText: "listFiles(input) interpolates input into execSync template; shell metacharacters execute arbitrary commands",
+    summary: "shell injection in listFiles via execSync interpolation",
+    failureDescription: "input containing shell metacharacters reaches execSync without sanitization",
+    codeReferences: [{ file: "cmd.ts", line: 3 }],
+    bugClassHint: "shell-injection",
+  };
+
+  const ABSTRACT_CLAIM: InvariantClaim = {
+    principleId: null,
+    description: "input passed to listFiles must not contain shell metacharacters before being interpolated into the execSync command string",
+    formalExpression: [
+      "(declare-const tainted Bool)",
+      "(declare-const sanitized Bool)",
+      "(assert (and tainted (not sanitized)))",
+      "(check-sat)",
+    ].join("\n"),
+    bindings: [
+      { smt_constant: "tainted", source_expr: "input", source_line: 3, sort: "Bool" },
+      { smt_constant: "sanitized", source_expr: "input", source_line: 3, sort: "Bool" },
+    ],
+    complexity: 1,
+    witness: "sat",
+    citations: [
+      { smt_clause: "(and tainted (not sanitized))", source_quote: "input containing shell metacharacters reaches execSync without sanitization" },
+    ],
+  };
+
+  it("passes when adversary prose shares ≥0.3 jaccard of content words", async () => {
+    const adversaryProse = JSON.stringify({
+      description: "shell metacharacters in input flow into execSync command without sanitization",
+    });
+    const llm = makeStubLlm(new Map([["INDEPENDENTLY", adversaryProse]]));
+    const result = await proseJaccardAgreement({
+      invariant: ABSTRACT_CLAIM,
+      signal: SHELL_INJECTION_SIGNAL,
+      llm,
+    });
+    expect(result.passed).toBe(true);
+    expect(result.detail).toMatch(/PASS/);
+    expect(result.detail).toMatch(/skipped SMT cross-LLM for abstract invariant/);
+  });
+
+  it("fails when adversary prose disagrees (jaccard < 0.3)", async () => {
+    const adversaryProse = JSON.stringify({
+      description: "buffer overflow when memcpy length exceeds destination capacity",
+    });
+    const llm = makeStubLlm(new Map([["INDEPENDENTLY", adversaryProse]]));
+    const result = await proseJaccardAgreement({
+      invariant: ABSTRACT_CLAIM,
+      signal: SHELL_INJECTION_SIGNAL,
+      llm,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.detail).toMatch(/FAIL/);
+    expect(result.detail).toMatch(/skipped SMT cross-LLM for abstract invariant/);
+  });
+
+  it("fails when adversary call throws", async () => {
+    const llm: LLMProvider = { complete: async () => { throw new Error("network"); } };
+    const result = await proseJaccardAgreement({
+      invariant: ABSTRACT_CLAIM,
+      signal: SHELL_INJECTION_SIGNAL,
+      llm,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain("network");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4d. runInvariantFidelity adaptive routing
+// ---------------------------------------------------------------------------
+
+describe("runInvariantFidelity adaptive routing", () => {
+  const SHELL_SIGNAL: BugSignal = {
+    source: "test",
+    rawText: "shell injection via execSync interpolation",
+    summary: "shell injection in listFiles",
+    failureDescription: "input flows into execSync without sanitization",
+    codeReferences: [{ file: "cmd.ts", line: 3 }],
+    bugClassHint: "shell-injection",
+  };
+
+  const ABSTRACT_CLAIM: InvariantClaim = {
+    principleId: null,
+    description: "input must be sanitized before reaching execSync",
+    formalExpression: [
+      "(declare-const tainted Bool)",
+      "(declare-const sanitized Bool)",
+      "(assert (and tainted (not sanitized)))",
+      "(check-sat)",
+    ].join("\n"),
+    bindings: [
+      { smt_constant: "tainted", source_expr: "input", source_line: 3, sort: "Bool" },
+      { smt_constant: "sanitized", source_expr: "input", source_line: 3, sort: "Bool" },
+    ],
+    complexity: 1,
+    witness: "sat",
+    citations: [
+      { smt_clause: "(and tainted (not sanitized))", source_quote: "input flows into execSync without sanitization" },
+    ],
+  };
+
+  it("for abstract invariant: runs prose-Jaccard + traceability; skips SMT cross-LLM and fixtures", async () => {
+    const callLog: string[] = [];
+    const verifiers = {
+      crossLlmAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("cross"); return { passed: false, detail: "should not run" }; },
+      traceabilityCheck: async (): Promise<FidelityCheckResult> => { callLog.push("trace"); return { passed: true, detail: "grounded" }; },
+      adversarialFixturePreValidation: async (): Promise<FidelityCheckResult> => { callLog.push("fixture"); return { passed: false, detail: "should not run" }; },
+      proseJaccardAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("prose"); return { passed: true, detail: "PASS jaccard=0.50 (skipped SMT cross-LLM for abstract invariant)" }; },
+    } as unknown as FidelityVerifiers;
+    const llm: LLMProvider = { complete: async () => { throw new Error("not called"); } };
+
+    const result = await runInvariantFidelity({
+      invariant: ABSTRACT_CLAIM,
+      signal: SHELL_SIGNAL,
+      llm,
+      _verifiers: verifiers,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.invariantKind).toBe("abstract");
+    expect(callLog).toContain("prose");
+    expect(callLog).toContain("trace");
+    expect(callLog).not.toContain("cross");
+    expect(callLog).not.toContain("fixture");
+  });
+
+  it("for abstract invariant: fails with prose-Jaccard reason when prose disagrees", async () => {
+    const verifiers = {
+      crossLlmAgreement: async (): Promise<FidelityCheckResult> => { throw new Error("should not run"); },
+      traceabilityCheck: async (): Promise<FidelityCheckResult> => ({ passed: true, detail: "grounded" }),
+      adversarialFixturePreValidation: async (): Promise<FidelityCheckResult> => { throw new Error("should not run"); },
+      proseJaccardAgreement: async (): Promise<FidelityCheckResult> => ({ passed: false, detail: "FAIL jaccard=0.10 < 0.30 (skipped SMT cross-LLM for abstract invariant)" }),
+    } as unknown as FidelityVerifiers;
+    const llm: LLMProvider = { complete: async () => { throw new Error("not called"); } };
+
+    const result = await runInvariantFidelity({
+      invariant: ABSTRACT_CLAIM,
+      signal: SHELL_SIGNAL,
+      llm,
+      _verifiers: verifiers,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.invariantKind).toBe("abstract");
+    expect(result.failures.length).toBeGreaterThanOrEqual(1);
+    expect(result.failures.some((f) => /jaccard/i.test(f))).toBe(true);
+  });
+
+  it("for concrete invariant: runs all three checks; prose-Jaccard not called (regression)", async () => {
+    const callLog: string[] = [];
+    const verifiers = {
+      crossLlmAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("cross"); return { passed: true, detail: "ok" }; },
+      traceabilityCheck: async (): Promise<FidelityCheckResult> => { callLog.push("trace"); return { passed: true, detail: "ok" }; },
+      adversarialFixturePreValidation: async (): Promise<FidelityCheckResult> => { callLog.push("fixture"); return { passed: true, detail: "ok" }; },
+      proseJaccardAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("prose"); return { passed: false, detail: "should not run" }; },
+    } as unknown as FidelityVerifiers;
+    const llm: LLMProvider = { complete: async () => { throw new Error("not called"); } };
+
+    const result = await runInvariantFidelity({
+      invariant: VALID_CLAIM, // arithmetic Int-bound invariant from fixtures
+      signal: DIVIDE_BUG_SIGNAL,
+      llm,
+      _verifiers: verifiers,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.invariantKind).toBe("concrete");
+    expect(callLog).toContain("cross");
+    expect(callLog).toContain("trace");
+    expect(callLog).toContain("fixture");
+    expect(callLog).not.toContain("prose");
   });
 });
 
