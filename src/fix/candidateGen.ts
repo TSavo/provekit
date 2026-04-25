@@ -36,6 +36,7 @@ import type {
   FixCandidate,
 } from "./types.js";
 import { parseJsonFromLlm } from "./llmJson.js";
+import { extractGuardConditions } from "./pathConditions.js";
 
 // ---------------------------------------------------------------------------
 // Internal shape for a proposed fix from the LLM
@@ -305,17 +306,32 @@ export async function runOracleTwo(
         if (matches.length === 0) {
           return "bug_site_removed";
         }
-        // Matches still exist — fix didn't remove the bug site.
-        // We run verifyBlock on the original formalExpression here, but this is
-        // intentionally doing REJECTION, not real Z3 verification.
-        //
-        // The formalExpression encodes the violation state (e.g., "denominator = 0"),
-        // so Z3 will return "sat" (= violation is still satisfiable = fix did not help).
-        // This correctly causes verifyCandidate to reject the candidate.
-        //
-        // NOTE: this code path does NOT verify that the fix makes the invariant hold.
-        // It only confirms that the bug-site-removed check failed. If you ever need
-        // real Z3 verification here, you would need to negate formalExpression first.
+        // Matches still exist — fix didn't remove the bug site structurally.
+        // Try the guard-augmented path: extract dominating guards from the overlay
+        // SAST and augment the violation SMT. If Z3 returns unsat, the guards make
+        // the violation unreachable → invariant holds → oracle #2 passes.
+        const guards = extractGuardConditions(overlay, invariant.bindings);
+        if (guards.guardCount > 0) {
+          // Strip the trailing (check-sat) from formalExpression and append guard
+          // assertions + a fresh (check-sat).
+          const baseSmtWithoutCheck = invariant.formalExpression.replace(/\(check-sat\)[\s\S]*$/, "").trimEnd();
+          const augmented = baseSmtWithoutCheck +
+            "\n" + guards.smtAssertions.join("\n") + "\n(check-sat)";
+          try {
+            const z3Result = verifyBlock(augmented);
+            if (z3Result.result === "unsat") return "unsat";  // guards make violation unreachable
+            if (z3Result.result === "sat") return "sat";
+            if (z3Result.result === "unknown") return "unknown";
+            return "error";
+          } catch {
+            // Z3 invocation failed — fall through to original verdict.
+          }
+        }
+        // No guards found, or guard-augmented path failed: proxy was right to reject.
+        // Run verifyBlock on the original formalExpression as the rejection signal.
+        // formalExpression encodes the violation state → Z3 returns sat → reject candidate.
+        // NOTE: this does NOT verify that the fix makes the invariant hold. It is
+        // intentionally rejection-only (see original comment).
         const z3Result = verifyBlock(invariant.formalExpression);
         if (z3Result.result === "sat") return "sat";
         if (z3Result.result === "unsat") return "unsat";
@@ -357,10 +373,29 @@ export async function runOracleTwo(
   }
 
   // -----------------------------------------------------------------------
-  // Fallback: run Z3 on the original formalExpression.
+  // Fallback: run Z3 — try guard-augmented path first, then plain.
   // For novel invariants where the expression is self-contained SMT (no
-  // source references), this is the only check available.
+  // source references), this may be the only check available.
+  // Guard augmentation applies whenever guards are found via dominance.
   // -----------------------------------------------------------------------
+  if (invariant.bindings.length > 0) {
+    const guards = extractGuardConditions(overlay, invariant.bindings);
+    if (guards.guardCount > 0) {
+      const baseSmtWithoutCheck = invariant.formalExpression.replace(/\(check-sat\)[\s\S]*$/, "").trimEnd();
+      const augmented = baseSmtWithoutCheck +
+        "\n" + guards.smtAssertions.join("\n") + "\n(check-sat)";
+      try {
+        const z3Result = verifyBlock(augmented);
+        if (z3Result.result === "unsat") return "unsat";
+        if (z3Result.result === "sat") return "sat";
+        if (z3Result.result === "unknown") return "unknown";
+        return "error";
+      } catch {
+        // Fall through to plain Z3 below.
+      }
+    }
+  }
+
   try {
     const z3Result = verifyBlock(invariant.formalExpression);
     if (z3Result.result === "sat") return "sat";
