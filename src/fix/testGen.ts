@@ -228,6 +228,41 @@ it("${testName}", () => {
 }
 
 // ---------------------------------------------------------------------------
+// validateImportPaths
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse import statements from TypeScript source. For each relative-path
+ * import, verify the target resolves to a file in the overlay. Returns
+ * a list of unresolved import paths (empty when all resolve).
+ */
+export function validateImportPaths(
+  testFileAbsPath: string,
+  source: string,
+  overlay: OverlayHandle,
+): string[] {
+  const testDir = dirname(testFileAbsPath);
+  // Match both double- and single-quoted relative imports (handles multi-line by using [^'"]+)
+  const importRe = /import\b[^'"]*?['"](\.[^'"]+)['"]/g;
+  const unresolved: string[] = [];
+
+  let match: RegExpExecArray | null;
+  while ((match = importRe.exec(source)) !== null) {
+    const importedPath = match[1];
+    // Resolve against the test file's directory (absolute within the overlay)
+    const base = resolve(testDir, importedPath);
+    // Try with and without common extensions
+    const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}.js`];
+    const exists = candidates.some((c) => existsSync(c));
+    if (!exists) {
+      unresolved.push(importedPath);
+    }
+  }
+
+  return unresolved;
+}
+
+// ---------------------------------------------------------------------------
 // generateTestCodeViaAgent
 // ---------------------------------------------------------------------------
 
@@ -309,7 +344,16 @@ SOURCE CODE (post-fix, in overlay):
 ${functionSource.slice(0, 2000)}
 \`\`\`
 
-IMPORT PATH (from test file to module): ${importPath}
+=== IMPORT PATH — READ THIS CAREFULLY ===
+import path (use VERBATIM — do not rename, do not substitute, do not shorten):
+"${importPath}"
+
+Your import statement MUST be exactly:
+import { ... } from "${importPath}";
+
+Do NOT use the word "fixture" or any placeholder name — use the exact path above.
+Do NOT change "${importPath}" to anything else. Copy it character-for-character.
+=== END IMPORT PATH ===
 
 TEST FILE PATH: ${testFilePath}
 TEST NAME: ${testName}
@@ -339,7 +383,7 @@ Write the test file using your file editing tools now.`;
     );
   }
 
-  const code = readFileSync(absTestPath, "utf8").trim();
+  let code = readFileSync(absTestPath, "utf8").trim();
 
   // Validate: must have at least one it() call.
   if (!code.includes("it(") && !code.includes("it.")) {
@@ -353,6 +397,41 @@ Write the test file using your file editing tools now.`;
     throw new Error(
       `C5 agent: LLM-generated test code does not import from vitest.`,
     );
+  }
+
+  // Validate import paths — ensure all relative imports resolve in the overlay.
+  let unresolvedImports = validateImportPaths(absTestPath, code, overlay);
+  if (unresolvedImports.length > 0) {
+    // ONE retry: re-prompt with explicit failure detail.
+    const retryPrompt = `Your previous test file at ${testFilePath} contains import(s) that do not exist in the overlay: ${unresolvedImports.map((p) => `\`${p}\``).join(", ")}.
+
+The import path you MUST use is \`${importPath}\` — exact string, character-for-character.
+
+Your import statement MUST be:
+import { ... } from "${importPath}";
+
+Rewrite the test file at ${testFilePath} using ONLY this import path. Do not use "${unresolvedImports[0]}" or any other path.`;
+
+    await runAgentInOverlay({
+      overlay,
+      llm,
+      prompt: retryPrompt,
+      allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+    });
+
+    if (!existsSync(absTestPath)) {
+      throw new Error(
+        `C5 agent (retry): agent did not write test file at ${testFilePath}`,
+      );
+    }
+
+    code = readFileSync(absTestPath, "utf8").trim();
+    unresolvedImports = validateImportPaths(absTestPath, code, overlay);
+    if (unresolvedImports.length > 0) {
+      throw new Error(
+        `C5 agent: import path validation failed after retry. Unresolved imports: ${unresolvedImports.join(", ")}. Expected import path: "${importPath}"`,
+      );
+    }
   }
 
   return code;

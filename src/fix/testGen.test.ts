@@ -19,6 +19,7 @@ import {
   chooseTestFilePath,
   generateTestCode,
   generateTestCodeViaAgent,
+  validateImportPaths,
   revertFixInOverlay,
   restoreFixInOverlay,
 } from "./testGen.js";
@@ -132,8 +133,9 @@ const BUGGY_SOURCE = `export function divide(a: number, b: number): number {
 `;
 
 // Canned test code returned by stub LLM (no trailing newline — generateTestCode trims)
+// Uses "./divide" — the correct relative import from src/ to src/divide.ts
 const CANNED_TEST_CODE = `import { it, expect } from "vitest";
-import { divide } from "../divide";
+import { divide } from "./divide";
 
 it("regression: divide(a, b) crashes when b is zero", () => {
   // Z3 witness: a=5, b=0 triggers division-by-zero before fix
@@ -310,6 +312,63 @@ describe("C5: generateTestCode", () => {
       ).rejects.toThrow("no it() call");
     } finally {
       rmSync(worktreePath, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 3b: validateImportPaths
+// ---------------------------------------------------------------------------
+
+describe("C5: validateImportPaths", () => {
+  it("returns empty array when all relative imports resolve", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "provekit-c5-vip-ok-"));
+    try {
+      mkdirSync(join(tmpDir, "src"), { recursive: true });
+      writeFileSync(join(tmpDir, "src", "divide.ts"), FIXED_SOURCE, "utf8");
+
+      const testFileAbsPath = join(tmpDir, "src", "divide.regression.test.ts");
+      const source = `import { it, expect } from "vitest";\nimport { divide } from "./divide";\nit("x", () => {});`;
+      const overlay = makeMinimalOverlay(tmpDir);
+
+      const result = validateImportPaths(testFileAbsPath, source, overlay);
+      expect(result).toEqual([]);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns unresolved paths when relative import target is missing", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "provekit-c5-vip-bad-"));
+    try {
+      mkdirSync(join(tmpDir, "src"), { recursive: true });
+      // Note: we do NOT create "fixture.ts" — only "divide.ts" exists
+      writeFileSync(join(tmpDir, "src", "divide.ts"), FIXED_SOURCE, "utf8");
+
+      const testFileAbsPath = join(tmpDir, "src", "divide.regression.test.ts");
+      const source = `import { it, expect } from "vitest";\nimport { divide } from "./fixture";\nit("x", () => {});`;
+      const overlay = makeMinimalOverlay(tmpDir);
+
+      const result = validateImportPaths(testFileAbsPath, source, overlay);
+      expect(result).toEqual(["./fixture"]);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores non-relative (bare) imports", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "provekit-c5-vip-bare-"));
+    try {
+      mkdirSync(join(tmpDir, "src"), { recursive: true });
+
+      const testFileAbsPath = join(tmpDir, "src", "divide.regression.test.ts");
+      const source = `import { it } from "vitest";\nimport path from "path";\nit("x", () => {});`;
+      const overlay = makeMinimalOverlay(tmpDir);
+
+      const result = validateImportPaths(testFileAbsPath, source, overlay);
+      expect(result).toEqual([]);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 });
