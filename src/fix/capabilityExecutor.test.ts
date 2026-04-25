@@ -186,6 +186,39 @@ export function extractTestBinaryExpr(tx: any) {
 // Test 7: tmpfiles cleaned up after execution
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Test 8: SAST schema FK imports — canonical references(() => nodes.id)
+// must resolve when the schema is loaded from the executor cache dir.
+// ---------------------------------------------------------------------------
+
+describe("capabilityExecutor — SAST schema FK imports", () => {
+  it("schema importing nodes from src/sast/schema/nodes.js loads via stub", async () => {
+    const spec = makeSpec({
+      schemaTs: `
+import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { nodes } from "../../../src/sast/schema/nodes.js";
+export const nodeTestBinaryExpr = sqliteTable("node_test_binary_expr", {
+  nodeId: text("node_id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
+});`,
+      extractorTs: `
+import { SyntaxKind } from "ts-morph";
+import { nodeTestBinaryExpr } from "./schema";
+export function extractTestBinaryExpr(tx: any, sourceFile: any, nodeIdByNode: any): void {
+  sourceFile.forEachDescendant((node: any) => {
+    if (node.getKind() === SyntaxKind.BinaryExpression) {
+      const nid = nodeIdByNode.get(node);
+      if (nid) tx.insert(nodeTestBinaryExpr).values({ nodeId: nid }).run();
+    }
+  });
+}`,
+      migrationSql: "CREATE TABLE node_test_binary_expr (node_id TEXT NOT NULL PRIMARY KEY)",
+    });
+    const result = await executeExtractorSpec(spec);
+    expect(result.passed).toBe(true);
+    expect(result.detail).toContain("positive fixtures: 1/1");
+  }, 30000);
+});
+
 describe("capabilityExecutor — tmpfile cleanup", () => {
   it("tmpdir is removed after successful execution", async () => {
     // Per-test scratch dir scopes the cleanup-verification to ONLY this

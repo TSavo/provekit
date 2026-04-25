@@ -49,6 +49,23 @@ interface FixtureResult {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Stub written next to transpiled schema/extractor in the executor cache dir.
+ * Replaces imports from src/sast/schema/* so capability specs that follow the
+ * canonical FK pattern (`references(() => nodes.id, ...)`) load at oracle #16
+ * time. Returns a self-recursive Proxy for any property access — drizzle's
+ * references() callback isn't actually invoked during sqliteTable definition,
+ * and we apply migration.sql directly rather than using drizzle's SQL gen.
+ */
+const SAST_STUB_SOURCE = `"use strict";
+const stub = new Proxy(function () {}, {
+  get(_t, _p) { return stub; },
+  apply() { return stub; },
+  construct() { return stub; },
+});
+module.exports = new Proxy({}, { get() { return stub; } });
+`;
+
 /** Transpile TypeScript source to CJS JavaScript in-memory. */
 function transpileTs(source: string): string {
   const result = ts.transpileModule(source, {
@@ -156,6 +173,25 @@ export async function executeExtractorSpec(
       };
     }
 
+    // Capability schemas commonly reference the SAST nodes table for FK cascade,
+    // e.g. `references(() => nodes.id, { onDelete: "cascade" })` — that's the
+    // canonical pattern in src/sast/schema/dataFlow.ts and dominance.ts. The
+    // import path resolves at the source location (.provekit/capability-proposal/<name>/)
+    // but NOT from the executor cache dir, AND the project ships TS source only
+    // (no transpiled .js for src/sast/schema/nodes.ts to require). Rewrite any
+    // SAST schema import to a local proxy stub. Drizzle stores the references()
+    // callback but doesn't invoke it at sqliteTable-definition time — and the
+    // executor applies migration.sql directly, bypassing drizzle's SQL gen — so
+    // the stub never has to behave like a real drizzle column.
+    schemaJs = schemaJs.replace(
+      /require\(["'][^"']*\/sast\/schema\/[^"']+["']\)/g,
+      'require("./_sast_stub.js")',
+    );
+    extractorJs = extractorJs.replace(
+      /require\(["'][^"']*\/sast\/schema\/[^"']+["']\)/g,
+      'require("./_sast_stub.js")',
+    );
+
     // Write both transpiled files. Schema is written as schema.js (NOT
     // .cjs) because Node's CJS module resolver tries .js / .json / .node
     // by default — `require('./schema')` from extractor.cjs would fail to
@@ -163,6 +199,8 @@ export async function executeExtractorSpec(
     // treats it as CommonJS.
     const jsPath = join(tmpDir, "extractor.cjs");
     const schemaJsPath = join(tmpDir, "schema.js");
+    const sastStubPath = join(tmpDir, "_sast_stub.js");
+    writeFileSync(sastStubPath, SAST_STUB_SOURCE);
     writeFileSync(schemaJsPath, schemaJs);
     writeFileSync(jsPath, extractorJs);
 
