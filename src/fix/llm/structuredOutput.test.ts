@@ -99,6 +99,22 @@ describe("requestStructuredJson", () => {
       ).rejects.toThrow(/parseJsonFromLlm/);
     });
 
+    it("recovers JSON from prose-prefixed fenced response (opus tier behavior)", async () => {
+      // Opus often returns "Here is the output:\n```json\n{...}\n```" despite
+      // JSON-only prompts. The fallback should extract the fenced block.
+      const proseWrapped =
+        'Here is the invariant output:\n\n```json\n{"answer": 99}\n```';
+      const stub = new StubLLMProvider(
+        new Map([["prose", proseWrapped]]),
+      );
+      const result = await requestStructuredJson<{ answer: number }>({
+        prompt: "prose",
+        llm: stub,
+        stage: "unit",
+      });
+      expect(result.answer).toBe(99);
+    });
+
     it("does NOT route to agent mode when llm.agent exists but useAgent is unspecified", async () => {
       // StubLLMProvider with agentResponses defines .agent. Default helper
       // behavior must keep using complete(), not the canned agent.

@@ -305,10 +305,22 @@ async function runTextMode<T>(args: {
   });
   logger?.response(stage, model ?? "sonnet", raw);
 
-  // Parse with the legacy tolerant parser. It strips fences and trims
-  // whitespace, but does NOT tolerate prose-prefix; schemaCheck still runs
-  // after.
-  const parsed = parseJsonFromLlm<unknown>(raw, stage);
+  // Parse with the legacy tolerant parser first (handles bare JSON and simple
+  // ```fenced``` JSON). On failure, fall back to extractJsonFromText, which
+  // also recovers prose-wrapped fenced JSON ("Here is the output: ```json...```")
+  // — a common opus tier behavior despite "JSON only" prompts. Mirrors the
+  // agent-mode inline-fallback so a single disobedience doesn't abort a run.
+  let parsed: unknown;
+  try {
+    parsed = parseJsonFromLlm<unknown>(raw, stage);
+  } catch (parseErr) {
+    const recovered = extractJsonFromText(raw);
+    if (recovered === null) throw parseErr;
+    parsed = recovered;
+    logger?.detail(
+      `[${stage}] structuredOutput: recovered JSON from prose-wrapped text response (model returned a preamble despite JSON-only contract)`,
+    );
+  }
 
   if (schemaCheck) {
     return schemaCheck(parsed);
