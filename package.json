@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "fuzz": "ts-node --esm scripts/fuzz.ts"
   },
   "keywords": [
     "logging",
@@ -45,6 +46,7 @@
     "@types/pino": "^7.0.4",
     "@vitest/ui": "^4.1.4",
     "drizzle-kit": "^0.31.10",
+    "fast-check": "^4.7.0",
     "vitest": "^4.1.4"
   }
 }
