@@ -9,6 +9,8 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { execFileSync } from "child_process";
 import type { OverlayHandle, CodePatch, LLMProvider, AgentRequestOptions } from "./types.js";
+import { createNoopLogger } from "./logger.js";
+import type { FixLoopLogger } from "./logger.js";
 
 /**
  * Run an LLM agent in the overlay's worktree. After the agent returns,
@@ -21,6 +23,7 @@ export async function runAgentInOverlay(args: {
   allowedTools?: string[];
   model?: AgentRequestOptions["model"];
   maxTurns?: number;
+  logger?: FixLoopLogger;
 }): Promise<{
   patch: CodePatch;
   rationale: string;
@@ -32,6 +35,7 @@ export async function runAgentInOverlay(args: {
     );
   }
 
+  const logger = args.logger ?? createNoopLogger();
   const cwd = args.overlay.worktreePath;
 
   const result = await args.llm.agent(args.prompt, {
@@ -40,6 +44,38 @@ export async function runAgentInOverlay(args: {
     model: args.model,
     maxTurns: args.maxTurns ?? 20,
   });
+
+  // Emit one detail line per tool use into the fix-loop log file.
+  for (let i = 0; i < result.toolUses.length; i++) {
+    const tu = result.toolUses[i];
+    const inp = (tu.input ?? {}) as Record<string, unknown>;
+    const errorFlag = tu.isError ? " [ERROR]" : "";
+    const durationStr = `${tu.ms}ms`;
+    let detail: string;
+    switch (tu.name) {
+      case "Edit":
+        detail = `tool_use[${i + 1}] turn=${tu.turn} Edit(${inp.file_path ?? ""}, -${String(inp.old_string ?? "").length}/+${String(inp.new_string ?? "").length} chars) ${durationStr}${errorFlag}`;
+        break;
+      case "Write":
+        detail = `tool_use[${i + 1}] turn=${tu.turn} Write(${inp.file_path ?? ""}, ${String(inp.content ?? "").length} chars) ${durationStr}${errorFlag}`;
+        break;
+      case "Read":
+        detail = `tool_use[${i + 1}] turn=${tu.turn} Read(${inp.file_path ?? ""}) ${durationStr}${errorFlag}`;
+        break;
+      case "Bash":
+        detail = `tool_use[${i + 1}] turn=${tu.turn} Bash($ ${String(inp.command ?? "").slice(0, 200)}) ${durationStr}${errorFlag}`;
+        break;
+      case "Glob":
+        detail = `tool_use[${i + 1}] turn=${tu.turn} Glob(${inp.pattern ?? ""} in ${inp.path ?? "."}) ${durationStr}${errorFlag}`;
+        break;
+      case "Grep":
+        detail = `tool_use[${i + 1}] turn=${tu.turn} Grep(${inp.pattern ?? ""} in ${inp.path ?? "."}) ${durationStr}${errorFlag}`;
+        break;
+      default:
+        detail = `tool_use[${i + 1}] turn=${tu.turn} ${tu.name}(${JSON.stringify(tu.input).slice(0, 80)}) ${durationStr}${errorFlag}`;
+    }
+    logger.detail(detail);
+  }
 
   // Reconstruct CodePatch: modified tracked files from git diff + new untracked files.
   // Exclude .provekit/ — it contains the scratch SAST DB which must not be overwritten.

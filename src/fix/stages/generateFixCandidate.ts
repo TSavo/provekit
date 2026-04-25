@@ -38,7 +38,7 @@ export async function generateFixCandidate(args: {
 }): Promise<FixCandidate> {
   // Agent path: if the LLM provider supports agent(), use capture-the-change.
   if (args.llm.agent) {
-    return generateFixCandidateViaAgent(args);
+    return generateFixCandidateViaAgent({ ...args, logger: args.logger });
   }
   // Legacy JSON-patch path.
   return generateFixCandidateViaJson(args);
@@ -55,6 +55,7 @@ async function generateFixCandidateViaAgent(args: {
   overlay: OverlayHandle;
   llm: LLMProvider;
   options?: { maxCandidates?: number; minConfidence?: number };
+  logger?: FixLoopLogger;
 }): Promise<FixCandidate> {
   const { signal, locus, invariant, overlay } = args;
 
@@ -66,6 +67,7 @@ async function generateFixCandidateViaAgent(args: {
     llm: args.llm,
     prompt,
     maxTurns: 20,
+    logger: args.logger,
   });
 
   // verifyCandidate applies the patch to the overlay (idempotent rewrite),
@@ -94,6 +96,7 @@ async function generateFixCandidateViaAgent(args: {
     llm: args.llm,
     prompt: retryPrompt,
     maxTurns: 20,
+    logger: args.logger,
   });
 
   const proposed2 = { patch: retryPatch, rationale: retryRationale, confidence: 1.0 };

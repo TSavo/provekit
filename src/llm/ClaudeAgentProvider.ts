@@ -1,6 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { execFileSync } from "child_process";
-import { LLMProvider, LLMRequestOptions, LLMResponse, LLMStreamEvent, AgentRequestOptions, AgentResult } from "./Provider";
+import { LLMProvider, LLMRequestOptions, LLMResponse, LLMStreamEvent, AgentRequestOptions, AgentResult, ToolUseRecord } from "./Provider";
 
 export class ClaudeAgentProvider implements LLMProvider {
   readonly name = "claude-agent-sdk";
@@ -71,6 +71,12 @@ export class ClaudeAgentProvider implements LLMProvider {
 
     let turnsUsed = 0;
     let finalText = "";
+    const toolUses: ToolUseRecord[] = [];
+
+    // Pending tool calls: keyed by tool_use id, value is { turn, startMs }.
+    const pendingTools = new Map<string, { turn: number; startMs: number; name: string; input: unknown }>();
+
+    let toolUseCounter = 0;
 
     for await (const message of query({
       prompt,
@@ -85,10 +91,65 @@ export class ClaudeAgentProvider implements LLMProvider {
     })) {
       if (message.type === "assistant") {
         turnsUsed++;
+        const content = (message as any).message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === "tool_use") {
+              toolUseCounter++;
+              pendingTools.set(block.id, {
+                turn: turnsUsed,
+                startMs: Date.now(),
+                name: block.name,
+                input: block.input,
+              });
+              const summary = formatToolSummary(block.name, block.input);
+              console.log(`[llm:${this.name}] tool_use #${toolUseCounter}: ${block.name}(${summary})`);
+            }
+          }
+        }
       }
+
+      if (message.type === "user") {
+        const content = (message as any).message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === "tool_result") {
+              const pending = pendingTools.get(block.tool_use_id);
+              if (pending) {
+                pendingTools.delete(block.tool_use_id);
+                const ms = Date.now() - pending.startMs;
+                const resultPreview = extractResultPreview(block.content);
+                toolUses.push({
+                  id: block.tool_use_id,
+                  name: pending.name,
+                  input: pending.input,
+                  resultPreview,
+                  isError: !!block.is_error,
+                  turn: pending.turn,
+                  ms,
+                });
+              }
+            }
+          }
+        }
+      }
+
       if (message.type === "result" && message.subtype === "success") {
         finalText = message.result ?? "";
       }
+    }
+
+    // Flush any tool_use blocks that never got a matching tool_result.
+    for (const [id, pending] of pendingTools) {
+      toolUses.push({
+        id,
+        name: pending.name,
+        input: pending.input,
+        resultPreview: undefined,
+        isError: false,
+        turn: pending.turn,
+        ms: Date.now() - pending.startMs,
+      });
     }
 
     // Gather modified tracked files and new untracked files.
@@ -131,6 +192,50 @@ export class ClaudeAgentProvider implements LLMProvider {
       diff,
       text: finalText,
       turnsUsed,
+      toolUses,
     };
   }
+}
+
+/**
+ * Build a concise one-line summary of a tool call for console logging.
+ * File paths are always shown (safety surface). Commands truncated at 200 chars.
+ */
+function formatToolSummary(name: string, input: unknown): string {
+  const inp = (input ?? {}) as Record<string, unknown>;
+  switch (name) {
+    case "Edit":
+      return `${inp.file_path ?? ""}, -${String(inp.old_string ?? "").length}/${String(inp.new_string ?? "").length} chars`;
+    case "Write":
+      return `${inp.file_path ?? ""}, ${String(inp.content ?? "").length} chars`;
+    case "Read":
+      return String(inp.file_path ?? "");
+    case "Bash":
+      return `$ ${String(inp.command ?? "").slice(0, 200)}`;
+    case "Glob":
+      return `${inp.pattern ?? ""} in ${inp.path ?? "."}`;
+    case "Grep":
+      return `${inp.pattern ?? ""} in ${inp.path ?? "."}`;
+    default:
+      return JSON.stringify(input).slice(0, 80);
+  }
+}
+
+/**
+ * Extract up to 500 chars of preview text from a tool_result content block.
+ * content may be a string or an array of content blocks.
+ */
+function extractResultPreview(content: unknown): string | undefined {
+  if (content == null) return undefined;
+  if (typeof content === "string") {
+    return content.slice(0, 500);
+  }
+  if (Array.isArray(content)) {
+    const text = content
+      .filter((b: any) => b.type === "text")
+      .map((b: any) => b.text ?? "")
+      .join("");
+    return text.slice(0, 500) || undefined;
+  }
+  return undefined;
 }

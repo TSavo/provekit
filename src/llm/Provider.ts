@@ -25,6 +25,23 @@ export interface AgentRequestOptions {
   systemPrompt?: string;
 }
 
+export interface ToolUseRecord {
+  /** Tool call ID from the SDK. */
+  id: string;
+  /** Tool name: Read, Edit, Write, Bash, Glob, Grep, etc. */
+  name: string;
+  /** Full input parameters as received from the SDK. */
+  input: unknown;
+  /** First 500 chars of the tool result (or error text). */
+  resultPreview?: string;
+  /** Whether the tool result carried is_error=true. */
+  isError: boolean;
+  /** Turn index (incremented on each assistant message). */
+  turn: number;
+  /** Wall-clock duration from tool_use emission to tool_result receipt, in ms. */
+  ms: number;
+}
+
 export interface AgentResult {
   /** Files changed (relative to cwd), from git diff --name-only. */
   filesChanged: string[];
@@ -34,6 +51,8 @@ export interface AgentResult {
   text: string;
   /** Number of turns consumed. */
   turnsUsed: number;
+  /** All tool calls made during the agent run, in order. */
+  toolUses: ToolUseRecord[];
 }
 
 export interface LLMProvider {

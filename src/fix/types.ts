@@ -281,6 +281,7 @@ export class StubLLMProvider implements LLMProvider {
           diff,
           text: cannedResult.text ?? "stub agent completed",
           turnsUsed: 1,
+          toolUses: [],
         };
       };
     }
