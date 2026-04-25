@@ -785,4 +785,130 @@ describe("C3: candidateGen", () => {
     expect(candidate.overlayZ3Verdict).toBe("unsat");
     expect(candidate.llmRationale).toContain("JSON path");
   }, 60_000);
+
+  // -------------------------------------------------------------------------
+  // 16. Adaptive oracle #2 — ABSTRACT (Bool-only) invariant defers to C5
+  // -------------------------------------------------------------------------
+  it("runOracleTwo: abstract invariant + source_expr still present → 'deferred_behavioral' (C5 owns proof)", async () => {
+    const source = 'export function risky(input: string) { return require("child_process").execSync(`ls ${input}`); }\n';
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-c3-maindb-abstract1-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePath);
+
+    const locus = makeLocus(filePath, "abstract000000");
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    // Apply a sanitization patch that keeps `input` and `execSync` references.
+    const patched = 'export function risky(input: string) { const safe = String(input).replace(/[;|&`$]/g, ""); return require("child_process").execSync(`ls ${safe}`); }\n';
+    applyPatchToOverlay(overlay, {
+      fileEdits: [{ file: "fixture.ts", newContent: patched }],
+      description: "sanitize input but keep execSync interpolation",
+    });
+    await reindexOverlay(overlay);
+
+    // Abstract invariant: Bool-only, no Int/Real declarations.
+    const abstractInvariant: InvariantClaim = {
+      principleId: null,
+      description: "input must not contain shell metacharacters when reaching execSync",
+      formalExpression:
+        "(declare-const input_contains_metachar Bool)\n(assert input_contains_metachar)\n(check-sat)",
+      bindings: [
+        { smt_constant: "input_contains_metachar", source_line: 1, source_expr: "input", sort: "Bool" },
+      ],
+      complexity: 1,
+      witness: "sat",
+    };
+
+    const verdict = await runOracleTwo(overlay, abstractInvariant);
+    // `input` still appears in patched file → bug_site_removed false. Bool-only
+    // invariant → Z3 cannot help → defer to C5's behavioral oracle.
+    expect(verdict).toBe("deferred_behavioral");
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
+  // 17. Adaptive oracle #2 — ABSTRACT but bug site removed → 'bug_site_removed'
+  // -------------------------------------------------------------------------
+  it("runOracleTwo: abstract invariant + source_expr removed → 'bug_site_removed' (kind-agnostic)", async () => {
+    const source = 'export function risky(input: string) { return require("child_process").execSync(`ls ${input}`); }\n';
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-c3-maindb-abstract2-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePath);
+
+    const locus = makeLocus(filePath, "abstract000001");
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    // Patch removes the shell-injection-trigger entirely (renames param + drops execSync).
+    const patched = 'export function risky(_safe: string) { return null; }\n';
+    applyPatchToOverlay(overlay, {
+      fileEdits: [{ file: "fixture.ts", newContent: patched }],
+      description: "delete dangerous code path",
+    });
+    await reindexOverlay(overlay);
+
+    const abstractInvariant: InvariantClaim = {
+      principleId: null,
+      description: "input must not contain shell metacharacters when reaching execSync",
+      formalExpression:
+        "(declare-const input_contains_metachar Bool)\n(assert input_contains_metachar)\n(check-sat)",
+      bindings: [
+        { smt_constant: "input_contains_metachar", source_line: 1, source_expr: "input", sort: "Bool" },
+      ],
+      complexity: 1,
+      witness: "sat",
+    };
+
+    const verdict = await runOracleTwo(overlay, abstractInvariant);
+    // `input` is gone from the patched file → kind-agnostic structural removal wins.
+    expect(verdict).toBe("bug_site_removed");
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
+  // 18. Concrete invariant unchanged: source_expr still present → Z3 sat (regression)
+  // -------------------------------------------------------------------------
+  it("runOracleTwo: concrete (Int) invariant + source_expr still present → 'sat' (existing behavior preserved)", async () => {
+    const source = 'export function risky() { return "DANGER_EXPR"; }\n';
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-c3-maindb-concrete1-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePath);
+
+    const locus = makeLocus(filePath, "concrete000000");
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const sameContent = 'export function risky() { return "DANGER_EXPR" + ""; }\n';
+    applyPatchToOverlay(overlay, {
+      fileEdits: [{ file: "fixture.ts", newContent: sameContent }],
+      description: "does not remove DANGER_EXPR",
+    });
+    await reindexOverlay(overlay);
+
+    // CONCRETE: has Int declaration. Adaptive routing must not affect this path.
+    const concreteInvariant = makeNovelInvariant(["DANGER_EXPR"]);
+
+    const verdict = await runOracleTwo(overlay, concreteInvariant);
+    expect(verdict).toBe("sat");
+  }, 30_000);
 });

@@ -44,6 +44,7 @@ import type { InvariantClaim, BugSignal, LLMProvider, InvariantCitation } from "
 import { createNoopLogger, type FixLoopLogger } from "./logger.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
 import { verifyBlock } from "../verifier.js";
+import { classifyInvariantKind as classifyInvariantKindShared, type InvariantKind as InvariantKindShared } from "./invariantKind.js";
 
 // ---------------------------------------------------------------------------
 // Shared result shape
@@ -689,35 +690,17 @@ Respond with ONLY a JSON object (no markdown fences):
 }
 
 // ---------------------------------------------------------------------------
-// Invariant kind classification
+// Invariant kind classification — promoted to shared utility
 // ---------------------------------------------------------------------------
+//
+// Re-exported from ./invariantKind.ts so all SMT-using oracles share the same
+// classifier. The post-hoc demotion (concrete → abstract when fixtures returns
+// 0/N negatives) is local to this module's runInvariantFidelity orchestration
+// because it depends on a fidelity-check side-effect; the invariantKind module
+// stays a pure SMT-shape classifier.
 
-export type InvariantKind = "concrete" | "abstract";
-
-/**
- * Classify an invariant by its SMT formalization.
- *
- * ABSTRACT: no Int/Real declarations in the SMT body. These are taint-style
- * invariants where Z3 has nothing useful to evaluate.
- *
- * CONCRETE: at least one Int/Real declaration. Arithmetic-style invariants
- * (division-by-zero with (= b 0), off-by-one with (>= idx len), etc.).
- *
- * The orchestrator does post-hoc demotion: if the concrete fixtures check
- * returns "0 negative correct", the SMT was actually a Bool-flag-as-Int
- * encoding (e.g. (= input 1)) where fixtures classification is structurally
- * meaningless, and the orchestrator falls back to prose-overlap.
- *
- * The ground truth here is the SMT body, not the bindings list. The
- * formulateInvariant parser defaults missing `sort` fields to "Int" (line
- * 403 of stages/formulateInvariant.ts), so LLM-omitted sort metadata cannot
- * be trusted to distinguish a Bool-encoded taint invariant from arithmetic.
- */
-export function classifyInvariantKind(invariant: InvariantClaim): InvariantKind {
-  const numericDeclRe = /\(declare-const\s+\S+\s+(Int|Real)\b/;
-  if (!numericDeclRe.test(invariant.formalExpression)) return "abstract";
-  return "concrete";
-}
+export type InvariantKind = InvariantKindShared;
+export const classifyInvariantKind = classifyInvariantKindShared;
 
 // ---------------------------------------------------------------------------
 // runInvariantFidelity orchestration

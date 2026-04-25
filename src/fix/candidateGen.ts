@@ -38,6 +38,7 @@ import type {
 import { parseJsonFromLlm } from "./llmJson.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
 import { extractGuardConditions } from "./pathConditions.js";
+import { classifyInvariantKind } from "./invariantKind.js";
 
 // ---------------------------------------------------------------------------
 // Internal shape for a proposed fix from the LLM
@@ -289,7 +290,30 @@ export function parseProposedFixes(rawOrParsed: string | unknown): ProposedFix[]
 // Oracle #2
 // ---------------------------------------------------------------------------
 
-export type OracleTwoVerdict = "sat" | "unsat" | "unknown" | "error" | "bug_site_removed";
+/**
+ * Oracle #2 verdicts.
+ *
+ * - "unsat": Z3 confirmed the post-fix violation SMT is unsat. Invariant holds.
+ * - "bug_site_removed": structural check confirmed the source expressions are
+ *   gone from the modified files. Kind-agnostic — works for both concrete and
+ *   abstract invariants. (e.g. fix deletes the call site entirely.)
+ * - "deferred_behavioral": ABSTRACT invariant whose source expressions still
+ *   appear in modified files (sanitization-style fix that preserves the call).
+ *   Z3 cannot prove the abstract Bool predicate is now false because there's
+ *   no formula linking the sanitization to the predicate. The behavioral gate
+ *   at C5 (oracle #9: test fails on original code, passes on patched) IS the
+ *   verification. C3 treats this as a pass-forward verdict; C5 is responsible
+ *   for the real proof.
+ * - "sat": Z3 says the violation is still reachable. Reject the candidate.
+ * - "unknown" / "error": treat as failure.
+ */
+export type OracleTwoVerdict =
+  | "sat"
+  | "unsat"
+  | "unknown"
+  | "error"
+  | "bug_site_removed"
+  | "deferred_behavioral";
 
 /**
  * Load the DSL source for a principle from the overlay's .provekit/principles/ dir.
@@ -311,25 +335,35 @@ function loadPrincipleDslFromOverlay(
 /**
  * Oracle #2: verify that the invariant now holds in the overlay's scratch DB.
  *
- * Returns "bug_site_removed" when approach (a) confirms the fix structurally
- * removed the bug site. Returns "unsat" when Z3 confirms the negated goal is
- * unprovable. Returns "sat" | "unknown" | "error" for failure cases.
+ * Adaptive routing by invariant kind:
  *
- * Defers to approach (a) first:
- *   - Principle path: re-evaluate the principle's DSL against the overlay's
- *     scratch DB. Zero matches → bug_site_removed.
- *   - Novel path: check whether each SMT binding's source_expr appears in
- *     the overlay's modified file contents. All absent → bug_site_removed.
+ *   1. Approach (a) — structural bug-site removal. KIND-AGNOSTIC.
+ *      Either the principle no longer matches, or all binding source_exprs
+ *      are gone from modified files. Either way: bug_site_removed.
  *
- * Falls back to approach (b) — re-running verifyBlock on the original
- * formalExpression — only as a last resort check for novel invariants
- * where the source_expr strings still appear (treats as unknown/failure
- * per spec decision #6).
+ *   2. CONCRETE path (Int/Real declarations present): existing Z3 logic.
+ *      Try guard-augmented SMT (path conditions from dominance), then plain
+ *      verifyBlock. Z3 unsat = invariant holds.
+ *
+ *   3. ABSTRACT path (Bool-only, no Int/Real declarations): no Z3 fallback.
+ *      Z3 cannot prove the abstract taint predicate is now false because
+ *      there's no formula linking sanitization to the Bool predicate. Return
+ *      "deferred_behavioral" so the orchestrator pass-forwards to C5, where
+ *      mutation-verified regression test (oracle #9) IS the verification:
+ *        - test fails on original code (must)
+ *        - test passes on patched code (must)
+ *      That's empirical proof equivalent in informational content.
+ *
+ * Returns "bug_site_removed" | "unsat" on success.
+ * Returns "deferred_behavioral" for abstract invariants whose source
+ * expressions still appear in modified files (sanitization-style fix).
+ * Returns "sat" | "unknown" | "error" for failure cases.
  */
 export async function runOracleTwo(
   overlay: OverlayHandle,
   invariant: InvariantClaim,
 ): Promise<OracleTwoVerdict> {
+  const kind = classifyInvariantKind(invariant);
   // -----------------------------------------------------------------------
   // Approach (a): principle path
   // -----------------------------------------------------------------------
@@ -347,9 +381,16 @@ export async function runOracleTwo(
           return "bug_site_removed";
         }
         // Matches still exist — fix didn't remove the bug site structurally.
-        // Try the guard-augmented path: extract dominating guards from the overlay
-        // SAST and augment the violation SMT. If Z3 returns unsat, the guards make
-        // the violation unreachable → invariant holds → oracle #2 passes.
+        // For ABSTRACT invariants, Z3 cannot help: the principle still matches
+        // because the call site is still there post-sanitization, but Z3 has no
+        // formula linking the sanitization to the abstract Bool predicate.
+        // Defer to C5's behavioral gate (oracle #9).
+        if (kind === "abstract") {
+          return "deferred_behavioral";
+        }
+        // CONCRETE path: try guard-augmented SMT (extract dominating guards
+        // from overlay SAST). If Z3 returns unsat under guards, the path is
+        // unreachable → invariant holds.
         const guards = extractGuardConditions(overlay, invariant.bindings);
         if (guards.guardCount > 0) {
           // Strip the trailing (check-sat) from formalExpression and append guard
@@ -413,11 +454,18 @@ export async function runOracleTwo(
   }
 
   // -----------------------------------------------------------------------
-  // Fallback: run Z3 — try guard-augmented path first, then plain.
-  // For novel invariants where the expression is self-contained SMT (no
-  // source references), this may be the only check available.
-  // Guard augmentation applies whenever guards are found via dominance.
+  // Fallback for novel invariants: ABSTRACT defers to C5; CONCRETE runs Z3.
+  //
+  // For ABSTRACT (Bool-only) invariants, Z3 has no formula linking source-code
+  // sanitization to the abstract predicate. Re-running verifyBlock on the
+  // unmodified formalExpression would just return "sat" again (it's the same
+  // SMT as pre-fix) and incorrectly reject every candidate. Defer to oracle #9.
   // -----------------------------------------------------------------------
+  if (kind === "abstract") {
+    return "deferred_behavioral";
+  }
+
+  // CONCRETE: try guard-augmented Z3 first, then plain.
   if (invariant.bindings.length > 0) {
     const guards = extractGuardConditions(overlay, invariant.bindings);
     if (guards.guardCount > 0) {
@@ -481,9 +529,22 @@ export async function verifyCandidate(
   const verdict = await runOracleTwo(overlay, invariant);
   audit.z3RunMs = Date.now() - z3Start;
 
-  const invariantHolds = verdict === "bug_site_removed" || verdict === "unsat";
+  // Three pass verdicts:
+  //   - "unsat":             Z3 confirmed invariant holds (concrete proof).
+  //   - "bug_site_removed":  structural removal (kind-agnostic).
+  //   - "deferred_behavioral": abstract invariant; C5 oracle #9 owns the proof.
+  const invariantHolds =
+    verdict === "bug_site_removed" ||
+    verdict === "unsat" ||
+    verdict === "deferred_behavioral";
+
+  // Surface the verdict honestly in the FixCandidate audit. The narrow type
+  // doesn't include "deferred_behavioral", so map it to "unsat" (pass-forward)
+  // for downstream callers — the audit trail logger gets the full string.
   const z3Verdict: "sat" | "unsat" | "unknown" | "error" =
-    verdict === "bug_site_removed" ? "unsat" : verdict;
+    verdict === "bug_site_removed" || verdict === "deferred_behavioral"
+      ? "unsat"
+      : verdict;
 
   return { invariantHoldsUnderOverlay: invariantHolds, z3Verdict, audit };
 }
