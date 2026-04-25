@@ -4,7 +4,7 @@
  * Each LLM-calling stage looks up its model tier via getModelTier(stageName).
  * The default mapping in MODEL_TIERS calibrates cost/latency:
  *
- *   - haiku: short-text parsing (intake adapters, classify) — opus is overkill.
+ *   - haiku: short-text parsing (intake adapters, classify); opus is overkill.
  *   - sonnet: code generation + diffing (C3, C4, C5, C6 principle proposal)
  *             where we need quality but not the load-bearing reasoning of opus.
  *   - opus: load-bearing reasoning (C1 invariant, C6 capability spec).
@@ -35,12 +35,12 @@ export type ModelTier = "haiku" | "sonnet" | "opus";
  * Stage-to-tier mapping. Keys are the literal stage strings used at call sites
  * (passed to requestStructuredJson({ stage }) or as model: arg to runAgentInOverlay).
  *
- * If a stage isn't listed here, getModelTier falls back to "sonnet" — the
- * defensive middle tier.
+ * If a stage isn't listed here, getModelTier falls back to "sonnet" (the
+ * defensive middle tier).
  */
 export const MODEL_TIERS: Record<string, ModelTier> = {
   // -------------------------------------------------------------------------
-  // B1: intake — short-text parsing, structured-extraction prompts.
+  // B1: intake. Short-text parsing, structured-extraction prompts.
   // Opus is overkill; haiku handles these in <1s.
   // -------------------------------------------------------------------------
   "intake-report": "haiku",
@@ -49,12 +49,12 @@ export const MODEL_TIERS: Record<string, ModelTier> = {
   "intake-runtimeLog": "haiku",
 
   // -------------------------------------------------------------------------
-  // B2: classify — short categorization.
+  // B2: classify. Short categorization.
   // -------------------------------------------------------------------------
   classify: "haiku",
 
   // -------------------------------------------------------------------------
-  // C1: formulateInvariant — load-bearing. Whole correctness story rides on
+  // C1: formulateInvariant. Load-bearing; whole correctness story rides on
   // the SMT formula being right. Stays opus.
   // -------------------------------------------------------------------------
   C1: "opus",
@@ -68,20 +68,20 @@ export const MODEL_TIERS: Record<string, ModelTier> = {
   "C1.5-proseOverlap": "sonnet",
 
   // -------------------------------------------------------------------------
-  // C3: generateFixCandidate — code edits in overlay. Sonnet is the
+  // C3: generateFixCandidate. Code edits in overlay; sonnet is the
   // sweet spot for tool-use code generation.
   // -------------------------------------------------------------------------
   "C3-candidateGen": "sonnet",
   "C3-agent": "sonnet",
 
   // -------------------------------------------------------------------------
-  // C4: complementary — adjacent-site fixes. Same task class as C3.
+  // C4: complementary. Adjacent-site fixes; same task class as C3.
   // -------------------------------------------------------------------------
   "C4-complementary": "sonnet",
   "C4-agent": "sonnet",
 
   // -------------------------------------------------------------------------
-  // C5: regression test generation — code synthesis for a small test file.
+  // C5: regression test generation. Code synthesis for a small test file.
   // -------------------------------------------------------------------------
   "C5-testGen": "sonnet",
 
@@ -89,7 +89,7 @@ export const MODEL_TIERS: Record<string, ModelTier> = {
   // C6: principle proposal (sonnet) and capability spec (opus).
   // Capability proposal is a substrate-extension event: schema migrations +
   // extractor + DSL all at once. That's a load-bearing structural design
-  // decision — opus.
+  // decision; opus.
   // -------------------------------------------------------------------------
   "C6-principleProposal": "sonnet",
   "C6-adversarial": "sonnet",

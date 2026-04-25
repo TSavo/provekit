@@ -72,7 +72,7 @@ function loadPrincipleJson(principleName: string): PrincipleJson | null {
  *
  * The C1 short-circuit at "Path 1" below queries principleMatches for a row
  * at locus.primaryNode. In production, that table is populated only by the
- * fix loop itself (C4 / oracle code) — `provekit analyze` builds the SAST
+ * fix loop itself (C4 / oracle code); `provekit analyze` builds the SAST
  * but does NOT evaluate principles. So Path 1 was effectively dormant in
  * real-LLM runs even though every test that touched it passed.
  *
@@ -84,7 +84,7 @@ function loadPrincipleJson(principleName: string): PrincipleJson | null {
  * library (single SQL query per principle, no LLM, no Z3).
  *
  * Failure modes are deliberately swallowed: a malformed DSL, a missing
- * capability, an INSERT collision — none of these are catastrophic at the
+ * capability, an INSERT collision: none of these are catastrophic at the
  * C1 entry, because Path 1 is opportunistic. If population fails, Path 2
  * (LLM-novel) takes over with the same cost as before.
  */
