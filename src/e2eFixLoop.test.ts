@@ -179,6 +179,34 @@ const INVARIANT_LLM_RESPONSE = JSON.stringify({
     { smt_constant: "numerator", source_expr: "numerator", sort: "Int" },
     { smt_constant: "denominator", source_expr: "denominator", sort: "Int" },
   ],
+  citations: [
+    {
+      smt_clause: "(= denominator 0)",
+      source_quote: "denominator = 0",
+    },
+  ],
+});
+
+// Oracle #1.5 traceability verifier — keyed on "Citations to verify".
+const TRACEABILITY_RESPONSE = JSON.stringify({ all_grounded: true });
+
+// Oracle #1.5 adversarial-fixture pre-validation — keyed on "software testing
+// expert". Positive: denominator=0 (SAT). Negative: denominator!=0 (UNSAT).
+const FIXTURE_PREVAL_RESPONSE = JSON.stringify({
+  positive: [
+    { source: "function p1(a: number, b: number) { return a / b; }", inputBindings: { numerator: 1, denominator: 0 }, description: "b is zero" },
+    { source: "function p2(x: number, y: number) { return x / y; }", inputBindings: { numerator: 5, denominator: 0 }, description: "y is zero" },
+    { source: "function p3(n: number, d: number) { return n / d; }", inputBindings: { numerator: 0, denominator: 0 }, description: "0/0" },
+    { source: "function p4(a: number, b: number) { if (a > 0) return a / b; return 0; }", inputBindings: { numerator: 1, denominator: 0 }, description: "guarded but b zero" },
+    { source: "function p5(x: number, y: number) { return Math.floor(x / y); }", inputBindings: { numerator: 10, denominator: 0 }, description: "floor of div by zero" },
+  ],
+  negative: [
+    { source: "function n1(a: number, b: number) { if (b === 0) throw new Error('zero'); return a / b; }", inputBindings: { numerator: 1, denominator: 1 }, description: "guard prevents" },
+    { source: "function n2(x: number, y: number) { return x / (y || 1); }", inputBindings: { numerator: 5, denominator: 1 }, description: "default" },
+    { source: "function n3(a: number, b: number) { return a / Math.max(b, 1); }", inputBindings: { numerator: 1, denominator: 1 }, description: "max guard" },
+    { source: "function n4(x: number) { return x / 2; }", inputBindings: { numerator: 4, denominator: 2 }, description: "literal nonzero" },
+    { source: "function n5(a: number, b: number) { return b !== 0 ? a / b : 0; }", inputBindings: { numerator: 5, denominator: 1 }, description: "ternary guard" },
+  ],
 });
 
 function buildStubLLM(): StubLLMProvider {
@@ -188,6 +216,10 @@ function buildStubLLM(): StubLLMProvider {
       ["bug-report parser", BUG_SIGNAL_RESPONSE],
       // Classify prompt
       ["classifying a bug report into a remediation layer", CLASSIFY_RESPONSE],
+      // Oracle #1.5 traceability check
+      ["Citations to verify", TRACEABILITY_RESPONSE],
+      // Oracle #1.5 adversarial fixture pre-validation
+      ["software testing expert", FIXTURE_PREVAL_RESPONSE],
       // C3 fix generation prompt
       ["propose", FIX_PROPOSAL_RESPONSE],
       // C4 complementary prompt
@@ -196,7 +228,7 @@ function buildStubLLM(): StubLLMProvider {
       ["regression", TEST_RESPONSE],
       // C6 principle candidate prompt
       ["principle candidate", PRINCIPLE_NULL_RESPONSE],
-      // C1 LLM fallback (only fires if principle-match misses)
+      // C1 LLM fallback + cross-LLM agreement (both use "formal verification expert")
       ["formal verification expert", INVARIANT_LLM_RESPONSE],
     ]),
   );

@@ -98,9 +98,10 @@ const CLASSIFY_RESPONSE = JSON.stringify({
 });
 
 // C1 LLM fallback — formal verification expert
-// Uses placeholder names that won't appear in the patched file
+// Uses placeholder names that won't appear in the patched file.
+// Includes citations to satisfy oracle #1.5 traceability check.
 const INVARIANT_LLM_RESPONSE = JSON.stringify({
-  description: "catch handler has zero statements — exception is silently discarded",
+  description: "catch handler has zero statements; exception is silently discarded",
   smt_declarations: [
     "(declare-const catchStmtCount Int)",
     "(declare-const hasFinally Bool)",
@@ -109,6 +110,77 @@ const INVARIANT_LLM_RESPONSE = JSON.stringify({
   bindings: [
     { smt_constant: "catchStmtCount", source_expr: "catchStmtCount", sort: "Int" },
     { smt_constant: "hasFinally", source_expr: "hasFinally", sort: "Bool" },
+  ],
+  citations: [
+    {
+      smt_clause: "(= catchStmtCount 0)",
+      source_quote: "Empty try/catch silently swallows exceptions",
+    },
+  ],
+});
+
+// Oracle #1.5 traceability verifier — keyed on "Citations to verify"
+// (a substring of the verifier prompt that no other prompt contains).
+const TRACEABILITY_RESPONSE = JSON.stringify({ all_grounded: true });
+
+// Oracle #1.5 adversarial-fixture pre-validation — keyed on "software testing
+// expert" (distinct from C5's "TypeScript testing expert"). Positive fixtures
+// have catchStmtCount=0 (SAT against the violation). Negative fixtures have
+// catchStmtCount > 0 (UNSAT).
+const FIXTURE_PREVAL_RESPONSE = JSON.stringify({
+  positive: [
+    {
+      source: "function p1() { try { doX(); } catch (e) {} }",
+      inputBindings: { catchStmtCount: 0, hasFinally: false },
+      description: "empty catch",
+    },
+    {
+      source: "function p2() { try { parse(x); } catch (err) {} return x; }",
+      inputBindings: { catchStmtCount: 0, hasFinally: false },
+      description: "empty catch",
+    },
+    {
+      source: "class L { load() { try { this.init(); } catch (e) {} } }",
+      inputBindings: { catchStmtCount: 0, hasFinally: false },
+      description: "empty catch in method",
+    },
+    {
+      source: "async function p4() { try { await fn(); } catch (e) {} }",
+      inputBindings: { catchStmtCount: 0, hasFinally: false },
+      description: "empty catch around await",
+    },
+    {
+      source: "function p5() { try { JSON.parse(s); } catch (e) {} }",
+      inputBindings: { catchStmtCount: 0, hasFinally: false },
+      description: "empty catch around parse",
+    },
+  ],
+  negative: [
+    {
+      source: "function n1() { try { doX(); } catch (e) { console.error(e); } }",
+      inputBindings: { catchStmtCount: 1, hasFinally: false },
+      description: "catch logs",
+    },
+    {
+      source: "function n2() { try { doX(); } catch (e) { throw e; } }",
+      inputBindings: { catchStmtCount: 1, hasFinally: false },
+      description: "rethrow",
+    },
+    {
+      source: "function n3() { try { doX(); } catch (e) { return null; } }",
+      inputBindings: { catchStmtCount: 1, hasFinally: false },
+      description: "catch returns",
+    },
+    {
+      source: "function n4() { try { doX(); } catch (e) { logger.warn(e); metrics.inc(); } }",
+      inputBindings: { catchStmtCount: 2, hasFinally: false },
+      description: "catch logs and metrics",
+    },
+    {
+      source: "function n5() { try { doX(); } catch (e) { handle(e); } finally { cleanup(); } }",
+      inputBindings: { catchStmtCount: 1, hasFinally: true },
+      description: "catch handles + finally",
+    },
   ],
 });
 
@@ -378,7 +450,13 @@ function buildHappyPathLLM(): StubLLMProvider {
       ["bug-report parser", INTAKE_RESPONSE],
       // Classify
       ["classifying a bug report", CLASSIFY_RESPONSE],
-      // C1 LLM fallback (formal verification expert)
+      // Oracle #1.5 traceability check (keyed before "formal verification expert"
+      // even though prompts are distinct; explicit ordering aids review).
+      ["Citations to verify", TRACEABILITY_RESPONSE],
+      // Oracle #1.5 adversarial fixture pre-validation. The fixture prompt
+      // contains "software testing expert" (distinct from C5's "TypeScript testing expert").
+      ["software testing expert", FIXTURE_PREVAL_RESPONSE],
+      // C1 LLM + cross-LLM agreement (both use "formal verification expert")
       ["formal verification expert", INVARIANT_LLM_RESPONSE],
       // C3 fix generation (propose up to N candidate patches)
       ["propose up to", FIX_PROPOSAL_RESPONSE],
@@ -402,6 +480,8 @@ function buildDestructiveMigrationLLM(): StubLLMProvider {
       ["static-analysis rule author", NEEDS_CAPABILITY_RESPONSE],
       ["bug-report parser", INTAKE_RESPONSE],
       ["classifying a bug report", CLASSIFY_RESPONSE],
+      ["Citations to verify", TRACEABILITY_RESPONSE],
+      ["software testing expert", FIXTURE_PREVAL_RESPONSE],
       ["formal verification expert", INVARIANT_LLM_RESPONSE],
       ["propose up to", FIX_PROPOSAL_RESPONSE],
       ["A bug was just fixed at one site", COMPLEMENTARY_RESPONSE],
