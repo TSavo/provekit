@@ -16,10 +16,10 @@ The result is not a suggested edit. It is a commit-ready artifact with a machine
 
 - Not a linter. Linters flag patterns. ProveKit closes bugs: it formulates a formal invariant, generates a fix that satisfies it under Z3, and refuses to ship a patch that does not.
 - Not a codegen tool. Codegen proposes. ProveKit verifies. Every artifact in the bundle cleared a mechanical gate before it landed there.
-- Not a coding agent with guardrails. The LLM is fungible at every stage boundary. The oracles are not. The pipeline is the product.
+- Not a coding agent with guardrails. The LLM tier is calibrated per stage (haiku tolerable for intake parsing, sonnet for classification, opus for invariant formulation), and the architecture's contribution is bounding what "competent" has to mean: small structured output per stage, not "understand the whole codebase." The oracles are the load-bearing claim. The pipeline is the product.
 - Captures institutional knowledge. Every applied bundle updates the principles library and the SAST substrate. The system is strictly smarter after every fix.
 - Substrate self-extends. When a bug shape cannot be expressed in the current DSL, ProveKit proposes a new capability, gates it through oracles 14-18, and lands it atomically with the fix. The floor rises with each gap closed.
-- Compounds. Seven remaining capability gaps are dogfood fuel. Each one that closes adds a new detection column to the substrate that runs on every future analysis.
+- Compounds. Remaining capability gaps are dogfood fuel. Each one that closes adds a new detection column to the substrate that runs on every future analysis.
 
 ## From bug report to verified bundle
 
@@ -54,9 +54,17 @@ The `--apply` flag cherry-picks the resulting commit onto the target branch. Wit
 
 The pipeline runs in nine stages: Intake parses the bug signal, Locate finds the SAST locus, Classify picks the remediation layer, then C1-C6 produce the invariant, overlay, fix candidate, complementary changes, regression test, and principle candidate (with optional substrate extension). D1 assembles and verifies the bundle via the full 18-oracle suite. D2 applies transactionally. D3 updates the principles library and capability registry. See [ARCHITECTURE.md](./ARCHITECTURE.md) for a full walkthrough.
 
+## Pitch leaks closed
+
+The pitch had six honest cracks (`docs/plans/2026-04-25-pitch-leaks.md`). Three are closed:
+
+- **Invariant fidelity (Leak 1).** Oracle 1.5 runs cross-LLM derivation agreement, prose-to-clause traceability, and adversarial-fixture pre-validation before C1 returns, with adaptive routing for taint-style versus arithmetic invariants. Underwrites: Z3 is checking an invariant grounded in the bug report, not one the LLM wrote in a vacuum.
+- **Loop seams (Leak 4).** 211-scenario corpus across fast-check, SemGrep, Stryker, and a BugsJS skeleton. Integration-gap rate at 0%. Underwrites: the pipeline holds across realistic bug surface, not one happy path.
+- **Hard-bug existence proof (Leak 2).** Real-LLM run on shell-injection produced a `taintSource` capability plus a `no_unsanitized_shell_exec` principle, and a separate run auto-applied an `execFileSync` argv-form fix with regression test. Required chained data-flow as substrate prereq. Underwrites: the substrate-extension path handles non-trivial bug classes, not just syntactic ones.
+
 ## Status
 
-See [RETROSPECTIVE.md](./RETROSPECTIVE.md) for what is built, what the dogfood proved, what the seven remaining capability gaps are, and what is deferred.
+See [RETROSPECTIVE.md](./RETROSPECTIVE.md) for what is built, what the dogfood proved, what the remaining capability gaps are, and what is deferred.
 
 The historical implementation plan lives at [docs/plans/2026-04-23-fix-loop.md](./docs/plans/2026-04-23-fix-loop.md).
 

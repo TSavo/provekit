@@ -4,7 +4,9 @@ A guide for understanding the system in 15 minutes. This is not a plan or a spec
 
 ## The thesis
 
-A bug report enters. A mechanically-verified fix bundle exits. The LLM is a participant at every stage boundary, proposing code patches, invariants, regression tests, and substrate extensions. The mechanical oracles are in the hot path, not the review path. They do not evaluate prompts or outputs for quality; they evaluate whether formal properties hold under Z3, whether regression tests pass and fail in the right directions, whether the SAST index is structurally coherent, and whether migrations are safe. When an oracle fails, the pipeline stops. The LLM is fungible. The oracles are not.
+A bug report enters. A mechanically-verified fix bundle exits. The LLM is a participant at every stage boundary, proposing code patches, invariants, regression tests, and substrate extensions. The mechanical oracles are in the hot path, not the review path. They do not evaluate prompts or outputs for quality; they evaluate whether formal properties hold under Z3, whether regression tests pass and fail in the right directions, whether the SAST index is structurally coherent, and whether migrations are safe. When an oracle fails, the pipeline stops.
+
+The LLM tier is calibrated per stage. Intake parsing tolerates haiku. Classification tolerates sonnet. Invariant formulation requires opus. Lower-tier models on load-bearing stages degrade silently; the oracles catch unsatisfiable invariants, not vague ones. The pipeline assumes the LLM was competent for its assigned stage. The architecture's contribution is bounding what "competent" has to mean: small structured output per stage, not "understand the whole codebase." The oracles are the load-bearing claim, not the LLM.
 
 ## The pipeline
 
@@ -26,7 +28,9 @@ A bug report enters. A mechanically-verified fix bundle exits. The LLM is a part
 
 **C6: Generate principle candidate.** The LLM first tries to express the invariant using existing DSL capabilities (`tryExistingCapabilities`). If an existing capability can express it, the LLM produces a `principle` candidate directly. Oracle 6 runs adversarial validation: a second LLM call attempts to construct a counterexample to the principle. If no existing capability can express the invariant, the loop routes to the substrate-extension path (see below). The output is a `PrincipleCandidate`, either plain or with a `CapabilitySpec`.
 
-**D1: Assemble bundle.** All artifacts are collected and the full 18-oracle suite runs. Nine oracles already fired during C1-C6 and are verified from the audit trail. Nine new oracles run here: proven-clause no-regression (4), bundle SMT coherence (5), witness replay (7, MVP pass-through), no-new-gaps (8), full vitest suite (10), SAST structural coherence (11), DSL no-silent-regressions (12, MVP stub), gap closure confirmation (13), and cross-codebase regression (15, substrate only, MVP stub). If all oracles pass, a `FixBundle` is persisted to the database and returned. The bundle type is `"fix"` for normal bundles and `"substrate"` for bundles that include a capability extension.
+**D1: Assemble bundle.** All artifacts are collected and the full 18-oracle suite runs. Nine oracles already fired during C1-C6 and are verified from the audit trail. Nine new oracles run here: proven-clause no-regression (4), bundle SMT coherence (5), witness replay (7), no-new-gaps (8), full vitest suite (10), SAST structural coherence (11), DSL no-silent-regressions (12), gap closure confirmation (13), and cross-codebase regression (15, substrate only). If all oracles pass, a `FixBundle` is persisted to the database and returned. The bundle type is `"fix"` for normal bundles and `"substrate"` for bundles that include a capability extension.
+
+In addition to the 18 numbered oracles, **oracle 1.5 (invariant fidelity)** fires inside C1 before the invariant is returned. It runs cross-LLM derivation agreement (a second-tier LLM derives its own invariant from the same prose; Z3 implication checks both directions), prose-to-clause traceability (each SMT clause must cite the source sentence that justifies it), and adversarial-fixture pre-validation (5 positive and 5 negative fixtures must match and not match respectively). Adaptive routing distinguishes abstract taint-style invariants from concrete arithmetic invariants; abstract invariants defer the behavioral gate to the C5 regression test rather than failing on path-condition extraction.
 
 **D2: Apply bundle.** If `autoApply` is set, the bundle is cherry-picked onto the target branch and the migration (for substrate bundles) is executed transactionally: if the migration fails, the code commit is rolled back. If `prDraftMode` is set (the default when `--apply` is not passed), a unified diff and PR body are written to the working directory for human review.
 
@@ -54,15 +58,15 @@ A bug report enters. A mechanically-verified fix bundle exits. The LLM is a part
 | 4 | No proven-clause regression | D1 | All previously-proven clauses in main DB are still unsat |
 | 5 | Bundle SMT coherence | D1 | Combined invariant set is satisfiable (no internal contradiction) |
 | 6 | Adversarial principle validation | C6 | Adversarial LLM call fails to construct a counterexample to the principle |
-| 7 | Witness replay | D1 | (MVP pass-through) Runtime harness re-runs on fixed code; deferred to D2 |
+| 7 | Witness replay | D1 | Runtime harness replays the Z3 witness against original and fixed code; original must trigger, fixed must not |
 | 8 | No new gaps introduced | D1 | Overlay gap-report count does not exceed main DB count |
 | 9 | Regression test two-way | C5 | Test passes on fixed code (9a) and fails on original code after revert (9b) |
 | 10 | Full vitest suite | D1 | Complete test suite passes in the overlay with retry-once flake tolerance |
 | 11 | SAST structural coherence | D1 | Overlay SAST has nodes and no orphan node-children edges |
-| 12 | DSL no silent regressions | D1 | (MVP stub) Deferred to D3 post-apply check |
+| 12 | DSL no silent regressions | D1 | Re-runs every existing DSL principle against the overlay SAST; rejects bundles that flip any verdict from no-violation to violation |
 | 13 | Gap closure | D1 | Triggering gap report is absent from overlay SAST (gap was actually closed) |
 | 14 | Migration safety | C6 | Proposed migration SQL contains no DROP TABLE, DROP COLUMN, or other destructive statements |
-| 15 | Cross-codebase regression | D1 | (MVP stub, substrate only) Deferred to D3 fixture corpus |
+| 15 | Cross-codebase regression | D1 | (substrate only) Runs the new capability extractor and every existing principle against the fixture corpus; rejects bundles that introduce false positives |
 | 16 | Extractor coverage | C6 | Extractor runs against positive and negative fixtures; row counts match expectations |
 | 17 | Substrate consistency | C6 | Capability schema, extractor, and migration are self-consistent |
 | 18 | Principle registry uniqueness | C6 | Proposed capability name does not collide with an existing registry entry |

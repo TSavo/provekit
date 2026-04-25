@@ -67,13 +67,25 @@ The dogfood surfaced five integration gaps that stub-LLM tests could not reach. 
 4. Oracle #2 was a proxy (re-evaluate principle, reject if matches remain). Guard-based fixes still match the division pattern after the guard lands; the proxy rejected correct fixes. Closed by path-condition extraction + augmented Z3 (see ARCHITECTURE.md).
 5. The overlay was not enforced at the tool level. Prompts containing absolute paths let Claude edit files outside the worktree via Edit directly. Closed by sanitized prompts (overlay-relative paths only) and post-validation throwing `OverlayBypassError` on any path that escapes.
 
-## Seven remaining A8 capability gaps
+### Pitch-leak closures
+
+`docs/plans/2026-04-25-pitch-leaks.md` named six honest cracks. Three are closed.
+
+**Leak 1 (invariant fidelity).** Oracle 1.5 lands cross-LLM derivation agreement, prose-to-clause traceability, and adversarial-fixture pre-validation, with adaptive routing for taint-style versus arithmetic invariants. Commits `9954876`, `694d731`, `4f344ab`, `d35df4d`. Closes the "Z3 proves the patch satisfies an invariant the LLM wrote from prose" exposure.
+
+**Leak 4 (loop seams).** Deliberate fuzzing surfaced the rest of the integration gaps: 211-scenario corpus across fast-check, SemGrep, Stryker, and a BugsJS skeleton. Integration-gap rate at 0%. Commits `20bf9a2`, `5f3a933`, `0d1f373`, `5d5826d`, `0480c18`. Closes the "five gaps in one run" critique with a corpus-driven hardening pass instead of a single happy path.
+
+**Leak 2 (hard-bug existence proof).** Closed via real-LLM end-to-end on shell-injection. Opus produced both a `taintSource` capability proposal and a `no_unsanitized_shell_exec` DSL principle, and in a separate run auto-applied an `execFileSync` argv-form fix with a regression test. Required chained data-flow via transitive closure (commit `3ce6f4c`) as the substrate prereq, then the substrate-extension dogfood test in commit `20e3257`. The systemic JSON refactor (commit `ad89d5b`, LLM writes JSON to disk via the Write tool, the pipeline reads it) eliminated the prose-prefix and fence-wrapping failure mode that was blocking longer LLM outputs. Closes the "demos are easy mode" critique.
+
+Three leaks remain open: semantic generalization (Leak 3), tier-calibrated speed (Leak 6), and the Leak 5 wording leak which is closed by this document.
+
+## Remaining A8 capability gaps
 
 From `docs/plans/2026-04-23-fix-loop/capability-gaps.md`. These are the bug classes that cannot yet be expressed in the ProveKit DSL because required capabilities or relations are missing. Each is dogfood fuel for the next sprint.
 
 | Gap | Status | What it needs |
 |-----|--------|---------------|
-| shell-injection | Open | `string_composition.has_interpolation` capability + `data_flow_reaches` relation |
+| shell-injection | **Done** | `taintSource` capability + `no_unsanitized_shell_exec` DSL principle (proposed by real-LLM substrate run); chained data-flow via transitive closure (commit `3ce6f4c`) was the substrate prereq |
 | empty-catch | **Done** | `try_catch_block` capability (landed via substrate dogfood) |
 | guard-narrowing | **Done** | `same_value` relation (#66) + parser opens for arbitrary relation names (#67), varDeref in target position (#68), explicit `where RELATION(LHS, RHS)` syntax (#69) |
 | loop-accumulator-overflow | Open | `encloses($outer, $inner)` relation (AST ancestor check) |
@@ -85,17 +97,17 @@ From `docs/plans/2026-04-23-fix-loop/capability-gaps.md`. These are the bug clas
 
 Each gap closed produces a substrate bundle that lands a new capability in the registry. The next analysis run can then detect that bug class across the full codebase.
 
-## Known MVP pass-throughs
+## All 18 oracles implemented
 
-Three oracles are documented stubs, not full implementations:
+The three formerly-stubbed oracles now have real implementations:
 
-**Oracle 7 (witness replay).** Currently a pass-through returning `passed: true`. Full implementation requires runtime harness wiring: the Z3-witness-derived inputs need to be executed against the fixed code in the overlay to confirm they trigger the bug on original code and do not trigger it on the fixed code. The harness infrastructure (`src/harness.ts`) exists. Wiring it into the oracle is deferred.
+**Oracle 7 (witness replay)** runs the Z3 witness against original and fixed code through the harness in `src/harness.ts`. Original must trigger the bug, fixed must not. Landed in commit `bf46f30`.
 
-**Oracle 12 (DSL no-regressions).** Currently a pass-through. Full implementation would re-run all existing DSL principles against the overlay's SAST to confirm none flip from no-violation to violation. Deferred to D3 post-apply.
+**Oracle 12 (DSL no-regressions)** re-runs every existing DSL principle against the overlay SAST and rejects bundles that flip any verdict from no-violation to violation. Landed in commit `bf46f30`.
 
-**Oracle 15 (cross-codebase regression, substrate only).** Currently a pass-through. Full implementation would run the new capability extractor and principle against a fixture corpus of known-clean codebases to confirm no false positives are introduced. Deferred to D3 fixture corpus.
+**Oracle 15 (cross-codebase regression, substrate only)** runs the new capability extractor plus every existing principle against the fixture corpus and rejects bundles that introduce false positives. Landed in commit `5dac896`.
 
-All three are documented in `src/fix/oracles.ts` with inline rationale.
+Oracle 1.5 (invariant fidelity, fires inside C1) also landed: cross-LLM derivation agreement, prose-to-clause traceability, adversarial-fixture pre-validation, with adaptive routing that distinguishes abstract taint-style invariants from concrete arithmetic invariants. See `src/fix/invariantFidelity.ts`.
 
 ## Known integration gaps
 
@@ -109,17 +121,13 @@ The real-LLM loop is closed. Remaining work is engineering toward production:
 
 2. **`autoApply` end-to-end.** Every dogfood run used `prDraft` mode (writes patch + PR body to disk). The cherry-pick path with substrate rollback needs end-to-end testing against a clean target branch.
 
-3. **Oracle #15 (cross-codebase regression).** MVP pass-through. Real implementation runs every existing principle across `examples/` (or a designated corpus) post-substrate-migration; any verdict shift rejects the bundle. Required before substrate bundles can land in production.
+3. **Remaining A8 capability gaps.** Three closed (shell-injection via real-LLM substrate run, empty-catch via stub-LLM substrate dogfood, guard-narrowing via #66-69). The remainder (loop-accumulator, param-mutation, switch-no-default, ternary-branch-collapse, variable-staleness, while-loop-termination) are queued as substrate bundles.
 
-4. **Oracle #7 (witness replay) and #12 (DSL no-regressions).** Same MVP-stub pattern. Scoped, not yet built.
+4. **Multi-language support.** Currently TypeScript-only via ts-morph. Tree-sitter wiring exists for the analyze layer; the fix-loop's SAST builder is TS-specific.
 
-5. **Seven remaining A8 capability gaps.** Some closed in #66-69 (`same_value` relation, parser opens for arbitrary relation names, varDeref in target position, explicit `where RELATION(LHS, RHS)` syntax). The remainder (shell-injection, loop-accumulator, param-mutation, switch-no-default, ternary-branch-collapse, variable-staleness, while-loop-termination) are queued as substrate bundles.
+5. **Concurrency.** Single-user, single-process, single-worktree. The capability registry is a process-local Map. Multi-user setups need either a shared registry or per-tenant isolation.
 
-6. **Multi-language support.** Currently TypeScript-only via ts-morph. Tree-sitter wiring exists for the analyze layer; the fix-loop's SAST builder is TS-specific.
-
-7. **Concurrency.** Single-user, single-process, single-worktree. The capability registry is a process-local Map. Multi-user setups need either a shared registry or per-tenant isolation.
-
-8. **Performance.** Each dogfood run takes 2-8 minutes on Opus 4.7 (LLM-latency-bound). Tiered model selection (haiku for intake/classify, sonnet for proposals, opus for invariant formulation) would reduce this. Opus 4.7 everywhere is conservative; Opus 4.7 is now the default tier but production wants tiered selection per stage.
+6. **Performance.** Each dogfood run takes 2-8 minutes on Opus 4.7 (LLM-latency-bound). Tier-calibrated model selection (haiku for intake parsing, sonnet for classification, opus for invariant formulation) is the documented production path; Opus 4.7 across every stage is the conservative current default.
 
 ## What the architecture is ready for
 
