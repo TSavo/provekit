@@ -426,6 +426,17 @@ import type { Db } from "../db/index.js";
 export type SmtBindingRef = SmtBinding;
 
 /**
+ * One citation linking an SMT clause to a source-text quote in the bug report.
+ * Produced by C1's LLM prompt (oracle #1.5 traceability check uses these).
+ */
+export interface InvariantCitation {
+  /** The specific SMT clause being cited, e.g. "(= b 0)". */
+  smt_clause: string;
+  /** The verbatim quote from the bug report that justifies this clause. */
+  source_quote: string;
+}
+
+/**
  * A formal claim about what invariant the code is violating.
  * C1 (formulateInvariant) produces this; oracle #1 has already confirmed SAT before returning.
  */
@@ -449,6 +460,12 @@ export interface InvariantClaim {
   complexity: number;
   /** Z3 witness from oracle #1 run (the sat-ness proves the bug is real). */
   witness: string | null;
+  /**
+   * Prose-to-clause citations for oracle #1.5 traceability check.
+   * Present on novel-LLM-path invariants; null on principle-match-path invariants
+   * (principle-match artifacts are vetted at C6 generation time).
+   */
+  citations?: InvariantCitation[] | null;
 }
 
 /** A concrete code change proposed to fix the bug. C3 fills this in. */

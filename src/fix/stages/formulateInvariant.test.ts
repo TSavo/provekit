@@ -17,6 +17,15 @@ import { principleMatches, principleMatchCaptures } from "../../db/schema/princi
 import { formulateInvariant } from "./formulateInvariant.js";
 import { InvariantFormulationFailed } from "../types.js";
 import type { BugSignal, BugLocus, LLMProvider } from "../types.js";
+import type { FidelityVerifiers } from "../invariantFidelity.js";
+
+/** Stub fidelity verifiers that always pass. Injected into novel-LLM-path tests
+ * to keep them focused on oracle #1 (SAT check) without triggering real fidelity LLM calls. */
+const FIDELITY_ALL_PASS: FidelityVerifiers = {
+  crossLlmAgreement: async () => ({ passed: true, detail: "stub pass" }),
+  traceabilityCheck: async () => ({ passed: true, detail: "stub pass" }),
+  adversarialFixturePreValidation: async () => ({ passed: true, detail: "stub pass" }),
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -270,7 +279,7 @@ describe("formulateInvariant (C1)", () => {
       complete: async () => validSmtResponse,
     };
 
-    const claim = await formulateInvariant({ signal, locus, db, llm: stubLlm });
+    const claim = await formulateInvariant({ signal, locus, db, llm: stubLlm, _fidelityVerifiers: FIDELITY_ALL_PASS });
 
     expect(claim.principleId).toBeNull();
     expect(claim.description).toContain("zero");
@@ -306,7 +315,7 @@ describe("formulateInvariant (C1)", () => {
     };
 
     await expect(
-      formulateInvariant({ signal, locus, db, llm: badLlm }),
+      formulateInvariant({ signal, locus, db, llm: badLlm, _fidelityVerifiers: FIDELITY_ALL_PASS }),
     ).rejects.toThrow(InvariantFormulationFailed);
   });
 
@@ -345,11 +354,11 @@ describe("formulateInvariant (C1)", () => {
     };
 
     await expect(
-      formulateInvariant({ signal, locus, db, llm: stubLlm }),
+      formulateInvariant({ signal, locus, db, llm: stubLlm, _fidelityVerifiers: FIDELITY_ALL_PASS }),
     ).rejects.toThrow(InvariantFormulationFailed);
 
     await expect(
-      formulateInvariant({ signal, locus, db, llm: stubLlm }),
+      formulateInvariant({ signal, locus, db, llm: stubLlm, _fidelityVerifiers: FIDELITY_ALL_PASS }),
     ).rejects.toThrow(/unsat|oracle/i);
   });
 });

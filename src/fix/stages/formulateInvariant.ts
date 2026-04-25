@@ -9,7 +9,7 @@
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { eq, or, and, lte, gte } from "drizzle-orm";
-import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef } from "../types.js";
+import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef, InvariantCitation } from "../types.js";
 import { InvariantFormulationFailed } from "../types.js";
 import { createNoopLogger, loggedComplete, type FixLoopLogger } from "../logger.js";
 import { parseJsonFromLlm } from "../llmJson.js";
@@ -18,6 +18,7 @@ import { principleMatches, principleMatchCaptures } from "../../db/schema/princi
 import { nodes, files as filesTable } from "../../sast/schema/index.js";
 import { nodeArithmetic } from "../../sast/schema/capabilities/arithmetic.js";
 import { verifyBlock, proofComplexity } from "../../verifier.js";
+import { runInvariantFidelity, type FidelityVerifiers } from "../invariantFidelity.js";
 
 // ---------------------------------------------------------------------------
 // Principle JSON shape
@@ -245,6 +246,7 @@ interface LlmInvariantResponse {
   smt_declarations: string[];
   smt_violation_assertion: string;
   bindings: { smt_constant: string; source_expr: string; sort: string }[];
+  citations?: { smt_clause: string; source_quote: string }[];
 }
 
 function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db): string {
@@ -296,6 +298,9 @@ Respond with ONLY a JSON object (no markdown fences):
   "smt_violation_assertion": "(assert (...))",
   "bindings": [
     {"smt_constant": "varName", "source_expr": "expression in source", "sort": "Int"}
+  ],
+  "citations": [
+    {"smt_clause": "(= b 0)", "source_quote": "exact or close-paraphrase quote from the bug report that justifies this clause"}
   ]
 }
 
@@ -305,6 +310,7 @@ Rules:
 - Do NOT include (check-sat) — it will be appended automatically
 - Use Int or Bool sorts
 - Keep it simple: 2-5 constants maximum
+- citations: one entry per meaningful clause in smt_violation_assertion; each source_quote must be a verbatim or close-paraphrase excerpt from the bug report above
 
 CRITICAL — invariant must be VERIFIABLE post-fix:
 - ONLY use SMT constants that map directly to source-code INPUT variables
@@ -326,6 +332,7 @@ function parseLlmResponse(raw: string): {
   formalExpression: string;
   bindings: SmtBindingRef[];
   description: string;
+  citations: InvariantCitation[] | null;
 } {
   let parsed: LlmInvariantResponse;
   try {
@@ -393,7 +400,15 @@ function parseLlmResponse(raw: string): {
     sort: b.sort ?? "Int",
   }));
 
-  return { formalExpression, bindings, description: parsed.description };
+  // Parse citations (optional field — fidelity check requires them but parse is lenient)
+  let citations: InvariantCitation[] | null = null;
+  if (Array.isArray(parsed.citations)) {
+    citations = (parsed.citations as { smt_clause: string; source_quote: string }[])
+      .filter((c) => typeof c.smt_clause === "string" && typeof c.source_quote === "string")
+      .map((c) => ({ smt_clause: c.smt_clause, source_quote: c.source_quote }));
+  }
+
+  return { formalExpression, bindings, description: parsed.description, citations };
 }
 
 // ---------------------------------------------------------------------------
@@ -406,6 +421,8 @@ export async function formulateInvariant(args: {
   db: Db;
   llm: LLMProvider;
   logger?: FixLoopLogger;
+  /** Dependency injection for fidelity verifiers — for testing only. */
+  _fidelityVerifiers?: FidelityVerifiers;
 }): Promise<InvariantClaim> {
   const { signal, locus, db, llm } = args;
   const logger = args.logger ?? createNoopLogger();
@@ -533,18 +550,81 @@ export async function formulateInvariant(args: {
   const prompt = buildLlmPrompt(signal, locus, db);
   logger.detail(`C1 LLM prompt (novel path): ${prompt.slice(0, 200)}...`);
   const rawResponse = await loggedComplete(logger, "C1", llm, { prompt });
-  const { formalExpression, bindings, description } = parseLlmResponse(rawResponse);
+  const { formalExpression, bindings, description, citations } = parseLlmResponse(rawResponse);
 
   // Oracle #1: must return SAT.
   const { witness } = runOracleOne(formalExpression);
   logger.oracle({ id: 1, name: "Z3 SAT check (novel)", passed: witness !== null, detail: witness ? `witness obtained` : "SAT returned no witness" });
 
-  return {
+  const firstClaim: InvariantClaim = {
     principleId: null,
     description,
     formalExpression,
     bindings,
     complexity: proofComplexity(formalExpression),
     witness,
+    citations,
   };
+
+  // Oracle #1.5: fidelity check — runs only on novel-LLM path.
+  const fidelity = await runInvariantFidelity({
+    invariant: firstClaim,
+    signal,
+    llm,
+    logger,
+    _verifiers: args._fidelityVerifiers,
+  });
+
+  if (fidelity.passed) {
+    return firstClaim;
+  }
+
+  // One retry: feed failure detail back into the prompt.
+  const retryFeedback = `\n\nPRIOR ATTEMPT FAILED ORACLE #1.5 FIDELITY CHECK:\n${fidelity.failures.join("\n")}\n\nFix the issues and produce a faithful invariant that passes all three fidelity verifiers:\n1. cross-LLM agreement (your invariant must semantically agree with an independently-derived one)\n2. traceability (every SMT clause must cite a quote from the bug report)\n3. adversarial fixtures (5 positive + 5 negative test cases must classify correctly)`;
+
+  const retryPrompt = prompt + retryFeedback;
+  logger.detail(`C1 retry prompt (oracle #1.5 failed): ${retryPrompt.slice(0, 300)}...`);
+
+  let retryRaw: string;
+  try {
+    retryRaw = await loggedComplete(logger, "C1-retry", llm, { prompt: retryPrompt });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new InvariantFormulationFailed(
+      `fidelity: retry LLM call failed — ${msg}. Original failures: ${fidelity.failures.join("; ")}`,
+    );
+  }
+
+  const retry = parseLlmResponse(retryRaw);
+
+  // Oracle #1 on retry: must still be SAT.
+  const { witness: retryWitness } = runOracleOne(retry.formalExpression);
+  logger.oracle({ id: 1, name: "Z3 SAT check (novel retry)", passed: retryWitness !== null, detail: retryWitness ? `witness obtained` : "SAT returned no witness" });
+
+  const retryClaim: InvariantClaim = {
+    principleId: null,
+    description: retry.description,
+    formalExpression: retry.formalExpression,
+    bindings: retry.bindings,
+    complexity: proofComplexity(retry.formalExpression),
+    witness: retryWitness,
+    citations: retry.citations,
+  };
+
+  // Oracle #1.5 on retry: if still failing, throw.
+  const retryFidelity = await runInvariantFidelity({
+    invariant: retryClaim,
+    signal,
+    llm,
+    logger,
+    _verifiers: args._fidelityVerifiers,
+  });
+
+  if (retryFidelity.passed) {
+    return retryClaim;
+  }
+
+  throw new InvariantFormulationFailed(
+    `fidelity: ${retryFidelity.failures.join("; ")}`,
+  );
 }
