@@ -21,6 +21,7 @@ import { nodeArithmetic } from "../../sast/schema/capabilities/arithmetic.js";
 import { verifyBlock, proofComplexity } from "../../verifier.js";
 import { runInvariantFidelity, type FidelityVerifiers } from "../invariantFidelity.js";
 import { evaluatePrinciple } from "../../dsl/evaluator.js";
+import type { RecognizeResult } from "./recognize.js";
 
 // ---------------------------------------------------------------------------
 // Principle JSON shape
@@ -506,11 +507,74 @@ export async function formulateInvariant(args: {
   db: Db;
   llm: LLMProvider;
   logger?: FixLoopLogger;
+  /**
+   * B3 mechanical-mode input. When `matched: true`, C1m runs: instantiate the
+   * recognized principle's smt2Template with locus bindings, run oracle #1,
+   * return InvariantClaim with `source: "library"`. No LLM call.
+   *
+   * If oracle #1 fails on the instantiated SMT, log and fall back to LLM mode
+   * via the existing Path 1 / Path 2 flow (per spec).
+   */
+  recognized?: RecognizeResult;
   /** Dependency injection for fidelity verifiers — for testing only. */
   _fidelityVerifiers?: FidelityVerifiers;
 }): Promise<InvariantClaim> {
   const { signal, locus, db, llm } = args;
   const logger = args.logger ?? createNoopLogger();
+
+  // -------------------------------------------------------------------------
+  // C1m: B3 recognized path. Mechanical instantiation, no LLM, no DB requery.
+  // -------------------------------------------------------------------------
+  if (args.recognized && args.recognized.matched) {
+    const rec = args.recognized;
+    const principle = rec.principle;
+    const smtTemplate = principle.smt2Template;
+    if (smtTemplate) {
+      // Build a captureRows array compatible with buildBindings from rec.bindings.
+      const captureRows = Object.entries(rec.bindings).map(([captureName, capturedNodeId]) => ({
+        captureName,
+        capturedNodeId,
+      }));
+      const placeholders = extractPlaceholders(smtTemplate);
+      const bindings = placeholders.length > 0
+        ? buildBindings(db, captureRows, placeholders)
+        : buildBindings(db, captureRows, captureRows.length > 0 ? [captureRows[0]!.captureName] : []);
+      const formalExpression = placeholders.length > 0
+        ? substituteTemplate(smtTemplate, bindings)
+        : smtTemplate;
+
+      try {
+        const { witness } = runOracleOne(formalExpression);
+        logger.oracle({
+          id: 1,
+          name: "Z3 SAT check (C1m library)",
+          passed: witness !== null,
+          detail: `principle=${principle.id}`,
+        });
+        return {
+          principleId: principle.id,
+          description: principle.description ?? `library: ${principle.id}`,
+          formalExpression,
+          bindings,
+          complexity: proofComplexity(formalExpression),
+          witness,
+          source: "library",
+        };
+      } catch (err) {
+        // Oracle #1 failed on instantiated template. Log and fall through to
+        // existing LLM-mode behavior, per spec.
+        logger.detail(
+          `[C1m] WARN: oracle #1 failed for principle '${principle.id}'; falling back to LLM mode: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    } else {
+      logger.detail(
+        `[C1m] WARN: principle '${principle.id}' has no smt2Template; falling back to LLM mode`,
+      );
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Path 1: existing principle match at locus

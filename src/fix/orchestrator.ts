@@ -29,6 +29,7 @@ import { generatePrincipleCandidate } from "./stages/generatePrincipleCandidate.
 import { assembleBundle } from "./stages/assembleBundle.js";
 import { applyBundle } from "./stages/applyBundle.js";
 import { learnFromBundle } from "./stages/learnFromBundle.js";
+import { recognize, type RecognizeResult } from "./stages/recognize.js";
 
 export interface RunFixLoopArgs {
   signal: BugSignal;
@@ -65,6 +66,28 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
   const logger = args.logger ?? createNoopLogger();
 
   try {
+    // -----------------------------------------------------------------------
+    // Stage B3: Recognize.
+    //
+    // Pure SAST + DSL, no LLM. Runs every library principle's compiled query
+    // against the locus's file. If any match's root intersects locus.primaryNode
+    // AND the matched principle has BOTH fixTemplate and testTemplate, the
+    // recognized result flows downstream and routes C1/C3/C5/C6 through their
+    // mechanical-mode arms (C1m/C3m/C5m/C6m) — zero LLM calls, seconds total.
+    // If no match (or matched-but-unready), the loop continues with the
+    // existing LLM-driven path unchanged.
+    // -----------------------------------------------------------------------
+    logger.stage("B3: recognize");
+    const t0b3 = Date.now();
+    const recognized: RecognizeResult = await runStage("B3", "recognize", audit, () =>
+      recognize({ db: args.db, locus: args.locus, logger }),
+    );
+    logger.info(
+      `  B3 complete — matched: ${recognized.matched}` +
+        (recognized.matched ? `, principle: ${recognized.principleId}` : "") +
+        ` in ${Date.now() - t0b3}ms`,
+    );
+
     // Stages C1 + C2: formulate invariant and open overlay worktree IN PARALLEL.
     //
     // C1 and C2 are independent: both read from args.db (read-only shared
@@ -89,7 +112,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     const t0c1c2 = Date.now();
     const [invariant, overlay] = await Promise.all([
       runStage("C1", "formulateInvariant", audit, () =>
-        formulateInvariant({ signal: args.signal, locus: args.locus, db: args.db, llm: args.llm, logger }),
+        formulateInvariant({ signal: args.signal, locus: args.locus, db: args.db, llm: args.llm, logger, recognized }),
       ),
       runStage("C2", "openOverlay", audit, () =>
         openOverlay({ locus: args.locus, db: args.db }),
@@ -101,7 +124,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     logger.stage("C3: generateFixCandidate");
     const t0c3 = Date.now();
     const fix = await runStage("C3", "generateFixCandidate", audit, () =>
-      generateFixCandidate({ signal: args.signal, locus: args.locus, invariant, overlay, llm: args.llm, logger }),
+      generateFixCandidate({ signal: args.signal, locus: args.locus, invariant, overlay, llm: args.llm, logger, recognized }),
     );
     logger.info(`  C3 complete — patch files: ${fix.patch.fileEdits.length} invariantHolds: ${fix.invariantHoldsUnderOverlay} in ${Date.now() - t0c3}ms`);
 
@@ -125,7 +148,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     logger.stage("C5: generateRegressionTest");
     const t0c5 = Date.now();
     const test = await runStage("C5", "generateRegressionTest", audit, () =>
-      generateRegressionTest({ fix, signal: args.signal, locus: args.locus, overlay, invariant, llm: args.llm, testRunner: args.c5TestRunner, logger }),
+      generateRegressionTest({ fix, signal: args.signal, locus: args.locus, overlay, invariant, llm: args.llm, testRunner: args.c5TestRunner, logger, recognized }),
     );
     logger.info(`  C5 complete — passesOnFixed: ${test?.passesOnFixedCode} failsOnOriginal: ${test?.failsOnOriginalCode} in ${Date.now() - t0c5}ms`);
 
@@ -135,7 +158,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     logger.stage("C6: generatePrincipleCandidate");
     const t0c6 = Date.now();
     const principles = await runStage("C6", "generatePrincipleCandidate", audit, () =>
-      generatePrincipleCandidate({ signal: args.signal, invariant, fixCandidate: fix, db: args.db, llm: args.llm, overlay, logger }),
+      generatePrincipleCandidate({ signal: args.signal, invariant, fixCandidate: fix, db: args.db, llm: args.llm, overlay, logger, recognized }),
     );
     const primaryPrinciple = principles.length > 0 ? principles[0] : null;
     const alternateShapes = principles.length > 1 ? principles.slice(1) : [];

@@ -60,6 +60,93 @@ export interface AuditEntry {
   metadata?: Record<string, unknown>;
 }
 
+// ---------------------------------------------------------------------------
+// B3 Recognize: LibraryPrinciple — recognized-path mechanical templates.
+//
+// A LibraryPrinciple is the in-memory shape of a `.provekit/principles/*.json`
+// file enriched with optional fixTemplate + testTemplate. When BOTH are
+// present, B3 (recognize) can fire mechanical mode and route C1/C3/C5/C6
+// through pure template instantiation with zero LLM calls.
+//
+// Both templates are OPTIONAL for backward compatibility: existing principles
+// without templates still load, and a B3 hit on a principle missing either
+// falls through to LLM mode with a logged warning.
+// ---------------------------------------------------------------------------
+
+export interface FixTemplate {
+  /**
+   * Whole-file replacement template using {{name}} placeholders bound from the
+   * principle's match captures. The substitution mechanism mirrors
+   * smt2Template substitution: simple textual replacement.
+   *
+   * The instantiated string is treated as the new file contents for the locus
+   * file (single-file MVP — multi-file fixes remain an LLM-mode concern).
+   */
+  pattern: string;
+  /** New imports the fix introduces. Reserved for future use; v1 unused. */
+  imports?: string[];
+  /** Human-readable rationale stamped onto the FixCandidate. */
+  rationale: string;
+}
+
+export interface TestTemplate {
+  /**
+   * Vitest test source with {{name}} placeholders. Same substitution rules as
+   * FixTemplate: textual replacement bound from match captures + witness inputs.
+   *
+   * The {{importsFrom}} placeholder is automatically populated by C5m using
+   * the relative path from the test file to the module under fix.
+   */
+  source: string;
+  /** Module-under-test relative path placeholder name (e.g. "./demo.js"). */
+  importsFrom: string;
+}
+
+export interface BugProvenance {
+  /** Which BugsJS bug or customer fix contributed this principle. */
+  source: "customer-fix" | "harvest" | "seed";
+  /** Project ID (or repo identifier) the contributing bug came from. */
+  projectId?: string;
+  /** Bug ID within the contributing project. */
+  bugId?: string;
+  /** ISO timestamp when this provenance entry was appended. */
+  timestamp: string;
+}
+
+/**
+ * In-memory shape of a `.provekit/principles/*.json` file. The on-disk schema
+ * uses camelCase + snake_case mixing (id / bug_class_id / smt2Template); this
+ * interface is the typed view used by B3 (recognize) and the mechanical-mode
+ * downstream stages (C1m / C3m / C5m / C6m).
+ *
+ * Field names match the on-disk JSON layout directly so JSON.parse() yields a
+ * LibraryPrinciple without a translation layer.
+ */
+export interface LibraryPrinciple {
+  /** Slug identifier (e.g. "division-by-zero"). Matches the JSON filename. */
+  id: string;
+  /** Bug-class slug shared by all alternative shapes. */
+  bug_class_id: string;
+  /** Display name. */
+  name: string;
+  /** Human-readable description of the bug class. */
+  description?: string;
+  /** SMT-LIB violation template with {{name}} placeholders. */
+  smt2Template?: string;
+  /** SMT-LIB post-fix unsat-proof template. Optional. */
+  smt2ProofTemplate?: string;
+  /** Teaching example for documentation; not used at recognition time. */
+  teachingExample?: { domain: string; explanation: string; smt2: string };
+  /** "high" | "medium" | "low" — used when multiple principles match the same locus. */
+  confidence?: "high" | "medium" | "low";
+  /** Recognition-mode mechanical fix template. Optional for backward compat. */
+  fixTemplate?: FixTemplate;
+  /** Recognition-mode mechanical test template. Optional for backward compat. */
+  testTemplate?: TestTemplate;
+  /** Append-only provenance trail. Customer fixes / harvest entries push here. */
+  provenance?: BugProvenance | BugProvenance[];
+}
+
 /** Capability spec for substrate-extension bundles (C6 → D1). stub — D1 will refine. */
 export interface CapabilitySpec {
   capabilityName: string;
@@ -494,6 +581,12 @@ export interface InvariantClaim {
    */
   citations?: InvariantCitation[] | null;
   /**
+   * B3 source marker. "library" when this invariant came from C1m
+   * (mechanical mode via a recognized LibraryPrinciple). "llm" otherwise.
+   * Defaults to "llm" when absent for backward compat with older bundles.
+   */
+  source?: "library" | "llm";
+  /**
    * Authoritative invariant kind, post-C1.5 fidelity routing.
    *
    * Set by formulateInvariant after runInvariantFidelity completes — captures
@@ -515,6 +608,12 @@ export interface InvariantClaim {
 export interface FixCandidate {
   /** The patch (CodePatch). v1 MVP allows multi-file via fileEdits. */
   patch: CodePatch;
+  /**
+   * B3 source marker. "library" when produced by C3m (mechanical fix template
+   * instantiation). "llm" when produced by the LLM-driven C3 path.
+   * Defaults to "llm" when absent for backward compat with older bundles.
+   */
+  source?: "library" | "llm";
   /** LLM's rationale for why this patch fixes the bug. */
   llmRationale: string;
   /** LLM self-reported confidence 0..1. */
@@ -539,6 +638,11 @@ export interface FixCandidate {
 
 /** A test artifact (new test or modified test) that validates the fix. C5 fills this in. */
 export interface TestArtifact {
+  /**
+   * B3 source marker. "library" when produced by C5m (mechanical test template
+   * instantiation). "llm" when produced by the LLM-driven C5 path.
+   */
+  source?: "library" | "llm";
   /** Path of the new test file inside the overlay worktree (e.g., "src/divide.regression.test.ts"). */
   testFilePath: string;
   /** Name of the vitest it(...) case. Stable, derived from signal + timestamp. */

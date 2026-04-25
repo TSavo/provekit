@@ -22,12 +22,23 @@
     "explanation": "compute_average divides total by count with no zero guard",
     "smt2": "(declare-const total Int)\n(declare-const count Int)\n(assert (= count 0))\n(check-sat)"
   },
-  "provenance": {
-    "discoveredIn": "seed",
-    "violation": "",
-    "generalizedAt": "2026-04-14T00:00:00.000Z"
-  },
+  "provenance": [
+    {
+      "source": "seed",
+      "discoveredIn": "seed",
+      "violation": "",
+      "generalizedAt": "2026-04-14T00:00:00.000Z"
+    }
+  ],
   "validated": true,
   "smt2ProofTemplate": "(declare-const {{numerator}} Int)\n(declare-const {{denominator}} Int)\n; Guard: path condition ensures {{denominator}} != 0\n(assert (not (= {{denominator}} 0)))\n; Can {{denominator}} still be zero?\n(assert (= {{denominator}} 0))\n(check-sat)\n; unsat → proven: guard prevents division by zero",
-  "confidence": "high"
+  "confidence": "high",
+  "fixTemplate": {
+    "pattern": "export function divide(a: number, b: number): number {\n  if (b === 0) throw new Error(\"Division by zero\");\n  return {{division}};\n}\n",
+    "rationale": "Add explicit zero-guard before the division. The denominator is checked against zero and a clear error is thrown when it would cause undefined behavior."
+  },
+  "testTemplate": {
+    "source": "import { describe, it, expect } from 'vitest';\nimport { divide } from '{{importsFrom}}';\n\ndescribe('divide regression: division by zero', () => {\n  it('throws when denominator is zero', () => {\n    expect(() => divide(10, 0)).toThrow('Division by zero');\n  });\n  it('returns correct quotient for non-zero denominators', () => {\n    expect(divide(10, 2)).toBe(5);\n  });\n});\n",
+    "importsFrom": "{{importsFrom}}"
+  }
 }

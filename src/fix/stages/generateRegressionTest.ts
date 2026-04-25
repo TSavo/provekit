@@ -30,6 +30,8 @@ import type {
   InvariantClaim,
 } from "../types.js";
 import type { FixLoopLogger } from "../logger.js";
+import { instantiateTestTemplate } from "./recognizeTemplates.js";
+import type { RecognizeResult } from "./recognize.js";
 
 export async function generateRegressionTest(args: {
   fix: FixCandidate;
@@ -45,6 +47,8 @@ export async function generateRegressionTest(args: {
    */
   testRunner?: (overlay: OverlayHandle, testFilePath: string, mainRepoRoot: string) => { exitCode: number; stdout: string; stderr: string };
   logger?: FixLoopLogger;
+  /** B3 mechanical-mode input. When matched, C5m runs (no LLM). */
+  recognized?: RecognizeResult;
 }): Promise<TestArtifact> {
   const { fix, signal, locus, overlay, invariant, llm } = args;
 
@@ -56,33 +60,52 @@ export async function generateRegressionTest(args: {
   // -------------------------------------------------------------------------
   // Step 2: Derive test file path and name
   // -------------------------------------------------------------------------
-  const testFilePath = chooseTestFilePath(locus, overlay);
+  let testFilePath: string;
   const testName = `regression: ${signal.summary.slice(0, 80)}`;
+  let testCode: string;
+  let source: "library" | "llm" = "llm";
 
   // -------------------------------------------------------------------------
-  // Step 3: LLM generates a vitest test using those inputs (agent path or JSON path)
+  // C5m: B3 recognized path. Mechanical instantiation of testTemplate.
   // -------------------------------------------------------------------------
-  const testCode = llm.agent
-    ? await generateTestCodeViaAgent({
-        signal,
-        locus,
-        invariant,
-        inputs: witnessInputs,
-        testFilePath,
-        testName,
-        llm,
-        overlay,
-      })
-    : await generateTestCode({
-        signal,
-        locus,
-        invariant,
-        inputs: witnessInputs,
-        testFilePath,
-        testName,
-        llm,
-        overlay,
-      });
+  if (args.recognized && args.recognized.matched && args.recognized.principle.testTemplate) {
+    const inst = instantiateTestTemplate({
+      template: args.recognized.principle.testTemplate,
+      locus,
+      overlay,
+      bindings: args.recognized.bindings,
+      witnessInputs,
+    });
+    testFilePath = inst.testFilePath;
+    testCode = inst.testCode;
+    source = "library";
+  } else {
+    testFilePath = chooseTestFilePath(locus, overlay);
+    // ---------------------------------------------------------------------
+    // Step 3: LLM generates a vitest test using those inputs.
+    // ---------------------------------------------------------------------
+    testCode = llm.agent
+      ? await generateTestCodeViaAgent({
+          signal,
+          locus,
+          invariant,
+          inputs: witnessInputs,
+          testFilePath,
+          testName,
+          llm,
+          overlay,
+        })
+      : await generateTestCode({
+          signal,
+          locus,
+          invariant,
+          inputs: witnessInputs,
+          testFilePath,
+          testName,
+          llm,
+          overlay,
+        });
+  }
 
   // -------------------------------------------------------------------------
   // Step 4: Write the test file into the overlay (C3's fix is already applied)
@@ -105,6 +128,7 @@ export async function generateRegressionTest(args: {
   const NO_RUNNER_SENTINEL = "no test runner; oracle #9 skipped";
   if (fixedRun.stdout.startsWith(NO_RUNNER_SENTINEL)) {
     return {
+      source,
       testFilePath,
       testName,
       testCode,
@@ -162,6 +186,7 @@ export async function generateRegressionTest(args: {
   // Step 9: Return artifact with full audit
   // -------------------------------------------------------------------------
   return {
+    source,
     testFilePath,
     testName,
     testCode,

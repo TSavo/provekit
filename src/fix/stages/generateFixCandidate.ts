@@ -22,12 +22,17 @@ import type {
   OverlayHandle,
   FixCandidate,
   LLMProvider,
+  CodePatch,
 } from "../types.js";
 import type { FixLoopLogger } from "../logger.js";
 import { buildFixPrompt, parseProposedFixes, verifyCandidate, buildAgentFixPrompt } from "../candidateGen.js";
 import { runAgentInOverlay } from "../captureChange.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
 import { getModelTier } from "../modelTiers.js";
+import { instantiateFixTemplate } from "./recognizeTemplates.js";
+import type { RecognizeResult } from "./recognize.js";
+import { applyPatchToOverlay, reindexOverlay } from "../overlay.js";
+import { createNoopLogger } from "../logger.js";
 
 export async function generateFixCandidate(args: {
   signal: BugSignal;
@@ -37,13 +42,72 @@ export async function generateFixCandidate(args: {
   llm: LLMProvider;
   options?: { maxCandidates?: number; minConfidence?: number };
   logger?: FixLoopLogger;
+  /** B3 mechanical-mode input. When matched, C3m runs (no LLM). */
+  recognized?: RecognizeResult;
 }): Promise<FixCandidate> {
+  // C3m: B3 recognized path. Mechanical instantiation of fixTemplate.
+  if (args.recognized && args.recognized.matched) {
+    return generateFixCandidateViaLibrary({
+      recognized: args.recognized,
+      locus: args.locus,
+      invariant: args.invariant,
+      overlay: args.overlay,
+      logger: args.logger,
+    });
+  }
   // Agent path: if the LLM provider supports agent(), use capture-the-change.
   if (args.llm.agent) {
     return generateFixCandidateViaAgent({ ...args, logger: args.logger });
   }
   // Legacy JSON-patch path.
   return generateFixCandidateViaJson(args);
+}
+
+// ---------------------------------------------------------------------------
+// C3m: library-mode mechanical fix.
+// ---------------------------------------------------------------------------
+
+async function generateFixCandidateViaLibrary(args: {
+  recognized: Extract<RecognizeResult, { matched: true }>;
+  locus: BugLocus;
+  invariant: InvariantClaim;
+  overlay: OverlayHandle;
+  logger?: FixLoopLogger;
+}): Promise<FixCandidate> {
+  const logger = args.logger ?? createNoopLogger();
+  const { recognized, locus, invariant, overlay } = args;
+  const fixTemplate = recognized.principle.fixTemplate!;
+
+  const t0 = Date.now();
+  const patch: CodePatch = instantiateFixTemplate({
+    template: fixTemplate,
+    locus,
+    overlay,
+    bindings: recognized.bindings,
+  });
+
+  applyPatchToOverlay(overlay, patch);
+  await reindexOverlay(overlay, patch.fileEdits.map((e) => e.file));
+
+  // Verify via oracle #2 (same as LLM mode). Reuse verifyCandidate.
+  const proposed = {
+    patch,
+    rationale: fixTemplate.rationale,
+    confidence: 1.0,
+  };
+  const result = await verifyCandidate(proposed, overlay, invariant);
+
+  logger.detail(`[C3m] applied library fix for '${recognized.principleId}' in ${Date.now() - t0}ms`);
+
+  return {
+    patch,
+    source: "library",
+    llmRationale: fixTemplate.rationale,
+    llmConfidence: 1.0,
+    invariantHoldsUnderOverlay: result.invariantHoldsUnderOverlay,
+    overlayZ3Verdict: result.z3Verdict,
+    audit: result.audit,
+  };
 }
 
 // ---------------------------------------------------------------------------
