@@ -111,6 +111,10 @@ export async function executeExtractorSpec(
   // Ensure cache dir exists (created on first use)
   mkdirSync(cacheDir, { recursive: true });
 
+  // Cache dir is scoped per-call already (cacheDirOverride for tests, or
+  // node_modules/.cache in production). Using mkdtempSync directly here
+  // because the cache dir IS the scratch parent — createScratchDir's env
+  // override would be a redundant second knob in this codepath.
   const tmpDir = mkdtempSync(join(cacheDir, "provekit-extractor-"));
 
   try {
@@ -131,10 +135,20 @@ export async function executeExtractorSpec(
       scratchDb.$client.exec(stmt);
     }
 
-    // 4. Transpile extractorTs to CJS
-    let transpiled: string;
+    // 4. Transpile extractorTs AND schemaTs to CJS.
+    //
+    // Modular capability specs split the schema (sqliteTable definitions)
+    // from the extractor (the AST walker that inserts rows). The extractor
+    // imports the schema via a relative path (typically './schema'). Oracle
+    // #16 must transpile both side-by-side so the require resolves at
+    // dynamic-import time. Without this, capability specs that follow the
+    // standard split-file layout fail oracle #16 with "Cannot find module
+    // './schema'" — punishing C6 for producing the canonical shape.
+    let extractorJs: string;
+    let schemaJs: string;
     try {
-      transpiled = transpileTs(spec.extractorTs);
+      extractorJs = transpileTs(spec.extractorTs);
+      schemaJs = transpileTs(spec.schemaTs);
     } catch (err) {
       return {
         passed: false,
@@ -142,9 +156,12 @@ export async function executeExtractorSpec(
       };
     }
 
-    // Write transpiled JS next to the DB so require() can resolve project modules
+    // Write both transpiled files. extractor.cjs's `require('./schema')`
+    // resolves to schema.cjs by Node's module resolution rules.
     const jsPath = join(tmpDir, "extractor.cjs");
-    writeFileSync(jsPath, transpiled);
+    const schemaJsPath = join(tmpDir, "schema.cjs");
+    writeFileSync(schemaJsPath, schemaJs);
+    writeFileSync(jsPath, extractorJs);
 
     // 5. Dynamic-import the extractor module
     let extractorFn: (...args: unknown[]) => void;

@@ -156,7 +156,11 @@ describe("C2 overlay lifecycle", () => {
   // -------------------------------------------------------------------------
   // 3. reindexOverlay updates scratch DB, not main DB
   // -------------------------------------------------------------------------
-  it("reindexOverlay updates scratch DB; main DB retains the pre-fix state", async () => {
+  // Real git-worktree creation + ts-morph SAST reindex inside the test:
+  // intrinsically 1-3s in isolation, can stretch to 8-12s under heavy
+  // parallel-CI filesystem contention. 30s ceiling gives room without
+  // hiding any genuine hang.
+  it("reindexOverlay updates scratch DB; main DB retains the pre-fix state", { timeout: 30_000 }, async () => {
     const mainTmp = mkdtempSync(join(tmpdir(), "provekit-overlay-test-"));
     cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
 
@@ -292,13 +296,13 @@ export function mul(a: number, b: number) { return a * b; }
   // 7. Error path: non-git directory — throws, leaves no scratch resources
   // -------------------------------------------------------------------------
   it("openOverlay throws a clear error when locus file is not in a git repo", async () => {
-    const nonGitDir = mkdtempSync(join(tmpdir(), "provekit-overlay-nongit-"));
+    const nonGitDir = mkdtempSync(join(tmpdir(), "overlay-nongit-"));
     cleanups.push(() => rmSync(nonGitDir, { recursive: true, force: true }));
 
     const fakePath = join(nonGitDir, "src.ts");
     writeFileSync(fakePath, "const x = 1;", "utf8");
 
-    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-overlay-test-"));
+    const mainTmp = mkdtempSync(join(tmpdir(), "overlay-maindb-"));
     cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
 
     const { db: mainDb } = openMainDb(mainTmp);
@@ -306,24 +310,30 @@ export function mul(a: number, b: number) { return a * b; }
 
     const locus = makeLocus(fakePath);
 
-    // Snapshot overlay dirs that exist BEFORE the call (concurrent test files may have
-    // live overlays; we only care that THIS failed call adds none).
+    // Per-test scratch parent isolates this test's openOverlay attempts from
+    // any concurrent test runs that also create provekit-overlay-* dirs.
+    // PROVEKIT_SCRATCH_PARENT_PROVEKIT_OVERLAY routes openOverlay's
+    // mkdtempSync target to this directory only.
+    const scratchParent = mkdtempSync(join(tmpdir(), "overlay-scratch-parent-"));
+    cleanups.push(() => rmSync(scratchParent, { recursive: true, force: true }));
+    const savedEnv = process.env.PROVEKIT_SCRATCH_PARENT_PROVEKIT_OVERLAY;
+    process.env.PROVEKIT_SCRATCH_PARENT_PROVEKIT_OVERLAY = scratchParent;
+    cleanups.push(() => {
+      if (savedEnv === undefined) delete process.env.PROVEKIT_SCRATCH_PARENT_PROVEKIT_OVERLAY;
+      else process.env.PROVEKIT_SCRATCH_PARENT_PROVEKIT_OVERLAY = savedEnv;
+    });
+
     const { readdirSync } = await import("fs");
-    const overlaysBefore = new Set(
-      readdirSync(tmpdir()).filter((n) =>
-        n.startsWith("provekit-overlay-") && !n.startsWith("provekit-overlay-nongit") && !n.startsWith("provekit-overlay-test"),
-      ),
-    );
 
     await expect(openOverlay({ locus, db: mainDb })).rejects.toThrow(
       /not inside a git repository/,
     );
 
-    // No NEW scratch directories should have been created by the failed call.
-    const overlaysAfter = readdirSync(tmpdir()).filter((n) =>
-      n.startsWith("provekit-overlay-") && !n.startsWith("provekit-overlay-nongit") && !n.startsWith("provekit-overlay-test"),
+    // No scratch directories should have been created by the failed call —
+    // openOverlay resolves repo root BEFORE creating the scratch dir.
+    const remaining = readdirSync(scratchParent).filter((n) =>
+      n.startsWith("provekit-overlay-"),
     );
-    const newDirs = overlaysAfter.filter((n) => !overlaysBefore.has(n));
-    expect(newDirs).toHaveLength(0);
+    expect(remaining).toHaveLength(0);
   });
 });

@@ -32,7 +32,8 @@
  * via the env var.
  */
 
-import { mkdtempSync, existsSync, readFileSync, rmSync } from "fs";
+import { existsSync, readFileSync, rmSync } from "fs";
+import { createScratchDir } from "../scratchDir.js";
 import { join } from "path";
 import { tmpdir } from "os";
 import type { LLMProvider } from "../types.js";
@@ -166,7 +167,7 @@ async function runAgentMode<T>(args: {
 
   // Scratch dir: holds output.json. Separate from agentCwd so the file write
   // never touches project files even if agentCwd is the project root.
-  const scratchDir = args.cwd ?? mkdtempSync(join(tmpdir(), `provekit-${stage}-`));
+  const scratchDir = args.cwd ?? createScratchDir(`provekit-${stage}-`);
   const outputPath = join(scratchDir, "output.json");
 
   const mutatedPrompt = prompt + buildAgentInstruction(outputPath);

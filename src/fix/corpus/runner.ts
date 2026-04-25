@@ -12,7 +12,8 @@
  * Mirrors the pattern in dogfood.empty-catch.test.ts — no runFixLoopCli indirection.
  */
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, existsSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync, symlinkSync, existsSync } from "fs";
+import { createScratchDir } from "../scratchDir.js";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { execFileSync } from "child_process";
@@ -187,7 +188,7 @@ export async function runScenarioIsolated(
 
   try {
     // Set up scratch project
-    scratchDir = mkdtempSync(join(tmpdir(), `provekit-fuzz-${scenario.id.slice(0, 20)}-`));
+    scratchDir = createScratchDir(`provekit-fuzz-${scenario.id.slice(0, 20)}-`);
 
     const absoluteFilePaths: Record<string, string> = {};
     for (const [relPath, content] of Object.entries(scenario.files)) {

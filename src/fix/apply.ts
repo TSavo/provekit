@@ -7,9 +7,8 @@
 
 import { writeFileSync, mkdirSync, existsSync, rmSync } from "fs";
 import { join, dirname } from "path";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
 import { execFileSync } from "child_process";
+import { createScratchDir } from "./scratchDir.js";
 import { eq } from "drizzle-orm";
 import { fixBundles } from "../db/schema/fixBundles.js";
 import { gapReports } from "../db/schema/gapReports.js";
@@ -50,11 +49,10 @@ export function createApplyWorktree(
   repoRoot: string,
   parentDir?: string,
 ): ApplyWorktreeHandle {
-  // parentDir lets tests scope worktrees to a per-test scratch directory so
-  // their cleanup-verification assertions aren't poisoned by concurrent runs
-  // of other apply.test cases that also create provekit-apply-* dirs in
-  // tmpdir(). Production callers omit it and get the default tmpdir().
-  const worktreePath = mkdtempSync(join(parentDir ?? tmpdir(), "provekit-apply-"));
+  // parentDir or PROVEKIT_SCRATCH_PARENT[_PROVEKIT_APPLY] env vars let tests
+  // scope worktrees to a per-test scratch directory so their cleanup checks
+  // aren't poisoned by concurrent test runs.
+  const worktreePath = createScratchDir("provekit-apply-", parentDir);
 
   try {
     execFileSync("git", ["worktree", "add", "--detach", worktreePath, ref], {
@@ -380,7 +378,7 @@ export function cherryPickToTarget(
   targetBranch: string,
   sha: string,
 ): void {
-  const helperPath = mkdtempSync(join(tmpdir(), "provekit-cherry-"));
+  const helperPath = createScratchDir("provekit-cherry-");
 
   try {
     // Create a detached worktree off targetBranch.

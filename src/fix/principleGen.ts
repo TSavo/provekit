@@ -7,10 +7,10 @@
  *   runAdversarialValidation — oracle #6 (shared by both paths)
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "fs";
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from "fs";
+import { createScratchDir } from "./scratchDir.js";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
@@ -489,7 +489,7 @@ export async function runAdversarialValidation(
 
   // Run a fixture: build SAST, run all principles, return total match count.
   const runFixture = (source: string): number => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "provekit-adversarial-"));
+    const tmpDir = createScratchDir("provekit-adversarial-");
     try {
       // Init a bare git repo (builder requires git-tracked files).
       const GIT_ID = ["-c", "user.name=test", "-c", "user.email=test@test"];

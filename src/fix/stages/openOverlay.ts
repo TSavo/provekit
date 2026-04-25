@@ -6,10 +6,10 @@
  * The overlay is torn down by closeOverlay() in overlay.ts.
  */
 
-import { mkdtempSync, mkdirSync, cpSync, existsSync, rmSync, realpathSync } from "fs";
+import { mkdirSync, cpSync, existsSync, rmSync, realpathSync } from "fs";
+import { createScratchDir } from "../scratchDir.js";
 import { join, relative, dirname } from "path";
 import { fileURLToPath } from "url";
-import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { openDb } from "../../db/index.js";
@@ -64,7 +64,7 @@ export async function openOverlay(args: {
   // ------------------------------------------------------------------
   // Step 2: Create scratch directory.
   // ------------------------------------------------------------------
-  const scratchPath = mkdtempSync(join(tmpdir(), "provekit-overlay-"));
+  const scratchPath = createScratchDir("provekit-overlay-");
 
   // ------------------------------------------------------------------
   // Step 3: Add the git worktree (detached HEAD).
