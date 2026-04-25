@@ -3,10 +3,7 @@
  *
  * Oracles 1,2,3,6,9,14,16,17,18 are verified via audit trail (already-fired).
  * This module implements oracles 4,5,7,8,10,11,12,13,15 — the "NEW" set that
- * runs during bundle assembly.
- *
- * MVP stubs: oracle 15 is pass-through (D3 territory).
- * Oracles 7 and 12 are fully implemented.
+ * runs during bundle assembly. All implementations are real (no MVP stubs).
  */
 
 import type { OverlayHandle, InvariantClaim, FixCandidate, BugSignal, BugLocus } from "./types.js";
