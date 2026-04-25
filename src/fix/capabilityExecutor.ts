@@ -156,10 +156,13 @@ export async function executeExtractorSpec(
       };
     }
 
-    // Write both transpiled files. extractor.cjs's `require('./schema')`
-    // resolves to schema.cjs by Node's module resolution rules.
+    // Write both transpiled files. Schema is written as schema.js (NOT
+    // .cjs) because Node's CJS module resolver tries .js / .json / .node
+    // by default — `require('./schema')` from extractor.cjs would fail to
+    // find schema.cjs. The extractor itself is .cjs so dynamic-import
+    // treats it as CommonJS.
     const jsPath = join(tmpDir, "extractor.cjs");
-    const schemaJsPath = join(tmpDir, "schema.cjs");
+    const schemaJsPath = join(tmpDir, "schema.js");
     writeFileSync(schemaJsPath, schemaJs);
     writeFileSync(jsPath, extractorJs);
 
