@@ -1,5 +1,6 @@
 {
   "id": "while-loop-termination",
+  "bug_class_id": "while-loop-termination",
   "name": "While Loop Non-Termination",
   "description": "While loop whose body does not modify any variable referenced in the loop condition. If the condition is true on entry, it stays true forever.",
   "astPatterns": [

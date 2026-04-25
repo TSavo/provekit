@@ -42,13 +42,14 @@ import type {
 import type { CapabilitySpec } from "./types.js";
 import { proposeCapabilitySpec, runSubstrateOracles } from "./capabilityGen.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
+import { getModelTier } from "./modelTiers.js";
 
 // ---------------------------------------------------------------------------
 // Internal result shape for tryExistingCapabilities
 // ---------------------------------------------------------------------------
 
 export type ExistingCapAttempt =
-  | { kind: "ok"; principle: PrincipleCandidate }
+  | { kind: "ok"; principles: PrincipleCandidate[] }
   | { kind: "capability_gap"; gap: string }
   | { kind: "non_codifiable" };
 
@@ -141,18 +142,47 @@ ${exemplar}
 
 === END EXEMPLAR ===
 
+=== MULTI-SHAPE PRINCIPLES (PITCH-LEAK 3 LAYER 1) ===
+
+The same bug class often manifests in multiple syntactic forms. Example:
+the "division-by-zero" bug class can appear as:
+  - canonical:  a / b           (binary "/" with unguarded rhs)
+  - alternate:  a % b           (modulo also throws on zero)
+  - alternate:  Math.floor(a/b) (wrapped in a call expression)
+
+Each alternate shape matches a DIFFERENT AST pattern but is the SAME bug.
+Without alternates, the principle library only catches the canonical form;
+real-world variants slip past.
+
+You MUST produce 1 to 3 principles for this bug class:
+- the FIRST principle is the canonical shape that matches the reported bug.
+- ADDITIONAL principles (0, 1, or 2 more) are syntactically distinct shapes
+  of the SAME bug class. Add an alternate shape ONLY if it is materially
+  different in AST structure. Do NOT pad with redundant variants.
+- ALL shapes share the same \`bugClassId\` slug. Names must be unique.
+
 If you can express the invariant using ONLY the capabilities above, respond:
 {
-  "kind": "principle",
-  "name": "UniquePrincipleName",
-  "dslSource": "<full DSL source>",
-  "smtTemplate": "<SMT-LIB template with {{placeholders}}>",
-  "teachingExample": {
-    "domain": "arithmetic",
-    "explanation": "...",
-    "smt2": "(declare-const x Int)\\n(assert (= x 0))\\n(check-sat)"
-  }
+  "kind": "principles",
+  "bugClassId": "division-by-zero",
+  "principles": [
+    {
+      "name": "UniquePrincipleName",
+      "dslSource": "<full DSL source>",
+      "smtTemplate": "<SMT-LIB template with {{placeholders}}>",
+      "teachingExample": {
+        "domain": "arithmetic",
+        "explanation": "...",
+        "smt2": "(declare-const x Int)\\n(assert (= x 0))\\n(check-sat)"
+      }
+    }
+  ]
 }
+
+The "principles" array MUST contain 1 to 3 entries. Each entry has its own
+DSL source, SMT template, and teaching example. The bugClassId at the top
+applies to all entries. Each principle is compiled and adversarially
+validated independently; valid shapes are kept, invalid shapes are dropped.
 
 If you CANNOT express it without a new capability, respond:
 {
@@ -165,6 +195,12 @@ If the invariant is non-codifiable as a static rule (e.g., too runtime-specific)
   "kind": "non_codifiable",
   "reason": "..."
 }
+
+Legacy single-principle response (still accepted for backward compatibility):
+{ "kind": "principle", "name": "...", "dslSource": "...", "smtTemplate": "...",
+  "teachingExample": {...} }
+This is wrapped into a length-1 principles array with bugClassId derived from
+\`bugClassHint\` or the principle name. Prefer the "principles" array form.
 
 DSL syntax (exact format, no variations):
   predicate predicateName($arg: node) {
@@ -491,42 +527,91 @@ function findLatentSiteMatches(
 // LLM response parser for principle proposal
 // ---------------------------------------------------------------------------
 
+/** A single shape (one entry of the multi-shape `principles` array). */
+interface PrincipleShape {
+  name: string;
+  dslSource: string;
+  smtTemplate: string;
+  teachingExample: { domain: string; explanation: string; smt2: string };
+}
+
 type PrincipleProposalResponse =
   | {
-      kind: "principle";
-      name: string;
-      dslSource: string;
-      smtTemplate: string;
-      teachingExample: { domain: string; explanation: string; smt2: string };
+      kind: "principles";
+      bugClassId: string;
+      principles: PrincipleShape[];
     }
   | { kind: "needs_capability"; missing_predicate: string }
   | { kind: "non_codifiable"; reason?: string };
 
-function validatePrincipleProposal(rawParsed: unknown): PrincipleProposalResponse | null {
+/**
+ * Validate one shape entry. Returns null on shape failure.
+ */
+function validateShape(raw: unknown): PrincipleShape | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const s = raw as Record<string, unknown>;
+  const name = s["name"];
+  const dslSource = s["dslSource"];
+  const smtTemplate = s["smtTemplate"];
+  const teachingExample = s["teachingExample"] as
+    | { domain: string; explanation: string; smt2: string }
+    | undefined;
+  if (
+    typeof name !== "string" ||
+    typeof dslSource !== "string" ||
+    typeof smtTemplate !== "string" ||
+    !teachingExample ||
+    typeof teachingExample.domain !== "string"
+  ) {
+    return null;
+  }
+  return { name, dslSource, smtTemplate, teachingExample };
+}
+
+/**
+ * Slugify a principle name to a stable bug-class-id when the LLM didn't supply one.
+ * Lower-cases, replaces non-alphanumerics with hyphens, collapses + trims.
+ */
+function slugifyBugClassId(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "unknown-bug-class";
+}
+
+function validatePrincipleProposal(rawParsed: unknown, bugClassHint?: string): PrincipleProposalResponse | null {
   try {
     if (typeof rawParsed !== "object" || rawParsed === null) return null;
     const p = rawParsed as Record<string, unknown>;
     const kind = p["kind"];
-    if (kind === "principle") {
-      const name = p["name"];
-      const dslSource = p["dslSource"];
-      const smtTemplate = p["smtTemplate"];
-      const teachingExample = p["teachingExample"] as {
-        domain: string;
-        explanation: string;
-        smt2: string;
-      } | undefined;
-      if (
-        typeof name !== "string" ||
-        typeof dslSource !== "string" ||
-        typeof smtTemplate !== "string" ||
-        !teachingExample ||
-        typeof teachingExample.domain !== "string"
-      ) {
-        return null;
+
+    // Multi-shape response (preferred form per pitch-leak 3 layer 1).
+    if (kind === "principles") {
+      const arr = p["principles"];
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      const shapes: PrincipleShape[] = [];
+      for (const entry of arr) {
+        const shape = validateShape(entry);
+        if (shape !== null) shapes.push(shape);
       }
-      return { kind: "principle", name, dslSource, smtTemplate, teachingExample };
+      if (shapes.length === 0) return null;
+      const rawId = p["bugClassId"];
+      const bugClassId =
+        typeof rawId === "string" && rawId.length > 0
+          ? slugifyBugClassId(rawId)
+          : slugifyBugClassId(bugClassHint ?? shapes[0].name);
+      return { kind: "principles", bugClassId, principles: shapes };
     }
+
+    // Legacy single-principle response — wrap into length-1 array.
+    if (kind === "principle") {
+      const shape = validateShape(p);
+      if (shape === null) return null;
+      const bugClassId = slugifyBugClassId(bugClassHint ?? shape.name);
+      return { kind: "principles", bugClassId, principles: [shape] };
+    }
+
     if (kind === "needs_capability") {
       const missing_predicate = p["missing_predicate"];
       if (typeof missing_predicate !== "string") return null;
@@ -547,8 +632,20 @@ function validatePrincipleProposal(rawParsed: unknown): PrincipleProposalRespons
 
 /**
  * Ask the LLM to express the invariant using existing capabilities.
+ *
+ * Pitch-leak 3 layer 1: the LLM may return 1-3 alternative syntactic shapes
+ * for the same bug class. Each shape is compiled + adversarially validated
+ * INDEPENDENTLY; valid shapes are kept, failing shapes are dropped (with a
+ * warning), and the canonical shape is preserved at index 0. The whole call
+ * is treated as non_codifiable only if NO shapes survive validation; if even
+ * one survives we return the surviving set.
+ *
+ * Capability-gap routing: if the FIRST (canonical) shape compile fails with
+ * unknown-capability, we route to the substrate path. We don't probe alts
+ * for capability gaps — alts assume the canonical's capability set.
+ *
  * Returns:
- *   { kind: "ok", principle } — principle compiled clean + adversarial passed
+ *   { kind: "ok", principles } — at least one principle compiled + adversarial passed
  *   { kind: "capability_gap", gap } — needs new capability
  *   { kind: "non_codifiable" } — cannot be expressed as a static rule
  */
@@ -567,14 +664,14 @@ export async function tryExistingCapabilities(args: {
       prompt: buildPrinciplePrompt(signal, invariant, fixCandidate),
       llm,
       stage: "C6-principleProposal",
-      model: "sonnet",
+      model: getModelTier("C6-principleProposal"),
     });
   } catch (err) {
     console.warn(`[C6] LLM call/parse failed: ${err instanceof Error ? err.message : String(err)}`);
     return { kind: "non_codifiable" };
   }
 
-  const proposal = validatePrincipleProposal(parsedRaw);
+  const proposal = validatePrincipleProposal(parsedRaw, signal.bugClassHint);
   if (!proposal) {
     console.warn(`[C6] LLM response malformed or could not be parsed`);
     return { kind: "non_codifiable" };
@@ -588,60 +685,82 @@ export async function tryExistingCapabilities(args: {
     return { kind: "capability_gap", gap: proposal.missing_predicate };
   }
 
-  // Compile the DSL to check it's valid with current capabilities.
-  try {
-    const program = parseDSL(proposal.dslSource);
-    compileProgram(program.nodes);
-  } catch (err) {
-    if (err instanceof CompileError) {
-      // Check for unknown-capability error → route to substrate path.
-      const msg = err.message.toLowerCase();
-      if (msg.includes("unknown capability") || msg.includes("unknown column")) {
-        return {
-          kind: "capability_gap",
-          gap: err.message,
-        };
+  // proposal.kind === "principles". Validate each shape independently.
+  const accepted: PrincipleCandidate[] = [];
+  for (let i = 0; i < proposal.principles.length; i++) {
+    const shape = proposal.principles[i];
+    const isCanonical = i === 0;
+
+    // Compile.
+    try {
+      const program = parseDSL(shape.dslSource);
+      compileProgram(program.nodes);
+    } catch (err) {
+      if (err instanceof CompileError) {
+        const msg = err.message.toLowerCase();
+        if (msg.includes("unknown capability") || msg.includes("unknown column")) {
+          // Capability gap on the canonical shape → route to substrate path.
+          if (isCanonical) {
+            return { kind: "capability_gap", gap: err.message };
+          }
+          // Alt shapes are ignored if they reference a missing capability.
+          console.warn(`[C6] alt shape "${shape.name}" references unknown capability; dropping`);
+          continue;
+        }
       }
+      console.warn(
+        `[C6] DSL compile error for shape "${shape.name}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+      // Canonical compile failure (non-capability-gap) → non-codifiable for the bundle.
+      if (isCanonical) {
+        return { kind: "non_codifiable" };
+      }
+      continue;
     }
-    // Other compile error → non-codifiable.
-    console.warn(`[C6] DSL compile error: ${err instanceof Error ? err.message : String(err)}`);
+
+    // Oracle #6: adversarial validation, per shape.
+    const adversarial = await runAdversarialValidation(
+      shape.dslSource,
+      invariant.description,
+      llm,
+      db,
+      { proposerModel: "sonnet" },
+    );
+
+    if (!adversarial.passed) {
+      console.warn(
+        `[C6] adversarial validation failed for shape "${shape.name}": ${adversarial.evidence}`,
+      );
+      // For the canonical shape we still allow alts to potentially survive,
+      // but if NO shape survives we'll return non_codifiable below.
+      continue;
+    }
+
+    const latentSiteMatches = findLatentSiteMatches(shape.dslSource, db);
+
+    accepted.push({
+      kind: "principle",
+      name: shape.name,
+      bugClassId: proposal.bugClassId,
+      dslSource: shape.dslSource,
+      smtTemplate: shape.smtTemplate,
+      teachingExample: shape.teachingExample,
+      adversarialValidation: [
+        {
+          validatorModel: adversarial.validatorModel,
+          result: "pass",
+          evidence: adversarial.evidence,
+        },
+      ],
+      latentSiteMatches,
+    });
+  }
+
+  if (accepted.length === 0) {
     return { kind: "non_codifiable" };
   }
 
-  // Oracle #6: adversarial validation.
-  const adversarial = await runAdversarialValidation(
-    proposal.dslSource,
-    invariant.description,
-    llm,
-    db,
-    { proposerModel: "sonnet" },
-  );
-
-  if (!adversarial.passed) {
-    console.warn(`[C6] Adversarial validation failed: ${adversarial.evidence}`);
-    return { kind: "non_codifiable" };
-  }
-
-  // Collect latent site matches from the live SAST DB.
-  const latentSiteMatches = findLatentSiteMatches(proposal.dslSource, db);
-
-  const principle: PrincipleCandidate = {
-    kind: "principle",
-    name: proposal.name,
-    dslSource: proposal.dslSource,
-    smtTemplate: proposal.smtTemplate,
-    teachingExample: proposal.teachingExample,
-    adversarialValidation: [
-      {
-        validatorModel: adversarial.validatorModel,
-        result: "pass",
-        evidence: adversarial.evidence,
-      },
-    ],
-    latentSiteMatches,
-  };
-
-  return { kind: "ok", principle };
+  return { kind: "ok", principles: accepted };
 }
 
 // ---------------------------------------------------------------------------
@@ -839,6 +958,9 @@ export async function proposeWithCapability(args: {
     const principle: PrincipleCandidate = {
       kind: "principle_with_capability",
       name,
+      // Substrate-extension path: single canonical shape. bugClassId derives
+      // from bugClassHint when available, else from the principle name.
+      bugClassId: slugifyBugClassId(signal.bugClassHint ?? name),
       dslSource,
       smtTemplate,
       teachingExample,

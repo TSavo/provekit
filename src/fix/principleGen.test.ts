@@ -134,7 +134,7 @@ describe("generatePrincipleCandidate", () => {
   beforeEach(snapshotRegistry);
   afterEach(restoreRegistry);
 
-  it("returns null when invariant has a principleId (already covered)", async () => {
+  it("returns empty array when invariant has a principleId (already covered)", async () => {
     const llm = new StubLLMProvider(new Map());
     const invariant = makeInvariant({ principleId: "existing-principle" });
     const result = await generatePrincipleCandidate({
@@ -144,10 +144,10 @@ describe("generatePrincipleCandidate", () => {
       db: makeDb(),
       llm,
     });
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 
-  it("returns null when LLM returns malformed response", async () => {
+  it("returns empty array when LLM returns malformed response", async () => {
     const llm = new StubLLMProvider(
       new Map([["denominator", '{"kind": "INVALID_KIND"}']]),
     );
@@ -158,10 +158,10 @@ describe("generatePrincipleCandidate", () => {
       db: makeDb(),
       llm,
     });
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 
-  it("returns null when LLM explicitly reports non_codifiable", async () => {
+  it("returns empty array when LLM explicitly reports non_codifiable", async () => {
     const llm = new StubLLMProvider(
       new Map([
         ["denominator", '{"kind": "non_codifiable", "reason": "too runtime-specific"}'],
@@ -174,7 +174,7 @@ describe("generatePrincipleCandidate", () => {
       db: makeDb(),
       llm,
     });
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 });
 

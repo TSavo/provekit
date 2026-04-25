@@ -65,21 +65,37 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
   const logger = args.logger ?? createNoopLogger();
 
   try {
-    // Stage C1: formulate invariant
-    logger.stage("C1: formulateInvariant");
-    const t0c1 = Date.now();
-    const invariant = await runStage("C1", "formulateInvariant", audit, () =>
-      formulateInvariant({ signal: args.signal, locus: args.locus, db: args.db, llm: args.llm, logger }),
-    );
-    logger.info(`  C1 complete in ${Date.now() - t0c1}ms`);
-
-    // Stage C2: open overlay worktree + reindex
-    logger.stage("C2: openOverlay");
-    const t0c2 = Date.now();
-    const overlay = await runStage("C2", "openOverlay", audit, () =>
-      openOverlay({ locus: args.locus, db: args.db }),
-    );
-    logger.info(`  C2 complete — worktree: ${overlay.worktreePath} in ${Date.now() - t0c2}ms`);
+    // Stages C1 + C2: formulate invariant and open overlay worktree IN PARALLEL.
+    //
+    // C1 and C2 are independent: both read from args.db (read-only shared
+    // sqlite handle), neither writes to overlay state, and C3 is the first
+    // consumer of either. C1 dominates wall time (LLM call, ~5-25s on the
+    // novel path) while C2 is a worktree checkout + reindex (~600ms).
+    // Running them concurrently saves the entire C2 wall time off the loop.
+    //
+    // Race scope: the in-process db is better-sqlite3 — synchronous reads
+    // do not interleave with the async LLM call's microtasks, and there are
+    // no writes to args.db from either stage. The audit array is mutated
+    // sequentially below (we await BOTH before continuing), and the start
+    // markers are pushed by runStage in the order Promise.all dispatches
+    // them — for parallel stages we accept that "C1:start" / "C2:start"
+    // appear adjacent to each other rather than strictly serially.
+    //
+    // Pitch-leak 6 Win 3. C4+C5 deliberately remain sequential below: they
+    // both write to the same overlay worktree (filesystem race) and to
+    // overlay.modifiedFiles (in-memory race), so concurrent execution would
+    // be unsafe.
+    logger.stage("C1+C2: formulateInvariant || openOverlay");
+    const t0c1c2 = Date.now();
+    const [invariant, overlay] = await Promise.all([
+      runStage("C1", "formulateInvariant", audit, () =>
+        formulateInvariant({ signal: args.signal, locus: args.locus, db: args.db, llm: args.llm, logger }),
+      ),
+      runStage("C2", "openOverlay", audit, () =>
+        openOverlay({ locus: args.locus, db: args.db }),
+      ),
+    ]);
+    logger.info(`  C1+C2 complete — worktree: ${overlay.worktreePath} in ${Date.now() - t0c1c2}ms (parallel)`);
 
     // Stage C3: generate fix candidate
     logger.stage("C3: generateFixCandidate");
@@ -113,13 +129,20 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     );
     logger.info(`  C5 complete — passesOnFixed: ${test?.passesOnFixedCode} failsOnOriginal: ${test?.failsOnOriginalCode} in ${Date.now() - t0c5}ms`);
 
-    // Stage C6: generate principle candidate (may be plain or with capability spec)
+    // Stage C6: generate principle candidate(s).
+    // Pitch-leak 3 layer 1: C6 returns 0..3 principles; index 0 is canonical,
+    // rest are alternative AST shapes of the same bug class.
     logger.stage("C6: generatePrincipleCandidate");
     const t0c6 = Date.now();
-    const principle = await runStage("C6", "generatePrincipleCandidate", audit, () =>
+    const principles = await runStage("C6", "generatePrincipleCandidate", audit, () =>
       generatePrincipleCandidate({ signal: args.signal, invariant, fixCandidate: fix, db: args.db, llm: args.llm, overlay, logger }),
     );
-    logger.info(`  C6 complete — kind: ${principle?.kind ?? "null"} in ${Date.now() - t0c6}ms`);
+    const primaryPrinciple = principles.length > 0 ? principles[0] : null;
+    const alternateShapes = principles.length > 1 ? principles.slice(1) : [];
+    logger.info(
+      `  C6 complete — primary kind: ${primaryPrinciple?.kind ?? "null"}, ` +
+      `${alternateShapes.length} alternate shape(s) in ${Date.now() - t0c6}ms`,
+    );
 
     // Stage D1: assemble bundle
     logger.stage("D1: assembleBundle");
@@ -132,7 +155,8 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
         fix,
         complementary,
         test,
-        principle,
+        principle: primaryPrinciple,
+        alternateShapes,
         overlay,
         db: args.db,
         existingAuditTrail: audit,

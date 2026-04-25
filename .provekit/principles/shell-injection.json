@@ -1,5 +1,6 @@
 {
   "id": "shell-injection",
+  "bug_class_id": "shell-injection",
   "name": "Shell Injection",
   "description": "Parameter-derived value interpolated into a string passed to a shell execution function (execSync, exec, spawn) without sanitization.",
   "astPatterns": [

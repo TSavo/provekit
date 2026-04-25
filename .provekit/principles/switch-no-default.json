@@ -1,5 +1,6 @@
 {
   "id": "switch-no-default",
+  "bug_class_id": "switch-no-default",
   "name": "Switch Without Default",
   "description": "Switch statement with no default case. Unmatched values fall through silently with no handling.",
   "astPatterns": [

@@ -1,5 +1,6 @@
 {
   "id": "multiplication-overflow",
+  "bug_class_id": "multiplication-overflow",
   "name": "Multiplication Overflow",
   "description": "Multiplication of two positive values where the result can exceed JavaScript's MAX_SAFE_INTEGER.",
   "astPatterns": [

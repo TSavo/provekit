@@ -148,6 +148,7 @@ function makePrincipleWithCapability(): PrincipleCandidate {
   return {
     kind: "principle_with_capability",
     name: "null_guard_principle",
+    bugClassId: "null-guard-principle",
     dslSource: "MATCH ...",
     smtTemplate: "(assert ...)",
     teachingExample: { domain: "null", explanation: "example", smt2: "(check-sat)" },
@@ -161,6 +162,7 @@ function makePrinciple(): PrincipleCandidate {
   return {
     kind: "principle",
     name: "null_guard_principle",
+    bugClassId: "null-guard-principle",
     dslSource: "MATCH ...",
     smtTemplate: "(assert ...)",
     teachingExample: { domain: "null", explanation: "example", smt2: "(check-sat)" },

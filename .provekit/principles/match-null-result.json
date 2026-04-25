@@ -1,5 +1,6 @@
 {
   "id": "match-null-result",
+  "bug_class_id": "match-null-result",
   "name": "Regex Match Null Result",
   "description": "String.match() or RegExp.exec() result accessed without null check. Returns null when no match found.",
   "astPatterns": [

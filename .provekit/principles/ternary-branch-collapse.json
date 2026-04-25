@@ -1,5 +1,6 @@
 {
   "id": "ternary-branch-collapse",
+  "bug_class_id": "ternary-branch-collapse",
   "name": "ternary-branch-collapse",
   "description": "Ternary expression where one branch silently produces an empty or identity-value result (e.g. empty string \"\") that collapses meaningful output to a no-op, making the condition effectively untestable and the branch semantically dead under certain input ranges.",
   "astPatterns": [

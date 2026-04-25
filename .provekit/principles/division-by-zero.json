@@ -1,5 +1,6 @@
 {
   "id": "division-by-zero",
+  "bug_class_id": "division-by-zero",
   "name": "Division by Zero",
   "description": "Division where the denominator derives from a parameter or external input and no guard ensures it is non-zero.",
   "astPatterns": [

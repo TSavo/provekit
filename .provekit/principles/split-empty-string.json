@@ -1,5 +1,6 @@
 {
   "id": "split-empty-string",
+  "bug_class_id": "split-empty-string",
   "name": "Split on Empty String",
   "description": "String.split() called on a parameter that could be empty. ''.split(x) returns [''] (array with one empty string), not [] (empty array).",
   "astPatterns": [

@@ -1,5 +1,6 @@
 {
   "id": "empty-collection-loop",
+  "bug_class_id": "empty-collection-loop",
   "name": "Empty Collection Loop",
   "description": "For-of/for-in loop over a collection that could be empty. Loop body never executes, leaving accumulators and state unchanged.",
   "astPatterns": [

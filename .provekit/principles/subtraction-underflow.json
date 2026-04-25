@@ -1,5 +1,6 @@
 {
   "id": "subtraction-underflow",
+  "bug_class_id": "subtraction-underflow",
   "name": "Subtraction Underflow",
   "description": "Subtraction where the right operand can exceed the left, producing a negative result when a non-negative result is expected.",
   "astPatterns": [

@@ -27,6 +27,17 @@ import { enqueuePendingFix } from "./bundlePersistence.js";
 export interface LearnResult {
   principleAdded: string | null;
   principleFilesWritten: { dslPath: string; jsonPath: string } | null;
+  /**
+   * Pitch-leak 3 layer 1: alternative AST shapes for the same bug class that
+   * were also written to .provekit/principles/. Empty when C6 returned only
+   * the canonical shape (or returned no principles at all).
+   */
+  alternateShapesWritten: {
+    name: string;
+    bugClassId: string;
+    dslPath: string;
+    jsonPath: string;
+  }[];
   /** substrate bundles only — the capabilityName that was registered */
   capabilityRegistered: string | null;
   /** MVP: always empty — deferred to `provekit review` CLI */
@@ -77,6 +88,7 @@ export async function learnFromBundle(args: {
     return {
       principleAdded: null,
       principleFilesWritten: null,
+      alternateShapesWritten: [],
       capabilityRegistered: null,
       confidenceUpdates: [],
       pendingFixesEnqueued: 0,
@@ -89,6 +101,7 @@ export async function learnFromBundle(args: {
   const result: LearnResult = {
     principleAdded: null,
     principleFilesWritten: null,
+    alternateShapesWritten: [],
     capabilityRegistered: null,
     confidenceUpdates: [],
     pendingFixesEnqueued: 0,
@@ -97,56 +110,86 @@ export async function learnFromBundle(args: {
 
   // -------------------------------------------------------------------------
   // 1. Principle library update
+  //
+  // Pitch-leak 3 layer 1: a single C6 call may produce 1-3 alternative shapes
+  // for the same bug class. We persist ALL of them — the canonical principle
+  // and each alternate shape — to .provekit/principles/. They share the same
+  // `bug_class_id` in their JSON metadata, allowing downstream tooling to
+  // group shapes when reasoning about bug-class coverage.
+  //
+  // `result.principleAdded` and `result.principleFilesWritten` reflect the
+  // canonical (primary) shape only, for backward compatibility with callers
+  // that read those fields. Alternate shapes are reported via
+  // `result.alternateShapesWritten`.
   // -------------------------------------------------------------------------
   const principle = args.bundle.artifacts.principle;
+  const alternateShapes = args.bundle.artifacts.alternateShapes ?? [];
+  const allShapes = principle !== null ? [principle, ...alternateShapes] : [];
 
-  if (principle !== null) {
-    assertSafePrincipleName(principle.name);
-
+  if (allShapes.length > 0) {
     const principlesDir = join(projectRoot, ".provekit", "principles");
     mkdirSync(principlesDir, { recursive: true });
 
-    const dslPath = join(principlesDir, `${principle.name}.dsl`);
-    const jsonPath = join(principlesDir, `${principle.name}.json`);
+    for (let i = 0; i < allShapes.length; i++) {
+      const shape = allShapes[i];
+      const isPrimary = i === 0;
+      assertSafePrincipleName(shape.name);
 
-    writeFileSync(dslPath, principle.dslSource, "utf8");
-    writeFileSync(
-      jsonPath,
-      JSON.stringify(
-        {
-          id: principle.name,
-          name: principle.name,
-          description: principle.teachingExample.explanation,
-          smtTemplate: principle.smtTemplate,
-          teachingExample: principle.teachingExample,
-          validated: true,
-          confidence: "advisory",
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
+      const dslPath = join(principlesDir, `${shape.name}.dsl`);
+      const jsonPath = join(principlesDir, `${shape.name}.json`);
 
-    const relDsl = relative(projectRoot, dslPath);
-    const relJson = relative(projectRoot, jsonPath);
+      writeFileSync(dslPath, shape.dslSource, "utf8");
+      writeFileSync(
+        jsonPath,
+        JSON.stringify(
+          {
+            id: shape.name,
+            name: shape.name,
+            // Pitch-leak 3 layer 1: bug_class_id is shared across all shapes
+            // of the same bug class. Canonical and alternates have distinct
+            // `id`/`name` but identical `bug_class_id`.
+            bug_class_id: shape.bugClassId,
+            description: shape.teachingExample.explanation,
+            smtTemplate: shape.smtTemplate,
+            teachingExample: shape.teachingExample,
+            validated: true,
+            confidence: "advisory",
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
 
-    args.db
-      .insert(principlesLibrary)
-      .values({
-        name: principle.name,
-        dslPath: relDsl,
-        jsonPath: relJson,
-        confidenceTier: "advisory",
-        addedBundleId: args.bundle.bundleId,
-        addedAt: Date.now(),
-        falseNegativeCount: 0,
-        successfulApplicationCount: 0,
-      })
-      .run();
+      const relDsl = relative(projectRoot, dslPath);
+      const relJson = relative(projectRoot, jsonPath);
 
-    result.principleAdded = principle.name;
-    result.principleFilesWritten = { dslPath, jsonPath };
+      args.db
+        .insert(principlesLibrary)
+        .values({
+          name: shape.name,
+          dslPath: relDsl,
+          jsonPath: relJson,
+          confidenceTier: "advisory",
+          addedBundleId: args.bundle.bundleId,
+          addedAt: Date.now(),
+          falseNegativeCount: 0,
+          successfulApplicationCount: 0,
+        })
+        .run();
+
+      if (isPrimary) {
+        result.principleAdded = shape.name;
+        result.principleFilesWritten = { dslPath, jsonPath };
+      } else {
+        result.alternateShapesWritten.push({
+          name: shape.name,
+          bugClassId: shape.bugClassId,
+          dslPath,
+          jsonPath,
+        });
+      }
+    }
   }
 
   // -------------------------------------------------------------------------

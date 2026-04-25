@@ -1,5 +1,6 @@
 {
   "id": "null-assertion",
+  "bug_class_id": "null-assertion",
   "name": "Unguarded Non-Null Assertion",
   "description": "TypeScript non-null assertion operator (!) used without a preceding null/undefined check in the path conditions.",
   "astPatterns": [

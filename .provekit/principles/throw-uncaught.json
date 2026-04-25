@@ -1,5 +1,6 @@
 {
   "id": "throw-uncaught",
+  "bug_class_id": "throw-uncaught",
   "name": "Uncaught Throw",
   "description": "Throw statement not inside a try/catch. Creates a caller obligation to handle the exception.",
   "astPatterns": [

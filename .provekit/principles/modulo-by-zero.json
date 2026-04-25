@@ -1,5 +1,6 @@
 {
   "id": "modulo-by-zero",
+  "bug_class_id": "modulo-by-zero",
   "name": "Modulo by Zero",
   "description": "Modulo operation where the divisor derives from a parameter and no guard ensures it is non-zero.",
   "astPatterns": [

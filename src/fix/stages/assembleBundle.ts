@@ -30,6 +30,12 @@ export async function assembleBundle(args: {
   complementary: ComplementaryChange[];
   test: TestArtifact | null;
   principle: PrincipleCandidate | null;
+  /**
+   * Pitch-leak 3 layer 1: alternative AST shapes for the same bug class.
+   * Stored alongside the canonical `principle` so the principle library
+   * captures multi-shape coverage. Defaults to [] when not supplied.
+   */
+  alternateShapes?: PrincipleCandidate[];
   overlay: OverlayHandle;
   db: Db;
   /** Optional pre-seeded audit trail from the orchestrator. */

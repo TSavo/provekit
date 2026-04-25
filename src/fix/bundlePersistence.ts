@@ -70,7 +70,15 @@ export function persistBundle(
       } else if (kind.name === "regression_test") {
         payload = bundle.artifacts.test;
       } else if (kind.name === "principle_candidate") {
-        payload = bundle.artifacts.principle;
+        // Pitch-leak 3 layer 1: serialize the canonical principle plus any
+        // alternative-shape principles (same bugClassId, distinct names).
+        // Shape on disk: { primary, alternateShapes? } so loadBundle can
+        // reconstruct both fields.
+        const alts = bundle.artifacts.alternateShapes ?? [];
+        payload = {
+          primary: bundle.artifacts.principle,
+          alternateShapes: alts.length > 0 ? alts : undefined,
+        };
       } else if (kind.name === "capability_spec") {
         payload = bundle.artifacts.capabilitySpec;
       } else if (kind.name === "complementary_change") {
@@ -111,10 +119,27 @@ export function loadBundle(db: Db, bundleId: number): FixBundle | null {
     artifactMap[ar.kind] = JSON.parse(ar.payloadJson);
   }
 
+  // Pitch-leak 3 layer 1: principle_candidate payload is now
+  // { primary, alternateShapes? }. Older rows (pre-layer-1) stored the
+  // PrincipleCandidate directly, so detect that shape and unwrap.
+  const principlePayload = artifactMap["principle_candidate"] as
+    | { primary: FixBundle["artifacts"]["principle"]; alternateShapes?: FixBundle["artifacts"]["alternateShapes"] }
+    | FixBundle["artifacts"]["principle"]
+    | undefined;
+  let principle: FixBundle["artifacts"]["principle"] = null;
+  let alternateShapes: FixBundle["artifacts"]["alternateShapes"] = undefined;
+  if (principlePayload && typeof principlePayload === "object" && "primary" in principlePayload) {
+    principle = principlePayload.primary ?? null;
+    alternateShapes = principlePayload.alternateShapes;
+  } else if (principlePayload) {
+    principle = principlePayload as FixBundle["artifacts"]["principle"];
+  }
+
   const artifacts: FixBundle["artifacts"] = {
     primaryFix: (artifactMap["code_patch"] as FixBundle["artifacts"]["primaryFix"]) ?? null,
     test: (artifactMap["regression_test"] as FixBundle["artifacts"]["test"]) ?? null,
-    principle: (artifactMap["principle_candidate"] as FixBundle["artifacts"]["principle"]) ?? null,
+    principle,
+    alternateShapes,
     capabilitySpec:
       (artifactMap["capability_spec"] as FixBundle["artifacts"]["capabilitySpec"]) ?? null,
     complementary:

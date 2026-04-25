@@ -1,5 +1,6 @@
 {
   "id": "loop-accumulator-overflow",
+  "bug_class_id": "loop-accumulator-overflow",
   "name": "Loop Accumulator Overflow",
   "description": "Augmented assignment (+=, *=) inside a loop body. Unbounded iteration count can overflow the accumulator.",
   "astPatterns": [

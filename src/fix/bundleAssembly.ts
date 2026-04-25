@@ -135,6 +135,13 @@ export async function assembleBundle(args: {
   complementary: ComplementaryChange[];
   test: TestArtifact | null;
   principle: PrincipleCandidate | null;
+  /**
+   * Pitch-leak 3 layer 1: alternative AST shapes for the same bug class.
+   * Each entry shares `bugClassId` with `principle`. Stored alongside the
+   * canonical principle so the principle library captures multi-shape
+   * coverage. Defaults to [] when not supplied.
+   */
+  alternateShapes?: PrincipleCandidate[];
   overlay: OverlayHandle;
   db: Db;
   /** Optional pre-seeded audit trail from the orchestrator. */
@@ -160,6 +167,7 @@ export async function assembleBundle(args: {
     vitestRunner,
     triggeringGapId,
   } = args;
+  const alternateShapes = args.alternateShapes ?? [];
 
   // -------------------------------------------------------------------------
   // Step 1: Determine bundleType
@@ -185,6 +193,7 @@ export async function assembleBundle(args: {
     complementary,
     test: test ?? null,
     principle: principle ?? null,
+    alternateShapes: alternateShapes.length > 0 ? alternateShapes : undefined,
     capabilitySpec:
       principle?.kind === "principle_with_capability" ? principle.capabilitySpec : null,
   };

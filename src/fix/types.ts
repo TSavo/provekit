@@ -73,11 +73,26 @@ export interface CapabilitySpec {
   rationale: string;
 }
 
-/** Principle candidate — tagged union per substrate-extension path (C6 output). */
+/**
+ * Principle candidate — tagged union per substrate-extension path (C6 output).
+ *
+ * `bugClassId` is a slug-style identifier (e.g. "division-by-zero") shared by
+ * all alternative syntactic shapes for the same underlying bug class. Pitch-leak 3
+ * layer 1: C6 may emit 1-3 PrincipleCandidates per call, all with the same
+ * `bugClassId` but distinct `name` (e.g. "division-by-zero",
+ * "division-by-zero-modulo", "division-by-zero-floor"). Each shape compiles
+ * + validates independently.
+ */
 export type PrincipleCandidate =
   | {
       kind: "principle";
       name: string;
+      /**
+       * Bug-class slug shared by all alternative shapes (e.g. "division-by-zero").
+       * For canonical shapes typically equals `name`; for alternative shapes
+       * the `name` differs but `bugClassId` matches the canonical's bugClassId.
+       */
+      bugClassId: string;
       dslSource: string;
       smtTemplate: string;
       teachingExample: { domain: string; explanation: string; smt2: string };
@@ -87,6 +102,7 @@ export type PrincipleCandidate =
   | {
       kind: "principle_with_capability";
       name: string;
+      bugClassId: string;
       dslSource: string;
       smtTemplate: string;
       teachingExample: { domain: string; explanation: string; smt2: string };
@@ -180,7 +196,17 @@ export interface FixBundle {
     primaryFix: FixCandidate | null;
     complementary: ComplementaryChange[];
     test: TestArtifact | null;
+    /**
+     * Primary (canonical) principle for the bug class. Always principle[0] of
+     * the bundle's principle set when any principles were generated.
+     */
     principle: PrincipleCandidate | null;
+    /**
+     * Pitch-leak 3 layer 1: alternative syntactic shapes for the same bug class.
+     * Each shares `bugClassId` with `principle`. Empty (or undefined) when C6
+     * returned only the canonical shape, or when no principle was generated.
+     */
+    alternateShapes?: PrincipleCandidate[];
     capabilitySpec: CapabilitySpec | null;
   };
   coherence: {

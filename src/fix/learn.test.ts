@@ -58,6 +58,7 @@ function makePrinciple(
   return {
     kind: "principle",
     name: "null-deref-guard",
+    bugClassId: "null-deref-guard",
     dslSource: "(rule null_deref_guard ...)",
     smtTemplate: "(assert (not (= x null)))",
     teachingExample: {

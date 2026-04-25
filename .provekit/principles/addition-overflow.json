@@ -1,5 +1,6 @@
 {
   "id": "addition-overflow",
+  "bug_class_id": "addition-overflow",
   "name": "addition-overflow",
   "description": "Integer addition where one or both operands derive from external input and no guard ensures the result stays within safe bounds, risking silent overflow into unexpected negative values or exceeding maximum capacity.",
   "astPatterns": [

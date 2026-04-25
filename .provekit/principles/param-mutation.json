@@ -1,5 +1,6 @@
 {
   "id": "param-mutation",
+  "bug_class_id": "param-mutation",
   "name": "Parameter Object Mutation",
   "description": "Property assignment on a parameter-derived object. The mutation is a side effect visible to the caller, who may not expect it.",
   "astPatterns": [

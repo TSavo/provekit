@@ -1,5 +1,6 @@
 {
   "id": "empty-catch",
+  "bug_class_id": "empty-catch",
   "name": "Silent Exception Swallowing",
   "description": "Try/catch with an empty catch block. Exceptions are silently swallowed — caller cannot distinguish success from failure.",
   "astPatterns": [

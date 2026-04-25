@@ -1,5 +1,6 @@
 {
   "id": "find-undefined-result",
+  "bug_class_id": "find-undefined-result",
   "name": "Find Returns Undefined",
   "description": "Array.find() result used without undefined check. Returns undefined when no element matches the predicate.",
   "astPatterns": [

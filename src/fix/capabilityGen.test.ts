@@ -385,8 +385,8 @@ describe("oracle #18 — principle-needs-capability (via generatePrincipleCandid
       llm,
     });
 
-    // Should return null because the principle compiles WITHOUT myCapability (gratuitous).
-    expect(result).toBeNull();
+    // Should return empty array because the principle compiles WITHOUT myCapability (gratuitous).
+    expect(result).toEqual([]);
   });
 
   it("live registry not mutated after substrate path returns null", async () => {
@@ -408,7 +408,7 @@ describe("oracle #18 — principle-needs-capability (via generatePrincipleCandid
       llm,
     });
 
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
 
     const after = listCapabilities().map((c) => c.dslName).sort();
     expect(after).toEqual(before);

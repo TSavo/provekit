@@ -1,5 +1,6 @@
 {
   "id": "reduce-no-initial",
+  "bug_class_id": "reduce-no-initial",
   "name": "Reduce Without Initial Value",
   "description": "Array.reduce() called without a second argument (initial value). Throws TypeError on empty arrays.",
   "astPatterns": [

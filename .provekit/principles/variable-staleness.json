@@ -1,5 +1,6 @@
 {
   "id": "variable-staleness",
+  "bug_class_id": "variable-staleness",
   "name": "Variable Staleness on Fall-Through",
   "description": "Variable modified inside an if-block but used after it. On the fall-through path (condition false), the code uses the unmodified value.",
   "astPatterns": [

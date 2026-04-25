@@ -1,5 +1,6 @@
 {
   "id": "guard-narrowing",
+  "bug_class_id": "guard-narrowing",
   "name": "Guard Narrowing",
   "description": "If-statement with return/throw in the consequence and no else. Code after the if implicitly assumes the condition's negation holds, but this may not be checked.",
   "astPatterns": [

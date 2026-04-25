@@ -1,5 +1,6 @@
 {
   "id": "unguarded-await",
+  "bug_class_id": "unguarded-await",
   "name": "Unguarded Await",
   "description": "Await expression not inside a try/catch. Promise rejection propagates uncaught to the caller.",
   "astPatterns": [

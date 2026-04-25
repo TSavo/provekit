@@ -1,5 +1,6 @@
 {
   "id": "falsy-default",
+  "bug_class_id": "falsy-default",
   "name": "Falsy Default Trap",
   "description": "Logical OR (||) used as a default where the left operand derives from a parameter. Valid falsy values (0, empty string, false) are silently replaced by the default.",
   "astPatterns": [
