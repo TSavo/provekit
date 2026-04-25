@@ -216,6 +216,15 @@ function buildBindings(
 // Oracle #1 gate
 // ---------------------------------------------------------------------------
 
+/**
+ * Kind-agnostic by construction: SAT-checking the violation SMT works whether
+ * the invariant is concrete (Int/Real declarations + arithmetic constraints)
+ * or abstract (Bool-only, taint-style). Z3 will return SAT for any
+ * non-contradictory formula — for an abstract `(declare-const tainted Bool)
+ * (assert tainted)`, the trivial witness `(model (define-fun tainted () Bool true))`
+ * proves the bug shape is consistent. The discriminator between concrete and
+ * abstract lives in oracle #2 (post-fix verification), not here.
+ */
 function runOracleOne(formalExpression: string): { witness: string | null } {
   const z3 = verifyBlock(formalExpression);
   if (z3.result === "sat") {
@@ -595,6 +604,10 @@ export async function formulateInvariant(args: {
   });
 
   if (fidelity.passed) {
+    // Stamp the post-demotion kind so downstream SMT-using oracles (especially
+    // oracle #2) route by the authoritative classification rather than the
+    // surface SMT shape, which lies when the LLM encodes Bool taint as Int.
+    firstClaim.effectiveKind = fidelity.invariantKind ?? null;
     return firstClaim;
   }
 
@@ -645,6 +658,7 @@ export async function formulateInvariant(args: {
   });
 
   if (retryFidelity.passed) {
+    retryClaim.effectiveKind = retryFidelity.invariantKind ?? null;
     return retryClaim;
   }
 

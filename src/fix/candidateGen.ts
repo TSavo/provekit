@@ -363,7 +363,11 @@ export async function runOracleTwo(
   overlay: OverlayHandle,
   invariant: InvariantClaim,
 ): Promise<OracleTwoVerdict> {
-  const kind = classifyInvariantKind(invariant);
+  // Prefer the authoritative classification stamped by C1.5 fidelity routing
+  // (which can demote concrete → abstract when fixtures verifier returns 0/N
+  // negatives, indicating Bool-encoded-as-Int). Fall back to surface SMT
+  // classification for paths that don't run C1.5 (principle match, tests).
+  const kind = invariant.effectiveKind ?? classifyInvariantKind(invariant);
   // -----------------------------------------------------------------------
   // Approach (a): principle path
   // -----------------------------------------------------------------------

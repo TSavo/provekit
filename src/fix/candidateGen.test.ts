@@ -879,6 +879,59 @@ describe("C3: candidateGen", () => {
   }, 30_000);
 
   // -------------------------------------------------------------------------
+  // 17b. Adaptive oracle #2 — Int-shaped SMT but effectiveKind=abstract → defer
+  //
+  // Real-LLM regression: the proposer wrote `(declare-const input Int)` to
+  // encode a Bool taint predicate, C1.5's fixtures-based demotion catches it
+  // and stamps invariant.effectiveKind = "abstract". Oracle #2 must trust the
+  // stamp over the surface SMT shape.
+  // -------------------------------------------------------------------------
+  it("runOracleTwo: Int-shaped SMT with effectiveKind=abstract → defers to C5", async () => {
+    const source = 'export function risky(input: string) { return require("child_process").execSync(`ls ${input}`); }\n';
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-c3-maindb-effective-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePath);
+
+    const locus = makeLocus(filePath, "effective000000");
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const patched = 'export function risky(input: string) { const safe = String(input).replace(/[;|&`$]/g, ""); return require("child_process").execSync(`ls ${safe}`); }\n';
+    applyPatchToOverlay(overlay, {
+      fileEdits: [{ file: "fixture.ts", newContent: patched }],
+      description: "sanitize but keep input identifier",
+    });
+    await reindexOverlay(overlay);
+
+    // SMT body has `(declare-const input Int)` — surface classifier would say "concrete".
+    // But fidelity demoted it after fixtures verifier returned 0/N negatives, so
+    // effectiveKind = "abstract" is the truth.
+    const intShapedAbstract: InvariantClaim = {
+      principleId: null,
+      description: "input must not contain shell metacharacters when reaching execSync",
+      formalExpression:
+        "(declare-const input Int)\n(assert (>= input 1))\n(check-sat)",
+      bindings: [
+        { smt_constant: "input", source_line: 1, source_expr: "input", sort: "Int" },
+      ],
+      complexity: 1,
+      witness: "sat",
+      effectiveKind: "abstract",
+    };
+
+    const verdict = await runOracleTwo(overlay, intShapedAbstract);
+    // effectiveKind=abstract beats surface "concrete" → defer to C5.
+    expect(verdict).toBe("deferred_behavioral");
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
   // 18. Concrete invariant unchanged: source_expr still present → Z3 sat (regression)
   // -------------------------------------------------------------------------
   it("runOracleTwo: concrete (Int) invariant + source_expr still present → 'sat' (existing behavior preserved)", async () => {

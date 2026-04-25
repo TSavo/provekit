@@ -467,6 +467,22 @@ export interface InvariantClaim {
    * (principle-match artifacts are vetted at C6 generation time).
    */
   citations?: InvariantCitation[] | null;
+  /**
+   * Authoritative invariant kind, post-C1.5 fidelity routing.
+   *
+   * Set by formulateInvariant after runInvariantFidelity completes — captures
+   * the demotion path (concrete → abstract when fixtures verifier returned
+   * 0/N negatives, indicating the SMT was Bool-flag-encoded-as-Int).
+   *
+   * Downstream SMT-using oracles MUST prefer this over re-running
+   * classifyInvariantKind on the surface SMT body, because the surface body
+   * lies when the LLM writes `(declare-const x Int)` to express a Bool taint
+   * predicate (the real shell-injection failure mode in v4/v5 dogfood).
+   *
+   * Falls back to surface classification when undefined (test paths that
+   * don't exercise C1.5, principle-match path).
+   */
+  effectiveKind?: "concrete" | "abstract" | null;
 }
 
 /** A concrete code change proposed to fix the bug. C3 fills this in. */
