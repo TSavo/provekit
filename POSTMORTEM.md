@@ -224,3 +224,109 @@ It found a real credential exposure in production billing code. From a `logger.i
 The mechanism is real. The artifacts are on disk. The proofs are independently verifiable. The thesis is proven.
 
 The product isn't finished. But the research question is answered: yes, an LLM can derive meaningful formal invariants from ordinary log statements, and Z3 can verify them. The gap between here and a shipped product is engineering, not research.
+
+---
+
+## Addendum (2026-04-24): the closed-loop fix system
+
+The original system (above) ANALYZED. The next iteration FIXES. Same week.
+
+### What got built
+
+Eight sections, ~50 commits, ~580 tests. From the bug-loop plan at `docs/plans/2026-04-23-fix-loop.md`:
+
+- **Section A (substrate):** SAST tables (nodes, children, kind, 16 capability tables), data-flow edges with closed slot vocabulary, dominance + post-dominance, incremental re-index, DSL parser/compiler/evaluator with capability + relation registries, 14 of 23 seed principles migrated.
+- **Section B (intake + orchestration):** intake adapter registry (`BugSignal.source` is data, not enum), SAST-backed locator, remediation layer registry (`primaryLayer` is data, not enum), `provekit fix <ref>` CLI, orchestrator scaffold.
+- **Section C (generation + verification):** invariant formulator (oracle #1), scratch overlay, fix candidate generator (oracle #2), complementary changes (oracle #3), mutation-verified regression test (oracle #9), principle/capability candidate (oracles #6/#14/#16/#17/#18). Each is a stage; each is gated by Z3 or runtime verifiers, not LLM self-confidence.
+- **Section D (bundle + apply + learn):** artifact-kind registry (4th primitive — each kind names which oracles its verification requires), bundle coherence runner, transactional apply with substrate-rollback, learning layer that promotes principles into the library.
+
+### The architectural moves that mattered
+
+1. **Five primitive registries.** Capabilities, DSL relations, intake adapters, remediation layers, artifact kinds. Each is a runtime `Map<name, descriptor>`. Adding a new bug class, a new query relation, a new fix layer, a new artifact type — all are `register*({...})` calls, never code changes. Closed enums are death.
+
+2. **18 oracles, layered.** 13 for fix bundles (Z3 confirmation, primary fix gate, complementary gate, no-regression, bundle coherence, adversarial validation, witness replay, no-new-gaps, mutation-verified test, full suite, SAST coherence, DSL no-regressions, gap closure). +5 for substrate bundles (migration safety, cross-codebase regression, extractor coverage, substrate consistency, principle-needs-capability). No LLM output enters the library without surviving its full applicable set.
+
+3. **Two bundle types.** A fix bundle changes code only. A substrate bundle changes the substrate (adds a capability, schema, extractor, registry registration) atomically with the fix that motivated it. C6 routes to whichever is needed; D2 applies whichever was assembled. The system extends ITSELF through the same loop that fixes its bugs.
+
+4. **Capture-the-change.** The LLM does not emit JSON patches. It edits files in a scratch git worktree directly via the Claude Agent SDK's tool use. `git diff` captures the structured change. The oracles verify the result, not the prompt. This is the architectural difference between "LLM that describes a fix" and "LLM that performs the fix."
+
+### What the dogfood actually proved
+
+Pointed the loop at `dogfood-scratch/` containing `function divide(a, b) { return a / b; }` plus a bug report. With the real Claude Agent SDK and Opus 4.7:
+
+```
+C1 ✅ formulateInvariant     (Z3 oracle #1 PASS, 12s)
+C2 ✅ openOverlay             (scratch worktree, 0.6s)
+C3 ✅ generateFixCandidate    (Read + Edit, oracle #2 PASS via path-condition extraction, 20s)
+C4 ✅ generateComplementary   (Read + Edit; eventually pruned by oracle #3)
+C5 ✅ generateRegressionTest  (Write + Edit; mutation-verified)
+C6 ✅ generatePrincipleCandidate
+D1 ✅ assembleBundle
+D2 ✅ applyBundle (prDraft mode)
+   → patch + PR body on disk
+```
+
+The patch was a clean guard:
+```diff
+ export function divide(a: number, b: number): number {
++  if (b === 0) {
++    throw new Error("Division by zero: denominator must be non-zero");
++  }
+   return a / b;
+ }
+```
+
+The regression test encoded the Z3 witness directly (`const b = 0; const a = 1`), tolerated either fix shape (throw OR return finite), and exhaustively rejected `Infinity`, `NaN`, `-Infinity`. The PR body was auto-generated.
+
+### Five architectural truths the dogfood surfaced
+
+Every real-LLM run paid rent by exposing one integration gap that the stub-LLM tests literally could not. In order:
+
+1. **`provekit analyze` never populated the SAST tables.** The fix-loop queries against `files`/`nodes`/`capabilities`/`data_flow`/`dominance`. Analyze populated `clauses`/`gap_reports` only. Two sibling pipelines that diverged when the fix-loop's substrate landed. Closed by wiring `buildSASTForFile` into analyze's per-file walk.
+
+2. **LLM JSON responses are wrapped in markdown code-fences.** Every parse site that called `JSON.parse(rawResponse)` failed. Closed by a shared `parseJsonFromLlm()` helper that strips fences. Ten call sites updated.
+
+3. **The CLI bridge didn't forward `agent()`.** `cli.fix.ts` wraps the real LLMProvider into a fix-layer interface. The wrapper only forwarded `complete()`, not `agent()`. Every C-stage's `if (llm.agent) { ... }` dispatch fell back to the JSON path even though Claude Agent SDK's `agent()` was fully wired. Closed by adding the conditional `agent()` forward.
+
+4. **Oracle #2 was a proxy, not Z3.** It re-evaluated the principle on the post-fix SAST and rejected if any matches remained. For guard-based fixes the division expression still matches `arithmetic.op = "/"`, so the proxy rejected correct fixes. Closed by `extractGuardConditions()` which walks dominance + decides + node_returns to extract path conditions, conjoins them with the original violation SMT, runs Z3. Augmented SMT unsat → invariant holds → fix accepted.
+
+5. **The overlay was theatrical.** `git worktree` cloned the file tree but the SDK's tools accepted any path. C-stage prompts contained absolute paths (`/Users/tsavo/dogfood-scratch/src/divide.ts`); Claude used those paths directly with Edit, bypassing the overlay entirely. The "fix" landed in the user's actual fixture directory. Closed by (a) sanitizing all prompts to use overlay-relative paths only, (b) post-validating every tool's path against `overlay.worktreePath` and throwing `OverlayBypassError` if a path escaped.
+
+The 5 closed gaps cost ~12 commits of focused work. None would have surfaced through unit-tests-with-stubs.
+
+### Logging earned its keep
+
+Initial logging was terse ("Locate failed: cannot continue"). After the second dogfood run failed without diagnostic detail, the system grew:
+
+- Stage markers per loop phase
+- Per-LLM-call timing, prompt length, response length
+- Context object on every error path
+- Tool-use events captured per turn (Edit/Write/Read/Bash with full inputs)
+- Thinking blocks captured when the SDK exposes them
+- Pino with dual streams: file = full NDJSON transcript, stdout = pretty-printed summary
+- Persisted to `.provekit/fix-loop-<ts>.log` for post-hoc replay
+
+The logging convention got committed as `docs/LOGGING.md`: **truncation in log files is forbidden.** Disk pressure is solved by rotation, sensitive data by field-level redaction, readability by tools at read time. Truncation at write time is a permanent loss of information at exactly the moment debugging needs it most. The overlay-bypass took an afternoon to catch only because tool-use parameters were elided in the SDK's default summary.
+
+### What's left
+
+The research question is answered. The first real-LLM bundle landed. The remaining work is engineering toward production:
+
+1. **C5 robustness for arbitrary projects.** The vitest-in-overlay path requires the user's project to have its own `node_modules` (we symlink it into the overlay). Real projects have monorepo workspaces, custom test runners, varied module systems. Each shape needs handling.
+
+2. **`autoApply` end-to-end.** Today every dogfood ran in `prDraft` mode (writes patch + PR body). Real production flow needs the cherry-pick path tested against a clean target branch, with rollback verified.
+
+3. **Oracle #15 (cross-codebase regression).** Currently an MVP pass-through. Real implementation runs every existing principle across `examples/` (or a designated corpus) post-substrate-migration; any verdict shift rejects the bundle. Needed before substrate bundles can land safely.
+
+4. **Oracle #7 (witness replay) and #12 (DSL no-regressions).** Same MVP-stub pattern. Real implementations are scoped, just not yet built.
+
+5. **The 8 remaining A8 capability gaps.** Each is a substrate bundle waiting for its first real bug. Some closed in #66-69 (same_value relation, parser opens, varDeref args, explicit relation calls). The other half — string_composition for shell-injection, encloses for loop-accumulator, control-flow capabilities for guard-narrowing — stay queued.
+
+6. **Multi-language support.** Currently TypeScript-only via ts-morph. Tree-sitter wiring exists for the analyze layer; the fix-loop's SAST builder is TS-specific. Generalizing the capability extractors to other languages is a per-language task.
+
+7. **Concurrency.** Today: single-user, single-process, single-worktree. The capability registry is a process-local Map. Multi-user setups need either a shared registry or per-tenant isolation.
+
+8. **Performance.** Each dogfood run takes 2–8 minutes on Opus 4.7 (LLM-latency-bound). Cheaper tier choice per stage (haiku for intake/classify, sonnet for proposals, opus for invariant formulation) would cut this. Opus everywhere is conservative; production wants tiered selection.
+
+The architecture holds. Every piece traces back to "logs are assertions made with eyeballs — what if they weren't." The closed loop now lets the system fix the bugs eyeballs would have found, prove the fixes are real, and learn the bug class so the next eyeballs never have to.
+
