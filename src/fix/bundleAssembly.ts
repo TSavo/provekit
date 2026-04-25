@@ -229,7 +229,8 @@ export async function assembleBundle(args: {
         overlay,
         fix,
         invariant: invariants[0] ?? ({} as InvariantClaim),
-        witnessInputs: {},
+        signal,
+        locus,
       }),
     });
   }
@@ -247,7 +248,7 @@ export async function assembleBundle(args: {
   }
 
   if (newOracles.has(12)) {
-    checks.push({ oracleId: 12, result: await runOracle12({ overlay, mainDb: db }) });
+    checks.push({ oracleId: 12, result: await runOracle12({ overlay, mainDb: db, signal, locus }) });
   }
 
   if (newOracles.has(13)) {
