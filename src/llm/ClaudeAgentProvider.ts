@@ -65,7 +65,7 @@ export class ClaudeAgentProvider implements LLMProvider {
     const modelMap: Record<string, string> = {
       haiku: "claude-haiku-4-5",
       sonnet: "claude-sonnet-4-5",
-      opus: "claude-opus-4-5",
+      opus: "claude-opus-4-7",
     };
     const model = options.model ? (modelMap[options.model] ?? options.model) : undefined;
 
