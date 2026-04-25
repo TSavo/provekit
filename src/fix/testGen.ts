@@ -300,19 +300,33 @@ export async function generateTestCodeViaAgent(args: {
   }
 
   // Derive the relative import path from the test file to the module under test.
+  // locus.file may be absolute (/Users/tsavo/proj/src/foo.ts) or overlay-relative
+  // (src/foo.ts). The overlay's git-worktree clone preserves project-relative
+  // paths, so we strip the absolute prefix by finding the file under overlay.worktreePath.
   const testDir = dirname(testFilePath);
-  const locusRelToWorktree = (() => {
-    try {
-      const r = relative(overlay.worktreePath, locus.file);
-      return r.startsWith("..") ? null : r;
-    } catch {
-      return null;
+
+  // Resolve locus.file to its overlay-relative path.
+  let locusRelToOverlay: string | null = null;
+  if (locus.file.startsWith("/")) {
+    // Absolute. Try every component of locus.file as a suffix until one exists in overlay.
+    const parts = locus.file.split("/").filter(Boolean);
+    for (let i = 0; i < parts.length; i++) {
+      const suffix = parts.slice(i).join("/");
+      if (existsSync(join(overlay.worktreePath, suffix))) {
+        locusRelToOverlay = suffix;
+        break;
+      }
     }
-  })();
+  } else {
+    // Already relative. Verify it exists in overlay.
+    if (existsSync(join(overlay.worktreePath, locus.file))) {
+      locusRelToOverlay = locus.file;
+    }
+  }
 
   let importPath = "./fixture";
-  if (locusRelToWorktree) {
-    const rel = relative(testDir, locusRelToWorktree.replace(/\.(ts|tsx)$/, ""));
+  if (locusRelToOverlay) {
+    const rel = relative(testDir, locusRelToOverlay.replace(/\.(ts|tsx)$/, ""));
     importPath = rel.startsWith(".") ? rel : `./${rel}`;
   }
 
