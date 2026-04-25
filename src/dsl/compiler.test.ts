@@ -229,7 +229,7 @@ principle mock-test {
     expect(queries.has("mock-test")).toBe(true);
   });
 
-  it("compiles same_value relation with varDeref target without throwing", () => {
+  it("compiles same_value relation with varDeref target (OLD form) without throwing", () => {
     const src = `
 predicate zero_guard($var: node) {
   match $g: node where narrows.target_node == $var and narrows.narrowing_kind == "literal_eq"
@@ -250,5 +250,42 @@ principle division-by-zero-sv {
     expect(queries.has("division-by-zero-sv")).toBe(true);
     const fn = queries.get("division-by-zero-sv");
     expect(typeof fn).toBe("function");
+  });
+
+  it("compiles NEW where RELATION(LHS, RHS) form; SQL contains JOIN aliases for both arg derefs", () => {
+    const src = `
+predicate zero_guard($div: node) {
+  match $g: node where narrows.narrowing_kind == "literal_eq"
+}
+
+principle division-by-zero-new {
+  match $div: node where arithmetic.op == "/"
+  require no $guard: zero_guard($div)
+    where same_value($guard.narrows.target_node, $div.arithmetic.rhs_node)
+  report violation {
+    at $div
+    captures { division: $div }
+    message "division denominator may be zero"
+  }
+}
+    `.trim();
+    const program = parseDSL(src);
+    const queries = compileProgram(program.nodes);
+    expect(queries.has("division-by-zero-new")).toBe(true);
+    const fn = queries.get("division-by-zero-new")!;
+    expect(typeof fn).toBe("function");
+
+    // Verify the SQL shape: it must contain nodes JOINs for both arg derefs.
+    const sql: string = (fn as any).__sql ?? "";
+    expect(sql).toBeTruthy();
+    // Sub-scope nodes JOIN for $guard.narrows.target_node (emitted into subquery).
+    expect(sql).toContain("node_relarg_");
+    // The same_value EXISTS fragment references data_flow.from_node.
+    expect(sql).toContain("data_flow");
+    expect(sql).toContain("df1.from_node = df2.from_node");
+    // Narrows table alias appears in subquery FROM/JOIN.
+    expect(sql).toContain("node_narrows");
+    // Arithmetic table alias appears in main FROM.
+    expect(sql).toContain("node_arithmetic");
   });
 });

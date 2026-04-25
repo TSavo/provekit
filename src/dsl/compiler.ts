@@ -148,7 +148,7 @@ export interface MatchRow {
   captures: Record<string, string>;
 }
 
-export type CompiledPrincipleQuery = (db: Db) => MatchRow[];
+export type CompiledPrincipleQuery = ((db: Db) => MatchRow[]) & { __sql?: string };
 
 // ---------------------------------------------------------------------------
 // Predicate inlining
@@ -490,24 +490,48 @@ export function compilePrinciple(
       }
     }
 
-    // Validate target (targetVarName or targetVarDeref) is bound in the main query.
-    if (req.targetVarName) {
-      const targetBinding = varBindings.get(req.targetVarName);
-      if (!targetBinding) {
-        throw new CompileError(
-          `Unbound variable '$${req.targetVarName}' in require clause relation`,
-        );
+    // Validate relation args are bound.
+    if (req.relationArgs) {
+      // NEW form: validate main-scope args (guard-scope args validated at resolution time).
+      for (const arg of req.relationArgs) {
+        if (arg.name === req.guardVar) continue; // guard-scope — validated during compilation
+        const deref = arg.deref;
+        if (deref) {
+          const b = varBindings.get(deref.varName);
+          if (!b) {
+            throw new CompileError(
+              `Unbound variable '$${deref.varName}' in require clause relation arg deref`,
+            );
+          }
+        } else {
+          const b = varBindings.get(arg.name);
+          if (!b) {
+            throw new CompileError(
+              `Unbound variable '$${arg.name}' in require clause relation arg`,
+            );
+          }
+        }
       }
-      void targetBinding;
-    } else if (req.targetVarDeref) {
-      const deref = req.targetVarDeref;
-      const targetBinding = varBindings.get(deref.varName);
-      if (!targetBinding) {
-        throw new CompileError(
-          `Unbound variable '$${deref.varName}' in require clause relation target deref`,
-        );
+    } else {
+      // OLD form: validate targetVarName or targetVarDeref is bound in the main query.
+      if (req.targetVarName) {
+        const targetBinding = varBindings.get(req.targetVarName);
+        if (!targetBinding) {
+          throw new CompileError(
+            `Unbound variable '$${req.targetVarName}' in require clause relation`,
+          );
+        }
+        void targetBinding;
+      } else if (req.targetVarDeref) {
+        const deref = req.targetVarDeref;
+        const targetBinding = varBindings.get(deref.varName);
+        if (!targetBinding) {
+          throw new CompileError(
+            `Unbound variable '$${deref.varName}' in require clause relation target deref`,
+          );
+        }
+        void targetBinding;
       }
-      void targetBinding;
     }
 
     // Inline the predicate.
@@ -622,65 +646,173 @@ export function compilePrinciple(
       }
     }
 
-    // Apply the built-in relation between guardVar and target.
-    // The guard node alias is the node alias for the first inlined variable
-    // (which represents the guard in the source — the narrows/other matching row).
-    const guardNodeAlias = firstSubVarNodeAlias ?? `sub_node_${req.guardVar}`;
-
-    // Resolve target node alias: bare var or varDeref.
-    let targetNodeAlias: string;
-    if (req.targetVarName) {
-      const a = nodeTableAliases.get(req.targetVarName);
-      if (!a) {
-        throw new CompileError(`No nodes alias for '$${req.targetVarName}' in require clause`);
-      }
-      targetNodeAlias = a;
-    } else if (req.targetVarDeref) {
-      const deref = req.targetVarDeref;
-      const ownerBinding = varBindings.get(deref.varName);
-      if (!ownerBinding) {
-        throw new CompileError(
-          `Unbound variable '$${deref.varName}' in require clause relation target deref`,
-        );
-      }
-      // Validate the capability/column exists and matches the owner binding.
-      if (ownerBinding.capabilityName !== deref.capability) {
-        throw new CompileError(
-          `Relation target deref '$${deref.varName}.${deref.capability}.${deref.column}': ` +
-          `variable '$${deref.varName}' is bound to capability '${ownerBinding.capabilityName}', ` +
-          `not '${deref.capability}'`,
-        );
-      }
-      const { colSqlName: targetColSql } = resolveCapCol(
-        deref.capability,
-        deref.column,
-        ` in require clause relation target deref '$${deref.varName}.${deref.capability}.${deref.column}'`,
+    // Validate and look up the relation descriptor first (shared by both forms).
+    const descriptor = getRelation(req.relation);
+    if (!descriptor) {
+      throw new CompileError(
+        `unknown relation '${req.relation}'. Registered: ${listRelations().map((r) => r.name).join(", ")}`,
       );
-      // Emit a JOIN to nodes via the column value (the column is a node_id reference).
-      const freshAlias = `node_target_${aliasCounter++}`;
-      mainJoins.push(
-        `JOIN nodes AS ${freshAlias} ON ${freshAlias}.id = ${ownerBinding.tableAlias}.${targetColSql}`,
-      );
-      targetNodeAlias = freshAlias;
-    } else {
-      throw new CompileError(`require clause relation has no target (internal error)`);
     }
 
-    {
-      const descriptor = getRelation(req.relation);
-      if (!descriptor) {
-        throw new CompileError(
-          `unknown relation '${req.relation}'. Registered: ${listRelations().map((r) => r.name).join(", ")}`,
+    // Apply the built-in relation. Two forms:
+    //
+    // NEW form (relationArgs non-null): each arg is an explicit $var or $var.cap.col.
+    //   When varName === req.guardVar, it resolves within the sub-scope (first inlined
+    //   predicate clause binding). Otherwise it resolves in main scope.
+    //
+    // OLD form (relationArgs null): guard=firstSubVarNodeAlias, target=targetVar/targetDeref
+    //   (original behavior preserved).
+
+    /**
+     * Resolve a relation arg to a `nodes` table alias, emitting JOINs as needed.
+     * Returns the alias string.
+     *
+     * @param argName  Variable name without `$`
+     * @param argDeref Optional cap.col deref
+     * @param isGuardArg True when argName === req.guardVar (sub-scope resolution)
+     */
+    function resolveRelationArgAlias(
+      argName: string,
+      argDeref: VarDeref | null,
+      isGuardArg: boolean,
+    ): string {
+      if (argDeref) {
+        // $var.cap.col — emit a nodes JOIN via the capability column value.
+        const deref = argDeref;
+        let ownerBinding: VarBinding | undefined;
+        if (isGuardArg) {
+          // Guard-side: resolve in sub-scope (first inlined predicate variable's binding).
+          ownerBinding = subVarBindings.get(deref.varName);
+          // When guardVar itself is used, fall back to the first sub-binding capability.
+          // e.g. $guard.narrows.target_node → the first inlined narrows-row binding.
+          if (!ownerBinding && deref.varName === req.guardVar) {
+            // Find the first sub-binding whose varName matches inlined predicate aliases.
+            // The first inlined predicate clause is bound under inlined var names (e.g. "guard_param" or the arg var).
+            // Walk subVarBindings (insertion-ordered) to find the first non-imported entry.
+            for (const [vn, vb] of subVarBindings) {
+              if (!varBindings.has(vn) && !vn.startsWith("__node_")) {
+                // This is the first sub-scope binding (the inlined predicate's main clause).
+                // But the deref's capability must match.
+                if (vb.capabilityName === deref.capability) {
+                  ownerBinding = vb;
+                }
+                break;
+              }
+            }
+          }
+        } else {
+          ownerBinding = varBindings.get(deref.varName);
+        }
+        if (!ownerBinding) {
+          throw new CompileError(
+            `Unbound variable '$${deref.varName}' in require clause relation arg deref`,
+          );
+        }
+        if (ownerBinding.capabilityName !== deref.capability) {
+          throw new CompileError(
+            `Relation arg deref '$${deref.varName}.${deref.capability}.${deref.column}': ` +
+            `variable '$${deref.varName}' is bound to capability '${ownerBinding.capabilityName}', ` +
+            `not '${deref.capability}'`,
+          );
+        }
+        const { colSqlName: colSql } = resolveCapCol(
+          deref.capability,
+          deref.column,
+          ` in require clause relation arg '$${deref.varName}.${deref.capability}.${deref.column}'`,
         );
+        // Emit the nodes JOIN. Sub-scope args go in subJoins; main-scope args go in mainJoins.
+        const freshAlias = `node_relarg_${aliasCounter++}`;
+        if (isGuardArg) {
+          subJoins.push(`JOIN nodes AS ${freshAlias} ON ${freshAlias}.id = ${ownerBinding.tableAlias}.${colSql}`);
+        } else {
+          mainJoins.push(`JOIN nodes AS ${freshAlias} ON ${freshAlias}.id = ${ownerBinding.tableAlias}.${colSql}`);
+        }
+        return freshAlias;
+      } else {
+        // Bare $var — look up existing nodes alias.
+        if (isGuardArg) {
+          // Guard-scope bare var: use sub-scope node alias for the inlined var.
+          const subNodeKey = `__node_${argName}`;
+          const vb = subVarBindings.get(subNodeKey);
+          if (vb) return vb.tableAlias;
+          // Fall back to the first sub-var node alias.
+          const fallback = firstSubVarNodeAlias;
+          if (fallback) return fallback;
+          throw new CompileError(
+            `No sub-scope nodes alias for '$${argName}' in require clause relation arg`,
+          );
+        } else {
+          const a = nodeTableAliases.get(argName);
+          if (!a) {
+            throw new CompileError(`No nodes alias for '$${argName}' in require clause relation arg`);
+          }
+          return a;
+        }
       }
-      const fragment = descriptor.compile({
+    }
+
+    let relationSql: string;
+    if (req.relationArgs) {
+      // NEW explicit form: where RELATION($lhsArg, $rhsArg)
+      const [lhsArg, rhsArg] = req.relationArgs;
+      const lhsIsGuard = lhsArg.name === req.guardVar;
+      const rhsIsGuard = rhsArg.name === req.guardVar;
+      const lhsAlias = resolveRelationArgAlias(lhsArg.name, lhsArg.deref, lhsIsGuard);
+      const rhsAlias = resolveRelationArgAlias(rhsArg.name, rhsArg.deref, rhsIsGuard);
+      relationSql = descriptor.compile({
+        args: [
+          { kind: "node", alias: lhsAlias },
+          { kind: "node", alias: rhsAlias },
+        ],
+      });
+    } else {
+      // OLD form: guard=firstSubVarNodeAlias, target=targetVar/targetDeref.
+      const guardNodeAlias = firstSubVarNodeAlias ?? `sub_node_${req.guardVar}`;
+
+      let targetNodeAlias: string;
+      if (req.targetVarName) {
+        const a = nodeTableAliases.get(req.targetVarName);
+        if (!a) {
+          throw new CompileError(`No nodes alias for '$${req.targetVarName}' in require clause`);
+        }
+        targetNodeAlias = a;
+      } else if (req.targetVarDeref) {
+        const deref = req.targetVarDeref;
+        const ownerBinding = varBindings.get(deref.varName);
+        if (!ownerBinding) {
+          throw new CompileError(
+            `Unbound variable '$${deref.varName}' in require clause relation target deref`,
+          );
+        }
+        if (ownerBinding.capabilityName !== deref.capability) {
+          throw new CompileError(
+            `Relation target deref '$${deref.varName}.${deref.capability}.${deref.column}': ` +
+            `variable '$${deref.varName}' is bound to capability '${ownerBinding.capabilityName}', ` +
+            `not '${deref.capability}'`,
+          );
+        }
+        const { colSqlName: targetColSql } = resolveCapCol(
+          deref.capability,
+          deref.column,
+          ` in require clause relation target deref '$${deref.varName}.${deref.capability}.${deref.column}'`,
+        );
+        const freshAlias = `node_target_${aliasCounter++}`;
+        mainJoins.push(
+          `JOIN nodes AS ${freshAlias} ON ${freshAlias}.id = ${ownerBinding.tableAlias}.${targetColSql}`,
+        );
+        targetNodeAlias = freshAlias;
+      } else {
+        throw new CompileError(`require clause relation has no target (internal error)`);
+      }
+
+      relationSql = descriptor.compile({
         args: [
           { kind: "node", alias: guardNodeAlias },
           { kind: "node", alias: targetNodeAlias },
         ],
       });
-      subWheres.push(fragment);
     }
+    subWheres.push(relationSql);
 
     void 0; // nothing to do here
 
@@ -740,7 +872,7 @@ export function compilePrinciple(
   const captureNames = report.captures.map((c) => c.name);
   const message = report.message;
 
-  return function runQuery(db: Db): MatchRow[] {
+  function runQuery(db: Db): MatchRow[] {
     const rawDb = db.$client as import("better-sqlite3").Database;
     const stmt = rawDb.prepare(sql);
     const rows = stmt.all() as Record<string, string>[];
@@ -756,7 +888,10 @@ export function compilePrinciple(
         message,
       };
     });
-  };
+  }
+  // Expose the generated SQL for testing / debugging.
+  (runQuery as any).__sql = sql;
+  return runQuery;
 }
 
 /**

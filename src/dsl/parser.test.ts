@@ -209,7 +209,7 @@ principle cross-ref {
     }
   });
 
-  it("parses varDeref target in require clause (same_value $y.cap.col)", () => {
+  it("parses varDeref target in require clause OLD form (same_value $y.cap.col)", () => {
     const src = `
 principle test-deref-target {
   match $div: node where arithmetic.op == "/"
@@ -226,6 +226,8 @@ principle test-deref-target {
     expect(req).not.toBeNull();
     if (!req) throw new Error("expected requireClause");
     expect(req.relation).toBe("same_value");
+    // OLD form: relationArgs is null, targetVarDeref is populated.
+    expect(req.relationArgs).toBeNull();
     expect(req.targetVarName).toBeNull();
     expect(req.targetVarDeref).not.toBeNull();
     if (req.targetVarDeref) {
@@ -233,5 +235,72 @@ principle test-deref-target {
       expect(req.targetVarDeref.capability).toBe("arithmetic");
       expect(req.targetVarDeref.column).toBe("rhs_node");
     }
+  });
+
+  it("parses NEW where RELATION(LHS, RHS) form with two varDeref args", () => {
+    const src = `
+principle test-explicit-rel {
+  match $div: node where arithmetic.op == "/"
+  require no $guard: zero_guard($div)
+    where same_value($guard.narrows.target_node, $div.arithmetic.rhs_node)
+  report violation { at $div captures { div: $div } message "test" }
+}
+    `.trim();
+    const program = parseDSL(src);
+    expect(program.nodes).toHaveLength(1);
+    const p = program.nodes[0];
+    expect(p.kind).toBe("principle");
+    if (p.kind !== "principle") throw new Error("expected principle");
+    const req = p.requireClause;
+    expect(req).not.toBeNull();
+    if (!req) throw new Error("expected requireClause");
+    expect(req.relation).toBe("same_value");
+    // NEW form: relationArgs is populated, targetVarName/targetVarDeref are null.
+    expect(req.relationArgs).not.toBeNull();
+    expect(req.targetVarName).toBeNull();
+    expect(req.targetVarDeref).toBeNull();
+    if (req.relationArgs) {
+      expect(req.relationArgs).toHaveLength(2);
+      const [lhs, rhs] = req.relationArgs;
+      // LHS: $guard.narrows.target_node
+      expect(lhs.name).toBe("guard");
+      expect(lhs.deref).not.toBeNull();
+      if (lhs.deref) {
+        expect(lhs.deref.varName).toBe("guard");
+        expect(lhs.deref.capability).toBe("narrows");
+        expect(lhs.deref.column).toBe("target_node");
+      }
+      // RHS: $div.arithmetic.rhs_node
+      expect(rhs.name).toBe("div");
+      expect(rhs.deref).not.toBeNull();
+      if (rhs.deref) {
+        expect(rhs.deref.varName).toBe("div");
+        expect(rhs.deref.capability).toBe("arithmetic");
+        expect(rhs.deref.column).toBe("rhs_node");
+      }
+    }
+  });
+
+  it("OLD form still parses: require no $g: pred($x) before $y", () => {
+    const src = `
+principle test-old-compat {
+  match $div: node where arithmetic.op == "/"
+  require no $guard: zero_guard($div.arithmetic.rhs_node) before $div
+  report violation { at $div captures { div: $div } message "test" }
+}
+    `.trim();
+    const program = parseDSL(src);
+    expect(program.nodes).toHaveLength(1);
+    const p = program.nodes[0];
+    expect(p.kind).toBe("principle");
+    if (p.kind !== "principle") throw new Error("expected principle");
+    const req = p.requireClause;
+    expect(req).not.toBeNull();
+    if (!req) throw new Error("expected requireClause");
+    expect(req.relation).toBe("before");
+    // OLD form: relationArgs is null.
+    expect(req.relationArgs).toBeNull();
+    expect(req.targetVarName).toBe("div");
+    expect(req.targetVarDeref).toBeNull();
   });
 });

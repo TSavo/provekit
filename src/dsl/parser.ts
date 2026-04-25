@@ -16,6 +16,7 @@ import type {
   Literal,
   VarRef,
   VarDeref,
+  RelationArg,
   RequireClause,
   ReportBlock,
   CaptureEntry,
@@ -430,11 +431,38 @@ class Parser {
     }
     this.expect("RPAREN");
 
-    // relation name — any IDENT; compiler validates against registry
+    // Peek: if next token is IDENT "where", parse NEW explicit relation-call form.
+    // Otherwise fall through to OLD RELATION $target form.
+    if (this.peek().type === "IDENT" && this.peek().value === "where") {
+      this.consume(); // eat "where"
+
+      // Parse: IDENT "(" relationArg "," relationArg ")"
+      const relNameTok = this.expectIdent();
+      const relation: BuiltinRelation = relNameTok.value;
+      this.expect("LPAREN");
+      const arg0 = this.parseRelationArg();
+      this.expect("COMMA");
+      const arg1 = this.parseRelationArg();
+      this.expect("RPAREN");
+
+      return {
+        guardVar,
+        predName,
+        predArgVarName,
+        predArgDeref,
+        relation,
+        relationArgs: [arg0, arg1],
+        targetVarName: null,
+        targetVarDeref: null,
+        loc,
+      };
+    }
+
+    // OLD form: relation name — any IDENT; compiler validates against registry
     const relTok = this.peek();
     if (relTok.type !== "IDENT") {
       throw new ParseError(
-        `Expected relation name (identifier) but got '${relTok.value}'`,
+        `Expected relation name (identifier) or 'where' but got '${relTok.value}'`,
         relTok.line, relTok.col,
       );
     }
@@ -460,7 +488,26 @@ class Parser {
       targetVarName = targetVarTok.value;
     }
 
-    return { guardVar, predName, predArgVarName, predArgDeref, relation, targetVarName, targetVarDeref, loc };
+    return { guardVar, predName, predArgVarName, predArgDeref, relation, relationArgs: null, targetVarName, targetVarDeref, loc };
+  }
+
+  private parseRelationArg(): RelationArg {
+    const varTok = this.expectVar();
+    if (this.peek().type === "DOT") {
+      this.consume(); // eat first dot
+      const capTok = this.expectIdent();
+      this.expect("DOT");
+      const colTok = this.expectIdent();
+      const deref: VarDeref = {
+        kind: "varDeref",
+        varName: varTok.value,
+        capability: capTok.value,
+        column: colTok.value,
+        loc: { line: varTok.line, col: varTok.col },
+      };
+      return { name: varTok.value, deref };
+    }
+    return { name: varTok.value, deref: null };
   }
 
   private parseReportBlock(): ReportBlock {

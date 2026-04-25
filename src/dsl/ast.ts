@@ -29,7 +29,10 @@
  *                 | "$" IDENT                         -- direct var ref (node id comparison)
  *   literal       = STRING | NUMBER | "true" | "false" | "null"
  *
- *   requireClause = "require" "no" "$" IDENT ":" predCall relationName targetRef
+ *   requireClause = "require" "no" "$" IDENT ":" predCall "where" relationCall     (NEW form)
+ *                 | "require" "no" "$" IDENT ":" predCall relationName targetRef   (OLD compat form)
+ *   relationCall  = IDENT "(" relationArg "," relationArg ")"
+ *   relationArg   = "$" IDENT ("." IDENT "." IDENT)?
  *   predCall      = IDENT "(" predArg ")"
  *   predArg       = varDeref | varRef
  *   targetRef     = varDeref | varRef
@@ -161,6 +164,14 @@ export interface MatchClause {
 // Require clause
 // ---------------------------------------------------------------------------
 
+/** A single argument in an explicit relation call: `$var` or `$var.cap.col`. */
+export interface RelationArg {
+  /** Variable name without leading `$`. */
+  name: string;
+  /** When present, this is a `$var.cap.col` deref; when null, it's a bare `$var`. */
+  deref: VarDeref | null;
+}
+
 export interface RequireClause {
   /** The guard variable introduced by `require no $guard: ...` */
   guardVar: string;
@@ -176,9 +187,17 @@ export interface RequireClause {
   /** Built-in relation applied between guard var and target */
   relation: BuiltinRelation;
   /**
-   * Relation target: either a bare var ref or a varDeref (symmetric with predArg).
+   * NEW: explicit relation call args from `where RELATION(LHS, RHS)` syntax.
+   * When present (non-null), the compiler resolves both args as relation sides.
+   * When null, the compiler falls back to the OLD form using firstSubVarNodeAlias
+   * as LHS and (targetVarName / targetVarDeref) as RHS.
+   */
+  relationArgs: [RelationArg, RelationArg] | null;
+  /**
+   * OLD form: relation target — either a bare var ref or a varDeref.
    * When it's a varRef, targetVarName is set and targetVarDeref is null.
    * When it's a varDeref, targetVarDeref is set and targetVarName is null.
+   * Ignored when `relationArgs` is non-null.
    */
   targetVarName: string | null;
   targetVarDeref: VarDeref | null;
