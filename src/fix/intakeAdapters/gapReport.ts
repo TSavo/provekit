@@ -97,7 +97,7 @@ const adapter: IntakeAdapter = {
 
     // LLM call for prose summary + failureDescription.
     const prompt = buildSummaryPrompt(ctx.reason, file, codeRef?.line);
-    const raw = await llm.complete({ prompt, model: "haiku" });
+    const raw = await llm.complete({ prompt, model: "opus" });
 
     let prose: { summary: string; failureDescription: string };
     try {

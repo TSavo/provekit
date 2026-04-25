@@ -41,7 +41,7 @@ const adapter: IntakeAdapter = {
 
   async parse(input: IntakeInput, llm: LLMProvider): Promise<BugSignal> {
     const prompt = buildPrompt(input.text);
-    const raw = await llm.complete({ prompt, model: "haiku" });
+    const raw = await llm.complete({ prompt, model: "opus" });
 
     let parsed: {
       summary: string;

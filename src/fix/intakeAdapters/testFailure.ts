@@ -88,7 +88,7 @@ const adapter: IntakeAdapter = {
     const codeReferences = ctx.stack ? parseStackFrames(ctx.stack) : [];
 
     const prompt = buildPrompt(ctx.testName, ctx.errorMessage, ctx.stack);
-    const raw = await llm.complete({ prompt, model: "haiku" });
+    const raw = await llm.complete({ prompt, model: "opus" });
 
     let prose: { summary: string; failureDescription: string };
     try {

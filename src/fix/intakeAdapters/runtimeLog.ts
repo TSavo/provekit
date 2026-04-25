@@ -67,7 +67,7 @@ const adapter: IntakeAdapter = {
     const codeReferences = extractStackFrames(input.text);
 
     const prompt = buildPrompt(input.text);
-    const raw = await llm.complete({ prompt, model: "haiku" });
+    const raw = await llm.complete({ prompt, model: "opus" });
 
     let parsed: { summary: string; failureDescription: string; bugClassHint?: string | null };
     try {

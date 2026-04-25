@@ -632,14 +632,14 @@ export async function runFix(argv: string[]): Promise<void> {
   const llm: LLMProvider = {
     complete: async (params) => {
       const resp = await realProvider.complete(params.prompt, {
-        model: params.model ?? "sonnet",
+        model: params.model ?? "opus",
         systemPrompt: "",
       });
       return resp.text;
     },
     ...(realProvider.agent
       ? {
-          agent: (prompt, options) => realProvider.agent!(prompt, options),
+          agent: (prompt, options) => realProvider.agent!(prompt, { ...options, model: options.model ?? "opus" }),
         }
       : {}),
   };
