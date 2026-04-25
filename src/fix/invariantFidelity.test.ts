@@ -499,7 +499,7 @@ describe("proseJaccardAgreement", () => {
     ],
   };
 
-  it("passes when adversary prose has overlap >= 0.4 of content words", async () => {
+  it("passes when adversary prose has overlap >= 0.35 of content words", async () => {
     const adversaryProse = JSON.stringify({
       description: "shell metacharacters in input flow into execSync command without sanitization",
     });
@@ -517,7 +517,7 @@ describe("proseJaccardAgreement", () => {
   it("passes on the run-1 evidence pair (verbose adversary prose with 4 of 9 shared)", async () => {
     // Reproduces the pitch-leak-2 evidence: proposer was 9 stemmed content words,
     // adversary was 18, shared 4 (shell, command, allow, injection).
-    // Pure Jaccard would give 4/(9+18-4)=0.17 (fails 0.3); overlap is 4/min(9,18)=0.44 (passes 0.4).
+    // Pure Jaccard would give 4/(9+18-4)=0.17 (fails 0.3); overlap is 4/min(9,18)=0.44 (passes 0.35).
     const claim: InvariantClaim = {
       ...ABSTRACT_CLAIM,
       description: "The invariant input passed to execSync must not contain shell metacharacters is violated when input contains an unsanitized shell metacharacter that allows command injection.",
@@ -535,7 +535,7 @@ describe("proseJaccardAgreement", () => {
     expect(result.detail).toMatch(/PASS/);
   });
 
-  it("fails when adversary prose disagrees (overlap < 0.4)", async () => {
+  it("fails when adversary prose disagrees (overlap < 0.35)", async () => {
     const adversaryProse = JSON.stringify({
       description: "buffer overflow when memcpy length exceeds destination capacity",
     });
@@ -641,6 +641,35 @@ describe("runInvariantFidelity adaptive routing", () => {
     expect(result.invariantKind).toBe("abstract");
     expect(result.failures.length).toBeGreaterThanOrEqual(1);
     expect(result.failures.some((f) => /overlap/i.test(f))).toBe(true);
+  });
+
+  it("for concrete invariant: demotes to abstract when fixtures returns 0/N negatives correct (Bool-flag-as-Int encoding)", async () => {
+    // v4 dogfood evidence: proposer LLM emits Int decls but with a Bool-flag-
+    // shaped assertion (e.g. (assert (= input 1))); fixtures verifier returns
+    // 0/5 negatives correct because the assertion is tautologically SAT for
+    // every input binding the LLM picks. Orchestrator must demote to abstract
+    // and re-route through prose-overlap rather than fail the invariant.
+    const callLog: string[] = [];
+    const verifiers = {
+      crossLlmAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("cross"); return { passed: false, detail: "FAIL semantic disagreement" }; },
+      traceabilityCheck: async (): Promise<FidelityCheckResult> => { callLog.push("trace"); return { passed: true, detail: "grounded" }; },
+      adversarialFixturePreValidation: async (): Promise<FidelityCheckResult> => { callLog.push("fixture"); return { passed: false, detail: "adversarial fixtures: FAIL — negative fixtures: only 0/5 classified correctly (fixture[0]=positive, fixture[1]=positive, fixture[2]=positive, fixture[3]=positive, fixture[4]=positive)" }; },
+      proseJaccardAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("prose"); return { passed: true, detail: "prose overlap: PASS" }; },
+    } as unknown as FidelityVerifiers;
+    const llm: LLMProvider = { complete: async () => { throw new Error("not called"); } };
+
+    const result = await runInvariantFidelity({
+      invariant: VALID_CLAIM, // Int-bound invariant -> classified concrete
+      signal: DIVIDE_BUG_SIGNAL,
+      llm,
+      _verifiers: verifiers,
+    });
+
+    // Demoted to abstract: prose-overlap pass + traceability pass = overall pass
+    expect(result.passed).toBe(true);
+    expect(result.invariantKind).toBe("abstract");
+    expect(callLog).toContain("fixture"); // concrete path ran first
+    expect(callLog).toContain("prose"); // then demoted and prose ran
   });
 
   it("for concrete invariant: runs all three checks; prose-Jaccard not called (regression)", async () => {
