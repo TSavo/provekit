@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseJsonFromLlm } from "./llmJson.js";
+import { parseJsonFromLlm, extractJsonFromText } from "./llmJson.js";
 
 describe("parseJsonFromLlm", () => {
   it("parses clean JSON", () => {
@@ -48,5 +48,48 @@ describe("parseJsonFromLlm", () => {
     // Raw response in error should be truncated: the message contains exactly 500 x's
     expect(caught!.message).toContain("x".repeat(500));
     expect(caught!.message).not.toContain("x".repeat(501));
+  });
+});
+
+describe("extractJsonFromText", () => {
+  it("returns parsed object for bare JSON", () => {
+    expect(extractJsonFromText('{"a": 1}')).toEqual({ a: 1 });
+  });
+
+  it("returns parsed object for fenced JSON", () => {
+    expect(extractJsonFromText('```json\n{"b": 2}\n```')).toEqual({ b: 2 });
+  });
+
+  it("extracts JSON from prose-prefixed text", () => {
+    const text = `I'll write the file. Here it is: {"recovered": true, "value": 42}`;
+    expect(extractJsonFromText(text)).toEqual({ recovered: true, value: 42 });
+  });
+
+  it("extracts JSON from text with trailing prose", () => {
+    const text = `{"primary": "fix"}\n\nI hope this helps!`;
+    expect(extractJsonFromText(text)).toEqual({ primary: "fix" });
+  });
+
+  it("extracts fenced JSON anywhere in text", () => {
+    const text = `Some preamble.\n\nHere's the JSON:\n\`\`\`json\n{"in_fence": true}\n\`\`\`\n\nDone.`;
+    expect(extractJsonFromText(text)).toEqual({ in_fence: true });
+  });
+
+  it("extracts JSON arrays from text", () => {
+    const text = `result: [1, 2, 3]`;
+    expect(extractJsonFromText(text)).toEqual([1, 2, 3]);
+  });
+
+  it("returns null when no JSON is extractable", () => {
+    expect(extractJsonFromText("I encountered an error and couldn't produce a result.")).toBeNull();
+  });
+
+  it("returns null on empty string", () => {
+    expect(extractJsonFromText("")).toBeNull();
+  });
+
+  it("handles nested objects with prose around them", () => {
+    const text = `analyzed the code. Output:\n\n{"outer": {"inner": [1, 2]}, "flag": true}\n\nthat's it.`;
+    expect(extractJsonFromText(text)).toEqual({ outer: { inner: [1, 2] }, flag: true });
   });
 });

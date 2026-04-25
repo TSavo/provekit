@@ -37,10 +37,17 @@ import { getModelTier } from "./modelTiers.js";
  * still generate a test using the locus source as context).
  */
 export function extractWitnessInputs(invariant: InvariantClaim): Record<string, unknown> {
+  // For abstract invariants (taint, set-uniqueness, cardinality, order),
+  // Z3 returns SAT trivially with Bool predicates that don't map to concrete
+  // input values. The witness may be null OR contain only Bool=true entries
+  // that aren't useful as test inputs. In both cases the LLM still has the
+  // bug summary + invariant description to generate a test from prose;
+  // the empty-input contract just signals "no concrete witness available".
+  //
+  // Arithmetic invariants (concrete kind) reliably produce an Int/Real
+  // witness; in those cases we still extract concrete input values.
   if (invariant.witness === null || invariant.witness === undefined) {
-    throw new Error(
-      "C5: invariant has no Z3 witness — C1 must have failed to produce one. Cannot generate mutation-verified regression test.",
-    );
+    return {};
   }
 
   const model = parseZ3Model(invariant.witness);
@@ -154,9 +161,10 @@ export async function generateTestCode(args: {
     importPath = rel.startsWith(".") ? rel : `./${rel}`;
   }
 
-  const inputsJson = JSON.stringify(inputs, (_k, v) =>
-    typeof v === "bigint" ? v.toString() : v
-  , 2);
+  const hasConcreteInputs = Object.keys(inputs).length > 0;
+  const inputsJson = hasConcreteInputs
+    ? JSON.stringify(inputs, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2)
+    : "(none — abstract invariant; derive test inputs from the bug summary and invariant description below)";
 
   // Use overlay-relative display path to avoid leaking absolute paths.
   const locusDisplay = locusRelToWorktree ?? locus.file;
@@ -246,7 +254,10 @@ behavior an assertion.
 - Use vitest: \`import { it, expect, describe } from "vitest"\`
 - Import the buggy function by name (named import preferred; default OK if
   the module has a default export)
-- Call the function with the EXACT Z3 witness input values shown above
+- If the Z3 witness inputs above are concrete values: call the function with
+  them exactly. If they're "(none — abstract invariant; ...)": derive a
+  realistic test scenario from the bug summary and invariant description
+  yourself. Choose inputs that exercise the bug class, not arbitrary values.
 - The bug-class assertion MUST run unconditionally on every test execution
 - Test name MUST be exactly: "${testName}"
 - Output ONLY the complete TypeScript test file contents — no markdown
@@ -438,9 +449,10 @@ export async function generateTestCodeViaAgent(args: {
     importPath = rel.startsWith(".") ? rel : `./${rel}`;
   }
 
-  const inputsJson = JSON.stringify(inputs, (_k, v) =>
-    typeof v === "bigint" ? v.toString() : v
-  , 2);
+  const hasConcreteInputs = Object.keys(inputs).length > 0;
+  const inputsJson = hasConcreteInputs
+    ? JSON.stringify(inputs, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2)
+    : "(none — abstract invariant; derive test inputs from the bug summary and invariant description below)";
 
   const prompt = `[STAGE:C5] generateTestCodeViaAgent
 Your CWD is the project root. All paths in this prompt are relative to your CWD.
@@ -516,7 +528,10 @@ Use \`expect(() => exec(input)).not.toThrow()\` or \`.toThrow()\` instead.
 
 - Use vitest: \`import { it, expect, describe } from "vitest"\`
 - Import the function by name from "${importPath}" — verbatim, no substitution
-- Call the function with the EXACT Z3 witness input values shown above
+- If the Z3 witness inputs above are concrete values: call the function with
+  them exactly. If they're "(none — abstract invariant; ...)": derive a
+  realistic test scenario from the bug summary and invariant description
+  yourself. Choose inputs that exercise the bug class, not arbitrary values.
 - The bug-class assertion MUST run on every execution. No \`if\` gating it.
 - Test name MUST be exactly: "${testName}"
 - Write the complete file to: ${testFilePath}

@@ -185,14 +185,18 @@ describe("C5: extractWitnessInputs", () => {
     expect(inputs).toEqual({});
   });
 
-  it("throws when witness is null", () => {
+  it("returns empty inputs when witness is null (abstract-invariant path)", () => {
+    // For abstract invariants (taint, set-uniqueness, cardinality, order),
+    // Z3 returns SAT but no useful concrete witness. extractWitnessInputs
+    // returns {} so C5's prompt can derive test inputs from the bug
+    // summary + invariant description instead.
     const invariant = makeDivInvariant(null);
-    expect(() => extractWitnessInputs(invariant)).toThrow("C5: invariant has no Z3 witness");
+    expect(extractWitnessInputs(invariant)).toEqual({});
   });
 
-  it("throws when witness is undefined (typed as null but cast)", () => {
+  it("returns empty inputs when witness is undefined (abstract-invariant path)", () => {
     const invariant = { ...makeDivInvariant(null), witness: undefined as unknown as null };
-    expect(() => extractWitnessInputs(invariant)).toThrow("C5: invariant has no Z3 witness");
+    expect(extractWitnessInputs(invariant)).toEqual({});
   });
 });
 

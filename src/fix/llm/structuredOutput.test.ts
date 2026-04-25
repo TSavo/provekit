@@ -181,14 +181,43 @@ describe("requestStructuredJson", () => {
       expect(result).toEqual({ kind: "principle", name: "X" });
     });
 
-    it("throws StructuredOutputError when agent returns without writing", async () => {
-      const noopAgent: LLMProvider = {
+    it("falls back to inline JSON when agent didn't use Write tool but text contains valid JSON", async () => {
+      // LLM nondeterminism: even when the prompt says "Write JSON to {path}",
+      // the LLM occasionally returns the JSON inline in text. Resilience
+      // backstop: extract JSON from text rather than aborting the run.
+      const inlineJsonAgent: LLMProvider = {
         async complete() { throw new Error("not called"); },
         async agent() {
           return {
             filesChanged: [],
             diff: "",
-            text: "I forgot to write the file. Here is the JSON: {\"oops\": true}",
+            text: "I'll write the file. Here it is: ```json\n{\"recovered\": true, \"value\": 42}\n```",
+            turnsUsed: 1,
+            toolUses: [],
+            thinkingBlocks: [],
+            textBlocks: [],
+          };
+        },
+      };
+
+      const result = await requestStructuredJson<{ recovered: boolean; value: number }>({
+        prompt: "ask",
+        llm: inlineJsonAgent,
+        stage: "unit",
+        useAgent: true,
+      });
+      expect(result.recovered).toBe(true);
+      expect(result.value).toBe(42);
+    });
+
+    it("throws StructuredOutputError when agent returns without writing AND text has no extractable JSON", async () => {
+      const unextractableAgent: LLMProvider = {
+        async complete() { throw new Error("not called"); },
+        async agent() {
+          return {
+            filesChanged: [],
+            diff: "",
+            text: "I encountered an error and couldn't produce a result.",
             turnsUsed: 1,
             toolUses: [],
             thinkingBlocks: [],
@@ -201,7 +230,7 @@ describe("requestStructuredJson", () => {
       try {
         await requestStructuredJson({
           prompt: "ask",
-          llm: noopAgent,
+          llm: unextractableAgent,
           stage: "unit",
           useAgent: true,
         });
@@ -210,12 +239,9 @@ describe("requestStructuredJson", () => {
       }
       expect(caught).toBeInstanceOf(StructuredOutputError);
       expect(caught!.message).toMatch(/did not write JSON file/);
-      // The agent's text response should be in the error so a human can see it.
-      expect(caught!.message).toMatch(/I forgot to write/);
-      // Scratch path is preserved on error so a human can inspect.
+      expect(caught!.message).toMatch(/inline JSON could not be extracted/);
       expect(caught!.scratchPath).toBeDefined();
       expect(existsSync(caught!.scratchPath!)).toBe(true);
-      // Cleanup so we don't leak.
       rmSync(caught!.scratchPath!, { recursive: true, force: true });
     });
 

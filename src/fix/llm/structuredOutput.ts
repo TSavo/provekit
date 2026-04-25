@@ -37,7 +37,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import type { LLMProvider } from "../types.js";
 import type { FixLoopLogger } from "../logger.js";
-import { parseJsonFromLlm } from "../llmJson.js";
+import { parseJsonFromLlm, extractJsonFromText } from "../llmJson.js";
 
 /**
  * Thrown when the agent fails to produce a parseable JSON file.
@@ -207,31 +207,47 @@ async function runAgentMode<T>(args: {
     );
   }
 
-  if (!existsSync(outputPath)) {
-    // Preserve scratch dir for inspection. Do NOT fall back to text-mode
-    // parse — failure here is the signal the prompt instruction needs
-    // tightening, not a parser-leniency problem.
-    throw new StructuredOutputError(
-      `[${stage}] LLM agent did not write JSON file at ${outputPath}. scratch=${scratchDir}. ` +
-      `Agent text response: ${agentText.slice(0, 500)}`,
-      agentText,
-      undefined,
-      scratchDir,
-    );
-  }
-
-  const fileContent = readFileSync(outputPath, "utf-8");
-
+  let fileContent: string | undefined;
   let parsed: unknown;
-  try {
-    parsed = JSON.parse(fileContent);
-  } catch (err) {
-    throw new StructuredOutputError(
-      `[${stage}] JSON.parse failed on agent-written file: ${err instanceof Error ? err.message : String(err)}. ` +
-      `scratch=${scratchDir}. File content (truncated to 500 chars): ${fileContent.slice(0, 500)}`,
-      agentText,
-      fileContent,
-      scratchDir,
+  let parseSource: "file" | "inline-fallback" = "file";
+
+  if (existsSync(outputPath)) {
+    fileContent = readFileSync(outputPath, "utf-8");
+    try {
+      parsed = JSON.parse(fileContent);
+    } catch (err) {
+      // File present but garbage. Don't try the inline fallback — the LLM
+      // explicitly chose to use the Write tool but produced bad content;
+      // that's a different failure mode and silently switching paths would
+      // hide it.
+      throw new StructuredOutputError(
+        `[${stage}] JSON.parse failed on agent-written file: ${err instanceof Error ? err.message : String(err)}. ` +
+        `scratch=${scratchDir}. File content (truncated to 500 chars): ${fileContent.slice(0, 500)}`,
+        agentText,
+        fileContent,
+        scratchDir,
+      );
+    }
+  } else {
+    // The LLM disobeyed the "Write JSON to ${path}" contract and returned
+    // JSON inline in its text response instead. This is LLM nondeterminism
+    // (more common on smaller tiers); we fall back to extracting JSON from
+    // the text rather than aborting the whole run. The prompt still
+    // expresses the contract; this is purely a resilience backstop.
+    const recovered = extractJsonFromText(agentText);
+    if (recovered === null) {
+      throw new StructuredOutputError(
+        `[${stage}] LLM agent did not write JSON file at ${outputPath} AND inline JSON could not be extracted from the text response. ` +
+        `scratch=${scratchDir}. Agent text response: ${agentText.slice(0, 500)}`,
+        agentText,
+        undefined,
+        scratchDir,
+      );
+    }
+    parsed = recovered;
+    parseSource = "inline-fallback";
+    logger?.detail(
+      `[${stage}] structuredOutput: recovered JSON from inline text response (Write tool was not used; this is acceptable but indicates LLM tier may need upgrade)`,
     );
   }
 
@@ -240,7 +256,7 @@ async function runAgentMode<T>(args: {
     typed = schemaCheck ? schemaCheck(parsed) : (parsed as T);
   } catch (err) {
     throw new StructuredOutputError(
-      `[${stage}] schemaCheck rejected agent output: ${err instanceof Error ? err.message : String(err)}. scratch=${scratchDir}`,
+      `[${stage}] schemaCheck rejected agent output (source=${parseSource}): ${err instanceof Error ? err.message : String(err)}. scratch=${scratchDir}`,
       agentText,
       fileContent,
       scratchDir,
