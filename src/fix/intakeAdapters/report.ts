@@ -14,7 +14,7 @@
 import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, LLMProvider } from "../types.js";
-import { parseJsonFromLlm } from "../llmJson.js";
+import { requestStructuredJson } from "../llm/structuredOutput.js";
 
 function buildPrompt(text: string): string {
   return (
@@ -41,20 +41,19 @@ const adapter: IntakeAdapter = {
 
   async parse(input: IntakeInput, llm: LLMProvider): Promise<BugSignal> {
     const prompt = buildPrompt(input.text);
-    const raw = await llm.complete({ prompt, model: "opus" });
 
-    let parsed: {
+    const parsed = await requestStructuredJson<{
       summary: string;
       failureDescription: string;
       fixHint?: string | null;
       codeReferences?: Array<{ file: string; line?: number; function?: string }>;
       bugClassHint?: string | null;
-    };
-    try {
-      parsed = parseJsonFromLlm(raw, "report");
-    } catch (e) {
-      throw new Error(e instanceof Error ? e.message : String(e));
-    }
+    }>({
+      prompt,
+      llm,
+      stage: "intake-report",
+      model: "opus",
+    });
 
     return {
       source: "report",

@@ -36,6 +36,7 @@ import type {
   FixCandidate,
 } from "./types.js";
 import { parseJsonFromLlm } from "./llmJson.js";
+import { requestStructuredJson } from "./llm/structuredOutput.js";
 import { extractGuardConditions } from "./pathConditions.js";
 
 // ---------------------------------------------------------------------------
@@ -182,13 +183,20 @@ Read the relevant files (using relative paths), understand the bug, and edit the
  * Parse the LLM response into ProposedFix[].
  * Skips malformed candidates with a console warning.
  * Throws if the response is not JSON or has zero valid candidates.
+ *
+ * Accepts either a raw LLM string (legacy) or a pre-parsed object (when
+ * called from a site that already routed through requestStructuredJson).
  */
-export function parseProposedFixes(raw: string): ProposedFix[] {
+export function parseProposedFixes(rawOrParsed: string | unknown): ProposedFix[] {
   let parsed: unknown;
-  try {
-    parsed = parseJsonFromLlm(raw, "parseProposedFixes");
-  } catch (e) {
-    throw new Error(e instanceof Error ? e.message : String(e));
+  if (typeof rawOrParsed === "string") {
+    try {
+      parsed = parseJsonFromLlm(rawOrParsed, "parseProposedFixes");
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : String(e));
+    }
+  } else {
+    parsed = rawOrParsed;
   }
 
   if (
@@ -196,8 +204,9 @@ export function parseProposedFixes(raw: string): ProposedFix[] {
     parsed === null ||
     !Array.isArray((parsed as Record<string, unknown>)["candidates"])
   ) {
+    const display = typeof rawOrParsed === "string" ? rawOrParsed.slice(0, 200) : JSON.stringify(parsed).slice(0, 200);
     throw new Error(
-      `parseProposedFixes: expected {"candidates": [...]} but got: ${raw.slice(0, 200)}`,
+      `parseProposedFixes: expected {"candidates": [...]} but got: ${display}`,
     );
   }
 

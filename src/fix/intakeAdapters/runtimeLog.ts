@@ -13,7 +13,7 @@
 import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
-import { parseJsonFromLlm } from "../llmJson.js";
+import { requestStructuredJson } from "../llm/structuredOutput.js";
 
 /**
  * Detect stack-trace-style lines:
@@ -67,11 +67,15 @@ const adapter: IntakeAdapter = {
     const codeReferences = extractStackFrames(input.text);
 
     const prompt = buildPrompt(input.text);
-    const raw = await llm.complete({ prompt, model: "opus" });
 
     let parsed: { summary: string; failureDescription: string; bugClassHint?: string | null };
     try {
-      parsed = parseJsonFromLlm(raw, "runtimeLog");
+      parsed = await requestStructuredJson<{ summary: string; failureDescription: string; bugClassHint?: string | null }>({
+        prompt,
+        llm,
+        stage: "intake-runtimeLog",
+        model: "opus",
+      });
     } catch {
       parsed = {
         summary: input.text.split("\n")[0] ?? input.text.slice(0, 120),

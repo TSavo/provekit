@@ -34,7 +34,7 @@ import { evaluatePrinciple } from "../dsl/evaluator.js";
 import { buildSASTForFile, reindexFile } from "../sast/builder.js";
 import { applyPatchToOverlay, reindexOverlay } from "./overlay.js";
 import { parseProposedFixes } from "./candidateGen.js";
-import { parseJsonFromLlm } from "./llmJson.js";
+import { requestStructuredJson } from "./llm/structuredOutput.js";
 import type { Db } from "../db/index.js";
 import type {
   BugLocus,
@@ -428,16 +428,13 @@ Rules:
 - Rank candidates by confidence descending.
 - Do NOT output anything outside the JSON object or skip response.`;
 
-  const rawResponse = await llm.complete({ prompt });
+  const parsed = await requestStructuredJson<unknown>({
+    prompt,
+    llm,
+    stage: "C4-complementary",
+  });
 
   // Check for explicit skip.
-  let parsed: unknown;
-  try {
-    parsed = parseJsonFromLlm(rawResponse, "complementary");
-  } catch (e) {
-    throw new Error(e instanceof Error ? e.message : String(e));
-  }
-
   if (
     typeof parsed === "object" &&
     parsed !== null &&
@@ -447,7 +444,7 @@ Rules:
   }
 
   // Parse as candidates array (reuse parseProposedFixes logic).
-  const fixes = parseProposedFixes(rawResponse);
+  const fixes = parseProposedFixes(parsed);
   if (fixes.length === 0) return null;
 
   // Take the highest-confidence candidate.

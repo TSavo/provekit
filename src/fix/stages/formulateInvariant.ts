@@ -11,8 +11,8 @@ import { join, dirname } from "path";
 import { eq, or, and, lte, gte } from "drizzle-orm";
 import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef, InvariantCitation } from "../types.js";
 import { InvariantFormulationFailed } from "../types.js";
-import { createNoopLogger, loggedComplete, type FixLoopLogger } from "../logger.js";
-import { parseJsonFromLlm } from "../llmJson.js";
+import { createNoopLogger, type FixLoopLogger } from "../logger.js";
+import { requestStructuredJson } from "../llm/structuredOutput.js";
 import type { Db } from "../../db/index.js";
 import { principleMatches, principleMatchCaptures } from "../../db/schema/principleMatches.js";
 import { nodes, files as filesTable } from "../../sast/schema/index.js";
@@ -328,18 +328,21 @@ CRITICAL — invariant must be VERIFIABLE post-fix:
   synthetic flag.`;
 }
 
-function parseLlmResponse(raw: string): {
+/**
+ * Validate + transform a parsed LLM JSON response into invariant components.
+ * Throws InvariantFormulationFailed on any structural / semantic violation.
+ * Used as the schemaCheck for requestStructuredJson.
+ */
+function validateLlmResponse(rawParsed: unknown): {
   formalExpression: string;
   bindings: SmtBindingRef[];
   description: string;
   citations: InvariantCitation[] | null;
 } {
-  let parsed: LlmInvariantResponse;
-  try {
-    parsed = parseJsonFromLlm<LlmInvariantResponse>(raw, "formulateInvariant");
-  } catch (e) {
-    throw new InvariantFormulationFailed(e instanceof Error ? e.message : String(e));
+  if (typeof rawParsed !== "object" || rawParsed === null) {
+    throw new InvariantFormulationFailed("LLM response is not an object");
   }
+  const parsed = rawParsed as LlmInvariantResponse;
 
   if (!parsed.description || typeof parsed.description !== "string") {
     throw new InvariantFormulationFailed("LLM response missing 'description' field");
@@ -549,8 +552,24 @@ export async function formulateInvariant(args: {
 
   const prompt = buildLlmPrompt(signal, locus, db);
   logger.detail(`C1 LLM prompt (novel path): ${prompt.slice(0, 200)}...`);
-  const rawResponse = await loggedComplete(logger, "C1", llm, { prompt });
-  const { formalExpression, bindings, description, citations } = parseLlmResponse(rawResponse);
+  let formalExpression: string;
+  let bindings: SmtBindingRef[];
+  let description: string;
+  let citations: InvariantCitation[] | null;
+  try {
+    ({ formalExpression, bindings, description, citations } = await requestStructuredJson({
+      prompt,
+      llm,
+      stage: "C1",
+      logger,
+      schemaCheck: validateLlmResponse,
+    }));
+  } catch (err) {
+    if (err instanceof InvariantFormulationFailed) throw err;
+    // Wrap parser errors / agent IO errors as InvariantFormulationFailed so
+    // the orchestrator's graceful-skip path sees a typed error.
+    throw new InvariantFormulationFailed(err instanceof Error ? err.message : String(err));
+  }
 
   // Oracle #1: must return SAT.
   const { witness } = runOracleOne(formalExpression);
@@ -585,17 +604,22 @@ export async function formulateInvariant(args: {
   const retryPrompt = prompt + retryFeedback;
   logger.detail(`C1 retry prompt (oracle #1.5 failed): ${retryPrompt.slice(0, 300)}...`);
 
-  let retryRaw: string;
+  let retry: ReturnType<typeof validateLlmResponse>;
   try {
-    retryRaw = await loggedComplete(logger, "C1-retry", llm, { prompt: retryPrompt });
+    retry = await requestStructuredJson({
+      prompt: retryPrompt,
+      llm,
+      stage: "C1-retry",
+      logger,
+      schemaCheck: validateLlmResponse,
+    });
   } catch (err: unknown) {
+    if (err instanceof InvariantFormulationFailed) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     throw new InvariantFormulationFailed(
       `fidelity: retry LLM call failed — ${msg}. Original failures: ${fidelity.failures.join("; ")}`,
     );
   }
-
-  const retry = parseLlmResponse(retryRaw);
 
   // Oracle #1 on retry: must still be SAT.
   const { witness: retryWitness } = runOracleOne(retry.formalExpression);

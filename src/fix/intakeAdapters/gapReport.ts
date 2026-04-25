@@ -25,7 +25,7 @@
 import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
-import { parseJsonFromLlm } from "../llmJson.js";
+import { requestStructuredJson } from "../llm/structuredOutput.js";
 
 interface GapReportContext {
   gapReportId: string | number;
@@ -97,11 +97,15 @@ const adapter: IntakeAdapter = {
 
     // LLM call for prose summary + failureDescription.
     const prompt = buildSummaryPrompt(ctx.reason, file, codeRef?.line);
-    const raw = await llm.complete({ prompt, model: "opus" });
 
     let prose: { summary: string; failureDescription: string };
     try {
-      prose = parseJsonFromLlm(raw, "gapReport");
+      prose = await requestStructuredJson<{ summary: string; failureDescription: string }>({
+        prompt,
+        llm,
+        stage: "intake-gapReport",
+        model: "opus",
+      });
     } catch {
       // Fallback: use raw reason text.
       prose = {

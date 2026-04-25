@@ -12,7 +12,7 @@ import {
   listRemediationLayers,
   getRemediationLayer,
 } from "./remediationLayerRegistry.js";
-import { parseJsonFromLlm } from "./llmJson.js";
+import { requestStructuredJson } from "./llm/structuredOutput.js";
 import type {
   RemediationLayerDescriptor,
 } from "./remediationLayerRegistry.js";
@@ -115,14 +115,7 @@ interface ParsedResponse {
   rationale: string;
 }
 
-function parseResponse(raw: string): ParsedResponse {
-  let parsed: unknown;
-  try {
-    parsed = parseJsonFromLlm(raw, "classify");
-  } catch (e) {
-    throw new ClassifyError(e instanceof Error ? e.message : String(e));
-  }
-
+function validateClassifyResponse(parsed: unknown): ParsedResponse {
   if (typeof parsed !== "object" || parsed === null) {
     throw new ClassifyError(`classify: LLM response is not an object`);
   }
@@ -193,9 +186,23 @@ export async function classify(
   const layers = listRemediationLayers();
   const prompt = buildPrompt(signal, locus, layers);
 
-  // 2. LLM call, schema-validated JSON response
-  const raw = await llm.complete({ prompt, schema: CLASSIFY_SCHEMA });
-  const parsed = parseResponse(raw);
+  // 2. LLM call, schema-validated JSON response.
+  //    requestStructuredJson handles JSON parsing + writes via Write tool in
+  //    agent mode (see src/fix/llm/structuredOutput.ts). We catch and rewrap
+  //    parse-layer errors as ClassifyError to preserve the existing API.
+  let parsed: ParsedResponse;
+  try {
+    parsed = await requestStructuredJson<ParsedResponse>({
+      prompt,
+      llm,
+      stage: "classify",
+      schema: CLASSIFY_SCHEMA,
+      schemaCheck: validateClassifyResponse,
+    });
+  } catch (e) {
+    if (e instanceof ClassifyError) throw e;
+    throw new ClassifyError(e instanceof Error ? e.message : String(e));
+  }
 
   // 3. Validate primaryLayer against the registry
   if (!getRemediationLayer(parsed.primaryLayer)) {

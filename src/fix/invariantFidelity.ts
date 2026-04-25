@@ -22,8 +22,8 @@
  */
 
 import type { InvariantClaim, BugSignal, LLMProvider, InvariantCitation } from "./types.js";
-import { createNoopLogger, loggedComplete, type FixLoopLogger } from "./logger.js";
-import { parseJsonFromLlm } from "./llmJson.js";
+import { createNoopLogger, type FixLoopLogger } from "./logger.js";
+import { requestStructuredJson } from "./llm/structuredOutput.js";
 import { verifyBlock } from "../verifier.js";
 
 // ---------------------------------------------------------------------------
@@ -96,17 +96,6 @@ Rules:
   const proposerModel = "opus"; // proposer is always opus on the novel path (C1 default)
   const adModel = adversaryModel(proposerModel);
 
-  let adversaryRaw: string;
-  try {
-    adversaryRaw = await loggedComplete(logger, "C1.5-crossLLM", llm, {
-      prompt: adversaryPrompt,
-      model: adModel,
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { passed: false, detail: `cross-LLM agreement: adversary LLM call failed — ${msg}` };
-  }
-
   // Parse adversary response
   interface AdversaryResponse {
     description: string;
@@ -117,10 +106,16 @@ Rules:
 
   let adversary: AdversaryResponse;
   try {
-    adversary = parseJsonFromLlm<AdversaryResponse>(adversaryRaw, "crossLlmAgreement");
+    adversary = await requestStructuredJson<AdversaryResponse>({
+      prompt: adversaryPrompt,
+      llm,
+      stage: "C1.5-crossLLM",
+      model: adModel,
+      logger,
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { passed: false, detail: `cross-LLM agreement: could not parse adversary response — ${msg}` };
+    return { passed: false, detail: `cross-LLM agreement: adversary call/parse failed — ${msg}` };
   }
 
   if (!adversary.smt_declarations || !adversary.smt_violation_assertion || !adversary.bindings) {
@@ -295,17 +290,6 @@ OR
   ]
 }`;
 
-  let verifierRaw: string;
-  try {
-    verifierRaw = await loggedComplete(logger, "C1.5-traceability", llm, {
-      prompt: verifierPrompt,
-      model: "sonnet", // opposite tier from opus proposer
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { passed: false, detail: `traceability: verifier LLM call failed — ${msg}` };
-  }
-
   interface VerifierResponse {
     all_grounded: boolean;
     ungrounded?: { smt_clause: string; reason: string }[];
@@ -313,10 +297,16 @@ OR
 
   let verdict: VerifierResponse;
   try {
-    verdict = parseJsonFromLlm<VerifierResponse>(verifierRaw, "traceabilityCheck");
+    verdict = await requestStructuredJson<VerifierResponse>({
+      prompt: verifierPrompt,
+      llm,
+      stage: "C1.5-traceability",
+      model: "sonnet", // opposite tier from opus proposer
+      logger,
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { passed: false, detail: `traceability: could not parse verifier response — ${msg}` };
+    return { passed: false, detail: `traceability: verifier call/parse failed — ${msg}` };
   }
 
   if (verdict.all_grounded) {
@@ -390,17 +380,6 @@ Rules:
 - Positive: inputBindings should make the violation SMT SAT
 - Negative: inputBindings should make the violation SMT UNSAT`;
 
-  let fixtureRaw: string;
-  try {
-    fixtureRaw = await loggedComplete(logger, "C1.5-fixtures", llm, {
-      prompt: fixturePrompt,
-      model: "opus",
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { passed: false, detail: `adversarial fixtures: LLM call failed — ${msg}` };
-  }
-
   interface Fixture {
     source: string;
     inputBindings: Record<string, number | boolean>;
@@ -413,10 +392,16 @@ Rules:
 
   let fixtures: FixtureResponse;
   try {
-    fixtures = parseJsonFromLlm<FixtureResponse>(fixtureRaw, "adversarialFixturePreValidation");
+    fixtures = await requestStructuredJson<FixtureResponse>({
+      prompt: fixturePrompt,
+      llm,
+      stage: "C1.5-fixtures",
+      model: "opus",
+      logger,
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { passed: false, detail: `adversarial fixtures: could not parse fixture response — ${msg}` };
+    return { passed: false, detail: `adversarial fixtures: LLM call/parse failed — ${msg}` };
   }
 
   if (!Array.isArray(fixtures.positive) || !Array.isArray(fixtures.negative)) {

@@ -41,7 +41,7 @@ import type {
 } from "./types.js";
 import type { CapabilitySpec } from "./types.js";
 import { proposeCapabilitySpec, runSubstrateOracles } from "./capabilityGen.js";
-import { parseJsonFromLlm } from "./llmJson.js";
+import { requestStructuredJson } from "./llm/structuredOutput.js";
 
 // ---------------------------------------------------------------------------
 // Internal result shape for tryExistingCapabilities
@@ -251,23 +251,20 @@ function openFreshDb(dbPath: string): Db {
   return db;
 }
 
-/** Parse adversarial fixtures from LLM response. Returns null on parse failure. */
-function parseAdversarialFixtures(raw: string): {
+/** Validate adversarial fixtures from a parsed LLM JSON object. Returns null on shape failure. */
+function validateAdversarialFixtures(rawParsed: unknown): {
   falsePositives: { source: string }[];
   falseNegatives: { source: string }[];
 } | null {
-  try {
-    const parsed = parseJsonFromLlm<{
-      false_positives?: { source: string }[];
-      false_negatives?: { source: string }[];
-    }>(raw, "adversarialFixtures");
-    const fps = parsed.false_positives;
-    const fns = parsed.false_negatives;
-    if (!Array.isArray(fps) || !Array.isArray(fns)) return null;
-    return { falsePositives: fps, falseNegatives: fns };
-  } catch {
-    return null;
-  }
+  if (typeof rawParsed !== "object" || rawParsed === null) return null;
+  const parsed = rawParsed as {
+    false_positives?: { source: string }[];
+    false_negatives?: { source: string }[];
+  };
+  const fps = parsed.false_positives;
+  const fns = parsed.false_negatives;
+  if (!Array.isArray(fps) || !Array.isArray(fns)) return null;
+  return { falsePositives: fps, falseNegatives: fns };
 }
 
 /**
@@ -313,21 +310,26 @@ export async function runAdversarialValidation(
     proposerModel === "haiku" ? "sonnet" : "haiku";
   const passThreshold = opts.passThreshold ?? 0.667;
 
-  let fixtureRaw: string;
+  let parsedRaw: unknown;
   try {
-    fixtureRaw = await llm.complete({
+    parsedRaw = await requestStructuredJson<unknown>({
       prompt: buildAdversarialPrompt(principleDescription, dslSource),
+      llm,
+      stage: "C6-adversarial",
       model: validatorModel,
     });
   } catch (err) {
+    // JSON parse failures + agent-write failures both surface here. Use
+    // "malformed" so the evidence string is stable across both paths and
+    // matches existing test expectations.
     return {
       passed: false,
-      evidence: `adversarial LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
+      evidence: `adversarial LLM response was malformed: ${err instanceof Error ? err.message : String(err)}`,
       validatorModel,
     };
   }
 
-  const parsed = parseAdversarialFixtures(fixtureRaw);
+  const parsed = validateAdversarialFixtures(parsedRaw);
   if (!parsed) {
     return {
       passed: false,
@@ -500,9 +502,10 @@ type PrincipleProposalResponse =
   | { kind: "needs_capability"; missing_predicate: string }
   | { kind: "non_codifiable"; reason?: string };
 
-function parsePrincipleProposal(raw: string): PrincipleProposalResponse | null {
+function validatePrincipleProposal(rawParsed: unknown): PrincipleProposalResponse | null {
   try {
-    const p = parseJsonFromLlm<Record<string, unknown>>(raw, "principleProposal");
+    if (typeof rawParsed !== "object" || rawParsed === null) return null;
+    const p = rawParsed as Record<string, unknown>;
     const kind = p["kind"];
     if (kind === "principle") {
       const name = p["name"];
@@ -558,18 +561,20 @@ export async function tryExistingCapabilities(args: {
 }): Promise<ExistingCapAttempt> {
   const { signal, invariant, fixCandidate, db, llm } = args;
 
-  let raw: string;
+  let parsedRaw: unknown;
   try {
-    raw = await llm.complete({
+    parsedRaw = await requestStructuredJson<unknown>({
       prompt: buildPrinciplePrompt(signal, invariant, fixCandidate),
+      llm,
+      stage: "C6-principleProposal",
       model: "sonnet",
     });
   } catch (err) {
-    console.warn(`[C6] LLM call failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`[C6] LLM call/parse failed: ${err instanceof Error ? err.message : String(err)}`);
     return { kind: "non_codifiable" };
   }
 
-  const proposal = parsePrincipleProposal(raw);
+  const proposal = validatePrincipleProposal(parsedRaw);
   if (!proposal) {
     console.warn(`[C6] LLM response malformed or could not be parsed`);
     return { kind: "non_codifiable" };

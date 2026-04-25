@@ -22,7 +22,7 @@ import type { CapabilitySpec } from "./types.js";
 import { listCapabilities } from "../sast/capabilityRegistry.js";
 import { executeExtractorSpec } from "./capabilityExecutor.js";
 import { runAgentInOverlay } from "./captureChange.js";
-import { parseJsonFromLlm } from "./llmJson.js";
+import { requestStructuredJson } from "./llm/structuredOutput.js";
 
 // ---------------------------------------------------------------------------
 // Substrate oracle result
@@ -106,9 +106,10 @@ interface CapabilitySpecProposal {
   teachingExample: { domain: string; explanation: string; smt2: string };
 }
 
-function parseCapabilitySpecResponse(raw: string): CapabilitySpecProposal | null {
+function validateCapabilitySpecResponse(rawParsed: unknown): CapabilitySpecProposal | null {
   try {
-    const p = parseJsonFromLlm<Record<string, unknown>>(raw, "capabilitySpec");
+    if (typeof rawParsed !== "object" || rawParsed === null) return null;
+    const p = rawParsed as Record<string, unknown>;
 
     const capabilityName = p["capabilityName"];
     const schemaTs = p["schemaTs"];
@@ -372,19 +373,21 @@ export async function proposeCapabilitySpec(args: {
     return proposeCapabilitySpecViaAgent({ signal, invariant, fixCandidate, gap, llm, overlay: args.overlay });
   }
 
-  // JSON path (existing behavior).
-  let raw: string;
+  // JSON path (existing behavior, now via requestStructuredJson).
+  let parsedRaw: unknown;
   try {
-    raw = await llm.complete({
+    parsedRaw = await requestStructuredJson<unknown>({
       prompt: buildCapabilitySpecPrompt({ signal, invariant, fixCandidate, gap }),
+      llm,
+      stage: "C6-capabilitySpec",
       model: "opus",
     });
   } catch (err) {
-    console.warn(`[C6/cap] LLM call failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`[C6/cap] LLM call/parse failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 
-  const proposal = parseCapabilitySpecResponse(raw);
+  const proposal = validateCapabilitySpecResponse(parsedRaw);
   if (!proposal) {
     console.warn(`[C6/cap] Capability spec response malformed`);
     return null;

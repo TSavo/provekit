@@ -26,6 +26,7 @@ import type {
 import type { FixLoopLogger } from "../logger.js";
 import { buildFixPrompt, parseProposedFixes, verifyCandidate, buildAgentFixPrompt } from "../candidateGen.js";
 import { runAgentInOverlay } from "../captureChange.js";
+import { requestStructuredJson } from "../llm/structuredOutput.js";
 
 export async function generateFixCandidate(args: {
   signal: BugSignal;
@@ -137,8 +138,12 @@ async function generateFixCandidateViaJson(args: {
 
   // 1. LLM proposes up to maxCandidates patches.
   const prompt = buildFixPrompt(signal, locus, invariant, maxCandidates);
-  const rawResponse = await llm.complete({ prompt });
-  const candidatePatches = parseProposedFixes(rawResponse);
+  const parsed = await requestStructuredJson<unknown>({
+    prompt,
+    llm,
+    stage: "C3-candidateGen",
+  });
+  const candidatePatches = parseProposedFixes(parsed);
 
   if (candidatePatches.length === 0) {
     throw new Error(

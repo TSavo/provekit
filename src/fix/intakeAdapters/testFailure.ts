@@ -19,7 +19,7 @@
 import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
-import { parseJsonFromLlm } from "../llmJson.js";
+import { requestStructuredJson } from "../llm/structuredOutput.js";
 
 interface TestFailureContext {
   testName: string;
@@ -88,11 +88,15 @@ const adapter: IntakeAdapter = {
     const codeReferences = ctx.stack ? parseStackFrames(ctx.stack) : [];
 
     const prompt = buildPrompt(ctx.testName, ctx.errorMessage, ctx.stack);
-    const raw = await llm.complete({ prompt, model: "opus" });
 
     let prose: { summary: string; failureDescription: string };
     try {
-      prose = parseJsonFromLlm(raw, "testFailure");
+      prose = await requestStructuredJson<{ summary: string; failureDescription: string }>({
+        prompt,
+        llm,
+        stage: "intake-testFailure",
+        model: "opus",
+      });
     } catch {
       prose = {
         summary: `Test "${ctx.testName}" failed: ${ctx.errorMessage}`,
