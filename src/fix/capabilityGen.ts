@@ -331,10 +331,57 @@ sourceFile.forEachDescendant((node) => {
 });
 \`\`\`
 
+# Schema shape (CRITICAL — all node references are TEXT, not INTEGER)
+
+The SAST \`nodes\` table uses TEXT primary keys (synthetic IDs derived from
+file path + AST position). Every capability that references a node MUST
+declare those columns as \`text\`, NOT \`integer\`. Mismatching the type
+causes oracle #16 to fail with "datatype mismatch" on every insert because
+the extractor passes string IDs into integer-declared columns.
+
+Canonical schema shape:
+
+\`\`\`ts
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { nodes } from "../../../src/sast/schema/nodes.js";  // path adjusted at integration
+
+export const nodeMyCapability = sqliteTable("node_my_capability", {
+  // PRIMARY KEY: the AST node this row describes. text + FK to nodes.id.
+  nodeId: text("node_id").primaryKey().references(() => nodes.id, { onDelete: "cascade" }),
+
+  // OTHER NODE REFERENCES: also text + FK to nodes.id.
+  rhsNode: text("rhs_node").references(() => nodes.id, { onDelete: "cascade" }),
+  objectNode: text("object_node").notNull().references(() => nodes.id, { onDelete: "cascade" }),
+
+  // NON-NODE COLUMNS: enums or strings as text(), counts as integer().
+  propertyName: text("property_name"),                    // optional string
+  assignKind: text("assign_kind").notNull(),              // enum-as-string
+  occurrenceCount: integer("occurrence_count").notNull(), // numeric
+  isComputed: integer("is_computed", { mode: "boolean" }).notNull(),  // 0/1 boolean
+});
+\`\`\`
+
+Mirror these conventions in your migration.sql:
+\`\`\`sql
+CREATE TABLE node_my_capability (
+  node_id TEXT PRIMARY KEY NOT NULL,
+  rhs_node TEXT,
+  object_node TEXT NOT NULL,
+  property_name TEXT,
+  assign_kind TEXT NOT NULL,
+  occurrence_count INTEGER NOT NULL,
+  is_computed INTEGER NOT NULL,
+  FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE,
+  FOREIGN KEY (rhs_node) REFERENCES nodes(id) ON DELETE CASCADE,
+  FOREIGN KEY (object_node) REFERENCES nodes(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_node_my_capability_property ON node_my_capability(property_name);
+\`\`\`
+
 # Files to write (all paths relative to overlay root)
 
 1. .provekit/capability-proposal/<capabilityName>/schema.ts — TypeScript
-   schema with sqliteTable. Use \`drizzle-orm/sqlite-core\` imports.
+   schema with sqliteTable, following the canonical shape above.
 
 2. .provekit/capability-proposal/<capabilityName>/migration.sql —
    CREATE TABLE for your capability. CREATE INDEX is also allowed (and
