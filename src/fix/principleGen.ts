@@ -51,6 +51,14 @@ import { getModelTier } from "./modelTiers.js";
 export type ExistingCapAttempt =
   | { kind: "ok"; principles: PrincipleCandidate[] }
   | { kind: "capability_gap"; gap: string }
+  /**
+   * The LLM emitted bare-principle shapes that COMPILED (no missing capability)
+   * but ALL failed adversarial validation as too-broad. Distinct from
+   * `non_codifiable`: there's still a chance the substrate path can express
+   * what stock capabilities couldn't. Caller may route to `proposeWithCapability`
+   * with the rejection evidence as the synthetic gap.
+   */
+  | { kind: "all_shapes_rejected"; rejectedShapes: { name: string; evidence: string }[] }
   | { kind: "non_codifiable" };
 
 // ---------------------------------------------------------------------------
@@ -770,6 +778,7 @@ export async function tryExistingCapabilities(args: {
 
   // proposal.kind === "principles". Validate each shape independently.
   const accepted: PrincipleCandidate[] = [];
+  const adversarialRejected: { name: string; evidence: string }[] = [];
   for (let i = 0; i < proposal.principles.length; i++) {
     const shape = proposal.principles[i];
     const isCanonical = i === 0;
@@ -814,8 +823,9 @@ export async function tryExistingCapabilities(args: {
       console.warn(
         `[C6] adversarial validation failed for shape "${shape.name}": ${adversarial.evidence}`,
       );
+      adversarialRejected.push({ name: shape.name, evidence: adversarial.evidence });
       // For the canonical shape we still allow alts to potentially survive,
-      // but if NO shape survives we'll return non_codifiable below.
+      // but if NO shape survives we'll fall through below.
       continue;
     }
 
@@ -840,6 +850,15 @@ export async function tryExistingCapabilities(args: {
   }
 
   if (accepted.length === 0) {
+    // Distinguish two empty-result causes for routing. If we got here because
+    // every shape compiled but adversarial validation rejected them all, the
+    // substrate path may still succeed — the LLM tried to express the bug
+    // with stock capabilities and produced over-broad shapes. The C6 stage
+    // controller can re-route to proposeWithCapability with the rejection
+    // evidence as a synthetic gap.
+    if (adversarialRejected.length > 0) {
+      return { kind: "all_shapes_rejected", rejectedShapes: adversarialRejected };
+    }
     return { kind: "non_codifiable" };
   }
 

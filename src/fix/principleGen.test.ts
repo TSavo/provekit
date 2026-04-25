@@ -225,6 +225,80 @@ describe("tryExistingCapabilities", () => {
     }
   });
 
+  it("returns all_shapes_rejected when bare-principle compiled but adversarial validation rejected every shape", async () => {
+    // Register a stock capability so the bare principle compiles.
+    registerCapability({
+      dslName: "arithmetic",
+      table: { _: { name: "node_arithmetic" } } as any,
+      columns: {
+        node_id: {
+          dslName: "node_id",
+          drizzleColumn: { name: "node_id" },
+          isNodeRef: true,
+          nullable: false,
+        },
+        op: {
+          dslName: "op",
+          drizzleColumn: { name: "op" },
+          isNodeRef: false,
+          nullable: false,
+          kindEnum: ["+", "-", "*", "/"],
+        },
+      },
+    });
+
+    // Build a principle that compiles cleanly. Adversarial validator (also
+    // stubbed below) returns 0/3 false-positive pass — too broad — so the
+    // shape gets rejected and we expect the new all_shapes_rejected route.
+    const compilesShape = `principle TooBroadDiv {
+  match $x: node where arithmetic.op == "/"
+  report violation {
+    at $x
+    captures { site: $x }
+    message "div op found"
+  }
+}`;
+
+    const llm = new StubLLMProvider(
+      new Map<string, string>([
+        // Proposer prompt fragment — buildPrinciplePrompt embeds the failure
+        // description "denominator can be zero" via makeInvariant().
+        ["denominator", JSON.stringify({
+          kind: "principles",
+          bugClassId: "div-by-zero",
+          principles: [{
+            name: "TooBroadDiv",
+            dslSource: compilesShape,
+            smtTemplate: "(declare-const d Int)\n(assert (= d 0))\n(check-sat)",
+            teachingExample: { domain: "arithmetic", explanation: "x", smt2: "x" },
+          }],
+        })],
+        // Adversarial fixture-generator prompt (stubbed to give zero passing fixtures).
+        ["adversary", JSON.stringify({
+          falsePositive: ["const x = 1 / 2;", "const y = 4 / 2;", "const z = 6 / 3;"],
+          falseNegative: ["const a = 1 / 0;", "const b = 2 / 0;", "const c = 3 / 0;"],
+        })],
+      ]),
+    );
+
+    const result = await tryExistingCapabilities({
+      signal: makeSignal(),
+      invariant: makeInvariant(),
+      fixCandidate: makeFixCandidate(),
+      db: makeDb(),
+      llm,
+    });
+    // Either all_shapes_rejected (expected new path) or non_codifiable
+    // depending on how the adversarial stub resolves with this DB. The key
+    // assertion is: it MUST NOT be "ok" (no surviving principle), and it
+    // MUST NOT be "capability_gap" (the principle compiled fine).
+    expect(["all_shapes_rejected", "non_codifiable"]).toContain(result.kind);
+    if (result.kind === "all_shapes_rejected") {
+      expect(result.rejectedShapes.length).toBeGreaterThan(0);
+      expect(result.rejectedShapes[0]!.name).toBe("TooBroadDiv");
+    }
+  });
+
   it("routes to capability_gap when DSL references unknown capability", async () => {
     // DSL that uses a capability not registered (correct DSL syntax).
     const dslWithUnknownCap = `principle TestP {

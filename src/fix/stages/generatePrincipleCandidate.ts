@@ -54,9 +54,26 @@ export async function generatePrincipleCandidate(args: {
   if (attempt.kind === "non_codifiable") return [];
 
   // 3. Capability gap → propose new capability (single principle, no alts).
+  // Two routes get here:
+  //   (a) compile-time capability_gap — LLM said "needs_capability" or its
+  //       canonical shape referenced an unknown column. Standard substrate
+  //       path with the LLM-named gap.
+  //   (b) all_shapes_rejected — LLM emitted bare-principle shapes that all
+  //       compiled but adversarial validation rejected as too-broad. The
+  //       mechanical fallback: try substrate with a synthetic gap describing
+  //       the rejection evidence. Closes the v13 routing hole where bare
+  //       principles failed adversarial validation and we silently produced
+  //       no candidate, despite a substrate route potentially working.
+  const gap =
+    attempt.kind === "capability_gap"
+      ? attempt.gap
+      : `bare-principle shapes were too broad: ${attempt.rejectedShapes
+          .map((s) => `${s.name} (${s.evidence})`)
+          .join("; ")}`;
+
   const substrate = await proposeWithCapability({
     ...args,
-    gap: attempt.gap,
+    gap,
     overlay: args.overlay,
   });
   return substrate ? [substrate] : [];
