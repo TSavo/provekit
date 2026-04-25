@@ -817,9 +817,11 @@ function computePostDominance(
 // Emit helpers
 // ---------------------------------------------------------------------------
 
-function emitDominance(tx: SastTx, Dom: Map<string, Set<string>>): void {
-  const emitted = new Set<string>();
-
+function emitDominance(
+  tx: SastTx,
+  Dom: Map<string, Set<string>>,
+  emitted: Set<string>,
+): void {
   for (const [n, domSet] of Dom) {
     if (n === EXIT) continue;
     for (const d of domSet) {
@@ -832,9 +834,11 @@ function emitDominance(tx: SastTx, Dom: Map<string, Set<string>>): void {
   }
 }
 
-function emitPostDominance(tx: SastTx, PostDom: Map<string, Set<string>>): void {
-  const emitted = new Set<string>();
-
+function emitPostDominance(
+  tx: SastTx,
+  PostDom: Map<string, Set<string>>,
+  emitted: Set<string>,
+): void {
   for (const [n, pdSet] of PostDom) {
     if (n === EXIT) continue;
     for (const pd of pdSet) {
@@ -855,24 +859,23 @@ function processFunction(
   tx: SastTx,
   fnNode: Node,
   nodeIdByNode: NodeIdMap,
+  emittedDom: Set<string>,
+  emittedPostDom: Set<string>,
 ): void {
   const cfgResult = buildCFG(fnNode, nodeIdByNode);
   if (!cfgResult) return;
 
   const { adj, entryId } = cfgResult;
 
-  // Compute reachable nodes (DFS from entry, excluding EXIT)
   const reachable = reachableFrom(entryId, adj);
   if (reachable.size === 0) return;
 
-  // Forward dominance
   const Dom = computeDominance(entryId, adj, reachable);
-  emitDominance(tx, Dom);
+  emitDominance(tx, Dom, emittedDom);
 
-  // Reverse CFG for post-dominance
   const { revAdj } = buildReverseCFG(adj, reachable);
   const PostDom = computePostDominance(revAdj, reachable);
-  emitPostDominance(tx, PostDom);
+  emitPostDominance(tx, PostDom, emittedPostDom);
 }
 
 // ---------------------------------------------------------------------------
@@ -884,10 +887,17 @@ export function extractDominance(
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
-  // Walk all function-like nodes in the file
+  // Dedupe spans the entire file: nested functions can produce the same
+  // self-dominator pair (N, N) when N is both a CFG node in the outer
+  // function and the entry node of an inner function. Sharing the emitted
+  // sets across processFunction calls prevents the UNIQUE constraint
+  // violation on dominance.{dominator, dominated}.
+  const emittedDom = new Set<string>();
+  const emittedPostDom = new Set<string>();
+
   sourceFile.forEachDescendant((node) => {
     if (FUNCTION_KINDS.has(node.getKind())) {
-      processFunction(tx, node, nodeIdByNode);
+      processFunction(tx, node, nodeIdByNode, emittedDom, emittedPostDom);
     }
   });
 }
