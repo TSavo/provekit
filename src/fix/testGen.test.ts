@@ -22,6 +22,7 @@ import {
   validateImportPaths,
   revertFixInOverlay,
   restoreFixInOverlay,
+  setupOverlayForTest,
 } from "./testGen.js";
 import type { InvariantClaim, BugLocus, BugSignal, OverlayHandle, FixCandidate } from "./types.js";
 import { StubLLMProvider } from "./types.js";
@@ -442,6 +443,59 @@ describe("C5: revertFixInOverlay + restoreFixInOverlay", () => {
       restoreFixInOverlay(overlay, stash);
       expect(existsSync(join(repoDir, "src", "newfile.ts"))).toBe(true);
     } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setupOverlayForTest: bare-fixture handling
+// ---------------------------------------------------------------------------
+
+describe("C5: setupOverlayForTest", () => {
+  it("returns true when overlay already has node_modules", () => {
+    const overlayDir = mkdtempSync(join(tmpdir(), "provekit-c5-setup-have-"));
+    try {
+      mkdirSync(join(overlayDir, "node_modules"), { recursive: true });
+      const ready = setupOverlayForTest(
+        { worktreePath: overlayDir } as OverlayHandle,
+        "/nonexistent",
+      );
+      expect(ready).toBe(true);
+    } finally {
+      rmSync(overlayDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns false when main repo has no node_modules (bare fixture)", () => {
+    const overlayDir = mkdtempSync(join(tmpdir(), "provekit-c5-setup-bare-"));
+    const repoDir = mkdtempSync(join(tmpdir(), "provekit-c5-setup-norepo-"));
+    try {
+      const ready = setupOverlayForTest(
+        { worktreePath: overlayDir } as OverlayHandle,
+        repoDir,
+      );
+      expect(ready).toBe(false);
+      expect(existsSync(join(overlayDir, "node_modules"))).toBe(false);
+    } finally {
+      rmSync(overlayDir, { recursive: true, force: true });
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("symlinks main repo node_modules when present", () => {
+    const overlayDir = mkdtempSync(join(tmpdir(), "provekit-c5-setup-link-"));
+    const repoDir = mkdtempSync(join(tmpdir(), "provekit-c5-setup-repo-"));
+    try {
+      mkdirSync(join(repoDir, "node_modules"), { recursive: true });
+      const ready = setupOverlayForTest(
+        { worktreePath: overlayDir } as OverlayHandle,
+        repoDir,
+      );
+      expect(ready).toBe(true);
+      expect(existsSync(join(overlayDir, "node_modules"))).toBe(true);
+    } finally {
+      rmSync(overlayDir, { recursive: true, force: true });
       rmSync(repoDir, { recursive: true, force: true });
     }
   });

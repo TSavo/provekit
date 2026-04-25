@@ -463,22 +463,20 @@ Rewrite the test file at ${testFilePath} using ONLY this import path. Do not use
 
 /**
  * Ensure the overlay directory has a node_modules symlink pointing at the
- * main repo's node_modules. This is needed because git worktrees do NOT
- * inherit node_modules — they only inherit checked-in files.
+ * main repo's node_modules. Git worktrees do NOT inherit node_modules — they
+ * only inherit checked-in files.
  *
- * The symlink is created once; subsequent calls are no-ops.
+ * Returns true if the overlay is ready to run tests, false if the main repo
+ * has no node_modules (a bare fixture). The caller treats false the same as
+ * runner=none and emits the no-runner sentinel so oracle #9 is cleanly skipped.
  */
-export function setupOverlayForTest(overlay: OverlayHandle, mainRepoRoot: string): void {
+export function setupOverlayForTest(overlay: OverlayHandle, mainRepoRoot: string): boolean {
   const nmTarget = join(overlay.worktreePath, "node_modules");
-  if (!existsSync(nmTarget)) {
-    const nmSource = join(mainRepoRoot, "node_modules");
-    if (!existsSync(nmSource)) {
-      throw new Error(
-        `C5: main repo node_modules not found at ${nmSource}. Cannot run vitest in overlay.`,
-      );
-    }
-    symlinkSync(nmSource, nmTarget);
-  }
+  if (existsSync(nmTarget)) return true;
+  const nmSource = join(mainRepoRoot, "node_modules");
+  if (!existsSync(nmSource)) return false;
+  symlinkSync(nmSource, nmTarget);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -512,8 +510,16 @@ export function runTestInOverlay(
   testFilePath: string,
   mainRepoRoot: string,
 ): RunResult {
-  // Ensure node_modules symlink exists
-  setupOverlayForTest(overlay, mainRepoRoot);
+  // Ensure node_modules symlink exists. If the main repo has no node_modules
+  // (bare fixture), the overlay can't run tests. Return the no-runner sentinel
+  // so oracle #9 is cleanly skipped instead of crashing C5.
+  if (!setupOverlayForTest(overlay, mainRepoRoot)) {
+    return {
+      exitCode: 0,
+      stdout: "no test runner; oracle #9 skipped (no node_modules in main repo)",
+      stderr: "",
+    };
+  }
 
   const runner = detectTestRunner(overlay.worktreePath);
 
