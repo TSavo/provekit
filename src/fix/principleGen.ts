@@ -7,7 +7,7 @@
  *   runAdversarialValidation — oracle #6 (shared by both paths)
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
@@ -72,19 +72,34 @@ export interface AdversarialFixture {
 // Prompt helpers
 // ---------------------------------------------------------------------------
 
-function capabilitySummary(): string {
+function describeCapabilities(): string {
   const caps = listCapabilities();
   if (caps.length === 0) return "(no capabilities registered)";
   return caps.map((c) => {
-    const cols = Object.keys(c.columns).join(", ");
-    return `  ${c.dslName}: [${cols}]`;
+    const cols = Object.values(c.columns).map((col) => {
+      const sort = col.sort ?? (col.isNodeRef ? "node" : "?");
+      const enumSuffix = col.kindEnum ? ` in [${col.kindEnum.join(", ")}]` : "";
+      return `    ${col.dslName} (${sort})${enumSuffix}`;
+    }).join("\n");
+    return `- ${c.dslName}\n${cols}`;
   }).join("\n");
 }
 
-function relationSummary(): string {
+function describeRelations(): string {
   const rels = listRelations();
   if (rels.length === 0) return "(no relations registered)";
-  return rels.map((r) => `  ${r.name}/${r.paramCount}`).join("\n");
+  return rels.map((r) =>
+    `- ${r.name}(${r.paramTypes.join(", ")})`
+  ).join("\n");
+}
+
+function loadExemplar(): string {
+  const exemplarPath = join(__dirname, "..", "..", ".provekit", "principles", "division-by-zero.dsl");
+  try {
+    return readFileSync(exemplarPath, "utf-8");
+  } catch {
+    return "(exemplar not available)";
+  }
 }
 
 export function buildPrinciplePrompt(
@@ -92,6 +107,8 @@ export function buildPrinciplePrompt(
   invariant: InvariantClaim,
   fix: FixCandidate,
 ): string {
+  const exemplar = loadExemplar();
+
   return `You are a static-analysis rule author. Given a bug and its fix, produce a reusable DSL principle that catches this bug class.
 
 Bug summary: ${signal.summary}
@@ -99,11 +116,30 @@ Invariant violated: ${invariant.description}
 Bug class hint: ${signal.bugClassHint ?? "(none)"}
 Fix description: ${fix.patch.description}
 
-Available capabilities (dslName: [columns]):
-${capabilitySummary()}
+=== THREE NAME-SPACES IN THE DSL. DO NOT MIX THEM. ===
 
-Available relations:
-${relationSummary()}
+A. CAPABILITIES: These are schema tables. Reference their columns as
+   capabilityName.columnName (e.g., arithmetic.op, narrows.target_node).
+   NEVER use a capability name as a predicate name in a require clause.
+   Available capabilities (from the runtime registry):
+${describeCapabilities()}
+
+B. BUILT-IN RELATIONS: These ARE callable in where clauses inside require
+   clauses. They take two arguments (varRef or varDeref).
+   Available relations (from the runtime registry):
+${describeRelations()}
+   Example: where same_value($guard.narrows.target_node, $div.arithmetic.rhs_node)
+
+C. USER-DEFINED PREDICATES: You can declare your own with
+   predicate name($arg: node) { match ... }
+   Then call them from a require no clause. Use this for reusable match logic.
+   The predicate name MUST NOT collide with any capability or relation name above.
+
+=== EXEMPLAR: your output should be of similar shape ===
+
+${exemplar}
+
+=== END EXEMPLAR ===
 
 If you can express the invariant using ONLY the capabilities above, respond:
 {
@@ -130,11 +166,15 @@ If the invariant is non-codifiable as a static rule (e.g., too runtime-specific)
   "reason": "..."
 }
 
-DSL syntax (exact format — no variations):
+DSL syntax (exact format, no variations):
+  predicate predicateName($arg: node) {
+    match $inner: node where capabilityName.columnName == "value"
+  }
+
   principle PrincipleName {
-    match $var: node where capability.column == "value"
-    $var2: node where capability.column == "value2"
-    require no $guard: predicateName($var) before $var
+    match $var: node where capabilityName.columnName == "value"
+    require no $guard: predicateName($var)
+      where RELATION($guard.capabilityName.columnName, $var.capabilityName.columnName)
     report violation {
       at $var
       captures { captureName: $var }
@@ -145,10 +185,16 @@ DSL syntax (exact format — no variations):
 Notes:
 - Each match clause: $varName: node where cap.col == "value"
 - Multiple match clauses: only the first line uses "match", subsequent lines start with $varName directly
-- require clause: require no $guard: predicateName($arg) before $target
+- require clause: require no $guard: predicateName($arg)
+- where clause on require: uses a BUILT-IN RELATION from section B above, not a capability name
 - report block: "report violation {" or "report warning {" or "report info {"
 - captures block is REQUIRED and must have at least one entry
 - message is a quoted string
+
+FINAL CHECK before producing output: review the CAPABILITIES list in section A above.
+If you reference a name in a require no predicate position, that name MUST be declared
+as a predicate name(...) { ... } in the same principle file.
+NEVER reference a capability name (section A) as a predicate name.
 
 Rules:
 - DSL must be valid (parseable) and use ONLY registered capabilities/relations above.

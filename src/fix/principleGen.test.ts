@@ -9,33 +9,54 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "fs";
+import { join } from "path";
 import {
   listCapabilities,
   registerCapability,
   unregisterCapability,
   _clearRegistry,
 } from "../sast/capabilityRegistry.js";
+import { listRelations, registerRelation, _clearRelationRegistry } from "../dsl/relationRegistry.js";
 import { StubLLMProvider } from "./types.js";
 import type { BugSignal, InvariantClaim, FixCandidate } from "./types.js";
-import { tryExistingCapabilities, runAdversarialValidation } from "./principleGen.js";
+import { tryExistingCapabilities, runAdversarialValidation, buildPrinciplePrompt } from "./principleGen.js";
 import { generatePrincipleCandidate } from "./stages/generatePrincipleCandidate.js";
+import { parseDSL } from "../dsl/parser.js";
+import { compileProgram } from "../dsl/compiler.js";
 
 // ---------------------------------------------------------------------------
 // Registry helpers — snapshot + restore
 // ---------------------------------------------------------------------------
 
 let savedCapabilities: ReturnType<typeof listCapabilities>;
+let savedRelations: ReturnType<typeof listRelations>;
 
 function snapshotRegistry(): void {
   savedCapabilities = [...listCapabilities()];
+  savedRelations = [...listRelations()];
 }
 
 function restoreRegistry(): void {
-  // Remove anything added since snapshot.
-  const current = listCapabilities();
-  for (const cap of current) {
+  // Remove capabilities added since snapshot.
+  const currentCaps = listCapabilities();
+  for (const cap of currentCaps) {
     if (!savedCapabilities.find((s) => s.dslName === cap.dslName)) {
       unregisterCapability(cap.dslName);
+    }
+  }
+  // Remove relations added since snapshot.
+  const currentRels = listRelations();
+  for (const rel of currentRels) {
+    if (!savedRelations.find((s) => s.name === rel.name)) {
+      // relationRegistry doesn't have unregisterRelation, use _clearRelationRegistry
+      // and re-register saved ones — but only if we actually added extras.
+      // Simpler: use internal clear + restore.
+      _clearRelationRegistry();
+      for (const saved of savedRelations) {
+        registerRelation(saved);
+      }
+      break;
     }
   }
 }
@@ -380,5 +401,131 @@ describe("runAdversarialValidation (oracle #6)", () => {
 
     const after = listCapabilities().map((c) => c.dslName).sort();
     expect(after).toEqual(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: buildPrinciplePrompt — three name-spaces + registry + exemplar
+// ---------------------------------------------------------------------------
+
+describe("buildPrinciplePrompt — namespace clarity", () => {
+  beforeEach(snapshotRegistry);
+  afterEach(restoreRegistry);
+
+  it("includes a dynamically registered capability in the prompt", () => {
+    registerCapability({
+      dslName: "truthiness",
+      table: { _: { name: "node_truthiness" } } as any,
+      columns: {
+        node_id: {
+          dslName: "node_id",
+          drizzleColumn: { name: "node_id" },
+          isNodeRef: true,
+          nullable: false,
+        },
+        coercion_kind: {
+          dslName: "coercion_kind",
+          drizzleColumn: { name: "coercion_kind" },
+          isNodeRef: false,
+          nullable: true,
+          kindEnum: ["truthy", "falsy"],
+        },
+        operand_node: {
+          dslName: "operand_node",
+          drizzleColumn: { name: "operand_node" },
+          isNodeRef: true,
+          nullable: false,
+        },
+      },
+    });
+
+    const prompt = buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
+    expect(prompt).toContain("truthiness");
+    expect(prompt).toContain("coercion_kind");
+    // The prompt must make clear capabilities are NOT callable as predicates.
+    expect(prompt).toContain("NEVER use a capability name as a predicate name");
+  });
+
+  it("includes the built-in relations list in the prompt", () => {
+    registerRelation({
+      name: "fake_relation_for_test",
+      paramCount: 2,
+      paramTypes: ["node", "node"],
+      compile: () => "1=1",
+    });
+
+    const prompt = buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
+    expect(prompt).toContain("fake_relation_for_test");
+  });
+
+  it("embeds the division-by-zero exemplar verbatim in the prompt", () => {
+    const exemplarPath = join(process.cwd(), ".provekit", "principles", "division-by-zero.dsl");
+    const exemplar = readFileSync(exemplarPath, "utf-8");
+    const prompt = buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
+    // The exemplar is embedded verbatim — check its core content is present.
+    expect(prompt).toContain("predicate zero_guard");
+    expect(prompt).toContain("division-by-zero");
+    expect(prompt).toContain(exemplar.trim().slice(0, 80));
+  });
+
+  it("stub LLM that declares a predicate for truthiness logic compiles correctly", () => {
+    // Register capabilities so compile succeeds.
+    registerCapability({
+      dslName: "truthiness",
+      table: { _: { name: "node_truthiness" } } as any,
+      columns: {
+        node_id: {
+          dslName: "node_id",
+          drizzleColumn: { name: "node_id" },
+          isNodeRef: true,
+          nullable: false,
+        },
+        coercion_kind: {
+          dslName: "coercion_kind",
+          drizzleColumn: { name: "coercion_kind" },
+          isNodeRef: false,
+          nullable: true,
+        },
+      },
+    });
+
+    // Register narrows so the same_value relation arg resolves.
+    registerCapability({
+      dslName: "narrows",
+      table: { _: { name: "node_narrows" } } as any,
+      columns: {
+        node_id: {
+          dslName: "node_id",
+          drizzleColumn: { name: "node_id" },
+          isNodeRef: true,
+          nullable: false,
+        },
+        target_node: {
+          dslName: "target_node",
+          drizzleColumn: { name: "target_node" },
+          isNodeRef: true,
+          nullable: false,
+        },
+      },
+    });
+
+    // This DSL properly declares a predicate instead of using capability name directly.
+    // It uses the "before" old-style relation which doesn't need where-clause.
+    const validDsl = `predicate truthiness_guard($x: node) {
+  match $g: node where truthiness.coercion_kind == "falsy"
+}
+
+principle TruthinessCheck {
+  match $x: node where truthiness.coercion_kind == "truthy"
+  require no $guard: truthiness_guard($x) before $x
+  report violation {
+    at $x
+    captures { site: $x }
+    message "unexpected truthy coercion"
+  }
+}`;
+
+    const program = parseDSL(validDsl);
+    expect(() => compileProgram(program.nodes)).not.toThrow();
   });
 });
