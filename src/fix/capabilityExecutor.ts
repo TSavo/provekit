@@ -97,9 +97,16 @@ function resolveProjectRoot(): string {
  *   6. For each negative fixture: builds SAST, calls extractor, checks row count == 0.
  *   7. Cleans up tmpfiles in try/finally.
  */
-export async function executeExtractorSpec(spec: CapabilitySpec): Promise<OracleResult> {
+export async function executeExtractorSpec(
+  spec: CapabilitySpec,
+  options?: { cacheDirOverride?: string },
+): Promise<OracleResult> {
   const projectRoot = resolveProjectRoot();
-  const cacheDir = join(projectRoot, "node_modules", ".cache");
+  // cacheDirOverride lets tests scope tmpdir creation to a per-test directory
+  // so their cleanup-verification (counting provekit-extractor-* dirs) isn't
+  // poisoned by concurrent test runs creating their own dirs in the shared
+  // cache. Production callers omit it.
+  const cacheDir = options?.cacheDirOverride ?? join(projectRoot, "node_modules", ".cache");
 
   // Ensure cache dir exists (created on first use)
   mkdirSync(cacheDir, { recursive: true });

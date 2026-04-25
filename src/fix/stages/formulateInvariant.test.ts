@@ -363,4 +363,5 @@ describe("formulateInvariant (C1)", () => {
       formulateInvariant({ signal, locus, db, llm: stubLlm, _fidelityVerifiers: FIDELITY_ALL_PASS }),
     ).rejects.toThrow(/unsat|oracle/i);
   });
+
 });

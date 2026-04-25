@@ -429,17 +429,27 @@ paired-equality \`(= k1 k2)\` patterns.
 Use when the bug is: duplicate keys, duplicate methods in HTTP Allow,
 duplicate IDs, primary-key collision, set-as-list-without-dedup.
 
-Canonical SMT shape (Bug-1 Express duplicate-methods):
+Canonical SMT shape (Bug-1 Express duplicate-methods, "distinct" form):
 \`\`\`
-(declare-const k1 Int)
-(declare-const k2 Int)
-(assert (and (not (= k1 k2)) (= (header_method k1) (header_method k2))))
-\`\`\`
-OR equivalently, using distinct:
-\`\`\`
-(declare-const m1 Int) (declare-const m2 Int) (declare-const m3 Int)
+(declare-const m1 Int)
+(declare-const m2 Int)
+(declare-const m3 Int)
 (assert (not (distinct m1 m2 m3)))
 \`\`\`
+Each \`mN\` represents the value of the N-th element in the should-be-set.
+The violation is "the values are NOT all distinct" → some pair is equal.
+
+Alternative shape (paired-equality, when only two elements matter):
+\`\`\`
+(declare-const m1 Int)
+(declare-const m2 Int)
+(assert (= m1 m2))
+\`\`\`
+The violation is "two distinct positions hold the same value."
+
+Bindings: each declared constant must map to a source expression. For Bug-1
+the source_expr is the position in the array (e.g. "options[0]", "options[1]").
+
 Canonical prose: "no two X share Y", "the methods in the Allow header must
 be unique", "duplicate keys are forbidden". **AVOID** "appears at most
 once", "occurs more than once" — those phrasings vary across models.
@@ -621,11 +631,14 @@ function validateLlmResponse(rawParsed: unknown): {
     );
   }
 
-  // Validate each binding's smt_constant appears in declarations.
+  // Validate each binding's smt_constant appears in declarations. Accept
+  // declare-const, declare-fun, and declare-sort — set_uniqueness invariants
+  // commonly use uninterpreted functions to express "method of i-th element"
+  // without inventing concrete representations.
   const rawBindings = (parsed.bindings ?? []) as { smt_constant: string; source_expr: string; sort: string }[];
   const declaredConsts = new Set<string>();
   for (const decl of decls) {
-    const m = decl.match(/\(declare-const\s+(\S+)/);
+    const m = decl.match(/\(declare-(?:const|fun|sort)\s+(\S+)/);
     if (m && m[1]) declaredConsts.add(m[1]);
   }
   for (const b of rawBindings) {

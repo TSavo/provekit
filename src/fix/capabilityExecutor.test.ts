@@ -8,8 +8,9 @@
 
 import { describe, it, expect } from "vitest";
 import { executeExtractorSpec } from "./capabilityExecutor.js";
-import { existsSync, readdirSync, mkdirSync } from "fs";
+import { existsSync, readdirSync, mkdirSync, mkdtempSync, rmSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import type { CapabilitySpec } from "./types.js";
@@ -187,26 +188,26 @@ export function extractTestBinaryExpr(tx: any) {
 
 describe("capabilityExecutor — tmpfile cleanup", () => {
   it("tmpdir is removed after successful execution", async () => {
-    // Count provekit-extractor-* dirs before and after; none should remain.
-    mkdirSync(CACHE_DIR, { recursive: true });
-    const before = readdirSync(CACHE_DIR).filter((d) => d.startsWith("provekit-extractor-")).length;
-
-    await executeExtractorSpec(makeSpec());
-
-    const after = readdirSync(CACHE_DIR).filter((d) => d.startsWith("provekit-extractor-")).length;
-
-    // No new orphaned tmpdir should remain
-    expect(after).toBe(before);
+    // Per-test scratch dir scopes the cleanup-verification to ONLY this
+    // test's tmp dirs. Sibling tests / other test files concurrently calling
+    // executeExtractorSpec into the shared CACHE_DIR no longer poison the
+    // count.
+    const scratchCacheDir = mkdtempSync(join(tmpdir(), "captest-cache-"));
+    try {
+      await executeExtractorSpec(makeSpec(), { cacheDirOverride: scratchCacheDir });
+      const remaining = readdirSync(scratchCacheDir).filter((d) => d.startsWith("provekit-extractor-"));
+      expect(remaining).toHaveLength(0);
+    } finally {
+      rmSync(scratchCacheDir, { recursive: true, force: true });
+    }
   }, 30000);
 
   it("tmpdir is removed after failed execution", async () => {
-    mkdirSync(CACHE_DIR, { recursive: true });
-    const before = readdirSync(CACHE_DIR).filter((d) => d.startsWith("provekit-extractor-")).length;
-
-    // Run a spec that will fail at execution time
-    await executeExtractorSpec(
-      makeSpec({
-        extractorTs: `
+    const scratchCacheDir = mkdtempSync(join(tmpdir(), "captest-cache-"));
+    try {
+      await executeExtractorSpec(
+        makeSpec({
+          extractorTs: `
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 const nodeTestBinaryExpr = sqliteTable("node_test_binary_expr", {
   nodeId: text("node_id").notNull(),
@@ -214,11 +215,13 @@ const nodeTestBinaryExpr = sqliteTable("node_test_binary_expr", {
 export function extractTestBinaryExpr(tx: any, sourceFile: any, nodeIdByNode: any): void {
   throw new Error("cleanup test failure");
 }`,
-      }),
-    );
-
-    const after = readdirSync(CACHE_DIR).filter((d) => d.startsWith("provekit-extractor-")).length;
-
-    expect(after).toBe(before);
+        }),
+        { cacheDirOverride: scratchCacheDir },
+      );
+      const remaining = readdirSync(scratchCacheDir).filter((d) => d.startsWith("provekit-extractor-"));
+      expect(remaining).toHaveLength(0);
+    } finally {
+      rmSync(scratchCacheDir, { recursive: true, force: true });
+    }
   }, 30000);
 });
