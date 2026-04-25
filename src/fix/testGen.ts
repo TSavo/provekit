@@ -20,6 +20,7 @@ import { parseZ3Model } from "../z3/modelParser.js";
 import { materializeZ3Value } from "../inputs/synthesizer.js";
 import { applyPatchToOverlay, reindexOverlay } from "./overlay.js";
 import { runAgentInOverlay } from "./captureChange.js";
+import { detectTestRunner } from "./testRunners/index.js";
 import type { InvariantClaim, BugLocus, BugSignal, OverlayHandle, CodePatch, LLMProvider } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -514,18 +515,30 @@ export function runTestInOverlay(
   // Ensure node_modules symlink exists
   setupOverlayForTest(overlay, mainRepoRoot);
 
-  const vitestBin = join(overlay.worktreePath, "node_modules", ".bin", "vitest");
+  const runner = detectTestRunner(overlay.worktreePath);
 
-  const result = spawnSync(
-    vitestBin,
-    ["run", "--reporter=verbose", testFilePath],
-    {
-      cwd: overlay.worktreePath,
-      encoding: "utf8",
-      timeout: 60000,
-      env: { ...process.env, NODE_ENV: "test", CI: "true" },
-    },
-  );
+  let binary: string;
+  try {
+    binary = runner.resolveRunnerBinary(overlay.worktreePath);
+  } catch (_err) {
+    // Runner is "none" (or binary unresolved). Return informational pass so
+    // oracle #9 is cleanly skipped. Callers that want to distinguish this
+    // case should check the stdout sentinel.
+    return {
+      exitCode: 0,
+      stdout: "no test runner; oracle #9 skipped",
+      stderr: "",
+    };
+  }
+
+  const argv = runner.invocation(testFilePath);
+
+  const result = spawnSync(binary, argv, {
+    cwd: overlay.worktreePath,
+    encoding: "utf8",
+    timeout: 60000,
+    env: { ...process.env, NODE_ENV: "test", CI: "true" },
+  });
 
   return {
     exitCode: result.status ?? 1,

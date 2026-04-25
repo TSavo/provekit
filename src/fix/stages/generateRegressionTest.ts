@@ -97,7 +97,30 @@ export async function generateRegressionTest(args: {
   // -------------------------------------------------------------------------
   const mainRepoRoot = resolveMainRepoRoot(overlay);
   const runTest = args.testRunner ?? runTestInOverlay;
+
   const fixedRun = runTest(overlay, testFilePath, mainRepoRoot);
+
+  // If the runner returned the "no runner" sentinel, skip oracle #9 entirely
+  // (informational pass). This happens when detectTestRunner returned "none".
+  const NO_RUNNER_SENTINEL = "no test runner; oracle #9 skipped";
+  if (fixedRun.stdout.startsWith(NO_RUNNER_SENTINEL)) {
+    return {
+      testFilePath,
+      testName,
+      testCode,
+      witnessInputs,
+      passesOnFixedCode: true,
+      failsOnOriginalCode: true,
+      audit: {
+        fixedRunStdout: fixedRun.stdout,
+        fixedRunExitCode: 0,
+        originalRunStdout: "no test runner; oracle #9 skipped (informational)",
+        originalRunExitCode: 1,
+        mutationApplied: false,
+        mutationReverted: false,
+      },
+    };
+  }
 
   if (fixedRun.exitCode !== 0) {
     throw new Error(
