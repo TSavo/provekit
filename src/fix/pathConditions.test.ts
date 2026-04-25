@@ -334,4 +334,149 @@ export function divide(a: number, b: number): number {
     // Z3 returns unsat → oracle #2 should return "unsat".
     expect(verdict).toBe("unsat");
   }, 60_000);
+
+  // -------------------------------------------------------------------------
+  // Test 6: Early-exit guard pattern — throw in then-branch, use-site after if
+  //   `if (b === 0) throw new Error('!'); return a / b;`
+  //   → use-site is AFTER the if, then-branch always exits → emit negation
+  // -------------------------------------------------------------------------
+  it("early-exit guard: if (b === 0) throw → use-site after if → (assert (not (= b 0)))", async () => {
+    const source = `
+export function divide(a: number, b: number): number {
+  if (b === 0) {
+    throw new Error("division by zero");
+  }
+  return a / b;
+}
+`.trim() + "\n";
+
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+    seedPrinciples(repoDir);
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-pc-db6-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    const overlay = await buildOverlayForSource(source, repoDir, filePath, mainDb);
+    cleanups.push(() => closeOverlay(overlay));
+
+    const bindings = [makeBinding("b", "b")];
+    const result = extractGuardConditions(overlay, bindings);
+
+    expect(result.guardCount).toBeGreaterThan(0);
+    const assertionStr = result.smtAssertions.join(" ");
+    // Negation of (b === 0) — early-exit guard detected
+    expect(assertionStr).toContain("(not (= b 0))");
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
+  // Test 7: Early-exit guard pattern — early return in then-branch, use-site after if
+  //   `if (b === 0) return; return a / b;`
+  //   → same expectation as test 6
+  // -------------------------------------------------------------------------
+  it("early-exit guard: if (b === 0) return → use-site after if → (assert (not (= b 0)))", async () => {
+    const source = `
+export function divide(a: number, b: number): number {
+  if (b === 0) {
+    return 0;
+  }
+  return a / b;
+}
+`.trim() + "\n";
+
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+    seedPrinciples(repoDir);
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-pc-db7-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    const overlay = await buildOverlayForSource(source, repoDir, filePath, mainDb);
+    cleanups.push(() => closeOverlay(overlay));
+
+    const bindings = [makeBinding("b", "b")];
+    const result = extractGuardConditions(overlay, bindings);
+
+    expect(result.guardCount).toBeGreaterThan(0);
+    const assertionStr = result.smtAssertions.join(" ");
+    expect(assertionStr).toContain("(not (= b 0))");
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
+  // Test 8: No early-exit — then-branch does NOT exit, use-site is after if
+  //   `if (b === 0) { x++; } return a / b;`
+  //   → then-branch has no exit → 0 guards (existing behavior, sanity check)
+  // -------------------------------------------------------------------------
+  it("no early-exit: if (b === 0) { x++; } → then-branch non-exiting → guardCount 0", async () => {
+    const source = `
+export function divide(a: number, b: number): number {
+  let x = 0;
+  if (b === 0) {
+    x++;
+  }
+  return a / b;
+}
+`.trim() + "\n";
+
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-pc-db8-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    buildSASTForFile(mainDb, filePath);
+    const locus = makeLocus(filePath);
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const bindings = [makeBinding("b", "b")];
+    const result = extractGuardConditions(overlay, bindings);
+
+    expect(result.guardCount).toBe(0);
+    expect(result.smtAssertions).toHaveLength(0);
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
+  // Test 9: Use-site INSIDE the then-branch, not after — existing behavior
+  //   `if (b > 0) { return a / b; } return 0;`
+  //   → positive condition asserted (b > 0), no negation
+  // -------------------------------------------------------------------------
+  it("use-site inside then-branch → positive condition, no early-exit negation", async () => {
+    const source = `
+export function divide(a: number, b: number): number {
+  if (b > 0) {
+    return a / b;
+  }
+  return 0;
+}
+`.trim() + "\n";
+
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+    seedPrinciples(repoDir);
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-pc-db9-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    const overlay = await buildOverlayForSource(source, repoDir, filePath, mainDb);
+    cleanups.push(() => closeOverlay(overlay));
+
+    const bindings = [makeBinding("b", "b")];
+    const result = extractGuardConditions(overlay, bindings);
+
+    // Use-site is INSIDE the then-branch → positive condition
+    expect(result.guardCount).toBeGreaterThan(0);
+    const assertionStr = result.smtAssertions.join(" ");
+    expect(assertionStr).toContain("(> b 0)");
+    // Should NOT be negated
+    expect(assertionStr).not.toContain("(not (> b 0))");
+  }, 30_000);
 });

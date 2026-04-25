@@ -30,7 +30,7 @@
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { eq, inArray } from "drizzle-orm";
-import { nodes, files, dominance, nodeDecides, nodeChildren } from "../sast/schema/index.js";
+import { nodes, files, dominance, nodeDecides, nodeChildren, nodeReturns } from "../sast/schema/index.js";
 import type { OverlayHandle } from "./types.js";
 import type { SmtBinding } from "../contracts.js";
 
@@ -257,6 +257,13 @@ export function extractGuardConditions(
   }
 
   // -------------------------------------------------------------------------
+  // Step 5b: Load all exit-kind rows from node_returns for early-exit detection.
+  // -------------------------------------------------------------------------
+
+  const allReturns = db.select({ nodeId: nodeReturns.nodeId }).from(nodeReturns).all();
+  const exitNodeIds = new Set(allReturns.map((r) => r.nodeId));
+
+  // -------------------------------------------------------------------------
   // Step 6: Build structural ancestry sets for consequentNode and alternateNode.
   //
   //   For each IfStatement, we need to know which nodes are structurally
@@ -291,6 +298,22 @@ export function extractGuardConditions(
     if (decides.alternateNode && !descendantsOf.has(decides.alternateNode)) {
       descendantsOf.set(decides.alternateNode, collectDescendants(decides.alternateNode));
     }
+  }
+
+  /**
+   * Returns true if the branch rooted at branchNode unconditionally exits
+   * (i.e., any descendant — including branchNode itself — is in exitNodeIds).
+   *
+   * Note: collectDescendants includes rootId itself, so braceless
+   * `if (c) throw ...` is handled correctly.
+   */
+  function branchAlwaysExits(branchNode: string): boolean {
+    const descendants = descendantsOf.get(branchNode);
+    if (!descendants) return false;
+    for (const d of descendants) {
+      if (exitNodeIds.has(d)) return true;
+    }
+    return false;
   }
 
   // -------------------------------------------------------------------------
@@ -349,14 +372,28 @@ export function extractGuardConditions(
         ? descendantsOf.get(decides.alternateNode)
         : undefined;
 
-      // The enclosing statement must be a structural descendant of EXACTLY ONE branch.
+      // The enclosing statement must be a structural descendant of EXACTLY ONE branch,
+      // OR it may be AFTER the if (early-exit guard pattern).
       const inConsequent = thenDescendants !== undefined && thenDescendants.has(stmtId);
       const inAlternate = elseDescendants !== undefined && elseDescendants.has(stmtId);
 
-      if (!inConsequent && !inAlternate) continue;
-      if (inConsequent && inAlternate) continue; // ambiguous
-
-      const negate = inAlternate;
+      let negate: boolean;
+      if (inConsequent && !inAlternate) {
+        negate = false;
+      } else if (inAlternate && !inConsequent) {
+        negate = true;
+      } else if (!inConsequent && !inAlternate) {
+        // Early-exit guard pattern: use-site is AFTER the if-statement, and the
+        // then-branch always exits. Reaching the use-site implies the condition was false.
+        const consNode = decides.consequentNode;
+        if (!consNode || !branchAlwaysExits(consNode)) continue;
+        const useStart = nodeById.get(stmtId)?.sourceStart;
+        const ifStart = nodeById.get(dominatorId)?.sourceStart;
+        if (useStart == null || ifStart == null || useStart <= ifStart) continue;
+        negate = true;
+      } else {
+        continue; // inConsequent && inAlternate = ambiguous
+      }
 
       // Fetch condition text.
       const condNode = conditionNodeById.get(decides.conditionNode);
