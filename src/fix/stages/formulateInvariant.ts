@@ -304,7 +304,22 @@ Rules:
 - smt_violation_assertion: a single (assert ...) encoding the violation state
 - Do NOT include (check-sat) — it will be appended automatically
 - Use Int or Bool sorts
-- Keep it simple: 2-5 constants maximum`;
+- Keep it simple: 2-5 constants maximum
+
+CRITICAL — invariant must be VERIFIABLE post-fix:
+- ONLY use SMT constants that map directly to source-code INPUT variables
+  (function parameters, named locals). Each binding's source_expr must be a
+  literal substring of source code (e.g., "b", "a", "x").
+- DO NOT introduce SYMBOLIC CONTROL-FLOW VARIABLES (e.g., "throws Bool",
+  "guard_returns Int", "code_after_reached Bool"). These cannot be verified
+  against the post-fix code: oracle #2's path-condition extraction can only
+  rebind source variables to dominating guards, not synthetic booleans.
+- Express the violation as constraints on input variables only.
+  Good: "(assert (= b 0))"   ← b is a function parameter; oracle #2 can verify
+  Bad:  "(assert (and (= b 0) (= throws false)))"  ← oracle #2 cannot verify "throws"
+- If the bug only manifests under specific control flow, encode that as
+  constraints on the input variables that REACH the bug site, not as a
+  synthetic flag.`;
 }
 
 function parseLlmResponse(raw: string): {
