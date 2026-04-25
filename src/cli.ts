@@ -164,10 +164,13 @@ async function runAnalyze(args: string[]): Promise<void> {
   const dbPath = join(projectRoot, ".provekit", "provekit.db");
   const db = openDb(dbPath);
   try {
-    const tsExtensions = new Set([".ts", ".tsx"]);
+    // ts-morph parses .js and .jsx via its compiler API. Restricting SAST
+    // indexing to TypeScript blocked BugsJS harvest from JS-only projects
+    // (Express, Mocha, etc.). Accept all four extensions.
+    const sastExtensions = new Set([".ts", ".tsx", ".js", ".jsx"]);
     for (const fileNode of result.graph.files) {
       const ext = fileNode.path.slice(fileNode.path.lastIndexOf("."));
-      if (!tsExtensions.has(ext)) continue;
+      if (!sastExtensions.has(ext)) continue;
       try {
         buildSASTForFile(db, fileNode.path);
       } catch (err: any) {
