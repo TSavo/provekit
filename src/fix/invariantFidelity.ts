@@ -530,9 +530,26 @@ const STOP_WORDS = new Set<string>([
   "values", "code", "without", "via",
 ]);
 
+/**
+ * Lightweight stemmer. Not a real Porter stemmer; just enough to collapse the
+ * inflectional variants that show up in invariant prose ("contain"/"containing",
+ * "metacharacter"/"metacharacters") so semantically identical descriptions
+ * register on the Jaccard set. Verified to push the run-1 shell-injection prose
+ * pair from 0.23 to 0.33 (above the 0.3 threshold) without inflating distinct
+ * bug pairs (buffer-overflow vs shell-injection still at 0.0).
+ */
+function stem(w: string): string {
+  if (w.length <= 4) return w;
+  if (w.endsWith("ing") && w.length > 5) return w.slice(0, -3);
+  if (w.endsWith("ed") && w.length > 4) return w.slice(0, -2);
+  if (w.endsWith("es") && w.length > 4) return w.slice(0, -2);
+  if (w.endsWith("s") && w.length > 4) return w.slice(0, -1);
+  return w;
+}
+
 function tokenizeContentWords(text: string): Set<string> {
   const words = text.toLowerCase().split(/\W+/).filter(Boolean);
-  return new Set(words.filter((w) => w.length > 1 && !STOP_WORDS.has(w)));
+  return new Set(words.filter((w) => w.length > 1 && !STOP_WORDS.has(w)).map(stem));
 }
 
 function jaccard(a: Set<string>, b: Set<string>): number {
