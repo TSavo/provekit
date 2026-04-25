@@ -161,12 +161,10 @@ export async function generateTestCode(args: {
   // Use overlay-relative display path to avoid leaking absolute paths.
   const locusDisplay = locusRelToWorktree ?? locus.file;
 
-  const prompt = `You are a TypeScript testing expert. Generate a complete vitest regression test file.
+  const prompt = `[STAGE:C5] generateTestCode
+You are a TypeScript testing expert. Generate a complete vitest regression test file.
 
-TASK: Generate a vitest test that:
-1. Imports the buggy function from the module under test
-2. Calls the function with the exact Z3 witness inputs provided
-3. Asserts the invariant holds (the function should NOT exhibit the bug)
+# Inputs
 
 INVARIANT VIOLATED: ${invariant.description}
 
@@ -188,23 +186,128 @@ IMPORT PATH (from test file to module): ${importPath}
 TEST FILE PATH: ${testFilePath}
 TEST NAME: ${testName}
 
-REQUIREMENTS:
-- Use vitest (import { it, expect, describe } from "vitest")
-- Import the function by name from the module (named import preferred; if unclear use default import)
-- Call the function with the exact Z3 witness input values
-- Assert the function either: (a) does not throw, OR (b) returns a value that satisfies the invariant
-- If the function takes b=0 as a denominator, assert it does NOT throw (e.g. wraps in expect(...).not.toThrow())
-- Use the test name exactly: "${testName}"
-- Output ONLY the complete TypeScript test file contents, no markdown, no explanation
+# What happens to your output
 
-Example structure:
+Your test will be run TWICE: once on the patched (post-fix) code, once with
+the fix reverted to the original buggy code.
+- On post-fix code: your test MUST pass.
+- On original code: your test MUST fail (mutation verification — proves the
+  test actually exercises the bug, not just unrelated infrastructure).
+
+If your test passes on BOTH (because its bug-class assertion is gated on a
+condition the test setup didn't force), it's vacuous and gets rejected.
+
+# Anti-pattern: gated bug-class assertion
+
+The single most common failure mode. Don't write:
+
+\`\`\`ts
+const result = exec(input);
+if (result && result.length > 0) {
+  // bug-class assertion gated on a precondition
+  expect(result.unique).toBe(true);
+}
+\`\`\`
+
+If \`result\` is empty for any reason (timing, default state, infrastructure
+mismatch in the overlay), the assertion is skipped and the test passes
+WITHOUT exercising the bug. Mutation verification might still catch the
+differential through OTHER assertions in the test, but the BUG-CLASS
+assertion is silent — the test isn't verifying what it claims.
+
+Force the precondition. Don't gate the assertion on it:
+
+\`\`\`ts
+const result = exec(input);
+expect(result).toBeDefined();              // precondition becomes an assertion
+expect(result.length).toBeGreaterThan(0);  // precondition becomes an assertion
+expect(result.unique).toBe(true);          // bug-class assertion runs unconditionally
+\`\`\`
+
+If the setup can't reliably produce \`result\`, that's a SETUP problem to
+solve, not a test-shape problem to paper over.
+
+# Anti-pattern: try/catch swallowing the failure
+
+\`\`\`ts
+try {
+  exec(input);
+} catch {
+  // swallowed; nothing asserts that exec didn't throw on input that
+  // shouldn't have caused a throw
+}
+\`\`\`
+
+Use \`expect(() => ...).not.toThrow()\` or \`.toThrow()\` instead. Make the
+behavior an assertion.
+
+# Universal rules
+
+- Use vitest: \`import { it, expect, describe } from "vitest"\`
+- Import the buggy function by name (named import preferred; default OK if
+  the module has a default export)
+- Call the function with the EXACT Z3 witness input values shown above
+- The bug-class assertion MUST run unconditionally on every test execution
+- Test name MUST be exactly: "${testName}"
+- Output ONLY the complete TypeScript test file contents — no markdown
+  fences, no explanation, no "Here is the test:" preamble
+
+# Canonical examples
+
+## Division-by-zero
+\`\`\`ts
 import { it, expect } from "vitest";
 import { divide } from "../utils/math";
 
 it("${testName}", () => {
-  // Z3 witness: a=5, b=0 triggers division-by-zero before fix
-  expect(() => divide(5, 0)).not.toThrow();
+  // Z3 witness: a=5, b=0 should not produce Infinity post-fix.
+  expect(() => divide(5, 0)).toThrow();
 });
+\`\`\`
+
+## Set / uniqueness (Bug-1 Express duplicate methods, anti-pattern fixed)
+\`\`\`ts
+import { it, expect } from "vitest";
+import express from "../app";
+
+it("${testName}", () => {
+  const app = express();
+  app.get("/x", () => {});
+  app.get("/x", () => {});
+  app.put("/x", () => {});
+
+  // Force the precondition by exercising the OPTIONS path explicitly.
+  const allow = computeOptionsAllow(app, "/x");
+  expect(allow).toBeDefined();
+  expect(allow.length).toBeGreaterThan(0);
+
+  // Bug-class assertion: unconditional.
+  const methods = allow.split(",").map(s => s.trim());
+  expect(methods.length).toBe(new Set(methods).size);
+});
+\`\`\`
+
+## Taint / shell-injection
+\`\`\`ts
+import { it, expect } from "vitest";
+import { listFiles } from "../cmd";
+import { existsSync, mkdtempSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+
+it("${testName}", () => {
+  const dir = mkdtempSync(join(tmpdir(), "regression-"));
+  const marker = join(dir, "INJECTED");
+  const payload = \`; touch \${marker} ;\`;
+
+  // Either throws or returns non-buffer — both acceptable; what matters
+  // is the marker file did NOT get created (the injected command did
+  // NOT execute).
+  try { listFiles(payload); } catch { /* accepted */ }
+
+  expect(existsSync(marker)).toBe(false);
+});
+\`\`\`
 `;
 
   const raw = await llm.complete({ prompt, model: getModelTier("C5-testGen") });
@@ -339,16 +442,14 @@ export async function generateTestCodeViaAgent(args: {
     typeof v === "bigint" ? v.toString() : v
   , 2);
 
-  const prompt = `Your CWD is the project root. All paths in this prompt are relative to your CWD. Do not use absolute paths — use only the relative paths shown here.
+  const prompt = `[STAGE:C5] generateTestCodeViaAgent
+Your CWD is the project root. All paths in this prompt are relative to your CWD.
+Do not use absolute paths — use only the relative paths shown here.
 
-You are a TypeScript testing expert. Generate a complete vitest regression test file.
+You are a TypeScript testing expert. Write a complete vitest regression test
+file to disk at path: ${testFilePath}
 
-TASK: Write a vitest regression test to the file at path: ${testFilePath}
-
-The test should:
-1. Import the buggy function from the module under test
-2. Call the function with the exact Z3 witness inputs provided
-3. Assert the invariant holds (the function should NOT exhibit the bug)
+# Inputs
 
 INVARIANT VIOLATED: ${invariant.description}
 
@@ -379,13 +480,72 @@ Do NOT change "${importPath}" to anything else. Copy it character-for-character.
 TEST FILE PATH: ${testFilePath}
 TEST NAME: ${testName}
 
-REQUIREMENTS:
-- Use vitest (import { it, expect, describe } from "vitest")
-- Import the function by name from the module (named import preferred)
-- Call the function with the exact Z3 witness input values
-- Assert the function either: (a) does not throw, OR (b) returns a value that satisfies the invariant
-- Use the test name exactly: "${testName}"
-- Write the complete TypeScript test file to: ${testFilePath}
+# What happens to your output
+
+Your test will be run TWICE: once on the patched code, once with the fix
+reverted. Pass on patched + fail on reverted = correct. Pass on BOTH (because
+the bug-class assertion was vacuous) = REJECTED by mutation verification.
+
+# Anti-pattern: gated bug-class assertion (DO NOT do this)
+
+\`\`\`ts
+const result = exec(input);
+if (result && result.length > 0) {
+  expect(result.unique).toBe(true);  // gated → vacuous when result is empty
+}
+\`\`\`
+
+Force the precondition. Don't gate on it:
+
+\`\`\`ts
+const result = exec(input);
+expect(result).toBeDefined();              // precondition is now an assertion
+expect(result.length).toBeGreaterThan(0);  // precondition is now an assertion
+expect(result.unique).toBe(true);          // bug-class assertion runs unconditionally
+\`\`\`
+
+# Anti-pattern: try/catch swallowing failure
+
+\`\`\`ts
+try { exec(input); } catch { /* swallowed */ }   // wrong
+\`\`\`
+
+Use \`expect(() => exec(input)).not.toThrow()\` or \`.toThrow()\` instead.
+
+# Universal rules
+
+- Use vitest: \`import { it, expect, describe } from "vitest"\`
+- Import the function by name from "${importPath}" — verbatim, no substitution
+- Call the function with the EXACT Z3 witness input values shown above
+- The bug-class assertion MUST run on every execution. No \`if\` gating it.
+- Test name MUST be exactly: "${testName}"
+- Write the complete file to: ${testFilePath}
+
+# Canonical examples
+
+Division-by-zero:
+\`\`\`ts
+import { it, expect } from "vitest";
+import { divide } from "${importPath}";
+
+it("${testName}", () => {
+  expect(() => divide(5, 0)).toThrow();
+});
+\`\`\`
+
+Set / uniqueness (force the precondition, then assert unconditionally):
+\`\`\`ts
+import { it, expect } from "vitest";
+import { listFiles } from "${importPath}";
+
+it("${testName}", () => {
+  const result = computeAllowHeader();
+  expect(result).toBeDefined();
+  expect(result.length).toBeGreaterThan(0);
+  const methods = result.split(",").map(s => s.trim());
+  expect(methods.length).toBe(new Set(methods).size);
+});
+\`\`\`
 
 Write the test file using your file editing tools now.`;
 

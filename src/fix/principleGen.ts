@@ -110,12 +110,47 @@ export function buildPrinciplePrompt(
 ): string {
   const exemplar = loadExemplar();
 
-  return `You are a static-analysis rule author. Given a bug and its fix, produce a reusable DSL principle that catches this bug class.
+  return `[STAGE:C6] generatePrincipleCandidate
+You are a static-analysis rule author. Given a bug and its fix, produce a reusable DSL principle that catches this bug class.
 
 Bug summary: ${signal.summary}
 Invariant violated: ${invariant.description}
 Bug class hint: ${signal.bugClassHint ?? "(none)"}
 Fix description: ${fix.patch.description}
+
+=== WHY YOUR PRINCIPLE WILL FAIL ADVERSARIAL VALIDATION (READ FIRST) ===
+
+After you produce a principle, oracle #6 will:
+1. Generate 3 positive fixtures (code that MUST match — exhibits the bug)
+2. Generate 3 negative fixtures (code that MUST NOT match — clean code)
+3. Compile your DSL to a SAST query and run it against all 6 fixtures.
+4. Pass criteria: ≥2/3 positives match AND ≥2/3 negatives don't match.
+
+The two failure modes:
+
+a) TOO BROAD — matches negatives. Your DSL captures a structural pattern
+   that's not exclusive to the bug. Example:
+     match $div: node where arithmetic.op == "/"
+   This matches EVERY division, including \`a / 2\` (literal divisor — no bug).
+   Fix: add a require clause that captures the LOAD-BEARING element. For
+   division-by-zero, that's "the divisor is unguarded AND can be zero."
+
+b) TOO NARROW — misses positives. Your DSL only matches one specific syntactic
+   shape. Example:
+     match $div: node where arithmetic.op == "/" and arithmetic.rhs_value == 0
+   This only matches \`a / 0\` (literal zero divisor) and misses \`a / b\` where
+   \`b\` is a parameter. Fix: capture the structural pattern that COVERS the
+   class, not one literal example.
+
+The goal is to express the LOAD-BEARING ELEMENT — the thing that, if removed,
+would make the code safe. For division-by-zero: an unguarded divisor that can
+take zero. For shell-injection: untrusted input flowing to a shell sink without
+sanitization. For duplicate-method-collection: array-merge without dedup
+before set-semantic consumption.
+
+Before writing the DSL, identify the load-bearing element of THIS bug. State
+it to yourself in plain English. The DSL must check for THAT, not for
+incidental scaffolding around it.
 
 === THREE NAME-SPACES IN THE DSL. DO NOT MIX THEM. ===
 
@@ -241,7 +276,8 @@ function buildAdversarialPrompt(
   principleDescription: string,
   dslSource: string,
 ): string {
-  return `You are a security-minded adversary reviewing a static-analysis principle.
+  return `[STAGE:C6-adversarial] adversarial fixtures
+You are a security-minded adversary reviewing a static-analysis principle.
 
 Principle description: ${principleDescription}
 DSL source:
@@ -249,26 +285,73 @@ DSL source:
 ${dslSource}
 \`\`\`
 
-Generate TypeScript fixture files to stress-test this principle.
-Produce exactly 3 false-positive fixtures (benign code that should NOT match) and
-3 false-negative fixtures (buggy code that MUST match).
+# Your job
+
+Generate two sets of TypeScript fixtures to stress-test this principle:
+- 3 POSITIVE fixtures (called "false_negatives" in the schema): minimal code
+  that exhibits the bug. The principle MUST match all 3.
+- 3 NEGATIVE fixtures (called "false_positives" in the schema): minimal code
+  that does NOT exhibit the bug. The principle MUST NOT match any of them.
+
+The principle passes adversarial validation if ≥2/3 of each set classifies
+correctly. ≥2/3 positives matching means it's not too narrow. ≥2/3 negatives
+not matching means it's not too broad.
+
+# What makes good fixtures
+
+POSITIVE fixtures (true bugs):
+- Strip everything that's not load-bearing. The fixture should contain ONLY
+  what's needed for the bug to manifest. No imports, no I/O, no scaffolding.
+- Vary the syntactic surface. Don't write the same fixture three times with
+  different variable names. Use different identifier patterns, different
+  enclosing function shapes, different surrounding statements.
+- Each fixture must be ≤10 lines.
+
+NEGATIVE fixtures (clean code, structurally similar):
+- The KEY skill is "structurally similar but lacking the load-bearing element."
+  If the principle is for division-by-zero, a good negative is \`a / 2\` or
+  \`a / Math.max(b, 1)\` — same arithmetic operator, but the divisor is
+  guarded or known non-zero.
+- A bad negative is unrelated code: \`function foo() { console.log("hi"); }\`
+  doesn't test the principle at all because it doesn't have ANY of the
+  pattern's structural elements.
+- Each fixture must be ≤10 lines.
+
+# Anti-patterns
+
+POSITIVE fixture that doesn't actually exhibit the bug (e.g., for
+division-by-zero, writing \`function f(a) { return a / 2; }\` — that's a
+NEGATIVE, not a positive). The principle correctly won't match → false
+negative passing reported as 0/3.
+
+NEGATIVE fixture that's not structurally close enough (e.g., empty function).
+The principle correctly won't match, but the fixture isn't testing the
+principle's discrimination.
+
+NEGATIVE fixture that accidentally has the bug (e.g., \`a / b\` with no guard
+when the principle catches "unguarded division"). The principle correctly
+matches → counts as false positive (negative wrongly classified).
+
+# Output
 
 Respond with ONLY a JSON object (no markdown fences):
 {
   "false_positives": [
-    { "source": "// TypeScript code here\\nfunction ok() { return 1; }" },
+    { "source": "function safe(a: number) { return a / 2; }" },
     ...
   ],
   "false_negatives": [
-    { "source": "// TypeScript code with the bug\\nfunction bad() { return x / 0; }" },
+    { "source": "function bad(a: number, b: number) { return a / b; }" },
     ...
   ]
 }
 
 Rules:
-- Each source must be valid TypeScript (may have simple type errors but must parse).
-- false_positives: code that a careless rule would flag but SHOULD NOT be flagged.
-- false_negatives: code that DOES contain the bug pattern the principle targets.
+- Each source must be valid TypeScript (may have simple type warnings but must parse).
+- "false_positives" key holds the NEGATIVE fixtures (clean code).
+- "false_negatives" key holds the POSITIVE fixtures (buggy code).
+- Yes, the schema names are inverted relative to plain English; the names refer
+  to the failure modes a careless principle would exhibit on each set.
 - Do NOT output anything outside the JSON object.`;
 }
 
