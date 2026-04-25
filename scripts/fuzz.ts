@@ -4,6 +4,7 @@
  *
  * Usage:
  *   npx ts-node scripts/fuzz.ts [--threshold 0.10] [--bug-class division-by-zero]
+ *                               [--amplify=stryker [--multiplier=3]]
  *
  * Exit 0 if integrationGapRate < threshold (default 0.05).
  * Exit 1 if integrationGapRate >= threshold (seams need hardening).
@@ -14,27 +15,62 @@
 
 import { runSweep } from "../src/fix/corpus/runner.js";
 import { summarize, formatDashboardForCLI } from "../src/fix/corpus/dashboard.js";
+import type { AmplificationContext } from "../src/fix/corpus/dashboard.js";
 import { loadScenarios } from "../src/fix/corpus/index.js";
+import { amplifyScenario } from "../src/fix/corpus/amplify-stryker.js";
+import type { CorpusScenario } from "../src/fix/corpus/scenarios.js";
+
+/** Parse `--key=value` or `--key value` style. Returns undefined if absent. */
+function parseArg(args: string[], key: string): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === `--${key}`) {
+      return i + 1 < args.length ? args[i + 1] : undefined;
+    }
+    if (a.startsWith(`--${key}=`)) {
+      return a.slice(`--${key}=`.length);
+    }
+  }
+  return undefined;
+}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  // Parse --threshold N
-  const thresholdIdx = args.indexOf("--threshold");
-  const threshold = thresholdIdx !== -1 && thresholdIdx + 1 < args.length
-    ? parseFloat(args[thresholdIdx + 1])
-    : 0.05;
+  const thresholdRaw = parseArg(args, "threshold");
+  const threshold = thresholdRaw !== undefined ? parseFloat(thresholdRaw) : 0.05;
 
-  // Parse --bug-class <class>
-  const bugClassIdx = args.indexOf("--bug-class");
-  const bugClass = bugClassIdx !== -1 && bugClassIdx + 1 < args.length
-    ? args[bugClassIdx + 1]
-    : "all";
+  const bugClass = parseArg(args, "bug-class") ?? "all";
 
-  const corpus = loadScenarios(bugClass);
-  if (corpus.length === 0) {
+  const amplifyMode = parseArg(args, "amplify");
+  const multiplierRaw = parseArg(args, "multiplier");
+  const multiplier = multiplierRaw !== undefined ? parseInt(multiplierRaw, 10) : 3;
+
+  const baseCorpus = loadScenarios(bugClass);
+  if (baseCorpus.length === 0) {
     process.stderr.write(`No scenarios found for bug class '${bugClass}'.\n`);
     process.exit(2);
+  }
+
+  // Build run corpus: base + (optional) amplified scenarios.
+  let corpus: CorpusScenario[] = [...baseCorpus];
+  let amplificationCtx: AmplificationContext | undefined;
+
+  if (amplifyMode === "stryker") {
+    const ctxMap = new Map<string, { baseId: string; mutationKind: string }>();
+    let amplifiedCount = 0;
+    for (const base of baseCorpus) {
+      const amplified = amplifyScenario(base, { maxMutations: multiplier });
+      for (const a of amplified) {
+        corpus.push(a);
+        ctxMap.set(a.id, { baseId: a.baseScenarioId, mutationKind: a.mutationKind });
+        amplifiedCount++;
+      }
+    }
+    amplificationCtx = { mutated: ctxMap };
+    process.stdout.write(
+      `Amplifier: stryker (multiplier=${multiplier}) added ${amplifiedCount} scenario(s) from ${baseCorpus.length} base(s).\n`,
+    );
   }
 
   process.stdout.write(`Running corpus sweep: ${corpus.length} scenario(s), threshold=${(threshold * 100).toFixed(1)}%\n\n`);
@@ -47,7 +83,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const dashboard = summarize(results);
+  const dashboard = summarize(results, amplificationCtx);
   const formatted = formatDashboardForCLI(dashboard);
   process.stdout.write(formatted + "\n");
 
