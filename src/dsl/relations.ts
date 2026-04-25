@@ -5,8 +5,8 @@
  * Importing this module (or calling registerBuiltinRelations()) is
  * sufficient to populate the registry.
  *
- * Current relations: before, dominates, same_value.
- * Reserved (not implemented): post_dominates, data_source, data_flow_reaches,
+ * Current relations: before, dominates, same_value, data_flow_reaches.
+ * Reserved (not implemented): post_dominates, data_source,
  * encloses, always_exits, branch_reaches, mutates, literal_value, call_arity,
  * method_name, compound_assignment.
  *
@@ -70,6 +70,37 @@ export function registerBuiltinRelations(): void {
         `SELECT 1 FROM data_flow df1 ` +
         `JOIN data_flow df2 ON df1.from_node = df2.from_node ` +
         `WHERE df1.to_node = ${a}.id AND df2.to_node = ${b}.id` +
+        `)`
+      );
+    },
+  });
+
+  // Leak 2 substrate prerequisite: data_flow_reaches(source, sink) — true iff
+  // the value of `source` can flow (transitively) into `sink` via 0+ hops in
+  // the data_flow graph. Backed by data_flow_transitive, which now contains
+  // real chains thanks to the chain-formation init edges in
+  // src/sast/dataFlow.ts (the bipartite-graph limitation is resolved).
+  //
+  // Direction: data_flow rows are (to_node, from_node) where from_node's value
+  // flows TO to_node. So data_flow_reaches(source, sink) ⇔
+  // data_flow_transitive row with from_node = source.id AND to_node = sink.id.
+  //
+  // Note: data_flow_transitive contains all direct edges PLUS multi-hop
+  // ancestors, so 1-hop reachability is included. Self-reach (source === sink)
+  // is NOT included here since data_flow_transitive does not include zero-hop
+  // identity rows. Callers needing reflexive closure can OR with `same_node`.
+  registerRelation({
+    name: "data_flow_reaches",
+    paramCount: 2,
+    paramTypes: ["node", "node"],
+    compile: ({ args }) => {
+      const a = args[0]?.kind === "node" ? args[0].alias : null;
+      const b = args[1]?.kind === "node" ? args[1].alias : null;
+      if (!a || !b) throw new Error("data_flow_reaches: both args must be node");
+      return (
+        `EXISTS (` +
+        `SELECT 1 FROM data_flow_transitive ` +
+        `WHERE from_node = ${a}.id AND to_node = ${b}.id` +
         `)`
       );
     },

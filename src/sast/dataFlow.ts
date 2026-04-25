@@ -6,17 +6,37 @@
  * nodeBinding fallback (file-scoped), emit a data_flow row with the
  * appropriate slot from the closed vocabulary.
  *
+ * Pass 1b (chain-formation, fixes the previous bipartite limitation):
+ * for every VariableDeclaration with an initializer and every assignment
+ * BinaryExpression (op === EqualsToken), emit one extra edge per Identifier
+ * appearing in the RHS expression of shape `(decl_or_lhs_decl, rhs_use, "init")`.
+ * That is: the declaration node ALSO becomes a to_node whose from_nodes are
+ * the use-site identifiers feeding its initial/assigned value. This is what
+ * makes chains form — the graph stops being bipartite.
+ *
  * Pass 2: Compute transitive closure (DFS backward) and insert into
  * data_flow_transitive. O(N²) is fine for file-sized graphs.
  *
- * KNOWN LIMITATION (surfaced during A4 review): the current edge shape
- * produces a bipartite graph — declarations are only from_nodes, use-site
- * identifiers are only to_nodes. Transitive closure therefore equals direct
- * edges; no chains form. If A7 DSL or C4 complementary-site discovery needs
- * chained reachability ("param a ultimately flows into y/b via x and y"),
- * the edge shape needs redesign — either (a) emit def→binding→use triples
- * so chains form, or (b) populate data_flow_transitive by joining through
- * node_binding name. Revisit when a consumer needs it.
+ * Why approach A (extra emit-time edges) over approach B (closure-time
+ * bridging via node_binding name): the AST-walking pass already has full
+ * parent context to identify decl/RHS pairs. Bridging in the closure pass
+ * would mean adding name lookups against node_binding inside what is
+ * currently a pure graph DFS. Cleaner to keep the closure dumb and put the
+ * one extra edge emission in the place that already understands AST shape.
+ *
+ * Chain example for `function f(a){ const x=a; const y=x; return y; }`:
+ *   direct edges include:
+ *     (use_a, decl_a)                 — use_a is in init of x; reads param a
+ *     (decl_x, use_a, "init")         — NEW: x's value flows from use_a
+ *     (use_x, decl_x)                 — use_x in init of y reads decl_x
+ *     (decl_y, use_x, "init")         — NEW
+ *     (use_y_in_return, decl_y)
+ *   transitive closure now contains (use_y_in_return, decl_a). No chain
+ *   would form without the "init" edges.
+ *
+ * Interprocedural flow (e.g. `f(a){ g(a) } g(b){ use(b) }`) is NOT modeled.
+ * Call-arg → callee-param edges would require name-resolved cross-function
+ * binding, which is intentionally out of scope for the v1 syntactic substrate.
  */
 
 import {
@@ -54,7 +74,11 @@ type Slot =
   | "index"
   | "throws"
   | "captures"
-  | "read";
+  | "read"
+  // "init" is emitted on the SECOND edge in a def→use chain step:
+  // for `const x = expr`, we emit (decl_x, ident_in_expr, "init") so that
+  // the closure DFS chains through decl_x. Same for assignments `x = expr`.
+  | "init";
 
 const ARITHMETIC_OPS = new Set([
   SyntaxKind.PlusToken,
@@ -427,6 +451,131 @@ function emitDirectEdges(
       if (fnStart !== undefined && declStart < fnStart) {
         emit(useId, declId, "captures");
       }
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Pass 1b: chain-formation edges. For every VariableDeclaration with an
+  // initializer, and every assignment BinaryExpression (op === EqualsToken or
+  // a compound-assignment), emit (lhs_decl, rhs_use_ident, "init") for every
+  // identifier appearing in the initializer/RHS expression.
+  //
+  // This is what fixes the bipartite-graph limitation: declaration nodes
+  // become to_nodes (predecessors of their RHS uses), so the closure DFS can
+  // chain from a use of a chained variable back to the original source.
+  // -------------------------------------------------------------------------
+
+  function emitInitChainFromExpr(targetDeclId: string, expr: Node): void {
+    // Walk identifiers in the expression. Skip declaration names + property
+    // access right-hand identifiers (same predicate used above).
+    expr.forEachDescendant((d) => {
+      if (d.getKind() !== SyntaxKind.Identifier) return;
+      const id = d as Identifier;
+      if (isDeclarationName(id)) return;
+      const useId = nodeIdByNode.get(id);
+      if (!useId) return;
+      // Don't self-loop: targetDecl is its own LHS name; the initializer
+      // identifiers won't be the decl name node itself, but defend anyway.
+      if (useId === targetDeclId) return;
+      emit(targetDeclId, useId, "init");
+    });
+    // Edge case: the initializer IS itself a single Identifier (forEachDescendant
+    // does not visit the root). Cover that.
+    if (expr.getKind() === SyntaxKind.Identifier) {
+      const id = expr as Identifier;
+      if (!isDeclarationName(id)) {
+        const useId = nodeIdByNode.get(id);
+        if (useId && useId !== targetDeclId) {
+          emit(targetDeclId, useId, "init");
+        }
+      }
+    }
+  }
+
+  function resolveAssignmentTargetDeclId(lhs: Node): string | undefined {
+    // Only handle simple identifier LHS for now; property/element access
+    // assignments (`o.x = …`, `arr[i] = …`) don't have a single decl target
+    // we can attribute the chain to.
+    if (lhs.getKind() !== SyntaxKind.Identifier) return undefined;
+    const ident = lhs as Identifier;
+
+    // Try symbol API
+    try {
+      const sym = ident.getSymbol();
+      if (sym) {
+        const decls = sym.getDeclarations();
+        if (decls && decls.length > 0) {
+          const first = decls[0];
+          if (first.getSourceFile() === sourceFile) {
+            return nodeIdByNode.get(first);
+          }
+        }
+      }
+    } catch {
+      // fall through to nodeBinding
+    }
+
+    // Fallback: nodeBinding (most recent binding before this LHS in the file)
+    const name = ident.getText();
+    const bindings = tx
+      .select({ nodeId: nodeBinding.nodeId })
+      .from(nodeBinding)
+      .innerJoin(nodesTable, eq(nodeBinding.nodeId, nodesTable.id))
+      .where(and(eq(nodeBinding.name, name), eq(nodesTable.fileId, fileId)))
+      .all();
+    if (bindings.length === 0) return undefined;
+
+    const useStart = ident.getStart();
+    let bestId: string | undefined;
+    let bestStart = -1;
+    for (const b of bindings) {
+      const nRow = tx
+        .select({ sourceStart: nodesTable.sourceStart })
+        .from(nodesTable)
+        .where(eq(nodesTable.id, b.nodeId))
+        .get();
+      if (nRow && nRow.sourceStart <= useStart && nRow.sourceStart > bestStart) {
+        bestStart = nRow.sourceStart;
+        bestId = b.nodeId;
+      }
+    }
+    return bestId;
+  }
+
+  sourceFile.forEachDescendant((node) => {
+    const k = node.getKind();
+
+    // VariableDeclaration: const/let/var x = expr;
+    if (k === SyntaxKind.VariableDeclaration) {
+      const vd = node as import("ts-morph").VariableDeclaration;
+      const init = vd.getInitializer();
+      if (!init) return;
+      const declId = nodeIdByNode.get(vd);
+      if (!declId) return;
+      emitInitChainFromExpr(declId, init);
+      return;
+    }
+
+    // BinaryExpression with assignment op: x = expr; x += expr; ...
+    if (k === SyntaxKind.BinaryExpression) {
+      const bin = node as BinaryExpression;
+      const opKind = bin.getOperatorToken().getKind();
+      if (!ASSIGNMENT_OPS.has(opKind)) return;
+      const targetDeclId = resolveAssignmentTargetDeclId(bin.getLeft());
+      if (!targetDeclId) return;
+      emitInitChainFromExpr(targetDeclId, bin.getRight());
+      return;
+    }
+
+    // Parameter with default: function f(x = expr) { ... }
+    if (k === SyntaxKind.Parameter) {
+      const param = node as import("ts-morph").ParameterDeclaration;
+      const init = param.getInitializer();
+      if (!init) return;
+      const declId = nodeIdByNode.get(param);
+      if (!declId) return;
+      emitInitChainFromExpr(declId, init);
+      return;
     }
   });
 }

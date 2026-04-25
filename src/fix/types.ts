@@ -389,15 +389,16 @@ export interface BugLocus {
   /**
    * Node IDs whose values flow INTO primaryNode (one-hop, via data_flow table).
    *
-   * KNOWN LIMITATION: data_flow_transitive is bipartite (decls as from_node, use-site
-   * identifiers as to_node). Transitive closure equals direct edges — no chains form.
-   * When C4 (complementary-site discovery) needs chained reachability, revisit the
-   * edge-shape redesign described in src/sast/dataFlow.ts (commit 9f4c220).
+   * For multi-hop reachability ("does X flow into primaryNode through any
+   * number of intermediate variables"), use the `data_flow_reaches` relation
+   * in DSL principles or query data_flow_transitive directly. The bipartite
+   * limitation that previously prevented chains was fixed via init-edge
+   * emission in src/sast/dataFlow.ts.
    */
   dataFlowAncestors: string[];
   /**
    * Node IDs consuming primaryNode's output (one-hop, via data_flow table).
-   * Same bipartite limitation as dataFlowAncestors above.
+   * For chained reachability use data_flow_transitive / data_flow_reaches.
    */
   dataFlowDescendants: string[];
   /** Node IDs of everything primaryNode dominates (via dominance table). */

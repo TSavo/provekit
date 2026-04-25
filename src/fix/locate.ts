@@ -385,7 +385,7 @@ function findRelatedFunctions(
 
 function queryDataFlowAncestors(db: Db, primaryNodeId: string): string[] {
   // One-hop: from_node rows where to_node = primaryNodeId.
-  // See BugLocus.dataFlowAncestors comment for the bipartite limitation.
+  // For multi-hop, query data_flow_transitive or use the data_flow_reaches DSL relation.
   return db
     .select({ fromNode: dataFlow.fromNode })
     .from(dataFlow)
