@@ -401,11 +401,24 @@ export async function proposeCapabilitySpec(args: {
 // ---------------------------------------------------------------------------
 
 /**
+ * Strip SQL line comments and block comments so the statement parser sees
+ * only the executable text. LLMs reliably emit a header comment summarizing
+ * what the migration does; rejecting that as a statement was an oracle
+ * false-positive.
+ */
+function stripSqlComments(sql: string): string {
+  // Remove block comments first (non-greedy, multi-line).
+  const noBlock = sql.replace(/\/\*[\s\S]*?\*\//g, "");
+  // Then line comments to end-of-line.
+  return noBlock.replace(/--[^\n]*/g, "");
+}
+
+/**
  * Oracle #14: Parse migrationSql. Reject anything that's not CREATE TABLE or ALTER TABLE ADD COLUMN.
  * Reject DROPs, destructive ALTERs, column narrowing.
  */
 export function runOracle14(migrationSql: string): { passed: boolean; reason: string } {
-  const statements = migrationSql
+  const statements = stripSqlComments(migrationSql)
     .split(";")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);

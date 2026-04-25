@@ -169,6 +169,30 @@ describe("oracle #14 — migration safety", () => {
     expect(result.passed).toBe(false);
     expect(result.reason).toContain("Oracle #14");
   });
+
+  it("strips line comments before parsing statements", () => {
+    const sql = [
+      "-- Capability: taintSource",
+      "-- Adds the taint_source table for tracking nodes that carry untrusted data.",
+      "",
+      "CREATE TABLE taint_source (node_id TEXT PRIMARY KEY)",
+    ].join("\n");
+    const result = runOracle14(sql);
+    expect(result.passed).toBe(true);
+  });
+
+  it("strips block comments before parsing statements", () => {
+    const sql = "/* multi\nline\nblock */\nCREATE TABLE foo (id INTEGER PRIMARY KEY)";
+    const result = runOracle14(sql);
+    expect(result.passed).toBe(true);
+  });
+
+  it("still rejects DROP even when preceded by comments", () => {
+    const sql = "-- pretend this is fine\nDROP TABLE foo";
+    const result = runOracle14(sql);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain("DROP");
+  });
 });
 
 // ---------------------------------------------------------------------------
