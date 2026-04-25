@@ -21,11 +21,14 @@
  *  - ABSTRACT (taint-style: only Bool bindings, no Int/Real; "X flows to Y"
  *      where Z3 has no canonical numerical shape)
  *      runs:
- *       1. proseJaccardAgreement, adversary still derives prose for the same
- *          bug; Jaccard similarity over content words must be at least 0.3.
- *          SMT cross-LLM is skipped because Bool-only formalizations are not
- *          structurally meaningful (sonnet wrote (and X (not X) X) for shell
- *          injection; Z3 correctly flagged false but the prose was sound).
+ *       1. proseJaccardAgreement (overlap-coefficient under the hood; name
+ *          retained for DI backward compat). Adversary still derives prose
+ *          for the same bug; |A∩B|/min(|A|,|B|) over stemmed content words
+ *          must be at least 0.4 and the shorter side must have at least 3
+ *          content words. SMT cross-LLM is skipped because Bool-only
+ *          formalizations are not structurally meaningful (sonnet wrote
+ *          (and X (not X) X) for shell injection; Z3 correctly flagged false
+ *          but the prose was sound).
  *       2. traceabilityCheck (unchanged).
  *       3. fixtures are skipped, classification without a real taint principle
  *          is meaningless because clean and buggy code share the same Bool shape.
@@ -533,10 +536,11 @@ const STOP_WORDS = new Set<string>([
 /**
  * Lightweight stemmer. Not a real Porter stemmer; just enough to collapse the
  * inflectional variants that show up in invariant prose ("contain"/"containing",
- * "metacharacter"/"metacharacters") so semantically identical descriptions
- * register on the Jaccard set. Verified to push the run-1 shell-injection prose
- * pair from 0.23 to 0.33 (above the 0.3 threshold) without inflating distinct
- * bug pairs (buffer-overflow vs shell-injection still at 0.0).
+ * "metacharacter"/"metacharacters", "interpolat"/"interpolation") so
+ * semantically identical descriptions register as the same set element.
+ * Without stemming, the run-1 shell-injection prose pair has 4 of 9 content
+ * words shared (overlap 0.44); without stemming it drops to 3 of 9 (overlap
+ * 0.33) because "containing" and "contain" miss.
  */
 function stem(w: string): string {
   if (w.length <= 4) return w;
@@ -552,25 +556,49 @@ function tokenizeContentWords(text: string): Set<string> {
   return new Set(words.filter((w) => w.length > 1 && !STOP_WORDS.has(w)).map(stem));
 }
 
-function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 0;
+/**
+ * Overlap coefficient (Szymkiewicz-Simpson): |A ∩ B| / min(|A|, |B|).
+ *
+ * Chosen over Jaccard because invariant prose is asymmetric in length. The
+ * adversary tends to write 2-3x more words than the proposer (full sentences
+ * with attacker-perspective framing: "user-controlled, untrusted, arbitrary,
+ * attacks") while the proposer writes a tight property statement. Jaccard's
+ * union denominator punishes that asymmetry; on the run-1 shell-injection
+ * case the proposer had 9 stem-words and the adversary had 18, with 4-shared,
+ * giving jaccard=0.17. The overlap coefficient on the same case is 0.44,
+ * which correctly indicates "they are talking about the same bug, the
+ * adversary is just more verbose."
+ *
+ * The min() denominator means: if every content word in the shorter
+ * description shows up in the longer one, overlap=1.0. The shorter side is
+ * almost always the proposer (the property statement). False positives are
+ * gated by the threshold and by the requirement that the SHORTER side has at
+ * least 3 content words (a one-word match doesn't count as agreement).
+ */
+function overlapCoefficient(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
   let intersection = 0;
   for (const w of a) if (b.has(w)) intersection++;
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
+  return intersection / Math.min(a.size, b.size);
 }
 
 /**
  * Abstract-invariant analog of crossLlmAgreement. Asks the adversary LLM to
  * derive its own invariant prose from the same bug report, then compares
- * content-word sets via Jaccard similarity. Threshold: 0.3 (empirically
- * separates "they're talking about the same bug" from "they're talking about
- * different bugs"; verified on shell-injection and division-by-zero cases).
+ * content-word sets via the overlap coefficient (Szymkiewicz-Simpson).
+ *
+ * Threshold: 0.4 with a minimum-length floor on the shorter side (>= 3
+ * content words) to gate trivial 1/1 matches. Calibrated empirically against
+ * the run-1 shell-injection prose pair (overlap=0.44) and the contrast
+ * case shell-injection vs buffer-overflow (overlap=0.0).
  *
  * Skips the SMT round-trip entirely. For Bool-only formalizations Z3 has
- * nothing useful to say, sonnet's (and X (not X) X) was tautologically false
+ * nothing useful to say; sonnet's (and X (not X) X) was tautologically false
  * not because the invariant was wrong but because Bool-encoding of taint flow
  * is shapeless without a concrete principle to anchor it.
+ *
+ * Function name retained for backward compat with FidelityVerifiers DI even
+ * though the math is no longer Jaccard.
  */
 export async function proseJaccardAgreement(args: {
   invariant: InvariantClaim;
@@ -607,42 +635,51 @@ Respond with ONLY a JSON object (no markdown fences):
     adversary = await requestStructuredJson<ProseResponse>({
       prompt: adversaryPrompt,
       llm,
-      stage: "C1.5-proseJaccard",
+      stage: "C1.5-proseOverlap",
       model: adModel,
       logger,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { passed: false, detail: `prose Jaccard: adversary call/parse failed (skipped SMT cross-LLM for abstract invariant): ${msg}` };
+    return { passed: false, detail: `prose overlap: adversary call/parse failed (skipped SMT cross-LLM for abstract invariant): ${msg}` };
   }
 
   if (!adversary.description) {
     return {
       passed: false,
-      detail: `prose Jaccard: adversary response missing description (skipped SMT cross-LLM for abstract invariant)`,
+      detail: `prose overlap: adversary response missing description (skipped SMT cross-LLM for abstract invariant)`,
     };
   }
 
   const proposerWords = tokenizeContentWords(invariant.description);
   const adversaryWords = tokenizeContentWords(adversary.description);
-  const ratio = jaccard(proposerWords, adversaryWords);
+  const minSize = Math.min(proposerWords.size, adversaryWords.size);
+  const ratio = overlapCoefficient(proposerWords, adversaryWords);
   const ratioStr = ratio.toFixed(2);
-  const THRESHOLD = 0.3;
+  const THRESHOLD = 0.4;
+  const MIN_SHORTER_SIZE = 3;
 
   logger.detail(
-    `C1.5 proseJaccard: proposer=${[...proposerWords].join(",")} adversary=${[...adversaryWords].join(",")} jaccard=${ratioStr}`,
+    `C1.5 proseOverlap: proposer=${[...proposerWords].join(",")} adversary=${[...adversaryWords].join(",")} overlap=${ratioStr} minSize=${minSize}`,
   );
+
+  if (minSize < MIN_SHORTER_SIZE) {
+    return {
+      passed: false,
+      detail: `prose overlap: FAIL (skipped SMT cross-LLM for abstract invariant). shorter side has only ${minSize} content word(s); needs >= ${MIN_SHORTER_SIZE}. proposer="${invariant.description}" adversary="${adversary.description}"`,
+    };
+  }
 
   if (ratio >= THRESHOLD) {
     return {
       passed: true,
-      detail: `prose Jaccard: PASS (skipped SMT cross-LLM for abstract invariant). jaccard=${ratioStr} >= ${THRESHOLD}. proposer="${invariant.description}" adversary="${adversary.description}"`,
+      detail: `prose overlap: PASS (skipped SMT cross-LLM for abstract invariant). overlap=${ratioStr} >= ${THRESHOLD}. proposer="${invariant.description}" adversary="${adversary.description}"`,
     };
   }
 
   return {
     passed: false,
-    detail: `prose Jaccard: FAIL (skipped SMT cross-LLM for abstract invariant). jaccard=${ratioStr} < ${THRESHOLD}. LLMs disagree on what the bug is. proposer="${invariant.description}" adversary="${adversary.description}"`,
+    detail: `prose overlap: FAIL (skipped SMT cross-LLM for abstract invariant). overlap=${ratioStr} < ${THRESHOLD}. LLMs disagree on what the bug is. proposer="${invariant.description}" adversary="${adversary.description}"`,
   };
 }
 
@@ -759,12 +796,12 @@ export async function runInvariantFidelity(args: {
       traceabilityFn({ invariant, signal, llm, logger }),
     ]);
 
-    if (!a.passed) failures.push(`prose Jaccard: ${a.detail}`);
+    if (!a.passed) failures.push(`prose overlap: ${a.detail}`);
     if (!b.passed) failures.push(`traceability: ${b.detail}`);
   }
 
   const passed = failures.length === 0;
-  const checksRun = kind === "concrete" ? "three verifiers" : "prose-Jaccard + traceability (skipped SMT cross-LLM for abstract invariant; skipped fixtures)";
+  const checksRun = kind === "concrete" ? "three verifiers" : "prose-overlap + traceability (skipped SMT cross-LLM for abstract invariant; skipped fixtures)";
   logger.oracle({
     id: 1.5,
     name: "invariant fidelity",

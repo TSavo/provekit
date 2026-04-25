@@ -461,7 +461,7 @@ describe("proseJaccardAgreement", () => {
     ],
   };
 
-  it("passes when adversary prose shares ≥0.3 jaccard of content words", async () => {
+  it("passes when adversary prose has overlap >= 0.4 of content words", async () => {
     const adversaryProse = JSON.stringify({
       description: "shell metacharacters in input flow into execSync command without sanitization",
     });
@@ -476,7 +476,28 @@ describe("proseJaccardAgreement", () => {
     expect(result.detail).toMatch(/skipped SMT cross-LLM for abstract invariant/);
   });
 
-  it("fails when adversary prose disagrees (jaccard < 0.3)", async () => {
+  it("passes on the run-1 evidence pair (verbose adversary prose with 4 of 9 shared)", async () => {
+    // Reproduces the pitch-leak-2 evidence: proposer was 9 stemmed content words,
+    // adversary was 18, shared 4 (shell, command, allow, injection).
+    // Pure Jaccard would give 4/(9+18-4)=0.17 (fails 0.3); overlap is 4/min(9,18)=0.44 (passes 0.4).
+    const claim: InvariantClaim = {
+      ...ABSTRACT_CLAIM,
+      description: "The invariant input passed to execSync must not contain shell metacharacters is violated when input contains an unsanitized shell metacharacter that allows command injection.",
+    };
+    const adversaryProse = JSON.stringify({
+      description: "User-controlled input must be sanitized or escaped before being incorporated into shell commands. Direct interpolation of untrusted input into shell command strings without proper escaping allows arbitrary command execution through injection attacks.",
+    });
+    const llm = makeStubLlm(new Map([["INDEPENDENTLY", adversaryProse]]));
+    const result = await proseJaccardAgreement({
+      invariant: claim,
+      signal: SHELL_INJECTION_SIGNAL,
+      llm,
+    });
+    expect(result.passed).toBe(true);
+    expect(result.detail).toMatch(/PASS/);
+  });
+
+  it("fails when adversary prose disagrees (overlap < 0.4)", async () => {
     const adversaryProse = JSON.stringify({
       description: "buffer overflow when memcpy length exceeds destination capacity",
     });
@@ -543,7 +564,7 @@ describe("runInvariantFidelity adaptive routing", () => {
       crossLlmAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("cross"); return { passed: false, detail: "should not run" }; },
       traceabilityCheck: async (): Promise<FidelityCheckResult> => { callLog.push("trace"); return { passed: true, detail: "grounded" }; },
       adversarialFixturePreValidation: async (): Promise<FidelityCheckResult> => { callLog.push("fixture"); return { passed: false, detail: "should not run" }; },
-      proseJaccardAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("prose"); return { passed: true, detail: "PASS jaccard=0.50 (skipped SMT cross-LLM for abstract invariant)" }; },
+      proseJaccardAgreement: async (): Promise<FidelityCheckResult> => { callLog.push("prose"); return { passed: true, detail: "PASS overlap=0.50 (skipped SMT cross-LLM for abstract invariant)" }; },
     } as unknown as FidelityVerifiers;
     const llm: LLMProvider = { complete: async () => { throw new Error("not called"); } };
 
@@ -567,7 +588,7 @@ describe("runInvariantFidelity adaptive routing", () => {
       crossLlmAgreement: async (): Promise<FidelityCheckResult> => { throw new Error("should not run"); },
       traceabilityCheck: async (): Promise<FidelityCheckResult> => ({ passed: true, detail: "grounded" }),
       adversarialFixturePreValidation: async (): Promise<FidelityCheckResult> => { throw new Error("should not run"); },
-      proseJaccardAgreement: async (): Promise<FidelityCheckResult> => ({ passed: false, detail: "FAIL jaccard=0.10 < 0.30 (skipped SMT cross-LLM for abstract invariant)" }),
+      proseJaccardAgreement: async (): Promise<FidelityCheckResult> => ({ passed: false, detail: "FAIL overlap=0.10 < 0.40 (skipped SMT cross-LLM for abstract invariant)" }),
     } as unknown as FidelityVerifiers;
     const llm: LLMProvider = { complete: async () => { throw new Error("not called"); } };
 
@@ -581,7 +602,7 @@ describe("runInvariantFidelity adaptive routing", () => {
     expect(result.passed).toBe(false);
     expect(result.invariantKind).toBe("abstract");
     expect(result.failures.length).toBeGreaterThanOrEqual(1);
-    expect(result.failures.some((f) => /jaccard/i.test(f))).toBe(true);
+    expect(result.failures.some((f) => /overlap/i.test(f))).toBe(true);
   });
 
   it("for concrete invariant: runs all three checks; prose-Jaccard not called (regression)", async () => {
