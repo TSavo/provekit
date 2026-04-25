@@ -20,6 +20,7 @@ export async function runAgentInOverlay(args: {
   overlay: OverlayHandle;
   llm: LLMProvider;
   prompt: string;
+  stage?: string;
   allowedTools?: string[];
   model?: AgentRequestOptions["model"];
   maxTurns?: number;
@@ -36,6 +37,7 @@ export async function runAgentInOverlay(args: {
   }
 
   const logger = args.logger ?? createNoopLogger();
+  const stageName = args.stage ?? "agent";
   const cwd = args.overlay.worktreePath;
 
   const result = await args.llm.agent(args.prompt, {
@@ -45,36 +47,18 @@ export async function runAgentInOverlay(args: {
     maxTurns: args.maxTurns ?? 20,
   });
 
-  // Emit one detail line per tool use into the fix-loop log file.
-  for (let i = 0; i < result.toolUses.length; i++) {
-    const tu = result.toolUses[i];
-    const inp = (tu.input ?? {}) as Record<string, unknown>;
-    const errorFlag = tu.isError ? " [ERROR]" : "";
-    const durationStr = `${tu.ms}ms`;
-    let detail: string;
-    switch (tu.name) {
-      case "Edit":
-        detail = `tool_use[${i + 1}] turn=${tu.turn} Edit(${inp.file_path ?? ""}, -${String(inp.old_string ?? "").length}/+${String(inp.new_string ?? "").length} chars) ${durationStr}${errorFlag}`;
-        break;
-      case "Write":
-        detail = `tool_use[${i + 1}] turn=${tu.turn} Write(${inp.file_path ?? ""}, ${String(inp.content ?? "").length} chars) ${durationStr}${errorFlag}`;
-        break;
-      case "Read":
-        detail = `tool_use[${i + 1}] turn=${tu.turn} Read(${inp.file_path ?? ""}) ${durationStr}${errorFlag}`;
-        break;
-      case "Bash":
-        detail = `tool_use[${i + 1}] turn=${tu.turn} Bash($ ${String(inp.command ?? "").slice(0, 200)}) ${durationStr}${errorFlag}`;
-        break;
-      case "Glob":
-        detail = `tool_use[${i + 1}] turn=${tu.turn} Glob(${inp.pattern ?? ""} in ${inp.path ?? "."}) ${durationStr}${errorFlag}`;
-        break;
-      case "Grep":
-        detail = `tool_use[${i + 1}] turn=${tu.turn} Grep(${inp.pattern ?? ""} in ${inp.path ?? "."}) ${durationStr}${errorFlag}`;
-        break;
-      default:
-        detail = `tool_use[${i + 1}] turn=${tu.turn} ${tu.name}(${JSON.stringify(tu.input).slice(0, 80)}) ${durationStr}${errorFlag}`;
+  // Emit structured log events for every block — full payloads, no truncation.
+  for (const tu of result.toolUses) {
+    logger.toolUse(stageName, tu.name, tu.input);
+    if (tu.result !== undefined) {
+      logger.toolResult(stageName, tu.id, tu.result);
     }
-    logger.detail(detail);
+  }
+  for (const tb of result.thinkingBlocks) {
+    logger.thinking(stageName, tb.content);
+  }
+  for (const txt of result.textBlocks) {
+    logger.response(stageName, "claude-agent", txt.content);
   }
 
   // Reconstruct CodePatch: modified tracked files from git diff + new untracked files.

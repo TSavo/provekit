@@ -1,9 +1,10 @@
 /**
- * ClaudeAgentProvider.test.ts — unit tests for tool_use event capture.
+ * ClaudeAgentProvider.test.ts — unit tests for tool_use, thinking, and text block capture.
  *
  * Mocks @anthropic-ai/claude-agent-sdk to yield a synthetic message stream
- * with mixed text + tool_use blocks. Verifies toolUses population,
- * file paths, result preview truncation, and console.log summaries.
+ * with mixed text + tool_use + thinking blocks. Verifies toolUses population,
+ * file paths, full (un-truncated) result content, thinking block capture, and
+ * console.log summaries.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -100,7 +101,7 @@ describe("ClaudeAgentProvider.agent — tool_use capture", () => {
     expect((edit.input as any).file_path).toBe("/abs/src/foo.ts");
     expect(edit.isError).toBe(false);
     expect(edit.turn).toBe(1);
-    expect(edit.resultPreview).toBe("ok");
+    expect(edit.result).toBe("ok");
     expect(typeof edit.ms).toBe("number");
 
     const bash = result.toolUses[1];
@@ -124,7 +125,7 @@ describe("ClaudeAgentProvider.agent — tool_use capture", () => {
     expect((result.toolUses[0].input as any).file_path).toBe("/outside/sandbox/evil.ts");
   });
 
-  it("truncates resultPreview to 500 chars", async () => {
+  it("stores full result content without truncation", async () => {
     const longContent = "x".repeat(1000);
     mockQuery.mockReturnValue(makeStream([
       assistantWithBlocks([
@@ -136,10 +137,12 @@ describe("ClaudeAgentProvider.agent — tool_use capture", () => {
 
     const result = await provider.agent("read file", { cwd: "/tmp/repo" });
 
-    expect(result.toolUses[0].resultPreview).toHaveLength(500);
+    // Full content — no truncation. Per docs/LOGGING.md.
+    expect(result.toolUses[0].result).toBe(longContent);
+    expect(result.toolUses[0].result!.length).toBe(1000);
   });
 
-  it("handles array-form tool_result content and still truncates", async () => {
+  it("handles array-form tool_result content without truncation", async () => {
     const longText = "y".repeat(800);
     mockQuery.mockReturnValue(makeStream([
       assistantWithBlocks([
@@ -154,7 +157,9 @@ describe("ClaudeAgentProvider.agent — tool_use capture", () => {
 
     const result = await provider.agent("read array", { cwd: "/tmp/repo" });
 
-    expect(result.toolUses[0].resultPreview).toHaveLength(500);
+    // Full content — no truncation. Per docs/LOGGING.md.
+    expect(result.toolUses[0].result).toBe(longText);
+    expect(result.toolUses[0].result!.length).toBe(800);
   });
 
   it("sets isError=true for error tool results", async () => {
@@ -215,6 +220,60 @@ describe("ClaudeAgentProvider.agent — tool_use capture", () => {
 
     expect(result.toolUses).toHaveLength(1);
     expect(result.toolUses[0].name).toBe("Glob");
-    expect(result.toolUses[0].resultPreview).toBeUndefined();
+    expect(result.toolUses[0].result).toBeUndefined();
+  });
+
+  it("captures thinking blocks per turn", async () => {
+    mockQuery.mockReturnValue(makeStream([
+      assistantWithBlocks([
+        { type: "thinking", thinking: "I should edit foo.ts to fix the null check." },
+        { type: "text", text: "Let me fix the null check." },
+        { type: "tool_use", id: "tt_1", name: "Edit", input: { file_path: "/src/foo.ts", old_string: "a", new_string: "b" } },
+      ]),
+      userWithToolResults([{ tool_use_id: "tt_1", content: "ok" }]),
+      assistantWithBlocks([
+        { type: "thinking", thinking: "The edit looks good. I am done." },
+        { type: "text", text: "Done." },
+      ]),
+      successResult("fixed"),
+    ]));
+
+    const result = await provider.agent("fix null check", { cwd: "/tmp/repo" });
+
+    expect(result.thinkingBlocks).toHaveLength(2);
+    expect(result.thinkingBlocks[0]).toEqual({ turn: 1, content: "I should edit foo.ts to fix the null check." });
+    expect(result.thinkingBlocks[1]).toEqual({ turn: 2, content: "The edit looks good. I am done." });
+
+    expect(result.textBlocks).toHaveLength(2);
+    expect(result.textBlocks[0]).toEqual({ turn: 1, content: "Let me fix the null check." });
+    expect(result.textBlocks[1]).toEqual({ turn: 2, content: "Done." });
+  });
+
+  it("captures redacted_thinking blocks as [redacted]", async () => {
+    mockQuery.mockReturnValue(makeStream([
+      assistantWithBlocks([
+        { type: "redacted_thinking", data: "encrypted-blob" },
+        { type: "text", text: "Here is my answer." },
+      ]),
+      successResult("answer"),
+    ]));
+
+    const result = await provider.agent("sensitive question", { cwd: "/tmp/repo" });
+
+    expect(result.thinkingBlocks).toHaveLength(1);
+    expect(result.thinkingBlocks[0]).toEqual({ turn: 1, content: "[redacted]" });
+  });
+
+  it("returns empty thinkingBlocks and textBlocks when stream has no such blocks", async () => {
+    mockQuery.mockReturnValue(makeStream([
+      assistantWithBlocks([{ type: "text", text: "simple response" }]),
+      successResult("done"),
+    ]));
+
+    const result = await provider.agent("simple", { cwd: "/tmp/repo" });
+
+    expect(result.thinkingBlocks).toEqual([]);
+    expect(result.textBlocks).toHaveLength(1);
+    expect(result.textBlocks[0].content).toBe("simple response");
   });
 });

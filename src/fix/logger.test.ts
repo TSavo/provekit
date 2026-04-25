@@ -139,6 +139,43 @@ describe("createFixLoopLogger", () => {
     expect(fileContent).toContain("the entire new string");
   });
 
+  it("thinking goes to file only — never stdout (verbose=false or true)", () => {
+    const logFile = tempLogPath("thinking-only");
+    const { stream: out, captured } = captureStream();
+
+    const logger = createFixLoopLogger({ stdout: out, verbose: true, logFilePath: logFile });
+    logger.thinking("C3", "long reasoning text about the fix approach");
+    logger.close();
+
+    const fileContent = readFileSync(logFile, "utf-8");
+    const stdoutContent = captured();
+
+    // File: must contain full thinking content
+    expect(fileContent).toContain("long reasoning text about the fix approach");
+    // Stdout: never (trace level)
+    expect(stdoutContent).not.toContain("long reasoning text about the fix approach");
+  });
+
+  it("toolUse: file gets full input (stringified), stdout gets one-line summary at debug level", () => {
+    const logFile = tempLogPath("tooluse-full-vs-summary");
+    const { stream: out, captured } = captureStream();
+
+    const logger = createFixLoopLogger({ stdout: out, verbose: true, logFilePath: logFile });
+    logger.toolUse("C3", "Edit", { file_path: "/x", old_string: "entire old string content", new_string: "entire new string content" });
+    logger.close();
+
+    const fileContent = readFileSync(logFile, "utf-8");
+    const stdoutContent = captured();
+
+    // File: must contain entire input (no truncation)
+    expect(fileContent).toContain("entire old string content");
+    expect(fileContent).toContain("entire new string content");
+    // Stdout: summary line (event=toolUse) at debug level (visible in verbose=true)
+    expect(stdoutContent).toContain("tool:Edit");
+    // Stdout: must NOT contain the raw string contents (those go to file only via trace)
+    expect(stdoutContent).not.toContain("entire old string content");
+  });
+
   it("toolResult full payload is in file, never stdout", () => {
     const logFile = tempLogPath("toolresult");
     const { stream: out, captured } = captureStream();

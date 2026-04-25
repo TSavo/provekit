@@ -282,6 +282,8 @@ export class StubLLMProvider implements LLMProvider {
           text: cannedResult.text ?? "stub agent completed",
           turnsUsed: 1,
           toolUses: [],
+          thinkingBlocks: [],
+          textBlocks: [],
         };
       };
     }

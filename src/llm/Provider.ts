@@ -32,8 +32,8 @@ export interface ToolUseRecord {
   name: string;
   /** Full input parameters as received from the SDK. */
   input: unknown;
-  /** First 500 chars of the tool result (or error text). */
-  resultPreview?: string;
+  /** Full content of the tool result (or error text). Never truncated. */
+  result?: string;
   /** Whether the tool result carried is_error=true. */
   isError: boolean;
   /** Turn index (incremented on each assistant message). */
@@ -53,6 +53,10 @@ export interface AgentResult {
   turnsUsed: number;
   /** All tool calls made during the agent run, in order. */
   toolUses: ToolUseRecord[];
+  /** All thinking blocks emitted during the agent run, in turn order. */
+  thinkingBlocks: Array<{ turn: number; content: string }>;
+  /** All assistant text blocks emitted during the agent run, in turn order. */
+  textBlocks: Array<{ turn: number; content: string }>;
 }
 
 export interface LLMProvider {

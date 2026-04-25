@@ -72,6 +72,8 @@ export class ClaudeAgentProvider implements LLMProvider {
     let turnsUsed = 0;
     let finalText = "";
     const toolUses: ToolUseRecord[] = [];
+    const thinkingBlocks: Array<{ turn: number; content: string }> = [];
+    const textBlocks: Array<{ turn: number; content: string }> = [];
 
     // Pending tool calls: keyed by tool_use id, value is { turn, startMs }.
     const pendingTools = new Map<string, { turn: number; startMs: number; name: string; input: unknown }>();
@@ -87,6 +89,7 @@ export class ClaudeAgentProvider implements LLMProvider {
         maxTurns,
         systemPrompt: options.systemPrompt,
         permissionMode: "acceptEdits",
+        thinking: { type: "enabled", budgetTokens: 4096 },
       },
     })) {
       if (message.type === "assistant") {
@@ -94,7 +97,13 @@ export class ClaudeAgentProvider implements LLMProvider {
         const content = (message as any).message?.content;
         if (Array.isArray(content)) {
           for (const block of content) {
-            if (block.type === "tool_use") {
+            if (block.type === "thinking") {
+              thinkingBlocks.push({ turn: turnsUsed, content: (block as any).thinking ?? "" });
+            } else if (block.type === "redacted_thinking") {
+              thinkingBlocks.push({ turn: turnsUsed, content: "[redacted]" });
+            } else if (block.type === "text") {
+              textBlocks.push({ turn: turnsUsed, content: (block as any).text ?? "" });
+            } else if (block.type === "tool_use") {
               toolUseCounter++;
               pendingTools.set(block.id, {
                 turn: turnsUsed,
@@ -118,12 +127,12 @@ export class ClaudeAgentProvider implements LLMProvider {
               if (pending) {
                 pendingTools.delete(block.tool_use_id);
                 const ms = Date.now() - pending.startMs;
-                const resultPreview = extractResultPreview(block.content);
+                const result = extractResultContent(block.content);
                 toolUses.push({
                   id: block.tool_use_id,
                   name: pending.name,
                   input: pending.input,
-                  resultPreview,
+                  result,
                   isError: !!block.is_error,
                   turn: pending.turn,
                   ms,
@@ -145,7 +154,7 @@ export class ClaudeAgentProvider implements LLMProvider {
         id,
         name: pending.name,
         input: pending.input,
-        resultPreview: undefined,
+        result: undefined,
         isError: false,
         turn: pending.turn,
         ms: Date.now() - pending.startMs,
@@ -193,6 +202,8 @@ export class ClaudeAgentProvider implements LLMProvider {
       text: finalText,
       turnsUsed,
       toolUses,
+      thinkingBlocks,
+      textBlocks,
     };
   }
 }
@@ -222,20 +233,21 @@ function formatToolSummary(name: string, input: unknown): string {
 }
 
 /**
- * Extract up to 500 chars of preview text from a tool_result content block.
+ * Extract the full text content from a tool_result content block.
  * content may be a string or an array of content blocks.
+ * Never truncated — per docs/LOGGING.md, the file stream gets full content.
  */
-function extractResultPreview(content: unknown): string | undefined {
+function extractResultContent(content: unknown): string | undefined {
   if (content == null) return undefined;
   if (typeof content === "string") {
-    return content.slice(0, 500);
+    return content;
   }
   if (Array.isArray(content)) {
     const text = content
       .filter((b: any) => b.type === "text")
       .map((b: any) => b.text ?? "")
       .join("");
-    return text.slice(0, 500) || undefined;
+    return text || undefined;
   }
   return undefined;
 }
