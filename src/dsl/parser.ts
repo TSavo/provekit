@@ -442,9 +442,25 @@ class Parser {
     const relation: BuiltinRelation = relTok.value;
 
     const targetVarTok = this.expectVar();
-    const targetVar = targetVarTok.value;
+    let targetVarName: string | null = null;
+    let targetVarDeref: import("./ast.js").VarDeref | null = null;
+    if (this.peek().type === "DOT") {
+      this.consume(); // eat first dot
+      const capTok = this.expectIdent();
+      this.expect("DOT");
+      const colTok = this.expectIdent();
+      targetVarDeref = {
+        kind: "varDeref",
+        varName: targetVarTok.value,
+        capability: capTok.value,
+        column: colTok.value,
+        loc: { line: targetVarTok.line, col: targetVarTok.col },
+      };
+    } else {
+      targetVarName = targetVarTok.value;
+    }
 
-    return { guardVar, predName, predArgVarName, predArgDeref, relation, targetVar, loc };
+    return { guardVar, predName, predArgVarName, predArgDeref, relation, targetVarName, targetVarDeref, loc };
   }
 
   private parseReportBlock(): ReportBlock {

@@ -243,27 +243,28 @@ describe("same_value relation — guarded division equivalence (grammar limitati
     if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  // Skipped: the parser now accepts any relation name in the requireClause position,
-  // but the grammar still only allows whole-node variable arguments there. The form
-  // needed for this predicate is:
-  //   match $target: node where same_value($target, $var)
-  // which puts a relation call inside a match where-clause atom — not the requireClause.
-  // Predicate where-clause atoms are currently only capCol == rhs expressions.
-  // This requires a grammar extension to support relation atoms in where predicates.
-  it.skip("guarded division: division-by-zero DSL principle should NOT fire when guard present", () => {
+  // Unskipped: the parser now accepts varDeref in the requireClause target position,
+  // enabling `same_value $div.arithmetic.rhs_node` syntax. The principle can now
+  // express "no guard whose data_flow source matches the division rhs_node source".
+  //
+  // KNOWN LIMIT: the relation LHS is hardcoded to the first inlined predicate clause's
+  // node alias (the narrows row itself), NOT narrows.target_node. same_value checks
+  // data_flow.to_node, so the guard node (a narrows row) has no data_flow row and the
+  // NOT EXISTS subquery is vacuously true — violations still fire even for guarded sites.
+  // The next required extension is: relation LHS targeting capability column values
+  // (e.g., specifying $guard.narrows.target_node as the guard side of same_value).
+  it("guarded division: division-by-zero DSL principle should NOT fire when guard present", () => {
     ({ db, tmpDir } = openTestDb());
     writeFixture(tmpDir, "function f(a: number, b: number) { if (b !== 0) return a / b; return 0; }");
     buildSASTForFile(db, join(tmpDir, "fixture.ts"));
 
     const DIVISION_BY_ZERO_WITH_SAME_VALUE = `
 predicate zero_guard($var: node) {
-  match $g: node where narrows.narrowing_kind == "literal_eq"
-  match $target: node where same_value($target, $var)
-  where narrows.target_node == $target
+  match $g: node where narrows.target_node == $var and narrows.narrowing_kind == "literal_eq"
 }
 principle division-by-zero {
   match $div: node where arithmetic.op == "/"
-  require no $guard: zero_guard($div.arithmetic.rhs_node) before $div
+  require no $guard: zero_guard($div.arithmetic.rhs_node) same_value $div.arithmetic.rhs_node
   report violation {
     at $div
     captures { division: $div }
@@ -274,6 +275,9 @@ principle division-by-zero {
 
     const matches = evaluatePrinciple(db, DIVISION_BY_ZERO_WITH_SAME_VALUE);
     // The guard covers `b !== 0`, so no violation should fire.
+    // NOTE: this expectation will FAIL until relation LHS targeting capability columns
+    // is implemented. The compiler correctly generates SQL but the LHS alias points
+    // to the narrows node (no data_flow row), making NOT EXISTS always true.
     expect(matches).toHaveLength(0);
   });
 });

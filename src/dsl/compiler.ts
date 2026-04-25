@@ -490,14 +490,25 @@ export function compilePrinciple(
       }
     }
 
-    // Validate targetVar is bound in the main query.
-    const targetBinding = varBindings.get(req.targetVar);
-    if (!targetBinding) {
-      throw new CompileError(
-        `Unbound variable '$${req.targetVar}' in require clause relation`,
-      );
+    // Validate target (targetVarName or targetVarDeref) is bound in the main query.
+    if (req.targetVarName) {
+      const targetBinding = varBindings.get(req.targetVarName);
+      if (!targetBinding) {
+        throw new CompileError(
+          `Unbound variable '$${req.targetVarName}' in require clause relation`,
+        );
+      }
+      void targetBinding;
+    } else if (req.targetVarDeref) {
+      const deref = req.targetVarDeref;
+      const targetBinding = varBindings.get(deref.varName);
+      if (!targetBinding) {
+        throw new CompileError(
+          `Unbound variable '$${deref.varName}' in require clause relation target deref`,
+        );
+      }
+      void targetBinding;
     }
-    void targetBinding;
 
     // Inline the predicate.
     const inlinedClauses = inlinePredicate(pred, req, req.guardVar);
@@ -611,14 +622,48 @@ export function compilePrinciple(
       }
     }
 
-    // Apply the built-in relation between guardVar and targetVar.
+    // Apply the built-in relation between guardVar and target.
     // The guard node alias is the node alias for the first inlined variable
     // (which represents the guard in the source — the narrows/other matching row).
     const guardNodeAlias = firstSubVarNodeAlias ?? `sub_node_${req.guardVar}`;
 
-    const targetNodeAlias = nodeTableAliases.get(req.targetVar);
-    if (!targetNodeAlias) {
-      throw new CompileError(`No nodes alias for '$${req.targetVar}' in require clause`);
+    // Resolve target node alias: bare var or varDeref.
+    let targetNodeAlias: string;
+    if (req.targetVarName) {
+      const a = nodeTableAliases.get(req.targetVarName);
+      if (!a) {
+        throw new CompileError(`No nodes alias for '$${req.targetVarName}' in require clause`);
+      }
+      targetNodeAlias = a;
+    } else if (req.targetVarDeref) {
+      const deref = req.targetVarDeref;
+      const ownerBinding = varBindings.get(deref.varName);
+      if (!ownerBinding) {
+        throw new CompileError(
+          `Unbound variable '$${deref.varName}' in require clause relation target deref`,
+        );
+      }
+      // Validate the capability/column exists and matches the owner binding.
+      if (ownerBinding.capabilityName !== deref.capability) {
+        throw new CompileError(
+          `Relation target deref '$${deref.varName}.${deref.capability}.${deref.column}': ` +
+          `variable '$${deref.varName}' is bound to capability '${ownerBinding.capabilityName}', ` +
+          `not '${deref.capability}'`,
+        );
+      }
+      const { colSqlName: targetColSql } = resolveCapCol(
+        deref.capability,
+        deref.column,
+        ` in require clause relation target deref '$${deref.varName}.${deref.capability}.${deref.column}'`,
+      );
+      // Emit a JOIN to nodes via the column value (the column is a node_id reference).
+      const freshAlias = `node_target_${aliasCounter++}`;
+      mainJoins.push(
+        `JOIN nodes AS ${freshAlias} ON ${freshAlias}.id = ${ownerBinding.tableAlias}.${targetColSql}`,
+      );
+      targetNodeAlias = freshAlias;
+    } else {
+      throw new CompileError(`require clause relation has no target (internal error)`);
     }
 
     {

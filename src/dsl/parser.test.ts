@@ -94,7 +94,8 @@ describe("parseDSL", () => {
       expect(req.predArgDeref.column).toBe("rhs_node");
     }
     expect(req.relation).toBe("before");
-    expect(req.targetVar).toBe("div");
+    expect(req.targetVarName).toBe("div");
+    expect(req.targetVarDeref).toBeNull();
 
     // Report block
     const rb = principle.reportBlock;
@@ -175,7 +176,8 @@ principle test-same-value {
     if (!req) throw new Error("expected requireClause");
     expect(req.relation).toBe("same_value");
     expect(req.predName).toBe("zero_guard");
-    expect(req.targetVar).toBe("div");
+    expect(req.targetVarName).toBe("div");
+    expect(req.targetVarDeref).toBeNull();
   });
 
   it("parses varDeref RHS in match clause", () => {
@@ -204,6 +206,32 @@ principle cross-ref {
         expect(atom.rhs.capability).toBe("arithmetic");
         expect(atom.rhs.column).toBe("rhs_node");
       }
+    }
+  });
+
+  it("parses varDeref target in require clause (same_value $y.cap.col)", () => {
+    const src = `
+principle test-deref-target {
+  match $div: node where arithmetic.op == "/"
+  require no $guard: zero_guard($div.arithmetic.rhs_node) same_value $div.arithmetic.rhs_node
+  report violation { at $div captures { div: $div } message "test" }
+}
+    `.trim();
+    const program = parseDSL(src);
+    expect(program.nodes).toHaveLength(1);
+    const p = program.nodes[0];
+    expect(p.kind).toBe("principle");
+    if (p.kind !== "principle") throw new Error("expected principle");
+    const req = p.requireClause;
+    expect(req).not.toBeNull();
+    if (!req) throw new Error("expected requireClause");
+    expect(req.relation).toBe("same_value");
+    expect(req.targetVarName).toBeNull();
+    expect(req.targetVarDeref).not.toBeNull();
+    if (req.targetVarDeref) {
+      expect(req.targetVarDeref.varName).toBe("div");
+      expect(req.targetVarDeref.capability).toBe("arithmetic");
+      expect(req.targetVarDeref.column).toBe("rhs_node");
     }
   });
 });

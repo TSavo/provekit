@@ -29,9 +29,10 @@
  *                 | "$" IDENT                         -- direct var ref (node id comparison)
  *   literal       = STRING | NUMBER | "true" | "false" | "null"
  *
- *   requireClause = "require" "no" "$" IDENT ":" predCall relationName "$" IDENT
- *   predCall      = IDENT "(" varRef ")"
- *   varRef        = "$" IDENT
+ *   requireClause = "require" "no" "$" IDENT ":" predCall relationName targetRef
+ *   predCall      = IDENT "(" predArg ")"
+ *   predArg       = varDeref | varRef
+ *   targetRef     = varDeref | varRef
  *   relationName  = IDENT   -- any registered relation name; validated at compile time
  *
  *   reportBlock   = "report" severity "{" "at" varRef capturesBlock messageLine "}"
@@ -172,10 +173,15 @@ export interface RequireClause {
    */
   predArgVarName: string | null;
   predArgDeref: VarDeref | null;
-  /** Built-in relation applied between guard var and target var */
+  /** Built-in relation applied between guard var and target */
   relation: BuiltinRelation;
-  /** The target variable (RHS of the relation) */
-  targetVar: string;
+  /**
+   * Relation target: either a bare var ref or a varDeref (symmetric with predArg).
+   * When it's a varRef, targetVarName is set and targetVarDeref is null.
+   * When it's a varDeref, targetVarDeref is set and targetVarName is null.
+   */
+  targetVarName: string | null;
+  targetVarDeref: VarDeref | null;
   loc: SourceLoc;
 }
 

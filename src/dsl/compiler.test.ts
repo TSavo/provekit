@@ -228,4 +228,27 @@ principle mock-test {
     const queries = compileProgram(program.nodes);
     expect(queries.has("mock-test")).toBe(true);
   });
+
+  it("compiles same_value relation with varDeref target without throwing", () => {
+    const src = `
+predicate zero_guard($var: node) {
+  match $g: node where narrows.target_node == $var and narrows.narrowing_kind == "literal_eq"
+}
+
+principle division-by-zero-sv {
+  match $div: node where arithmetic.op == "/"
+  require no $guard: zero_guard($div.arithmetic.rhs_node) same_value $div.arithmetic.rhs_node
+  report violation {
+    at $div
+    captures { division: $div }
+    message "division denominator may be zero"
+  }
+}
+    `.trim();
+    const program = parseDSL(src);
+    const queries = compileProgram(program.nodes);
+    expect(queries.has("division-by-zero-sv")).toBe(true);
+    const fn = queries.get("division-by-zero-sv");
+    expect(typeof fn).toBe("function");
+  });
 });
