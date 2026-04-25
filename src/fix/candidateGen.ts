@@ -21,7 +21,7 @@
  */
 
 import { readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { join, relative } from "path";
 import { eq } from "drizzle-orm";
 import { principleMatches } from "../db/schema/principleMatches.js";
 import { evaluatePrinciple } from "../dsl/evaluator.js";
@@ -123,24 +123,55 @@ Rules:
 /**
  * Build a concise prompt for the agent path (capture-the-change).
  * The agent edits files directly in its cwd — no JSON response schema required.
+ *
+ * @param overlay - When provided, locus.file is expressed as an overlay-relative
+ *   path so the agent cannot derive an absolute path to the user's real repo.
  */
 export function buildAgentFixPrompt(
   signal: BugSignal,
   locus: BugLocus,
   invariant: InvariantClaim,
+  overlay?: { worktreePath: string },
 ): string {
-  return `You are a code-repair expert. A bug has been identified in the codebase in your current working directory.
+  // Compute overlay-relative path for the locus so the agent never sees an
+  // absolute path to the user's real repo (the dogfood bypass used locus.file
+  // directly, which let the agent edit the user's actual file).
+  let locusDisplay = locus.file;
+  if (overlay) {
+    try {
+      const rel = relative(overlay.worktreePath, locus.file);
+      if (!rel.startsWith("..")) {
+        locusDisplay = rel;
+      } else {
+        // locus.file is in the real repo (absolute). Try suffix matching.
+        const parts = locus.file.split("/").filter(Boolean);
+        for (let i = 0; i < parts.length; i++) {
+          const suffix = parts.slice(i).join("/");
+          if (existsSync(join(overlay.worktreePath, suffix))) {
+            locusDisplay = suffix;
+            break;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal: fall back to locus.file (absolute). Log-worthy but not blocking.
+    }
+  }
+
+  return `Your CWD is the project root. All paths in this prompt are relative to your CWD. Do not use absolute paths — use only the relative paths shown here.
+
+You are a code-repair expert. A bug has been identified in the codebase in your current working directory.
 
 Bug summary: ${signal.summary}
 Failure description: ${signal.failureDescription}${signal.fixHint ? `\nFix hint: ${signal.fixHint}` : ""}
 
-Location: ${locus.file}:${locus.line}${locus.function ? ` in ${locus.function}` : ""}
+Location: ${locusDisplay}:${locus.line}${locus.function ? ` in ${locus.function}` : ""}
 
 Invariant violated: ${invariant.description}
 Formal expression (SMT, violation state — must become unsat after fix):
 ${invariant.formalExpression}
 
-Read the relevant files, understand the bug, and edit the file(s) to fix it. Do NOT run tests — just make the minimal change to fix the invariant violation. After making your changes, briefly explain what you changed and why.`;
+Read the relevant files (using relative paths), understand the bug, and edit the file(s) to fix it. Do NOT run tests — just make the minimal change to fix the invariant violation. After making your changes, briefly explain what you changed and why.`;
 }
 
 // ---------------------------------------------------------------------------

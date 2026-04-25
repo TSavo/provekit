@@ -15,7 +15,7 @@ import { openDb } from "../db/index.js";
 import { runAgentInOverlay, getChangedFiles } from "./captureChange.js";
 import { openOverlay } from "./stages/openOverlay.js";
 import { closeOverlay } from "./overlay.js";
-import { StubLLMProvider } from "./types.js";
+import { StubLLMProvider, OverlayBypassError } from "./types.js";
 import type { BugLocus } from "./types.js";
 
 const GIT_ID = ["-c", "user.name=test", "-c", "user.email=test@test"];
@@ -180,4 +180,143 @@ describe("captureChange: runAgentInOverlay", () => {
       runAgentInOverlay({ overlay, llm, prompt: "fix it" }),
     ).rejects.toThrow(/does not implement agent\(\)/);
   }, 15_000);
+
+  // -------------------------------------------------------------------------
+  // 4. Layer 2: stub agent uses Edit outside cwd → OverlayBypassError
+  // -------------------------------------------------------------------------
+  it("throws OverlayBypassError when stub agent reports Edit on absolute path outside overlay", async () => {
+    const source = "export function qux() { return 1; }\n";
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-cc-maindb4-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    const locus = makeLocus(filePath);
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    // Stub agent writes inside cwd (correct), but also reports a tool_use that
+    // touched a path outside the overlay (the bypass).
+    const outsidePath = filePath; // original repo file — outside the overlay
+
+    const llm = new StubLLMProvider(
+      new Map(),
+      [{
+        matchPrompt: "fix",
+        fileEdits: [{ file: "fixture.ts", newContent: "export function qux() { return 99; }\n" }],
+        text: "Fixed",
+        toolUses: [
+          {
+            id: "tu-bypass",
+            name: "Edit",
+            input: { file_path: outsidePath, old_string: "return 1", new_string: "return 99" },
+            result: "ok",
+            isError: false,
+            turn: 1,
+            ms: 10,
+          },
+        ],
+      }],
+    );
+
+    await expect(
+      runAgentInOverlay({ overlay, llm, prompt: "please fix" }),
+    ).rejects.toThrow(OverlayBypassError);
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
+  // 5. Layer 2: stub agent uses Edit inside overlay → no throw
+  // -------------------------------------------------------------------------
+  it("does NOT throw when stub agent reports Edit on path inside overlay", async () => {
+    const source = "export function quux() { return 1; }\n";
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-cc-maindb5-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    const locus = makeLocus(filePath);
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    // The tool_use path is inside the overlay — this should be allowed.
+    const insidePath = join(overlay.worktreePath, "fixture.ts");
+
+    const fixedContent = "export function quux() { return 42; }\n";
+    const llm = new StubLLMProvider(
+      new Map(),
+      [{
+        matchPrompt: "fix",
+        fileEdits: [{ file: "fixture.ts", newContent: fixedContent }],
+        text: "Fixed",
+        toolUses: [
+          {
+            id: "tu-ok",
+            name: "Edit",
+            input: { file_path: insidePath, old_string: "return 1", new_string: "return 42" },
+            result: "ok",
+            isError: false,
+            turn: 1,
+            ms: 10,
+          },
+        ],
+      }],
+    );
+
+    const { patch } = await runAgentInOverlay({ overlay, llm, prompt: "please fix" });
+    expect(patch.fileEdits).toHaveLength(1);
+    expect(patch.fileEdits[0]!.newContent).toBe(fixedContent);
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
+  // 6. Layer 2: stub agent uses Bash with absolute path outside overlay → warn (no throw)
+  // -------------------------------------------------------------------------
+  it("does NOT throw (only warns) when stub agent Bash command references path outside overlay", async () => {
+    const source = "export function corge() { return 1; }\n";
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-cc-maindb6-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    const locus = makeLocus(filePath);
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const fixedContent = "export function corge() { return 7; }\n";
+    const llm = new StubLLMProvider(
+      new Map(),
+      [{
+        matchPrompt: "fix",
+        fileEdits: [{ file: "fixture.ts", newContent: fixedContent }],
+        text: "Fixed",
+        toolUses: [
+          {
+            id: "tu-bash",
+            name: "Bash",
+            // Bash command that references an absolute path outside the overlay.
+            input: { command: `cat ${filePath}` },
+            result: "export function corge() { return 1; }",
+            isError: false,
+            turn: 1,
+            ms: 5,
+          },
+        ],
+      }],
+    );
+
+    // Should NOT throw — Bash bypass is warn-only (too many false positives).
+    const { patch } = await runAgentInOverlay({ overlay, llm, prompt: "please fix" });
+    expect(patch.fileEdits).toHaveLength(1);
+  }, 30_000);
 });

@@ -6,9 +6,11 @@
  */
 
 import { readFileSync } from "fs";
-import { join } from "path";
+import { join, relative } from "path";
+import { realpathSync } from "fs";
 import { execFileSync } from "child_process";
 import type { OverlayHandle, CodePatch, LLMProvider, AgentRequestOptions } from "./types.js";
+import { OverlayBypassError } from "./types.js";
 import { createNoopLogger } from "./logger.js";
 import type { FixLoopLogger } from "./logger.js";
 
@@ -59,6 +61,63 @@ export async function runAgentInOverlay(args: {
   }
   for (const txt of result.textBlocks) {
     logger.response(stageName, "claude-agent", txt.content);
+  }
+
+  // -------------------------------------------------------------------------
+  // Layer 2: post-agent path enforcement.
+  //
+  // Inspect every tool use to detect file accesses outside the overlay.
+  // Edit/Write/Read are hard-fail: any absolute path outside the overlay root
+  // is a confirmed bypass. Bash is warn-and-log: false-positive rate is too
+  // high to hard-fail (the overlay itself lives under /var/folders on macOS,
+  // /usr/bin/node is legit, etc.). The dogfood proof was an Edit, not a Bash,
+  // so this threshold is correct.
+  //
+  // NOTE: This is detection, not prevention. By the time we get here the agent
+  // has already run. Throwing stops the patch from being recorded but does NOT
+  // undo any filesystem mutations. Callers should treat a bypass as a poisoned
+  // overlay and close it.
+  // -------------------------------------------------------------------------
+  const overlayRootReal = (() => {
+    try { return realpathSync(cwd); } catch { return cwd; }
+  })();
+
+  for (const tu of result.toolUses) {
+    const inp = (tu.input ?? {}) as Record<string, unknown>;
+
+    if (tu.name === "Edit" || tu.name === "Write" || tu.name === "Read") {
+      const rawPath = typeof inp["file_path"] === "string" ? inp["file_path"] : null;
+      if (rawPath && rawPath.startsWith("/")) {
+        const realRaw = (() => { try { return realpathSync(rawPath); } catch { return rawPath; } })();
+        const rel = relative(overlayRootReal, realRaw);
+        if (rel.startsWith("..")) {
+          // Bypass confirmed. Log at error level with full path for audit trail.
+          logger.error(
+            `overlay-bypass: ${tu.name} on path outside overlay`,
+            { tool: tu.name, path: rawPath, overlayRoot: cwd, stage: stageName },
+          );
+          throw new OverlayBypassError(tu.name, rawPath, cwd);
+        }
+      }
+    } else if (tu.name === "Bash") {
+      const cmd = typeof inp["command"] === "string" ? inp["command"] : null;
+      if (cmd) {
+        // Extract absolute-path tokens from the command.
+        const absTokens = cmd.match(/(?<!['"\/\w])\/[^\s'";\|&>]+/g) ?? [];
+        for (const token of absTokens) {
+          const realToken = (() => { try { return realpathSync(token); } catch { return token; } })();
+          const rel = relative(overlayRootReal, realToken);
+          if (rel.startsWith("..")) {
+            // Warn and log — do not hard-fail Bash (too many false positives).
+            logger.error(
+              `overlay-bypass-warn: Bash command references path outside overlay (not failing hard — Bash has high false-positive rate)`,
+              { tool: "Bash", path: token, command: cmd, overlayRoot: cwd, stage: stageName },
+            );
+            // No throw for Bash — see comment above.
+          }
+        }
+      }
+    }
   }
 
   // Reconstruct CodePatch: modified tracked files from git diff + new untracked files.

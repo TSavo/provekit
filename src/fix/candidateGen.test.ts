@@ -28,7 +28,7 @@ import { openDb } from "../db/index.js";
 import { buildSASTForFile } from "../sast/builder.js";
 import { evaluatePrinciple } from "../dsl/evaluator.js";
 import { generateFixCandidate } from "./stages/generateFixCandidate.js";
-import { parseProposedFixes, buildFixPrompt, runOracleTwo } from "./candidateGen.js";
+import { parseProposedFixes, buildFixPrompt, buildAgentFixPrompt, runOracleTwo } from "./candidateGen.js";
 import { openOverlay } from "./stages/openOverlay.js";
 import { applyPatchToOverlay, reindexOverlay, closeOverlay } from "./overlay.js";
 import type {
@@ -257,6 +257,43 @@ describe("C3: candidateGen", () => {
     expect(prompt).toContain(invariant.description);
     expect(prompt).toContain(invariant.formalExpression);
     expect(prompt).toContain("3");  // maxCandidates
+  });
+
+  // -------------------------------------------------------------------------
+  // 5b. buildAgentFixPrompt — overlay-relative paths, no absolute paths
+  // -------------------------------------------------------------------------
+  it("buildAgentFixPrompt: prompt does not contain absolute locus.file when overlay is provided", () => {
+    const signal = makeDivSignal("/Users/tsavo/dogfood-scratch/src/divide.ts");
+    const locus = makeLocus("/Users/tsavo/dogfood-scratch/src/divide.ts", "node1");
+    const invariant = makeDivInvariant();
+
+    // Simulate an overlay whose worktreePath is a tempdir.
+    const fakeTmp = mkdtempSync(join(tmpdir(), "provekit-c3-prompt-test-"));
+    cleanups.push(() => rmSync(fakeTmp, { recursive: true, force: true }));
+    // Create src/divide.ts inside the fake overlay so the suffix-match finds it.
+    mkdirSync(join(fakeTmp, "src"), { recursive: true });
+    writeFileSync(join(fakeTmp, "src", "divide.ts"), "// placeholder\n", "utf8");
+
+    const overlay = { worktreePath: fakeTmp };
+    const prompt = buildAgentFixPrompt(signal, locus, invariant, overlay);
+
+    // The absolute path to the user's repo must not appear.
+    expect(prompt).not.toContain("/Users/tsavo/dogfood-scratch");
+    // The overlay-relative path should appear instead.
+    expect(prompt).toContain("src/divide.ts");
+    // CWD instruction must be present.
+    expect(prompt).toContain("Your CWD is the project root");
+  });
+
+  it("buildAgentFixPrompt: without overlay falls back to locus.file (absolute)", () => {
+    const signal = makeDivSignal("/Users/tsavo/dogfood-scratch/src/divide.ts");
+    const locus = makeLocus("/Users/tsavo/dogfood-scratch/src/divide.ts", "node1");
+    const invariant = makeDivInvariant();
+
+    const prompt = buildAgentFixPrompt(signal, locus, invariant);
+    // Without overlay context the function still produces a valid prompt.
+    expect(prompt).toContain(signal.summary);
+    expect(prompt).toContain(invariant.description);
   });
 
   // -------------------------------------------------------------------------

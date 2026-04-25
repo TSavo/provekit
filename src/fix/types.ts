@@ -20,6 +20,35 @@ export class NotImplementedError extends Error {
   }
 }
 
+/**
+ * Thrown by runAgentInOverlay when the agent attempts to access a path outside
+ * the overlay worktree. This is a safety violation — the prompt did not correctly
+ * confine the agent to the overlay.
+ *
+ * IMPORTANT: this error is raised AFTER the agent has already run. The leaked
+ * tool call may have already mutated files on disk. This error prevents the
+ * resulting patch from being recorded, but does NOT undo any filesystem changes.
+ * Callers should treat the overlay state as poisoned and close it.
+ */
+export class OverlayBypassError extends Error {
+  constructor(
+    /** The tool that was used (Edit, Write, Read, Bash). */
+    public readonly toolName: string,
+    /** The path Claude attempted to access (as reported in tool input). */
+    public readonly claudePath: string,
+    /** The overlay root that all tool paths should have been under. */
+    public readonly overlayRoot: string,
+  ) {
+    super(
+      `Claude attempted to use ${toolName} on a path outside the overlay. ` +
+      `Path: ${claudePath}. Overlay root: ${overlayRoot}. ` +
+      `This indicates the agent prompt did not correctly confine paths to the overlay. ` +
+      `The overlay state may be poisoned — close and discard it.`,
+    );
+    this.name = "OverlayBypassError";
+  }
+}
+
 /** One entry in the orchestrator's audit trail. */
 export interface AuditEntry {
   /** Stage label: "C1", "C2", ..., "D3", or "orchestrator". */
@@ -211,6 +240,12 @@ export interface StubAgentResponse {
   fileEdits: { file: string; newContent: string }[];
   /** Optional final text response. */
   text?: string;
+  /**
+   * Optional tool use records to include in the AgentResult.
+   * Use this to simulate tool calls with absolute paths for bypass-detection tests.
+   * Each record must have id, name, input, isError, turn, ms at minimum.
+   */
+  toolUses?: AgentResult["toolUses"];
 }
 
 /** In-memory stub for tests. Caller supplies canned responses keyed by substring. */
@@ -281,7 +316,7 @@ export class StubLLMProvider implements LLMProvider {
           diff,
           text: cannedResult.text ?? "stub agent completed",
           turnsUsed: 1,
-          toolUses: [],
+          toolUses: cannedResult.toolUses ?? [],
           thinkingBlocks: [],
           textBlocks: [],
         };

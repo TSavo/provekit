@@ -21,7 +21,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, realpathSync } from "fs"; // realpathSync used in computeRelPath
-import { join, relative, dirname } from "path";
+import { join, relative, dirname, basename } from "path";
 import { execFileSync } from "child_process";
 import { eq } from "drizzle-orm";
 import { runAgentInOverlay, getChangedFiles, getUntrackedFiles } from "./captureChange.js";
@@ -519,20 +519,47 @@ export async function proposeChangeForSiteViaAgent(
     siteSourceContext = site.reason;
   }
 
-  const prompt = `You are a code-repair expert. A bug was just fixed at one site in a codebase.
+  // Compute overlay-relative display path for the locus so the agent never sees
+  // an absolute path to the user's real repo (overlay-bypass mitigation).
+  let locusDisplay = locus.file;
+  try {
+    const rel = relative(overlay.worktreePath, locus.file);
+    if (!rel.startsWith("..")) {
+      locusDisplay = rel;
+    } else {
+      const parts = locus.file.split("/").filter(Boolean);
+      for (let i = 0; i < parts.length; i++) {
+        const suffix = parts.slice(i).join("/");
+        if (existsSync(join(overlay.worktreePath, suffix))) {
+          locusDisplay = suffix;
+          break;
+        }
+      }
+    }
+  } catch { /* fall back to locus.file */ }
+
+  // For the site, prefer fileRelPath. Fall back to basename only (never raw filePath).
+  const siteDisplay = site.fileRelPath ?? basename(site.filePath);
+
+  // Sanitize the discovery reason: replace absolute filePath with siteDisplay.
+  const sanitizedReason = site.reason.replace(site.filePath, siteDisplay);
+
+  const prompt = `Your CWD is the project root. All paths in this prompt are relative to your CWD. Do not use absolute paths — use only the relative paths shown here.
+
+You are a code-repair expert. A bug was just fixed at one site in a codebase.
 Apply a complementary change at the adjacent site described below to prevent the same bug class.
 
 == Primary fix ==
 Fixed at node: ${locus.primaryNode} (containing function: ${locus.containingFunction})
-File: ${locus.file}:${locus.line}
+File: ${locusDisplay}:${locus.line}
 Patch applied:
 ${JSON.stringify(fix.patch, null, 2)}
 
 == Adjacent site to fix ==
 Site kind: ${site.kind}
 Site node ID: ${site.nodeId}
-File: ${site.fileRelPath ?? site.filePath}
-Discovery reason: ${site.reason}
+File: ${siteDisplay}
+Discovery reason: ${sanitizedReason}
 Source:
 \`\`\`
 ${siteSourceContext.slice(0, 2000)}
@@ -541,7 +568,7 @@ ${invariant ? `\nInvariant violated at primary: ${invariant.description}` : ""}
 
 Apply the complementary fix directly to the file using your tools.
 If no change is needed at this site, write a file named .provekit/c4-skip.txt containing "skip".
-Otherwise, edit the file at ${site.fileRelPath ?? site.filePath} to apply the complementary fix.`;
+Otherwise, edit the file at ${siteDisplay} to apply the complementary fix.`;
 
   // Step 2: Run the agent.
   let agentResult: Awaited<ReturnType<typeof runAgentInOverlay>>;

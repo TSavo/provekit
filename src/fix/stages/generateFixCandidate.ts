@@ -59,7 +59,7 @@ async function generateFixCandidateViaAgent(args: {
 }): Promise<FixCandidate> {
   const { signal, locus, invariant, overlay } = args;
 
-  const prompt = buildAgentFixPrompt(signal, locus, invariant);
+  const prompt = buildAgentFixPrompt(signal, locus, invariant, overlay);
 
   // First attempt.
   const { patch, rationale } = await runAgentInOverlay({

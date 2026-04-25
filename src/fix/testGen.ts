@@ -156,6 +156,9 @@ export async function generateTestCode(args: {
     typeof v === "bigint" ? v.toString() : v
   , 2);
 
+  // Use overlay-relative display path to avoid leaking absolute paths.
+  const locusDisplay = locusRelToWorktree ?? locus.file;
+
   const prompt = `You are a TypeScript testing expert. Generate a complete vitest regression test file.
 
 TASK: Generate a vitest test that:
@@ -170,7 +173,7 @@ BUG SUMMARY: ${signal.summary}
 Z3 WITNESS INPUTS (values that trigger the bug before the fix):
 ${inputsJson}
 
-MODULE UNDER TEST (locus file): ${locus.file}
+MODULE UNDER TEST (locus file): ${locusDisplay}
 FUNCTION/LINE: ${locus.function ?? "(unknown)"} at line ${locus.line}
 
 SOURCE CODE (post-fix, in overlay):
@@ -334,7 +337,9 @@ export async function generateTestCodeViaAgent(args: {
     typeof v === "bigint" ? v.toString() : v
   , 2);
 
-  const prompt = `You are a TypeScript testing expert. Generate a complete vitest regression test file.
+  const prompt = `Your CWD is the project root. All paths in this prompt are relative to your CWD. Do not use absolute paths — use only the relative paths shown here.
+
+You are a TypeScript testing expert. Generate a complete vitest regression test file.
 
 TASK: Write a vitest regression test to the file at path: ${testFilePath}
 
@@ -350,7 +355,7 @@ BUG SUMMARY: ${signal.summary}
 Z3 WITNESS INPUTS (values that trigger the bug before the fix):
 ${inputsJson}
 
-MODULE UNDER TEST (locus file): ${locus.file}
+MODULE UNDER TEST (locus file): ${locusRelToOverlay ?? locus.file}
 FUNCTION/LINE: ${locus.function ?? "(unknown)"} at line ${locus.line}
 
 SOURCE CODE (post-fix, in overlay):
