@@ -602,6 +602,15 @@ export interface InvariantClaim {
    * don't exercise C1.5, principle-match path).
    */
   effectiveKind?: "concrete" | "abstract" | null;
+  /**
+   * Granular kind self-emitted by C1's LLM (post-#99 prompt rewrite).
+   * One of: "arithmetic", "set_uniqueness", "cardinality", "order", "taint",
+   * "other". When present, classifyInvariantKind prefers this over its
+   * keyword/regex heuristics — the LLM already told us what kind it is, no
+   * need to guess. Maps to effectiveKind via: arithmetic → concrete; all
+   * others → abstract.
+   */
+  llmKind?: string;
 }
 
 /** A concrete code change proposed to fix the bug. C3 fills this in. */

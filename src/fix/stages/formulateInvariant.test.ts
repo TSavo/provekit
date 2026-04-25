@@ -270,6 +270,7 @@ describe("formulateInvariant (C1)", () => {
     // Stub returns valid SMT that Z3 will find SAT.
     const validSmtResponse = JSON.stringify({
       description: "x must not be zero before division",
+      kind: "arithmetic",
       smt_declarations: ["(declare-const x Int)"],
       smt_violation_assertion: "(assert (= x 0))",
       bindings: [{ smt_constant: "x", source_expr: "x", sort: "Int" }],
@@ -344,6 +345,7 @@ describe("formulateInvariant (C1)", () => {
     // Return a contradictory SMT that's always UNSAT.
     const unsatSmtResponse = JSON.stringify({
       description: "contradictory invariant",
+      kind: "arithmetic",
       smt_declarations: ["(declare-const y Int)"],
       smt_violation_assertion: "(assert (and (= y 0) (not (= y 0))))",
       bindings: [{ smt_constant: "y", source_expr: "y", sort: "Int" }],

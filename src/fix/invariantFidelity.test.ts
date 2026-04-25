@@ -70,6 +70,7 @@ const VALID_CLAIM: InvariantClaim = {
 /** Equivalent claim in same variable namespace */
 const ADVERSARY_EQUIVALENT_RESPONSE = JSON.stringify({
   description: "denominator must not equal zero",
+  kind: "arithmetic",
   smt_declarations: ["(declare-const a Int)", "(declare-const b Int)"],
   smt_violation_assertion: "(assert (= b 0))",
   bindings: [
@@ -81,6 +82,7 @@ const ADVERSARY_EQUIVALENT_RESPONSE = JSON.stringify({
 /** Conflicting claim (extra constraint that proposer doesn't have) */
 const ADVERSARY_CONFLICTING_RESPONSE = JSON.stringify({
   description: "a must be positive AND b must be negative",
+  kind: "arithmetic",
   smt_declarations: ["(declare-const a Int)", "(declare-const b Int)"],
   smt_violation_assertion: "(assert (and (> a 0) (< b 0)))",
   bindings: [
@@ -195,6 +197,7 @@ describe("crossLlmAgreement", () => {
     // Adversary uses source_expr "result" which proposer doesn't have → cannot alpha-rename
     const adversaryDifferentBindings = JSON.stringify({
       description: "b must not be zero",
+      kind: "arithmetic",
       smt_declarations: ["(declare-const b Int)", "(declare-const result Int)"],
       smt_violation_assertion: "(assert (= b 0))",
       bindings: [
@@ -728,6 +731,7 @@ describe("formulateInvariant integration: oracle #1.5", () => {
 
   const VALID_LLM_RESPONSE = JSON.stringify({
     description: "b must not be zero before division",
+    kind: "arithmetic",
     smt_declarations: ["(declare-const a Int)", "(declare-const b Int)"],
     smt_violation_assertion: "(assert (= b 0))",
     bindings: [

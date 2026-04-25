@@ -102,6 +102,7 @@ const CLASSIFY_RESPONSE = JSON.stringify({
 // Includes citations to satisfy oracle #1.5 traceability check.
 const INVARIANT_LLM_RESPONSE = JSON.stringify({
   description: "catch handler has zero statements; exception is silently discarded",
+  kind: "taint",
   smt_declarations: [
     "(declare-const catchStmtCount Int)",
     "(declare-const hasFinally Bool)",

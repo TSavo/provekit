@@ -66,7 +66,29 @@ const ABSTRACT_PROSE_KEYWORDS = [
  */
 const CARDINALITY_RE = /\b(occurs?|occurr(ed|ing|ences?)|happens?|fires?|matches|times)\b.*\b(once|twice|thrice|\d+\s*times?)\b|\b(once|twice|thrice|\d+\s*times?)\b.*\b(occurs?|occurr(ed|ing|ences?)|happens?|fires?|matches)\b/;
 
+/**
+ * Map the C1 LLM-emitted granular kind label to the binary kind used by
+ * downstream oracle routing (concrete = Z3-equivalence path; abstract =
+ * prose-overlap + behavioral-deferral path).
+ *
+ * Only `arithmetic` warrants the concrete path because that's the only
+ * kind where two LLM runs produce SMT shapes Z3 can canonically compare.
+ * Set-uniqueness, cardinality, order, taint, and other all have multiple
+ * equivalent SMT formalizations across LLM runs and need the abstract path.
+ */
+function llmKindToBinary(llmKind: string): InvariantKind {
+  return llmKind === "arithmetic" ? "concrete" : "abstract";
+}
+
 export function classifyInvariantKind(invariant: InvariantClaim): InvariantKind {
+  // Signal 0 (post-#99): trust the LLM's self-emitted kind. C1's prompt
+  // teaches the six categories with canonical examples; the LLM picks one
+  // and emits it in the JSON. When present, this is authoritative — no
+  // need to second-guess it via keyword heuristics.
+  if (typeof invariant.llmKind === "string" && invariant.llmKind.length > 0) {
+    return llmKindToBinary(invariant.llmKind);
+  }
+
   // Signal 1: SMT structure. Quantifiers, distinct-clauses, set ops.
   if (ABSTRACT_SMT_RE.test(invariant.formalExpression)) return "abstract";
 

@@ -116,6 +116,7 @@ const CLASSIFY_RESPONSE = JSON.stringify({
 const INVARIANT_LLM_RESPONSE = JSON.stringify({
   description:
     "tainted user input must not flow into the argument of execSync, exec, or spawn",
+  kind: "taint",
   smt_declarations: [
     "(declare-const argHasInterpolation Bool)",
     "(declare-const interpSourceIsParam Bool)",

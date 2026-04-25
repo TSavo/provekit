@@ -173,6 +173,7 @@ const PRINCIPLE_NULL_RESPONSE = JSON.stringify(null);
 // TypeScript parameter names ("a", "b") which remain in the patched file.
 const INVARIANT_LLM_RESPONSE = JSON.stringify({
   description: "divide() called with denominator = 0 is a violation",
+  kind: "arithmetic",
   smt_declarations: ["(declare-const numerator Int)", "(declare-const denominator Int)"],
   smt_violation_assertion: "(assert (= denominator 0))",
   bindings: [
@@ -210,25 +211,24 @@ const FIXTURE_PREVAL_RESPONSE = JSON.stringify({
 });
 
 function buildStubLLM(): StubLLMProvider {
+  // Stage-tag keys come FIRST so they win first-match-wins iteration over
+  // the legacy keyword keys. C-stage prompts that prepend "[STAGE:CN]" route
+  // here regardless of any prose collisions with downstream-stage keywords.
   return new StubLLMProvider(
     new Map<string, string>([
-      // Intake / report adapter prompt
+      // Stage-tagged keys (preferred path; new prompts opt in by prepending the tag)
+      ["[STAGE:C1]", INVARIANT_LLM_RESPONSE],
+      // Legacy substring keys for stages whose prompts haven't been tagged yet
       ["bug-report parser", BUG_SIGNAL_RESPONSE],
-      // Classify prompt
       ["classifying a bug report into a remediation layer", CLASSIFY_RESPONSE],
-      // Oracle #1.5 traceability check
       ["Citations to verify", TRACEABILITY_RESPONSE],
-      // Oracle #1.5 adversarial fixture pre-validation
       ["software testing expert", FIXTURE_PREVAL_RESPONSE],
-      // C3 fix generation prompt
       ["propose", FIX_PROPOSAL_RESPONSE],
-      // C4 complementary prompt
       ["complementary", COMPLEMENTARY_RESPONSE],
-      // C5 regression test prompt
       ["regression", TEST_RESPONSE],
-      // C6 principle candidate prompt
       ["principle candidate", PRINCIPLE_NULL_RESPONSE],
-      // C1 LLM fallback + cross-LLM agreement (both use "formal verification expert")
+      // Cross-LLM agreement / fidelity check (still uses substring match;
+      // not a primary C-stage prompt)
       ["formal verification expert", INVARIANT_LLM_RESPONSE],
     ]),
   );

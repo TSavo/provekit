@@ -324,8 +324,22 @@ function runOracleOne(formalExpression: string): { witness: string | null } {
 // LLM path helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * The six invariant kinds the LLM can emit. Each has a per-kind canonical
+ * SMT shape and prose vocabulary. Validators downstream use this directly
+ * instead of guessing via classifyInvariantKind() heuristics.
+ */
+type InvariantKindLabel =
+  | "arithmetic"        // Int/Real bindings, equalities/inequalities, no quantifiers
+  | "set_uniqueness"    // distinct-clauses or paired-equality on set elements
+  | "cardinality"       // counting occurrences (prefer Bool predicates over Int counts)
+  | "order"             // pairwise relations on indexed elements
+  | "taint"             // Bool predicates only, no concrete numeric values
+  | "other";            // doesn't fit the above; routes to abstract by default
+
 interface LlmInvariantResponse {
   description: string;
+  kind: InvariantKindLabel;
   smt_declarations: string[];
   smt_violation_assertion: string;
   bindings: { smt_constant: string; source_expr: string; sort: string }[];
@@ -358,9 +372,12 @@ function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db): string {
     // ignore
   }
 
-  return `You are a formal verification expert. Given a bug report, produce an SMT-LIB assertion
+  return `[STAGE:C1] formulateInvariant
+You are a formal verification expert. You will produce an SMT-LIB assertion
 that expresses the VIOLATION STATE (the negation of the desired invariant).
 The assertion must be satisfiable (Z3 check-sat returns "sat") — this proves the bug is reachable.
+
+# Inputs
 
 Bug summary: ${signal.summary}
 Failure description: ${signal.failureDescription}
@@ -374,42 +391,171 @@ ${sourceContext}
 Data-flow ancestors of bug site: ${locus.dataFlowAncestors.length} nodes
 Data-flow descendants of bug site: ${locus.dataFlowDescendants.length} nodes
 
-Respond with ONLY a JSON object (no markdown fences):
+# What happens to your output
+
+A second model will independently derive its own invariant from the same bug
+report. The two are compared via cross-LLM agreement: SMT-equivalence first,
+prose-similarity fallback. **Convergent phrasing matters.** If you choose
+unusual variable names, exotic SMT constructs, or rare prose synonyms, the
+second model will pick something different and the loop will retry.
+
+Stick to canonical forms within your invariant's kind. There are six kinds.
+**You must declare which one your invariant is.**
+
+# Choose the kind that matches the bug
+
+You will set \`"kind"\` in your JSON output to exactly one of:
+
+## kind: "arithmetic"
+Numeric inequality, equality, range, or remainder relation. Variables are
+\`Int\` or \`Real\`. The violation is a concrete numeric state.
+
+Use when the bug is: division-by-zero, off-by-one, integer overflow,
+range-bound violation, modulo-by-zero, NaN comparison.
+
+Canonical SMT shape (division-by-zero):
+\`\`\`
+(declare-const b Int)
+(assert (= b 0))
+\`\`\`
+Canonical prose: "the divisor must not be zero", "the index must be less
+than array length", "the sum must fit in 32-bit signed range".
+
+## kind: "set_uniqueness"
+The violation is "two values that should be distinct are equal" OR "an array
+should have only unique elements but does not". Use \`(distinct ...)\` or
+paired-equality \`(= k1 k2)\` patterns.
+
+Use when the bug is: duplicate keys, duplicate methods in HTTP Allow,
+duplicate IDs, primary-key collision, set-as-list-without-dedup.
+
+Canonical SMT shape (Bug-1 Express duplicate-methods):
+\`\`\`
+(declare-const k1 Int)
+(declare-const k2 Int)
+(assert (and (not (= k1 k2)) (= (header_method k1) (header_method k2))))
+\`\`\`
+OR equivalently, using distinct:
+\`\`\`
+(declare-const m1 Int) (declare-const m2 Int) (declare-const m3 Int)
+(assert (not (distinct m1 m2 m3)))
+\`\`\`
+Canonical prose: "no two X share Y", "the methods in the Allow header must
+be unique", "duplicate keys are forbidden". **AVOID** "appears at most
+once", "occurs more than once" — those phrasings vary across models.
+
+## kind: "cardinality"
+The violation is about the COUNT of occurrences: "X must run at least
+once but ran zero times", "Y must fire at most twice but fired three
+times". **Prefer Bool predicates over Int counts**, because two LLMs
+will pick different counter encodings (length vs counter vs witness).
+
+Canonical SMT shape:
+\`\`\`
+(declare-const x_ran_at_least_once Bool)
+(assert (= x_ran_at_least_once false))
+\`\`\`
+Canonical prose: "must run at least once", "must fire exactly once",
+"cannot exceed N retries". The Bool-predicate name carries the cardinality
+relation.
+
+## kind: "order"
+The violation is about pairwise ordering: "elements should be sorted but
+i < j with a[i] > a[j]", "events are out of expected sequence". Use Bool
+predicates over the violation pair, not Int sequences.
+
+Canonical SMT shape:
+\`\`\`
+(declare-const out_of_order_pair_exists Bool)
+(assert (= out_of_order_pair_exists true))
+\`\`\`
+Canonical prose: "must be sorted ascending", "events must occur in
+chronological order", "the result must be monotonically increasing".
+
+## kind: "taint"
+The violation is "untrusted data reaches a dangerous sink without
+sanitization". All bindings are Bool predicates ABOUT the data, not
+the data itself.
+
+Canonical SMT shape (shell-injection):
+\`\`\`
+(declare-const input_contains_shell_metachar Bool)
+(declare-const input_was_sanitized Bool)
+(assert (and input_contains_shell_metachar (not input_was_sanitized)))
+\`\`\`
+Canonical prose: "user input must be sanitized before reaching execSync",
+"untrusted X must not flow to dangerous Y".
+
+## kind: "other"
+Use only when none of the five above fit. The loop will route to the
+behavioral verification path (regression test must fail on original /
+pass on fixed). Be precise about why none of the five fit.
+
+# Universal rules (apply to every kind)
+
+1. **smt_declarations**: declare every constant you use. The runner
+   appends \`(check-sat)\` automatically; do not include it.
+
+2. **Variable names** must map to source-code identifiers when the kind
+   is arithmetic. \`b\`, \`a\`, \`x\`, \`count\`, \`index\`, etc. — names
+   that appear literally in the source.
+
+3. **No synthetic control-flow variables.** Forbidden:
+   \`(declare-const throws Bool)\`,
+   \`(declare-const guard_returns Int)\`,
+   \`(declare-const code_after_reached Bool)\`. These cannot be verified
+   post-fix because oracle #2 has no way to bind them to the patched
+   code's path conditions.
+   ✓ Good (arithmetic): \`(assert (= b 0))\` — b is a function parameter
+   ✗ Bad: \`(assert (and (= b 0) (= throws false)))\` — \`throws\` is synthetic
+
+4. **Bindings**: every smt_constant in your declarations must appear in
+   the bindings list. \`source_expr\` is the literal source-code expression
+   (\`"b"\`, \`"options.length"\`, \`"input"\`).
+
+5. **Citations**: one citation per meaningful clause in your assertion.
+   \`source_quote\` must be a verbatim or close-paraphrase excerpt from
+   the bug report. The citations are checked by oracle #1.5 traceability
+   verifier — every clause needs prose justification.
+
+6. **Keep it small**: 2-5 constants maximum. Prefer the simplest assertion
+   that captures the violation. Complexity invites disagreement with the
+   second model.
+
+# Output format
+
+Respond with ONLY a JSON object via the Write tool (no prose, no markdown).
+The object must have exactly these fields:
+
+\`\`\`json
 {
-  "description": "one sentence: what invariant is being violated",
-  "smt_declarations": ["(declare-const varName Sort)", ...],
+  "description": "one sentence: what invariant is being violated, in canonical prose for your kind",
+  "kind": "arithmetic" | "set_uniqueness" | "cardinality" | "order" | "taint" | "other",
+  "smt_declarations": ["(declare-const varName Sort)", "..."],
   "smt_violation_assertion": "(assert (...))",
   "bindings": [
-    {"smt_constant": "varName", "source_expr": "expression in source", "sort": "Int"}
+    {"smt_constant": "varName", "source_expr": "literal source code", "sort": "Int" | "Bool" | "Real"}
   ],
   "citations": [
-    {"smt_clause": "(= b 0)", "source_quote": "exact or close-paraphrase quote from the bug report that justifies this clause"}
+    {"smt_clause": "(= b 0)", "source_quote": "exact or close-paraphrase from bug report"}
   ]
 }
+\`\`\`
 
-Rules:
-- smt_declarations: declare all constants you use
-- smt_violation_assertion: a single (assert ...) encoding the violation state
-- Do NOT include (check-sat) — it will be appended automatically
-- Use Int or Bool sorts
-- Keep it simple: 2-5 constants maximum
-- citations: one entry per meaningful clause in smt_violation_assertion; each source_quote must be a verbatim or close-paraphrase excerpt from the bug report above
+# The quiet part
 
-CRITICAL — invariant must be VERIFIABLE post-fix:
-- ONLY use SMT constants that map directly to source-code INPUT variables
-  (function parameters, named locals). Each binding's source_expr must be a
-  literal substring of source code (e.g., "b", "a", "x").
-- DO NOT introduce SYMBOLIC CONTROL-FLOW VARIABLES (e.g., "throws Bool",
-  "guard_returns Int", "code_after_reached Bool"). These cannot be verified
-  against the post-fix code: oracle #2's path-condition extraction can only
-  rebind source variables to dominating guards, not synthetic booleans.
-- Express the violation as constraints on input variables only.
-  Good: "(assert (= b 0))"   ← b is a function parameter; oracle #2 can verify
-  Bad:  "(assert (and (= b 0) (= throws false)))"  ← oracle #2 cannot verify "throws"
-- If the bug only manifests under specific control flow, encode that as
-  constraints on the input variables that REACH the bug site, not as a
-  synthetic flag.`;
+Two models will look at the same bug and emit invariants. If both emit
+\`(declare-const b Int) (assert (= b 0))\` for division-by-zero, the
+SMT-equivalence check passes instantly and the loop continues. If one
+emits \`(assert (= b 0))\` and the other emits \`(assert (not (> b 0)))\`,
+the equivalence check has to reason about \`b ≤ 0 ≠ b = 0\` and might
+fail. The canonical examples above are the shapes both models should pick.
+Pick them.`;
 }
+
+const VALID_KINDS: ReadonlySet<InvariantKindLabel> = new Set([
+  "arithmetic", "set_uniqueness", "cardinality", "order", "taint", "other",
+]);
 
 /**
  * Validate + transform a parsed LLM JSON response into invariant components.
@@ -421,6 +567,7 @@ function validateLlmResponse(rawParsed: unknown): {
   bindings: SmtBindingRef[];
   description: string;
   citations: InvariantCitation[] | null;
+  kind: InvariantKindLabel | null;
 } {
   if (typeof rawParsed !== "object" || rawParsed === null) {
     throw new InvariantFormulationFailed("LLM response is not an object");
@@ -429,6 +576,18 @@ function validateLlmResponse(rawParsed: unknown): {
 
   if (!parsed.description || typeof parsed.description !== "string") {
     throw new InvariantFormulationFailed("LLM response missing 'description' field");
+  }
+  // `kind` is optional for backward compat with older stubs and pre-#99 prompts.
+  // When present, must be one of the six valid labels; when absent, downstream
+  // classifyInvariantKind() will heuristically classify via SMT structure +
+  // prose keywords. New C1 prompt (#99) instructs the LLM to emit it.
+  if (parsed.kind !== undefined && parsed.kind !== null) {
+    if (typeof parsed.kind !== "string" || !VALID_KINDS.has(parsed.kind as InvariantKindLabel)) {
+      throw new InvariantFormulationFailed(
+        `LLM response 'kind' field is invalid (got ${JSON.stringify(parsed.kind)}; ` +
+        `expected one of: arithmetic, set_uniqueness, cardinality, order, taint, other, OR omitted)`,
+      );
+    }
   }
   if (!Array.isArray(parsed.smt_declarations)) {
     throw new InvariantFormulationFailed("LLM response missing 'smt_declarations' array");
@@ -494,7 +653,13 @@ function validateLlmResponse(rawParsed: unknown): {
       .map((c) => ({ smt_clause: c.smt_clause, source_quote: c.source_quote }));
   }
 
-  return { formalExpression, bindings, description: parsed.description, citations };
+  return {
+    formalExpression,
+    bindings,
+    description: parsed.description,
+    citations,
+    kind: (parsed.kind as InvariantKindLabel | undefined) ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -727,8 +892,9 @@ export async function formulateInvariant(args: {
   let bindings: SmtBindingRef[];
   let description: string;
   let citations: InvariantCitation[] | null;
+  let novelKind: InvariantKindLabel | null;
   try {
-    ({ formalExpression, bindings, description, citations } = await requestStructuredJson({
+    ({ formalExpression, bindings, description, citations, kind: novelKind } = await requestStructuredJson({
       prompt,
       llm,
       stage: "C1",
@@ -755,7 +921,9 @@ export async function formulateInvariant(args: {
     complexity: proofComplexity(formalExpression),
     witness,
     citations,
+    ...(novelKind ? { llmKind: novelKind } : {}),
   };
+  logger.detail(`C1 LLM-emitted kind: ${novelKind ?? "(omitted; will fall back to heuristic)"}`);
 
   // Oracle #1.5: fidelity check — runs only on novel-LLM path.
   const fidelity = await runInvariantFidelity({
@@ -810,7 +978,9 @@ export async function formulateInvariant(args: {
     complexity: proofComplexity(retry.formalExpression),
     witness: retryWitness,
     citations: retry.citations,
+    ...(retry.kind ? { llmKind: retry.kind } : {}),
   };
+  logger.detail(`C1 retry LLM-emitted kind: ${retry.kind ?? "(omitted; will fall back to heuristic)"}`);
 
   // Oracle #1.5 on retry: if still failing, throw.
   const retryFidelity = await runInvariantFidelity({
