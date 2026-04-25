@@ -6,19 +6,21 @@
  * been verified SAT by Z3. Principle-match path is tried before LLM path.
  */
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { eq, or, and, lte, gte } from "drizzle-orm";
 import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef, InvariantCitation } from "../types.js";
 import { InvariantFormulationFailed } from "../types.js";
 import { createNoopLogger, type FixLoopLogger } from "../logger.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
+import { getModelTier } from "../modelTiers.js";
 import type { Db } from "../../db/index.js";
 import { principleMatches, principleMatchCaptures } from "../../db/schema/principleMatches.js";
 import { nodes, files as filesTable } from "../../sast/schema/index.js";
 import { nodeArithmetic } from "../../sast/schema/capabilities/arithmetic.js";
 import { verifyBlock, proofComplexity } from "../../verifier.js";
 import { runInvariantFidelity, type FidelityVerifiers } from "../invariantFidelity.js";
+import { evaluatePrinciple } from "../../dsl/evaluator.js";
 
 // ---------------------------------------------------------------------------
 // Principle JSON shape
@@ -63,6 +65,77 @@ function loadPrincipleJson(principleName: string): PrincipleJson | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Pitch-leak 6 Win 2: warm the principleMatches table.
+ *
+ * The C1 short-circuit at "Path 1" below queries principleMatches for a row
+ * at locus.primaryNode. In production, that table is populated only by the
+ * fix loop itself (C4 / oracle code) — `provekit analyze` builds the SAST
+ * but does NOT evaluate principles. So Path 1 was effectively dormant in
+ * real-LLM runs even though every test that touched it passed.
+ *
+ * This helper closes the gap: when principleMatches has zero rows for the
+ * locus's file, we evaluate every .dsl in .provekit/principles/ against
+ * args.db once. Each evaluation inserts rows for every match in the indexed
+ * SAST graph. Subsequent calls return immediately because the file already
+ * has rows. Wall-time cost on a fresh db: ~50-200ms total for the canonical
+ * library (single SQL query per principle, no LLM, no Z3).
+ *
+ * Failure modes are deliberately swallowed: a malformed DSL, a missing
+ * capability, an INSERT collision — none of these are catastrophic at the
+ * C1 entry, because Path 1 is opportunistic. If population fails, Path 2
+ * (LLM-novel) takes over with the same cost as before.
+ */
+function ensurePrincipleMatchesPopulated(db: Db, locusFileId: number, logger: FixLoopLogger): void {
+  // Cheap existence check: does any row exist for this file?
+  const existing = db
+    .select({ id: principleMatches.id })
+    .from(principleMatches)
+    .where(eq(principleMatches.fileId, locusFileId))
+    .limit(1)
+    .all();
+  if (existing.length > 0) return;
+
+  // Empty for this file. Evaluate every DSL in the principles dir.
+  // We re-evaluate everything (not just for one file) because evaluatePrinciple
+  // is whole-DB scoped and re-running it when partial populations exist would
+  // duplicate rows. The cost is bounded: <20 principles, <1ms each on small
+  // databases, ~50-200ms total in practice.
+  const principlesDir = findPrinciplesDir();
+  if (!existsSync(principlesDir)) return;
+
+  let dslFiles: string[];
+  try {
+    dslFiles = readdirSync(principlesDir).filter((f) => f.endsWith(".dsl"));
+  } catch {
+    return;
+  }
+
+  const t0 = Date.now();
+  let evaluatedCount = 0;
+  for (const dslFile of dslFiles) {
+    const dslPath = join(principlesDir, dslFile);
+    let dslSource: string;
+    try {
+      dslSource = readFileSync(dslPath, "utf-8");
+    } catch {
+      continue;
+    }
+    try {
+      evaluatePrinciple(db, dslSource);
+      evaluatedCount++;
+    } catch (err) {
+      // DSL eval errors (compile errors, missing capabilities) are non-fatal:
+      // we just won't have rows from this principle. Log at detail level so
+      // a curious operator can find it.
+      logger.detail(
+        `[C1] principle ${dslFile} evaluation skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  logger.detail(`[C1] populated principleMatches from ${evaluatedCount}/${dslFiles.length} DSL files in ${Date.now() - t0}ms`);
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +516,19 @@ export async function formulateInvariant(args: {
   // Path 1: existing principle match at locus
   // -------------------------------------------------------------------------
 
+  // Pitch-leak 6 Win 2: ensure principleMatches has been populated for the
+  // locus's file. In production, `provekit analyze` does not run the DSL
+  // evaluator, so the table is empty until the fix loop populates it on
+  // demand. This call is a no-op when rows already exist.
+  const locusFileRow = db
+    .select({ fileId: nodes.fileId })
+    .from(nodes)
+    .where(eq(nodes.id, locus.primaryNode))
+    .get();
+  if (locusFileRow?.fileId !== undefined) {
+    ensurePrincipleMatchesPopulated(db, locusFileRow.fileId, logger);
+  }
+
   // Exact match: principle matched exactly at locus.primaryNode.
   let allMatches = db
     .select({
@@ -528,18 +614,30 @@ export async function formulateInvariant(args: {
       .all();
 
     // Extract placeholder names from template.
+    //
+    // Pitch-leak 6 Win 2: a template with zero {{...}} tokens is treated as
+    // already-concrete SMT (no substitution needed). This is the case for
+    // abstract Bool-style principles (shell-injection, taint patterns) whose
+    // template is a literal "constants + assert + check-sat" sequence rather
+    // than a parameterized formula. Previously this threw and forced the
+    // novel-LLM path; now we accept it and produce a binding for the first
+    // capture so downstream stages still have somewhere to anchor source
+    // positions in audit output.
     const placeholders = extractPlaceholders(smtTemplate);
-    if (placeholders.length === 0) {
-      throw new InvariantFormulationFailed(
-        `principle '${match.principleName}' smt2Template has no {{placeholder}} variables`,
-      );
-    }
 
     // Build bindings (maps placeholder names → source positions).
-    const bindings = buildBindings(db, captureRows, placeholders);
+    // For zero-placeholder templates we still build a binding for the
+    // primary capture to keep the bindings array non-empty (downstream
+    // oracles dereference bindings[0] when reporting witness positions).
+    const bindings = placeholders.length > 0
+      ? buildBindings(db, captureRows, placeholders)
+      : buildBindings(db, captureRows, captureRows.length > 0 ? [captureRows[0]!.captureName] : []);
 
     // Substitute placeholders → SMT constant names.
-    const formalExpression = substituteTemplate(smtTemplate, bindings);
+    // For zero-placeholder templates this is the identity transform.
+    const formalExpression = placeholders.length > 0
+      ? substituteTemplate(smtTemplate, bindings)
+      : smtTemplate;
 
     // Oracle #1: must return SAT.
     const { witness } = runOracleOne(formalExpression);
@@ -570,6 +668,7 @@ export async function formulateInvariant(args: {
       prompt,
       llm,
       stage: "C1",
+      model: getModelTier("C1"),
       logger,
       schemaCheck: validateLlmResponse,
     }));
@@ -623,6 +722,7 @@ export async function formulateInvariant(args: {
       prompt: retryPrompt,
       llm,
       stage: "C1-retry",
+      model: getModelTier("C1"),
       logger,
       schemaCheck: validateLlmResponse,
     });

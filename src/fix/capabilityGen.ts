@@ -23,6 +23,7 @@ import { listCapabilities } from "../sast/capabilityRegistry.js";
 import { executeExtractorSpec } from "./capabilityExecutor.js";
 import { runAgentInOverlay } from "./captureChange.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
+import { getModelTier } from "./modelTiers.js";
 
 // ---------------------------------------------------------------------------
 // Substrate oracle result
@@ -246,6 +247,7 @@ Write all files now using your tools.`;
       llm,
       prompt,
       allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+      model: getModelTier("C6-capabilityAgent"),
     });
   } catch (err) {
     console.warn(`[C6/cap/agent] Agent call failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -380,7 +382,7 @@ export async function proposeCapabilitySpec(args: {
       prompt: buildCapabilitySpecPrompt({ signal, invariant, fixCandidate, gap }),
       llm,
       stage: "C6-capabilitySpec",
-      model: "opus",
+      model: getModelTier("C6-capabilitySpec"),
     });
   } catch (err) {
     console.warn(`[C6/cap] LLM call/parse failed: ${err instanceof Error ? err.message : String(err)}`);

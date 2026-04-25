@@ -27,6 +27,7 @@ import type { FixLoopLogger } from "../logger.js";
 import { buildFixPrompt, parseProposedFixes, verifyCandidate, buildAgentFixPrompt } from "../candidateGen.js";
 import { runAgentInOverlay } from "../captureChange.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
+import { getModelTier } from "../modelTiers.js";
 
 export async function generateFixCandidate(args: {
   signal: BugSignal;
@@ -69,6 +70,8 @@ async function generateFixCandidateViaAgent(args: {
     prompt,
     maxTurns: 20,
     logger: args.logger,
+    model: getModelTier("C3-agent"),
+    stage: "C3-agent",
   });
 
   // verifyCandidate applies the patch to the overlay (idempotent rewrite),
@@ -98,6 +101,8 @@ async function generateFixCandidateViaAgent(args: {
     prompt: retryPrompt,
     maxTurns: 20,
     logger: args.logger,
+    model: getModelTier("C3-agent"),
+    stage: "C3-agent",
   });
 
   const proposed2 = { patch: retryPatch, rationale: retryRationale, confidence: 1.0 };
@@ -142,6 +147,7 @@ async function generateFixCandidateViaJson(args: {
     prompt,
     llm,
     stage: "C3-candidateGen",
+    model: getModelTier("C3-candidateGen"),
   });
   const candidatePatches = parseProposedFixes(parsed);
 

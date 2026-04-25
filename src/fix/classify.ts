@@ -13,6 +13,7 @@ import {
   getRemediationLayer,
 } from "./remediationLayerRegistry.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
+import { getModelTier } from "./modelTiers.js";
 import type {
   RemediationLayerDescriptor,
 } from "./remediationLayerRegistry.js";
@@ -196,6 +197,7 @@ export async function classify(
       prompt,
       llm,
       stage: "classify",
+      model: getModelTier("classify"),
       schema: CLASSIFY_SCHEMA,
       schemaCheck: validateClassifyResponse,
     });

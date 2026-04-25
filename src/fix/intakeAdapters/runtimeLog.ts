@@ -14,6 +14,7 @@ import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
+import { getModelTier } from "../modelTiers.js";
 
 /**
  * Detect stack-trace-style lines:
@@ -74,7 +75,7 @@ const adapter: IntakeAdapter = {
         prompt,
         llm,
         stage: "intake-runtimeLog",
-        model: "opus",
+        model: getModelTier("intake-runtimeLog"),
       });
     } catch {
       parsed = {

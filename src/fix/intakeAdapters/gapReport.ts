@@ -26,6 +26,7 @@ import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
+import { getModelTier } from "../modelTiers.js";
 
 interface GapReportContext {
   gapReportId: string | number;
@@ -104,7 +105,7 @@ const adapter: IntakeAdapter = {
         prompt,
         llm,
         stage: "intake-gapReport",
-        model: "opus",
+        model: getModelTier("intake-gapReport"),
       });
     } catch {
       // Fallback: use raw reason text.

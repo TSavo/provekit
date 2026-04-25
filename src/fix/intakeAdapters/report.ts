@@ -15,6 +15,7 @@ import { registerIntakeAdapter } from "../intakeRegistry.js";
 import type { IntakeInput, IntakeAdapter } from "../intakeRegistry.js";
 import type { BugSignal, LLMProvider } from "../types.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
+import { getModelTier } from "../modelTiers.js";
 
 function buildPrompt(text: string): string {
   return (
@@ -52,7 +53,7 @@ const adapter: IntakeAdapter = {
       prompt,
       llm,
       stage: "intake-report",
-      model: "opus",
+      model: getModelTier("intake-report"),
     });
 
     return {

@@ -22,6 +22,7 @@ import { applyPatchToOverlay, reindexOverlay } from "./overlay.js";
 import { runAgentInOverlay } from "./captureChange.js";
 import { detectTestRunner } from "./testRunners/index.js";
 import type { InvariantClaim, BugLocus, BugSignal, OverlayHandle, CodePatch, LLMProvider } from "./types.js";
+import { getModelTier } from "./modelTiers.js";
 
 // ---------------------------------------------------------------------------
 // extractWitnessInputs
@@ -206,7 +207,7 @@ it("${testName}", () => {
 });
 `;
 
-  const raw = await llm.complete({ prompt, model: "sonnet" });
+  const raw = await llm.complete({ prompt, model: getModelTier("C5-testGen") });
 
   // Extract code block if LLM wraps in markdown fences
   let code = raw.trim();

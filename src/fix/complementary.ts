@@ -35,6 +35,7 @@ import { buildSASTForFile, reindexFile } from "../sast/builder.js";
 import { applyPatchToOverlay, reindexOverlay } from "./overlay.js";
 import { parseProposedFixes } from "./candidateGen.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
+import { getModelTier } from "./modelTiers.js";
 import type { Db } from "../db/index.js";
 import type {
   BugLocus,
@@ -432,6 +433,7 @@ Rules:
     prompt,
     llm,
     stage: "C4-complementary",
+    model: getModelTier("C4-complementary"),
   });
 
   // Check for explicit skip.
@@ -575,6 +577,8 @@ Otherwise, edit the file at ${siteDisplay} to apply the complementary fix.`;
       llm,
       prompt,
       allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+      model: getModelTier("C4-agent"),
+      stage: "C4-agent",
     });
   } catch (err) {
     // Agent threw (e.g. no agent method). Caller should handle.
