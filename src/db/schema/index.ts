@@ -6,3 +6,4 @@ export * from "./principleMatches.js";
 export * from "../../sast/schema/index.js";
 export * from "./fixBundles.js";
 export * from "./principlesLibrary.js";
+export * from "./harvestExpressibility.js";

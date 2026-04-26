@@ -28,3 +28,6 @@ dist/
 # Harvest staging — discovered principles awaiting validation/promotion.
 # Once promoted to .provekit/principles/ they become source-controlled.
 .provekit/harvest/staging/
+.provekit/harvest/harvest.db
+.provekit/harvest/harvest.db-shm
+.provekit/harvest/harvest.db-wal
