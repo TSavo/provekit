@@ -386,6 +386,124 @@ CREATE TABLE node_my_capability (
 CREATE INDEX IF NOT EXISTS idx_node_my_capability_property ON node_my_capability(property_name);
 \`\`\`
 
+# DSL grammar (CRITICAL — the parser is strict; this is the ONLY supported shape)
+
+The DSL principle file at \`.provekit/principles/<name>.dsl\` MUST follow
+this exact grammar. The parser does NOT accept \`description:\`,
+\`severity:\`, \`category:\`, \`bug_class:\`, \`forbid\`, or \`match { ... }\`
+block syntax — those keywords don't exist. Below is the entire grammar
+with two complete real examples.
+
+## Skeleton
+
+\`\`\`dsl
+principle <name> {
+  match $<var>: node where <capability>.<column> == "<value>"
+  report violation {
+    at $<var>
+    captures { <name>: $<var> }
+    message "<human-readable description>"
+  }
+}
+\`\`\`
+
+Optional clauses (in order between \`match\` and \`report\`):
+- \`require no $<var>: <predicateName>($<other>) where <relation>(...)\` —
+  forbid the existence of a sibling node satisfying a predicate.
+- \`require $<var>: <predicateName>($<other>)\` — require a sibling node.
+- Predicates declared at file scope:
+  \`\`\`
+  predicate <name>($<param>: node) {
+    match $<var>: node where <capability>.<column> == "<value>"
+  }
+  \`\`\`
+
+Comments are \`//\` line comments. No block comments.
+
+## Real example 1: simple match (falsy-default principle)
+
+\`\`\`dsl
+principle falsy-default {
+  match $node: node where truthiness.coercion_kind == "falsy_default"
+  report violation {
+    at $node
+    captures { node: $node }
+    message "|| used as default may silently discard valid falsy values"
+  }
+}
+\`\`\`
+
+## Real example 2: predicate + require (division-by-zero principle)
+
+\`\`\`dsl
+predicate zero_guard($div: node) {
+  match $g: node where narrows.narrowing_kind == "literal_eq"
+}
+
+principle division-by-zero {
+  match $div: node where arithmetic.op == "/"
+  require no $guard: zero_guard($div)
+    where same_value($guard.narrows.target_node, $div.arithmetic.rhs_node)
+  report violation {
+    at $div
+    captures { division: $div }
+    message "division denominator may be zero"
+  }
+}
+\`\`\`
+
+## Anti-patterns (DO NOT do these — parser will fail)
+
+\`\`\`dsl
+// WRONG — \`description:\`, \`severity:\`, \`category:\` are not valid keywords
+principle bad_principle {
+  description: "..."     // ← parser error
+  severity: warning      // ← parser error
+  category: correctness  // ← parser error
+  match { capability: foo as occ }  // ← also wrong; match must be \`match $x: node where ...\`
+}
+\`\`\`
+
+\`\`\`dsl
+// WRONG — \`forbid\` is not a keyword. Use \`require no $x: <pred>($y)\` instead.
+principle bad_other {
+  forbid (j: myCapability) { ... }  // ← parser error
+}
+\`\`\`
+
+## Your principle for THIS bug
+
+For the substrate path you're on now, your principle's \`match\` clause
+should reference the capability you're proposing. The simplest viable
+shape is:
+
+\`\`\`dsl
+principle <kebab-case-name> {
+  match $x: node where <yourCapabilityDslName>.<some_column> == "<value>"
+  report violation {
+    at $x
+    captures { site: $x }
+    message "<one-sentence description of the bug shape>"
+  }
+}
+\`\`\`
+
+If your capability extractor only emits rows for bug-shaped sites
+(which it should — that's the whole point of the load-bearing
+discriminator in the extractor), then the principle can be the simplest
+form: every row in the new table is a violation.
+
+\`\`\`dsl
+principle <kebab-case-name> {
+  match $x: node where <yourCapabilityDslName>.node_id == $x
+  report violation {
+    at $x
+    captures { site: $x }
+    message "<one-sentence description>"
+  }
+}
+\`\`\`
+
 # Files to write (all paths relative to overlay root)
 
 1. .provekit/capability-proposal/<capabilityName>/schema.ts — TypeScript

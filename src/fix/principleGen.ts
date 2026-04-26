@@ -989,6 +989,21 @@ export async function proposeWithCapability(args: {
 
   const { capabilitySpec, dslSource, name, smtTemplate, teachingExample } = proposal;
 
+  // 1.5. Pre-validate the DSL source with the parser before running the
+  // expensive substrate oracles. The C6 capability agent occasionally
+  // hallucinates DSL syntax (description:/severity:/forbid blocks) that
+  // the parser doesn't accept — that always fails oracle #18 and wastes
+  // the substrate oracle work. Fast-fail here with a clean error.
+  try {
+    parseDSL(dslSource);
+  } catch (err) {
+    console.warn(
+      `[C6] DSL pre-validation failed: ${err instanceof Error ? err.message : String(err)}\n` +
+      `    First 200 chars of dslSource: ${dslSource.slice(0, 200)}`,
+    );
+    return null;
+  }
+
   // 2. Run substrate oracles #14/#16/#17 (before touching the registry).
   const substrateResult = await runSubstrateOracles(capabilitySpec);
   if (!substrateResult.passed) {
