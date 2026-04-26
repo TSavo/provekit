@@ -22,6 +22,8 @@ import { dirname } from "path";
 import { extractBugs, type HarvestCandidate } from "../src/fix/harvest/extractBugs.js";
 import { recognizeCandidate } from "../src/fix/harvest/recognize.js";
 import { discoverPrinciple, type DiscoveryResult } from "../src/fix/harvest/discover.js";
+import { appendHarvestProvenance, type HarvestProvenanceEntry } from "../src/fix/harvest/provenance.js";
+import { promoteAllStaged } from "../src/fix/harvest/promote.js";
 import { createProvider } from "../src/llm/index.js";
 import type { LLMProvider } from "../src/fix/types.js";
 
@@ -43,11 +45,20 @@ async function main(): Promise<void> {
   const bugFlag = parseFlag(args, "--bug");
   const maxFlag = parseFlag(args, "--max");
   const max = maxFlag !== undefined ? parseInt(maxFlag, 10) : 1;
+  // --persist-provenance: append harvest provenance to recognized candidates'
+  // principle JSONs at end of run. Off by default (calibration runs shouldn't
+  // mutate the source-controlled library).
+  const persistProvenance = args.includes("--persist-provenance");
+  // --promote: after discovery, run promotion pass over staging. Off by
+  // default for the same reason.
+  const promote = args.includes("--promote");
 
   // Default staging dir lives in the project root.
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  const stagingDir = join(__dirname, "..", ".provekit", "harvest", "staging");
+  const projectRoot = join(__dirname, "..");
+  const stagingDir = join(projectRoot, ".provekit", "harvest", "staging");
+  const principlesDir = join(projectRoot, ".provekit", "principles");
   mkdirSync(stagingDir, { recursive: true });
 
   // Build provider + bridge to the fix-layer LLMProvider shape (see
@@ -95,13 +106,33 @@ async function main(): Promise<void> {
 
   let processed = 0;
   let skippedRecognized = 0;
+  // All candidates we examined, indexed by "<project>-<bugId>" — used by the
+  // promotion pass at end-of-run as the negative cohort source.
+  const candidatesById = new Map<string, HarvestCandidate>();
+  // Recognized provenance entries to write at end (if --persist-provenance).
+  const recognizedProvenance: HarvestProvenanceEntry[] = [];
+
   for (const { candidate, project } of toExamine) {
+    candidatesById.set(`${project}-${candidate.source.bugId}`, candidate);
     if (processed >= max) break;
 
     // Recognition gate: skip candidates already covered by the library.
-    const rec = recognizeCandidate(candidate);
+    const rec = recognizeCandidate(candidate, { principlesDir });
     if (rec.recognized) {
       skippedRecognized++;
+      // Track provenance: each principle that fired earns one entry. Dedup
+      // by principle name within a single candidate (the recognizer may
+      // report the same principle on multiple lines).
+      const seen = new Set<string>();
+      for (const m of rec.matches) {
+        if (seen.has(m.principleName)) continue;
+        seen.add(m.principleName);
+        recognizedProvenance.push({
+          principleId: m.principleName,
+          projectId: project,
+          bugId: candidate.source.bugId,
+        });
+      }
       continue;
     }
 
@@ -166,6 +197,28 @@ async function main(): Promise<void> {
   console.log(`processed: ${processed}`);
   console.log(`skipped (already recognized): ${skippedRecognized}`);
   console.log(`staging dir: ${stagingDir}`);
+
+  // Optional provenance writeback for recognized candidates.
+  if (persistProvenance && recognizedProvenance.length > 0) {
+    const r = appendHarvestProvenance(recognizedProvenance, principlesDir);
+    console.log();
+    console.log(`# Provenance writeback`);
+    console.log(`appended: ${r.appended}`);
+    console.log(`duplicates (idempotent): ${r.duplicates}`);
+    if (r.missingPrinciples.length > 0) {
+      console.log(`missing principle ids (skipped): ${r.missingPrinciples.length}`);
+    }
+  }
+
+  // Optional promotion pass over staging.
+  if (promote) {
+    console.log();
+    console.log(`# Promotion pass`);
+    const r = promoteAllStaged({ stagingDir, candidatesById, principlesDir });
+    console.log(`records examined: ${r.totalRecords}`);
+    console.log(`promoted: ${r.totalPromoted}`);
+    console.log(`quarantined: ${r.totalQuarantined}`);
+  }
 }
 
 function truncate(s: string, max: number): string {
