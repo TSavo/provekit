@@ -1000,12 +1000,38 @@ Your previous (over-broad) principle:
 ${failedDsl}
 \`\`\`
 
-Produce a tighter principle. Same DSL grammar:
+# DSL grammar (parser is strict)
+
+Allowed shape:
   principle <name> {
-    match $x: node where <capability>.<jsColumnName> == "<value>"
-    [optional: require [no] $g: predicate(...)]
-    report violation { at $x captures { site: $x } message "..." }
+    match $x: node where <capability>.<jsColumnName> == "<literal>"
+    [require no $g: <predicate>($x) where same_value(\$g.cap.col, $x.cap.col)]
+    report violation {
+      at $x
+      captures { site: $x }
+      message "..."
+    }
   }
+
+Predicates (file scope) for narrowing:
+  predicate <name>($x: node) {
+    match $g: node where <capability>.<jsColumnName> == "<literal>"
+  }
+
+Forbidden — common LLM hallucinations the parser rejects:
+- NO boolean operators: \`&&\`, \`||\`, \`!\`, \`AND\`, \`OR\`, \`NOT\`
+  - To AND multiple constraints: use multiple \`require\` clauses
+  - To OR alternatives: emit two separate principles (DSL has no OR)
+- NO compound where: \`where a == "x" && b == "y"\` — split into
+  match + require, or use a single \`==\` per where
+- NO method-call syntax: \`x.split(...)\`, \`x.length\`, \`length($x)\`
+  — only \`==\` against a literal is supported
+- NO arithmetic: \`+\`, \`-\`, \`*\`, \`<\`, \`>\` are not in the DSL
+- NO chained dot access: \`$x.cap.col.sub\` — depth is one level
+  (use \`$x.cap.col\` or in a relation like \`same_value($x.cap.a, $y.cap.b)\`)
+
+Use the JS property name from the schema (camelCase) in DSL queries,
+NEVER the SQL column name (snake_case).
 
 Return ONLY a JSON object with one field:
   { "dslSource": "<full DSL principle text, NO markdown fencing>" }
