@@ -25,3 +25,6 @@ dist/
 # Fix-loop run artifacts — per-run log files (debug output, not versioned knowledge)
 .provekit/fix-loop-*.log
 .provekit/fuzz-runs/
+# Harvest staging — discovered principles awaiting validation/promotion.
+# Once promoted to .provekit/principles/ they become source-controlled.
+.provekit/harvest/staging/
