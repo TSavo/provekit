@@ -220,6 +220,14 @@ Missing predicate: ${gap}
 
 Existing capability tables: ${existingTables}
 
+# Working directory
+
+Your cwd is ${overlay.worktreePath}. Use RELATIVE paths from this cwd
+when writing files (e.g. \`.provekit/capability-proposal/<name>/schema.ts\`),
+NOT absolute paths like \`/home/user/...\` or \`/Users/...\`. The Write
+tool resolves relative paths against your cwd; absolute paths land outside
+the overlay and trigger a confinement error.
+
 # How your capability will be validated
 
 After you produce the spec, oracle #16 will:

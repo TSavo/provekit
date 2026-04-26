@@ -276,6 +276,140 @@ describe("captureChange: runAgentInOverlay", () => {
   }, 30_000);
 
   // -------------------------------------------------------------------------
+  // 5b. Layer 2: stub agent hallucinates absolute Write path then self-corrects
+  // -------------------------------------------------------------------------
+  it("does NOT throw on Write bypass when same .provekit tail was also written inside overlay (self-correction)", async () => {
+    // Bug-1 v16 regression: agent hallucinated /home/user/.provekit/...
+    // for the first round of writes, then ran pwd, saw the real overlay,
+    // and re-wrote everything under /<overlay>/.provekit/...  The bypass
+    // detector caught the first write and threw, even though the agent
+    // had already self-corrected. This tolerates that case.
+    const source = "export function corge() { return 1; }\n";
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-cc-selfcorr-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    const locus = makeLocus(filePath);
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const tailA = ".provekit/capability-proposal/foo/schema.ts";
+    const tailB = ".provekit/capability-proposal/foo/migration.sql";
+    const llm = new StubLLMProvider(
+      new Map(),
+      [{
+        matchPrompt: "fix",
+        fileEdits: [
+          { file: tailA, newContent: "// schema\n" },
+          { file: tailB, newContent: "CREATE TABLE x (id TEXT)\n" },
+        ],
+        text: "Wrote files",
+        toolUses: [
+          // First — agent hallucinates absolute /home/user/ path
+          {
+            id: "tu-bad-1",
+            name: "Write",
+            input: { file_path: "/home/user/" + tailA, content: "// schema\n" },
+            result: "ok",
+            isError: false,
+            turn: 1,
+            ms: 10,
+          },
+          {
+            id: "tu-bad-2",
+            name: "Write",
+            input: { file_path: "/home/user/" + tailB, content: "CREATE TABLE x (id TEXT)\n" },
+            result: "ok",
+            isError: false,
+            turn: 1,
+            ms: 10,
+          },
+          // Then — agent corrects to the real overlay path
+          {
+            id: "tu-good-1",
+            name: "Write",
+            input: { file_path: join(overlay.worktreePath, tailA), content: "// schema\n" },
+            result: "ok",
+            isError: false,
+            turn: 2,
+            ms: 10,
+          },
+          {
+            id: "tu-good-2",
+            name: "Write",
+            input: { file_path: join(overlay.worktreePath, tailB), content: "CREATE TABLE x (id TEXT)\n" },
+            result: "ok",
+            isError: false,
+            turn: 2,
+            ms: 10,
+          },
+        ],
+      }],
+    );
+
+    // Should NOT throw — Write bypass was self-corrected.
+    const { patch } = await runAgentInOverlay({ overlay, llm, prompt: "fix" });
+    expect(patch).toBeDefined();
+  }, 30_000);
+
+  it("DOES throw on Edit bypass even if a corresponding overlay-internal write exists", async () => {
+    // Edit on an outside path means modifying real existing files —
+    // self-correction via a separate Write doesn't undo the Edit. Always throw.
+    const source = "export function grault() { return 1; }\n";
+    const { repoDir, filePath } = makeTestRepo(source);
+    cleanups.push(() => rmSync(repoDir, { recursive: true, force: true }));
+
+    const mainTmp = mkdtempSync(join(tmpdir(), "provekit-cc-edit-bypass-"));
+    cleanups.push(() => rmSync(mainTmp, { recursive: true, force: true }));
+
+    const { db: mainDb } = openMainDb(mainTmp);
+    cleanups.push(() => { try { mainDb.$client.close(); } catch { /* ignore */ } });
+
+    const locus = makeLocus(filePath);
+    const overlay = await openOverlay({ locus, db: mainDb });
+    cleanups.push(() => closeOverlay(overlay));
+
+    const tail = ".provekit/principles/foo.dsl";
+    const llm = new StubLLMProvider(
+      new Map(),
+      [{
+        matchPrompt: "fix",
+        fileEdits: [{ file: tail, newContent: "principle\n" }],
+        text: "Fixed",
+        toolUses: [
+          {
+            id: "tu-edit-bypass",
+            name: "Edit",
+            input: { file_path: "/home/user/" + tail, old_string: "x", new_string: "y" },
+            result: "ok",
+            isError: false,
+            turn: 1,
+            ms: 10,
+          },
+          {
+            id: "tu-write-good",
+            name: "Write",
+            input: { file_path: join(overlay.worktreePath, tail), content: "principle\n" },
+            result: "ok",
+            isError: false,
+            turn: 1,
+            ms: 10,
+          },
+        ],
+      }],
+    );
+
+    await expect(
+      runAgentInOverlay({ overlay, llm, prompt: "fix" }),
+    ).rejects.toThrow(OverlayBypassError);
+  }, 30_000);
+
+  // -------------------------------------------------------------------------
   // 6. Layer 2: stub agent uses Bash with absolute path outside overlay → warn (no throw)
   // -------------------------------------------------------------------------
   it("does NOT throw (only warns) when stub agent Bash command references path outside overlay", async () => {

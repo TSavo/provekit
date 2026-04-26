@@ -82,22 +82,43 @@ export async function runAgentInOverlay(args: {
     try { return realpathSync(cwd); } catch { return cwd; }
   })();
 
+  // Two-pass: collect all path-bearing tool uses first, then decide which
+  // bypasses to throw on. Self-correction is common — the agent hallucinates
+  // an absolute path like `/home/user/.provekit/foo`, sees the failure (or
+  // its own pwd), then re-writes to the real overlay path. The first pass
+  // finds bypass events; the second pass tolerates Write bypasses if the
+  // same relative tail was also written inside the overlay (the agent
+  // self-corrected). Read/Edit bypasses still throw — those touch real
+  // files outside the overlay and indicate genuine confinement failure.
+  type ToolPath = { tool: string; rawPath: string; overlayRel: string | null };
+  const bypassEvents: ToolPath[] = [];
+  const inOverlayPaths = new Set<string>();
+
   for (const tu of result.toolUses) {
     const inp = (tu.input ?? {}) as Record<string, unknown>;
 
     if (tu.name === "Edit" || tu.name === "Write" || tu.name === "Read") {
       const rawPath = typeof inp["file_path"] === "string" ? inp["file_path"] : null;
-      if (rawPath && rawPath.startsWith("/")) {
+      if (!rawPath) continue;
+
+      if (rawPath.startsWith("/")) {
         const realRaw = (() => { try { return realpathSync(rawPath); } catch { return rawPath; } })();
         const rel = relative(overlayRootReal, realRaw);
         if (rel.startsWith("..")) {
-          // Bypass confirmed. Log at error level with full path for audit trail.
-          logger.error(
-            `overlay-bypass: ${tu.name} on path outside overlay`,
-            { tool: tu.name, path: rawPath, overlayRoot: cwd, stage: stageName },
-          );
-          throw new OverlayBypassError(tu.name, rawPath, cwd);
+          // Find the .provekit/-rooted suffix if present (the canonical agent
+          // output shape). We compare on this suffix to detect self-correction.
+          const provekitMatch = rawPath.match(/(\.provekit\/.+)$/);
+          const overlayRel = provekitMatch ? provekitMatch[1]! : null;
+          bypassEvents.push({ tool: tu.name, rawPath, overlayRel });
+          continue;
         }
+        // Path normalized to inside the overlay — record its in-overlay tail.
+        const provekitMatch = rawPath.match(/(\.provekit\/.+)$/);
+        if (provekitMatch) inOverlayPaths.add(provekitMatch[1]!);
+      } else {
+        // Relative path — agent kept things in the overlay's cwd. Record.
+        const provekitMatch = rawPath.match(/(\.provekit\/.+)$/);
+        if (provekitMatch) inOverlayPaths.add(provekitMatch[1]!);
       }
     } else if (tu.name === "Bash") {
       const cmd = typeof inp["command"] === "string" ? inp["command"] : null;
@@ -118,6 +139,33 @@ export async function runAgentInOverlay(args: {
         }
       }
     }
+  }
+
+  // Second pass: decide which bypass events warrant a throw.
+  for (const ev of bypassEvents) {
+    const selfCorrected =
+      ev.tool === "Write" &&
+      ev.overlayRel !== null &&
+      inOverlayPaths.has(ev.overlayRel);
+
+    if (selfCorrected) {
+      // Agent hallucinated an absolute path then re-wrote to the correct
+      // overlay path. Tolerate: log a warning, keep going. Common with
+      // open toolsets where the agent picks /home/user/... before pwd.
+      logger.error(
+        `overlay-bypass-warn: ${ev.tool} on ${ev.rawPath} but same relative tail was also written inside overlay (self-corrected)`,
+        { tool: ev.tool, path: ev.rawPath, overlayRoot: cwd, stage: stageName },
+      );
+      continue;
+    }
+
+    // Hard bypass: Read/Edit always throws (those touch real existing
+    // files outside the overlay), or Write with no in-overlay counterpart.
+    logger.error(
+      `overlay-bypass: ${ev.tool} on path outside overlay`,
+      { tool: ev.tool, path: ev.rawPath, overlayRoot: cwd, stage: stageName },
+    );
+    throw new OverlayBypassError(ev.tool, ev.rawPath, cwd);
   }
 
   // Reconstruct CodePatch: modified tracked files from git diff + new untracked files.
