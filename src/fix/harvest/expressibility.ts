@@ -75,12 +75,19 @@ const __dirname = dirname(__filename);
 // Threshold: number of distinct capabilities with rows on dirty-line nodes
 // required to call a candidate "expressible-now-pending-principle". Below
 // that threshold we don't have enough signal to combine into a principle;
-// the candidate falls to unknown.
+// the candidate falls to unknown (or needs-new-relation if cross-locus
+// signal dominates).
 const PENDING_PRINCIPLE_CAPABILITY_THRESHOLD = 2;
 
-// Threshold: minimum number of cross-locus data_flow_transitive edges before
-// declaring "needs-new-relation". One stray edge isn't evidence of a chain.
-const CROSS_LOCUS_EDGE_THRESHOLD = 1;
+// needs-new-relation requires BOTH a high absolute count of cross-locus
+// data_flow_transitive edges AND a dominant ratio against intra-locus edges.
+// First pass used threshold=1, which fired on nearly every non-trivial fix
+// because variables defined outside the diff naturally flow into changes.
+// The honest signal is "barely any substrate coverage and the bug is
+// dominantly cross-scope" — strong enough to require new relation
+// machinery, not just data flow at the edges.
+const CROSS_LOCUS_EDGE_ABS_THRESHOLD = 10;
+const CROSS_LOCUS_EDGE_RATIO_THRESHOLD = 0.8;
 
 /**
  * Tag a single candidate. Builds a scratch SAST DB, runs both layers, returns
@@ -207,17 +214,12 @@ function classify(sig: Signature, taggedAt: string): ExpressibilityTag {
     taggedAt,
   };
 
-  if (sig.crossLocusEdges >= CROSS_LOCUS_EDGE_THRESHOLD) {
-    return {
-      ...base,
-      tag: "needs-new-relation",
-      signatureRelations: ["data_flow_chain"],
-      missingColumns: [],
-      missingRelations: ["data_flow_chain (transitive across locus boundary)"],
-      auditLine: `needs-new-relation: ${sig.crossLocusEdges} cross-locus data_flow_transitive edges; capabilities=[${[...sig.capabilities].join(",")}] kinds=[${sig.dirtyKinds.join(",")}]`,
-    };
-  }
+  const totalEdges = sig.crossLocusEdges + sig.intraLocusEdges;
+  const crossRatio = totalEdges > 0 ? sig.crossLocusEdges / totalEdges : 0;
 
+  // Default for substrate-covered candidates: pending-principle. The cross-locus
+  // signal alone is not enough — variables defined outside the diff flowing in
+  // is normal in any non-trivial fix.
   if (sig.capabilities.size >= PENDING_PRINCIPLE_CAPABILITY_THRESHOLD) {
     return {
       ...base,
@@ -225,10 +227,13 @@ function classify(sig: Signature, taggedAt: string): ExpressibilityTag {
       signatureRelations: [],
       missingColumns: [],
       missingRelations: [],
-      auditLine: `expressible-now-pending-principle: ${sig.capabilities.size} capabilities cover dirty nodes [${[...sig.capabilities].join(",")}]; intra-locus edges=${sig.intraLocusEdges}; no principle fires yet`,
+      auditLine: `expressible-now-pending-principle: ${sig.capabilities.size} capabilities cover dirty nodes [${[...sig.capabilities].join(",")}]; cross/intra=${sig.crossLocusEdges}/${sig.intraLocusEdges} (${(crossRatio * 100).toFixed(0)}%); no principle fires yet`,
     };
   }
 
+  // 0 capabilities on dirty nodes but dirty nodes exist: substrate doesn't
+  // describe these AST shapes. Likely a kind/operator the extractor doesn't
+  // cover yet (e.g., array methods like push/splice with no array_op capability).
   if (sig.capabilities.size === 0 && sig.dirtyNodeCount > 0) {
     return {
       ...base,
@@ -237,6 +242,25 @@ function classify(sig: Signature, taggedAt: string): ExpressibilityTag {
       missingColumns: [`<no capability rows on ${sig.dirtyNodeCount} dirty nodes of kinds [${sig.dirtyKinds.join(",")}]>`],
       missingRelations: [],
       auditLine: `needs-capability-extension: 0 capabilities have rows on ${sig.dirtyNodeCount} dirty nodes; kinds=[${sig.dirtyKinds.join(",")}]`,
+    };
+  }
+
+  // Barely-covered + dominantly cross-locus: the bug shape mostly reaches
+  // outside the diff, suggesting a chain or alias relation is the real
+  // missing piece. This is the rare case; most "cross-locus" candidates fall
+  // to pending-principle.
+  if (
+    sig.capabilities.size === 1 &&
+    sig.crossLocusEdges >= CROSS_LOCUS_EDGE_ABS_THRESHOLD &&
+    crossRatio >= CROSS_LOCUS_EDGE_RATIO_THRESHOLD
+  ) {
+    return {
+      ...base,
+      tag: "needs-new-relation",
+      signatureRelations: ["data_flow_chain"],
+      missingColumns: [],
+      missingRelations: ["data_flow_chain (transitive across locus boundary)"],
+      auditLine: `needs-new-relation: 1 capability + ${sig.crossLocusEdges}/${totalEdges} cross-locus edges (${(crossRatio * 100).toFixed(0)}%); capabilities=[${[...sig.capabilities].join(",")}]`,
     };
   }
 
