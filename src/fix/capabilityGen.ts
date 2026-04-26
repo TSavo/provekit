@@ -438,7 +438,7 @@ Write all files now using your tools.`;
       overlay,
       llm,
       prompt,
-      allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+      allowedTools: [".*"],
       model: getModelTier("C6-capabilityAgent"),
     });
   } catch (err) {

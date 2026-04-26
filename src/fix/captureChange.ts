@@ -44,7 +44,7 @@ export async function runAgentInOverlay(args: {
 
   const result = await args.llm.agent(args.prompt, {
     cwd,
-    allowedTools: args.allowedTools ?? ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+    allowedTools: args.allowedTools ?? [".*"],
     model: args.model,
     maxTurns: args.maxTurns ?? 20,
   });

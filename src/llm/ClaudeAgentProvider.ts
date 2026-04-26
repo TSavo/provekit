@@ -58,7 +58,10 @@ export class ClaudeAgentProvider implements LLMProvider {
 
   async agent(prompt: string, options: AgentRequestOptions): Promise<AgentResult> {
     const { cwd } = options;
-    const allowedTools = options.allowedTools ?? ["Read", "Edit", "Write", "Bash", "Glob", "Grep"];
+    // Default: regex wildcard — let the agent use whatever it needs (built-in,
+    // MCP, skills). Callers that need a tighter contract (e.g. structured-
+    // JSON output via Write) pass an explicit narrower list.
+    const allowedTools = options.allowedTools ?? [".*"];
     const maxTurns = options.maxTurns ?? 20;
 
     // Map tier alias to a model string. The SDK accepts full model IDs or aliases.

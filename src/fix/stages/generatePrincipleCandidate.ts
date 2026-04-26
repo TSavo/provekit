@@ -59,17 +59,22 @@ export async function generatePrincipleCandidate(args: {
   //       canonical shape referenced an unknown column. Standard substrate
   //       path with the LLM-named gap.
   //   (b) all_shapes_rejected — LLM emitted bare-principle shapes that all
-  //       compiled but adversarial validation rejected as too-broad. The
-  //       mechanical fallback: try substrate with a synthetic gap describing
-  //       the rejection evidence. Closes the v13 routing hole where bare
-  //       principles failed adversarial validation and we silently produced
-  //       no candidate, despite a substrate route potentially working.
+  //       compiled but adversarial validation rejected as too-broad. Build
+  //       a predicate-shaped gap from the invariant description so the
+  //       capability agent has a clean target to model. Including the raw
+  //       adversarial metrics ("false-positive pass: 3/3") as the gap
+  //       confused the agent (v15: 11 min of exploration with no spec
+  //       written) — agents need a predicate description, not validation
+  //       metrics.
   const gap =
     attempt.kind === "capability_gap"
       ? attempt.gap
-      : `bare-principle shapes were too broad: ${attempt.rejectedShapes
-          .map((s) => `${s.name} (${s.evidence})`)
-          .join("; ")}`;
+      : `Express the predicate: ${args.invariant.description}\n\n` +
+        `Stock SAST capabilities cannot narrow this precisely — bare-principle ` +
+        `shapes (${attempt.rejectedShapes.map((s) => s.name).join(", ")}) ` +
+        `compiled but matched too broadly. The new capability must encode the ` +
+        `contextual semantic that distinguishes the bug shape from look-alike ` +
+        `non-bug code.`;
 
   const substrate = await proposeWithCapability({
     ...args,

@@ -568,7 +568,7 @@ Write the test file using your file editing tools now.`;
     overlay,
     llm,
     prompt,
-    allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+    allowedTools: [".*"],
   });
 
   // Read back the file the agent wrote.
@@ -612,7 +612,7 @@ Rewrite the test file at ${testFilePath} using ONLY this import path. Do not use
       overlay,
       llm,
       prompt: retryPrompt,
-      allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+      allowedTools: [".*"],
     });
 
     if (!existsSync(absTestPath)) {

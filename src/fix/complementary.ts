@@ -576,7 +576,7 @@ Otherwise, edit the file at ${siteDisplay} to apply the complementary fix.`;
       overlay,
       llm,
       prompt,
-      allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+      allowedTools: [".*"],
       model: getModelTier("C4-agent"),
       stage: "C4-agent",
     });
