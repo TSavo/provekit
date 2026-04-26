@@ -513,7 +513,34 @@ Write all files now using your tools.`;
 
   const resolvedCapabilityName = (typeof meta["capabilityName"] === "string" ? meta["capabilityName"] : capabilityName);
   const rationale = typeof meta["rationale"] === "string" ? meta["rationale"] : "";
-  const dslSource = typeof meta["dslSource"] === "string" ? meta["dslSource"] : "";
+  let dslSource = typeof meta["dslSource"] === "string" ? meta["dslSource"] : "";
+  // Resilience: agent sometimes writes the .dsl file separately and puts the
+  // path string into meta.dslSource instead of inlining the source. Detect
+  // that pattern (relative path under .provekit/principles/ ending in .dsl,
+  // single line, no DSL keywords) and read the file from the overlay. If
+  // the file isn't there or reading fails, fall through with the original
+  // string — oracle #18 will reject it as a parse error.
+  if (
+    dslSource &&
+    !dslSource.includes("\n") &&
+    /^\.provekit\/principles\/.+\.dsl$/.test(dslSource.trim()) &&
+    !/\bprinciple\b|\bmatch\b|\bforbid\b/.test(dslSource)
+  ) {
+    const dslPath = join(overlay.worktreePath, dslSource.trim());
+    if (existsSync(dslPath)) {
+      try {
+        const fileContents = readFileSync(dslPath, "utf-8");
+        if (fileContents.trim().length > 0) {
+          console.warn(
+            `[C6/cap/agent] meta.dslSource was a path '${dslSource.trim()}'; recovered DSL from file (${fileContents.length} chars)`,
+          );
+          dslSource = fileContents;
+        }
+      } catch {
+        // fall through; oracle #18 will surface the parse error
+      }
+    }
+  }
   const name = typeof meta["name"] === "string" ? meta["name"] : resolvedCapabilityName;
   const smtTemplate = typeof meta["smtTemplate"] === "string" ? meta["smtTemplate"] : "";
   const teachingExample = (meta["teachingExample"] as { domain: string; explanation: string; smt2: string } | undefined) ?? {

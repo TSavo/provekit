@@ -544,6 +544,78 @@ export const nodeDivisionCap = sqliteTable("node_division_cap", {
     }
   }, 30_000);
 
+  it("agent path: meta.dslSource is a relative .dsl path → recovers DSL from the file the agent wrote", async () => {
+    // Bug-1 v14 regression: agent put the .dsl path string into meta.dslSource
+    // instead of inlining the source. Oracle #18 then tried to parseDSL the
+    // path and failed with "Unexpected character '/'". The mechanical
+    // resilience: detect the pattern, read the file from the overlay.
+    const repoDir = mkdtempSync(join(tmpdir(), "provekit-c6-pathrec-"));
+    try {
+      execFileSync("git", [...GIT_ID, "init", repoDir]);
+      writeFileSync(join(repoDir, "README.md"), "hello\n", "utf8");
+      execFileSync("git", [...GIT_ID, "add", "."], { cwd: repoDir });
+      execFileSync("git", [...GIT_ID, "commit", "-m", "init"], { cwd: repoDir });
+
+      const overlay = makeMinimalOverlay(repoDir);
+
+      const capabilityName = "pathRecCap";
+      const capDir = `.provekit/capability-proposal/${capabilityName}`;
+      const dslPath = `.provekit/principles/path-rec.dsl`;
+      const realDsl = `principle PathRec {
+  match $x: node where pathRecCap.node_id == "x"
+  report violation {
+    at $x
+    captures { site: $x }
+    message "recovered"
+  }
+}`;
+      const meta = JSON.stringify({
+        capabilityName,
+        rationale: "Tracks pattern",
+        // The disobedience: dslSource is a relative path, not the source.
+        dslSource: dslPath,
+        name: "PathRec",
+        smtTemplate: "(declare-const x Int)\n(assert (= x 0))\n(check-sat)",
+        teachingExample: { domain: "test", explanation: "x", smt2: "(check-sat)" },
+      });
+
+      const llm = new StubLLMProvider(
+        new Map(),
+        [{
+          matchPrompt: "capability",
+          fileEdits: [
+            { file: `${capDir}/schema.ts`, newContent: 'export const x = 1;' },
+            { file: `${capDir}/migration.sql`, newContent: "CREATE TABLE node_path_rec_cap (node_id TEXT)" },
+            { file: `${capDir}/extractor.ts`, newContent: 'export function extractPathRecCap() {}' },
+            { file: `${capDir}/extractor.test.ts`, newContent: "import { it, expect } from 'vitest'; it('x', () => expect(1).toBe(1));" },
+            { file: `${capDir}/registry.ts`, newContent: "registerCapability({});" },
+            { file: `${capDir}/fixtures.json`, newContent: JSON.stringify({ positiveFixtures: [{ source: "x", expectedRowCount: 1 }], negativeFixtures: [{ source: "y", expectedRowCount: 0 }] }) },
+            { file: `${capDir}/meta.json`, newContent: meta },
+            // The .dsl file the agent wrote separately.
+            { file: dslPath, newContent: realDsl },
+          ],
+          text: "Wrote files",
+        }],
+      );
+
+      const proposal = await proposeCapabilitySpec({
+        signal: makeSignal(),
+        invariant: makeInvariant(),
+        fixCandidate: makeFixCandidate(),
+        gap: "test gap",
+        llm,
+        overlay,
+      });
+
+      expect(proposal).not.toBeNull();
+      // The recovery should have replaced the path with the file's contents.
+      expect(proposal!.dslSource).toBe(realDsl);
+      expect(proposal!.dslSource).not.toBe(dslPath);
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("backward compat: JSON path used when LLM has no agent()", async () => {
     const capabilityName = "myCapability";
     const capSpec = makeCapabilitySpec({ capabilityName });
