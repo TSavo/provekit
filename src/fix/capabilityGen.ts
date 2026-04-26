@@ -407,6 +407,37 @@ principle <name> {
 }
 \`\`\`
 
+## Column naming (CRITICAL — common parse-time failure)
+
+In the DSL, columns are referenced by their **drizzle JS property name**
+(camelCase), NOT the SQL column name (snake_case). Drizzle schemas
+declare both — they are NOT the same string.
+
+\`\`\`ts
+// In your schema.ts — TWO names per column:
+violationKind: text("violation_kind").notNull(),
+//   ▲ JS property              ▲ SQL column name
+//   (use this in DSL)          (use this in migration.sql)
+\`\`\`
+
+\`\`\`dsl
+// In your principle.dsl — use the JS property name:
+match $x: node where myCap.violationKind == "duplicate"  // ✅ correct
+\`\`\`
+
+\`\`\`dsl
+// WRONG — using the SQL column name from migration.sql:
+match $x: node where myCap.violation_kind == "duplicate"
+//                          ▲ snake_case fails compile with
+//                            "Unknown column 'violation_kind'.
+//                             Did you mean 'violationKind'?"
+\`\`\`
+
+The same applies to nodeId / node_id, propertyName / property_name,
+etc. Whenever you write a column name in the DSL, find it in your
+schema.ts file and copy the JS property name (the part LEFT of the
+colon), not the string literal in text()/integer().
+
 Optional clauses (in order between \`match\` and \`report\`):
 - \`require no $<var>: <predicateName>($<other>) where <relation>(...)\` —
   forbid the existence of a sibling node satisfying a predicate.
