@@ -1051,6 +1051,48 @@ export async function proposeWithCapability(args: {
   gap: string;
   overlay?: OverlayHandle;
 }): Promise<PrincipleCandidate | null> {
+  // Two-attempt loop: on any gate failure (substrate oracle 14/16/17,
+  // oracle 18 compile, adversarial validation) the second attempt re-calls
+  // proposeCapabilitySpec with augmented gap that includes the prior failure
+  // detail. The principle-only refinement retry inside attempt 1's
+  // adversarial branch still runs, so we get up to (1 spec call + 1 principle
+  // refine) on attempt 1, plus (1 spec call + 1 principle refine) on attempt
+  // 2 — bounded but more forgiving than single-shot.
+  let lastFailure: string | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const augmentedGap =
+      lastFailure === null
+        ? args.gap
+        : `${args.gap}\n\nPRIOR ATTEMPT FAILED: ${lastFailure}\n` +
+          `Address that specific failure in this attempt. The capability ` +
+          `must be tight enough that NO row is emitted for benign patterns ` +
+          `that don't exhibit the bug shape.`;
+
+    const result = await proposeWithCapabilityOnce({ ...args, gap: augmentedGap });
+    if ("principle" in result) return result.principle;
+    lastFailure = result.failure;
+    console.warn(
+      `[C6] proposeWithCapability attempt ${attempt}/2 failed: ${result.failure}` +
+      (attempt < 2 ? ". Retrying with augmented gap." : ". No more retries."),
+    );
+  }
+  return null;
+}
+
+/**
+ * One iteration of the substrate-extension pipeline. Returns either a
+ * working PrincipleCandidate or a structured failure description that
+ * the outer loop can use to augment the gap on retry.
+ */
+async function proposeWithCapabilityOnce(args: {
+  signal: BugSignal;
+  invariant: InvariantClaim;
+  fixCandidate: FixCandidate;
+  db: Db;
+  llm: LLMProvider;
+  gap: string;
+  overlay?: OverlayHandle;
+}): Promise<{ principle: PrincipleCandidate } | { failure: string }> {
   const { signal, invariant, fixCandidate, db, llm, gap } = args;
 
   // 1. Ask LLM to propose a CapabilitySpec + principle.
@@ -1064,8 +1106,7 @@ export async function proposeWithCapability(args: {
   });
 
   if (!proposal) {
-    console.warn(`[C6] Capability spec proposal returned null`);
-    return null;
+    return { failure: "Capability spec proposal returned null (LLM call/parse failed)" };
   }
 
   const { capabilitySpec, dslSource, name, smtTemplate, teachingExample } = proposal;
@@ -1078,18 +1119,17 @@ export async function proposeWithCapability(args: {
   try {
     parseDSL(dslSource);
   } catch (err) {
-    console.warn(
-      `[C6] DSL pre-validation failed: ${err instanceof Error ? err.message : String(err)}\n` +
-      `    First 200 chars of dslSource: ${dslSource.slice(0, 200)}`,
-    );
-    return null;
+    return {
+      failure:
+        `DSL pre-validation failed: ${err instanceof Error ? err.message : String(err)}. ` +
+        `First 200 chars of dslSource: ${dslSource.slice(0, 200)}`,
+    };
   }
 
   // 2. Run substrate oracles #14/#16/#17 (before touching the registry).
   const substrateResult = await runSubstrateOracles(capabilitySpec);
   if (!substrateResult.passed) {
-    console.warn(`[C6] Substrate oracle failed: ${substrateResult.reason}`);
-    return null;
+    return { failure: `Substrate oracle failed: ${substrateResult.reason}` };
   }
 
   // 3. Oracle #18: register capability temporarily, verify compile behavior.
@@ -1098,19 +1138,20 @@ export async function proposeWithCapability(args: {
     const program = parseDSL(dslSource);
     compileProgram(program.nodes);
     // If compile succeeded WITHOUT the new capability, the principle doesn't need it.
-    console.warn(`[C6] Oracle #18 failed: principle compiles without the proposed capability (gratuitous)`);
-    return null;
+    return {
+      failure:
+        `Oracle #18: principle compiles without the proposed capability (gratuitous — ` +
+        `the principle should reference the new capability so it can't compile without it)`,
+    };
   } catch (err) {
     if (!(err instanceof CompileError)) {
-      // Unexpected error (parse error etc.) — treat as non-codifiable.
-      console.warn(`[C6] Oracle #18: unexpected error before registration: ${err instanceof Error ? err.message : String(err)}`);
-      return null;
+      return {
+        failure: `Oracle #18: unexpected error before registration: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     const msg = err.message.toLowerCase();
     if (!msg.includes("unknown capability") && !msg.includes("unknown column")) {
-      // Fails for a different reason — not a capability gap.
-      console.warn(`[C6] Oracle #18: compile failed for unexpected reason: ${err.message}`);
-      return null;
+      return { failure: `Oracle #18: compile failed for unexpected reason: ${err.message}` };
     }
     // Expected: compile fails with unknown capability. Proceed.
   }
@@ -1127,8 +1168,9 @@ export async function proposeWithCapability(args: {
       const program = parseDSL(dslSource);
       compileProgram(program.nodes);
     } catch (err) {
-      console.warn(`[C6] Oracle #18: compile still failed after registering capability: ${err instanceof Error ? err.message : String(err)}`);
-      return null;
+      return {
+        failure: `Oracle #18: compile still failed after registering capability: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
 
     // Oracle #6: adversarial validation WITH the capability temporarily registered.
@@ -1168,8 +1210,7 @@ export async function proposeWithCapability(args: {
       });
 
       if (!refined) {
-        console.warn(`[C6] Refinement retry: LLM did not return a usable refined DSL.`);
-        return null;
+        return { failure: `Refinement retry: LLM did not return a usable refined DSL` };
       }
 
       // Pre-validate the refined DSL with parseDSL + compile.
@@ -1177,10 +1218,9 @@ export async function proposeWithCapability(args: {
         const program = parseDSL(refined);
         compileProgram(program.nodes);
       } catch (err) {
-        console.warn(
-          `[C6] Refinement retry: refined DSL failed compile: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return null;
+        return {
+          failure: `Refinement retry: refined DSL failed compile: ${err instanceof Error ? err.message : String(err)}`,
+        };
       }
 
       const retryAdversarial = await runAdversarialValidation(
@@ -1195,10 +1235,9 @@ export async function proposeWithCapability(args: {
       );
 
       if (!retryAdversarial.passed) {
-        console.warn(
-          `[C6] Refinement retry adversarial still failed: ${retryAdversarial.evidence}`,
-        );
-        return null;
+        return {
+          failure: `Adversarial validation failed even after principle refinement: ${retryAdversarial.evidence}`,
+        };
       }
 
       acceptedDsl = refined;
@@ -1228,7 +1267,7 @@ export async function proposeWithCapability(args: {
       capabilitySpec,
     };
 
-    return principle;
+    return { principle };
   } finally {
     unregisterCapability(capabilitySpec.capabilityName);
   }
