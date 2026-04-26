@@ -2,6 +2,8 @@
 
 ProveKit turns a bug report into a mechanically-verified fix bundle: patch, regression test, formal principle, and optional substrate extension. Every stage is gated by mechanical oracles. No "LLM said it works."
 
+> **Landing in this repo for the first time?** Read [docs/QUICKSTART.md](docs/QUICKSTART.md) for a greenfield-project walkthrough, including which modes are production-ready vs. research-only.
+
 ## What it does
 
 A bug report goes in. A verified bundle comes out.
