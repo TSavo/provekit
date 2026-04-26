@@ -89,6 +89,33 @@ export function registerBuiltinRelations(): void {
   // ancestors, so 1-hop reachability is included. Self-reach (source === sink)
   // is NOT included here since data_flow_transitive does not include zero-hop
   // identity rows. Callers needing reflexive closure can OR with `same_node`.
+  // 2026-04-26: flows_from_param($n) — true iff $n receives data flow
+  // (transitively) from a parameter binding declaration. Encodes the
+  // "user-derived value" check the original tightening spec required:
+  // a falsy-default `||` is only meaningful when the LHS could legitimately
+  // be 0 / "" / false at runtime, i.e. when it traces back to external
+  // input via a function parameter.
+  //
+  // SQL: there exists a transitive data_flow row from some param-bound
+  // node into $n. The param-bound node is identified via node_binding rows
+  // where binding_kind = 'param'.
+  registerRelation({
+    name: "flows_from_param",
+    paramCount: 1,
+    paramTypes: ["node"],
+    compile: ({ args }) => {
+      const a = args[0]?.kind === "node" ? args[0].alias : null;
+      if (!a) throw new Error("flows_from_param: arg must be node");
+      return (
+        `EXISTS (` +
+        `SELECT 1 FROM data_flow_transitive dft ` +
+        `JOIN node_binding nb ON nb.node_id = dft.from_node ` +
+        `WHERE dft.to_node = ${a}.id AND nb.binding_kind = 'param'` +
+        `)`
+      );
+    },
+  });
+
   registerRelation({
     name: "data_flow_reaches",
     paramCount: 2,

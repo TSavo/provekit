@@ -402,6 +402,18 @@ export function extractNarrows(
     SyntaxKind.ExclamationEqualsToken,
   ]);
 
+  // Ordering comparisons: each entry is [kindWhenLiteralOnRight, kindWhenLiteralOnLeft].
+  // The narrowing applies to the non-literal target; the kind reflects the
+  // direction of the bound from the target's perspective.
+  //   x < 100  → target=x, kind=literal_lt
+  //   100 < x  → target=x, kind=literal_gt   (x is greater than 100)
+  const CMP_OPS = new Map<SyntaxKind, [string, string]>([
+    [SyntaxKind.LessThanToken,          ["literal_lt",  "literal_gt"]],
+    [SyntaxKind.GreaterThanToken,       ["literal_gt",  "literal_lt"]],
+    [SyntaxKind.LessThanEqualsToken,    ["literal_lte", "literal_gte"]],
+    [SyntaxKind.GreaterThanEqualsToken, ["literal_gte", "literal_lte"]],
+  ]);
+
   sourceFile.forEachDescendant((node) => {
     if (node.getKind() === SyntaxKind.BinaryExpression) {
       const bin = node as BinaryExpression;
@@ -432,6 +444,45 @@ export function extractNarrows(
           narrowingKind: "in",
           narrowedType: left.getText(),
         }).run();
+        return;
+      }
+
+      // Ordering comparisons against a literal: x < N, N < x, etc.
+      // Emit literal_lt / literal_gt / literal_lte / literal_gte based on
+      // the operator + which side carries the literal.
+      const cmpKinds = CMP_OPS.get(opKind);
+      if (cmpKinds !== undefined) {
+        const LIT_KINDS = new Set([
+          SyntaxKind.StringLiteral,
+          SyntaxKind.NumericLiteral,
+          SyntaxKind.TrueKeyword,
+          SyntaxKind.FalseKeyword,
+        ]);
+        const [kindRightLit, kindLeftLit] = cmpKinds;
+        if (LIT_KINDS.has(right.getKind())) {
+          const nodeId = nodeIdByNode.get(bin);
+          const targetId = id(nodeIdByNode, left);
+          if (!nodeId || !targetId) return;
+          tx.insert(nodeNarrows).values({
+            nodeId,
+            targetNode: targetId,
+            narrowingKind: kindRightLit,
+            narrowedType: right.getText(),
+          }).run();
+          return;
+        }
+        if (LIT_KINDS.has(left.getKind())) {
+          const nodeId = nodeIdByNode.get(bin);
+          const targetId = id(nodeIdByNode, right);
+          if (!nodeId || !targetId) return;
+          tx.insert(nodeNarrows).values({
+            nodeId,
+            targetNode: targetId,
+            narrowingKind: kindLeftLit,
+            narrowedType: left.getText(),
+          }).run();
+          return;
+        }
         return;
       }
 

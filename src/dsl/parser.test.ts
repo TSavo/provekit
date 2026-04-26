@@ -120,7 +120,10 @@ describe("parseDSL", () => {
     }
   });
 
-  it("parse error: 'require yes' instead of 'require no' produces error", () => {
+  it("parse error: 'require yes' is rejected (yes is not a valid IDENT here)", () => {
+    // 2026-04-26: 'no' is now optional (positive-existence form added).
+    // `require yes` parses as positive-existence with no negation, then the
+    // parser expects $guardVar but sees IDENT 'yes' and errors out.
     const src = `
 principle foo {
   match $x: node where arithmetic.op == "/"
@@ -133,7 +136,7 @@ principle foo {
       parseDSL(src);
     } catch (e) {
       expect(e).toBeInstanceOf(ParseError);
-      expect((e as ParseError).message).toContain("'no'");
+      expect((e as ParseError).message).toMatch(/Expected VAR|yes/);
     }
   });
 

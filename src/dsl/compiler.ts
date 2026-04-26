@@ -818,7 +818,8 @@ export function compilePrinciple(
 
     const subFromClause = subJoins.join("\n    ");
     const subWhereStr = subWheres.length > 0 ? `WHERE ${subWheres.join("\n      AND ")}` : "";
-    notExistsSql = `NOT EXISTS (\n  SELECT 1\n  ${subFromClause}\n  ${subWhereStr}\n)`;
+    const existenceOp = req.negated ? "NOT EXISTS" : "EXISTS";
+    notExistsSql = `${existenceOp} (\n  SELECT 1\n  ${subFromClause}\n  ${subWhereStr}\n)`;
   }
 
   // -------------------------------------------------------------------------

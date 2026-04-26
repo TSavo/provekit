@@ -394,14 +394,16 @@ class Parser {
   private parseRequireClause(): RequireClause {
     const loc = this.loc();
     this.expectIdent("require");
+    // `require no $guard: ...` (negated existence) vs `require $guard: ...`
+    // (positive existence). The "no" token is optional; absence means the
+    // clause asserts a witness must exist (compiles to EXISTS).
+    let negated = true;
     const noTok = this.peek();
-    if (noTok.type !== "IDENT" || noTok.value !== "no") {
-      throw new ParseError(
-        `Expected 'no' after 'require' but got '${noTok.value}'`,
-        noTok.line, noTok.col,
-      );
+    if (noTok.type === "IDENT" && noTok.value === "no") {
+      this.consume(); // eat "no"
+    } else {
+      negated = false;
     }
-    this.consume(); // eat "no"
 
     const guardVarTok = this.expectVar();
     const guardVar = guardVarTok.value;
@@ -440,12 +442,24 @@ class Parser {
       const relNameTok = this.expectIdent();
       const relation: BuiltinRelation = relNameTok.value;
       this.expect("LPAREN");
-      const arg0 = this.parseRelationArg();
-      this.expect("COMMA");
-      const arg1 = this.parseRelationArg();
+      // Variable arg-count: comma-separated args until RPAREN. Compiler
+      // validates the count against the relation's declared paramCount.
+      const relArgs: RelationArg[] = [];
+      relArgs.push(this.parseRelationArg());
+      while (this.peek().type === "COMMA") {
+        this.consume();
+        relArgs.push(this.parseRelationArg());
+      }
       this.expect("RPAREN");
+      // The AST currently types relationArgs as a 2-tuple; pad to 2 for
+      // backward compatibility. Single-arg relations get the same arg
+      // duplicated as the placeholder; the compiler ignores extras when
+      // paramCount permits.
+      const arg0 = relArgs[0]!;
+      const arg1 = relArgs.length > 1 ? relArgs[1]! : relArgs[0]!;
 
       return {
+        negated,
         guardVar,
         predName,
         predArgVarName,
@@ -488,7 +502,7 @@ class Parser {
       targetVarName = targetVarTok.value;
     }
 
-    return { guardVar, predName, predArgVarName, predArgDeref, relation, relationArgs: null, targetVarName, targetVarDeref, loc };
+    return { negated, guardVar, predName, predArgVarName, predArgDeref, relation, relationArgs: null, targetVarName, targetVarDeref, loc };
   }
 
   private parseRelationArg(): RelationArg {

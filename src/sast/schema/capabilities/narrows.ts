@@ -27,7 +27,7 @@ export function registerNarrows(): void {
       node_id:       { dslName: "node_id",       drizzleColumn: nodeNarrows.nodeId,       isNodeRef: true,  nullable: false },
       target_node:   { dslName: "target_node",   drizzleColumn: nodeNarrows.targetNode,   isNodeRef: true,  nullable: false },
       narrowing_kind: { dslName: "narrowing_kind", drizzleColumn: nodeNarrows.narrowingKind, sort: "Text",  isNodeRef: false, nullable: false,
-                        kindEnum: ["typeof", "instanceof", "in", "null_check", "undefined_check", "literal_eq", "tag_check"] },
+                        kindEnum: ["typeof", "instanceof", "in", "null_check", "undefined_check", "literal_eq", "literal_lt", "literal_gt", "literal_lte", "literal_gte", "tag_check"] },
       narrowed_type: { dslName: "narrowed_type", drizzleColumn: nodeNarrows.narrowedType, sort: "Text",     isNodeRef: false, nullable: true },
     },
   });

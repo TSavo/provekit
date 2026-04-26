@@ -173,6 +173,13 @@ export interface RelationArg {
 }
 
 export interface RequireClause {
+  /**
+   * Whether the clause is `require no` (negated existence) vs `require`
+   * (positive existence). Defaults to true for backward compatibility with
+   * the original grammar. The compiler emits `NOT EXISTS` when negated and
+   * `EXISTS` when positive.
+   */
+  negated: boolean;
   /** The guard variable introduced by `require no $guard: ...` */
   guardVar: string;
   /** The predicate call: predName($varRef) or predName($var.cap.col) */
