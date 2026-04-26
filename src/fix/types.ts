@@ -630,7 +630,7 @@ export interface FixCandidate {
   /** Oracle #2 result: does C1's invariant now hold under the overlay? (Z3 negated-goal unsat.) */
   invariantHoldsUnderOverlay: boolean;
   /** Z3 verdict from the overlay run — "unsat" means invariant holds (fix is real). */
-  overlayZ3Verdict: "sat" | "unsat" | "unknown" | "error";
+  overlayZ3Verdict: "sat" | "unsat" | "unknown" | "error" | "ground-truth";
   /**
    * Audit of the C3 run: what the LLM said, what Z3 said, what the overlay contained.
    * Note: overlayClosed is always false when C3 returns — the orchestrator owns the overlay lifecycle.

@@ -14,44 +14,53 @@ A practical walkthrough for landing ProveKit in a new TypeScript/JavaScript repo
 
 ## Install
 
-ProveKit isn't on npm yet. Build it from source and link it globally:
+ProveKit isn't on npm yet, and the production build (`npm run build && npm link`) is currently broken pending a CJS/ESM module-config refactor. Until that lands, run the CLI directly via `tsx`:
 
 ```bash
 git clone <provekit-repo>
 cd provekit
 npm install
-npm run build
-npm link
+# DON'T run npm run build — it currently fails on import.meta + module=commonjs mismatch (tracked separately)
 ```
 
-Verify:
+Then either alias the CLI:
 
 ```bash
-provekit --version       # → provekit v0.3.0
+# Add to ~/.bashrc or ~/.zshrc
+alias provekit="npx tsx /path/to/provekit/src/cli.ts"
 ```
 
-In your **target** project (the greenfield repo you want to run ProveKit on), make sure `node_modules` is reachable from where you run `provekit` (the CLI looks for the project root via `package.json` / `.git` / `.provekit/`).
+Or invoke explicitly per command:
+
+```bash
+npx tsx /path/to/provekit/src/cli.ts --version       # → provekit v0.3.0
+```
+
+The walkthrough below assumes you've aliased it as `provekit`.
+
+For commands that take a project path (`init`, `lint`), pass the target project as the positional arg. For `analyze`, pass the file path.
 
 ---
 
-## Step 1: init
+## Step 1: init (only needed for `analyze` / `fix` — `lint` works without it)
 
 ```bash
-cd /path/to/your/greenfield/repo
-provekit init
+provekit init /path/to/your/greenfield/repo --no-hook
 ```
 
 What this does:
-- Verifies it's a git repo (errors if not)
-- Scans for signals in your code (TODO/FIXME comments, log levels, function-name patterns) — these become the input set for the analyze phase
-- Optionally installs a pre-push git hook that runs `provekit verify` before every push
+- Verifies the target is a git repo (errors if not)
+- Scans for signals in your code (TODO/FIXME comments, log levels, function-name patterns) — these become the input set for the `analyze` phase
+- Without `--no-hook`, installs a pre-push git hook that runs `provekit verify` before every push
 
-Output is written to `.provekit/` at the repo root:
+Output is written to `.provekit/` at the target repo root:
 - `.provekit/provekit.db` — SQLite store for SAST + signals + gap reports + fix bundle history
-- `.provekit/principles/` — the principle library (DSL files + JSON metadata, source-controlled)
-- `.provekit/harvest/` — harvest pipeline staging (gitignored; intermediate output)
+- `.provekit/contexts/`, `.provekit/contracts/`, `.provekit/observations/` — analyze-pipeline artifacts
+- `.provekit/graph.json`, `.provekit/derivation.json`, `.provekit/report.json` — analyze output
 
-After init, commit `.provekit/principles/` to your repo. Don't commit `.provekit/provekit.db` — it's machine-specific. Add this to your `.gitignore`:
+**Note:** `init` does NOT seed `.provekit/principles/` into your project. The principle library lives with the ProveKit package; `provekit lint` falls back to that location when your project has no local override. To customize: copy `.provekit/principles/` from the ProveKit checkout into your target project.
+
+Add this to your target project's `.gitignore`:
 
 ```gitignore
 .provekit/provekit.db
@@ -67,16 +76,30 @@ After init, commit `.provekit/principles/` to your repo. Don't commit `.provekit
 
 ---
 
-## Step 2: analyze (Mode 1 — static analysis, ready)
+## Step 2: lint (Mode 1 — static analysis with the principle library)
 
 ```bash
-provekit analyze
+provekit lint /path/to/your/project          # full project walk
+provekit lint /path/to/your/project --ci     # exit 1 on any violation (for CI)
+provekit lint /path/to/your/project -v       # verbose; surfaces parser/principle errors
 ```
 
-What this does (no LLM, no cost):
-1. Builds the SAST index for every TypeScript/JavaScript file under your project root
-2. Runs the principle library against the index, recording matches at each principle's locus (file + source line)
-3. Writes `gap_reports` rows for every match — these are the things ProveKit thinks might be bugs
+What this does (no LLM, no cost, seconds for small projects):
+1. Walks every `.ts/.tsx/.mts/.cts` file under the project root (skipping `node_modules`, `dist`, `.git`, `test/`, `__tests__/`)
+2. Builds the SAST index in a scratch DB
+3. Runs every DSL principle in `.provekit/principles/` (or falls back to the principles bundled with the ProveKit package if the project hasn't been seeded yet)
+4. Prints one line per match: `<file>:<line>  [<severity>]  <principle>: <message>`
+5. Summarizes: files indexed, principles evaluated, total matches by severity
+
+Example output on a 1-file scratch project:
+
+```
+src/divide.ts:2  [violation]  division-by-zero: division denominator may be zero
+
+Files indexed: 1/1
+Principles evaluated: 15/15
+Matches: 1 (1 violations, 0 warnings, 0 info)
+```
 
 The principle library (≈ 15 DSL files in `.provekit/principles/`) covers a small, opinionated set of bug classes:
 
@@ -100,26 +123,15 @@ The principle library (≈ 15 DSL files in `.provekit/principles/`) covers a sma
 
 The library has known noise floors (some principles are over-broad — see `docs/plans/2026-04-26-principle-tightening.md`). Tightening is ongoing.
 
-Read the matches with `provekit explain`:
+To customize: copy `.provekit/principles/*.dsl` from the ProveKit package into your project's `.provekit/principles/` and edit. The `lint` command prefers the project's local copies when present.
 
-```bash
-provekit explain src/foo.ts:42
-```
+### A second pipeline: `provekit analyze`
 
-Or get a summary:
+Note that `provekit analyze <file.ts>` is a **different** machinery — it runs Z3-based contract verification per file (Phases 1-5), not the principle library. Both are useful:
+- `lint` for fast principle-library scanning across many files
+- `analyze` for deep per-file Z3 contract proof
 
-```bash
-provekit report
-```
-
-Use `provekit diff <ref>` to see only matches new since a git ref:
-
-```bash
-provekit diff HEAD~10        # what's new in the last 10 commits
-provekit diff main           # what's new on this branch
-```
-
-This is the layer to wire into CI. It's deterministic, fast (seconds for small projects), and never costs API credits.
+CI typically wires `lint --ci`. `analyze` is for development.
 
 ---
 
@@ -200,31 +212,35 @@ This works in StubLLM tests (`src/fix/dogfood.empty-catch.test.ts`, `src/fix/dog
 
 ## CI integration
 
-Minimal GitHub Actions stub for Mode 1 (static analysis on PRs):
+Minimal GitHub Actions stub for Mode 1 (`provekit lint` on PRs):
 
 ```yaml
 # .github/workflows/provekit.yml
-name: ProveKit
+name: ProveKit lint
 
 on:
   pull_request:
     branches: [main]
 
 jobs:
-  analyze:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
-      - run: npm ci
-      - run: npm install -g <provekit-package-or-tarball>
-      - run: provekit init --no-hook
-      - run: provekit diff origin/${{ github.base_ref }} --ci
+
+      # Install ProveKit (until npm publication, this is a tarball / git URL)
+      - run: |
+          git clone https://github.com/<your-org>/provekit /tmp/provekit
+          cd /tmp/provekit && npm ci
+          # Until the build path is fixed, run via tsx
+          echo 'alias provekit="npx tsx /tmp/provekit/src/cli.ts"' >> ~/.bashrc
+
+      - run: npx tsx /tmp/provekit/src/cli.ts lint . --ci
 ```
 
-The `--ci` flag exits non-zero on any new violation since the base ref. The `--no-hook` flag during init skips the pre-push hook installation (the runner doesn't need it).
+The `--ci` flag exits non-zero on any violation. Lint runs against the bundled principle library by default (no `provekit init` required for lint-only flows).
 
 Mode 2 (fix loop) is too slow + costs API credits per PR; don't run it from CI by default. If you want fix-loop integration, gate it on a `provekit fix` label or a manual workflow_dispatch.
 

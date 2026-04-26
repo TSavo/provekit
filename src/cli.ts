@@ -43,6 +43,7 @@ async function main(): Promise<void> {
     case "hook":     runHook(rest); break;
     case "override": runOverride(rest); break;
     case "fix":     await runFix(rest); break;
+    case "lint":    await runLint(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
       printHelp();
@@ -561,6 +562,125 @@ function runHook(args: string[]): void {
 // override — allow committing despite violations
 // ---------------------------------------------------------------------------
 
+async function runLint(args: string[]): Promise<void> {
+  // Walk all .ts/.tsx files under projectRoot, build SAST, evaluate every
+  // .dsl in .provekit/principles/, print principle_matches. The principle
+  // library's "static analyzer" surface — what `analyze` doesn't do.
+  const { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } = await import("fs");
+  const { tmpdir } = await import("os");
+  const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
+  const { evaluatePrinciple } = await import("./dsl/evaluator.js");
+  const { buildSASTForFile } = await import("./sast/builder.js");
+
+  const projectRoot = resolve(args.find((a) => !a.startsWith("-")) || ".");
+  const localPrinciplesDir = join(projectRoot, ".provekit", "principles");
+  // Fall back to the principles bundled with the provekit checkout. `provekit
+  // init` doesn't seed principles into the target project (only the SAST
+  // scaffolding), so a greenfield user runs lint against the package's
+  // library out-of-the-box. They can copy/customize into their project's
+  // .provekit/principles/ to override.
+  const bundledPrinciplesDir = join(__dirname, "..", ".provekit", "principles");
+  const principlesDir = existsSync(localPrinciplesDir) ? localPrinciplesDir : bundledPrinciplesDir;
+  if (!existsSync(principlesDir)) {
+    process.stderr.write(`No principles found at ${localPrinciplesDir} or ${bundledPrinciplesDir}.\n`);
+    process.exit(1);
+  }
+  const usingBundled = principlesDir === bundledPrinciplesDir;
+  const ci = args.includes("--ci");
+  const verbose = args.includes("--verbose") || args.includes("-v");
+
+  // Recursively walk the project for .ts/.tsx files. Skip node_modules,
+  // dist, .git, .provekit, anything under test/ or __tests__.
+  const tsFiles: string[] = [];
+  const skip = new Set(["node_modules", "dist", ".git", ".provekit", "test", "tests", "__tests__"]);
+  function walk(dir: string): void {
+    let entries: string[];
+    try { entries = readdirSync(dir, { withFileTypes: true }).map((e) => e.isDirectory() ? `${e.name}/` : e.name); }
+    catch { return; }
+    for (const name of entries) {
+      const isDir = name.endsWith("/");
+      const clean = isDir ? name.slice(0, -1) : name;
+      if (skip.has(clean)) continue;
+      const full = join(dir, clean);
+      if (isDir) walk(full);
+      else if (/\.(ts|tsx|mts|cts)$/.test(clean) && !/\.(test|spec)\.[^/]+$/.test(clean)) {
+        tsFiles.push(full);
+      }
+    }
+  }
+  walk(projectRoot);
+
+  if (tsFiles.length === 0) {
+    console.log(`No .ts/.tsx files under ${projectRoot}.`);
+    return;
+  }
+
+  // Open scratch DB, build SAST for every file, run every principle.
+  const scratchDir = mkdtempSync(join(tmpdir(), "provekit-lint-"));
+  void mkdirSync; // keep tsc happy if future versions need parent mkdir
+  void writeFileSync;
+  const dbPath = join(scratchDir, "scratch.db");
+  const db = openDb(dbPath);
+  migrate(db, { migrationsFolder: join(__dirname, "..", "drizzle") });
+
+  let parsedFiles = 0;
+  let parserFailures = 0;
+  for (const f of tsFiles) {
+    try { buildSASTForFile(db, f); parsedFiles++; }
+    catch (e) {
+      parserFailures++;
+      if (verbose) process.stderr.write(`parser failed on ${f}: ${e instanceof Error ? e.message : String(e)}\n`);
+    }
+  }
+
+  const dslFiles = readdirSync(principlesDir).filter((f) => f.endsWith(".dsl"));
+  let principleErrors = 0;
+  for (const dslFile of dslFiles) {
+    const dslPath = join(principlesDir, dslFile);
+    let dsl: string;
+    try { dsl = readFileSync(dslPath, "utf-8"); } catch { principleErrors++; continue; }
+    try { evaluatePrinciple(db, dsl); }
+    catch (e) {
+      principleErrors++;
+      if (verbose) process.stderr.write(`principle ${dslFile} failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    }
+  }
+
+  // Read matches + print them.
+  const matches = db.$client
+    .prepare(
+      `SELECT pm.principle_name, pm.severity, pm.message, n.source_line, f.path
+       FROM principle_matches pm
+       JOIN nodes n ON n.id = pm.root_match_node_id
+       JOIN files f ON f.id = pm.file_id
+       ORDER BY f.path, n.source_line`,
+    )
+    .all() as Array<{ principle_name: string; severity: string; message: string; source_line: number; path: string }>;
+
+  const violations = matches.filter((m) => m.severity === "violation");
+  const warnings = matches.filter((m) => m.severity === "warning");
+  const infos = matches.filter((m) => m.severity === "info");
+
+  for (const m of matches) {
+    const rel = relative(projectRoot, m.path);
+    console.log(`${rel}:${m.source_line}  [${m.severity}]  ${m.principle_name}: ${m.message}`);
+  }
+
+  console.log();
+  if (usingBundled) {
+    console.log(`(Using bundled principles from ${principlesDir} — copy to ${localPrinciplesDir} to customize)`);
+  }
+  console.log(`Files indexed: ${parsedFiles}/${tsFiles.length}${parserFailures ? ` (${parserFailures} parser failures, run with -v to see)` : ""}`);
+  console.log(`Principles evaluated: ${dslFiles.length - principleErrors}/${dslFiles.length}${principleErrors ? ` (${principleErrors} errors)` : ""}`);
+  console.log(`Matches: ${matches.length} (${violations.length} violations, ${warnings.length} warnings, ${infos.length} info)`);
+
+  db.$client.close();
+  try { rmSync(scratchDir, { recursive: true, force: true }); } catch { /* ignore */ }
+
+  // CI mode: exit non-zero if any violations.
+  if (ci && violations.length > 0) process.exit(1);
+}
+
 function runOverride(args: string[]): void {
   const reason = getFlag(args, "--reason");
   if (!reason) {
@@ -638,6 +758,9 @@ function printHelp(): void {
   console.log("  report [project]            Coverage summary");
   console.log("  hook [--uninstall]          Install/remove git hook");
   console.log("  override --reason \"...\"      Record override for --no-verify");
+  console.log("  lint [project]              Run the principle library across the project (Mode 1, no LLM).");
+  console.log("                              Falls back to bundled principles when local .provekit/principles/ is empty.");
+  console.log("                              Flags: --ci (exit 1 on violation), -v (verbose error surfacing).");
   console.log("  fix <ref>               Run the fix loop on a bug report.");
   console.log("                          <ref> can be:");
   console.log("                            gap_report:<id>      — reference a gap_reports row");
