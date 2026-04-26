@@ -89,6 +89,31 @@ export function registerBuiltinRelations(): void {
   // ancestors, so 1-hop reachability is included. Self-reach (source === sink)
   // is NOT included here since data_flow_transitive does not include zero-hop
   // identity rows. Callers needing reflexive closure can OR with `same_node`.
+  // 2026-04-26: encloses($outer, $inner) — true iff $outer is an AST ancestor
+  // of $inner (i.e. $outer's source range strictly contains $inner's). Used
+  // by loop-accumulator-overflow ("augmented assignment inside a loop body")
+  // and other principles needing parent-child structural containment.
+  //
+  // Source ranges in ts-morph are properly nested per AST contract, so source
+  // span comparison is sufficient — no recursive closure needed. Compares are
+  // cheap (single index seek on file_id).
+  registerRelation({
+    name: "encloses",
+    paramCount: 2,
+    paramTypes: ["node", "node"],
+    compile: ({ args }) => {
+      const a = args[0]?.kind === "node" ? args[0].alias : null;
+      const b = args[1]?.kind === "node" ? args[1].alias : null;
+      if (!a || !b) throw new Error("encloses: both args must be node");
+      return (
+        `(${a}.file_id = ${b}.file_id AND ` +
+        `${a}.source_start <= ${b}.source_start AND ` +
+        `${a}.source_end >= ${b}.source_end AND ` +
+        `${a}.id <> ${b}.id)`
+      );
+    },
+  });
+
   // 2026-04-26: flows_from_param($n) — true iff $n receives data flow
   // (transitively) from a parameter binding declaration. Encodes the
   // "user-derived value" check the original tightening spec required:
