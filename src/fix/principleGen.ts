@@ -953,6 +953,87 @@ async function buildSubstrateAdversarialExtractor(
 }
 
 // ---------------------------------------------------------------------------
+// Refinement helper: regenerate just the principle DSL when adversarial fails
+// ---------------------------------------------------------------------------
+
+/**
+ * One-shot refinement: feed the adversarial failure evidence back to the LLM
+ * and ask for a tighter principle DSL using the SAME capability. Used when
+ * the substrate path's capability passed oracles 14/16/17/18 but the DSL
+ * principle matched too broadly. Returns the refined dslSource, or null if
+ * the LLM didn't return usable JSON.
+ *
+ * Cheaper than retrying the whole proposeWithCapability path — the schema/
+ * extractor are sound; only the principle's match clause needs narrowing.
+ */
+async function refinePrincipleDsl(args: {
+  capabilitySpec: CapabilitySpec;
+  failedDsl: string;
+  evidence: string;
+  invariantDescription: string;
+  llm: LLMProvider;
+}): Promise<string | null> {
+  const { capabilitySpec, failedDsl, evidence, invariantDescription, llm } = args;
+
+  const prompt = `[STAGE:C6-refine-principle] refine DSL after adversarial rejection
+Your prior principle DSL passed parsing and compiled with the proposed
+capability registered, but it FAILED adversarial validation: it matched
+benign code patterns the validator generated as negatives. Refine the
+principle to be tighter — narrow its match clause so benign patterns
+don't fire.
+
+Invariant we're encoding: ${invariantDescription}
+
+Adversarial failure evidence: ${evidence}
+
+The capability is fixed (it already passed substrate oracles 14/16/17/18).
+Use the SAME capability table and column names. Only the principle DSL
+changes.
+
+Existing capability schema (drizzle JS property names — use these in DSL):
+\`\`\`ts
+${capabilitySpec.schemaTs}
+\`\`\`
+
+Your previous (over-broad) principle:
+\`\`\`dsl
+${failedDsl}
+\`\`\`
+
+Produce a tighter principle. Same DSL grammar:
+  principle <name> {
+    match $x: node where <capability>.<jsColumnName> == "<value>"
+    [optional: require [no] $g: predicate(...)]
+    report violation { at $x captures { site: $x } message "..." }
+  }
+
+Return ONLY a JSON object with one field:
+  { "dslSource": "<full DSL principle text, NO markdown fencing>" }
+No prose, no explanation outside the JSON.`;
+
+  let parsed: unknown;
+  try {
+    parsed = await requestStructuredJson<unknown>({
+      prompt,
+      llm,
+      stage: "C6-refinePrinciple",
+      model: getModelTier("C6-principleProposal"),
+    });
+  } catch (err) {
+    console.warn(
+      `[C6/refine] LLM call/parse failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const obj = parsed as Record<string, unknown>;
+  const newDsl = obj["dslSource"];
+  if (typeof newDsl !== "string" || newDsl.trim().length === 0) return null;
+  return newDsl;
+}
+
+// ---------------------------------------------------------------------------
 // Substrate-extension path: proposeWithCapability
 // ---------------------------------------------------------------------------
 
@@ -1065,12 +1146,67 @@ export async function proposeWithCapability(args: {
       },
     );
 
+    let acceptedDsl = dslSource;
+    let acceptedAdversarial = adversarial;
+
     if (!adversarial.passed) {
-      console.warn(`[C6] Adversarial validation failed for substrate path: ${adversarial.evidence}`);
-      return null;
+      // One retry: feed the failure evidence back to the LLM and ask for a
+      // tighter principle. The capability already passed substrate oracles
+      // 14/16/17/18, so the schema/extractor are sound — only the principle
+      // DSL is matching too broadly. A focused refinement call is cheaper
+      // than re-running the whole proposeWithCapability path.
+      console.warn(
+        `[C6] Adversarial validation failed for substrate path: ${adversarial.evidence}. Attempting refinement retry.`,
+      );
+
+      const refined = await refinePrincipleDsl({
+        capabilitySpec,
+        failedDsl: dslSource,
+        evidence: adversarial.evidence,
+        invariantDescription: invariant.description,
+        llm,
+      });
+
+      if (!refined) {
+        console.warn(`[C6] Refinement retry: LLM did not return a usable refined DSL.`);
+        return null;
+      }
+
+      // Pre-validate the refined DSL with parseDSL + compile.
+      try {
+        const program = parseDSL(refined);
+        compileProgram(program.nodes);
+      } catch (err) {
+        console.warn(
+          `[C6] Refinement retry: refined DSL failed compile: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return null;
+      }
+
+      const retryAdversarial = await runAdversarialValidation(
+        refined,
+        invariant.description,
+        llm,
+        db,
+        {
+          proposerModel: "sonnet",
+          preRunExtractor: substrateExtractor ?? undefined,
+        },
+      );
+
+      if (!retryAdversarial.passed) {
+        console.warn(
+          `[C6] Refinement retry adversarial still failed: ${retryAdversarial.evidence}`,
+        );
+        return null;
+      }
+
+      acceptedDsl = refined;
+      acceptedAdversarial = retryAdversarial;
+      console.warn(`[C6] Refinement retry succeeded — adversarial validation passed on second pass.`);
     }
 
-    const latentSiteMatches = findLatentSiteMatches(dslSource, db);
+    const latentSiteMatches = findLatentSiteMatches(acceptedDsl, db);
 
     const principle: PrincipleCandidate = {
       kind: "principle_with_capability",
@@ -1078,14 +1214,14 @@ export async function proposeWithCapability(args: {
       // Substrate-extension path: single canonical shape. bugClassId derives
       // from bugClassHint when available, else from the principle name.
       bugClassId: slugifyBugClassId(signal.bugClassHint ?? name),
-      dslSource,
+      dslSource: acceptedDsl,
       smtTemplate,
       teachingExample,
       adversarialValidation: [
         {
-          validatorModel: adversarial.validatorModel,
+          validatorModel: acceptedAdversarial.validatorModel,
           result: "pass",
-          evidence: adversarial.evidence,
+          evidence: acceptedAdversarial.evidence,
         },
       ],
       latentSiteMatches,
