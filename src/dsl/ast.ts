@@ -137,6 +137,8 @@ export interface CapColRef {
 
 export interface AtomPred {
   kind: "atomPred";
+  /** Comparison operator. Defaults to "eq" for backward compatibility. */
+  op: "eq" | "neq";
   lhs: CapColRef;
   rhs: RHS;
   loc: SourceLoc;

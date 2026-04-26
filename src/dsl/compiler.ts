@@ -386,16 +386,21 @@ export function compilePrinciple(
 
         const lhsExpr = `${binding.tableAlias}.${colSqlName}`;
 
+        // 2026-04-26: AtomPred gained an `op` field for == vs !=. Default
+        // backward-compat path is "eq" → "=". "neq" emits SQL "<>", except
+        // for the IS NULL case which becomes IS NOT NULL.
+        const cmp = atom.op === "neq" ? "<>" : "=";
+
         const rhs = atom.rhs;
         if (rhs.kind === "string") {
           validateEnum(capName, atom.lhs.column, rhs.value);
-          extraWheres.push(`${lhsExpr} = '${rhs.value.replace(/'/g, "''")}'`);
+          extraWheres.push(`${lhsExpr} ${cmp} '${rhs.value.replace(/'/g, "''")}'`);
         } else if (rhs.kind === "number") {
-          extraWheres.push(`${lhsExpr} = ${rhs.value}`);
+          extraWheres.push(`${lhsExpr} ${cmp} ${rhs.value}`);
         } else if (rhs.kind === "bool") {
-          extraWheres.push(`${lhsExpr} = ${rhs.value ? 1 : 0}`);
+          extraWheres.push(`${lhsExpr} ${cmp} ${rhs.value ? 1 : 0}`);
         } else if (rhs.kind === "null") {
-          extraWheres.push(`${lhsExpr} IS NULL`);
+          extraWheres.push(`${lhsExpr} IS ${atom.op === "neq" ? "NOT NULL" : "NULL"}`);
         } else if (rhs.kind === "varRef") {
           // $other — must be bound
           const otherBinding = varBindings.get(rhs.name);
@@ -406,7 +411,7 @@ export function compilePrinciple(
           }
           // Compare the node_id columns
           const otherNodeIdCol = resolveCapCol(otherBinding.capabilityName, "node_id", "").colSqlName;
-          extraWheres.push(`${lhsExpr} = ${otherBinding.tableAlias}.${otherNodeIdCol}`);
+          extraWheres.push(`${lhsExpr} ${cmp} ${otherBinding.tableAlias}.${otherNodeIdCol}`);
         } else if (rhs.kind === "varDeref") {
           // $other.cap.col
           const deref = rhs as VarDeref;
@@ -428,7 +433,7 @@ export function compilePrinciple(
               `not '${deref.capability}'`,
             );
           }
-          extraWheres.push(`${lhsExpr} = ${otherBinding.tableAlias}.${otherColSql}`);
+          extraWheres.push(`${lhsExpr} ${cmp} ${otherBinding.tableAlias}.${otherColSql}`);
         }
       }
     }

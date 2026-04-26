@@ -43,6 +43,7 @@ type TK =
   | "SEMI"
   | "COLON"
   | "EQEQ"
+  | "NEQ"
   | "EOF";
 
 interface Token {
@@ -117,6 +118,13 @@ function tokenize(src: string): Token[] {
     if (src[i] === "=" && peek(1) === "=") {
       advance(2);
       tokens.push({ type: "EQEQ", value: "==", line: startLine, col: startCol });
+      continue;
+    }
+
+    // != operator (inequality, parity with == in atom-pred position)
+    if (src[i] === "!" && peek(1) === "=") {
+      advance(2);
+      tokens.push({ type: "NEQ", value: "!=", line: startLine, col: startCol });
       continue;
     }
 
@@ -323,9 +331,21 @@ class Parser {
   private parseAtomPred(): AtomPred {
     const loc = this.loc();
     const capColRef = this.parseCapCol();
-    this.expect("EQEQ");
+    let op: "eq" | "neq" = "eq";
+    const opTok = this.peek();
+    if (opTok.type === "EQEQ") {
+      this.consume();
+    } else if (opTok.type === "NEQ") {
+      op = "neq";
+      this.consume();
+    } else {
+      throw new ParseError(
+        `Expected '==' or '!=' after capability column, got '${opTok.value}'`,
+        opTok.line, opTok.col,
+      );
+    }
     const rhs = this.parseRHS();
-    return { kind: "atomPred", lhs: capColRef, rhs, loc };
+    return { kind: "atomPred", op, lhs: capColRef, rhs, loc };
   }
 
   private parseCapCol(): CapColRef {
