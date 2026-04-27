@@ -57,7 +57,13 @@ export function recordCandidateDiff(
 
     const rows = entries.map((e) => entryToRow(context, filePath, e));
     if (rows.length > 0) {
-      db.insert(prePostDiff).values(rows).run();
+      // Batch insert: pre_post_diff has 21 columns, sqlite caps bound
+      // params at SQLITE_MAX_VARIABLE_NUMBER (32766 since 3.32; was 999).
+      // 21 cols * 100 rows = 2100 params per batch leaves headroom for both.
+      const BATCH = 100;
+      for (let i = 0; i < rows.length; i += BATCH) {
+        db.insert(prePostDiff).values(rows.slice(i, i + BATCH)).run();
+      }
       rowsInserted += rows.length;
     }
     filesProcessed += 1;
