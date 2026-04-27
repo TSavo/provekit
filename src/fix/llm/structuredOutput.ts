@@ -184,14 +184,13 @@ async function runAgentMode<T>(args: {
   try {
     const result = await agent(mutatedPrompt, {
       cwd,
-      // No allowedTools restriction: stages like Investigate need to Read
-      // source files to do their job (look at functions, see imports,
-      // understand structure) before producing the structured output.
-      // Restricting to ["Write"] forced the LLM into "describe what I
-      // would do" prose responses when it actually wanted to Read first.
-      // The agent's outputs are still constrained: the prompt asks for
-      // a Write to a specific scratch path, and we parse that file.
-      maxTurns: 5,
+      // No artificial restrictions: the LLM gets all tools and uses
+      // however many turns it needs. The output contract is enforced
+      // structurally — the prompt asks for a Write to a specific scratch
+      // path, we parse that file. If the LLM doesn't Write, the inline
+      // fallback catches it. Trying to clamp tool surface or turn count
+      // forced the agent into "describe what I would do" prose responses
+      // and broke the reasoning the helper was trying to capture.
       model,
     });
     agentText = result.text ?? "";

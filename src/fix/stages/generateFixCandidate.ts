@@ -140,7 +140,6 @@ async function generateFixCandidateViaAgent(args: {
     overlay,
     llm: args.llm,
     prompt,
-    maxTurns: 20,
     logger: args.logger,
     model: getModelTier("C3-agent"),
     stage: "C3-agent",

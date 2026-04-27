@@ -42,11 +42,14 @@ export async function runAgentInOverlay(args: {
   const stageName = args.stage ?? "agent";
   const cwd = args.overlay.worktreePath;
 
+  // No artificial caps: the LLM gets all tools and as many turns as it
+  // needs. The agent's output contract is enforced by the parsed result
+  // (toolUses + final patch), not by clamping the turn budget.
   const result = await args.llm.agent(args.prompt, {
     cwd,
     allowedTools: args.allowedTools ?? [".*"],
     model: args.model,
-    maxTurns: args.maxTurns ?? 20,
+    ...(args.maxTurns !== undefined ? { maxTurns: args.maxTurns } : {}),
   });
 
   // Emit structured log events for every block — full payloads, no truncation.
