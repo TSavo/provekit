@@ -15,16 +15,34 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
-import { eq, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { fileURLToPath } from "url";
 import { openDb } from "../../db/index.js";
 import { buildSASTForFile } from "../../sast/builder.js";
 import { evaluatePrinciple } from "../../dsl/evaluator.js";
-import { files } from "../../sast/schema/nodes.js";
+import { files, nodes } from "../../sast/schema/nodes.js";
 import { principleMatches } from "../../db/schema/principleMatches.js";
+import { prePostDiff } from "../../db/schema/preDiff.js";
 import type { HarvestCandidate } from "./extractBugs.js";
 import { recordCandidateDiff, setActiveCandidate } from "./diff.js";
+
+/**
+ * Principles that intentionally bind their `at` to a node WITHOUT change
+ * (e.g., `or-chain-extended-by-fix` binds `at $or` where $or pairs as
+ * `unchanged` in the diff — the inner OR survives, the OUTER one is added).
+ * The recognition harness's mining-context dirty-set post-filter must not
+ * drop those matches.
+ *
+ * Convention: any principle whose name contains `extended-by-fix` or
+ * starts with `diff-` is treated as self-managing its diff-awareness.
+ */
+function isDiffAwarePrincipleName(name: string): boolean {
+  if (name.startsWith("diff-")) return true;
+  if (name.includes("extended-by-fix")) return true;
+  if (name.includes("replaced-by-fix")) return true;
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -162,12 +180,23 @@ export function recognizeCandidate(
       }
     }
 
-    // 5. Read principleMatches and map to relative paths. Only count a match
-    // as recognition if the match's source_line falls within a line range
-    // that the candidate's diff actually touched. "Any match in any changed
-    // file" produces spurious 100% recognition because broad principles
-    // (e.g. "any || operator") match everywhere in any file containing the
-    // shape, regardless of whether the match is at the bug's locus.
+    // 5. Read principleMatches and map to relative paths. Two filters apply
+    // to count a match as recognition:
+    //   (a) coarse line-level: the match's source_line falls within a line
+    //       range the candidate's diff touched. Rejects matches in files
+    //       the diff doesn't reach at all.
+    //   (b) node-level dirty set: the match's `at` node has change_kind !=
+    //       'unchanged' in pre_post_diff. Rejects matches on stable code
+    //       that happens to live on a changed line (e.g., addition-overflow
+    //       firing on `parentElements[0].loc.start.line === parent.loc.start.line`
+    //       at line 729 because the surrounding if-statement got a null-guard).
+    //       Filter (b) is exempted for principles that intentionally bind
+    //       to unchanged nodes — see `isDiffAwarePrincipleName`.
+    //
+    // The node-level filter is the architectural fix for #115's
+    // recognized-stratum over-firing: rather than every DSL author having
+    // to add `require ... is_in_dirty_set($matched)`, the harness applies
+    // the constraint uniformly. DSL stays clean.
     const dirtyLinesByPath = parseDiffDirtyLines(candidate.diff);
 
     const matchRows = db
@@ -198,6 +227,14 @@ export function recognizeCandidate(
         const line = lineForNode(db, m.rootNodeId);
         const dirtyLines = dirtyLinesByPath.get(relPath);
         if (!dirtyLines || !lineInRanges(line, dirtyLines)) continue;
+
+        // Node-level dirty-set filter (mining-context architectural fix).
+        // Skip principles that intentionally fire on unchanged nodes.
+        if (!isDiffAwarePrincipleName(m.principleName)) {
+          const isDirty = isNodeDirty(db, m.rootNodeId);
+          if (!isDirty) continue;
+        }
+
         matches.push({ principleName: m.principleName, filePath: relPath, line });
       }
     }
@@ -220,6 +257,37 @@ export function recognizeCandidate(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * True iff the SAST node identified by `nodeId` corresponds to a
+ * pre_post_diff row whose change_kind is anything but `unchanged` —
+ * i.e., the fix actually touched this node. Joins via (file_path,
+ * source_start, kind) which uniquely identifies the node since both
+ * tables key on getFullStart() and the kind name.
+ *
+ * Returns FALSE when:
+ *   - The node has a pre_post_diff row with change_kind = 'unchanged'
+ *   - No pre_post_diff row exists for this node (defensive — recognition
+ *     should not silently include matches whose diff classification we
+ *     couldn't compute)
+ */
+function isNodeDirty(db: ReturnType<typeof openDb>, nodeId: string): boolean {
+  const rows = db
+    .select({ kind: prePostDiff.changeKind })
+    .from(prePostDiff)
+    .innerJoin(files, eq(files.path, prePostDiff.filePath))
+    .innerJoin(nodes, eq(nodes.fileId, files.id))
+    .where(
+      and(
+        eq(nodes.id, nodeId),
+        eq(prePostDiff.preStart, nodes.sourceStart),
+        eq(prePostDiff.preKind, nodes.kind),
+      ),
+    )
+    .all();
+  if (rows.length === 0) return false;
+  return rows.some((r) => r.kind !== "unchanged");
+}
 
 /**
  * Parse a unified diff into per-file dirty-line ranges. Each entry is the
