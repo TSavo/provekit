@@ -24,6 +24,7 @@ import { evaluatePrinciple } from "../../dsl/evaluator.js";
 import { files } from "../../sast/schema/nodes.js";
 import { principleMatches } from "../../db/schema/principleMatches.js";
 import type { HarvestCandidate } from "./extractBugs.js";
+import { recordCandidateDiff, setActiveCandidate } from "./diff.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,14 +79,22 @@ export function recognizeCandidate(
 
   let db: ReturnType<typeof openDb> | null = null;
   try {
-    // 1. Materialize buggy files.
+    // 1. Materialize buggy files. Track abs↔relPath so we can pass the
+    // remapped paths to recordCandidateDiff (the diff writer keys
+    // pre_post_diff rows by the file path stored in `files.path`, which
+    // is what nodes.file_id joins on at DSL-relation eval time).
     const productionPaths: string[] = [];
+    const remappedBuggy: Record<string, string> = {};
+    const remappedFixed: Record<string, string> = {};
     for (const [relPath, content] of Object.entries(candidate.buggyFiles)) {
       if (isTestPath(relPath)) continue;
       const abs = join(scratchDir, "src", relPath);
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, content, "utf-8");
       productionPaths.push(abs);
+      remappedBuggy[abs] = content;
+      const fixed = candidate.fixedFiles[relPath];
+      if (fixed !== undefined) remappedFixed[abs] = fixed;
     }
 
     if (productionPaths.length === 0) {
@@ -109,6 +118,23 @@ export function recognizeCandidate(
         // Swallow per-file build errors — recognition is opportunistic.
         // A file the parser can't handle simply doesn't contribute matches.
       }
+    }
+
+    // 3.5. Record the pre/post diff and set the active diff context so
+    // diff-aware DSL relations (`is_in_dirty_set`, `was_replaced_by_addition`)
+    // can fire. Without this, principles using those relations correctly
+    // return false everywhere — which would silently zero out the
+    // recognition rate of every principle that depends on diff signal.
+    try {
+      recordCandidateDiff(db, {
+        ...candidate,
+        buggyFiles: remappedBuggy,
+        fixedFiles: remappedFixed,
+      });
+      setActiveCandidate(db, candidate.source.project, candidate.source.bugId);
+    } catch {
+      // Diff recording is best-effort — recognition should still attempt
+      // even if the diff couldn't be classified for some reason.
     }
 
     // 4. Load principle DSL files and evaluate each. Failures are per-DSL
