@@ -112,19 +112,32 @@ export function registerBuiltinRelations(): void {
       return (
         `(EXISTS (` +
         // (1) $if has a decides row whose consequent_node structurally
-        //     encloses $assn (intersect via source-range nesting on the
-        //     consequent's nodes-row).
+        //     encloses $assn (source-range nesting on the consequent).
         `SELECT 1 FROM node_decides d, nodes c ` +
         `WHERE d.node_id = ${a}.id AND c.id = d.consequent_node ` +
         `AND c.file_id = ${b}.file_id ` +
         `AND c.source_start <= ${b}.source_start ` +
         `AND c.source_end >= ${b}.source_end` +
         `) AND EXISTS (` +
-        // (2) $assn has data flow to some use whose source range is NOT
-        //     enclosed by $if's range — the fall-through reach.
-        `SELECT 1 FROM data_flow_transitive dft, nodes use_n ` +
-        `WHERE dft.from_node = ${b}.id ` +
-        `AND use_n.id = dft.to_node ` +
+        // (2) The variable that $assn writes to has at least one OTHER
+        //     use-site whose source range is NOT enclosed by $if. We pivot
+        //     through node_assigns.target_node (the LHS use of the
+        //     variable) and use the data_flow declaration-share pattern
+        //     (same df.from_node = same declared variable) the same way
+        //     same_value works.
+        //
+        //     2026-04-27: an earlier draft used `dft.from_node = $assn.id`
+        //     which doesn't pair (data_flow tracks decl-to-use, not
+        //     assignment-result-to-use). Pivoting through target_node is
+        //     the correct same-variable semantic.
+        `SELECT 1 FROM node_assigns assn_row, ` +
+        `data_flow df1, data_flow df2, ` +
+        `nodes use_n ` +
+        `WHERE assn_row.node_id = ${b}.id ` +
+        `AND df1.to_node = assn_row.target_node ` +
+        `AND df2.from_node = df1.from_node ` +
+        `AND df2.to_node = use_n.id ` +
+        `AND use_n.id <> assn_row.target_node ` +
         `AND NOT (` +
         `use_n.file_id = ${a}.file_id ` +
         `AND use_n.source_start >= ${a}.source_start ` +

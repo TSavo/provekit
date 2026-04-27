@@ -1,36 +1,36 @@
-// 2026-04-27: hard-bug 3 closure (v1, conservative shape).
+// 2026-04-27: hard-bug 3 closure. Variable Staleness on Fall-Through.
 //
-// Variable Staleness on Fall-Through. Pattern:
 //   let x = 0;
 //   if (cond) { x = 1; }
 //   use(x);
-// When cond is false, use(x) sees the stale default. The classical fix is
-// either an else-branch with the same assignment OR replacing the if with
-// a conditional expression.
 //
-// V1 substrate signal: an if-statement with NO else-branch
-// (decides.alternate_node IS NULL) that ENCLOSES an assignment. Severity
-// = info because legitimate `if (cond) { x = ... }` patterns exist (e.g.,
-// when x is used only inside the same block, or when the missing else is
-// intentional).
+// When cond is false, use(x) sees the stale default. Fix is an else-branch
+// with the same assignment, or replacing the if with a conditional
+// expression.
 //
-// V2 (deferred): would require adding a relation that links the assignment's
-// target variable to use-sites OUTSIDE the if-statement. The substrate has
-// data_flow_transitive but it tracks variable-declarations to uses, not
-// assignment-to-uses. A new same-variable-use relation (analogous to
-// same_value but parameterized by scope) would tighten this.
+// Substrate machinery (this commit's full version):
+//   stale_assignment($if, $assn) — true iff:
+//     (1) $assn is structurally inside $if's `decides.consequent_node`
+//         (source-range nesting), AND
+//     (2) the variable that $assn writes (assigns.target_node) has at
+//         least one OTHER use-site (sharing the same data_flow.from_node
+//         declaration) whose source range is NOT enclosed by $if. The
+//         "other use outside the if" is the staleness condition.
+//
+// Severity = violation (the data-flow check restricts firings to cases
+// with a real fall-through reach, not just any if-with-assignment).
 
 predicate any_assignment($x: node) {
   match $a: node where assigns.assign_kind == "="
 }
 
 principle variable-staleness {
-  match $if: node where decides.decision_kind == "if" and decides.alternate_node == null
+  match $if: node where decides.decision_kind == "if"
   require $assn: any_assignment($if)
-    where encloses($if, $assn)
-  report info {
+    where stale_assignment($if, $assn)
+  report violation {
     at $if
     captures { ifBlock: $if }
-    message "if-statement with no else branch contains an assignment; fall-through path may see the unmodified value"
+    message "assignment inside if-block writes a variable that is also used outside the if; fall-through path sees the unmodified value"
   }
 }
