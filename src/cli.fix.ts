@@ -20,6 +20,7 @@ import { Readable, Writable } from "stream";
 import { eq } from "drizzle-orm";
 
 import { parseBugSignal } from "./fix/intake.js";
+import { investigate } from "./fix/stages/investigate.js";
 import { locate } from "./fix/locate.js";
 import { classify, ClassifyError } from "./fix/classify.js";
 import { openDb, type Db } from "./db/index.js";
@@ -358,6 +359,81 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
         .join(", ");
       e(`Registered adapters: ${names}`);
       return 1;
+    }
+
+    // ── Investigate ──────────────────────────────────────────────────────────
+    // Bridge for symptom-only bug reports (user perspective): if Intake didn't
+    // give us a usable code reference (no refs at all, or refs with no file
+    // path), run the LLM with a project tour and ask it to propose candidate
+    // code sites. The result feeds Locate as if Intake had produced those
+    // references natively.
+    // Validate by disk-existence, not by string-shape: Intake's LLM has
+    // been observed hallucinating function names (`evolve`) into the
+    // file slot. We need a path that actually points at a file before
+    // we can trust it.
+    const projectRootForCheck = resolve(process.cwd());
+    const hasUsableRef = signal.codeReferences.some((r) => {
+      if (typeof r.file !== "string" || r.file.length === 0) return false;
+      const abs = r.file.startsWith("/") ? r.file : resolve(projectRootForCheck, r.file);
+      return existsSync(abs);
+    });
+    if (!hasUsableRef) {
+      logger.stage("Investigate");
+      const t0Investigate = Date.now();
+      const projectRoot = resolve(process.cwd());
+      try {
+        const investigateResult = await investigate({
+          signal,
+          projectRoot,
+          llm,
+          logger,
+        });
+        signal = {
+          ...signal,
+          codeReferences: investigateResult.codeReferences,
+          fixHint: signal.fixHint ?? investigateResult.report.fixHypothesis,
+        };
+        logger.info(
+          `  primary location: ${investigateResult.report.primaryLocation.file}` +
+          (investigateResult.report.primaryLocation.function
+            ? ` (${investigateResult.report.primaryLocation.function})`
+            : "") +
+          ` — ${investigateResult.report.primaryLocation.confidence} confidence`,
+        );
+        logger.info(`  candidates: ${investigateResult.report.candidateLocations.length}`);
+        for (const c of investigateResult.report.candidateLocations) {
+          logger.info(`    - ${c.file}${c.function ? ` (${c.function})` : ""} — ${c.confidence}`);
+        }
+        logger.info(`  report: ${investigateResult.reportPath}`);
+
+        // Build SAST for the candidate files so Locate can find them. The
+        // fix loop's DB was created by `provekit init` but is empty until
+        // analyze populates it; for the symptom-only flow Investigate just
+        // identified, populate just those files now (no need to index the
+        // whole project — Locate only needs the candidates).
+        const { buildSASTForFile } = await import("./sast/builder.js");
+        const filesToIndex = new Set<string>();
+        for (const ref of investigateResult.codeReferences) {
+          filesToIndex.add(resolve(projectRoot, ref.file));
+        }
+        let indexed = 0;
+        let parseFailures = 0;
+        for (const abs of filesToIndex) {
+          if (!existsSync(abs)) continue;
+          try {
+            buildSASTForFile(db, abs);
+            indexed++;
+          } catch {
+            parseFailures++;
+          }
+        }
+        logger.info(`  indexed ${indexed} candidate file(s) into SAST (${parseFailures} parse failures)`);
+        logger.info(`  Investigate stage OK in ${Date.now() - t0Investigate}ms`);
+      } catch (err) {
+        logger.error(`Investigate threw`, { message: (err as Error).message });
+        e(`Investigate error: ${(err as Error).message}`);
+        return 2;
+      }
     }
 
     // ── Locate ───────────────────────────────────────────────────────────────
