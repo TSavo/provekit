@@ -439,6 +439,47 @@ export function cherryPickToTarget(
       stdio: ["pipe", "pipe", "pipe"],
     }).trim();
 
+    // 2026-04-27 (P2 dogfood finding): update-ref advances the branch pointer
+    // but does NOT sync the working tree. If the user has the target branch
+    // checked out, the file content stays at the pre-fix state — the branch
+    // says "fixed" but the working tree says "buggy."
+    //
+    // Plan: BEFORE update-ref, determine whether it's safe to sync. AFTER
+    // update-ref, do `git reset --hard` if so. The cleanliness check has
+    // to happen pre-update-ref because update-ref itself makes status
+    // appear dirty (the cherry-pick's delta now shows as index-vs-HEAD).
+    //
+    // Untracked .provekit/ entries are tolerated: provekit creates that dir
+    // as part of analyze and doesn't represent user-authored changes.
+    let canSyncAfterUpdate = false;
+    let currentBranchPre: string | null = null;
+    try {
+      currentBranchPre = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], {
+        cwd: handle.repoRoot,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+    } catch {
+      // detached HEAD — leave alone
+    }
+    if (currentBranchPre === targetBranch) {
+      try {
+        const status = execFileSync("git", ["status", "--porcelain"], {
+          cwd: handle.repoRoot,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+        // Filter out untracked .provekit/ — that's our scaffolding, not user state.
+        const dirtyLines = status
+          .split("\n")
+          .filter((l) => l.length > 0)
+          .filter((l) => !/^\?\?\s+\.provekit\//.test(l));
+        canSyncAfterUpdate = dirtyLines.length === 0;
+      } catch {
+        // Treat status failure as dirty.
+      }
+    }
+
     // Update the branch ref to point at the cherry-picked commit.
     // Use update-ref instead of branch -f to allow updating the checked-out branch.
     execFileSync("git", ["update-ref", `refs/heads/${targetBranch}`, newSha], {
@@ -446,6 +487,18 @@ export function cherryPickToTarget(
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     });
+
+    if (canSyncAfterUpdate) {
+      try {
+        execFileSync("git", ["reset", "--hard", newSha], {
+          cwd: handle.repoRoot,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch {
+        // Reset failed — branch ref is still updated; user can sync manually.
+      }
+    }
   } finally {
     // Remove the helper worktree in all cases.
     try {

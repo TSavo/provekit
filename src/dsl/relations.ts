@@ -89,6 +89,52 @@ export function registerBuiltinRelations(): void {
   // ancestors, so 1-hop reachability is included. Self-reach (source === sink)
   // is NOT included here since data_flow_transitive does not include zero-hop
   // identity rows. Callers needing reflexive closure can OR with `same_node`.
+  // 2026-04-27: stale_assignment($if, $assn) — closes hard-bug 3
+  // (variable-staleness on fall-through). True iff:
+  //   1. $assn is structurally inside $if's `decides.consequent_node` (the
+  //      then-branch), and
+  //   2. $assn's value has data flow (transitive) to at least one node that
+  //      is NOT enclosed by $if's source range — i.e., the assignment
+  //      reaches a use on the fall-through path.
+  //
+  // The bug class: `let x = 0; if (cond) { x = 1; } use(x);` — when cond is
+  // false, use(x) sees the unmodified default. The relation packages the
+  // structural + data-flow constraints into a single SQL expression because
+  // the DSL's require clause supports only one relation per principle.
+  registerRelation({
+    name: "stale_assignment",
+    paramCount: 2,
+    paramTypes: ["node", "node"],
+    compile: ({ args }) => {
+      const a = args[0]?.kind === "node" ? args[0].alias : null; // $if
+      const b = args[1]?.kind === "node" ? args[1].alias : null; // $assn
+      if (!a || !b) throw new Error("stale_assignment: both args must be node");
+      return (
+        `(EXISTS (` +
+        // (1) $if has a decides row whose consequent_node structurally
+        //     encloses $assn (intersect via source-range nesting on the
+        //     consequent's nodes-row).
+        `SELECT 1 FROM node_decides d, nodes c ` +
+        `WHERE d.node_id = ${a}.id AND c.id = d.consequent_node ` +
+        `AND c.file_id = ${b}.file_id ` +
+        `AND c.source_start <= ${b}.source_start ` +
+        `AND c.source_end >= ${b}.source_end` +
+        `) AND EXISTS (` +
+        // (2) $assn has data flow to some use whose source range is NOT
+        //     enclosed by $if's range — the fall-through reach.
+        `SELECT 1 FROM data_flow_transitive dft, nodes use_n ` +
+        `WHERE dft.from_node = ${b}.id ` +
+        `AND use_n.id = dft.to_node ` +
+        `AND NOT (` +
+        `use_n.file_id = ${a}.file_id ` +
+        `AND use_n.source_start >= ${a}.source_start ` +
+        `AND use_n.source_end <= ${a}.source_end` +
+        `)` +
+        `))`
+      );
+    },
+  });
+
   // 2026-04-26: encloses($outer, $inner) — true iff $outer is an AST ancestor
   // of $inner (i.e. $outer's source range strictly contains $inner's). Used
   // by loop-accumulator-overflow ("augmented assignment inside a loop body")
