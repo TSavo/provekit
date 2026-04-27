@@ -58,5 +58,15 @@ export const prePostDiff = sqliteTable(
       t.postStart,
       t.postKind,
     ),
+    // Pre-side lookup: mining principles fire on the BUGGY SAST, so the
+    // bound variable's coordinates are pre-side. A relation like
+    // `was_replaced_by_addition($preNode)` joins by (context, file_path,
+    // pre_start, pre_kind) → row → check change_kind / post-side context.
+    byPreLocation: index("pre_post_diff_by_pre_location").on(
+      t.context,
+      t.filePath,
+      t.preStart,
+      t.preKind,
+    ),
   }),
 );

@@ -124,6 +124,10 @@ const fixtures: Fixture[] = [
   },
 
   // ===== or-chain-extension: principle mining target =====
+  // Day 3 principle: a pre BinaryExpression whose fingerprint appears as
+  // an `unchanged` row inside a post tree where its parent is `added` is
+  // an extended-OR-chain candidate. The assertion below verifies BOTH the
+  // pre→unchanged reachability and the new-clause-is-added signal.
   {
     name: "or-chain-extend-1: enum disjunction",
     pre: `function check(x) {
@@ -133,15 +137,24 @@ const fixtures: Fixture[] = [
   return x === "a" || x === "b" || x === "c";
 }`,
     check: (e) => {
-      // Pre BinaryExpr (a || b) fingerprint should appear as an unchanged
-      // subtree inside post (post parses as (a||b) || c, so the inner
-      // BinaryExpression has the same fingerprint as the entire pre
-      // BinaryExpression).
-      const summary = summarize(e);
-      if (!hasUnchangedCount(e, 5)) {
-        return `expected ≥5 unchanged (function shell + inner OR shape preserved); got ${summary.unchanged}`;
+      // The pre 2-clause OR's fingerprint must appear in an `unchanged` row
+      // (because post parses as ((a||b) || c), the inner subtree matches).
+      const preOrFp = e.find(
+        (entry) =>
+          entry.pre?.kindName === "BinaryExpression" &&
+          /=== "a".*\|\|.*=== "b"/.test(entry.pre.textPreview),
+      )?.pre?.fingerprint;
+      if (!preOrFp) return "couldn't locate pre 2-clause BinaryExpression";
+      const innerUnchanged = e.find(
+        (entry) =>
+          entry.changeKind === "unchanged" &&
+          entry.pre?.fingerprint === preOrFp &&
+          entry.post?.kindName === "BinaryExpression",
+      );
+      if (!innerUnchanged) {
+        return `pre 2-clause OR fingerprint ${preOrFp} not unchanged-paired; the OR-chain principle would fail to find the inner subtree`;
       }
-      // The new "x === c" comparison must show up as added.
+      // The outer 3-clause OR (or its new "c" clause) must be added.
       const hasAddedCompare = e.some(
         (entry) =>
           entry.changeKind === "added" &&
@@ -163,6 +176,23 @@ const fixtures: Fixture[] = [
   return t === "Foo" || t === "Bar" || t === "Baz";
 }`,
     check: (e) => {
+      // Same dual assertion as -1: inner unchanged + outer added.
+      const preOrFp = e.find(
+        (entry) =>
+          entry.pre?.kindName === "BinaryExpression" &&
+          /Foo.*\|\|.*Bar/.test(entry.pre.textPreview) &&
+          !/Baz/.test(entry.pre.textPreview),
+      )?.pre?.fingerprint;
+      if (!preOrFp) return "couldn't locate pre 2-clause BinaryExpression";
+      const innerUnchanged = e.find(
+        (entry) =>
+          entry.changeKind === "unchanged" &&
+          entry.pre?.fingerprint === preOrFp &&
+          entry.post?.kindName === "BinaryExpression",
+      );
+      if (!innerUnchanged) {
+        return `pre 2-clause OR fingerprint ${preOrFp} not unchanged-paired`;
+      }
       const hasAddedBaz = e.some(
         (entry) =>
           entry.changeKind === "added" &&
