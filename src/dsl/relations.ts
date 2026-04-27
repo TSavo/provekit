@@ -200,6 +200,80 @@ export function registerBuiltinRelations(): void {
     },
   });
 
+  // 2026-04-27: was_replaced_by_addition($preNode) — closes hard-bug 1
+  // (diff-aware principle mining). True iff:
+  //   1. $preNode pairs as `unchanged` to a post-side node in the active
+  //      diff context (its fingerprint survived into the post tree), AND
+  //   2. There exists an `added` post node whose source range strictly
+  //      encloses that paired post node — i.e., $preNode's subtree was
+  //      preserved but rewrapped inside new code.
+  //
+  // The bug class: `return x === "a" || x === "b"` (pre) is enclosed by
+  // `return x === "a" || x === "b" || x === "c"` (post). The OR-chain
+  // extension principle binds $preNode to the inner BinaryExpression and
+  // detects the new-clause-extension by structural enclosure, not LLM
+  // recognition. Generalizes to "any subtree extended by wrapping".
+  //
+  // Active context: requires diff_context_active to have a row. Without
+  // it, the relation returns false (no diff in scope = no signal).
+  // src/fix/harvest/diff.ts setActiveDiffContext() is the canonical setter.
+  registerRelation({
+    name: "was_replaced_by_addition",
+    paramCount: 1,
+    paramTypes: ["node"],
+    compile: ({ args }) => {
+      const a = args[0]?.kind === "node" ? args[0].alias : null;
+      if (!a) throw new Error("was_replaced_by_addition: arg must be node");
+      return (
+        `EXISTS (` +
+        `SELECT 1 FROM pre_post_diff ppd_unc ` +
+        `JOIN files f ON f.path = ppd_unc.file_path ` +
+        `JOIN diff_context_active adc ON adc.context = ppd_unc.context ` +
+        `WHERE f.id = ${a}.file_id ` +
+        `AND ppd_unc.pre_start = ${a}.source_start ` +
+        `AND ppd_unc.pre_kind = ${a}.kind ` +
+        `AND ppd_unc.change_kind = 'unchanged' ` +
+        `AND EXISTS (` +
+        `SELECT 1 FROM pre_post_diff ppd_add ` +
+        `WHERE ppd_add.context = ppd_unc.context ` +
+        `AND ppd_add.file_path = ppd_unc.file_path ` +
+        `AND ppd_add.change_kind = 'added' ` +
+        `AND ppd_add.post_start <= ppd_unc.post_start ` +
+        `AND ppd_add.post_end >= ppd_unc.post_end ` +
+        `AND NOT (ppd_add.post_start = ppd_unc.post_start ` +
+        `AND ppd_add.post_end = ppd_unc.post_end)` +
+        `)` +
+        `)`
+      );
+    },
+  });
+
+  // 2026-04-27: is_post_added($node) — lint-context counterpart. Fires
+  // when $node was added in the post side relative to pre. Matched by
+  // post coordinates (lint binds principles to the working-tree SAST).
+  // Use this for "this code is new" queries; for "the BUGGY code that
+  // got wrapped" queries, use `was_replaced_by_addition`.
+  registerRelation({
+    name: "is_post_added",
+    paramCount: 1,
+    paramTypes: ["node"],
+    compile: ({ args }) => {
+      const a = args[0]?.kind === "node" ? args[0].alias : null;
+      if (!a) throw new Error("is_post_added: arg must be node");
+      return (
+        `EXISTS (` +
+        `SELECT 1 FROM pre_post_diff ppd ` +
+        `JOIN files f ON f.path = ppd.file_path ` +
+        `JOIN diff_context_active adc ON adc.context = ppd.context ` +
+        `WHERE f.id = ${a}.file_id ` +
+        `AND ppd.post_start = ${a}.source_start ` +
+        `AND ppd.post_kind = ${a}.kind ` +
+        `AND ppd.change_kind = 'added'` +
+        `)`
+      );
+    },
+  });
+
   registerRelation({
     name: "data_flow_reaches",
     paramCount: 2,

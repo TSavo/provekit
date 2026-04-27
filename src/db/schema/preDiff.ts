@@ -1,4 +1,27 @@
-import { sqliteTable, integer, text, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, integer, text, index, primaryKey } from "drizzle-orm/sqlite-core";
+
+/**
+ * Singleton table identifying which diff context DSL diff-aware relations
+ * should resolve against. The principle SQL emitted by relations like
+ * `was_replaced_by_addition` joins this table; if no row is set, the
+ * relation never fires (false), which is exactly what we want when no
+ * diff is in scope (lint without --base, fix-loop without bundle).
+ *
+ * The table holds at most one row. Callers use setActiveDiffContext /
+ * clearActiveDiffContext (src/fix/harvest/diff.ts) — direct DB writes
+ * are discouraged. The `k` column is a fixed-string PK that lets us use
+ * upsert semantics without ON CONFLICT(empty PK) edge cases.
+ */
+export const diffContextActive = sqliteTable(
+  "diff_context_active",
+  {
+    k: text("k").notNull(),
+    context: text("context").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.k] }),
+  }),
+);
 
 /**
  * Per-node diff classification harvested from a (pre, post) file pair.

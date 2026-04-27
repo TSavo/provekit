@@ -17,9 +17,9 @@
  * want to compare runs.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
-import { prePostDiff } from "../../db/schema/preDiff.js";
+import { prePostDiff, diffContextActive } from "../../db/schema/preDiff.js";
 import { computeFileDiff, type DiffEntry } from "../../sast/diff.js";
 import type { HarvestCandidate } from "./extractBugs.js";
 
@@ -78,6 +78,33 @@ export function clearCandidateDiff(
   const context = `harvest:${project}:${bugId}`;
   const result = db.delete(prePostDiff).where(eq(prePostDiff.context, context)).run();
   return Number(result.changes ?? 0);
+}
+
+/**
+ * Tell the DSL relation layer which diff context is currently in scope.
+ * Must be called BEFORE evaluating a principle that uses diff-aware
+ * relations (`was_replaced_by_addition`, etc.) — otherwise those
+ * relations correctly report false (no context = no diff to compare).
+ */
+export function setActiveDiffContext(db: Db, context: string): void {
+  // Single-row replace: delete then insert (sqlite has no convenient
+  // UPSERT in drizzle for a fixed-PK case at our version level).
+  db.delete(diffContextActive).run();
+  db.insert(diffContextActive).values({ k: "active", context }).run();
+}
+
+/** Clear the active diff context. Diff-aware relations now report false. */
+export function clearActiveDiffContext(db: Db): void {
+  db.delete(diffContextActive).run();
+}
+
+/** Convenience: set active context to the candidate's harvest tag. */
+export function setActiveCandidate(
+  db: Db,
+  project: string,
+  bugId: string,
+): void {
+  setActiveDiffContext(db, `harvest:${project}:${bugId}`);
 }
 
 function entryToRow(context: string, filePath: string, e: DiffEntry) {

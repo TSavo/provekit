@@ -89,23 +89,22 @@ const fixtures: Fixture[] = [
     pre: `function f(a) { return a + 1; }`,
     post: `function f(a) { return a + 2; }`,
     check: (e) => {
-      // The "1" → "2" change: NumericLiteral fingerprints differ, but the
-      // numeric literal should occupy the same role under the same parent
-      // shape... well, the parent BinaryExpression's fingerprint also
-      // changes. So in step 1 nothing pairs at the BinaryExpr level.
-      // In step 2, the BinaryExpression pairs by (parent=ReturnStatement-pre-fp, ordinal=0, kind=BinaryExpression).
-      // Wait: ReturnStatement fingerprints differ too because they include
-      // their child's fingerprints recursively. So the parent-fp won't
-      // match. This climbs all the way up to FunctionDeclaration which
-      // also won't match. So the modification "modified" classification
-      // will only land at the top of the modification chain.
-      //
-      // What's guaranteed: at least one "modified" entry. The exact level
-      // depends on ts-morph's tree shape — accept any "modified".
+      // The "1" → "2" change: same kind (NumericLiteral), same ordinal
+      // among parent's children → top-down pairing classifies as
+      // `modified` recursively up to the differing leaf. No add/delete
+      // needed since each level pairs cleanly.
       const summary = summarize(e);
       if (summary.modified === 0) return "no 'modified' entries";
-      if (summary.added === 0) return "no 'added' entries (the new literal is unmatched)";
-      if (summary.deleted === 0) return "no 'deleted' entries (the old literal is unmatched)";
+      // Find a NumericLiteral entry classified modified, with the
+      // pre/post text reflecting the literal swap.
+      const litMod = e.find(
+        (entry) =>
+          entry.changeKind === "modified" &&
+          entry.pre?.kindName === "NumericLiteral" &&
+          entry.pre.textPreview === "1" &&
+          entry.post?.textPreview === "2",
+      );
+      if (!litMod) return "no NumericLiteral 1→2 modified entry";
       return null;
     },
   },
