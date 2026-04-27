@@ -217,6 +217,16 @@ export function registerBuiltinRelations(): void {
   // Active context: requires diff_context_active to have a row. Without
   // it, the relation returns false (no diff in scope = no signal).
   // src/fix/harvest/diff.ts setActiveDiffContext() is the canonical setter.
+  // 2026-04-27 round-2 tightening: require the enclosing added node to
+  // itself be a BinaryExpression. The original relation accepted ANY
+  // added enclosing node, which over-fired on wrappers — Hexo/12 added
+  // `.toString()` around an unchanged OR (CallExpression encloses the
+  // BinaryExpression but is not an OR-chain extension); eslint/184 had
+  // unrelated added nodes enclosing the matched falsy_default.
+  // The bug-class shape is "OR-chain wrapped by a wider OR-chain"; the
+  // encloser must be a BinaryExpression to capture that shape. Other
+  // shapes (e.g., addition wrapped by an addition) get a separate relation
+  // when needed.
   registerRelation({
     name: "was_replaced_by_addition",
     paramCount: 1,
@@ -238,6 +248,7 @@ export function registerBuiltinRelations(): void {
         `WHERE ppd_add.context = ppd_unc.context ` +
         `AND ppd_add.file_path = ppd_unc.file_path ` +
         `AND ppd_add.change_kind = 'added' ` +
+        `AND ppd_add.post_kind = 'BinaryExpression' ` +
         `AND ppd_add.post_start <= ppd_unc.post_start ` +
         `AND ppd_add.post_end >= ppd_unc.post_end ` +
         `AND NOT (ppd_add.post_start = ppd_unc.post_start ` +
