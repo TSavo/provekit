@@ -184,14 +184,14 @@ async function runAgentMode<T>(args: {
   try {
     const result = await agent(mutatedPrompt, {
       cwd,
-      // No artificial restrictions: the LLM gets all tools and uses
-      // however many turns it needs. The output contract is enforced
-      // structurally — the prompt asks for a Write to a specific scratch
-      // path, we parse that file. If the LLM doesn't Write, the inline
-      // fallback catches it. Trying to clamp tool surface or turn count
-      // forced the agent into "describe what I would do" prose responses
-      // and broke the reasoning the helper was trying to capture.
+      // Explicitly all tools. Passing `undefined` makes the SDK fall back
+      // to a restrictive default ("I need write permission" prose responses
+      // result). [".*"] regex matches every tool name. The output contract
+      // is still enforced structurally — the prompt asks for a Write to a
+      // scratch path, we parse that file; if the LLM doesn't Write, the
+      // inline fallback catches it.
       // 1000 is effectively no cap (overrides the SDK's 20-turn default).
+      allowedTools: [".*"],
       maxTurns: 1000,
       model,
     });
