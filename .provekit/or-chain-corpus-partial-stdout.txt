@@ -1,0 +1,5 @@
+
+=== bower: 3 candidates (0 skipped by filter) ===
+  processed=3 matched_candidates=1 total_matches=1 errors=0
+
+=== eslint: 326 candidates (7 skipped by filter) ===
