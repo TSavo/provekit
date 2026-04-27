@@ -43,13 +43,17 @@ export async function runAgentInOverlay(args: {
   const cwd = args.overlay.worktreePath;
 
   // No artificial caps: the LLM gets all tools and as many turns as it
-  // needs. The agent's output contract is enforced by the parsed result
+  // needs. The claude-agent-sdk has a default of 20 turns which cuts off
+  // legitimate exploration (we observed C3 successfully navigating from a
+  // wrong investigateReport locus to the real code path at turn 24, then
+  // dying). 1000 is effectively no cap — any realistic stage finishes well
+  // before it. The agent's output contract is enforced by the parsed result
   // (toolUses + final patch), not by clamping the turn budget.
   const result = await args.llm.agent(args.prompt, {
     cwd,
     allowedTools: args.allowedTools ?? [".*"],
     model: args.model,
-    ...(args.maxTurns !== undefined ? { maxTurns: args.maxTurns } : {}),
+    maxTurns: args.maxTurns ?? 1000,
   });
 
   // Emit structured log events for every block — full payloads, no truncation.

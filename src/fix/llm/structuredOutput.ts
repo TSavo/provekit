@@ -191,6 +191,8 @@ async function runAgentMode<T>(args: {
       // fallback catches it. Trying to clamp tool surface or turn count
       // forced the agent into "describe what I would do" prose responses
       // and broke the reasoning the helper was trying to capture.
+      // 1000 is effectively no cap (overrides the SDK's 20-turn default).
+      maxTurns: 1000,
       model,
     });
     agentText = result.text ?? "";
