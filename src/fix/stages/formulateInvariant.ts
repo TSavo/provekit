@@ -1031,6 +1031,7 @@ export async function formulateInvariant(args: {
     llm,
     logger,
     _verifiers: args._fidelityVerifiers,
+    investigateReport: args.investigateReport,
   });
 
   if (fidelity.passed) {
@@ -1088,6 +1089,7 @@ export async function formulateInvariant(args: {
     llm,
     logger,
     _verifiers: args._fidelityVerifiers,
+    investigateReport: args.investigateReport,
   });
 
   if (retryFidelity.passed) {

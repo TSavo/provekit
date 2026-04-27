@@ -82,8 +82,38 @@ export async function crossLlmAgreement(args: {
   signal: BugSignal;
   llm: LLMProvider;
   logger?: FixLoopLogger;
+  /**
+   * Investigate's report when the symptom-only flow ran. Carried here so
+   * the adversary can REASON about whether Investigate's bug interpretation
+   * matches the symptom — not as a constraint to follow blindly. When
+   * symptom-only bug reports admit multiple plausible bug classes (e.g.,
+   * "evolve produces stale revisions" reads as either telemetry-truncation
+   * or revision-leak), the adversary needs to see the upstream reading to
+   * be reasoning about the SAME bug — otherwise the cross-LLM check
+   * conflates "different bug interpretations" with "hallucinated invariant"
+   * and refuses to ship even when the proposer was right.
+   */
+  investigateReport?: import("./stages/investigate.js").InvestigateReport;
 }): Promise<FidelityCheckResult> {
   const { invariant, signal, llm, logger = createNoopLogger() } = args;
+  const investigate = args.investigateReport;
+
+  const investigateBlock = investigate
+    ? `\nUpstream Investigate (a separate stage that scanned the project) concluded:
+- Primary location: ${investigate.primaryLocation.file}${investigate.primaryLocation.function ? ` (${investigate.primaryLocation.function})` : ""} — ${investigate.primaryLocation.confidence} confidence
+- Root-cause hypothesis: ${investigate.rootCauseHypothesis}
+- Fix hypothesis (shape, not exact text): ${investigate.fixHypothesis}
+
+Treat Investigate as evidence to weigh, not a directive. If Investigate's
+hypothesis matches the bug report you just read, write the SMT for THAT
+hypothesis (not a different one that's also consistent with the report).
+If you read the bug report and genuinely think Investigate misidentified
+the bug class, write your own invariant — but explain in the description
+field which clause of the report Investigate's hypothesis fails to
+explain. The cross-LLM check exists to catch invariant hallucinations,
+not to penalize correctly anchored reads.
+`
+    : "\nIMPORTANT: Derive the invariant INDEPENDENTLY from the prose above.\nDo NOT adjust to match any other invariant you may have seen.\n";
 
   const adversaryPrompt = `You are a formal verification expert. Given a bug report, produce an SMT-LIB assertion
 that expresses the VIOLATION STATE (the negation of the desired invariant).
@@ -91,10 +121,7 @@ The assertion must be satisfiable (Z3 check-sat returns "sat") — this proves t
 
 Bug summary: ${signal.summary}
 Failure description: ${signal.failureDescription}
-
-IMPORTANT: Derive the invariant INDEPENDENTLY from the prose above.
-Do NOT adjust to match any other invariant you may have seen.
-
+${investigateBlock}
 Respond with ONLY a JSON object (no markdown fences):
 {
   "description": "one sentence: what invariant is being violated",
@@ -742,6 +769,10 @@ export async function runInvariantFidelity(args: {
   llm: LLMProvider;
   logger?: FixLoopLogger;
   _verifiers?: FidelityVerifiers;
+  /** Carried through to the adversary so cross-LLM check operates on the
+   *  same bug interpretation as the proposer when Investigate had high
+   *  confidence in the read. */
+  investigateReport?: import("./stages/investigate.js").InvestigateReport;
 }): Promise<InvariantFidelityResult> {
   const { invariant, signal, llm, _verifiers } = args;
   const logger = args.logger ?? createNoopLogger();
@@ -772,7 +803,7 @@ export async function runInvariantFidelity(args: {
   if (kind === "concrete") {
     // Existing three-check path for arithmetic-style invariants.
     const [a, b, c] = await Promise.all([
-      crossLlmFn({ invariant, signal, llm, logger }),
+      crossLlmFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
       traceabilityFn({ invariant, signal, llm, logger }),
       fixtureFn({ invariant, signal, llm, logger }),
     ]);
