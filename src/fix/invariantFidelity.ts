@@ -297,8 +297,16 @@ export async function traceabilityCheck(args: {
   signal: BugSignal;
   llm: LLMProvider;
   logger?: FixLoopLogger;
+  /** Investigate's report when symptom-only flow ran. Citations to
+   *  Investigate's analysis are valid groundings — Investigate is part of
+   *  the loop's evidence chain, not external speculation. Without this,
+   *  the proposer's correctly-anchored citations get rejected as
+   *  "ungrounded" because the symptom-only bug report doesn't mention
+   *  the implementation mechanics Investigate uncovered. */
+  investigateReport?: import("./stages/investigate.js").InvestigateReport;
 }): Promise<FidelityCheckResult> {
   const { invariant, signal, llm, logger = createNoopLogger() } = args;
+  const investigate = args.investigateReport;
 
   const citations = invariant.citations;
   if (!citations || citations.length === 0) {
@@ -313,14 +321,22 @@ export async function traceabilityCheck(args: {
     .filter(Boolean)
     .join("\n\n");
 
-  const verifierPrompt = `You are a verification expert. A bug report and a list of SMT clause citations are given.
-Your task: for each citation, determine whether the "source_quote" is genuinely grounded in the bug report
-(the quote must be present verbatim or as a close paraphrase — NOT speculative).
+  const investigateText = investigate
+    ? `\n\nInvestigate's analysis (a separate upstream stage that scanned the project to find the locus):
+- Primary location: ${investigate.primaryLocation.file}${investigate.primaryLocation.function ? ` (${investigate.primaryLocation.function})` : ""}
+- Investigate's reasoning: ${investigate.primaryLocation.rationale}
+- Root-cause hypothesis: ${investigate.rootCauseHypothesis}
+- Fix hypothesis: ${investigate.fixHypothesis}`
+    : "";
 
+  const verifierPrompt = `You are a verification expert. A bug report${investigate ? ", upstream Investigate analysis," : ""} and a list of SMT clause citations are given.
+Your task: for each citation, determine whether the "source_quote" is genuinely grounded in either the bug report${investigate ? " OR Investigate's analysis" : ""} (the quote must be present verbatim or as a close paraphrase — NOT speculative).
+
+${investigate ? "Both the bug report AND Investigate's analysis are valid grounding sources. Investigate's hypothesis IS evidence the loop produced — citing it is grounded, not speculative.\n" : ""}
 Bug report:
 ---
 ${bugReportText}
----
+---${investigateText}
 
 Citations to verify:
 ${citationsJson}
@@ -633,8 +649,32 @@ export async function proseJaccardAgreement(args: {
   signal: BugSignal;
   llm: LLMProvider;
   logger?: FixLoopLogger;
+  /** Investigate's report when symptom-only flow ran. The adversary reasons
+   *  about whether Investigate's bug interpretation matches the bug report;
+   *  if yes, write the invariant for THAT interpretation. Without this, the
+   *  adversary picks an arbitrary plausible reading of an ambiguous symptom
+   *  and oracle #1.5 false-rejects coherent proposer reads. */
+  investigateReport?: import("./stages/investigate.js").InvestigateReport;
 }): Promise<FidelityCheckResult> {
   const { invariant, signal, llm, logger = createNoopLogger() } = args;
+  const investigate = args.investigateReport;
+
+  const investigateBlock = investigate
+    ? `\nUpstream Investigate (a separate stage that scanned the project) concluded:
+- Primary location: ${investigate.primaryLocation.file}${investigate.primaryLocation.function ? ` (${investigate.primaryLocation.function})` : ""} — ${investigate.primaryLocation.confidence} confidence
+- Root-cause hypothesis: ${investigate.rootCauseHypothesis}
+- Fix hypothesis (shape, not exact text): ${investigate.fixHypothesis}
+
+Treat Investigate as evidence to weigh, not a directive. If Investigate's
+hypothesis matches the bug report you just read, describe the invariant
+for THAT hypothesis (not a different one that's also consistent with the
+report). If you read the bug report and genuinely think Investigate
+misidentified the bug class, describe your own invariant — and explain
+which clause of the report Investigate's hypothesis fails to explain.
+The cross-LLM check exists to catch invariant hallucinations, not to
+penalize correctly anchored reads.
+`
+    : "\nIMPORTANT: Derive the invariant INDEPENDENTLY from the prose above.\nDo NOT adjust to match any other invariant you may have seen.\n";
 
   const adversaryPrompt = `You are a formal verification expert. Given a bug report, describe in prose
 the invariant that the buggy code violates. Focus on the property that, if held,
@@ -642,10 +682,7 @@ would prevent the bug.
 
 Bug summary: ${signal.summary}
 Failure description: ${signal.failureDescription}
-
-IMPORTANT: Derive the invariant INDEPENDENTLY from the prose above.
-Do NOT adjust to match any other invariant you may have seen.
-
+${investigateBlock}
 Respond with ONLY a JSON object (no markdown fences):
 {
   "description": "one to three sentences describing the invariant in plain English"
@@ -820,7 +857,7 @@ export async function runInvariantFidelity(args: {
       demoted = true;
 
       // Re-run the abstract path. Traceability already ran; reuse it.
-      const a2 = await proseJaccardFn({ invariant, signal, llm, logger });
+      const a2 = await proseJaccardFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport });
       if (!a2.passed) failures.push(`prose overlap: ${a2.detail}`);
       if (!b.passed) failures.push(`traceability: ${b.detail}`);
     } else {
@@ -832,7 +869,7 @@ export async function runInvariantFidelity(args: {
     // Abstract path: prose overlap + traceability only. SMT cross-LLM and
     // fixtures are intentionally skipped (see header doc).
     const [a, b] = await Promise.all([
-      proseJaccardFn({ invariant, signal, llm, logger }),
+      proseJaccardFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
       traceabilityFn({ invariant, signal, llm, logger }),
     ]);
 

@@ -414,6 +414,30 @@ addressing the root cause — the loop ships a placebo. If the invariant is
 too broad, it false-positives on legitimate code paths and the loop never
 ships at all.
 
+## Mandatory self-check before you write SMT
+
+Before you commit your invariant to JSON, ask yourself ONE question:
+
+  *"Can a downstream JavaScript post-processing step (a .sort, a .filter,
+  a .slice on already-fetched data) satisfy this invariant WITHOUT changing
+  the upstream code that decided what data was fetched?"*
+
+If yes, your invariant is too narrow. It admits a placebo patch — a sort
+applied to data that was already truncated by the bug satisfies the local
+invariant ("the result is sorted") while leaving the truncation in place.
+The loop will ship the placebo, oracle #9a (test must reproduce at scale)
+will reject it, the loop will fail.
+
+The fix is to widen the invariant's scope to quantify over the data flow,
+not the consequent state. A correctly-scoped invariant references the
+SOURCE of the data ("the data fetched from storage includes…") rather than
+the result of the consumer's transformation ("the value passed to the
+function is…"). The data-source invariant cannot be satisfied by a
+downstream sort/filter; the consequent-state invariant trivially can.
+
+Worked examples below make this concrete. Apply the self-check after
+reading them and before writing your SMT.
+
 Reason about three calibration tiers BEFORE you write SMT. Worked examples:
 
 ## Example 1 — division-by-zero in \`function divide(a, b) { return a / b }\`
