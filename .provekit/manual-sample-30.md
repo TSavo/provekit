@@ -28,11 +28,11 @@ Sample salt: `115-step2-v1` (re-run `scripts/sample-30.ts` reproduces this exact
 
 Diff: `cd /Users/tsavo/bugsjs/pencilblue && git diff Bug-6..Bug-6-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Multi-fix: validation regex tweaks + isEmpty extended to handle empty arrays + isFloat→isNum strictness. Logic is decides/narrows/truthiness shaped; substrate covers it, no specific principle yet.
 
 ---
 
@@ -47,11 +47,11 @@ Diff: `cd /Users/tsavo/bugsjs/pencilblue && git diff Bug-6..Bug-6-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-72..Bug-72-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Wrong-object selected for member access (`lastItem.loc.end` → `penultimateToken.loc.end`); decides/member_access shape, no principle yet.
 
 ---
 
@@ -66,11 +66,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-72..Bug-72-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-259..Bug-259-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Null guard `lastToken && ...` added before access; truthy_test/ternary shape, no specific principle.
 
 ---
 
@@ -85,11 +85,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-259..Bug-259-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-78..Bug-78-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Indent-rule fix; introduces extra getTokenAfter call + matchIndentOf to align RHS. Calls/binding/member_access shape; substrate covers it.
 
 ---
 
@@ -104,11 +104,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-78..Bug-78-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-291..Bug-291-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Equality-check inversion: `name[0] === toUpperCase()` → `name[0] !== toLowerCase()` to handle non-letter first chars; decides/short_circuit_and shape covers it.
 
 ---
 
@@ -123,11 +123,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-291..Bug-291-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-262..Bug-262-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Adds handling for `from` clause in import/export with new `if (node.source)` and `if (fromToken)` guards; if/literal_eq/truthy_test shape covers it.
 
 ---
 
@@ -142,11 +142,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-262..Bug-262-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-127..Bug-127-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Replaces getLastToken with getTokenAfter(lastElement || opener) to handle trailing-comma; uses `||` falsy_default and ternary, all in substrate.
 
 ---
 
@@ -161,11 +161,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-127..Bug-127-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-208..Bug-208-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Adds new handler for division-as-regex case with multi-clause `&&` guard; if/literal_eq/short_circuit_and substrate covers it.
 
 ---
 
@@ -180,11 +180,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-208..Bug-208-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-327..Bug-327-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Classic null-guard `node.argument && containsAssignment(...)`; short_circuit_and shape, no specific principle.
 
 ---
 
@@ -200,10 +200,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-327..Bug-327-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-80..Bug-80-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug is regex-content fix `(.+?)` → `([^{}]+?)`. The substrate has no regex-pattern capability; this should be `unknown`. The if/in/truthy_test signature is from surrounding unchanged code, not the actual bug locus.
 
 ---
 
@@ -218,11 +218,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-80..Bug-80-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-82..Bug-82-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Adds early-return guard on arrow with brace body and removes brittle string check; if/short_circuit_and/literal_eq shape, no specific principle.
 
 ---
 
@@ -237,11 +237,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-82..Bug-82-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-96..Bug-96-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Extends OR-chain to include ObjectPattern+RestProperty case (similar shape to or-chain-extended-by-fix but on logical-OR, not falsy_default); decides/short_circuit_or/literal_eq covers it.
 
 ---
 
@@ -256,11 +256,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-96..Bug-96-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-196..Bug-196-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** isOuterIIFE rewritten to use parent + missing `* indentSize` multiplier on offset; assigns/decides/literal_eq covers it.
 
 ---
 
@@ -275,11 +275,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-196..Bug-196-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-23..Bug-23-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Adds `.filter(p => p.length)` to drop empty paths before processing; calls/member_access/truthy_test substrate covers it, no principle yet.
 
 ---
 
@@ -294,11 +294,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-23..Bug-23-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-24..Bug-24-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Adds guards for empty/spread/multiple-arg `Boolean()` cases before fix; if/return/literal_eq shape covers it.
 
 ---
 
@@ -313,11 +313,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-24..Bug-24-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-11..Bug-11-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug: `expected = false` should preserve braces when leading comments present; fix replaces with `leadingComments.length > 0`. assigns/decides/literal_eq/truthy_test covers it.
 
 ---
 
@@ -334,10 +334,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-11..Bug-11-fix`
 Diff: `cd /Users/tsavo/bugsjs/karma && git diff Bug-22..Bug-22-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug is regex-string assembly (concatenating hostname/port into URL_REGEXP). The `+` is string concatenation, not numeric addition. addition-overflow false-fires; should be `unknown` (regex content) or `expressible-now-pending-principle`. Principle lacks operand-type filter.
 
 ---
 
@@ -352,10 +352,10 @@ Diff: `cd /Users/tsavo/bugsjs/karma && git diff Bug-22..Bug-22-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-51..Bug-51-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug splits one sentinel regex into three (return/throw vs break vs continue) plus label tracking. The `+` matched is string concatenation in unrelated code. addition-overflow false fires; should be `expressible-now-pending-principle`.
 
 ---
 
@@ -370,10 +370,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-51..Bug-51-fix`
 Diff: `cd /Users/tsavo/bugsjs/express && git diff Bug-21..Bug-21-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug is missing `req.params` in the save/restore wrap; fix introduces `restore()` helper. `parentUrl = req.baseUrl || ''` is unchanged code that the falsy-default principle hit. Wrong locus; should be `expressible-now-pending-principle`.
 
 ---
 
@@ -388,10 +388,10 @@ Diff: `cd /Users/tsavo/bugsjs/express && git diff Bug-21..Bug-21-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-232..Bug-232-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug is null-guard `parentElements[0] && ...`. No arithmetic in the fix. addition-overflow and multiplication-overflow are entirely unrelated. Should be `expressible-now-pending-principle`.
 
 ---
 
@@ -406,10 +406,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-232..Bug-232-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-246..Bug-246-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug introduces helpers `getCommentsInNode`/`isLocatedBefore` to fix comment scoping. `blockStart + 2` and `blockEnd - 2` are unchanged at locus, neither is the bug. Should be `expressible-now-pending-principle`.
 
 ---
 
@@ -424,10 +424,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-246..Bug-246-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-60..Bug-60-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug is missing baseline indent: `indentSize * options...` should be `getNodeIndent(node).goodChar + indentSize * options...`. The `*` is the locus, but the bug is "missing additive offset," not multiplication overflow. Should be `expressible-now-pending-principle`.
 
 ---
 
@@ -442,10 +442,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-60..Bug-60-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-64..Bug-64-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Adds `requiresTrailingSpace` helper and ForIn/ForOf left-paren reporting. The `+` matched is string concatenation in fixer text. addition-overflow false-fires. Should be `expressible-now-pending-principle`.
 
 ---
 
@@ -460,10 +460,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-64..Bug-64-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-182..Bug-182-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug guards against fixing block comments containing leading `/`. `commentGroup.length - 1` (the matched subtraction) is unchanged. subtraction-underflow misfires; should be `expressible-now-pending-principle`.
 
 ---
 
@@ -478,10 +478,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-182..Bug-182-fix`
 Diff: `cd /Users/tsavo/bugsjs/hexo && git diff Bug-12..Bug-12-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug adds `.toString()` coercion before slugize. The `+` matched is string concat in regex assembly (`'^' + escapeRegExp(slug)`). addition-overflow false-fires; should be `expressible-now-pending-principle`.
 
 ---
 
@@ -496,10 +496,10 @@ Diff: `cd /Users/tsavo/bugsjs/hexo && git diff Bug-12..Bug-12-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-49..Bug-49-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug fixes object-shorthand fixer to preserve trailing range using `keyPrefix + keyText + sourceCode.text.slice(...)`. The `+` matched is string concatenation. addition-overflow false-fires; should be `expressible-now-pending-principle`.
 
 ---
 
@@ -514,10 +514,10 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-49..Bug-49-fix`
 Diff: `cd /Users/tsavo/bugsjs/hessian.js && git diff Bug-6..Bug-6-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug filters synthetic `this$N` keys when reading object props. `position() - 1` is unchanged at locus. subtraction-underflow misfires; should be `expressible-now-pending-principle`.
 
 ---
 
@@ -534,10 +534,10 @@ Diff: `cd /Users/tsavo/bugsjs/hessian.js && git diff Bug-6..Bug-6-fix`
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-244..Bug-244-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug is regex-anchoring fix `/set(?:Timeout|Interval)|execScript/` → `/^(setTimeout|setInterval|execScript)$/`. Single-node regex literal change; no multi-node taint chain or alias relation needed. Should be `unknown` (regex content outside substrate).
 
 ---
 
@@ -552,11 +552,11 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-244..Bug-244-fix`
 
 Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-44..Bug-44-fix`
 
-- [ ] agree (tagger correctly classified)
+- [x] agree (tagger correctly classified)
 - [ ] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug extends regex pattern `Pattern|RestElement|Property` → adds `SpreadProperty|ExperimentalRestProperty`. Pure regex content extension; substrate has no regex capability. `unknown` is correct.
 
 ---
 
@@ -570,9 +570,9 @@ Diff: `cd /Users/tsavo/bugsjs/eslint && git diff Bug-44..Bug-44-fix`
 Diff: `cd /Users/tsavo/bugsjs/pencilblue && git diff Bug-7..Bug-7-fix`
 
 - [ ] agree (tagger correctly classified)
-- [ ] disagree (provide correct tag in note)
+- [x] disagree (provide correct tag in note)
 - [ ] unclear (mark with ?)
 
-**Note:**
+**Note:** Bug is typo `protoype` → `prototype` plus a stricter validation arg and a new getter method. Trivially readable JS, fully substrate-shaped (assigns/calls/returns/decides). Tagger reported "parser failed on every changed file" — that's a parser-robustness bug, not an exotic shape. Should be `expressible-now-pending-principle`.
 
 ---

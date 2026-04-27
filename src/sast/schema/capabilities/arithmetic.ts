@@ -26,7 +26,8 @@ export function registerArithmetic(): void {
                      kindEnum: ["+", "-", "*", "/", "%", "**", "<<", ">>", ">>>", "&", "|", "^"] },
       lhs_node:    { dslName: "lhs_node",    drizzleColumn: nodeArithmetic.lhsNode,    isNodeRef: true,  nullable: false },
       rhs_node:    { dslName: "rhs_node",    drizzleColumn: nodeArithmetic.rhsNode,    isNodeRef: true,  nullable: false },
-      result_sort: { dslName: "result_sort", drizzleColumn: nodeArithmetic.resultSort, sort: "Text",     isNodeRef: false, nullable: false },
+      result_sort: { dslName: "result_sort", drizzleColumn: nodeArithmetic.resultSort, sort: "Text",     isNodeRef: false, nullable: false,
+                     kindEnum: ["String", "Numeric", "Unknown", "Real"] },
     },
   });
 }

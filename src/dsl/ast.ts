@@ -239,7 +239,14 @@ export interface PrincipleNode {
   kind: "principle";
   name: string;
   matchClauses: MatchClause[];
-  requireClause: RequireClause | null;
+  /**
+   * Zero, one, or more `require [no] $w: pred(...) where rel(...)` clauses.
+   * Each compiles to its own EXISTS / NOT EXISTS sub-query AND-joined into
+   * the principal WHERE. Multi-clause was added 2026-04-27 for #115's
+   * arithmetic principles, which need both same_value-based guard
+   * suppression AND is_in_dirty_set diff-awareness in one principle.
+   */
+  requireClauses: RequireClause[];
   reportBlock: ReportBlock;
   loc: SourceLoc;
 }

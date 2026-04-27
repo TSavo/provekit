@@ -248,6 +248,49 @@ export function registerBuiltinRelations(): void {
     },
   });
 
+  // 2026-04-27: is_in_dirty_set($node) — true iff $node corresponds to
+  // a pre_post_diff row with change_kind != 'unchanged'. The diff-aware
+  // counterpart of "this node was actually touched by the fix."
+  //
+  // Motivation: #115 step 2 manual-30 gate exposed a systemic over-
+  // matching: arithmetic principles fired on stable code at the bug
+  // locus (e.g., addition-overflow on `parentElements[0].loc.start.line`
+  // when the actual fix was adding a null-guard). Without a way to
+  // discriminate "node was modified" from "node happens to live near
+  // the diff," static principles silently latch onto unchanged
+  // ancestors of the actual fix and report violations.
+  //
+  // Mining context: $node is in the buggy SAST. Pre coordinates match
+  // a row in pre_post_diff via (file_path, pre_start, pre_kind). The
+  // change_kind says whether the fix touched it.
+  //
+  // Lint context: TBD — the lint-side variant would key on post coords
+  // ("did the working-tree SAST node change vs HEAD?"). Add when lint's
+  // diff-aware path lands.
+  //
+  // Without active diff context: returns false. Static-only runs see
+  // no dirty-set effect — principles using this relation become dormant.
+  registerRelation({
+    name: "is_in_dirty_set",
+    paramCount: 1,
+    paramTypes: ["node"],
+    compile: ({ args }) => {
+      const a = args[0]?.kind === "node" ? args[0].alias : null;
+      if (!a) throw new Error("is_in_dirty_set: arg must be node");
+      return (
+        `EXISTS (` +
+        `SELECT 1 FROM pre_post_diff ppd ` +
+        `JOIN files f ON f.path = ppd.file_path ` +
+        `JOIN diff_context_active adc ON adc.context = ppd.context ` +
+        `WHERE f.id = ${a}.file_id ` +
+        `AND ppd.pre_start = ${a}.source_start ` +
+        `AND ppd.pre_kind = ${a}.kind ` +
+        `AND ppd.change_kind <> 'unchanged'` +
+        `)`
+      );
+    },
+  });
+
   // 2026-04-27: is_post_added($node) — lint-context counterpart. Fires
   // when $node was added in the post side relative to pre. Matched by
   // post coordinates (lint binds principles to the working-tree SAST).

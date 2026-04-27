@@ -8,13 +8,25 @@
 // literal_gt as the dominant idiom; revisit if false-positive count remains high.
 //
 // One-sided check (LHS only) — same DSL limit as addition-overflow.
+//
+// Tightened (2026-04-27, #115 step 2.5): added is_in_dirty_set guard so the
+// principle only fires on subtractions actually changed by the fix, not stable
+// arithmetic in the dirty-zone neighborhood (e.g. `commentGroup.length - 1`
+// at the locus where the actual bug is somewhere else). Subtraction always
+// produces a numeric result so no result_sort filter needed.
 
 predicate has_lower_bound_gt($var: node) {
   match $g: node where narrows.narrowing_kind == "literal_gt"
 }
 
+predicate any_sub($x: node) {
+  match $a: node where arithmetic.op == "-"
+}
+
 principle subtraction-underflow {
   match $sub: node where arithmetic.op == "-"
+  require $w: any_sub($sub)
+    where is_in_dirty_set($sub)
   require no $guard: has_lower_bound_gt($sub)
     where same_value($guard.narrows.target_node, $sub.arithmetic.lhs_node)
   report violation {

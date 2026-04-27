@@ -110,25 +110,109 @@ export function extractArithmetic(
   sourceFile: SourceFile,
   nodeIdByNode: NodeIdMap,
 ): void {
+  // Cache of inferred result kinds for nested BinaryExpressions, used so
+  // outer expressions inherit their inner expression's classification
+  // (e.g., `'a' + b + c` has String inner → outer is also String).
+  const inferred = new Map<Node, "String" | "Numeric" | "Unknown">();
+
+  // Pre-pass: walk in post-order so children are classified before parents.
+  // forEachDescendant visits parents before children, so we collect first
+  // and reverse-iterate by source position (deeper nodes have later starts).
+  const arithBins: BinaryExpression[] = [];
   sourceFile.forEachDescendant((node) => {
     if (node.getKind() !== SyntaxKind.BinaryExpression) return;
     const bin = node as BinaryExpression;
-    const opKind = bin.getOperatorToken().getKind();
-    if (!ARITHMETIC_OPS.has(opKind)) return;
+    if (!ARITHMETIC_OPS.has(bin.getOperatorToken().getKind())) return;
+    arithBins.push(bin);
+  });
 
+  // Sort by depth: deepest first. We approximate depth by source span size
+  // (smaller span ≈ deeper). Tie-break on getStart for stability.
+  arithBins.sort((a, b) => {
+    const sa = a.getEnd() - a.getStart();
+    const sb = b.getEnd() - b.getStart();
+    if (sa !== sb) return sa - sb;
+    return a.getStart() - b.getStart();
+  });
+
+  for (const bin of arithBins) {
     const nodeId = nodeIdByNode.get(bin);
     const lhsId = id(nodeIdByNode, bin.getLeft());
     const rhsId = id(nodeIdByNode, bin.getRight());
-    if (!nodeId || !lhsId || !rhsId) return;
+    if (!nodeId || !lhsId || !rhsId) continue;
+
+    inferred.set(bin, inferResultKind(bin, inferred));
 
     tx.insert(nodeArithmetic).values({
       nodeId,
       op: bin.getOperatorToken().getText(),
       lhsNode: lhsId,
       rhsNode: rhsId,
-      resultSort: "Real",
+      // Reuse `result_sort` (was hardcoded "Real") for the inferred kind.
+      // The Z3-callers that consume this column treat any value as opaque
+      // for sorting purposes; nothing currently filters on `== "Real"`,
+      // so widening the value space is safe.
+      resultSort: inferred.get(bin)!,
     }).run();
-  });
+  }
+}
+
+/**
+ * Infer the result kind of a binary `+`/`-`/etc. expression. JavaScript's
+ * type coercion rules make this fundamentally ambiguous without a type
+ * checker, but for the BugsJS corpus the pattern is:
+ *   - any operand is a string literal, template literal, or known string
+ *     producer (call to .toString, JSON.stringify, etc.) → "String"
+ *   - both operands are numeric literals → "Numeric"
+ *   - otherwise → "Unknown"
+ *
+ * Principles needing strict numeric matches use `result_sort == "Numeric"`;
+ * principles wanting to skip definite-string ops use `result_sort != "String"`.
+ */
+function inferResultKind(
+  bin: BinaryExpression,
+  inferred: Map<Node, "String" | "Numeric" | "Unknown">,
+): "String" | "Numeric" | "Unknown" {
+  const opKind = bin.getOperatorToken().getKind();
+  // -, *, /, %, **, <<, >>, >>>, &, |, ^ all coerce to numeric in JS.
+  // Only + can produce a string. So everything else is Numeric by default.
+  if (opKind !== SyntaxKind.PlusToken) {
+    return "Numeric";
+  }
+
+  const lhs = bin.getLeft();
+  const rhs = bin.getRight();
+  const lhsKind = classifyOperand(lhs, inferred);
+  const rhsKind = classifyOperand(rhs, inferred);
+
+  // String contagion: if either side is a string, the whole expression is a string.
+  if (lhsKind === "String" || rhsKind === "String") return "String";
+  // Both numeric → numeric.
+  if (lhsKind === "Numeric" && rhsKind === "Numeric") return "Numeric";
+  return "Unknown";
+}
+
+function classifyOperand(
+  node: Node,
+  inferred: Map<Node, "String" | "Numeric" | "Unknown">,
+): "String" | "Numeric" | "Unknown" {
+  const k = node.getKind();
+  if (k === SyntaxKind.StringLiteral) return "String";
+  if (k === SyntaxKind.NoSubstitutionTemplateLiteral) return "String";
+  if (k === SyntaxKind.TemplateExpression) return "String";
+  if (k === SyntaxKind.NumericLiteral) return "Numeric";
+  if (k === SyntaxKind.BigIntLiteral) return "Numeric";
+  if (k === SyntaxKind.BinaryExpression) {
+    return inferred.get(node) ?? "Unknown";
+  }
+  if (k === SyntaxKind.ParenthesizedExpression) {
+    const inner = (node as import("ts-morph").ParenthesizedExpression).getExpression();
+    return classifyOperand(inner, inferred);
+  }
+  // Property/element access on a string-literal target inherits string-ness
+  // through .slice / .substring / .replace etc. — but classifying the call
+  // chain reliably needs more work. For now, conservative Unknown.
+  return "Unknown";
 }
 
 // ---------------------------------------------------------------------------

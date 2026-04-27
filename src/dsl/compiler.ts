@@ -465,9 +465,8 @@ export function compilePrinciple(
   // Build NOT EXISTS subquery for requireClause.
   // -------------------------------------------------------------------------
 
-  let notExistsSql = "";
-  if (principle.requireClause) {
-    const req = principle.requireClause;
+  const notExistsSqlParts: string[] = [];
+  for (const req of principle.requireClauses) {
 
     // Validate predicate exists.
     const pred = predicates.get(req.predName);
@@ -824,7 +823,7 @@ export function compilePrinciple(
     const subFromClause = subJoins.join("\n    ");
     const subWhereStr = subWheres.length > 0 ? `WHERE ${subWheres.join("\n      AND ")}` : "";
     const existenceOp = req.negated ? "NOT EXISTS" : "EXISTS";
-    notExistsSql = `${existenceOp} (\n  SELECT 1\n  ${subFromClause}\n  ${subWhereStr}\n)`;
+    notExistsSqlParts.push(`${existenceOp} (\n  SELECT 1\n  ${subFromClause}\n  ${subWhereStr}\n)`);
   }
 
   // -------------------------------------------------------------------------
@@ -861,7 +860,7 @@ export function compilePrinciple(
 
   const fromAndJoins = mainJoins.join("\n");
   const allWheres = [...mainWheres];
-  if (notExistsSql) allWheres.push(notExistsSql);
+  for (const part of notExistsSqlParts) allWheres.push(part);
   const whereStr = allWheres.length > 0 ? `WHERE ${allWheres.join("\n  AND ")}` : "";
 
   const sql = [

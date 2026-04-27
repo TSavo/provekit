@@ -269,16 +269,16 @@ class Parser {
     }
 
     // Optional require clause
-    let requireClause = null;
-    if (this.peek().type === "IDENT" && this.peek().value === "require") {
-      requireClause = this.parseRequireClause();
+    const requireClauses: RequireClause[] = [];
+    while (this.peek().type === "IDENT" && this.peek().value === "require") {
+      requireClauses.push(this.parseRequireClause());
     }
 
     // Report block
     const reportBlock = this.parseReportBlock();
 
     this.expect("RBRACE");
-    return { kind: "principle", name, matchClauses, requireClause, reportBlock, loc };
+    return { kind: "principle", name, matchClauses, requireClauses, reportBlock, loc };
   }
 
   private parsePredicate(): PredicateDef {

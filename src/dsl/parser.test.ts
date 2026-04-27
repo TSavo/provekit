@@ -81,7 +81,7 @@ describe("parseDSL", () => {
     }
 
     // Require clause
-    const req = principle.requireClause;
+    const req = principle.requireClauses[0];
     expect(req).not.toBeNull();
     if (!req) throw new Error("expected requireClause");
     expect(req.guardVar).toBe("guard");
@@ -156,7 +156,7 @@ principle simple {
     const p = program.nodes[0];
     expect(p.kind).toBe("principle");
     if (p.kind === "principle") {
-      expect(p.requireClause).toBeNull();
+      expect(p.requireClauses).toEqual([]);
       expect(p.reportBlock.severity).toBe("info");
     }
   });
@@ -174,7 +174,7 @@ principle test-same-value {
     const p = program.nodes[0];
     expect(p.kind).toBe("principle");
     if (p.kind !== "principle") throw new Error("expected principle");
-    const req = p.requireClause;
+    const req = p.requireClauses[0];
     expect(req).not.toBeNull();
     if (!req) throw new Error("expected requireClause");
     expect(req.relation).toBe("same_value");
@@ -225,7 +225,7 @@ principle test-deref-target {
     const p = program.nodes[0];
     expect(p.kind).toBe("principle");
     if (p.kind !== "principle") throw new Error("expected principle");
-    const req = p.requireClause;
+    const req = p.requireClauses[0];
     expect(req).not.toBeNull();
     if (!req) throw new Error("expected requireClause");
     expect(req.relation).toBe("same_value");
@@ -254,7 +254,7 @@ principle test-explicit-rel {
     const p = program.nodes[0];
     expect(p.kind).toBe("principle");
     if (p.kind !== "principle") throw new Error("expected principle");
-    const req = p.requireClause;
+    const req = p.requireClauses[0];
     expect(req).not.toBeNull();
     if (!req) throw new Error("expected requireClause");
     expect(req.relation).toBe("same_value");
@@ -297,7 +297,7 @@ principle test-old-compat {
     const p = program.nodes[0];
     expect(p.kind).toBe("principle");
     if (p.kind !== "principle") throw new Error("expected principle");
-    const req = p.requireClause;
+    const req = p.requireClauses[0];
     expect(req).not.toBeNull();
     if (!req) throw new Error("expected requireClause");
     expect(req.relation).toBe("before");
