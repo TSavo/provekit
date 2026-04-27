@@ -107,6 +107,24 @@ async function runInit(args: string[]): Promise<void> {
   console.log(`  Signal generators: ${signalRegistry.getGeneratorNames().join(", ")}`);
   console.log();
 
+  // Create the persistent .provekit/provekit.db with migrations applied.
+  // Without this, `provekit fix --apply` and other tools that expect the
+  // SAST schema fail on a fresh project — the F1 from the P2 dogfood
+  // surfaced this in 2026-04-26: init scaffolding only handled the signal
+  // index, not the SAST DB. Real-LLM fix runs require the schema to be
+  // pre-applied so per-fix builds can populate it incrementally.
+  const dbPath = join(projectRoot, ".provekit", "provekit.db");
+  const dbExisted = existsSync(dbPath);
+  const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
+  const initDb = openDb(dbPath);
+  try {
+    migrate(initDb, { migrationsFolder: join(__dirname, "..", "drizzle") });
+  } finally {
+    initDb.$client.close();
+  }
+  console.log(`Database: ${dbExisted ? "migrations applied" : "created"} at .provekit/provekit.db`);
+  console.log();
+
   // Install hook
   const hookInstaller = new HookInstaller(projectRoot);
   if (!args.includes("--no-hook")) {
@@ -117,6 +135,7 @@ async function runInit(args: string[]): Promise<void> {
 
   console.log();
   console.log("Next steps:");
+  console.log("  provekit lint                Run principle library across the codebase");
   console.log("  provekit analyze <file.ts>   Derive proofs for a file");
   console.log("  provekit derive              Derive proofs for changed files");
   console.log("  provekit verify              Run Z3 against cached proofs");

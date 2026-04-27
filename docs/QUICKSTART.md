@@ -210,6 +210,51 @@ This works in StubLLM tests (`src/fix/dogfood.empty-catch.test.ts`, `src/fix/dog
 
 ---
 
+## Step 6: extending the principle library (manual-review harvest)
+
+The principle library grows from real bugs. When you fix one, three paths to land a new detector:
+
+### Path A: hand-written principle (fastest, today)
+
+You just fixed `divide(a, b)` in `src/calc.ts:5` to throw on `b === 0`. To make ProveKit catch it next time:
+
+1. Copy an existing principle as a template: `cp .provekit/principles/division-by-zero.dsl .provekit/principles/my-new-principle.dsl`
+2. Edit the match clause (which capability column distinguishes the buggy shape) and the `require no $guard` clause (what existing-code pattern is the legitimate guard)
+3. Re-run `provekit lint .` to verify it fires on the buggy version of your file (revert your fix locally, run lint, see the new principle fire, restore your fix)
+
+The DSL is small (≈12 keywords). Read `.provekit/principles/division-by-zero.dsl` first — the cleanest example with the `same_value` cross-relation. The grammar lives in `src/dsl/parser.ts`; relations in `src/dsl/relations.ts`.
+
+### Path B: fix loop emits a principle candidate (semi-automated, today)
+
+`provekit fix bug-report.md` runs C6 (principle distillation) after the patch lands. The output includes a `.dsl` snippet ProveKit thinks would catch this bug class. Find it in `.provekit/staging/` after the run. Eyeball it, edit, drop into `.provekit/principles/`. The C6 stage has been validated on Bug-1 (division-by-zero) end-to-end with real Claude.
+
+This is the recommended growth path while Path C matures. You stay in the loop, the LLM does the DSL grunt work.
+
+### Path C: continuous customer-fix-loop harvest (research)
+
+The longer-term direction: after every commit on your project, the harvest pipeline (`src/fix/harvest/*`) detects the diff, attempts to distill a principle from the buggy↔fixed pair, and writes a candidate to `.provekit/principles/staging/`. You review the staged principles weekly (or on a hook) and move the keepers to `.provekit/principles/`.
+
+The pipeline exists end-to-end on synthetic data (the BugsJS corpus harvest). What's NOT yet wired:
+- A `provekit harvest` CLI command (today the pipeline is invoked via `scripts/harvest-discover.ts` etc.)
+- A turnkey staging-area review UX (today you `cat .provekit/principles/staging/*.dsl` and copy-paste into `principles/`)
+- Automatic gating on principle-quality metrics (the substrate works; the principle-correctness gate is research as of 2026-04-27)
+
+For now: stick with Path A and Path B. Path C is fully unlocked when the harvest pipeline gets a CLI surface and a review tool — both small ergonomics wins, not architectural blockers.
+
+### Reviewing a principle before committing
+
+Whichever path produced the new `.dsl`, the manual review is the same checklist:
+
+1. **Match clause:** does the capability column actually distinguish the bug class? (E.g., `arithmetic.op == "/"` matches every division — fine if the principle catches every division-without-zero-guard, too broad if you only want `n / count` where `count` flows from input.)
+2. **Require clause:** is the suppression condition correct? Run lint on a known-good example of the guarded pattern; the principle should NOT fire.
+3. **Captures:** does the principle bind enough of the AST that a follow-up fix can reference it? `at $div captures { division: $div }` is the minimum.
+4. **Smoke test:** lint your project. The new principle's match count should be small (1-5 sites, not thousands). If it's thousands, the match clause is too broad — tighten with another `where` constraint or a cross-capability relation (see `same_value`, `flows_from_param`, `is_in_dirty_set` in `src/dsl/relations.ts`).
+5. **Commit the .dsl alongside a regression test** (just a fixture that lint should fire on, kept in `tests/fixtures/principles/<name>/buggy.ts`). When you next refactor a principle, the fixtures verify nothing regressed.
+
+The library is editable physics: every addition becomes a permanent gate that runs on every PR. Make additions deliberately.
+
+---
+
 ## CI integration
 
 Minimal GitHub Actions stub for Mode 1 (`provekit lint` on PRs):
