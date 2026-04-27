@@ -49,6 +49,14 @@ export async function generateRegressionTest(args: {
   logger?: FixLoopLogger;
   /** B3 mechanical-mode input. When matched, C5m runs (no LLM). */
   recognized?: RecognizeResult;
+  /**
+   * Investigate's report when symptom-only flow fired. C5 cites
+   * `rootCauseHypothesis` and `fixHypothesis` so the regression test
+   * reproduces the bug at the scale the symptom describes — placebo
+   * tests at small scale that "pass against the buggy code" are the
+   * #1 way oracle #9a fails on real-world dogfoods.
+   */
+  investigateReport?: import("./investigate.js").InvestigateReport;
 }): Promise<TestArtifact> {
   const { fix, signal, locus, overlay, invariant, llm } = args;
 
@@ -94,6 +102,7 @@ export async function generateRegressionTest(args: {
           testName,
           llm,
           overlay,
+          investigateReport: args.investigateReport,
         })
       : await generateTestCode({
           signal,

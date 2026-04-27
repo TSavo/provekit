@@ -20,7 +20,7 @@ import { Readable, Writable } from "stream";
 import { eq } from "drizzle-orm";
 
 import { parseBugSignal } from "./fix/intake.js";
-import { investigate } from "./fix/stages/investigate.js";
+import { investigate, type InvestigateReport } from "./fix/stages/investigate.js";
 import { locate } from "./fix/locate.js";
 import { classify, ClassifyError } from "./fix/classify.js";
 import { openDb, type Db } from "./db/index.js";
@@ -327,6 +327,7 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
 
     // 2. Parse bug signal via intake adapter
     let signal: BugSignal;
+    let investigateReport: InvestigateReport | undefined;
     try {
       // Wrap the LLM call with timing + logging
       const wrappedLlm: LLMProvider = {
@@ -393,6 +394,11 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
           codeReferences: investigateResult.codeReferences,
           fixHint: signal.fixHint ?? investigateResult.report.fixHypothesis,
         };
+        // Capture for downstream stages — C1, C3, C5 read this report
+        // directly to anchor reasoning about location, root cause, and
+        // expected fix shape. Carrying it through the orchestrator keeps
+        // every later prompt aware of the same upstream evidence.
+        investigateReport = investigateResult.report;
         logger.info(
           `  primary location: ${investigateResult.report.primaryLocation.file}` +
           (investigateResult.report.primaryLocation.function
@@ -550,6 +556,7 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
         confidenceThreshold: 0.5,
       },
       logger,
+      investigateReport,
     };
 
     const result = await fixLoopFn(fixLoopArgs);

@@ -401,8 +401,10 @@ export async function generateTestCodeViaAgent(args: {
   testName: string;
   llm: LLMProvider;
   overlay: OverlayHandle;
+  investigateReport?: import("./stages/investigate.js").InvestigateReport;
 }): Promise<string> {
   const { signal, locus, invariant, inputs, testFilePath, testName, llm, overlay } = args;
+  const investigate = args.investigateReport;
 
   // Read the locus file source from the overlay (it's already been patched by C3)
   let functionSource = "(source unavailable)";
@@ -497,6 +499,56 @@ TEST NAME: ${testName}
 Your test will be run TWICE: once on the patched code, once with the fix
 reverted. Pass on patched + fail on reverted = correct. Pass on BOTH (because
 the bug-class assertion was vacuous) = REJECTED by mutation verification.
+
+# Reproduction scale: this is where most C5 tests fail
+
+The bug DESCRIPTION tells you at what scale the bug fires. Your test must
+reproduce at that scale, not at a happy-path 3-element fixture.
+
+${investigate ? `Upstream Investigate hypothesized the root cause as:
+"${investigate.rootCauseHypothesis}"
+
+The fix shape (per Investigate):
+"${investigate.fixHypothesis}"
+
+` : ""}## Worked example A — scale-correct test
+
+Bug: "evolve loop stops responding to recent feedback once a revision
+accumulates ~30+ invocations." Reasoning: the bug only fires past a
+threshold. A 3-element fixture would produce a test that PASSES on
+the buggy code (because the truncation hasn't happened yet) and PASSES
+on the fixed code. Both pass = mutation rejection = test fails oracle #9.
+
+Right reproduction: insert >25 invocations into the test fixture
+(matching the documented threshold), attach fail signals to the most
+recent K of them, run evolve, assert that the recent fails appear in
+what evolve received. The test FAILS against the buggy code (because
+the truncation drops them) and PASSES against the fix (which orders
+desc and includes them).
+
+## Worked example B — scale-correct already-trivial test
+
+Bug: "divide(1, 0) returns Infinity instead of throwing." Reasoning:
+the bug fires on the first call with the bad input. No threshold.
+Right reproduction: a single \`expect(() => divide(1, 0)).toThrow()\`
+is sufficient. Adding more inputs is needless work.
+
+## Read the bug description carefully
+
+If the user mentions:
+- "after some time", "once it accumulates", "in production", "at scale",
+  "with N+ items" — the bug is threshold-shaped. Construct fixtures at
+  that scale or above.
+- A specific number (3 weeks, 30 invocations, 100 records) — use that
+  number as your reproduction floor.
+- A single triggering input ("divide by zero", "empty array",
+  "undefined argument") — a minimal direct test is enough.
+
+If the bug description doesn't say but the symptom hints at scale (e.g.
+"older feedback dominates" implies pagination/limit), default to a
+fixture that exceeds the most plausible internal limit (say, 50 items).
+A test that passes against the buggy code at small scale is worse than
+no test at all — it claims the bug is fixed when it isn't.
 
 # Anti-pattern: gated bug-class assertion (DO NOT do this)
 

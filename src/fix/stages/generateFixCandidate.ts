@@ -44,6 +44,13 @@ export async function generateFixCandidate(args: {
   logger?: FixLoopLogger;
   /** B3 mechanical-mode input. When matched, C3m runs (no LLM). */
   recognized?: RecognizeResult;
+  /**
+   * Investigate's report when symptom-only flow fired. Carried through to
+   * buildAgentFixPrompt so C3's reasoning shows the upstream chain
+   * (primary location, root-cause hypothesis, fix hypothesis) and the
+   * LLM patches at the locus rather than wandering up the call stack.
+   */
+  investigateReport?: import("./investigate.js").InvestigateReport;
 }): Promise<FixCandidate> {
   // C3m: B3 recognized path. Mechanical instantiation of fixTemplate.
   if (args.recognized && args.recognized.matched) {
@@ -122,10 +129,11 @@ async function generateFixCandidateViaAgent(args: {
   llm: LLMProvider;
   options?: { maxCandidates?: number; minConfidence?: number };
   logger?: FixLoopLogger;
+  investigateReport?: import("./investigate.js").InvestigateReport;
 }): Promise<FixCandidate> {
   const { signal, locus, invariant, overlay } = args;
 
-  const prompt = buildAgentFixPrompt(signal, locus, invariant, overlay);
+  const prompt = buildAgentFixPrompt(signal, locus, invariant, overlay, args.investigateReport);
 
   // First attempt.
   const { patch, rationale } = await runAgentInOverlay({

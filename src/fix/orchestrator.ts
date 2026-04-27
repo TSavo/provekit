@@ -17,6 +17,7 @@ import type {
   AuditEntry,
   OverlayHandle,
 } from "./types.js";
+import type { InvestigateReport } from "./stages/investigate.js";
 import { NotImplementedError } from "./types.js";
 import { createNoopLogger, type FixLoopLogger } from "./logger.js";
 import type { Db } from "../db/index.js";
@@ -59,6 +60,15 @@ export interface RunFixLoopArgs {
   c5TestRunner?: (overlay: OverlayHandle, testFilePath: string, mainRepoRoot: string) => { exitCode: number; stdout: string; stderr: string };
   /** Logger for stage entry/exit markers and LLM call metrics. Defaults to noop. */
   logger?: FixLoopLogger;
+  /**
+   * Investigate's full report when the symptom-only path was used. Carries
+   * primaryLocation, candidateLocations, rootCauseHypothesis, fixHypothesis.
+   * Downstream stages (C1, C3, C5) cite these in their reasoner prompts so
+   * each LLM sees the same upstream evidence and can self-calibrate.
+   * Undefined when Intake produced clean code references and Investigate
+   * didn't fire.
+   */
+  investigateReport?: InvestigateReport;
 }
 
 export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
@@ -112,7 +122,15 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     const t0c1c2 = Date.now();
     const [invariant, overlay] = await Promise.all([
       runStage("C1", "formulateInvariant", audit, () =>
-        formulateInvariant({ signal: args.signal, locus: args.locus, db: args.db, llm: args.llm, logger, recognized }),
+        formulateInvariant({
+          signal: args.signal,
+          locus: args.locus,
+          db: args.db,
+          llm: args.llm,
+          logger,
+          recognized,
+          investigateReport: args.investigateReport,
+        }),
       ),
       runStage("C2", "openOverlay", audit, () =>
         openOverlay({ locus: args.locus, db: args.db }),
@@ -124,7 +142,16 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     logger.stage("C3: generateFixCandidate");
     const t0c3 = Date.now();
     const fix = await runStage("C3", "generateFixCandidate", audit, () =>
-      generateFixCandidate({ signal: args.signal, locus: args.locus, invariant, overlay, llm: args.llm, logger, recognized }),
+      generateFixCandidate({
+        signal: args.signal,
+        locus: args.locus,
+        invariant,
+        overlay,
+        llm: args.llm,
+        logger,
+        recognized,
+        investigateReport: args.investigateReport,
+      }),
     );
     logger.info(`  C3 complete — patch files: ${fix.patch.fileEdits.length} invariantHolds: ${fix.invariantHoldsUnderOverlay} in ${Date.now() - t0c3}ms`);
 
@@ -148,7 +175,18 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     logger.stage("C5: generateRegressionTest");
     const t0c5 = Date.now();
     const test = await runStage("C5", "generateRegressionTest", audit, () =>
-      generateRegressionTest({ fix, signal: args.signal, locus: args.locus, overlay, invariant, llm: args.llm, testRunner: args.c5TestRunner, logger, recognized }),
+      generateRegressionTest({
+        fix,
+        signal: args.signal,
+        locus: args.locus,
+        overlay,
+        invariant,
+        llm: args.llm,
+        testRunner: args.c5TestRunner,
+        logger,
+        recognized,
+        investigateReport: args.investigateReport,
+      }),
     );
     logger.info(`  C5 complete — passesOnFixed: ${test?.passesOnFixedCode} failsOnOriginal: ${test?.failsOnOriginalCode} in ${Date.now() - t0c5}ms`);
 

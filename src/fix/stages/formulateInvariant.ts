@@ -22,6 +22,7 @@ import { verifyBlock, proofComplexity } from "../../verifier.js";
 import { runInvariantFidelity, type FidelityVerifiers } from "../invariantFidelity.js";
 import { evaluatePrinciple } from "../../dsl/evaluator.js";
 import type { RecognizeResult } from "./recognize.js";
+import type { InvestigateReport } from "./investigate.js";
 
 // ---------------------------------------------------------------------------
 // Principle JSON shape
@@ -346,7 +347,7 @@ interface LlmInvariantResponse {
   citations?: { smt_clause: string; source_quote: string }[];
 }
 
-function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db): string {
+function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, investigate?: InvestigateReport): string {
   // Gather source context around locus.
   let sourceContext = "(source not available)";
   try {
@@ -372,6 +373,19 @@ function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db): string {
     // ignore
   }
 
+  // Investigate-derived evidence (when symptom-only flow ran). The reasoning
+  // section below cites these directly so the LLM sees the upstream chain
+  // and can self-calibrate on whether the locus is decisive or speculative.
+  const investigateBlock = investigate
+    ? `\nInvestigate's analysis (the upstream stage that scanned the project to find this locus):
+- Primary location: ${investigate.primaryLocation.file}${investigate.primaryLocation.function ? ` (${investigate.primaryLocation.function})` : ""} — ${investigate.primaryLocation.confidence} confidence
+  Rationale: ${investigate.primaryLocation.rationale}
+- Root-cause hypothesis: ${investigate.rootCauseHypothesis}
+- Fix hypothesis (shape, not exact text): ${investigate.fixHypothesis}
+- Other candidate locations Investigate considered: ${investigate.candidateLocations.length}${investigate.candidateLocations.length > 0 ? `\n${investigate.candidateLocations.map((c) => `  - ${c.file}${c.function ? ` (${c.function})` : ""} — ${c.confidence}`).join("\n")}` : ""}
+`
+    : "";
+
   return `[STAGE:C1] formulateInvariant
 You are a formal verification expert. You will produce an SMT-LIB assertion
 that expresses the VIOLATION STATE (the negation of the desired invariant).
@@ -390,6 +404,70 @@ ${sourceContext}
 
 Data-flow ancestors of bug site: ${locus.dataFlowAncestors.length} nodes
 Data-flow descendants of bug site: ${locus.dataFlowDescendants.length} nodes
+${investigateBlock}
+# Invariant strength: the Goldilocks zone
+
+The invariant you write is the only formal gate between a real fix and a
+placebo. Z3 will accept any patch that satisfies your invariant. If the
+invariant is too narrow, downstream patches can satisfy it WITHOUT
+addressing the root cause — the loop ships a placebo. If the invariant is
+too broad, it false-positives on legitimate code paths and the loop never
+ships at all.
+
+Reason about three calibration tiers BEFORE you write SMT. Worked examples:
+
+## Example 1 — division-by-zero in \`function divide(a, b) { return a / b }\`
+- Too narrow: "result of \`a / b\` is finite when \`b !== 0\`"
+  Why narrow: only quantifies over this exact expression. A patch that
+  catches NaN downstream and returns 0 satisfies it without guarding b.
+- Too broad: "all integer divisions in this codebase guard against zero"
+  Why broad: false-positive on \`x / 2\` where 2 is a literal — no guard
+  needed. The principle would fire on legitimate code.
+- Right: "for every call to \`divide(a, b)\`, b !== 0 must be reachable
+  before the division executes"
+  Why right: forces the fix at the data flow into the divisor. Catches
+  the bug at every call site without false-positive on b-as-literal.
+
+## Example 2 — telemetry-feeding query orders ASC instead of DESC
+(this is the kind of bug that motivated this prompt rewrite — a placebo
+fix at the consumer site can sort the truncated-old data and satisfy a
+narrow invariant while leaving the root cause intact)
+- Too narrow: "the exemplar passed to evolve is the most-recent failing
+  invocation"
+  Why narrow: a JS-side \`telemetry.sort((a,b) => b.date - a.date)\` after
+  the query satisfies it. But the query already truncated to oldest 25;
+  the sort has no recent data to surface. Placebo passes.
+- Too broad: "every \`forRevision\` call returns desc-ordered rows"
+  Why broad: an audit/history surface that legitimately wants chronological
+  order would now be a violation. False positive.
+- Right: "data REACHING the evolve meta-prompt includes the K most-recent
+  invocations from the revision's full history (not just the most-recent
+  K of those already returned)"
+  Why right: forces the fix at the data source for the evolve call path.
+  An audit caller with a different consumer doesn't trigger it.
+
+## The principle (generalize from the examples)
+
+A strong invariant constrains the smallest scope of code such that **no
+narrower patch can satisfy the invariant while leaving the symptom intact**.
+That scope is rarely the bug expression itself; it is usually the data
+flow into the bug site.
+
+Three questions to answer in your prose description (cited verbatim by
+downstream stages):
+1. **Where in the data flow** must the invariant hold for the symptom to
+   actually be prevented? (Not just where the bug fires, but where the
+   data shape is decided.)
+2. **What patches at narrower scopes** would technically satisfy the
+   invariant without addressing the root cause? Name at least one
+   placebo and explain why your invariant rejects it.
+3. **What contexts** would your invariant false-positive on if you
+   stated it more broadly? Name at least one legitimate caller and
+   explain why your scope respects it.
+
+If you cannot answer (2) or (3), your invariant is either too narrow
+(no placebos to reject) or too broad (no legitimate callers to
+respect). Re-formulate.
 
 # What happens to your output
 
@@ -694,6 +772,14 @@ export async function formulateInvariant(args: {
    * via the existing Path 1 / Path 2 flow (per spec).
    */
   recognized?: RecognizeResult;
+  /**
+   * Investigate's report when symptom-only bug-report flow ran. C1 cites
+   * `rootCauseHypothesis` and `fixHypothesis` directly in the LLM prompt
+   * so the formulated invariant is strong enough to rule out the root
+   * cause — not just a narrow consequent-state claim a placebo patch can
+   * satisfy. Undefined when Intake produced clean code references.
+   */
+  investigateReport?: InvestigateReport;
   /** Dependency injection for fidelity verifiers — for testing only. */
   _fidelityVerifiers?: FidelityVerifiers;
 }): Promise<InvariantClaim> {
@@ -899,7 +985,7 @@ export async function formulateInvariant(args: {
   // Path 2: novel — LLM proposes
   // -------------------------------------------------------------------------
 
-  const prompt = buildLlmPrompt(signal, locus, db);
+  const prompt = buildLlmPrompt(signal, locus, db, args.investigateReport);
   logger.detail(`C1 LLM prompt (novel path): ${prompt.slice(0, 200)}...`);
   let formalExpression: string;
   let bindings: SmtBindingRef[];
