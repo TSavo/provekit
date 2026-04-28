@@ -684,18 +684,21 @@ pass on fixed). Be precise about why none of the five fit.
    - \`"divisor parameter of divide"\`
 
    If you cannot identify a verbatim substring in the locus file that
-   captures the SMT constant's binding, take ONE of these escape hatches:
+   captures the SMT constant's binding, take this escape hatch:
 
-   (a) widen the smt_declaration to a Bool predicate (which doesn't need
-       a source-code anchor — the predicate name encodes the meaning), OR
-   (b) emit an INTENT-LEVEL invariant with declarations only and an EMPTY
-       \`bindings\` array (\`"bindings": []\`).
+   - widen the smt_declaration to a Bool predicate (which doesn't need
+     a source-code anchor — the predicate name encodes the meaning).
+
+   You MUST emit at least one binding. An invariant with \`"bindings": []\`
+   has no per-binding contract to enforce and is rejected at C1 exit; do
+   not return one. The Bool-predicate escape hatch above is the correct
+   shape for invariants whose constants do not have source-code anchors.
 
    Prose \`source_expr\` is a generation bug. The validator runs an exact
    substring check against the locus file before this invariant proceeds
    to oracle #1; if any binding's source_expr is not in the source, the
    prompt is replayed with sharper feedback once and then the formulation
-   fails hard. Pick a real substring or use an escape hatch.
+   fails hard. Pick a real substring or use the Bool-predicate escape hatch.
 
 5. **Citations**: one citation per meaningful clause in your assertion.
    \`source_quote\` must be a verbatim or close-paraphrase excerpt from
@@ -917,7 +920,39 @@ function validateLlmResponse(rawParsed: unknown): {
 // Main export
 // ---------------------------------------------------------------------------
 
+/**
+ * Public C1 entry point. Wraps the inner formulator and enforces the
+ * "at least one binding" structural contract (#147a) at exit, regardless
+ * of which path inside (C1m / principle-match / novel-LLM) produced the
+ * claim. An InvariantClaim with `bindings.length === 0` has no per-
+ * binding verbatim-substring contract (#142) to enforce and is therefore
+ * structurally meaningless; refusing it here keeps the corpus clean and
+ * prevents downstream stages from operating on nothing.
+ */
 export async function formulateInvariant(args: {
+  signal: BugSignal;
+  locus: BugLocus;
+  db: Db;
+  llm: LLMProvider;
+  logger?: FixLoopLogger;
+  recognized?: RecognizeResult;
+  investigateReport?: InvestigateReport;
+  _fidelityVerifiers?: FidelityVerifiers;
+}): Promise<InvariantClaim> {
+  const claim = await formulateInvariantInner(args);
+  if (claim.bindings.length === 0) {
+    throw new InvariantFormulationFailed(
+      `C1 must emit at least one binding (got bindings: []). An invariant ` +
+        `with no bindings has no per-binding verbatim-substring contract to ` +
+        `enforce and is structurally meaningless. Use a Bool-predicate escape ` +
+        `hatch instead — declare a Bool constant whose name encodes the ` +
+        `meaning, and bind it to a verbatim substring of the locus source.`,
+    );
+  }
+  return claim;
+}
+
+async function formulateInvariantInner(args: {
   signal: BugSignal;
   locus: BugLocus;
   db: Db;

@@ -9,14 +9,26 @@
  * Architecture v2 (2026-04-27 spec): the orchestrator is an
  * **artifact-stream collector**. Each stage produces 0 or 1 artifacts; the
  * orchestrator collects them as they are produced and flushes them in a
- * dedicated `finally` step at the end. This matters because some artifacts
- * (notably the StoredInvariant) MUST be persisted even when downstream
- * stages fail — the invariant is the durable proof of the constraint, the
- * fix bundle is one consumer of it. Cross-stage flush gating is removed.
+ * dedicated `finally` step at the end.
  *
- * Cross-stage DATA flow is NOT removed. C3 still consumes C1's invariant;
- * D1 still consumes C3's fix. What is removed is "downstream failure blocks
- * upstream artifact persistence."
+ * Persistence-hygiene contract (#146):
+ *   The corpus on disk must only accumulate VALIDATED invariants. The
+ *   `finally`-block invariant flush therefore runs ONLY when D1 produced
+ *   a bundle (i.e. the invariant has cleared every gate up to and
+ *   including bundle assembly). When `bundle === null` — D1 failed,
+ *   oracle gates rejected, C3 produced no edits, etc. — the flush is
+ *   skipped with a clear log line. Persisting unvalidated invariants is
+ *   the bug that motivated this contract: a `bindings: []` claim from a
+ *   failed run was landing in the corpus and decaying on every verify.
+ *
+ *   Stages downstream of D1 (D2 apply, D3 learn) MUST NOT block the
+ *   flush — by the time D1 returns a bundle, the invariant is validated
+ *   and durable. That is what the early-path flush at the top of D2's
+ *   block guarantees; the `finally` flush is a backstop for the case
+ *   where D2/D3 themselves throw after D1 succeeded.
+ *
+ * Cross-stage DATA flow is preserved: C3 still consumes C1's invariant;
+ * D1 still consumes C3's fix.
  */
 
 import type {
@@ -125,6 +137,10 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
   let fix: FixCandidate | null = null;
   let test: TestArtifact | null = null;
   let invariantPersisted = false;
+  // Hoisted for finally-block visibility (#146). When `bundle` is still
+  // null at finally time, D1 never produced a validated bundle — the
+  // finally-block flush refuses to persist unvalidated invariants.
+  let bundle: FixBundle | null = null;
 
   let result: FixLoopResultWithArtifacts;
 
@@ -254,7 +270,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     // Stage D1: assemble bundle
     logger.stage("D1: assembleBundle");
     const t0d1 = Date.now();
-    const bundle = await runStage("D1", "assembleBundle", audit, () =>
+    const assembledBundle = await runStage("D1", "assembleBundle", audit, () =>
       assembleBundle({
         signal: args.signal,
         plan: args.plan,
@@ -271,9 +287,12 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
         logger,
       }),
     );
-    logger.info(`  D1 complete — bundleId: ${bundle.bundleId} confidence: ${bundle.confidence.toFixed(2)} in ${Date.now() - t0d1}ms`);
+    // Assign the function-scoped `bundle` so the `finally`-block flush gate
+    // (#146) can see that D1 produced a validated bundle.
+    bundle = assembledBundle;
+    logger.info(`  D1 complete — bundleId: ${assembledBundle.bundleId} confidence: ${assembledBundle.confidence.toFixed(2)} in ${Date.now() - t0d1}ms`);
 
-    artifacts.push({ kind: "bundle", bundle });
+    artifacts.push({ kind: "bundle", bundle: assembledBundle });
 
     // -----------------------------------------------------------------------
     // PERSIST INVARIANT (early, idempotent path).
@@ -296,7 +315,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     logger.stage("D2: applyBundle");
     const t0d2 = Date.now();
     const applyResult = await runStage("D2", "applyBundle", audit, () =>
-      applyBundle({ bundle, options: { autoApply: args.options.autoApply, prDraftMode: !args.options.autoApply }, db: args.db, logger }),
+      applyBundle({ bundle: assembledBundle, options: { autoApply: args.options.autoApply, prDraftMode: !args.options.autoApply }, db: args.db, logger }),
     );
     logger.info(`  D2 complete — applied: ${applyResult.applied} commitSha: ${applyResult.commitSha ?? "none"} in ${Date.now() - t0d2}ms`);
 
@@ -305,13 +324,13 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
       logger.stage("D3: learnFromBundle");
       const t0d3 = Date.now();
       await runStage("D3", "learnFromBundle", audit, () =>
-        learnFromBundle({ bundle, applyResult, db: args.db, logger }),
+        learnFromBundle({ bundle: assembledBundle, applyResult, db: args.db, logger }),
       );
       logger.info(`  D3 complete in ${Date.now() - t0d3}ms`);
     }
 
     result = {
-      bundle,
+      bundle: assembledBundle,
       applied: applyResult.applied,
       auditTrail: audit,
       reason: applyResult.applied ? undefined : applyResult.failureReason,
@@ -355,14 +374,32 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     }
   } finally {
     // -----------------------------------------------------------------------
-    // ARTIFACT-STREAM FLUSH (unconditional).
+    // ARTIFACT-STREAM FLUSH (gated on bundle).
     //
-    // Cross-stage flush gating is removed: a downstream failure must NOT
-    // suppress the invariant's persistence. If we have an invariant claim
-    // (C1 succeeded) and we haven't already written it on the early path,
-    // write it now. AC#3 unblock.
+    // Persistence-hygiene contract (#146): the corpus must only accumulate
+    // VALIDATED invariants. Skip the flush when:
+    //   - we already wrote the invariant on the early path (idempotent), OR
+    //   - C1 never produced a claim, OR
+    //   - D1 never produced a bundle (`bundle === null`).
+    //
+    // The bundle gate is what stops `bindings: []` / placebo / oracle-
+    // rejected claims from polluting `.provekit/invariants/`. Failed fix
+    // loops emit nothing to the corpus.
+    //
+    // This block runs only when a downstream stage AFTER D1 (D2 apply,
+    // D3 learn) threw. The early-path flush at the top of the D2 block
+    // already wrote the invariant in the success case; this is a backstop.
     // -----------------------------------------------------------------------
-    if (!invariantPersisted && invariant) {
+    if (invariantPersisted) {
+      // already written above; nothing to do
+    } else if (!invariant) {
+      // C1 never succeeded — no claim to persist
+    } else if (bundle === null) {
+      logger.info(
+        `  skipping invariant flush: no validated bundle (D1 did not produce one; ` +
+          `corpus only accumulates validated invariants)`,
+      );
+    } else {
       try {
         await flushInvariantArtifact({
           logger,
@@ -411,6 +448,22 @@ async function flushInvariantArtifact(args: {
   test: TestArtifact | null;
   patchSha: string | null;
 }): Promise<boolean> {
+  // -----------------------------------------------------------------------
+  // #147 backstop: refuse empty-bindings invariants at persistence time.
+  //
+  // Even if C1's structural check is bypassed (mock paths, future code
+  // that constructs InvariantClaim directly), the corpus must never
+  // accumulate `bindings: []` invariants — they have no per-binding
+  // verbatim-substring contract (#142) to enforce, and the verify CLI
+  // immediately marks them as decay because no locus resolves.
+  // -----------------------------------------------------------------------
+  if (args.claim.bindings.length === 0) {
+    args.logger.info(
+      `  skipping invariant flush: claim has empty bindings array ` +
+        `(invariant has no per-binding verbatim-substring contract; refusing to persist)`,
+    );
+    return false;
+  }
   try {
     const projectRoot = resolveProjectRoot(args.locus.file);
     if (!projectRoot) return false;

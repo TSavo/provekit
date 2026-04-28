@@ -6,7 +6,7 @@
  * WITHOUT needing any real C1-D3 implementation.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runFixLoop } from "./orchestrator.js";
 import { NotImplementedError } from "./types.js";
 import type { BugSignal, BugLocus, RemediationPlan, LLMProvider, InvariantClaim, OverlayHandle, FixCandidate, ComplementaryChange } from "./types.js";
@@ -261,5 +261,271 @@ describe("orchestrator.runFixLoop", () => {
     expect(c4Args.maxSites).toBe(20);
     expect(c4Args.fix).toBe(mockFix);
     expect(c4Args.locus).toBe(mockLocus);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #146 + #147: persistence-hygiene tests.
+//
+// These exercise the orchestrator's `finally`-block flush gating end-to-end.
+// They use a real temp git repo (so `resolveProjectRoot` resolves) plus the
+// existing vi.mock'd stages to drive specific success/failure shapes.
+// ---------------------------------------------------------------------------
+
+describe("orchestrator persistence hygiene (#146 + #147)", () => {
+  // Use a fresh temp repo per test so the .provekit/invariants/ assertion
+  // sees an isolated directory.
+  let repoRoot: string;
+  let locusFile: string;
+
+  beforeEach(async () => {
+    const fs = await import("fs");
+    const os = await import("os");
+    const path = await import("path");
+    const cp = await import("child_process");
+    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "provekit-orch-hygiene-"));
+    cp.execFileSync("git", ["init", "--initial-branch=main"], { cwd: repoRoot, stdio: "pipe" });
+    cp.execFileSync("git", ["config", "user.email", "t@t"], { cwd: repoRoot, stdio: "pipe" });
+    cp.execFileSync("git", ["config", "user.name", "t"], { cwd: repoRoot, stdio: "pipe" });
+    fs.mkdirSync(path.join(repoRoot, "src"), { recursive: true });
+    locusFile = path.join(repoRoot, "src", "buggy.ts");
+    fs.writeFileSync(locusFile, "export function buggy(b) { return 1 / b; }\n", "utf-8");
+    cp.execFileSync("git", ["add", "."], { cwd: repoRoot, stdio: "pipe" });
+    cp.execFileSync("git", ["commit", "-m", "init"], { cwd: repoRoot, stdio: "pipe" });
+    vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    const fs = await import("fs");
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  function realLocus(): BugLocus {
+    return {
+      file: locusFile,
+      line: 1,
+      confidence: 0.9,
+      primaryNode: "node-001",
+      containingFunction: "node-002",
+      relatedFunctions: [],
+      dataFlowAncestors: [],
+      dataFlowDescendants: [],
+      dominanceRegion: [],
+      postDominanceRegion: [],
+    };
+  }
+
+  function realPlan(locus: BugLocus): RemediationPlan {
+    return {
+      signal: mockSignal,
+      locus,
+      primaryLayer: "code_invariant",
+      secondaryLayers: [],
+      artifacts: [],
+      rationale: "stub",
+    };
+  }
+
+  function makeRealMocks() {
+    const validInvariant: InvariantClaim = {
+      principleId: "div-by-zero",
+      description: "divisor must not be zero",
+      formalExpression: "(declare-const b Int)\n(assert (= b 0))\n(check-sat)",
+      bindings: [
+        { smt_constant: "b", source_line: 1, source_expr: "b", sort: "Int" },
+      ],
+      complexity: 1,
+      witness: null,
+    };
+    const mockOverlay: OverlayHandle = {
+      worktreePath: repoRoot, // ok for our test; not used by mocks
+      sastDbPath: "",
+      sastDb: {} as import("../db/index.js").Db,
+      baseRef: "HEAD",
+      modifiedFiles: new Set(),
+      closed: false,
+    };
+    const mockFix: FixCandidate = {
+      patch: {
+        fileEdits: [
+          {
+            file: locusFile,
+            newContent: "export function buggy(b) { if (b === 0) return 0; return 1 / b; }\n",
+          },
+        ],
+        description: "guard divisor",
+      },
+      llmRationale: "guard divisor",
+      llmConfidence: 0.9,
+      invariantHoldsUnderOverlay: true,
+      overlayZ3Verdict: "unsat",
+      audit: {
+        overlayCreated: true,
+        patchApplied: true,
+        overlayReindexed: true,
+        z3RunMs: 1,
+        overlayClosed: false,
+      },
+    };
+    return { validInvariant, mockOverlay, mockFix };
+  }
+
+  it("#146: when D1 fails (bundle === null), the finally-block flush is skipped — no invariant lands on disk", async () => {
+    const { formulateInvariant } = await import("./stages/formulateInvariant.js");
+    const { openOverlay } = await import("./stages/openOverlay.js");
+    const { generateFixCandidate } = await import("./stages/generateFixCandidate.js");
+    const { generateComplementary } = await import("./stages/generateComplementary.js");
+    const { generateRegressionTest } = await import("./stages/generateRegressionTest.js");
+    const { generatePrincipleCandidate } = await import("./stages/generatePrincipleCandidate.js");
+    const { assembleBundle } = await import("./stages/assembleBundle.js");
+
+    const { validInvariant, mockOverlay, mockFix } = makeRealMocks();
+    vi.mocked(formulateInvariant).mockImplementationOnce(async () => validInvariant);
+    vi.mocked(openOverlay).mockImplementationOnce(async () => mockOverlay);
+    vi.mocked(generateFixCandidate).mockImplementationOnce(async () => mockFix);
+    vi.mocked(generateComplementary).mockImplementationOnce(async () => [] as ComplementaryChange[]);
+    vi.mocked(generateRegressionTest).mockImplementationOnce(async () => null);
+    vi.mocked(generatePrincipleCandidate).mockImplementationOnce(async () => []);
+    // D1 throws — this is the failure mode that motivated #146.
+    vi.mocked(assembleBundle).mockImplementationOnce(async () => {
+      throw new Error("D1 oracle gates rejected");
+    });
+
+    const locus = realLocus();
+    const result = await runFixLoop({
+      ...defaultArgs,
+      locus,
+      plan: realPlan(locus),
+    });
+
+    expect(result.applied).toBe(false);
+    expect(result.bundle).toBeNull();
+    // Critical: nothing should have been persisted.
+    const fs = await import("fs");
+    const path = await import("path");
+    const invariantsDir = path.join(repoRoot, ".provekit", "invariants");
+    if (fs.existsSync(invariantsDir)) {
+      const files = fs.readdirSync(invariantsDir).filter((n) => n.endsWith(".json"));
+      expect(files).toEqual([]);
+    }
+  });
+
+  it("#146: when D1 succeeds, the early-path flush DOES persist the invariant (regression for the success path)", async () => {
+    const { formulateInvariant } = await import("./stages/formulateInvariant.js");
+    const { openOverlay } = await import("./stages/openOverlay.js");
+    const { generateFixCandidate } = await import("./stages/generateFixCandidate.js");
+    const { generateComplementary } = await import("./stages/generateComplementary.js");
+    const { generateRegressionTest } = await import("./stages/generateRegressionTest.js");
+    const { generatePrincipleCandidate } = await import("./stages/generatePrincipleCandidate.js");
+    const { assembleBundle } = await import("./stages/assembleBundle.js");
+    const { applyBundle } = await import("./stages/applyBundle.js");
+
+    const { validInvariant, mockOverlay, mockFix } = makeRealMocks();
+    vi.mocked(formulateInvariant).mockImplementationOnce(async () => validInvariant);
+    vi.mocked(openOverlay).mockImplementationOnce(async () => mockOverlay);
+    vi.mocked(generateFixCandidate).mockImplementationOnce(async () => mockFix);
+    vi.mocked(generateComplementary).mockImplementationOnce(async () => [] as ComplementaryChange[]);
+    vi.mocked(generateRegressionTest).mockImplementationOnce(async () => null);
+    vi.mocked(generatePrincipleCandidate).mockImplementationOnce(async () => []);
+    vi.mocked(assembleBundle).mockImplementationOnce(async () => ({
+      bundleId: "test-bundle",
+      confidence: 0.95,
+      auditTrail: [],
+      signal: mockSignal,
+      plan: realPlan(realLocus()),
+      locus: realLocus(),
+      fix: mockFix,
+      complementary: [],
+      test: null,
+      principle: null,
+      alternateShapes: [],
+      overlay: mockOverlay,
+      patch: mockFix.patch,
+    } as unknown as import("./types.js").FixBundle));
+    // D2 throws so the finally block has a chance to fire — but the early
+    // path already flushed, so `invariantPersisted` is true and no double
+    // write happens.
+    vi.mocked(applyBundle).mockImplementationOnce(async () => {
+      throw new Error("apply failed");
+    });
+
+    const locus = realLocus();
+    const result = await runFixLoop({
+      ...defaultArgs,
+      locus,
+      plan: realPlan(locus),
+    });
+
+    // D2 threw → result.applied is false, result.bundle still set if
+    // captured; but the invariant should be on disk.
+    void result;
+    const fs = await import("fs");
+    const path = await import("path");
+    const invariantsDir = path.join(repoRoot, ".provekit", "invariants");
+    expect(fs.existsSync(invariantsDir)).toBe(true);
+    const files = fs.readdirSync(invariantsDir).filter((n) => n.endsWith(".json"));
+    expect(files.length).toBe(1);
+  });
+
+  it("#147b: persistence backstop — an empty-bindings claim is refused even if it reaches the orchestrator", async () => {
+    // Defense in depth: even if some future code path constructs a claim
+    // with `bindings: []` and reaches the orchestrator's flush, the corpus
+    // must not gain a malformed entry.
+    const { formulateInvariant } = await import("./stages/formulateInvariant.js");
+    const { openOverlay } = await import("./stages/openOverlay.js");
+    const { generateFixCandidate } = await import("./stages/generateFixCandidate.js");
+    const { generateComplementary } = await import("./stages/generateComplementary.js");
+    const { generateRegressionTest } = await import("./stages/generateRegressionTest.js");
+    const { generatePrincipleCandidate } = await import("./stages/generatePrincipleCandidate.js");
+    const { assembleBundle } = await import("./stages/assembleBundle.js");
+
+    const emptyBindingsInvariant: InvariantClaim = {
+      principleId: null,
+      description: "abstract",
+      formalExpression: "(declare-const x Bool)\n(assert (= x true))\n(check-sat)",
+      bindings: [],
+      complexity: 1,
+      witness: null,
+    };
+    const { mockOverlay, mockFix } = makeRealMocks();
+    vi.mocked(formulateInvariant).mockImplementationOnce(async () => emptyBindingsInvariant);
+    vi.mocked(openOverlay).mockImplementationOnce(async () => mockOverlay);
+    vi.mocked(generateFixCandidate).mockImplementationOnce(async () => mockFix);
+    vi.mocked(generateComplementary).mockImplementationOnce(async () => [] as ComplementaryChange[]);
+    vi.mocked(generateRegressionTest).mockImplementationOnce(async () => null);
+    vi.mocked(generatePrincipleCandidate).mockImplementationOnce(async () => []);
+    vi.mocked(assembleBundle).mockImplementationOnce(async () => ({
+      bundleId: "test-bundle",
+      confidence: 0.95,
+      auditTrail: [],
+      signal: mockSignal,
+      plan: realPlan(realLocus()),
+      locus: realLocus(),
+      fix: mockFix,
+      complementary: [],
+      test: null,
+      principle: null,
+      alternateShapes: [],
+      overlay: mockOverlay,
+      patch: mockFix.patch,
+    } as unknown as import("./types.js").FixBundle));
+
+    const locus = realLocus();
+    const result = await runFixLoop({
+      ...defaultArgs,
+      locus,
+      plan: realPlan(locus),
+    });
+    void result;
+
+    // Even though D1 succeeded and the early-path flush ran, the
+    // empty-bindings backstop must have refused to write.
+    const fs = await import("fs");
+    const path = await import("path");
+    const invariantsDir = path.join(repoRoot, ".provekit", "invariants");
+    if (fs.existsSync(invariantsDir)) {
+      const files = fs.readdirSync(invariantsDir).filter((n) => n.endsWith(".json"));
+      expect(files).toEqual([]);
+    }
   });
 });

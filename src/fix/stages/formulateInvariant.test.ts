@@ -441,7 +441,15 @@ describe("formulateInvariant (C1)", () => {
     expect(callCount).toBe(4);
   });
 
-  it("source_expr gate: empty bindings array is the documented escape hatch and bypasses the gate", async () => {
+  it("#147a: an empty-bindings invariant is refused at C1 exit (was previously the documented escape hatch)", async () => {
+    // Persistence-hygiene contract (#147): an InvariantClaim with
+    // `bindings.length === 0` has no per-binding verbatim-substring
+    // contract (#142) to enforce. The C1 entry point now refuses such
+    // claims and throws InvariantFormulationFailed with a clear message.
+    // The substring gate's `bindings.length === 0` early-return is dead
+    // code from the perspective of the public formulateInvariant() entry
+    // point — kept for defense-in-depth, exercised by the unit test
+    // below for findInvalidSourceExprBindings.
     ({ db, tmpDir } = openTestDb());
     const source = "function f(x: number) { return x; }\n";
     const filePath = writeFixture(tmpDir, "intent.ts", source);
@@ -457,8 +465,7 @@ describe("formulateInvariant (C1)", () => {
     };
     const locus = makeLocus(fakeNodeId, filePath);
 
-    // Bool predicate, no bindings. The gate must NOT fire — empty bindings
-    // is the explicit escape hatch in the prompt contract.
+    // Bool predicate, no bindings. C1 must REJECT this shape now.
     const intentResponse = JSON.stringify({
       description: "abstract violation must not occur",
       kind: "taint",
@@ -471,16 +478,24 @@ describe("formulateInvariant (C1)", () => {
       complete: async () => intentResponse,
     };
 
-    const claim = await formulateInvariant({
-      signal,
-      locus,
-      db,
-      llm: stubLlm,
-      _fidelityVerifiers: FIDELITY_ALL_PASS,
-    });
-
-    expect(claim.bindings).toHaveLength(0);
-    expect(claim.formalExpression).toContain("(assert (= violation true))");
+    await expect(
+      formulateInvariant({
+        signal,
+        locus,
+        db,
+        llm: stubLlm,
+        _fidelityVerifiers: FIDELITY_ALL_PASS,
+      }),
+    ).rejects.toThrow(InvariantFormulationFailed);
+    await expect(
+      formulateInvariant({
+        signal,
+        locus,
+        db,
+        llm: stubLlm,
+        _fidelityVerifiers: FIDELITY_ALL_PASS,
+      }),
+    ).rejects.toThrow(/at least one binding/i);
   });
 
   it("source_expr gate (unit): findInvalidSourceExprBindings returns offending bindings only", async () => {
