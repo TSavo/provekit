@@ -81,5 +81,10 @@
     "drizzle-kit": "^0.31.10",
     "fast-check": "^4.7.0",
     "vitest": "^4.1.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }
