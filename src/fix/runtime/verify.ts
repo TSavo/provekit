@@ -301,9 +301,14 @@ async function runPathPhase(
   projectRoot: string,
   options: VerifyOptions,
 ): Promise<PathPhaseResult> {
+  // Resolve relative filePath to absolute before substrate lookup. The
+  // invariant persists relative paths (relative to project root), but the
+  // substrate `files` table stores absolute paths. resolveAbs is the same
+  // helper used for binding lookups — apply the same normalization here.
+  const callsiteAbsPath = resolveAbs(projectRoot, invariant.callsite.filePath);
   const callsiteNodeId = resolveCallsiteNodeId(
     db,
-    invariant.callsite.filePath,
+    callsiteAbsPath,
     invariant.callsite.startLine,
   );
   if (!callsiteNodeId) {
@@ -425,9 +430,12 @@ async function runAdversarialPathPhase(
   projectRoot: string,
   options: VerifyOptions,
 ): Promise<AdversarialPhaseResult> {
+  // Same absolute-path normalization as runPathPhase. Invariant stores
+  // relative paths; substrate files table has absolute paths.
+  const callsiteAbsPath = resolveAbs(projectRoot, invariant.callsite.filePath);
   const callsiteNodeId = resolveCallsiteNodeId(
     db,
-    invariant.callsite.filePath,
+    callsiteAbsPath,
     invariant.callsite.startLine,
   );
   if (!callsiteNodeId) {
