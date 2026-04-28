@@ -1,0 +1,9 @@
+{
+  "name": "while-loop-termination",
+  "retired": {
+    "at": "2026-04-27T00:00:00.000Z",
+    "reason": "DSL-pending; termination is undecidable in general and would over-match.",
+    "task": "#129",
+    "spec": "docs/specs/2026-04-27-constraint-driven-development.md"
+  }
+}
