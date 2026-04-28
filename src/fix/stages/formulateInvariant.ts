@@ -23,6 +23,63 @@ import { runInvariantFidelity, type FidelityVerifiers } from "../invariantFideli
 import { evaluatePrinciple } from "../../dsl/evaluator.js";
 import { enumeratePrincipleFiles } from "../../principleEnumeration.js";
 import type { RecognizeResult } from "./recognize.js";
+
+// ---------------------------------------------------------------------------
+// Prompt fragments (better-prompts artifacts).
+//
+// Each named const here is a static prompt fragment that lives ALSO as a
+// bp artifact under the namespace shown in the comment above it. The literal
+// is the source-of-record; bp.get() returns it byte-identically until the
+// fragment is evolved. Day 0: nothing changes. Day N: any single fragment
+// can be evolved without touching the surrounding assembly.
+//
+// Discriminator pattern: ISO date that bumps each time the literal here is
+// edited. A bump tells bp "this is a new revision; stop returning the
+// previously-evolved body, the source-of-record has advanced."
+// ---------------------------------------------------------------------------
+
+// bp namespace: c1.kind.order.polarity_convention
+const C1_KIND_ORDER_POLARITY_CONVENTION = `**Polarity convention (load-bearing — read before writing SMT):**
+
+The path-checker that runs during verify scans the source line for
+\`asc(\` / \`desc(\` and pins ALL Bool bindings using this rule:
+
+  - \`desc(...)\` found on path → binding pinned to **true**
+  - \`asc(...)\` found on path → binding pinned to **false**
+
+So "true" means "the correct/spec-compliant ordering is used". The constant
+name MUST reflect the spec state (what is true when the code is correct),
+not the bug state (what is true when the code is broken). If the constant
+name implies the WRONG polarity, future readers and future LLMs will emit
+inverted polarity and the verify results will be wrong.
+
+Canonical SMT shape (spec-flavored constant, asserted true):
+\`\`\`
+(declare-const result_returns_k_most_recent Bool)
+(assert (= result_returns_k_most_recent true))
+\`\`\`
+Polarity walkthrough (asc/desc dogfood example):
+- Bug code (\`.orderBy(asc(schema.invocations.date))\`):
+    path-checker pins \`result_returns_k_most_recent = false\`
+    negated-invariant = \`(not (= result_returns_k_most_recent true))\` = true
+    Z3 SAT (false satisfies both pin and negated-invariant) → **violated** ✓
+- Fixed code (\`.orderBy(desc(schema.invocations.date))\`):
+    path-checker pins \`result_returns_k_most_recent = true\`
+    negated-invariant = \`(not (= result_returns_k_most_recent true))\` = false
+    Z3 UNSAT → **holds** ✓
+
+BAD (bug-flavored name — DO NOT use this shape):
+\`\`\`
+declarations: ["(declare-const recent_invocations_excluded_by_asc_limit Bool)"]
+assertion: "(assert (= recent_invocations_excluded_by_asc_limit true))"
+\`\`\`
+Why bad: the constant name says "excluded" (the bug condition), but the
+assertion says it equals true. The path-checker is name-agnostic and pins
+on asc/desc presence. This creates a naming mismatch that confuses future
+LLMs and human readers: they see a bug-flavored name asserted true and
+assume the polarity is correct when the convention is inverted.
+Use a spec-flavored name (what is true when the code is correct) so the
+naming convention is consistent with the path-checker's pin rule.`;
 import type { InvestigateReport } from "./investigate.js";
 
 // ---------------------------------------------------------------------------
@@ -625,47 +682,7 @@ The violation is about pairwise ordering: "elements should be sorted but
 i < j with a[i] > a[j]", "events are out of expected sequence". Use Bool
 predicates over the violation pair, not Int sequences.
 
-**Polarity convention (load-bearing — read before writing SMT):**
-
-The path-checker that runs during verify scans the source line for
-\`asc(\` / \`desc(\` and pins ALL Bool bindings using this rule:
-
-  - \`desc(...)\` found on path → binding pinned to **true**
-  - \`asc(...)\` found on path → binding pinned to **false**
-
-So "true" means "the correct/spec-compliant ordering is used". The constant
-name MUST reflect the spec state (what is true when the code is correct),
-not the bug state (what is true when the code is broken). If the constant
-name implies the WRONG polarity, future readers and future LLMs will emit
-inverted polarity and the verify results will be wrong.
-
-Canonical SMT shape (spec-flavored constant, asserted true):
-\`\`\`
-(declare-const result_returns_k_most_recent Bool)
-(assert (= result_returns_k_most_recent true))
-\`\`\`
-Polarity walkthrough (asc/desc dogfood example):
-- Bug code (\`.orderBy(asc(schema.invocations.date))\`):
-    path-checker pins \`result_returns_k_most_recent = false\`
-    negated-invariant = \`(not (= result_returns_k_most_recent true))\` = true
-    Z3 SAT (false satisfies both pin and negated-invariant) → **violated** ✓
-- Fixed code (\`.orderBy(desc(schema.invocations.date))\`):
-    path-checker pins \`result_returns_k_most_recent = true\`
-    negated-invariant = \`(not (= result_returns_k_most_recent true))\` = false
-    Z3 UNSAT → **holds** ✓
-
-BAD (bug-flavored name — DO NOT use this shape):
-\`\`\`
-declarations: ["(declare-const recent_invocations_excluded_by_asc_limit Bool)"]
-assertion: "(assert (= recent_invocations_excluded_by_asc_limit true))"
-\`\`\`
-Why bad: the constant name says "excluded" (the bug condition), but the
-assertion says it equals true. The path-checker is name-agnostic and pins
-on asc/desc presence. This creates a naming mismatch that confuses future
-LLMs and human readers: they see a bug-flavored name asserted true and
-assume the polarity is correct when the convention is inverted.
-Use a spec-flavored name (what is true when the code is correct) so the
-naming convention is consistent with the path-checker's pin rule.
+${C1_KIND_ORDER_POLARITY_CONVENTION}
 
 Canonical prose: "the result must include the K most recent entries",
 "elements must be in descending chronological order",
