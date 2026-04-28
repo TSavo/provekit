@@ -59,6 +59,32 @@ surface") are:
 should prefer in latency-sensitive contexts (IDE on-edit hooks, fast PR
 checks).
 
+### How the package ships (v1, pre-ESM-conversion)
+
+`provekit` v0.x ships its library entry as a tsx-driven runtime shim,
+not a precompiled `dist/`. Concretely:
+
+- `package.json` `"main"` → `lib/provekit.cjs`, which calls
+  `require("tsx/cjs/api").register()` then `require("../src/index.ts")`.
+- `package.json` `"exports".import` → `lib/provekit.mjs`, which
+  destructure-re-exports the value names so static ESM imports
+  resolve.
+- `package.json` `"types"` → `src/index.ts` directly. Consumers
+  resolve types from TypeScript source.
+
+This is the same strategy the CLI binary uses (channel 1) and unblocks
+distribution without the full ESM conversion (a separate, larger task).
+Two consumer-facing consequences worth knowing:
+
+1. **`tsx` is a runtime dependency**, not a devDependency. It ships
+   with `npm install provekit`. esbuild and get-tsconfig come along
+   as tsx's own deps. (next, vite, vitest ship the same shape.)
+2. **`"types"` points at `src/index.ts`.** Consumers using
+   `moduleResolution: "node16" | "nodenext" | "bundler"` get full
+   types out of the box. Older `node10` resolution may be flaky on
+   the `.js`-style relative specifiers in the source. The full
+   `.d.ts` emit will land alongside the ESM conversion.
+
 ## 2. Common integration shapes
 
 ### 2a. IDE on-edit hook
@@ -283,7 +309,7 @@ minor bump.
 
 **What is not stable.**
 - Anything not exported from `src/index.ts`. The internal package
-  layout WILL move; integrators reaching into `provekit/dist/fix/...`
+  layout WILL move; integrators reaching into `provekit/src/fix/...`
   do so at their own risk.
 - Performance characteristics. A minor bump may make a call faster or
   slower as long as the type contract holds.

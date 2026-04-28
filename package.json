@@ -2,21 +2,23 @@
   "name": "provekit",
   "version": "0.4.0",
   "description": "ProvekIt: the fourth horseman of the git commit. tsc, lint, test, prove.",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./lib/provekit.cjs",
+  "types": "./src/index.ts",
   "bin": {
     "provekit": "bin/provekit.cjs"
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "default": "./dist/index.js"
+      "types": "./src/index.ts",
+      "import": "./lib/provekit.mjs",
+      "require": "./lib/provekit.cjs",
+      "default": "./lib/provekit.cjs"
     },
     "./package.json": "./package.json"
   },
   "files": [
     "bin/",
+    "lib/",
     "src/",
     "drizzle/",
     ".provekit/principles/",
