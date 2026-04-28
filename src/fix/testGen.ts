@@ -529,6 +529,57 @@ Your test will be run TWICE: once on the patched code, once with the fix
 reverted. Pass on patched + fail on reverted = correct. Pass on BOTH (because
 the bug-class assertion was vacuous) = REJECTED by mutation verification.
 
+# DO NOT mock the file under test
+
+The test must invoke the REAL exported symbol from the patched module:
+
+  import { ... } from "${importPath}";
+
+Forbidden patterns (every one of these produces a placebo that passes
+mutation verification on BOTH the fixed and unfixed builds):
+
+- \`vi.mock("${importPath}", ...)\` — replaces the symbol you must verify
+- Any \`vi.mock(...)\` whose path resolves to the patched file
+- Local fakes (a constant fixture or inline class) that re-implement the
+  function under test with the FIXED behavior. The bug lives in code,
+  not in mocks: a fake "InvocationRepository" that already does desc-order
+  selection inside the test file is exactly the placebo shape oracle #9b
+  rejects.
+
+Worked example of the placebo shape (do NOT do this):
+
+  vi.mock("${importPath}", () => ({
+    InvocationRepository: class {
+      async forRevision() {
+        // Hand-rolled "fixed" behavior. Whether the real repo uses
+        // asc or desc no longer matters — the test never touches it.
+        return invocations.sort((a,b) => b.date.localeCompare(a.date)).slice(0, 25);
+      }
+    },
+  }));
+
+Worked example of the correct shape (do this):
+
+  import Database from "better-sqlite3";
+  import { drizzle } from "drizzle-orm/better-sqlite3";
+  import { InvocationRepository } from "${importPath}";
+
+  const db = drizzle(new Database(":memory:"));
+  // Apply the real schema DDL so InvocationRepository's queries work.
+  // Insert >25 rows. Call repo.forRevision(...) (the real one). Assert
+  // the returned set contains the most-recent rows, not the oldest.
+
+If the patched module needs a database, an HTTP server, a filesystem,
+etc., set up the dependency in the test (use \`:memory:\` SQLite, an
+in-process http server, a temp dir) — do NOT mock the dependency to
+make the test "easier." The whole point of C5 is to drive the real
+patched code with real inputs.
+
+The only thing you may legitimately mock is something COMPLETELY OUTSIDE
+the data path the bug lives in (e.g. an unrelated logger, an analytics
+beacon). When in doubt: if removing the mock would change whether the
+test reproduces the bug on the unfixed code, do not mock it.
+
 # Reproduction scale: this is where most C5 tests fail
 
 The bug DESCRIPTION tells you at what scale the bug fires. Your test must

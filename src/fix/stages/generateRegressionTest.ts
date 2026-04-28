@@ -88,14 +88,27 @@ export async function generateRegressionTest(args: {
     testCode = inst.testCode;
     source = "library";
   } else {
-    testFilePath = chooseTestFilePath(locus, overlay);
+    // C3's fix.patch.fileEdits is the authoritative "where the bug actually
+    // lives." Locate sometimes resolves to an entry-point or wrapper that
+    // doesn't host the bug (an API route that calls into the real data
+    // layer); C3 already adjudicated and may have patched a different file
+    // entirely. The regression test must aim at the same surface C3 patched
+    // — testing the wrapper invites the agent to mock the data layer and
+    // produce a placebo. Use the (largest, by edit length) patched file as
+    // the locus for the test path; fall back to Locate's locus if the
+    // patch list is empty.
+    const patchLocusPath = pickPrimaryPatchFile(args.fix);
+    const testLocus: BugLocus = patchLocusPath
+      ? { ...locus, file: patchLocusPath }
+      : locus;
+    testFilePath = chooseTestFilePath(testLocus, overlay);
     // ---------------------------------------------------------------------
     // Step 3: LLM generates a vitest test using those inputs.
     // ---------------------------------------------------------------------
     testCode = llm.agent
       ? await generateTestCodeViaAgent({
           signal,
-          locus,
+          locus: testLocus,
           invariant,
           inputs: witnessInputs,
           testFilePath,
@@ -106,7 +119,7 @@ export async function generateRegressionTest(args: {
         })
       : await generateTestCode({
           signal,
-          locus,
+          locus: testLocus,
           invariant,
           inputs: witnessInputs,
           testFilePath,
@@ -211,4 +224,24 @@ export async function generateRegressionTest(args: {
       mutationReverted: true,
     },
   };
+}
+
+/**
+ * Return the relative path of the file C3 patched (largest edit if multi-
+ * file). The returned path is relative to the overlay worktree root —
+ * matches the shape Locate uses, so it's a drop-in replacement for
+ * locus.file. Returns null if the patch list is empty.
+ */
+function pickPrimaryPatchFile(fix: FixCandidate): string | null {
+  const edits = fix.patch?.fileEdits ?? [];
+  if (edits.length === 0) return null;
+  if (edits.length === 1) return edits[0].file;
+  // Multi-file: pick the edit with the longest newContent (most substantive).
+  let primary = edits[0];
+  for (const e of edits) {
+    if ((e.newContent?.length ?? 0) > (primary.newContent?.length ?? 0)) {
+      primary = e;
+    }
+  }
+  return primary.file;
 }
