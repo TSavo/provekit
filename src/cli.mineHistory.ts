@@ -38,6 +38,7 @@ import { statSync } from "fs";
 import type { LLMProvider as RealLLMProvider } from "./llm/index.js";
 import { createProvider } from "./llm/index.js";
 import { extractIntent } from "./fix/intake/retrospective.js";
+import { generateMissingTestsForReport } from "./fix/intake/missingTestForRetrospective.js";
 import type {
   IntentReport,
   IntentReportIntent,
@@ -59,6 +60,13 @@ interface MineHistoryArgs {
   since?: string;
   maxCommits: number;
   dryRun: boolean;
+  /**
+   * Generate missing regression tests as part of the IntentReport's
+   * outputBundle.addedTests. Default true. --no-tests disables (e.g. for
+   * users on tight LLM budgets, or for fast triage walks). --dry-run also
+   * implicitly skips test generation regardless of this flag.
+   */
+  generateTests: boolean;
   providerName?: string;
 }
 
@@ -104,6 +112,7 @@ export async function runMineHistory(rawArgs: string[]): Promise<void> {
   console.log(`  since:       ${args.since ?? "<entire history>"}`);
   console.log(`  max-commits: ${args.maxCommits}`);
   console.log(`  dry-run:     ${args.dryRun ? "yes" : "no"}`);
+  console.log(`  gen-tests:   ${args.generateTests && !args.dryRun ? "yes" : "no"}`);
   console.log(`  walk order:  oldest → newest (most additive corpus; ` +
     `content-addressable IDs collapse duplicates)`);
   console.log();
@@ -137,6 +146,28 @@ export async function runMineHistory(rawArgs: string[]): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       console.log(`  ${shortSha}  ERROR  ${truncate(msg, 100)}`);
       continue;
+    }
+
+    // Step 10: opportunistic missing-test generation. Drive C5's agent over
+    // every intent that ships without a test and carries a constraint
+    // candidate, then persist. Skip in --dry-run (no LLM-budget commitment
+    // for a cost-estimation walk) and in --no-tests (explicit user opt-out).
+    // Per-intent failures inside generateMissingTestsForReport are caught
+    // there; this top-level try is the same belt-and-suspenders pattern as
+    // extractIntent above.
+    if (!args.dryRun && args.generateTests) {
+      try {
+        report = await generateMissingTestsForReport({
+          report,
+          llm,
+          projectRoot: args.projectRoot,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`  ${shortSha}  TEST-GEN-ERROR  ${truncate(msg, 100)}`);
+        // Do not bump commitErrors or continue — the report is still
+        // good for invariant persistence even if test gen failed wholesale.
+      }
     }
 
     let perCommitMinted = 0;
@@ -241,12 +272,14 @@ function parseArgs(rawArgs: string[]): MineHistoryArgs {
     process.exit(2);
   }
   const dryRun = rawArgs.includes("--dry-run");
+  const generateTests = !rawArgs.includes("--no-tests");
   const providerName = getFlag(rawArgs, "--provider");
 
   const out: MineHistoryArgs = {
     projectRoot,
     maxCommits,
     dryRun,
+    generateTests,
   };
   if (since !== undefined) out.since = since;
   if (providerName !== undefined) out.providerName = providerName;
@@ -485,6 +518,12 @@ function printMineHistoryHelp(): void {
   console.log(`  --max-commits N           Cap the walk (default 100). Useful for cost-bounding.`);
   console.log(`  --dry-run                 Run extractIntent but do not write invariants;`);
   console.log(`                            print would-mint counts + a rough cost estimate.`);
+  console.log(`                            Implies --no-tests (no overlay or C5 agent runs).`);
+  console.log(`  --no-tests                Skip missing-test generation. By default, when an`);
+  console.log(`                            intent ships without a regression test, the run`);
+  console.log(`                            drives C5 to synthesize one and appends it to the`);
+  console.log(`                            report's outputBundle.addedTests. Disable for`);
+  console.log(`                            tight LLM budgets or for fast triage walks.`);
   console.log(`  --provider <name>         LLM provider (claude-agent, opencode, openai,`);
   console.log(`                            openrouter, pool). Defaults to claude-agent.`);
   console.log();
