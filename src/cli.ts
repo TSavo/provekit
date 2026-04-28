@@ -14,7 +14,7 @@ import { runFix } from "./cli.fix.js";
 import { runMineHistory } from "./cli.mineHistory.js";
 import { buildSASTForFile } from "./sast/builder.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -128,6 +128,14 @@ async function runInit(args: string[]): Promise<void> {
   console.log(`Database: ${dbExisted ? "migrations applied" : "created"} at .provekit/provekit.db`);
   console.log();
 
+  // Seed the principle library. The bundled .provekit/principles/ directory
+  // ships in the npm package via the "files" array in package.json. Idempotent:
+  // if the target already has any files we leave it alone — users edit their
+  // local copy and we don't clobber edits on re-init.
+  const principlesResult = seedPrinciples(projectRoot);
+  console.log(`Principles: ${principlesResult.message}`);
+  console.log();
+
   // Install hook
   const hookInstaller = new HookInstaller(projectRoot);
   if (!args.includes("--no-hook")) {
@@ -136,13 +144,108 @@ async function runInit(args: string[]): Promise<void> {
     if (result.path) console.log(`  ${result.path}`);
   }
 
+  // Scaffold a GitHub Actions workflow stub by default. Flag to skip:
+  // --no-actions-workflow. The workflow runs `npx provekit invariants verify
+  // --ci` on push and pull_request — Channel 1 of the distribution surface
+  // (every developer adds it to their CI). Idempotent: never overwrites an
+  // existing file.
+  const skipWorkflow = args.includes("--no-actions-workflow");
+  if (!skipWorkflow) {
+    const wfResult = scaffoldGitHubWorkflow(projectRoot);
+    console.log(`Workflow:   ${wfResult.message}`);
+    if (wfResult.path) console.log(`  ${wfResult.path}`);
+  }
+
   console.log();
   console.log("Next steps:");
   console.log("  provekit lint                Run principle library across the codebase");
+  console.log("  provekit invariants verify   Run the standing-invariant gate (Z3, no LLM)");
   console.log("  provekit analyze <file.ts>   Derive proofs for a file");
   console.log("  provekit derive              Derive proofs for changed files");
   console.log("  provekit verify              Run Z3 against cached proofs");
   console.log("  provekit report              Show coverage summary");
+}
+
+// ---------------------------------------------------------------------------
+// init helpers
+// ---------------------------------------------------------------------------
+
+function seedPrinciples(projectRoot: string): { copied: number; skipped: boolean; message: string } {
+  const { readdirSync, mkdirSync, copyFileSync, statSync } = require("fs");
+  const targetDir = join(projectRoot, ".provekit", "principles");
+
+  // The bundled library lives next to the package's drizzle/ directory:
+  // `<package_root>/.provekit/principles/`. At runtime, __dirname is dist/
+  // (compiled output) so we step up one level. This mirrors the lookup in
+  // runLint() above.
+  const bundledDir = join(__dirname, "..", ".provekit", "principles");
+
+  if (!existsSync(bundledDir)) {
+    return { copied: 0, skipped: true, message: `bundled library not found at ${bundledDir}` };
+  }
+
+  // Idempotence: if the target exists and is non-empty, leave it alone. Users
+  // who edited their local library should not have those edits clobbered by a
+  // re-run of `provekit init`.
+  if (existsSync(targetDir)) {
+    try {
+      const existing = readdirSync(targetDir).filter((name: string) => {
+        try { return statSync(join(targetDir, name)).isFile(); } catch { return false; }
+      });
+      if (existing.length > 0) {
+        return { copied: 0, skipped: true, message: `${existing.length} file(s) already at .provekit/principles/ (left alone)` };
+      }
+    } catch {
+      // fall through to seed
+    }
+  }
+
+  mkdirSync(targetDir, { recursive: true });
+  let copied = 0;
+  for (const name of readdirSync(bundledDir)) {
+    const src = join(bundledDir, name);
+    const dst = join(targetDir, name);
+    try {
+      const st = statSync(src);
+      if (!st.isFile()) continue;
+      copyFileSync(src, dst);
+      copied++;
+    } catch { /* skip unreadable entries */ }
+  }
+  return { copied, skipped: false, message: `seeded ${copied} principle(s) into .provekit/principles/` };
+}
+
+function scaffoldGitHubWorkflow(projectRoot: string): { wrote: boolean; path: string; message: string } {
+  const { mkdirSync, writeFileSync } = require("fs");
+  const wfDir = join(projectRoot, ".github", "workflows");
+  const wfPath = join(wfDir, "provekit.yml");
+
+  if (existsSync(wfPath)) {
+    return { wrote: false, path: wfPath, message: "workflow already exists (left alone)" };
+  }
+
+  const yaml = `name: ProvekIt
+on:
+  push:
+  pull_request:
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        run: npm ci || npm install
+      - name: ProvekIt verify
+        run: npx provekit invariants verify --ci
+`;
+
+  mkdirSync(wfDir, { recursive: true });
+  writeFileSync(wfPath, yaml, "utf-8");
+  return { wrote: true, path: wfPath, message: "scaffolded .github/workflows/provekit.yml" };
 }
 
 // ---------------------------------------------------------------------------
@@ -963,7 +1066,11 @@ function printHelp(): void {
   console.log("The Kit to Prove It's Fixed.");
   console.log();
   console.log("Commands:");
-  console.log("  init [project]              Scan codebase, install git hook");
+  console.log("  init [project]              Bootstrap a project: seed principles, install git hook,");
+  console.log("                              scaffold .github/workflows/provekit.yml.");
+  console.log("                              Flags: --no-hook, --no-actions-workflow.");
+  console.log("  invariants <sub>            Constraint store ops: list | verify | retire | paths.");
+  console.log("                              `verify --ci` is the standing-invariant gate (Z3, no LLM).");
   console.log("  analyze <file.ts>           Full pipeline (phases 1-5)");
   console.log("  derive                      Analyze changed files only (diff-powered)");
   console.log("  verify [project]            Phase 5 only (no LLM, just Z3)");

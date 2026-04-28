@@ -6,16 +6,32 @@ const HOOK_MARKER = "# provekit pre-commit hook";
 
 const HOOK_SCRIPT = `#!/bin/sh
 ${HOOK_MARKER}
-# Installed by provekit init. Runs Phase 5 (Z3 only, no LLM, no network).
+# Installed by provekit init. Runs the standing-invariant gate (Z3 only,
+# no LLM, no network) and the legacy phase-5 verifier in series.
 # To remove: provekit hook --uninstall
 
-# Use local dev binary if available, otherwise installed package
+# Pick the dev binary if running inside the provekit checkout, otherwise
+# defer to the installed package. \`npx provekit\` also works when invoked
+# from a project that lists provekit in its devDependencies.
 if [ -f "src/cli.ts" ]; then
-  npx tsx src/cli.ts verify --ci 2>&1
+  PROVEKIT="npx tsx src/cli.ts"
 else
-  npx provekit verify --ci 2>&1
+  PROVEKIT="npx provekit"
 fi
-exit_code=$?
+
+$PROVEKIT invariants verify --ci 2>&1
+inv_exit=$?
+
+$PROVEKIT verify --ci 2>&1
+verify_exit=$?
+
+if [ $inv_exit -ne 0 ]; then
+  exit_code=$inv_exit
+elif [ $verify_exit -ne 0 ]; then
+  exit_code=$verify_exit
+else
+  exit_code=0
+fi
 
 if [ $exit_code -ne 0 ]; then
   echo ""

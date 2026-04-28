@@ -1,8 +1,10 @@
 # ProvekIt: The Kit to Prove It's Fixed.
 
-ProvekIt turns a bug report into a mechanically-verified fix bundle: patch, regression test, formal principle, and optional substrate extension. Every stage is gated by mechanical oracles. No "LLM said it works."
+**ProvekIt is the fourth horseman of the git commit: tsc, lint, test, prove.** Every developer adds it to their CI. The job runs `provekit invariants verify --ci`, the standing-invariant gate fails on violations, and branch protection blocks the merge — the same shape as the three horsemen the industry already trusts. No bespoke integration, no separate dashboard, no event-bus subscriptions.
 
-> **Landing in this repo for the first time?** Read [docs/QUICKSTART.md](docs/QUICKSTART.md) for a greenfield-project walkthrough, including which modes are production-ready vs. research-only.
+ProvekIt turns a bug report (or a landed commit) into a mechanically-verified bundle: patch, regression test, formal principle, optional substrate extension. Every stage is gated by mechanical oracles. No "LLM said it works."
+
+> **Landing in this repo for the first time?** Read [docs/QUICKSTART.md](docs/QUICKSTART.md) for a greenfield-project walkthrough, including which modes are production-ready vs. research-only. The architectural pitch is in [`docs/specs/2026-04-27-constraint-driven-development.md`](docs/specs/2026-04-27-constraint-driven-development.md).
 
 ## What it does
 
@@ -42,15 +44,57 @@ The regression test encoded the Z3 witness directly (`const b = 0; const a = 1`)
 
 ## Quick start
 
+ProvekIt ships through three install paths. Pick the one that matches your situation.
+
+### 1. New project — install the CLI and bootstrap
+
 ```bash
-npm install
-provekit init             # scan codebase, build SAST index, wire commit hook
-provekit analyze          # find proven clauses and gap violations across the tree
-provekit fix gap_report:42             # close a specific gap report
-provekit fix bug-report.md --apply     # run fix loop on a file-based bug report and apply autonomously
+npm install -D provekit
+npx provekit init
 ```
 
-The `--apply` flag cherry-picks the resulting commit onto the target branch. Without it, ProvekIt writes a patch file and PR draft to the working directory for human review.
+`provekit init` is idempotent. It creates `.provekit/`, applies migrations, seeds the principle library into `.provekit/principles/`, installs a pre-commit hook that runs `provekit invariants verify --ci`, and scaffolds `.github/workflows/provekit.yml`. Re-running it skips work that has already been done.
+
+After init, the typical loop is:
+
+```bash
+npx provekit invariants verify   # standing-runtime gate — Z3 only, no LLM, no network
+npx provekit lint                # principle library across the codebase
+npx provekit fix bug-report.md   # run the full pipeline on a bug
+```
+
+### 2. Existing project with CI — drop in the GitHub Action
+
+Copy [`.github/workflows/provekit-example.yml`](.github/workflows/provekit-example.yml) into your repo, or reference the bundled action directly:
+
+```yaml
+name: ProvekIt
+on: [push, pull_request]
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: provekit/provekit/.github/actions/provekit-verify@main
+```
+
+See [`.github/actions/provekit-verify/README.md`](.github/actions/provekit-verify/README.md) for the action's inputs and outputs (including `summary-md` for PR-comment integration).
+
+### 3. As a library — IDE / agent runtime / platform integration
+
+```ts
+import { verifyAll, readInvariants, writeInvariant } from "provekit";
+
+const report = await verifyAll(projectRoot);
+if (report.summary.violated > 0) {
+  // block the agent's tool call, refuse the apply, surface in the IDE...
+}
+```
+
+The library surface is Channel 2 of the distribution surface in [`docs/specs/2026-04-27-standing-invariant-runtime.md`](docs/specs/2026-04-27-standing-invariant-runtime.md). Holyship integrates ProvekIt at the agent's `report` boundary; the same surface is what an IDE or other agent runtime targets.
 
 ## Architecture at a glance
 
