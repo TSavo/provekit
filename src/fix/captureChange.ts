@@ -5,7 +5,7 @@
  * Used by the C3 agent path in candidateGen.ts.
  */
 
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join, relative } from "path";
 import { realpathSync } from "fs";
 import { execFileSync } from "child_process";
@@ -112,10 +112,36 @@ export async function runAgentInOverlay(args: {
         const realRaw = (() => { try { return realpathSync(rawPath); } catch { return rawPath; } })();
         const rel = relative(overlayRootReal, realRaw);
         if (rel.startsWith("..")) {
-          // Find the .provekit/-rooted suffix if present (the canonical agent
-          // output shape). We compare on this suffix to detect self-correction.
+          // Path is outside the overlay. The threat we're guarding against
+          // is the agent mutating real files in the user's home/workspace.
+          // A path that doesn't exist on disk is a hallucination — Read on
+          // it returns ENOENT, Write/Edit on it would create a new file in
+          // a foreign location (still bad). Distinguish:
+          //
+          //   - Read on a nonexistent path: harmless, log a soft warning.
+          //   - Read on an existing path: log a soft warning (agent may
+          //     have informationally peeked, not mutated).
+          //   - Write/Edit on ANY path outside overlay: hard-fail (the
+          //     dogfood bypass that motivated this guard was an Edit).
+          const exists = (() => { try { return existsSync(realRaw); } catch { return false; } })();
           const provekitMatch = rawPath.match(/(\.provekit\/.+)$/);
           const overlayRel = provekitMatch ? provekitMatch[1]! : null;
+
+          if (tu.name === "Read") {
+            // Reads can't poison the overlay; they can only inform the agent.
+            // Log + continue regardless of whether the target exists.
+            logger.error(
+              `overlay-bypass-warn: Read on path outside overlay (not failing hard — Read cannot mutate)`,
+              { tool: "Read", path: rawPath, exists, overlayRoot: cwd, stage: stageName },
+            );
+            continue;
+          }
+
+          // Write/Edit: still queued for the second-pass self-correction
+          // check, but only the existing-target case is a concrete poisoning.
+          // Nonexistent-path Write/Edit creates a stray file outside the
+          // overlay; treat as bypass too (creating files in /Users/jesse/...
+          // is still wrong even if the dir doesn't exist).
           bypassEvents.push({ tool: tu.name, rawPath, overlayRel });
           continue;
         }
