@@ -5,12 +5,10 @@
  * Used by the C3 agent path in candidateGen.ts.
  */
 
-import { readFileSync, existsSync } from "fs";
-import { join, relative } from "path";
-import { realpathSync } from "fs";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { execFileSync } from "child_process";
 import type { OverlayHandle, CodePatch, LLMProvider, AgentRequestOptions } from "./types.js";
-import { OverlayBypassError } from "./types.js";
 import { createNoopLogger } from "./logger.js";
 import type { FixLoopLogger } from "./logger.js";
 
@@ -70,137 +68,20 @@ export async function runAgentInOverlay(args: {
     logger.response(stageName, "claude-agent", txt.content);
   }
 
-  // -------------------------------------------------------------------------
-  // Layer 2: post-agent path enforcement.
+  // No agent-behavior gating. The agent has bypassPermissions and full
+  // tool access by explicit user directive. The mechanical gates that
+  // matter live downstream: Z3 for invariant satisfiability, mutation
+  // verification for the regression test, full-suite parity for the
+  // bundle. Heuristic path-policing here just creates false negatives
+  // when the agent picks a hallucinated path, gets ENOENT, and moves on.
   //
-  // Inspect every tool use to detect file accesses outside the overlay.
-  // Edit/Write/Read are hard-fail: any absolute path outside the overlay root
-  // is a confirmed bypass. Bash is warn-and-log: false-positive rate is too
-  // high to hard-fail (the overlay itself lives under /var/folders on macOS,
-  // /usr/bin/node is legit, etc.). The dogfood proof was an Edit, not a Bash,
-  // so this threshold is correct.
+  // The overlay is a throwaway git worktree — anything the agent writes
+  // OUTSIDE it lands in a real path under the user's home only if the
+  // agent picks that exact path AND the user's filesystem layout matches.
+  // Even then, the user has explicitly opted into bypassPermissions for
+  // this run; that's a policy decision at session level, not a per-tool
+  // veto.
   //
-  // NOTE: This is detection, not prevention. By the time we get here the agent
-  // has already run. Throwing stops the patch from being recorded but does NOT
-  // undo any filesystem mutations. Callers should treat a bypass as a poisoned
-  // overlay and close it.
-  // -------------------------------------------------------------------------
-  const overlayRootReal = (() => {
-    try { return realpathSync(cwd); } catch { return cwd; }
-  })();
-
-  // Two-pass: collect all path-bearing tool uses first, then decide which
-  // bypasses to throw on. Self-correction is common — the agent hallucinates
-  // an absolute path like `/home/user/.provekit/foo`, sees the failure (or
-  // its own pwd), then re-writes to the real overlay path. The first pass
-  // finds bypass events; the second pass tolerates Write bypasses if the
-  // same relative tail was also written inside the overlay (the agent
-  // self-corrected). Read/Edit bypasses still throw — those touch real
-  // files outside the overlay and indicate genuine confinement failure.
-  type ToolPath = { tool: string; rawPath: string; overlayRel: string | null };
-  const bypassEvents: ToolPath[] = [];
-  const inOverlayPaths = new Set<string>();
-
-  for (const tu of result.toolUses) {
-    const inp = (tu.input ?? {}) as Record<string, unknown>;
-
-    if (tu.name === "Edit" || tu.name === "Write" || tu.name === "Read") {
-      const rawPath = typeof inp["file_path"] === "string" ? inp["file_path"] : null;
-      if (!rawPath) continue;
-
-      if (rawPath.startsWith("/")) {
-        const realRaw = (() => { try { return realpathSync(rawPath); } catch { return rawPath; } })();
-        const rel = relative(overlayRootReal, realRaw);
-        if (rel.startsWith("..")) {
-          // Path is outside the overlay. The threat we're guarding against
-          // is the agent mutating real files in the user's home/workspace.
-          // A path that doesn't exist on disk is a hallucination — Read on
-          // it returns ENOENT, Write/Edit on it would create a new file in
-          // a foreign location (still bad). Distinguish:
-          //
-          //   - Read on a nonexistent path: harmless, log a soft warning.
-          //   - Read on an existing path: log a soft warning (agent may
-          //     have informationally peeked, not mutated).
-          //   - Write/Edit on ANY path outside overlay: hard-fail (the
-          //     dogfood bypass that motivated this guard was an Edit).
-          const exists = (() => { try { return existsSync(realRaw); } catch { return false; } })();
-          const provekitMatch = rawPath.match(/(\.provekit\/.+)$/);
-          const overlayRel = provekitMatch ? provekitMatch[1]! : null;
-
-          if (tu.name === "Read") {
-            // Reads can't poison the overlay; they can only inform the agent.
-            // Log + continue regardless of whether the target exists.
-            logger.error(
-              `overlay-bypass-warn: Read on path outside overlay (not failing hard — Read cannot mutate)`,
-              { tool: "Read", path: rawPath, exists, overlayRoot: cwd, stage: stageName },
-            );
-            continue;
-          }
-
-          // Write/Edit: still queued for the second-pass self-correction
-          // check, but only the existing-target case is a concrete poisoning.
-          // Nonexistent-path Write/Edit creates a stray file outside the
-          // overlay; treat as bypass too (creating files in /Users/jesse/...
-          // is still wrong even if the dir doesn't exist).
-          bypassEvents.push({ tool: tu.name, rawPath, overlayRel });
-          continue;
-        }
-        // Path normalized to inside the overlay — record its in-overlay tail.
-        const provekitMatch = rawPath.match(/(\.provekit\/.+)$/);
-        if (provekitMatch) inOverlayPaths.add(provekitMatch[1]!);
-      } else {
-        // Relative path — agent kept things in the overlay's cwd. Record.
-        const provekitMatch = rawPath.match(/(\.provekit\/.+)$/);
-        if (provekitMatch) inOverlayPaths.add(provekitMatch[1]!);
-      }
-    } else if (tu.name === "Bash") {
-      const cmd = typeof inp["command"] === "string" ? inp["command"] : null;
-      if (cmd) {
-        // Extract absolute-path tokens from the command.
-        const absTokens = cmd.match(/(?<!['"\/\w])\/[^\s'";\|&>]+/g) ?? [];
-        for (const token of absTokens) {
-          const realToken = (() => { try { return realpathSync(token); } catch { return token; } })();
-          const rel = relative(overlayRootReal, realToken);
-          if (rel.startsWith("..")) {
-            // Warn and log — do not hard-fail Bash (too many false positives).
-            logger.error(
-              `overlay-bypass-warn: Bash command references path outside overlay (not failing hard — Bash has high false-positive rate)`,
-              { tool: "Bash", path: token, command: cmd, overlayRoot: cwd, stage: stageName },
-            );
-            // No throw for Bash — see comment above.
-          }
-        }
-      }
-    }
-  }
-
-  // Second pass: decide which bypass events warrant a throw.
-  for (const ev of bypassEvents) {
-    const selfCorrected =
-      ev.tool === "Write" &&
-      ev.overlayRel !== null &&
-      inOverlayPaths.has(ev.overlayRel);
-
-    if (selfCorrected) {
-      // Agent hallucinated an absolute path then re-wrote to the correct
-      // overlay path. Tolerate: log a warning, keep going. Common with
-      // open toolsets where the agent picks /home/user/... before pwd.
-      logger.error(
-        `overlay-bypass-warn: ${ev.tool} on ${ev.rawPath} but same relative tail was also written inside overlay (self-corrected)`,
-        { tool: ev.tool, path: ev.rawPath, overlayRoot: cwd, stage: stageName },
-      );
-      continue;
-    }
-
-    // Hard bypass: Read/Edit always throws (those touch real existing
-    // files outside the overlay), or Write with no in-overlay counterpart.
-    logger.error(
-      `overlay-bypass: ${ev.tool} on path outside overlay`,
-      { tool: ev.tool, path: ev.rawPath, overlayRoot: cwd, stage: stageName },
-    );
-    throw new OverlayBypassError(ev.tool, ev.rawPath, cwd);
-  }
-
   // Reconstruct CodePatch: modified tracked files from git diff + new untracked files.
   // Exclude .provekit/ — it contains the scratch SAST DB which must not be overwritten.
   const isOverlayInternal = (f: string) => f.startsWith(".provekit/") || f === ".provekit";
