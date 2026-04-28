@@ -716,40 +716,126 @@ Respond with ONLY a JSON object (no markdown fences):
     };
   }
 
-  const proposerWords = tokenizeContentWords(invariant.description);
-  const adversaryWords = tokenizeContentWords(adversary.description);
-  const minSize = Math.min(proposerWords.size, adversaryWords.size);
-  const ratio = overlapCoefficient(proposerWords, adversaryWords);
-  const ratioStr = ratio.toFixed(2);
-  // Threshold 0.35 calibrated against v4-rerun-2 retry attempt where overlap
-  // was 0.37 with semantically equivalent prose (proposer 19 words, adversary
-  // 25 words; both clearly described shell-metacharacter sanitization in
-  // execSync interpolation). The distinct-bug contrast (shell vs buffer
-  // overflow) still scores 0.0 so the discriminator is preserved.
-  const THRESHOLD = 0.35;
-  const MIN_SHORTER_SIZE = 3;
+  // Semantic-equivalence judge: a third LLM reads both invariants and reasons
+  // about whether they describe the same bug. This replaces the prior
+  // bag-of-words overlap-coefficient: that metric couldn't distinguish "same
+  // bug, different framing" (declarative property vs. mechanistic explanation
+  // of the same root cause) from "different bugs, overlapping vocabulary."
+  // We saw a 0.48 ratio reject a clearly-semantically-equivalent pair where
+  // proposer said "newest fetched must equal newest overall" and adversary
+  // said "asc + LIMIT excludes the newest's ascending rank." Same bug, score
+  // below threshold, ship rejected.
+  //
+  // The judge prompt teaches by examples: same-bug-different-framing PASS,
+  // different-bugs-overlapping-words FAIL, same-bug-declarative-vs-mechanistic
+  // PASS. Generalization: a single fix should satisfy both, regardless of
+  // vocabulary divergence.
+  const judgePrompt = `You are evaluating whether two prose descriptions of an invariant describe the SAME bug.
 
-  logger.detail(
-    `C1.5 proseOverlap: proposer=${[...proposerWords].join(",")} adversary=${[...adversaryWords].join(",")} overlap=${ratioStr} minSize=${minSize}`,
-  );
+Two LLMs read the same bug report and each wrote what they thought the violated invariant is. The fix loop needs to know: do these describe the same bug class, such that a single fix would address both?
 
-  if (minSize < MIN_SHORTER_SIZE) {
+This is not a word-overlap question. Two invariants can use entirely different vocabulary and describe the same bug; two invariants can share many words and describe different bugs.
+
+# Worked examples
+
+## Example A — same bug, different framings (PASS)
+
+Proposer: "the divisor must not be zero"
+Adversary: "every call to divide(a, b) must check b !== 0 before the operation executes"
+
+Reasoning: both describe division-by-zero prevention. Proposer states the property abstractly; adversary states the mechanism that achieves it. A single fix — add a guard on b inside divide() — satisfies both. Same bug.
+
+## Example B — different bugs, overlapping words (FAIL)
+
+Proposer: "user input must not contain shell metacharacters before exec()"
+Adversary: "user input must be length-bounded before strcpy()"
+
+Reasoning: the surface-level "user input must X before Y" pattern is shared, but X and Y refer to different vulnerabilities — shell injection vs buffer overflow. The fix for the first (escape/sanitize metacharacters) does not prevent the second (length-bound the buffer). Different bugs.
+
+## Example C — same bug, declarative vs mechanistic (PASS)
+
+Proposer: "data fetched from storage must include the most recent invocations from the revision's full history"
+Adversary: "forRevision sorts ascending then LIMITs, so the newest invocation's ascending rank exceeds the window size, permanently excluding it"
+
+Reasoning: proposer states the desired property (recent records reach the consumer); adversary explains the mechanism that violates it (asc + LIMIT excludes newest). The fix that ensures the property holds (use desc instead of asc) is the same fix that removes the exclusion mechanism. Same bug.
+
+# Generalization
+
+Two invariants describe the same bug when a single change to the program could simultaneously:
+  1. Make the proposer's stated property hold, AND
+  2. Eliminate the mechanism the adversary describes.
+
+When you mentally write a fix that satisfies one, ask whether it also satisfies the other. If yes, same bug. If not, different bugs — even if the words overlap.
+
+Vocabulary divergence between proposer and adversary is normal: one tends toward properties (declarative), the other toward mechanisms (operational). What matters is whether the underlying program-state distinction they describe is the same one.
+
+# The current case
+
+Proposer's invariant:
+"${invariant.description}"
+
+Adversary's invariant:
+"${adversary.description}"
+
+Reason through:
+1. What program-state distinction does each invariant draw?
+2. Imagine the smallest fix that satisfies the proposer. Does it also eliminate the adversary's described violation?
+3. Imagine the smallest fix that eliminates the adversary's violation. Does it also satisfy the proposer's property?
+
+Output ONLY a JSON object via the Write tool:
+
+{
+  "rationale": "your reasoning, 2-4 sentences naming the program-state distinction and the candidate fix",
+  "sameBug": true | false,
+  "confidence": "high" | "medium" | "low"
+}`;
+
+  interface JudgeResponse {
+    rationale: string;
+    sameBug: boolean;
+    confidence: "high" | "medium" | "low";
+  }
+
+  const judgeModel = adversaryModel(proposerModel);
+
+  let judge: JudgeResponse;
+  try {
+    judge = await requestStructuredJson<JudgeResponse>({
+      prompt: judgePrompt,
+      llm,
+      stage: "C1.5-judge",
+      model: judgeModel,
+      logger,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     return {
       passed: false,
-      detail: `prose overlap: FAIL (skipped SMT cross-LLM for abstract invariant). shorter side has only ${minSize} content word(s); needs >= ${MIN_SHORTER_SIZE}. proposer="${invariant.description}" adversary="${adversary.description}"`,
+      detail: `semantic equivalence: judge call/parse failed (skipped SMT cross-LLM for abstract invariant): ${msg}`,
     };
   }
 
-  if (ratio >= THRESHOLD) {
+  logger.detail(
+    `C1.5 judge: sameBug=${judge.sameBug} confidence=${judge.confidence} rationale="${judge.rationale}"`,
+  );
+
+  if (judge.sameBug && (judge.confidence === "high" || judge.confidence === "medium")) {
     return {
       passed: true,
-      detail: `prose overlap: PASS (skipped SMT cross-LLM for abstract invariant). overlap=${ratioStr} >= ${THRESHOLD}. proposer="${invariant.description}" adversary="${adversary.description}"`,
+      detail: `semantic equivalence: PASS (judge=${judge.confidence}). proposer="${invariant.description}" adversary="${adversary.description}" rationale="${judge.rationale}"`,
+    };
+  }
+
+  if (judge.sameBug && judge.confidence === "low") {
+    return {
+      passed: false,
+      detail: `semantic equivalence: FAIL — judge said sameBug=true but confidence=low. The two invariants are too uncertain to ship on. proposer="${invariant.description}" adversary="${adversary.description}" rationale="${judge.rationale}"`,
     };
   }
 
   return {
     passed: false,
-    detail: `prose overlap: FAIL (skipped SMT cross-LLM for abstract invariant). overlap=${ratioStr} < ${THRESHOLD}. LLMs disagree on what the bug is. proposer="${invariant.description}" adversary="${adversary.description}"`,
+    detail: `semantic equivalence: FAIL — judge says different bugs (${judge.confidence} confidence). proposer="${invariant.description}" adversary="${adversary.description}" rationale="${judge.rationale}"`,
   };
 }
 
