@@ -48,7 +48,18 @@ export function registerVitest(): void {
       return 0;
     },
     resolveRunnerBinary: (projectRoot) => join(projectRoot, "node_modules", ".bin", "vitest"),
-    invocation: (testFile) => ["run", testFile, "--reporter=default"],
+    // --include overrides the project's vitest.config include glob so our
+    // regression test file is picked up regardless of where the project
+    // expects tests. promptlib for example uses include: ["tests/**/*.test.ts"]
+    // and would silently match zero tests when we drop the test under src/.
+    // Passing the file path as --include ensures vitest runs it whatever the
+    // project's config says.
+    invocation: (testFile) => [
+      "run",
+      testFile,
+      `--include=${testFile}`,
+      "--reporter=default",
+    ],
     parseOutcome: (exitCode, stdout, _stderr) => ({
       passed: exitCode === 0,
       testCount: parseInt(stdout.match(/Tests\s+(\d+)\s+passed/)?.[1] ?? "0", 10),
