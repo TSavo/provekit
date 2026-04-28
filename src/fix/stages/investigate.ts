@@ -263,8 +263,9 @@ ${recentText}
 - Confidence "high" should mean "I'd bet money on it"; "low" means "worth
   checking but the symptom is consistent with several places."
 
-Now write the JSON to a file via the Write tool. Filename: investigate.json
-relative to your working directory.
+The structuredOutput layer will append the exact path to write to;
+follow that instruction precisely. Do NOT invent a path or write to
+the project root — the appended instruction is the contract.
 `.trim();
 }
 

@@ -113,13 +113,23 @@ function shouldUseAgent(opts: { useAgent?: boolean }, llm: LLMProvider): boolean
  */
 function buildAgentInstruction(outputPath: string): string {
   return (
-    `\n\nIMPORTANT: Write your JSON response to the absolute path:\n` +
+    `\n\n` +
+    `═══ OUTPUT CONTRACT (read this carefully) ═══\n` +
+    `\n` +
+    `Use the Write tool to write your JSON response to this EXACT absolute path:\n` +
+    `\n` +
     `  ${outputPath}\n` +
-    `using the Write tool. The file content must be ONLY the JSON object — ` +
-    `no markdown fences, no prose, no commentary. Do not include the JSON in ` +
-    `your text response. After writing the file, you may briefly confirm in ` +
-    `plain text (one sentence) that you wrote the file. Do not perform any ` +
-    `other actions.`
+    `\n` +
+    `That path is in a temporary scratch directory. You have full write\n` +
+    `permission for it. Do NOT invent a different filename. Do NOT write to\n` +
+    `the project root. Do NOT respond with prose like "I need write\n` +
+    `permission" — you do have permission, the path above is the one to use.\n` +
+    `\n` +
+    `The file content must be ONLY the JSON object — no markdown fences,\n` +
+    `no prose, no commentary. Do not include the JSON in your text response.\n` +
+    `After writing the file, you may briefly confirm in plain text (one\n` +
+    `sentence) that you wrote the file. Do not perform any other actions.\n` +
+    `═══════════════════════════════════════════`
   );
 }
 
