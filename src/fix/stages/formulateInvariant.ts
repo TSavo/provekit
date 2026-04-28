@@ -404,8 +404,21 @@ function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusSource:
   let sourceContext = "(source not available)";
   if (locusSource) {
     const lines = locusSource.split("\n");
-    const start = Math.max(0, locus.line - 3);
-    const end = Math.min(lines.length, locus.line + 2);
+    // When locus.line is at the file top (≤5), the substrate resolved to a
+    // SourceFile node rather than a function body — the ±3-line window shows
+    // only imports, misleading the LLM into picking import strings as
+    // source_expr anchors. Show the full file (capped at 200 lines) so the
+    // LLM can use the investigate block + its own reading to locate the
+    // actual bug site and pick a call-expression-shaped source_expr.
+    let start: number;
+    let end: number;
+    if (locus.line <= 5) {
+      start = 0;
+      end = Math.min(lines.length, 200);
+    } else {
+      start = Math.max(0, locus.line - 3);
+      end = Math.min(lines.length, locus.line + 2);
+    }
     sourceContext = lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join("\n");
   }
 
@@ -664,24 +677,44 @@ pass on fixed). Be precise about why none of the five fit.
    == source_expr CONTRACT (load-bearing for downstream verification) ==
 
    For EVERY binding you emit, \`source_expr\` MUST be a verbatim substring
-   of the locus file's source code. Downstream verification substring-
-   searches the patched file for this exact string to populate real binding
-   line numbers; prose source_expr never substring-matches and produces
-   honest-zero geometry that decays the invariant on every subsequent
-   verify run.
+   of the locus file's source code AND it must appear on EXACTLY ONE LINE
+   in that file (so it uniquely locates the bug site).
 
-   Examples of VALID source_expr (verbatim substrings of real source):
-   - \`"asc(schema.invocations.date)"\`
-   - \`"len < 15"\`
-   - \`"buf[i]"\`
-   - \`"memo->buffer"\`
-   - \`"divisor"\`
+   Downstream verification substring-searches the patched file for this
+   exact string to populate real binding line numbers. If the substring
+   appears on more than one line (for example, a bare function name that
+   shows up on the import line AND the bug call site), the binding collapses
+   to the FIRST occurrence (the import line), not the bug site. That produces
+   wrong geometry and the invariant decays on every subsequent verify run.
 
-   Examples of INVALID source_expr (these are PROSE, not code):
-   - \`"feedback rows fetched by repositories.ts for evolve"\`
-   - \`"the buffer length"\`
-   - \`"the user input before sanitization"\`
-   - \`"divisor parameter of divide"\`
+   UNIQUENESS RULE: a bare identifier like \`"asc"\` is UNACCEPTABLE when
+   it appears in more than one place in the file (e.g. the import line
+   \`import { asc, desc } from "drizzle-orm"\` at line 1 AND the bug site
+   \`.orderBy(asc(schema.invocations.date))\` at line 120). The binding
+   maps to line 1, not line 120 — wrong geometry.
+
+   The RIGHT value is the smallest substring that UNIQUELY IDENTIFIES the
+   bug location. Prefer:
+   - A full call expression with arguments: \`"asc(schema.invocations.date)"\`
+   - A property access chain: \`"schema.invocations.date"\`
+   - A method-call expression: \`".orderBy(asc("\`
+
+   A bare identifier is acceptable ONLY when it appears on exactly one line
+   in the entire file.
+
+   Examples of VALID source_expr (verbatim substrings, unique location):
+   - \`"asc(schema.invocations.date)"\`  ← call expression, unique
+   - \`"len < 15"\`                       ← comparison, unique
+   - \`"buf[i]"\`                         ← indexed access, unique
+   - \`"memo->buffer"\`                   ← field access, unique
+   - \`"divisor"\`                        ← identifier, IF it appears only once
+
+   Examples of INVALID source_expr:
+   - \`"asc"\`  ← appears on import line AND multiple call sites; NOT unique
+   - \`"feedback rows fetched by repositories.ts for evolve"\` ← PROSE, not code
+   - \`"the buffer length"\`              ← PROSE, not code
+   - \`"the user input before sanitization"\` ← PROSE, not code
+   - \`"divisor parameter of divide"\`   ← PROSE, not code
 
    If you cannot identify a verbatim substring in the locus file that
    captures the SMT constant's binding, take this escape hatch:
@@ -753,8 +786,13 @@ const VALID_KINDS: ReadonlySet<InvariantKindLabel> = new Set([
 
 /**
  * Check that every binding's `source_expr` is a verbatim substring of the
- * locus file's source. Returns the list of offending bindings (empty when
- * all bindings pass).
+ * locus file's source AND that it appears on exactly one distinct line (so
+ * it uniquely locates the bug site rather than collapsing to an earlier
+ * occurrence like an import line).
+ *
+ * Returns the list of offending bindings (empty when all bindings pass).
+ * Each offender carries a `reason` discriminator ("not-found" | "ambiguous")
+ * and, for the "ambiguous" case, the line numbers where the substring appears.
  *
  * Empty bindings array is the documented escape hatch (intent-level
  * invariant) and passes trivially. Empty `locusSource` (when the locus
@@ -768,21 +806,34 @@ const VALID_KINDS: ReadonlySet<InvariantKindLabel> = new Set([
 export function findInvalidSourceExprBindings(
   bindings: SmtBindingRef[],
   locusSource: string,
-): Array<{ smt_constant: string; source_expr: string }> {
+): Array<{ smt_constant: string; source_expr: string; reason?: "not-found" | "ambiguous"; lines?: number[] }> {
   if (bindings.length === 0) return [];
   if (locusSource.length === 0) return [];
-  const offenders: Array<{ smt_constant: string; source_expr: string }> = [];
+  const sourceLines = locusSource.split("\n");
+  const offenders: Array<{ smt_constant: string; source_expr: string; reason?: "not-found" | "ambiguous"; lines?: number[] }> = [];
   for (const b of bindings) {
     const trimmed = (b.source_expr ?? "").trim();
     if (trimmed.length === 0) {
       // Empty source_expr is also a contract violation (every non-empty
       // bindings entry must anchor to source). The retry feedback below
       // calls this out specifically.
-      offenders.push({ smt_constant: b.smt_constant, source_expr: b.source_expr ?? "" });
+      offenders.push({ smt_constant: b.smt_constant, source_expr: b.source_expr ?? "", reason: "not-found" });
       continue;
     }
     if (!locusSource.includes(trimmed)) {
-      offenders.push({ smt_constant: b.smt_constant, source_expr: b.source_expr });
+      offenders.push({ smt_constant: b.smt_constant, source_expr: b.source_expr, reason: "not-found" });
+      continue;
+    }
+    // Multi-line uniqueness check: if the substring appears on more than one
+    // distinct line, a binding to it can't be located — it collapses to the
+    // first match (often an import line) rather than the actual bug site.
+    // A bare identifier like "asc" that appears in imports, parameter names,
+    // AND the bug call-expression is the canonical failure mode this catches.
+    const matchingLines = sourceLines
+      .map((line, idx) => (line.includes(trimmed) ? idx + 1 : 0))
+      .filter((n) => n > 0);
+    if (matchingLines.length > 1) {
+      offenders.push({ smt_constant: b.smt_constant, source_expr: b.source_expr, reason: "ambiguous", lines: matchingLines });
     }
   }
   return offenders;
@@ -790,22 +841,34 @@ export function findInvalidSourceExprBindings(
 
 /**
  * Build a sharper feedback string for the C1 retry when the substring gate
- * caught prose source_expr. Includes the offending bindings verbatim so the
- * LLM can see exactly which constants need a real substring (or an escape
- * hatch).
+ * caught prose or ambiguous source_expr. Includes the offending bindings
+ * verbatim so the LLM can see exactly which constants need a real unique
+ * substring (or an escape hatch).
  */
 function buildSourceExprRetryFeedback(
-  offenders: Array<{ smt_constant: string; source_expr: string }>,
+  offenders: Array<{ smt_constant: string; source_expr: string; reason?: "not-found" | "ambiguous"; lines?: number[] }>,
 ): string {
-  const lines = offenders.map(
-    (o) =>
+  const lines = offenders.map((o) => {
+    if (o.reason === "ambiguous" && o.lines && o.lines.length > 0) {
+      return (
+        `  - smt_constant="${o.smt_constant}", source_expr=${JSON.stringify(o.source_expr)}` +
+        ` appears on lines ${o.lines.join(", ")} in the locus file — it is NOT unique.` +
+        ` A bare identifier like this matches the import line, not the bug site.` +
+        ` Emit a more specific substring that uniquely identifies the bug location,` +
+        ` typically a full call expression with arguments (e.g., "asc(schema.invocations.date)"` +
+        ` instead of "asc"), a property access chain, or a method-call expression.`
+      );
+    }
+    return (
       `  - smt_constant="${o.smt_constant}", source_expr=${JSON.stringify(o.source_expr)}` +
-      ` is NOT a verbatim substring of the locus file's source code.`,
-  );
+      ` is NOT a verbatim substring of the locus file's source code.`
+    );
+  });
   return `\n\nPRIOR ATTEMPT VIOLATED THE source_expr CONTRACT:\n${lines.join("\n")}\n\n` +
-    `Pick a verbatim substring of the locus file for each offending binding,\n` +
-    `OR widen the SMT declaration to a Bool predicate (which doesn't need a\n` +
-    `source-code anchor), OR emit "bindings": [] for an intent-level invariant.`;
+    `For each offending binding, either:\n` +
+    `  1. Pick a verbatim substring that uniquely identifies the bug location (appears on exactly ONE line) — prefer call expressions with arguments over bare identifiers.\n` +
+    `  2. Widen the SMT declaration to a Bool predicate (which doesn't need a source-code anchor).\n` +
+    `A bare identifier (like a function name) is only acceptable when it appears on exactly one line in the file.`;
 }
 
 /**
