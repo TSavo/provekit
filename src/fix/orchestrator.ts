@@ -5,6 +5,18 @@
  * Every downstream stage is currently a stub that throws NotImplementedError.
  * The orchestrator catches NotImplementedError and converts it to a graceful
  * abort entry in the audit trail — distinct from a real runtime error.
+ *
+ * Architecture v2 (2026-04-27 spec): the orchestrator is an
+ * **artifact-stream collector**. Each stage produces 0 or 1 artifacts; the
+ * orchestrator collects them as they are produced and flushes them in a
+ * dedicated `finally` step at the end. This matters because some artifacts
+ * (notably the StoredInvariant) MUST be persisted even when downstream
+ * stages fail — the invariant is the durable proof of the constraint, the
+ * fix bundle is one consumer of it. Cross-stage flush gating is removed.
+ *
+ * Cross-stage DATA flow is NOT removed. C3 still consumes C1's invariant;
+ * D1 still consumes C3's fix. What is removed is "downstream failure blocks
+ * upstream artifact persistence."
  */
 
 import type {
@@ -16,6 +28,8 @@ import type {
   FixBundle,
   AuditEntry,
   OverlayHandle,
+  InvariantClaim,
+  TestArtifact,
 } from "./types.js";
 import type { InvestigateReport } from "./stages/investigate.js";
 import { NotImplementedError } from "./types.js";
@@ -32,6 +46,7 @@ import { applyBundle } from "./stages/applyBundle.js";
 import { learnFromBundle } from "./stages/learnFromBundle.js";
 import { recognize, type RecognizeResult } from "./stages/recognize.js";
 import { buildStoredInvariant, writeInvariant } from "./runtime/invariantStore.js";
+import type { Artifact, InvariantArtifact } from "../integration/interfaces.js";
 import { execFileSync } from "child_process";
 import { dirname } from "path";
 
@@ -74,21 +89,41 @@ export interface RunFixLoopArgs {
   investigateReport?: InvestigateReport;
 }
 
-export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
+/**
+ * Result extension that exposes the artifact stream collected during the
+ * run. Existing fields on FixLoopResult are preserved; integrators wanting
+ * the unfiltered artifact stream consume `artifacts`. We declare it as a
+ * type *alias* with `artifacts` optional so existing mocks producing a
+ * plain FixLoopResult remain assignable.
+ */
+export type FixLoopResultWithArtifacts = FixLoopResult & {
+  /**
+   * Every artifact emitted during the run, in order of emission. Includes
+   * artifacts that were already persisted (their flush ran successfully)
+   * AND artifacts that survived a downstream failure. Inspecting this
+   * array is the canonical way to see "what got produced." Optional for
+   * backward compatibility with mocks that returned FixLoopResult.
+   */
+  artifacts?: Artifact[];
+};
+
+export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWithArtifacts> {
   const audit: AuditEntry[] = [];
   const logger = args.logger ?? createNoopLogger();
+  const artifacts: Artifact[] = [];
+
+  // Capture variables that are filled in along the way. We keep them at
+  // function scope so the `finally` block can flush them regardless of
+  // where the main flow aborted.
+  let invariant: InvariantClaim | null = null;
+  let test: TestArtifact | null = null;
+  let invariantPersisted = false;
+
+  let result: FixLoopResultWithArtifacts;
 
   try {
     // -----------------------------------------------------------------------
     // Stage B3: Recognize.
-    //
-    // Pure SAST + DSL, no LLM. Runs every library principle's compiled query
-    // against the locus's file. If any match's root intersects locus.primaryNode
-    // AND the matched principle has BOTH fixTemplate and testTemplate, the
-    // recognized result flows downstream and routes C1/C3/C5/C6 through their
-    // mechanical-mode arms (C1m/C3m/C5m/C6m) — zero LLM calls, seconds total.
-    // If no match (or matched-but-unready), the loop continues with the
-    // existing LLM-driven path unchanged.
     // -----------------------------------------------------------------------
     logger.stage("B3: recognize");
     const t0b3 = Date.now();
@@ -102,28 +137,9 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     );
 
     // Stages C1 + C2: formulate invariant and open overlay worktree IN PARALLEL.
-    //
-    // C1 and C2 are independent: both read from args.db (read-only shared
-    // sqlite handle), neither writes to overlay state, and C3 is the first
-    // consumer of either. C1 dominates wall time (LLM call, ~5-25s on the
-    // novel path) while C2 is a worktree checkout + reindex (~600ms).
-    // Running them concurrently saves the entire C2 wall time off the loop.
-    //
-    // Race scope: the in-process db is better-sqlite3 — synchronous reads
-    // do not interleave with the async LLM call's microtasks, and there are
-    // no writes to args.db from either stage. The audit array is mutated
-    // sequentially below (we await BOTH before continuing), and the start
-    // markers are pushed by runStage in the order Promise.all dispatches
-    // them — for parallel stages we accept that "C1:start" / "C2:start"
-    // appear adjacent to each other rather than strictly serially.
-    //
-    // Pitch-leak 6 Win 3. C4+C5 deliberately remain sequential below: they
-    // both write to the same overlay worktree (filesystem race) and to
-    // overlay.modifiedFiles (in-memory race), so concurrent execution would
-    // be unsafe.
     logger.stage("C1+C2: formulateInvariant || openOverlay");
     const t0c1c2 = Date.now();
-    const [invariant, overlay] = await Promise.all([
+    const [invariantResult, overlay] = await Promise.all([
       runStage("C1", "formulateInvariant", audit, () =>
         formulateInvariant({
           signal: args.signal,
@@ -139,6 +155,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
         openOverlay({ locus: args.locus, db: args.db }),
       ),
     ]);
+    invariant = invariantResult;
     logger.info(`  C1+C2 complete — worktree: ${overlay.worktreePath} in ${Date.now() - t0c1c2}ms (parallel)`);
 
     // Stage C3: generate fix candidate
@@ -148,7 +165,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
       generateFixCandidate({
         signal: args.signal,
         locus: args.locus,
-        invariant,
+        invariant: invariant!,
         overlay,
         llm: args.llm,
         logger,
@@ -157,6 +174,14 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
       }),
     );
     logger.info(`  C3 complete — patch files: ${fix.patch.fileEdits.length} invariantHolds: ${fix.invariantHoldsUnderOverlay} in ${Date.now() - t0c3}ms`);
+
+    // Emit a patch artifact as soon as C3 returns. Survives downstream failure.
+    artifacts.push({
+      kind: "patch",
+      patch: fix.patch,
+      rationale: fix.llmRationale,
+      source: fix.source,
+    });
 
     // Stage C4: generate complementary changes
     logger.stage("C4: generateComplementary");
@@ -177,13 +202,13 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     // Stage C5: generate regression test
     logger.stage("C5: generateRegressionTest");
     const t0c5 = Date.now();
-    const test = await runStage("C5", "generateRegressionTest", audit, () =>
+    const c5Result = await runStage("C5", "generateRegressionTest", audit, () =>
       generateRegressionTest({
         fix,
         signal: args.signal,
         locus: args.locus,
         overlay,
-        invariant,
+        invariant: invariant!,
         llm: args.llm,
         testRunner: args.c5TestRunner,
         logger,
@@ -191,15 +216,18 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
         investigateReport: args.investigateReport,
       }),
     );
+    test = c5Result;
     logger.info(`  C5 complete — passesOnFixed: ${test?.passesOnFixedCode} failsOnOriginal: ${test?.failsOnOriginalCode} in ${Date.now() - t0c5}ms`);
 
+    if (test) {
+      artifacts.push({ kind: "regression_test", test });
+    }
+
     // Stage C6: generate principle candidate(s).
-    // Pitch-leak 3 layer 1: C6 returns 0..3 principles; index 0 is canonical,
-    // rest are alternative AST shapes of the same bug class.
     logger.stage("C6: generatePrincipleCandidate");
     const t0c6 = Date.now();
     const principles = await runStage("C6", "generatePrincipleCandidate", audit, () =>
-      generatePrincipleCandidate({ signal: args.signal, invariant, fixCandidate: fix, db: args.db, llm: args.llm, overlay, logger, recognized }),
+      generatePrincipleCandidate({ signal: args.signal, invariant: invariant!, fixCandidate: fix, db: args.db, llm: args.llm, overlay, logger, recognized }),
     );
     const primaryPrinciple = principles.length > 0 ? principles[0] : null;
     const alternateShapes = principles.length > 1 ? principles.slice(1) : [];
@@ -207,6 +235,14 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
       `  C6 complete — primary kind: ${primaryPrinciple?.kind ?? "null"}, ` +
       `${alternateShapes.length} alternate shape(s) in ${Date.now() - t0c6}ms`,
     );
+
+    if (primaryPrinciple) {
+      artifacts.push({
+        kind: "principle",
+        principle: primaryPrinciple,
+        alternateShapes: alternateShapes.length > 0 ? alternateShapes : undefined,
+      });
+    }
 
     // Stage D1: assemble bundle
     logger.stage("D1: assembleBundle");
@@ -230,35 +266,23 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     );
     logger.info(`  D1 complete — bundleId: ${bundle.bundleId} confidence: ${bundle.confidence.toFixed(2)} in ${Date.now() - t0d1}ms`);
 
-    // After D1: persist the invariant to .provekit/invariants/ in the user's
-    // project root. This is step 1 of the standing-invariant-runtime spec —
-    // the constraint must live as a source-controlled, content-addressable
-    // artifact so the standing runtime (provekit verify) can re-resolve and
-    // re-check it on every subsequent commit. Failure to write does not
-    // abort the loop; the bundle still ships.
-    try {
-      const projectRoot = resolveProjectRoot(args.locus.file);
-      if (projectRoot) {
-        const stored = buildStoredInvariant({
-          claim: invariant,
-          signal: args.signal,
-          locus: args.locus,
-          test,
-          patchSha: null,
-          // v1: empty map. The substrate has node hashes; we'll wire
-          // them through in the same step that lands the path enumerator
-          // (the next item in the runtime spec's implementation order).
-          // For now bindings carry source positions only; the runtime
-          // detects decay by re-resolving file+line at verify time.
-          bindingNodeHashes: new Map(),
-        });
-        const writtenAt = writeInvariant(projectRoot, stored);
-        logger.info(`  invariant persisted: ${writtenAt}`);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error(`invariant store write failed (non-fatal)`, { error: msg });
-    }
+    artifacts.push({ kind: "bundle", bundle });
+
+    // -----------------------------------------------------------------------
+    // PERSIST INVARIANT (early, idempotent path).
+    //
+    // Best-effort: if this throws, the `finally` block tries again. Doing it
+    // here lets the standing-runtime spec's contract hold even when D2 is
+    // not exercised (e.g., dry-run, autoApply=false).
+    // -----------------------------------------------------------------------
+    invariantPersisted = await flushInvariantArtifact({
+      logger,
+      claim: invariant,
+      signal: args.signal,
+      locus: args.locus,
+      test,
+      patchSha: null,
+    }) || invariantPersisted;
 
     // Stage D2: apply bundle
     logger.stage("D2: applyBundle");
@@ -278,16 +302,16 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
       logger.info(`  D3 complete in ${Date.now() - t0d3}ms`);
     }
 
-    return {
+    result = {
       bundle,
       applied: applyResult.applied,
       auditTrail: audit,
       reason: applyResult.applied ? undefined : applyResult.failureReason,
       applyResult,
+      artifacts,
     };
   } catch (err) {
     if (err instanceof NotImplementedError) {
-      // Graceful abort: record a skipped entry so tests can assert on the kind.
       logger.info(`  stage ${err.stageId} not yet implemented — graceful abort`);
       audit.push({
         stage: err.stageId,
@@ -295,30 +319,99 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
         detail: err.message,
         timestamp: Date.now(),
       });
-      return {
+      result = {
         bundle: null,
         applied: false,
         auditTrail: audit,
         reason: `aborted at stage ${err.stageId}: ${err.message}`,
+        artifacts,
+      };
+    } else {
+      logger.error(`orchestrator caught unexpected error`, {
+        message: err instanceof Error ? err.message : String(err),
+        auditSoFar: audit.map((e) => `${e.stage}:${e.kind}`),
+      });
+      audit.push({
+        stage: "orchestrator",
+        kind: "error",
+        detail: err instanceof Error ? err.message : String(err),
+        timestamp: Date.now(),
+      });
+      result = {
+        bundle: null,
+        applied: false,
+        auditTrail: audit,
+        reason: err instanceof Error ? err.message : String(err),
+        artifacts,
       };
     }
-    // Unexpected error: record under "orchestrator" and return.
-    logger.error(`orchestrator caught unexpected error`, {
-      message: err instanceof Error ? err.message : String(err),
-      auditSoFar: audit.map((e) => `${e.stage}:${e.kind}`),
+  } finally {
+    // -----------------------------------------------------------------------
+    // ARTIFACT-STREAM FLUSH (unconditional).
+    //
+    // Cross-stage flush gating is removed: a downstream failure must NOT
+    // suppress the invariant's persistence. If we have an invariant claim
+    // (C1 succeeded) and we haven't already written it on the early path,
+    // write it now. AC#3 unblock.
+    // -----------------------------------------------------------------------
+    if (!invariantPersisted && invariant) {
+      try {
+        await flushInvariantArtifact({
+          logger,
+          claim: invariant,
+          signal: args.signal,
+          locus: args.locus,
+          test,
+          patchSha: null,
+        });
+      } catch (flushErr) {
+        const msg = flushErr instanceof Error ? flushErr.message : String(flushErr);
+        logger.error(`invariant flush (finally) failed (non-fatal)`, { error: msg });
+      }
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Materialize the invariant claim into a StoredInvariant and write it to
+ * `.provekit/invariants/<sha>.json`. Returns true on successful write.
+ *
+ * Failures are caught + logged; never thrown. The invariant write must not
+ * abort the loop (the bundle still ships) — but we DO want the artifact
+ * collected in the return value's `artifacts` list when it lands.
+ */
+async function flushInvariantArtifact(args: {
+  logger: FixLoopLogger;
+  claim: InvariantClaim;
+  signal: BugSignal;
+  locus: BugLocus;
+  test: TestArtifact | null;
+  patchSha: string | null;
+}): Promise<boolean> {
+  try {
+    const projectRoot = resolveProjectRoot(args.locus.file);
+    if (!projectRoot) return false;
+    const stored = buildStoredInvariant({
+      claim: args.claim,
+      signal: args.signal,
+      locus: args.locus,
+      test: args.test,
+      patchSha: args.patchSha,
+      bindingNodeHashes: new Map(),
     });
-    audit.push({
-      stage: "orchestrator",
-      kind: "error",
-      detail: err instanceof Error ? err.message : String(err),
-      timestamp: Date.now(),
-    });
-    return {
-      bundle: null,
-      applied: false,
-      auditTrail: audit,
-      reason: err instanceof Error ? err.message : String(err),
-    };
+    const writtenAt = writeInvariant(projectRoot, stored);
+    args.logger.info(`  invariant persisted: ${writtenAt}`);
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    args.logger.error(`invariant store write failed (non-fatal)`, { error: msg });
+    return false;
   }
 }
 
@@ -343,10 +436,8 @@ async function runStage<T>(
     return result;
   } catch (err) {
     if (err instanceof NotImplementedError) {
-      // Let outer catch handle — don't record here, outer push the "skipped" entry.
       throw err;
     }
-    // Real error: record it under this stage before rethrowing to outer catch.
     audit.push({
       stage: stageId,
       kind: "error",
