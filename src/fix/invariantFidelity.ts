@@ -841,7 +841,7 @@ export async function runInvariantFidelity(args: {
     // Existing three-check path for arithmetic-style invariants.
     const [a, b, c] = await Promise.all([
       crossLlmFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
-      traceabilityFn({ invariant, signal, llm, logger }),
+      traceabilityFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
       fixtureFn({ invariant, signal, llm, logger }),
     ]);
 
@@ -870,7 +870,7 @@ export async function runInvariantFidelity(args: {
     // fixtures are intentionally skipped (see header doc).
     const [a, b] = await Promise.all([
       proseJaccardFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
-      traceabilityFn({ invariant, signal, llm, logger }),
+      traceabilityFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
     ]);
 
     if (!a.passed) failures.push(`prose overlap: ${a.detail}`);
