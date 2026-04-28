@@ -351,9 +351,19 @@ it("${testName}", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse import statements from TypeScript source. For each relative-path
- * import, verify the target resolves to a file in the overlay. Returns
- * a list of unresolved import paths (empty when all resolve).
+ * Parse import statements from TypeScript source. Rejects two failure modes:
+ *
+ *   1. Relative imports (`./foo`, `../bar`) that don't resolve to any file
+ *      in the overlay.
+ *   2. Self-imports — imports of the overlay project's own package name
+ *      (e.g. `@wopr-network/better-prompts` when the project's package.json
+ *      has that name). The package may declare `exports`/`main` pointing at
+ *      a `dist/` directory that doesn't exist in the overlay (no build
+ *      artifact in a fresh git-worktree clone), causing vite to throw
+ *      "Failed to resolve entry for package …" with no test output. Force
+ *      a relative import of the source file instead.
+ *
+ * Returns a list of unresolved import paths (empty when all resolve).
  */
 export function validateImportPaths(
   testFileAbsPath: string,
@@ -361,20 +371,39 @@ export function validateImportPaths(
   overlay: OverlayHandle,
 ): string[] {
   const testDir = dirname(testFileAbsPath);
-  // Match both double- and single-quoted relative imports (handles multi-line by using [^'"]+)
-  const importRe = /import\b[^'"]*?['"](\.[^'"]+)['"]/g;
   const unresolved: string[] = [];
 
+  // 1. Relative-path imports must resolve to a real file.
+  const relativeRe = /import\b[^'"]*?['"](\.[^'"]+)['"]/g;
   let match: RegExpExecArray | null;
-  while ((match = importRe.exec(source)) !== null) {
+  while ((match = relativeRe.exec(source)) !== null) {
     const importedPath = match[1];
-    // Resolve against the test file's directory (absolute within the overlay)
     const base = resolve(testDir, importedPath);
-    // Try with and without common extensions
     const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}.js`];
     const exists = candidates.some((c) => existsSync(c));
     if (!exists) {
       unresolved.push(importedPath);
+    }
+  }
+
+  // 2. Self-imports of the overlay's own package name are forbidden.
+  let selfPackageName: string | null = null;
+  try {
+    const pkgPath = join(overlay.worktreePath, "package.json");
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, unknown>;
+      const name = pkg["name"];
+      if (typeof name === "string" && name.length > 0) {
+        selfPackageName = name;
+      }
+    }
+  } catch { /* ignore — only a self-import check */ }
+
+  if (selfPackageName) {
+    const escaped = selfPackageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const selfRe = new RegExp(`import\\b[^'"]*?['"](${escaped}(?:/[^'"]*)?)['"]`, "g");
+    while ((match = selfRe.exec(source)) !== null) {
+      unresolved.push(match[1]);
     }
   }
 
