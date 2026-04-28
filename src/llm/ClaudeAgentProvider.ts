@@ -99,7 +99,12 @@ export class ClaudeAgentProvider implements LLMProvider {
         // entire output channel relies on the agent writing structured
         // JSON to a known scratch path; partial permission gating turns
         // every stage into a coin flip on prompt obedience.
+        //
+        // bypassPermissions requires allowDangerouslySkipPermissions=true
+        // as an explicit acknowledgement (per SDK type def). Without it,
+        // the SDK silently falls back to default permission gating.
         permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
         thinking: { type: "enabled", budgetTokens: 4096 },
       },
     })) {
