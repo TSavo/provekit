@@ -801,7 +801,12 @@ export function setupOverlayForTest(overlay: OverlayHandle, mainRepoRoot: string
   // prefix of its own output and corrupt the config. The marker comment
   // below short-circuits subsequent calls.
   const PROVEKIT_MARKER = "/* provekit: include widened */";
-  const WIDENED_LINE = `${PROVEKIT_MARKER}\n    include: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"]`;
+  // include matches every test file under the overlay; exclude shields
+  // .provekit/ scratch (substrate tests C6 emits import provekit-only
+  // deps like ts-morph that aren't in the user's node_modules) and the
+  // standard noisy dirs vitest already excludes by default. Listing them
+  // explicitly keeps behavior consistent across vitest minor versions.
+  const WIDENED_LINE = `${PROVEKIT_MARKER}\n    include: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"],\n    exclude: ["**/node_modules/**", "**/dist/**", "**/.provekit/**", "**/.git/**"]`;
   for (const cfgName of ["vitest.config.ts", "vitest.config.js", "vitest.config.mjs"]) {
     const cfgPath = join(overlay.worktreePath, cfgName);
     if (!existsSync(cfgPath)) continue;
