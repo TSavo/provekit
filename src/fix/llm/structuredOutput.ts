@@ -96,13 +96,26 @@ export interface StructuredJsonOptions<T> {
 
 /**
  * Determine whether agent mode is active for this call.
- * Order: explicit useAgent → env override → text mode.
+ *
+ * Default: use agent mode whenever the provider supports it. The text-mode
+ * path is broken for prompts that say "via the Write tool" — `llm.complete`
+ * still goes through the agent SDK which has tools loaded but restrictive
+ * permissions; the model emits prose ("I need write permission to create
+ * invariant.json") and structuredOutput's recovery path can't extract a
+ * JSON block from a permission-request preamble. The agent-mode path
+ * appends the OUTPUT CONTRACT, runs with bypassPermissions, and writes
+ * the JSON file deterministically.
+ *
+ * Explicit overrides:
+ *   - opts.useAgent set wins
+ *   - env PROVEKIT_AGENT_JSON=0 forces text mode (debugging escape hatch)
  */
 function shouldUseAgent(opts: { useAgent?: boolean }, llm: LLMProvider): boolean {
   if (!llm.agent) return false;
   if (opts.useAgent === true) return true;
   if (opts.useAgent === false) return false;
-  return process.env["PROVEKIT_AGENT_JSON"] === "1";
+  if (process.env["PROVEKIT_AGENT_JSON"] === "0") return false;
+  return true;
 }
 
 /**
