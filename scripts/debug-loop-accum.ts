@@ -44,7 +44,7 @@ for (const r of asRows) console.log(r);
 console.log("\n=== running loop-accumulator-overflow ===");
 console.log("Expected: 1 match (buggy.ts line 4); 0 matches on clean.ts (no for-loop)");
 try {
-  evaluatePrinciple(db, readFileSync(".provekit/principles/loop-accumulator-overflow.dsl", "utf-8"));
+  evaluatePrinciple(db, readFileSync(".provekit/principles/universal/loop-accumulator-overflow.dsl", "utf-8"));
 } catch (e: any) {
   console.log("evaluatePrinciple error:", e.message);
 }

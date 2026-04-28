@@ -38,7 +38,7 @@ console.log(dfRows);
 
 console.log("\n=== Running variable-staleness ===");
 try {
-  evaluatePrinciple(db, readFileSync(".provekit/principles/variable-staleness.dsl", "utf-8"));
+  evaluatePrinciple(db, readFileSync(".provekit/principles/typescript/variable-staleness.dsl", "utf-8"));
 } catch (e: any) {
   console.log("evaluatePrinciple error:", e.message);
 }

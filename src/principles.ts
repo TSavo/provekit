@@ -1,9 +1,13 @@
 import { LLMProvider, createProvider } from "./llm";
 import { VerificationResult } from "./verifier";
 import { judgeTeachingExample } from "./judge";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "fs";
+import { basename, dirname, join } from "path";
 import { createHash } from "crypto";
+import {
+  enumeratePrincipleFiles,
+  resolveWritePartition,
+} from "./principleEnumeration.js";
 
 export interface ASTPattern {
   nodeType: string;
@@ -73,15 +77,35 @@ export class PrincipleStore {
   private loadFromDisk(): void {
     if (!existsSync(this.principlesDir)) return;
 
-    for (const entry of readdirSync(this.principlesDir)) {
-      if (!entry.endsWith(".json")) continue;
+    // Partition-aware load (task #134): walks universal/ + detected
+    // language partitions under .provekit/principles/. disabled/ and
+    // runtime retired/ are excluded by the allowlist.
+    const { jsonPaths } = enumeratePrincipleFiles(this.principlesDir, {
+      projectRoot: this.projectRoot,
+    });
+    for (const path of jsonPaths) {
       try {
-        const data: Principle = JSON.parse(
-          readFileSync(join(this.principlesDir, entry), "utf-8")
-        );
+        const data: Principle = JSON.parse(readFileSync(path, "utf-8"));
         this.principles.push(data);
-      } catch (e: any) { console.log(`[principles] Failed to load ${entry}: ${e?.message?.slice(0, 40)}`); }
+      } catch (e: any) {
+        console.log(`[principles] Failed to load ${basename(path)}: ${e?.message?.slice(0, 40)}`);
+      }
     }
+  }
+
+  /**
+   * Locate the on-disk JSON file for a principle id by scanning the
+   * partitioned library. Returns undefined if the principle has never
+   * been persisted (in-memory only). Used by persistStats and retire
+   * so they can rewrite the file in its actual partition rather than
+   * blindly writing to the flat root.
+   */
+  private findExistingPath(id: string): string | undefined {
+    const { jsonPaths } = enumeratePrincipleFiles(this.principlesDir, {
+      loadAllPartitions: true,
+    });
+    const filename = `${id}.json`;
+    return jsonPaths.find((p) => basename(p) === filename);
   }
 
   getAll(): Principle[] {
@@ -109,12 +133,19 @@ export class PrincipleStore {
     return "";
   }
 
-  add(principle: Principle): void {
+  add(principle: Principle, options: { language?: string } = {}): void {
     this.principles.push(principle);
-    mkdirSync(this.principlesDir, { recursive: true });
+    // Write into the appropriate partition (task #134). Without a
+    // language tag, default to universal/. The call site that knows
+    // the language at derivation time can pass it explicitly.
+    const partitionDir = resolveWritePartition(
+      this.principlesDir,
+      options.language as any,
+    );
+    mkdirSync(partitionDir, { recursive: true });
     const filename = `${principle.id}.json`;
     writeFileSync(
-      join(this.principlesDir, filename),
+      join(partitionDir, filename),
       JSON.stringify(principle, null, 2)
     );
   }
@@ -146,14 +177,21 @@ export class PrincipleStore {
 
   persistStats(): void {
     if (this.dirtyStats.size === 0) return;
-    mkdirSync(this.principlesDir, { recursive: true });
     for (const id of this.dirtyStats) {
       const p = this.principles.find((x) => x.id === id);
       if (!p) continue;
+      // Rewrite into whichever partition the principle is currently
+      // filed under. If we can't locate it (never persisted), file it
+      // in universal/ — the conservative default.
+      const existing = this.findExistingPath(id);
+      const targetDir = existing
+        ? dirname(existing)
+        : resolveWritePartition(this.principlesDir);
+      mkdirSync(targetDir, { recursive: true });
       const filename = `${id}.json`;
       try {
         writeFileSync(
-          join(this.principlesDir, filename),
+          join(targetDir, filename),
           JSON.stringify(p, null, 2)
         );
       } catch (e: any) {
@@ -199,9 +237,15 @@ export class PrincipleStore {
     const filename = `${id}.json`;
     try {
       writeFileSync(join(retiredDir, filename), JSON.stringify(p, null, 2));
-      try {
-        unlinkSync(join(this.principlesDir, filename));
-      } catch {}
+      // Delete the live copy from whichever partition it lived in
+      // (task #134). findExistingPath scans every partition.
+      const existing = this.findExistingPath(id);
+      if (existing) {
+        try { unlinkSync(existing); } catch {}
+      } else {
+        // Backward-compat: delete from flat root if that's where it was.
+        try { unlinkSync(join(this.principlesDir, filename)); } catch {}
+      }
     } catch (e: any) {
       console.log(`[principles] retire ${id}: ${e?.message?.slice(0, 40) || "ok"}`);
     }
@@ -221,13 +265,20 @@ export class PrincipleStore {
 
     if (!existsSync(this.principlesDir)) return "";
 
-    const entries = readdirSync(this.principlesDir)
-      .filter((e) => e.endsWith(".json"))
-      .sort();
-
-    for (const entry of entries) {
-      const content = readFileSync(join(this.principlesDir, entry), "utf-8");
-      hash.update(entry);
+    // Hash every JSON across all partitions (task #134). Files are
+    // sorted by the enumerator so the hash is stable. Hash key is the
+    // path RELATIVE to principlesDir so a file moving between
+    // partitions invalidates the cache (which is the correct thing —
+    // a partition change is a real semantic change to the library).
+    const { jsonPaths } = enumeratePrincipleFiles(this.principlesDir, {
+      loadAllPartitions: true,
+    });
+    for (const path of jsonPaths) {
+      const rel = path.startsWith(this.principlesDir + "/")
+        ? path.slice(this.principlesDir.length + 1)
+        : basename(path);
+      const content = readFileSync(path, "utf-8");
+      hash.update(rel);
       hash.update(content);
     }
 

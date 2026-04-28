@@ -224,12 +224,43 @@ function main() {
     console.error(`No principles dir at ${PRINCIPLES_DIR}`);
     process.exit(1);
   }
-  const dslFiles = readdirSync(PRINCIPLES_DIR).filter((f) => f.endsWith(".dsl"));
+  // Walk every partition under .provekit/principles/ (task #134:
+  // universal/, typescript/, cpp/, rust/, java/, python/, go/). The
+  // curation gate exercises every shipped principle regardless of
+  // partition; partitioning gates LOAD-TIME selection in production,
+  // not validation.
+  const PARTITION_DIRS = [
+    "universal",
+    "typescript",
+    "javascript",
+    "cpp",
+    "c",
+    "rust",
+    "java",
+    "python",
+    "go",
+  ];
+  const dslFiles: Array<{ partition: string; file: string }> = [];
+  for (const part of PARTITION_DIRS) {
+    const partDir = join(PRINCIPLES_DIR, part);
+    if (!existsSync(partDir)) continue;
+    for (const f of readdirSync(partDir)) {
+      if (f.endsWith(".dsl")) dslFiles.push({ partition: part, file: f });
+    }
+  }
+  // Backward-compat: pick up any flat-root .dsl too.
+  for (const f of readdirSync(PRINCIPLES_DIR)) {
+    if (f.endsWith(".dsl")) dslFiles.push({ partition: "", file: f });
+  }
   const rows: Row[] = [];
 
-  for (const f of dslFiles.sort()) {
+  for (const { partition, file: f } of dslFiles.sort((a, b) =>
+    `${a.partition}/${a.file}`.localeCompare(`${b.partition}/${b.file}`),
+  )) {
     const id = f.replace(/\.dsl$/, "");
-    const dslPath = join(PRINCIPLES_DIR, f);
+    const dslPath = partition
+      ? join(PRINCIPLES_DIR, partition, f)
+      : join(PRINCIPLES_DIR, f);
     let dslSource = readFileSync(dslPath, "utf-8");
     const fixture = FIXTURES[id];
     if (!fixture) {

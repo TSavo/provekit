@@ -79,11 +79,29 @@ function parseArgs(): Args {
   return out as Args;
 }
 
+/**
+ * Resolve a principle name to its `.dsl` path. Searches every partition
+ * directory (task #134) plus the flat root for backward compatibility.
+ */
+function resolvePrincipleDslPath(name: string): string | null {
+  const PARTITIONS = [
+    "universal", "typescript", "javascript", "cpp", "c",
+    "rust", "java", "python", "go",
+  ];
+  for (const part of PARTITIONS) {
+    const candidate = join(principlesDir, part, `${name}.dsl`);
+    if (existsSync(candidate)) return candidate;
+  }
+  const flat = join(principlesDir, `${name}.dsl`);
+  if (existsSync(flat)) return flat;
+  return null;
+}
+
 function loadAndCompile(principleNames: string[]): Map<string, CompiledPrincipleQuery> {
   const compiled = new Map<string, CompiledPrincipleQuery>();
   for (const name of principleNames) {
-    const path = join(principlesDir, `${name}.dsl`);
-    if (!existsSync(path)) throw new Error(`principle file not found: ${path}`);
+    const path = resolvePrincipleDslPath(name);
+    if (!path) throw new Error(`principle file not found: ${name}.dsl`);
     const program = parseDSL(readFileSync(path, "utf-8"));
     const map = compileProgram(program.nodes);
     for (const [pname, q] of map) {

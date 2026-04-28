@@ -184,34 +184,49 @@ function seedPrinciples(projectRoot: string): { copied: number; skipped: boolean
     return { copied: 0, skipped: true, message: `bundled library not found at ${bundledDir}` };
   }
 
-  // Idempotence: if the target exists and is non-empty, leave it alone. Users
-  // who edited their local library should not have those edits clobbered by a
-  // re-run of `provekit init`.
-  if (existsSync(targetDir)) {
+  // Idempotence: if the target exists and is non-empty (recursive — count
+  // partition subdirs too), leave it alone. v2 of the library uses
+  // partitioned directories (universal/, typescript/, ...), so a flat
+  // file-only check would miss them.
+  function hasAnyFiles(dir: string): boolean {
     try {
-      const existing = readdirSync(targetDir).filter((name: string) => {
-        try { return statSync(join(targetDir, name)).isFile(); } catch { return false; }
-      });
-      if (existing.length > 0) {
-        return { copied: 0, skipped: true, message: `${existing.length} file(s) already at .provekit/principles/ (left alone)` };
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        try {
+          const st = statSync(full);
+          if (st.isFile()) return true;
+          if (st.isDirectory() && hasAnyFiles(full)) return true;
+        } catch { /* skip unreadable */ }
       }
-    } catch {
-      // fall through to seed
-    }
+    } catch { /* nothing */ }
+    return false;
+  }
+  if (existsSync(targetDir) && hasAnyFiles(targetDir)) {
+    return { copied: 0, skipped: true, message: `existing library at .provekit/principles/ (left alone)` };
   }
 
-  mkdirSync(targetDir, { recursive: true });
+  // Recursive copy so partition subdirectories (universal/, typescript/,
+  // cpp/, rust/, ...) seed correctly.
   let copied = 0;
-  for (const name of readdirSync(bundledDir)) {
-    const src = join(bundledDir, name);
-    const dst = join(targetDir, name);
-    try {
-      const st = statSync(src);
-      if (!st.isFile()) continue;
-      copyFileSync(src, dst);
-      copied++;
-    } catch { /* skip unreadable entries */ }
+  function copyTree(src: string, dst: string): void {
+    mkdirSync(dst, { recursive: true });
+    let entries: string[];
+    try { entries = readdirSync(src); } catch { return; }
+    for (const name of entries) {
+      const srcPath = join(src, name);
+      const dstPath = join(dst, name);
+      try {
+        const st = statSync(srcPath);
+        if (st.isDirectory()) {
+          copyTree(srcPath, dstPath);
+        } else if (st.isFile()) {
+          copyFileSync(srcPath, dstPath);
+          copied++;
+        }
+      } catch { /* skip */ }
+    }
   }
+  copyTree(bundledDir, targetDir);
   return { copied, skipped: false, message: `seeded ${copied} principle(s) into .provekit/principles/` };
 }
 
@@ -950,10 +965,14 @@ async function runLint(args: string[]): Promise<void> {
     }
   }
 
-  const dslFiles = readdirSync(principlesDir).filter((f) => f.endsWith(".dsl"));
+  // Partition-aware enumeration (task #134): walks universal/ + the
+  // language partitions detected for projectRoot. The lint surface
+  // wants every applicable principle, NOT just the flat root.
+  const { enumeratePrincipleFiles } = await import("./principleEnumeration.js");
+  const { dslPaths } = enumeratePrincipleFiles(principlesDir, { projectRoot });
   let principleErrors = 0;
-  for (const dslFile of dslFiles) {
-    const dslPath = join(principlesDir, dslFile);
+  for (const dslPath of dslPaths) {
+    const dslFile = relative(principlesDir, dslPath);
     let dsl: string;
     try { dsl = readFileSync(dslPath, "utf-8"); } catch { principleErrors++; continue; }
     try { evaluatePrinciple(db, dsl); }
@@ -988,7 +1007,7 @@ async function runLint(args: string[]): Promise<void> {
     console.log(`(Using bundled principles from ${principlesDir} — copy to ${localPrinciplesDir} to customize)`);
   }
   console.log(`Files indexed: ${parsedFiles}/${tsFiles.length}${parserFailures ? ` (${parserFailures} parser failures, run with -v to see)` : ""}`);
-  console.log(`Principles evaluated: ${dslFiles.length - principleErrors}/${dslFiles.length}${principleErrors ? ` (${principleErrors} errors)` : ""}`);
+  console.log(`Principles evaluated: ${dslPaths.length - principleErrors}/${dslPaths.length}${principleErrors ? ` (${principleErrors} errors)` : ""}`);
   console.log(`Matches: ${matches.length} (${violations.length} violations, ${warnings.length} warnings, ${infos.length} info)`);
 
   db.$client.close();

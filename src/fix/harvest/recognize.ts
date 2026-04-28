@@ -12,7 +12,7 @@
  * for fix loops. The harvest pipeline calls it in batch.
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
 import { eq, and, inArray } from "drizzle-orm";
@@ -26,6 +26,7 @@ import { principleMatches } from "../../db/schema/principleMatches.js";
 import { prePostDiff } from "../../db/schema/preDiff.js";
 import type { HarvestCandidate } from "./extractBugs.js";
 import { recordCandidateDiff, setActiveCandidate } from "./diff.js";
+import { enumeratePrincipleFiles } from "../../principleEnumeration.js";
 
 /**
  * Principles that intentionally bind their `at` to a node WITHOUT change
@@ -161,10 +162,15 @@ export function recognizeCandidate(
     let principlesEvaluated = 0;
     let principleErrors = 0;
     if (existsSync(principlesDir)) {
-      const dslFiles = readdirSync(principlesDir).filter((f) => f.endsWith(".dsl"));
-      for (const dslFile of dslFiles) {
+      // Partition-aware (task #134): every partition's DSL is evaluated
+      // because harvest runs cross-corpus and we want any applicable
+      // principle to fire. loadAllPartitions=true mirrors the B3
+      // recognize stage decision for the same reason.
+      const { dslPaths } = enumeratePrincipleFiles(principlesDir, {
+        loadAllPartitions: true,
+      });
+      for (const dslPath of dslPaths) {
         principlesEvaluated++;
-        const dslPath = join(principlesDir, dslFile);
         let dslSource: string;
         try {
           dslSource = readFileSync(dslPath, "utf-8");

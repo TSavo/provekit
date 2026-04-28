@@ -30,7 +30,7 @@
  * across a typical 1000-LOC file. No LLM calls. No Z3.
  */
 
-import { readFileSync, existsSync, readdirSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { eq, and, lte, gte } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
@@ -39,6 +39,7 @@ import { principleMatches, principleMatchCaptures } from "../../db/schema/princi
 import { nodes } from "../../sast/schema/index.js";
 import { evaluatePrinciple } from "../../dsl/evaluator.js";
 import { createNoopLogger, type FixLoopLogger } from "../logger.js";
+import { enumeratePrincipleFiles } from "../../principleEnumeration.js";
 
 // ---------------------------------------------------------------------------
 // Result shape
@@ -105,15 +106,20 @@ export function loadPrincipleLibrary(dir?: string): PrincipleLibrary {
     return { byId, dir: principlesDir };
   }
 
-  let entries: string[];
-  try {
-    entries = readdirSync(principlesDir).filter((f) => f.endsWith(".json"));
-  } catch {
-    return { byId, dir: principlesDir };
-  }
+  // Partition-aware enumeration (task #134). loadAllPartitions=true
+  // because B3 recognition runs against any incoming locus regardless
+  // of project language; the recognize stage doesn't know which
+  // language partition is "active" — that's a project-level concern,
+  // and we want B3 to fire on every applicable principle.
+  //
+  // Note: this is a deliberate choice over detection-gated loading.
+  // Once per-language SAST extractors exist, this will narrow to the
+  // partition matching the locus file's language.
+  const { jsonPaths } = enumeratePrincipleFiles(principlesDir, {
+    loadAllPartitions: true,
+  });
 
-  for (const entry of entries) {
-    const path = join(principlesDir, entry);
+  for (const path of jsonPaths) {
     let raw: string;
     try {
       raw = readFileSync(path, "utf-8");
@@ -164,15 +170,12 @@ function ensurePrincipleMatchesPopulated(
 
   if (!existsSync(principlesDir)) return;
 
-  let dslFiles: string[];
-  try {
-    dslFiles = readdirSync(principlesDir).filter((f) => f.endsWith(".dsl"));
-  } catch {
-    return;
-  }
+  // Same loadAllPartitions=true rationale as loadPrincipleLibrary above.
+  const { dslPaths } = enumeratePrincipleFiles(principlesDir, {
+    loadAllPartitions: true,
+  });
 
-  for (const dslFile of dslFiles) {
-    const dslPath = join(principlesDir, dslFile);
+  for (const dslPath of dslPaths) {
     let dslSource: string;
     try {
       dslSource = readFileSync(dslPath, "utf-8");
@@ -182,6 +185,9 @@ function ensurePrincipleMatchesPopulated(
     try {
       evaluatePrinciple(db, dslSource);
     } catch (err) {
+      const dslFile = dslPath.startsWith(principlesDir)
+        ? dslPath.slice(principlesDir.length + 1)
+        : dslPath;
       logger.detail(
         `[B3] principle ${dslFile} eval skipped: ${err instanceof Error ? err.message : String(err)}`,
       );

@@ -34,7 +34,7 @@ console.log("\n=== data_flow rows (first 10) ===");
 const dfRows = db.$client.prepare(`SELECT * FROM data_flow LIMIT 10`).all();
 for (const r of dfRows) console.log(r);
 
-const addDsl = readFileSync(".provekit/principles/addition-overflow.dsl", "utf-8");
+const addDsl = readFileSync(".provekit/principles/universal/addition-overflow.dsl", "utf-8");
 console.log("\n=== running addition-overflow on guarded code (n<100; return n+1) ===");
 console.log("Expected: principle SUPPRESSED (no match) because n is bounded");
 try {

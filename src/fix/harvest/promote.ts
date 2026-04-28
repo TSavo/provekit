@@ -16,6 +16,7 @@ import { join } from "path";
 import type { LibraryPrinciple } from "../types.js";
 import type { HarvestCandidate } from "./extractBugs.js";
 import { validateStagedPrinciple, type ValidationResult } from "./validate.js";
+import { resolveWritePartition } from "../../principleEnumeration.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -111,9 +112,18 @@ export function promoteStagedRecord(opts: PromoteOptions): PromoteResult {
       continue;
     }
 
-    // Validation passed — write DSL + JSON to the library.
-    mkdirSync(principlesDir, { recursive: true });
-    const dslPath = join(principlesDir, `${principle.name}.dsl`);
+    // Validation passed — write DSL + JSON to the library partition
+    // (task #134). Promoted principles default to universal/ unless a
+    // language tag is present on the principle metadata. Today the
+    // staged record carries no language tag, so universal/ is the
+    // conservative default; once harvest captures the source-corpus
+    // language we'll route per-language.
+    const partitionDir = resolveWritePartition(
+      principlesDir,
+      (principle as { language?: string }).language as any,
+    );
+    mkdirSync(partitionDir, { recursive: true });
+    const dslPath = join(partitionDir, `${principle.name}.dsl`);
     writeFileSync(dslPath, dslSource, "utf-8");
 
     const libraryEntry: LibraryPrinciple = {
@@ -128,7 +138,7 @@ export function promoteStagedRecord(opts: PromoteOptions): PromoteResult {
       }],
       confidence: "medium", // harvested + validated; humans can promote to "high" later
     };
-    const jsonPath = join(principlesDir, `${principle.name}.json`);
+    const jsonPath = join(partitionDir, `${principle.name}.json`);
     // If the file already exists (e.g. promoted previously), preserve any
     // additional fields a maintainer added by hand.
     let merged: LibraryPrinciple = libraryEntry;

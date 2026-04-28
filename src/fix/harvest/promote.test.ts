@@ -89,13 +89,15 @@ describe("promoteStagedRecord", () => {
 
     expect(result.promoted).toBe(1);
     expect(result.quarantined).toBe(0);
-    expect(existsSync(join(principlesDir, "div_by_zero.dsl"))).toBe(true);
-    expect(existsSync(join(principlesDir, "div_by_zero.json"))).toBe(true);
+    // Task #134: promoted principles land in universal/ unless a
+    // language tag is present on the staged record.
+    expect(existsSync(join(principlesDir, "universal", "div_by_zero.dsl"))).toBe(true);
+    expect(existsSync(join(principlesDir, "universal", "div_by_zero.json"))).toBe(true);
 
-    const dsl = readFileSync(join(principlesDir, "div_by_zero.dsl"), "utf-8");
+    const dsl = readFileSync(join(principlesDir, "universal", "div_by_zero.dsl"), "utf-8");
     expect(dsl).toContain('arithmetic.op == "/"');
 
-    const json = JSON.parse(readFileSync(join(principlesDir, "div_by_zero.json"), "utf-8"));
+    const json = JSON.parse(readFileSync(join(principlesDir, "universal", "div_by_zero.json"), "utf-8"));
     expect(json.id).toBe("div_by_zero");
     expect(json.bug_class_id).toBe("div-by-zero");
     expect(json.provenance[0].source).toBe("harvest");
@@ -132,7 +134,7 @@ describe("promoteStagedRecord", () => {
 
     expect(result.promoted).toBe(0);
     expect(result.quarantined).toBe(1);
-    expect(existsSync(join(principlesDir, "div_by_zero.dsl"))).toBe(false);
+    expect(existsSync(join(principlesDir, "universal", "div_by_zero.dsl"))).toBe(false);
 
     // Audit trail in the staged file:
     const audited = JSON.parse(readFileSync(stagedPath, "utf-8"));
@@ -165,7 +167,7 @@ describe("promoteStagedRecord", () => {
     });
     promoteStagedRecord({ stagedPath: staged2, source: source2, cohort: [], principlesDir, scratchParent });
 
-    const json = JSON.parse(readFileSync(join(principlesDir, "div_by_zero.json"), "utf-8"));
+    const json = JSON.parse(readFileSync(join(principlesDir, "universal", "div_by_zero.json"), "utf-8"));
     expect(json.provenance).toHaveLength(2);
     const bugIds = json.provenance.map((p: any) => p.bugId).sort();
     expect(bugIds).toEqual(["1", "2"]);
