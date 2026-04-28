@@ -1135,6 +1135,115 @@ codebase-specific universal-over-paths constraint that nothing else
 can produce, mechanically enforced at git-commit speed forever.** The
 universal axioms are ambient; the corridor is the product.
 
+## Total symmetry: a prompt is an unformalized invariant
+
+There is a complete symmetry between two things that look different on
+the surface but are the same construction in different representations:
+
+- A **prompt** is a natural-language directive the user gives to an
+  LLM-shaped tool. "Fix this bug." "Add this feature." "Make this
+  faster."
+- An **invariant** is a formal SMT-LIB universal-over-paths constraint
+  the codebase pledges to satisfy.
+
+The pipeline IS the formalization step that converts one into the
+other. B0 takes a prompt; C1 derives the SMT; the validation gates
+check it; the survivor lands in the corpus as a permanent invariant.
+**A prompt is an unformalized invariant; an invariant is a formalized
+prompt.** Bidirectional in concept: any persisted invariant can be
+paraphrased back as a prose prompt (useful for explanation + audit);
+any prompt is a candidate invariant in formation.
+
+This collapses several earlier framings into one operational claim:
+
+- "Every commit is an intake candidate" — every commit was authored
+  from a prompt. That prompt is the candidate invariant.
+- "Few principles, unbounded observations" — observations are exactly
+  the formalized residue of user prompts that passed validation.
+- "Constraint is the shape of the product" — the user is continuously
+  producing constraints whenever they interact with an LLM-shaped tool.
+  ProvekIt is the layer that catches the formalizable ones and locks
+  them in.
+
+The corridor narrows in proportion to how much the user interacts
+with AI. Not just bug fixes — every prompt the user types is a
+candidate. Bug fixes formalize cleanly into correctness invariants.
+Feature additions formalize into data-shape invariants. Refactors
+formalize into "what must continue to hold across the rename"
+invariants — exactly the case where ProvekIt's content-addressable
+binding survives the cosmetic edit. **The corpus grows at the rate
+the user is using AI to produce code, which is exactly the rate at
+which the codebase needs more constraints to remain coherent under
+AI velocity.**
+
+Operational consequence: ProvekIt is **the formalization layer for the
+user's natural-language intent.** The user prompts; ProvekIt converts
+the prompt into a machine-checkable constraint; the constraint becomes
+a permanent wall; the next prompt the user (or AI) generates has to
+live within the corridor of all previous formalized prompts. **The
+user's prompt history becomes the codebase's correctness specification,
+formalized incrementally, mechanically enforced forever.**
+
+## Memory and longer context windows cannot solve correctness
+
+The standard industry answer to "AI loses track of constraints in large
+codebases" is: bigger context windows, better memory frameworks, RAG
+over the codebase's history. **None of those approaches can scale to
+solve correctness, mathematically.**
+
+The argument:
+
+- **Constraint corpus grows without bound.** Every commit that yields
+  a formalizable invariant adds one. Year-one codebase: tens. Year-
+  five: hundreds. Year-ten: thousands.
+- **Attention complexity is bounded.** Even multi-million-token
+  context windows have hard physical limits, and the model's cognitive
+  load on simultaneous-constraint-satisfaction degrades long before
+  the limit. Memory frameworks help with knowledge recall — pulling
+  the right API doc into context — not with active reasoning over a
+  thousand-element constraint set during each generation.
+- **Therefore in-context approaches mathematically cannot scale with
+  constraint count.** No matter how much memory or how long the
+  context, the AI cannot actively reason about every standing
+  constraint while generating each token. The strategy is wrong on the
+  axis it's chosen.
+
+ProvekIt's architecture sidesteps the problem entirely. Two complexity
+surfaces, asymmetric:
+
+- **AI generation:** O(context window). Bounded by attention. Bounded
+  forever, regardless of model improvements.
+- **Gate enforcement:** O(1) amortized per binding-hash check. Cache
+  hit on unchanged code is sub-millisecond. Cache miss runs Z3 path-
+  checking only on the affected dataflow. **Constraint count doesn't
+  enter the per-check cost** — only the size of the diff does, which
+  is bounded by what changed, not by what's in the corpus.
+
+The asymmetry is the architectural win: **the user can mint constraints
+faster than the AI can absorb them in-context, and that's a feature,
+not a bug.** A year-five ProvekIt-substrate codebase with 500 standing
+invariants does not require the AI to load 500 invariants into context.
+The AI generates whatever it generates within whatever context it has;
+the gate runs in single-digit seconds (cache hits cover 95% of
+invariants; Z3 runs only on the 5% that touch changed code). The AI
+never sees the 500. **The corridor is mechanical; the AI is sandboxed
+inside it without knowing.**
+
+This is the structural answer to "why is ProvekIt's architecture right
+where context-engineering approaches are wrong?":
+
+> **You cannot solve correctness through context. You can only solve
+> it through enforcement.** Context tells the AI what's possible;
+> enforcement tells the gate what's allowed. The product is the gate.
+
+Compound implication for the industry: every dollar spent on longer
+context windows and better memory is a dollar spent on the right axis
+for *knowledge* problems and the wrong axis for *correctness* problems.
+Knowledge surface: improves the AI's awareness of APIs, conventions,
+prior art. Correctness surface: requires external enforcement that
+scales with the substrate, not with the model. Different problems;
+both worth solving; only the second compounds correctness over time.
+
 ## The recursive depth
 
 The vibe-coding AI is BOTH the source of the bugs AND the agent that
