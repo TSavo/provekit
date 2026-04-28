@@ -1,0 +1,11 @@
+{
+  "key": "src/fix/types.ts/complete[444]",
+  "file": "src/fix/types.ts",
+  "function": "complete",
+  "line": 444,
+  "signal_hash": "e44c060b62aa81746e1b6b8932da7e6d78559fd507798f3decc56f0d416bb476",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

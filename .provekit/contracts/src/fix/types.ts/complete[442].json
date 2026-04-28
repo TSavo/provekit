@@ -1,0 +1,31 @@
+{
+  "key": "src/fix/types.ts/complete[442]",
+  "file": "src/fix/types.ts",
+  "function": "complete",
+  "line": 442,
+  "signal_hash": "e1a9a860b4f97fc983074aef9bd4c984c20c88dd691b6fe91f10e0459cd645bb",
+  "proven": [],
+  "violations": [
+    {
+      "principle": "guard-narrowing",
+      "principle_hash": "",
+      "claim": "VIOLATION: Guard Narrowing at complete",
+      "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 442\n; REASON: The original encoding asserts guard_condition=0, which is the\n; legitimate no-match path that intentionally reaches the throw. A real\n; guard-narrowing violation requires the guard to have matched\n; (guard_condition=1) AND code after the guard to still be reached. The\n; missing precondition is that the guard fired; without it Z3 trivially\n; satisfies the formula via the normal throw-on-no-match control flow.\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n; Precondition: violation only meaningful when the guard DID match\n(assert (= guard_condition 1))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "witness": "(\n  (define-fun guard_returns () Int\n    1)\n  (define-fun code_after_reached () Int\n    1)\n  (define-fun guard_condition () Int\n    1)\n)",
+      "complexity": 2,
+      "confidence": "high",
+      "reason": "The original encoding asserts guard_condition=0, which is the legitimate no-match path that intentionally reaches the throw. A real guard-narrowing violation requires the guard to have matched (guard_condition=1) AND code after the guard to still be reached. The missing precondition is that the guard fired; without it Z3 trivially satisfies the formula via the normal throw-on-no-match control flow.",
+      "judge_note": "cegar-refined: bug persists after tightened encoding"
+    }
+  ],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: guard-narrowing\n; LINE: 442\n; VIOLATION: Guard Narrowing at complete\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n(assert (= guard_condition 0))\n(assert (= code_after_reached 1))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

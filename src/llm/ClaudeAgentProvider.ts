@@ -15,6 +15,14 @@ export class ClaudeAgentProvider implements LLMProvider {
       options: {
         model: options.model,
         systemPrompt: options.systemPrompt,
+        // Same permission posture as agent(): bypass everything, every tool
+        // available, no turn cap. Without this the SDK falls back to its
+        // restrictive default and prompts that say "use the Write tool"
+        // produce "I need write permission" prose responses.
+        allowedTools: [".*"],
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+        maxTurns: 1000,
       },
     })) {
       if (message.type === "assistant") {
@@ -42,6 +50,10 @@ export class ClaudeAgentProvider implements LLMProvider {
         model: options.model,
         includePartialMessages: true,
         systemPrompt: options.systemPrompt,
+        allowedTools: [".*"],
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
+        maxTurns: 1000,
       },
     })) {
       if (message.type === "stream_event") {
@@ -62,7 +74,9 @@ export class ClaudeAgentProvider implements LLMProvider {
     // MCP, skills). Callers that need a tighter contract (e.g. structured-
     // JSON output via Write) pass an explicit narrower list.
     const allowedTools = options.allowedTools ?? [".*"];
-    const maxTurns = options.maxTurns ?? 20;
+    // 1000 is effectively no cap. Per user directive: never artificially
+    // gate agent calls — let the LLM use whatever turns/tools it needs.
+    const maxTurns = options.maxTurns ?? 1000;
 
     // Map tier alias to a model string. The SDK accepts full model IDs or aliases.
     const modelMap: Record<string, string> = {

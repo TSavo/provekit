@@ -1,0 +1,11 @@
+{
+  "key": "src/fix/types.ts/constructor[404]",
+  "file": "src/fix/types.ts",
+  "function": "constructor",
+  "line": 404,
+  "signal_hash": "91a93f59e41283e6cdd50b90f33b88e96a0c7f87bd2a08c49214a1a88029b98e",
+  "proven": [],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": []
+}

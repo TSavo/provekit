@@ -1,0 +1,36 @@
+{
+  "id": "constructor-io-unguarded",
+  "name": "constructor-io-unguarded",
+  "description": "A constructor performs external I/O (file writes, directory creation) or mutates shared error-name state as unconditional expression statements with no try/catch guard and no path condition, meaning any construction failure throws synchronously and leaves the object in a partially initialized, inconsistent state that callers cannot detect.",
+  "astPatterns": [
+    {
+      "nodeType": ";",
+      "parentType": "expression_statement",
+      "insideTryCatch": false,
+      "pathConditions": [],
+      "callerContext": "constructor",
+      "dangerCategories": [
+        "dangerous-call",
+        "mutation"
+      ],
+      "guardPatterns": [
+        "try",
+        "existsSync",
+        "catch",
+        "?."
+      ]
+    }
+  ],
+  "smt2Template": "(declare-const {{io_attempted}} Int)\n(declare-const {{io_succeeded}} Int)\n(declare-const {{object_fully_initialized}} Int)\n(declare-const {{caller_notified_of_failure}} Int)\n(declare-const {{guard_present}} Int)\n; io is attempted unconditionally in constructor\n(assert (= {{io_attempted}} 1))\n; guard is absent\n(assert (= {{guard_present}} 0))\n; io can fail\n(assert (or (= {{io_succeeded}} 0) (= {{io_succeeded}} 1)))\n; if io fails and no guard, object is not fully initialized\n(assert (=> (and (= {{io_succeeded}} 0) (= {{guard_present}} 0))\n            (= {{object_fully_initialized}} 0)))\n; caller is never notified — exception propagates from constructor\n(assert (= {{caller_notified_of_failure}} 0))\n; show satisfiable: io fails, object broken, caller blind\n(assert (= {{io_succeeded}} 0))\n(check-sat)",
+  "teachingExample": {
+    "domain": "medical device firmware logger",
+    "explanation": "A PatientEventLogger class writes an audit directory and an initial log file unconditionally inside its constructor. On a read-only filesystem (e.g., after a storage fault), mkdirSync throws synchronously. The calling subsystem catches the constructor exception generically, discards the half-built logger object, and silently falls back to a null reference — causing all subsequent patient events to be dropped with no alert. Because the I/O is an unguarded expression statement inside the constructor with no try/catch, there is no way for the object to signal partial initialization or for the caller to distinguish a healthy logger from a broken one.",
+    "smt2": "(declare-const dir_create_attempted Int)\n(declare-const dir_create_succeeded Int)\n(declare-const file_write_attempted Int)\n(declare-const file_write_succeeded Int)\n(declare-const logger_initialized Int)\n(declare-const events_recorded Int)\n(declare-const guard_present Int)\n(assert (= dir_create_attempted 1))\n(assert (= guard_present 0))\n; filesystem is read-only — both ops fail\n(assert (= dir_create_succeeded 0))\n(assert (= file_write_attempted 0))\n(assert (= file_write_succeeded 0))\n; without guard, initialization never completes\n(assert (=> (and (= dir_create_succeeded 0) (= guard_present 0))\n            (= logger_initialized 0)))\n; no initialized logger means no events recorded\n(assert (=> (= logger_initialized 0) (= events_recorded 0)))\n(check-sat)"
+  },
+  "provenance": {
+    "discoveredIn": "src/fix/types.ts/constructor[19], src/fix/types.ts/constructor[48], src/fix/types.ts/constructor[387], src/fix/types.ts/constructor[388], src/fix/types.ts/constructor[530]",
+    "violation": "Discovered from 5 unverified signals",
+    "generalizedAt": "2026-04-26T21:20:39.219Z"
+  },
+  "validated": true
+}

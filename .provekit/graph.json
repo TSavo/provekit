@@ -1,0 +1,26 @@
+{
+  "root": "/Users/tsavo/provekit/src/fix/types.ts",
+  "projectRoot": "/Users/tsavo/provekit",
+  "files": [
+    {
+      "path": "/Users/tsavo/provekit/src/fix/types.ts",
+      "relativePath": "src/fix/types.ts",
+      "imports": [],
+      "signalCount": 18,
+      "hash": "a53ddbf7def0bc4c27294b752516ac01e3c4f144c1f95ee0c0adce2066f0f808"
+    }
+  ],
+  "topologicalOrder": [
+    "/Users/tsavo/provekit/src/fix/types.ts"
+  ],
+  "parallelGroups": [
+    {
+      "depth": 0,
+      "files": [
+        "/Users/tsavo/provekit/src/fix/types.ts"
+      ],
+      "signalCount": 18
+    }
+  ],
+  "builtAt": "2026-04-26T21:20:01.637Z"
+}

@@ -1,0 +1,29 @@
+{
+  "key": "src/fix/types.ts/complete[441]",
+  "file": "src/fix/types.ts",
+  "function": "complete",
+  "line": 441,
+  "signal_hash": "5cc0238d388858d14a9b61fdc020a2ebfe7f7b47ba09974ae79ab61982de32bc",
+  "proven": [
+    {
+      "principle": "empty-collection-loop",
+      "principle_hash": "",
+      "claim": "PROVEN: Empty Collection Loop at complete is prevented (CEGAR-refined encoding)",
+      "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+      "reason": "Original encoding asserted collection_size=0 trivially SAT with no constraints linking emptiness to an *unintended* silent skip. In this code an empty map causes an explicit throw — the loop body not executing is the designed failure path, not a hidden bug. A real violation would require the empty-loop to silently return a value instead of throwing. Adding the constraint that empty collection => exception (not silent success) makes the \"violation\" unsatisfiable.",
+      "confidence": "high",
+      "judge_note": "cegar-flipped: violation became proof after tightening encoding (premises verified consistent)"
+    }
+  ],
+  "violations": [],
+  "depends_on": [],
+  "clause_history": [
+    {
+      "clause": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; VIOLATION: Empty Collection Loop at complete\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(assert (= collection_size 0))\n(assert (= loop_body_executed 0))\n(check-sat)",
+      "status": "active",
+      "weaken_step": 0,
+      "witness_count_at_last_weaken": 0,
+      "current_witness_count": 0
+    }
+  ]
+}

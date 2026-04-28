@@ -1,0 +1,228 @@
+{
+  "contractCount": 18,
+  "checkerResults": [
+    {
+      "checker": "template",
+      "proven": 15,
+      "violations": 1,
+      "errors": 0,
+      "results": [
+        {
+          "checker": "template",
+          "description": "[guard-narrowing] complete:442: VIOLATION: Guard Narrowing at complete",
+          "sourceContract": "complete:442",
+          "smt2": "; PRINCIPLE: guard-narrowing\n; LINE: 442\n; REASON: The original encoding asserts guard_condition=0, which is the\n; legitimate no-match path that intentionally reaches the throw. A real\n; guard-narrowing violation requires the guard to have matched\n; (guard_condition=1) AND code after the guard to still be reached. The\n; missing precondition is that the guard fired; without it Z3 trivially\n; satisfies the formula via the normal throw-on-no-match control flow.\n(declare-const guard_condition Int)\n(declare-const guard_returns Int)\n(declare-const code_after_reached Int)\n(assert (=> (= guard_condition 1) (= guard_returns 1)))\n(assert (=> (= guard_returns 0) (= code_after_reached 1)))\n; Precondition: violation only meaningful when the guard DID match\n(assert (= guard_condition 1))\n(assert (= code_after_reached 1))\n(check-sat)",
+          "expected": "sat",
+          "z3Result": "sat",
+          "verdict": "violation",
+          "witness": "(\n  (define-fun guard_returns () Int\n    1)\n  (define-fun code_after_reached () Int\n    1)\n  (define-fun guard_condition () Int\n    1)\n)"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:19 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:19",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:374 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:374",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:376 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:376",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:378 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:378",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:379 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:379",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:385 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:385",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:387 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:387",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:388 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:388",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:393 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:393",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:404 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:404",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:417 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:417",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:418 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:418",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:43 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:43",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "Precondition propagation: constructor:48 → complete:441: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "constructor:48",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        },
+        {
+          "checker": "template",
+          "description": "State mutation: complete:441 → complete:442: PROVEN: Empty Collection Loop at complete is prevented (CEGA",
+          "sourceContract": "complete:441",
+          "targetContract": "complete:442",
+          "smt2": "; PRINCIPLE: empty-collection-loop\n; LINE: 441\n; REASON: Original encoding asserted collection_size=0 trivially SAT with no constraints\n; linking emptiness to an *unintended* silent skip. In this code an empty map causes\n; an explicit throw — the loop body not executing is the designed failure path, not a\n; hidden bug. A real violation would require the empty-loop to silently return a value\n; instead of throwing. Adding the constraint that empty collection => exception (not\n; silent success) makes the \"violation\" unsatisfiable.\n(declare-const collection_size Int)\n(declare-const loop_body_executed Int)\n(declare-const exception_thrown Bool)\n\n; collection non-negative\n(assert (>= collection_size 0))\n\n; loop body executes iff collection non-empty\n(assert (= loop_body_executed (ite (> collection_size 0) 1 0)))\n\n; when loop body never executes, the code throws — not a silent empty-loop bug\n(assert (= exception_thrown (= loop_body_executed 0)))\n\n; for a real empty-collection-loop violation we need: empty AND no exception\n; (i.e., the code silently returns nothing instead of surfacing the error)\n(assert (and (= collection_size 0) (not exception_thrown)))\n\n(check-sat)",
+          "expected": "unsat",
+          "z3Result": "unsat",
+          "verdict": "proven"
+        }
+      ]
+    },
+    {
+      "checker": "consistency",
+      "proven": 0,
+      "violations": 0,
+      "errors": 0,
+      "results": []
+    },
+    {
+      "checker": "entailment",
+      "proven": 0,
+      "violations": 0,
+      "errors": 0,
+      "results": []
+    },
+    {
+      "checker": "reachability",
+      "proven": 0,
+      "violations": 0,
+      "errors": 0,
+      "results": []
+    },
+    {
+      "checker": "strengthening",
+      "proven": 0,
+      "violations": 0,
+      "errors": 0,
+      "results": []
+    },
+    {
+      "checker": "independence",
+      "proven": 0,
+      "violations": 0,
+      "errors": 0,
+      "results": []
+    },
+    {
+      "checker": "strength",
+      "proven": 0,
+      "violations": 0,
+      "errors": 0,
+      "results": []
+    },
+    {
+      "checker": "property-test",
+      "proven": 0,
+      "violations": 0,
+      "errors": 0,
+      "results": []
+    }
+  ],
+  "totalProven": 15,
+  "totalViolations": 1,
+  "totalErrors": 0,
+  "ignored": 0,
+  "staleContracts": 0,
+  "reportedAt": "2026-04-26T21:22:19.937Z"
+}

@@ -28,6 +28,21 @@
       "discoveredIn": "seed",
       "violation": "",
       "generalizedAt": "2026-04-14T00:00:00.000Z"
+    },
+    {
+      "source": "customer-fix",
+      "timestamp": "2026-04-27T17:11:27.916Z",
+      "bugId": "src/calc.ts:2"
+    },
+    {
+      "source": "customer-fix",
+      "timestamp": "2026-04-27T17:13:40.976Z",
+      "bugId": "src/calc.ts:2"
+    },
+    {
+      "source": "customer-fix",
+      "timestamp": "2026-04-27T17:16:03.492Z",
+      "bugId": "src/calc.ts:2"
     }
   ],
   "validated": true,
