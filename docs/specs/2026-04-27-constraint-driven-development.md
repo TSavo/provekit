@@ -1,5 +1,7 @@
 # Constraint-Driven Development
 
+> **ProvekIt.** The k is silent. The slogan is the product: *Prove It.*
+
 **Date:** 2026-04-27
 **Status:** Positioning + methodology doc, paired with the standing-invariant-runtime spec
 **Author:** Captured from a session-long architectural dialogue with TSavo
@@ -10,7 +12,7 @@ A methodology and a product positioning. The methodology, named honestly:
 **development whose trajectory is driven by the codebase's accumulating
 impossibilities — the things it cannot become.** Each fix mints a permanent
 constraint; the cumulative constraint set monotonically reduces the
-codebase's degrees of freedom; the value is in the reduction. ProveKit's
+codebase's degrees of freedom; the value is in the reduction. ProvekIt's
 fix loop is the mechanism that converts each problem statement into a
 constraint, and the standing runtime is the substrate that enforces every
 accumulated constraint on every commit, mechanically, at git-commit speed.
@@ -115,7 +117,7 @@ git-commit speed across every call site that exists today AND every call
 site that ever gets added later, derived mechanically from the actual
 problems a team has actually encountered.**
 
-That gap is the entire ProveKit product. The fix loop + shadow AST + Z3
+That gap is the entire ProvekIt product. The fix loop + shadow AST + Z3
 path enumeration + git-hook construction is the only construction that
 fills it, and it does so as a side effect of the action a developer was
 already going to take ("fix this bug" / "add this feature" / "make this
@@ -135,7 +137,7 @@ The intake stage generalizes over two equally-valid input shapes:
   extractor reads both, derives what the change was trying to accomplish,
   mints a constraint capturing that intent, and ships any regression test
   that would lock the intent in. If the existing test suite already
-  covers the intent, no test gets added; if it doesn't, ProveKit writes
+  covers the intent, no test gets added; if it doesn't, ProvekIt writes
   the missing test as part of its output.
 
 Both directions reduce to the same canonical operation: **artifact-of-
@@ -146,7 +148,7 @@ v1 extension — the framework is coherent because both directions live
 under one intake.
 
 The retrospective direction unlocks two important properties:
-- **Existing codebases self-bootstrap.** Point ProveKit at a five-year-old
+- **Existing codebases self-bootstrap.** Point ProvekIt at a five-year-old
   codebase and run the retrospective intake in batch over the existing
   commit log. Thousands of constraints get mined from history that nobody
   ever wrote down. The constraint corpus arrives populated.
@@ -263,6 +265,96 @@ satisfy the constraint through any path that ever reaches the protected
 sink, whether that path exists today or gets added by an AI agent six
 months from now.
 
+## One pipeline, five harnesses
+
+The architecture is one pipeline (artifact-of-change → intent → constraint
+→ output bundle) with thin deployment harnesses on top. The pipeline is
+invariant. Harnesses differ in *who* triggers them, *when*, and *how* the
+output gets routed. All five compose with the same underlying machinery;
+none requires changes to the pipeline.
+
+1. **Interactive harness — "fix this bug" / "make this change."** User
+   files a problem statement directly to the LLM in conversation. The
+   pipeline runs prospectively, ships a patch + invariant + tests. The
+   bug-fix harness wires this to GitHub Issues; the change harness wires
+   it to Linear. Same pipeline, different inboxes.
+
+2. **Historical harness — `provekit mine-history`.** Walks the existing
+   git log, formats each commit as artifact-of-change, runs the pipeline
+   retrospectively. Bootstraps the constraint corpus on adoption day for
+   codebases with years of existing history.
+
+3. **Continuous harness — pre-receive / PR webhook.** Every commit (or
+   PR) gets handed to a ProvekIt agent asynchronously. The agent enhances
+   the change with whatever the codebase needs to satisfy correctness:
+   adds missing tests, mints constraints, opens a follow-up PR with the
+   augmentations against the user's branch. Never commits to main
+   directly. Always reviewable.
+
+4. **Report-only harness — verify-and-file.** Zero write authority. Runs
+   `provekit verify` on schedule (cron, GitHub Actions); when anything
+   decays or violates, files a GitHub Issue with the binding details and
+   Z3 witness. The output of this harness becomes input to the
+   interactive harness — the issue gets typed into the LLM, the fix loop
+   runs. Recursive feedback: the report harness creates the work queue
+   the interactive harness consumes.
+
+5. **MCP harness — `/prove <natural-language assertion>`.** Any LLM
+   agent that speaks MCP (Claude Code, Cursor, agentic IDE plugins,
+   Copilot if it gains MCP) gets prove-as-a-tool. The agent passes a
+   declarative property in natural language; ProvekIt derives an
+   invariant, runs the verify pipeline against the codebase, returns a
+   structured verdict (holds | violated | undecidable + Z3 witness).
+   Read-only by default; optionally promotes the property to a
+   permanent constraint. Ad-hoc verification at conversational speed.
+
+The five span the cost-vs-friction grid: interactive is highest-friction
+highest-leverage (user types a sentence, gets a permanent constraint);
+historical is one-time bootstrap; continuous is zero-friction always-on;
+report-only is zero-write safety mode; MCP is conversational pull. Pick
+the harness shape that matches the deployment context; the underlying
+guarantees compose identically.
+
+## Holyship: ProvekIt as the proof gate
+
+ProvekIt slots into Holyship (the flow engine + worker pool for agentic
+software at `~/platform/platforms/holyship`) as the **proof gate** in
+its gate library. Holyship defines pipelines as state machines, enforces
+transitions with deterministic gates, and gives agents only `claim` and
+`report`. The engine — not the agent — decides what comes next, based on
+gate evidence. The four horsemen of git-commit map directly to
+Holyship's gate library:
+
+- **tsc** gate — types consistent
+- **lint** gate — patterns clean
+- **test** gate — behavior matches assertions
+- **prove** gate — universal-over-paths constraints satisfied
+
+Each gate has the same shape from Holyship's perspective: deterministic,
+fast (cache-bound), no LLM in the verification path, returns a
+structured verdict the engine routes on. The fixer agent gets called
+with the failing gate's evidence; the reviewer agent doesn't have to
+read the whole diff because the gate already named the violation.
+
+The compounding property gets even sharper inside Holyship: every
+prove-gate failure that ships through the fix loop mints a NEW
+constraint. The next agent that tries to write code in that area has to
+satisfy a strictly larger gate-set. Holyship's gate library expands
+monotonically as the codebase ships work. *Holyship doesn't just enforce
+gates — it grows them.* That's the deepest fit: Holyship is the platform
+that makes constraint-driven development operational at agent-velocity,
+and prove is what makes the gate growth mechanical.
+
+The MCP-able `/prove` tool is the agent-facing API for this gate. An
+agent in the `coding` state writes code, calls `/prove the data layer
+respects the most-recent-K invariant`, gets a verdict. Fail → fix; hold
+→ emit `pr_created`. Every agent in Holyship's worker pool gets
+prove-as-a-tool with no per-agent configuration.
+
+The two products ship together. Holyship is the platform. ProvekIt is
+the load-bearing gate. The marketing line: ProvekIt is what turns
+"AI velocity is dangerous" into "AI velocity compounds correctness."
+
 ## The user journey
 
 The entry point that makes this product distribute itself goes deeper
@@ -277,7 +369,7 @@ the user was already having. Bug gets fixed, first constraint gets minted,
 git hook gets installed, `.provekit/` substrate gets bootstrapped. Zero
 friction. Adoption is identical to the action the user was already taking.
 
-**Shape B — implicit commit-as-input.** User installs ProveKit. From that
+**Shape B — implicit commit-as-input.** User installs ProvekIt. From that
 moment forward, every commit that lands gets retrospectively mined. The
 intent extractor reads the diff plus commit message, derives intent,
 mints a constraint where one is constraint-shaped, and ships a follow-up
@@ -299,7 +391,7 @@ constraints from every previous change in the codebase, mined from every
 commit that's ever landed. The corpus density grows with commit rate,
 not with deliberate user effort.
 
-For existing codebases adopting ProveKit, the retrospective intake runs
+For existing codebases adopting ProvekIt, the retrospective intake runs
 in batch over the existing commit log. A five-year-old codebase with
 thousands of commits gets thousands of mined intents on day one, the
 constraint corpus arrives populated, and the standing runtime starts
@@ -392,9 +484,9 @@ Two surfaces, no heuristics:
   Enforced by `provekit verify` git hook on every commit. Universal over
   paths to the bound sink in *this* codebase.
 
-Heuristics are biome's product, not ProveKit's. Empty-catch, falsy-
+Heuristics are biome's product, not ProvekIt's. Empty-catch, falsy-
 default, exhaustive-deps, unused-vars — that whole surface is owned by
-linters. ProveKit competing there has zero value differential. The
+linters. ProvekIt competing there has zero value differential. The
 interesting space is exactly the two extremes: locally provable
 (per-codebase constraints, the bulk of output) and universally provable
 (principles, the rare graduation).
@@ -497,11 +589,11 @@ These are v2+. v1 ships without them and remains the load-bearing claim.
 
 ## Bottom line
 
-ProveKit's product is not "AI fixes your bugs faster." That's the
+ProvekIt's product is not "AI fixes your bugs faster." That's the
 productivity story everyone else is selling, and it's bounded by
 human-equivalent quality.
 
-ProveKit's product is: **every problem your codebase encounters becomes a
+ProvekIt's product is: **every problem your codebase encounters becomes a
 permanent constraint on what every line of code anyone (human or AI) ever
 writes from then on, mechanically enforced at git-commit speed.** The
 codebase's degrees of freedom decrease monotonically. Software ages

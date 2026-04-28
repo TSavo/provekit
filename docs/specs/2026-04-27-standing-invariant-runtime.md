@@ -499,7 +499,7 @@ The runtime is shippable when:
 
 The marketing claim becomes provable:
 
-*ProveKit doesn't fix your bugs. ProveKit makes the bug class permanently
+*ProvekIt doesn't fix your bugs. ProvekIt makes the bug class permanently
 un-shippable. Every fix is a contract your codebase pledges to keep.
 Refactor freely; the contracts move with you.*
 
