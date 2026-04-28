@@ -44,6 +44,7 @@ async function main(): Promise<void> {
     case "override": runOverride(rest); break;
     case "fix":     await runFix(rest); break;
     case "lint":    await runLint(rest); break;
+    case "invariants": await runInvariants(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
       printHelp();
@@ -574,6 +575,71 @@ function runHook(args: string[]): void {
     const result = installer.install();
     console.log(result.message);
     if (result.path) console.log(`  ${result.path}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// invariants — list/verify/retire the per-codebase constraint store
+// ---------------------------------------------------------------------------
+
+async function runInvariants(args: string[]): Promise<void> {
+  const sub = args[0] ?? "list";
+  const rest = args.slice(1);
+  const projectRoot = resolveProjectRoot(rest);
+
+  // Lazy-load runtime modules so the rest of the CLI doesn't pay the
+  // import cost when invariants commands aren't being used.
+  const { readInvariants, retireInvariant } = await import("./fix/runtime/invariantStore.js");
+  const { verifyAll, formatReport, exitCodeFor } = await import("./fix/runtime/verify.js");
+
+  switch (sub) {
+    case "list": {
+      const invariants = readInvariants(projectRoot, { includeRetired: rest.includes("--all") });
+      if (invariants.length === 0) {
+        console.log("(no invariants in .provekit/invariants/)");
+        return;
+      }
+      for (const inv of invariants) {
+        const status = inv.retired ? "retired" : "active";
+        console.log(`${inv.id}  ${status}  ${inv.smt.kind}  ${inv.callsite.filePath}:${inv.callsite.startLine}  ${inv.originatingBug.slice(0, 80)}`);
+      }
+      return;
+    }
+
+    case "verify": {
+      const verbose = rest.includes("--verbose") || rest.includes("-v");
+      const json = rest.includes("--json");
+      const report = verifyAll(projectRoot);
+      if (json) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        console.log(formatReport(report, { verbose }));
+      }
+      process.exit(exitCodeFor(report));
+      return;
+    }
+
+    case "retire": {
+      const id = rest[0];
+      if (!id) {
+        console.error("usage: provekit invariants retire <id> --reason \"<text>\"");
+        process.exit(2);
+      }
+      const reasonIdx = rest.indexOf("--reason");
+      const reason = reasonIdx >= 0 && rest[reasonIdx + 1] ? rest[reasonIdx + 1]! : "(no reason given)";
+      const result = retireInvariant(projectRoot, id, reason);
+      if (!result) {
+        console.error(`invariant ${id} not found`);
+        process.exit(2);
+      }
+      console.log(`retired ${id}: ${reason}`);
+      return;
+    }
+
+    default:
+      console.error(`unknown subcommand: ${sub}`);
+      console.error("usage: provekit invariants {list|verify|retire <id> --reason \"<text>\"}");
+      process.exit(2);
   }
 }
 
