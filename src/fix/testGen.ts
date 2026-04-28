@@ -23,6 +23,7 @@ import { runAgentInOverlay } from "./captureChange.js";
 import { detectTestRunner } from "./testRunners/index.js";
 import type { InvariantClaim, BugLocus, BugSignal, OverlayHandle, CodePatch, LLMProvider } from "./types.js";
 import { getModelTier } from "./modelTiers.js";
+import { extractGrammarBundle, renderGrammarSection } from "./runtime/grammarExtractor.js";
 
 // ---------------------------------------------------------------------------
 // extractWitnessInputs
@@ -169,6 +170,20 @@ export async function generateTestCode(args: {
   // Use overlay-relative display path to avoid leaking absolute paths.
   const locusDisplay = locusRelToWorktree ?? locus.file;
 
+  // CDD principle: enumerate the available schema/imports so the LLM
+  // can't invent column names. See grammarExtractor.ts for rationale.
+  const grammarLocusAbsCompletion = locusRelToWorktree
+    ? join(overlay.worktreePath, locusRelToWorktree)
+    : (locus.file.startsWith("/") ? locus.file : undefined);
+  const grammarBundleCompletion = extractGrammarBundle({
+    projectRoot: overlay.worktreePath,
+    locusFile: grammarLocusAbsCompletion,
+  });
+  const grammarSectionCompletion = renderGrammarSection(grammarBundleCompletion);
+  const grammarBlockCompletion = grammarSectionCompletion
+    ? `\n${grammarSectionCompletion}\n`
+    : "";
+
   const prompt = `[STAGE:C5] generateTestCode
 You are a TypeScript testing expert. Generate a complete vitest regression test file.
 
@@ -193,7 +208,7 @@ IMPORT PATH (from test file to module): ${importPath}
 
 TEST FILE PATH: ${testFilePath}
 TEST NAME: ${testName}
-
+${grammarBlockCompletion}
 # What happens to your output
 
 Your test will be run TWICE: once on the patched (post-fix) code, once with
@@ -485,6 +500,22 @@ export async function generateTestCodeViaAgent(args: {
     ? JSON.stringify(inputs, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2)
     : "(none — abstract invariant; derive test inputs from the bug summary and invariant description below)";
 
+  // CDD principle: enumerate the available grammar (schema + idiomatic
+  // imports) instead of letting the LLM hallucinate column names. The
+  // bundle pulls Drizzle table declarations + observed test imports out
+  // of the overlay; renderGrammarSection emits an empty string when the
+  // project has nothing to teach (non-Drizzle, no test files), in which
+  // case the section disappears cleanly from the prompt.
+  const grammarLocusAbs = locusRelToOverlay
+    ? join(overlay.worktreePath, locusRelToOverlay)
+    : (locus.file.startsWith("/") ? locus.file : undefined);
+  const grammarBundle = extractGrammarBundle({
+    projectRoot: overlay.worktreePath,
+    locusFile: grammarLocusAbs,
+  });
+  const grammarSection = renderGrammarSection(grammarBundle);
+  const grammarBlock = grammarSection ? `\n${grammarSection}\n` : "";
+
   const prompt = `[STAGE:C5] generateTestCodeViaAgent
 Your CWD is the project root. All paths in this prompt are relative to your CWD.
 Do not use absolute paths — use only the relative paths shown here.
@@ -522,7 +553,7 @@ Do NOT change "${importPath}" to anything else. Copy it character-for-character.
 
 TEST FILE PATH: ${testFilePath}
 TEST NAME: ${testName}
-
+${grammarBlock}
 # What happens to your output
 
 Your test will be run TWICE: once on the patched code, once with the fix
