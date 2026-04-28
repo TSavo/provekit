@@ -606,6 +606,56 @@ async function runInvariants(args: string[]): Promise<void> {
       return;
     }
 
+    case "paths": {
+      // Diagnostic: enumerate dataflow paths to a given callsite or to
+      // a stored invariant's callsite. Requires the substrate (.provekit
+      // SQLite db) to exist. Useful for debugging the path enumerator
+      // before step 4 (Z3 path checker) lands.
+      const invariantId = rest[0];
+      if (!invariantId) {
+        console.error("usage: provekit invariants paths <invariantId> [--max-paths N]");
+        process.exit(2);
+      }
+      const inv = readInvariants(projectRoot, { includeRetired: true })
+        .find((i) => i.id === invariantId);
+      if (!inv) {
+        console.error(`invariant ${invariantId} not found`);
+        process.exit(2);
+      }
+      const maxIdx = rest.indexOf("--max-paths");
+      const maxPaths = maxIdx >= 0 && rest[maxIdx + 1] ? parseInt(rest[maxIdx + 1]!, 10) : 50;
+
+      const { openSubstrateDb } = await import("./fix/runtime/substrate.js");
+      const { pathsTo } = await import("./fix/runtime/pathEnumerator.js");
+      const db = openSubstrateDb(projectRoot);
+      if (!db) {
+        console.error(".provekit/provekit.db not found — run `provekit analyze` first");
+        process.exit(2);
+      }
+
+      // The invariant's callsite is recorded by file+line, not by node
+      // id — node ids are content-addressable and can drift. For v1
+      // diagnostic, we resolve the node id at query time via the
+      // substrate's nodes table.
+      const { resolveCallsiteNodeId } = await import("./fix/runtime/substrate.js");
+      const nodeId = resolveCallsiteNodeId(db, inv.callsite.filePath, inv.callsite.startLine);
+      if (!nodeId) {
+        console.error(`could not resolve callsite ${inv.callsite.filePath}:${inv.callsite.startLine} in substrate`);
+        process.exit(2);
+      }
+
+      const paths = pathsTo(db, nodeId, { maxPaths });
+      console.log(`paths to ${inv.callsite.filePath}:${inv.callsite.startLine}:`);
+      console.log(`  enumerated ${paths.length} path${paths.length === 1 ? "" : "s"}`);
+      for (let i = 0; i < paths.length; i++) {
+        console.log(`  path ${i + 1}: ${paths[i]!.steps.length} steps`);
+        for (const step of paths[i]!.steps) {
+          console.log(`    ${step.slot}: ${step.nodeId.slice(0, 16)}`);
+        }
+      }
+      return;
+    }
+
     case "verify": {
       const verbose = rest.includes("--verbose") || rest.includes("-v");
       const json = rest.includes("--json");
