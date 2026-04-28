@@ -189,7 +189,7 @@ direction. JSON-shaped:
   ],
   "outputBundle": {
     "patch": "<diff if change is needed>",
-    "tests": ["<test code if missing>"],
+    "addedTests": ["<test code if missing>"],
     "constraintArtifact": ".provekit/invariants/<sha>.json"
   }
 }
