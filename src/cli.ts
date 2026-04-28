@@ -11,6 +11,7 @@ import { openDb, type Db } from "./db/index.js";
 import { gapReports, clauses, runtimeValues } from "./db/schema/index.js";
 import { eq } from "drizzle-orm";
 import { runFix } from "./cli.fix.js";
+import { runMineHistory } from "./cli.mineHistory.js";
 import { buildSASTForFile } from "./sast/builder.js";
 
 const VERSION = "0.3.0";
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
     case "fix":     await runFix(rest); break;
     case "lint":    await runLint(rest); break;
     case "invariants": await runInvariants(rest); break;
+    case "mine-history": await runMineHistory(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
       printHelp();
@@ -927,6 +929,11 @@ function printHelp(): void {
   console.log("  lint [project]              Run the principle library across the project (Mode 1, no LLM).");
   console.log("                              Falls back to bundled principles when local .provekit/principles/ is empty.");
   console.log("                              Flags: --ci (exit 1 on violation), -v (verbose error surfacing).");
+  console.log("  mine-history [project]      Walk git log; run B0 retrospective intake;");
+  console.log("                              persist constraint-shaped intents to");
+  console.log("                              .provekit/invariants/. Bootstrap-from-history.");
+  console.log("                              Flags: --since <sha-or-date>, --max-commits N,");
+  console.log("                              --dry-run (print would-mint counts + cost est).");
   console.log("  fix <ref>               Run the fix loop on a bug report.");
   console.log("                          <ref> can be:");
   console.log("                            gap_report:<id>      — reference a gap_reports row");
