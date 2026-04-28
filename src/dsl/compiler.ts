@@ -879,7 +879,18 @@ export function compilePrinciple(
 
   function runQuery(db: Db): MatchRow[] {
     const rawDb = db.$client as import("better-sqlite3").Database;
-    const stmt = rawDb.prepare(sql);
+    if (process.env.PROVEKIT_SQL_TRACE) {
+      console.error(`[sql:exec dsl-compiled-principle ${principle.name}]\n${sql}\n[/sql:exec]`);
+    }
+    let stmt;
+    try {
+      stmt = rawDb.prepare(sql);
+    } catch (err) {
+      if (process.env.PROVEKIT_SQL_TRACE || (err as Error)?.message?.includes("syntax error")) {
+        console.error(`[sql:prepare-failed]\n${sql}\n[/sql:prepare-failed]`);
+      }
+      throw err;
+    }
     const rows = stmt.all() as Record<string, string>[];
     return rows.map((row) => {
       const captures: Record<string, string> = {};
