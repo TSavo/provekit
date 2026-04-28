@@ -20,11 +20,15 @@ import type { BugSignal, BugLocus, LLMProvider } from "../types.js";
 import type { FidelityVerifiers } from "../invariantFidelity.js";
 
 /** Stub fidelity verifiers that always pass. Injected into novel-LLM-path tests
- * to keep them focused on oracle #1 (SAT check) without triggering real fidelity LLM calls. */
+ * to keep them focused on oracle #1 (SAT check) without triggering real fidelity LLM calls.
+ *
+ * Includes proseJaccardAgreement so the abstract-path (Bool-only invariants
+ * like `taint`) tests don't fall through to the live LLM call. */
 const FIDELITY_ALL_PASS: FidelityVerifiers = {
   crossLlmAgreement: async () => ({ passed: true, detail: "stub pass" }),
   traceabilityCheck: async () => ({ passed: true, detail: "stub pass" }),
   adversarialFixturePreValidation: async () => ({ passed: true, detail: "stub pass" }),
+  proseJaccardAgreement: async () => ({ passed: true, detail: "stub pass" }),
 };
 
 // ---------------------------------------------------------------------------
@@ -320,6 +324,191 @@ describe("formulateInvariant (C1)", () => {
     ).rejects.toThrow(InvariantFormulationFailed);
   });
 
+  // -------------------------------------------------------------------------
+  // Task #142: source_expr substring-match gate
+  // -------------------------------------------------------------------------
+
+  it("source_expr gate: passes when every binding's source_expr is a verbatim substring of the locus file", async () => {
+    ({ db, tmpDir } = openTestDb());
+    const source = "function risky(x: number) { return 1 / x; }\n";
+    const filePath = writeFixture(tmpDir, "risky.ts", source);
+    buildSASTForFile(db, filePath);
+
+    const fakeNodeId = "fake-node-id-not-in-db";
+    const signal: BugSignal = {
+      source: "test",
+      rawText: "risky division",
+      summary: "division by zero risk in risky()",
+      failureDescription: "x could be zero",
+      codeReferences: [{ file: filePath, line: 1 }],
+    };
+    const locus = makeLocus(fakeNodeId, filePath);
+
+    // source_expr "x" is a verbatim substring of the source → gate passes.
+    const goodResponse = JSON.stringify({
+      description: "x must not be zero before division",
+      kind: "arithmetic",
+      smt_declarations: ["(declare-const x Int)"],
+      smt_violation_assertion: "(assert (= x 0))",
+      bindings: [{ smt_constant: "x", source_expr: "x", sort: "Int" }],
+    });
+
+    let callCount = 0;
+    const stubLlm: LLMProvider = {
+      complete: async () => {
+        callCount++;
+        return goodResponse;
+      },
+    };
+
+    const claim = await formulateInvariant({
+      signal,
+      locus,
+      db,
+      llm: stubLlm,
+      _fidelityVerifiers: FIDELITY_ALL_PASS,
+    });
+
+    expect(claim.bindings).toHaveLength(1);
+    expect(claim.bindings[0]!.source_expr).toBe("x");
+    // Only one LLM call — gate did not trigger a retry.
+    expect(callCount).toBe(1);
+  });
+
+  it("source_expr gate: rejects prose source_expr after retry, throwing InvariantFormulationFailed", async () => {
+    ({ db, tmpDir } = openTestDb());
+    const source = "function risky(x: number) { return 1 / x; }\n";
+    const filePath = writeFixture(tmpDir, "risky2.ts", source);
+    buildSASTForFile(db, filePath);
+
+    const fakeNodeId = "fake-node-id-not-in-db-2";
+    const signal: BugSignal = {
+      source: "test",
+      rawText: "risky division",
+      summary: "division by zero risk",
+      failureDescription: "x could be zero",
+      codeReferences: [{ file: filePath, line: 1 }],
+    };
+    const locus = makeLocus(fakeNodeId, filePath);
+
+    // source_expr is prose (not a substring of the source) on both attempts.
+    // The gate should retry once, see the same failure, and throw.
+    const proseResponse = JSON.stringify({
+      description: "the divisor must not be zero",
+      kind: "arithmetic",
+      smt_declarations: ["(declare-const x Int)"],
+      smt_violation_assertion: "(assert (= x 0))",
+      bindings: [
+        {
+          smt_constant: "x",
+          source_expr: "the divisor parameter of the risky function",
+          sort: "Int",
+        },
+      ],
+    });
+
+    let callCount = 0;
+    const stubLlm: LLMProvider = {
+      complete: async () => {
+        callCount++;
+        return proseResponse;
+      },
+    };
+
+    await expect(
+      formulateInvariant({
+        signal,
+        locus,
+        db,
+        llm: stubLlm,
+        _fidelityVerifiers: FIDELITY_ALL_PASS,
+      }),
+    ).rejects.toThrow(InvariantFormulationFailed);
+
+    // Second invocation to assert error message — same stub, two retries inside.
+    await expect(
+      formulateInvariant({
+        signal,
+        locus,
+        db,
+        llm: stubLlm,
+        _fidelityVerifiers: FIDELITY_ALL_PASS,
+      }),
+    ).rejects.toThrow(/source_expr contract/i);
+
+    // Each formulateInvariant call: 1 initial + 1 retry = 2 LLM calls.
+    // Two formulateInvariant calls above → 4 total.
+    expect(callCount).toBe(4);
+  });
+
+  it("source_expr gate: empty bindings array is the documented escape hatch and bypasses the gate", async () => {
+    ({ db, tmpDir } = openTestDb());
+    const source = "function f(x: number) { return x; }\n";
+    const filePath = writeFixture(tmpDir, "intent.ts", source);
+    buildSASTForFile(db, filePath);
+
+    const fakeNodeId = "fake-node-id-empty-bindings";
+    const signal: BugSignal = {
+      source: "test",
+      rawText: "abstract intent",
+      summary: "intent-level invariant",
+      failureDescription: "abstract violation",
+      codeReferences: [{ file: filePath, line: 1 }],
+    };
+    const locus = makeLocus(fakeNodeId, filePath);
+
+    // Bool predicate, no bindings. The gate must NOT fire — empty bindings
+    // is the explicit escape hatch in the prompt contract.
+    const intentResponse = JSON.stringify({
+      description: "abstract violation must not occur",
+      kind: "taint",
+      smt_declarations: ["(declare-const violation Bool)"],
+      smt_violation_assertion: "(assert (= violation true))",
+      bindings: [],
+    });
+
+    const stubLlm: LLMProvider = {
+      complete: async () => intentResponse,
+    };
+
+    const claim = await formulateInvariant({
+      signal,
+      locus,
+      db,
+      llm: stubLlm,
+      _fidelityVerifiers: FIDELITY_ALL_PASS,
+    });
+
+    expect(claim.bindings).toHaveLength(0);
+    expect(claim.formalExpression).toContain("(assert (= violation true))");
+  });
+
+  it("source_expr gate (unit): findInvalidSourceExprBindings returns offending bindings only", async () => {
+    const { findInvalidSourceExprBindings } = await import("./formulateInvariant.js");
+    const src = "function divide(a: number, b: number) { return a / b; }\n";
+    expect(
+      findInvalidSourceExprBindings(
+        [{ smt_constant: "a", source_expr: "a", source_line: 0, sort: "Int" }],
+        src,
+      ),
+    ).toEqual([]);
+    expect(
+      findInvalidSourceExprBindings(
+        [{ smt_constant: "a", source_expr: "the dividend", source_line: 0, sort: "Int" }],
+        src,
+      ),
+    ).toHaveLength(1);
+    // Empty bindings → trivially passes (escape hatch).
+    expect(findInvalidSourceExprBindings([], src)).toEqual([]);
+    // Empty source → trivially passes (no context to validate against).
+    expect(
+      findInvalidSourceExprBindings(
+        [{ smt_constant: "a", source_expr: "anything goes", source_line: 0, sort: "Int" }],
+        "",
+      ),
+    ).toEqual([]);
+  });
+
   // Note: "unknown" verdict path is covered by runOracleOne's switch statement;
   // no separate test — Z3-backed timeout injection is fragile in CI.
 
@@ -328,7 +517,10 @@ describe("formulateInvariant (C1)", () => {
   // -------------------------------------------------------------------------
   it("novel LLM path: throws InvariantFormulationFailed when LLM SMT is always unsat", async () => {
     ({ db, tmpDir } = openTestDb());
-    const source = "function g(x: number) { return x * 2; }\n";
+    // Include `y` literally in the source so the source_expr substring-match
+    // gate (task #142) lets the response through to oracle #1, where the
+    // contradictory SMT (always-unsat) is the actual failure mode under test.
+    const source = "function g(x: number, y: number) { return x * 2 - y + y; }\n";
     const filePath = writeFixture(tmpDir, "safe2.ts", source);
     buildSASTForFile(db, filePath);
 

@@ -347,30 +347,57 @@ interface LlmInvariantResponse {
   citations?: { smt_clause: string; source_quote: string }[];
 }
 
-function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, investigate?: InvestigateReport): string {
-  // Gather source context around locus.
-  let sourceContext = "(source not available)";
+/**
+ * Read the full source of the locus file, preferring the SAST-recorded path
+ * (resolved via locus.primaryNode → files table) and falling back to
+ * locus.file when that lookup is empty (novel-LLM-path tests use synthetic
+ * primaryNode IDs that are not in the SAST graph).
+ *
+ * Returns the empty string when neither path resolves a readable file. The
+ * source_expr substring-match gate treats empty source as "cannot validate"
+ * and allows whatever the LLM emits — matching the v1 contract that gating
+ * is a guarantee tightener, not a fabrication when context is missing.
+ */
+function readLocusSource(db: Db, locus: BugLocus): string {
+  // Path 1: SAST-recorded path (canonical, present when nodes were indexed).
   try {
-    const fileRow = db
-      .select({ path: filesTable.path })
-      .from(filesTable)
-      .where(
-        eq(filesTable.id,
-          db.select({ fileId: nodes.fileId })
-            .from(nodes)
-            .where(eq(nodes.id, locus.primaryNode))
-            .get()?.fileId ?? 0,
-        ),
-      )
+    const fileIdRow = db
+      .select({ fileId: nodes.fileId })
+      .from(nodes)
+      .where(eq(nodes.id, locus.primaryNode))
       .get();
-    if (fileRow && existsSync(fileRow.path)) {
-      const lines = readFileSync(fileRow.path, "utf-8").split("\n");
-      const start = Math.max(0, locus.line - 3);
-      const end = Math.min(lines.length, locus.line + 2);
-      sourceContext = lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join("\n");
+    if (fileIdRow?.fileId !== undefined) {
+      const fileRow = db
+        .select({ path: filesTable.path })
+        .from(filesTable)
+        .where(eq(filesTable.id, fileIdRow.fileId))
+        .get();
+      if (fileRow?.path && existsSync(fileRow.path)) {
+        return readFileSync(fileRow.path, "utf-8");
+      }
     }
   } catch {
-    // ignore
+    // fall through to path-2 fallback
+  }
+  // Path 2: locus.file (synthetic-node novel-LLM-path tests).
+  try {
+    if (locus.file && existsSync(locus.file)) {
+      return readFileSync(locus.file, "utf-8");
+    }
+  } catch {
+    // ignore — empty source disables the substring gate (documented contract).
+  }
+  return "";
+}
+
+function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusSource: string, investigate?: InvestigateReport): string {
+  // Gather source context around locus from the already-loaded full source.
+  let sourceContext = "(source not available)";
+  if (locusSource) {
+    const lines = locusSource.split("\n");
+    const start = Math.max(0, locus.line - 3);
+    const end = Math.min(lines.length, locus.line + 2);
+    sourceContext = lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join("\n");
   }
 
   // Investigate-derived evidence (when symptom-only flow ran). The reasoning
@@ -625,6 +652,42 @@ pass on fixed). Be precise about why none of the five fit.
    the bindings list. \`source_expr\` is the literal source-code expression
    (\`"b"\`, \`"options.length"\`, \`"input"\`).
 
+   == source_expr CONTRACT (load-bearing for downstream verification) ==
+
+   For EVERY binding you emit, \`source_expr\` MUST be a verbatim substring
+   of the locus file's source code. Downstream verification substring-
+   searches the patched file for this exact string to populate real binding
+   line numbers; prose source_expr never substring-matches and produces
+   honest-zero geometry that decays the invariant on every subsequent
+   verify run.
+
+   Examples of VALID source_expr (verbatim substrings of real source):
+   - \`"asc(schema.invocations.date)"\`
+   - \`"len < 15"\`
+   - \`"buf[i]"\`
+   - \`"memo->buffer"\`
+   - \`"divisor"\`
+
+   Examples of INVALID source_expr (these are PROSE, not code):
+   - \`"feedback rows fetched by repositories.ts for evolve"\`
+   - \`"the buffer length"\`
+   - \`"the user input before sanitization"\`
+   - \`"divisor parameter of divide"\`
+
+   If you cannot identify a verbatim substring in the locus file that
+   captures the SMT constant's binding, take ONE of these escape hatches:
+
+   (a) widen the smt_declaration to a Bool predicate (which doesn't need
+       a source-code anchor — the predicate name encodes the meaning), OR
+   (b) emit an INTENT-LEVEL invariant with declarations only and an EMPTY
+       \`bindings\` array (\`"bindings": []\`).
+
+   Prose \`source_expr\` is a generation bug. The validator runs an exact
+   substring check against the locus file before this invariant proceeds
+   to oracle #1; if any binding's source_expr is not in the source, the
+   prompt is replayed with sharper feedback once and then the formulation
+   fails hard. Pick a real substring or use an escape hatch.
+
 5. **Citations**: one citation per meaningful clause in your assertion.
    \`source_quote\` must be a verbatim or close-paraphrase excerpt from
    the bug report. The citations are checked by oracle #1.5 traceability
@@ -668,6 +731,70 @@ Pick them.`;
 const VALID_KINDS: ReadonlySet<InvariantKindLabel> = new Set([
   "arithmetic", "set_uniqueness", "cardinality", "order", "taint", "other",
 ]);
+
+// ---------------------------------------------------------------------------
+// source_expr substring-match gate (task #142 — same architectural pattern
+// as #140's grammar-aware C5: convert an open prompt to a multiple-choice one
+// by ruling out every answer outside the legal grammar — here, the grammar of
+// source_expr is "verbatim substring of the locus file's source code").
+// ---------------------------------------------------------------------------
+
+/**
+ * Check that every binding's `source_expr` is a verbatim substring of the
+ * locus file's source. Returns the list of offending bindings (empty when
+ * all bindings pass).
+ *
+ * Empty bindings array is the documented escape hatch (intent-level
+ * invariant) and passes trivially. Empty `locusSource` (when the locus
+ * file could not be read) also passes — the gate is a guarantee
+ * tightener, not a fabrication when context is unavailable.
+ *
+ * Trims `source_expr` before comparison to absorb stray whitespace from
+ * LLM tokenization without giving up substring fidelity (the orchestrator's
+ * downstream substring-search at flush time uses the same trim).
+ */
+export function findInvalidSourceExprBindings(
+  bindings: SmtBindingRef[],
+  locusSource: string,
+): Array<{ smt_constant: string; source_expr: string }> {
+  if (bindings.length === 0) return [];
+  if (locusSource.length === 0) return [];
+  const offenders: Array<{ smt_constant: string; source_expr: string }> = [];
+  for (const b of bindings) {
+    const trimmed = (b.source_expr ?? "").trim();
+    if (trimmed.length === 0) {
+      // Empty source_expr is also a contract violation (every non-empty
+      // bindings entry must anchor to source). The retry feedback below
+      // calls this out specifically.
+      offenders.push({ smt_constant: b.smt_constant, source_expr: b.source_expr ?? "" });
+      continue;
+    }
+    if (!locusSource.includes(trimmed)) {
+      offenders.push({ smt_constant: b.smt_constant, source_expr: b.source_expr });
+    }
+  }
+  return offenders;
+}
+
+/**
+ * Build a sharper feedback string for the C1 retry when the substring gate
+ * caught prose source_expr. Includes the offending bindings verbatim so the
+ * LLM can see exactly which constants need a real substring (or an escape
+ * hatch).
+ */
+function buildSourceExprRetryFeedback(
+  offenders: Array<{ smt_constant: string; source_expr: string }>,
+): string {
+  const lines = offenders.map(
+    (o) =>
+      `  - smt_constant="${o.smt_constant}", source_expr=${JSON.stringify(o.source_expr)}` +
+      ` is NOT a verbatim substring of the locus file's source code.`,
+  );
+  return `\n\nPRIOR ATTEMPT VIOLATED THE source_expr CONTRACT:\n${lines.join("\n")}\n\n` +
+    `Pick a verbatim substring of the locus file for each offending binding,\n` +
+    `OR widen the SMT declaration to a Bool predicate (which doesn't need a\n` +
+    `source-code anchor), OR emit "bindings": [] for an intent-level invariant.`;
+}
 
 /**
  * Validate + transform a parsed LLM JSON response into invariant components.
@@ -1009,7 +1136,11 @@ export async function formulateInvariant(args: {
   // Path 2: novel — LLM proposes
   // -------------------------------------------------------------------------
 
-  const prompt = buildLlmPrompt(signal, locus, db, args.investigateReport);
+  // Read the full locus source ONCE up-front. Used both for the prompt's
+  // ±3-line context and for the source_expr substring-match gate (task #142).
+  const locusSource = readLocusSource(db, locus);
+
+  const prompt = buildLlmPrompt(signal, locus, db, locusSource, args.investigateReport);
   logger.detail(`C1 LLM prompt (novel path): ${prompt.slice(0, 200)}...`);
   let formalExpression: string;
   let bindings: SmtBindingRef[];
@@ -1030,6 +1161,63 @@ export async function formulateInvariant(args: {
     // Wrap parser errors / agent IO errors as InvariantFormulationFailed so
     // the orchestrator's graceful-skip path sees a typed error.
     throw new InvariantFormulationFailed(err instanceof Error ? err.message : String(err));
+  }
+
+  // -------------------------------------------------------------------------
+  // Task #142: source_expr substring-match gate.
+  //
+  // C1's emitted bindings drive the orchestrator's persistence flush, which
+  // substring-searches the patched file's content for each binding's
+  // source_expr to populate real binding line numbers. Prose source_expr
+  // never substring-matches and produces honest-zero geometry that decays
+  // the invariant on every subsequent verify run.
+  //
+  // The fix is the same architectural pattern as #140's grammar-aware C5:
+  // convert an open prompt to a multiple-choice one by ruling out every
+  // answer outside the legal grammar (here, "verbatim substring of the
+  // locus file's source"). The prompt now states the contract explicitly
+  // (with valid + invalid examples + escape hatches); this gate enforces
+  // it, with one sharpened-feedback retry before failing hard.
+  // -------------------------------------------------------------------------
+  let invalidBindings = findInvalidSourceExprBindings(bindings, locusSource);
+  if (invalidBindings.length > 0) {
+    logger.detail(
+      `C1: source_expr gate caught prose bindings on first attempt — retrying once: ${
+        invalidBindings.map((o) => o.smt_constant).join(", ")
+      }`,
+    );
+    const exprRetryPrompt = prompt + buildSourceExprRetryFeedback(invalidBindings);
+    let exprRetry: ReturnType<typeof validateLlmResponse>;
+    try {
+      exprRetry = await requestStructuredJson({
+        prompt: exprRetryPrompt,
+        llm,
+        stage: "C1-source-expr-retry",
+        model: getModelTier("C1"),
+        logger,
+        schemaCheck: validateLlmResponse,
+      });
+    } catch (err) {
+      if (err instanceof InvariantFormulationFailed) throw err;
+      throw new InvariantFormulationFailed(
+        `source_expr gate retry LLM call failed — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    invalidBindings = findInvalidSourceExprBindings(exprRetry.bindings, locusSource);
+    if (invalidBindings.length > 0) {
+      throw new InvariantFormulationFailed(
+        `source_expr contract violated after retry — bindings have prose, not verbatim source substrings: ${
+          invalidBindings
+            .map((o) => `${o.smt_constant}=${JSON.stringify(o.source_expr)}`)
+            .join("; ")
+        }`,
+      );
+    }
+    formalExpression = exprRetry.formalExpression;
+    bindings = exprRetry.bindings;
+    description = exprRetry.description;
+    citations = exprRetry.citations;
+    novelKind = exprRetry.kind;
   }
 
   // Oracle #1: must return SAT.
@@ -1087,6 +1275,22 @@ export async function formulateInvariant(args: {
     const msg = err instanceof Error ? err.message : String(err);
     throw new InvariantFormulationFailed(
       `fidelity: retry LLM call failed — ${msg}. Original failures: ${fidelity.failures.join("; ")}`,
+    );
+  }
+
+  // Task #142: re-apply the source_expr substring gate on the oracle-#1.5
+  // retry response. The retry budget is already spent (single retry per
+  // upstream constraint), so any prose source_expr here fails hard. Lower-
+  // probability path (the LLM passed the gate on the first attempt and is
+  // only retrying because fidelity failed) but the contract is universal.
+  const retryInvalidBindings = findInvalidSourceExprBindings(retry.bindings, locusSource);
+  if (retryInvalidBindings.length > 0) {
+    throw new InvariantFormulationFailed(
+      `source_expr contract violated on oracle-#1.5 retry — bindings have prose, not verbatim source substrings: ${
+        retryInvalidBindings
+          .map((o) => `${o.smt_constant}=${JSON.stringify(o.source_expr)}`)
+          .join("; ")
+      }`,
     );
   }
 
