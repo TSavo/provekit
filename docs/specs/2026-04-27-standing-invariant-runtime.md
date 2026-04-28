@@ -57,6 +57,81 @@ Whole-program reachability + dataflow + Z3, no LLM in the verifier. The
 shadow AST gives the path enumeration. The invariant gives the property
 to check at each path's tail. Z3 gives the decision procedure.
 
+## Intake unification (v1)
+
+The fix loop's intake supports two equally-valid input shapes, both
+processed by the same downstream pipeline:
+
+- **Prospective intake.** A user-filed problem statement. The change
+  hasn't happened yet. Same shape as the dogfood proof on 2026-04-27.
+- **Retrospective intake.** An existing commit (or a proposed commit
+  about to land). The intent extractor reads diff + commit message,
+  derives intent from what's there, mints constraint candidates and
+  identifies missing regression tests. Same downstream gates apply
+  (Z3 SAT, fidelity check, mutation verification, no-existing-violation).
+
+Both intake directions converge on a single canonical artifact: the
+**intent report**, a structured JSON document the rest of the pipeline
+consumes. The intent report is also the bundle's primary output —
+diffable, source-controlled, queryable. Schema:
+
+```json
+{
+  "source": "prospective" | "retrospective",
+  "trigger": {
+    "kind": "problem_statement" | "commit",
+    "ref": "user-text or commit-sha",
+    "diff": "<unified diff if retrospective>",
+    "commitMessage": "<message if retrospective>"
+  },
+  "intents": [
+    {
+      "lineRange": [42, 48],
+      "filePath": "src/store/sqlite/repositories.ts",
+      "intent": "ensure most-recent K invocations reach evolve",
+      "hasRegressionTest": false,
+      "testGenerationOpportunity": true,
+      "constraintCandidate": {
+        "smtSketch": "(assert (and ...))",
+        "kind": "order",
+        "validationStatus": "candidate" | "z3_sat" | "passed_oracles" | "rejected"
+      }
+    }
+  ],
+  "outputBundle": {
+    "patch": "<diff if change is needed>",
+    "addedTests": ["<test code if missing>"],
+    "constraintArtifact": ".provekit/invariants/<sha>.json"
+  }
+}
+```
+
+Stage B0 (new) sits before Investigate in the pipeline and produces the
+intent report. Its inputs are either a problem statement (prospective)
+or diff + commit message (retrospective). Its outputs are zero or more
+intents, each with constraint candidates and missing-test flags.
+
+The retrospective direction enables two operations the prospective-only
+loop cannot:
+
+1. **Bootstrap from history.** `provekit mine-history` runs B0 in batch
+   over every commit in the existing log, populating the constraint
+   corpus from changes nobody filed problem statements for. A
+   five-year-old codebase arrives at adoption with thousands of mined
+   intents on day one.
+2. **Self-test missing-test gaps.** When an intent ships without a
+   corresponding regression test, the fix loop's output bundle includes
+   the missing test. Vibe-coded codebases that ship features without
+   tests get tests written by the substrate as it mines intent. Test
+   coverage grows mechanically alongside the constraint corpus.
+
+The intent extractor itself is an LLM call (same spiky-intelligence
+properties as C1) and falls under the same gating posture: extracted
+intents that don't yield Z3-SAT-able constraints don't ship; intents
+whose constraint candidates fail oracle 1.5 fidelity don't ship; intents
+whose generated tests fail mutation verification don't ship. The intent
+extractor proposes; the gates dispose. No LLM in the verification path.
+
 ## Non-goals (v1)
 
 - **Symbolic node identity across renames/extractions/moves.** Defer to v2.
@@ -382,8 +457,20 @@ Each step is independently shippable; users get value at each stage.
    path/invariant pairs.
 5. **Wire #3 + #4 into `provekit verify`.** Now `verify` returns full
    verdicts.
-6. **Cache layer.** Last performance pass.
+6. **Cache layer.** Performance pass; cache invariant verdicts keyed on
+   binding hashes.
 7. **Adversarial scan flag.** Composes; minimal new code.
+8. **B0 prospective intake** as the v0 entry path (already exists in the
+   shipped fix loop, formalize the intent-report output shape).
+9. **B0 retrospective intake.** Read diff + commit message, run intent
+   extractor, produce intent report. Reuses every downstream gate that
+   B0 prospective uses. No new mechanical infrastructure beyond the
+   intent extractor itself.
+10. **Missing-test generation.** When B0 (either direction) reports an
+    intent without a regression test, plumb that signal into C5 so the
+    output bundle includes the missing test as a first-class artifact.
+11. **`provekit mine-history`** CLI: runs B0 retrospective in batch over
+    the existing commit log. Bootstrap-from-history product surface.
 
 Steps 1-2 give a working `verify` that detects decays. Steps 3-5 add
 violation detection. Step 6 makes it CI-fast. Step 7 catches bug-class

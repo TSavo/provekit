@@ -122,15 +122,101 @@ already going to take ("fix this bug" / "add this feature" / "make this
 change"). The constraint accumulates as a consequence of normal
 problem-solving; no separate ceremony required.
 
+## Two intake directions, one pipeline
+
+The intake stage generalizes over two equally-valid input shapes:
+
+- **Prospective intake.** The user files a problem statement before the
+  change has happened. "The system stops responding to recent feedback
+  after 30 invocations." The fix loop derives intent, mints a constraint,
+  generates a patch that satisfies it, and ships a regression test.
+- **Retrospective intake.** The change has already happened — there's a
+  commit in git history with a diff and a commit message. The intent
+  extractor reads both, derives what the change was trying to accomplish,
+  mints a constraint capturing that intent, and ships any regression test
+  that would lock the intent in. If the existing test suite already
+  covers the intent, no test gets added; if it doesn't, ProveKit writes
+  the missing test as part of its output.
+
+Both directions reduce to the same canonical operation: **artifact-of-
+change → intent → constraint → output bundle.** The downstream pipeline
+is identical regardless of which direction fed it. The only difference is
+where the intent comes from. This unification is v0 architecture, not a
+v1 extension — the framework is coherent because both directions live
+under one intake.
+
+The retrospective direction unlocks two important properties:
+- **Existing codebases self-bootstrap.** Point ProveKit at a five-year-old
+  codebase and run the retrospective intake in batch over the existing
+  commit log. Thousands of constraints get mined from history that nobody
+  ever wrote down. The constraint corpus arrives populated.
+- **Vibe-coded codebases self-test.** When the AI commits a feature
+  without writing the corresponding test, the intent extractor reports
+  the gap and the fix loop's output is a follow-up commit that adds the
+  missing regression test. The codebase's test coverage grows
+  mechanically alongside its constraint corpus, no human discipline
+  required.
+
+## The intent report
+
+The pipeline's canonical structured output, regardless of intake
+direction. JSON-shaped:
+
+```json
+{
+  "source": "prospective" | "retrospective",
+  "trigger": {
+    "kind": "problem_statement" | "commit",
+    "ref": "user-text or commit-sha",
+    "diff": "<unified diff if retrospective>",
+    "commitMessage": "<message if retrospective>"
+  },
+  "intents": [
+    {
+      "lineRange": [42, 48],
+      "filePath": "src/store/sqlite/repositories.ts",
+      "intent": "ensure most-recent K invocations reach evolve",
+      "hasRegressionTest": false,
+      "testGenerationOpportunity": true,
+      "constraintCandidate": {
+        "smtSketch": "(assert (and ...))",
+        "kind": "order",
+        "validationStatus": "candidate"
+      }
+    }
+  ],
+  "outputBundle": {
+    "patch": "<diff if change is needed>",
+    "tests": ["<test code if missing>"],
+    "constraintArtifact": ".provekit/invariants/<sha>.json"
+  }
+}
+```
+
+The report is queryable, diffable, and source-controlled. It carries the
+LLM's output through every gate (Z3 SAT, fidelity check, mutation
+verification) and surfaces the result of each. When the LLM's intent
+extraction fails any gate, the intent gets dropped from the bundle, not
+shipped with a "trust me bro" caveat.
+
 ## The mechanism, end-to-end
 
 ```
-user files a problem statement (bug, feature, refactor, perf, security)
+[INTAKE] either:
+  - user files a problem statement (prospective), OR
+  - a commit lands or already exists (retrospective: diff + message)
   │
   ▼
-fix loop ingests the problem statement as a symptom
+B0: intent extractor reads the input, produces intent report (JSON)
   │
-  ├── Investigate stage maps symptom → candidate code sites
+  ├── for each identified intent:
+  │   - is there a regression test that locks it in?
+  │   - is there a constraint-shape (SMT-expressible) candidate?
+  │
+  ▼
+fix loop processes each intent:
+  │
+  ├── Investigate stage maps intent → candidate code sites
   ├── Locate stage refines → callsite via SAST
   ├── Classify stage routes the change kind
   ├── B3 stage matches against axiomatic principles (fast path)
@@ -142,9 +228,11 @@ fix loop ingests the problem statement as a symptom
   ├── C6 attempts (one shot, no retries) to graduate the constraint to
   │   a cross-codebase principle; usually fails (per-codebase) and the
   │   bundle ships without a principle
-  ├── D1 assembles bundle: patch + constraint + regression test + audit
+  ├── D1 assembles bundle: intent report + patch + constraint + regression
+  │   test (including any that were missing from the intake) + audit
   └── D2 emits patch.diff + pr-body.md + writes constraint to
-      .provekit/invariants/<sha>.json
+      .provekit/invariants/<sha>.json + writes any added tests to the
+      appropriate test paths
   │
   ▼
 human reviews the change, accepts the patch, commits
@@ -177,28 +265,46 @@ months from now.
 
 ## The user journey
 
-The entry point that makes this product distribute itself:
+The entry point that makes this product distribute itself goes deeper
+than "fix this bug." The retrospective intake means the user doesn't have
+to file anything at all — the act of committing IS the input.
 
-1. User asks a vibe-coding agent to build a product. Agent ships a
-   working-on-the-happy-path codebase with high interconnection and
-   plenty of edge cases the agent didn't anticipate.
-2. User uses the product. Surface works. Edge case breaks.
-3. User goes back to the LLM and types "fix this bug."
-4. **This is the install moment.** The fix loop runs inside the
-   conversation the user was already having. The bug gets fixed AND the
-   first constraint gets minted AND the git hook gets installed AND the
-   `.provekit/` substrate gets bootstrapped. Zero friction. Zero new
-   tooling decisions. Zero adoption ceremony.
-5. From that moment forward, every subsequent problem statement the user
-   files ratchets the floor up. Each new "fix this bug" / "add this
-   feature" / "make this change" produces another permanent constraint.
-   The vibe-coding agent that introduced the original bug now has to
-   satisfy a growing corpus of constraints from every previous incident
-   the user has reported.
+Two adoption shapes, both invisible:
 
-The user never made a deliberate decision to adopt ProveKit. The product
-got installed transparently inside the action the user was already
-taking. Adoption is identical to the use case.
+**Shape A — explicit problem statement.** User encounters an edge case,
+types "fix this bug" to the LLM. Fix loop runs inside the conversation
+the user was already having. Bug gets fixed, first constraint gets minted,
+git hook gets installed, `.provekit/` substrate gets bootstrapped. Zero
+friction. Adoption is identical to the action the user was already taking.
+
+**Shape B — implicit commit-as-input.** User installs ProveKit. From that
+moment forward, every commit that lands gets retrospectively mined. The
+intent extractor reads the diff plus commit message, derives intent,
+mints a constraint where one is constraint-shaped, and ships a follow-up
+that backfills any missing regression tests. The user did nothing
+explicit; the substrate captured the intent of every change anyway. The
+codebase's constraint corpus grows monotonically as a function of
+ordinary commit activity, regardless of whether the developer is
+deliberately filing problem statements.
+
+In both shapes, the product gets installed transparently inside actions
+the user was already taking. Adoption is identical to the use case. There
+is no separate ceremony.
+
+The compounding property kicks in regardless of intake direction. Each
+mined intent — whether from an explicit fix request or from a routine
+commit — produces another permanent constraint. The vibe-coding agent
+that introduced the original bug now has to satisfy a growing corpus of
+constraints from every previous change in the codebase, mined from every
+commit that's ever landed. The corpus density grows with commit rate,
+not with deliberate user effort.
+
+For existing codebases adopting ProveKit, the retrospective intake runs
+in batch over the existing commit log. A five-year-old codebase with
+thousands of commits gets thousands of mined intents on day one, the
+constraint corpus arrives populated, and the standing runtime starts
+enforcing immediately. There's no migration period; the codebase has the
+same product as a greenfield project from minute one.
 
 ## The constraint flywheel
 
@@ -331,12 +437,14 @@ TDD cannot cover.
 
 ## The pitch, in one line
 
-> *Every problem your codebase encounters becomes a permanent constraint
-> on what it cannot do. The git hook does the static analysis across
-> every existing call site and every new call site that ever gets added,
-> mechanically, no LLM in the verification path. Code as fast as you
-> want; the constraints accumulate at git-commit speed; possibility space
-> locks down monotonically; software ages backwards.*
+> *Every commit your codebase ever takes — every fix request, every
+> feature, every refactor — becomes a permanent constraint on what the
+> codebase cannot do. The intent extractor mines intent from the diff
+> plus message; the fix loop mints constraints and writes any missing
+> regression tests; the git hook enforces every constraint on every
+> subsequent commit, mechanically, with no LLM in the verification path.
+> Code as fast as you want; the constraints accumulate at commit speed;
+> possibility space locks down monotonically; software ages backwards.*
 
 Every word is mechanically true once the standing-invariant-runtime spec
 is implemented. The dogfood proof shipped 2026-04-27 against the planted
