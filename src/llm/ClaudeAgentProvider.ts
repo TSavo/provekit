@@ -91,7 +91,15 @@ export class ClaudeAgentProvider implements LLMProvider {
         allowedTools,
         maxTurns,
         systemPrompt: options.systemPrompt,
-        permissionMode: "acceptEdits",
+        // bypassPermissions accepts every tool action without prompting.
+        // acceptEdits rejected Write to scratch /var/folders paths even
+        // with allowedTools=[".*"] — observed across C1 + Investigate
+        // failures where the agent responded with "I need write permission"
+        // prose instead of writing the JSON contract file. The fix loop's
+        // entire output channel relies on the agent writing structured
+        // JSON to a known scratch path; partial permission gating turns
+        // every stage into a coin flip on prompt obedience.
+        permissionMode: "bypassPermissions",
         thinking: { type: "enabled", budgetTokens: 4096 },
       },
     })) {
