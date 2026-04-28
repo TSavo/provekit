@@ -7,6 +7,7 @@ import { parseFile } from "../parser";
 import { createProvider } from "../llm";
 import { judgeRuntimeOutcome } from "../judge";
 import { synthesizeHarness, runHarness, HarnessCache, HarnessOutcome } from "../harness";
+import { getPromptStore } from "../llm/promptStore";
 import { judgeHarnessCode } from "../judge";
 import { JudgeCache } from "../judgeCache";
 import { loadModuleWithPrivates, collectTransitiveSource } from "../moduleLoader";
@@ -652,8 +653,8 @@ export class PropertyTestChecker implements Checker {
     console.log(`[harness] ${candidates.length} candidate contracts (of ${this.harnessCandidates.length}); synthesizing with ${synthModel} at concurrency ${concurrency}`);
 
     type Prepared =
-      | { cand: typeof candidates[number]; kind: "skip"; outcomeKind: HarnessOutcome["kind"]; message: string }
-      | { cand: typeof candidates[number]; kind: "ready"; harness: string; info: FunctionInfo; absPath: string };
+      | { cand: typeof candidates[number]; kind: "skip"; outcomeKind: HarnessOutcome["kind"]; message: string; invocationId: string | null }
+      | { cand: typeof candidates[number]; kind: "ready"; harness: string; info: FunctionInfo; absPath: string; invocationId: string | null };
 
     const depsSourceCache = new Map<string, string>();
     const getDepsSource = (filePath: string): string => {
@@ -666,12 +667,13 @@ export class PropertyTestChecker implements Checker {
     const prepare = async (cand: typeof candidates[number]): Promise<Prepared> => {
       const absPath = this.resolvePath(cand.contract.file);
       const info = this.extractFunctionInfo(absPath, cand.contract.function);
-      if (!info) return { cand, kind: "skip", outcomeKind: "synthesis-failed", message: "could not extract function source" };
+      if (!info) return { cand, kind: "skip", outcomeKind: "synthesis-failed", message: "could not extract function source", invocationId: null };
 
       const depsSource = getDepsSource(absPath);
       let cached = cache.get(cand.prop.smt2, info.source, depsSource);
       let harness: string | null = cached?.harness || null;
       let untestable: string | null = cached?.untestable || null;
+      let invocationId: string | null = null;
 
       if (!cached) {
         const testRefs = findTestsForFunction(this.projectRoot, cand.contract.function);
@@ -691,11 +693,12 @@ export class PropertyTestChecker implements Checker {
         );
         harness = result.harness;
         untestable = result.untestable;
+        invocationId = result.invocationId;
         cache.put(cand.prop.smt2, info.source, { harness, untestable }, depsSource);
       }
 
-      if (untestable) return { cand, kind: "skip", outcomeKind: "untestable", message: untestable };
-      if (!harness) return { cand, kind: "skip", outcomeKind: "synthesis-failed", message: "LLM did not emit a valid harness or UNTESTABLE line" };
+      if (untestable) return { cand, kind: "skip", outcomeKind: "untestable", message: untestable, invocationId };
+      if (!harness) return { cand, kind: "skip", outcomeKind: "synthesis-failed", message: "LLM did not emit a valid harness or UNTESTABLE line", invocationId };
 
       if (process.env.NEURALLOG_HARNESS_AUDIT !== "0") {
         const auditModel = process.env.NEURALLOG_AUDIT_MODEL || process.env.NEURALLOG_JUDGE_MODEL || "claude-haiku-4-5-20251001";
@@ -717,11 +720,11 @@ export class PropertyTestChecker implements Checker {
           cache.putAudit(cand.prop.smt2, info.source, verdict, depsSource);
         }
         if (!auditValid) {
-          return { cand, kind: "skip", outcomeKind: "harness-error", message: `audit rejected: ${auditNote}` };
+          return { cand, kind: "skip", outcomeKind: "harness-error", message: `audit rejected: ${auditNote}`, invocationId };
         }
       }
 
-      return { cand, kind: "ready", harness, info, absPath };
+      return { cand, kind: "ready", harness, info, absPath, invocationId };
     };
 
     const prepared = await this.parallelMap(candidates, concurrency, prepare);
@@ -735,10 +738,17 @@ export class PropertyTestChecker implements Checker {
         else if (p.outcomeKind === "synthesis-failed") stats.synthesisFailed++;
         else if (p.outcomeKind === "harness-error") stats.harnessError++;
         this.applyHarnessVerdict(store, touched, p.cand, p.outcomeKind, p.message);
+        if (p.invocationId) {
+          await getPromptStore(this.projectRoot).signal(p.invocationId, {
+            verdict: p.outcomeKind === "untestable" ? "pass" : "fail",
+            reason: p.outcomeKind,
+            source: "PropertyTestChecker",
+          });
+        }
         continue;
       }
 
-      const { cand, harness, info, absPath } = p;
+      const { cand, harness, info, absPath, invocationId } = p;
       const extracted = this.loadFunction(absPath, cand.contract.function);
       if (!extracted) {
         this.harnessResults.push(this.harnessCheckResult(cand, "harness-error", "could not load function for harness execution"));
@@ -782,6 +792,14 @@ export class PropertyTestChecker implements Checker {
       else if (outcome.kind === "encoding-gap") stats.encodingGap++;
       else if (outcome.kind === "harness-error") stats.harnessError++;
       else if (outcome.kind === "timeout") stats.timeout++;
+
+      if (invocationId) {
+        await getPromptStore(this.projectRoot).signal(invocationId, {
+          verdict: outcome.kind === "pass" ? "pass" : "fail",
+          reason: outcome.kind,
+          source: "PropertyTestChecker",
+        });
+      }
 
       this.applyHarnessVerdict(store, touched, cand, outcome.kind, outcome.message);
     }

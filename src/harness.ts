@@ -3,6 +3,7 @@ import { join, dirname } from "path";
 import { createHash, randomBytes } from "crypto";
 import * as vm from "vm";
 import { LLMProvider } from "./llm";
+import { getPromptStore } from "./llm/promptStore";
 
 export type HarnessOutcomeKind =
   | "pass"
@@ -29,18 +30,16 @@ export interface SynthesisInput {
   testOracleContext?: string;
 }
 
-const PROMPT_CACHE: { template: string | null } = { template: null };
-
-function loadPromptTemplate(projectRoot: string): string {
-  if (PROMPT_CACHE.template) return PROMPT_CACHE.template;
+async function loadPromptTemplate(projectRoot: string): Promise<{ body: string; revisionId: string }> {
   const candidates = [
     join(projectRoot, "prompts", "harness_synthesis.md"),
     join(__dirname, "..", "prompts", "harness_synthesis.md"),
   ];
   for (const p of candidates) {
     if (existsSync(p)) {
-      PROMPT_CACHE.template = readFileSync(p, "utf-8");
-      return PROMPT_CACHE.template;
+      const bp = getPromptStore(projectRoot);
+      const rev = await bp.fromFile(p, { key: "harness_synthesis" });
+      return { body: rev.body, revisionId: rev.id };
     }
   }
   throw new Error("harness_synthesis.md not found");
@@ -109,8 +108,8 @@ export async function synthesizeHarness(
   provider: LLMProvider,
   model: string,
   projectRoot: string
-): Promise<{ harness: string | null; untestable: string | null; raw: string }> {
-  const template = loadPromptTemplate(projectRoot);
+): Promise<{ harness: string | null; untestable: string | null; raw: string; invocationId: string | null }> {
+  const { body: template, revisionId } = await loadPromptTemplate(projectRoot);
   const prompt = buildSynthesisPrompt(template, input);
 
   let response;
@@ -120,11 +119,29 @@ export async function synthesizeHarness(
       systemPrompt: "You synthesize empirical test harnesses for formally-proven claims. Follow the format strictly. Emit either one ```javascript code block OR a single // UNTESTABLE: line. Nothing else.",
     });
   } catch (err: any) {
-    return { harness: null, untestable: null, raw: `synthesis-error: ${err?.message?.slice(0, 120) || "unknown"}` };
+    return { harness: null, untestable: null, raw: `synthesis-error: ${err?.message?.slice(0, 120) || "unknown"}`, invocationId: null };
   }
 
   const parsed = parseSynthesisResponse(response.text);
-  return { ...parsed, raw: response.text.slice(0, 2000) };
+  const bp = getPromptStore(projectRoot);
+  const invocation = await bp.record({
+    artifactKey: "harness_synthesis",
+    revisionId,
+    output: response.text,
+    vars: {
+      contractKey: input.contractKey,
+      functionName: input.functionName,
+      claim: input.claim,
+    },
+    metadata: {
+      model,
+      provider: provider.constructor.name,
+      smt2Hash: createHash("sha256").update(input.smt2).digest("hex").slice(0, 16),
+      parsed: parsed.harness ? "harness" : parsed.untestable ? "untestable" : "unparseable",
+    },
+  });
+
+  return { ...parsed, raw: response.text.slice(0, 2000), invocationId: invocation.id };
 }
 
 // vm.createContext here is a containment mechanism, not a security boundary.

@@ -37,6 +37,10 @@ dist/
 .provekit/provekit.db-journal
 .provekit/provekit.db-wal
 .provekit/provekit.db-shm
+.provekit/prompts.db
+.provekit/prompts.db-journal
+.provekit/prompts.db-wal
+.provekit/prompts.db-shm
 .provekit/or-chain-mining-results.json
 # Harvest staging — discovered principles awaiting validation/promotion.
 # Once promoted to .provekit/principles/ they become source-controlled.

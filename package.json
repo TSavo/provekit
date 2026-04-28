@@ -59,6 +59,7 @@
     "@anthropic-ai/sdk": "^0.88.0",
     "@opencode-ai/sdk": "^1.4.3",
     "@types/node": "^25.6.0",
+    "@wopr-network/better-prompts": "^0.1.0",
     "better-sqlite3": "^12.9.0",
     "drizzle-orm": "^0.45.2",
     "handlebars": "^4.7.9",
