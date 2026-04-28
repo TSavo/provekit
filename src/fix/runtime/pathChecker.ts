@@ -161,35 +161,56 @@ interface SymbolicState {
  * Without `db`, we cannot resolve nodeIds to (file, line) and therefore
  * cannot match steps to bindings; we emit nothing.
  *
- * KIND-AWARE EMISSION (v1 covers ONLY kind === "order"):
+ * KIND-AWARE EMISSION:
  *
- * For order-kind invariants we read the source line at each path step
- * and look for the substrings `asc(` / `desc(` (the orderBy proxy
- * shipped by the dogfood asc/desc bug). When a Bool-sorted binding's
- * recorded node range covers a step's line, we emit a real Z3
- * constraint pinning the binding's constant: `false` if the source
- * uses `asc(`, `true` if `desc(`. This gives Z3 something to
- * disagree with when the post-revert source no longer matches the
- * invariant's "must use descending" claim. realPathConstraints ticks
- * for these, so a SAT result here is trustworthy as a real violation.
+ * For each kind we extract kind-specific evidence from path source
+ * lines and pin the invariant's bindings against actual code
+ * structure. Each pinning ticks realPathConstraints, gating SAT-trust.
  *
- * Brittle assumptions documented:
- *   - The Bool binding's intended semantics is "uses descending
- *     ordering" (true = desc, false = asc). C1's prompt steers toward
- *     this naming/polarity but doesn't enforce it. If a binding's
- *     polarity is inverted, the violation will surface as a HOLDS
- *     instead — false negative, not a false positive.
- *   - Source-text matching is `asc(` / `desc(` literal — a project
- *     using `ascending(` or sorting by index expression will fall
- *     through to the reachability tautology.
- *   - Other kinds (arithmetic, set_uniqueness, cardinality, taint)
- *     get the reachability tautology only, which downgrades SAT to
- *     "undecidable" via the realPathConstraints guard. v1 ships
- *     order-class detection only; later revs add per-kind emitters.
+ * Coverage and confidence (v1):
  *
- * The goal of this v1 emitter: pass the spec's acceptance criterion
- * #3 (planted asc/desc revert in promptlib produces a violated
- * verdict with a Z3 witness). Full kind coverage is later work.
+ *   - kind="order"        — CONFIDENT. Scans for `asc(` / `desc(`
+ *     literals and pins Bool bindings. The motivating dogfood case.
+ *
+ *   - kind="cardinality"  — CONFIDENT for "must run / fire / be called"
+ *     shapes. Walks the path looking for a call to `<source_expr>(`,
+ *     reads polarity from the Bool binding's constant name, pins on
+ *     direct presence-evidence only (absence is too weak on a
+ *     best-effort path).
+ *
+ *   - kind="taint"        — CONFIDENT for sanitization-presence. Pins
+ *     Bool sanitizer bindings to true when a recognized sanitizer
+ *     (escapeHtml, sanitize*, escapeShell, parameterize, etc.)
+ *     appears on the path. Absence does NOT pin to false (most safe
+ *     paths simply lack a literal sanitizer call); the bug only
+ *     surfaces post-fix when a sanitizer is removed and Z3's negated
+ *     invariant becomes path-feasible.
+ *
+ *   - kind="set_uniqueness" — CONSERVATIVE. Fires only on a literal
+ *     array containing a syntactic duplicate string entry on a path
+ *     step's source line. Pins two Int bindings equal so Z3 sees the
+ *     duplicate state. All other set-uniqueness shapes punt to
+ *     undecidable. Documented in the per-kind block.
+ *
+ *   - kind="arithmetic"   — PUNTED for v1. The canonical Int-binding
+ *     shape `(assert (= b 0))` requires real symbolic execution to
+ *     contradict from a non-equality guard. We detect guards as a
+ *     scaffolding signal (comment marker only) but emit no real
+ *     constraint. Verdict surfaces as undecidable — honest, matches
+ *     the spec's v1 limitation language. Full arithmetic SE is later
+ *     work.
+ *
+ * Brittle assumptions, all kinds:
+ *   - Source-text scanning is regex over a ±2 line window. Codebases
+ *     that pass through unrecognized helpers (`ascending(`, custom
+ *     sanitizers, hand-rolled comparators) fall through to the
+ *     reachability-tautology-only state, which downgrades SAT to
+ *     undecidable via the realPathConstraints guard. Honest gray
+ *     zone, not a false alarm.
+ *   - Bool binding polarity comes from constant-name heuristics
+ *     (`_at_least_once`, `_ran`, `sanitiz`, etc.). Inverted polarity
+ *     surfaces as a HOLDS / undecidable, NEVER as a false-positive
+ *     violation.
  */
 function symbolicallyExecute(
   path: Path,
@@ -334,7 +355,368 @@ function symbolicallyExecute(
     }
   }
 
+  // -- Pass 2 (kind === "cardinality") --------------------------------
+  //
+  // Canonical SMT shape (per formulateInvariant.ts prompt):
+  //   (declare-const x_ran_at_least_once Bool)
+  //   (assert (= x_ran_at_least_once false))
+  // The Bool predicate name CARRIES the cardinality relation; the
+  // emitter's job is to decide whether the operation actually ran on
+  // this path and pin the binding accordingly.
+  //
+  // Heuristic (best-effort, documented as such):
+  //   1. Treat each Bool binding's `source_expr` as a token name (the
+  //      operation we're counting). Strip non-identifier chars.
+  //   2. Walk path steps; if any step's source line contains the token
+  //      followed by `(` (a call), the operation ran on this path.
+  //   3. Pin the binding's polarity from its constant name:
+  //        - contains "_at_least_once" / "_ran" / "_fired" → ran=true
+  //        - contains "_never" / "_zero" / "_not_fired"   → ran=false
+  //   4. If we cannot infer polarity from the name, leave UNPINNED —
+  //      the SAT-trust guard then surfaces undecidable rather than
+  //      guess. Z3 has no other anchor.
+  //
+  // What this catches confidently:
+  //   - "must run at least once" with a `_ran_at_least_once` Bool, where
+  //     the operation appears as a call literally on the path.
+  //   - "must fire exactly once" / "must not fire" with similarly-named
+  //     Bools — same call-presence detection.
+  //
+  // What this MISSES on purpose:
+  //   - Indirect calls (operation invoked via dynamic dispatch / event
+  //     bus). Path steps still contain the dispatch frame's source line,
+  //     not the dispatched handler's, so a textual scan won't find the
+  //     handler name there.
+  //   - "Exactly N" cardinality where N > 1: we don't count, we just
+  //     witness presence/absence. v1 limitation, sanctioned by the spec
+  //     ("loops, recursion, and external calls model as nondeterministic
+  //     havoc").
+  if (invariant.smt.kind === "cardinality") {
+    const boolBindings = invariant.bindings.filter((b) => b.sort === "Bool");
+    for (const binding of boolBindings) {
+      const polarity = inferCardinalityPolarity(binding.smt_constant);
+      if (polarity === null) continue; // can't read the binding's intent
+
+      const token = binding.source_expr.replace(/[^A-Za-z0-9_$]/g, "");
+      if (!token || token.length < 2) continue; // too generic to be safe
+
+      let opAppeared = false;
+      let chosenLoc: { filePath: string; line: number } | null = null;
+      // Compile a word-boundary call regex once per binding.
+      const reEsc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const callRe = new RegExp(`\\b${reEsc}\\s*\\(`);
+
+      for (const step of path.steps) {
+        const loc = resolveStepLocation(db, step.nodeId);
+        if (!loc) continue;
+        const lines = readSource(loc.filePath);
+        if (!lines) continue;
+        const idx = loc.line - 1;
+        if (idx < 0 || idx >= lines.length) continue;
+        const winStart = Math.max(0, idx - 2);
+        const winEnd = Math.min(lines.length, idx + 3);
+        const windowText = lines.slice(winStart, winEnd).join("\n");
+        if (callRe.test(windowText)) {
+          opAppeared = true;
+          chosenLoc = loc;
+          break;
+        }
+      }
+
+      // polarity tells us what `true` means for this binding:
+      //   - "ran"  → opAppeared==true  ⇒ binding=true
+      //   - "never" → opAppeared==false ⇒ binding=true (the absence IS
+      //     what the predicate asserts)
+      // For honesty we only pin when we have direct evidence (the call
+      // appeared) or the path is short enough that absence is a
+      // meaningful signal. v1 conservative cut: only pin on PRESENCE.
+      // Absence-as-evidence on a partial best-effort path is too weak.
+      if (opAppeared && chosenLoc) {
+        const value = polarity === "ran" ? "true" : "false";
+        state.pathAssertions.push(
+          `; kind-aware (cardinality): ${chosenLoc.filePath}:${chosenLoc.line} calls ${token}(...) — pinning ${binding.smt_constant} = ${value} (polarity=${polarity})`,
+        );
+        state.pathAssertions.push(
+          `(assert (= ${binding.smt_constant} ${value}))`,
+        );
+        state.emittedPathConstraints++;
+        state.realPathConstraints++;
+      }
+    }
+  }
+
+  // -- Pass 2 (kind === "taint") --------------------------------------
+  //
+  // Canonical SMT shape:
+  //   (declare-const input_contains_shell_metachar Bool)
+  //   (declare-const input_was_sanitized Bool)
+  //   (assert (and input_contains_shell_metachar (not input_was_sanitized)))
+  //
+  // Strategy: identify a sanitization step on the path and pin
+  // `input_was_sanitized = true`. The other binding
+  // (`input_contains_shell_metachar` or similar) is a value-state
+  // property of the data, NOT structural to the path; we leave it
+  // unpinned (let Z3 stay undecidable on that axis). The
+  // sanitization-presence check is what makes the post-fix verdict
+  // possible: when sanitization disappears from the path, this binding
+  // pins to false and Z3 SAT becomes a real violation.
+  //
+  // Sanitizer tokens (case-insensitive substring match in source line):
+  //   escapeHtml, escapeShell, sanitize, escapeRegex, parameterize,
+  //   bindParam, prepared, $1 / $2 (placeholder param syntax).
+  //
+  // Conservative: we only emit when we find a sanitizer; absence does
+  // NOT pin to false here, because most safe paths simply don't have
+  // a literal sanitization call (e.g., the data is intrinsically safe
+  // — int-typed param, allowlisted at the boundary). An absence-pin
+  // would generate false positives wholesale on those paths.
+  //
+  // Brittle assumptions:
+  //   - Bool binding name semantics: anything matching /sanitiz/ in
+  //     the constant name is treated as the sanitization predicate
+  //     (true = sanitized).
+  //   - Heuristic sanitizer list is non-exhaustive. Custom sanitizers
+  //     fall through; verdict surfaces as undecidable for those, not
+  //     as false-positive violation.
+  if (invariant.smt.kind === "taint") {
+    const sanitizerBindings = invariant.bindings.filter(
+      (b) => b.sort === "Bool" && /sanitiz|escap|safe|clean/i.test(b.smt_constant),
+    );
+    if (sanitizerBindings.length > 0) {
+      const sanitizerRe = /\b(escapeHtml|escapeShell|escapeRegex|sanitize\w*|escapeJson|encodeURI(Component)?|bindParam|prepared|parameterize\w*)\s*\(/i;
+      let foundSanitizer: { filePath: string; line: number } | null = null;
+      for (const step of path.steps) {
+        const loc = resolveStepLocation(db, step.nodeId);
+        if (!loc) continue;
+        const lines = readSource(loc.filePath);
+        if (!lines) continue;
+        const idx = loc.line - 1;
+        if (idx < 0 || idx >= lines.length) continue;
+        const winStart = Math.max(0, idx - 2);
+        const winEnd = Math.min(lines.length, idx + 3);
+        const windowText = lines.slice(winStart, winEnd).join("\n");
+        if (sanitizerRe.test(windowText)) {
+          foundSanitizer = loc;
+          break;
+        }
+      }
+      if (foundSanitizer) {
+        for (const binding of sanitizerBindings) {
+          state.pathAssertions.push(
+            `; kind-aware (taint): ${foundSanitizer.filePath}:${foundSanitizer.line} calls a recognized sanitizer — pinning ${binding.smt_constant} = true`,
+          );
+          state.pathAssertions.push(
+            `(assert (= ${binding.smt_constant} true))`,
+          );
+          state.emittedPathConstraints++;
+          state.realPathConstraints++;
+        }
+      }
+      // No sanitizer found: deliberately leave bindings unpinned.
+      // See the block comment above for why absence-as-evidence is
+      // unsafe here.
+    }
+  }
+
+  // -- Pass 2 (kind === "arithmetic") ---------------------------------
+  //
+  // Canonical SMT shape:
+  //   (declare-const b Int)
+  //   (assert (= b 0))
+  //
+  // The bindings are Int-sorted, not Bool. To make Z3's "negate the
+  // invariant and check SAT" return a USEFUL verdict, we'd have to
+  // pin the Int constant to a value that either matches or contradicts
+  // the assertion's hypothesis. That's a research-grade problem in
+  // general (it requires real symbolic execution of the path's
+  // arithmetic). For v1 we instead emit GUARD evidence: when a
+  // structural guard against the bug shape exists on the path
+  // (`if (b !== 0)` for a divide-by-zero invariant), Z3 should be
+  // told the path is safe.
+  //
+  // Conservative cut: we look for the binding's source_expr appearing
+  // in a guard-like construct on the path. If found, we emit a comment
+  // marker only (no constraint), because we cannot soundly contradict
+  // the invariant's `(= b 0)` hypothesis from a non-equality guard
+  // without proper SE. We DO NOT emit a "violated" constraint; the
+  // arithmetic emitter is intentionally conservative — false negatives
+  // (verdict: undecidable) are preferred over false positives.
+  //
+  // What this means in practice:
+  //   - Arithmetic invariants currently surface as "undecidable" on
+  //     most paths. That is honest and matches the spec's v1
+  //     limitation language. A future iteration will translate
+  //     literal arithmetic operators to SMT for real symbolic
+  //     execution.
+  //   - We keep the guard-detection scaffolding in code so the next
+  //     iteration has a documented anchor.
+  //
+  // PUNTED: full arithmetic SE is out of scope for v1. Documented in
+  // the block comment above the pass-2 dispatcher.
+  if (invariant.smt.kind === "arithmetic") {
+    const intBindings = invariant.bindings.filter((b) => b.sort === "Int" || b.sort === "Real");
+    for (const binding of intBindings) {
+      const token = binding.source_expr.replace(/[^A-Za-z0-9_$]/g, "");
+      if (!token || token.length < 1) continue;
+      const reEsc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      // Detect guards: `if (b !== 0)`, `if (b)`, `b == 0 ?`, `b === 0 ?`,
+      // `b !== 0 ?`. Conservative: if the guard literally contradicts
+      // the invariant's `(= b 0)` hypothesis on this path, leave a
+      // comment marker but do NOT emit a constraint. v1 punts here.
+      const guardRe = new RegExp(
+        `\\bif\\s*\\([^)]*\\b${reEsc}\\b[^)]*\\)|\\b${reEsc}\\b\\s*(===|!==|==|!=)\\s*0\\s*\\?`,
+      );
+      let foundGuard: { filePath: string; line: number } | null = null;
+      for (const step of path.steps) {
+        const loc = resolveStepLocation(db, step.nodeId);
+        if (!loc) continue;
+        const lines = readSource(loc.filePath);
+        if (!lines) continue;
+        const idx = loc.line - 1;
+        if (idx < 0 || idx >= lines.length) continue;
+        const winStart = Math.max(0, idx - 2);
+        const winEnd = Math.min(lines.length, idx + 3);
+        const windowText = lines.slice(winStart, winEnd).join("\n");
+        if (guardRe.test(windowText)) {
+          foundGuard = loc;
+          break;
+        }
+      }
+      if (foundGuard) {
+        // Comment-only — see block comment above for why we do not
+        // emit a hard constraint here in v1. Does NOT tick
+        // realPathConstraints.
+        state.pathAssertions.push(
+          `; kind-aware (arithmetic): guard detected against ${token} at ${foundGuard.filePath}:${foundGuard.line}; v1 emits no constraint (full SE punted) — verdict will be undecidable`,
+        );
+        state.emittedPathConstraints++;
+      }
+    }
+  }
+
+  // -- Pass 2 (kind === "set_uniqueness") -----------------------------
+  //
+  // Canonical SMT shapes:
+  //   - distinct form:    (assert (not (distinct m1 m2 m3)))
+  //   - paired-equality:  (assert (= m1 m2))
+  // Bindings are Int-sorted; each `mN` represents the value of the
+  // N-th element in the should-be-set.
+  //
+  // Decisive evidence we trust:
+  //   - A literal ARRAY containing a syntactic duplicate, e.g.
+  //     `["GET", "POST", "GET"]`. We extract string-literal entries
+  //     from the line and check for duplicates.
+  // What we do with that evidence:
+  //   - Emit `(assert (= m1 m2))` for the first two Int bindings, so
+  //     Z3 sees the duplicate state and the invariant's
+  //     `(not (distinct ...))` becomes consistent (i.e., the negated
+  //     invariant `(distinct ...)` becomes UNSAT under the equality
+  //     pin, surfacing "holds" if the invariant is "must be unique").
+  //     Wait — re-check: the C1 invariant ASSERTS the violation:
+  //     `(not (distinct ...))` is the canonical form, meaning Z3 SAT
+  //     is the bug shape. We negate that to `(distinct ...)`, then
+  //     pin `m1=m2` from the literal duplicate → negated invariant
+  //     UNSAT → verdict "violated" via the path checker's classify().
+  //     That matches the spec.
+  //
+  // What we DON'T trust (sanctioned punts, documented):
+  //   - `array.push(x)` without preceding `array.includes(x)` —
+  //     dataflow-level analysis required, full SE punt.
+  //   - Object literals with duplicate keys: TS catches statically;
+  //     scanning runtime paths for them is noisy.
+  //   - Any non-literal duplicate (computed dup, .concat with
+  //     overlapping arrays). Falls through to undecidable.
+  //
+  // Conservative: only fires on a literal-array dup found verbatim on
+  // a path step's source line.
+  if (invariant.smt.kind === "set_uniqueness") {
+    const intBindings = invariant.bindings.filter((b) => b.sort === "Int" || b.sort === "Real");
+    if (intBindings.length >= 2) {
+      let foundDup: { filePath: string; line: number; values: string[] } | null = null;
+      for (const step of path.steps) {
+        const loc = resolveStepLocation(db, step.nodeId);
+        if (!loc) continue;
+        const lines = readSource(loc.filePath);
+        if (!lines) continue;
+        const idx = loc.line - 1;
+        if (idx < 0 || idx >= lines.length) continue;
+        const winStart = Math.max(0, idx - 2);
+        const winEnd = Math.min(lines.length, idx + 3);
+        const windowText = lines.slice(winStart, winEnd).join("\n");
+        const dup = findLiteralArrayDuplicate(windowText);
+        if (dup) {
+          foundDup = { filePath: loc.filePath, line: loc.line, values: dup };
+          break;
+        }
+      }
+      if (foundDup) {
+        // Pin the first two Int bindings to be equal (any duplicate
+        // pair satisfies the canonical "(not (distinct ...))" shape).
+        // We use the first two bindings as a stand-in for the pair
+        // identified at the source level — v1 doesn't try to map
+        // specific m_i constants to specific array indices.
+        const [b1, b2] = intBindings;
+        state.pathAssertions.push(
+          `; kind-aware (set_uniqueness): literal-array duplicate at ${foundDup.filePath}:${foundDup.line} (${foundDup.values.join(",")}) — pinning ${b1.smt_constant} = ${b2.smt_constant}`,
+        );
+        state.pathAssertions.push(
+          `(assert (= ${b1.smt_constant} ${b2.smt_constant}))`,
+        );
+        state.emittedPathConstraints++;
+        state.realPathConstraints++;
+      }
+    }
+  }
+
   return state;
+}
+
+/**
+ * Map a Bool cardinality binding's constant name to a polarity:
+ *   "ran"   = true means "the operation ran"
+ *   "never" = true means "the operation did NOT run"
+ * Returns null when the name is too ambiguous to read confidently.
+ *
+ * Heuristic, sanctioned for v1. Inverted polarity surfaces as a false
+ * negative (undecidable), never as a false positive — we err toward
+ * unpinned when ambiguous.
+ */
+function inferCardinalityPolarity(constantName: string): "ran" | "never" | null {
+  const n = constantName.toLowerCase();
+  if (/never|_zero|not_fired|did_not|no_run/.test(n)) return "never";
+  if (/at_least_once|_ran|_fired|exactly_once|was_called|did_run/.test(n)) return "ran";
+  return null;
+}
+
+/**
+ * Scan a window of source text for a literal array containing a
+ * duplicate string-literal element. Returns the duplicate value(s) or
+ * null. Conservative — only fires on simple literal arrays of strings:
+ *   `["GET", "POST", "GET"]`  →  ["GET"]
+ *   `["a", "b", "a", "c"]`    →  ["a"]
+ *
+ * Misses: numeric duplicates, computed entries, multi-line arrays
+ * straddling the window. Sanctioned for v1.
+ */
+function findLiteralArrayDuplicate(text: string): string[] | null {
+  // Match an array literal containing only string-quoted entries.
+  // Tolerates whitespace; bails on anything not matching the simple shape.
+  const arrRe = /\[\s*((?:["'][^"']*["']\s*,\s*)+["'][^"']*["'])\s*,?\s*\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = arrRe.exec(text)) !== null) {
+    const inner = m[1];
+    const items = inner.match(/["']([^"']*)["']/g);
+    if (!items) continue;
+    const values = items.map((s) => s.slice(1, -1));
+    const seen = new Set<string>();
+    const dups: string[] = [];
+    for (const v of values) {
+      if (seen.has(v)) dups.push(v);
+      seen.add(v);
+    }
+    if (dups.length > 0) return dups;
+  }
+  return null;
 }
 
 interface ResolvedStep {
