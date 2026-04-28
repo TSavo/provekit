@@ -461,6 +461,24 @@ export function locate(db: Db, signal: BugSignal): BugLocus | null {
     ? primary.nodeId
     : findContainingFunction(db, primary.nodeId, fileRootId);
 
+  // Look up the containing function's binding name so we can populate
+  // locus.function even when the caller only supplied file+line (no
+  // ref.function). Skip when the "containing function" is the file root —
+  // module-top-level has no enclosing function name to report.
+  const containingFunctionName: string | undefined = (() => {
+    if (containingFunction === fileRootId) return undefined;
+    try {
+      const row = db
+        .select({ name: nodeBinding.name })
+        .from(nodeBinding)
+        .where(eq(nodeBinding.nodeId, containingFunction))
+        .get();
+      return row?.name;
+    } catch {
+      return undefined;
+    }
+  })();
+
   // Step 4: related functions (intra-file)
   const relatedFunctions = findRelatedFunctions(
     db,
@@ -477,7 +495,7 @@ export function locate(db: Db, signal: BugSignal): BugLocus | null {
   return {
     file: primary.ref.file,
     line: primary.ref.line ?? primary.sourceLine,
-    function: primary.ref.function,
+    function: primary.ref.function ?? containingFunctionName,
     confidence,
     primaryNode: primary.nodeId,
     containingFunction,

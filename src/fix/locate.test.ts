@@ -99,6 +99,74 @@ describe("locate()", () => {
       .get();
     expect(fnRow).toBeDefined();
     expect(fnRow!.kind).toBe("FunctionDeclaration");
+
+    // locus.function must be populated from the containing function's binding name
+    // even though the signal only carried file+line (no ref.function).
+    // (Regression: this used to be undefined, which propagated as null through
+    //  the orchestrator's persistence path and made callsite.startLine fall back to 1.)
+    expect(locus!.function).toBe("divide");
+  });
+
+  // -------------------------------------------------------------------------
+  // Test: locus.function populated for a line INSIDE a named function
+  // (the regression shape — line ref lands on a statement deeper than the
+  //  fn declaration line, with no ref.function supplied).
+  // -------------------------------------------------------------------------
+  it("populates locus.function with the containing function name for a line inside that function", () => {
+    ({ db, tmpDir } = openTestDb());
+    const source = [
+      "export function forRevision(rev: number) {",
+      "  const order = rev;",            // line 2 — bug site, not the fn decl line
+      "  return order;",
+      "}",
+    ].join("\n");
+    const filePath = writeFixture(tmpDir, "repositories.ts", source);
+    buildSASTForFile(db, filePath);
+
+    // Signal carries ONLY file+line — no ref.function. This is the shape that
+    // was losing the function name through the orchestrator.
+    const signal = makeSignal([{ file: filePath, line: 2 }]);
+    const locus = locate(db, signal);
+
+    expect(locus).not.toBeNull();
+    expect(locus!.confidence).toBe(1.0);
+    expect(locus!.function).toBe("forRevision");
+  });
+
+  // -------------------------------------------------------------------------
+  // Test: module-top-level reference leaves locus.function undefined
+  // (no enclosing function — the lookup must NOT invent a name).
+  // -------------------------------------------------------------------------
+  it("leaves locus.function undefined when the bug site is at module top level", () => {
+    ({ db, tmpDir } = openTestDb());
+    const source = "export const x = 1;\n";
+    const filePath = writeFixture(tmpDir, "module-top.ts", source);
+    buildSASTForFile(db, filePath);
+
+    const signal = makeSignal([{ file: filePath, line: 1 }]);
+    const locus = locate(db, signal);
+
+    expect(locus).not.toBeNull();
+    expect(locus!.function).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test: explicit ref.function takes precedence over the looked-up name
+  // -------------------------------------------------------------------------
+  it("prefers ref.function (caller hint) over the containing function's binding name", () => {
+    ({ db, tmpDir } = openTestDb());
+    const source = "function divide(a: number, b: number) { return a / b; }\n";
+    const filePath = writeFixture(tmpDir, "div-precedence.ts", source);
+    buildSASTForFile(db, filePath);
+
+    // Caller hint deliberately differs from the actual binding name.
+    const signal = makeSignal([
+      { file: filePath, line: 1, function: "callerSuppliedName" },
+    ]);
+    const locus = locate(db, signal);
+
+    expect(locus).not.toBeNull();
+    expect(locus!.function).toBe("callerSuppliedName");
   });
 
   // -------------------------------------------------------------------------
