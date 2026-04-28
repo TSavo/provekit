@@ -700,10 +700,42 @@ Rewrite the test file at ${testFilePath} using ONLY this import path. Do not use
  */
 export function setupOverlayForTest(overlay: OverlayHandle, mainRepoRoot: string): boolean {
   const nmTarget = join(overlay.worktreePath, "node_modules");
-  if (existsSync(nmTarget)) return true;
-  const nmSource = join(mainRepoRoot, "node_modules");
-  if (!existsSync(nmSource)) return false;
-  symlinkSync(nmSource, nmTarget);
+  if (!existsSync(nmTarget)) {
+    const nmSource = join(mainRepoRoot, "node_modules");
+    if (!existsSync(nmSource)) return false;
+    symlinkSync(nmSource, nmTarget);
+  }
+
+  // Widen the overlay's vitest config to match ANY .test.ts file. The
+  // user's project may restrict include to a specific dir (e.g. promptlib
+  // uses include: ["tests/**/*.test.ts"]) but our regression test lives
+  // wherever chooseTestFilePath put it (typically under src/). The CLI
+  // --include flag merges with the config's include rather than replacing
+  // it, so a config-level override is needed. We only edit the overlay's
+  // copy — the original repo is untouched.
+  for (const cfgName of ["vitest.config.ts", "vitest.config.js", "vitest.config.mjs"]) {
+    const cfgPath = join(overlay.worktreePath, cfgName);
+    if (!existsSync(cfgPath)) continue;
+    try {
+      let cfg = readFileSync(cfgPath, "utf-8");
+      // Replace any include: [...] array with a permissive pattern. Idempotent:
+      // re-running the regex over an already-widened config keeps the result
+      // identical (the regex matches any include array shape).
+      const widened = cfg.replace(
+        /include:\s*\[[^\]]*\]/,
+        'include: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"]',
+      );
+      if (widened !== cfg) {
+        writeFileSync(cfgPath, widened, "utf-8");
+      }
+    } catch {
+      // Best-effort — if the rewrite fails, vitest will fall back to its
+      // own behavior. The test file may still be picked up if the project's
+      // include happens to match its path.
+    }
+    break;
+  }
+
   return true;
 }
 
