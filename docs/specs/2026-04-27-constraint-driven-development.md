@@ -438,6 +438,183 @@ library. We don't write or maintain them.
 > prove. Every developer adds it to their CI. Every IDE integrates it
 > to prove correctness.*
 
+## The two-part architecture: A is the product, B is a plugin
+
+ProvekIt decomposes into two parts with **low coupling** between them and
+**high cohesion** within each. They communicate through one artifact: the
+invariant store on disk. This decomposition is the load-bearing axis of
+the entire architecture.
+
+### Part A — The gate (the part that ensures correctness)
+
+Mechanical, deterministic, fast, no LLM in the verification path.
+`provekit verify`, the path enumerator, the Z3 path checker, the cache
+layer, the invariant store reader. Lives at every venue: file-edit hook,
+pre-commit, PR check, IDE diagnostic, Holyship gate boundary, MCP
+`/prove` (read mode). Always-on, cheap, sub-second-to-seconds.
+
+**Part A is the product.** It's small, mechanical, auditable, free. The
+fourth horseman of the git commit. The thing every developer adds to
+their CI. The substrate that turns "AI velocity is dangerous" into
+"AI velocity compounds correctness."
+
+### Part B — The constraint-minting pipeline (the part that expands correctness)
+
+LLM-touching, expensive, full-pipeline. B0 (intent extraction) → C1
+(invariant minting) → C3 (patch generation when needed) → C5 (regression
+test generation) → C6 (rare promotion to principle). Runs at gate-
+promotion moments only: explicit user request, offline-on-commit harness,
+MCP `/prove` (write mode), Holyship `report`-boundary gate. Minutes per
+invocation; token cost matters.
+
+**Part B is a plugin.** It's a *slot* in the architecture, not a single
+implementation we ship. ProvekIt provides a reference implementation of
+B that uses claude-agent-sdk + ts-morph + git worktrees, but that's one
+option among many. Integrators bring their own:
+
+- **LLM.** Claude, GPT, local Llama, an enterprise on-prem model. The
+  `LLMProvider` abstraction is the well-known one, but it's one of many
+  swappable pieces.
+- **Language server bindings.** Our reference uses ts-morph to read
+  TypeScript ASTs. An IDE has its own LSP that already knows the
+  codebase deeply; an integrator's B might bind there instead of
+  re-parsing.
+- **Toolpath.** How agent tools (Read, Edit, Write, Bash) are invoked.
+  Claude Code has its own tool model; Cursor has its own; an enterprise
+  sandbox has yet another. B's reference uses the claude-agent-sdk's
+  tool surface; an integrator's B uses whatever their environment
+  ships.
+- **Code sandbox.** Where generated code runs during validation. Our
+  reference uses git worktrees on local disk. An IDE might use its
+  in-process sandbox; a hosted runtime might use a container or microVM.
+- **Diff process.** How code changes get produced and applied. We
+  produce unified diffs against a worktree. An IDE's B might produce
+  in-editor edits via its own diff model.
+- **PR flow.** How the output gets routed back. We emit `provekit-fix.patch`
+  and `provekit-fix.md`. An integrator's B might open a PR via the IDE's
+  source-control API, comment on a Linear ticket, post to Slack, or
+  drop a follow-up commit on a branch.
+
+What B must produce to be a valid implementation: an `IntentReport` JSON
+artifact (per the runtime spec's schema), and any minted invariants
+written to `.provekit/invariants/<sha>.json` in the project's invariant
+store. That's the contract. Anything that produces those artifacts —
+through whatever LLM, whatever toolpath, whatever sandbox — is a valid B.
+
+### Why the split matters strategically
+
+**Part A is permanent. Part B is a moving target.**
+
+A doesn't change as LLMs get better. The path enumerator, Z3, the cache,
+the invariant store — none of that gets replaced when frontier models
+ship. A is small, mechanical, auditable, free; the kind of code that
+lives 20 years in millions of CI pipelines without ever needing a major
+version bump.
+
+B, by contrast, gets cheaper and better every quarter on someone else's
+R&D budget. The intent extractor, C1, C3, C5 — every part of B benefits
+from frontier-model improvements without us shipping anything. We swap
+the LLMProvider implementation (or the integrator swaps the entire B
+plugin) and B gets sharper. We don't compete on B; we ride the curve.
+
+The competitive shape that follows:
+
+- **A is the moat.** Open-source, ubiquitous, the thing every developer's
+  CI runs and every IDE integrates. Distribution by zero friction. The
+  constraint corpus that accumulates inside each customer's codebase IS
+  the customer's data; we don't own it, but we're the only thing that
+  produces it. Switching costs grow with each constraint minted.
+
+- **B is replaceable infrastructure.** We ship a B today as a reference
+  implementation because no one else does it well yet. Whoever ships a
+  better B in two years can take over that piece without disturbing A.
+  The customer's constraint corpus survives any B swap. The customer
+  can BYO LLM (via LLMProvider), BYO toolpath (via the IDE's plugin),
+  BYO sandbox, BYO diff process — without leaving A.
+
+- **Token cost lives in B, not A.** A user with 1,000 invariants on
+  their codebase pays exactly zero per `provekit verify` run. The
+  customer who wants to mint MORE invariants pays per fix-loop run.
+  That's the natural pricing surface: A is free because A is cheap to
+  run; B is paid because B has real LLM cost. As LLMs get cheaper, B
+  gets cheaper. Whoever owns A wins the long game even if B becomes a
+  race-to-the-bottom commodity.
+
+**The marketing implication:** never lead with "we use the best AI to
+fix your bugs." Every competitor says that. Always lead with "we make
+your codebase mathematically refuse to regress." The first claim ages
+out by next quarter; the second ages forever. ProvekIt's pitch must
+always be A. B is the means; A is the product.
+
+The LLMProvider abstraction we already have is the explicit shape of
+the A/B coupling. Customers can plug Anthropic, OpenAI, local Llama,
+whatever frontier model they trust — A doesn't care. The full B-as-plugin
+extension goes further: a customer can plug their own intent extractor,
+their own toolpath, their own sandbox. The constraint store is OUR data
+structure; whatever populated it is just a tool that wrote into it.
+
+## Product constraints: ProvekIt's own impossibility set
+
+The architectural decisions in this doc form a constraint-driven spec
+*about the product itself*. ProvekIt's shape is the intersection of an
+accumulating set of impossibility statements — what ProvekIt *cannot
+become* — derived through the same methodology the product enforces on
+its users' code. Capturing them explicitly:
+
+1. **No LLM in the verification path.** The gate is mechanical or it
+   isn't a gate.
+2. **No SaaS-only deployment as the canonical surface.** ProvekIt must
+   run locally; SaaS is one venue among many.
+3. **No bundled integrations** (Linear, Slack, IDE-specific plugins,
+   webhooks). Composition through Unix shapes is the substitute. We
+   ship the tool; the world ships the pipeline.
+4. **No principle without adversarial validation.** The validator IS
+   the definition; failing candidates are not principles.
+5. **No silent constraint removal.** Decay is an alarm requiring
+   human acknowledgment; never a quiet retraction.
+6. **No heuristic tier.** Biome / ESLint own that surface; ProvekIt
+   competes only at the universally-axiomatic level (principles) or
+   the per-codebase-bound level (invariants).
+7. **Part B is a plugin, not a product.** The constraint-minting
+   pipeline is a slot integrators implement; ProvekIt ships a
+   reference B but not THE B.
+8. **Part A is open source.** The gate is the moat through ubiquity,
+   not exclusivity. Locking it down forfeits the distribution.
+9. **One pipeline fork only.** The pipeline forks once, on the
+   verifier's empirical verdict. Never on intake direction, never on
+   bug-vs-change, never on who triggered.
+10. **No constraint without a regression test that locks it in.** The
+    test is the executable witness. Constraints that cannot be tested
+    are not constraints.
+11. **No invariant without Z3 SAT proof of reachability.** Oracle #1
+    is the existence proof. Untestable claims don't enter the corpus.
+12. **No regression test without mutation verification.** Oracle #9 is
+    the test-quality proof. A test that passes against the unfixed code
+    is a placebo and is rejected.
+13. **No LLM-tier work in pre-commit blocking context.** The
+    LLM-touching pipeline runs at gate-promotion moments only:
+    explicit user request, offline-on-commit, agent-runtime tool-call
+    boundary. Pre-commit is mechanical-only.
+14. **No marketing claim without mechanical backing.** Every
+    user-facing assertion has a Z3 proof, an audit trail, or a clear
+    disclaimer. "We use the best AI" is permanently off the
+    pitch.
+15. **No silent scope changes.** A constraint scoped to one callsite
+    cannot quietly broaden to a sink-level scope, or vice versa. Scope
+    changes are explicit retire-plus-remint operations, surfaced in
+    the audit trail.
+
+These 15 constraints define ProvekIt by negative space. Anything that
+respects all 15 is ProvekIt; anything that violates any one isn't,
+no matter how feature-rich or well-marketed. The product is the
+intersection.
+
+This is also the product's promise to its users: every constraint here
+is permanent. Future versions tighten the set or add to it; they do not
+relax existing items. ProvekIt ages backwards too — older versions of
+the product are *not* less constrained than newer ones. The same shape
+the methodology applies to user codebases applies to ProvekIt itself.
+
 ## Operational layering: when does each piece run, and who owns the gate?
 
 The five input shapes describe *who* triggers the pipeline. The

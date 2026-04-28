@@ -495,6 +495,85 @@ The runtime is shippable when:
 6. Performance: a 100-invariant test repo verifies in <5s on a typical
    commit, <100ms with no changes.
 
+## Part B as a plugin: the constraint-minting interface
+
+The runtime is one half of a two-part architecture (the other half is
+the constraint-minting pipeline; see the constraint-driven-development
+doc for the full A/B framing). This spec is about Part A — the gate
+that consumes invariants. Part B is the producer side, and B is
+**explicitly a plugin slot, not a fixed implementation**.
+
+ProvekIt ships a reference B that uses claude-agent-sdk + ts-morph +
+git worktrees. Integrators (IDEs, agent runtimes, on-prem deployments)
+can swap the entire B with their own implementation without touching A.
+
+### The B-plugin contract
+
+Any valid Part B implementation must produce two artifact shapes:
+
+1. **An `IntentReport` JSON object** matching the schema in the "Intake
+   unification (v1)" section above. This carries the derived intent
+   plus any constraint candidates plus per-intent flags
+   (hasRegressionTest, testGenerationOpportunity).
+
+2. **A `StoredInvariant` JSON file** at
+   `.provekit/invariants/<id>.json` for any constraint that survives
+   the downstream gates (Z3 SAT, fidelity checks, mutation
+   verification). Schema is the one defined in this spec's invariant
+   store section.
+
+That's the contract. Anything that produces those two artifacts is a
+valid B. The reference implementation uses our LLMProvider abstraction,
+runAgentInOverlay (claude-agent-sdk-based), our overlay/git-worktree
+sandbox, and our diff-and-patch flow. None of those are part of the
+contract; they're implementation choices.
+
+### What integrators can swap
+
+When a third-party B replaces ours, these pieces change:
+
+- **LLM.** Already swappable via the LLMProvider abstraction. An
+  integrator's B may not use LLMProvider at all — they might call
+  their LLM through a totally different layer.
+- **Language-server bindings.** Our reference uses ts-morph to walk the
+  AST. An IDE that has an LSP already knows the codebase; their B can
+  bind there instead of re-parsing.
+- **Toolpath.** How tools (Read, Edit, Write, Bash, etc.) are invoked
+  on behalf of the LLM. The claude-agent-sdk's tool model is one shape;
+  Cursor's is another; an enterprise sandbox has its own. Our B uses
+  the SDK; theirs uses whatever they already operate.
+- **Code sandbox.** Where generated code runs during validation. We use
+  git worktrees on local disk; alternative B implementations can use
+  in-process sandboxes, containers, or remote microVMs.
+- **Diff process.** How proposed code changes are represented and
+  applied. We produce unified diffs against a worktree; an IDE's B
+  might produce in-editor edits via the IDE's diff model.
+- **PR flow.** Where the output ends up. We emit `provekit-fix.patch` +
+  `provekit-fix.md`. An integrator's B might open a PR through the
+  IDE's source-control API, post to a ticket system, or drop a
+  follow-up commit.
+
+### What stays invariant across B implementations
+
+Part A is invariant. The runtime gate consumes the artifact shapes B
+produces and processes them identically regardless of how B got there.
+This is what makes "BYO B" tractable: integrators don't have to
+re-implement the gate; they just have to produce its inputs.
+
+The contract surface is therefore the smallest possible Part-A-Part-B
+coupling: two JSON shapes (`IntentReport`, `StoredInvariant`) and one
+filesystem location (`.provekit/invariants/`). Everything else inside B
+is the integrator's choice.
+
+### Strategic consequence
+
+Part A is the moat — small, mechanical, free, ubiquitous. Part B is the
+moving target — improves with every frontier-model release on someone
+else's R&D budget. ProvekIt's reference B exists to bootstrap adoption;
+it's not the long-term product. The long-term product is the gate plus
+the constraint corpus it accumulates per codebase. B is a plugin that
+gets better around it.
+
 ## Distribution surface
 
 The runtime ships through two artifacts; everything else is downstream
