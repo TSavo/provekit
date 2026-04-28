@@ -662,31 +662,77 @@ async function runInvariants(args: string[]): Promise<void> {
     case "verify": {
       const verbose = rest.includes("--verbose") || rest.includes("-v");
       const json = rest.includes("--json");
+      const adversarial = rest.includes("--adversarial");
       const timeoutIdx = rest.indexOf("--timeout");
       const timeoutSeconds =
         timeoutIdx >= 0 && rest[timeoutIdx + 1]
           ? parseInt(rest[timeoutIdx + 1]!, 10)
           : undefined;
       const maxPathsIdx = rest.indexOf("--max-paths");
-      const maxPaths =
+      const maxPathsArg =
         maxPathsIdx >= 0 && rest[maxPathsIdx + 1]
           ? parseInt(rest[maxPathsIdx + 1]!, 10)
           : undefined;
+      // Adversarial default is more generous than the per-callsite
+      // default (200 vs 50) per step-7 spec, but still bounded.
+      const maxPaths = maxPathsArg ?? (adversarial ? 200 : undefined);
 
       try {
-        const report = await verifyAllCached(projectRoot, {
-          timeoutMs: timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined,
-          maxPaths,
-        });
+        // Step 7 cache decision: --adversarial bypasses verifyAllCached
+        // and calls verifyAll directly. Reasoning: the cache fingerprint
+        // currently folds in resolved binding hashes + substrate
+        // identity, but adversarial mode adds a new dimension — the
+        // sink's reverse-reachable set. Folding that in correctly means
+        // re-resolving every upstream node's content hash on every
+        // lookup, which dominates the cost the cache is meant to save.
+        // v1 skips caching for adversarial; CI/manual ops aren't
+        // pre-commit-budgeted anyway. Future work: a separate
+        // adversarial-cache layer keyed on (invariant id, reverse-
+        // reachable-set hash, substrate identity).
+        let report: Awaited<ReturnType<typeof verifyAllCached>>;
+        if (adversarial) {
+          const { verifyAll } = await import("./fix/runtime/verify.js");
+          const fresh = await verifyAll(projectRoot, {
+            timeoutMs: timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined,
+            maxPaths,
+            adversarial: true,
+          });
+          // Adapt the non-cached VerifyReport into the cached shape so
+          // the rest of this branch (JSON output, formatReport, exit
+          // code derivation) stays uniform. cacheHits/cacheMisses are
+          // synthetic 0s — the adversarial summary line below explains.
+          report = {
+            verdicts: fresh.verdicts.map((v) => ({ ...v, cacheStatus: "miss" as const })),
+            summary: {
+              ...fresh.summary,
+              cacheHits: 0,
+              cacheMisses: fresh.verdicts.length,
+            },
+          };
+        } else {
+          report = await verifyAllCached(projectRoot, {
+            timeoutMs: timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined,
+            maxPaths,
+          });
+        }
+
         if (json) {
           console.log(JSON.stringify(report, null, 2));
         } else {
           console.log(formatReport(report, { verbose }));
-          // Surface the cache line at the bottom (spec section 7).
-          if (report.summary.total > 0) {
+          // Surface the cache line at the bottom (spec section 7) for
+          // non-adversarial runs; adversarial prints its own scope line.
+          if (report.summary.total > 0 && !adversarial) {
             console.log(
               `cache: ${report.summary.cacheHits}/${report.summary.total} hit, ` +
               `${report.summary.cacheMisses} re-evaluated`,
+            );
+          } else if (adversarial && report.summary.total > 0) {
+            const sinkScoped = report.verdicts.filter(
+              (v) => v.invariant.scope === "sink",
+            ).length;
+            console.log(
+              `adversarial scan: ${sinkScoped}/${report.summary.total} invariant${report.summary.total === 1 ? "" : "s"} are scope=sink (callsite-scoped invariants verified normally)`,
             );
           }
         }
