@@ -708,22 +708,36 @@ export function setupOverlayForTest(overlay: OverlayHandle, mainRepoRoot: string
 
   // Widen the overlay's vitest config to match ANY .test.ts file. The
   // user's project may restrict include to a specific dir (e.g. promptlib
-  // uses include: ["tests/**/*.test.ts"]) but our regression test lives
-  // wherever chooseTestFilePath put it (typically under src/). The CLI
-  // --include flag merges with the config's include rather than replacing
-  // it, so a config-level override is needed. We only edit the overlay's
-  // copy — the original repo is untouched.
+  // uses include: ["tests/**/*.test.ts"]) and our regression test lives
+  // wherever chooseTestFilePath put it (typically under src/). vitest 4
+  // dropped --include as a CLI flag so a config-level override is the
+  // only way to broaden the match set. We only edit the overlay's copy —
+  // the original repo is untouched.
+  //
+  // Idempotency matters: setupOverlayForTest is called for oracle #9a,
+  // then again after fix-revert for #9b, then again for the full-suite
+  // run inside oracle #10. The widened glob contains a `[jt]` character
+  // class, so a naive `include:\s*\[[^\]]*\]` regex would re-match a
+  // prefix of its own output and corrupt the config. The marker comment
+  // below short-circuits subsequent calls.
+  const PROVEKIT_MARKER = "/* provekit: include widened */";
+  const WIDENED_LINE = `${PROVEKIT_MARKER}\n    include: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"]`;
   for (const cfgName of ["vitest.config.ts", "vitest.config.js", "vitest.config.mjs"]) {
     const cfgPath = join(overlay.worktreePath, cfgName);
     if (!existsSync(cfgPath)) continue;
     try {
-      let cfg = readFileSync(cfgPath, "utf-8");
-      // Replace any include: [...] array with a permissive pattern. Idempotent:
-      // re-running the regex over an already-widened config keeps the result
-      // identical (the regex matches any include array shape).
+      const cfg = readFileSync(cfgPath, "utf-8");
+      if (cfg.includes(PROVEKIT_MARKER)) {
+        // Already widened on a previous setupOverlayForTest call.
+        break;
+      }
+      // Replace any include: [...] array, anchoring to the closing `]`
+      // of the array LITERAL (the last `]` before the comma/newline that
+      // terminates the property). This regex tolerates nested brackets
+      // by scanning for `]` followed by `,` or end-of-line.
       const widened = cfg.replace(
-        /include:\s*\[[^\]]*\]/,
-        'include: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"]',
+        /include:\s*\[[\s\S]*?\](?=\s*[,\n])/,
+        WIDENED_LINE,
       );
       if (widened !== cfg) {
         writeFileSync(cfgPath, widened, "utf-8");
