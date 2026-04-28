@@ -31,6 +31,9 @@ import { assembleBundle } from "./stages/assembleBundle.js";
 import { applyBundle } from "./stages/applyBundle.js";
 import { learnFromBundle } from "./stages/learnFromBundle.js";
 import { recognize, type RecognizeResult } from "./stages/recognize.js";
+import { buildStoredInvariant, writeInvariant } from "./runtime/invariantStore.js";
+import { execFileSync } from "child_process";
+import { dirname } from "path";
 
 export interface RunFixLoopArgs {
   signal: BugSignal;
@@ -227,6 +230,36 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResult> {
     );
     logger.info(`  D1 complete — bundleId: ${bundle.bundleId} confidence: ${bundle.confidence.toFixed(2)} in ${Date.now() - t0d1}ms`);
 
+    // After D1: persist the invariant to .provekit/invariants/ in the user's
+    // project root. This is step 1 of the standing-invariant-runtime spec —
+    // the constraint must live as a source-controlled, content-addressable
+    // artifact so the standing runtime (provekit verify) can re-resolve and
+    // re-check it on every subsequent commit. Failure to write does not
+    // abort the loop; the bundle still ships.
+    try {
+      const projectRoot = resolveProjectRoot(args.locus.file);
+      if (projectRoot) {
+        const stored = buildStoredInvariant({
+          claim: invariant,
+          signal: args.signal,
+          locus: args.locus,
+          test,
+          patchSha: null,
+          // v1: empty map. The substrate has node hashes; we'll wire
+          // them through in the same step that lands the path enumerator
+          // (the next item in the runtime spec's implementation order).
+          // For now bindings carry source positions only; the runtime
+          // detects decay by re-resolving file+line at verify time.
+          bindingNodeHashes: new Map(),
+        });
+        const writtenAt = writeInvariant(projectRoot, stored);
+        logger.info(`  invariant persisted: ${writtenAt}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`invariant store write failed (non-fatal)`, { error: msg });
+    }
+
     // Stage D2: apply bundle
     logger.stage("D2: applyBundle");
     const t0d2 = Date.now();
@@ -326,3 +359,23 @@ async function runStage<T>(
 
 // Re-export FixBundle so callers don't have to reach into types.ts directly.
 export type { FixBundle };
+
+/**
+ * Find the git repo root that contains the given file. Used to anchor
+ * `.provekit/invariants/` writes to the user's project root rather than
+ * to the orchestrator's process cwd. Returns null if the file is not
+ * inside a git repo or git is unavailable — caller treats null as "skip
+ * the persistence step."
+ */
+function resolveProjectRoot(locusFile: string): string | null {
+  try {
+    const root = execFileSync(
+      "git",
+      ["rev-parse", "--show-toplevel"],
+      { cwd: dirname(locusFile), encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+    return root || null;
+  } catch {
+    return null;
+  }
+}
