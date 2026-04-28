@@ -495,6 +495,40 @@ The runtime is shippable when:
 6. Performance: a 100-invariant test repo verifies in <5s on a typical
    commit, <100ms with no changes.
 
+## Distribution surface
+
+The runtime ships through two artifacts; everything else is downstream
+of these.
+
+**Artifact 1 — `provekit` CLI binary + GitHub Action.** Single Node
+package, single entry point, single command. The CLI exposes:
+`provekit verify` (the standing-runtime gate), `provekit fix` (the LLM
+pipeline), `provekit invariants list/verify/retire/paths` (the
+constraint-store inspection commands), `provekit mine-history` (the
+historical-bootstrap command). The GitHub Action wraps `provekit verify`
+and exposes its verdict to the existing PR check surface every developer
+already understands. Channel 1: every developer adds it to their CI.
+
+**Artifact 2 — Library entry points.** TypeScript imports any IDE,
+agent runtime, or platform can integrate. The four canonical entry
+points: `runFixLoop` (full pipeline), `verifyAll` (the standing-runtime
+gate), `extractIntent` (B0 retrospective), `readInvariants` /
+`writeInvariant` (constraint store I/O). Channel 2: every IDE
+integrates ProvekIt to prove correctness; Holyship integrates it as a
+gate in its gate library; future agent runtimes plug into the same
+surface.
+
+**What's not in the distribution surface.** Linear webhooks, Slack
+bots, GitHub Issues subscribers, email connectors, per-IDE plugins,
+custom event-bus adapters — these are third-party integrations
+downstream of the CLI and library. ProvekIt doesn't ship or maintain
+them. Integrators write them by composing the two artifacts above.
+
+The acceptance criteria below verify both artifacts: criterion #6 (the
+performance budget) is the GitHub Action / CLI check; the existence of
+clean library entry points is verified by the fact that the CLI itself
+imports them.
+
 ## What this unlocks
 
 The marketing claim becomes provable:

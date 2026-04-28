@@ -333,41 +333,43 @@ satisfy the constraint through any path that ever reaches the protected
 sink, whether that path exists today or gets added by an AI agent six
 months from now.
 
-## One pipeline, five harnesses
+## Input shapes the gate handles
 
 The architecture is one pipeline (artifact-of-change → intent → constraint
-→ output bundle) with thin deployment harnesses on top. The pipeline is
-invariant. Harnesses differ in *who* triggers them, *when*, and *how* the
-output gets routed. All five compose with the same underlying machinery;
-none requires changes to the pipeline.
+→ output bundle) with thin input adapters on top. The pipeline is
+invariant; the inputs vary. Five conceptual input shapes feed the same
+universal gate, distinguished by *who* triggers them, *when*, and *how*
+the output gets routed. These are input shapes the pipeline accepts, not
+products ProvekIt ships. (See "Distribution: two channels" below for the
+actual product surface.)
 
-1. **Interactive harness — "fix this bug" / "make this change."** User
+1. **Interactive shape — "fix this bug" / "make this change."** A user
    files a problem statement directly to the LLM in conversation. The
    pipeline runs prospectively, ships a patch + invariant + tests. The
-   bug-fix harness wires this to GitHub Issues; the change harness wires
-   it to Linear. Same pipeline, different inboxes.
+   bug-fix variant reads from GitHub Issues; the change variant reads
+   from any issue tracker. Same pipeline, different inboxes — and the
+   inboxes are third-party, not something ProvekIt ships adapters for.
 
-2. **Historical harness — `provekit mine-history`.** Walks the existing
+2. **Historical shape — `provekit mine-history`.** Walks the existing
    git log, formats each commit as artifact-of-change, runs the pipeline
    retrospectively. Bootstraps the constraint corpus on adoption day for
    codebases with years of existing history.
 
-3. **Continuous harness — pre-receive / PR webhook.** Every commit (or
+3. **Continuous shape — pre-receive / PR webhook.** Every commit (or
    PR) gets handed to a ProvekIt agent asynchronously. The agent enhances
    the change with whatever the codebase needs to satisfy correctness:
    adds missing tests, mints constraints, opens a follow-up PR with the
    augmentations against the user's branch. Never commits to main
    directly. Always reviewable.
 
-4. **Report-only harness — verify-and-file.** Zero write authority. Runs
+4. **Report-only shape — verify-and-file.** Zero write authority. Runs
    `provekit verify` on schedule (cron, GitHub Actions); when anything
    decays or violates, files a GitHub Issue with the binding details and
-   Z3 witness. The output of this harness becomes input to the
-   interactive harness — the issue gets typed into the LLM, the fix loop
-   runs. Recursive feedback: the report harness creates the work queue
-   the interactive harness consumes.
+   Z3 witness. The output of this shape becomes input to the interactive
+   shape — the issue gets typed into the LLM, the fix loop runs.
+   Recursive feedback: report creates the work queue interactive consumes.
 
-5. **MCP harness — `/prove <natural-language assertion>`.** Any LLM
+5. **MCP shape — `/prove <natural-language assertion>`.** Any LLM
    agent that speaks MCP (Claude Code, Cursor, agentic IDE plugins,
    Copilot if it gains MCP) gets prove-as-a-tool. The agent passes a
    declarative property in natural language; ProvekIt derives an
@@ -377,17 +379,76 @@ none requires changes to the pipeline.
    permanent constraint. Ad-hoc verification at conversational speed.
 
 The five span the cost-vs-friction grid: interactive is highest-friction
-highest-leverage (user types a sentence, gets a permanent constraint);
-historical is one-time bootstrap; continuous is zero-friction always-on;
-report-only is zero-write safety mode; MCP is conversational pull. Pick
-the harness shape that matches the deployment context; the underlying
-guarantees compose identically.
+highest-leverage; historical is one-time bootstrap; continuous is
+zero-friction always-on; report-only is zero-write safety mode; MCP is
+conversational pull. The product is the gate; these are the input shapes
+the gate handles. ProvekIt does not ship Linear webhooks, Slack bots,
+GitHub Issues integrations, email connectors, IDE plugins for every
+editor, or custom event-bus subscribers. Anyone can build those on top
+of the CLI; ProvekIt's job is to expose a clean enough gate that they
+become trivial to wire.
 
-## Operational layering: when does each piece run?
+## Distribution: two channels
 
-The five harnesses describe *who* triggers the pipeline. The operational
-layering describes *when* each component within the pipeline runs and
-what it's allowed to invoke. Two strict rules govern this layering:
+The five input shapes above describe what the gate can consume. The
+distribution story is shorter and operationally cleaner: ProvekIt ships
+through exactly **two channels**.
+
+### Channel 1 — CI Action
+
+`provekit verify` runs as one step in any developer's existing CI
+pipeline. GitHub Actions, GitLab CI, Buildkite, Jenkins, plain shell —
+the developer adds one step; ProvekIt becomes a required check; branch
+protection blocks merges that fail. **That's the install.** No bespoke
+integration, no separate dashboard, no event-bus subscriptions. The
+GitHub Action wraps `provekit verify` and exposes its verdict to the
+existing PR check surface every developer already understands.
+
+### Channel 2 — Library entry points (IDEs, agent runtimes, platforms)
+
+`provekit` exposes a clean library surface — typed entry points for
+intake, verify, fix, and the standing-runtime store — that any IDE,
+agent runtime, or platform can call. Claude Code and Cursor integrate
+ProvekIt to prove correctness during agent sessions. Holyship integrates
+ProvekIt as a gate in its gate library, intercepting the agent's `report`
+boundary and running the full pipeline before the entity advances.
+(Holyship is described in detail in its own section below as a worked
+example of the agent-runtime integration shape.) Future IDEs and agent
+runtimes plug into the same library entry points; ProvekIt doesn't
+write per-IDE plugins, it provides the surface the integrators target.
+
+### What's explicitly NOT the product
+
+These exist conceptually as input shapes but are not artifacts ProvekIt
+ships, bills for, or supports as first-class integrations:
+
+- Linear webhooks
+- GitHub Issues bots
+- Slack integrations
+- Email connectors
+- Per-IDE plugins (the IDE owners ship those, calling our library)
+- Custom event-bus subscribers
+
+They're third-party adapters anyone can build on top of the CLI or the
+library. We don't write or maintain them.
+
+**The marketing line:**
+
+> *ProvekIt is the fourth horseman of the git commit — tsc, lint, test,
+> prove. Every developer adds it to their CI. Every IDE integrates it
+> to prove correctness.*
+
+## Operational layering: when does each piece run, and who owns the gate?
+
+The five input shapes describe *who* triggers the pipeline. The
+operational layering describes *when* each component within the pipeline
+runs, what it's allowed to invoke, and — equally importantly — *who owns
+the gate at each tier*. "Where to install ProvekIt" is a gate-ownership
+decision: different stakeholders pay different latency budgets, and
+ProvekIt's job is to expose a clean enough interface (CLI, library,
+GitHub Action) that each gate-owner can wire it in.
+
+Two strict rules govern the layering:
 
 1. **Static analysis runs everywhere, all the time.** Z3, path
    enumeration, decay detection, cache lookup — these are deterministic
@@ -402,85 +463,126 @@ what it's allowed to invoke. Two strict rules govern this layering:
 
 Under those rules, the operational layering breaks into four tiers:
 
-### Tier 1 — File-edit (sync, static, sub-second)
+### Tier 1 — File-edit / pre-commit (sync, static, sub-second to seconds)
 
-Triggered by IDE on-edit, Claude Code hook on save, or a fast `provekit
-verify --changed-files <paths>` invocation. Re-checks only invariants
-whose bindings touch the changed files; the rest cache-hit. No LLM.
+**Gate owner: the developer.** They installed the hook; they own the
+latency budget.
 
-The user gets continuous correctness pressure at typing speed — every
-edit is checked against every standing constraint that could be
-affected, with sub-second feedback. This is the lowest-cost, highest-
-frequency tier; if performance ever pushes it past one second per edit,
-the cache is failing and the architecture has a real bug.
+Triggered by IDE on-edit, Claude Code hook on save, or `git commit`. The
+on-edit variant runs `provekit verify --changed-files <paths>` and
+re-checks only invariants whose bindings touch the changed files; the
+rest cache-hit. The pre-commit variant runs the four horsemen — tsc /
+lint / test / prove — and blocks the commit on any violation. No LLM in
+the verification path at either sub-tier.
 
-### Tier 2 — Pre-commit (sync, static, seconds)
+The developer gets continuous correctness pressure at typing speed and a
+deterministic gate at commit time. Every commit, no matter how fast it
+was generated, gets verified against the codebase's accumulated
+impossibility set before it lands. This is the deterministic gate that
+prevents regressions of any standing constraint. It is the moat.
 
-Triggered by `git commit`. Runs the four horsemen — tsc / lint / test /
-prove. The prove gate runs the full constraint sweep, with
-cache-warmth keeping it under 5 seconds on typical commits. Blocks the
-commit on any violation. No LLM.
+If performance pushes the on-edit path past one second per edit, the
+cache is failing and the architecture has a real bug.
 
-This is the deterministic gate that prevents regressions of any standing
-constraint. It is the moat. It is what makes "AI velocity is correctness"
-mechanically true: every commit, no matter how fast it was generated,
-gets verified against the codebase's accumulated impossibility set
-before it lands.
+### Tier 2 — Repo / PR check (async, full pipeline, blocks merge)
 
-### Tier 3 — Offline-on-commit (async, LLM, minutes)
+**Gate owner: the repo.** Branch protection rules require a passing
+ProvekIt verdict before merge. The PR sits open while CI runs ProvekIt;
+the merge button stays grey until verdict + augmentations land.
 
-Triggered by a successful commit landing (post-receive hook, GitHub
-webhook, similar). The commit gets routed to an offline harness — a
-worker pool, a cloud function, a holyship agent — that runs the FULL
-pipeline against it: B0 captures the diff+message as an intent, C1 mints
-a candidate constraint, the verifier checks the codebase, conditional
-C3 generates any patch needed, C5 emits any missing test. Output gets
-routed back as a PR or follow-up commit on the user's branch with the
-augmentations.
+Triggered by a PR open or push to a protected branch. The CI Action
+runs `provekit verify` and, optionally, the full pipeline — B0 captures
+the diff + message as an intent, C1 mints a candidate constraint, the
+verifier checks the codebase, conditional C3 generates any patch needed,
+C5 emits any missing test. Output gets routed back as a follow-up commit
+on the user's branch with the augmentations.
 
-This is the *constraint-minting* tier. Tier 2 enforces the existing
-corpus; Tier 3 grows it. Every commit becomes a candidate for a new
-permanent obligation, processed asynchronously so the developer's loop
-isn't blocked. The user pays no commit-time latency — the work happens
-between when they commit and when they next look at their PR.
+This is the *constraint-minting* tier. Tier 1 enforces the existing
+corpus; Tier 2 grows it. The repo owner sets the policy; the developer
+pays no commit-time latency for the constraint-minting half — the work
+happens between when they commit and when they next look at their PR.
 
-### Tier 4 — Explicit user-triggered (sync or async, LLM, minutes)
+### Tier 3 — Agent-runtime / tool-call boundary (sync, full pipeline, minutes)
 
-Triggered when the user explicitly invokes the pipeline: `provekit fix
-<issue>`, the MCP `/prove` tool from inside an LLM conversation, the
-interactive harness reading from GitHub Issues or Linear. The full
-pipeline runs; cost is paid because the user explicitly chose to.
+**Gate owner: the agent runtime.** When the agent emits `report`, the
+flow engine intercepts and runs ProvekIt against whatever the agent
+produced. The agent stalls until the gate returns.
+
+This is exactly the gate Holyship is designed to host. Holyship's
+`claim` / `report` API and its gate-on-evidence architecture are the
+natural home for ProvekIt's full pipeline. The agent waits because the
+gate is doing the work the agent was supposed to do; the 20-minute
+pause when the pipeline runs end-to-end is correct behavior, not a bug.
+
+Triggered every time an agent in Holyship's worker pool produces a
+report. The gate runs the full pipeline; the agent transitions only on a
+passing verdict. Every prove-gate failure that ships through the fix
+loop mints a NEW constraint, so the gate-set the next agent must satisfy
+is strictly larger than the previous one. The gate library grows
+monotonically as the codebase ships work.
+
+### Tier 4 — IDE / session boundary (sync, varies, IDE policy)
+
+**Gate owner: the IDE.** Claude Code, Cursor, or similar intercepts the
+agent's session-end and runs ProvekIt before showing the diff to the
+user. The IDE owns the gate; the user opted in via hook config.
+
+Triggered when the user explicitly invokes the pipeline (`provekit fix
+<issue>`, the MCP `/prove` tool inside an LLM conversation, an issue
+typed from GitHub Issues into the interactive shape) or when the IDE's
+session-end hook fires. The full pipeline runs; cost is paid because
+the user (or the IDE policy on behalf of the user) explicitly chose
+to invoke it.
 
 ### Why the layering matters
 
 The two rules at the top — "static everywhere, LLM at promotion only" —
 are what make ProvekIt *cheap to run continuously and expensive only at
-moments that earn the cost*. A team can install the Tier 1 hook and pay
-nothing per edit; install the Tier 2 hook and pay a few seconds per
-commit; opt into the Tier 3 worker for ongoing constraint mining; and
-explicitly invoke Tier 4 when they file an issue.
+moments that earn the cost*. The four tiers exist because four
+different stakeholders own four different gates and pay four different
+latency budgets:
+
+- The **developer** pays sub-second to a-few-seconds at edit and commit time.
+- The **repo** pays minutes asynchronously, blocking merge.
+- The **agent runtime** pays minutes synchronously, blocking the agent.
+- The **IDE** pays whatever its policy budgets at session boundaries.
 
 The same code path serves all four tiers — the verifier's static gate
-is identical at Tiers 1 and 2; the LLM-touching pipeline is identical
-at Tiers 3 and 4. Only the trigger and the latency budget change. The
-architecture exposes the right surface (`verify`, `fix`, MCP tool,
-offline worker) for each tier; the underlying machinery is the universal
-pipeline this spec describes.
+is the deterministic core; the LLM-touching pipeline is the
+constraint-minting layer. Only the trigger, the gate-owner, and the
+latency budget change. The architecture exposes the right surface
+(`verify`, `fix`, MCP tool, GitHub Action, library imports) for each
+gate-owner; the underlying machinery is the universal pipeline this spec
+describes.
 
 This layering is what makes constraint-driven development *operational*
 at every team size. The expensive tier is amortized across the team;
 the cheap tier runs at every keystroke; the gates compose; correctness
 ratchets up monotonically while developer velocity is preserved.
 
-## Holyship: ProvekIt as the proof gate
+## Holyship: a worked example of agent-runtime integration
 
-ProvekIt slots into Holyship (the flow engine + worker pool for agentic
-software at `~/platform/platforms/holyship`) as the **proof gate** in
-its gate library. Holyship defines pipelines as state machines, enforces
-transitions with deterministic gates, and gives agents only `claim` and
-`report`. The engine — not the agent — decides what comes next, based on
-gate evidence. The four horsemen of git-commit map directly to
-Holyship's gate library:
+Holyship (the flow engine + worker pool for agentic software at
+`~/platform/platforms/holyship`) is the prominent example of channel 2
+in action: an agent runtime that integrates ProvekIt as a gate in its
+gate library. Holyship is one integrator among many — Claude Code,
+Cursor, and any future agent platform integrates the same library
+entry points. Holyship is described in detail here because it's the
+cleanest fit for the agent-runtime gate-ownership model and because
+it's where the four-horsemen-of-git-commit lineup gets enforced at
+agent-velocity.
+
+Holyship defines pipelines as state machines, enforces transitions with
+deterministic gates, and gives agents only `claim` and `report`. The
+engine — not the agent — decides what comes next, based on gate evidence.
+ProvekIt sits at the agent's tool-call boundary: when an agent emits
+`report`, the flow engine intercepts, ProvekIt runs the full pipeline
+against whatever the agent produced, and the agent stalls until the
+gate returns a verdict. The 20-minute pause when the pipeline runs
+end-to-end is correct behavior; the agent waits because the gate is
+doing the work the agent was supposed to do.
+
+The four horsemen of git-commit map directly to Holyship's gate library:
 
 - **tsc** gate — types consistent
 - **lint** gate — patterns clean
@@ -508,9 +610,12 @@ respects the most-recent-K invariant`, gets a verdict. Fail → fix; hold
 → emit `pr_created`. Every agent in Holyship's worker pool gets
 prove-as-a-tool with no per-agent configuration.
 
-The two products ship together. Holyship is the platform. ProvekIt is
-the load-bearing gate. The marketing line: ProvekIt is what turns
-"AI velocity is dangerous" into "AI velocity compounds correctness."
+Holyship is the worked example here because it's the cleanest
+match between ProvekIt's shape and an existing agent-runtime
+architecture. Other agent runtimes that integrate ProvekIt — Claude
+Code, Cursor, future platforms — will land on similar shapes for
+similar reasons. The library entry points ProvekIt exposes are what
+makes that integration tractable for any of them.
 
 ## The user journey
 
@@ -685,6 +790,12 @@ buys the methodological premise; CDD just extends the reach to the cases
 TDD cannot cover.
 
 ## The pitch, in one line
+
+> *ProvekIt is the fourth horseman of the git commit — tsc, lint, test,
+> prove. Every developer adds it to their CI. Every IDE integrates it
+> to prove correctness.*
+
+Underneath that one line:
 
 > *Every commit your codebase ever takes — every fix request, every
 > feature, every refactor — becomes a permanent constraint on what the
