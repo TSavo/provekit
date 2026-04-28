@@ -9,7 +9,10 @@
  * nothing. A test that fails after reverting proves the test locks in the fix.
  */
 
-import { applyPatchToOverlay, reindexOverlay } from "../overlay.js";
+import {
+  applyPatchToOverlay as defaultApplyPatch,
+  reindexOverlay as defaultReindex,
+} from "../overlay.js";
 import {
   extractWitnessInputs,
   generateTestCode,
@@ -28,10 +31,21 @@ import type {
   TestArtifact,
   LLMProvider,
   InvariantClaim,
+  CodePatch,
 } from "../types.js";
 import type { FixLoopLogger } from "../logger.js";
 import { instantiateTestTemplate } from "./recognizeTemplates.js";
 import type { RecognizeResult } from "./recognize.js";
+
+/**
+ * Stage dependencies for C5. Defaults preserve current behavior; override
+ * to inject a different Sandbox/PatchApplicator without touching the
+ * regression-test logic.
+ */
+export interface GenerateRegressionTestDeps {
+  applyPatch?: (overlay: OverlayHandle, patch: CodePatch) => void | Promise<void>;
+  reindex?: (overlay: OverlayHandle, files: string[]) => Promise<void>;
+}
 
 export async function generateRegressionTest(args: {
   fix: FixCandidate;
@@ -57,8 +71,12 @@ export async function generateRegressionTest(args: {
    * #1 way oracle #9a fails on real-world dogfoods.
    */
   investigateReport?: import("./investigate.js").InvestigateReport;
+  /** Optional dependency injection seams; falls back to module defaults. */
+  deps?: GenerateRegressionTestDeps;
 }): Promise<TestArtifact> {
   const { fix, signal, locus, overlay, invariant, llm } = args;
+  const applyPatch = args.deps?.applyPatch ?? defaultApplyPatch;
+  const reindex = args.deps?.reindex ?? defaultReindex;
 
   // -------------------------------------------------------------------------
   // Step 1: Extract Z3 witness as JS values
@@ -132,7 +150,7 @@ export async function generateRegressionTest(args: {
   // -------------------------------------------------------------------------
   // Step 4: Write the test file into the overlay (C3's fix is already applied)
   // -------------------------------------------------------------------------
-  applyPatchToOverlay(overlay, {
+  await applyPatch(overlay, {
     fileEdits: [{ file: testFilePath, newContent: testCode }],
     description: "regression test (C5)",
   });
@@ -181,7 +199,7 @@ export async function generateRegressionTest(args: {
 
   // Reindex only the fix files (not the test file) so SAST reflects pre-fix state
   const fixFiles = fix.patch.fileEdits.map((e) => e.file);
-  await reindexOverlay(overlay, fixFiles);
+  await reindex(overlay, fixFiles);
 
   // -------------------------------------------------------------------------
   // Step 7: Oracle #9b — run test against ORIGINAL (unfixed) code
@@ -192,7 +210,7 @@ export async function generateRegressionTest(args: {
     // Test passed against unfixed code — not mutation-verified.
     // Restore the fix before throwing.
     restoreFixInOverlay(overlay, postFixContents);
-    await reindexOverlay(overlay, fixFiles);
+    await reindex(overlay, fixFiles);
     throw new Error(
       `oracle #9b FAIL: test PASSED against original (unfixed) code. Test does not lock in the fix. stdout=${originalRun.stdout.slice(0, 500)}`,
     );
@@ -202,7 +220,7 @@ export async function generateRegressionTest(args: {
   // Step 8: Restore the fix so downstream stages see the fixed state
   // -------------------------------------------------------------------------
   restoreFixInOverlay(overlay, postFixContents);
-  await reindexOverlay(overlay, fixFiles);
+  await reindex(overlay, fixFiles);
 
   // -------------------------------------------------------------------------
   // Step 9: Return artifact with full audit

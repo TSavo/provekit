@@ -31,8 +31,25 @@ import { requestStructuredJson } from "../llm/structuredOutput.js";
 import { getModelTier } from "../modelTiers.js";
 import { instantiateFixTemplate } from "./recognizeTemplates.js";
 import type { RecognizeResult } from "./recognize.js";
-import { applyPatchToOverlay, reindexOverlay } from "../overlay.js";
+import {
+  applyPatchToOverlay as defaultApplyPatch,
+  reindexOverlay as defaultReindex,
+} from "../overlay.js";
 import { createNoopLogger } from "../logger.js";
+
+/**
+ * Stage dependencies for C3.
+ *
+ * The orchestrator and tests can override these to plug in a different
+ * Sandbox/PatchApplicator without touching the C3 logic. Defaults preserve
+ * the current behavior (applyPatchToOverlay + reindexOverlay).
+ */
+export interface GenerateFixCandidateDeps {
+  /** Apply the patch to the overlay tree. Default: applyPatchToOverlay. */
+  applyPatch?: (overlay: OverlayHandle, patch: CodePatch) => void | Promise<void>;
+  /** Re-index the overlay's SAST DB after a patch lands. Default: reindexOverlay. */
+  reindex?: (overlay: OverlayHandle, files: string[]) => Promise<void>;
+}
 
 export async function generateFixCandidate(args: {
   signal: BugSignal;
@@ -51,6 +68,8 @@ export async function generateFixCandidate(args: {
    * LLM patches at the locus rather than wandering up the call stack.
    */
   investigateReport?: import("./investigate.js").InvestigateReport;
+  /** Optional dependency injection seams; falls back to module defaults. */
+  deps?: GenerateFixCandidateDeps;
 }): Promise<FixCandidate> {
   // C3m: B3 recognized path. Mechanical instantiation of fixTemplate.
   if (args.recognized && args.recognized.matched) {
@@ -60,6 +79,7 @@ export async function generateFixCandidate(args: {
       invariant: args.invariant,
       overlay: args.overlay,
       logger: args.logger,
+      deps: args.deps,
     });
   }
   // Agent path: if the LLM provider supports agent(), use capture-the-change.
@@ -80,10 +100,13 @@ async function generateFixCandidateViaLibrary(args: {
   invariant: InvariantClaim;
   overlay: OverlayHandle;
   logger?: FixLoopLogger;
+  deps?: GenerateFixCandidateDeps;
 }): Promise<FixCandidate> {
   const logger = args.logger ?? createNoopLogger();
   const { recognized, locus, invariant, overlay } = args;
   const fixTemplate = recognized.principle.fixTemplate!;
+  const applyPatch = args.deps?.applyPatch ?? defaultApplyPatch;
+  const reindex = args.deps?.reindex ?? defaultReindex;
 
   const t0 = Date.now();
   const patch: CodePatch = instantiateFixTemplate({
@@ -93,8 +116,8 @@ async function generateFixCandidateViaLibrary(args: {
     bindings: recognized.bindings,
   });
 
-  applyPatchToOverlay(overlay, patch);
-  await reindexOverlay(overlay, patch.fileEdits.map((e) => e.file));
+  await applyPatch(overlay, patch);
+  await reindex(overlay, patch.fileEdits.map((e) => e.file));
 
   // Verify via oracle #2 (same as LLM mode). Reuse verifyCandidate.
   const proposed = {
