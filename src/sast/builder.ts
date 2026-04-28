@@ -34,13 +34,31 @@ function sha256hex(str: string): string {
 
 /**
  * Compute a stable node id:
- *   sha256(`${fileId}:${kind}:${start}:${end}:${subtreeHash}`).slice(0, 16)
+ *   sha256(`${fileId}:${parentId}:${childOrder}:${kind}:${start}:${end}:${subtreeHash}`).slice(0, 16)
  *
  * Kind is included to disambiguate nodes that share the same span
  * (e.g., SourceFile, SyntaxList, and FunctionDeclaration can all span [0..N]).
+ *
+ * parentId + childOrder are included to disambiguate nested wrappers like
+ * SyntaxList — ts-morph can produce multiple SyntaxList nodes that share the
+ * same span, kind, and subtree text (a single-child SyntaxList wrapping
+ * another SyntaxList). Without an AST-position discriminator they hash to
+ * the same id and collide on insert. The position-in-tree (parentId +
+ * childOrder) makes each node uniquely identifiable.
+ *
+ * The root node has parentId="ROOT" and childOrder=0 — no ambiguity since
+ * walkIterative emits exactly one root per file.
  */
-function nodeId(fileId: number, kind: number, start: number, end: number, hash: string): string {
-  return sha256hex(`${fileId}:${kind}:${start}:${end}:${hash}`).slice(0, 16);
+function nodeId(
+  fileId: number,
+  parentId: string,
+  childOrder: number,
+  kind: number,
+  start: number,
+  end: number,
+  hash: string,
+): string {
+  return sha256hex(`${fileId}:${parentId}:${childOrder}:${kind}:${start}:${end}:${hash}`).slice(0, 16);
 }
 
 /**
@@ -74,7 +92,7 @@ function walkIterative(
     const kindName = node.getKindName();
     const text = node.getFullText();
     const hash = subtreeHash(text);
-    const id = nodeId(fileId, kind, start, end, hash);
+    const id = nodeId(fileId, parentId ?? "ROOT", childOrder, kind, start, end, hash);
 
     // Store mapping for capability extractors
     nodeIdByNode.set(node, id);
@@ -199,22 +217,26 @@ function buildInternal(db: Db, filePath: string, force: boolean): SASTBuildResul
 function walkForMap(fileId: number, root: SourceFile): Map<Node, string> {
   interface Frame {
     node: Node;
+    parentId: string | null;
+    childOrder: number;
   }
-  const stack: Frame[] = [{ node: root }];
+  const stack: Frame[] = [{ node: root, parentId: null, childOrder: 0 }];
   const nodeIdByNode = new Map<Node, string>();
 
   while (stack.length > 0) {
-    const { node } = stack.pop()!;
+    const { node, parentId, childOrder } = stack.pop()!;
     const start = node.getFullStart();
     const end = node.getEnd();
     const kind = node.getKind();
     const text = node.getFullText();
     const hash = subtreeHash(text);
-    const id = sha256hex(`${fileId}:${kind}:${start}:${end}:${hash}`).slice(0, 16);
+    // Same formula as walkIterative — must include parentId + childOrder so
+    // cache-hit IDs match what's stored in the DB.
+    const id = nodeId(fileId, parentId ?? "ROOT", childOrder, kind, start, end, hash);
     nodeIdByNode.set(node, id);
     const children = node.getChildren();
     for (let i = children.length - 1; i >= 0; i--) {
-      stack.push({ node: children[i] });
+      stack.push({ node: children[i], parentId: id, childOrder: i });
     }
   }
 
