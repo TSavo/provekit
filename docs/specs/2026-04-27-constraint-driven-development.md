@@ -1054,6 +1054,87 @@ monotonically decreases as a function of the codebase's problem history.**
 The codebase becomes the substrate that *teaches the AI* which mistakes it
 has already learned not to make in this context.
 
+## Every commit is an intake candidate; the corridor narrows
+
+The deepest operational claim of constraint-driven development: **every
+single commit is a candidate intake.** Not just bug fixes. Every feature
+addition, every refactor, every schema change, every dependency bump.
+Each commit gets passed through B0 retrospective intake, which tries to
+extract a constraint-shape intent. Most commits produce nothing — they
+bounce out cheap at the very start of the pipeline because no
+universally-quantifiable property is derivable from the diff.
+Refactors, formatting, dependency bumps drop out at zero cost. The
+intake gate fires cheap, kills fast.
+
+But the commits that *do* produce a derivable invariant — bug fixes,
+feature additions that establish a data-shape guarantee, refactors that
+lock down an invariant by construction, schema changes that codify a
+new field's required state — pass through the full validation chain
+(Z3 SAT, fidelity check, mutation verification) and land in the
+invariant store. Forever.
+
+The compounded effect: **the corridor of writable code narrows
+monotonically.** This is the structural inversion of the entire
+developer experience.
+
+- **Day one of adoption:** AI generates almost anything. The codebase
+  has zero observations. Generation space is unconstrained.
+- **Day 100:** 50 observations exist. AI's generation space is
+  constrained by 50 universal-over-paths properties that any new code
+  MUST satisfy. Some shapes are no longer writable.
+- **Day 1000:** 500 observations exist. AI's generation space is the
+  intersection of 500 constraints — a specific, narrow, deeply-shaped
+  corridor capturing exactly the codebase's accumulated correctness
+  commitments.
+
+**Vibe coding inverts into constraint-based coding.** It stops being
+"AI generates whatever, human hopes for the best, bugs ship, repeat"
+and becomes "AI generates within the corridor of standing constraints,
+the gate enforces, the corridor narrows whenever a new constraint is
+mintable." The AI's choice space shrinks over time *as a function of
+how many bugs and features the codebase has shipped.* Mature codebases
+become hostile environments for the broad-spectrum mistakes AI-
+generated code makes today; the AI is forced through progressively
+tighter corridors that rule out the failure shapes the codebase has
+already encountered.
+
+This is the structural answer to vibe-coding's central failure mode.
+Today's vibe-coded code fails because AI generates something that
+*looks* correct but violates an unstated invariant — a property the
+team relies on but never wrote down. With ProvekIt accumulating
+observations, **the unstated invariants become stated.** Every previous
+failure mode in this codebase becomes a permanent, machine-checked
+constraint the next generation must satisfy. The "unstated assumption"
+attack surface monotonically shrinks toward zero as the corpus grows.
+
+It's also the structural answer to "why ProvekIt vs an AI code-review
+tool?" AI reviewers are one-shot opinions: an LLM looks at a PR and
+emits prose. The opinion doesn't compound. The next PR gets a fresh
+roll of the dice. ProvekIt's corpus IS the compounded layer — every
+successful intake leaves a permanent wall in the corridor. After a
+year of ProvekIt, the codebase isn't easier to break than it was at
+adoption; it's *harder*, by exactly as many observations as the team
+has shipped. After five years, the AI is generating in a corridor so
+specific to the codebase's history that off-distribution mistakes are
+mechanically impossible.
+
+The product is the corridor. The codebase BECOMES its accumulated
+constraints. The AI assistant is whatever ships the next commit
+through the corridor without violating any wall. The asc/desc bug we
+dogfood as the prototypical observation is one wall. Multiply by every
+shipped bug, every shipped feature, every shipped refactor that
+produced an invariant, and you arrive at constraint-based coding.
+
+The implication is recursive: principles are commodity work and the
+solved-problem surface (universal axioms have been static-analyzable
+for thirty years, served by Coverity, sonar, the compiler, biome).
+ProvekIt's value is not "we ship 7 axioms" — that's the credibility
+on-ramp, an afternoon's work that falls out of getting the architecture
+right. ProvekIt's value is **every shipped bug becomes a permanent
+codebase-specific universal-over-paths constraint that nothing else
+can produce, mechanically enforced at git-commit speed forever.** The
+universal axioms are ambient; the corridor is the product.
+
 ## The recursive depth
 
 The vibe-coding AI is BOTH the source of the bugs AND the agent that
