@@ -309,8 +309,19 @@ function symbolicallyExecute(
     if (boolBindings.length > 0) {
       let chosenPolarity: "asc" | "desc" | null = null;
       let chosenLoc: { filePath: string; line: number } | null = null;
-
-      for (const step of path.steps) {
+      if (process.env.PROVEKIT_KIND_ORDER_TRACE) {
+        console.error(`[kind=order] scanning path with ${path.steps.length} steps; bool bindings: ${boolBindings.length}`);
+      }
+      for (let stepIdx = 0; stepIdx < path.steps.length; stepIdx++) {
+        const step = path.steps[stepIdx]!;
+        // After path-enumerator reverse, the LAST step is the callsite
+        // (the function-under-test). For trivial 1-step paths the slot
+        // gets overwritten to "source" by the enumerator, but the node
+        // is still the callsite, so we identify by index, not slot.
+        const isCallsite = stepIdx === path.steps.length - 1;
+        if (process.env.PROVEKIT_KIND_ORDER_TRACE) {
+          console.error(`[kind=order] step nodeId=${step.nodeId.slice(0, 8)} slot=${step.slot} isCallsite=${isCallsite}`);
+        }
         const loc = resolveStepLocation(db, step.nodeId);
         if (!loc) continue;
         const lines = readSource(loc.filePath);
@@ -318,12 +329,70 @@ function symbolicallyExecute(
         const idx = loc.line - 1;
         if (idx < 0 || idx >= lines.length) continue;
 
-        // Window: ±2 lines to absorb multi-line orderBy(asc(...)) calls.
-        const winStart = Math.max(0, idx - 2);
-        const winEnd = Math.min(lines.length, idx + 3);
+        // Window sizing: for the callsite step the path-enumeration's
+        // resolved line is the FUNCTION DECLARATION (e.g. `async
+        // forRevision(...)`), but `asc(`/`desc(` lives several lines
+        // down inside the function body. A ±2 window misses it.
+        // Scan from the callsite line forward until we reach the
+        // next function/method declaration or a top-level brace —
+        // that's the body of the enclosing function. For non-callsite
+        // steps the original ±2 window stays.
+        let winStart: number;
+        let winEnd: number;
+        if (isCallsite) {
+          // Scope to a single function body. The callsite line may
+          // be the function declaration itself OR the line before it
+          // (depending on substrate placement). Walk forward, find
+          // the first opening brace from the callsite line, then
+          // close when matching brace depth returns to zero. That's
+          // exactly one function body — won't bleed into the next
+          // method's asc/desc and produce ambiguous polarity.
+          winStart = Math.max(0, idx - 2);
+          // Walk forward. Find the first `{` (function body open),
+          // then scan until depth returns to zero (function close).
+          // The substrate sometimes places the callsite at the line
+          // before the function decl, so we may pass through stray
+          // `}` from a preceding method first; ignore those (don't
+          // start counting until we've seen `{`).
+          let depth = 0;
+          let started = false;
+          let endIdx = lines.length;
+          let done = false;
+          for (let j = idx; j < lines.length && !done; j++) {
+            for (const ch of lines[j]!) {
+              if (!started) {
+                if (ch === "{") {
+                  started = true;
+                  depth = 1;
+                }
+                continue;
+              }
+              if (ch === "{") depth++;
+              else if (ch === "}") {
+                depth--;
+                if (depth === 0) {
+                  endIdx = j + 1;
+                  done = true;
+                  break;
+                }
+              }
+            }
+            if (j - idx > 200) {
+              endIdx = j + 1;
+              done = true;
+            }
+          }
+          winEnd = Math.min(lines.length, endIdx);
+        } else {
+          winStart = Math.max(0, idx - 2);
+          winEnd = Math.min(lines.length, idx + 3);
+        }
         const window = lines.slice(winStart, winEnd).join("\n");
         const hasDesc = /\bdesc\(/.test(window);
         const hasAsc = /\basc\(/.test(window);
+        if (process.env.PROVEKIT_KIND_ORDER_TRACE) {
+          console.error(`[kind=order] window ${loc.filePath}:${winStart + 1}-${winEnd} (${winEnd - winStart} lines) hasAsc=${hasAsc} hasDesc=${hasDesc}`);
+        }
 
         if (hasDesc && !hasAsc) {
           chosenPolarity = "desc";
