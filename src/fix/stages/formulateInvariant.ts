@@ -6,8 +6,8 @@
  * been verified SAT by Z3. Principle-match path is tried before LLM path.
  */
 
-import { readFileSync, existsSync, readdirSync } from "fs";
-import { join, dirname } from "path";
+import { readFileSync, existsSync } from "fs";
+import { basename, join, dirname } from "path";
 import { eq, or, and, lte, gte } from "drizzle-orm";
 import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef, InvariantCitation } from "../types.js";
 import { InvariantFormulationFailed } from "../types.js";
@@ -21,6 +21,7 @@ import { nodeArithmetic } from "../../sast/schema/capabilities/arithmetic.js";
 import { verifyBlock, proofComplexity } from "../../verifier.js";
 import { runInvariantFidelity, type FidelityVerifiers } from "../invariantFidelity.js";
 import { evaluatePrinciple } from "../../dsl/evaluator.js";
+import { enumeratePrincipleFiles } from "../../principleEnumeration.js";
 import type { RecognizeResult } from "./recognize.js";
 import type { InvestigateReport } from "./investigate.js";
 
@@ -59,9 +60,17 @@ function findPrinciplesDir(): string {
 }
 
 function loadPrincipleJson(principleName: string): PrincipleJson | null {
+  // Task #134: principle library is partitioned. Walk every partition
+  // (loadAllPartitions=true) and locate by filename — a C1 lookup by id
+  // doesn't know which language partition the principle landed in.
   const principlesDir = findPrinciplesDir();
-  const jsonPath = join(principlesDir, `${principleName}.json`);
-  if (!existsSync(jsonPath)) return null;
+  if (!existsSync(principlesDir)) return null;
+  const { jsonPaths } = enumeratePrincipleFiles(principlesDir, {
+    loadAllPartitions: true,
+  });
+  const filename = `${principleName}.json`;
+  const jsonPath = jsonPaths.find((p) => basename(p) === filename);
+  if (!jsonPath) return null;
   try {
     return JSON.parse(readFileSync(jsonPath, "utf-8")) as PrincipleJson;
   } catch {
@@ -108,17 +117,17 @@ function ensurePrincipleMatchesPopulated(db: Db, locusFileId: number, logger: Fi
   const principlesDir = findPrinciplesDir();
   if (!existsSync(principlesDir)) return;
 
-  let dslFiles: string[];
-  try {
-    dslFiles = readdirSync(principlesDir).filter((f) => f.endsWith(".dsl"));
-  } catch {
-    return;
-  }
+  // Task #134: principle library is partitioned. Walk every partition
+  // (loadAllPartitions=true) — same rationale as recognize.ts: principle
+  // evaluation runs against any incoming locus regardless of project
+  // language, and we want every applicable principle's matches in the table.
+  const { dslPaths } = enumeratePrincipleFiles(principlesDir, {
+    loadAllPartitions: true,
+  });
 
   const t0 = Date.now();
   let evaluatedCount = 0;
-  for (const dslFile of dslFiles) {
-    const dslPath = join(principlesDir, dslFile);
+  for (const dslPath of dslPaths) {
     let dslSource: string;
     try {
       dslSource = readFileSync(dslPath, "utf-8");
@@ -133,11 +142,11 @@ function ensurePrincipleMatchesPopulated(db: Db, locusFileId: number, logger: Fi
       // we just won't have rows from this principle. Log at detail level so
       // a curious operator can find it.
       logger.detail(
-        `[C1] principle ${dslFile} evaluation skipped: ${err instanceof Error ? err.message : String(err)}`,
+        `[C1] principle ${basename(dslPath)} evaluation skipped: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
-  logger.detail(`[C1] populated principleMatches from ${evaluatedCount}/${dslFiles.length} DSL files in ${Date.now() - t0}ms`);
+  logger.detail(`[C1] populated principleMatches from ${evaluatedCount}/${dslPaths.length} DSL files in ${Date.now() - t0}ms`);
 }
 
 // ---------------------------------------------------------------------------

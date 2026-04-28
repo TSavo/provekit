@@ -103,12 +103,22 @@ function describeRelations(): string {
 }
 
 function loadExemplar(): string {
-  const exemplarPath = join(__dirname, "..", "..", ".provekit", "principles", "division-by-zero.dsl");
-  try {
-    return readFileSync(exemplarPath, "utf-8");
-  } catch {
-    return "(exemplar not available)";
+  // Task #134: principle library is partitioned. The exemplar lives in
+  // universal/ (a numeric/arithmetic axiom that applies regardless of
+  // language). Try the partitioned location first; fall back to the
+  // legacy flat location for unmigrated checkouts.
+  const partitioned = join(
+    __dirname, "..", "..", ".provekit", "principles", "universal", "division-by-zero.dsl",
+  );
+  const flat = join(__dirname, "..", "..", ".provekit", "principles", "division-by-zero.dsl");
+  for (const path of [partitioned, flat]) {
+    try {
+      return readFileSync(path, "utf-8");
+    } catch {
+      // try next
+    }
   }
+  return "(exemplar not available)";
 }
 
 export function buildPrinciplePrompt(

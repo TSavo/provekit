@@ -19,6 +19,7 @@ import type { FixBundle, ApplyResult } from "./types.js";
 import type { Db } from "../db/index.js";
 import { principlesLibrary } from "../db/schema/principlesLibrary.js";
 import { enqueuePendingFix } from "./bundlePersistence.js";
+import { resolveWritePartition } from "../principleEnumeration.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -130,13 +131,20 @@ export async function learnFromBundle(args: {
     const principlesDir = join(projectRoot, ".provekit", "principles");
     mkdirSync(principlesDir, { recursive: true });
 
+    // Task #134: principle library is partitioned. PrincipleCandidate today
+    // carries no language tag, so all D3-minted shapes go to universal/
+    // (the conservative default). Once C6 captures the source-corpus
+    // language we can route per-language by passing it to resolveWritePartition.
+    const partitionDir = resolveWritePartition(principlesDir);
+    mkdirSync(partitionDir, { recursive: true });
+
     for (let i = 0; i < allShapes.length; i++) {
       const shape = allShapes[i];
       const isPrimary = i === 0;
       assertSafePrincipleName(shape.name);
 
-      const dslPath = join(principlesDir, `${shape.name}.dsl`);
-      const jsonPath = join(principlesDir, `${shape.name}.json`);
+      const dslPath = join(partitionDir, `${shape.name}.dsl`);
+      const jsonPath = join(partitionDir, `${shape.name}.json`);
 
       writeFileSync(dslPath, shape.dslSource, "utf8");
       writeFileSync(

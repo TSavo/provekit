@@ -254,7 +254,9 @@ describe("B3 Recognize stage", () => {
       // Pre-populate principleMatches by evaluating the division-by-zero DSL.
       // (B3 also does this lazily, but doing it here gives us a deterministic
       // pre-condition independent of B3's lazy-population path.)
-      const dslPath = join(scratchPrinciplesDir, "division-by-zero.dsl");
+      // Task #134: the principle library is partitioned by language; the
+      // division-by-zero principle lives in universal/.
+      const dslPath = join(scratchPrinciplesDir, "universal", "division-by-zero.dsl");
       const dslSource = readFileSync(dslPath, "utf-8");
       evaluatePrinciple(db, dslSource);
 

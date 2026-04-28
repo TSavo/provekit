@@ -12,9 +12,9 @@
  * known points (not interleaved with read paths).
  */
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import type { BugProvenance, LibraryPrinciple } from "../types.js";
+import { enumeratePrincipleFiles } from "../../principleEnumeration.js";
 
 export interface HarvestProvenanceEntry {
   /** Principle id (matches the JSON filename minus .json). */
@@ -119,12 +119,17 @@ export function appendHarvestProvenance(
  * Index principle id → JSON file path. The id is the value of the JSON's
  * `id` field, which conventionally matches the filename stem; we read each
  * file once to be tolerant of mismatches.
+ *
+ * Task #134: principle library is partitioned. Walks every partition
+ * (loadAllPartitions=true) — harvest provenance must reach principles
+ * regardless of which language partition they live in.
  */
 function buildPrincipleIdIndex(principlesDir: string): Map<string, string> {
   const out = new Map<string, string>();
-  const files = readdirSync(principlesDir).filter((f) => f.endsWith(".json"));
-  for (const file of files) {
-    const path = join(principlesDir, file);
+  const { jsonPaths } = enumeratePrincipleFiles(principlesDir, {
+    loadAllPartitions: true,
+  });
+  for (const path of jsonPaths) {
     try {
       const parsed = JSON.parse(readFileSync(path, "utf-8")) as LibraryPrinciple;
       if (typeof parsed.id === "string" && parsed.id.length > 0) {

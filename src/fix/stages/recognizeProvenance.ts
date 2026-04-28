@@ -11,9 +11,10 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+import { basename } from "path";
 import type { BugProvenance, LibraryPrinciple } from "../types.js";
 import { findPrinciplesDir } from "./recognize.js";
+import { enumeratePrincipleFiles } from "../../principleEnumeration.js";
 import { createNoopLogger, type FixLoopLogger } from "../logger.js";
 
 export interface AppendProvenanceArgs {
@@ -27,10 +28,19 @@ export interface AppendProvenanceArgs {
 export function appendLibraryProvenance(args: AppendProvenanceArgs): void {
   const logger = args.logger ?? createNoopLogger();
   const dir = args.dir ?? findPrinciplesDir();
-  const path = join(dir, `${args.principleId}.json`);
 
-  if (!existsSync(path)) {
-    logger.detail(`[C6m] WARN: principle file ${path} not found; skipping provenance append`);
+  // Task #134: principle library is partitioned. Locate the principle's
+  // JSON in whichever partition it actually lives. Walks every partition
+  // (loadAllPartitions=true) since a B3-recognized principle could be
+  // universal/ or any per-language partition.
+  const filename = `${args.principleId}.json`;
+  const { jsonPaths } = enumeratePrincipleFiles(dir, {
+    loadAllPartitions: true,
+  });
+  const path = jsonPaths.find((p) => basename(p) === filename);
+
+  if (!path || !existsSync(path)) {
+    logger.detail(`[C6m] WARN: principle file ${filename} not found under ${dir}; skipping provenance append`);
     return;
   }
 

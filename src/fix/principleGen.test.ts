@@ -533,7 +533,11 @@ describe("buildPrinciplePrompt — namespace clarity", () => {
   });
 
   it("embeds the division-by-zero exemplar verbatim in the prompt", () => {
-    const exemplarPath = join(process.cwd(), ".provekit", "principles", "division-by-zero.dsl");
+    // Task #134: principle library is partitioned. division-by-zero is a
+    // numeric-arithmetic axiom and lives in universal/.
+    const exemplarPath = join(
+      process.cwd(), ".provekit", "principles", "universal", "division-by-zero.dsl",
+    );
     const exemplar = readFileSync(exemplarPath, "utf-8");
     const prompt = buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
     // The exemplar is embedded verbatim — check its core content is present.
