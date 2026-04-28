@@ -30,6 +30,7 @@ import type {
   OverlayHandle,
   InvariantClaim,
   TestArtifact,
+  FixCandidate,
 } from "./types.js";
 import type { InvestigateReport } from "./stages/investigate.js";
 import { NotImplementedError } from "./types.js";
@@ -46,6 +47,11 @@ import { applyBundle } from "./stages/applyBundle.js";
 import { learnFromBundle } from "./stages/learnFromBundle.js";
 import { recognize, type RecognizeResult } from "./stages/recognize.js";
 import { buildStoredInvariant, writeInvariant } from "./runtime/invariantStore.js";
+import {
+  pickPrimaryPatchEdit,
+  findExpressionLines,
+  findFunctionLine,
+} from "./runtime/patchUtils.js";
 import type { Artifact, InvariantArtifact } from "../integration/interfaces.js";
 import { execFileSync } from "child_process";
 import { dirname } from "path";
@@ -116,6 +122,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
   // function scope so the `finally` block can flush them regardless of
   // where the main flow aborted.
   let invariant: InvariantClaim | null = null;
+  let fix: FixCandidate | null = null;
   let test: TestArtifact | null = null;
   let invariantPersisted = false;
 
@@ -161,7 +168,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     // Stage C3: generate fix candidate
     logger.stage("C3: generateFixCandidate");
     const t0c3 = Date.now();
-    const fix = await runStage("C3", "generateFixCandidate", audit, () =>
+    fix = await runStage("C3", "generateFixCandidate", audit, () =>
       generateFixCandidate({
         signal: args.signal,
         locus: args.locus,
@@ -188,7 +195,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     const t0c4 = Date.now();
     const complementary = await runStage("C4", "generateComplementary", audit, () =>
       generateComplementary({
-        fix,
+        fix: fix!,
         locus: args.locus,
         overlay,
         db: args.db,
@@ -204,7 +211,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     const t0c5 = Date.now();
     const c5Result = await runStage("C5", "generateRegressionTest", audit, () =>
       generateRegressionTest({
-        fix,
+        fix: fix!,
         signal: args.signal,
         locus: args.locus,
         overlay,
@@ -227,7 +234,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     logger.stage("C6: generatePrincipleCandidate");
     const t0c6 = Date.now();
     const principles = await runStage("C6", "generatePrincipleCandidate", audit, () =>
-      generatePrincipleCandidate({ signal: args.signal, invariant: invariant!, fixCandidate: fix, db: args.db, llm: args.llm, overlay, logger, recognized }),
+      generatePrincipleCandidate({ signal: args.signal, invariant: invariant!, fixCandidate: fix!, db: args.db, llm: args.llm, overlay, logger, recognized }),
     );
     const primaryPrinciple = principles.length > 0 ? principles[0] : null;
     const alternateShapes = principles.length > 1 ? principles.slice(1) : [];
@@ -252,7 +259,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
         signal: args.signal,
         plan: args.plan,
         locus: args.locus,
-        fix,
+        fix: fix!,
         complementary,
         test,
         principle: primaryPrinciple,
@@ -280,6 +287,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
       claim: invariant,
       signal: args.signal,
       locus: args.locus,
+      fix,
       test,
       patchSha: null,
     }) || invariantPersisted;
@@ -361,6 +369,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
           claim: invariant,
           signal: args.signal,
           locus: args.locus,
+          fix,
           test,
           patchSha: null,
         });
@@ -391,12 +400,30 @@ async function flushInvariantArtifact(args: {
   claim: InvariantClaim;
   signal: BugSignal;
   locus: BugLocus;
+  /**
+   * C3's patch output. When present, the persisted StoredInvariant's
+   * callsite + binding `node` blocks are derived from the patched file
+   * (its path + the post-edit line geometry of each `source_expr`).
+   * When null (B-stage early failure, or C3 produced no edits), the
+   * legacy `locus`-derived shape is used as a graceful fallback.
+   */
+  fix: FixCandidate | null;
   test: TestArtifact | null;
   patchSha: string | null;
 }): Promise<boolean> {
   try {
     const projectRoot = resolveProjectRoot(args.locus.file);
     if (!projectRoot) return false;
+
+    // Issue #138/#139 fix: ground callsite + binding geometry on C3's
+    // actual patch (when present), not on Locate's pre-stage best-guess.
+    const { callsiteOverride, bindingLocations } = computePatchGeometry(
+      args.fix,
+      args.claim,
+      args.locus,
+      args.logger,
+    );
+
     const stored = buildStoredInvariant({
       claim: args.claim,
       signal: args.signal,
@@ -404,6 +431,8 @@ async function flushInvariantArtifact(args: {
       test: args.test,
       patchSha: args.patchSha,
       bindingNodeHashes: new Map(),
+      callsiteOverride,
+      bindingLocations,
     });
     const writtenAt = writeInvariant(projectRoot, stored);
     args.logger.info(`  invariant persisted: ${writtenAt}`);
@@ -413,6 +442,101 @@ async function flushInvariantArtifact(args: {
     args.logger.error(`invariant store write failed (non-fatal)`, { error: msg });
     return false;
   }
+}
+
+/**
+ * Build `callsiteOverride` + `bindingLocations` from C3's patch by
+ * inspecting the primary patched file's `newContent`.
+ *
+ * For each binding, locate `source_expr` as a literal substring in the
+ * post-edit content and return the matched line range. A binding whose
+ * source_expr cannot be located gets startLine=endLine=0 with a debug
+ * log — that's an honest "we don't know" so the verify CLI marks the
+ * binding as decayed rather than silently persisting a wrong line.
+ *
+ * Returns `{}` when no patch is available — caller falls back to the
+ * legacy locus-derived shape.
+ */
+function computePatchGeometry(
+  fix: FixCandidate | null,
+  claim: InvariantClaim,
+  locus: BugLocus,
+  logger: FixLoopLogger,
+): {
+  callsiteOverride?: { filePath: string; startLine: number; endLine: number };
+  bindingLocations?: Map<
+    string,
+    { filePath: string; startLine: number; endLine: number }
+  >;
+} {
+  if (!fix) return {};
+  const primary = pickPrimaryPatchEdit(fix);
+  if (!primary) return {};
+
+  const filePath = primary.file;
+  const newContent = primary.newContent ?? "";
+
+  // Per-binding location map. Look up each binding's source_expr in the
+  // post-edit content. Honest-zero on miss (no fall-back to the claim's
+  // pre-edit source_line guess — that's the very value the verify CLI
+  // can't resolve to a substrate node).
+  const bindingLocations = new Map<
+    string,
+    { filePath: string; startLine: number; endLine: number }
+  >();
+  for (const b of claim.bindings) {
+    const lines = findExpressionLines(newContent, b.source_expr);
+    if (lines) {
+      bindingLocations.set(b.smt_constant, {
+        filePath,
+        startLine: lines.startLine,
+        endLine: lines.endLine,
+      });
+    } else {
+      bindingLocations.set(b.smt_constant, {
+        filePath,
+        startLine: 0,
+        endLine: 0,
+      });
+      logger.info(
+        `  invariant flush: binding "${b.smt_constant}" source_expr not located in patched ${filePath} (post-edit content); persisting startLine=endLine=0`,
+      );
+    }
+  }
+
+  // Callsite line: the function name from Locate, found in the post-edit
+  // file. v1 best-effort; if the function name doesn't match anything,
+  // try the first binding's resolved line as a representative anchor;
+  // last resort, line 1.
+  const fnLine = findFunctionLine(newContent, locus.function);
+  let callsiteLine: number;
+  if (fnLine != null) {
+    callsiteLine = fnLine;
+  } else {
+    if (locus.function) {
+      logger.info(
+        `  invariant flush: function "${locus.function}" not found in patched file ${filePath}; falling back to first-binding anchor`,
+      );
+    }
+    // Pick the first binding's resolved start line, if any non-zero.
+    let anchored = 0;
+    for (const loc of bindingLocations.values()) {
+      if (loc.startLine > 0) {
+        anchored = loc.startLine;
+        break;
+      }
+    }
+    callsiteLine = anchored > 0 ? anchored : 1;
+  }
+
+  return {
+    callsiteOverride: {
+      filePath,
+      startLine: callsiteLine,
+      endLine: callsiteLine,
+    },
+    bindingLocations,
+  };
 }
 
 /**

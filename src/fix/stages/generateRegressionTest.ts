@@ -36,6 +36,7 @@ import type {
 import type { FixLoopLogger } from "../logger.js";
 import { instantiateTestTemplate } from "./recognizeTemplates.js";
 import type { RecognizeResult } from "./recognize.js";
+import { pickPrimaryPatchFile } from "../runtime/patchUtils.js";
 
 /**
  * Stage dependencies for C5. Defaults preserve current behavior; override
@@ -244,22 +245,5 @@ export async function generateRegressionTest(args: {
   };
 }
 
-/**
- * Return the relative path of the file C3 patched (largest edit if multi-
- * file). The returned path is relative to the overlay worktree root —
- * matches the shape Locate uses, so it's a drop-in replacement for
- * locus.file. Returns null if the patch list is empty.
- */
-function pickPrimaryPatchFile(fix: FixCandidate): string | null {
-  const edits = fix.patch?.fileEdits ?? [];
-  if (edits.length === 0) return null;
-  if (edits.length === 1) return edits[0].file;
-  // Multi-file: pick the edit with the longest newContent (most substantive).
-  let primary = edits[0];
-  for (const e of edits) {
-    if ((e.newContent?.length ?? 0) > (primary.newContent?.length ?? 0)) {
-      primary = e;
-    }
-  }
-  return primary.file;
-}
+// pickPrimaryPatchFile lives in ../runtime/patchUtils.ts so the orchestrator's
+// invariant-persistence path can share the same patch-file selection logic.

@@ -155,20 +155,60 @@ export function buildStoredInvariant(args: {
    * threads it through.
    */
   bindingNodeHashes: Map<string, string>;
+  /**
+   * Optional override for the callsite block. The orchestrator's
+   * persistence path passes this when C3 produced a patch — Locate's
+   * `locus` is a B-stage best guess and frequently differs from the file
+   * C3 actually patched. When omitted, falls back to `locus` (preserves
+   * existing callers).
+   */
+  callsiteOverride?: {
+    filePath: string;
+    startLine: number;
+    endLine: number;
+  };
+  /**
+   * Per-binding location override. Keyed by smt_constant. When a key is
+   * present, the binding's `node.filePath` and `node.startLine` /
+   * `node.endLine` come from this map instead of `locus.file` and
+   * `b.source_line`. When a key is absent, the binding falls back to
+   * the legacy locus-derived shape. The orchestrator populates this by
+   * locating each binding's `source_expr` text in C3's post-edit
+   * `newContent` — a binding whose expression cannot be located gets an
+   * explicit `{ startLine: 0, endLine: 0 }` rather than a silent fall-
+   * back to the pre-edit line guess.
+   */
+  bindingLocations?: Map<
+    string,
+    { filePath: string; startLine: number; endLine: number }
+  >;
 }): StoredInvariant {
-  const { claim, signal, locus, test, patchSha, scope = "callsite", bindingNodeHashes } = args;
+  const {
+    claim,
+    signal,
+    locus,
+    test,
+    patchSha,
+    scope = "callsite",
+    bindingNodeHashes,
+    callsiteOverride,
+    bindingLocations,
+  } = args;
 
-  const bindings: StoredInvariant["bindings"] = claim.bindings.map((b) => ({
-    smt_constant: b.smt_constant,
-    source_expr: b.source_expr,
-    sort: b.sort,
-    node: {
-      filePath: locus.file,
-      nodeHash: bindingNodeHashes.get(b.smt_constant) ?? "",
-      startLine: b.source_line,
-      endLine: b.source_line,
-    },
-  }));
+  const bindings: StoredInvariant["bindings"] = claim.bindings.map((b) => {
+    const loc = bindingLocations?.get(b.smt_constant);
+    return {
+      smt_constant: b.smt_constant,
+      source_expr: b.source_expr,
+      sort: b.sort,
+      node: {
+        filePath: loc ? loc.filePath : locus.file,
+        nodeHash: bindingNodeHashes.get(b.smt_constant) ?? "",
+        startLine: loc ? loc.startLine : b.source_line,
+        endLine: loc ? loc.endLine : b.source_line,
+      },
+    };
+  });
 
   const smt: StoredInvariant["smt"] = {
     kind: normalizeKind(claim.llmKind),
@@ -178,18 +218,27 @@ export function buildStoredInvariant(args: {
 
   const id = hashInvariant({ smt, bindings });
 
+  const callsite: StoredInvariant["callsite"] = callsiteOverride
+    ? {
+        filePath: callsiteOverride.filePath,
+        function: locus.function ?? null,
+        startLine: callsiteOverride.startLine,
+        endLine: callsiteOverride.endLine,
+      }
+    : {
+        filePath: locus.file,
+        function: locus.function ?? null,
+        startLine: locus.line,
+        endLine: locus.line,
+      };
+
   return {
     id,
     createdAt: new Date().toISOString(),
     originatingBug: signal.summary,
     smt,
     bindings,
-    callsite: {
-      filePath: locus.file,
-      function: locus.function ?? null,
-      startLine: locus.line,
-      endLine: locus.line,
-    },
+    callsite,
     scope,
     regressionTest: test
       ? { filePath: test.testFilePath, testName: test.testName }
