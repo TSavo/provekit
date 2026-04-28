@@ -23,7 +23,89 @@
 // Pipeline (full LLM-touching loop)
 // ---------------------------------------------------------------------------
 export { runFixLoop } from "./fix/orchestrator.js";
-export type { RunFixLoopArgs } from "./fix/orchestrator.js";
+export type { RunFixLoopArgs, FixLoopResultWithArtifacts } from "./fix/orchestrator.js";
+
+// ---------------------------------------------------------------------------
+// Individual pipeline stages (channel 2 — call them directly without the
+// orchestrator).
+//
+// Per docs/specs/2026-04-27-constraint-driven-development.md "The pipeline
+// as a composition of swappable processes": every stage's input/output type
+// is a public, documented contract. The library entry points expose stages
+// individually, not just runFixLoop. An integrator who wants only our C5
+// imports `generateRegressionTest` directly.
+// ---------------------------------------------------------------------------
+export { recognize } from "./fix/stages/recognize.js";
+export { formulateInvariant } from "./fix/stages/formulateInvariant.js";
+export { openOverlay } from "./fix/stages/openOverlay.js";
+export { generateFixCandidate } from "./fix/stages/generateFixCandidate.js";
+export { generateComplementary } from "./fix/stages/generateComplementary.js";
+export { generateRegressionTest } from "./fix/stages/generateRegressionTest.js";
+export { generatePrincipleCandidate } from "./fix/stages/generatePrincipleCandidate.js";
+export { assembleBundle } from "./fix/stages/assembleBundle.js";
+export { applyBundle } from "./fix/stages/applyBundle.js";
+export { learnFromBundle } from "./fix/stages/learnFromBundle.js";
+export { investigate } from "./fix/stages/investigate.js";
+export type { RecognizeResult } from "./fix/stages/recognize.js";
+export type { InvestigateReport } from "./fix/stages/investigate.js";
+export type { GenerateFixCandidateDeps } from "./fix/stages/generateFixCandidate.js";
+export type { GenerateRegressionTestDeps } from "./fix/stages/generateRegressionTest.js";
+
+// ---------------------------------------------------------------------------
+// Channel 2 — Integration interfaces and reference implementations.
+//
+// The named, documented boundary contracts an integrator can swap behind
+// ProvekIt's pipeline. Each interface is one job. Reference classes are
+// thin wrappers over the existing module-scoped code.
+// ---------------------------------------------------------------------------
+export type {
+  Parser,
+  Substrate,
+  Sandbox,
+  BuildTestRunner,
+  SourcePatternScanner,
+  PatchApplicator,
+  AstGraph,
+  AstNode,
+  AstEdge,
+  NodeId,
+  RunResult,
+  TestTarget,
+  PatternQuery,
+  ScanContext,
+  ApplyPatchResult,
+  StageDependencies,
+  StageInput,
+  Artifact,
+  InvariantArtifact,
+  PatchArtifact,
+  RegressionTestArtifact,
+  PrincipleArtifact,
+  IntentReportArtifact,
+  BundleArtifact,
+  OracleReportArtifact,
+  SubstrateQueryByPosition,
+} from "./integration/interfaces.js";
+
+export {
+  isInvariantArtifact,
+  isPatchArtifact,
+  isRegressionTestArtifact,
+  isPrincipleArtifact,
+  isIntentReportArtifact,
+  isBundleArtifact,
+  isOracleReportArtifact,
+} from "./integration/interfaces.js";
+
+export {
+  ReferenceTsMorphParser,
+  ReferenceSqliteSubstrate,
+  ReferenceGitWorktreeSandbox,
+  ReferenceVitestPnpmRunner,
+  ReferenceTypeScriptPatternScanner,
+  ReferenceGitApplyApplicator,
+  createReferenceImplementations,
+} from "./integration/reference/index.js";
 
 // ---------------------------------------------------------------------------
 // Standing-runtime gate (no LLM)
