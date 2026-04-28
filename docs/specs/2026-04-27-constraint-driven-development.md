@@ -1135,54 +1135,119 @@ codebase-specific universal-over-paths constraint that nothing else
 can produce, mechanically enforced at git-commit speed forever.** The
 universal axioms are ambient; the corridor is the product.
 
-## Total symmetry: a prompt is an unformalized invariant
+## The corpus: how multimodal change signal becomes permanent constraints
 
-There is a complete symmetry between two things that look different on
-the surface but are the same construction in different representations:
+The corpus that drives constraint-driven development is built from
+**multimodal change signal**, formalized through the pipeline. The
+total signal available to the intent analyzer at any intake event is
+strictly larger than just the user's prompt. Every channel that
+carries information about the change is a signal source the analyzer
+fuses:
 
-- A **prompt** is a natural-language directive the user gives to an
-  LLM-shaped tool. "Fix this bug." "Add this feature." "Make this
-  faster."
-- An **invariant** is a formal SMT-LIB universal-over-paths constraint
-  the codebase pledges to satisfy.
+- **The prompt** — the user's natural-language directive when present.
+  "Fix this bug." "Add this feature." "Make this faster." One channel.
+- **The diff** — what actually changed in code. Before-and-after AST.
+  The dominant signal in retrospective intake (commit just landed; no
+  prompt accompanies it) and a load-bearing co-signal in prospective
+  intake (proposed change attached to a problem statement).
+- **The commit message** — the author's commentary, even when terse.
+  "wip" still distinguishes from "fix off-by-one in pagination."
+- **Attachments to the change request** — screenshots, stack traces,
+  reproduction steps, profiler output, error logs. Each is structured
+  signal the analyzer reads alongside the prose.
+- **Codebase context** — surrounding code, existing types, the call
+  graph, the standing invariant store (what's already true and must
+  continue to hold), the principles library that's pre-loaded.
+- **Pipeline-generated artifacts** — Investigate's hypothesis report,
+  Locate's candidate sites, Classify's verdict, the SAST graph. Each
+  upstream stage produces metadata that downstream stages consume as
+  additional signal. The pipeline progressively REFINES signal as it
+  runs.
 
-The pipeline IS the formalization step that converts one into the
-other. B0 takes a prompt; C1 derives the SMT; the validation gates
-check it; the survivor lands in the corpus as a permanent invariant.
-**A prompt is an unformalized invariant; an invariant is a formalized
-prompt.** Bidirectional in concept: any persisted invariant can be
-paraphrased back as a prose prompt (useful for explanation + audit);
-any prompt is a candidate invariant in formation.
+The intent analyzer (B0 + C1) fuses whatever channels are populated
+into a candidate constraint. Different intake shapes have different
+signal mixes:
+
+- **Retrospective intake (commit just landed):** diff + commit message
+  + codebase context dominate. No prompt needed; the commit IS the
+  change request.
+- **Interactive intake (user types "fix this bug"):** prompt + bug-
+  report attachments + codebase context dominate; diff is empty (the
+  change hasn't happened yet). The pipeline derives both the candidate
+  change AND its constraint from prose plus context.
+- **MCP `/prove`** (declarative property assertion): the prompt IS the
+  whole input; the analyzer formalizes the natural-language property
+  directly with no diff signal.
+- **Production case (most common):** all channels populated. User
+  files an issue with attachments, AI agent commits a fix, the analyzer
+  reads diff + message + Investigate's report + standing invariants +
+  the SAST graph all simultaneously. Multi-signal fusion is the rule,
+  not the exception.
+
+### Corpus composition: principles vs observations
+
+The corpus has two strata, both produced by the same fusion pipeline,
+distinguished by where each candidate succeeds in validation:
+
+- **Principles** — cross-codebase axioms that survive adversarial
+  validation against a corpus drawn from many codebases. Bounded set;
+  hand-curated starter library; rare promotion via federation. The
+  starter seven (division-by-zero, modulo-by-zero, NaN equality,
+  null/undefined dereference, unhandled async failure, array index
+  out of bounds, use-after-close) plus per-language partitions.
+- **Observations** — per-codebase invariants that survive validation
+  against this codebase only. Unbounded; minted from any signal-rich
+  intake event that yields a Z3-SAT-able universal property. The bulk
+  of the corpus.
+
+Cross-language sizing: principle partitions are sized inversely to the
+language's compile-time safety story. C/C++ has the largest partition
+because the language enforces the least. Rust has the smallest because
+the borrow checker absorbs most of what would otherwise be axioms.
+Observation corpora are unbounded everywhere — bound by codebase
+activity, not language.
+
+### Symmetry: change signal in, formalized constraint out
+
+The deep symmetry: **any intake event is a candidate invariant in
+formation; any persisted invariant is a formalized intake event.**
+Bidirectional. Any persisted invariant can be paraphrased back into
+prose plus diff plus context for explanation + audit. Any signal-rich
+change event is a candidate invariant the pipeline tries to formalize.
 
 This collapses several earlier framings into one operational claim:
 
-- "Every commit is an intake candidate" — every commit was authored
-  from a prompt. That prompt is the candidate invariant.
-- "Few principles, unbounded observations" — observations are exactly
-  the formalized residue of user prompts that passed validation.
-- "Constraint is the shape of the product" — the user is continuously
-  producing constraints whenever they interact with an LLM-shaped tool.
-  ProvekIt is the layer that catches the formalizable ones and locks
-  them in.
+- "Every commit is an intake candidate" — every commit carries diff
+  + message as signal even when there's no separate prompt.
+- "Few principles, unbounded observations" — observations are the
+  formalized residue of per-codebase change events; principles emerge
+  through cross-codebase validation as a special case.
+- "Constraint is the shape of the product" — the user (and the AI
+  acting on the user's behalf) is continuously producing change
+  signal; ProvekIt catches the formalizable subset and locks it in.
 
-The corridor narrows in proportion to how much the user interacts
-with AI. Not just bug fixes — every prompt the user types is a
-candidate. Bug fixes formalize cleanly into correctness invariants.
-Feature additions formalize into data-shape invariants. Refactors
-formalize into "what must continue to hold across the rename"
-invariants — exactly the case where ProvekIt's content-addressable
-binding survives the cosmetic edit. **The corpus grows at the rate
-the user is using AI to produce code, which is exactly the rate at
-which the codebase needs more constraints to remain coherent under
-AI velocity.**
+### Why this is stronger than prompt-engineering claims
 
-Operational consequence: ProvekIt is **the formalization layer for the
-user's natural-language intent.** The user prompts; ProvekIt converts
-the prompt into a machine-checkable constraint; the constraint becomes
-a permanent wall; the next prompt the user (or AI) generates has to
-live within the corridor of all previous formalized prompts. **The
-user's prompt history becomes the codebase's correctness specification,
-formalized incrementally, mechanically enforced forever.**
+The corpus is built from a strictly larger set than any context-window
+or memory-framework approach can hold. Some signal is GENERATED by the
+analysis itself — Investigate's hypotheses, Locate's findings, the
+SAST graph at this moment in time — and that generated signal exceeds
+what fits in any frontier-model attention window simultaneously. The
+substrate accumulates signal alongside the corpus; the corpus
+accumulates the formalized residue.
+
+Operational consequence: ProvekIt is **the formalization layer for
+all change signal across the codebase's history.** The team's entire
+change history — every commit, every report, every attachment, every
+pipeline analysis, every prompt — becomes the formalized spec, with
+prompts being one channel among several. The user's prompt history is
+a strict subset of the codebase's spec; the spec is bigger because the
+spec includes signal the user never typed.
+
+The corridor narrows at the rate the team produces change signal —
+which is exactly the rate the codebase produces opportunities for AI
+to introduce regressions. The corpus growth and the AI-velocity risk
+grow together; one offsets the other; the codebase ages backwards.
 
 ## Memory and longer context windows cannot solve correctness
 
