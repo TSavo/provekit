@@ -625,13 +625,51 @@ The violation is about pairwise ordering: "elements should be sorted but
 i < j with a[i] > a[j]", "events are out of expected sequence". Use Bool
 predicates over the violation pair, not Int sequences.
 
-Canonical SMT shape:
+**Polarity convention (load-bearing — read before writing SMT):**
+
+The path-checker that runs during verify scans the source line for
+\`asc(\` / \`desc(\` and pins ALL Bool bindings using this rule:
+
+  - \`desc(...)\` found on path → binding pinned to **true**
+  - \`asc(...)\` found on path → binding pinned to **false**
+
+So "true" means "the correct/spec-compliant ordering is used". The constant
+name MUST reflect the spec state (what is true when the code is correct),
+not the bug state (what is true when the code is broken). If the constant
+name implies the WRONG polarity, future readers and future LLMs will emit
+inverted polarity and the verify results will be wrong.
+
+Canonical SMT shape (spec-flavored constant, asserted true):
 \`\`\`
-(declare-const out_of_order_pair_exists Bool)
-(assert (= out_of_order_pair_exists true))
+(declare-const result_returns_k_most_recent Bool)
+(assert (= result_returns_k_most_recent true))
 \`\`\`
-Canonical prose: "must be sorted ascending", "events must occur in
-chronological order", "the result must be monotonically increasing".
+Polarity walkthrough (asc/desc dogfood example):
+- Bug code (\`.orderBy(asc(schema.invocations.date))\`):
+    path-checker pins \`result_returns_k_most_recent = false\`
+    negated-invariant = \`(not (= result_returns_k_most_recent true))\` = true
+    Z3 SAT (false satisfies both pin and negated-invariant) → **violated** ✓
+- Fixed code (\`.orderBy(desc(schema.invocations.date))\`):
+    path-checker pins \`result_returns_k_most_recent = true\`
+    negated-invariant = \`(not (= result_returns_k_most_recent true))\` = false
+    Z3 UNSAT → **holds** ✓
+
+BAD (bug-flavored name — DO NOT use this shape):
+\`\`\`
+declarations: ["(declare-const recent_invocations_excluded_by_asc_limit Bool)"]
+assertion: "(assert (= recent_invocations_excluded_by_asc_limit true))"
+\`\`\`
+Why bad: the constant name says "excluded" (the bug condition), but the
+assertion says it equals true. The path-checker is name-agnostic and pins
+on asc/desc presence. This creates a naming mismatch that confuses future
+LLMs and human readers: they see a bug-flavored name asserted true and
+assume the polarity is correct when the convention is inverted.
+Use a spec-flavored name (what is true when the code is correct) so the
+naming convention is consistent with the path-checker's pin rule.
+
+Canonical prose: "the result must include the K most recent entries",
+"elements must be in descending chronological order",
+"the query must use descending ordering for the relevant column".
 
 ## kind: "taint"
 The violation is "untrusted data reaches a dangerous sink without
