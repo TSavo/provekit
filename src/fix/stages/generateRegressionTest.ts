@@ -157,7 +157,7 @@ export async function generateRegressionTest(args: {
 
   if (fixedRun.exitCode !== 0) {
     throw new Error(
-      `oracle #9a FAIL: test did not pass against fixed code. exitCode=${fixedRun.exitCode}, stdout=${fixedRun.stdout.slice(0, 500)}`,
+      `oracle #9a FAIL: test did not pass against fixed code. exitCode=${fixedRun.exitCode}, stdout=${fixedRun.stdout.slice(0, 500)}, stderr=${fixedRun.stderr.slice(0, 500)}`,
     );
   }
 

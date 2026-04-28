@@ -48,16 +48,16 @@ export function registerVitest(): void {
       return 0;
     },
     resolveRunnerBinary: (projectRoot) => join(projectRoot, "node_modules", ".bin", "vitest"),
-    // --include overrides the project's vitest.config include glob so our
-    // regression test file is picked up regardless of where the project
-    // expects tests. promptlib for example uses include: ["tests/**/*.test.ts"]
-    // and would silently match zero tests when we drop the test under src/.
-    // Passing the file path as --include ensures vitest runs it whatever the
-    // project's config says.
+    // The positional arg filters which files to run. We do NOT pass
+    // --include — vitest 4.x removed it as a CLI flag and CAC throws
+    // CACError to stderr, leaving stdout empty (manifests as oracle #9a
+    // FAIL with no diagnostic). The config-level include must be wide
+    // enough to MATCH the test file; setupOverlayForTest widens the
+    // overlay's vitest.config to a permissive glob so the positional
+    // arg can do its job regardless of the project's own restrictions.
     invocation: (testFile) => [
       "run",
       testFile,
-      `--include=${testFile}`,
       "--reporter=default",
     ],
     parseOutcome: (exitCode, stdout, _stderr) => ({
