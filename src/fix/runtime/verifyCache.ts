@@ -28,12 +28,13 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "fs";
 import { join } from "path";
 import { createHash } from "crypto";
 import type { StoredInvariant } from "./invariantStore.js";
-import type { BindingResolution, InvariantVerdict, VerifyReport } from "./verify.js";
+import type { BindingResolution, InvariantVerdict, VerifyOptions, VerifyReport } from "./verify.js";
 import { verifyAll } from "./verify.js";
 
 // ---------------------------------------------------------------------------
@@ -146,26 +147,52 @@ function ensureCacheGitignored(projectRoot: string): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * Substrate identity token. Step 5 of the spec made path-level Z3
+ * verdicts a load-bearing piece of the cached value: those verdicts
+ * depend on the substrate's data_flow graph + on the live source
+ * content at each path step. The fingerprint must invalidate when the
+ * substrate flips, otherwise a `provekit analyze` rebuild won't
+ * surface as a cache miss and the user gets stale "holds" verdicts.
+ *
+ * Cheap proxy: include the substrate file's mtime + size. Substrate
+ * rebuilds are wholesale (the SAST builder writes the db fresh), so
+ * mtime changes whenever the graph changes. If the file is missing,
+ * we use a sentinel — a later run that builds the substrate will
+ * naturally invalidate every entry.
+ */
+function substrateIdentity(projectRoot: string): string {
+  const dbPath = join(projectRoot, ".provekit", "provekit.db");
+  if (!existsSync(dbPath)) return "no-substrate";
+  try {
+    const stat = statSync(dbPath);
+    return `${stat.mtimeMs.toFixed(0)}:${stat.size}`;
+  } catch {
+    return "no-substrate";
+  }
+}
+
+/**
  * Compute the cache key for an invariant given its currently-resolved
  * bindings. Per the spec: hash of (invariant.id + each binding's
  * resolved nodeId + each binding's resolved content hash).
+ *
+ * v1+step5 extension: the fingerprint also folds in a substrate
+ * identity token (mtime + size of `.provekit/provekit.db`). Path-level
+ * Z3 verdicts are part of the cached value now, and they depend on
+ * the substrate's data_flow graph plus live source content. Without
+ * this, a `provekit analyze` rebuild + an unchanged `verify` invocation
+ * would silently return stale path verdicts.
  *
  * Bindings are sorted by smt_constant before hashing so the fingerprint
  * is stable across binding-iteration order. A decayed binding folds its
  * decay marker into the fingerprint — when a previously decayed binding
  * resolves cleanly on a later run (or vice versa), the fingerprint
  * changes and the cache misses, which is the desired behavior.
- *
- * Falls back to the recorded node block from the StoredInvariant when a
- * BindingResolution doesn't carry a fresh nodeId/contentHash — v1's
- * BindingResolution shape only exposes status/decayKind/reason; the
- * spec's "resolved nodeId + content hash" come from the substrate-aware
- * resolver landing later. Using the stored node block as the fallback
- * keeps the cache key stable on repeat runs against the same substrate.
  */
 export function fingerprint(
   invariant: StoredInvariant,
   bindingResolutions: BindingResolution[],
+  projectRoot?: string,
 ): string {
   const byConstant = new Map(
     bindingResolutions.map((r) => [r.smt_constant, r]),
@@ -179,10 +206,6 @@ export function fingerprint(
     const r = byConstant.get(b.smt_constant);
     return {
       c: b.smt_constant,
-      // The recorded node block IS the v1 stand-in for "resolved nodeId
-      // + content hash". When step 3's substrate-aware resolver populates
-      // BindingResolution with live node identity this block flips over
-      // to read from `r` directly.
       file: b.node.filePath,
       hash: b.node.nodeHash,
       startLine: b.node.startLine,
@@ -195,6 +218,7 @@ export function fingerprint(
   const payload = JSON.stringify({
     id: invariant.id,
     bindings: parts,
+    substrate: projectRoot ? substrateIdentity(projectRoot) : null,
   });
   return createHash("sha256").update(payload).digest("hex").slice(0, 32);
 }
@@ -306,15 +330,18 @@ function cacheKey(invariantId: string, fingerprint: string): string {
  * (fingerprint, verdict) pair per invariant. Stale entries for
  * invariants no longer on disk get dropped on this rewrite.
  */
-export function verifyAllCached(projectRoot: string): CachedVerifyReport {
+export async function verifyAllCached(
+  projectRoot: string,
+  options: VerifyOptions = {},
+): Promise<CachedVerifyReport> {
   const cache = loadCache(projectRoot);
-  const fresh = verifyAll(projectRoot);
+  const fresh = await verifyAll(projectRoot, options);
 
   const next = new Map<string, CacheEntry>();
   const verdicts: CachedInvariantVerdict[] = [];
 
   for (const v of fresh.verdicts) {
-    const fp = fingerprint(v.invariant, v.bindings);
+    const fp = fingerprint(v.invariant, v.bindings, projectRoot);
     const key = cacheKey(v.invariant.id, fp);
     const hit = cache.get(key);
 
@@ -348,12 +375,24 @@ export function verifyAllCached(projectRoot: string): CachedVerifyReport {
   const cacheHits = verdicts.filter((v) => v.cacheStatus === "hit").length;
   const cacheMisses = verdicts.length - cacheHits;
 
+  // Recompute summary off the verdicts we ACTUALLY return — for cache
+  // hits, the displayed verdict is the cached one, so its status (not
+  // the freshly-computed status) governs the summary counts. The two
+  // will agree as long as the fingerprint contract is honored, but the
+  // recompute keeps display + counts internally consistent if a cache
+  // entry's status diverges (e.g., schema migration or a cache that
+  // outlives a verdict-shape change).
+  const summary = {
+    total: verdicts.length,
+    holds: verdicts.filter((v) => v.status === "holds").length,
+    decayed: verdicts.filter((v) => v.status === "decayed").length,
+    violated: verdicts.filter((v) => v.status === "violated").length,
+    cacheHits,
+    cacheMisses,
+  };
+
   return {
     verdicts,
-    summary: {
-      ...fresh.summary,
-      cacheHits,
-      cacheMisses,
-    },
+    summary,
   };
 }

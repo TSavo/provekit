@@ -201,6 +201,74 @@ verification) and surfaces the result of each. When the LLM's intent
 extraction fails any gate, the intent gets dropped from the bundle, not
 shipped with a "trust me bro" caveat.
 
+## One fork: the verifier's verdict
+
+The deepest architectural compression: **the pipeline forks exactly once,
+and the fork is mechanical**. Every input shape, every harness, every
+intake direction, every input kind (bug report / change request / commit /
+property assertion) routes through the same downstream pipeline. The only
+branching point is the verifier's verdict on the derived invariant
+against the current code:
+
+```
+intake (any harness, any input kind, prospective or retrospective)
+  → B0 derives intent
+  → C1 mints invariant
+  → verifier checks invariant against current code (path enumerator + Z3)
+       ├── holds   → emit invariant + missing tests, ship
+       └── violated → C3 generates patch + emit invariant + missing tests, ship
+```
+
+The fork has nothing to do with whether the user typed "fix this bug" or
+"add this feature" or whether a commit just landed or whether an LLM
+agent called `/prove`. Those are all upstream concerns the harnesses
+handle; the pipeline sees an intent and a codebase and asks Z3 whether
+the codebase satisfies the intent's invariant. Z3's verdict is the only
+routing signal. No spiky-intelligence decisions inside the pipeline.
+
+Two consequences of this compression that simplify the architecture:
+
+**Bug-vs-change is non-distinguishing.** Both produce intent → invariant
+shapes the verifier handles identically. A bug report yields an invariant
+that says "this state must not be reachable." A change request yields an
+invariant that says "this property must hold." The verifier treats them
+the same way: ask if the code currently satisfies the property.
+
+**Retrospective-vs-prospective is non-distinguishing.** Both produce the
+same artifact-of-change shape feeding into B0. A landed commit's diff
+yields one intent; a typed problem statement yields one intent; the
+verifier doesn't know or care which. It checks the invariant against the
+codebase as it stands.
+
+What differs between the cases is the empirical distribution over
+verdicts:
+
+- **Retrospective intake (commit just landed)** typically returns "holds"
+  — the commit usually establishes the property. C3 is skipped; we get
+  invariant + missing tests. (Exception: the commit may have fixed only
+  one path while the invariant covers a wider sink. Verifier flags
+  un-protected paths; C3 fires; codebase gets the fix the human didn't
+  write.)
+
+- **Prospective intake (user states a property)** typically returns
+  "violated" — the user is filing because something's wrong. C3 fires.
+  (Exception: the user is asserting something that's already true.
+  Verifier returns "holds"; ship invariant + missing tests; no patch.
+  The user gets a permanent constraint without any code change.)
+
+The pipeline doesn't know about these distributions. It just routes on
+verdicts. The cases above are emergent properties of how the harnesses
+shape inputs, not architectural fork-points.
+
+This is what makes "the constraint is the product" mechanically true.
+**The invariant is always shipped. The patch is conditional
+infrastructure to make the invariant true when the code disagrees.** The
+invariant has primacy; everything else (test, patch, hook installation)
+is in service of locking it in. A run that ships only an invariant + a
+test (no patch) is a complete and successful pipeline run, not a
+degenerate case. The constraint corpus grew by one; the codebase
+already satisfied it.
+
 ## The mechanism, end-to-end
 
 ```
@@ -314,6 +382,95 @@ historical is one-time bootstrap; continuous is zero-friction always-on;
 report-only is zero-write safety mode; MCP is conversational pull. Pick
 the harness shape that matches the deployment context; the underlying
 guarantees compose identically.
+
+## Operational layering: when does each piece run?
+
+The five harnesses describe *who* triggers the pipeline. The operational
+layering describes *when* each component within the pipeline runs and
+what it's allowed to invoke. Two strict rules govern this layering:
+
+1. **Static analysis runs everywhere, all the time.** Z3, path
+   enumeration, decay detection, cache lookup — these are deterministic
+   and fast (cache-warm). They have no token cost and no LLM dependency.
+   Run them on every keystroke if you can; certainly on every commit.
+
+2. **The LLM runs only at gate-promotion moments.** Intent extraction
+   (B0), invariant minting (C1), patch generation (C3), test generation
+   (C5) — these have token cost and LLM-shaped failure modes. Fire them
+   only at moments where a permanent obligation is being created or a
+   user has explicitly asked for one.
+
+Under those rules, the operational layering breaks into four tiers:
+
+### Tier 1 — File-edit (sync, static, sub-second)
+
+Triggered by IDE on-edit, Claude Code hook on save, or a fast `provekit
+verify --changed-files <paths>` invocation. Re-checks only invariants
+whose bindings touch the changed files; the rest cache-hit. No LLM.
+
+The user gets continuous correctness pressure at typing speed — every
+edit is checked against every standing constraint that could be
+affected, with sub-second feedback. This is the lowest-cost, highest-
+frequency tier; if performance ever pushes it past one second per edit,
+the cache is failing and the architecture has a real bug.
+
+### Tier 2 — Pre-commit (sync, static, seconds)
+
+Triggered by `git commit`. Runs the four horsemen — tsc / lint / test /
+prove. The prove gate runs the full constraint sweep, with
+cache-warmth keeping it under 5 seconds on typical commits. Blocks the
+commit on any violation. No LLM.
+
+This is the deterministic gate that prevents regressions of any standing
+constraint. It is the moat. It is what makes "AI velocity is correctness"
+mechanically true: every commit, no matter how fast it was generated,
+gets verified against the codebase's accumulated impossibility set
+before it lands.
+
+### Tier 3 — Offline-on-commit (async, LLM, minutes)
+
+Triggered by a successful commit landing (post-receive hook, GitHub
+webhook, similar). The commit gets routed to an offline harness — a
+worker pool, a cloud function, a holyship agent — that runs the FULL
+pipeline against it: B0 captures the diff+message as an intent, C1 mints
+a candidate constraint, the verifier checks the codebase, conditional
+C3 generates any patch needed, C5 emits any missing test. Output gets
+routed back as a PR or follow-up commit on the user's branch with the
+augmentations.
+
+This is the *constraint-minting* tier. Tier 2 enforces the existing
+corpus; Tier 3 grows it. Every commit becomes a candidate for a new
+permanent obligation, processed asynchronously so the developer's loop
+isn't blocked. The user pays no commit-time latency — the work happens
+between when they commit and when they next look at their PR.
+
+### Tier 4 — Explicit user-triggered (sync or async, LLM, minutes)
+
+Triggered when the user explicitly invokes the pipeline: `provekit fix
+<issue>`, the MCP `/prove` tool from inside an LLM conversation, the
+interactive harness reading from GitHub Issues or Linear. The full
+pipeline runs; cost is paid because the user explicitly chose to.
+
+### Why the layering matters
+
+The two rules at the top — "static everywhere, LLM at promotion only" —
+are what make ProvekIt *cheap to run continuously and expensive only at
+moments that earn the cost*. A team can install the Tier 1 hook and pay
+nothing per edit; install the Tier 2 hook and pay a few seconds per
+commit; opt into the Tier 3 worker for ongoing constraint mining; and
+explicitly invoke Tier 4 when they file an issue.
+
+The same code path serves all four tiers — the verifier's static gate
+is identical at Tiers 1 and 2; the LLM-touching pipeline is identical
+at Tiers 3 and 4. Only the trigger and the latency budget change. The
+architecture exposes the right surface (`verify`, `fix`, MCP tool,
+offline worker) for each tier; the underlying machinery is the universal
+pipeline this spec describes.
+
+This layering is what makes constraint-driven development *operational*
+at every team size. The expensive tier is amortized across the team;
+the cheap tier runs at every keystroke; the gates compose; correctness
+ratchets up monotonically while developer velocity is preserved.
 
 ## Holyship: ProvekIt as the proof gate
 

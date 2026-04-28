@@ -30,6 +30,8 @@
  */
 
 import { execSync } from "child_process";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { eq } from "drizzle-orm";
 import type { Db } from "../../db/index.js";
 import { nodes, files } from "../../sast/schema/nodes.js";
@@ -57,6 +59,13 @@ export interface CheckPathOptions {
    * default to that and let the CLI override via `--timeout`.
    */
   timeoutMs?: number;
+  /**
+   * Project root used by the kind-aware "order" emitter to resolve
+   * each path step's file path on disk. When omitted, the kind-aware
+   * emitter is silently skipped (the verdict will fall through to
+   * undecidable for non-tautological invariants on best-effort paths).
+   */
+  projectRoot?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +93,7 @@ export async function checkPath(
 
   // --- 1. Symbolically execute forward over the path, accumulating ----
   // --- path-derived SMT assertions. ------------------------------------
-  const symbolic = symbolicallyExecute(path, invariant, db);
+  const symbolic = symbolicallyExecute(path, invariant, db, options.projectRoot);
 
   // --- 2. Build the Z3 query: ------------------------------------------
   //   declarations
@@ -101,8 +110,10 @@ export async function checkPath(
   // --- 3. Run Z3 with the parameterized timeout. -----------------------
   const z3 = runZ3(smt, timeoutMs);
 
-  // --- 4. Map Z3 result + path-constraint count to a PathVerdict. ------
-  return classify(z3, smt, symbolic.emittedPathConstraints, timeoutMs);
+  // --- 4. Map Z3 result + REAL path-constraint count to a PathVerdict.
+  // We trust SAT only when symbolic execution produced at least one
+  // genuinely informative constraint (not the reachability tautology).
+  return classify(z3, smt, symbolic.realPathConstraints, timeoutMs);
 }
 
 // ---------------------------------------------------------------------------
@@ -112,8 +123,26 @@ export async function checkPath(
 interface SymbolicState {
   /** SMT-LIB assertions derived by walking the path. */
   pathAssertions: string[];
-  /** Number of constraints actually emitted. Discriminator for SAT trust. */
+  /**
+   * Total number of (assert ...) lines emitted, counting both
+   * reachability tautologies and real constraints. Kept for
+   * diagnostics only — DO NOT use as the SAT-trust discriminator.
+   */
   emittedPathConstraints: number;
+  /**
+   * Number of GENUINELY informative constraints emitted (kind-aware
+   * emissions only; reachability tautologies excluded). This is the
+   * discriminator `classify()` uses to decide whether a Z3 SAT result
+   * represents a real violation or just `(not invariant)` being
+   * trivially satisfiable in isolation.
+   *
+   * Why two counters: reachability tautologies (`(or (= c c) true)`)
+   * tick `emittedPathConstraints` but add zero real information to
+   * the Z3 query. Without a separate real-constraint counter, ANY
+   * step landing on a binding line would defeat the SAT-trust guard
+   * and surface every non-tautological invariant as "violated."
+   */
+  realPathConstraints: number;
 }
 
 /**
@@ -131,29 +160,83 @@ interface SymbolicState {
  *
  * Without `db`, we cannot resolve nodeIds to (file, line) and therefore
  * cannot match steps to bindings; we emit nothing.
+ *
+ * KIND-AWARE EMISSION (v1 covers ONLY kind === "order"):
+ *
+ * For order-kind invariants we read the source line at each path step
+ * and look for the substrings `asc(` / `desc(` (the orderBy proxy
+ * shipped by the dogfood asc/desc bug). When a Bool-sorted binding's
+ * recorded node range covers a step's line, we emit a real Z3
+ * constraint pinning the binding's constant: `false` if the source
+ * uses `asc(`, `true` if `desc(`. This gives Z3 something to
+ * disagree with when the post-revert source no longer matches the
+ * invariant's "must use descending" claim. realPathConstraints ticks
+ * for these, so a SAT result here is trustworthy as a real violation.
+ *
+ * Brittle assumptions documented:
+ *   - The Bool binding's intended semantics is "uses descending
+ *     ordering" (true = desc, false = asc). C1's prompt steers toward
+ *     this naming/polarity but doesn't enforce it. If a binding's
+ *     polarity is inverted, the violation will surface as a HOLDS
+ *     instead — false negative, not a false positive.
+ *   - Source-text matching is `asc(` / `desc(` literal — a project
+ *     using `ascending(` or sorting by index expression will fall
+ *     through to the reachability tautology.
+ *   - Other kinds (arithmetic, set_uniqueness, cardinality, taint)
+ *     get the reachability tautology only, which downgrades SAT to
+ *     "undecidable" via the realPathConstraints guard. v1 ships
+ *     order-class detection only; later revs add per-kind emitters.
+ *
+ * The goal of this v1 emitter: pass the spec's acceptance criterion
+ * #3 (planted asc/desc revert in promptlib produces a violated
+ * verdict with a Z3 witness). Full kind coverage is later work.
  */
 function symbolicallyExecute(
   path: Path,
   invariant: StoredInvariant,
   db: Db | undefined,
+  projectRoot: string | undefined,
 ): SymbolicState {
   const state: SymbolicState = {
     pathAssertions: [],
     emittedPathConstraints: 0,
+    realPathConstraints: 0,
   };
 
   if (!db) return state;
 
+  // Per-file source cache so we don't re-read files on each step.
+  const sourceCache = new Map<string, string[] | null>();
+  const readSource = (filePath: string): string[] | null => {
+    if (sourceCache.has(filePath)) return sourceCache.get(filePath) ?? null;
+    if (!projectRoot) {
+      sourceCache.set(filePath, null);
+      return null;
+    }
+    const abs = filePath.startsWith("/") ? filePath : join(projectRoot, filePath);
+    if (!existsSync(abs)) {
+      sourceCache.set(filePath, null);
+      return null;
+    }
+    try {
+      const text = readFileSync(abs, "utf-8");
+      const lines = text.split("\n");
+      sourceCache.set(filePath, lines);
+      return lines;
+    } catch {
+      sourceCache.set(filePath, null);
+      return null;
+    }
+  };
+
+  // -- Pass 1: reachability tautologies. -------------------------------
   // For each step on the path, look up its file + line. If those
-  // coordinates intersect any binding's recorded node range, that
-  // binding is "in scope" on this path. We emit a comment marking the
-  // role + a no-op assertion that ties the binding's SMT constant into
-  // the query (so Z3 sees the constant as referenced; without this it
-  // would be a free variable Z3 could trivially set to anything).
-  //
-  // The "no-op" is `(or (= c c) true)` — always true, but mentioning
-  // c keeps the variable in the assertion's syntactic surface. The
-  // counter still ticks because we did establish reachability.
+  // coordinates intersect any binding's recorded node range, emit a
+  // reachability tautology. This ticks emittedPathConstraints for
+  // diagnostic visibility but DELIBERATELY does not contribute to
+  // realPathConstraints — without a kind-aware real constraint
+  // following, a SAT result here would be `(not invariant)` trivially
+  // satisfiable in isolation, which is not a real violation.
   for (const step of path.steps) {
     const loc = resolveStepLocation(db, step.nodeId);
     if (!loc) continue;
@@ -167,14 +250,87 @@ function symbolicallyExecute(
         `; path step ${step.nodeId.slice(0, 8)} at ${loc.filePath}:${loc.line} ` +
           `(slot=${step.slot}) reaches binding ${binding.smt_constant}`,
       );
-      // Reachability fact: the binding's constant is referenced by this
-      // path. Tautological in isolation; meaningful in aggregate
-      // because it forces Z3 to treat the constant as path-relevant
-      // rather than free.
       state.pathAssertions.push(
         `(assert (or (= ${binding.smt_constant} ${binding.smt_constant}) true))`,
       );
       state.emittedPathConstraints++;
+    }
+  }
+
+  // -- Pass 2: kind-aware emission (v1 covers ONLY kind === "order"). --
+  //
+  // Decoupled from binding-range intersection on purpose. The dogfood
+  // example illustrates why: the binding's `node` block can point at a
+  // schema column declaration, while `asc(`/`desc(` lives at the
+  // orderBy callsite — different lines, often different files. Gating
+  // kind-aware emission on the same-line intersection used for the
+  // reachability tautology would silently miss the actual ordering
+  // operation and the SAT-trust guard would never engage.
+  //
+  // For kind="order" we scan every path step's resolved source line
+  // for the substrings `asc(` / `desc(`. The first unambiguous polarity
+  // we encounter pins ALL Bool-sorted bindings on the invariant. We
+  // pin once per path, not once per step, to avoid contradictory
+  // pins from callers and callees both showing on the same path.
+  //
+  // Brittle assumptions (intentional for v1):
+  //   - The Bool binding's intended polarity is "true = uses
+  //     descending ordering". C1's prompt nudges toward this, but
+  //     polarity isn't enforced. Inverted polarity surfaces as a
+  //     false negative, never a false positive.
+  //   - Source matching is literal `asc(` / `desc(`. Codebases using
+  //     `ascending(`, `sql.desc`, or hand-rolled comparators fall
+  //     through to the reachability-tautology-only state, which
+  //     downgrades SAT to undecidable via the realPathConstraints
+  //     guard. Honest gray zone, not a false alarm.
+  if (invariant.smt.kind === "order") {
+    const boolBindings = invariant.bindings.filter((b) => b.sort === "Bool");
+    if (boolBindings.length > 0) {
+      let chosenPolarity: "asc" | "desc" | null = null;
+      let chosenLoc: { filePath: string; line: number } | null = null;
+
+      for (const step of path.steps) {
+        const loc = resolveStepLocation(db, step.nodeId);
+        if (!loc) continue;
+        const lines = readSource(loc.filePath);
+        if (!lines) continue;
+        const idx = loc.line - 1;
+        if (idx < 0 || idx >= lines.length) continue;
+
+        // Window: ±2 lines to absorb multi-line orderBy(asc(...)) calls.
+        const winStart = Math.max(0, idx - 2);
+        const winEnd = Math.min(lines.length, idx + 3);
+        const window = lines.slice(winStart, winEnd).join("\n");
+        const hasDesc = /\bdesc\(/.test(window);
+        const hasAsc = /\basc\(/.test(window);
+
+        if (hasDesc && !hasAsc) {
+          chosenPolarity = "desc";
+          chosenLoc = loc;
+          break;
+        }
+        if (hasAsc && !hasDesc) {
+          chosenPolarity = "asc";
+          chosenLoc = loc;
+          break;
+        }
+        // hasAsc && hasDesc: ambiguous on this step, keep scanning.
+        // neither: keep scanning.
+      }
+
+      if (chosenPolarity && chosenLoc) {
+        const value = chosenPolarity === "desc" ? "true" : "false";
+        for (const binding of boolBindings) {
+          state.pathAssertions.push(
+            `; kind-aware (order): ${chosenLoc.filePath}:${chosenLoc.line} uses ${chosenPolarity}(...) — pinning ${binding.smt_constant} = ${value}`,
+          );
+          state.pathAssertions.push(
+            `(assert (= ${binding.smt_constant} ${value}))`,
+          );
+          state.emittedPathConstraints++;
+          state.realPathConstraints++;
+        }
+      }
     }
   }
 
@@ -407,20 +563,21 @@ function fetchWitness(smt: string, timeoutMs: number): string | undefined {
 // ---------------------------------------------------------------------------
 
 /**
- * Map (Z3 result, path-constraint count) to a PathVerdict.
+ * Map (Z3 result, real-path-constraint count) to a PathVerdict.
  *
- * Critical guard: SAT without any emitted path constraints is NOT a
- * real violation — it just means `(not assertion)` is trivially
+ * Critical guard: SAT without any genuinely informative path constraint
+ * is NOT a real violation — it just means `(not assertion)` is trivially
  * satisfiable for any non-tautological invariant. Reporting that as
  * "violated" would flag every real invariant the moment we wire this
  * into `provekit verify`. We surface those as "undecidable" with an
- * honest reason. The discriminator is the constraint counter from
- * symbolicallyExecute.
+ * honest reason. The discriminator is the realPathConstraints counter
+ * from symbolicallyExecute (NOT emittedPathConstraints — reachability
+ * tautologies tick the latter without contributing to Z3's reasoning).
  */
 function classify(
   z3: Z3Result,
   smt: string,
-  emittedPathConstraints: number,
+  realPathConstraints: number,
   timeoutMs: number,
 ): PathVerdict {
   switch (z3.result) {
@@ -428,26 +585,26 @@ function classify(
       return {
         status: "holds",
         reason:
-          emittedPathConstraints > 0
-            ? `path satisfies invariant under ${emittedPathConstraints} path constraint(s)`
-            : "invariant is a tautology under declared sorts (no path constraints needed)",
+          realPathConstraints > 0
+            ? `path satisfies invariant under ${realPathConstraints} real path constraint(s)`
+            : "invariant holds with no real path constraints (tautology under declared sorts, or path constraints not derivable)",
       };
 
     case "sat": {
-      if (emittedPathConstraints === 0) {
+      if (realPathConstraints === 0) {
         return {
           status: "undecidable",
           reason:
-            "Z3 returned SAT but no path constraints were derivable; " +
+            "Z3 returned SAT but no real path constraints were derivable; " +
             "the negated invariant is trivially satisfiable in isolation, so this SAT does not represent a real violation. " +
-            "v1 symbolic execution did not reach the bindings on this path.",
+            "v1 kind-aware symbolic execution did not produce an informative constraint on this path.",
         };
       }
       const witness = fetchWitness(smt, timeoutMs);
       return {
         status: "violated",
         witness,
-        reason: `path-feasible counterexample found under ${emittedPathConstraints} path constraint(s)`,
+        reason: `path-feasible counterexample found under ${realPathConstraints} real path constraint(s)`,
       };
     }
 

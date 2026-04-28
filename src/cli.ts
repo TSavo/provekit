@@ -590,7 +590,8 @@ async function runInvariants(args: string[]): Promise<void> {
   // Lazy-load runtime modules so the rest of the CLI doesn't pay the
   // import cost when invariants commands aren't being used.
   const { readInvariants, retireInvariant } = await import("./fix/runtime/invariantStore.js");
-  const { verifyAll, formatReport, exitCodeFor } = await import("./fix/runtime/verify.js");
+  const { formatReport, exitCodeFor } = await import("./fix/runtime/verify.js");
+  const { verifyAllCached } = await import("./fix/runtime/verifyCache.js");
 
   switch (sub) {
     case "list": {
@@ -659,13 +660,43 @@ async function runInvariants(args: string[]): Promise<void> {
     case "verify": {
       const verbose = rest.includes("--verbose") || rest.includes("-v");
       const json = rest.includes("--json");
-      const report = verifyAll(projectRoot);
-      if (json) {
-        console.log(JSON.stringify(report, null, 2));
-      } else {
-        console.log(formatReport(report, { verbose }));
+      const timeoutIdx = rest.indexOf("--timeout");
+      const timeoutSeconds =
+        timeoutIdx >= 0 && rest[timeoutIdx + 1]
+          ? parseInt(rest[timeoutIdx + 1]!, 10)
+          : undefined;
+      const maxPathsIdx = rest.indexOf("--max-paths");
+      const maxPaths =
+        maxPathsIdx >= 0 && rest[maxPathsIdx + 1]
+          ? parseInt(rest[maxPathsIdx + 1]!, 10)
+          : undefined;
+
+      try {
+        const report = await verifyAllCached(projectRoot, {
+          timeoutMs: timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined,
+          maxPaths,
+        });
+        if (json) {
+          console.log(JSON.stringify(report, null, 2));
+        } else {
+          console.log(formatReport(report, { verbose }));
+          // Surface the cache line at the bottom (spec section 7).
+          if (report.summary.total > 0) {
+            console.log(
+              `cache: ${report.summary.cacheHits}/${report.summary.total} hit, ` +
+              `${report.summary.cacheMisses} re-evaluated`,
+            );
+          }
+        }
+        process.exit(exitCodeFor(report));
+      } catch (err) {
+        // Spec exit code 3: internal error (Z3 crashed, substrate
+        // unreadable, etc.). Surface stderr so CI logs catch it.
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`provekit verify: internal error: ${msg}`);
+        if (err instanceof Error && err.stack) console.error(err.stack);
+        process.exit(3);
       }
-      process.exit(exitCodeFor(report));
       return;
     }
 
