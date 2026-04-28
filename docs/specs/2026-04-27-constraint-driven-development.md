@@ -553,6 +553,186 @@ extension goes further: a customer can plug their own intent extractor,
 their own toolpath, their own sandbox. The constraint store is OUR data
 structure; whatever populated it is just a tool that wrote into it.
 
+## The pipeline as a composition of swappable processes
+
+Once you accept "B is a plugin," the right next move is recognizing
+that B is *not one plugin*. B is a **composition of N plugins**, one
+per pipeline stage, each with its own structured contract.
+
+The reference fix loop chains these stages:
+
+```
+B0 → Investigate → Locate → Classify → B3 → C1 → C1.5 → C2 → C3 → C4 → C5 → C6 → D1 → D2
+```
+
+Each box is a process behind an interface. Each can be replaced by any
+other process that respects the same contract:
+
+- **Investigate** — `(BugSignal, ProjectTree) → CandidateLocation[]`. Our
+  reference is an LLM call; an integrator could use code search, an LSP
+  query, or a deterministic heuristic for known bug classes.
+- **Locate** — `CandidateLocation → BugLocus`. Our reference uses
+  ts-morph + dataflow walks; an IDE that already has an LSP can bind
+  there instead of re-parsing.
+- **C1 formulate-invariant** — `(BugSignal, BugLocus) → InvariantClaim`
+  (with Z3 SAT proof). LLM today; could be deterministic for recognized
+  bug-class shapes.
+- **C2 sandbox** — `ProjectRoot → OverlayHandle`. Git worktree on local
+  disk today; could be a container, microVM, in-process VFS, remote
+  workspace.
+- **C3 generate-fix** — `(OverlayHandle, InvariantClaim) → FixCandidate`.
+  Our LLM agent in an overlay; could be a different LLM, a different
+  toolpath, a deterministic synthesizer.
+- **C5 generate-regression-test** — same shape, same swap-ability.
+- **D2 apply-bundle** — our cherry-pick onto target; could be the IDE's
+  source-control API, a PR-creation service, a Slack-message-with-diff
+  bot.
+
+Every stage is fungible because every stage has a stable, structured
+contract. The reference fix loop pipes them in our preferred order with
+our preferred implementations. An integrator can replace any single
+stage without disturbing the rest. Want our Investigate but your own
+C3? Plug your C3 into the chain. Want our gate but a deterministic
+invariant-derivation backend instead of an LLM C1? Implement C1 as a
+SAT solver and feed it forward.
+
+This is the deepest expression of the Unix nature: **not one tool, but
+a pipeline of swappable tools, each contracted, each replaceable.** The
+reference fix loop is one particular `find | grep | xargs` of these
+stages; an integrator can write their own pipeline using their own
+tools at any stage.
+
+Practical consequence: every stage's input/output type should be a
+public, documented contract. The library entry points expose stages
+individually, not just `runFixLoop`. An integrator who wants only our
+C5 imports `generateRegressionTest` directly, feeds it their own
+InvariantClaim, gets a TestArtifact back. They don't need our
+orchestrator.
+
+This is also what makes "Part B as plugin" genuinely true rather than
+aspirational. B isn't ONE plugin slot — B is N plugin slots, one per
+stage, each with its own contract. Integrators don't have to choose
+between "use ours entirely" and "rebuild from scratch"; they pick
+stage by stage.
+
+What we ship today (the entire fix loop machinery: Investigate, Locate,
+Classify, B3, C1, C1.5, C2, C3, C4, C5, C6, D1, D2, plus B0
+retrospective, plus mine-history, plus the orchestrator, plus the
+LLMProvider abstraction) is collectively **the reference Part B
+implementation**. Not the canonical product surface; a worked example
+of what the contract looks like when you implement it. Same shape as
+Linux + GNU coreutils: the kernel is canonical (Part A); coreutils is
+one reference implementation of the userspace contract; busybox and
+Darwin are alternatives. The contract is what's stable; implementations
+vary.
+
+## Language partitioning: principles per language
+
+The principle library is **partitioned by language**, not flat. Universal
+axioms apply everywhere. Language-specific axioms apply only inside
+their language's universe.
+
+- `.provekit/principles/universal/` — applies to any language. The
+  starter seven (division-by-zero, modulo-by-zero, NaN equality,
+  null/undefined dereference, unhandled async failure, array index
+  out of bounds, use-after-close).
+- `.provekit/principles/c/` and `.provekit/principles/cpp/` — memory
+  safety axioms (use-after-free, double-free, buffer overflow, format-
+  string mismatches, return-pointer-to-local, integer signed-overflow
+  as UB, strict aliasing). Largest language-specific set because the
+  language's compile-time safety story is weakest.
+- `.provekit/principles/java/` — catch-Throwable, synchronized-DCL
+  needing volatile, ConcurrentModificationException via stale iterator,
+  string-equality-by-`==`, etc. Smaller set; Java's runtime catches
+  more.
+- `.provekit/principles/python/` — mutable default argument, late-
+  binding closures, `==` vs `is`, integer-division semantics. Small.
+- `.provekit/principles/rust/` — arithmetic overflow in release mode,
+  async-cancellation safety, Drop-order surprises. Smallest set; the
+  borrow checker enforces most of what would be axioms.
+- `.provekit/principles/go/` — nil-pointer deference (different shape
+  from JS), goroutine leaks, panic in deferred function, time.After
+  leaks in select loops.
+- `.provekit/principles/typescript/` — `==` vs `===` beyond NaN,
+  `this` binding in nested vs arrow function, hoisting with `var`,
+  truthiness coercion edge cases.
+
+Each language's bounded set stays small — typically 3-12 entries.
+Total library across all languages: maybe 40-60 entries in a mature
+state, never thousands. The size per language is *inversely
+proportional* to the language's compile-time safety story: stronger
+type system → more axioms absorbed by the compiler → smaller language-
+specific principle set.
+
+B0/C1 detects the project's language(s) at intake (TypeScript via
+package.json, Rust via Cargo.toml, Go via go.mod) and matches against
+universal + language-specific principle sets only. Cross-language
+matching is wasted work and a false-positive risk.
+
+## Rust gets value too: the layer above the type system
+
+The principle library is small for Rust because the borrow checker
+already enforces what would otherwise be axioms. But the **per-codebase
+observation corpus is unbounded everywhere, and Rust's clean substrate
+makes those observations *more* enforceable** than in any unsafe
+language.
+
+What ProvekIt's observation layer adds to a Rust codebase that the
+type system can't catch:
+
+- **Business-logic invariants.** "Every withdrawal debits account A
+  and credits account B atomically." Rust types model values, not
+  domain rules.
+- **Cross-module data integrity.** "Sum of debits equals sum of credits
+  across the ledger." Whole-program reasoning the borrow checker
+  doesn't perform.
+- **State-machine invariants.** "Order can only transition pending →
+  paid → shipped." Rust supports this with type-state, but most code
+  doesn't use type-state because it's expensive to write. ProvekIt
+  mints the invariant from a real bug; enforces it forever after with
+  no rewrite.
+- **API-contract invariants.** "Every authenticated request carries a
+  non-expired token at any call site requiring auth." Types express
+  presence, not expiration or auth-context-required-here.
+- **External-system invariants.** "Every database write is followed by
+  commit-or-rollback before the connection closes." Compiler can't see
+  the database; ProvekIt models resource lifecycle as state transitions.
+- **Concurrency observations beyond data races.** Rust prevents data
+  races; doesn't prevent deadlock patterns. Universal-over-paths
+  invariants catch lock-ordering violations and similar.
+
+Why those observations are MORE enforceable in Rust than in C/C++:
+
+1. **Cleaner substrate** — regular syntax, explicit lifetimes, annotated
+   mutability give the path enumerator free metadata.
+2. **Borrow check as precondition** — aliasing/lifetime properties are
+   already proven by the compiler; ProvekIt's reasoning gets to assume
+   them.
+3. **Pattern-matching exhaustiveness** — match arms are statically
+   exhaustive, making state-machine observations machine-checkable.
+4. **Const-evaluation** — `const fn` and const generics give the path
+   enumerator concrete values to symbolic-execute over.
+5. **Pre-filtered bug population** — bugs that survive into a Rust
+   codebase are almost by definition domain-logic bugs; ProvekIt's
+   value is highest exactly where the language stops doing your work.
+
+Strategic asymmetry across the market:
+
+- **C/C++:** Highest-pain, weak-existing-solution. Pitch is "Don't
+  rewrite in Rust. Install ProvekIt with the C++ axiom set; get
+  Rust-like memory-safety guarantees on your existing codebase."
+- **Rust:** Low-pain on primitives, high-pain on domain logic. Pitch
+  is "You already have memory safety. ProvekIt adds the layer above
+  the type system — business logic, state machines, cross-module
+  invariants, API contracts. The compiler catches what fits in a
+  type; ProvekIt catches what doesn't."
+
+Both markets are strong; different sales, equally legitimate. The
+universal axiom set is the same in both. The language-specific
+principle partition is large for one, small for the other. The
+observation corpus is unbounded in both — and that's the value-
+accumulating surface.
+
 ## Product constraints: ProvekIt's own impossibility set
 
 The architectural decisions in this doc form a constraint-driven spec
