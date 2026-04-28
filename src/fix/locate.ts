@@ -49,6 +49,40 @@ const LEAF_KINDS = new Set([
 // Max related-function entries (callers + callees) to avoid O(N) blowup.
 const MAX_RELATED = 50;
 
+// Path subtrees that are unlikely to be real patch targets. When a candidate's
+// resolved file path contains any of these segments, it is penalized in the
+// score below — vendored/built/reference code is rarely where the bug lives,
+// even if the LLM names it as a candidate. Match against path segments
+// (slash-bounded) so this stays robust to substring false positives like
+// `/var/folders/...` on macOS tmpdirs.
+const NON_SOURCE_SEGMENTS = [
+  "reference",
+  "vendor",
+  "node_modules",
+  "dist",
+  "build",
+];
+
+function isInNonSourceSubtree(path: string): boolean {
+  const segments = path.split("/");
+  for (const seg of NON_SOURCE_SEGMENTS) {
+    if (segments.includes(seg)) return true;
+  }
+  return false;
+}
+
+function investigateConfidenceTier(
+  c: "high" | "medium" | "low" | undefined,
+): number {
+  // 3 = high, 2 = medium, 1 = low, 0 = no Investigate signal at all.
+  // The 0 value matters: Intake-supplied refs (corpus, harvest, recognize)
+  // must not be ranked BELOW Investigate-low refs, only equal-tier-and-down.
+  if (c === "high") return 3;
+  if (c === "medium") return 2;
+  if (c === "low") return 1;
+  return 0;
+}
+
 // ---------------------------------------------------------------------------
 // Step 1: File resolution
 // ---------------------------------------------------------------------------
@@ -103,6 +137,13 @@ interface Candidate {
   sourceLine: number;
   ref: CodeReference;
   fileRow: { id: number; path: string; rootNodeId: string };
+  // Threaded from CodeReference for scoring. Carried on the Candidate
+  // (rather than re-derived inside matchScore) so resolveCandidates can
+  // compute path-shape once per ref.
+  investigateConfidence: "high" | "medium" | "low" | undefined;
+  isPrimary: boolean;
+  /** True if the RESOLVED file path sits in a non-source subtree (reference/, vendor/, etc.). */
+  inNonSourceSubtree: boolean;
 }
 
 function resolveCandidates(db: Db, signal: BugSignal): Candidate[] {
@@ -111,6 +152,15 @@ function resolveCandidates(db: Db, signal: BugSignal): Candidate[] {
   for (const ref of signal.codeReferences) {
     const fileRow = resolveFile(db, ref.file);
     if (!fileRow) continue;
+
+    // Score-shaping metadata is fixed for every Candidate produced from this
+    // ref: the resolved file path determines subtree-shape, and the upstream
+    // CodeReference carries the Investigate signals.
+    const refMeta = {
+      investigateConfidence: ref.investigateConfidence,
+      isPrimary: ref.isPrimary === true,
+      inNonSourceSubtree: isInNonSourceSubtree(fileRow.path),
+    };
 
     if (ref.line !== undefined) {
       // Line-level match: all nodes starting on that line
@@ -135,6 +185,7 @@ function resolveCandidates(db: Db, signal: BugSignal): Candidate[] {
           sourceLine: n.sourceLine,
           ref,
           fileRow,
+          ...refMeta,
         });
       }
     } else if (ref.function) {
@@ -172,6 +223,7 @@ function resolveCandidates(db: Db, signal: BugSignal): Candidate[] {
           sourceLine: n.sourceLine,
           ref,
           fileRow,
+          ...refMeta,
         });
       }
 
@@ -197,6 +249,7 @@ function resolveCandidates(db: Db, signal: BugSignal): Candidate[] {
             sourceLine: rootNode.sourceLine,
             ref,
             fileRow,
+            ...refMeta,
           });
         }
       }
@@ -222,6 +275,7 @@ function resolveCandidates(db: Db, signal: BugSignal): Candidate[] {
           sourceLine: rootNode.sourceLine,
           ref,
           fileRow,
+          ...refMeta,
         });
       }
     }
@@ -234,11 +288,40 @@ function resolveCandidates(db: Db, signal: BugSignal): Candidate[] {
 // Step 3: Pick the primary node
 // ---------------------------------------------------------------------------
 
-function matchScore(c: Candidate): [number, number, number] {
-  // [precision tier (higher = better), non-leaf bonus, negative span (larger span = worse)]
-  const tier = c.matchKind === "line" ? 2 : c.matchKind === "function" ? 1 : 0;
-  const leafPenalty = c.isLeaf ? 0 : 1; // prefer non-leaf for same-line candidates
-  return [tier, leafPenalty, -c.span];
+function matchScore(c: Candidate): number[] {
+  // Higher is better at every position. Comparison is lexicographic — earlier
+  // positions dominate later ones — so the tuple ORDERING expresses policy.
+  //
+  // Position 0: resolved-high-confidence-primary boost. When Investigate
+  //   marks a ref as `isPrimary` AND assigns it `high` confidence AND the
+  //   ref resolved in the substrate (we wouldn't be here otherwise), it
+  //   wins outright. This is rule (1) of task #145: prefer Investigate's
+  //   primary when it has high confidence and resolves.
+  //
+  // Position 1: investigate confidence tier (high=3, medium=2, low=1, none=0).
+  //   This is the fallback ordering when there is no high-confidence primary
+  //   among the resolved candidates — a medium primary still beats a low
+  //   candidate, etc. Rule (2): candidate locations are fallbacks.
+  //
+  // Position 2: non-source-subtree penalty. Candidates whose resolved path
+  //   sits in `reference/`, `vendor/`, `node_modules/`, `dist/`, or `build/`
+  //   score 0 here while real-source candidates score 1. This is rule (3):
+  //   penalize subtrees that are unlikely patch targets.
+  //
+  // Position 3: precision tier (line=2, function=1, file=0). The original
+  //   B2 ranking — prefer line refs over function-name refs over file-only.
+  //
+  // Position 4: non-leaf bonus (BinaryExpression beats Identifier on the
+  //   same line).
+  //
+  // Position 5: negative span (smaller node beats larger node). Existing
+  //   B2 tiebreak.
+  const isHighPrimary = c.isPrimary && c.investigateConfidence === "high" ? 1 : 0;
+  const investigateTier = investigateConfidenceTier(c.investigateConfidence);
+  const sourceSubtreeBonus = c.inNonSourceSubtree ? 0 : 1;
+  const precisionTier = c.matchKind === "line" ? 2 : c.matchKind === "function" ? 1 : 0;
+  const leafPenalty = c.isLeaf ? 0 : 1;
+  return [isHighPrimary, investigateTier, sourceSubtreeBonus, precisionTier, leafPenalty, -c.span];
 }
 
 function pickPrimary(candidates: Candidate[]): Candidate | null {
@@ -432,9 +515,22 @@ function queryPostDominanceRegion(db: Db, primaryNodeId: string): string[] {
  * Resolve a BugSignal's code references to a structural BugLocus via SAST queries.
  * Returns null if the signal has no resolvable code references.
  *
- * If multiple references resolve, picks the highest-confidence one. Ties break by
- * deepest (most-specific) non-leaf node covering the referenced line.
+ * Ranking, in priority order (see matchScore in this file):
+ *   1. Investigate's primary IF marked `high` confidence and resolved.
+ *   2. Investigate confidence tier (high > medium > low > none).
+ *   3. Source-subtree preference: paths in `reference/`, `vendor/`,
+ *      `node_modules/`, `dist/`, `build/` are penalized.
+ *   4. Precision tier: line > function > file-only.
+ *   5. Non-leaf preference: BinaryExpression beats Identifier on the same line.
+ *   6. Smaller span beats larger span (most-specific node).
+ *
  * Confidence: 1.0 exact file+line, 0.8 file+function (no line), 0.3 file-only.
+ *
+ * Rule (4) of task #145 — "when Locate's confidence in any candidate is below
+ * 0.5 AND a higher-confidence Investigate primary exists, use the primary
+ * anyway" — falls out of the ranking automatically: `isPrimary && high` is
+ * the top dimension, so a high-confidence primary always wins over any
+ * file-only (0.3) candidate even if the primary itself is file-only.
  */
 export function locate(db: Db, signal: BugSignal): BugLocus | null {
   const candidates = resolveCandidates(db, signal);

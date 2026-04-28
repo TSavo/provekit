@@ -313,6 +313,134 @@ describe("locate()", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Task #145 regression: Investigate's high-confidence primary in real
+  // source must beat a low-confidence candidate in a `reference/` subtree,
+  // even when both refs land in the same precision tier (file-only) and
+  // span tiebreak would have picked the smaller reference file.
+  //
+  // Symptom from /Users/tsavo/projects/promptlib AC#3 smoke run:
+  //   - Investigate identified `src/store/sqlite/repositories.ts` as
+  //     primary (high confidence) — a real source file.
+  //   - Locate then resolved to `reference/toolstac/core/prompt-store.ts:1`
+  //     at confidence 0.30 (file-only match in a non-source subtree).
+  //   - C3 patched the wrong file; C5 failed because the bogus locus had
+  //     broken imports; bundle returned null.
+  //
+  // The primary (src) file is intentionally LARGER than the reference file
+  // so the previous span tiebreak would have picked the wrong one — proving
+  // the new investigateConfidence + non-source-subtree dimensions actually
+  // dominate the score.
+  // -------------------------------------------------------------------------
+  it("prefers Investigate's high-confidence primary over a low-confidence candidate in a reference/ subtree", () => {
+    ({ db, tmpDir } = openTestDb());
+
+    // Real-source primary, intentionally LARGER (more nodes / bigger root span).
+    const srcSource = [
+      "export function listFeedback(limit: number) {",
+      "  // intentionally verbose so the file root span is large",
+      "  const sql = `SELECT * FROM feedback ORDER BY id ASC LIMIT ${limit}`;",
+      "  const rows = runQuery(sql);",
+      "  const filtered = rows.filter((r) => r.value !== null);",
+      "  const mapped = filtered.map((r) => ({ ...r, ts: Date.now() }));",
+      "  return mapped;",
+      "}",
+      "function runQuery(sql: string) { return [] as any[]; }",
+    ].join("\n");
+    const srcDir = join(tmpDir, "src", "store", "sqlite");
+    const srcPath = writeFixture(srcDir, "repositories.ts", srcSource);
+
+    // Reference subtree, intentionally SMALLER.
+    const refSource = "export const x = 1;\n";
+    const refDir = join(tmpDir, "reference", "toolstac", "core");
+    const refPath = writeFixture(refDir, "prompt-store.ts", refSource);
+
+    buildSASTForFile(db, srcPath);
+    buildSASTForFile(db, refPath);
+
+    // Both refs are file-only (matches the actual symptom — Investigate's
+    // LLM omitted lineRange for both). Primary first, candidate second —
+    // the order Investigate emits them.
+    const signal = makeSignal([
+      {
+        file: srcPath,
+        investigateConfidence: "high",
+        isPrimary: true,
+      },
+      {
+        file: refPath,
+        investigateConfidence: "low",
+        isPrimary: false,
+      },
+    ]);
+    const locus = locate(db, signal);
+
+    expect(locus).not.toBeNull();
+    // Primary (src) wins despite the reference file having a smaller span.
+    expect(locus!.file).toBe(srcPath);
+    // The matched file path must NOT be in the reference/ subtree.
+    expect(locus!.file).not.toMatch(/reference\//);
+  });
+
+  // -------------------------------------------------------------------------
+  // Task #145 corollary: when Investigate's primary cannot be resolved in
+  // the substrate at all, fall back to its candidates.
+  // -------------------------------------------------------------------------
+  it("falls back to candidates when Investigate's primary file does not exist in the substrate", () => {
+    ({ db, tmpDir } = openTestDb());
+
+    // Only the candidate is indexed — primary file is never built into SAST.
+    const candSource = "export function listFeedback() { return []; }\n";
+    const candPath = writeFixture(tmpDir, "real-candidate.ts", candSource);
+    buildSASTForFile(db, candPath);
+
+    const signal = makeSignal([
+      {
+        file: join(tmpDir, "does-not-exist.ts"),
+        investigateConfidence: "high",
+        isPrimary: true,
+      },
+      {
+        file: candPath,
+        investigateConfidence: "medium",
+        isPrimary: false,
+      },
+    ]);
+    const locus = locate(db, signal);
+
+    expect(locus).not.toBeNull();
+    expect(locus!.file).toBe(candPath);
+  });
+
+  // -------------------------------------------------------------------------
+  // Task #145 corollary: a non-source-subtree path is penalized even with
+  // no Investigate signal (Intake-only path). When two equal-tier refs
+  // both lack Investigate metadata, the source-tree path wins over the
+  // vendor/ path.
+  // -------------------------------------------------------------------------
+  it("penalizes non-source-subtree candidates (vendor/, node_modules/, etc.) when no Investigate signal is present", () => {
+    ({ db, tmpDir } = openTestDb());
+
+    const srcDir = join(tmpDir, "src");
+    const srcPath = writeFixture(srcDir, "real.ts", "export const a = 1;\n");
+
+    const vendorDir = join(tmpDir, "vendor", "lib");
+    const vendorPath = writeFixture(vendorDir, "lib.ts", "export const a = 1;\n");
+
+    buildSASTForFile(db, srcPath);
+    buildSASTForFile(db, vendorPath);
+
+    // Both file-only refs, no Investigate metadata.
+    const signal = makeSignal([
+      { file: vendorPath },
+      { file: srcPath },
+    ]);
+    const locus = locate(db, signal);
+
+    expect(locus).not.toBeNull();
+    expect(locus!.file).toBe(srcPath);
+  });
+
+  // -------------------------------------------------------------------------
   // Test 8: Multi-file isolation
   // -------------------------------------------------------------------------
   it("locus fields for file A contain no node IDs belonging to file B", () => {

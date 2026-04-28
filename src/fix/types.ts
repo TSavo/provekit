@@ -455,6 +455,21 @@ export interface CodeReference {
   file: string;
   line?: number;
   function?: string;
+  /**
+   * Upstream-Investigate confidence tier when this reference was emitted by
+   * B1.5 Investigate. Locate uses this to break ties between resolved
+   * candidates so a "high"-confidence primary in real source beats a "low"
+   * candidate in a vendored/reference subtree. Absent for Intake-supplied
+   * refs and harvest-corpus refs (treated as no signal).
+   */
+  investigateConfidence?: "high" | "medium" | "low";
+  /**
+   * True iff this CodeReference came from Investigate's `primaryLocation`
+   * (vs. one of its `candidateLocations`). Locate prefers the primary when
+   * its investigateConfidence is high and the file resolves in the
+   * substrate — see locate.ts pickPrimary().
+   */
+  isPrimary?: boolean;
 }
 
 /**

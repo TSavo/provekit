@@ -321,9 +321,21 @@ function validateCandidate(c: unknown, where: string): CandidateLocation {
 }
 
 function reportToCodeReferences(report: InvestigateReport, _projectRoot: string): CodeReference[] {
-  const all = [report.primaryLocation, ...report.candidateLocations];
-  return all.map((c) => {
-    const ref: CodeReference = { file: c.file };
+  // Mark the primary location with isPrimary=true; carry each candidate's
+  // confidence tier through as `investigateConfidence` so Locate can rank
+  // resolved candidates by upstream conviction (high primary in real source
+  // must beat a low candidate in a `reference/`-shaped subtree). See
+  // locate.ts pickPrimary() for how these fields fold into the score.
+  const all: { c: CandidateLocation; isPrimary: boolean }[] = [
+    { c: report.primaryLocation, isPrimary: true },
+    ...report.candidateLocations.map((c) => ({ c, isPrimary: false })),
+  ];
+  return all.map(({ c, isPrimary }) => {
+    const ref: CodeReference = {
+      file: c.file,
+      investigateConfidence: c.confidence,
+      isPrimary,
+    };
     if (c.function) ref.function = c.function;
     if (c.lineRange) ref.line = c.lineRange[0];
     return ref;
