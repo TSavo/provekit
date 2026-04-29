@@ -45,10 +45,11 @@ export interface WorkflowManifest {
   /** Stage nodes. Order is irrelevant; runner topo-sorts. */
   nodes: NodeSpec[];
   /**
-   * Optional Action nodes (side-effecting, run-every-time). Defaults to
-   * empty when absent in YAML.
+   * Optional Action nodes (side-effecting, run-every-time). Always
+   * populated by validateManifest (defaults to []), but typed optional
+   * so external callers constructing a manifest literal can omit it.
    */
-  actions: ActionSpec[];
+  actions?: ActionSpec[];
   /**
    * Reference to the terminal STAGE node whose output is the workflow
    * output. Action resources cannot be a terminal output — they are
@@ -565,15 +566,16 @@ export async function runManifest(
       );
     }
   }
+  const manifestActions = manifest.actions ?? [];
   // Surface unknown action capabilities up front when actions exist.
-  if (manifest.actions.length > 0) {
+  if (manifestActions.length > 0) {
     if (!actionRegistry) {
       throw new Error(
         `manifest "${manifest.name}" declares actions but runManifest was called without an actionRegistry`,
       );
     }
     const knownActions = new Set(actionRegistry.capabilities());
-    for (const action of manifest.actions) {
+    for (const action of manifestActions) {
       if (!knownActions.has(action.action)) {
         throw new Error(
           `manifest "${manifest.name}" references action capability "${action.action}" which is not registered`,
@@ -582,7 +584,7 @@ export async function runManifest(
     }
   }
 
-  const order = topoSort(manifest.nodes, manifest.actions);
+  const order = topoSort(manifest.nodes, manifestActions);
 
   return runner.runWorkflow(workflowInput, async (r) => {
     const records = new Map<string, NodeRecord>();
