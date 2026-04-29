@@ -178,61 +178,234 @@ export function resolveBindings(
 ): BindingResolution[] {
   const out: BindingResolution[] = [];
   for (const b of invariant.bindings) {
-    const absPath = resolveAbs(projectRoot, b.node.filePath);
-
-    if (!existsSync(absPath)) {
-      out.push({
-        smt_constant: b.smt_constant,
-        status: "decayed",
-        decayKind: "deleted",
-        reason: `file not found: ${b.node.filePath}`,
-      });
+    if (b.type === "graph") {
+      out.push(resolveGraphBinding(b, projectRoot));
       continue;
     }
+    out.push(resolveLocalBinding(b, projectRoot));
+  }
+  return out;
+}
+
+function resolveLocalBinding(
+  b: import("./invariantStore.js").LocalBinding,
+  projectRoot: string,
+): BindingResolution {
+  const absPath = resolveAbs(projectRoot, b.node.filePath);
+
+  if (!existsSync(absPath)) {
+    return {
+      smt_constant: b.smt_constant,
+      status: "decayed",
+      decayKind: "deleted",
+      reason: `file not found: ${b.node.filePath}`,
+    };
+  }
+
+  let content: string;
+  try {
+    content = readFileSync(absPath, "utf-8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      smt_constant: b.smt_constant,
+      status: "decayed",
+      decayKind: "changed",
+      reason: `read failed: ${msg}`,
+    };
+  }
+
+  const lines = content.split("\n");
+  if (b.node.startLine > lines.length || b.node.endLine > lines.length) {
+    return {
+      smt_constant: b.smt_constant,
+      status: "decayed",
+      decayKind: "changed",
+      reason:
+        `line range ${b.node.startLine}-${b.node.endLine} exceeds file length ${lines.length}`,
+    };
+  }
+
+  if (b.node.nodeHash) {
+    const span = lines.slice(b.node.startLine - 1, b.node.endLine).join("\n");
+    const currentHash = sha256Prefix16(span);
+    if (currentHash !== b.node.nodeHash) {
+      return {
+        smt_constant: b.smt_constant,
+        status: "decayed",
+        decayKind: "changed",
+        reason: `node hash mismatch (was ${b.node.nodeHash}, now ${currentHash})`,
+      };
+    }
+  }
+
+  return { smt_constant: b.smt_constant, status: "resolved" };
+}
+
+/**
+ * Graph-binding resolver. Walks the named relation from the binding's
+ * root and applies the predicate. Decays when the predicate stops
+ * holding (e.g. a previously-isolated module gains a new transitive
+ * import to a forbidden region).
+ *
+ * v1: one relation ("imports_transitively") and one predicate
+ * ("no_match" against a glob-light pattern). Both extensible via switch
+ * statements; new relations/predicates land as new arms.
+ *
+ * Mechanical, no LLM. Cost is bounded by the import graph size for
+ * "imports_transitively"; effectively O(N) in module count for typical
+ * codebases. Verify-tier-safe.
+ */
+function resolveGraphBinding(
+  b: import("./invariantStore.js").GraphBinding,
+  projectRoot: string,
+): BindingResolution {
+  if (b.relation !== "imports_transitively") {
+    return {
+      smt_constant: b.smt_constant,
+      status: "decayed",
+      decayKind: "substrate",
+      reason: `unknown graph relation: ${(b as { relation: string }).relation}`,
+    };
+  }
+
+  const rootAbs = resolveAbs(projectRoot, b.root.filePath);
+  if (!existsSync(rootAbs)) {
+    return {
+      smt_constant: b.smt_constant,
+      status: "decayed",
+      decayKind: "deleted",
+      reason: `graph root file not found: ${b.root.filePath}`,
+    };
+  }
+
+  const reached = walkImportsTransitively(rootAbs, projectRoot);
+
+  if (b.predicate !== "no_match") {
+    return {
+      smt_constant: b.smt_constant,
+      status: "decayed",
+      decayKind: "substrate",
+      reason: `unknown graph predicate: ${(b as { predicate: string }).predicate}`,
+    };
+  }
+
+  const offenders = [...reached].filter((p) => globMatch(p, b.predicateArg));
+  if (offenders.length > 0) {
+    return {
+      smt_constant: b.smt_constant,
+      status: "decayed",
+      decayKind: "changed",
+      reason:
+        `graph predicate violated: ${offenders.length} reached node(s) match "${b.predicateArg}" — first: ${offenders[0]}`,
+    };
+  }
+
+  return { smt_constant: b.smt_constant, status: "resolved" };
+}
+
+/**
+ * Walk a file's import graph transitively. Returns the set of project-
+ * relative paths the root file reaches via static `import`/`require`
+ * declarations. v1 uses a regex-based parse — fast, dependency-free,
+ * and correct for the canonical syntactic shapes ProvekIt uses. Edge
+ * cases (dynamic import expressions, conditional requires, type-only
+ * imports) are intentionally caught by the regex's permissiveness; a
+ * new import gets added → the set grows → the predicate re-fires.
+ *
+ * Module specifier resolution: only project-relative specifiers
+ * ('./foo', '../bar', 'src/baz' when src is a project subdirectory)
+ * resolve to a project file. External packages (no leading '.', no
+ * direct project-rel match) are skipped — they're not in the graph
+ * the predicate cares about for ProvekIt's product constraints.
+ */
+function walkImportsTransitively(
+  rootAbs: string,
+  projectRoot: string,
+): Set<string> {
+  const reached = new Set<string>();
+  const queue: string[] = [rootAbs];
+
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    if (reached.has(toRelative(cur, projectRoot))) continue;
+    reached.add(toRelative(cur, projectRoot));
 
     let content: string;
     try {
-      content = readFileSync(absPath, "utf-8");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      out.push({
-        smt_constant: b.smt_constant,
-        status: "decayed",
-        decayKind: "changed",
-        reason: `read failed: ${msg}`,
-      });
+      content = readFileSync(cur, "utf-8");
+    } catch {
       continue;
     }
 
-    const lines = content.split("\n");
-    if (b.node.startLine > lines.length || b.node.endLine > lines.length) {
-      out.push({
-        smt_constant: b.smt_constant,
-        status: "decayed",
-        decayKind: "changed",
-        reason:
-          `line range ${b.node.startLine}-${b.node.endLine} exceeds file length ${lines.length}`,
-      });
-      continue;
-    }
-
-    if (b.node.nodeHash) {
-      const span = lines.slice(b.node.startLine - 1, b.node.endLine).join("\n");
-      const currentHash = sha256Prefix16(span);
-      if (currentHash !== b.node.nodeHash) {
-        out.push({
-          smt_constant: b.smt_constant,
-          status: "decayed",
-          decayKind: "changed",
-          reason: `node hash mismatch (was ${b.node.nodeHash}, now ${currentHash})`,
-        });
-        continue;
+    for (const spec of extractImportSpecifiers(content)) {
+      const resolved = resolveModuleSpecifier(spec, cur, projectRoot);
+      if (resolved && !reached.has(toRelative(resolved, projectRoot))) {
+        queue.push(resolved);
       }
     }
+  }
 
-    out.push({ smt_constant: b.smt_constant, status: "resolved" });
+  return reached;
+}
+
+function extractImportSpecifiers(source: string): string[] {
+  const out: string[] = [];
+  // ES module imports: import ... from "x" / import "x"
+  const importRe = /(?:^|\s)import\s+(?:[^"']*from\s+)?["']([^"']+)["']/g;
+  // CommonJS: require("x")
+  const requireRe = /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
+  for (const re of [importRe, requireRe]) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(source)) !== null) {
+      out.push(m[1]!);
+    }
   }
   return out;
+}
+
+function resolveModuleSpecifier(
+  spec: string,
+  fromFileAbs: string,
+  projectRoot: string,
+): string | null {
+  if (!spec.startsWith(".") && !spec.startsWith("/")) {
+    // External package or bare specifier; not part of the project graph.
+    return null;
+  }
+  const path = require("path") as typeof import("path");
+  const fromDir = path.dirname(fromFileAbs);
+  const base = spec.startsWith("/") ? spec : path.resolve(fromDir, spec);
+  // Try common TS/JS extensions; the import in source rarely has one.
+  for (const ext of ["", ".ts", ".tsx", ".js", ".mjs", ".cjs", "/index.ts", "/index.js"]) {
+    const candidate = base + ext;
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function toRelative(absPath: string, projectRoot: string): string {
+  const path = require("path") as typeof import("path");
+  return path.relative(projectRoot, absPath).replaceAll("\\", "/");
+}
+
+/**
+ * Glob-light: supports the patterns ProvekIt's product constraints
+ * actually need. Specifically:
+ *   "src/llm/**"          → any path under src/llm/
+ *   "src/llm/*.ts"        → direct children of src/llm/ ending in .ts
+ *   "src/llm/specific.ts" → exact match
+ * Future patterns can be added as new arms; v1 is intentionally minimal.
+ */
+function globMatch(path: string, pattern: string): boolean {
+  if (!pattern.includes("*")) return path === pattern;
+  // Translate to regex: ** → .*, * → [^/]*, escape other regex meta.
+  const re = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*/g, " ")
+    .replace(/\*/g, "[^/]*")
+    .replace(/ /g, ".*");
+  return new RegExp("^" + re + "$").test(path);
 }
 
 function sha256Prefix16(s: string): string {

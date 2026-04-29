@@ -21,6 +21,87 @@ import { createHash } from "crypto";
 import type { InvariantClaim, BugLocus, BugSignal, TestArtifact } from "../types.js";
 
 // ---------------------------------------------------------------------------
+// Binding tagged union
+// ---------------------------------------------------------------------------
+
+/**
+ * Local binding: the SMT constant is bound to a specific source span. Drift
+ * is detected by re-hashing the span's bytes against the recorded nodeHash.
+ */
+export interface LocalBinding {
+  type: "local";
+  smt_constant: string;
+  source_expr: string;
+  /** Z3 sort. Common values: Int, Bool, Real. */
+  sort: string;
+  node: {
+    filePath: string;
+    /** sha256 prefix (16 hex chars) of the byte range at write time. */
+    nodeHash: string;
+    startLine: number;
+    endLine: number;
+  };
+}
+
+/**
+ * Graph binding: the SMT constant is bound to a graph reachability claim.
+ * The `relation` names a substrate-side traversal (e.g.
+ * "imports_transitively"); `predicate` names a check applied to each
+ * reached node (e.g. "no_match"). `predicateArg` is the relation- and
+ * predicate-specific argument — for "no_match" against the import-graph
+ * relation, it's a glob pattern; future relations may need different
+ * arg shapes (the field stays open).
+ *
+ * Drift detection walks `relation` from `root` and applies `predicate`.
+ * If the predicate still holds → resolved. Otherwise → decayed with a
+ * graph-shaped reason. No content-hash; the relation walk IS the check.
+ */
+export interface GraphBinding {
+  type: "graph";
+  smt_constant: string;
+  /**
+   * Substrate relation name. v1 supports: "imports_transitively".
+   * Future: "data_flow_reaches", "type_subsumed_by", etc.
+   */
+  relation: "imports_transitively";
+  /** The graph traversal's starting node — typically a file path. */
+  root: { filePath: string };
+  /**
+   * Predicate applied to reached nodes. v1 supports:
+   * - "no_match": none of the reached nodes' filePaths glob-match
+   *   `predicateArg` (the standard "FOO must not transitively reach BAR"
+   *   shape).
+   */
+  predicate: "no_match";
+  predicateArg: string;
+}
+
+export type Binding = LocalBinding | GraphBinding;
+
+/**
+ * Read-time normalizer: legacy persisted invariants stored bindings as
+ * the local-only shape without a `type` field. This coerces such bindings
+ * to `{ type: "local", ...rest }` so the rest of the pipeline sees a
+ * uniform tagged union. Idempotent — already-typed bindings pass through.
+ */
+export function normalizeBinding(raw: unknown): Binding {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error(`normalizeBinding: expected object, got ${typeof raw}`);
+  }
+  const obj = raw as Record<string, unknown>;
+  if (obj.type === "local" || obj.type === "graph") {
+    return obj as unknown as Binding;
+  }
+  // Legacy: presume local. Defensive on field presence.
+  if (obj.node && typeof obj.node === "object") {
+    return { type: "local", ...obj } as unknown as LocalBinding;
+  }
+  throw new Error(
+    `normalizeBinding: unrecognized binding shape (no type, no node): ${JSON.stringify(raw)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Stored invariant schema
 // ---------------------------------------------------------------------------
 
@@ -47,20 +128,25 @@ export interface StoredInvariant {
     declarations: string[];
     assertion: string;
   };
-  /** Each binding maps an SMT constant to a source expression and the AST node it resolved to. */
-  bindings: Array<{
-    smt_constant: string;
-    source_expr: string;
-    /** Z3 sort. Free-form string (matches the SmtBinding contract). Common values: Int, Bool, Real. */
-    sort: string;
-    node: {
-      filePath: string;
-      /** sha256 prefix (16 hex chars) of the byte range at write time. */
-      nodeHash: string;
-      startLine: number;
-      endLine: number;
-    };
-  }>;
+  /**
+   * Each binding maps an SMT constant to evidence in the codebase. Two
+   * binding kinds are supported, distinguished by the `type` discriminant:
+   *
+   * - "local": binds to a specific source span. Drift detection is a
+   *   content-hash compare on the bound bytes. Cheap, the workhorse for
+   *   per-callsite invariants (division-by-zero, off-by-one, etc.).
+   *
+   * - "graph": binds to a graph reachability claim — e.g. "no module
+   *   transitively imported from FILE matches PATTERN". Drift detection
+   *   walks the relation and re-evaluates the predicate. Required for
+   *   architectural axioms like "no LLM in verification path" that don't
+   *   reduce to a single source span.
+   *
+   * Backward compatibility: legacy persisted invariants without a `type`
+   * field are read as `type: "local"`. New writes always include the
+   * discriminant.
+   */
+  bindings: Array<Binding>;
   /** Where the patch landed. Path enumeration runs from this site by default. */
   callsite: {
     filePath: string;
@@ -116,11 +202,24 @@ export function hashInvariant(input: {
     declarations: input.smt.declarations,
     assertion: input.smt.assertion,
     kind: input.smt.kind,
-    bindings: sortedBindings.map((b) => ({
-      c: b.smt_constant,
-      e: b.source_expr,
-      s: b.sort,
-    })),
+    bindings: sortedBindings.map((b) => {
+      if (b.type === "graph") {
+        return {
+          t: "graph",
+          c: b.smt_constant,
+          r: b.relation,
+          rp: b.root.filePath,
+          p: b.predicate,
+          pa: b.predicateArg,
+        };
+      }
+      return {
+        t: "local",
+        c: b.smt_constant,
+        e: b.source_expr,
+        s: b.sort,
+      };
+    }),
   });
   return createHash("sha256").update(payload).digest("hex").slice(0, 16);
 }
@@ -197,7 +296,8 @@ export function buildStoredInvariant(args: {
 
   const bindings: StoredInvariant["bindings"] = claim.bindings.map((b) => {
     const loc = bindingLocations?.get(b.smt_constant);
-    return {
+    const localBinding: LocalBinding = {
+      type: "local",
       smt_constant: b.smt_constant,
       source_expr: b.source_expr,
       sort: b.sort,
@@ -208,6 +308,7 @@ export function buildStoredInvariant(args: {
         endLine: loc ? loc.endLine : b.source_line,
       },
     };
+    return localBinding;
   });
 
   const smt: StoredInvariant["smt"] = {
@@ -350,6 +451,11 @@ export function readInvariants(
     }
     const inv = parsed as StoredInvariant;
     if (!options.includeRetired && inv.retired) continue;
+    // Normalize legacy bindings (no type discriminant) to type:"local".
+    // Idempotent on already-typed bindings.
+    if (Array.isArray(inv.bindings)) {
+      inv.bindings = inv.bindings.map((b) => normalizeBinding(b));
+    }
     out.push(inv);
   }
 

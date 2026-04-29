@@ -9,7 +9,17 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildStoredInvariant } from "./invariantStore.js";
+import { buildStoredInvariant, type LocalBinding } from "./invariantStore.js";
+
+// Tests build invariants via buildStoredInvariant which always emits
+// LocalBindings in v1. Narrow at access sites so the union doesn't shed
+// the .node accessor.
+function asLocal(b: { type?: string }): LocalBinding {
+  if (b.type !== "local") {
+    throw new Error(`expected local binding, got type=${b.type}`);
+  }
+  return b as unknown as LocalBinding;
+}
 import type {
   InvariantClaim,
   BugSignal,
@@ -87,9 +97,9 @@ describe("buildStoredInvariant overrides (issues #138, #139)", () => {
     });
     expect(stored.callsite.filePath).toBe(locus.file);
     expect(stored.callsite.startLine).toBe(locus.line);
-    expect(stored.bindings[0].node.filePath).toBe(locus.file);
+    expect(asLocal(stored.bindings[0]).node.filePath).toBe(locus.file);
     // Legacy: pre-edit source_line guess (here 0).
-    expect(stored.bindings[0].node.startLine).toBe(0);
+    expect(asLocal(stored.bindings[0]).node.startLine).toBe(0);
   });
 
   it("override path: callsite filePath + startLine come from C3's patch", () => {
@@ -130,11 +140,11 @@ describe("buildStoredInvariant overrides (issues #138, #139)", () => {
         ],
       ]),
     });
-    expect(stored.bindings[0].node.filePath).toBe(
+    expect(asLocal(stored.bindings[0]).node.filePath).toBe(
       "src/store/sqlite/repositories.ts",
     );
-    expect(stored.bindings[0].node.startLine).toBe(121);
-    expect(stored.bindings[0].node.endLine).toBe(121);
+    expect(asLocal(stored.bindings[0]).node.startLine).toBe(121);
+    expect(asLocal(stored.bindings[0]).node.endLine).toBe(121);
   });
 
   it("hash is independent of node.{filePath,startLine,endLine} (extra metadata)", () => {
@@ -201,12 +211,12 @@ describe("buildStoredInvariant overrides (issues #138, #139)", () => {
     });
     // dir: from override
     const dir = stored.bindings.find((b) => b.smt_constant === "dir")!;
-    expect(dir.node.filePath).toBe("src/store/sqlite/repositories.ts");
-    expect(dir.node.startLine).toBe(121);
+    expect(asLocal(dir).node.filePath).toBe("src/store/sqlite/repositories.ts");
+    expect(asLocal(dir).node.startLine).toBe(121);
     // x: not in map → falls back to locus.file + b.source_line
     const x = stored.bindings.find((b) => b.smt_constant === "x")!;
-    expect(x.node.filePath).toBe(locus.file);
-    expect(x.node.startLine).toBe(42);
+    expect(asLocal(x).node.filePath).toBe(locus.file);
+    expect(asLocal(x).node.startLine).toBe(42);
   });
 });
 
