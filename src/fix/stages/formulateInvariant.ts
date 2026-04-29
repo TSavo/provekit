@@ -39,6 +39,55 @@ import { getPromptStore } from "../../llm/promptStore.js";
 // previously-evolved body, the source-of-record has advanced."
 // ---------------------------------------------------------------------------
 
+// bp namespace: c1.persona
+const C1_PERSONA = `You are a formal verification expert. You will produce an SMT-LIB assertion
+that expresses the VIOLATION STATE (the negation of the desired invariant).
+The assertion must be satisfiable (Z3 check-sat returns "sat") — this proves the bug is reachable.`;
+
+// bp namespace: c1.cross_llm_agreement
+const C1_CROSS_LLM_AGREEMENT = `# What happens to your output
+
+A second model will independently derive its own invariant from the same bug
+report. The two are compared via cross-LLM agreement: SMT-equivalence first,
+prose-similarity fallback. **Convergent phrasing matters.** If you choose
+unusual variable names, exotic SMT constructs, or rare prose synonyms, the
+second model will pick something different and the loop will retry.
+
+Stick to canonical forms within your invariant's kind. There are six kinds.
+**You must declare which one your invariant is.**`;
+
+// bp namespace: c1.kind.taint
+const C1_KIND_TAINT = `## kind: "taint"
+The violation is "untrusted data reaches a dangerous sink without
+sanitization". All bindings are Bool predicates ABOUT the data, not
+the data itself.
+
+Canonical SMT shape (shell-injection):
+\`\`\`
+(declare-const input_contains_shell_metachar Bool)
+(declare-const input_was_sanitized Bool)
+(assert (and input_contains_shell_metachar (not input_was_sanitized)))
+\`\`\`
+Canonical prose: "user input must be sanitized before reaching execSync",
+"untrusted X must not flow to dangerous Y".`;
+
+// bp namespace: c1.kind.other
+const C1_KIND_OTHER = `## kind: "other"
+Use only when none of the five above fit. The loop will route to the
+behavioral verification path (regression test must fail on original /
+pass on fixed). Be precise about why none of the five fit.`;
+
+// bp namespace: c1.quiet_part
+const C1_QUIET_PART = `# The quiet part
+
+Two models will look at the same bug and emit invariants. If both emit
+\`(declare-const b Int) (assert (= b 0))\` for division-by-zero, the
+SMT-equivalence check passes instantly and the loop continues. If one
+emits \`(assert (= b 0))\` and the other emits \`(assert (not (> b 0)))\`,
+the equivalence check has to reason about \`b ≤ 0 ≠ b = 0\` and might
+fail. The canonical examples above are the shapes both models should pick.
+Pick them.`;
+
 // bp namespace: c1.kind.order.polarity_convention
 const C1_KIND_ORDER_POLARITY_CONVENTION = `**Polarity convention (load-bearing — read before writing SMT):**
 
@@ -463,13 +512,19 @@ async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusS
   // the literal byte-identically until the fragment is evolved. When
   // projectRoot is unavailable (test contexts, dry-run), the literal is
   // used directly — same byte sequence either way on day 0.
-  const c1KindOrderPolarityConvention = projectRoot
-    ? (await getPromptStore(projectRoot).get(
-        "c1.kind.order.polarity_convention",
-        C1_KIND_ORDER_POLARITY_CONVENTION,
-        "2026-04-28",
-      )).body
-    : C1_KIND_ORDER_POLARITY_CONVENTION;
+  const fetch = async (key: string, literal: string): Promise<string> =>
+    projectRoot
+      ? (await getPromptStore(projectRoot).get(key, literal, "2026-04-28")).body
+      : literal;
+  const c1Persona = await fetch("c1.persona", C1_PERSONA);
+  const c1CrossLlmAgreement = await fetch("c1.cross_llm_agreement", C1_CROSS_LLM_AGREEMENT);
+  const c1KindTaint = await fetch("c1.kind.taint", C1_KIND_TAINT);
+  const c1KindOther = await fetch("c1.kind.other", C1_KIND_OTHER);
+  const c1QuietPart = await fetch("c1.quiet_part", C1_QUIET_PART);
+  const c1KindOrderPolarityConvention = await fetch(
+    "c1.kind.order.polarity_convention",
+    C1_KIND_ORDER_POLARITY_CONVENTION,
+  );
   // Gather source context around locus from the already-loaded full source.
   let sourceContext = "(source not available)";
   if (locusSource) {
@@ -506,9 +561,7 @@ async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusS
     : "";
 
   return `[STAGE:C1] formulateInvariant
-You are a formal verification expert. You will produce an SMT-LIB assertion
-that expresses the VIOLATION STATE (the negation of the desired invariant).
-The assertion must be satisfiable (Z3 check-sat returns "sat") — this proves the bug is reachable.
+${c1Persona}
 
 # Inputs
 
@@ -612,16 +665,7 @@ If you cannot answer (2) or (3), your invariant is either too narrow
 (no placebos to reject) or too broad (no legitimate callers to
 respect). Re-formulate.
 
-# What happens to your output
-
-A second model will independently derive its own invariant from the same bug
-report. The two are compared via cross-LLM agreement: SMT-equivalence first,
-prose-similarity fallback. **Convergent phrasing matters.** If you choose
-unusual variable names, exotic SMT constructs, or rare prose synonyms, the
-second model will pick something different and the loop will retry.
-
-Stick to canonical forms within your invariant's kind. There are six kinds.
-**You must declare which one your invariant is.**
+${c1CrossLlmAgreement}
 
 # Choose the kind that matches the bug
 
@@ -701,24 +745,9 @@ Canonical prose: "the result must include the K most recent entries",
 "elements must be in descending chronological order",
 "the query must use descending ordering for the relevant column".
 
-## kind: "taint"
-The violation is "untrusted data reaches a dangerous sink without
-sanitization". All bindings are Bool predicates ABOUT the data, not
-the data itself.
+${c1KindTaint}
 
-Canonical SMT shape (shell-injection):
-\`\`\`
-(declare-const input_contains_shell_metachar Bool)
-(declare-const input_was_sanitized Bool)
-(assert (and input_contains_shell_metachar (not input_was_sanitized)))
-\`\`\`
-Canonical prose: "user input must be sanitized before reaching execSync",
-"untrusted X must not flow to dangerous Y".
-
-## kind: "other"
-Use only when none of the five above fit. The loop will route to the
-behavioral verification path (regression test must fail on original /
-pass on fixed). Be precise about why none of the five fit.
+${c1KindOther}
 
 # Universal rules (apply to every kind)
 
@@ -830,15 +859,7 @@ The object must have exactly these fields:
 }
 \`\`\`
 
-# The quiet part
-
-Two models will look at the same bug and emit invariants. If both emit
-\`(declare-const b Int) (assert (= b 0))\` for division-by-zero, the
-SMT-equivalence check passes instantly and the loop continues. If one
-emits \`(assert (= b 0))\` and the other emits \`(assert (not (> b 0)))\`,
-the equivalence check has to reason about \`b ≤ 0 ≠ b = 0\` and might
-fail. The canonical examples above are the shapes both models should pick.
-Pick them.`;
+${c1QuietPart}`;
 }
 
 const VALID_KINDS: ReadonlySet<InvariantKindLabel> = new Set([
