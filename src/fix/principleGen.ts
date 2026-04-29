@@ -335,17 +335,15 @@ export async function buildPrinciplePrompt(
 }
 
 
-function buildAdversarialPrompt(
-  principleDescription: string,
-  dslSource: string,
-): string {
-  return `[STAGE:C6-adversarial] adversarial fixtures
+// C6 adversarial fixture prompt artifact: c6.adversarial_fixtures
+// Two runtime placeholders: PRINCIPLE_DESCRIPTION, DSL_SOURCE.
+const C6_ADVERSARIAL_FIXTURES_TEMPLATE = `[STAGE:C6-adversarial] adversarial fixtures
 You are a security-minded adversary reviewing a static-analysis principle.
 
-Principle description: ${principleDescription}
+Principle description: {{PRINCIPLE_DESCRIPTION}}
 DSL source:
 \`\`\`
-${dslSource}
+{{DSL_SOURCE}}
 \`\`\`
 
 # Your job
@@ -416,6 +414,26 @@ Rules:
 - Yes, the schema names are inverted relative to plain English; the names refer
   to the failure modes a careless principle would exhibit on each set.
 - Do NOT output anything outside the JSON object.`;
+
+const C6_ADVERSARIAL_FIXTURES_DISCRIMINATOR = "2026-04-28";
+
+async function buildAdversarialPrompt(
+  principleDescription: string,
+  dslSource: string,
+  projectRoot?: string,
+): Promise<string> {
+  let body = C6_ADVERSARIAL_FIXTURES_TEMPLATE;
+  if (projectRoot) {
+    const rev = await getPromptStore(projectRoot).get(
+      "c6.adversarial_fixtures",
+      C6_ADVERSARIAL_FIXTURES_TEMPLATE,
+      C6_ADVERSARIAL_FIXTURES_DISCRIMINATOR,
+    );
+    body = rev.body;
+  }
+  return body
+    .replaceAll("{{PRINCIPLE_DESCRIPTION}}", principleDescription)
+    .replaceAll("{{DSL_SOURCE}}", dslSource);
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +498,8 @@ export async function runAdversarialValidation(
      * Receives (fixtureDb, srcPath) — same DB that was passed to buildSASTForFile.
      */
     preRunExtractor?: (fixtureDb: Db, srcPath: string) => void;
+    /** Host project root for bp resolution of c6.adversarial_fixtures. */
+    projectRoot?: string;
   } = {},
 ): Promise<{
   passed: boolean;
@@ -495,7 +515,7 @@ export async function runAdversarialValidation(
   let parsedRaw: unknown;
   try {
     parsedRaw = await requestStructuredJson<unknown>({
-      prompt: buildAdversarialPrompt(principleDescription, dslSource),
+      prompt: await buildAdversarialPrompt(principleDescription, dslSource, opts.projectRoot),
       llm,
       stage: "C6-adversarial",
       model: validatorModel,
@@ -874,7 +894,7 @@ export async function tryExistingCapabilities(args: {
       invariant.description,
       llm,
       db,
-      { proposerModel: "sonnet" },
+      { proposerModel: "sonnet", projectRoot: args.projectRoot },
     );
 
     if (!adversarial.passed) {
@@ -1134,6 +1154,7 @@ export async function proposeWithCapability(args: {
   llm: LLMProvider;
   gap: string;
   overlay?: OverlayHandle;
+  projectRoot?: string;
 }): Promise<PrincipleCandidate | null> {
   // Two-attempt loop: on any gate failure (substrate oracle 14/16/17,
   // oracle 18 compile, adversarial validation) the second attempt re-calls
@@ -1176,6 +1197,7 @@ async function proposeWithCapabilityOnce(args: {
   llm: LLMProvider;
   gap: string;
   overlay?: OverlayHandle;
+  projectRoot?: string;
 }): Promise<{ principle: PrincipleCandidate } | { failure: string }> {
   const { signal, invariant, fixCandidate, db, llm, gap } = args;
 
@@ -1187,6 +1209,7 @@ async function proposeWithCapabilityOnce(args: {
     gap,
     llm,
     overlay: args.overlay,
+    projectRoot: args.projectRoot,
   });
 
   if (!proposal) {
@@ -1269,6 +1292,7 @@ async function proposeWithCapabilityOnce(args: {
       {
         proposerModel: "sonnet",
         preRunExtractor: substrateExtractor ?? undefined,
+        projectRoot: args.projectRoot,
       },
     );
 
@@ -1315,6 +1339,7 @@ async function proposeWithCapabilityOnce(args: {
         {
           proposerModel: "sonnet",
           preRunExtractor: substrateExtractor ?? undefined,
+          projectRoot: args.projectRoot,
         },
       );
 

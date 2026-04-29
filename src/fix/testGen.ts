@@ -251,6 +251,18 @@ interface C5PromptBuild {
   prompt: string;
   revisions: Array<{ key: string; revisionId: string }>;
 }
+
+// C5 retry prompt artifact (used when import-path validation fails on the
+// first attempt). Three runtime placeholders.
+const C5_RETRY_PROMPT_TEMPLATE = `Your previous test file at {{TEST_FILE_PATH}} contains import(s) that do not exist in the overlay: {{UNRESOLVED_IMPORTS}}.
+
+The import path you MUST use is \`{{IMPORT_PATH}}\` — exact string, character-for-character.
+
+Your import statement MUST be:
+import { ... } from "{{IMPORT_PATH}}";
+
+Rewrite the test file at {{TEST_FILE_PATH}} using ONLY this import path. Do not use "{{FIRST_BAD_IMPORT}}" or any other path.`;
+const C5_RETRY_PROMPT_DISCRIMINATOR = "2026-04-28";
 import { extractGrammarBundle, renderGrammarSection } from "./runtime/grammarExtractor.js";
 
 // ---------------------------------------------------------------------------
@@ -858,14 +870,20 @@ The fix shape (per Investigate):
   let unresolvedImports = validateImportPaths(absTestPath, code, overlay);
   if (unresolvedImports.length > 0) {
     // ONE retry: re-prompt with explicit failure detail.
-    const retryPrompt = `Your previous test file at ${testFilePath} contains import(s) that do not exist in the overlay: ${unresolvedImports.map((p) => `\`${p}\``).join(", ")}.
-
-The import path you MUST use is \`${importPath}\` — exact string, character-for-character.
-
-Your import statement MUST be:
-import { ... } from "${importPath}";
-
-Rewrite the test file at ${testFilePath} using ONLY this import path. Do not use "${unresolvedImports[0]}" or any other path.`;
+    let retryTemplate = C5_RETRY_PROMPT_TEMPLATE;
+    if (args.projectRoot) {
+      const rev = await getPromptStore(args.projectRoot).get(
+        "c5.retry_prompt",
+        C5_RETRY_PROMPT_TEMPLATE,
+        C5_RETRY_PROMPT_DISCRIMINATOR,
+      );
+      retryTemplate = rev.body;
+    }
+    const retryPrompt = retryTemplate
+      .replaceAll("{{TEST_FILE_PATH}}", testFilePath)
+      .replaceAll("{{UNRESOLVED_IMPORTS}}", unresolvedImports.map((p) => `\`${p}\``).join(", "))
+      .replaceAll("{{IMPORT_PATH}}", importPath)
+      .replaceAll("{{FIRST_BAD_IMPORT}}", unresolvedImports[0] ?? "");
 
     await runAgentInOverlay({
       overlay,

@@ -25,7 +25,7 @@ import type {
   CodePatch,
 } from "../types.js";
 import type { FixLoopLogger } from "../logger.js";
-import { buildFixPrompt, parseProposedFixes, verifyCandidate, buildAgentFixPrompt } from "../candidateGen.js";
+import { buildFixPrompt, parseProposedFixes, verifyCandidate, buildAgentFixPrompt, buildAgentFixRetrySuffix } from "../candidateGen.js";
 import { runAgentInOverlay } from "../captureChange.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
 import { getPromptStore } from "../../llm/promptStore.js";
@@ -249,9 +249,8 @@ async function generateFixCandidateViaAgent(args: {
   }
 
   // ONE retry with feedback about oracle #2 failure.
-  const retryPrompt =
-    `${prompt}\n\nYour previous fix attempt did not satisfy the invariant. ` +
-    `Oracle #2 returned: ${result.z3Verdict}. Please revise the fix.`;
+  const { suffix: retrySuffix } = await buildAgentFixRetrySuffix(result.z3Verdict, args.projectRoot);
+  const retryPrompt = `${prompt}${retrySuffix}`;
 
   const { patch: retryPatch, rationale: retryRationale } = await runAgentInOverlay({
     overlay,

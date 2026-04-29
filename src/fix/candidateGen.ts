@@ -97,6 +97,34 @@ export interface C3PromptBuild {
   prompt: string;
   revisions: Array<{ key: string; revisionId: string }>;
 }
+
+// C3 retry suffix artifact (appended to the original prompt when the first
+// patch attempt fails Oracle #2). Single placeholder {{Z3_VERDICT}}.
+const C3_RETRY_SUFFIX_TEMPLATE = `
+
+Your previous fix attempt did not satisfy the invariant. Oracle #2 returned: {{Z3_VERDICT}}. Please revise the fix.`;
+const C3_RETRY_SUFFIX_DISCRIMINATOR = "2026-04-28";
+
+/** Build the retry suffix appended to C3's original prompt on Oracle #2 fail. */
+export async function buildAgentFixRetrySuffix(
+  z3Verdict: string,
+  projectRoot?: string,
+): Promise<{ suffix: string; revisions: Array<{ key: string; revisionId: string }> }> {
+  const revisions: Array<{ key: string; revisionId: string }> = [];
+  let body = C3_RETRY_SUFFIX_TEMPLATE;
+  if (projectRoot) {
+    const rev = await getPromptStore(projectRoot).get(
+      "c3.retry_suffix",
+      C3_RETRY_SUFFIX_TEMPLATE,
+      C3_RETRY_SUFFIX_DISCRIMINATOR,
+    );
+    body = rev.body;
+    revisions.push({ key: "c3.retry_suffix", revisionId: rev.id });
+  }
+  const suffix = body.replaceAll("{{Z3_VERDICT}}", z3Verdict);
+  return { suffix, revisions };
+}
+
 import { principleMatches } from "../db/schema/principleMatches.js";
 import { evaluatePrinciple } from "../dsl/evaluator.js";
 import { verifyBlock } from "../verifier.js";

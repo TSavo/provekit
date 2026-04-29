@@ -23,42 +23,18 @@ import { listCapabilities } from "../sast/capabilityRegistry.js";
 import { executeExtractorSpec } from "./capabilityExecutor.js";
 import { runAgentInOverlay } from "./captureChange.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
-import { getModelTier } from "./modelTiers.js";
+import { getPromptStore } from "../llm/promptStore.js";
 
-// ---------------------------------------------------------------------------
-// Substrate oracle result
-// ---------------------------------------------------------------------------
+// C6 capability spec prompt artifact: c6.capability_spec
+// Five runtime placeholders. Same pattern as the rest of the C-stages.
+const C6_CAPABILITY_SPEC_TEMPLATE = `You are a static-analysis substrate architect. A new capability is needed to express an invariant.
 
-export interface SubstrateOracleResult {
-  passed: boolean;
-  reason: string;
-  oracleResults: {
-    oracle14_migrationSafe: boolean;
-    oracle16_extractorCoverage: boolean;
-    oracle17_substrateConsistency: boolean;
-  };
-}
+Bug summary: {{BUG_SUMMARY}}
+Invariant: {{INVARIANT_DESCRIPTION}}
+Fix description: {{FIX_DESCRIPTION}}
+Missing predicate: {{GAP}}
 
-// ---------------------------------------------------------------------------
-// Prompt builder
-// ---------------------------------------------------------------------------
-
-function buildCapabilitySpecPrompt(args: {
-  signal: BugSignal;
-  invariant: InvariantClaim;
-  fixCandidate: FixCandidate;
-  gap: string;
-}): string {
-  const existingTables = listCapabilities().map((c) => c.dslName).join(", ") || "(none)";
-
-  return `You are a static-analysis substrate architect. A new capability is needed to express an invariant.
-
-Bug summary: ${args.signal.summary}
-Invariant: ${args.invariant.description}
-Fix description: ${args.fixCandidate.patch.description}
-Missing predicate: ${args.gap}
-
-Existing capability tables: ${existingTables}
+Existing capability tables: {{EXISTING_TABLES}}
 
 Design a new capability to fill this gap. Respond with ONLY a JSON object (no markdown fences):
 {
@@ -93,6 +69,52 @@ Rules:
 - positiveFixtures: TypeScript code that SHOULD match the principle.
 - negativeFixtures: TypeScript code that should NOT match.
 - Do NOT output anything outside the JSON object.`;
+const C6_CAPABILITY_SPEC_DISCRIMINATOR = "2026-04-28";
+import { getModelTier } from "./modelTiers.js";
+
+// ---------------------------------------------------------------------------
+// Substrate oracle result
+// ---------------------------------------------------------------------------
+
+export interface SubstrateOracleResult {
+  passed: boolean;
+  reason: string;
+  oracleResults: {
+    oracle14_migrationSafe: boolean;
+    oracle16_extractorCoverage: boolean;
+    oracle17_substrateConsistency: boolean;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Prompt builder
+// ---------------------------------------------------------------------------
+
+async function buildCapabilitySpecPrompt(args: {
+  signal: BugSignal;
+  invariant: InvariantClaim;
+  fixCandidate: FixCandidate;
+  gap: string;
+  projectRoot?: string;
+}): Promise<string> {
+  const existingTables = listCapabilities().map((c) => c.dslName).join(", ") || "(none)";
+
+  let body = C6_CAPABILITY_SPEC_TEMPLATE;
+  if (args.projectRoot) {
+    const rev = await getPromptStore(args.projectRoot).get(
+      "c6.capability_spec",
+      C6_CAPABILITY_SPEC_TEMPLATE,
+      C6_CAPABILITY_SPEC_DISCRIMINATOR,
+    );
+    body = rev.body;
+  }
+
+  return body
+    .replaceAll("{{BUG_SUMMARY}}", args.signal.summary)
+    .replaceAll("{{INVARIANT_DESCRIPTION}}", args.invariant.description)
+    .replaceAll("{{FIX_DESCRIPTION}}", args.fixCandidate.patch.description)
+    .replaceAll("{{GAP}}", args.gap)
+    .replaceAll("{{EXISTING_TABLES}}", existingTables);
 }
 
 // ---------------------------------------------------------------------------
@@ -743,6 +765,7 @@ export async function proposeCapabilitySpec(args: {
   gap: string;
   llm: LLMProvider;
   overlay?: OverlayHandle;
+  projectRoot?: string;
 }): Promise<CapabilitySpecProposal | null> {
   const { signal, invariant, fixCandidate, gap, llm } = args;
 
@@ -755,7 +778,7 @@ export async function proposeCapabilitySpec(args: {
   let parsedRaw: unknown;
   try {
     parsedRaw = await requestStructuredJson<unknown>({
-      prompt: buildCapabilitySpecPrompt({ signal, invariant, fixCandidate, gap }),
+      prompt: await buildCapabilitySpecPrompt({ signal, invariant, fixCandidate, gap, projectRoot: args.projectRoot }),
       llm,
       stage: "C6-capabilitySpec",
       model: getModelTier("C6-capabilitySpec"),
