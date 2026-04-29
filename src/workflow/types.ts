@@ -15,6 +15,52 @@
  * The producer (engine, LLM, callable) shows up only in run().
  */
 
+/**
+ * Side-effecting unit of work. Runs every time; never cached. Output
+ * is a RESOURCE handle bound to the call site, not content-addressable.
+ *
+ * Contrast with Stage<I, O>:
+ * - Stage: pure, cacheable, output is a CLAIM that composes by reference
+ *   in the proof DAG. Verdict-bearing.
+ * - Action: impure, run-every-time, output is a RESOURCE handle. Audit-
+ *   only memento (write-only — no cache lookup ever happens). Does not
+ *   compose into binding hashes downstream.
+ *
+ * Spec: docs/specs/2026-04-29-stages-vs-actions.md
+ */
+export interface Action<TInput, TResource> {
+  /** Action identity within a workflow. */
+  name: string;
+
+  /** Producer identity for audit mementos. */
+  producedBy: string;
+
+  /**
+   * Canonicalize input for the audit memento. NOT used for cache
+   * lookup — Actions always run. Two invocations with the same input
+   * produce two separate audit mementos.
+   */
+  serializeInput(input: TInput): unknown;
+
+  /**
+   * Render the resource as a human-readable description for the audit
+   * memento's witness. Must NOT include the live resource handle —
+   * only metadata sufficient to identify what was produced (the
+   * worktree path, the lock identifier, the file path written).
+   */
+  describeResource(resource: TResource): string;
+
+  /** Always invoked. */
+  run(input: TInput): Promise<TResource>;
+}
+
+export interface ActionResult<TResource> {
+  /** The live resource handle. */
+  resource: TResource;
+  /** The CID of the audit-only memento recorded for this invocation. */
+  auditCid: string;
+}
+
 export interface Stage<TInput, TOutput> {
   /**
    * Stage identity within a workflow. Used as part of the binding
