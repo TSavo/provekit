@@ -30,7 +30,7 @@ import { createProvider } from "./llm/index.js";
 import type { LLMProvider as RealLLMProvider } from "./llm/index.js";
 import { resolve, join } from "path";
 import { writeFileSync } from "fs";
-import type { LLMProvider, RemediationPlan, BugLocus, BugSignal } from "./fix/types.js";
+import { type LLMProvider, type RemediationPlan, type BugLocus, type IntentSignal, getIntentText } from "./fix/types.js";
 import { runFixLoop } from "./fix/orchestrator.js";
 import type { RunFixLoopArgs } from "./fix/orchestrator.js";
 import {
@@ -202,15 +202,12 @@ function nodeKindAndName(
   };
 }
 
-function formatIntakeSection(signal: BugSignal, out: NodeJS.WritableStream): void {
+function formatIntakeSection(signal: IntentSignal, out: NodeJS.WritableStream): void {
   const w = (s: string) => out.write(s + "\n");
   w("Intake");
   w(`  Source: ${signal.source} (adapter: ${signal.source})`);
   w(`  Summary: ${signal.summary}`);
-  w(`  Failure: ${signal.failureDescription}`);
-  if (signal.fixHint) {
-    w(`  Fix hint: ${signal.fixHint}`);
-  }
+  w(`  Intent text: ${getIntentText(signal)}`);
   if (signal.codeReferences.length > 0) {
     w("  Code references:");
     for (const ref of signal.codeReferences) {
@@ -326,7 +323,7 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
     }
 
     // 2. Parse bug signal via intake adapter
-    let signal: BugSignal;
+    let signal: IntentSignal;
     let investigateReport: InvestigateReport | undefined;
     try {
       // Wrap the LLM call with timing + logging
@@ -392,7 +389,9 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
         signal = {
           ...signal,
           codeReferences: investigateResult.codeReferences,
-          fixHint: signal.fixHint ?? investigateResult.report.fixHypothesis,
+          // Investigate's fixHypothesis flows through the investigateReport
+          // threaded directly to downstream C-stages; we don't need to
+          // smuggle it back into the signal.
         };
         // Capture for downstream stages — C1, C3, C5 read this report
         // directly to anchor reasoning about location, root cause, and

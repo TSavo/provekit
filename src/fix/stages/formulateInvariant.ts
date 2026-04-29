@@ -1,7 +1,7 @@
 /**
  * C1: Invariant formulator.
  *
- * Given a BugSignal and BugLocus, produces a Z3-checkable InvariantClaim.
+ * Given an IntentSignal and BugLocus, produces a Z3-checkable InvariantClaim.
  * Oracle #1 fires inside this function — every returned InvariantClaim has
  * been verified SAT by Z3. Principle-match path is tried before LLM path.
  */
@@ -9,7 +9,7 @@
 import { readFileSync, existsSync } from "fs";
 import { basename, join, dirname } from "path";
 import { eq, or, and, lte, gte } from "drizzle-orm";
-import type { BugSignal, BugLocus, InvariantClaim, LLMProvider, SmtBindingRef, InvariantCitation } from "../types.js";
+import { type IntentSignal, type BugLocus, type InvariantClaim, type LLMProvider, type SmtBindingRef, type InvariantCitation, getIntentText } from "../types.js";
 import { InvariantFormulationFailed } from "../types.js";
 import { createNoopLogger, type FixLoopLogger } from "../logger.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
@@ -863,7 +863,7 @@ interface C1PromptBuild {
   revisions: Array<{ key: string; revisionId: string }>;
 }
 
-async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusSource: string, investigate?: InvestigateReport, projectRoot?: string): Promise<C1PromptBuild> {
+async function buildLlmPrompt(signal: IntentSignal, locus: BugLocus, db: Db, locusSource: string, investigate?: InvestigateReport, projectRoot?: string): Promise<C1PromptBuild> {
   // Gather source context around locus from the already-loaded full source.
   let sourceContext = "(source not available)";
   if (locusSource) {
@@ -901,8 +901,8 @@ async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusS
 
   // The dynamic context block. No trailing newline — the template's own
   // line break supplies it, matching pre-bp byte-for-byte.
-  const inputsBlock = `Bug summary: ${signal.summary}
-Failure description: ${signal.failureDescription}
+  const inputsBlock = `Intent summary: ${signal.summary}
+User text: ${getIntentText(signal)}
 Location: ${locus.file}:${locus.line}${locus.function ? ` in ${locus.function}` : ""}
 
 Source context:
@@ -1157,7 +1157,7 @@ function validateLlmResponse(rawParsed: unknown): {
  * prevents downstream stages from operating on nothing.
  */
 export async function formulateInvariant(args: {
-  signal: BugSignal;
+  signal: IntentSignal;
   locus: BugLocus;
   db: Db;
   llm: LLMProvider;
@@ -1187,7 +1187,7 @@ export async function formulateInvariant(args: {
 }
 
 async function formulateInvariantInner(args: {
-  signal: BugSignal;
+  signal: IntentSignal;
   locus: BugLocus;
   db: Db;
   llm: LLMProvider;
