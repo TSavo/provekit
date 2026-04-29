@@ -784,16 +784,34 @@ function readLocusSource(db: Db, locus: BugLocus): string {
   return "";
 }
 
-async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusSource: string, investigate?: InvestigateReport, projectRoot?: string): Promise<string> {
+/**
+ * Result of building C1's prompt: the assembled string plus the list of bp
+ * fragment revisions that contributed to it. The caller uses the revision
+ * list to record one bp invocation per fragment after the LLM call returns,
+ * so each fragment accumulates per-revision telemetry independently.
+ */
+interface C1PromptBuild {
+  prompt: string;
+  revisions: Array<{ key: string; revisionId: string }>;
+}
+
+async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusSource: string, investigate?: InvestigateReport, projectRoot?: string): Promise<C1PromptBuild> {
   // Resolve evolvable prompt fragments at their interpolation sites.
   // Each fragment is a bp artifact named after its position; bp.get returns
   // the literal byte-identically until the fragment is evolved. When
   // projectRoot is unavailable (test contexts, dry-run), the literal is
   // used directly — same byte sequence either way on day 0.
-  const fetch = async (key: string, literal: string): Promise<string> =>
-    projectRoot
-      ? (await getPromptStore(projectRoot).get(key, literal, "2026-04-28")).body
-      : literal;
+  // Track which bp fragment revisions contributed to this prompt. Returned
+  // alongside the prompt so the caller can record per-fragment invocations
+  // after the LLM call. When projectRoot is absent, the array stays empty
+  // (no telemetry; behavior identical to pre-bp).
+  const revisions: Array<{ key: string; revisionId: string }> = [];
+  const fetch = async (key: string, literal: string): Promise<string> => {
+    if (!projectRoot) return literal;
+    const rev = await getPromptStore(projectRoot).get(key, literal, "2026-04-28");
+    revisions.push({ key, revisionId: rev.id });
+    return rev.body;
+  };
   const c1Persona = await fetch("c1.persona", C1_PERSONA);
   const c1CrossLlmAgreement = await fetch("c1.cross_llm_agreement", C1_CROSS_LLM_AGREEMENT);
   const c1KindTaint = await fetch("c1.kind.taint", C1_KIND_TAINT);
@@ -846,7 +864,7 @@ async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusS
 `
     : "";
 
-  return `[STAGE:C1] formulateInvariant
+  const prompt = `[STAGE:C1] formulateInvariant
 ${c1Persona}
 
 # Inputs
@@ -892,6 +910,7 @@ ${c1UniversalRules}
 ${c1OutputFormat}
 
 ${c1QuietPart}`;
+  return { prompt, revisions };
 }
 
 const VALID_KINDS: ReadonlySet<InvariantKindLabel> = new Set([
@@ -1375,7 +1394,7 @@ async function formulateInvariantInner(args: {
   // ±3-line context and for the source_expr substring-match gate (task #142).
   const locusSource = readLocusSource(db, locus);
 
-  const prompt = await buildLlmPrompt(signal, locus, db, locusSource, args.investigateReport, args.projectRoot);
+  const { prompt, revisions: bpRevisions } = await buildLlmPrompt(signal, locus, db, locusSource, args.investigateReport, args.projectRoot);
   logger.detail(`C1 LLM prompt (novel path): ${prompt.slice(0, 200)}...`);
   let formalExpression: string;
   let bindings: SmtBindingRef[];
@@ -1458,6 +1477,44 @@ async function formulateInvariantInner(args: {
   // Oracle #1: must return SAT.
   const { witness } = runOracleOne(formalExpression);
   logger.oracle({ id: 1, name: "Z3 SAT check (novel)", passed: witness !== null, detail: witness ? `witness obtained` : "SAT returned no witness" });
+
+  // bp telemetry: one invocation per fragment that contributed to the prompt,
+  // signaled with Oracle #1's verdict. Each fragment accumulates its own
+  // per-revision history; aggregate analysis ("which revision of c1.calibration
+  // produces SAT-witnessed invariants most often") drives the next bp.evolve.
+  // No-ops when projectRoot is absent (bpRevisions is empty in that case).
+  if (args.projectRoot && bpRevisions.length > 0) {
+    const bp = getPromptStore(args.projectRoot);
+    const oracle1Passed = witness !== null;
+    const baseVars = {
+      signalSummary: signal.summary,
+      locusFile: locus.file,
+      locusFunction: locus.function ?? "",
+    };
+    const baseMetadata = {
+      stage: "C1",
+      kind: novelKind ?? "unknown",
+      promptLength: prompt.length,
+      formalExpressionLength: formalExpression.length,
+      bindingCount: bindings.length,
+    };
+    for (const { key, revisionId } of bpRevisions) {
+      const inv = await bp.record({
+        artifactKey: key,
+        revisionId,
+        vars: baseVars,
+        metadata: baseMetadata,
+        output: formalExpression,
+      });
+      await bp.signal(inv.id, {
+        verdict: oracle1Passed ? "pass" : "fail",
+        reason: oracle1Passed
+          ? `oracle #1 SAT — witness obtained for ${novelKind ?? "unknown"}-kind invariant`
+          : "oracle #1 — Z3 returned no witness; invariant unusable",
+        source: "c1-oracle-1",
+      });
+    }
+  }
 
   const firstClaim: InvariantClaim = {
     principleId: null,
