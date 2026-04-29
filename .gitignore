@@ -49,3 +49,6 @@ dist/
 .provekit/harvest/harvest.db-shm
 .provekit/harvest/harvest.db-wal
 prompts.db
+# Verify-cache (step 6 of the standing-invariant runtime).
+# Build artifact: deletable, rebuilds on next run.
+.provekit/cache/
