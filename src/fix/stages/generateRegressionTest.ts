@@ -151,6 +151,7 @@ export async function generateRegressionTest(args: {
           testName,
           llm,
           overlay,
+          projectRoot: args.projectRoot,
         });
   }
 

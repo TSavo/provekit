@@ -252,6 +252,162 @@ interface C5PromptBuild {
   revisions: Array<{ key: string; revisionId: string }>;
 }
 
+// C5 JSON-path test prompt artifact: c5.json_test_prompt
+// 11 runtime placeholders. Used by generateTestCode (the legacy non-agent
+// path that fires when llm.complete is used instead of llm.agent).
+const C5_JSON_TEST_PROMPT_TEMPLATE = `[STAGE:C5] generateTestCode
+You are a TypeScript testing expert. Generate a complete vitest regression test file.
+
+# Inputs
+
+INVARIANT VIOLATED: {{INVARIANT_DESCRIPTION}}
+
+BUG SUMMARY: {{BUG_SUMMARY}}
+
+Z3 WITNESS INPUTS (values that trigger the bug before the fix):
+{{INPUTS_JSON}}
+
+MODULE UNDER TEST (locus file): {{LOCUS_DISPLAY}}
+FUNCTION/LINE: {{LOCUS_FUNCTION}} at line {{LOCUS_LINE}}
+
+SOURCE CODE (post-fix, in overlay):
+\`\`\`typescript
+{{FUNCTION_SOURCE}}
+\`\`\`
+
+IMPORT PATH (from test file to module): {{IMPORT_PATH}}
+
+TEST FILE PATH: {{TEST_FILE_PATH}}
+TEST NAME: {{TEST_NAME}}
+{{GRAMMAR_BLOCK}}
+# What happens to your output
+
+Your test will be run TWICE: once on the patched (post-fix) code, once with
+the fix reverted to the original buggy code.
+- On post-fix code: your test MUST pass.
+- On original code: your test MUST fail (mutation verification — proves the
+  test actually exercises the bug, not just unrelated infrastructure).
+
+If your test passes on BOTH (because its bug-class assertion is gated on a
+condition the test setup didn't force), it's vacuous and gets rejected.
+
+# Anti-pattern: gated bug-class assertion
+
+The single most common failure mode. Don't write:
+
+\`\`\`ts
+const result = exec(input);
+if (result && result.length > 0) {
+  // bug-class assertion gated on a precondition
+  expect(result.unique).toBe(true);
+}
+\`\`\`
+
+If \`result\` is empty for any reason (timing, default state, infrastructure
+mismatch in the overlay), the assertion is skipped and the test passes
+WITHOUT exercising the bug. Mutation verification might still catch the
+differential through OTHER assertions in the test, but the BUG-CLASS
+assertion is silent — the test isn't verifying what it claims.
+
+Force the precondition. Don't gate the assertion on it:
+
+\`\`\`ts
+const result = exec(input);
+expect(result).toBeDefined();              // precondition becomes an assertion
+expect(result.length).toBeGreaterThan(0);  // precondition becomes an assertion
+expect(result.unique).toBe(true);          // bug-class assertion runs unconditionally
+\`\`\`
+
+If the setup can't reliably produce \`result\`, that's a SETUP problem to
+solve, not a test-shape problem to paper over.
+
+# Anti-pattern: try/catch swallowing the failure
+
+\`\`\`ts
+try {
+  exec(input);
+} catch {
+  // swallowed; nothing asserts that exec didn't throw on input that
+  // shouldn't have caused a throw
+}
+\`\`\`
+
+Use \`expect(() => ...).not.toThrow()\` or \`.toThrow()\` instead. Make the
+behavior an assertion.
+
+# Universal rules
+
+- Use vitest: \`import { it, expect, describe } from "vitest"\`
+- Import the buggy function by name (named import preferred; default OK if
+  the module has a default export)
+- If the Z3 witness inputs above are concrete values: call the function with
+  them exactly. If they're "(none — abstract invariant; ...)": derive a
+  realistic test scenario from the bug summary and invariant description
+  yourself. Choose inputs that exercise the bug class, not arbitrary values.
+- The bug-class assertion MUST run unconditionally on every test execution
+- Test name MUST be exactly: "{{TEST_NAME}}"
+- Output ONLY the complete TypeScript test file contents — no markdown
+  fences, no explanation, no "Here is the test:" preamble
+
+# Canonical examples
+
+## Division-by-zero
+\`\`\`ts
+import { it, expect } from "vitest";
+import { divide } from "../utils/math";
+
+it("{{TEST_NAME}}", () => {
+  // Z3 witness: a=5, b=0 should not produce Infinity post-fix.
+  expect(() => divide(5, 0)).toThrow();
+});
+\`\`\`
+
+## Set / uniqueness (Bug-1 Express duplicate methods, anti-pattern fixed)
+\`\`\`ts
+import { it, expect } from "vitest";
+import express from "../app";
+
+it("{{TEST_NAME}}", () => {
+  const app = express();
+  app.get("/x", () => {});
+  app.get("/x", () => {});
+  app.put("/x", () => {});
+
+  // Force the precondition by exercising the OPTIONS path explicitly.
+  const allow = computeOptionsAllow(app, "/x");
+  expect(allow).toBeDefined();
+  expect(allow.length).toBeGreaterThan(0);
+
+  // Bug-class assertion: unconditional.
+  const methods = allow.split(",").map(s => s.trim());
+  expect(methods.length).toBe(new Set(methods).size);
+});
+\`\`\`
+
+## Taint / shell-injection
+\`\`\`ts
+import { it, expect } from "vitest";
+import { listFiles } from "../cmd";
+import { existsSync, mkdtempSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+
+it("{{TEST_NAME}}", () => {
+  const dir = mkdtempSync(join(tmpdir(), "regression-"));
+  const marker = join(dir, "INJECTED");
+  const payload = \`; touch \${marker} ;\`;
+
+  // Either throws or returns non-buffer — both acceptable; what matters
+  // is the marker file did NOT get created (the injected command did
+  // NOT execute).
+  try { listFiles(payload); } catch { /* accepted */ }
+
+  expect(existsSync(marker)).toBe(false);
+});
+\`\`\`
+`;
+const C5_JSON_TEST_PROMPT_DISCRIMINATOR = "2026-04-28";
+
 // C5 retry prompt artifact (used when import-path validation fails on the
 // first attempt). Three runtime placeholders.
 const C5_RETRY_PROMPT_TEMPLATE = `Your previous test file at {{TEST_FILE_PATH}} contains import(s) that do not exist in the overlay: {{UNRESOLVED_IMPORTS}}.
@@ -365,6 +521,12 @@ export async function generateTestCode(args: {
   testName: string;
   llm: LLMProvider;
   overlay: OverlayHandle;
+  /**
+   * Host project root, optional. When provided, the C5 JSON-path test
+   * prompt resolves via better-prompts (c5.json_test_prompt artifact).
+   * Day 0 byte-identical.
+   */
+  projectRoot?: string;
 }): Promise<string> {
   const { signal, locus, invariant, inputs, testFilePath, testName, llm, overlay } = args;
 
@@ -424,157 +586,32 @@ export async function generateTestCode(args: {
     ? `\n${grammarSectionCompletion}\n`
     : "";
 
-  const prompt = `[STAGE:C5] generateTestCode
-You are a TypeScript testing expert. Generate a complete vitest regression test file.
-
-# Inputs
-
-INVARIANT VIOLATED: ${invariant.description}
-
-BUG SUMMARY: ${signal.summary}
-
-Z3 WITNESS INPUTS (values that trigger the bug before the fix):
-${inputsJson}
-
-MODULE UNDER TEST (locus file): ${locusDisplay}
-FUNCTION/LINE: ${locus.function ?? "(unknown)"} at line ${locus.line}
-
-SOURCE CODE (post-fix, in overlay):
-\`\`\`typescript
-${functionSource.slice(0, 2000)}
-\`\`\`
-
-IMPORT PATH (from test file to module): ${importPath}
-
-TEST FILE PATH: ${testFilePath}
-TEST NAME: ${testName}
-${grammarBlockCompletion}
-# What happens to your output
-
-Your test will be run TWICE: once on the patched (post-fix) code, once with
-the fix reverted to the original buggy code.
-- On post-fix code: your test MUST pass.
-- On original code: your test MUST fail (mutation verification — proves the
-  test actually exercises the bug, not just unrelated infrastructure).
-
-If your test passes on BOTH (because its bug-class assertion is gated on a
-condition the test setup didn't force), it's vacuous and gets rejected.
-
-# Anti-pattern: gated bug-class assertion
-
-The single most common failure mode. Don't write:
-
-\`\`\`ts
-const result = exec(input);
-if (result && result.length > 0) {
-  // bug-class assertion gated on a precondition
-  expect(result.unique).toBe(true);
-}
-\`\`\`
-
-If \`result\` is empty for any reason (timing, default state, infrastructure
-mismatch in the overlay), the assertion is skipped and the test passes
-WITHOUT exercising the bug. Mutation verification might still catch the
-differential through OTHER assertions in the test, but the BUG-CLASS
-assertion is silent — the test isn't verifying what it claims.
-
-Force the precondition. Don't gate the assertion on it:
-
-\`\`\`ts
-const result = exec(input);
-expect(result).toBeDefined();              // precondition becomes an assertion
-expect(result.length).toBeGreaterThan(0);  // precondition becomes an assertion
-expect(result.unique).toBe(true);          // bug-class assertion runs unconditionally
-\`\`\`
-
-If the setup can't reliably produce \`result\`, that's a SETUP problem to
-solve, not a test-shape problem to paper over.
-
-# Anti-pattern: try/catch swallowing the failure
-
-\`\`\`ts
-try {
-  exec(input);
-} catch {
-  // swallowed; nothing asserts that exec didn't throw on input that
-  // shouldn't have caused a throw
-}
-\`\`\`
-
-Use \`expect(() => ...).not.toThrow()\` or \`.toThrow()\` instead. Make the
-behavior an assertion.
-
-# Universal rules
-
-- Use vitest: \`import { it, expect, describe } from "vitest"\`
-- Import the buggy function by name (named import preferred; default OK if
-  the module has a default export)
-- If the Z3 witness inputs above are concrete values: call the function with
-  them exactly. If they're "(none — abstract invariant; ...)": derive a
-  realistic test scenario from the bug summary and invariant description
-  yourself. Choose inputs that exercise the bug class, not arbitrary values.
-- The bug-class assertion MUST run unconditionally on every test execution
-- Test name MUST be exactly: "${testName}"
-- Output ONLY the complete TypeScript test file contents — no markdown
-  fences, no explanation, no "Here is the test:" preamble
-
-# Canonical examples
-
-## Division-by-zero
-\`\`\`ts
-import { it, expect } from "vitest";
-import { divide } from "../utils/math";
-
-it("${testName}", () => {
-  // Z3 witness: a=5, b=0 should not produce Infinity post-fix.
-  expect(() => divide(5, 0)).toThrow();
-});
-\`\`\`
-
-## Set / uniqueness (Bug-1 Express duplicate methods, anti-pattern fixed)
-\`\`\`ts
-import { it, expect } from "vitest";
-import express from "../app";
-
-it("${testName}", () => {
-  const app = express();
-  app.get("/x", () => {});
-  app.get("/x", () => {});
-  app.put("/x", () => {});
-
-  // Force the precondition by exercising the OPTIONS path explicitly.
-  const allow = computeOptionsAllow(app, "/x");
-  expect(allow).toBeDefined();
-  expect(allow.length).toBeGreaterThan(0);
-
-  // Bug-class assertion: unconditional.
-  const methods = allow.split(",").map(s => s.trim());
-  expect(methods.length).toBe(new Set(methods).size);
-});
-\`\`\`
-
-## Taint / shell-injection
-\`\`\`ts
-import { it, expect } from "vitest";
-import { listFiles } from "../cmd";
-import { existsSync, mkdtempSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
-
-it("${testName}", () => {
-  const dir = mkdtempSync(join(tmpdir(), "regression-"));
-  const marker = join(dir, "INJECTED");
-  const payload = \`; touch \${marker} ;\`;
-
-  // Either throws or returns non-buffer — both acceptable; what matters
-  // is the marker file did NOT get created (the injected command did
-  // NOT execute).
-  try { listFiles(payload); } catch { /* accepted */ }
-
-  expect(existsSync(marker)).toBe(false);
-});
-\`\`\`
-`;
+  let templateBody = C5_JSON_TEST_PROMPT_TEMPLATE;
+  if (args.projectRoot) {
+    const rev = await getPromptStore(args.projectRoot).get(
+      "c5.json_test_prompt",
+      C5_JSON_TEST_PROMPT_TEMPLATE,
+      C5_JSON_TEST_PROMPT_DISCRIMINATOR,
+    );
+    templateBody = rev.body;
+  }
+  const renderVars: Record<string, string> = {
+    INVARIANT_DESCRIPTION: invariant.description,
+    BUG_SUMMARY: signal.summary,
+    INPUTS_JSON: inputsJson,
+    LOCUS_DISPLAY: locusDisplay,
+    LOCUS_FUNCTION: locus.function ?? "(unknown)",
+    LOCUS_LINE: String(locus.line),
+    FUNCTION_SOURCE: functionSource.slice(0, 2000),
+    IMPORT_PATH: importPath,
+    TEST_FILE_PATH: testFilePath,
+    TEST_NAME: testName,
+    GRAMMAR_BLOCK: grammarBlockCompletion,
+  };
+  let prompt = templateBody;
+  for (const [k, v] of Object.entries(renderVars)) {
+    prompt = prompt.replaceAll(`{{${k}}}`, v);
+  }
 
   const raw = await llm.complete({ prompt, model: getModelTier("C5-testGen") });
 
