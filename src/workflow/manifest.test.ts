@@ -1,20 +1,21 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdtempSync, mkdirSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { openDb } from "../db/index.js";
 import { WorkflowRunner } from "./runner.js";
-import { InMemoryRegistry } from "./registry.js";
+import { InMemoryRegistry, InMemoryActionRegistry } from "./registry.js";
 import {
   parseManifest,
   validateManifest,
   topoSort,
   runManifest,
   manifestToWorkflow,
+  loadKitsLock,
 } from "./manifest.js";
-import type { Stage } from "./types.js";
+import type { Action, Stage } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -42,6 +43,24 @@ function makeStage<I, O>(name: string, fn: (input: I) => O): Stage<I, O> & { inv
     },
   };
   return stage;
+}
+
+function makeAction<I, R>(
+  name: string,
+  fn: (input: I) => R,
+): Action<I, R> & { invocations: number } {
+  const action = {
+    name,
+    producedBy: `${name}@1.0`,
+    invocations: 0,
+    serializeInput: (input: I) => input,
+    describeResource: (r: R) => JSON.stringify(r),
+    async run(input: I) {
+      action.invocations++;
+      return fn(input);
+    },
+  };
+  return action;
 }
 
 describe("parseManifest + validateManifest", () => {
@@ -145,7 +164,7 @@ describe("topoSort", () => {
       { id: "a", capability: "x", input: "$input" },
       { id: "b", capability: "x", input: "$node.a.output" },
     ];
-    const ordered = topoSort(nodes).map((n) => n.id);
+    const ordered = topoSort(nodes).map((e) => e.spec.id);
     expect(ordered).toEqual(["a", "b", "c"]);
   });
 
@@ -160,7 +179,7 @@ describe("topoSort", () => {
         input: { l: "$node.left.output", r: "$node.right.output" },
       },
     ];
-    const ordered = topoSort(nodes).map((n) => n.id);
+    const ordered = topoSort(nodes).map((e) => e.spec.id);
     expect(ordered[0]).toBe("root");
     expect(ordered[3]).toBe("merge");
     expect(ordered.slice(1, 3).sort()).toEqual(["left", "right"]);
@@ -293,5 +312,362 @@ output: $node.b.output
     expect(producers[0]).toMatch(/^workflow:walkable@/);
     expect(producers).toContain("double@1.0");
     expect(producers).toContain("inc@1.0");
+  });
+});
+
+describe("actions: block (Stages-vs-Actions grammar)", () => {
+  it("parses a manifest with an actions: block", () => {
+    const yaml = `
+name: with-actions
+cid: wf-actions-v1
+nodes:
+  - id: consume
+    capability: consume
+    input:
+      overlay: $action.open-overlay.resource
+actions:
+  - id: open-overlay
+    action: open-overlay
+    input:
+      baseRef: $input.baseRef
+output: $node.consume.output
+`;
+    const m = parseManifest(yaml);
+    expect(m.actions).toHaveLength(1);
+    expect(m.actions[0]).toMatchObject({
+      id: "open-overlay",
+      action: "open-overlay",
+    });
+  });
+
+  it("defaults manifest.actions to [] when absent", () => {
+    const yaml = `
+name: noActions
+cid: wf-no-actions
+nodes:
+  - id: only
+    capability: passthrough
+    input: $input
+output: $node.only.output
+`;
+    const m = parseManifest(yaml);
+    expect(m.actions).toEqual([]);
+  });
+
+  it("rejects $action.<id>.output with a clear error", () => {
+    expect(() =>
+      validateManifest({
+        name: "x",
+        cid: "y",
+        output: "$node.consume.output",
+        nodes: [
+          {
+            id: "consume",
+            capability: "consume",
+            input: { bad: "$action.open-overlay.output" },
+          },
+        ],
+        actions: [
+          {
+            id: "open-overlay",
+            action: "open-overlay",
+            input: "$input",
+          },
+        ],
+      }),
+    ).toThrow(/must end in \.resource/);
+  });
+
+  it("rejects references to undeclared actions", () => {
+    expect(() =>
+      validateManifest({
+        name: "x",
+        cid: "y",
+        output: "$node.consume.output",
+        nodes: [
+          {
+            id: "consume",
+            capability: "consume",
+            input: { overlay: "$action.missing.resource" },
+          },
+        ],
+        actions: [],
+      }),
+    ).toThrow(/undeclared action "missing"/);
+  });
+
+  it("rejects ids colliding between nodes and actions", () => {
+    expect(() =>
+      validateManifest({
+        name: "x",
+        cid: "y",
+        output: "$node.shared.output",
+        nodes: [{ id: "shared", capability: "c", input: "$input" }],
+        actions: [{ id: "shared", action: "a", input: "$input" }],
+      }),
+    ).toThrow(/duplicate id "shared"/);
+  });
+
+  it("rejects manifest.output pointing at an action resource", () => {
+    expect(() =>
+      validateManifest({
+        name: "x",
+        cid: "y",
+        output: "$action.open-overlay.resource",
+        nodes: [],
+        actions: [
+          { id: "open-overlay", action: "open-overlay", input: "$input" },
+        ],
+      }),
+    ).toThrow(/action resources are not cacheable workflow outputs/);
+  });
+
+  it("rejects cycles between a stage and an action", () => {
+    // node consume → action overlay → node consume (cycle)
+    expect(() =>
+      validateManifest({
+        name: "x",
+        cid: "y",
+        output: "$node.consume.output",
+        nodes: [
+          {
+            id: "consume",
+            capability: "consume",
+            input: { overlay: "$action.overlay.resource" },
+          },
+        ],
+        actions: [
+          {
+            id: "overlay",
+            action: "overlay",
+            input: { signal: "$node.consume.output" },
+          },
+        ],
+      }),
+    ).toThrow(/cycle detected/);
+  });
+
+  it("topo-sorts mixed Stage/Action graphs by dependency", () => {
+    const order = topoSort(
+      [
+        {
+          id: "consume",
+          capability: "consume",
+          input: { overlay: "$action.open-overlay.resource" },
+        },
+      ],
+      [
+        {
+          id: "open-overlay",
+          action: "open-overlay",
+          input: "$input",
+        },
+      ],
+    );
+    expect(order).toHaveLength(2);
+    expect(order[0]).toMatchObject({ kind: "action" });
+    expect((order[0].spec as { id: string }).id).toBe("open-overlay");
+    expect(order[1]).toMatchObject({ kind: "node" });
+    expect((order[1].spec as { id: string }).id).toBe("consume");
+  });
+
+  it("respects runAfter as an ordering constraint", () => {
+    // cleanup runs after stage finishes, even though it has no data ref
+    const order = topoSort(
+      [{ id: "work", capability: "work", input: "$input" }],
+      [
+        {
+          id: "cleanup",
+          action: "cleanup",
+          input: "$input",
+          runAfter: "$node.work",
+        },
+      ],
+    );
+    expect(order).toHaveLength(2);
+    expect((order[0].spec as { id: string }).id).toBe("work");
+    expect((order[1].spec as { id: string }).id).toBe("cleanup");
+  });
+
+  it("rejects runAfter referencing an undeclared id", () => {
+    expect(() =>
+      validateManifest({
+        name: "x",
+        cid: "y",
+        output: "$node.work.output",
+        nodes: [{ id: "work", capability: "work", input: "$input" }],
+        actions: [
+          {
+            id: "cleanup",
+            action: "cleanup",
+            input: "$input",
+            runAfter: "$node.missing",
+          },
+        ],
+      }),
+    ).toThrow(/undeclared node "missing"/);
+  });
+
+  it("rejects malformed runAfter (3-part) references", () => {
+    expect(() =>
+      validateManifest({
+        name: "x",
+        cid: "y",
+        output: "$node.work.output",
+        nodes: [{ id: "work", capability: "work", input: "$input" }],
+        actions: [
+          {
+            id: "cleanup",
+            action: "cleanup",
+            input: "$input",
+            runAfter: "$node.work.output",
+          },
+        ],
+      }),
+    ).toThrow(/malformed runAfter reference/);
+  });
+});
+
+describe("runManifest with actions", () => {
+  let db: ReturnType<typeof makeDb>;
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("runs an action and threads its resource into a downstream stage", async () => {
+    const yaml = `
+name: with-action
+cid: wf-action-run-v1
+nodes:
+  - id: consume
+    capability: consume
+    input:
+      overlay: $action.open-overlay.resource
+      n: $input
+actions:
+  - id: open-overlay
+    action: open-overlay
+    input: $input
+output: $node.consume.output
+`;
+    const manifest = parseManifest(yaml);
+    const stages = new InMemoryRegistry();
+    const actions = new InMemoryActionRegistry();
+
+    const overlayAction = makeAction("open-overlay", (n: number) => ({
+      worktreePath: `/tmp/overlay-${n}`,
+      baseRef: `ref-${n}`,
+    }));
+    actions.register("open-overlay", overlayAction);
+
+    const consumeStage = makeStage(
+      "consume",
+      (input: { overlay: { worktreePath: string }; n: number }) =>
+        `consumed ${input.overlay.worktreePath} with ${input.n}`,
+    );
+    stages.register("consume", consumeStage);
+
+    const runner = new WorkflowRunner(db, manifestToWorkflow(manifest), stages);
+    const result = await runManifest(runner, stages, manifest, 7, actions);
+    expect(result.output).toBe("consumed /tmp/overlay-7 with 7");
+    expect(overlayAction.invocations).toBe(1);
+    expect(consumeStage.invocations).toBe(1);
+
+    // Re-run: workflow-level cache hit, NEITHER stage nor action runs.
+    // (Action audit cids do not affect Stage propertyHashes, so the
+    // workflow-level memento sees byte-identical input and short-circuits.)
+    const second = await runManifest(runner, stages, manifest, 7, actions);
+    expect(second.cacheHit).toBe(true);
+    expect(overlayAction.invocations).toBe(1);
+    expect(consumeStage.invocations).toBe(1);
+  });
+
+  it("fails fast when an action capability is not registered", async () => {
+    const yaml = `
+name: missing-action
+cid: wf-missing-action-v1
+nodes:
+  - id: noop
+    capability: noop
+    input: $input
+actions:
+  - id: dangling
+    action: not-registered
+    input: $input
+output: $node.noop.output
+`;
+    const manifest = parseManifest(yaml);
+    const stages = new InMemoryRegistry();
+    stages.register("noop", makeStage("noop", (n: unknown) => n));
+    const actions = new InMemoryActionRegistry();
+    const runner = new WorkflowRunner(db, manifestToWorkflow(manifest), stages);
+    await expect(
+      runManifest(runner, stages, manifest, null, actions),
+    ).rejects.toThrow(/not-registered.*not registered/);
+  });
+
+  it("requires an actionRegistry when the manifest declares actions", async () => {
+    const yaml = `
+name: needs-action-registry
+cid: wf-needs-action-registry-v1
+nodes:
+  - id: noop
+    capability: noop
+    input: $input
+actions:
+  - id: a
+    action: a
+    input: $input
+output: $node.noop.output
+`;
+    const manifest = parseManifest(yaml);
+    const stages = new InMemoryRegistry();
+    stages.register("noop", makeStage("noop", (n: unknown) => n));
+    const runner = new WorkflowRunner(db, manifestToWorkflow(manifest), stages);
+    await expect(runManifest(runner, stages, manifest, null)).rejects.toThrow(
+      /declares actions but runManifest was called without an actionRegistry/,
+    );
+  });
+});
+
+describe("loadKitsLock", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "kitslock-"));
+  });
+
+  it("returns null when .provekit/kits.lock does not exist", () => {
+    expect(loadKitsLock(tmp)).toBeNull();
+  });
+
+  it("parses a valid lockfile", () => {
+    mkdirSync(join(tmp, ".provekit"), { recursive: true });
+    writeFileSync(
+      join(tmp, ".provekit", "kits.lock"),
+      `typescript: { version: "0.5.2", cid: "abc123" }
+rust: { version: "0.1.0", cid: "def456" }
+`,
+    );
+    const lock = loadKitsLock(tmp);
+    expect(lock).toEqual({
+      typescript: { version: "0.5.2", cid: "abc123" },
+      rust: { version: "0.1.0", cid: "def456" },
+    });
+  });
+
+  it("throws on a malformed entry (missing version)", () => {
+    mkdirSync(join(tmp, ".provekit"), { recursive: true });
+    writeFileSync(
+      join(tmp, ".provekit", "kits.lock"),
+      `typescript: { cid: "abc123" }
+`,
+    );
+    expect(() => loadKitsLock(tmp)).toThrow(/version must be a string/);
+  });
+
+  it("returns {} for an empty lockfile", () => {
+    mkdirSync(join(tmp, ".provekit"), { recursive: true });
+    writeFileSync(join(tmp, ".provekit", "kits.lock"), "");
+    expect(loadKitsLock(tmp)).toEqual({});
   });
 });

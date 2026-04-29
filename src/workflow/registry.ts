@@ -16,7 +16,32 @@
  * a separate method).
  */
 
-import type { Stage } from "./types.js";
+import type { Action, Stage } from "./types.js";
+
+export interface ActionRegistry {
+  /**
+   * Bind an Action to a capability name. Throws if already registered;
+   * use replace() to overwrite. Parallel to ProducerRegistry but kept
+   * separate because Action<I,R> and Stage<I,O> are different shapes —
+   * a unified registry would force a union return that callers have to
+   * discriminate.
+   */
+  register<TInput, TResource>(
+    capability: string,
+    action: Action<TInput, TResource>,
+  ): void;
+
+  replace<TInput, TResource>(
+    capability: string,
+    action: Action<TInput, TResource>,
+  ): void;
+
+  resolve<TInput, TResource>(
+    capability: string,
+  ): Action<TInput, TResource> | null;
+
+  capabilities(): string[];
+}
 
 export interface ProducerRegistry {
   /**
@@ -86,5 +111,39 @@ export class InMemoryRegistry implements ProducerRegistry {
 
   capabilities(): string[] {
     return [...this.stages.keys()].sort();
+  }
+}
+
+export class InMemoryActionRegistry implements ActionRegistry {
+  private readonly actions = new Map<string, Action<unknown, unknown>>();
+
+  register<TInput, TResource>(
+    capability: string,
+    action: Action<TInput, TResource>,
+  ): void {
+    if (this.actions.has(capability)) {
+      throw new Error(
+        `action already registered for capability "${capability}"; use replace() to overwrite`,
+      );
+    }
+    this.actions.set(capability, action as Action<unknown, unknown>);
+  }
+
+  replace<TInput, TResource>(
+    capability: string,
+    action: Action<TInput, TResource>,
+  ): void {
+    this.actions.set(capability, action as Action<unknown, unknown>);
+  }
+
+  resolve<TInput, TResource>(
+    capability: string,
+  ): Action<TInput, TResource> | null {
+    const action = this.actions.get(capability);
+    return (action ?? null) as Action<TInput, TResource> | null;
+  }
+
+  capabilities(): string[] {
+    return [...this.actions.keys()].sort();
   }
 }
