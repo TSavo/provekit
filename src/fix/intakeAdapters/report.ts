@@ -58,11 +58,16 @@ const adapter: IntakeAdapter = {
 
     return {
       source: "report",
-      rawText: input.text,
+      // New canonical fields (the pipeline reads these going forward).
+      intentText: input.text,
       summary: parsed.summary ?? "",
+      classHint: parsed.bugClassHint ?? undefined,
+      codeReferences: parsed.codeReferences ?? [],
+      // Deprecated bug-shaped fields, kept populated during cutover for
+      // unmigrated consumers. Drop after consumer migration completes.
+      rawText: input.text,
       failureDescription: parsed.failureDescription ?? "",
       fixHint: parsed.fixHint ?? undefined,
-      codeReferences: parsed.codeReferences ?? [],
       bugClassHint: parsed.bugClassHint ?? undefined,
     };
   },

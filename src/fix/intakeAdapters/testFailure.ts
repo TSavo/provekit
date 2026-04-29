@@ -105,12 +105,16 @@ const adapter: IntakeAdapter = {
       };
     }
 
+    const text = input.text || `${ctx.testName}: ${ctx.errorMessage}`;
     return {
       source: "test_failure",
-      rawText: input.text || `${ctx.testName}: ${ctx.errorMessage}`,
+      intentText: text,
       summary: prose.summary,
-      failureDescription: prose.failureDescription,
+      classHint: "test-failure",
       codeReferences,
+      // Deprecated, kept during cutover.
+      rawText: text,
+      failureDescription: prose.failureDescription,
       bugClassHint: "test-failure",
     };
   },

@@ -115,12 +115,16 @@ const adapter: IntakeAdapter = {
       };
     }
 
+    const text = input.text || ctx.reason;
     return {
       source: "gap_report",
-      rawText: input.text || ctx.reason,
+      intentText: text,
       summary: prose.summary,
-      failureDescription: prose.failureDescription,
+      classHint: ctx.principleId,
       codeReferences,
+      // Deprecated, kept during cutover.
+      rawText: text,
+      failureDescription: prose.failureDescription,
       bugClassHint: ctx.principleId,
     };
   },

@@ -87,10 +87,13 @@ const adapter: IntakeAdapter = {
 
     return {
       source: "runtime_log",
-      rawText: input.text,
+      intentText: input.text,
       summary: parsed.summary,
-      failureDescription: parsed.failureDescription,
+      classHint: parsed.bugClassHint ?? undefined,
       codeReferences,
+      // Deprecated, kept during cutover.
+      rawText: input.text,
+      failureDescription: parsed.failureDescription,
       bugClassHint: parsed.bugClassHint ?? undefined,
     };
   },

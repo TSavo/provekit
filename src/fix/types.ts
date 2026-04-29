@@ -1,8 +1,10 @@
 /**
- * B1: Shared types for the fix loop.
+ * Shared types for the intent loop.
  *
- * BugSignal is the normalized output of the intake layer.
- * The remaining types are stubs — B2/B3/B5 fill in their implementations.
+ * IntentSignal is the normalized output of the intake layer. The framework
+ * has no notion of "bug-shaped vs change-shaped" — every input is an intent
+ * that requires investigation. The user's text varies; the structure does
+ * not.
  */
 
 // ---------------------------------------------------------------------------
@@ -473,20 +475,81 @@ export interface CodeReference {
 }
 
 /**
- * Normalized bug report produced by intake.
- * source is a plain string resolved via the intake adapter registry — no closed enum.
+ * Normalized intent extracted by an intake adapter from any input shape:
+ * bug report, change request, property assertion, commit replay, or test
+ * failure. The architecture has no notion of "bug-shaped vs change-shaped"
+ * — every input is an intent that requires investigation. The user's text
+ * varies; the structure does not.
+ *
+ * source is a plain string resolved via the intake adapter registry — no
+ * closed enum. Adapters set it to their registered name.
+ *
+ * Migration in progress (2026-04-28): the bug-shaped fields
+ * (failureDescription, fixHint, bugClassHint, rawText) are kept here
+ * during the cutover so existing consumers compile. New consumers should
+ * read intentText/classHint. Old fields drop in a follow-up commit once
+ * every reader is migrated.
  */
-export interface BugSignal {
+export interface IntentSignal {
   /** Adapter name used to parse this signal. No closed enum — resolved via registry. */
   source: string;
-  rawText: string;
+  /**
+   * Verbatim user-supplied text, exactly as the adapter received it. The
+   * pipeline's downstream prompts read this directly; bug reports state
+   * the property to hold by negation, change requests state it explicitly,
+   * property assertions are the property. Same field, same role.
+   *
+   * Optional during migration — fall back to rawText if absent. Use the
+   * `getIntentText(signal)` helper rather than reading the field directly
+   * so the migration is clean. Becomes required after the cutover lands.
+   */
+  intentText?: string;
   /** One-sentence summary, typically LLM-extracted. */
   summary: string;
-  /** Human-readable description of what goes wrong. */
-  failureDescription: string;
-  fixHint?: string;
   codeReferences: CodeReference[];
+  /**
+   * Optional free-form taxonomy hint extracted by intake. Examples:
+   * "null-dereference", "feature-add", "refactor", "perf-regression". Free
+   * string — no closed enum, since the taxonomy shifts as the framework
+   * encounters new intent shapes.
+   *
+   * During migration this mirrors bugClassHint. Adapters populate both.
+   */
+  classHint?: string;
+
+  // ---- Deprecated bug-shaped fields (drop after consumer migration) ----
+  /** @deprecated use intentText */
+  rawText: string;
+  /** @deprecated bugs put failure text in intentText; the LLM reads it from there */
+  failureDescription: string;
+  /** @deprecated user steers belong in intentText */
+  fixHint?: string;
+  /** @deprecated use classHint */
   bugClassHint?: string;
+}
+
+/**
+ * Backward-compat alias. Prefer IntentSignal in new code. Will be removed
+ * once all consumers migrate.
+ * @deprecated use IntentSignal
+ */
+export type BugSignal = IntentSignal;
+
+/**
+ * Bridge helper for the intentText / rawText cutover. Reads the new field
+ * if present, else falls back to rawText (which adapters always populate).
+ * After migration, every consumer reads intentText directly and this
+ * helper is removed.
+ */
+export function getIntentText(signal: IntentSignal): string {
+  return signal.intentText ?? signal.rawText ?? "";
+}
+
+/**
+ * Bridge helper for classHint / bugClassHint. Same shape as getIntentText.
+ */
+export function getClassHint(signal: IntentSignal): string | undefined {
+  return signal.classHint ?? signal.bugClassHint;
 }
 
 // ---------------------------------------------------------------------------
