@@ -13,6 +13,7 @@ import { fileURLToPath } from "url";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { openDb } from "../db/index.js";
 import { WorkflowRunner } from "./runner.js";
+import { InMemoryRegistry } from "./registry.js";
 import type { Stage, Workflow } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -181,6 +182,149 @@ describe("WorkflowRunner: cascading work-skipping", () => {
     expect(s1.invocations).toBe(2); // once for input=3, once for input=5
     expect(s2.invocations).toBe(2);
     expect(s3.invocations).toBe(2);
+  });
+});
+
+describe("WorkflowRunner: capability dispatch via registry", () => {
+  let db: ReturnType<typeof makeDb>;
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("request() resolves the capability and runs the registered stage", async () => {
+    const registry = new InMemoryRegistry();
+    const stage = makeStage("doubler", (n: number) => n * 2);
+    registry.register("double", stage);
+
+    const runner = new WorkflowRunner(db, wf, registry);
+    const result = await runner.request<number, number>("double", 7);
+
+    expect(result.output).toBe(14);
+    expect(result.cacheHit).toBe(false);
+    expect(stage.invocations).toBe(1);
+  });
+
+  it("request() caches the same way runStage() does", async () => {
+    const registry = new InMemoryRegistry();
+    const stage = makeStage("doubler", (n: number) => n * 2);
+    registry.register("double", stage);
+
+    const runner = new WorkflowRunner(db, wf, registry);
+    await runner.request<number, number>("double", 7);
+    const second = await runner.request<number, number>("double", 7);
+
+    expect(second.cacheHit).toBe(true);
+    expect(stage.invocations).toBe(1);
+  });
+
+  it("request() throws when capability is not registered", async () => {
+    const registry = new InMemoryRegistry();
+    const runner = new WorkflowRunner(db, wf, registry);
+    await expect(runner.request("missing", 1)).rejects.toThrow(/no producer/);
+  });
+
+  it("request() throws when no registry is configured", async () => {
+    const runner = new WorkflowRunner(db, wf);
+    await expect(runner.request("any", 1)).rejects.toThrow(/no registry/);
+  });
+
+  it("replace() swaps the producer; cache invalidates per-stage-name", async () => {
+    const registry = new InMemoryRegistry();
+    const v1 = makeStage("doubler-v1", (n: number) => n * 2);
+    const v2 = makeStage("doubler-v2", (n: number) => n * 2);
+    registry.register("double", v1);
+
+    const runner = new WorkflowRunner(db, wf, registry);
+    const a = await runner.request<number, number>("double", 7);
+    expect(a.output).toBe(14);
+
+    registry.replace("double", v2);
+    const b = await runner.request<number, number>("double", 7);
+    // Different stage.name = different bindingHash = cache miss
+    expect(b.cacheHit).toBe(false);
+    expect(b.output).toBe(14);
+    expect(v1.invocations).toBe(1);
+    expect(v2.invocations).toBe(1);
+  });
+});
+
+describe("WorkflowRunner: workflow-as-memento", () => {
+  let db: ReturnType<typeof makeDb>;
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("first run is a workflow-level cache miss; second run hits", async () => {
+    const runner = new WorkflowRunner(db, wf);
+    const s1 = makeStage("inc", (n: number) => n + 1);
+    const s2 = makeStage("double", (n: number) => n * 2);
+
+    const body = async (r: WorkflowRunner) => {
+      const r1 = await r.runStage(s1, 3);
+      const r2 = await r.runStage(s2, r1.output, [r1.cid]);
+      return { output: r2.output, cid: r2.cid };
+    };
+
+    const first = await runner.runWorkflow(3, body);
+    expect(first.cacheHit).toBe(false);
+    expect(first.output).toBe(8);
+    expect(s1.invocations).toBe(1);
+    expect(s2.invocations).toBe(1);
+
+    const second = await runner.runWorkflow(3, body);
+    expect(second.cacheHit).toBe(true);
+    expect(second.output).toBe(8);
+    expect(second.cid).toBe(first.cid);
+    // Workflow-level cache hit means body never invoked, so stages
+    // never invoked either.
+    expect(s1.invocations).toBe(1);
+    expect(s2.invocations).toBe(1);
+  });
+
+  it("workflow memento points at terminal stage CID via inputCids", async () => {
+    const { walk, findByCid } = await import("../fix/runtime/mementoStore.js");
+    const runner = new WorkflowRunner(db, wf);
+    const s1 = makeStage("inc", (n: number) => n + 1);
+    const s2 = makeStage("double", (n: number) => n * 2);
+
+    const result = await runner.runWorkflow(3, async (r) => {
+      const r1 = await r.runStage(s1, 3);
+      const r2 = await r.runStage(s2, r1.output, [r1.cid]);
+      return { output: r2.output, cid: r2.cid };
+    });
+
+    const wfMemento = findByCid(db, result.cid);
+    expect(wfMemento?.inputCids).toHaveLength(1);
+    // Walking from the workflow root reaches all 3 nodes (workflow + 2 stages).
+    const provenance = walk(db, result.cid);
+    expect(provenance).toHaveLength(3);
+    expect(provenance.map((m) => m.producedBy)).toEqual([
+      `workflow:${wf.name}@${wf.cid}`,
+      "double@1.0",
+      "inc@1.0",
+    ]);
+  });
+
+  it("different inputs produce different workflow mementos", async () => {
+    const runner = new WorkflowRunner(db, wf);
+    const stage = makeStage("double", (n: number) => n * 2);
+    const body = async (r: WorkflowRunner) => {
+      const result = await r.runStage(stage, 0); // dummy; replaced below
+      return { output: result.output, cid: result.cid };
+    };
+
+    const a = await runner.runWorkflow(5, async (r) => {
+      const result = await r.runStage(stage, 5);
+      return { output: result.output, cid: result.cid };
+    });
+    const b = await runner.runWorkflow(6, async (r) => {
+      const result = await r.runStage(stage, 6);
+      return { output: result.output, cid: result.cid };
+    });
+
+    expect(a.output).toBe(10);
+    expect(b.output).toBe(12);
+    expect(a.cid).not.toBe(b.cid);
   });
 });
 
