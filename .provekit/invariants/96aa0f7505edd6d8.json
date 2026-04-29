@@ -1,0 +1,23 @@
+{
+  "id": "96aa0f7505edd6d8",
+  "createdAt": "2026-04-29T06:16:44.695Z",
+  "originatingBug": "verifyBlock returns 'sat' when Z3 outputs 'sat', 'unsat' when Z3 outputs 'unsat', and 'unknown' when Z3 outputs 'unknown'",
+  "smt": {
+    "kind": "other",
+    "declarations": [
+      "(declare-const z3_output String) (declare-const return_value String) (assert (and (= z3_output \"sat\") (not (= return_value \"sat\"))))"
+    ],
+    "assertion": "(declare-const z3_output String) (declare-const return_value String) (assert (and (= z3_output \"sat\") (not (= return_value \"sat\"))))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/provekit/src/verifier.ts",
+    "function": null,
+    "startLine": 33,
+    "endLine": 33
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "b8e4b03b00f6bb24cdb8cb00e4dd7b15c6b0a871",
+  "retired": null
+}

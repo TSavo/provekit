@@ -1,0 +1,23 @@
+{
+  "id": "8342f19c09e8d358",
+  "createdAt": "2026-04-29T06:16:44.694Z",
+  "originatingBug": "tryExtractLogCall returns null when the object name is not in LOG_OBJECTS or the method name is not in LOG_METHODS",
+  "smt": {
+    "kind": "other",
+    "declarations": [
+      "(declare-const in_LOG_OBJECTS Bool) (declare-const in_LOG_METHODS Bool) (declare-const returns_null Bool) (assert (and (not in_LOG_OBJECTS) (not returns_null))) (assert (and (not in_LOG_METHODS) (not returns_null)))"
+    ],
+    "assertion": "(declare-const in_LOG_OBJECTS Bool) (declare-const in_LOG_METHODS Bool) (declare-const returns_null Bool) (assert (and (not in_LOG_OBJECTS) (not returns_null))) (assert (and (not in_LOG_METHODS) (not returns_null)))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/provekit/src/parser.ts",
+    "function": null,
+    "startLine": 60,
+    "endLine": 60
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "b8e4b03b00f6bb24cdb8cb00e4dd7b15c6b0a871",
+  "retired": null
+}

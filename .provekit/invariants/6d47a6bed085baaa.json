@@ -1,0 +1,23 @@
+{
+  "id": "6d47a6bed085baaa",
+  "createdAt": "2026-04-29T06:16:44.695Z",
+  "originatingBug": "reserveStock preserves the invariant that (available + reserved) before the operation equals (available + reserved) after the operation",
+  "smt": {
+    "kind": "arithmetic",
+    "declarations": [
+      "(declare-const available_before Int) (declare-const reserved_before Int) (declare-const available_after Int) (declare-const reserved_after Int) (declare-const quantity Int) (assert (= available_after (- available_before quantity))) (assert (= reserved_after (+ reserved_before quantity))) (assert (not (= (+ available_after reserved_after) (+ available_before reserved_before))))"
+    ],
+    "assertion": "(declare-const available_before Int) (declare-const reserved_before Int) (declare-const available_after Int) (declare-const reserved_after Int) (declare-const quantity Int) (assert (= available_after (- available_before quantity))) (assert (= reserved_after (+ reserved_before quantity))) (assert (not (= (+ available_after reserved_after) (+ available_before reserved_before))))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/provekit/examples/inventory.ts",
+    "function": null,
+    "startLine": 14,
+    "endLine": 14
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "b8e4b03b00f6bb24cdb8cb00e4dd7b15c6b0a871",
+  "retired": null
+}
