@@ -22,8 +22,17 @@
  *
  * JCS rules implemented:
  * - Object keys sorted lexicographically by their Unicode code point.
- * - Numbers: IEEE 754 doubles serialized without trailing zeros where
- *   possible; -0 serialized as 0 (normalization done in pass 2).
+ * - Numbers: IEEE 754 doubles serialized per RFC 8785 §3.2.2.3, which
+ *   normatively delegates to ECMA-262 §7.1.12.1 (Number::toString incl.
+ *   "Note 2"). On V8/Node, `JSON.stringify(n)` for a finite number IS
+ *   that algorithm: RFC 8785 cites V8 as the reference implementation,
+ *   and Appendix A's reference canonicalizer uses `JSON.stringify` for
+ *   the number path verbatim. -0 is normalized to "0" defensively
+ *   (pass 2 does not currently rewrite -0 in CanonicalConst). NaN and
+ *   ±Infinity throw, per the §3.2.2.3 prohibition.
+ *   Conformance is pinned in equivalence.test.ts §11 against all 24
+ *   RFC 8785 Appendix B fixtures; any future hand-rolled number
+ *   formatter that drifts from §3.2.2.3 is caught there.
  * - Strings: no extra escaping beyond JSON spec.
  * - bigint: serialized as a JSON number (valid for values that fit in
  *   safe integer range; bigints outside safe range are serialized as
@@ -34,6 +43,11 @@
  * WARNING: the JCS spec (RFC 8785) is designed for objects with string
  * values. Our canonical AST is object-structured; the implementation
  * below is sufficient for the AST node types defined in ast.ts.
+ *
+ * Cross-kit note: this conformance argument is V8/Node-specific. Each
+ * non-TS kit's serializer (Go, Rust, Python, ...) needs its own
+ * §3.2.2.3 conformance suite — a host-language `n.toString()` does NOT
+ * match V8's output for many edge cases.
  */
 
 import type { CanonicalFolAst } from "./ast.js";
@@ -86,16 +100,21 @@ function stringify(value: unknown): string {
 }
 
 function stringifyNumber(n: number): string {
-  // -0 is normalized to 0 in pass 2 (const normalization). Handle it here
-  // defensively anyway.
+  // -0 → "0" per RFC 8785 §3.2.2.3 (ECMA-262 ToString-applied-to-Number;
+  // Note 2 collapses -0). Pass 2 does not currently rewrite -0 in
+  // CanonicalConst, so this branch is load-bearing.
   if (Object.is(n, -0)) return "0";
   if (!isFinite(n)) {
-    // NaN and ±Infinity cannot appear in canonical JSON. Error loudly.
+    // NaN and ±Infinity are not permitted in canonical JSON
+    // (RFC 8785 §3.2.2.3, last paragraph). Throw rather than emit
+    // a non-conformant token.
     throw new Error(`Cannot serialize non-finite number ${n} in canonical JSON`);
   }
-  // JSON.stringify produces the shortest representation for safe integers,
-  // which is sufficient for JCS. For numbers that JSON.stringify would
-  // produce "1e+21"-style exponents: that is still valid and deterministic.
+  // RFC 8785 §3.2.2.3 delegates to ECMA-262 §7.1.12.1 incl. Note 2.
+  // V8's JSON.stringify implements that algorithm exactly; the RFC
+  // cites V8 as the reference implementation and Appendix A's
+  // reference canonicalizer uses this same call for the number path.
+  // Conformance pinned in equivalence.test.ts §11 (Appendix B fixtures).
   return JSON.stringify(n);
 }
 

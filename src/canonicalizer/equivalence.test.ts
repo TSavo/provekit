@@ -20,6 +20,8 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { propertyHashFromFormula, formulaToCanonicalAst } from "./canonicalize.js";
+import { serializeCanonicalAst } from "./serialize.js";
+import type { CanonicalFolAst, CanonicalSort } from "./ast.js";
 import type { IrFormula, IrTerm, Sort } from "./irFormula.js";
 import {
   forAll as irForAll,
@@ -782,5 +784,114 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
     const impl = new AstCanonicalizerImpl();
     const formula = irForAll(IrInt, (b) => irAssert.notEqual(b, 0));
     expect(impl.propertyHashFromFormula(formula)).toBe(propertyHashFromFormula(formula));
+  });
+});
+
+// -----------------------------------------------------------------------
+// 11. RFC 8785 §3.2.2.3 number-serialization conformance
+// -----------------------------------------------------------------------
+
+/**
+ * RFC 8785 §3.2.2.3 normatively delegates JSON number serialization to
+ * ECMA-262 §7.1.12.1 (Number::toString incl. "Note 2"). On V8/Node,
+ * `JSON.stringify(n)` for a finite number IS that algorithm — RFC 8785
+ * cites V8 as the reference implementation, and Appendix A's reference
+ * canonicalizer uses `JSON.stringify` for the number path verbatim.
+ *
+ * These tests pin the contract so a future hand-rolled formatter that
+ * drifts from §3.2.2.3 fails immediately. The fixtures are RFC 8785
+ * Appendix B, "Number Serialization Samples" — the canonical conformance
+ * suite for the numeric subset of §3.2.2.3.
+ *
+ * Cross-kit note: this conformance argument is V8/Node-specific. Each
+ * non-TS kit (Go, Rust, Python) needs its own §3.2.2.3 conformance suite.
+ */
+describe("11. RFC 8785 §3.2.2.3 number serialization", () => {
+  const RealSort: CanonicalSort = { kind: "primitive", name: "Real" };
+
+  /**
+   * Serialize a single number through the full canonical pipeline by
+   * wrapping it in a minimal Atomic AST node. Returns the byte string
+   * produced by `serializeCanonicalAst`. The returned form is:
+   *   {"args":[{"kind":"const","sort":{"kind":"primitive","name":"Real"},"value":<N>}],"kind":"atomic","predicate":"P"}
+   * — useful for asserting that the <N> substring is the §3.2.2.3
+   * canonical form for the input.
+   */
+  function serializeNumberInAst(n: number): string {
+    const ast: CanonicalFolAst = {
+      kind: "atomic",
+      predicate: "P",
+      args: [{ kind: "const", sort: RealSort, value: n }],
+    };
+    return serializeCanonicalAst(ast).toString("utf8");
+  }
+
+  /** Extract just the JSON literal that `value` was serialized to. */
+  function extractValueLiteral(serialized: string): string {
+    const m = serialized.match(/"value":([^}]+)/);
+    if (!m) throw new Error(`could not find "value":… in ${serialized}`);
+    return m[1];
+  }
+
+  // RFC 8785 Appendix B — IEEE-754 hex → expected JSON serialization.
+  // Each row is a contractual fixture: drift here breaks cross-impl
+  // hash equivalence and must be treated as a regression.
+  const APPENDIX_B: Array<{ hex: string; expected: string; comment: string }> = [
+    { hex: "0000000000000000", expected: "0", comment: "zero" },
+    { hex: "8000000000000000", expected: "0", comment: "minus zero → 0" },
+    { hex: "0000000000000001", expected: "5e-324", comment: "min positive subnormal" },
+    { hex: "8000000000000001", expected: "-5e-324", comment: "min negative subnormal" },
+    { hex: "7fefffffffffffff", expected: "1.7976931348623157e+308", comment: "max positive double" },
+    { hex: "ffefffffffffffff", expected: "-1.7976931348623157e+308", comment: "max negative double" },
+    { hex: "4340000000000000", expected: "9007199254740992", comment: "max safe int + 1" },
+    { hex: "c340000000000000", expected: "-9007199254740992", comment: "min safe int - 1" },
+    { hex: "4430000000000000", expected: "295147905179352830000", comment: "~2**68 (no exponent)" },
+    { hex: "44b52d02c7e14af5", expected: "9.999999999999997e+22", comment: "1e23 boundary -1 ulp" },
+    { hex: "44b52d02c7e14af6", expected: "1e+23", comment: "1e23 exact" },
+    { hex: "44b52d02c7e14af7", expected: "1.0000000000000001e+23", comment: "1e23 boundary +1 ulp" },
+    { hex: "444b1ae4d6e2ef4e", expected: "999999999999999700000", comment: "1e21 boundary -2 ulp" },
+    { hex: "444b1ae4d6e2ef4f", expected: "999999999999999900000", comment: "1e21 boundary -1 ulp" },
+    { hex: "444b1ae4d6e2ef50", expected: "1e+21", comment: "1e21 exact (exponent threshold)" },
+    { hex: "3eb0c6f7a0b5ed8c", expected: "9.999999999999997e-7", comment: "1e-6 boundary" },
+    { hex: "3eb0c6f7a0b5ed8d", expected: "0.000001", comment: "1e-6 (no exponent)" },
+    { hex: "41b3de4355555553", expected: "333333333.3333332", comment: "round-trip precision -3 ulp" },
+    { hex: "41b3de4355555554", expected: "333333333.33333325", comment: "round-trip precision -2 ulp" },
+    { hex: "41b3de4355555555", expected: "333333333.3333333", comment: "round-trip precision exact" },
+    { hex: "41b3de4355555556", expected: "333333333.3333334", comment: "round-trip precision +1 ulp" },
+    { hex: "41b3de4355555557", expected: "333333333.33333343", comment: "round-trip precision +2 ulp" },
+    { hex: "becbf647612f3696", expected: "-0.0000033333333333333333", comment: "negative small fixed-point" },
+    { hex: "43143ff3c1cb0959", expected: "1424953923781206.2", comment: "Note 2 round-to-even (was .25)" },
+  ];
+
+  // Decode an IEEE-754 hex string into a JS number for fixture input.
+  function hexToDouble(hex: string): number {
+    const buf = Buffer.alloc(8);
+    buf.writeBigUInt64BE(BigInt("0x" + hex), 0);
+    return buf.readDoubleBE(0);
+  }
+
+  for (const { hex, expected, comment } of APPENDIX_B) {
+    it(`Appendix B: ${hex} → ${expected} (${comment})`, () => {
+      const n = hexToDouble(hex);
+      const serialized = serializeNumberInAst(n);
+      expect(extractValueLiteral(serialized)).toBe(expected);
+    });
+  }
+
+  it("-0 normalizes to '0' (defensive: pass 2 does not rewrite -0)", () => {
+    const serialized = serializeNumberInAst(-0);
+    expect(extractValueLiteral(serialized)).toBe("0");
+  });
+
+  it("NaN throws the §3.2.2.3 prohibition error", () => {
+    expect(() => serializeNumberInAst(NaN)).toThrow(/non-finite number/);
+  });
+
+  it("+Infinity throws the §3.2.2.3 prohibition error", () => {
+    expect(() => serializeNumberInAst(Infinity)).toThrow(/non-finite number/);
+  });
+
+  it("-Infinity throws the §3.2.2.3 prohibition error", () => {
+    expect(() => serializeNumberInAst(-Infinity)).toThrow(/non-finite number/);
   });
 });
