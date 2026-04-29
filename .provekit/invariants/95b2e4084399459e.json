@@ -1,0 +1,23 @@
+{
+  "id": "95b2e4084399459e",
+  "createdAt": "2026-04-29T06:27:03.277Z",
+  "originatingBug": "Verification errors from evaluateContract do not propagate to the application or block the log stream",
+  "smt": {
+    "kind": "taint",
+    "declarations": [
+      "(declare-const eval_error Bool) (declare-const app_error Bool) (declare-const callback_invoked Bool) (assert (and eval_error (or app_error (not callback_invoked))))"
+    ],
+    "assertion": "(declare-const eval_error Bool) (declare-const app_error Bool) (declare-const callback_invoked Bool) (assert (and eval_error (or app_error (not callback_invoked))))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/provekit/src/transport.ts",
+    "function": null,
+    "startLine": 312,
+    "endLine": 312
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "d442f9a094a5cb49797ae25ade97aaccb2a148a5",
+  "retired": null
+}

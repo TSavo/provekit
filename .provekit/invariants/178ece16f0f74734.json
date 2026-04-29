@@ -1,0 +1,23 @@
+{
+  "id": "178ece16f0f74734",
+  "createdAt": "2026-04-29T06:37:01.291Z",
+  "originatingBug": "runVerify exits with status 0 when no contracts are found in the store",
+  "smt": {
+    "kind": "cardinality",
+    "declarations": [
+      "(declare-const contracts_length Int) (declare-const exit_code Int) (assert (and (= contracts_length 0) (not (= exit_code 0))))"
+    ],
+    "assertion": "(declare-const contracts_length Int) (declare-const exit_code Int) (assert (and (= contracts_length 0) (not (= exit_code 0))))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/provekit/src/index.ts",
+    "function": null,
+    "startLine": 194,
+    "endLine": 194
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "6d558ec416d9f288bef626017727f5220dc8b2d2",
+  "retired": null
+}

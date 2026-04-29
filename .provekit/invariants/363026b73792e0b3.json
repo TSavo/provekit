@@ -1,0 +1,23 @@
+{
+  "id": "363026b73792e0b3",
+  "createdAt": "2026-04-29T06:27:03.276Z",
+  "originatingBug": "When dryRun is true, fileViolationIssues does not create GitHub issues",
+  "smt": {
+    "kind": "other",
+    "declarations": [
+      "(declare-const dryRun Bool) (declare-const gh_issue_created Bool) (assert (and dryRun gh_issue_created))"
+    ],
+    "assertion": "(declare-const dryRun Bool) (declare-const gh_issue_created Bool) (assert (and dryRun gh_issue_created))"
+  },
+  "bindings": [],
+  "callsite": {
+    "filePath": "/Users/tsavo/provekit/src/issues.ts",
+    "function": null,
+    "startLine": 137,
+    "endLine": 137
+  },
+  "scope": "callsite",
+  "regressionTest": null,
+  "patchSha": "d442f9a094a5cb49797ae25ade97aaccb2a148a5",
+  "retired": null
+}
