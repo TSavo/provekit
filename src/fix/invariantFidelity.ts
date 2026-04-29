@@ -45,6 +45,162 @@ import { createNoopLogger, type FixLoopLogger } from "./logger.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
 import { verifyBlock } from "../verifier.js";
 import { classifyInvariantKind as classifyInvariantKindShared, type InvariantKind as InvariantKindShared } from "./invariantKind.js";
+import { getPromptStore } from "../llm/promptStore.js";
+
+// ---------------------------------------------------------------------------
+// C1.5 fidelity verifier prompts (4 artifacts, one per LLM call site).
+//
+// bp namespaces:
+//   c1.5.cross_llm_smt_adversary  — concrete-path SMT adversary
+//   c1.5.traceability             — citations grounded in bug report
+//   c1.5.prose_adversary          — abstract-path prose adversary
+//   c1.5.judge                    — same-bug judge
+//
+// Each prompt has its own placeholders; same pattern as the other stages.
+//
+// Future evolution warning: each {{...}} placeholder must be preserved
+// verbatim by bp.evolve. Multiple prompts share placeholder names like
+// {{SUMMARY}} / {{FAILURE_DESCRIPTION}} / {{INVESTIGATE_BLOCK}} —
+// independent across artifacts; each artifact's evolution sees only
+// its own body.
+// ---------------------------------------------------------------------------
+
+const C15_CROSS_LLM_ADVERSARY_TEMPLATE = `You are a formal verification expert. Given a bug report, produce an SMT-LIB assertion
+that expresses the VIOLATION STATE (the negation of the desired invariant).
+The assertion must be satisfiable (Z3 check-sat returns "sat") — this proves the bug is reachable.
+
+Bug summary: {{SUMMARY}}
+Failure description: {{FAILURE_DESCRIPTION}}
+{{INVESTIGATE_BLOCK}}
+Respond with ONLY a JSON object (no markdown fences):
+{
+  "description": "one sentence: what invariant is being violated",
+  "smt_declarations": ["(declare-const varName Sort)", ...],
+  "smt_violation_assertion": "(assert (...))",
+  "bindings": [
+    {"smt_constant": "varName", "source_expr": "expression in source", "sort": "Int"}
+  ]
+}
+
+Rules:
+- smt_declarations: declare all constants you use
+- smt_violation_assertion: a single (assert ...) encoding the violation state
+- Do NOT include (check-sat) — it will be appended automatically
+- Use Int or Bool sorts
+- Keep it simple: 2-5 constants maximum
+- Each binding's source_expr must be a literal source identifier (e.g. "b", "a", "x")`;
+
+const C15_TRACEABILITY_TEMPLATE = `You are a verification expert. A bug report{{INVESTIGATE_NOTE}} and a list of SMT clause citations are given.
+Your task: for each citation, determine whether the "source_quote" is genuinely grounded in either the bug report{{INVESTIGATE_OR}} (the quote must be present verbatim or as a close paraphrase — NOT speculative).
+
+{{INVESTIGATE_GROUNDING}}Bug report:
+---
+{{BUG_REPORT_TEXT}}
+---{{INVESTIGATE_TEXT}}
+
+Citations to verify:
+{{CITATIONS_JSON}}
+
+Respond with ONLY a JSON object (no markdown fences):
+{
+  "all_grounded": true
+}
+OR
+{
+  "all_grounded": false,
+  "ungrounded": [
+    {"smt_clause": "...", "reason": "quote not found or speculative"}
+  ]
+}`;
+
+const C15_PROSE_ADVERSARY_TEMPLATE = `You are a formal verification expert. Given a bug report, describe in prose
+the invariant that the buggy code violates. Focus on the property that, if held,
+would prevent the bug.
+
+Bug summary: {{SUMMARY}}
+Failure description: {{FAILURE_DESCRIPTION}}
+{{INVESTIGATE_BLOCK}}
+Respond with ONLY a JSON object (no markdown fences):
+{
+  "description": "one to three sentences describing the invariant in plain English"
+}`;
+
+const C15_JUDGE_TEMPLATE = `You are evaluating whether two prose descriptions of an invariant describe the SAME bug.
+
+Two LLMs read the same bug report and each wrote what they thought the violated invariant is. The fix loop needs to know: do these describe the same bug class, such that a single fix would address both?
+
+This is not a word-overlap question. Two invariants can use entirely different vocabulary and describe the same bug; two invariants can share many words and describe different bugs.
+
+# Worked examples
+
+## Example A — same bug, different framings (PASS)
+
+Proposer: "the divisor must not be zero"
+Adversary: "every call to divide(a, b) must check b !== 0 before the operation executes"
+
+Reasoning: both describe division-by-zero prevention. Proposer states the property abstractly; adversary states the mechanism that achieves it. A single fix — add a guard on b inside divide() — satisfies both. Same bug.
+
+## Example B — different bugs, overlapping words (FAIL)
+
+Proposer: "user input must not contain shell metacharacters before exec()"
+Adversary: "user input must be length-bounded before strcpy()"
+
+Reasoning: the surface-level "user input must X before Y" pattern is shared, but X and Y refer to different vulnerabilities — shell injection vs buffer overflow. The fix for the first (escape/sanitize metacharacters) does not prevent the second (length-bound the buffer). Different bugs.
+
+## Example C — same bug, declarative vs mechanistic (PASS)
+
+Proposer: "data fetched from storage must include the most recent invocations from the revision's full history"
+Adversary: "forRevision sorts ascending then LIMITs, so the newest invocation's ascending rank exceeds the window size, permanently excluding it"
+
+Reasoning: proposer states the desired property (recent records reach the consumer); adversary explains the mechanism that violates it (asc + LIMIT excludes newest). The fix that ensures the property holds (use desc instead of asc) is the same fix that removes the exclusion mechanism. Same bug.
+
+# Generalization
+
+Two invariants describe the same bug when a single change to the program could simultaneously:
+  1. Make the proposer's stated property hold, AND
+  2. Eliminate the mechanism the adversary describes.
+
+When you mentally write a fix that satisfies one, ask whether it also satisfies the other. If yes, same bug. If not, different bugs — even if the words overlap.
+
+Vocabulary divergence between proposer and adversary is normal: one tends toward properties (declarative), the other toward mechanisms (operational). What matters is whether the underlying program-state distinction they describe is the same one.
+
+# The current case
+
+Proposer's invariant:
+"{{PROPOSER_DESCRIPTION}}"
+
+Adversary's invariant:
+"{{ADVERSARY_DESCRIPTION}}"
+
+Reason through:
+1. What program-state distinction does each invariant draw?
+2. Imagine the smallest fix that satisfies the proposer. Does it also eliminate the adversary's described violation?
+3. Imagine the smallest fix that eliminates the adversary's violation. Does it also satisfy the proposer's property?
+
+Output ONLY a JSON object via the Write tool:
+
+{
+  "rationale": "your reasoning, 2-4 sentences naming the program-state distinction and the candidate fix",
+  "sameBug": true | false,
+  "confidence": "high" | "medium" | "low"
+}`;
+
+const C15_PROMPT_DISCRIMINATOR = "2026-04-28";
+
+/**
+ * Helper: render a C1.5 prompt template via bp.get when projectRoot is
+ * available, otherwise return the literal directly. Returns the rendered
+ * body (placeholders not yet substituted — caller does replaceAll).
+ */
+async function _fetchC15Template(
+  projectRoot: string | undefined,
+  key: string,
+  literal: string,
+): Promise<{ body: string; revisionId: string | null }> {
+  if (!projectRoot) return { body: literal, revisionId: null };
+  const rev = await getPromptStore(projectRoot).get(key, literal, C15_PROMPT_DISCRIMINATOR);
+  return { body: rev.body, revisionId: rev.id };
+}
 
 // ---------------------------------------------------------------------------
 // Shared result shape
@@ -94,6 +250,7 @@ export async function crossLlmAgreement(args: {
    * and refuses to ship even when the proposer was right.
    */
   investigateReport?: import("./stages/investigate.js").InvestigateReport;
+  projectRoot?: string;
 }): Promise<FidelityCheckResult> {
   const { invariant, signal, llm, logger = createNoopLogger() } = args;
   const investigate = args.investigateReport;
@@ -115,30 +272,15 @@ not to penalize correctly anchored reads.
 `
     : "\nIMPORTANT: Derive the invariant INDEPENDENTLY from the prose above.\nDo NOT adjust to match any other invariant you may have seen.\n";
 
-  const adversaryPrompt = `You are a formal verification expert. Given a bug report, produce an SMT-LIB assertion
-that expresses the VIOLATION STATE (the negation of the desired invariant).
-The assertion must be satisfiable (Z3 check-sat returns "sat") — this proves the bug is reachable.
-
-Bug summary: ${signal.summary}
-Failure description: ${signal.failureDescription}
-${investigateBlock}
-Respond with ONLY a JSON object (no markdown fences):
-{
-  "description": "one sentence: what invariant is being violated",
-  "smt_declarations": ["(declare-const varName Sort)", ...],
-  "smt_violation_assertion": "(assert (...))",
-  "bindings": [
-    {"smt_constant": "varName", "source_expr": "expression in source", "sort": "Int"}
-  ]
-}
-
-Rules:
-- smt_declarations: declare all constants you use
-- smt_violation_assertion: a single (assert ...) encoding the violation state
-- Do NOT include (check-sat) — it will be appended automatically
-- Use Int or Bool sorts
-- Keep it simple: 2-5 constants maximum
-- Each binding's source_expr must be a literal source identifier (e.g. "b", "a", "x")`;
+  const { body: c15CrossLlmBody } = await _fetchC15Template(
+    args.projectRoot,
+    "c1.5.cross_llm_smt_adversary",
+    C15_CROSS_LLM_ADVERSARY_TEMPLATE,
+  );
+  const adversaryPrompt = c15CrossLlmBody
+    .replaceAll("{{SUMMARY}}", signal.summary)
+    .replaceAll("{{FAILURE_DESCRIPTION}}", signal.failureDescription)
+    .replaceAll("{{INVESTIGATE_BLOCK}}", investigateBlock);
 
   const proposerModel = "opus"; // proposer is always opus on the novel path (C1 default)
   const adModel = adversaryModel(proposerModel);
@@ -304,6 +446,7 @@ export async function traceabilityCheck(args: {
    *  "ungrounded" because the symptom-only bug report doesn't mention
    *  the implementation mechanics Investigate uncovered. */
   investigateReport?: import("./stages/investigate.js").InvestigateReport;
+  projectRoot?: string;
 }): Promise<FidelityCheckResult> {
   const { invariant, signal, llm, logger = createNoopLogger() } = args;
   const investigate = args.investigateReport;
@@ -329,29 +472,18 @@ export async function traceabilityCheck(args: {
 - Fix hypothesis: ${investigate.fixHypothesis}`
     : "";
 
-  const verifierPrompt = `You are a verification expert. A bug report${investigate ? ", upstream Investigate analysis," : ""} and a list of SMT clause citations are given.
-Your task: for each citation, determine whether the "source_quote" is genuinely grounded in either the bug report${investigate ? " OR Investigate's analysis" : ""} (the quote must be present verbatim or as a close paraphrase — NOT speculative).
-
-${investigate ? "Both the bug report AND Investigate's analysis are valid grounding sources. Investigate's hypothesis IS evidence the loop produced — citing it is grounded, not speculative.\n" : ""}
-Bug report:
----
-${bugReportText}
----${investigateText}
-
-Citations to verify:
-${citationsJson}
-
-Respond with ONLY a JSON object (no markdown fences):
-{
-  "all_grounded": true
-}
-OR
-{
-  "all_grounded": false,
-  "ungrounded": [
-    {"smt_clause": "...", "reason": "quote not found or speculative"}
-  ]
-}`;
+  const { body: c15TraceabilityBody } = await _fetchC15Template(
+    args.projectRoot,
+    "c1.5.traceability",
+    C15_TRACEABILITY_TEMPLATE,
+  );
+  const verifierPrompt = c15TraceabilityBody
+    .replaceAll("{{INVESTIGATE_NOTE}}", investigate ? ", upstream Investigate analysis," : "")
+    .replaceAll("{{INVESTIGATE_OR}}", investigate ? " OR Investigate's analysis" : "")
+    .replaceAll("{{INVESTIGATE_GROUNDING}}", investigate ? "Both the bug report AND Investigate's analysis are valid grounding sources. Investigate's hypothesis IS evidence the loop produced — citing it is grounded, not speculative.\n\n" : "\n")
+    .replaceAll("{{BUG_REPORT_TEXT}}", bugReportText)
+    .replaceAll("{{INVESTIGATE_TEXT}}", investigateText)
+    .replaceAll("{{CITATIONS_JSON}}", citationsJson);
 
   interface VerifierResponse {
     all_grounded: boolean;
@@ -655,6 +787,7 @@ export async function proseJaccardAgreement(args: {
    *  adversary picks an arbitrary plausible reading of an ambiguous symptom
    *  and oracle #1.5 false-rejects coherent proposer reads. */
   investigateReport?: import("./stages/investigate.js").InvestigateReport;
+  projectRoot?: string;
 }): Promise<FidelityCheckResult> {
   const { invariant, signal, llm, logger = createNoopLogger() } = args;
   const investigate = args.investigateReport;
@@ -676,17 +809,15 @@ penalize correctly anchored reads.
 `
     : "\nIMPORTANT: Derive the invariant INDEPENDENTLY from the prose above.\nDo NOT adjust to match any other invariant you may have seen.\n";
 
-  const adversaryPrompt = `You are a formal verification expert. Given a bug report, describe in prose
-the invariant that the buggy code violates. Focus on the property that, if held,
-would prevent the bug.
-
-Bug summary: ${signal.summary}
-Failure description: ${signal.failureDescription}
-${investigateBlock}
-Respond with ONLY a JSON object (no markdown fences):
-{
-  "description": "one to three sentences describing the invariant in plain English"
-}`;
+  const { body: c15ProseAdvBody } = await _fetchC15Template(
+    args.projectRoot,
+    "c1.5.prose_adversary",
+    C15_PROSE_ADVERSARY_TEMPLATE,
+  );
+  const adversaryPrompt = c15ProseAdvBody
+    .replaceAll("{{SUMMARY}}", signal.summary)
+    .replaceAll("{{FAILURE_DESCRIPTION}}", signal.failureDescription)
+    .replaceAll("{{INVESTIGATE_BLOCK}}", investigateBlock);
 
   const proposerModel = "opus";
   const adModel = adversaryModel(proposerModel);
@@ -730,65 +861,14 @@ Respond with ONLY a JSON object (no markdown fences):
   // different-bugs-overlapping-words FAIL, same-bug-declarative-vs-mechanistic
   // PASS. Generalization: a single fix should satisfy both, regardless of
   // vocabulary divergence.
-  const judgePrompt = `You are evaluating whether two prose descriptions of an invariant describe the SAME bug.
-
-Two LLMs read the same bug report and each wrote what they thought the violated invariant is. The fix loop needs to know: do these describe the same bug class, such that a single fix would address both?
-
-This is not a word-overlap question. Two invariants can use entirely different vocabulary and describe the same bug; two invariants can share many words and describe different bugs.
-
-# Worked examples
-
-## Example A — same bug, different framings (PASS)
-
-Proposer: "the divisor must not be zero"
-Adversary: "every call to divide(a, b) must check b !== 0 before the operation executes"
-
-Reasoning: both describe division-by-zero prevention. Proposer states the property abstractly; adversary states the mechanism that achieves it. A single fix — add a guard on b inside divide() — satisfies both. Same bug.
-
-## Example B — different bugs, overlapping words (FAIL)
-
-Proposer: "user input must not contain shell metacharacters before exec()"
-Adversary: "user input must be length-bounded before strcpy()"
-
-Reasoning: the surface-level "user input must X before Y" pattern is shared, but X and Y refer to different vulnerabilities — shell injection vs buffer overflow. The fix for the first (escape/sanitize metacharacters) does not prevent the second (length-bound the buffer). Different bugs.
-
-## Example C — same bug, declarative vs mechanistic (PASS)
-
-Proposer: "data fetched from storage must include the most recent invocations from the revision's full history"
-Adversary: "forRevision sorts ascending then LIMITs, so the newest invocation's ascending rank exceeds the window size, permanently excluding it"
-
-Reasoning: proposer states the desired property (recent records reach the consumer); adversary explains the mechanism that violates it (asc + LIMIT excludes newest). The fix that ensures the property holds (use desc instead of asc) is the same fix that removes the exclusion mechanism. Same bug.
-
-# Generalization
-
-Two invariants describe the same bug when a single change to the program could simultaneously:
-  1. Make the proposer's stated property hold, AND
-  2. Eliminate the mechanism the adversary describes.
-
-When you mentally write a fix that satisfies one, ask whether it also satisfies the other. If yes, same bug. If not, different bugs — even if the words overlap.
-
-Vocabulary divergence between proposer and adversary is normal: one tends toward properties (declarative), the other toward mechanisms (operational). What matters is whether the underlying program-state distinction they describe is the same one.
-
-# The current case
-
-Proposer's invariant:
-"${invariant.description}"
-
-Adversary's invariant:
-"${adversary.description}"
-
-Reason through:
-1. What program-state distinction does each invariant draw?
-2. Imagine the smallest fix that satisfies the proposer. Does it also eliminate the adversary's described violation?
-3. Imagine the smallest fix that eliminates the adversary's violation. Does it also satisfy the proposer's property?
-
-Output ONLY a JSON object via the Write tool:
-
-{
-  "rationale": "your reasoning, 2-4 sentences naming the program-state distinction and the candidate fix",
-  "sameBug": true | false,
-  "confidence": "high" | "medium" | "low"
-}`;
+  const { body: c15JudgeBody } = await _fetchC15Template(
+    args.projectRoot,
+    "c1.5.judge",
+    C15_JUDGE_TEMPLATE,
+  );
+  const judgePrompt = c15JudgeBody
+    .replaceAll("{{PROPOSER_DESCRIPTION}}", invariant.description)
+    .replaceAll("{{ADVERSARY_DESCRIPTION}}", adversary.description);
 
   interface JudgeResponse {
     rationale: string;
@@ -896,6 +976,7 @@ export async function runInvariantFidelity(args: {
    *  same bug interpretation as the proposer when Investigate had high
    *  confidence in the read. */
   investigateReport?: import("./stages/investigate.js").InvestigateReport;
+  projectRoot?: string;
 }): Promise<InvariantFidelityResult> {
   const { invariant, signal, llm, _verifiers } = args;
   const logger = args.logger ?? createNoopLogger();
@@ -926,8 +1007,8 @@ export async function runInvariantFidelity(args: {
   if (kind === "concrete") {
     // Existing three-check path for arithmetic-style invariants.
     const [a, b, c] = await Promise.all([
-      crossLlmFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
-      traceabilityFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
+      crossLlmFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport, projectRoot: args.projectRoot }),
+      traceabilityFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport, projectRoot: args.projectRoot }),
       fixtureFn({ invariant, signal, llm, logger }),
     ]);
 
@@ -943,7 +1024,7 @@ export async function runInvariantFidelity(args: {
       demoted = true;
 
       // Re-run the abstract path. Traceability already ran; reuse it.
-      const a2 = await proseJaccardFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport });
+      const a2 = await proseJaccardFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport, projectRoot: args.projectRoot });
       if (!a2.passed) failures.push(`prose overlap: ${a2.detail}`);
       if (!b.passed) failures.push(`traceability: ${b.detail}`);
     } else {
@@ -955,8 +1036,8 @@ export async function runInvariantFidelity(args: {
     // Abstract path: prose overlap + traceability only. SMT cross-LLM and
     // fixtures are intentionally skipped (see header doc).
     const [a, b] = await Promise.all([
-      proseJaccardFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
-      traceabilityFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport }),
+      proseJaccardFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport, projectRoot: args.projectRoot }),
+      traceabilityFn({ invariant, signal, llm, logger, investigateReport: args.investigateReport, projectRoot: args.projectRoot }),
     ]);
 
     if (!a.passed) failures.push(`prose overlap: ${a.detail}`);

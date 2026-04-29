@@ -1561,6 +1561,7 @@ async function formulateInvariantInner(args: {
     logger,
     _verifiers: args._fidelityVerifiers,
     investigateReport: args.investigateReport,
+    projectRoot: args.projectRoot,
   });
 
   if (fidelity.passed) {
@@ -1635,6 +1636,7 @@ async function formulateInvariantInner(args: {
     logger,
     _verifiers: args._fidelityVerifiers,
     investigateReport: args.investigateReport,
+    projectRoot: args.projectRoot,
   });
 
   if (retryFidelity.passed) {
