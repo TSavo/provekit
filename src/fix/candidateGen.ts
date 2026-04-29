@@ -156,43 +156,23 @@ export interface ProposedFix {
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-export function buildFixPrompt(
-  signal: BugSignal,
-  locus: BugLocus,
-  invariant: InvariantClaim,
-  maxCandidates: number,
-): string {
-  // Attempt to read the source of the containing function.
-  let sourceContext = "(source not available)";
-  try {
-    if (existsSync(locus.file)) {
-      const lines = readFileSync(locus.file, "utf-8").split("\n");
-      const start = Math.max(0, locus.line - 5);
-      const end = Math.min(lines.length, locus.line + 10);
-      sourceContext = lines
-        .slice(start, end)
-        .map((l, i) => `${start + i + 1}: ${l}`)
-        .join("\n");
-    }
-  } catch {
-    // ignore
-  }
+// C3 JSON-path fix prompt artifact: c3.json_fix_prompt
+// Six placeholders (max-candidates, signal fields, locus, source, invariant).
+const C3_JSON_FIX_PROMPT_TEMPLATE = `You are a code-repair expert. Given a bug report and a formal invariant violation, propose up to {{MAX_CANDIDATES}} candidate patches.
 
-  return `You are a code-repair expert. Given a bug report and a formal invariant violation, propose up to ${maxCandidates} candidate patches.
+Bug summary: {{BUG_SUMMARY}}
+Failure description: {{FAILURE_DESCRIPTION}}{{FIX_HINT_BLOCK}}
 
-Bug summary: ${signal.summary}
-Failure description: ${signal.failureDescription}${signal.fixHint ? `\nFix hint: ${signal.fixHint}` : ""}
-
-Location: ${locus.file}:${locus.line}${locus.function ? ` in ${locus.function}` : ""}
+Location: {{LOCATION}}
 
 Source context:
 \`\`\`
-${sourceContext}
+{{SOURCE_CONTEXT}}
 \`\`\`
 
-Invariant violated: ${invariant.description}
+Invariant violated: {{INVARIANT_DESCRIPTION}}
 Formal expression (SMT, violation state — must become unsat after fix):
-${invariant.formalExpression}
+{{INVARIANT_FORMAL_EXPRESSION}}
 
 Respond with ONLY a JSON object (no markdown fences, no extra text):
 {
@@ -218,6 +198,50 @@ Rules:
 - patch.fileEdits is an array; each entry has file (relative path) and newContent (full file content).
 - Rank candidates by confidence descending.
 - Do NOT output anything outside the JSON object.`;
+const C3_JSON_FIX_PROMPT_DISCRIMINATOR = "2026-04-28";
+
+export async function buildFixPrompt(
+  signal: BugSignal,
+  locus: BugLocus,
+  invariant: InvariantClaim,
+  maxCandidates: number,
+  projectRoot?: string,
+): Promise<string> {
+  // Attempt to read the source of the containing function.
+  let sourceContext = "(source not available)";
+  try {
+    if (existsSync(locus.file)) {
+      const lines = readFileSync(locus.file, "utf-8").split("\n");
+      const start = Math.max(0, locus.line - 5);
+      const end = Math.min(lines.length, locus.line + 10);
+      sourceContext = lines
+        .slice(start, end)
+        .map((l, i) => `${start + i + 1}: ${l}`)
+        .join("\n");
+    }
+  } catch {
+    // ignore
+  }
+
+  let body = C3_JSON_FIX_PROMPT_TEMPLATE;
+  if (projectRoot) {
+    const rev = await getPromptStore(projectRoot).get(
+      "c3.json_fix_prompt",
+      C3_JSON_FIX_PROMPT_TEMPLATE,
+      C3_JSON_FIX_PROMPT_DISCRIMINATOR,
+    );
+    body = rev.body;
+  }
+
+  return body
+    .replaceAll("{{MAX_CANDIDATES}}", String(maxCandidates))
+    .replaceAll("{{BUG_SUMMARY}}", signal.summary)
+    .replaceAll("{{FAILURE_DESCRIPTION}}", signal.failureDescription)
+    .replaceAll("{{FIX_HINT_BLOCK}}", signal.fixHint ? `\nFix hint: ${signal.fixHint}` : "")
+    .replaceAll("{{LOCATION}}", `${locus.file}:${locus.line}${locus.function ? ` in ${locus.function}` : ""}`)
+    .replaceAll("{{SOURCE_CONTEXT}}", sourceContext)
+    .replaceAll("{{INVARIANT_DESCRIPTION}}", invariant.description)
+    .replaceAll("{{INVARIANT_FORMAL_EXPRESSION}}", invariant.formalExpression);
 }
 
 // ---------------------------------------------------------------------------

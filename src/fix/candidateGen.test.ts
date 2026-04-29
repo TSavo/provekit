@@ -246,11 +246,11 @@ describe("C3: candidateGen", () => {
   // -------------------------------------------------------------------------
   // 5. buildFixPrompt — includes required fields
   // -------------------------------------------------------------------------
-  it("buildFixPrompt: prompt includes signal, locus, invariant details", () => {
+  it("buildFixPrompt: prompt includes signal, locus, invariant details", async () => {
     const signal = makeDivSignal("/tmp/fake.ts");
     const locus = makeLocus("/tmp/fake.ts", "node1");
     const invariant = makeDivInvariant();
-    const prompt = buildFixPrompt(signal, locus, invariant, 3);
+    const prompt = await buildFixPrompt(signal, locus, invariant, 3);
 
     expect(prompt).toContain(signal.summary);
     expect(prompt).toContain(signal.failureDescription);

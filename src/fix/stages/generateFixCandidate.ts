@@ -292,13 +292,14 @@ async function generateFixCandidateViaJson(args: {
   overlay: OverlayHandle;
   llm: LLMProvider;
   options?: { maxCandidates?: number; minConfidence?: number };
+  projectRoot?: string;
 }): Promise<FixCandidate> {
   const { signal, locus, invariant, overlay, llm } = args;
   const maxCandidates = args.options?.maxCandidates ?? 3;
   const minConfidence = args.options?.minConfidence ?? 0.5;
 
   // 1. LLM proposes up to maxCandidates patches.
-  const prompt = buildFixPrompt(signal, locus, invariant, maxCandidates);
+  const prompt = await buildFixPrompt(signal, locus, invariant, maxCandidates, args.projectRoot);
   const parsed = await requestStructuredJson<unknown>({
     prompt,
     llm,
