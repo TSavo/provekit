@@ -21,7 +21,7 @@
 import { findMemento, writeMemento, hashCanonical } from "../fix/runtime/mementoStore.js";
 import type { Db } from "../db/index.js";
 import type { ProducerRegistry } from "./registry.js";
-import type { Stage, StageResult, Workflow } from "./types.js";
+import type { Action, ActionResult, Stage, StageResult, Workflow } from "./types.js";
 
 const WORKFLOW_RUN_STAGE_NAME = "__workflow_run__";
 
@@ -81,6 +81,63 @@ export class WorkflowRunner {
       output,
       cid: memento.cid!,
       cacheHit: false,
+    };
+  }
+
+  /**
+   * Run an Action, bypassing the cache entirely.
+   *
+   * Actions are side-effecting: they always run, never cache. Each
+   * invocation writes an audit-only memento (kind: action-invocation)
+   * with verdict "holds" meaning "the action ran successfully." The
+   * audit memento is skipped by proof-DAG walks but included in
+   * forensic/audit walks.
+   *
+   * - bindingHash = (workflow.cid, action.name) — "where in the
+   *   workflow we are."
+   * - propertyHash = canonical-hash of { input: action.serializeInput(input),
+   *   _auditSalt: randomUUID() } — unique per invocation so every call
+   *   gets a distinct audit row regardless of identical input.
+   *
+   * Spec: docs/specs/2026-04-29-stages-vs-actions.md
+   */
+  async runAction<TInput, TResource>(
+    action: Action<TInput, TResource>,
+    input: TInput,
+    inputCids: string[] = [],
+  ): Promise<ActionResult<TResource>> {
+    const start = Date.now();
+    const resource = await action.run(input);
+    const durationMs = Date.now() - start;
+
+    const bindingHash = hashCanonical({
+      workflow: this.workflow.cid,
+      stage: action.name,
+    });
+    const propertyHash = hashCanonical({
+      input: action.serializeInput(input),
+      _auditSalt: globalThis.crypto.randomUUID(),
+    });
+
+    const witness = JSON.stringify({
+      kind: "action-invocation",
+      actionName: action.name,
+      resourceDescription: action.describeResource(resource),
+      durationMs,
+    });
+
+    const memento = writeMemento(this.db, {
+      bindingHash,
+      propertyHash,
+      verdict: "holds",
+      witness,
+      producedBy: action.producedBy,
+      inputCids,
+    });
+
+    return {
+      resource,
+      auditCid: memento.cid!,
     };
   }
 
