@@ -23,6 +23,234 @@ import { runAgentInOverlay } from "./captureChange.js";
 import { detectTestRunner } from "./testRunners/index.js";
 import type { InvariantClaim, BugLocus, BugSignal, OverlayHandle, CodePatch, LLMProvider } from "./types.js";
 import { getModelTier } from "./modelTiers.js";
+import { getPromptStore } from "../llm/promptStore.js";
+
+// ---------------------------------------------------------------------------
+// C5 (agent path) prompt artifact: c5.agent_test_prompt
+//
+// The full static teaching body lives here as a literal const. Twelve runtime
+// placeholders carry per-call context — the prompt has heavy repetition of
+// import path / test name / test file path, all replaced by replaceAll at
+// render time.
+//
+// IMPORTANT for future evolution: bp.evolve on c5.agent_test_prompt MUST
+// preserve EVERY {{...}} placeholder verbatim — the template uses many
+// repetitions of {{IMPORT_PATH}}, {{TEST_NAME}}, {{TEST_FILE_PATH}} and
+// dropping any of them produces a broken assembled prompt.
+// ---------------------------------------------------------------------------
+
+const C5_AGENT_TEST_PROMPT_TEMPLATE = `[STAGE:C5] generateTestCodeViaAgent
+Your CWD is the project root. All paths in this prompt are relative to your CWD.
+Do not use absolute paths — use only the relative paths shown here.
+
+You are a TypeScript testing expert. Write a complete vitest regression test
+file to disk at path: {{TEST_FILE_PATH}}
+
+# Inputs
+
+INVARIANT VIOLATED: {{INVARIANT_DESCRIPTION}}
+
+BUG SUMMARY: {{BUG_SUMMARY}}
+
+Z3 WITNESS INPUTS (values that trigger the bug before the fix):
+{{INPUTS_JSON}}
+
+MODULE UNDER TEST (locus file): {{MODULE_UNDER_TEST}}
+FUNCTION/LINE: {{LOCUS_FUNCTION}} at line {{LOCUS_LINE}}
+
+SOURCE CODE (post-fix, in overlay):
+\`\`\`typescript
+{{FUNCTION_SOURCE}}
+\`\`\`
+
+=== IMPORT PATH — READ THIS CAREFULLY ===
+import path (use VERBATIM — do not rename, do not substitute, do not shorten):
+"{{IMPORT_PATH}}"
+
+Your import statement MUST be exactly:
+import { ... } from "{{IMPORT_PATH}}";
+
+Do NOT use the word "fixture" or any placeholder name — use the exact path above.
+Do NOT change "{{IMPORT_PATH}}" to anything else. Copy it character-for-character.
+=== END IMPORT PATH ===
+
+TEST FILE PATH: {{TEST_FILE_PATH}}
+TEST NAME: {{TEST_NAME}}
+{{GRAMMAR_BLOCK}}
+# What happens to your output
+
+Your test will be run TWICE: once on the patched code, once with the fix
+reverted. Pass on patched + fail on reverted = correct. Pass on BOTH (because
+the bug-class assertion was vacuous) = REJECTED by mutation verification.
+
+# DO NOT mock the file under test
+
+The test must invoke the REAL exported symbol from the patched module:
+
+  import { ... } from "{{IMPORT_PATH}}";
+
+Forbidden patterns (every one of these produces a placebo that passes
+mutation verification on BOTH the fixed and unfixed builds):
+
+- \`vi.mock("{{IMPORT_PATH}}", ...)\` — replaces the symbol you must verify
+- Any \`vi.mock(...)\` whose path resolves to the patched file
+- Local fakes (a constant fixture or inline class) that re-implement the
+  function under test with the FIXED behavior. The bug lives in code,
+  not in mocks: a fake "InvocationRepository" that already does desc-order
+  selection inside the test file is exactly the placebo shape oracle #9b
+  rejects.
+
+Worked example of the placebo shape (do NOT do this):
+
+  vi.mock("{{IMPORT_PATH}}", () => ({
+    InvocationRepository: class {
+      async forRevision() {
+        // Hand-rolled "fixed" behavior. Whether the real repo uses
+        // asc or desc no longer matters — the test never touches it.
+        return invocations.sort((a,b) => b.date.localeCompare(a.date)).slice(0, 25);
+      }
+    },
+  }));
+
+Worked example of the correct shape (do this):
+
+  import Database from "better-sqlite3";
+  import { drizzle } from "drizzle-orm/better-sqlite3";
+  import { InvocationRepository } from "{{IMPORT_PATH}}";
+
+  const db = drizzle(new Database(":memory:"));
+  // Apply the real schema DDL so InvocationRepository's queries work.
+  // Insert >25 rows. Call repo.forRevision(...) (the real one). Assert
+  // the returned set contains the most-recent rows, not the oldest.
+
+If the patched module needs a database, an HTTP server, a filesystem,
+etc., set up the dependency in the test (use \`:memory:\` SQLite, an
+in-process http server, a temp dir) — do NOT mock the dependency to
+make the test "easier." The whole point of C5 is to drive the real
+patched code with real inputs.
+
+The only thing you may legitimately mock is something COMPLETELY OUTSIDE
+the data path the bug lives in (e.g. an unrelated logger, an analytics
+beacon). When in doubt: if removing the mock would change whether the
+test reproduces the bug on the unfixed code, do not mock it.
+
+# Reproduction scale: this is where most C5 tests fail
+
+The bug DESCRIPTION tells you at what scale the bug fires. Your test must
+reproduce at that scale, not at a happy-path 3-element fixture.
+
+{{INVESTIGATE_HYPOTHESES}}## Worked example A — scale-correct test
+
+Bug: "evolve loop stops responding to recent feedback once a revision
+accumulates ~30+ invocations." Reasoning: the bug only fires past a
+threshold. A 3-element fixture would produce a test that PASSES on
+the buggy code (because the truncation hasn't happened yet) and PASSES
+on the fixed code. Both pass = mutation rejection = test fails oracle #9.
+
+Right reproduction: insert >25 invocations into the test fixture
+(matching the documented threshold), attach fail signals to the most
+recent K of them, run evolve, assert that the recent fails appear in
+what evolve received. The test FAILS against the buggy code (because
+the truncation drops them) and PASSES against the fix (which orders
+desc and includes them).
+
+## Worked example B — scale-correct already-trivial test
+
+Bug: "divide(1, 0) returns Infinity instead of throwing." Reasoning:
+the bug fires on the first call with the bad input. No threshold.
+Right reproduction: a single \`expect(() => divide(1, 0)).toThrow()\`
+is sufficient. Adding more inputs is needless work.
+
+## Read the bug description carefully
+
+If the user mentions:
+- "after some time", "once it accumulates", "in production", "at scale",
+  "with N+ items" — the bug is threshold-shaped. Construct fixtures at
+  that scale or above.
+- A specific number (3 weeks, 30 invocations, 100 records) — use that
+  number as your reproduction floor.
+- A single triggering input ("divide by zero", "empty array",
+  "undefined argument") — a minimal direct test is enough.
+
+If the bug description doesn't say but the symptom hints at scale (e.g.
+"older feedback dominates" implies pagination/limit), default to a
+fixture that exceeds the most plausible internal limit (say, 50 items).
+A test that passes against the buggy code at small scale is worse than
+no test at all — it claims the bug is fixed when it isn't.
+
+# Anti-pattern: gated bug-class assertion (DO NOT do this)
+
+\`\`\`ts
+const result = exec(input);
+if (result && result.length > 0) {
+  expect(result.unique).toBe(true);  // gated → vacuous when result is empty
+}
+\`\`\`
+
+Force the precondition. Don't gate on it:
+
+\`\`\`ts
+const result = exec(input);
+expect(result).toBeDefined();              // precondition is now an assertion
+expect(result.length).toBeGreaterThan(0);  // precondition is now an assertion
+expect(result.unique).toBe(true);          // bug-class assertion runs unconditionally
+\`\`\`
+
+# Anti-pattern: try/catch swallowing failure
+
+\`\`\`ts
+try { exec(input); } catch { /* swallowed */ }   // wrong
+\`\`\`
+
+Use \`expect(() => exec(input)).not.toThrow()\` or \`.toThrow()\` instead.
+
+# Universal rules
+
+- Use vitest: \`import { it, expect, describe } from "vitest"\`
+- Import the function by name from "{{IMPORT_PATH}}" — verbatim, no substitution
+- If the Z3 witness inputs above are concrete values: call the function with
+  them exactly. If they're "(none — abstract invariant; ...)": derive a
+  realistic test scenario from the bug summary and invariant description
+  yourself. Choose inputs that exercise the bug class, not arbitrary values.
+- The bug-class assertion MUST run on every execution. No \`if\` gating it.
+- Test name MUST be exactly: "{{TEST_NAME}}"
+- Write the complete file to: {{TEST_FILE_PATH}}
+
+# Canonical examples
+
+Division-by-zero:
+\`\`\`ts
+import { it, expect } from "vitest";
+import { divide } from "{{IMPORT_PATH}}";
+
+it("{{TEST_NAME}}", () => {
+  expect(() => divide(5, 0)).toThrow();
+});
+\`\`\`
+
+Set / uniqueness (force the precondition, then assert unconditionally):
+\`\`\`ts
+import { it, expect } from "vitest";
+import { listFiles } from "{{IMPORT_PATH}}";
+
+it("{{TEST_NAME}}", () => {
+  const result = computeAllowHeader();
+  expect(result).toBeDefined();
+  expect(result.length).toBeGreaterThan(0);
+  const methods = result.split(",").map(s => s.trim());
+  expect(methods.length).toBe(new Set(methods).size);
+});
+\`\`\`
+
+Write the test file using your file editing tools now.`;
+
+const C5_AGENT_TEST_PROMPT_DISCRIMINATOR = "2026-04-28";
+
+/** Result shape mirrors C1/C3 — assembled prompt + bp revisions used. */
+interface C5PromptBuild {
+  prompt: string;
+  revisions: Array<{ key: string; revisionId: string }>;
+}
 import { extractGrammarBundle, renderGrammarSection } from "./runtime/grammarExtractor.js";
 
 // ---------------------------------------------------------------------------
@@ -446,6 +674,12 @@ export async function generateTestCodeViaAgent(args: {
   llm: LLMProvider;
   overlay: OverlayHandle;
   investigateReport?: import("./stages/investigate.js").InvestigateReport;
+  /**
+   * Host project root, optional. When provided, the C5 prompt template
+   * resolves via better-prompts (c5.agent_test_prompt artifact). Day 0
+   * byte-identical; bp.evolve later returns evolved revisions.
+   */
+  projectRoot?: string;
 }): Promise<string> {
   const { signal, locus, invariant, inputs, testFilePath, testName, llm, overlay } = args;
   const investigate = args.investigateReport;
@@ -516,216 +750,49 @@ export async function generateTestCodeViaAgent(args: {
   const grammarSection = renderGrammarSection(grammarBundle);
   const grammarBlock = grammarSection ? `\n${grammarSection}\n` : "";
 
-  const prompt = `[STAGE:C5] generateTestCodeViaAgent
-Your CWD is the project root. All paths in this prompt are relative to your CWD.
-Do not use absolute paths — use only the relative paths shown here.
-
-You are a TypeScript testing expert. Write a complete vitest regression test
-file to disk at path: ${testFilePath}
-
-# Inputs
-
-INVARIANT VIOLATED: ${invariant.description}
-
-BUG SUMMARY: ${signal.summary}
-
-Z3 WITNESS INPUTS (values that trigger the bug before the fix):
-${inputsJson}
-
-MODULE UNDER TEST (locus file): ${locusRelToOverlay ?? locus.file}
-FUNCTION/LINE: ${locus.function ?? "(unknown)"} at line ${locus.line}
-
-SOURCE CODE (post-fix, in overlay):
-\`\`\`typescript
-${functionSource.slice(0, 2000)}
-\`\`\`
-
-=== IMPORT PATH — READ THIS CAREFULLY ===
-import path (use VERBATIM — do not rename, do not substitute, do not shorten):
-"${importPath}"
-
-Your import statement MUST be exactly:
-import { ... } from "${importPath}";
-
-Do NOT use the word "fixture" or any placeholder name — use the exact path above.
-Do NOT change "${importPath}" to anything else. Copy it character-for-character.
-=== END IMPORT PATH ===
-
-TEST FILE PATH: ${testFilePath}
-TEST NAME: ${testName}
-${grammarBlock}
-# What happens to your output
-
-Your test will be run TWICE: once on the patched code, once with the fix
-reverted. Pass on patched + fail on reverted = correct. Pass on BOTH (because
-the bug-class assertion was vacuous) = REJECTED by mutation verification.
-
-# DO NOT mock the file under test
-
-The test must invoke the REAL exported symbol from the patched module:
-
-  import { ... } from "${importPath}";
-
-Forbidden patterns (every one of these produces a placebo that passes
-mutation verification on BOTH the fixed and unfixed builds):
-
-- \`vi.mock("${importPath}", ...)\` — replaces the symbol you must verify
-- Any \`vi.mock(...)\` whose path resolves to the patched file
-- Local fakes (a constant fixture or inline class) that re-implement the
-  function under test with the FIXED behavior. The bug lives in code,
-  not in mocks: a fake "InvocationRepository" that already does desc-order
-  selection inside the test file is exactly the placebo shape oracle #9b
-  rejects.
-
-Worked example of the placebo shape (do NOT do this):
-
-  vi.mock("${importPath}", () => ({
-    InvocationRepository: class {
-      async forRevision() {
-        // Hand-rolled "fixed" behavior. Whether the real repo uses
-        // asc or desc no longer matters — the test never touches it.
-        return invocations.sort((a,b) => b.date.localeCompare(a.date)).slice(0, 25);
-      }
-    },
-  }));
-
-Worked example of the correct shape (do this):
-
-  import Database from "better-sqlite3";
-  import { drizzle } from "drizzle-orm/better-sqlite3";
-  import { InvocationRepository } from "${importPath}";
-
-  const db = drizzle(new Database(":memory:"));
-  // Apply the real schema DDL so InvocationRepository's queries work.
-  // Insert >25 rows. Call repo.forRevision(...) (the real one). Assert
-  // the returned set contains the most-recent rows, not the oldest.
-
-If the patched module needs a database, an HTTP server, a filesystem,
-etc., set up the dependency in the test (use \`:memory:\` SQLite, an
-in-process http server, a temp dir) — do NOT mock the dependency to
-make the test "easier." The whole point of C5 is to drive the real
-patched code with real inputs.
-
-The only thing you may legitimately mock is something COMPLETELY OUTSIDE
-the data path the bug lives in (e.g. an unrelated logger, an analytics
-beacon). When in doubt: if removing the mock would change whether the
-test reproduces the bug on the unfixed code, do not mock it.
-
-# Reproduction scale: this is where most C5 tests fail
-
-The bug DESCRIPTION tells you at what scale the bug fires. Your test must
-reproduce at that scale, not at a happy-path 3-element fixture.
-
-${investigate ? `Upstream Investigate hypothesized the root cause as:
+  const investigateHypotheses = investigate
+    ? `Upstream Investigate hypothesized the root cause as:
 "${investigate.rootCauseHypothesis}"
 
 The fix shape (per Investigate):
 "${investigate.fixHypothesis}"
 
-` : ""}## Worked example A — scale-correct test
+`
+    : "";
 
-Bug: "evolve loop stops responding to recent feedback once a revision
-accumulates ~30+ invocations." Reasoning: the bug only fires past a
-threshold. A 3-element fixture would produce a test that PASSES on
-the buggy code (because the truncation hasn't happened yet) and PASSES
-on the fixed code. Both pass = mutation rejection = test fails oracle #9.
+  // bp telemetry: one artifact for the full C5 agent prompt body. Day 0
+  // byte-identical; bp.evolve sees the whole composed prompt. No-op when
+  // projectRoot is absent.
+  const bpRevisions: Array<{ key: string; revisionId: string }> = [];
+  let templateBody = C5_AGENT_TEST_PROMPT_TEMPLATE;
+  if (args.projectRoot) {
+    const rev = await getPromptStore(args.projectRoot).get(
+      "c5.agent_test_prompt",
+      C5_AGENT_TEST_PROMPT_TEMPLATE,
+      C5_AGENT_TEST_PROMPT_DISCRIMINATOR,
+    );
+    templateBody = rev.body;
+    bpRevisions.push({ key: "c5.agent_test_prompt", revisionId: rev.id });
+  }
 
-Right reproduction: insert >25 invocations into the test fixture
-(matching the documented threshold), attach fail signals to the most
-recent K of them, run evolve, assert that the recent fails appear in
-what evolve received. The test FAILS against the buggy code (because
-the truncation drops them) and PASSES against the fix (which orders
-desc and includes them).
-
-## Worked example B — scale-correct already-trivial test
-
-Bug: "divide(1, 0) returns Infinity instead of throwing." Reasoning:
-the bug fires on the first call with the bad input. No threshold.
-Right reproduction: a single \`expect(() => divide(1, 0)).toThrow()\`
-is sufficient. Adding more inputs is needless work.
-
-## Read the bug description carefully
-
-If the user mentions:
-- "after some time", "once it accumulates", "in production", "at scale",
-  "with N+ items" — the bug is threshold-shaped. Construct fixtures at
-  that scale or above.
-- A specific number (3 weeks, 30 invocations, 100 records) — use that
-  number as your reproduction floor.
-- A single triggering input ("divide by zero", "empty array",
-  "undefined argument") — a minimal direct test is enough.
-
-If the bug description doesn't say but the symptom hints at scale (e.g.
-"older feedback dominates" implies pagination/limit), default to a
-fixture that exceeds the most plausible internal limit (say, 50 items).
-A test that passes against the buggy code at small scale is worse than
-no test at all — it claims the bug is fixed when it isn't.
-
-# Anti-pattern: gated bug-class assertion (DO NOT do this)
-
-\`\`\`ts
-const result = exec(input);
-if (result && result.length > 0) {
-  expect(result.unique).toBe(true);  // gated → vacuous when result is empty
-}
-\`\`\`
-
-Force the precondition. Don't gate on it:
-
-\`\`\`ts
-const result = exec(input);
-expect(result).toBeDefined();              // precondition is now an assertion
-expect(result.length).toBeGreaterThan(0);  // precondition is now an assertion
-expect(result.unique).toBe(true);          // bug-class assertion runs unconditionally
-\`\`\`
-
-# Anti-pattern: try/catch swallowing failure
-
-\`\`\`ts
-try { exec(input); } catch { /* swallowed */ }   // wrong
-\`\`\`
-
-Use \`expect(() => exec(input)).not.toThrow()\` or \`.toThrow()\` instead.
-
-# Universal rules
-
-- Use vitest: \`import { it, expect, describe } from "vitest"\`
-- Import the function by name from "${importPath}" — verbatim, no substitution
-- If the Z3 witness inputs above are concrete values: call the function with
-  them exactly. If they're "(none — abstract invariant; ...)": derive a
-  realistic test scenario from the bug summary and invariant description
-  yourself. Choose inputs that exercise the bug class, not arbitrary values.
-- The bug-class assertion MUST run on every execution. No \`if\` gating it.
-- Test name MUST be exactly: "${testName}"
-- Write the complete file to: ${testFilePath}
-
-# Canonical examples
-
-Division-by-zero:
-\`\`\`ts
-import { it, expect } from "vitest";
-import { divide } from "${importPath}";
-
-it("${testName}", () => {
-  expect(() => divide(5, 0)).toThrow();
-});
-\`\`\`
-
-Set / uniqueness (force the precondition, then assert unconditionally):
-\`\`\`ts
-import { it, expect } from "vitest";
-import { listFiles } from "${importPath}";
-
-it("${testName}", () => {
-  const result = computeAllowHeader();
-  expect(result).toBeDefined();
-  expect(result.length).toBeGreaterThan(0);
-  const methods = result.split(",").map(s => s.trim());
-  expect(methods.length).toBe(new Set(methods).size);
-});
-\`\`\`
-
-Write the test file using your file editing tools now.`;
+  const renderVars: Record<string, string> = {
+    TEST_FILE_PATH: testFilePath,
+    TEST_NAME: testName,
+    IMPORT_PATH: importPath,
+    INVARIANT_DESCRIPTION: invariant.description,
+    BUG_SUMMARY: signal.summary,
+    INPUTS_JSON: inputsJson,
+    MODULE_UNDER_TEST: locusRelToOverlay ?? locus.file,
+    LOCUS_FUNCTION: locus.function ?? "(unknown)",
+    LOCUS_LINE: String(locus.line),
+    FUNCTION_SOURCE: functionSource.slice(0, 2000),
+    GRAMMAR_BLOCK: grammarBlock,
+    INVESTIGATE_HYPOTHESES: investigateHypotheses,
+  };
+  let prompt = templateBody;
+  for (const [k, v] of Object.entries(renderVars)) {
+    prompt = prompt.replaceAll(`{{${k}}}`, v);
+  }
 
   await runAgentInOverlay({
     overlay,
@@ -733,6 +800,35 @@ Write the test file using your file editing tools now.`;
     prompt,
     allowedTools: [".*"],
   });
+
+  // bp telemetry: record the C5 invocation against c5.agent_test_prompt.
+  // Signal lives at the call site (where mutation verification fires) —
+  // C5's true verdict (passesOnFixed && failsOnOriginal) lives there, not
+  // here. Captured invocation IDs returned via the bpRevisions array on a
+  // future revision; for now, record only.
+  if (args.projectRoot && bpRevisions.length > 0) {
+    const bp = getPromptStore(args.projectRoot);
+    const baseVars = {
+      signalSummary: signal.summary,
+      testFilePath,
+      testName,
+      importPath,
+    };
+    const baseMetadata = {
+      stage: "C5",
+      model: getModelTier("C5-agent"),
+      invariantKind: invariant.llmKind ?? "unknown",
+    };
+    for (const { key, revisionId } of bpRevisions) {
+      await bp.record({
+        artifactKey: key,
+        revisionId,
+        vars: baseVars,
+        metadata: baseMetadata,
+        output: "(test code written to file via agent; read post-call)",
+      });
+    }
+  }
 
   // Read back the file the agent wrote.
   const absTestPath = join(overlay.worktreePath, testFilePath);

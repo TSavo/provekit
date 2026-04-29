@@ -72,6 +72,11 @@ export async function generateRegressionTest(args: {
    * #1 way oracle #9a fails on real-world dogfoods.
    */
   investigateReport?: import("./investigate.js").InvestigateReport;
+  /**
+   * Host project root, optional. Threaded into generateTestCodeViaAgent
+   * so the C5 prompt fragment resolves via better-prompts.
+   */
+  projectRoot?: string;
   /** Optional dependency injection seams; falls back to module defaults. */
   deps?: GenerateRegressionTestDeps;
 }): Promise<TestArtifact> {
@@ -135,6 +140,7 @@ export async function generateRegressionTest(args: {
           llm,
           overlay,
           investigateReport: args.investigateReport,
+          projectRoot: args.projectRoot,
         })
       : await generateTestCode({
           signal,

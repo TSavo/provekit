@@ -235,6 +235,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
         overlay,
         invariant: invariant!,
         llm: args.llm,
+        projectRoot: projectRootForBp,
         testRunner: args.c5TestRunner,
         logger,
         recognized,
