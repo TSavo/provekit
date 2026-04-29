@@ -600,16 +600,30 @@ export async function runAdversarialValidation(
       }
 
       let totalMatches = 0;
-      for (const [, queryFn] of queryFns) {
+      for (const [principleName, queryFn] of queryFns) {
         try {
           const rows = queryFn(fixtureDb);
           totalMatches += rows.length;
-        } catch {
-          // compile error at query time — count as 0 matches
+        } catch (err) {
+          // Query-time error (typically SQLite syntax error from a
+          // dynamically-built statement). Pre-fix this catch silently
+          // counted 0 matches; the user-facing report was opaque
+          // "validation failed". Now we surface the offending principle
+          // name + SQL error so the next repro shows what's broken.
+          // task #152: the dogfood prompt explicitly required errors
+          // be propagated meaningfully to the caller, not swallowed.
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(
+            `[C6 adversarial] principle '${principleName}' query failed against fixture: ${msg}`,
+          );
         }
       }
       return totalMatches;
-    } catch {
+    } catch (err) {
+      // Outer-fixture failure: substrate build, git init, file write, etc.
+      // Same propagation rule as the inner catch — surface, don't swallow.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[C6 adversarial] fixture run failed: ${msg}`);
       return -1; // error running fixture
     } finally {
       try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
