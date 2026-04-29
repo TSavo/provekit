@@ -231,6 +231,181 @@ framework's normal mode of operation. The supply-chain security
 industry's *entire roadmap* becomes a special case of the framework's
 default behavior.
 
+## Verification is hash comparison
+
+The killing economic blow.
+
+Every other verification system in the world charges you compute: re-run
+Z3, re-execute the test suite, re-typecheck, re-scan. Today's CI re-runs
+everything because there's no durable artifact format. Today's `npm
+audit` re-walks dependencies. Today's compliance audit re-examines code.
+**The world is paying exorbitant compute to redo work whose results are
+already known.**
+
+ProvekIt's verification: pull the memento, compare the CID against what
+your project depends on, verify the producer's signature. Microseconds.
+No Z3 invocation. No test re-run. No type-check. The expensive work was
+done once, by the producer at production time, and signed. Every
+subsequent verification is a hash lookup against a signed claim.
+
+| Verification mechanism | Cost per check |
+|---|---|
+| Re-run Z3 | seconds-to-minutes |
+| Re-run full test suite | seconds-to-minutes |
+| Re-run type checker | seconds |
+| Re-run linter | seconds |
+| Re-scan SAST | seconds-to-minutes |
+| Walk dependency tree, re-audit | seconds-to-minutes |
+| **ProvekIt: hash compare** | **microseconds** |
+
+Six orders of magnitude. Across every operation in the software lifecycle.
+The framework's verification is asymptotically free.
+
+**This is what content addressing was always for.** Every prior domain
+in the architectural lineage operated on the same insight:
+
+| System | Verification primitive |
+|---|---|
+| BitTorrent | Did the chunk arrive intact? Compare the hash. |
+| Bitcoin | Is this transaction valid? Verify the chain hash. |
+| IPFS | Did I fetch the right content? Compare the CID. |
+| Git | Trust commit hashes; `git fsck` to verify object integrity. |
+| **ProvekIt** | **Does this code satisfy the property? Compare the memento hash.** |
+
+The lineage was always operationalizing "verification is hash
+comparison." ProvekIt is the moment that insight gets applied to formal
+proofs — the most economically consequential domain because formal
+proof is what every other domain ultimately needs.
+
+The economic structure that emerges: the world's verification compute
+has two halves that today are conflated.
+
+1. **Production compute** — running Z3, tsc, tests, scanners. Expensive,
+   slow, done once per claim.
+2. **Verification compute** — re-doing 1) every time someone wants to
+   know if it's still true. *Most of the world's compute today.*
+
+ProvekIt collapses the second half to microseconds. The producer pool
+does the production work once; the swarm distributes the signed
+mementos; every consumer verifies in O(1) hash comparison.
+
+The framework is *cheaper than not using it*. Once the producer pool
+has produced the mementos for the properties you care about, the first
+run is normal-cost (pay the producer once); every subsequent run is
+asymptotically free. The compute budget the customer was already going
+to spend on these things gets reduced by 99%+, and the durable artifact
+(the memento) replaces the ephemeral one (CI's pass/fail token).
+
+The network effect is *self-reinforcing economically*: every memento
+contributed to the swarm makes every consumer's verification faster.
+More producers = more proofs = more hash comparisons replacing
+computations = lower marginal cost for everyone. The swarm is a public
+good whose marginal user pays nothing and whose contribution benefits
+everyone.
+
+## Trust, but verify
+
+Trust-but-verify is *structurally inherent* to content-addressed
+systems, and the framework supports it by construction. The default
+trust mode is fast (hash compare); the verify mode is always available
+when stakes warrant it.
+
+Every memento is a function of its inputs:
+
+```
+memento.cid = sha256(canonicalize({
+  bindingHash,      // recomputable from the code's AST + IR formula
+  propertyHash,     // recomputable from the IR formula
+  verdict,          // recomputable by re-running the producer
+  witness,          // recomputable by re-running the producer
+  producedBy,       // identifier; you compare against expected
+  inputCids,        // recomputable by walking the DAG
+}))
+```
+
+To recompute any claim from scratch:
+
+1. **Recompute bindingHash** from the actual code at the actual commit.
+   Re-canonicalize the AST → hash. Mismatch = the producer signed a
+   memento for code that doesn't match the repo. Tamper detection.
+2. **Recompute propertyHash** from the IR formula in the repo. Same
+   logic.
+3. **Re-run the producer** on the same inputs. Compare the witness to
+   the stored witness. Mismatch = producer is non-deterministic, has
+   been swapped, or signed a falsified verdict.
+4. **Recompute the memento.cid** from all of the above. Compare to
+   stored cid. Mismatch = the memento itself has been forged.
+5. **Verify the producer signature** on the memento. Mismatch =
+   signature is fake, key was compromised, or memento is from a
+   different producer than claimed.
+
+If all five pass, the memento is provably honest. If any fail, tampering,
+drift, or a producer bug has been detected — with a precise pointer to
+which step disagreed.
+
+**Trust modes the architecture supports natively:**
+
+| Mode | Cost | What it catches |
+|---|---|---|
+| Daily (hash compare) | microseconds per check | Matches recorded artifact |
+| Producer signature verification | microseconds per check | Forged signatures, key compromise |
+| Multi-producer agreement | microseconds per check | Forging requires compromising all of them |
+| Spot-check (random sample) | seconds per sample | Tampering at probabilistic frequency |
+| Differential (recompute touched subtree) | minutes per investigation | Drift in a specific change's impact |
+| Full audit (recompute from genesis) | hours-to-days | Total integrity check — SOC2, regulatory |
+| Adversarial red-team | open contest | Open mathematical inspection by anyone |
+
+Each mode is cheaper than the next; each mode catches different threats;
+the framework supports all of them by construction because content
+addressing makes them mechanical. You don't build a separate "audit
+subsystem" — recomputation IS the audit subsystem, falling out of the
+architecture.
+
+**Producer pool diversity multiplies trust.** If only one producer ever
+signed a property, you trust them or recompute yourself. If five
+independent producers all signed the same property and their evidence
+variants compose consistently, forging requires compromising all five
+independently — different toolchains, different keys, different archived
+times. Forging difficulty grows exponentially with producer diversity.
+This is why the swarm matters: not just for distribution, but for *trust
+amplification through redundancy*.
+
+**Ecosystem consequences:**
+
+- **Open red-teaming.** Anyone can recompute any part of the DAG.
+  Academics, security researchers, competing vendors, regulators,
+  paranoid CTOs all verify the producer pool's claims independently.
+  Compromised producers get caught by the math.
+- **Auditors become active verifiers.** Today they do paperwork.
+  Tomorrow they run differential recomputation against random samples
+  and check for consistency. The audit profession transforms from
+  review-of-process to mathematical-spot-check.
+- **Insurance becomes math-based.** "99% of properties verified by 5+
+  independent producers, 0.1% sampled-and-recomputed in the last 30
+  days" is an underwritable signal. Today insurance is reputation-based;
+  tomorrow it's proof-based.
+- **Bug bounties acquire a new shape.** "Find a memento whose
+  recomputed CID doesn't match its stored CID" is a valid bounty.
+  Mechanical to verify, high-value to catch.
+- **Regulatory verification goes online.** A regulator pings the swarm
+  and recomputes compliance properties on demand. Compliance becomes a
+  query, not a project.
+- **Producer accountability is non-repudiable.** A producer who signed
+  a memento can't later deny it. Caught signing falsified mementos =
+  signature permanently identifiable in the DAG = reputation collapses
+  = ecosystem routes around them. Producer trust is *earned through
+  verifiable consistency over time*, not inherited from brand.
+
+Reagan's doctrine, operationalized as architecture: **default to trust
+because verification is cheap; verify on demand because the architecture
+makes it always available.** The producer pool can't hide. The math is
+open. The audit is mechanical. The trust is provable.
+
+The framework is *honest by construction*. It can be audited from any
+angle by any party because content addressing makes the audit a hash
+comparison. Trust-but-verify is just the verb the architecture's default
+behavior implements.
+
 ## The AI safety dimension
 
 This is the foundational infrastructure problem AI safety hasn't
