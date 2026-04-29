@@ -21,12 +21,35 @@ import { createHash } from "crypto";
 import type { Db } from "../../db/index.js";
 import { verifications } from "../../db/schema/verifications.js";
 import type { VerificationRow, VerificationInsert } from "../../db/schema/verifications.js";
+import type { ClaimEnvelope, EvidenceVariant } from "../../claimEnvelope/index.js";
+import { computeEnvelopeCid } from "../../claimEnvelope/index.js";
+import { VARIANT_SCHEMA_CIDS } from "../../claimEnvelope/variants/index.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export type Verdict = "holds" | "violated" | "decayed" | "undecidable" | "error";
+
+/**
+ * Caller-supplied hint that selects an evidence variant for the envelope.
+ * The wrapper (bindingHash, propertyHash, verdict, producedBy, inputCids)
+ * is filled by writeMemento; the producer only specifies the variant.
+ *
+ * If no hint is supplied, writeMemento wraps the raw `witness` string in
+ * a `legacy-witness` variant.
+ */
+export type EvidenceHint =
+  | { kind: "z3-model"; body: Extract<EvidenceVariant, { kind: "z3-model" }>["body"] }
+  | { kind: "z3-unsat"; body: Extract<EvidenceVariant, { kind: "z3-unsat" }>["body"] }
+  | { kind: "pattern-match"; body: Extract<EvidenceVariant, { kind: "pattern-match" }>["body"] }
+  | { kind: "type-check-pass"; body: Extract<EvidenceVariant, { kind: "type-check-pass" }>["body"] }
+  | { kind: "lint-pass"; body: Extract<EvidenceVariant, { kind: "lint-pass" }>["body"] }
+  | { kind: "test-pass"; body: Extract<EvidenceVariant, { kind: "test-pass" }>["body"] }
+  | { kind: "test-fail"; body: Extract<EvidenceVariant, { kind: "test-fail" }>["body"] }
+  | { kind: "llm-proposal"; body: Extract<EvidenceVariant, { kind: "llm-proposal" }>["body"] }
+  | { kind: "mutation-witness"; body: Extract<EvidenceVariant, { kind: "mutation-witness" }>["body"] }
+  | { kind: "workflow-run"; body: Extract<EvidenceVariant, { kind: "workflow-run" }>["body"] };
 
 export interface Memento {
   bindingHash: string;
@@ -47,6 +70,23 @@ export interface Memento {
    * the provenance DAG.
    */
   inputCids?: string[];
+  /**
+   * Caller-supplied evidence-variant hint. When present, writeMemento
+   * builds a typed envelope variant (z3-model, llm-proposal, etc.)
+   * instead of the default `legacy-witness` wrapper around the raw
+   * witness string.
+   *
+   * On read, mementos with a typed variant expose the parsed evidence
+   * via `evidence`; the raw `witness` field will be null because the
+   * payload now lives inside `evidence.body`.
+   */
+  evidenceHint?: EvidenceHint;
+  /**
+   * Parsed evidence variant (set by rowToMemento when the row's
+   * stored payload is a typed claim envelope). Producers do not set
+   * this on writes — use `evidenceHint` instead.
+   */
+  evidence?: EvidenceVariant;
 }
 
 export interface MementoLookupKey {
@@ -111,28 +151,67 @@ export function computeCid(memento: Memento): string {
 }
 
 /**
+ * Build the evidence variant for an envelope. When the producer supplies
+ * an `evidenceHint`, that variant is used; otherwise the raw `witness`
+ * string is wrapped in a `legacy-witness` variant.
+ */
+function buildEvidence(memento: Memento): EvidenceVariant {
+  if (memento.evidenceHint) {
+    const hint = memento.evidenceHint;
+    return {
+      kind: hint.kind,
+      schema: VARIANT_SCHEMA_CIDS[hint.kind],
+      body: hint.body,
+    } as EvidenceVariant;
+  }
+  return {
+    kind: "legacy-witness",
+    schema: VARIANT_SCHEMA_CIDS["legacy-witness"],
+    body: {
+      rawWitness: memento.witness ?? "",
+      legacyProducerId: memento.producedBy,
+    },
+  };
+}
+
+/**
  * Insert a memento into the verifications table. Idempotent on
  * (bindingHash, propertyHash, producedBy) — re-inserting the same key
  * with a different verdict updates the existing row, surfaces the
  * change in the audit metadata.
  *
- * Computes the memento's CID at write time and stores its input_cids
- * (the upstream mementos that produced it). This is what makes the
- * verifications table a Merkle DAG rather than a flat key-value store.
- * Walking input_cids from any row reconstructs the provenance chain.
- *
- * v1 returns the row inserted/updated; downstream phases use this as
- * the cache-fill operation in the dispatch loop.
+ * The row's `witness` column stores the canonicalized claim envelope
+ * (per docs/specs/2026-04-29-universal-claim-envelope.md). The CID
+ * column is the envelope CID — sha256-prefix-32 of the canonicalized
+ * envelope with `cid` and `producerSignature` elided. Producers that
+ * want a typed evidence variant set `evidenceHint` on the memento;
+ * legacy callers continue to pass `witness` as a string and the
+ * envelope wraps it in a `legacy-witness` variant.
  */
 export function writeMemento(db: Db, memento: Memento): VerificationRow {
   const producedAt = memento.producedAt ?? new Date().toISOString();
-  const cid = memento.cid ?? computeCid({ ...memento, producedAt });
-  const inputCidsJson = memento.inputCids ? JSON.stringify(memento.inputCids) : null;
+  const sortedInputCids = [...(memento.inputCids ?? [])].sort();
+  const evidence = buildEvidence(memento);
+  const envelopeBase: Omit<ClaimEnvelope, "cid"> = {
+    schemaVersion: "1",
+    bindingHash: memento.bindingHash,
+    propertyHash: memento.propertyHash,
+    verdict: memento.verdict,
+    producedBy: memento.producedBy,
+    producedAt,
+    inputCids: sortedInputCids,
+    evidence,
+  };
+  const cid = memento.cid ?? computeEnvelopeCid(envelopeBase);
+  const envelope: ClaimEnvelope = { ...envelopeBase, cid };
+  const witnessJson = JSON.stringify(envelope);
+  const inputCidsJson =
+    sortedInputCids.length > 0 ? JSON.stringify(sortedInputCids) : null;
   const row: VerificationInsert = {
     bindingHash: memento.bindingHash,
     propertyHash: memento.propertyHash,
     verdict: memento.verdict,
-    witness: memento.witness ?? null,
+    witness: witnessJson,
     producedBy: memento.producedBy,
     producedAt,
     producerSignal: null,
@@ -296,17 +375,62 @@ function findExact(
   return rows.length > 0 ? rows[0] : null;
 }
 
+/**
+ * Try to parse the witness column as a claim envelope. Returns null on
+ * any failure — the row is then treated as a legacy pre-envelope row
+ * whose witness column held opaque producer JSON.
+ */
+function tryParseEnvelope(witness: string | null): ClaimEnvelope | null {
+  if (witness == null) return null;
+  if (witness.length === 0 || witness[0] !== "{") return null;
+  try {
+    const parsed = JSON.parse(witness) as Partial<ClaimEnvelope>;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      parsed.schemaVersion === "1" &&
+      typeof parsed.bindingHash === "string" &&
+      typeof parsed.propertyHash === "string" &&
+      typeof parsed.evidence === "object" &&
+      parsed.evidence !== null
+    ) {
+      return parsed as ClaimEnvelope;
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
 function rowToMemento(row: VerificationRow): Memento {
   const inputCids = row.inputCids ? (JSON.parse(row.inputCids) as string[]) : undefined;
+  const envelope = tryParseEnvelope(row.witness);
+
+  // Default: legacy row, witness column holds opaque producer JSON.
+  let witness: string | null = row.witness;
+  let evidence: EvidenceVariant | undefined;
+
+  if (envelope) {
+    evidence = envelope.evidence;
+    if (envelope.evidence.kind === "legacy-witness") {
+      // Surface the wrapped raw payload for callers that read .witness.
+      witness = envelope.evidence.body.rawWitness;
+    } else {
+      // Typed variant: witness lives in evidence.body, not .witness.
+      witness = null;
+    }
+  }
+
   return {
     bindingHash: row.bindingHash,
     propertyHash: row.propertyHash,
     verdict: row.verdict,
-    witness: row.witness,
+    witness,
     producedBy: row.producedBy,
     producedAt: row.producedAt,
     cid: row.cid ?? undefined,
     inputCids,
+    evidence,
   };
 }
 

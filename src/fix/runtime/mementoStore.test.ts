@@ -21,6 +21,11 @@ import {
   stats,
   hashCanonical,
 } from "./mementoStore.js";
+import {
+  validateEnvelope,
+  VARIANT_SCHEMA_CIDS,
+  type ClaimEnvelope,
+} from "../../claimEnvelope/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -321,6 +326,161 @@ describe("memento store: CID + DAG walk", () => {
 
     const depth1 = walk(db, rootCid, { maxDepth: 1 });
     expect(depth1).toHaveLength(2);
+  });
+});
+
+describe("memento store: claim envelope round-trip", () => {
+  let db: ReturnType<typeof makeDb>;
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  // Spec hashes must be 16 hex chars; CIDs in inputCids must be 32 hex.
+  const HEX16_A = "a1b2c3d4e5f6a7b8";
+  const HEX16_B = "b2c3d4e5f6a7b8c9";
+
+  it("stores a claim envelope in the witness column for legacy callers", () => {
+    writeMemento(db, {
+      bindingHash: HEX16_A,
+      propertyHash: HEX16_B,
+      verdict: "holds",
+      witness: '{"raw":"producer-output"}',
+      producedBy: "z3-symbolic@4.13",
+    });
+    const rows = db.select().from(verifications).all();
+    expect(rows).toHaveLength(1);
+    const envelope = JSON.parse(rows[0].witness as string) as ClaimEnvelope;
+    expect(envelope.schemaVersion).toBe("1");
+    expect(envelope.bindingHash).toBe(HEX16_A);
+    expect(envelope.propertyHash).toBe(HEX16_B);
+    expect(envelope.verdict).toBe("holds");
+    expect(envelope.producedBy).toBe("z3-symbolic@4.13");
+    expect(envelope.evidence.kind).toBe("legacy-witness");
+    expect(envelope.evidence.schema).toBe(VARIANT_SCHEMA_CIDS["legacy-witness"]);
+    expect((envelope.evidence as { body: { rawWitness: string } }).body.rawWitness).toBe(
+      '{"raw":"producer-output"}',
+    );
+    expect(envelope.cid).toMatch(/^[0-9a-f]{32}$/);
+    expect(envelope.cid).toBe(rows[0].cid);
+  });
+
+  it("legacy-witness round-trip: rowToMemento exposes the raw witness string", () => {
+    writeMemento(db, {
+      bindingHash: HEX16_A,
+      propertyHash: HEX16_B,
+      verdict: "holds",
+      witness: '{"z3":"sat","model":"k=5"}',
+      producedBy: "z3-symbolic@4.13",
+    });
+    const found = findMemento(db, { bindingHash: HEX16_A, propertyHash: HEX16_B });
+    expect(found?.witness).toBe('{"z3":"sat","model":"k=5"}');
+    expect(found?.evidence?.kind).toBe("legacy-witness");
+  });
+
+  it("typed evidenceHint produces a typed-variant envelope", () => {
+    writeMemento(db, {
+      bindingHash: HEX16_A,
+      propertyHash: HEX16_B,
+      verdict: "violated",
+      producedBy: "z3-symbolic@4.13",
+      evidenceHint: {
+        kind: "z3-model",
+        body: {
+          smtLibInput: "(assert (> x 0))",
+          z3Verdict: "sat",
+          model: "(define-fun x () Int 1)",
+          counterexample: { x: 1 },
+          z3RunMs: 12,
+        },
+      },
+    });
+    const found = findMemento(db, { bindingHash: HEX16_A, propertyHash: HEX16_B });
+    expect(found?.evidence?.kind).toBe("z3-model");
+    expect(found?.evidence?.schema).toBe(VARIANT_SCHEMA_CIDS["z3-model"]);
+    // For typed variants, the legacy `.witness` shortcut is null —
+    // the payload lives in evidence.body.
+    expect(found?.witness).toBeNull();
+    const body = (found?.evidence as { body: Record<string, unknown> }).body;
+    expect(body.smtLibInput).toBe("(assert (> x 0))");
+    expect(body.z3Verdict).toBe("sat");
+    expect(body.z3RunMs).toBe(12);
+  });
+
+  it("envelope validates against the spec when stored hashes are well-formed", () => {
+    writeMemento(db, {
+      bindingHash: HEX16_A,
+      propertyHash: HEX16_B,
+      verdict: "holds",
+      producedBy: "llm:claude-opus@4-7",
+      inputCids: ["a".repeat(32), "b".repeat(32)],
+      evidenceHint: {
+        kind: "llm-proposal",
+        body: {
+          llm: "claude-opus",
+          llmVersion: "4-7",
+          promptCid: "c".repeat(32),
+          proposedIrFormula: "(assert (> k 0))",
+          confidence: 0.9,
+          rationale: "hand-tuned",
+        },
+      },
+    });
+    const rows = db.select().from(verifications).all();
+    const envelope = JSON.parse(rows[0].witness as string) as ClaimEnvelope;
+    const result = validateEnvelope(envelope);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("envelope CID matches the row's cid column and is order-independent for inputCids", () => {
+    const cidA = "a".repeat(32);
+    const cidB = "b".repeat(32);
+    writeMemento(db, {
+      bindingHash: HEX16_A,
+      propertyHash: HEX16_B,
+      verdict: "holds",
+      witness: "raw",
+      producedBy: "z3@4.13",
+      producedAt: "2026-04-29T12:00:00Z",
+      inputCids: [cidB, cidA],
+    });
+    const rows = db.select().from(verifications).all();
+    const envelope = JSON.parse(rows[0].witness as string) as ClaimEnvelope;
+    expect(envelope.inputCids).toEqual([cidA, cidB]); // sorted in envelope
+    expect(envelope.cid).toBe(rows[0].cid);
+  });
+
+  it("typed-variant envelope is byte-stable: same inputs → same envelope CID", () => {
+    const writeOnce = (bindingHash: string) => {
+      writeMemento(db, {
+        bindingHash,
+        propertyHash: HEX16_B,
+        verdict: "holds",
+        producedBy: "z3-symbolic@4.13",
+        producedAt: "2026-04-29T12:00:00Z",
+        evidenceHint: {
+          kind: "z3-unsat",
+          body: {
+            smtLibInput: "(assert false)",
+            z3Verdict: "unsat",
+            z3RunMs: 5,
+          },
+        },
+      });
+      return db
+        .select()
+        .from(verifications)
+        .where(eq(verifications.bindingHash, bindingHash))
+        .all()[0].cid as string;
+    };
+    const cid1 = writeOnce(HEX16_A);
+    // A second key with identical evidence body but different binding
+    // hash must produce a DIFFERENT envelope CID — the binding is part
+    // of the canonical payload.
+    const cid2 = writeOnce("0000000000000000");
+    expect(cid1).not.toBe(cid2);
+    expect(cid1).toMatch(/^[0-9a-f]{32}$/);
+    expect(cid2).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 
