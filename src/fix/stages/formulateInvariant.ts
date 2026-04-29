@@ -23,6 +23,7 @@ import { runInvariantFidelity, type FidelityVerifiers } from "../invariantFideli
 import { evaluatePrinciple } from "../../dsl/evaluator.js";
 import { enumeratePrincipleFiles } from "../../principleEnumeration.js";
 import type { RecognizeResult } from "./recognize.js";
+import { getPromptStore } from "../../llm/promptStore.js";
 
 // ---------------------------------------------------------------------------
 // Prompt fragments (better-prompts artifacts).
@@ -456,7 +457,19 @@ function readLocusSource(db: Db, locus: BugLocus): string {
   return "";
 }
 
-function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusSource: string, investigate?: InvestigateReport): string {
+async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusSource: string, investigate?: InvestigateReport, projectRoot?: string): Promise<string> {
+  // Resolve evolvable prompt fragments at their interpolation sites.
+  // Each fragment is a bp artifact named after its position; bp.get returns
+  // the literal byte-identically until the fragment is evolved. When
+  // projectRoot is unavailable (test contexts, dry-run), the literal is
+  // used directly — same byte sequence either way on day 0.
+  const c1KindOrderPolarityConvention = projectRoot
+    ? (await getPromptStore(projectRoot).get(
+        "c1.kind.order.polarity_convention",
+        C1_KIND_ORDER_POLARITY_CONVENTION,
+        "2026-04-28",
+      )).body
+    : C1_KIND_ORDER_POLARITY_CONVENTION;
   // Gather source context around locus from the already-loaded full source.
   let sourceContext = "(source not available)";
   if (locusSource) {
@@ -682,7 +695,7 @@ The violation is about pairwise ordering: "elements should be sorted but
 i < j with a[i] > a[j]", "events are out of expected sequence". Use Bool
 predicates over the violation pair, not Int sequences.
 
-${C1_KIND_ORDER_POLARITY_CONVENTION}
+${c1KindOrderPolarityConvention}
 
 Canonical prose: "the result must include the K most recent entries",
 "elements must be in descending chronological order",
@@ -1052,6 +1065,13 @@ export async function formulateInvariant(args: {
   locus: BugLocus;
   db: Db;
   llm: LLMProvider;
+  /**
+   * Host project root, optional. When provided, the C1 prompt fragments
+   * resolve via better-prompts (each named const here lives also as a bp
+   * artifact, byte-identical day 0, evolvable day N). When absent, the
+   * literal source-of-record is used directly — same content either way.
+   */
+  projectRoot?: string;
   logger?: FixLoopLogger;
   recognized?: RecognizeResult;
   investigateReport?: InvestigateReport;
@@ -1302,7 +1322,7 @@ async function formulateInvariantInner(args: {
   // ±3-line context and for the source_expr substring-match gate (task #142).
   const locusSource = readLocusSource(db, locus);
 
-  const prompt = buildLlmPrompt(signal, locus, db, locusSource, args.investigateReport);
+  const prompt = await buildLlmPrompt(signal, locus, db, locusSource, args.investigateReport, args.projectRoot);
   logger.detail(`C1 LLM prompt (novel path): ${prompt.slice(0, 200)}...`);
   let formalExpression: string;
   let bindings: SmtBindingRef[];

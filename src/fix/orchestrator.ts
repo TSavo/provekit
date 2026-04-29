@@ -169,6 +169,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
           locus: args.locus,
           db: args.db,
           llm: args.llm,
+          projectRoot: resolveProjectRoot(args.locus.file) ?? undefined,
           logger,
           recognized,
           investigateReport: args.investigateReport,
