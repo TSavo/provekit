@@ -187,6 +187,42 @@ Output ONLY a JSON object via the Write tool:
 
 const C15_PROMPT_DISCRIMINATOR = "2026-04-28";
 
+// Fifth C1.5 verifier — concrete-path adversarial fixture generation.
+// Four runtime placeholders.
+const C15_ADVERSARIAL_FIXTURES_TEMPLATE = `You are a software testing expert. Given an invariant and a bug report, generate TypeScript fixtures.
+
+Bug summary: {{SUMMARY}}
+Invariant description: {{INVARIANT_DESCRIPTION}}
+Formal violation SMT: {{INVARIANT_FORMAL_EXPRESSION}}
+Bindings (SMT variable → source expression): {{BINDINGS_JSON}}
+
+Generate 5 POSITIVE fixtures (code that EXHIBITS the bug) and 5 NEGATIVE fixtures (similar but CLEAN code).
+For each fixture, also provide the concrete input values for each SMT binding that demonstrate the classification.
+
+Respond with ONLY a JSON object (no markdown fences):
+{
+  "positive": [
+    {
+      "source": "function divide(a: number, b: number) { return a / b; }",
+      "inputBindings": {"b": 0, "a": 5},
+      "description": "b is zero"
+    }
+  ],
+  "negative": [
+    {
+      "source": "function divide(a: number, b: number) { if (b === 0) throw new Error('zero'); return a / b; }",
+      "inputBindings": {"b": 1, "a": 5},
+      "description": "guard prevents division by zero"
+    }
+  ]
+}
+
+Rules:
+- Each fixture must be a complete, self-contained TypeScript snippet (no imports needed)
+- inputBindings must provide a value for every SMT constant in the invariant's bindings
+- Positive: inputBindings should make the violation SMT SAT
+- Negative: inputBindings should make the violation SMT UNSAT`;
+
 /**
  * Helper: render a C1.5 prompt template via bp.get when projectRoot is
  * available, otherwise return the literal directly. Returns the rendered
@@ -541,39 +577,16 @@ export async function adversarialFixturePreValidation(args: {
 }): Promise<FidelityCheckResult> {
   const { invariant, signal, llm, logger = createNoopLogger() } = args;
 
-  const fixturePrompt = `You are a software testing expert. Given an invariant and a bug report, generate TypeScript fixtures.
-
-Bug summary: ${signal.summary}
-Invariant description: ${invariant.description}
-Formal violation SMT: ${invariant.formalExpression}
-Bindings (SMT variable → source expression): ${JSON.stringify(invariant.bindings.map((b) => ({ smt_constant: b.smt_constant, source_expr: b.source_expr })))}
-
-Generate 5 POSITIVE fixtures (code that EXHIBITS the bug) and 5 NEGATIVE fixtures (similar but CLEAN code).
-For each fixture, also provide the concrete input values for each SMT binding that demonstrate the classification.
-
-Respond with ONLY a JSON object (no markdown fences):
-{
-  "positive": [
-    {
-      "source": "function divide(a: number, b: number) { return a / b; }",
-      "inputBindings": {"b": 0, "a": 5},
-      "description": "b is zero"
-    }
-  ],
-  "negative": [
-    {
-      "source": "function divide(a: number, b: number) { if (b === 0) throw new Error('zero'); return a / b; }",
-      "inputBindings": {"b": 1, "a": 5},
-      "description": "guard prevents division by zero"
-    }
-  ]
-}
-
-Rules:
-- Each fixture must be a complete, self-contained TypeScript snippet (no imports needed)
-- inputBindings must provide a value for every SMT constant in the invariant's bindings
-- Positive: inputBindings should make the violation SMT SAT
-- Negative: inputBindings should make the violation SMT UNSAT`;
+  const { body: c15FixtureBody } = await _fetchC15Template(
+    args.projectRoot,
+    "c1.5.adversarial_fixtures",
+    C15_ADVERSARIAL_FIXTURES_TEMPLATE,
+  );
+  const fixturePrompt = c15FixtureBody
+    .replaceAll("{{SUMMARY}}", signal.summary)
+    .replaceAll("{{INVARIANT_DESCRIPTION}}", invariant.description)
+    .replaceAll("{{INVARIANT_FORMAL_EXPRESSION}}", invariant.formalExpression)
+    .replaceAll("{{BINDINGS_JSON}}", JSON.stringify(invariant.bindings.map((b) => ({ smt_constant: b.smt_constant, source_expr: b.source_expr }))));
 
   interface Fixture {
     source: string;
