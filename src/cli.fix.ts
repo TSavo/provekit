@@ -675,7 +675,7 @@ export async function runFix(argv: string[]): Promise<void> {
   const ref = positionals[0];
 
   if (!ref) {
-    process.stderr.write("Usage: provekit fix <ref> [--no-confirm] [--dry-run] [--apply] [--max-sites N] [--verbose]\n");
+    process.stderr.write("Usage: provekit prove <intent> [--no-confirm] [--dry-run] [--apply] [--max-sites N] [--verbose]\n       provekit fix <ref>      (alias)\n");
     process.exit(1);
   }
 
