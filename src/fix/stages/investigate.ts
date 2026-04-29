@@ -31,6 +31,77 @@ import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync } from "fs"
 import { join, relative } from "path";
 import { execSync } from "child_process";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
+import { getPromptStore } from "../../llm/promptStore.js";
+
+// ---------------------------------------------------------------------------
+// Investigate (B1.5) prompt artifact: investigate.prompt
+//
+// One bp namespace. Five runtime placeholders carry per-call context.
+// Same pattern as C1/C3/C5 — coherence is global; bp.evolve operates on
+// the whole composed prompt body. Day 0 byte-identical.
+//
+// Future evolution warning: bp.evolve on investigate.prompt MUST preserve
+// {{SOURCE}}, {{SUMMARY}}, {{FAILURE_DESCRIPTION}}, {{FIX_HINT_BLOCK}},
+// {{TOUR_TEXT}}, {{RECENT_TEXT}} placeholders verbatim.
+// ---------------------------------------------------------------------------
+
+const INVESTIGATE_PROMPT_TEMPLATE = `You are the Investigate stage of a fix loop. A user has reported a bug
+in their project. They describe symptoms, not code. Your job: read the
+symptom, scan the project tour, propose where the bug most likely lives.
+
+Output a JSON object via the Write tool. Schema:
+
+{
+  "symptomSummary": "1-sentence restatement of what the user observes",
+  "rootCauseHypothesis": "1-2 sentences on the mechanical cause",
+  "fixHypothesis": "1-2 sentences on what kind of change would fix it",
+  "primaryLocation": {
+    "file": "path/relative/to/project/root.ts",
+    "function": "optional function or method name",
+    "lineRange": [optional inclusive start, end],
+    "rationale": "why does the symptom point here?",
+    "confidence": "high" | "medium" | "low"
+  },
+  "candidateLocations": [
+    /* up to 4 additional candidates, ordered by confidence descending */
+  ]
+}
+
+== Bug report ==
+
+Source: {{SOURCE}}
+
+Summary:
+{{SUMMARY}}
+
+Failure description:
+{{FAILURE_DESCRIPTION}}
+{{FIX_HINT_BLOCK}}
+== Project tour (source files only, tests excluded) ==
+
+{{TOUR_TEXT}}
+
+== Files changed in recent commits ==
+
+{{RECENT_TEXT}}
+
+== Reasoning hints ==
+
+- The user describes WHAT they see, not WHERE in the code. Your job is the WHERE.
+- Threshold-shaped symptoms (works small, breaks at scale) usually involve
+  pagination, sort order, limits, or caching. Look for query/repository code.
+- "Stops working over time" usually involves accumulated state — a list that
+  grows, a cache that doesn't invalidate, a counter that overflows.
+- Pick the file by NAME first (does the path describe the function the user
+  describes?), then narrow within the file.
+- Confidence "high" should mean "I'd bet money on it"; "low" means "worth
+  checking but the symptom is consistent with several places."
+
+The structuredOutput layer will append the exact path to write to;
+follow that instruction precisely. Do NOT invent a path or write to
+the project root — the appended instruction is the contract.`;
+
+const INVESTIGATE_PROMPT_DISCRIMINATOR = "2026-04-28";
 import { getModelTier } from "../modelTiers.js";
 import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
 import type { FixLoopLogger } from "../logger.js";
@@ -98,7 +169,7 @@ export async function investigate(opts: InvestigateOptions): Promise<Investigate
 
   const tour = buildProjectTour(projectRoot, maxEntries);
   const recentChanges = getRecentChanges(projectRoot);
-  const prompt = buildInvestigatePrompt(signal, tour, recentChanges);
+  const { prompt } = await buildInvestigatePrompt(signal, tour, recentChanges, projectRoot);
 
   logger?.info(
     `  Investigate prompt: ${tour.length} files in tour, ${recentChanges.length} recent changes`,
@@ -201,72 +272,46 @@ function getRecentChanges(projectRoot: string): string[] {
 // Prompt
 // ---------------------------------------------------------------------------
 
-function buildInvestigatePrompt(
+async function buildInvestigatePrompt(
   signal: BugSignal,
   tour: TourEntry[],
   recentChanges: string[],
-): string {
+  projectRoot?: string,
+): Promise<{ prompt: string; revisions: Array<{ key: string; revisionId: string }> }> {
   const tourText = tour.map((t) => `  ${t.path}  (${t.lines} lines)`).join("\n");
   const recentText = recentChanges.length > 0
     ? recentChanges.map((p) => `  ${p}`).join("\n")
     : "  (no git history available)";
+  const fixHintBlock = signal.fixHint ? `\nFix hint:\n${signal.fixHint}\n` : "";
 
-  return `You are the Investigate stage of a fix loop. A user has reported a bug
-in their project. They describe symptoms, not code. Your job: read the
-symptom, scan the project tour, propose where the bug most likely lives.
+  // Single bp artifact for the full Investigate prompt body. Day 0 byte-
+  // identical; bp.evolve sees the whole composed prompt. No-op when
+  // projectRoot is absent.
+  const revisions: Array<{ key: string; revisionId: string }> = [];
+  let templateBody = INVESTIGATE_PROMPT_TEMPLATE;
+  if (projectRoot) {
+    const rev = await getPromptStore(projectRoot).get(
+      "investigate.prompt",
+      INVESTIGATE_PROMPT_TEMPLATE,
+      INVESTIGATE_PROMPT_DISCRIMINATOR,
+    );
+    templateBody = rev.body;
+    revisions.push({ key: "investigate.prompt", revisionId: rev.id });
+  }
 
-Output a JSON object via the Write tool. Schema:
-
-{
-  "symptomSummary": "1-sentence restatement of what the user observes",
-  "rootCauseHypothesis": "1-2 sentences on the mechanical cause",
-  "fixHypothesis": "1-2 sentences on what kind of change would fix it",
-  "primaryLocation": {
-    "file": "path/relative/to/project/root.ts",
-    "function": "optional function or method name",
-    "lineRange": [optional inclusive start, end],
-    "rationale": "why does the symptom point here?",
-    "confidence": "high" | "medium" | "low"
-  },
-  "candidateLocations": [
-    /* up to 4 additional candidates, ordered by confidence descending */
-  ]
-}
-
-== Bug report ==
-
-Source: ${signal.source}
-
-Summary:
-${signal.summary}
-
-Failure description:
-${signal.failureDescription}
-${signal.fixHint ? `\nFix hint:\n${signal.fixHint}\n` : ""}
-== Project tour (source files only, tests excluded) ==
-
-${tourText}
-
-== Files changed in recent commits ==
-
-${recentText}
-
-== Reasoning hints ==
-
-- The user describes WHAT they see, not WHERE in the code. Your job is the WHERE.
-- Threshold-shaped symptoms (works small, breaks at scale) usually involve
-  pagination, sort order, limits, or caching. Look for query/repository code.
-- "Stops working over time" usually involves accumulated state — a list that
-  grows, a cache that doesn't invalidate, a counter that overflows.
-- Pick the file by NAME first (does the path describe the function the user
-  describes?), then narrow within the file.
-- Confidence "high" should mean "I'd bet money on it"; "low" means "worth
-  checking but the symptom is consistent with several places."
-
-The structuredOutput layer will append the exact path to write to;
-follow that instruction precisely. Do NOT invent a path or write to
-the project root — the appended instruction is the contract.
-`.trim();
+  const renderVars: Record<string, string> = {
+    SOURCE: signal.source,
+    SUMMARY: signal.summary,
+    FAILURE_DESCRIPTION: signal.failureDescription,
+    FIX_HINT_BLOCK: fixHintBlock,
+    TOUR_TEXT: tourText,
+    RECENT_TEXT: recentText,
+  };
+  let prompt = templateBody;
+  for (const [k, v] of Object.entries(renderVars)) {
+    prompt = prompt.replaceAll(`{{${k}}}`, v);
+  }
+  return { prompt, revisions };
 }
 
 // ---------------------------------------------------------------------------
