@@ -43,6 +43,20 @@ import type { CapabilitySpec } from "./types.js";
 import { proposeCapabilitySpec, runSubstrateOracles } from "./capabilityGen.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
 import { getModelTier } from "./modelTiers.js";
+import { getPromptStore } from "../llm/promptStore.js";
+
+// ---------------------------------------------------------------------------
+// C6 main principle prompt artifact: c6.principle_prompt
+//
+// One bp namespace. Seven runtime placeholders carry per-call context.
+// Same pattern as the other stages — bp.evolve operates on the whole
+// composed prompt; coherence is global.
+//
+// Future evolution warning: bp.evolve on c6.principle_prompt MUST preserve
+// {{BUG_SUMMARY}}, {{INVARIANT_DESCRIPTION}}, {{BUG_CLASS_HINT}},
+// {{FIX_DESCRIPTION}}, {{CAPABILITIES}}, {{RELATIONS}}, {{EXEMPLAR}}
+// placeholders verbatim.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Internal result shape for tryExistingCapabilities
@@ -121,20 +135,13 @@ function loadExemplar(): string {
   return "(exemplar not available)";
 }
 
-export function buildPrinciplePrompt(
-  signal: BugSignal,
-  invariant: InvariantClaim,
-  fix: FixCandidate,
-): string {
-  const exemplar = loadExemplar();
-
-  return `[STAGE:C6] generatePrincipleCandidate
+const C6_PRINCIPLE_PROMPT_TEMPLATE = `[STAGE:C6] generatePrincipleCandidate
 You are a static-analysis rule author. Given a bug and its fix, produce a reusable DSL principle that catches this bug class.
 
-Bug summary: ${signal.summary}
-Invariant violated: ${invariant.description}
-Bug class hint: ${signal.bugClassHint ?? "(none)"}
-Fix description: ${fix.patch.description}
+Bug summary: {{BUG_SUMMARY}}
+Invariant violated: {{INVARIANT_DESCRIPTION}}
+Bug class hint: {{BUG_CLASS_HINT}}
+Fix description: {{FIX_DESCRIPTION}}
 
 === WHY YOUR PRINCIPLE WILL FAIL ADVERSARIAL VALIDATION (READ FIRST) ===
 
@@ -176,12 +183,12 @@ A. CAPABILITIES: These are schema tables. Reference their columns as
    capabilityName.columnName (e.g., arithmetic.op, narrows.target_node).
    NEVER use a capability name as a predicate name in a require clause.
    Available capabilities (from the runtime registry):
-${describeCapabilities()}
+{{CAPABILITIES}}
 
 B. BUILT-IN RELATIONS: These ARE callable in where clauses inside require
    clauses. They take two arguments (varRef or varDeref).
    Available relations (from the runtime registry):
-${describeRelations()}
+{{RELATIONS}}
    Example: where same_value($guard.narrows.target_node, $div.arithmetic.rhs_node)
 
 C. USER-DEFINED PREDICATES: You can declare your own with
@@ -191,7 +198,7 @@ C. USER-DEFINED PREDICATES: You can declare your own with
 
 === EXEMPLAR: your output should be of similar shape ===
 
-${exemplar}
+{{EXEMPLAR}}
 
 === END EXEMPLAR ===
 
@@ -288,7 +295,45 @@ NEVER reference a capability name (section A) as a predicate name.
 Rules:
 - DSL must be valid (parseable) and use ONLY registered capabilities/relations above.
 - Do NOT output anything outside the JSON object.`;
+
+const C6_PRINCIPLE_PROMPT_DISCRIMINATOR = "2026-04-28";
+
+export async function buildPrinciplePrompt(
+  signal: BugSignal,
+  invariant: InvariantClaim,
+  fix: FixCandidate,
+  projectRoot?: string,
+): Promise<{ prompt: string; revisions: Array<{ key: string; revisionId: string }> }> {
+  const exemplar = loadExemplar();
+
+  const revisions: Array<{ key: string; revisionId: string }> = [];
+  let templateBody = C6_PRINCIPLE_PROMPT_TEMPLATE;
+  if (projectRoot) {
+    const rev = await getPromptStore(projectRoot).get(
+      "c6.principle_prompt",
+      C6_PRINCIPLE_PROMPT_TEMPLATE,
+      C6_PRINCIPLE_PROMPT_DISCRIMINATOR,
+    );
+    templateBody = rev.body;
+    revisions.push({ key: "c6.principle_prompt", revisionId: rev.id });
+  }
+
+  const renderVars: Record<string, string> = {
+    BUG_SUMMARY: signal.summary,
+    INVARIANT_DESCRIPTION: invariant.description,
+    BUG_CLASS_HINT: signal.bugClassHint ?? "(none)",
+    FIX_DESCRIPTION: fix.patch.description,
+    CAPABILITIES: describeCapabilities(),
+    RELATIONS: describeRelations(),
+    EXEMPLAR: exemplar,
+  };
+  let prompt = templateBody;
+  for (const [k, v] of Object.entries(renderVars)) {
+    prompt = prompt.replaceAll(`{{${k}}}`, v);
+  }
+  return { prompt, revisions };
 }
+
 
 function buildAdversarialPrompt(
   principleDescription: string,
@@ -756,13 +801,16 @@ export async function tryExistingCapabilities(args: {
   fixCandidate: FixCandidate;
   db: Db;
   llm: LLMProvider;
+  projectRoot?: string;
 }): Promise<ExistingCapAttempt> {
   const { signal, invariant, fixCandidate, db, llm } = args;
+
+  const { prompt: c6Prompt } = await buildPrinciplePrompt(signal, invariant, fixCandidate, args.projectRoot);
 
   let parsedRaw: unknown;
   try {
     parsedRaw = await requestStructuredJson<unknown>({
-      prompt: buildPrinciplePrompt(signal, invariant, fixCandidate),
+      prompt: c6Prompt,
       llm,
       stage: "C6-principleProposal",
       model: getModelTier("C6-principleProposal"),

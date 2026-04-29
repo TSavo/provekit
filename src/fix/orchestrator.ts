@@ -253,7 +253,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     logger.stage("C6: generatePrincipleCandidate");
     const t0c6 = Date.now();
     const principles = await runStage("C6", "generatePrincipleCandidate", audit, () =>
-      generatePrincipleCandidate({ signal: args.signal, invariant: invariant!, fixCandidate: fix!, db: args.db, llm: args.llm, overlay, logger, recognized }),
+      generatePrincipleCandidate({ signal: args.signal, invariant: invariant!, fixCandidate: fix!, db: args.db, llm: args.llm, overlay, projectRoot: projectRootForBp, logger, recognized }),
     );
     const primaryPrinciple = principles.length > 0 ? principles[0] : null;
     const alternateShapes = principles.length > 1 ? principles.slice(1) : [];

@@ -486,7 +486,7 @@ describe("buildPrinciplePrompt — namespace clarity", () => {
   beforeEach(snapshotRegistry);
   afterEach(restoreRegistry);
 
-  it("includes a dynamically registered capability in the prompt", () => {
+  it("includes a dynamically registered capability in the prompt", async () => {
     registerCapability({
       dslName: "truthiness",
       table: { _: { name: "node_truthiness" } } as any,
@@ -513,14 +513,14 @@ describe("buildPrinciplePrompt — namespace clarity", () => {
       },
     });
 
-    const prompt = buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
+    const { prompt } = await buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
     expect(prompt).toContain("truthiness");
     expect(prompt).toContain("coercion_kind");
     // The prompt must make clear capabilities are NOT callable as predicates.
     expect(prompt).toContain("NEVER use a capability name as a predicate name");
   });
 
-  it("includes the built-in relations list in the prompt", () => {
+  it("includes the built-in relations list in the prompt", async () => {
     registerRelation({
       name: "fake_relation_for_test",
       paramCount: 2,
@@ -528,18 +528,18 @@ describe("buildPrinciplePrompt — namespace clarity", () => {
       compile: () => "1=1",
     });
 
-    const prompt = buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
+    const { prompt } = await buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
     expect(prompt).toContain("fake_relation_for_test");
   });
 
-  it("embeds the division-by-zero exemplar verbatim in the prompt", () => {
+  it("embeds the division-by-zero exemplar verbatim in the prompt", async () => {
     // Task #134: principle library is partitioned. division-by-zero is a
     // numeric-arithmetic axiom and lives in universal/.
     const exemplarPath = join(
       process.cwd(), ".provekit", "principles", "universal", "division-by-zero.dsl",
     );
     const exemplar = readFileSync(exemplarPath, "utf-8");
-    const prompt = buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
+    const { prompt } = await buildPrinciplePrompt(makeSignal(), makeInvariant(), makeFixCandidate());
     // The exemplar is embedded verbatim — check its core content is present.
     expect(prompt).toContain("predicate zero_guard");
     expect(prompt).toContain("division-by-zero");

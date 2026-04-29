@@ -28,6 +28,11 @@ export async function generatePrincipleCandidate(args: {
   logger?: FixLoopLogger;
   /** B3 mechanical-mode input. When matched, C6m runs (provenance append, no LLM). */
   recognized?: RecognizeResult;
+  /**
+   * Host project root, optional. Threaded into tryExistingCapabilities so
+   * the C6 principle prompt fragment resolves via better-prompts.
+   */
+  projectRoot?: string;
 }): Promise<PrincipleCandidate[]> {
   // C6m: B3 recognized path — append provenance to the existing library entry.
   if (args.recognized && args.recognized.matched) {
