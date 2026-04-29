@@ -62,6 +62,7 @@ import type {
   IntentReportIntent,
   IntentReportConstraintCandidate,
 } from "./retrospective.js";
+import { validateIntentReport } from "../../contracts/intentReport.js";
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -92,6 +93,9 @@ export async function generateMissingTestsForReport(args: {
   projectRoot: string;
 }): Promise<IntentReport> {
   const { report, llm, projectRoot } = args;
+
+  // Contract gate: the upstream report must be well-formed before we touch it.
+  validateIntentReport(report);
 
   // C5's preferred path is the agent path (generateTestCodeViaAgent). If the
   // provider has no agent surface, the agent-driven prompt cannot fire — and
@@ -134,13 +138,15 @@ export async function generateMissingTestsForReport(args: {
     }
   }
 
-  return {
+  const augmented: IntentReport = {
     ...report,
     outputBundle: {
       ...report.outputBundle,
       addedTests,
     },
   };
+
+  return validateIntentReport(augmented);
 }
 
 // ---------------------------------------------------------------------------

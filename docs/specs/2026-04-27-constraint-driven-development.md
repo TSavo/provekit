@@ -201,6 +201,81 @@ verification) and surfaces the result of each. When the LLM's intent
 extraction fails any gate, the intent gets dropped from the bundle, not
 shipped with a "trust me bro" caveat.
 
+### Intent report schema
+
+The schema is the contract between every stage of Part B. Stages produce
+and consume reports under these typed shapes; the runtime gate at
+`src/contracts/intentReport.ts` (`validateIntentReport()`) rejects any
+report that fails validation rather than coercing it.
+
+```typescript
+type IntentReport = {
+  source: "prospective" | "retrospective";
+  trigger: IntentReportTrigger;
+  intents: IntentReportIntent[];
+  outputBundle: IntentReportOutputBundle;
+};
+
+type IntentReportTrigger = {
+  kind: "problem_statement" | "commit";
+  ref: string;
+  diff?: string;
+  commitMessage?: string;
+};
+
+type IntentReportIntent = {
+  filePath: string;             // repo-relative, POSIX-style
+  lineRange: [number, number];  // 1-indexed inclusive, line[0] <= line[1]
+  intent: string;               // one-sentence prose
+  hasRegressionTest: boolean;
+  testGenerationOpportunity: boolean;
+  constraintCandidate: IntentReportConstraintCandidate | null;
+  citations?: IntentReportCitation[];
+};
+
+type IntentReportConstraintCandidate = {
+  smtSketch: string;            // SMT-LIB2 form
+  kind: string;                 // open string; downstream classifyInvariantKind normalizes
+  validationStatus: "candidate" | "z3_sat" | "passed_oracles" | "rejected";
+};
+
+type IntentReportOutputBundle = {
+  patch: string | null;                  // null when "holds"
+  addedTests: string[];
+  constraintArtifact: string | null;     // path to .provekit/invariants/<sha>.json, null when no candidate survived
+};
+```
+
+Validation rules (enforced at the `validateIntentReport()` gate):
+
+1. `source` is one of the two literals.
+2. `trigger.kind` is one of the two literals; `trigger.ref` is non-empty.
+3. `intents[].lineRange` must satisfy `1 <= line[0] <= line[1]` with both
+   integer.
+4. `intents[].intent` is non-empty.
+5. `constraintCandidate` is either `null` or a fully-populated object
+   with non-empty `smtSketch`, non-empty `kind`, and a `validationStatus`
+   in the closed enum above.
+6. `validationStatus` is monotone in practice: stages promote `candidate`
+   → `z3_sat` → `passed_oracles` or → `rejected`. The validator does
+   not enforce monotonicity (drift is captured by the audit trail in
+   `bp.record`/`bp.signal`), only the enum membership.
+7. Reports flowing between stages cross `validateIntentReport()`; on
+   violation it throws `IntentReportValidationError` with a path-style
+   locator (e.g., `"intents[2].lineRange[0]"`) for the failing field.
+
+`kind` is intentionally an open string at this contract layer. B0
+emits whatever the LLM produced; downstream stages call
+`classifyInvariantKind` to normalize into the closed kind set the
+invariant store uses. Coupling B0 to the closed enum would force a
+schema bump every time the kind set evolves.
+
+Telemetry — per-stage timing, LLM invocation IDs, oracle outcomes —
+lives outside this schema in `bp.record`/`bp.signal` (per-revision)
+and in the standing-invariant-runtime store (per-invariant). The
+IntentReport stays focused on the artifact shape that flows between
+stages; the audit trail is a separate substrate.
+
 ## One fork: the verifier's verdict
 
 The deepest architectural compression: **the pipeline forks exactly once,
@@ -416,6 +491,97 @@ boundary and running the full pipeline before the entity advances.
 example of the agent-runtime integration shape.) Future IDEs and agent
 runtimes plug into the same library entry points; ProvekIt doesn't
 write per-IDE plugins, it provides the surface the integrators target.
+
+### The npm package surface
+
+`npm i provekit` produces a single package that backs both channels.
+The package layout is small and frozen by these constraints:
+
+**Binary entry points (Channel 1):**
+
+```
+bin/provekit               → CLI launcher (delegates to src/cli.ts via tsx)
+```
+
+The CLI exposes these subcommands, each one a thin wrapper around a
+library entry point:
+
+```
+provekit verify [path]              → mechanical Part A; Z3 + path checker
+provekit fix-loop <bug-or-change>   → full Part B pipeline (interactive shape)
+provekit mine-history [opts]        → retrospective bulk intake (historical shape)
+provekit prove <assertion>          → MCP-shape evaluation for one-shot use
+provekit watch                      → standing runtime; persistent verify on file change
+provekit version                    → package version + corpus schema version
+```
+
+`provekit verify` is the only subcommand that runs in pre-commit / CI.
+The others are gate-promotion-tier and run interactively or under
+agent-runtime control.
+
+**Library entry points (Channel 2):**
+
+```typescript
+// Top-level export — the surface IDEs and agent runtimes target
+import {
+  verify,           // (projectRoot, opts?) → VerifyResult
+  runFixLoop,       // (signal, opts) → FixLoopResult
+  mineHistory,      // (projectRoot, opts) → MineSummary
+  prove,            // (assertion, opts) → ProveResult
+  store,            // standing-invariant-runtime store API
+  contracts,        // type-only re-exports of IntentReport et al
+} from "provekit";
+```
+
+The `exports` map in `package.json` pins these as the only public surface:
+
+```json
+{
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./lib/provekit.mjs",
+      "require": "./lib/provekit.cjs",
+      "default": "./lib/provekit.cjs"
+    },
+    "./contracts": "./lib/contracts.mjs",
+    "./package.json": "./package.json"
+  }
+}
+```
+
+Anything not in `exports` is private. Consumers reaching into `src/fix/...`
+internals get no stability guarantee; the library API is the contract.
+
+**Files shipped:**
+
+```
+bin/                        CLI launchers
+lib/                        compiled JS (CJS + ESM)
+src/                        TS sources (for sourcemaps + type lookup)
+drizzle/                    SQL migrations for the standing-runtime store
+.provekit/principles/       starter principle library (the seven cross-language)
+tsconfig.json
+README.md
+LICENSE
+```
+
+The standing runtime expects `.provekit/` in the consumer's repo (created
+on first `provekit init`); the package itself ships only the *starter*
+principles, never the consumer's invariant store.
+
+**GitHub Action wrapper (Channel 1's CI form):**
+
+A separate, tiny package `provekit/action` lives in its own repo and
+wraps `npx provekit verify` for GitHub Actions consumption. The Action
+is a wrapper, not a fork; it pins a specific `provekit` version and adds
+nothing beyond reporting the verdict to the PR check surface.
+
+Versioning policy: `provekit` follows semver strictly. Breaking changes
+include adding a constraint to the impossibility set (which can fail
+codebases that previously passed). Schema bumps to the IntentReport or
+the persisted-invariant format are major-version events with documented
+migrations.
 
 ### What's explicitly NOT the product
 
@@ -795,6 +961,108 @@ relax existing items. ProvekIt ages backwards too — older versions of
 the product are *not* less constrained than newer ones. The same shape
 the methodology applies to user codebases applies to ProvekIt itself.
 
+### Encoding the 15 as enforceable invariants
+
+The 15 above are prose. For ProvekIt to age backwards on its own code,
+each must be encoded into the same on-disk shape the framework checks
+user codebases against. The encoding strategy partitions the 15 into
+three classes by what kind of evidence makes them checkable:
+
+**Class A — Z3-checkable invariants (the framework checks itself
+mechanically):**
+
+The constraint reduces to a property over the codebase's structure that
+a Z3 path-checker plus an SMT sketch can decide. Each one becomes a
+StoredInvariant under `.provekit/invariants/<hash>.json` with a binding
+that mine-history seeded from ProvekIt's own history.
+
+- **#1 No LLM in the verification path.** Encoded as: no module under
+  `src/runtime/` imports anything from `src/llm/` or names containing
+  `claude`, `agent`, `llm`. Z3-checkable via import-graph reachability.
+- **#9 One pipeline fork only.** Encoded as: every entry into the
+  pipeline composition reaches exactly one branching `if` whose
+  condition tests the verifier's verdict. SMT sketch over the AST of
+  `orchestrator.ts`.
+- **#10 No constraint without a regression test that locks it in.**
+  Encoded as: every `StoredInvariant` on disk has a `testArtifact` field
+  that points to a vitest file that exists and is registered in the
+  test runner. Z3-checkable as a join across the on-disk corpus and the
+  filesystem.
+- **#11 No invariant without Z3 SAT proof of reachability.** Encoded as:
+  every persisted invariant carries an `oracle1Witness` field with a
+  Z3 model. Pure presence check, but mechanical.
+- **#13 No LLM-tier work in pre-commit blocking context.** Encoded as:
+  the call graph from `provekit verify`'s entry point reaches no
+  symbol under `src/llm/`. Same shape as #1 with a different root.
+- **#15 No silent scope changes.** Encoded as: every invariant's
+  scope field changes only via the retire-plus-remint sequence, which
+  appends two audit entries with linked IDs. Diff-checkable across
+  consecutive corpus revisions.
+
+**Class B — Process invariants (audit-trail-shaped, validated by the
+publish pipeline):**
+
+The constraint is about *how* artifacts get produced rather than about
+their static structure. The encoding is an audit-trail rule the publish
+pipeline enforces; violations show up as a publish-blocked error with
+the offending artifact named.
+
+- **#4 No principle without adversarial validation.** Encoded as:
+  every published principle carries a `validatorRunId` linking to a
+  validator-pipeline invocation that returned `pass`. Publish blocked
+  without it.
+- **#5 No silent constraint removal.** Encoded as: corpus diffs that
+  remove an invariant require a `decayAcknowledgment` entry in the
+  audit trail, signed by a human review. The publish step rejects
+  diffs where this is missing.
+- **#7 Part B is a plugin, not a product.** Encoded as: the npm
+  package's `exports` map exposes Part A entry points but only one
+  reference Part B implementation, behind a clearly-labeled `/plugins`
+  prefix. Publish-time check on `package.json`.
+- **#12 No regression test without mutation verification.** Encoded
+  as: every test artifact on disk carries an `oracle9MutationProof`
+  field with the mutation-applied + test-failed evidence. Publish
+  blocked without it.
+- **#14 No marketing claim without mechanical backing.** Encoded as:
+  every claim in `README.md` and the marketing site must link to either
+  a Z3 audit URL or carry an explicit "claim-only" tag. Publish-time
+  check on the linked corpus.
+
+**Class C — Statements about the shape of the offering (non-mechanical;
+checked at policy review):**
+
+These do not reduce to mechanical checks because the predicate is about
+strategic intent, not code shape. They get checked at policy review
+during major-version planning rather than at every commit.
+
+- **#2 No SaaS-only deployment as the canonical surface.** Verified
+  every quarter: does a freshly-cloned repo + `npm i` + `provekit verify`
+  work without any cloud dependency? Quarterly drill, audit-trailed.
+- **#3 No bundled integrations.** Verified at release: the package's
+  dependency tree contains no Linear, Slack, or per-vendor SDK.
+- **#6 No heuristic tier.** Verified at every constraint mint: the
+  validator step rejects any candidate whose adversarial fixtures
+  don't separate principles from heuristics. Encoded in C6's
+  validator, but the policy is here.
+- **#8 Part A is open source.** Verified at release: `LICENSE` is
+  ISC/MIT/Apache-2.0; the publish pipeline rejects any other license
+  string for Part A's entry points.
+
+**Bootstrapping from ProvekIt's own history:**
+
+`provekit mine-history --project /path/to/provekit --since <first-commit>`
+produces a corpus that includes Class A and B as Z3-checkable / audit-
+checkable artifacts on disk. Class C lives in the spec; the spec is
+itself an artifact of change that mine-history will read in the
+recursive-depth section's flow. The framework checks itself against
+its own constraints starting from the moment Class A and B land.
+
+This is what "the framework makes its own next change" requires: the 15
+must be encoded before the first self-applied fix-loop run. The
+encoding is the seed corpus; mine-history is the bootstrap mechanism;
+the standing runtime keeps the corpus current. The recursive depth
+described later in the spec is real because the encoding is real.
+
 ## Operational layering: when does each piece run, and who owns the gate?
 
 The five input shapes describe *who* triggers the pipeline. The
@@ -916,6 +1184,37 @@ This layering is what makes constraint-driven development *operational*
 at every team size. The expensive tier is amortized across the team;
 the cheap tier runs at every keystroke; the gates compose; correctness
 ratchets up monotonically while developer velocity is preserved.
+
+## The mine-history bootstrap: walking history into a corpus
+
+`provekit mine-history` is the operational form of the historical input
+shape. Architecturally it is one shape:
+
+```
+for sha in git log <range>:
+  diff = git show <sha>
+  intent_report = retrospective_intake(diff, commit_message)
+  for intent in intent_report.intents with constraint candidate:
+    persist(intent) under .provekit/invariants/<content-hash>.json
+```
+
+Every commit is fed through the same retrospective intake the continuous
+shape runs against new commits. There is no separate "historical
+pipeline" — the loop reuses the running pipeline, with the diff as the
+artifact-of-change. Five years of git log becomes a populated corpus on
+adoption day because the framework reads its own past through the same
+gate it uses for the present.
+
+Content-addressable hashing collapses duplicates: the same constraint
+shape minted from a fix-and-its-regression produces one invariant on
+disk. Re-runs are idempotent for the same reason — already-persisted
+invariants are no-op writes.
+
+Operational polish (walk order, --max-commits cap, --dry-run cost
+estimate, per-commit error tolerance, file-existence checks against
+HEAD) lives in `provekit mine-history --help` and the implementation at
+`src/cli.mineHistory.ts`. The architectural claim is the loop and the
+shared retrospective gate.
 
 ## Holyship: a worked example of agent-runtime integration
 

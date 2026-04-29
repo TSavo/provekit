@@ -28,6 +28,7 @@ import { execFileSync } from "child_process";
 import type { LLMProvider } from "../types.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
 import { getModelTier } from "../modelTiers.js";
+import { validateIntentReport } from "../../contracts/intentReport.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -216,7 +217,7 @@ export async function extractIntent(
 
   const intents = coerceIntents(parsed);
 
-  return {
+  const report: IntentReport = {
     source: "retrospective",
     trigger,
     intents,
@@ -226,6 +227,8 @@ export async function extractIntent(
       constraintArtifact: null,
     },
   };
+
+  return validateIntentReport(report);
 }
 
 // ---------------------------------------------------------------------------
