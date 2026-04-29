@@ -8,3 +8,4 @@ export * from "./fixBundles.js";
 export * from "./principlesLibrary.js";
 export * from "./harvestExpressibility.js";
 export * from "./preDiff.js";
+export * from "./verifications.js";
