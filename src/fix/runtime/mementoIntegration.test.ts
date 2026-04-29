@@ -162,6 +162,44 @@ describe("verifyAll → memento store integration (step 2)", () => {
     expect(stats(mementoDb).totalRows).toBe(0);
   });
 
+  it("cache hit: second verifyAll uses the cached memento (step 3)", async () => {
+    const file = "src/example.ts";
+    const content = "function f(k: number) {\n  return k > 0;\n}\n";
+    writeFileSync(join(projectRoot, file), content);
+
+    const span = content.split("\n").slice(0, 3).join("\n");
+    const inv = makeLocalInvariant(file, 1, 3, span);
+    writeInvariant(projectRoot, inv);
+
+    // First run: cache miss, path-checker runs, memento gets written.
+    const first = await verifyAll(projectRoot, {
+      mementoDb,
+      mementoProducer: "first-producer@1.0",
+    });
+    expect(first.verdicts[0].status).toBe("holds");
+    // First-run note (if any) is the substrate-not-built note; never
+    // a cache-hit note (since the table was empty going in).
+    expect(first.verdicts[0].note ?? "").not.toMatch(/cached verdict from/);
+
+    // Second run: cache HIT. The verdict comes from the memento, not
+    // the path-checker. The note documents the cached origin.
+    const second = await verifyAll(projectRoot, {
+      mementoDb,
+      mementoProducer: "second-producer@1.0",
+    });
+    expect(second.verdicts[0].status).toBe("holds");
+    expect(second.verdicts[0].note).toMatch(/cached verdict from first-producer@1\.0/);
+
+    // Producer table should still show only the first run's producer
+    // (cache hit means second run did NOT write).
+    const s = stats(mementoDb);
+    expect(s.byProducer["first-producer@1.0"]).toBe(1);
+    // Cache hit DOES re-write under the second producer (step 2 always
+    // writes); cross-validation works because both rows exist for the
+    // same (binding_hash, property_hash, ...) tuple.
+    expect(s.byProducer["second-producer@1.0"]).toBe(1);
+  });
+
   it("respects a custom mementoProducer name", async () => {
     const file = "src/example.ts";
     const content = "const x = 1;\n";

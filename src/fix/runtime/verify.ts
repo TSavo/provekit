@@ -63,6 +63,7 @@ import type { Path } from "./pathEnumerator.js";
 import type { Db } from "../../db/index.js";
 import {
   writeMemento,
+  findMemento,
   computeBindingHash,
   computePropertyHash,
 } from "./mementoStore.js";
@@ -787,6 +788,45 @@ export async function verifyAll(
         pathCheck: "skipped",
       });
       continue;
+    }
+
+    // Step 3: cache-lookup short-circuit. If a memento exists for this
+    // (binding_hash, property_hash) pair from any prior verify run (or
+    // any other producer in the swarm), use its verdict instead of
+    // re-running the path-checker. Drift detection has already
+    // succeeded above (resolveBindings returned no decay), so the
+    // cached verdict is still valid for this code state.
+    //
+    // Producer-agnostic: if Z3 said "holds" on this exact key, that's
+    // a deterministic verdict regardless of which engine produced it.
+    // The architectural promise is "trust the memento's hash key, not
+    // the producer that emitted it."
+    if (options.mementoDb) {
+      const cached = findMemento(options.mementoDb, {
+        bindingHash: computeBindingHash(inv),
+        propertyHash: computePropertyHash(inv),
+      });
+      if (cached && (cached.verdict === "holds" || cached.verdict === "violated")) {
+        // Reconstruct the InvariantVerdict shape from the memento.
+        // Witness JSON was serialized by step 2; deserialize for the
+        // caller.
+        let extra: Record<string, unknown> = {};
+        try {
+          extra = cached.witness ? JSON.parse(cached.witness) : {};
+        } catch {
+          // Malformed witness — ignore the extra fields.
+        }
+        verdicts.push({
+          invariant: inv,
+          status: cached.verdict,
+          bindings,
+          pathCheck: (extra.pathCheck as InvariantVerdict["pathCheck"]) ?? "holds",
+          pathCount: extra.pathCount as number | undefined,
+          witness: extra.witness as string | undefined,
+          note: `cached verdict from ${cached.producedBy} (memento store hit)`,
+        });
+        continue;
+      }
     }
 
     if (!db) {
