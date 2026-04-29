@@ -88,6 +88,207 @@ the equivalence check has to reason about \`b ≤ 0 ≠ b = 0\` and might
 fail. The canonical examples above are the shapes both models should pick.
 Pick them.`;
 
+// bp namespace: c1.calibration
+const C1_CALIBRATION = `# Invariant strength: the Goldilocks zone
+
+The invariant you write is the only formal gate between a real fix and a
+placebo. Z3 will accept any patch that satisfies your invariant. If the
+invariant is too narrow, downstream patches can satisfy it WITHOUT
+addressing the root cause — the loop ships a placebo. If the invariant is
+too broad, it false-positives on legitimate code paths and the loop never
+ships at all.
+
+## Mandatory self-check before you write SMT
+
+Before you commit your invariant to JSON, ask yourself ONE question:
+
+  *"Can a downstream JavaScript post-processing step (a .sort, a .filter,
+  a .slice on already-fetched data) satisfy this invariant WITHOUT changing
+  the upstream code that decided what data was fetched?"*
+
+If yes, your invariant is too narrow. It admits a placebo patch — a sort
+applied to data that was already truncated by the bug satisfies the local
+invariant ("the result is sorted") while leaving the truncation in place.
+The loop will ship the placebo, oracle #9a (test must reproduce at scale)
+will reject it, the loop will fail.
+
+The fix is to widen the invariant's scope to quantify over the data flow,
+not the consequent state. A correctly-scoped invariant references the
+SOURCE of the data ("the data fetched from storage includes…") rather than
+the result of the consumer's transformation ("the value passed to the
+function is…"). The data-source invariant cannot be satisfied by a
+downstream sort/filter; the consequent-state invariant trivially can.
+
+Worked examples below make this concrete. Apply the self-check after
+reading them and before writing your SMT.
+
+Reason about three calibration tiers BEFORE you write SMT. Worked examples:
+
+## Example 1 — division-by-zero in \`function divide(a, b) { return a / b }\`
+- Too narrow: "result of \`a / b\` is finite when \`b !== 0\`"
+  Why narrow: only quantifies over this exact expression. A patch that
+  catches NaN downstream and returns 0 satisfies it without guarding b.
+- Too broad: "all integer divisions in this codebase guard against zero"
+  Why broad: false-positive on \`x / 2\` where 2 is a literal — no guard
+  needed. The principle would fire on legitimate code.
+- Right: "for every call to \`divide(a, b)\`, b !== 0 must be reachable
+  before the division executes"
+  Why right: forces the fix at the data flow into the divisor. Catches
+  the bug at every call site without false-positive on b-as-literal.
+
+## Example 2 — telemetry-feeding query orders ASC instead of DESC
+(this is the kind of bug that motivated this prompt rewrite — a placebo
+fix at the consumer site can sort the truncated-old data and satisfy a
+narrow invariant while leaving the root cause intact)
+- Too narrow: "the exemplar passed to evolve is the most-recent failing
+  invocation"
+  Why narrow: a JS-side \`telemetry.sort((a,b) => b.date - a.date)\` after
+  the query satisfies it. But the query already truncated to oldest 25;
+  the sort has no recent data to surface. Placebo passes.
+- Too broad: "every \`forRevision\` call returns desc-ordered rows"
+  Why broad: an audit/history surface that legitimately wants chronological
+  order would now be a violation. False positive.
+- Right: "data REACHING the evolve meta-prompt includes the K most-recent
+  invocations from the revision's full history (not just the most-recent
+  K of those already returned)"
+  Why right: forces the fix at the data source for the evolve call path.
+  An audit caller with a different consumer doesn't trigger it.
+
+## The principle (generalize from the examples)
+
+A strong invariant constrains the smallest scope of code such that **no
+narrower patch can satisfy the invariant while leaving the symptom intact**.
+That scope is rarely the bug expression itself; it is usually the data
+flow into the bug site.
+
+Three questions to answer in your prose description (cited verbatim by
+downstream stages):
+1. **Where in the data flow** must the invariant hold for the symptom to
+   actually be prevented? (Not just where the bug fires, but where the
+   data shape is decided.)
+2. **What patches at narrower scopes** would technically satisfy the
+   invariant without addressing the root cause? Name at least one
+   placebo and explain why your invariant rejects it.
+3. **What contexts** would your invariant false-positive on if you
+   stated it more broadly? Name at least one legitimate caller and
+   explain why your scope respects it.
+
+If you cannot answer (2) or (3), your invariant is either too narrow
+(no placebos to reject) or too broad (no legitimate callers to
+respect). Re-formulate.`;
+
+// bp namespace: c1.universal_rules
+const C1_UNIVERSAL_RULES = `# Universal rules (apply to every kind)
+
+1. **smt_declarations**: declare every constant you use. The runner
+   appends \`(check-sat)\` automatically; do not include it.
+
+2. **Variable names** must map to source-code identifiers when the kind
+   is arithmetic. \`b\`, \`a\`, \`x\`, \`count\`, \`index\`, etc. — names
+   that appear literally in the source.
+
+3. **No synthetic control-flow variables.** Forbidden:
+   \`(declare-const throws Bool)\`,
+   \`(declare-const guard_returns Int)\`,
+   \`(declare-const code_after_reached Bool)\`. These cannot be verified
+   post-fix because oracle #2 has no way to bind them to the patched
+   code's path conditions.
+   ✓ Good (arithmetic): \`(assert (= b 0))\` — b is a function parameter
+   ✗ Bad: \`(assert (and (= b 0) (= throws false)))\` — \`throws\` is synthetic
+
+4. **Bindings**: every smt_constant in your declarations must appear in
+   the bindings list. \`source_expr\` is the literal source-code expression
+   (\`"b"\`, \`"options.length"\`, \`"input"\`).
+
+   == source_expr CONTRACT (load-bearing for downstream verification) ==
+
+   For EVERY binding you emit, \`source_expr\` MUST be a verbatim substring
+   of the locus file's source code AND it must appear on EXACTLY ONE LINE
+   in that file (so it uniquely locates the bug site).
+
+   Downstream verification substring-searches the patched file for this
+   exact string to populate real binding line numbers. If the substring
+   appears on more than one line (for example, a bare function name that
+   shows up on the import line AND the bug call site), the binding collapses
+   to the FIRST occurrence (the import line), not the bug site. That produces
+   wrong geometry and the invariant decays on every subsequent verify run.
+
+   UNIQUENESS RULE: a bare identifier like \`"asc"\` is UNACCEPTABLE when
+   it appears in more than one place in the file (e.g. the import line
+   \`import { asc, desc } from "drizzle-orm"\` at line 1 AND the bug site
+   \`.orderBy(asc(schema.invocations.date))\` at line 120). The binding
+   maps to line 1, not line 120 — wrong geometry.
+
+   The RIGHT value is the smallest substring that UNIQUELY IDENTIFIES the
+   bug location. Prefer:
+   - A full call expression with arguments: \`"asc(schema.invocations.date)"\`
+   - A property access chain: \`"schema.invocations.date"\`
+   - A method-call expression: \`".orderBy(asc("\`
+
+   A bare identifier is acceptable ONLY when it appears on exactly one line
+   in the entire file.
+
+   Examples of VALID source_expr (verbatim substrings, unique location):
+   - \`"asc(schema.invocations.date)"\`  ← call expression, unique
+   - \`"len < 15"\`                       ← comparison, unique
+   - \`"buf[i]"\`                         ← indexed access, unique
+   - \`"memo->buffer"\`                   ← field access, unique
+   - \`"divisor"\`                        ← identifier, IF it appears only once
+
+   Examples of INVALID source_expr:
+   - \`"asc"\`  ← appears on import line AND multiple call sites; NOT unique
+   - \`"feedback rows fetched by repositories.ts for evolve"\` ← PROSE, not code
+   - \`"the buffer length"\`              ← PROSE, not code
+   - \`"the user input before sanitization"\` ← PROSE, not code
+   - \`"divisor parameter of divide"\`   ← PROSE, not code
+
+   If you cannot identify a verbatim substring in the locus file that
+   captures the SMT constant's binding, take this escape hatch:
+
+   - widen the smt_declaration to a Bool predicate (which doesn't need
+     a source-code anchor — the predicate name encodes the meaning).
+
+   You MUST emit at least one binding. An invariant with \`"bindings": []\`
+   has no per-binding contract to enforce and is rejected at C1 exit; do
+   not return one. The Bool-predicate escape hatch above is the correct
+   shape for invariants whose constants do not have source-code anchors.
+
+   Prose \`source_expr\` is a generation bug. The validator runs an exact
+   substring check against the locus file before this invariant proceeds
+   to oracle #1; if any binding's source_expr is not in the source, the
+   prompt is replayed with sharper feedback once and then the formulation
+   fails hard. Pick a real substring or use the Bool-predicate escape hatch.
+
+5. **Citations**: one citation per meaningful clause in your assertion.
+   \`source_quote\` must be a verbatim or close-paraphrase excerpt from
+   the bug report. The citations are checked by oracle #1.5 traceability
+   verifier — every clause needs prose justification.
+
+6. **Keep it small**: 2-5 constants maximum. Prefer the simplest assertion
+   that captures the violation. Complexity invites disagreement with the
+   second model.`;
+
+// bp namespace: c1.output_format
+const C1_OUTPUT_FORMAT = `# Output format
+
+Respond with ONLY a JSON object via the Write tool (no prose, no markdown).
+The object must have exactly these fields:
+
+\`\`\`json
+{
+  "description": "one sentence: what invariant is being violated, in canonical prose for your kind",
+  "kind": "arithmetic" | "set_uniqueness" | "cardinality" | "order" | "taint" | "other",
+  "smt_declarations": ["(declare-const varName Sort)", "..."],
+  "smt_violation_assertion": "(assert (...))",
+  "bindings": [
+    {"smt_constant": "varName", "source_expr": "literal source code", "sort": "Int" | "Bool" | "Real"}
+  ],
+  "citations": [
+    {"smt_clause": "(= b 0)", "source_quote": "exact or close-paraphrase from bug report"}
+  ]
+}
+\`\`\``;
+
 // bp namespace: c1.kind.arithmetic
 const C1_KIND_ARITHMETIC = `## kind: "arithmetic"
 Numeric inequality, equality, range, or remainder relation. Variables are
@@ -607,6 +808,9 @@ async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusS
     "c1.kind.order.polarity_convention",
     C1_KIND_ORDER_POLARITY_CONVENTION,
   );
+  const c1Calibration = await fetch("c1.calibration", C1_CALIBRATION);
+  const c1UniversalRules = await fetch("c1.universal_rules", C1_UNIVERSAL_RULES);
+  const c1OutputFormat = await fetch("c1.output_format", C1_OUTPUT_FORMAT);
   // Gather source context around locus from the already-loaded full source.
   let sourceContext = "(source not available)";
   if (locusSource) {
@@ -659,93 +863,7 @@ ${sourceContext}
 Data-flow ancestors of bug site: ${locus.dataFlowAncestors.length} nodes
 Data-flow descendants of bug site: ${locus.dataFlowDescendants.length} nodes
 ${investigateBlock}
-# Invariant strength: the Goldilocks zone
-
-The invariant you write is the only formal gate between a real fix and a
-placebo. Z3 will accept any patch that satisfies your invariant. If the
-invariant is too narrow, downstream patches can satisfy it WITHOUT
-addressing the root cause — the loop ships a placebo. If the invariant is
-too broad, it false-positives on legitimate code paths and the loop never
-ships at all.
-
-## Mandatory self-check before you write SMT
-
-Before you commit your invariant to JSON, ask yourself ONE question:
-
-  *"Can a downstream JavaScript post-processing step (a .sort, a .filter,
-  a .slice on already-fetched data) satisfy this invariant WITHOUT changing
-  the upstream code that decided what data was fetched?"*
-
-If yes, your invariant is too narrow. It admits a placebo patch — a sort
-applied to data that was already truncated by the bug satisfies the local
-invariant ("the result is sorted") while leaving the truncation in place.
-The loop will ship the placebo, oracle #9a (test must reproduce at scale)
-will reject it, the loop will fail.
-
-The fix is to widen the invariant's scope to quantify over the data flow,
-not the consequent state. A correctly-scoped invariant references the
-SOURCE of the data ("the data fetched from storage includes…") rather than
-the result of the consumer's transformation ("the value passed to the
-function is…"). The data-source invariant cannot be satisfied by a
-downstream sort/filter; the consequent-state invariant trivially can.
-
-Worked examples below make this concrete. Apply the self-check after
-reading them and before writing your SMT.
-
-Reason about three calibration tiers BEFORE you write SMT. Worked examples:
-
-## Example 1 — division-by-zero in \`function divide(a, b) { return a / b }\`
-- Too narrow: "result of \`a / b\` is finite when \`b !== 0\`"
-  Why narrow: only quantifies over this exact expression. A patch that
-  catches NaN downstream and returns 0 satisfies it without guarding b.
-- Too broad: "all integer divisions in this codebase guard against zero"
-  Why broad: false-positive on \`x / 2\` where 2 is a literal — no guard
-  needed. The principle would fire on legitimate code.
-- Right: "for every call to \`divide(a, b)\`, b !== 0 must be reachable
-  before the division executes"
-  Why right: forces the fix at the data flow into the divisor. Catches
-  the bug at every call site without false-positive on b-as-literal.
-
-## Example 2 — telemetry-feeding query orders ASC instead of DESC
-(this is the kind of bug that motivated this prompt rewrite — a placebo
-fix at the consumer site can sort the truncated-old data and satisfy a
-narrow invariant while leaving the root cause intact)
-- Too narrow: "the exemplar passed to evolve is the most-recent failing
-  invocation"
-  Why narrow: a JS-side \`telemetry.sort((a,b) => b.date - a.date)\` after
-  the query satisfies it. But the query already truncated to oldest 25;
-  the sort has no recent data to surface. Placebo passes.
-- Too broad: "every \`forRevision\` call returns desc-ordered rows"
-  Why broad: an audit/history surface that legitimately wants chronological
-  order would now be a violation. False positive.
-- Right: "data REACHING the evolve meta-prompt includes the K most-recent
-  invocations from the revision's full history (not just the most-recent
-  K of those already returned)"
-  Why right: forces the fix at the data source for the evolve call path.
-  An audit caller with a different consumer doesn't trigger it.
-
-## The principle (generalize from the examples)
-
-A strong invariant constrains the smallest scope of code such that **no
-narrower patch can satisfy the invariant while leaving the symptom intact**.
-That scope is rarely the bug expression itself; it is usually the data
-flow into the bug site.
-
-Three questions to answer in your prose description (cited verbatim by
-downstream stages):
-1. **Where in the data flow** must the invariant hold for the symptom to
-   actually be prevented? (Not just where the bug fires, but where the
-   data shape is decided.)
-2. **What patches at narrower scopes** would technically satisfy the
-   invariant without addressing the root cause? Name at least one
-   placebo and explain why your invariant rejects it.
-3. **What contexts** would your invariant false-positive on if you
-   stated it more broadly? Name at least one legitimate caller and
-   explain why your scope respects it.
-
-If you cannot answer (2) or (3), your invariant is either too narrow
-(no placebos to reject) or too broad (no legitimate callers to
-respect). Re-formulate.
+${c1Calibration}
 
 ${c1CrossLlmAgreement}
 
@@ -769,115 +887,9 @@ ${c1KindTaint}
 
 ${c1KindOther}
 
-# Universal rules (apply to every kind)
+${c1UniversalRules}
 
-1. **smt_declarations**: declare every constant you use. The runner
-   appends \`(check-sat)\` automatically; do not include it.
-
-2. **Variable names** must map to source-code identifiers when the kind
-   is arithmetic. \`b\`, \`a\`, \`x\`, \`count\`, \`index\`, etc. — names
-   that appear literally in the source.
-
-3. **No synthetic control-flow variables.** Forbidden:
-   \`(declare-const throws Bool)\`,
-   \`(declare-const guard_returns Int)\`,
-   \`(declare-const code_after_reached Bool)\`. These cannot be verified
-   post-fix because oracle #2 has no way to bind them to the patched
-   code's path conditions.
-   ✓ Good (arithmetic): \`(assert (= b 0))\` — b is a function parameter
-   ✗ Bad: \`(assert (and (= b 0) (= throws false)))\` — \`throws\` is synthetic
-
-4. **Bindings**: every smt_constant in your declarations must appear in
-   the bindings list. \`source_expr\` is the literal source-code expression
-   (\`"b"\`, \`"options.length"\`, \`"input"\`).
-
-   == source_expr CONTRACT (load-bearing for downstream verification) ==
-
-   For EVERY binding you emit, \`source_expr\` MUST be a verbatim substring
-   of the locus file's source code AND it must appear on EXACTLY ONE LINE
-   in that file (so it uniquely locates the bug site).
-
-   Downstream verification substring-searches the patched file for this
-   exact string to populate real binding line numbers. If the substring
-   appears on more than one line (for example, a bare function name that
-   shows up on the import line AND the bug call site), the binding collapses
-   to the FIRST occurrence (the import line), not the bug site. That produces
-   wrong geometry and the invariant decays on every subsequent verify run.
-
-   UNIQUENESS RULE: a bare identifier like \`"asc"\` is UNACCEPTABLE when
-   it appears in more than one place in the file (e.g. the import line
-   \`import { asc, desc } from "drizzle-orm"\` at line 1 AND the bug site
-   \`.orderBy(asc(schema.invocations.date))\` at line 120). The binding
-   maps to line 1, not line 120 — wrong geometry.
-
-   The RIGHT value is the smallest substring that UNIQUELY IDENTIFIES the
-   bug location. Prefer:
-   - A full call expression with arguments: \`"asc(schema.invocations.date)"\`
-   - A property access chain: \`"schema.invocations.date"\`
-   - A method-call expression: \`".orderBy(asc("\`
-
-   A bare identifier is acceptable ONLY when it appears on exactly one line
-   in the entire file.
-
-   Examples of VALID source_expr (verbatim substrings, unique location):
-   - \`"asc(schema.invocations.date)"\`  ← call expression, unique
-   - \`"len < 15"\`                       ← comparison, unique
-   - \`"buf[i]"\`                         ← indexed access, unique
-   - \`"memo->buffer"\`                   ← field access, unique
-   - \`"divisor"\`                        ← identifier, IF it appears only once
-
-   Examples of INVALID source_expr:
-   - \`"asc"\`  ← appears on import line AND multiple call sites; NOT unique
-   - \`"feedback rows fetched by repositories.ts for evolve"\` ← PROSE, not code
-   - \`"the buffer length"\`              ← PROSE, not code
-   - \`"the user input before sanitization"\` ← PROSE, not code
-   - \`"divisor parameter of divide"\`   ← PROSE, not code
-
-   If you cannot identify a verbatim substring in the locus file that
-   captures the SMT constant's binding, take this escape hatch:
-
-   - widen the smt_declaration to a Bool predicate (which doesn't need
-     a source-code anchor — the predicate name encodes the meaning).
-
-   You MUST emit at least one binding. An invariant with \`"bindings": []\`
-   has no per-binding contract to enforce and is rejected at C1 exit; do
-   not return one. The Bool-predicate escape hatch above is the correct
-   shape for invariants whose constants do not have source-code anchors.
-
-   Prose \`source_expr\` is a generation bug. The validator runs an exact
-   substring check against the locus file before this invariant proceeds
-   to oracle #1; if any binding's source_expr is not in the source, the
-   prompt is replayed with sharper feedback once and then the formulation
-   fails hard. Pick a real substring or use the Bool-predicate escape hatch.
-
-5. **Citations**: one citation per meaningful clause in your assertion.
-   \`source_quote\` must be a verbatim or close-paraphrase excerpt from
-   the bug report. The citations are checked by oracle #1.5 traceability
-   verifier — every clause needs prose justification.
-
-6. **Keep it small**: 2-5 constants maximum. Prefer the simplest assertion
-   that captures the violation. Complexity invites disagreement with the
-   second model.
-
-# Output format
-
-Respond with ONLY a JSON object via the Write tool (no prose, no markdown).
-The object must have exactly these fields:
-
-\`\`\`json
-{
-  "description": "one sentence: what invariant is being violated, in canonical prose for your kind",
-  "kind": "arithmetic" | "set_uniqueness" | "cardinality" | "order" | "taint" | "other",
-  "smt_declarations": ["(declare-const varName Sort)", "..."],
-  "smt_violation_assertion": "(assert (...))",
-  "bindings": [
-    {"smt_constant": "varName", "source_expr": "literal source code", "sort": "Int" | "Bool" | "Real"}
-  ],
-  "citations": [
-    {"smt_clause": "(= b 0)", "source_quote": "exact or close-paraphrase from bug report"}
-  ]
-}
-\`\`\`
+${c1OutputFormat}
 
 ${c1QuietPart}`;
 }
