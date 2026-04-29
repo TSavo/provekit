@@ -28,6 +28,7 @@ import type { FixLoopLogger } from "../logger.js";
 import { buildFixPrompt, parseProposedFixes, verifyCandidate, buildAgentFixPrompt } from "../candidateGen.js";
 import { runAgentInOverlay } from "../captureChange.js";
 import { requestStructuredJson } from "../llm/structuredOutput.js";
+import { getPromptStore } from "../../llm/promptStore.js";
 import { getModelTier } from "../modelTiers.js";
 import { instantiateFixTemplate } from "./recognizeTemplates.js";
 import type { RecognizeResult } from "./recognize.js";
@@ -68,6 +69,12 @@ export async function generateFixCandidate(args: {
    * LLM patches at the locus rather than wandering up the call stack.
    */
   investigateReport?: import("./investigate.js").InvestigateReport;
+  /**
+   * Host project root, optional. When provided, the C3 prompt fragment
+   * resolves via better-prompts (c3.agent_fix_prompt artifact). Day 0
+   * byte-identical; bp.evolve later returns evolved revisions.
+   */
+  projectRoot?: string;
   /** Optional dependency injection seams; falls back to module defaults. */
   deps?: GenerateFixCandidateDeps;
 }): Promise<FixCandidate> {
@@ -153,10 +160,24 @@ async function generateFixCandidateViaAgent(args: {
   options?: { maxCandidates?: number; minConfidence?: number };
   logger?: FixLoopLogger;
   investigateReport?: import("./investigate.js").InvestigateReport;
+  /**
+   * Host project root, optional. When provided, the C3 prompt fragment
+   * resolves via better-prompts (c3.agent_fix_prompt artifact, byte-
+   * identical day 0). When absent, the literal source-of-record is used
+   * directly — same content either way.
+   */
+  projectRoot?: string;
 }): Promise<FixCandidate> {
   const { signal, locus, invariant, overlay } = args;
 
-  const prompt = buildAgentFixPrompt(signal, locus, invariant, overlay, args.investigateReport);
+  const { prompt, revisions: bpRevisions } = await buildAgentFixPrompt(
+    signal,
+    locus,
+    invariant,
+    overlay,
+    args.investigateReport,
+    args.projectRoot,
+  );
 
   // First attempt.
   const { patch, rationale } = await runAgentInOverlay({
@@ -168,10 +189,53 @@ async function generateFixCandidateViaAgent(args: {
     stage: "C3-agent",
   });
 
+  // bp telemetry: record the C3 invocation against c3.agent_fix_prompt.
+  // Signal pass/fail after oracle #2 returns. No-op when projectRoot is
+  // absent (bpRevisions is empty in that case).
+  const bpInvocationIds: string[] = [];
+  if (args.projectRoot && bpRevisions.length > 0) {
+    const bp = getPromptStore(args.projectRoot);
+    const baseVars = {
+      signalSummary: signal.summary,
+      locusFile: locus.file,
+      invariantDescription: invariant.description,
+    };
+    const baseMetadata = {
+      stage: "C3",
+      model: getModelTier("C3-agent"),
+      attempt: "first",
+      patchFileCount: patch.fileEdits.length,
+    };
+    for (const { key, revisionId } of bpRevisions) {
+      const inv = await bp.record({
+        artifactKey: key,
+        revisionId,
+        vars: baseVars,
+        metadata: baseMetadata,
+        output: rationale,
+      });
+      bpInvocationIds.push(inv.id);
+    }
+  }
+
   // verifyCandidate applies the patch to the overlay (idempotent rewrite),
   // re-indexes, and runs oracle #2.
   const proposed = { patch, rationale, confidence: 1.0 };
   const result = await verifyCandidate(proposed, overlay, invariant);
+
+  // Signal Oracle #2's verdict on the C3 invocation(s).
+  if (bpInvocationIds.length > 0 && args.projectRoot) {
+    const bp = getPromptStore(args.projectRoot);
+    for (const invId of bpInvocationIds) {
+      await bp.signal(invId, {
+        verdict: result.invariantHoldsUnderOverlay ? "pass" : "fail",
+        reason: result.invariantHoldsUnderOverlay
+          ? `oracle #2 — invariant holds under C3's first patch`
+          : `oracle #2 — invariant does not hold (z3: ${result.z3Verdict})`,
+        source: "c3-oracle-2",
+      });
+    }
+  }
 
   if (result.invariantHoldsUnderOverlay) {
     return {

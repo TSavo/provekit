@@ -262,7 +262,7 @@ describe("C3: candidateGen", () => {
   // -------------------------------------------------------------------------
   // 5b. buildAgentFixPrompt — overlay-relative paths, no absolute paths
   // -------------------------------------------------------------------------
-  it("buildAgentFixPrompt: prompt does not contain absolute locus.file when overlay is provided", () => {
+  it("buildAgentFixPrompt: prompt does not contain absolute locus.file when overlay is provided", async () => {
     const signal = makeDivSignal("/Users/tsavo/dogfood-scratch/src/divide.ts");
     const locus = makeLocus("/Users/tsavo/dogfood-scratch/src/divide.ts", "node1");
     const invariant = makeDivInvariant();
@@ -275,7 +275,7 @@ describe("C3: candidateGen", () => {
     writeFileSync(join(fakeTmp, "src", "divide.ts"), "// placeholder\n", "utf8");
 
     const overlay = { worktreePath: fakeTmp };
-    const prompt = buildAgentFixPrompt(signal, locus, invariant, overlay);
+    const { prompt } = await buildAgentFixPrompt(signal, locus, invariant, overlay);
 
     // The absolute path to the user's repo must not appear.
     expect(prompt).not.toContain("/Users/tsavo/dogfood-scratch");
@@ -285,12 +285,12 @@ describe("C3: candidateGen", () => {
     expect(prompt).toContain("Your CWD is the project root");
   });
 
-  it("buildAgentFixPrompt: without overlay falls back to locus.file (absolute)", () => {
+  it("buildAgentFixPrompt: without overlay falls back to locus.file (absolute)", async () => {
     const signal = makeDivSignal("/Users/tsavo/dogfood-scratch/src/divide.ts");
     const locus = makeLocus("/Users/tsavo/dogfood-scratch/src/divide.ts", "node1");
     const invariant = makeDivInvariant();
 
-    const prompt = buildAgentFixPrompt(signal, locus, invariant);
+    const { prompt } = await buildAgentFixPrompt(signal, locus, invariant);
     // Without overlay context the function still produces a valid prompt.
     expect(prompt).toContain(signal.summary);
     expect(prompt).toContain(invariant.description);

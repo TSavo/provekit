@@ -192,6 +192,7 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
         invariant: invariant!,
         overlay,
         llm: args.llm,
+        projectRoot: projectRootForBp,
         logger,
         recognized,
         investigateReport: args.investigateReport,

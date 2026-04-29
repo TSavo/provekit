@@ -23,6 +23,80 @@
 import { readFileSync, existsSync } from "fs";
 import { join, relative } from "path";
 import { eq } from "drizzle-orm";
+import { getPromptStore } from "../llm/promptStore.js";
+
+// ---------------------------------------------------------------------------
+// The single C3 prompt artifact.
+//
+// One bp namespace: `c3.agent_fix_prompt`. The static teaching body lives
+// here as a literal const (source-of-record), with three runtime
+// placeholders that buildAgentFixPrompt fills in at call time:
+//   {{BUG_SECTION}}      — signal summary + failure description + fix hint
+//   {{INVESTIGATE_BLOCK}}— Investigate findings OR locus + invariant fallback
+//   {{LOCUS_DISPLAY}}    — overlay-relative path to the bug site, used
+//                          inside the "What to do now" instructions
+//
+// IMPORTANT for future evolution: when bp.evolve rewrites c3.agent_fix_prompt,
+// the new revision MUST preserve all three {{...}} placeholders verbatim.
+// Without them the assembled prompt loses runtime context. The enhancer
+// prompt should be told this constraint explicitly the first time we run
+// bp.evolve on this artifact.
+// ---------------------------------------------------------------------------
+
+const C3_AGENT_FIX_PROMPT_TEMPLATE = `Your CWD is the project root. All paths in this prompt are relative to your CWD. Do not use absolute paths — use only the relative paths shown here.
+
+You are at the patch-generation stage of the ProveKit fix loop. Your job is to write a minimal code change that makes the formal invariant hold and prevents the symptom from recurring.
+
+# The bug, as the user reported it
+
+{{BUG_SECTION}}
+{{INVESTIGATE_BLOCK}}
+# How to think about where to patch
+
+The pipeline has already done significant work to identify where this bug lives. By the time you see this prompt, Investigate has analyzed the project structure and Locate has confirmed a SAST node. **Your default action is to edit at that locus.**
+
+You are not, however, a passive executor. If after reading the file you genuinely believe the bug lives elsewhere, you have two paths to consider — and which one applies determines whether your patch will hold up:
+
+## Worked example A — when honoring the locus is right
+
+A bug report says: "divide(1, 0) returns Infinity instead of throwing." Investigate identifies \`src/calc.ts\` (\`divide\` function). Locate confirms a SAST node on the \`/\` expression. C1's invariant: "for every call to \`divide(a, b)\`, b !== 0 must be reachable before the division executes."
+
+Reasoning: the invariant constrains the data flow into the divisor. The fix is a guard on b inside divide(). Patching divide() satisfies the invariant; patching every caller doesn't (you'd need to patch them all and miss new ones). The locus is right.
+
+Action: edit \`divide\` in \`src/calc.ts\`. Done in one hunk.
+
+## Worked example B — when the locus looks right but a placebo at a wrong layer fails
+
+A bug report says: "evolve produces revisions that don't reflect recent feedback." Investigate identifies \`src/store/sqlite/repositories.ts\` (\`forRevision\` orders by asc instead of desc). C1's invariant (correctly written): "data REACHING the evolve meta-prompt includes the K most-recent invocations from the revision's full history."
+
+Tempting placebo: patch \`src/index.ts\` where the consumer reads telemetry, add a JS-side \`telemetry.sort((a,b) => b.date - a.date)\` to surface recent failures. The local invariant ("exemplar passed to evolve is most-recent failing") would seem to hold.
+
+But the data layer truncated to oldest 25 already. The consumer-side sort is sorting old data. The invariant as written ("data REACHING evolve") is NOT satisfied — the data didn't reach evolve in the first place. Z3 will reject the placebo if the invariant is correctly scoped. Oracle #9a (test must pass against fixed code at reproduction-scale) catches it if Z3 doesn't.
+
+Action: edit \`forRevision\` in \`repositories.ts\` — change asc to desc. The locus was right. The placebo at \`src/index.ts\` would have looked like a fix, but it cannot make the invariant hold because the data never reaches the sort point.
+
+## What to do now
+
+Before you write any patch:
+
+1. Read the file at \`{{LOCUS_DISPLAY}}\`. See the actual code.
+2. Trace what the invariant is REALLY saying. Where in the data flow must it hold?
+3. Ask: can a patch at the locus, working with what arrives there, make the invariant hold? If yes, edit there.
+4. If you genuinely believe the locus is wrong (rare — Investigate had high confidence and Locate confirmed via SAST), state that explicitly in your explanation BEFORE you edit elsewhere. Name what the upstream stages missed.
+
+Your patch is the minimum change that makes the invariant hold. Do NOT run tests. After your edits, briefly explain what you changed and why — and if you patched somewhere other than the locus, explain what Investigate and Locate missed.`;
+
+const C3_AGENT_FIX_PROMPT_DISCRIMINATOR = "2026-04-28";
+
+/**
+ * Result of building C3's agent prompt: the assembled string plus the bp
+ * revision id (for telemetry recording at the call site). Empty revisions
+ * array when projectRoot is absent (no telemetry; behavior identical to pre-bp).
+ */
+export interface C3PromptBuild {
+  prompt: string;
+  revisions: Array<{ key: string; revisionId: string }>;
+}
 import { principleMatches } from "../db/schema/principleMatches.js";
 import { evaluatePrinciple } from "../dsl/evaluator.js";
 import { verifyBlock } from "../verifier.js";
@@ -129,13 +203,14 @@ Rules:
  * @param overlay - When provided, locus.file is expressed as an overlay-relative
  *   path so the agent cannot derive an absolute path to the user's real repo.
  */
-export function buildAgentFixPrompt(
+export async function buildAgentFixPrompt(
   signal: BugSignal,
   locus: BugLocus,
   invariant: InvariantClaim,
   overlay?: { worktreePath: string },
   investigate?: import("./stages/investigate.js").InvestigateReport,
-): string {
+  projectRoot?: string,
+): Promise<C3PromptBuild> {
   // Compute overlay-relative path for the locus so the agent never sees an
   // absolute path to the user's real repo (the dogfood bypass used locus.file
   // directly, which let the agent edit the user's actual file).
@@ -190,49 +265,32 @@ Invariant the patch must satisfy:
   ${invariant.formalExpression}
 `;
 
-  return `Your CWD is the project root. All paths in this prompt are relative to your CWD. Do not use absolute paths — use only the relative paths shown here.
+  // Dynamic context block (signal summary + failure + optional fix hint).
+  const bugSection = `Bug summary: ${signal.summary}
+Failure description: ${signal.failureDescription}${signal.fixHint ? `\nFix hint (from upstream): ${signal.fixHint}` : ""}`;
 
-You are at the patch-generation stage of the ProveKit fix loop. Your job is to write a minimal code change that makes the formal invariant hold and prevents the symptom from recurring.
+  // Single bp artifact for the full C3 agent prompt body. Day 0 the
+  // template is byte-identical to pre-bp; bp.evolve sees the whole
+  // composed prompt — coherence is global. No-op (literal direct) when
+  // projectRoot is absent.
+  const revisions: Array<{ key: string; revisionId: string }> = [];
+  let templateBody = C3_AGENT_FIX_PROMPT_TEMPLATE;
+  if (projectRoot) {
+    const rev = await getPromptStore(projectRoot).get(
+      "c3.agent_fix_prompt",
+      C3_AGENT_FIX_PROMPT_TEMPLATE,
+      C3_AGENT_FIX_PROMPT_DISCRIMINATOR,
+    );
+    templateBody = rev.body;
+    revisions.push({ key: "c3.agent_fix_prompt", revisionId: rev.id });
+  }
 
-# The bug, as the user reported it
+  const prompt = templateBody
+    .replace("{{BUG_SECTION}}", bugSection)
+    .replace("{{INVESTIGATE_BLOCK}}", investigateBlock)
+    .replace("{{LOCUS_DISPLAY}}", locusDisplay);
 
-Bug summary: ${signal.summary}
-Failure description: ${signal.failureDescription}${signal.fixHint ? `\nFix hint (from upstream): ${signal.fixHint}` : ""}
-${investigateBlock}
-# How to think about where to patch
-
-The pipeline has already done significant work to identify where this bug lives. By the time you see this prompt, Investigate has analyzed the project structure and Locate has confirmed a SAST node. **Your default action is to edit at that locus.**
-
-You are not, however, a passive executor. If after reading the file you genuinely believe the bug lives elsewhere, you have two paths to consider — and which one applies determines whether your patch will hold up:
-
-## Worked example A — when honoring the locus is right
-
-A bug report says: "divide(1, 0) returns Infinity instead of throwing." Investigate identifies \`src/calc.ts\` (\`divide\` function). Locate confirms a SAST node on the \`/\` expression. C1's invariant: "for every call to \`divide(a, b)\`, b !== 0 must be reachable before the division executes."
-
-Reasoning: the invariant constrains the data flow into the divisor. The fix is a guard on b inside divide(). Patching divide() satisfies the invariant; patching every caller doesn't (you'd need to patch them all and miss new ones). The locus is right.
-
-Action: edit \`divide\` in \`src/calc.ts\`. Done in one hunk.
-
-## Worked example B — when the locus looks right but a placebo at a wrong layer fails
-
-A bug report says: "evolve produces revisions that don't reflect recent feedback." Investigate identifies \`src/store/sqlite/repositories.ts\` (\`forRevision\` orders by asc instead of desc). C1's invariant (correctly written): "data REACHING the evolve meta-prompt includes the K most-recent invocations from the revision's full history."
-
-Tempting placebo: patch \`src/index.ts\` where the consumer reads telemetry, add a JS-side \`telemetry.sort((a,b) => b.date - a.date)\` to surface recent failures. The local invariant ("exemplar passed to evolve is most-recent failing") would seem to hold.
-
-But the data layer truncated to oldest 25 already. The consumer-side sort is sorting old data. The invariant as written ("data REACHING evolve") is NOT satisfied — the data didn't reach evolve in the first place. Z3 will reject the placebo if the invariant is correctly scoped. Oracle #9a (test must pass against fixed code at reproduction-scale) catches it if Z3 doesn't.
-
-Action: edit \`forRevision\` in \`repositories.ts\` — change asc to desc. The locus was right. The placebo at \`src/index.ts\` would have looked like a fix, but it cannot make the invariant hold because the data never reaches the sort point.
-
-## What to do now
-
-Before you write any patch:
-
-1. Read the file at \`${locusDisplay}\`. See the actual code.
-2. Trace what the invariant is REALLY saying. Where in the data flow must it hold?
-3. Ask: can a patch at the locus, working with what arrives there, make the invariant hold? If yes, edit there.
-4. If you genuinely believe the locus is wrong (rare — Investigate had high confidence and Locate confirmed via SAST), state that explicitly in your explanation BEFORE you edit elsewhere. Name what the upstream stages missed.
-
-Your patch is the minimum change that makes the invariant hold. Do NOT run tests. After your edits, briefly explain what you changed and why — and if you patched somewhere other than the locus, explain what Investigate and Locate missed.`;
+  return { prompt, revisions };
 }
 
 // ---------------------------------------------------------------------------
