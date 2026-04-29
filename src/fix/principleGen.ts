@@ -31,13 +31,14 @@ import { listRelations } from "../dsl/relationRegistry.js";
 import { nodes as nodesTable, files as filesTable } from "../sast/schema/nodes.js";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import type {
-  BugSignal,
-  InvariantClaim,
-  FixCandidate,
-  PrincipleCandidate,
-  LLMProvider,
-  OverlayHandle,
+import {
+  type IntentSignal,
+  type InvariantClaim,
+  type FixCandidate,
+  type PrincipleCandidate,
+  type LLMProvider,
+  type OverlayHandle,
+  getClassHint,
 } from "./types.js";
 import type { CapabilitySpec } from "./types.js";
 import { proposeCapabilitySpec, runSubstrateOracles } from "./capabilityGen.js";
@@ -299,7 +300,7 @@ Rules:
 const C6_PRINCIPLE_PROMPT_DISCRIMINATOR = "2026-04-28";
 
 export async function buildPrinciplePrompt(
-  signal: BugSignal,
+  signal: IntentSignal,
   invariant: InvariantClaim,
   fix: FixCandidate,
   projectRoot?: string,
@@ -321,7 +322,7 @@ export async function buildPrinciplePrompt(
   const renderVars: Record<string, string> = {
     BUG_SUMMARY: signal.summary,
     INVARIANT_DESCRIPTION: invariant.description,
-    BUG_CLASS_HINT: signal.bugClassHint ?? "(none)",
+    BUG_CLASS_HINT: getClassHint(signal) ?? "(none)",
     FIX_DESCRIPTION: fix.patch.description,
     CAPABILITIES: describeCapabilities(),
     RELATIONS: describeRelations(),
@@ -816,7 +817,7 @@ function validatePrincipleProposal(rawParsed: unknown, bugClassHint?: string): P
  *   { kind: "non_codifiable" } — cannot be expressed as a static rule
  */
 export async function tryExistingCapabilities(args: {
-  signal: BugSignal;
+  signal: IntentSignal;
   invariant: InvariantClaim;
   fixCandidate: FixCandidate;
   db: Db;
@@ -840,7 +841,7 @@ export async function tryExistingCapabilities(args: {
     return { kind: "non_codifiable" };
   }
 
-  const proposal = validatePrincipleProposal(parsedRaw, signal.bugClassHint);
+  const proposal = validatePrincipleProposal(parsedRaw, getClassHint(signal));
   if (!proposal) {
     console.warn(`[C6] LLM response malformed or could not be parsed`);
     return { kind: "non_codifiable" };
@@ -1147,7 +1148,7 @@ No prose, no explanation outside the JSON.`;
  * Returns null if any oracle fails or adversarial validation fails.
  */
 export async function proposeWithCapability(args: {
-  signal: BugSignal;
+  signal: IntentSignal;
   invariant: InvariantClaim;
   fixCandidate: FixCandidate;
   db: Db;
@@ -1190,7 +1191,7 @@ export async function proposeWithCapability(args: {
  * the outer loop can use to augment the gap on retry.
  */
 async function proposeWithCapabilityOnce(args: {
-  signal: BugSignal;
+  signal: IntentSignal;
   invariant: InvariantClaim;
   fixCandidate: FixCandidate;
   db: Db;
@@ -1361,7 +1362,7 @@ async function proposeWithCapabilityOnce(args: {
       name,
       // Substrate-extension path: single canonical shape. bugClassId derives
       // from bugClassHint when available, else from the principle name.
-      bugClassId: slugifyBugClassId(signal.bugClassHint ?? name),
+      bugClassId: slugifyBugClassId(getClassHint(signal) ?? name),
       dslSource: acceptedDsl,
       smtTemplate,
       teachingExample,

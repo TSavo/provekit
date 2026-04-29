@@ -14,7 +14,7 @@ import {
   pendingFixes,
 } from "../db/schema/fixBundles.js";
 import { listArtifactKinds } from "./artifactKindRegistry.js";
-import type { FixBundle, AuditEntry } from "./types.js";
+import { type FixBundle, type AuditEntry, getIntentText } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Stage → oracle ID mapping (used by oraclesPassedFromAudit)
@@ -45,7 +45,7 @@ export function persistBundle(
       .values({
         bundleType: bundle.bundleType,
         createdAt: now,
-        signalRawtext: bundle.bugSignal.rawText,
+        signalRawtext: getIntentText(bundle.bugSignal),
         signalSource: bundle.bugSignal.source,
         signalSummary: bundle.bugSignal.summary,
         primaryLayer: bundle.plan.primaryLayer,

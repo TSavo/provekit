@@ -1,5 +1,5 @@
 /**
- * B3: classify — given a BugSignal + BugLocus, determine what kind of
+ * B3: classify — given an IntentSignal + BugLocus, determine what kind of
  * remediation is needed and produce a RemediationPlan.
  *
  * The classifier prompt is built dynamically from the remediation layer
@@ -21,17 +21,18 @@ import { getPromptStore } from "../llm/promptStore.js";
 // One bp namespace. Four runtime placeholders. Same pattern as the C-stages.
 //
 // Future evolution warning: bp.evolve on classify.prompt MUST preserve
-// {{LAYER_LIST}}, {{SUMMARY}}, {{FAILURE}}, {{LOCUS}} placeholders verbatim.
+// {{LAYER_LIST}}, {{SUMMARY}}, {{INTENT_TEXT}}, {{LOCUS}} placeholders verbatim.
 // ---------------------------------------------------------------------------
 
-const CLASSIFY_PROMPT_TEMPLATE = `You are classifying a bug report into a remediation layer.
+const CLASSIFY_PROMPT_TEMPLATE = `You are classifying an intent into a remediation layer. The intent may be a bug report (a failure that should not happen), a change request (a property that should hold), or a property assertion (the property stated directly). Treat them uniformly: the intent describes a property the code should satisfy.
+
 Here are the available layers:
 
 {{LAYER_LIST}}
 
-Given this bug:
+Given this intent:
   Summary: {{SUMMARY}}
-  Failure: {{FAILURE}}
+  User text: {{INTENT_TEXT}}
   Code location: {{LOCUS}}
 
 Produce JSON with exactly these keys:
@@ -42,17 +43,18 @@ Produce JSON with exactly these keys:
 
 Respond with JSON only. No prose before or after.`;
 
-const CLASSIFY_PROMPT_DISCRIMINATOR = "2026-04-28";
+const CLASSIFY_PROMPT_DISCRIMINATOR = "2026-04-29";
 import { getModelTier } from "./modelTiers.js";
 import type {
   RemediationLayerDescriptor,
 } from "./remediationLayerRegistry.js";
-import type {
-  BugSignal,
-  BugLocus,
-  RemediationPlan,
-  PlannedArtifact,
-  LLMProvider,
+import {
+  type IntentSignal,
+  type BugLocus,
+  type RemediationPlan,
+  type PlannedArtifact,
+  type LLMProvider,
+  getIntentText,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -75,7 +77,7 @@ export class ClassifyError extends Error {
  * Exported so tests can inspect the prompt without making a real LLM call.
  */
 export async function buildPrompt(
-  signal: BugSignal,
+  signal: IntentSignal,
   locus: BugLocus | null,
   layers: readonly RemediationLayerDescriptor[],
   projectRoot?: string,
@@ -106,7 +108,7 @@ export async function buildPrompt(
   const renderVars: Record<string, string> = {
     LAYER_LIST: layerList,
     SUMMARY: signal.summary,
-    FAILURE: signal.failureDescription,
+    INTENT_TEXT: getIntentText(signal),
     LOCUS: locusStr,
   };
   let prompt = templateBody;
@@ -211,14 +213,14 @@ function validateClassifyResponse(parsed: unknown): ParsedResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * Classify a BugSignal into a RemediationPlan.
+ * Classify a IntentSignal into a RemediationPlan.
  *
  * The classifier prompt is built dynamically from the registered remediation
  * layers — adding a layer via registerRemediationLayer() changes what the LLM
  * sees on the next call with no code changes here.
  */
 export async function classify(
-  signal: BugSignal,
+  signal: IntentSignal,
   locus: BugLocus | null,
   llm: LLMProvider,
   projectRoot?: string,

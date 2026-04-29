@@ -40,7 +40,7 @@
  *   abstract: +15-25s (adversary ~10-15s, traceability ~5-10s)
  */
 
-import type { InvariantClaim, BugSignal, LLMProvider, InvariantCitation } from "./types.js";
+import { type InvariantClaim, type IntentSignal, getIntentText, type LLMProvider, type InvariantCitation } from "./types.js";
 import { createNoopLogger, type FixLoopLogger } from "./logger.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
 import { verifyBlock } from "../verifier.js";
@@ -65,12 +65,12 @@ import { getPromptStore } from "../llm/promptStore.js";
 // its own body.
 // ---------------------------------------------------------------------------
 
-const C15_CROSS_LLM_ADVERSARY_TEMPLATE = `You are a formal verification expert. Given a bug report, produce an SMT-LIB assertion
+const C15_CROSS_LLM_ADVERSARY_TEMPLATE = `You are a formal verification expert. Given an intent (a bug report, change request, or property assertion), produce an SMT-LIB assertion
 that expresses the VIOLATION STATE (the negation of the desired invariant).
-The assertion must be satisfiable (Z3 check-sat returns "sat") — this proves the bug is reachable.
+The assertion must be satisfiable (Z3 check-sat returns "sat") — this proves the violation is reachable.
 
-Bug summary: {{SUMMARY}}
-Failure description: {{FAILURE_DESCRIPTION}}
+Intent summary: {{SUMMARY}}
+User text: {{INTENT_TEXT}}
 {{INVESTIGATE_BLOCK}}
 Respond with ONLY a JSON object (no markdown fences):
 {
@@ -90,12 +90,12 @@ Rules:
 - Keep it simple: 2-5 constants maximum
 - Each binding's source_expr must be a literal source identifier (e.g. "b", "a", "x")`;
 
-const C15_TRACEABILITY_TEMPLATE = `You are a verification expert. A bug report{{INVESTIGATE_NOTE}} and a list of SMT clause citations are given.
-Your task: for each citation, determine whether the "source_quote" is genuinely grounded in either the bug report{{INVESTIGATE_OR}} (the quote must be present verbatim or as a close paraphrase — NOT speculative).
+const C15_TRACEABILITY_TEMPLATE = `You are a verification expert. An intent statement (bug report / change request / property assertion){{INVESTIGATE_NOTE}} and a list of SMT clause citations are given.
+Your task: for each citation, determine whether the "source_quote" is genuinely grounded in either the intent text{{INVESTIGATE_OR}} (the quote must be present verbatim or as a close paraphrase — NOT speculative).
 
-{{INVESTIGATE_GROUNDING}}Bug report:
+{{INVESTIGATE_GROUNDING}}Intent text:
 ---
-{{BUG_REPORT_TEXT}}
+{{INTENT_TEXT}}
 ---{{INVESTIGATE_TEXT}}
 
 Citations to verify:
@@ -113,12 +113,12 @@ OR
   ]
 }`;
 
-const C15_PROSE_ADVERSARY_TEMPLATE = `You are a formal verification expert. Given a bug report, describe in prose
-the invariant that the buggy code violates. Focus on the property that, if held,
-would prevent the bug.
+const C15_PROSE_ADVERSARY_TEMPLATE = `You are a formal verification expert. Given an intent (a bug report, change request, or property assertion), describe in prose
+the invariant that the current code must satisfy. Focus on the property that, if held,
+satisfies the user's stated intent.
 
-Bug summary: {{SUMMARY}}
-Failure description: {{FAILURE_DESCRIPTION}}
+Intent summary: {{SUMMARY}}
+User text: {{INTENT_TEXT}}
 {{INVESTIGATE_BLOCK}}
 Respond with ONLY a JSON object (no markdown fences):
 {
@@ -271,7 +271,7 @@ function adversaryModel(proposerModel: "opus" | "sonnet" | "haiku"): "opus" | "s
  */
 export async function crossLlmAgreement(args: {
   invariant: InvariantClaim;
-  signal: BugSignal;
+  signal: IntentSignal;
   llm: LLMProvider;
   logger?: FixLoopLogger;
   /**
@@ -315,7 +315,7 @@ not to penalize correctly anchored reads.
   );
   const adversaryPrompt = c15CrossLlmBody
     .replaceAll("{{SUMMARY}}", signal.summary)
-    .replaceAll("{{FAILURE_DESCRIPTION}}", signal.failureDescription)
+    .replaceAll("{{INTENT_TEXT}}", getIntentText(signal))
     .replaceAll("{{INVESTIGATE_BLOCK}}", investigateBlock);
 
   const proposerModel = "opus"; // proposer is always opus on the novel path (C1 default)
@@ -472,7 +472,7 @@ ${adversaryAssertion}
  */
 export async function traceabilityCheck(args: {
   invariant: InvariantClaim;
-  signal: BugSignal;
+  signal: IntentSignal;
   llm: LLMProvider;
   logger?: FixLoopLogger;
   /** Investigate's report when symptom-only flow ran. Citations to
@@ -496,7 +496,7 @@ export async function traceabilityCheck(args: {
   }
 
   const citationsJson = JSON.stringify(citations, null, 2);
-  const bugReportText = [signal.summary, signal.failureDescription, signal.rawText]
+  const intentText = [signal.summary, getIntentText(signal)]
     .filter(Boolean)
     .join("\n\n");
 
@@ -517,7 +517,7 @@ export async function traceabilityCheck(args: {
     .replaceAll("{{INVESTIGATE_NOTE}}", investigate ? ", upstream Investigate analysis," : "")
     .replaceAll("{{INVESTIGATE_OR}}", investigate ? " OR Investigate's analysis" : "")
     .replaceAll("{{INVESTIGATE_GROUNDING}}", investigate ? "Both the bug report AND Investigate's analysis are valid grounding sources. Investigate's hypothesis IS evidence the loop produced — citing it is grounded, not speculative.\n\n" : "\n")
-    .replaceAll("{{BUG_REPORT_TEXT}}", bugReportText)
+    .replaceAll("{{INTENT_TEXT}}", intentText)
     .replaceAll("{{INVESTIGATE_TEXT}}", investigateText)
     .replaceAll("{{CITATIONS_JSON}}", citationsJson);
 
@@ -571,7 +571,7 @@ export async function traceabilityCheck(args: {
  */
 export async function adversarialFixturePreValidation(args: {
   invariant: InvariantClaim;
-  signal: BugSignal;
+  signal: IntentSignal;
   llm: LLMProvider;
   logger?: FixLoopLogger;
 }): Promise<FidelityCheckResult> {
@@ -791,7 +791,7 @@ function overlapCoefficient(a: Set<string>, b: Set<string>): number {
  */
 export async function proseJaccardAgreement(args: {
   invariant: InvariantClaim;
-  signal: BugSignal;
+  signal: IntentSignal;
   llm: LLMProvider;
   logger?: FixLoopLogger;
   /** Investigate's report when symptom-only flow ran. The adversary reasons
@@ -829,7 +829,7 @@ penalize correctly anchored reads.
   );
   const adversaryPrompt = c15ProseAdvBody
     .replaceAll("{{SUMMARY}}", signal.summary)
-    .replaceAll("{{FAILURE_DESCRIPTION}}", signal.failureDescription)
+    .replaceAll("{{INTENT_TEXT}}", getIntentText(signal))
     .replaceAll("{{INVESTIGATE_BLOCK}}", investigateBlock);
 
   const proposerModel = "opus";
@@ -981,7 +981,7 @@ export interface FidelityVerifiers {
  */
 export async function runInvariantFidelity(args: {
   invariant: InvariantClaim;
-  signal: BugSignal;
+  signal: IntentSignal;
   llm: LLMProvider;
   logger?: FixLoopLogger;
   _verifiers?: FidelityVerifiers;

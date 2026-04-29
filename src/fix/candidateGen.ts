@@ -31,7 +31,7 @@ import { getPromptStore } from "../llm/promptStore.js";
 // One bp namespace: `c3.agent_fix_prompt`. The static teaching body lives
 // here as a literal const (source-of-record), with three runtime
 // placeholders that buildAgentFixPrompt fills in at call time:
-//   {{BUG_SECTION}}      — signal summary + failure description + fix hint
+//   {{INTENT_SECTION}}   — signal summary + verbatim user text
 //   {{INVESTIGATE_BLOCK}}— Investigate findings OR locus + invariant fallback
 //   {{LOCUS_DISPLAY}}    — overlay-relative path to the bug site, used
 //                          inside the "What to do now" instructions
@@ -45,11 +45,11 @@ import { getPromptStore } from "../llm/promptStore.js";
 
 const C3_AGENT_FIX_PROMPT_TEMPLATE = `Your CWD is the project root. All paths in this prompt are relative to your CWD. Do not use absolute paths — use only the relative paths shown here.
 
-You are at the patch-generation stage of the ProveKit fix loop. Your job is to write a minimal code change that makes the formal invariant hold and prevents the symptom from recurring.
+You are at the patch-generation stage of the ProveKit intent loop. Your job is to write a minimal code change that makes the formal invariant hold. The intent may be a bug report (the property is stated by negation — what's failing should not fail), a change request (the property is stated directly — make X do Y), or a property assertion (the property IS the user text). Treat them uniformly.
 
-# The bug, as the user reported it
+# The intent, as the user described it
 
-{{BUG_SECTION}}
+{{INTENT_SECTION}}
 {{INVESTIGATE_BLOCK}}
 # How to think about where to patch
 
@@ -129,8 +129,9 @@ import { principleMatches } from "../db/schema/principleMatches.js";
 import { evaluatePrinciple } from "../dsl/evaluator.js";
 import { verifyBlock } from "../verifier.js";
 import { applyPatchToOverlay, reindexOverlay } from "./overlay.js";
+import { getIntentText } from "./types.js";
 import type {
-  BugSignal,
+  IntentSignal,
   BugLocus,
   InvariantClaim,
   OverlayHandle,
@@ -157,11 +158,11 @@ export interface ProposedFix {
 // ---------------------------------------------------------------------------
 
 // C3 JSON-path fix prompt artifact: c3.json_fix_prompt
-// Six placeholders (max-candidates, signal fields, locus, source, invariant).
-const C3_JSON_FIX_PROMPT_TEMPLATE = `You are a code-repair expert. Given a bug report and a formal invariant violation, propose up to {{MAX_CANDIDATES}} candidate patches.
+// Five placeholders (max-candidates, intent summary + text, locus, source, invariant).
+const C3_JSON_FIX_PROMPT_TEMPLATE = `You are a code-repair expert. Given an intent (a bug report, a change request, or a property assertion) and a formal invariant violation, propose up to {{MAX_CANDIDATES}} candidate patches that make the invariant hold.
 
-Bug summary: {{BUG_SUMMARY}}
-Failure description: {{FAILURE_DESCRIPTION}}{{FIX_HINT_BLOCK}}
+Intent summary: {{INTENT_SUMMARY}}
+User text: {{INTENT_TEXT}}
 
 Location: {{LOCATION}}
 
@@ -198,10 +199,10 @@ Rules:
 - patch.fileEdits is an array; each entry has file (relative path) and newContent (full file content).
 - Rank candidates by confidence descending.
 - Do NOT output anything outside the JSON object.`;
-const C3_JSON_FIX_PROMPT_DISCRIMINATOR = "2026-04-28";
+const C3_JSON_FIX_PROMPT_DISCRIMINATOR = "2026-04-29";
 
 export async function buildFixPrompt(
-  signal: BugSignal,
+  signal: IntentSignal,
   locus: BugLocus,
   invariant: InvariantClaim,
   maxCandidates: number,
@@ -235,9 +236,8 @@ export async function buildFixPrompt(
 
   return body
     .replaceAll("{{MAX_CANDIDATES}}", String(maxCandidates))
-    .replaceAll("{{BUG_SUMMARY}}", signal.summary)
-    .replaceAll("{{FAILURE_DESCRIPTION}}", signal.failureDescription)
-    .replaceAll("{{FIX_HINT_BLOCK}}", signal.fixHint ? `\nFix hint: ${signal.fixHint}` : "")
+    .replaceAll("{{INTENT_SUMMARY}}", signal.summary)
+    .replaceAll("{{INTENT_TEXT}}", getIntentText(signal))
     .replaceAll("{{LOCATION}}", `${locus.file}:${locus.line}${locus.function ? ` in ${locus.function}` : ""}`)
     .replaceAll("{{SOURCE_CONTEXT}}", sourceContext)
     .replaceAll("{{INVARIANT_DESCRIPTION}}", invariant.description)
@@ -256,7 +256,7 @@ export async function buildFixPrompt(
  *   path so the agent cannot derive an absolute path to the user's real repo.
  */
 export async function buildAgentFixPrompt(
-  signal: BugSignal,
+  signal: IntentSignal,
   locus: BugLocus,
   invariant: InvariantClaim,
   overlay?: { worktreePath: string },
@@ -318,8 +318,8 @@ Invariant the patch must satisfy:
 `;
 
   // Dynamic context block (signal summary + failure + optional fix hint).
-  const bugSection = `Bug summary: ${signal.summary}
-Failure description: ${signal.failureDescription}${signal.fixHint ? `\nFix hint (from upstream): ${signal.fixHint}` : ""}`;
+  const intentSection = `Intent summary: ${signal.summary}
+User text: ${getIntentText(signal)}`;
 
   // Single bp artifact for the full C3 agent prompt body. Day 0 the
   // template is byte-identical to pre-bp; bp.evolve sees the whole
@@ -338,7 +338,7 @@ Failure description: ${signal.failureDescription}${signal.fixHint ? `\nFix hint 
   }
 
   const prompt = templateBody
-    .replace("{{BUG_SECTION}}", bugSection)
+    .replace("{{INTENT_SECTION}}", intentSection)
     .replace("{{INVESTIGATE_BLOCK}}", investigateBlock)
     .replace("{{LOCUS_DISPLAY}}", locusDisplay);
 

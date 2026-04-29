@@ -2,7 +2,7 @@
  * B1.5 — Investigate.
  *
  * Bridges symptom-only bug reports to the rest of the fix-loop pipeline.
- * Intake produces a `BugSignal` with prose summary + failure description;
+ * Intake produces a `IntentSignal` with prose summary + failure description;
  * for user-facing bug reports those `codeReferences` are typically empty
  * (real users don't know which file the bug lives in). Locate then has
  * nothing to resolve and the loop aborts.
@@ -41,25 +41,23 @@ import { getPromptStore } from "../../llm/promptStore.js";
 // the whole composed prompt body. Day 0 byte-identical.
 //
 // Future evolution warning: bp.evolve on investigate.prompt MUST preserve
-// {{SOURCE}}, {{SUMMARY}}, {{FAILURE_DESCRIPTION}}, {{FIX_HINT_BLOCK}},
-// {{TOUR_TEXT}}, {{RECENT_TEXT}} placeholders verbatim.
+// {{SOURCE}}, {{SUMMARY}}, {{INTENT_TEXT}}, {{TOUR_TEXT}}, {{RECENT_TEXT}}
+// placeholders verbatim.
 // ---------------------------------------------------------------------------
 
-const INVESTIGATE_PROMPT_TEMPLATE = `You are the Investigate stage of a fix loop. A user has reported a bug
-in their project. They describe symptoms, not code. Your job: read the
-symptom, scan the project tour, propose where the bug most likely lives.
+const INVESTIGATE_PROMPT_TEMPLATE = `You are the Investigate stage of an intent loop. A user has supplied an intent — a bug report, a change request, or a property assertion. The intent describes a property the code should satisfy. Your job: read the intent, scan the project tour, propose where in the codebase this intent applies and where the change (if any) should land.
 
 Output a JSON object via the Write tool. Schema:
 
 {
-  "symptomSummary": "1-sentence restatement of what the user observes",
-  "rootCauseHypothesis": "1-2 sentences on the mechanical cause",
-  "fixHypothesis": "1-2 sentences on what kind of change would fix it",
+  "symptomSummary": "1-sentence restatement of what the user wants",
+  "rootCauseHypothesis": "1-2 sentences on the mechanical reason the property doesn't currently hold (for bugs) OR what currently exists at the change site (for change requests)",
+  "fixHypothesis": "1-2 sentences on what kind of change would make the property hold",
   "primaryLocation": {
     "file": "path/relative/to/project/root.ts",
     "function": "optional function or method name",
     "lineRange": [optional inclusive start, end],
-    "rationale": "why does the symptom point here?",
+    "rationale": "why does the intent point here?",
     "confidence": "high" | "medium" | "low"
   },
   "candidateLocations": [
@@ -67,16 +65,16 @@ Output a JSON object via the Write tool. Schema:
   ]
 }
 
-== Bug report ==
+== Intent ==
 
 Source: {{SOURCE}}
 
 Summary:
 {{SUMMARY}}
 
-Failure description:
-{{FAILURE_DESCRIPTION}}
-{{FIX_HINT_BLOCK}}
+User text:
+{{INTENT_TEXT}}
+
 == Project tour (source files only, tests excluded) ==
 
 {{TOUR_TEXT}}
@@ -87,23 +85,26 @@ Failure description:
 
 == Reasoning hints ==
 
-- The user describes WHAT they see, not WHERE in the code. Your job is the WHERE.
-- Threshold-shaped symptoms (works small, breaks at scale) usually involve
-  pagination, sort order, limits, or caching. Look for query/repository code.
-- "Stops working over time" usually involves accumulated state — a list that
-  grows, a cache that doesn't invalidate, a counter that overflows.
-- Pick the file by NAME first (does the path describe the function the user
-  describes?), then narrow within the file.
+- The user describes WHAT property they want to hold (or which is failing), not WHERE in the code. Your job is the WHERE.
+- For bugs: threshold-shaped symptoms (works small, breaks at scale) usually involve
+  pagination, sort order, limits, or caching. "Stops working over time" usually
+  involves accumulated state. Pick the file by NAME first, then narrow within the file.
+- For change requests: the landing site is whatever code already does the closest
+  thing, or is the natural anchor for the new behavior. "Add a verify-axioms
+  subcommand" lands in the CLI dispatcher; "make X return Y instead of Z" lands
+  in the function that produces the value.
+- For property assertions: the property's bindings name specific symbols; locate
+  by symbol resolution.
 - Confidence "high" should mean "I'd bet money on it"; "low" means "worth
-  checking but the symptom is consistent with several places."
+  checking but the intent is consistent with several places."
 
 The structuredOutput layer will append the exact path to write to;
 follow that instruction precisely. Do NOT invent a path or write to
 the project root — the appended instruction is the contract.`;
 
-const INVESTIGATE_PROMPT_DISCRIMINATOR = "2026-04-28";
+const INVESTIGATE_PROMPT_DISCRIMINATOR = "2026-04-29";
 import { getModelTier } from "../modelTiers.js";
-import type { BugSignal, CodeReference, LLMProvider } from "../types.js";
+import { type IntentSignal, type CodeReference, type LLMProvider, getIntentText } from "../types.js";
 import type { FixLoopLogger } from "../logger.js";
 
 // ---------------------------------------------------------------------------
@@ -140,7 +141,7 @@ export interface InvestigateReport {
 }
 
 export interface InvestigateOptions {
-  signal: BugSignal;
+  signal: IntentSignal;
   projectRoot: string;
   llm: LLMProvider;
   logger?: FixLoopLogger;
@@ -273,7 +274,7 @@ function getRecentChanges(projectRoot: string): string[] {
 // ---------------------------------------------------------------------------
 
 async function buildInvestigatePrompt(
-  signal: BugSignal,
+  signal: IntentSignal,
   tour: TourEntry[],
   recentChanges: string[],
   projectRoot?: string,
@@ -282,7 +283,6 @@ async function buildInvestigatePrompt(
   const recentText = recentChanges.length > 0
     ? recentChanges.map((p) => `  ${p}`).join("\n")
     : "  (no git history available)";
-  const fixHintBlock = signal.fixHint ? `\nFix hint:\n${signal.fixHint}\n` : "";
 
   // Single bp artifact for the full Investigate prompt body. Day 0 byte-
   // identical; bp.evolve sees the whole composed prompt. No-op when
@@ -302,8 +302,7 @@ async function buildInvestigatePrompt(
   const renderVars: Record<string, string> = {
     SOURCE: signal.source,
     SUMMARY: signal.summary,
-    FAILURE_DESCRIPTION: signal.failureDescription,
-    FIX_HINT_BLOCK: fixHintBlock,
+    INTENT_TEXT: getIntentText(signal),
     TOUR_TEXT: tourText,
     RECENT_TEXT: recentText,
   };
