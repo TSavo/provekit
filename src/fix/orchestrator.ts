@@ -51,6 +51,7 @@ import type { Db } from "../db/index.js";
 import { formulateInvariant } from "./stages/formulateInvariant.js";
 import { openOverlay } from "./stages/openOverlay.js";
 import { generateFixCandidate } from "./stages/generateFixCandidate.js";
+import { doTheWork } from "./stages/doTheWork.js";
 import { generateComplementary } from "./stages/generateComplementary.js";
 import { generateRegressionTest } from "./stages/generateRegressionTest.js";
 import { generatePrincipleCandidate } from "./stages/generatePrincipleCandidate.js";
@@ -144,6 +145,11 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
 
   let result: FixLoopResultWithArtifacts;
 
+  // Hoisted projectRoot used by every bp-aware stage. Resolved once from
+  // the locus and passed through to C1/C3/C5/C6 so each stage's prompt
+  // routes through the bp store when available.
+  const projectRootForBp = resolveProjectRoot(args.locus.file) ?? undefined;
+
   try {
     // -----------------------------------------------------------------------
     // Stage B3: Recognize.
@@ -182,23 +188,57 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     invariant = invariantResult;
     logger.info(`  C1+C2 complete — worktree: ${overlay.worktreePath} in ${Date.now() - t0c1c2}ms (parallel)`);
 
-    // Stage C3: generate fix candidate
-    logger.stage("C3: generateFixCandidate");
-    const t0c3 = Date.now();
-    fix = await runStage("C3", "generateFixCandidate", audit, () =>
-      generateFixCandidate({
-        signal: args.signal,
-        locus: args.locus,
-        invariant: invariant!,
-        overlay,
-        llm: args.llm,
-        projectRoot: projectRootForBp,
-        logger,
-        recognized,
-        investigateReport: args.investigateReport,
-      }),
-    );
-    logger.info(`  C3 complete — patch files: ${fix.patch.fileEdits.length} invariantHolds: ${fix.invariantHoldsUnderOverlay} in ${Date.now() - t0c3}ms`);
+    // Stages C3+C5: collapsed into doTheWork when the agent path is
+    // available AND we're not on the recognized library-template path
+    // (B3 templates emit canned patches+tests; doTheWork is the LLM
+    // route). Otherwise fall back to separate C3 (generateFixCandidate)
+    // and C5 (generateRegressionTest) calls — same machinery, two
+    // round-trips instead of one.
+    const useUnifiedDoTheWork = !!args.llm.agent && !recognized.matched;
+    if (useUnifiedDoTheWork) {
+      logger.stage("C3+C5: doTheWork (unified)");
+      const t0doTheWork = Date.now();
+      const dtw = await runStage("C3+C5", "doTheWork", audit, () =>
+        doTheWork({
+          signal: args.signal,
+          locus: args.locus,
+          invariant: invariant!,
+          overlay,
+          llm: args.llm,
+          investigateReport: args.investigateReport,
+          projectRoot: projectRootForBp,
+          logger,
+          testRunner: args.c5TestRunner,
+        }),
+      );
+      fix = dtw.fix;
+      test = dtw.test;
+      logger.info(
+        `  doTheWork complete — patch files: ${fix.patch.fileEdits.length}` +
+          ` invariantHolds: ${fix.invariantHoldsUnderOverlay}` +
+          ` testPassesOnFixed: ${test.passesOnFixedCode}` +
+          ` testFailsOnOriginal: ${test.failsOnOriginalCode}` +
+          ` in ${Date.now() - t0doTheWork}ms`,
+      );
+    } else {
+      // Fallback: legacy two-call path.
+      logger.stage("C3: generateFixCandidate");
+      const t0c3 = Date.now();
+      fix = await runStage("C3", "generateFixCandidate", audit, () =>
+        generateFixCandidate({
+          signal: args.signal,
+          locus: args.locus,
+          invariant: invariant!,
+          overlay,
+          llm: args.llm,
+          projectRoot: projectRootForBp,
+          logger,
+          recognized,
+          investigateReport: args.investigateReport,
+        }),
+      );
+      logger.info(`  C3 complete — patch files: ${fix.patch.fileEdits.length} invariantHolds: ${fix.invariantHoldsUnderOverlay} in ${Date.now() - t0c3}ms`);
+    }
 
     // Emit a patch artifact as soon as C3 returns. Survives downstream failure.
     artifacts.push({
@@ -224,26 +264,31 @@ export async function runFixLoop(args: RunFixLoopArgs): Promise<FixLoopResultWit
     );
     logger.info(`  C4 complete — ${complementary.length} sites in ${Date.now() - t0c4}ms`);
 
-    // Stage C5: generate regression test
-    logger.stage("C5: generateRegressionTest");
-    const t0c5 = Date.now();
-    const c5Result = await runStage("C5", "generateRegressionTest", audit, () =>
-      generateRegressionTest({
-        fix: fix!,
-        signal: args.signal,
-        locus: args.locus,
-        overlay,
-        invariant: invariant!,
-        llm: args.llm,
-        projectRoot: projectRootForBp,
-        testRunner: args.c5TestRunner,
-        logger,
-        recognized,
-        investigateReport: args.investigateReport,
-      }),
-    );
-    test = c5Result;
-    logger.info(`  C5 complete — passesOnFixed: ${test?.passesOnFixedCode} failsOnOriginal: ${test?.failsOnOriginalCode} in ${Date.now() - t0c5}ms`);
+    // Stage C5: generate regression test. Skipped when doTheWork
+    // already produced a mutation-verified test in the unified path.
+    if (test === null) {
+      logger.stage("C5: generateRegressionTest");
+      const t0c5 = Date.now();
+      const c5Result = await runStage("C5", "generateRegressionTest", audit, () =>
+        generateRegressionTest({
+          fix: fix!,
+          signal: args.signal,
+          locus: args.locus,
+          overlay,
+          invariant: invariant!,
+          llm: args.llm,
+          projectRoot: projectRootForBp,
+          testRunner: args.c5TestRunner,
+          logger,
+          recognized,
+          investigateReport: args.investigateReport,
+        }),
+      );
+      test = c5Result;
+      logger.info(`  C5 complete — passesOnFixed: ${test?.passesOnFixedCode} failsOnOriginal: ${test?.failsOnOriginalCode} in ${Date.now() - t0c5}ms`);
+    } else {
+      logger.info(`  C5 skipped — test already produced by doTheWork (unified path)`);
+    }
 
     if (test) {
       artifacts.push({ kind: "regression_test", test });

@@ -33,6 +33,7 @@ import type {
   OverlayHandle,
   LLMProvider,
   FixCandidate,
+  TestArtifact,
 } from "../types.js";
 import type { FixLoopLogger } from "../logger.js";
 import { runAgentInOverlay } from "../captureChange.js";
@@ -44,6 +45,8 @@ import {
   DO_THE_WORK_PROMPT_DISCRIMINATOR,
 } from "../prompts/doTheWork.js";
 import { getIntentText } from "../types.js";
+import { verifyOracle9 } from "../runtime/oracle9.js";
+import { resolveMainRepoRoot, extractWitnessInputs } from "../testGen.js";
 
 /**
  * Output of doTheWork. The patch and test are both captured from a single
@@ -53,10 +56,8 @@ import { getIntentText } from "../types.js";
  */
 export interface DoTheWorkResult {
   fix: FixCandidate;
-  /** The captured test file's path, repo-relative inside the overlay. */
-  testFilePath: string;
-  /** The captured test file's contents, ready to write back to the overlay. */
-  testCode: string;
+  /** Mutation-verified regression test artifact, ready for D1 bundle assembly. */
+  test: TestArtifact;
   /** The LLM's rationale (final text block from the agent run). */
   rationale: string;
   /** Number of agent turns used. */
@@ -74,6 +75,15 @@ export interface DoTheWorkArgs {
   /** Host project root, optional. When provided, the prompt routes through bp. */
   projectRoot?: string;
   logger?: FixLoopLogger;
+  /**
+   * Injectable test runner for Oracle #9. When provided, replaces the real
+   * vitest invocation. Same signature as generateRegressionTest's testRunner.
+   */
+  testRunner?: (
+    overlay: OverlayHandle,
+    testFilePath: string,
+    mainRepoRoot: string,
+  ) => { exitCode: number; stdout: string; stderr: string };
 }
 
 /**
@@ -130,6 +140,7 @@ export async function doTheWork(args: DoTheWorkArgs): Promise<DoTheWorkResult> {
 
   const fix: FixCandidate = {
     patch: sourcePatch,
+    source: "llm",
     llmRationale: rationale,
     llmConfidence: 1.0,
     invariantHoldsUnderOverlay: oracleTwo.invariantHoldsUnderOverlay,
@@ -137,10 +148,39 @@ export async function doTheWork(args: DoTheWorkArgs): Promise<DoTheWorkResult> {
     audit: oracleTwo.audit,
   };
 
+  // Oracle #9: mutation verification. The agent already wrote the test
+  // file inside the overlay during the unified run; oracle9.ts's helper
+  // assumes the test isn't yet on disk and writes it itself, so we
+  // pass the captured testEdits[0] for it to (re)apply. The
+  // double-write is idempotent — same content to the same path.
+  const testFilePath = testEdits[0].file;
+  const testCode = testEdits[0].newContent;
+  const mainRepoRoot = resolveMainRepoRoot(args.overlay);
+  const testName = `regression: ${args.signal.summary.slice(0, 80)}`;
+
+  const o9 = await verifyOracle9({
+    overlay: args.overlay,
+    fix,
+    testFilePath,
+    testCode,
+    mainRepoRoot,
+    testRunner: args.testRunner,
+  });
+
+  const test: TestArtifact = {
+    source: "llm",
+    testFilePath,
+    testName,
+    testCode,
+    witnessInputs: extractWitnessInputs(args.invariant),
+    passesOnFixedCode: o9.passesOnFixedCode,
+    failsOnOriginalCode: o9.failsOnOriginalCode,
+    audit: o9.audit,
+  };
+
   return {
     fix,
-    testFilePath: testEdits[0].file,
-    testCode: testEdits[0].newContent,
+    test,
     rationale,
     turnsUsed,
   };
