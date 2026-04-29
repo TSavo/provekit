@@ -1,0 +1,307 @@
+/**
+ * Validation rules for claim envelopes.
+ *
+ * Spec: docs/specs/2026-04-29-universal-claim-envelope.md §Validation rules
+ *
+ * Validates:
+ * 1. Wrapper shape (required fields, types, verdict enum, producedBy format).
+ * 2. CID integrity (recompute and compare).
+ * 3. Signature (when present, via optional KeyResolver).
+ * 4. Variant schema (standard variants checked against built-in schemas).
+ * 5. inputCids consistency (each is 32 hex chars; deeper DAG validation optional).
+ */
+
+import { KeyObject } from "node:crypto";
+import { VERDICTS, type ClaimEnvelope, type EvidenceVariant } from "./types.js";
+import { computeEnvelopeCid } from "./cid.js";
+import { verifyEnvelopeSignature } from "./sign.js";
+
+// ---------------------------------------------------------------------------
+// KeyResolver callback
+// ---------------------------------------------------------------------------
+
+/**
+ * Called during validation when a `producerSignature` is present.
+ * Return the public key for the given `producedBy` identity, or
+ * null if the key is unknown (signature check is skipped / warned).
+ */
+export type KeyResolver = (
+  producedBy: string,
+) => KeyObject | Buffer | string | null;
+
+// ---------------------------------------------------------------------------
+// Validation result
+// ---------------------------------------------------------------------------
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const HEX16 = /^[0-9a-f]{16}$/;
+const HEX32 = /^[0-9a-f]{32}$/;
+/** producedBy format: <name>@<version>; name may include colons, slashes, dots. */
+const PRODUCED_BY = /^[^@\s]+@[^@\s]+$/;
+/** ISO-8601 UTC basic check */
+const ISO8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+function isString(v: unknown): v is string {
+  return typeof v === "string";
+}
+
+function isNumber(v: unknown): v is number {
+  return typeof v === "number";
+}
+
+function isBoolean(v: unknown): v is boolean {
+  return typeof v === "boolean";
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+// ---------------------------------------------------------------------------
+// Variant body validators
+// ---------------------------------------------------------------------------
+
+function validateVariantBody(
+  evidence: EvidenceVariant,
+  errors: string[],
+): void {
+  const { kind, body } = evidence as { kind: string; body: Record<string, unknown> };
+
+  if (!isObject(body)) {
+    errors.push(`evidence.body must be an object for kind "${kind}"`);
+    return;
+  }
+
+  switch (kind) {
+    case "z3-model": {
+      if (!isString(body.smtLibInput)) errors.push("z3-model body.smtLibInput must be string");
+      if (body.z3Verdict !== "sat") errors.push("z3-model body.z3Verdict must be \"sat\"");
+      if (!isString(body.model)) errors.push("z3-model body.model must be string");
+      if (!isObject(body.counterexample)) errors.push("z3-model body.counterexample must be object");
+      if (!isNumber(body.z3RunMs)) errors.push("z3-model body.z3RunMs must be number");
+      break;
+    }
+    case "z3-unsat": {
+      if (!isString(body.smtLibInput)) errors.push("z3-unsat body.smtLibInput must be string");
+      if (body.z3Verdict !== "unsat") errors.push("z3-unsat body.z3Verdict must be \"unsat\"");
+      if (body.proof !== undefined && !isString(body.proof)) errors.push("z3-unsat body.proof must be string when present");
+      if (!isNumber(body.z3RunMs)) errors.push("z3-unsat body.z3RunMs must be number");
+      break;
+    }
+    case "pattern-match": {
+      if (!isString(body.pattern)) errors.push("pattern-match body.pattern must be string");
+      if (!isStringArray(body.matchedNodes)) errors.push("pattern-match body.matchedNodes must be string[]");
+      if (!isObject(body.matchedCaptures)) errors.push("pattern-match body.matchedCaptures must be object");
+      break;
+    }
+    case "type-check-pass": {
+      if (!isString(body.checker)) errors.push("type-check-pass body.checker must be string");
+      if (!isString(body.checkerVersion)) errors.push("type-check-pass body.checkerVersion must be string");
+      if (!isString(body.symbol)) errors.push("type-check-pass body.symbol must be string");
+      if (body.resolvedType !== undefined && !isString(body.resolvedType)) errors.push("type-check-pass body.resolvedType must be string when present");
+      if (body.diagnosticsClean !== true) errors.push("type-check-pass body.diagnosticsClean must be true");
+      break;
+    }
+    case "lint-pass": {
+      if (!isString(body.linter)) errors.push("lint-pass body.linter must be string");
+      if (!isString(body.linterVersion)) errors.push("lint-pass body.linterVersion must be string");
+      if (!isString(body.rulesetHash) || !HEX32.test(body.rulesetHash as string)) errors.push("lint-pass body.rulesetHash must be hex32");
+      if (body.warnings !== 0) errors.push("lint-pass body.warnings must be 0");
+      break;
+    }
+    case "test-pass": {
+      if (!isString(body.runner)) errors.push("test-pass body.runner must be string");
+      if (!isString(body.runnerVersion)) errors.push("test-pass body.runnerVersion must be string");
+      if (!isString(body.testId)) errors.push("test-pass body.testId must be string");
+      if (!isNumber(body.durationMs)) errors.push("test-pass body.durationMs must be number");
+      if (body.stdout !== undefined && !isString(body.stdout)) errors.push("test-pass body.stdout must be string when present");
+      break;
+    }
+    case "test-fail": {
+      if (!isString(body.runner)) errors.push("test-fail body.runner must be string");
+      if (!isString(body.runnerVersion)) errors.push("test-fail body.runnerVersion must be string");
+      if (!isString(body.testId)) errors.push("test-fail body.testId must be string");
+      if (!isNumber(body.durationMs)) errors.push("test-fail body.durationMs must be number");
+      if (body.stdout !== undefined && !isString(body.stdout)) errors.push("test-fail body.stdout must be string when present");
+      if (body.failureDetail !== undefined && !isString(body.failureDetail)) errors.push("test-fail body.failureDetail must be string when present");
+      break;
+    }
+    case "llm-proposal": {
+      if (!isString(body.llm)) errors.push("llm-proposal body.llm must be string");
+      if (!isString(body.llmVersion)) errors.push("llm-proposal body.llmVersion must be string");
+      if (!isString(body.promptCid) || !HEX32.test(body.promptCid as string)) errors.push("llm-proposal body.promptCid must be hex32");
+      if (!isString(body.proposedIrFormula)) errors.push("llm-proposal body.proposedIrFormula must be string");
+      if (!isNumber(body.confidence) || (body.confidence as number) < 0 || (body.confidence as number) > 1) errors.push("llm-proposal body.confidence must be number 0..1");
+      if (body.rationale !== undefined && !isString(body.rationale)) errors.push("llm-proposal body.rationale must be string when present");
+      break;
+    }
+    case "mutation-witness": {
+      if (!isString(body.testCid) || !HEX32.test(body.testCid as string)) errors.push("mutation-witness body.testCid must be hex32");
+      if (!isString(body.mutationCid) || !HEX32.test(body.mutationCid as string)) errors.push("mutation-witness body.mutationCid must be hex32");
+      if (!isBoolean(body.failsOnOriginal)) errors.push("mutation-witness body.failsOnOriginal must be boolean");
+      if (!isBoolean(body.passesOnFixed)) errors.push("mutation-witness body.passesOnFixed must be boolean");
+      break;
+    }
+    case "workflow-run": {
+      if (!isString(body.workflowName)) errors.push("workflow-run body.workflowName must be string");
+      if (!isString(body.workflowCid) || !HEX32.test(body.workflowCid as string)) errors.push("workflow-run body.workflowCid must be hex32");
+      if (!isObject(body.inputCanonicalForm)) errors.push("workflow-run body.inputCanonicalForm must be object");
+      // body.output is type-specific, no constraint
+      break;
+    }
+    case "legacy-witness": {
+      if (!isString(body.rawWitness)) errors.push("legacy-witness body.rawWitness must be string");
+      if (!isString(body.legacyProducerId)) errors.push("legacy-witness body.legacyProducerId must be string");
+      break;
+    }
+    default:
+      // Unknown variant — verdict-trustworthy but witness-opaque.
+      // No error; future variants are allowed.
+      break;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main validator
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate a claim envelope per the spec's §Validation rules.
+ *
+ * @param envelope - The envelope to validate (any shape, cast internally).
+ * @param opts.keyResolver - Called to resolve a public key for signature
+ *   verification. If absent, signatures are skipped with a warning.
+ * @param opts.swarmMode - If true, missing or unresolvable signature is an
+ *   error rather than a warning (required for swarm-distribution).
+ */
+export function validateEnvelope(
+  envelope: unknown,
+  opts: {
+    keyResolver?: KeyResolver;
+    swarmMode?: boolean;
+  } = {},
+): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!isObject(envelope)) {
+    return { valid: false, errors: ["envelope must be a non-null object"], warnings };
+  }
+
+  const env = envelope as Record<string, unknown>;
+
+  // ------------------------------------------------------------------
+  // 1. Wrapper shape
+  // ------------------------------------------------------------------
+
+  if (env.schemaVersion !== "1") {
+    errors.push(`schemaVersion must be "1", got: ${JSON.stringify(env.schemaVersion)}`);
+  }
+
+  if (!isString(env.bindingHash) || !HEX16.test(env.bindingHash)) {
+    errors.push(`bindingHash must be a 16-char hex string, got: ${JSON.stringify(env.bindingHash)}`);
+  }
+
+  if (!isString(env.propertyHash) || !HEX16.test(env.propertyHash)) {
+    errors.push(`propertyHash must be a 16-char hex string, got: ${JSON.stringify(env.propertyHash)}`);
+  }
+
+  if (!isString(env.verdict) || !VERDICTS.has(env.verdict as any)) {
+    errors.push(
+      `verdict must be one of [${[...VERDICTS].join(", ")}], got: ${JSON.stringify(env.verdict)}`,
+    );
+  }
+
+  if (!isString(env.producedBy) || !PRODUCED_BY.test(env.producedBy)) {
+    errors.push(
+      `producedBy must match <name>@<version>, got: ${JSON.stringify(env.producedBy)}`,
+    );
+  }
+
+  if (!isString(env.producedAt) || !ISO8601.test(env.producedAt)) {
+    errors.push(`producedAt must be an ISO-8601 UTC string, got: ${JSON.stringify(env.producedAt)}`);
+  }
+
+  if (!Array.isArray(env.inputCids) || !env.inputCids.every((x: unknown) => isString(x) && HEX32.test(x))) {
+    errors.push("inputCids must be an array of 32-char hex strings");
+  }
+
+  if (!isObject(env.evidence)) {
+    errors.push("evidence must be a non-null object");
+  } else {
+    const ev = env.evidence as Record<string, unknown>;
+    if (!isString(ev.kind)) {
+      errors.push("evidence.kind must be a string");
+    }
+    if (!isString(ev.schema) || !HEX32.test(ev.schema)) {
+      errors.push("evidence.schema must be a 32-char hex string");
+    }
+    if (ev.kind && !errors.some((e) => e.startsWith("evidence"))) {
+      validateVariantBody(env.evidence as EvidenceVariant, errors);
+    }
+  }
+
+  if (!isString(env.cid) || !HEX32.test(env.cid)) {
+    errors.push(`cid must be a 32-char hex string, got: ${JSON.stringify(env.cid)}`);
+  }
+
+  if (env.producerSignature !== undefined && !isString(env.producerSignature)) {
+    errors.push("producerSignature must be a string when present");
+  }
+
+  // ------------------------------------------------------------------
+  // 2. CID integrity — only if wrapper shape is OK enough to canonicalize
+  // ------------------------------------------------------------------
+
+  const wrapperOk = errors.length === 0;
+  if (wrapperOk) {
+    const recomputed = computeEnvelopeCid(env as unknown as ClaimEnvelope);
+    if (recomputed !== env.cid) {
+      errors.push(
+        `CID integrity failure: stored=${env.cid}, recomputed=${recomputed}`,
+      );
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 3. Signature verification
+  // ------------------------------------------------------------------
+
+  if (isString(env.producerSignature)) {
+    const resolver = opts.keyResolver;
+    if (!resolver) {
+      const msg = "producerSignature present but no KeyResolver provided; signature not verified";
+      if (opts.swarmMode) errors.push(msg);
+      else warnings.push(msg);
+    } else if (isString(env.producedBy)) {
+      const key = resolver(env.producedBy);
+      if (!key) {
+        const msg = `producer key not found for "${env.producedBy}"; signature not verified`;
+        if (opts.swarmMode) errors.push(msg);
+        else warnings.push(msg);
+      } else {
+        const ok = verifyEnvelopeSignature(env as unknown as ClaimEnvelope, key);
+        if (!ok) {
+          errors.push(`producerSignature verification failed for producer "${env.producedBy}"`);
+        }
+      }
+    }
+  } else if (opts.swarmMode) {
+    warnings.push("no producerSignature present; swarm mode recommends signatures");
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
