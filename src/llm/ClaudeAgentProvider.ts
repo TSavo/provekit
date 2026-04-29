@@ -191,10 +191,22 @@ export class ClaudeAgentProvider implements LLMProvider {
       });
     }
 
-    // Gather modified tracked files and new untracked files.
+    // Gather modified tracked files and new untracked files. The cwd
+    // may not be a git repo (e.g. structured-output's temp scratch dir);
+    // when git emits "Not a git repository" or other errors we already
+    // catch the throw and return empty, but we ALSO need to suppress the
+    // child process's stderr so it doesn't leak ~100 lines of git
+    // --no-index help text to the parent terminal. Hence stdio's stderr
+    // arm pinned to "pipe" everywhere — captures stderr for our own
+    // discard; never lets it through to the user.
+    const gitStdio: ["pipe", "pipe", "pipe"] = ["pipe", "pipe", "pipe"];
     const changedTracked = (() => {
       try {
-        return execFileSync("git", ["diff", "--name-only"], { cwd, encoding: "utf-8" })
+        return execFileSync("git", ["diff", "--name-only"], {
+          cwd,
+          encoding: "utf-8",
+          stdio: gitStdio,
+        })
           .split("\n")
           .filter(Boolean);
       } catch {
@@ -204,7 +216,11 @@ export class ClaudeAgentProvider implements LLMProvider {
 
     const newUntracked = (() => {
       try {
-        return execFileSync("git", ["ls-files", "--others", "--exclude-standard"], { cwd, encoding: "utf-8" })
+        return execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+          cwd,
+          encoding: "utf-8",
+          stdio: gitStdio,
+        })
           .split("\n")
           .filter(Boolean);
       } catch {
@@ -218,9 +234,13 @@ export class ClaudeAgentProvider implements LLMProvider {
     const diff = (() => {
       try {
         if (newUntracked.length > 0) {
-          execFileSync("git", ["add", "-N", ...newUntracked], { cwd, stdio: "pipe" });
+          execFileSync("git", ["add", "-N", ...newUntracked], { cwd, stdio: gitStdio });
         }
-        return execFileSync("git", ["diff"], { cwd, encoding: "utf-8" });
+        return execFileSync("git", ["diff"], {
+          cwd,
+          encoding: "utf-8",
+          stdio: gitStdio,
+        });
       } catch {
         return "";
       }
