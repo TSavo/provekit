@@ -264,6 +264,66 @@ export interface MementoStoreStats {
   byProducer: Record<string, number>;
 }
 
+// ---------------------------------------------------------------------------
+// Hash computation for invariants (used by step-2 instrumentation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the binding_hash for a StoredInvariant — fingerprints the
+ * code shape the invariant binds to. Stable across runs as long as
+ * the bound source spans (and their structural relationships) are
+ * unchanged. Two invariants whose bindings reference the same code
+ * shape collapse to the same binding_hash.
+ *
+ * v1 implementation: hash the array of bindings normalized to the
+ * fields that determine "what code is bound" — local bindings hash
+ * their nodeHash + filePath + line range; graph bindings hash root
+ * + relation + predicate. The smt_constant aliases are NOT included
+ * (they're arbitrary names that don't change the bound code).
+ */
+export function computeBindingHash(invariant: {
+  bindings: ReadonlyArray<unknown>;
+}): string {
+  const normalized = (invariant.bindings as Array<Record<string, unknown>>).map((b) => {
+    if (b.type === "graph") {
+      return {
+        type: "graph",
+        relation: b.relation,
+        root: b.root,
+        predicate: b.predicate,
+        predicateArg: b.predicateArg,
+      };
+    }
+    // Local binding (default for legacy bindings without a type field).
+    return {
+      type: "local",
+      filePath: (b as { node?: { filePath?: string } }).node?.filePath,
+      nodeHash: (b as { node?: { nodeHash?: string } }).node?.nodeHash,
+      startLine: (b as { node?: { startLine?: number } }).node?.startLine,
+      endLine: (b as { node?: { endLine?: number } }).node?.endLine,
+    };
+  });
+  // Sort by JSON-stringified form so the hash is binding-order-independent.
+  normalized.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return hashCanonical({ bindings: normalized });
+}
+
+/**
+ * Compute the property_hash for a StoredInvariant — fingerprints the
+ * formal claim being checked, independent of which code it binds to.
+ * Two invariants with the same SMT formula on different code share
+ * the same property_hash.
+ */
+export function computePropertyHash(invariant: {
+  smt: { kind: string; declarations: string[]; assertion: string };
+}): string {
+  return hashCanonical({
+    kind: invariant.smt.kind,
+    declarations: [...invariant.smt.declarations].sort(),
+    assertion: invariant.smt.assertion,
+  });
+}
+
 export function stats(db: Db): MementoStoreStats {
   const all = db.select().from(verifications).all();
   const keys = new Set<string>();

@@ -61,6 +61,11 @@ import { pathsTo, reverseReachableNodes } from "./pathEnumerator.js";
 import { checkPath, type PathVerdict } from "./pathChecker.js";
 import type { Path } from "./pathEnumerator.js";
 import type { Db } from "../../db/index.js";
+import {
+  writeMemento,
+  computeBindingHash,
+  computePropertyHash,
+} from "./mementoStore.js";
 
 // ---------------------------------------------------------------------------
 // Verdict types
@@ -448,6 +453,25 @@ export interface VerifyOptions {
    * Default 1000. Early-out on first violation still applies.
    */
   adversarialPathBudget?: number;
+  /**
+   * Memento-store DB to write verdicts to (relational memento store,
+   * step 2 of the 2026-04-29 spec). When provided, every verdict
+   * verifyAll computes also gets persisted as a memento row keyed by
+   * (binding_hash, property_hash). Cache-lookup short-circuit (step 3)
+   * is the next phase; this commit is instrumentation-only — verdicts
+   * still come from the path-checker, but they ALSO populate the table.
+   *
+   * When undefined, no memento writes happen. Existing call sites
+   * unaffected.
+   */
+  mementoDb?: Db;
+  /**
+   * Producer name to record on each memento. Defaults to
+   * "path-checker@1.0" — the engine that actually computed the verdict
+   * in this codebase. Override per-call when other producers (Z3-only,
+   * Datalog-only, etc) get wired.
+   */
+  mementoProducer?: string;
 }
 
 /**
@@ -911,6 +935,46 @@ export async function verifyAll(
       pathCount: phase.pathCount,
       pathVerdicts: phase.pathVerdicts,
     });
+  }
+
+  // Step 2 instrumentation: record each verdict as a memento in the
+  // relational store, when a memento DB is provided. Read-only side
+  // effect on top of the existing verdict-pushing logic — does not
+  // change behavior. The cache-lookup short-circuit (step 3) is the
+  // next phase; this commit just populates the table so step 3 has
+  // material to query against.
+  if (options.mementoDb) {
+    const producer = options.mementoProducer ?? "path-checker@1.0";
+    for (const v of verdicts) {
+      try {
+        const bindingHash = computeBindingHash(v.invariant);
+        const propertyHash = computePropertyHash(v.invariant);
+        // Map InvariantVerdict.status to memento Verdict. Both
+        // share "holds" / "violated" / "decayed"; verifyAll never
+        // produces "undecidable" or "error" at the verdict level
+        // (those collapse into "holds" with notes today; future
+        // refactor can disambiguate).
+        const verdict: "holds" | "violated" | "decayed" = v.status;
+        const witness = JSON.stringify({
+          pathCheck: v.pathCheck,
+          pathCount: v.pathCount,
+          witness: v.witness,
+          note: v.note,
+          adversarial: v.adversarial,
+        });
+        writeMemento(options.mementoDb, {
+          bindingHash,
+          propertyHash,
+          verdict,
+          witness,
+          producedBy: producer,
+        });
+      } catch {
+        // Memento write failure is non-fatal. The verdict is still
+        // returned to the caller; only the cache population fails.
+        // Future work: surface this in the report as a soft warning.
+      }
+    }
   }
 
   const summary = {
