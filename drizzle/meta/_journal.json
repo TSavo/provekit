@@ -134,6 +134,13 @@
       "when": 1777478400000,
       "tag": "0018_verifications",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1777492800000,
+      "tag": "0019_dag_edges",
+      "breakpoints": true
     }
   ]
 }

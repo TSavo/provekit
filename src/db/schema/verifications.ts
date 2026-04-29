@@ -70,10 +70,34 @@ export const verifications = sqliteTable(
     producerSignal: text("producer_signal", {
       enum: ["pass", "fail", "unknown"],
     }),
+    /**
+     * Canonical content-addressed identifier for THIS memento.
+     * Computed at write time from (binding_hash, property_hash,
+     * verdict, witness, produced_by, sorted input_cids). Stable
+     * across runs that produce the same content; populated even
+     * for legacy rows during read normalization.
+     *
+     * The CID makes mementos referenceable by other mementos (via
+     * input_cids), turning the table from a flat key-value store
+     * into a Merkle DAG.
+     */
+    cid: text("cid"),
+    /**
+     * JSON-encoded array of CIDs that fed this memento's production.
+     * For an Oracle #2 verdict: the binding's nodeHash + the property
+     * hash + the producer's identity. For a workflow stage: the
+     * upstream stage outputs.
+     *
+     * Empty array (or null) for terminal mementos with no upstream
+     * dependencies. Walking input_cids reconstructs the provenance
+     * chain — this is the operational form of "audit trail = DAG walk."
+     */
+    inputCids: text("input_cids"),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.bindingHash, t.propertyHash, t.producedBy] }),
     lookup: index("verifications_lookup").on(t.bindingHash, t.propertyHash),
+    cidIndex: index("verifications_cid").on(t.cid),
   }),
 );
 

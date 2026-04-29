@@ -10,7 +10,9 @@ import { tmpdir } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { and, eq } from "drizzle-orm";
 import { openDb } from "../../db/index.js";
+import { verifications } from "../../db/schema/verifications.js";
 import {
   writeMemento,
   findMemento,
@@ -198,6 +200,127 @@ describe("memento store: cross-validation", () => {
       producedBy: "datalog",
     });
     expect(crossValidate(db)).toHaveLength(2);
+  });
+});
+
+describe("memento store: CID + DAG walk", () => {
+  let db: ReturnType<typeof makeDb>;
+  beforeEach(() => {
+    db = makeDb();
+  });
+
+  it("writeMemento computes a CID and persists it", async () => {
+    const { writeMemento, findMemento, computeCid } = await import("./mementoStore.js");
+    writeMemento(db, {
+      bindingHash: "aaaa",
+      propertyHash: "bbbb",
+      verdict: "holds",
+      producedBy: "z3@4.13",
+    });
+    const found = findMemento(db, { bindingHash: "aaaa", propertyHash: "bbbb" });
+    expect(found?.cid).toBeDefined();
+    expect(found?.cid).toMatch(/^[a-f0-9]{32}$/);
+  });
+
+  it("computeCid is stable for identical content", async () => {
+    const { computeCid } = await import("./mementoStore.js");
+    const a = computeCid({
+      bindingHash: "x",
+      propertyHash: "y",
+      verdict: "holds",
+      producedBy: "p",
+    });
+    const b = computeCid({
+      bindingHash: "x",
+      propertyHash: "y",
+      verdict: "holds",
+      producedBy: "p",
+    });
+    expect(a).toBe(b);
+  });
+
+  it("computeCid changes when verdict changes", async () => {
+    const { computeCid } = await import("./mementoStore.js");
+    const a = computeCid({
+      bindingHash: "x",
+      propertyHash: "y",
+      verdict: "holds",
+      producedBy: "p",
+    });
+    const b = computeCid({
+      bindingHash: "x",
+      propertyHash: "y",
+      verdict: "violated",
+      producedBy: "p",
+    });
+    expect(a).not.toBe(b);
+  });
+
+  it("walk follows inputCids from a starting memento", async () => {
+    const { writeMemento, findByCid, walk } = await import("./mementoStore.js");
+    // Build a 3-node DAG: A → B → C (A has B as input; B has C as input)
+    writeMemento(db, {
+      bindingHash: "leaf",
+      propertyHash: "p",
+      verdict: "holds",
+      producedBy: "z3",
+    });
+    const cFound = db.select().from(verifications)
+      .where(and(eq(verifications.bindingHash, "leaf"), eq(verifications.propertyHash, "p")))
+      .all();
+    const cCid = cFound[0]?.cid as string;
+    expect(cCid).toBeDefined();
+
+    writeMemento(db, {
+      bindingHash: "mid",
+      propertyHash: "p",
+      verdict: "holds",
+      producedBy: "z3",
+      inputCids: [cCid],
+    });
+    const bFound = db.select().from(verifications)
+      .where(and(eq(verifications.bindingHash, "mid"), eq(verifications.propertyHash, "p")))
+      .all();
+    const bCid = bFound[0]?.cid as string;
+
+    writeMemento(db, {
+      bindingHash: "root",
+      propertyHash: "p",
+      verdict: "holds",
+      producedBy: "z3",
+      inputCids: [bCid],
+    });
+    const aFound = db.select().from(verifications)
+      .where(and(eq(verifications.bindingHash, "root"), eq(verifications.propertyHash, "p")))
+      .all();
+    const aCid = aFound[0]?.cid as string;
+
+    const walked = walk(db, aCid);
+    expect(walked).toHaveLength(3);
+    expect(walked.map((m) => m.bindingHash)).toEqual(["root", "mid", "leaf"]);
+  });
+
+  it("walk respects maxDepth", async () => {
+    const { writeMemento, walk } = await import("./mementoStore.js");
+    // Two-node DAG: A → B
+    writeMemento(db, { bindingHash: "leaf", propertyHash: "p", verdict: "holds", producedBy: "z3" });
+    const leafCid = (db.select().from(verifications).all()[0] as { cid: string }).cid;
+    writeMemento(db, {
+      bindingHash: "root",
+      propertyHash: "p",
+      verdict: "holds",
+      producedBy: "z3",
+      inputCids: [leafCid],
+    });
+    const rootCid = (db.select().from(verifications)
+      .where(eq(verifications.bindingHash, "root")).all()[0] as { cid: string }).cid;
+
+    const depth0 = walk(db, rootCid, { maxDepth: 0 });
+    expect(depth0).toHaveLength(1);
+    expect(depth0[0].bindingHash).toBe("root");
+
+    const depth1 = walk(db, rootCid, { maxDepth: 1 });
+    expect(depth1).toHaveLength(2);
   });
 });
 

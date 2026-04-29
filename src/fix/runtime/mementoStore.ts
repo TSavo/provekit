@@ -35,6 +35,18 @@ export interface Memento {
   witness?: string | null;
   producedBy: string;
   producedAt?: string;
+  /**
+   * Canonical CID for this memento (sha256-prefix-32 of the
+   * canonicalized payload). Computed at write time; stable across
+   * runs that produce the same content.
+   */
+  cid?: string;
+  /**
+   * CIDs of upstream mementos that fed this memento's production.
+   * Empty for terminal mementos. Walking these CIDs reconstructs
+   * the provenance DAG.
+   */
+  inputCids?: string[];
 }
 
 export interface MementoLookupKey {
@@ -77,16 +89,45 @@ function stringifySorted(value: unknown): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Compute the canonical CID for a memento. sha256-prefix-32 of the
+ * canonicalized payload — binding_hash, property_hash, verdict,
+ * witness, produced_by, and the sorted input_cids list. Stable across
+ * runs that produce the same content; collision-resistant at any
+ * plausible corpus scale.
+ *
+ * 32 hex chars (16 bytes / 128 bits) is enough for the non-adversarial
+ * case. Lengthen to 40 or 64 for adversarial-resistance deployments.
+ */
+export function computeCid(memento: Memento): string {
+  const canonical = stringifySorted({
+    binding_hash: memento.bindingHash,
+    property_hash: memento.propertyHash,
+    verdict: memento.verdict,
+    witness: memento.witness ?? null,
+    produced_by: memento.producedBy,
+    input_cids: [...(memento.inputCids ?? [])].sort(),
+  });
+  return createHash("sha256").update(canonical).digest("hex").slice(0, 32);
+}
+
+/**
  * Insert a memento into the verifications table. Idempotent on
  * (bindingHash, propertyHash, producedBy) — re-inserting the same key
  * with a different verdict updates the existing row, surfaces the
  * change in the audit metadata.
+ *
+ * Computes the memento's CID at write time and stores its input_cids
+ * (the upstream mementos that produced it). This is what makes the
+ * verifications table a Merkle DAG rather than a flat key-value store.
+ * Walking input_cids from any row reconstructs the provenance chain.
  *
  * v1 returns the row inserted/updated; downstream phases use this as
  * the cache-fill operation in the dispatch loop.
  */
 export function writeMemento(db: Db, memento: Memento): VerificationRow {
   const producedAt = memento.producedAt ?? new Date().toISOString();
+  const cid = memento.cid ?? computeCid({ ...memento, producedAt });
+  const inputCidsJson = memento.inputCids ? JSON.stringify(memento.inputCids) : null;
   const row: VerificationInsert = {
     bindingHash: memento.bindingHash,
     propertyHash: memento.propertyHash,
@@ -95,12 +136,14 @@ export function writeMemento(db: Db, memento: Memento): VerificationRow {
     producedBy: memento.producedBy,
     producedAt,
     producerSignal: null,
+    cid,
+    inputCids: inputCidsJson,
   };
 
   // Upsert: on conflict (binding_hash, property_hash, produced_by),
-  // overwrite verdict + witness + producedAt. The producer's most
-  // recent claim wins. Cross-validation against OTHER producers'
-  // rows still surfaces via the join in `crossValidate()`.
+  // overwrite verdict + witness + producedAt + cid + input_cids.
+  // Producer's most recent claim wins on the row's identity tuple;
+  // historical rows for OTHER producers stay for cross-validation.
   db.insert(verifications)
     .values(row)
     .onConflictDoUpdate({
@@ -113,11 +156,68 @@ export function writeMemento(db: Db, memento: Memento): VerificationRow {
         verdict: row.verdict,
         witness: row.witness,
         producedAt: row.producedAt,
+        cid: row.cid,
+        inputCids: row.inputCids,
       },
     })
     .run();
 
   return findExact(db, memento.bindingHash, memento.propertyHash, memento.producedBy)!;
+}
+
+/**
+ * Fetch a memento by its CID. Iterates the table — for v1 corpus
+ * sizes this is fine; later we'll lean on the cid index for direct
+ * lookup. Returns null if no row matches.
+ */
+export function findByCid(db: Db, cid: string): Memento | null {
+  const rows = db
+    .select()
+    .from(verifications)
+    .where(eq(verifications.cid, cid))
+    .limit(1)
+    .all();
+  if (rows.length === 0) return null;
+  return rowToMemento(rows[0]);
+}
+
+/**
+ * Walk the DAG of inputs from a starting CID. Returns the starting
+ * memento + all transitively-reachable upstream mementos in BFS
+ * order, capped at maxDepth. The operational form of "audit trail =
+ * DAG walk" — given any memento, reconstruct the chain of mementos
+ * that produced it.
+ *
+ * Cycles are detected via a visited-set (CIDs are unique; a real
+ * Merkle DAG can't have cycles, but defensive against corruption).
+ */
+export function walk(
+  db: Db,
+  startCid: string,
+  opts: { maxDepth?: number } = {},
+): Memento[] {
+  const maxDepth = opts.maxDepth ?? 100;
+  const visited = new Set<string>();
+  const out: Memento[] = [];
+  const queue: Array<{ cid: string; depth: number }> = [
+    { cid: startCid, depth: 0 },
+  ];
+
+  while (queue.length > 0) {
+    const { cid, depth } = queue.shift()!;
+    if (visited.has(cid)) continue;
+    visited.add(cid);
+    const memento = findByCid(db, cid);
+    if (!memento) continue;
+    out.push(memento);
+    if (depth >= maxDepth) continue;
+    for (const inputCid of memento.inputCids ?? []) {
+      if (!visited.has(inputCid)) {
+        queue.push({ cid: inputCid, depth: depth + 1 });
+      }
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +297,7 @@ function findExact(
 }
 
 function rowToMemento(row: VerificationRow): Memento {
+  const inputCids = row.inputCids ? (JSON.parse(row.inputCids) as string[]) : undefined;
   return {
     bindingHash: row.bindingHash,
     propertyHash: row.propertyHash,
@@ -204,6 +305,8 @@ function rowToMemento(row: VerificationRow): Memento {
     witness: row.witness,
     producedBy: row.producedBy,
     producedAt: row.producedAt,
+    cid: row.cid ?? undefined,
+    inputCids,
   };
 }
 
