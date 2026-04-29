@@ -200,14 +200,46 @@ with the raw response included in the error message.
 
 #### Witness storage
 
-`serializeOutput` must JSON-stringify the entire `IntentProposal`.
-The witness stored in the memento is that JSON string. This means the
-evidence in the actual claim envelope (if you're writing one) is the
-`llm-proposal` variant. For v1, the existing `writeMemento` function
-stores the JSON as the `witness` column — you do NOT need to write a
-full `ClaimEnvelope` object unless you are also integrating with the
-claim-envelope module. The `witness` column is sufficient for the
-cache-hit roundtrip.
+`serializeOutput` must produce a JSON string whose shape matches the
+`LlmProposalEvidence` body from the universal claim envelope spec. The
+acceptance criteria explicitly requires the `llm-proposal` evidence
+variant to be correctly populated — a bare `IntentProposal` JSON object
+is NOT sufficient.
+
+The `LlmProposalEvidence` body shape (from
+`git show dcb52ec:src/claimEnvelope/types.ts`):
+```typescript
+{
+  llm: string;            // e.g. "claude-opus"
+  llmVersion: string;     // e.g. "4-7"
+  promptCid: string;      // hex32 CID of the prompt artifact
+  proposedIrFormula: string;
+  confidence: number;     // 0..1
+  rationale?: string;
+}
+```
+
+Map your `IntentProposal` fields to this shape in `serializeOutput`:
+```typescript
+serializeOutput(output: IntentProposal): string {
+  const evidence = {
+    llm: output.llm,
+    llmVersion: output.llmVersion,
+    promptCid: output.promptCid,
+    proposedIrFormula: output.proposedIrFormula,
+    confidence: output.confidence,
+    rationale: output.rationale,
+  };
+  return JSON.stringify(evidence);
+}
+```
+
+`deserializeOutput` must reconstruct the full `IntentProposal` from
+this stored JSON. The `inferredIntent` field lives on `IntentProposal`
+but NOT in `LlmProposalEvidence`. Store it in `rationale` (concatenated
+or as a suffix) or add it as an extension field inside the serialized
+JSON. Choose one approach and document it in a comment. Round-trip must
+be exact: `deserializeOutput(serializeOutput(x))` must reproduce `x`.
 
 ### Good vs bad
 
@@ -291,8 +323,10 @@ Do NOT implement:
 - Actual IR formula parsing or validation — the formula is a string
   in v1; validation is downstream.
 - Any change to `intake.ts` or any other existing producer.
-- Full `ClaimEnvelope` construction — the `writeMemento` witness
-  column is sufficient for v1 cache behavior.
+- Full `ClaimEnvelope` wrapper construction or signature logic — your
+  Stage uses `writeMemento` which stores the witness column. The
+  claim-envelope types define the SHAPE of your witness, not a wrapper
+  you must construct.
 
 ### Verify
 
@@ -485,11 +519,19 @@ Validation rules for `$action.<id>.<field>`:
   "action references must use .resource, not .output".
 - The action `id` MUST be declared in `manifest.actions`.
 - A `$action.<id>.resource` reference appearing inside a Stage node's
-  input is only valid in a DISTINGUISHED FIELD. A distinguished field
-  is declared by the Stage's input type having a field marked
-  `"__resourceField"` — for v1, track this as a convention rather than
-  enforcing at parse time. The parser validates that action refs are
-  present; the runner threads them without hashing.
+  input is only valid in a DISTINGUISHED FIELD. The enforcement mechanism
+  is the Stage's own `serializeInput`: Stage authors must omit resource
+  fields from the return value of `serializeInput`, because anything
+  returned by `serializeInput` is hashed into the propertyHash. The
+  TypeScript type system (the fact that `serializeInput` returns
+  `unknown`, not the full input type) is the constraint. The manifest
+  parser cannot enforce this at parse time — it does not know which
+  input fields `serializeInput` will include. Document this clearly in
+  a comment in `manifest.ts`: "Resource fields from $action references
+  are passed to run() but must NOT appear in serializeInput() return
+  values. This is enforced by Stage author discipline, not by the
+  parser." The parser validates that action refs resolve to declared
+  action ids; the runner threads them through run() without hashing.
 
 #### Topo-sort extension
 
@@ -958,13 +1000,26 @@ can mask non-determinism in other parts of the test.
 ### Quiet parts
 
 - Node's `crypto.generateKeyPairSync('ed25519')` does not accept a
-  seed directly. To generate a deterministic keypair from a seed, you
-  must use the `privateKey` parameter of
-  `crypto.createPrivateKey({ key: seed, format: 'raw', type: 'ed25519' })`.
-  This is only available in newer Node versions. For v1, generate a
-  random keypair and document that deterministic seed is a future
-  enhancement. The test can use `generateKeypair()` and just pin the
-  returned keypair in the test body.
+  seed directly. To generate a deterministic keypair from a 32-byte
+  seed, use:
+  ```typescript
+  import { createPrivateKey, createPublicKey } from "node:crypto";
+
+  // seed must be exactly 32 bytes for ed25519
+  const privateKey = createPrivateKey({
+    key: seed,
+    format: "raw",
+    type: "ed25519",   // note: this is the "type" here, not the curve
+  });
+  const publicKey = createPublicKey(privateKey);
+  ```
+  This works in Node 16+. The `format: "raw"` path for ed25519 private
+  keys accepts the 32-byte seed directly (not the 64-byte expanded form).
+  In tests, use `Buffer.alloc(32, 0x42)` or similar as the seed so the
+  keypair is identical on every run. This is required for test
+  reproducibility — tests that generate a fresh random keypair and then
+  call `loadProducerKey` to retrieve it are fragile in CI and produce
+  different memento CIDs on every run.
 
 - `findMemento` looks up by `(bindingHash, propertyHash)`. For the
   rotation chain walk, you know the `bindingHash` (it encodes the
