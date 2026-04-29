@@ -48,7 +48,8 @@ principle division-by-zero {
   // A principle that contains "SQL" as a literal — first guess at what
   // the LLM might have emitted. The DSL grammar permits string literals
   // inside `where ... == "..."`, so this should compile but may produce
-  // surprising SQL.
+  // surprising SQL. (Currently fails at compile-time: 'ts' isn't a
+  // registered capability.)
   "sql-string-literal": `
 principle sql-mention {
   match $n: node where ts.kind == "SQL"
@@ -56,6 +57,80 @@ principle sql-mention {
     at $n
     captures { node: $n }
     message "node references SQL"
+  }
+}
+  `.trim(),
+
+  // Probe: callee_name is a Text column on calls — does the compiler
+  // emit valid SQL when the literal contains a SQL keyword?
+  "calls-named-sql": `
+principle calls-sql {
+  match $c: node where calls.callee_name == "SQL"
+  report violation {
+    at $c
+    captures { call: $c }
+    message "calls SQL"
+  }
+}
+  `.trim(),
+
+  // Probe: capture name that resembles a SQL keyword. Compiler builds
+  // alias __cap_<name> — if cap.name is "SQL" the alias becomes
+  // __cap_SQL which is a valid identifier; should compile fine, but
+  // worth verifying.
+  "capture-named-sql": `
+principle capture-sql {
+  match $div: node where arithmetic.op == "/"
+  report violation {
+    at $div
+    captures { SQL: $div }
+    message "capture named SQL"
+  }
+}
+  `.trim(),
+
+  // Probe: predicate with SQL-ish names. Predicates inline; the
+  // generated SQL incorporates predicate body atoms with rebound
+  // variables.
+  "predicate-named-sql": `
+predicate SQL($var: node) {
+  match $g: node where narrows.target_node == $var
+}
+
+principle uses-sql-predicate {
+  match $div: node where arithmetic.op == "/"
+  require no $g: SQL($div.arithmetic.rhs_node)
+  report violation {
+    at $div
+    captures { division: $div }
+    message "no guard for division"
+  }
+}
+  `.trim(),
+
+  // Probe: principle name resembling a SQL keyword. The compiler uses
+  // principle.name only for error messages; should not appear in SQL.
+  "principle-named-sql": `
+principle SQL {
+  match $div: node where arithmetic.op == "/"
+  report violation {
+    at $div
+    captures { division: $div }
+    message "principle named SQL"
+  }
+}
+  `.trim(),
+
+  // Probe: variable name resembling a SQL keyword. Variable names
+  // become parts of table aliases like cap_<cap>_<varname>; aliases
+  // may or may not be quoted.
+  "variable-named-sql": `
+principle var-sql {
+  match $SQL: node where arithmetic.op == "/"
+  report violation {
+    at $SQL
+    captures { division: $SQL }
+    message "variable named SQL"
   }
 }
   `.trim(),

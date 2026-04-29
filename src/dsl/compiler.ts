@@ -886,10 +886,35 @@ export function compilePrinciple(
     try {
       stmt = rawDb.prepare(sql);
     } catch (err) {
-      if (process.env.PROVEKIT_SQL_TRACE || (err as Error)?.message?.includes("syntax error")) {
-        console.error(`[sql:prepare-failed]\n${sql}\n[/sql:prepare-failed]`);
+      // Always log on prepare failure (any error, not just "syntax error"):
+      // the SQL is what the caller needs to diagnose. Also log the source-of-
+      // record DSL so the caller can see the principle that compiled to this
+      // SQL — invaluable when a C6 adversarial run fires and the principle
+      // text is ephemeral (LLM-generated, not committed to disk).
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // The AST is always available (the compiler holds a reference);
+      // serializing it gives the caller everything needed to reproduce
+      // the input that compiled to this SQL. DSL source isn't threaded
+      // through compilePrinciple, so the AST is the durable artifact.
+      let principleAstJson: string;
+      try {
+        principleAstJson = JSON.stringify(principle, null, 2);
+      } catch {
+        principleAstJson = "(could not serialize principle AST)";
       }
-      throw err;
+      console.error(
+        `[sql:prepare-failed principle=${principle.name}] ${errMsg}\n` +
+          `--- principle AST ---\n${principleAstJson}\n` +
+          `--- compiled SQL ---\n${sql}\n` +
+          `[/sql:prepare-failed]`,
+      );
+      // Re-throw with the principle name + SQL excerpt so even consumers
+      // that swallow at a higher catch can see the cause.
+      const enriched = new Error(
+        `${errMsg} (principle=${principle.name}, sql excerpt: ${sql.replace(/\s+/g, " ").slice(0, 200)})`,
+      );
+      (enriched as { cause?: unknown }).cause = err;
+      throw enriched;
     }
     const rows = stmt.all() as Record<string, string>[];
     return rows.map((row) => {
