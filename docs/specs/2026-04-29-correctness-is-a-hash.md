@@ -468,30 +468,83 @@ That's the entire architecture in one sentence. There is no third
 state. No "probably correct." No "trusted maintainer." No "passing CI"
 as a trust signal. No "looks fine to me" as a code-review verdict.
 
-The hash chain composes:
+The hash chain composes — and it goes all the way down to physics:
 
 ```
-hardware attestation (Intel/AMD/Apple/AWS Nitro signs the silicon's identity)
-  ↓ composes via TPM/enclave hash
-boot attestation (the OS that booted on this hardware)
-  ↓ composes via boot-loader hash
-binary content hash (the bytes loaded into this OS)
-  ↓ composes via binary-proof-binding memento
-source proof DAG root (the proof those bytes correspond to)
-  ↓ composes via memento DAG walk
 project invariants (what this code claims about itself)
   ↓ composes via inputCids
 inherited library proofs (every transitive dependency's DAG)
   ↓ composes via cross-equivalence mementos
 kit catalog mementos (host-language built-ins, signed by kit authors)
   ↓ composes via specification references
-spec axioms (ECMA-262, ISO C, POSIX, content-hashed)
+spec leaves (ECMA-262, ISO C, POSIX, IEEE 754 — content-hashed)
+  ↓ composes via standards-body attestation
+language-runtime proof DAG (V8 has formal verification of hot paths;
+                            JVM has its own; Wasm runtimes have theirs)
+  ↓ composes via hardware-instruction-set semantics
+CPU instruction-set verification (Intel, AMD, Apple, ARM publish formal
+                                  models of their ISAs — content-hashed)
+  ↓ composes via microarchitectural verification
+silicon circuit-level proofs (formal verification of arithmetic units,
+                              cache coherence, memory ordering — Intel
+                              learned this lesson from Pentium FDIV in
+                              1994; today every major vendor publishes
+                              verification artifacts)
+  ↓ composes via gate-level synthesis
+transistor behavior models (verified empirically + via TCAD simulation;
+                            the physical layer)
+  ↓ composes via solid-state physics
+semiconductor physics (content-hashed peer-reviewed papers, foundry
+                       process attestations, charge-carrier behavior
+                       at sub-nanometer scales)
+  ↓ composes via fundamental physics
+quantum mechanics (the standard model's mathematical formulation;
+                   the substrate of transistor behavior)
 ```
+
+**Every codebase's proof DAG eventually grounds out at physics.**
+
+The chain is universal. From your shitty TypeScript invariant about
+billing math, walking down the inputCids: through React, through V8,
+through ECMA-262 + IEEE 754, through Intel's FPU verification, through
+silicon-level circuit proofs, through transistor models, through
+semiconductor physics, through quantum mechanics. Every codebase. Every
+language. Every host. Same chain. Different leaves, same depth, same
+grounding.
+
+**The Pentium FDIV story (1994) is the historical proof-of-concept.**
+Intel's chip computed division wrong. Every program that called FDIV
+inherited the error. The fix was at the silicon. Intel learned: formally
+verify the FPU. Every major chip vendor today publishes verification
+artifacts for their arithmetic units. Those artifacts ARE leaves of
+every codebase's proof DAG that does arithmetic. Every TS project
+calling `5.5 + 3.2` transitively depends on Intel's (or AMD's, or
+Apple's) FPU proof.
 
 Either every link in this chain composes correctly under your
 proofkit's adversarial re-verification, or the signature doesn't match.
 
 **There is no middle ground.**
+
+**Hardware vendors become producers in the framework.** The chip ships
+with a proof DAG. The CPU's identity isn't just "Intel Xeon X5680" — it's
+`Intel Xeon X5680 + sha256(silicon) + proofHash(verified ops)`. Three
+coordinates, same as software. The hardware market reorganizes around
+proof depth. Vendors compete on coverage of their ISA's verified
+operations. "How much of your chip is formally verified?" becomes a
+spec-sheet line item.
+
+**Software's correctness is grounded in physics, mechanically.** Not as
+philosophy. As hash-chain composition. When a regulator asks "is this
+banking system correct?" — the answer is "walk the DAG from the running
+CPUs all the way down to physical reality. Every link is content-
+addressed and signed. The audit IS the walk." Compliance becomes a
+mechanical proof traversal.
+
+**This is the trust substrate of computation itself.** Not a software-
+only system. ProvekIt is the content-addressing infrastructure that
+lets EVERY VERIFIABLE CLAIM about ANYTHING compose into one DAG,
+eventually grounded in physical observation.
 
 The system is mechanically binary at every layer. Composing software
 becomes composing hash chains. Trusting software becomes verifying hash
