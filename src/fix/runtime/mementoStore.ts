@@ -354,6 +354,29 @@ export function findAll(
   return rows.map(rowToMemento);
 }
 
+/**
+ * All mementos sharing a bindingHash, optionally filtered by producedBy.
+ *
+ * Producer-key management uses this to walk rotation chains: rotation
+ * mementos encode oldKeyCid into their bindingHash, and the chain walker
+ * needs to find a rotation memento by bindingHash alone (the propertyHash
+ * encodes the unknown new key bytes).
+ */
+export function findMementoByBindingHash(
+  db: Db,
+  bindingHash: string,
+  opts: { producedBy?: string } = {},
+): Memento[] {
+  const where = opts.producedBy
+    ? and(
+        eq(verifications.bindingHash, bindingHash),
+        eq(verifications.producedBy, opts.producedBy),
+      )
+    : eq(verifications.bindingHash, bindingHash);
+  const rows = db.select().from(verifications).where(where).all();
+  return rows.map(rowToMemento);
+}
+
 function findExact(
   db: Db,
   bindingHash: string,
