@@ -370,10 +370,26 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
     // file slot. We need a path that actually points at a file before
     // we can trust it.
     const projectRootForCheck = resolve(process.cwd());
+    // A "usable" ref is more than just a file that exists — Locate needs
+    // a concrete site (file + line OR file + function) to resolve a SAST
+    // node. A bare file path with no line/function is fine for Locate's
+    // suffix-match fallback only when the file is small or has obvious
+    // entry points; for prose-style intents that name a file but no
+    // location, Investigate's project-tour search is more reliable.
+    //
+    // Run Investigate when EITHER (a) no ref's file resolves on disk, OR
+    // (b) every ref is bare (file only, no line and no function). The
+    // strict-bare check matches the empirical Move 2 failure mode where
+    // intent text named files but not specific lines, and Locate's
+    // suffix-match returned with low-confidence file-level loci that
+    // downstream stages couldn't anchor to.
     const hasUsableRef = signal.codeReferences.some((r) => {
       if (typeof r.file !== "string" || r.file.length === 0) return false;
       const abs = r.file.startsWith("/") ? r.file : resolve(projectRootForCheck, r.file);
-      return existsSync(abs);
+      if (!existsSync(abs)) return false;
+      const hasLine = typeof r.line === "number" && r.line > 0;
+      const hasFunction = typeof r.function === "string" && r.function.length > 0;
+      return hasLine || hasFunction;
     });
     if (!hasUsableRef) {
       logger.stage("Investigate");

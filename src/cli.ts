@@ -274,6 +274,71 @@ async function runAnalyze(args: string[]): Promise<void> {
   const model = getFlag(args, "--model") || "sonnet";
   const verbose = args.includes("--verbose") || args.includes("-v");
   const dryRun = args.includes("--dry-run");
+  const substrateOnly = args.includes("--substrate-only");
+
+  // --substrate-only: skip the LLM-driven phases-1-5 pipeline. Walk every
+  // TS/JS file in the project tree and run the SAST indexer against each.
+  // No LLM cost. Sufficient for the standing-runtime's Locate stage to
+  // resolve invariant callsites — but does NOT produce signals, contracts,
+  // or violations (those need the LLM phases).
+  //
+  // Use case: bootstrap the substrate before `provekit prove` against a
+  // prose intent. Without the substrate populated, Locate has no AST nodes
+  // to match codeReferences against and the prove run aborts.
+  if (substrateOnly) {
+    console.log(`provekit v${VERSION} — substrate-only indexer`);
+    console.log(`Project: ${projectRoot}`);
+    console.log();
+
+    const { execSync: ex } = require("child_process");
+    const tsFiles: string[] = (() => {
+      try {
+        const out = ex("git ls-files '*.ts' '*.tsx' '*.js' '*.jsx'", {
+          cwd: projectRoot,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+        return out
+          ? out
+              .split("\n")
+              .filter((f: string) => !f.includes("node_modules") && !f.endsWith(".d.ts"))
+              .map((f: string) => resolve(projectRoot, f))
+          : [];
+      } catch {
+        return [];
+      }
+    })();
+
+    console.log(`Files to index: ${tsFiles.length}`);
+
+    const dbPath = join(projectRoot, ".provekit", "provekit.db");
+    const db = openDb(dbPath);
+    let indexed = 0;
+    let skipped = 0;
+    try {
+      for (const file of tsFiles) {
+        try {
+          buildSASTForFile(db, file);
+          indexed++;
+          if (verbose && indexed % 50 === 0) {
+            console.log(`  indexed ${indexed}/${tsFiles.length}...`);
+          }
+        } catch (err: any) {
+          skipped++;
+          if (verbose) {
+            console.warn(`  SKIP ${file}: ${err?.message ?? err}`);
+          }
+        }
+      }
+    } finally {
+      db.$client.close();
+    }
+
+    console.log();
+    console.log(`Substrate indexed: ${indexed} files (${skipped} skipped)`);
+    console.log(`Database: ${dbPath}`);
+    return;
+  }
 
   const signalRegistry = buildSignalRegistry(args, model);
 
