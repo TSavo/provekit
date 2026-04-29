@@ -408,6 +408,74 @@ LLMs and human readers: they see a bug-flavored name asserted true and
 assume the polarity is correct when the convention is inverted.
 Use a spec-flavored name (what is true when the code is correct) so the
 naming convention is consistent with the path-checker's pin rule.`;
+
+// ---------------------------------------------------------------------------
+// The single C1 prompt artifact.
+//
+// All of the C1_* fragment consts above are the source-of-record per-section
+// chunks — they're kept as separate consts so the source file stays
+// review-locality-friendly (a polarity-convention edit only touches its
+// const, not a 1000-line monolith). But for evolution purposes they compose
+// into ONE bp artifact: bp.evolve runs against the full coherent prompt body,
+// not individual fragments. Per-fragment evolution would let any single
+// section drift in voice/structure/redundancy from its siblings, breaking
+// LLM-coherence at the assembled-prompt level.
+//
+// Two runtime placeholders ({{INPUTS_BLOCK}}, {{INVESTIGATE_BLOCK}}) are
+// where the dynamic-per-call context (signal summary, locus, sourceContext,
+// investigate findings) gets substituted in by buildLlmPrompt.
+//
+// IMPORTANT for future evolution: if bp.evolve rewrites this body, the new
+// revision MUST preserve the {{INPUTS_BLOCK}} and {{INVESTIGATE_BLOCK}}
+// placeholder tokens verbatim. Without them, the assembled prompt loses
+// its dynamic context. The enhancer prompt should be told this constraint
+// explicitly the first time we run bp.evolve on c1.full_prompt.
+// ---------------------------------------------------------------------------
+
+// bp namespace: c1.full_prompt
+const C1_FULL_PROMPT_TEMPLATE = `[STAGE:C1] formulateInvariant
+${C1_PERSONA}
+
+# Inputs
+
+{{INPUTS_BLOCK}}
+{{INVESTIGATE_BLOCK}}
+${C1_CALIBRATION}
+
+${C1_CROSS_LLM_AGREEMENT}
+
+# Choose the kind that matches the bug
+
+You will set \`"kind"\` in your JSON output to exactly one of:
+
+${C1_KIND_ARITHMETIC}
+
+${C1_KIND_SET_UNIQUENESS}
+
+${C1_KIND_CARDINALITY}
+
+${C1_KIND_ORDER_INTRO}
+
+${C1_KIND_ORDER_POLARITY_CONVENTION}
+
+${C1_KIND_ORDER_CANONICAL_PROSE}
+
+${C1_KIND_TAINT}
+
+${C1_KIND_OTHER}
+
+${C1_UNIVERSAL_RULES}
+
+${C1_OUTPUT_FORMAT}
+
+${C1_QUIET_PART}`;
+
+// Discriminator: bump when ANY of the underlying C1_* fragment consts
+// is edited. bp.get with a new discriminator + the same body is a no-op
+// (same content); bumping flags "the source-of-record has advanced past
+// any previously-evolved revision" so bp returns the new literal.
+const C1_FULL_PROMPT_DISCRIMINATOR = "2026-04-28";
+
 import type { InvestigateReport } from "./investigate.js";
 
 // ---------------------------------------------------------------------------
@@ -796,39 +864,6 @@ interface C1PromptBuild {
 }
 
 async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusSource: string, investigate?: InvestigateReport, projectRoot?: string): Promise<C1PromptBuild> {
-  // Resolve evolvable prompt fragments at their interpolation sites.
-  // Each fragment is a bp artifact named after its position; bp.get returns
-  // the literal byte-identically until the fragment is evolved. When
-  // projectRoot is unavailable (test contexts, dry-run), the literal is
-  // used directly — same byte sequence either way on day 0.
-  // Track which bp fragment revisions contributed to this prompt. Returned
-  // alongside the prompt so the caller can record per-fragment invocations
-  // after the LLM call. When projectRoot is absent, the array stays empty
-  // (no telemetry; behavior identical to pre-bp).
-  const revisions: Array<{ key: string; revisionId: string }> = [];
-  const fetch = async (key: string, literal: string): Promise<string> => {
-    if (!projectRoot) return literal;
-    const rev = await getPromptStore(projectRoot).get(key, literal, "2026-04-28");
-    revisions.push({ key, revisionId: rev.id });
-    return rev.body;
-  };
-  const c1Persona = await fetch("c1.persona", C1_PERSONA);
-  const c1CrossLlmAgreement = await fetch("c1.cross_llm_agreement", C1_CROSS_LLM_AGREEMENT);
-  const c1KindTaint = await fetch("c1.kind.taint", C1_KIND_TAINT);
-  const c1KindOther = await fetch("c1.kind.other", C1_KIND_OTHER);
-  const c1QuietPart = await fetch("c1.quiet_part", C1_QUIET_PART);
-  const c1KindArithmetic = await fetch("c1.kind.arithmetic", C1_KIND_ARITHMETIC);
-  const c1KindSetUniqueness = await fetch("c1.kind.set_uniqueness", C1_KIND_SET_UNIQUENESS);
-  const c1KindCardinality = await fetch("c1.kind.cardinality", C1_KIND_CARDINALITY);
-  const c1KindOrderIntro = await fetch("c1.kind.order.intro", C1_KIND_ORDER_INTRO);
-  const c1KindOrderCanonicalProse = await fetch("c1.kind.order.canonical_prose", C1_KIND_ORDER_CANONICAL_PROSE);
-  const c1KindOrderPolarityConvention = await fetch(
-    "c1.kind.order.polarity_convention",
-    C1_KIND_ORDER_POLARITY_CONVENTION,
-  );
-  const c1Calibration = await fetch("c1.calibration", C1_CALIBRATION);
-  const c1UniversalRules = await fetch("c1.universal_rules", C1_UNIVERSAL_RULES);
-  const c1OutputFormat = await fetch("c1.output_format", C1_OUTPUT_FORMAT);
   // Gather source context around locus from the already-loaded full source.
   let sourceContext = "(source not available)";
   if (locusSource) {
@@ -864,12 +899,9 @@ async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusS
 `
     : "";
 
-  const prompt = `[STAGE:C1] formulateInvariant
-${c1Persona}
-
-# Inputs
-
-Bug summary: ${signal.summary}
+  // The dynamic context block. No trailing newline — the template's own
+  // line break supplies it, matching pre-bp byte-for-byte.
+  const inputsBlock = `Bug summary: ${signal.summary}
 Failure description: ${signal.failureDescription}
 Location: ${locus.file}:${locus.line}${locus.function ? ` in ${locus.function}` : ""}
 
@@ -879,37 +911,29 @@ ${sourceContext}
 \`\`\`
 
 Data-flow ancestors of bug site: ${locus.dataFlowAncestors.length} nodes
-Data-flow descendants of bug site: ${locus.dataFlowDescendants.length} nodes
-${investigateBlock}
-${c1Calibration}
+Data-flow descendants of bug site: ${locus.dataFlowDescendants.length} nodes`;
 
-${c1CrossLlmAgreement}
-
-# Choose the kind that matches the bug
-
-You will set \`"kind"\` in your JSON output to exactly one of:
-
-${c1KindArithmetic}
-
-${c1KindSetUniqueness}
-
-${c1KindCardinality}
-
-${c1KindOrderIntro}
-
-${c1KindOrderPolarityConvention}
-
-${c1KindOrderCanonicalProse}
-
-${c1KindTaint}
-
-${c1KindOther}
-
-${c1UniversalRules}
-
-${c1OutputFormat}
-
-${c1QuietPart}`;
+  // Single bp artifact for the full C1 prompt body. The template carries
+  // {{INPUTS_BLOCK}} and {{INVESTIGATE_BLOCK}} placeholders that the runtime
+  // fills in below. bp.evolve sees the whole composed prompt — coherence is
+  // a global property; it cannot be enforced by per-fragment evolution.
+  // Day 0 the substituted output is byte-identical to pre-bp; tests + AC#3
+  // verify confirm. Discriminator bumps any time the underlying literals
+  // (the C1_* fragment consts) get edited.
+  const revisions: Array<{ key: string; revisionId: string }> = [];
+  let templateBody = C1_FULL_PROMPT_TEMPLATE;
+  if (projectRoot) {
+    const rev = await getPromptStore(projectRoot).get(
+      "c1.full_prompt",
+      C1_FULL_PROMPT_TEMPLATE,
+      C1_FULL_PROMPT_DISCRIMINATOR,
+    );
+    templateBody = rev.body;
+    revisions.push({ key: "c1.full_prompt", revisionId: rev.id });
+  }
+  const prompt = templateBody
+    .replace("{{INPUTS_BLOCK}}", inputsBlock)
+    .replace("{{INVESTIGATE_BLOCK}}", investigateBlock);
   return { prompt, revisions };
 }
 
@@ -1478,10 +1502,11 @@ async function formulateInvariantInner(args: {
   const { witness } = runOracleOne(formalExpression);
   logger.oracle({ id: 1, name: "Z3 SAT check (novel)", passed: witness !== null, detail: witness ? `witness obtained` : "SAT returned no witness" });
 
-  // bp telemetry: one invocation per fragment that contributed to the prompt,
-  // signaled with Oracle #1's verdict. Each fragment accumulates its own
-  // per-revision history; aggregate analysis ("which revision of c1.calibration
-  // produces SAT-witnessed invariants most often") drives the next bp.evolve.
+  // bp telemetry: one invocation per fully-assembled C1 prompt, signaled
+  // with Oracle #1's verdict. The artifact (c1.full_prompt) is the WHOLE
+  // composed prompt body — evolution operates on the whole, not on
+  // sub-fragments, so coherence between sections is preserved. Per-revision
+  // history of c1.full_prompt drives the next bp.evolve.
   // No-ops when projectRoot is absent (bpRevisions is empty in that case).
   if (args.projectRoot && bpRevisions.length > 0) {
     const bp = getPromptStore(args.projectRoot);
