@@ -155,11 +155,11 @@ describe("classify()", () => {
   });
 
   // Test 5: classifier prompt contains ALL 8 registered layers by name
-  it("classifier prompt contains all 8 registered layer names", () => {
+  it("classifier prompt contains all 8 registered layer names", async () => {
     const layers = listRemediationLayers();
     expect(layers).toHaveLength(8);
 
-    const prompt = buildPrompt(makeSignal(), null, layers);
+    const { prompt } = await buildPrompt(makeSignal(), null, layers);
     const expectedNames = [
       "code_invariant",
       "config",
@@ -189,7 +189,7 @@ describe("classify()", () => {
 
     // The prompt should now include "mythical"
     const layers = listRemediationLayers();
-    const prompt = buildPrompt(makeSignal(), null, layers);
+    const { prompt } = await buildPrompt(makeSignal(), null, layers);
     expect(prompt).toContain("mythical");
 
     // And a classify call with a stub that returns "mythical" should succeed
@@ -225,17 +225,17 @@ describe("classify()", () => {
   });
 
   // Bonus: prompt includes "not resolved" when locus is null
-  it("prompt contains 'not resolved' when locus is null", () => {
+  it("prompt contains 'not resolved' when locus is null", async () => {
     const layers = listRemediationLayers();
-    const prompt = buildPrompt(makeSignal(), null, layers);
+    const { prompt } = await buildPrompt(makeSignal(), null, layers);
     expect(prompt).toContain("not resolved");
   });
 
   // Bonus: prompt includes file:line when locus is provided
-  it("prompt contains file:line when locus is provided", () => {
+  it("prompt contains file:line when locus is provided", async () => {
     const layers = listRemediationLayers();
     const locus = makeLocus({ file: "src/math.ts", line: 42 });
-    const prompt = buildPrompt(makeSignal(), locus, layers);
+    const { prompt } = await buildPrompt(makeSignal(), locus, layers);
     expect(prompt).toContain("src/math.ts:42");
   });
 });

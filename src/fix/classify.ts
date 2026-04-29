@@ -13,6 +13,36 @@ import {
   getRemediationLayer,
 } from "./remediationLayerRegistry.js";
 import { requestStructuredJson } from "./llm/structuredOutput.js";
+import { getPromptStore } from "../llm/promptStore.js";
+
+// ---------------------------------------------------------------------------
+// Classify prompt artifact: classify.prompt
+//
+// One bp namespace. Four runtime placeholders. Same pattern as the C-stages.
+//
+// Future evolution warning: bp.evolve on classify.prompt MUST preserve
+// {{LAYER_LIST}}, {{SUMMARY}}, {{FAILURE}}, {{LOCUS}} placeholders verbatim.
+// ---------------------------------------------------------------------------
+
+const CLASSIFY_PROMPT_TEMPLATE = `You are classifying a bug report into a remediation layer.
+Here are the available layers:
+
+{{LAYER_LIST}}
+
+Given this bug:
+  Summary: {{SUMMARY}}
+  Failure: {{FAILURE}}
+  Code location: {{LOCUS}}
+
+Produce JSON with exactly these keys:
+  primaryLayer: string (one of the layer names above)
+  secondaryLayers: string[] (zero or more additional layer names)
+  artifacts: Array<{kind: string, rationale?: string, envVar?: string, site?: string, bugClassName?: string}>
+  rationale: string (why you chose this layer)
+
+Respond with JSON only. No prose before or after.`;
+
+const CLASSIFY_PROMPT_DISCRIMINATOR = "2026-04-28";
 import { getModelTier } from "./modelTiers.js";
 import type {
   RemediationLayerDescriptor,
@@ -44,11 +74,12 @@ export class ClassifyError extends Error {
  * Build the classifier prompt from the registered layers and the signal/locus.
  * Exported so tests can inspect the prompt without making a real LLM call.
  */
-export function buildPrompt(
+export async function buildPrompt(
   signal: BugSignal,
   locus: BugLocus | null,
   layers: readonly RemediationLayerDescriptor[],
-): string {
+  projectRoot?: string,
+): Promise<{ prompt: string; revisions: Array<{ key: string; revisionId: string }> }> {
   const layerList = layers
     .map(
       (l, i) =>
@@ -60,21 +91,29 @@ export function buildPrompt(
     ? `${locus.file}:${locus.line}${locus.function ? ` (${locus.function})` : ""}`
     : "not resolved";
 
-  return (
-    `You are classifying a bug report into a remediation layer.\n` +
-    `Here are the available layers:\n\n` +
-    `${layerList}\n\n` +
-    `Given this bug:\n` +
-    `  Summary: ${signal.summary}\n` +
-    `  Failure: ${signal.failureDescription}\n` +
-    `  Code location: ${locusStr}\n\n` +
-    `Produce JSON with exactly these keys:\n` +
-    `  primaryLayer: string (one of the layer names above)\n` +
-    `  secondaryLayers: string[] (zero or more additional layer names)\n` +
-    `  artifacts: Array<{kind: string, rationale?: string, envVar?: string, site?: string, bugClassName?: string}>\n` +
-    `  rationale: string (why you chose this layer)\n\n` +
-    `Respond with JSON only. No prose before or after.`
-  );
+  const revisions: Array<{ key: string; revisionId: string }> = [];
+  let templateBody = CLASSIFY_PROMPT_TEMPLATE;
+  if (projectRoot) {
+    const rev = await getPromptStore(projectRoot).get(
+      "classify.prompt",
+      CLASSIFY_PROMPT_TEMPLATE,
+      CLASSIFY_PROMPT_DISCRIMINATOR,
+    );
+    templateBody = rev.body;
+    revisions.push({ key: "classify.prompt", revisionId: rev.id });
+  }
+
+  const renderVars: Record<string, string> = {
+    LAYER_LIST: layerList,
+    SUMMARY: signal.summary,
+    FAILURE: signal.failureDescription,
+    LOCUS: locusStr,
+  };
+  let prompt = templateBody;
+  for (const [k, v] of Object.entries(renderVars)) {
+    prompt = prompt.replaceAll(`{{${k}}}`, v);
+  }
+  return { prompt, revisions };
 }
 
 // ---------------------------------------------------------------------------
@@ -182,10 +221,11 @@ export async function classify(
   signal: BugSignal,
   locus: BugLocus | null,
   llm: LLMProvider,
+  projectRoot?: string,
 ): Promise<RemediationPlan> {
   // 1. Build the classifier prompt dynamically from the registered layers.
   const layers = listRemediationLayers();
-  const prompt = buildPrompt(signal, locus, layers);
+  const { prompt } = await buildPrompt(signal, locus, layers, projectRoot);
 
   // 2. LLM call, schema-validated JSON response.
   //    requestStructuredJson handles JSON parsing + writes via Write tool in
