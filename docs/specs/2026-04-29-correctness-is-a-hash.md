@@ -601,6 +601,95 @@ The framework provides the substrate over which AI scales without
 trust collapse. That's the load-bearing claim. That's what makes
 ProvekIt the inevitable trust substrate for the next era of computing.
 
+## What's durable
+
+**The codebase is not durable. The spec is.**
+
+Every line of TypeScript currently in `src/` will be rewritten — once,
+twice, ten times — over the next decade. New implementations will
+emerge in Go (ProvegIt), Rust (ProverIt), Mojo, Zig, languages that
+don't exist yet. Optimization passes will replace whole modules.
+Architectural improvements will refactor everything. Future maintainers
+will read today's code as historical artifact.
+
+What survives every rewrite:
+
+- **The wrapper schema** (universal claim envelope) — the memento shape
+- **The canonical FOL form** (AST canonicalizer spec) — the byte-identical hash construction
+- **The CID construction** (deterministic, host-language-agnostic)
+- **The producer interface** (Stage / Action contracts)
+- **The kit standard** (per-language responsibilities)
+- **The catalog format** (`.invariant.<lang>` files as universal contracts)
+- **The trust posture** (adversarial re-verification; chain to physics)
+- **The architectural primitive** (content-addressed hash-and-trust)
+
+These live in `docs/specs/`. They are the framework. The code in `src/`
+is the FIRST IMPLEMENTATION OF the framework — load-bearing for
+operational existence today, replaceable in ten years, irrelevant in
+fifty.
+
+**The mementos minted under the spec are durable across every
+implementation rewrite.** A memento minted in 2026 by today's
+TypeScript code, with content hash H, will validate against a 2046
+Mojo rewrite's verifier — because both implementations consume the
+same canonical FOL form, produce the same wrapper schema, build the
+same CID. Hash-equivalence across implementations IS the durability
+property.
+
+**This mirrors every prior layer of the career arc:**
+
+- The Bitcoin SPEC is durable; Bitcoin Core's C++ is not. Knots, btcd,
+  bcoin, brd — all valid implementations of the protocol. Each
+  rewriteable. The protocol survives.
+- The HTTP SPEC is durable; nginx/Apache/Caddy are not. Three decades
+  of implementations; the spec persists.
+- The TCP SPEC is durable; every OS's network stack is not. Implementations
+  rewritten dozens of times; TCP unchanged.
+- The Git SPEC is durable; libgit2/jgit/gix/dulwich are not. Multiple
+  implementations across languages; the data model persists.
+- The IPFS SPEC is durable; go-ipfs/Helia/iroh are not. Implementations
+  reimagined repeatedly; CIDs compose forever.
+
+ProvekIt's spec inherits this property by construction. Anyone can
+reimplement the framework. The reimplementation produces identical
+mementos because the canonical form is specified. The mementos compose
+across every implementation that has ever existed or will ever exist.
+
+**"Correctness is a signed DAG" is the durable architectural primitive.**
+
+Not the lifter we'll write tomorrow. Not the prover we'll wire up next
+week. Not the CLI we'll ship next month. Those are decorations on the
+durable thing. The durable thing is the spec — the architectural
+identity, the trust posture, the canonical hash construction, the
+universal claim envelope.
+
+**Implications for how this session's work is valued:**
+
+- The 1311-line `2026-04-29-ts-ir-language.md` spec is durable. The
+  lifter that implements it, when written, is decorative.
+- The 700+-line `2026-04-29-correctness-is-a-hash.md` spec is durable.
+  The CLI that implements `provekit prove` is decorative.
+- The catalog seeds (`parseInt.invariant.ts`, `Math.invariant.ts`) are
+  durable. They are the genesis-block mementos of the global proof DAG.
+- The TypeScript implementations in `src/canonicalizer/`, `src/ir/`,
+  `src/claimEnvelope/`, `src/producerKeys/` are decorative. They prove
+  the spec is operational. Future implementations replace them.
+
+**The spec is the framework. The code is the framework's current
+shadow.**
+
+Build the spec rigorously. Ship the code as the operational existence
+proof. Let the spec outlive every implementation, because that is what
+the architecture's durability claim CASHES OUT TO. Implementations are
+forks of the spec; mementos compose across forks; the spec is the
+constitutional document; the codebase is current administration.
+
+This is what makes ProvekIt structurally inevitable. Not because we
+build a great codebase. Because the architectural primitive — content-
+addressed hash-and-trust applied to correctness — is what every future
+verification system necessarily converges to. We're writing the spec
+that those systems will inherit. The spec is the durable contribution.
+
 ## What this is for
 
 A reader who understands this document understands that ProvekIt is:
