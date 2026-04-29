@@ -48,3 +48,4 @@ dist/
 .provekit/harvest/harvest.db
 .provekit/harvest/harvest.db-shm
 .provekit/harvest/harvest.db-wal
+prompts.db
