@@ -88,6 +88,83 @@ the equivalence check has to reason about \`b ≤ 0 ≠ b = 0\` and might
 fail. The canonical examples above are the shapes both models should pick.
 Pick them.`;
 
+// bp namespace: c1.kind.arithmetic
+const C1_KIND_ARITHMETIC = `## kind: "arithmetic"
+Numeric inequality, equality, range, or remainder relation. Variables are
+\`Int\` or \`Real\`. The violation is a concrete numeric state.
+
+Use when the bug is: division-by-zero, off-by-one, integer overflow,
+range-bound violation, modulo-by-zero, NaN comparison.
+
+Canonical SMT shape (division-by-zero):
+\`\`\`
+(declare-const b Int)
+(assert (= b 0))
+\`\`\`
+Canonical prose: "the divisor must not be zero", "the index must be less
+than array length", "the sum must fit in 32-bit signed range".`;
+
+// bp namespace: c1.kind.set_uniqueness
+const C1_KIND_SET_UNIQUENESS = `## kind: "set_uniqueness"
+The violation is "two values that should be distinct are equal" OR "an array
+should have only unique elements but does not". Use \`(distinct ...)\` or
+paired-equality \`(= k1 k2)\` patterns.
+
+Use when the bug is: duplicate keys, duplicate methods in HTTP Allow,
+duplicate IDs, primary-key collision, set-as-list-without-dedup.
+
+Canonical SMT shape (Bug-1 Express duplicate-methods, "distinct" form):
+\`\`\`
+(declare-const m1 Int)
+(declare-const m2 Int)
+(declare-const m3 Int)
+(assert (not (distinct m1 m2 m3)))
+\`\`\`
+Each \`mN\` represents the value of the N-th element in the should-be-set.
+The violation is "the values are NOT all distinct" → some pair is equal.
+
+Alternative shape (paired-equality, when only two elements matter):
+\`\`\`
+(declare-const m1 Int)
+(declare-const m2 Int)
+(assert (= m1 m2))
+\`\`\`
+The violation is "two distinct positions hold the same value."
+
+Bindings: each declared constant must map to a source expression. For Bug-1
+the source_expr is the position in the array (e.g. "options[0]", "options[1]").
+
+Canonical prose: "no two X share Y", "the methods in the Allow header must
+be unique", "duplicate keys are forbidden". **AVOID** "appears at most
+once", "occurs more than once" — those phrasings vary across models.`;
+
+// bp namespace: c1.kind.cardinality
+const C1_KIND_CARDINALITY = `## kind: "cardinality"
+The violation is about the COUNT of occurrences: "X must run at least
+once but ran zero times", "Y must fire at most twice but fired three
+times". **Prefer Bool predicates over Int counts**, because two LLMs
+will pick different counter encodings (length vs counter vs witness).
+
+Canonical SMT shape:
+\`\`\`
+(declare-const x_ran_at_least_once Bool)
+(assert (= x_ran_at_least_once false))
+\`\`\`
+Canonical prose: "must run at least once", "must fire exactly once",
+"cannot exceed N retries". The Bool-predicate name carries the cardinality
+relation.`;
+
+// bp namespace: c1.kind.order.intro
+const C1_KIND_ORDER_INTRO = `## kind: "order"
+The violation is about pairwise ordering: "elements should be sorted but
+i < j with a[i] > a[j]", "events are out of expected sequence". Use Bool
+predicates over the violation pair, not Int sequences.`;
+
+// bp namespace: c1.kind.order.canonical_prose
+const C1_KIND_ORDER_CANONICAL_PROSE = `Canonical prose: "the result must include the K most recent entries",
+"elements must be in descending chronological order",
+"the query must use descending ordering for the relevant column".`;
+
 // bp namespace: c1.kind.order.polarity_convention
 const C1_KIND_ORDER_POLARITY_CONVENTION = `**Polarity convention (load-bearing — read before writing SMT):**
 
@@ -521,6 +598,11 @@ async function buildLlmPrompt(signal: BugSignal, locus: BugLocus, db: Db, locusS
   const c1KindTaint = await fetch("c1.kind.taint", C1_KIND_TAINT);
   const c1KindOther = await fetch("c1.kind.other", C1_KIND_OTHER);
   const c1QuietPart = await fetch("c1.quiet_part", C1_QUIET_PART);
+  const c1KindArithmetic = await fetch("c1.kind.arithmetic", C1_KIND_ARITHMETIC);
+  const c1KindSetUniqueness = await fetch("c1.kind.set_uniqueness", C1_KIND_SET_UNIQUENESS);
+  const c1KindCardinality = await fetch("c1.kind.cardinality", C1_KIND_CARDINALITY);
+  const c1KindOrderIntro = await fetch("c1.kind.order.intro", C1_KIND_ORDER_INTRO);
+  const c1KindOrderCanonicalProse = await fetch("c1.kind.order.canonical_prose", C1_KIND_ORDER_CANONICAL_PROSE);
   const c1KindOrderPolarityConvention = await fetch(
     "c1.kind.order.polarity_convention",
     C1_KIND_ORDER_POLARITY_CONVENTION,
@@ -671,79 +753,17 @@ ${c1CrossLlmAgreement}
 
 You will set \`"kind"\` in your JSON output to exactly one of:
 
-## kind: "arithmetic"
-Numeric inequality, equality, range, or remainder relation. Variables are
-\`Int\` or \`Real\`. The violation is a concrete numeric state.
+${c1KindArithmetic}
 
-Use when the bug is: division-by-zero, off-by-one, integer overflow,
-range-bound violation, modulo-by-zero, NaN comparison.
+${c1KindSetUniqueness}
 
-Canonical SMT shape (division-by-zero):
-\`\`\`
-(declare-const b Int)
-(assert (= b 0))
-\`\`\`
-Canonical prose: "the divisor must not be zero", "the index must be less
-than array length", "the sum must fit in 32-bit signed range".
+${c1KindCardinality}
 
-## kind: "set_uniqueness"
-The violation is "two values that should be distinct are equal" OR "an array
-should have only unique elements but does not". Use \`(distinct ...)\` or
-paired-equality \`(= k1 k2)\` patterns.
-
-Use when the bug is: duplicate keys, duplicate methods in HTTP Allow,
-duplicate IDs, primary-key collision, set-as-list-without-dedup.
-
-Canonical SMT shape (Bug-1 Express duplicate-methods, "distinct" form):
-\`\`\`
-(declare-const m1 Int)
-(declare-const m2 Int)
-(declare-const m3 Int)
-(assert (not (distinct m1 m2 m3)))
-\`\`\`
-Each \`mN\` represents the value of the N-th element in the should-be-set.
-The violation is "the values are NOT all distinct" → some pair is equal.
-
-Alternative shape (paired-equality, when only two elements matter):
-\`\`\`
-(declare-const m1 Int)
-(declare-const m2 Int)
-(assert (= m1 m2))
-\`\`\`
-The violation is "two distinct positions hold the same value."
-
-Bindings: each declared constant must map to a source expression. For Bug-1
-the source_expr is the position in the array (e.g. "options[0]", "options[1]").
-
-Canonical prose: "no two X share Y", "the methods in the Allow header must
-be unique", "duplicate keys are forbidden". **AVOID** "appears at most
-once", "occurs more than once" — those phrasings vary across models.
-
-## kind: "cardinality"
-The violation is about the COUNT of occurrences: "X must run at least
-once but ran zero times", "Y must fire at most twice but fired three
-times". **Prefer Bool predicates over Int counts**, because two LLMs
-will pick different counter encodings (length vs counter vs witness).
-
-Canonical SMT shape:
-\`\`\`
-(declare-const x_ran_at_least_once Bool)
-(assert (= x_ran_at_least_once false))
-\`\`\`
-Canonical prose: "must run at least once", "must fire exactly once",
-"cannot exceed N retries". The Bool-predicate name carries the cardinality
-relation.
-
-## kind: "order"
-The violation is about pairwise ordering: "elements should be sorted but
-i < j with a[i] > a[j]", "events are out of expected sequence". Use Bool
-predicates over the violation pair, not Int sequences.
+${c1KindOrderIntro}
 
 ${c1KindOrderPolarityConvention}
 
-Canonical prose: "the result must include the K most recent entries",
-"elements must be in descending chronological order",
-"the query must use descending ordering for the relevant column".
+${c1KindOrderCanonicalProse}
 
 ${c1KindTaint}
 
