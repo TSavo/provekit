@@ -18,9 +18,19 @@
  *   8. Negative cases — formulas that DIFFER and must produce different hashes
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { propertyHashFromFormula, formulaToCanonicalAst } from "./canonicalize.js";
-import type { IrFormula, Sort } from "./irFormula.js";
+import type { IrFormula, IrTerm, Sort } from "./irFormula.js";
+import {
+  forAll as irForAll,
+  exists as irExists,
+  Int as IrInt,
+  assert as irAssert,
+  and as irAnd,
+  implies as irImplies,
+  iff as irIff,
+} from "../ir/index.js";
+import { _resetCounter as _resetIrCounter } from "../ir/quantifiers.js";
 
 // -----------------------------------------------------------------------
 // Helpers to build IrFormula values
@@ -31,11 +41,11 @@ const Bool: Sort = { kind: "primitive", name: "Bool" };
 const Real: Sort = { kind: "primitive", name: "Real" };
 const Ref: Sort = { kind: "primitive", name: "Ref" };
 
-function varTerm(name: string, sort: Sort): IrFormula["args"] extends Array<infer T> ? T : never {
-  return { kind: "var", name, sort } as never;
+function varTerm(name: string, sort: Sort): IrTerm {
+  return { kind: "var", name, sort };
 }
-function constTerm(value: unknown, sort: Sort): IrFormula["args"] extends Array<infer T> ? T : never {
-  return { kind: "const", value, sort } as never;
+function constTerm(value: unknown, sort: Sort): IrTerm {
+  return { kind: "const", value, sort };
 }
 
 function atomicEq(a: Parameters<typeof varTerm>[0], b: Parameters<typeof varTerm>[0], sort: Sort = Int): IrFormula {
@@ -681,5 +691,96 @@ describe("9. Hash format", () => {
     const { AstCanonicalizerImpl } = await import("./index.js");
     const impl = new AstCanonicalizerImpl();
     expect(impl.specVersion().major).toBe(1);
+  });
+});
+
+// -----------------------------------------------------------------------
+// 10. IR-library → canonicalizer roundtrip (no manual translation)
+// -----------------------------------------------------------------------
+
+/**
+ * These tests are the alignment proof for task #2: an `IrFormula`
+ * value built via the IR library's public exports flows directly
+ * into the canonicalizer without any cast or translation step.
+ *
+ * If TypeScript ever rejects one of these calls, the IR-library /
+ * canonicalizer types have drifted apart. If a hash drifts, either
+ * the canonicalizer's pipeline changed or the IR library started
+ * emitting a different shape — both are alignment regressions.
+ */
+describe("10. IR-library → canonicalizer roundtrip", () => {
+  beforeEach(() => {
+    // Deterministic bound-variable names. The canonicalizer erases them
+    // via de Bruijn, but resetting keeps debug output stable.
+    _resetIrCounter();
+  });
+
+  it("forAll(Int, b => assert.notEqual(b, 0)) — spec example, pinned hash", () => {
+    // Surface (TypeScript): forAll<Int>(b => assert.notEqual(b, 0))
+    // Canonical FOL:        forall(b: Int).¬(b = 0)
+    // Spec:                 docs/specs/2026-04-29-ir-library.md §"Cross-language equivalence"
+    const formula = irForAll(IrInt, (b) => irAssert.notEqual(b, 0));
+
+    // No cast — the IR library returns IrFormula, the canonicalizer
+    // accepts IrFormula. Alignment is "this line type-checks".
+    const hash = propertyHashFromFormula(formula);
+
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    // Pinned fixture: regenerate intentionally if the canonical-AST
+    // grammar changes (a major-version event).
+    expect(hash).toBe("d2569af7719024b3");
+  });
+
+  it("IR-library forAll matches hand-built equivalent", () => {
+    // Library-dialect surface
+    const fromLib = irForAll(IrInt, (b) => irAssert.notEqual(b, 0));
+
+    // Hand-built — must produce the same canonical hash as the
+    // library output, since both encode `forall(b: Int).¬(b = 0)`.
+    // Variable names differ ("_x0" vs "b"); de Bruijn erases them.
+    const handBuilt: IrFormula = forall("b", Int, atomicNeq("b", 0));
+
+    expect(propertyHashFromFormula(fromLib)).toBe(propertyHashFromFormula(handBuilt));
+  });
+
+  it("IR-library nested quantifiers — forAll(a => exists(b => a < b))", () => {
+    const formula = irForAll(IrInt, (a) =>
+      irExists(IrInt, (b) => irAssert.lessThan(a, b)),
+    );
+    const ast = formulaToCanonicalAst(formula);
+    expect(ast.kind).toBe("forall");
+    if (ast.kind !== "forall") throw new Error();
+    expect(ast.body.kind).toBe("exists");
+  });
+
+  it("IR-library implies + connectives canonicalize through implies-removal + NNF", () => {
+    // forAll(x. (x = 0) → ¬(x ≠ 0))  — tautology after rewrites.
+    const formula = irForAll(IrInt, (x) =>
+      irImplies(irAssert.equal(x, 0), irAssert.notEqual(x, 0)),
+    );
+    const hash = propertyHashFromFormula(formula);
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("IR-library iff desugar reaches the same canonical hash as explicit and(implies, implies)", () => {
+    // The IR library's public iff() desugars at construction; the
+    // canonicalizer's NNF+AC pipeline collapses it to one shape.
+    // Use ground atoms (no free vars) so the canonicalizer's de Bruijn
+    // pass has a well-formed input.
+    const a: IrFormula = irAssert.equal(0, 0);
+    const b: IrFormula = irAssert.equal(1, 1);
+    const viaIff = irIff(a, b);
+    const viaAnd = irAnd(
+      irImplies(a, b),
+      irImplies(b, a),
+    );
+    expect(propertyHashFromFormula(viaIff)).toBe(propertyHashFromFormula(viaAnd));
+  });
+
+  it("AstCanonicalizerImpl accepts IR-library output via .propertyHashFromFormula", async () => {
+    const { AstCanonicalizerImpl } = await import("./index.js");
+    const impl = new AstCanonicalizerImpl();
+    const formula = irForAll(IrInt, (b) => irAssert.notEqual(b, 0));
+    expect(impl.propertyHashFromFormula(formula)).toBe(propertyHashFromFormula(formula));
   });
 });

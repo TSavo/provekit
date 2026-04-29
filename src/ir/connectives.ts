@@ -38,7 +38,20 @@ export function implies(antecedent: IrFormula, consequent: IrFormula): IrFormula
   return { kind: "implies", antecedent, consequent };
 }
 
-/** Biconditional (if and only if): a ↔ b. */
+/**
+ * Biconditional (if and only if): a ↔ b.
+ *
+ * Desugared to `and(implies(a, b), implies(b, a))` so the IR formula
+ * matches the canonical-FOL grammar fixed by the IR-library spec
+ * (no `iff` variant in `IrFormula`). The canonicalizer's
+ * implies-removal + AC-normalization passes finish the job.
+ */
 export function iff(a: IrFormula, b: IrFormula): IrFormula {
-  return { kind: "iff", left: a, right: b };
+  return {
+    kind: "and",
+    conjuncts: [
+      { kind: "implies", antecedent: a, consequent: b },
+      { kind: "implies", antecedent: b, consequent: a },
+    ],
+  };
 }

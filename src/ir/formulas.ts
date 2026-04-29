@@ -1,17 +1,29 @@
 /**
  * Internal IR formula data structures. The AST canonicalizer
- * consumes these; everything else in the IR library produces them.
+ * (src/canonicalizer/) consumes these directly via re-export;
+ * everything else in the IR library produces them.
  *
- * NEVER import from the canonicalizer — it is a separate package
- * being implemented in parallel. This file is dependency-free.
+ * This file is the single source of truth for the IR-formula shape.
+ * Zero runtime dependencies — pure type and helper definitions.
  */
 
 // ---------------------------------------------------------------------------
 // Sorts
 // ---------------------------------------------------------------------------
 
+export type PrimitiveSortName =
+  | "Bool"
+  | "Int"
+  | "Real"
+  | "String"
+  | "Ref"
+  | "Node"
+  | "Edge"
+  | "Region"
+  | "Time";
+
 export type Sort =
-  | { kind: "primitive"; name: "Bool" | "Int" | "Real" | "String" | "Ref" | "Node" | "Edge" }
+  | { kind: "primitive"; name: PrimitiveSortName | string }
   | { kind: "set"; element: Sort }
   | { kind: "tuple"; elements: Sort[] }
   | { kind: "function"; domain: Sort[]; range: Sort };
@@ -33,7 +45,7 @@ export type AtomicPredicate =
   | "=" | "≠" | "<" | "≤" | ">" | "≥"
   | "true" | "false"
   | "subset" | "member"
-  | "kind-of" | "data-flows-to" | "dominates"
+  | "kind-of" | "data-flows-to" | "dominates" | "post-dominates"
   | "transition-from-to"
   | "on-path"
   | string; // kit-defined extensions
@@ -56,7 +68,6 @@ export type IrFormula =
   | { kind: "or"; disjuncts: IrFormula[] }
   | { kind: "not"; body: IrFormula }
   | { kind: "implies"; antecedent: IrFormula; consequent: IrFormula }
-  | { kind: "iff"; left: IrFormula; right: IrFormula }
   | { kind: "atomic"; predicate: AtomicPredicate; args: IrTerm[] };
 
 // ---------------------------------------------------------------------------

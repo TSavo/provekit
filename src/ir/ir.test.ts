@@ -305,12 +305,25 @@ describe("connectives", () => {
     expect(f.consequent).toBe(b);
   });
 
-  it("iff constructs biconditional", () => {
+  it("iff desugars to and(implies(a, b), implies(b, a))", () => {
+    // The IR-library spec's `IrFormula` union does not include `iff`;
+    // the public `iff` builder desugars at construction so the canonical
+    // FOL grammar consumed by the canonicalizer stays minimal.
     const f = iff(a, b);
-    expect(f.kind).toBe("iff");
-    if (f.kind !== "iff") throw new Error();
-    expect(f.left).toBe(a);
-    expect(f.right).toBe(b);
+    expect(f.kind).toBe("and");
+    if (f.kind !== "and") throw new Error();
+    expect(f.conjuncts).toHaveLength(2);
+
+    const [forward, backward] = f.conjuncts;
+    expect(forward.kind).toBe("implies");
+    if (forward.kind !== "implies") throw new Error();
+    expect(forward.antecedent).toBe(a);
+    expect(forward.consequent).toBe(b);
+
+    expect(backward.kind).toBe("implies");
+    if (backward.kind !== "implies") throw new Error();
+    expect(backward.antecedent).toBe(b);
+    expect(backward.consequent).toBe(a);
   });
 });
 
