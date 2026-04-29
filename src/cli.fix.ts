@@ -39,6 +39,13 @@ import {
   loggedComplete,
   type FixLoopLogger,
 } from "./fix/logger.js";
+import { WorkflowRunner } from "./workflow/runner.js";
+import { runManifest, manifestToWorkflow } from "./workflow/manifest.js";
+import {
+  loadBugFixManifest,
+  registerBugFixCapabilities,
+  type BugFixWorkflowInput,
+} from "./workflows/bug-fix.js";
 
 export { ClassifyError };
 
@@ -75,6 +82,13 @@ export interface RunFixArgs {
   logger?: FixLoopLogger;
   /** Override the log file path. Defaults to .provekit/fix-loop-<timestamp>.log */
   logFilePath?: string;
+  /**
+   * Dispatch mode for the fix loop.
+   *   - "imperative" (default): call runFixLoop (existing behavior).
+   *   - "manifest": load src/workflows/bug-fix.workflow.yaml + dispatch
+   *     through the WorkflowRunner. Opt-in via --workflow=manifest.
+   */
+  workflow?: "imperative" | "manifest";
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +296,7 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
   const maxSites = args.maxSites ?? 10;
   const fixLoopFn = args.runFixLoopFn ?? runFixLoop;
   const verbose = args.verbose ?? false;
+  const workflowMode = args.workflow ?? "imperative";
 
   const w = (s: string) => stdout.write(s + "\n");
   const e = (s: string) => stderr.write(s + "\n");
@@ -305,6 +320,92 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
       w(`provekit fix loop · v${VERSION}`);
       w("");
       logger.info(`Log file: ${logFilePath}`);
+    }
+
+    // ── Manifest dispatch (opt-in via --workflow=manifest) ────────────────
+    // When the manifest path is selected, the bug-fix workflow YAML drives
+    // the entire pipeline — including intake, investigate, locate, and
+    // classify. The imperative pre-loop below is skipped wholesale.
+    if (workflowMode === "manifest") {
+      logger.stage("Manifest dispatch");
+      // Resolve the user's ref the same way the imperative path does.
+      let resolved: ResolvedRef;
+      try {
+        resolved = await resolveRef(ref, db, args.stdin);
+      } catch (err) {
+        logger.error(`resolveRef failed (manifest mode)`, {
+          ref,
+          message: (err as Error).message,
+        });
+        e(`Intake error: ${(err as Error).message}`);
+        return 1;
+      }
+
+      const manifest = loadBugFixManifest();
+      const registry = registerBugFixCapabilities({
+        db,
+        llm,
+        logger,
+        projectRoot: resolve(process.cwd()),
+      });
+      const runner = new WorkflowRunner(db, manifestToWorkflow(manifest), registry);
+
+      const workflowInput: BugFixWorkflowInput = {
+        text: resolved.text,
+        source: resolved.source,
+        context: resolved.context,
+        projectRoot: resolve(process.cwd()),
+      };
+
+      try {
+        const result = await runManifest(runner, registry, manifest, workflowInput);
+        const bundle = result.output as {
+          bundleType?: string;
+          confidence?: number;
+          artifacts?: {
+            primaryFix: unknown;
+            complementary: unknown[];
+            test: unknown;
+            principle: unknown;
+          };
+          coherence?: Record<string, unknown>;
+        } | null;
+
+        if (!bundle) {
+          e(`Fix loop (manifest) returned null bundle`);
+          return 5;
+        }
+
+        // Mirror the imperative path's bundle summary block so external
+        // callers see the same output shape regardless of dispatch mode.
+        if (!dryRun) {
+          w(`Bundle type: ${bundle.bundleType ?? "unknown"}`);
+          if (bundle.artifacts) {
+            w(`Artifacts:`);
+            w(`  primaryFix: ${bundle.artifacts.primaryFix !== null ? "yes" : "none"}`);
+            w(`  complementary: ${bundle.artifacts.complementary.length}`);
+            w(`  test: ${bundle.artifacts.test !== null ? "yes" : "none"}`);
+            w(`  principle: ${bundle.artifacts.principle !== null ? "yes" : "none"}`);
+          }
+          if (typeof bundle.confidence === "number") {
+            w(`Confidence: ${bundle.confidence.toFixed(2)}`);
+          }
+          if (bundle.coherence) {
+            w(`Coherence:`);
+            for (const [key, val] of Object.entries(bundle.coherence)) {
+              if (val !== null) w(`  ${key}: ${val}`);
+            }
+          }
+          w(`Cache hit: ${result.cacheHit ? "yes" : "no"}`);
+        }
+        return 0;
+      } catch (err) {
+        logger.error(`manifest dispatch failed`, {
+          message: (err as Error).message,
+        });
+        e(`Manifest dispatch error: ${(err as Error).message}`);
+        return 5;
+      }
     }
 
     // ── Intake ──────────────────────────────────────────────────────────────
@@ -681,6 +782,14 @@ export async function runFix(argv: string[]): Promise<void> {
   const apply = argv.includes("--apply");
   const verbose = argv.includes("--verbose") || argv.includes("-v");
 
+  // --workflow=manifest opts into the YAML-driven dispatch path; default
+  // remains the imperative runFixLoop orchestrator.
+  const workflowArg = argv.find((a) => a.startsWith("--workflow="));
+  const workflow: "imperative" | "manifest" =
+    workflowArg && workflowArg.split("=")[1] === "manifest"
+      ? "manifest"
+      : "imperative";
+
   // --max-sites N
   const maxSitesIdx = argv.indexOf("--max-sites");
   const maxSites = maxSitesIdx !== -1 && maxSitesIdx + 1 < argv.length
@@ -691,7 +800,7 @@ export async function runFix(argv: string[]): Promise<void> {
   const ref = positionals[0];
 
   if (!ref) {
-    process.stderr.write("Usage: provekit prove <intent> [--no-confirm] [--dry-run] [--apply] [--max-sites N] [--verbose]\n       provekit fix <ref>      (alias)\n");
+    process.stderr.write("Usage: provekit prove <intent> [--no-confirm] [--dry-run] [--apply] [--max-sites N] [--verbose] [--workflow=manifest]\n       provekit fix <ref>      (alias)\n");
     process.exit(1);
   }
 
@@ -755,6 +864,7 @@ export async function runFix(argv: string[]): Promise<void> {
     apply,
     maxSites,
     verbose,
+    workflow,
     stdout: process.stdout,
     stderr: process.stderr,
     stdin: process.stdin,

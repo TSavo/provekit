@@ -1,0 +1,152 @@
+# Bug-fix workflow — data-driven manifest.
+#
+# This is the bug-fix pipeline that runFixLoop() encodes imperatively in
+# src/fix/orchestrator.ts, lifted into a YAML DAG that the workflow runner
+# topo-sorts and executes capability-by-capability.
+#
+# Deviations from runFixLoop (documented; see src/workflows/bug-fix.ts):
+#   - investigate is unconditional. The orchestrator runs it only when
+#     intake didn't produce a usable code-reference; the manifest format
+#     has no conditionals so we always run it. The cache makes the
+#     extra call free on the second run.
+#   - The unified do-the-work path is hardcoded. The orchestrator picks
+#     between unified doTheWork (when llm.agent && !recognized.matched)
+#     and the legacy split C3+C5 (generateFixCandidate + generateRegressionTest).
+#     Per task spec, the manifest commits to unified — that's the canonical
+#     path going forward.
+#   - bundle gets an empty audit trail. The manifest has no
+#     audit-accumulator concept; runFixLoop builds one in-flight and passes
+#     it as existingAuditTrail. This is a known gap.
+#   - D2 applyBundle and D3 learnFromBundle are out of scope for the
+#     bug-fix workflow; the manifest terminates at bundle.
+
+name: bug-fix
+cid: bafy-bugfix-v1
+description: >-
+  Walk a bug report through intake, investigate, locate, classify, recognize,
+  formulate, open-overlay, do-the-work, generate-complementary,
+  generate-principle-candidate, and bundle. Terminal artifact: a FixBundle.
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # Intake — adapt the user's report into a structured IntentSignal.
+  # ---------------------------------------------------------------------------
+  - id: intake
+    capability: intake
+    input:
+      text: $input.text
+      source: $input.source
+      context: $input.context
+
+  # ---------------------------------------------------------------------------
+  # Investigate — project tour + LLM hypothesis. Runs unconditionally;
+  # the orchestrator skips it on intake-with-clean-refs, but the manifest
+  # has no conditionals. Cache absorbs the cost on warm runs.
+  # ---------------------------------------------------------------------------
+  - id: investigate
+    capability: investigate
+    input:
+      signal: $node.intake.output
+      projectRoot: $input.projectRoot
+
+  # ---------------------------------------------------------------------------
+  # Locate — SAST-driven bug-locus resolution. No LLM, no fs writes.
+  # Depends only on the signal; runs in parallel with investigate.
+  # ---------------------------------------------------------------------------
+  - id: locate
+    capability: locate
+    input:
+      signal: $node.intake.output
+
+  # ---------------------------------------------------------------------------
+  # Classify — remediation-layer classification. Depends on signal + locus.
+  # Runs in parallel with the C1+C2 branch once locate has produced a locus.
+  # ---------------------------------------------------------------------------
+  - id: classify
+    capability: classify
+    input:
+      signal: $node.intake.output
+      locus: $node.locate.output
+
+  # ---------------------------------------------------------------------------
+  # Recognize (B3) — match locus against the principle library. No LLM.
+  # Output is consumed by formulate (orchestrator passes it as `recognized`).
+  # ---------------------------------------------------------------------------
+  - id: recognize
+    capability: recognize
+    input:
+      locus: $node.locate.output
+
+  # ---------------------------------------------------------------------------
+  # Open overlay (C2) — scratch git worktree + per-overlay SAST DB.
+  # Runs in parallel with formulate (the orchestrator does the same).
+  # ---------------------------------------------------------------------------
+  - id: open-overlay
+    capability: open-overlay
+    input:
+      locus: $node.locate.output
+
+  # ---------------------------------------------------------------------------
+  # Formulate (C1) — invariant claim. Reads recognized + investigateReport
+  # and threads them into the formulation prompt.
+  # ---------------------------------------------------------------------------
+  - id: formulate
+    capability: formulate
+    input:
+      signal: $node.intake.output
+      locus: $node.locate.output
+      recognized: $node.recognize.output
+      investigateReport: $node.investigate.output
+
+  # ---------------------------------------------------------------------------
+  # Do-the-work (C3+C5 unified) — atomic patch + test + Oracle #2/#9 verdicts.
+  # Consumes the full upstream context (signal, locus, invariant, overlay,
+  # investigateReport).
+  # ---------------------------------------------------------------------------
+  - id: do-the-work
+    capability: do-the-work
+    input:
+      signal: $node.intake.output
+      locus: $node.locate.output
+      invariant: $node.formulate.output
+      overlay: $node.open-overlay.output
+      investigateReport: $node.investigate.output
+
+  # ---------------------------------------------------------------------------
+  # Generate complementary (C4) — adjacent-site changes. Reads do-the-work's
+  # fix + the overlay (cumulative state).
+  # ---------------------------------------------------------------------------
+  - id: generate-complementary
+    capability: generate-complementary
+    input:
+      fix: $node.do-the-work.output
+      locus: $node.locate.output
+      overlay: $node.open-overlay.output
+
+  # ---------------------------------------------------------------------------
+  # Generate principle candidate (C6) — codify the bug-class.
+  # ---------------------------------------------------------------------------
+  - id: generate-principle-candidate
+    capability: generate-principle-candidate
+    input:
+      signal: $node.intake.output
+      invariant: $node.formulate.output
+      fix: $node.do-the-work.output
+      overlay: $node.open-overlay.output
+      recognized: $node.recognize.output
+
+  # ---------------------------------------------------------------------------
+  # Bundle (D1) — terminal artifact. Carries Oracle #10 coherence verdicts.
+  # ---------------------------------------------------------------------------
+  - id: bundle
+    capability: bundle
+    input:
+      signal: $node.intake.output
+      plan: $node.classify.output
+      locus: $node.locate.output
+      fix: $node.do-the-work.output
+      complementary: $node.generate-complementary.output
+      principle: $node.generate-principle-candidate.output
+      overlay: $node.open-overlay.output
+
+output: $node.bundle.output
