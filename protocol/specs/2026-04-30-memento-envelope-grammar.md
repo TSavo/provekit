@@ -8,9 +8,18 @@
 
 Every memento ProvekIt produces is a `ClaimEnvelope` (defined in
 `2026-04-29-universal-claim-envelope.md`). This spec adds **role**:
-the application-level purpose a memento serves. Six roles are defined:
-**catalog**, **property**, **bridge**, **verdict**, **audit**,
-**deprecation**.
+the application-level purpose a memento serves. Eight roles are defined:
+**catalog**, **contract**, **bridge**, **verdict**, **audit**,
+**deprecation**, **extension-declaration**, **implication**.
+
+The **contract** memento is the unit of behavior specification: a
+function's pre + post + inv together, signed and content-addressed as
+one artifact. The **implication** memento is a published Z3 witness
+that one formula implies another, used by verifiers as a hash-keyed
+cache of proven facts. Together these enable the handshake algorithm
+specified in `2026-04-30-handshake-algorithm.md`: most call sites
+discharge by hash equality; the residue runs Z3 once per (post, pre)
+pair and publishes the result for everyone else.
 
 Roles are not separate top-level types. A role is a constrained
 instance of the universal envelope, identified by:
@@ -95,12 +104,13 @@ verdict        = "holds" / "violated" / "decayed" / "undecidable" / "error"
 
 evidence-variant =
     catalog-evidence
-  / property-evidence
+  / contract-evidence
   / bridge-evidence
   / verdict-evidence
   / audit-evidence
   / deprecation-evidence
   / extension-declaration-evidence
+  / implication-evidence
 
 ; The legacy-witness variant is retained at the wrapper layer for
 ; backward compatibility with pre-protocol mementos. It MUST NOT be
@@ -135,12 +145,13 @@ Computation is specified in `2026-04-29-universal-claim-envelope.md`
 
 | Role         | `evidence.kind` (CDDL `kind` literal)                                                                        | Signature                          | `inputCids` referent role(s)             |
 |--------------|--------------------------------------------------------------------------------------------------------------|------------------------------------|------------------------------------------|
-| catalog      | `"kit-catalog"`                                                                                              | REQUIRED swarm; OPTIONAL local     | bridge, property                          |
-| property     | `"property-declaration"`                                                                                     | REQUIRED swarm; OPTIONAL local     | property                                  |
-| bridge       | `"bridge"`                                                                                                   | REQUIRED swarm; OPTIONAL local     | property, catalog                         |
-| verdict      | `"z3-model"` / `"z3-unsat"` / `"test-pass"` / `"test-fail"` / `"pattern-match"` / `"lint-pass"` / `"type-check-pass"` / `"mutation-witness"` | REQUIRED swarm; OPTIONAL local | property, verdict, bridge                 |
-| audit        | `"workflow-run"`                                                                                             | REQUIRED swarm; OPTIONAL local     | audit, verdict, property, bridge          |
-| deprecation  | `"retirement"`                                                                                               | REQUIRED swarm; OPTIONAL local     | property                                  |
+| catalog      | `"kit-catalog"`                                                                                              | REQUIRED swarm; OPTIONAL local     | bridge, contract                          |
+| contract     | `"contract"`                                                                                                 | REQUIRED swarm; OPTIONAL local     | contract                                  |
+| bridge       | `"bridge"`                                                                                                   | REQUIRED swarm; OPTIONAL local     | contract, catalog                         |
+| verdict      | `"z3-model"` / `"z3-unsat"` / `"test-pass"` / `"test-fail"` / `"pattern-match"` / `"lint-pass"` / `"type-check-pass"` / `"mutation-witness"` | REQUIRED swarm; OPTIONAL local | contract, verdict, bridge                 |
+| audit        | `"workflow-run"`                                                                                             | REQUIRED swarm; OPTIONAL local     | audit, verdict, contract, bridge          |
+| deprecation  | `"retirement"`                                                                                               | REQUIRED swarm; OPTIONAL local     | contract                                  |
+| implication  | `"implication"`                                                                                              | REQUIRED swarm; OPTIONAL local     | contract                                  |
 
 The signature column applies a single rule across roles: signatures
 are REQUIRED for swarm-distributed mementos and OPTIONAL for
@@ -256,39 +267,64 @@ downstream consumer's proofHash.
 }
 ```
 
-## Role: PropertyMemento
+## Role: ContractMemento
 
-Publishes one canonical IR claim and binds its `propertyHash` to
-the formula bytes. The body carries the canonical IR formula (per
-`2026-04-30-ir-formal-grammar.md`) plus the producer's authoring
-metadata. The IR formula's sha256-prefix-16 equals the wrapper's
-`propertyHash` field. This memento makes the propertyHash
-*resolvable*: given a CID, a consumer can fetch the memento and
-read the formula it commits to. Without a property memento, a
-propertyHash is a hash with no published preimage.
+Publishes the canonical behavior contract for a function-shaped
+binding: precondition, postcondition, and inductive invariant
+together as one signed, content-addressed unit. The body carries up
+to three IR formulas (per `2026-04-30-ir-formal-grammar.md`) — `pre`,
+`post`, `inv` — each optional but at least one MUST be present. The
+contract memento is the unit of behavior specification; bridges and
+verdicts both refer back to it.
 
-A property memento says "I, the producer, commit to this
-propertyHash naming this exact IR formula." It does NOT say the
-property holds for any particular code; that is the verdict role's
-job.
+A contract memento says "I, the producer, commit that this binding
+SHOULD satisfy these formulas." It does NOT assert the formulas hold
+of any particular implementation; that is the verdict role's job. A
+contract is a definition; a verdict reports whether reality conforms.
+
+The three slots have distinct semantic roles:
+
+- **`pre`**: a constraint the caller MUST establish before the call.
+  Quantified over function inputs (parameter sorts).
+- **`post`**: a guarantee the function provides on its return. The
+  formula has free-variable `outBinding` (default `"out"`) referring
+  to the return value; the verifier substitutes the call expression
+  there at use sites.
+- **`inv`**: a property that holds across the function's lifetime
+  (e.g. "the receiver's state remains valid"). Optional; rare for
+  pure functions, common for stateful objects.
+
+The pre/post split is what enables the **handshake algorithm**
+(`2026-04-30-handshake-algorithm.md`): a callee's `post` is matched
+against a caller's `pre` by hash equality (free), by published
+implication memento (cached), or by Z3 (residue). Most call sites
+discharge without a solver invocation when the ecosystem ships
+sufficient implication mementos.
 
 ```cddl
-property-evidence = {
-  kind:    "property-declaration",
+contract-evidence = {
+  kind:    "contract",
   schema:  cid,
-  body:    property-body
+  body:    contract-body
 }
 
-property-body = {
-  propertyName: tstr,
-  irFormula:    ir-formula,        ; imported from 2026-04-30-ir-formal-grammar.md
+contract-body = {
+  contractName: tstr,
+  ? pre:        ir-formula,        ; imported from 2026-04-30-ir-formal-grammar.md
+  ? post:       ir-formula,        ; the post-formula's free var refers to the return value
+  ? inv:        ir-formula,
+  outBinding:   tstr,              ; name of the free-variable post uses for the return value
+                                   ; conventionally "out"; required even when post is absent
+  ? preHash:    hex16,             ; DERIVED: hash16(canonical(pre)) when pre is present
+  ? postHash:   hex16,             ; DERIVED: hash16(canonical(post)) when post is present
+  ? invHash:    hex16,             ; DERIVED: hash16(canonical(inv)) when inv is present
   authoring:    authoring-block
 }
 
 authoring-block =
     llm-authoring
   / kit-author-authoring
-  / fix-loop-authoring
+  / lift-authoring
 
 llm-authoring = {
   producerKind: "llm",
@@ -305,37 +341,56 @@ kit-author-authoring = {
   ? note:       tstr
 }
 
-fix-loop-authoring = {
-  producerKind:          "fix-loop",
-  originatingBugSummary: tstr,
-  patchSha:              (tstr / null)
+lift-authoring = {
+  producerKind: "lift",
+  lifter:       producer-id,       ; e.g. "provekit-lift@1.0"
+  evidence:     "tests" / "types" / "docs" / "symbolic-exec",
+  ? sourceCid:  cid                ; the source artifact lift derived from
 }
 ```
 
 **Wrapper-field constraints (CDDL-checkable via shared rules):**
 
 - `verdict = "holds"`.
+- At least one of `pre`, `post`, `inv` MUST be present in
+  `evidence.body`. A contract with all three absent has no
+  semantic content; producers MUST NOT mint such a memento.
+- `outBinding` MUST be present even when `post` is absent (this lets
+  the contract evolve to add a `post` later without changing the
+  binding name). The string MUST match the regex
+  `^[A-Za-z_][A-Za-z0-9_]*$` to keep substitution predictable.
 
 **REFERENT constraints (post-CDDL validator):**
 
-- Every entry of `inputCids` MUST resolve to a memento whose role
-  is **property**. Validators reject property mementos whose
-  `inputCids` reach a non-property role.
+- Every entry of `inputCids` MUST resolve to a memento whose role is
+  **contract**. Validators reject contracts whose `inputCids` reach
+  a non-contract role.
 
 **DERIVED constraints (post-CDDL validator):**
 
-- `propertyHash == hash16(canonical(evidence.body.irFormula))`.
-  The IR formula is hashed under the canonical rules of the
-  envelope spec (sorted-keys JSON, no whitespace, UTF-8).
-- `bindingHash == hash16(canonical({producerId, propertyName,
-  irFormulaCid}))` where `producerId = wrapper.producedBy`,
-  `propertyName = evidence.body.propertyName`,
-  `irFormulaCid = wrapper.propertyHash`. Locking the construction
-  makes property bindingHashes reproducible across implementations.
+- `preHash`, `postHash`, `invHash` MUST be present iff their
+  corresponding `pre`/`post`/`inv` formula is present, AND MUST equal
+  `hash16(canonical(formula))` under JCS canonicalization. Validators
+  recompute and reject mismatches. The redundancy makes the
+  per-formula handshake index O(1) per memento at load time.
+- `propertyHash == hash16(canonical({pre?, post?, inv?, outBinding}))`
+  — the wrapper-level `propertyHash` is the whole-contract identity,
+  computed over the semantic fields (formulas + binding name) with
+  JCS-canonical key order and `omit absent` semantics. The
+  `contractName` and `authoring` fields are NOT in the
+  propertyHash: two contracts with byte-equal pre/post/inv/outBinding
+  produced under different names or by different authors share the
+  same propertyHash, which is the point — the propertyHash is the
+  canonical identity of the contract's behavior, not its provenance.
+- `bindingHash == hash16(canonical({producerId, contractName,
+  propertyHash}))` where `producerId = wrapper.producedBy`,
+  `contractName = evidence.body.contractName`,
+  `propertyHash = wrapper.propertyHash`. Locking the construction
+  makes contract bindingHashes reproducible across implementations.
 
 **Signature.** REQUIRED for swarm distribution; OPTIONAL local.
 
-### Worked example
+### Worked example (parseInt: pre + post)
 
 ```json
 {
@@ -345,46 +400,62 @@ fix-loop-authoring = {
   "evidence": {
     "body": {
       "authoring": {
-        "confidence": 0.93,
-        "llm": "claude-opus",
-        "llmVersion": "4-7",
-        "producerKind": "llm",
-        "promptCid": "0000000000000000000000000000beef",
-        "rationale": "abs(parseInt(x)) is non-negative when parseInt converges"
+        "evidence": "tests",
+        "lifter": "provekit-lift@1.0",
+        "producerKind": "lift",
+        "sourceCid": "0000000000000000000000000000beef"
       },
-      "irFormula": {
-        "kind": "forall-formula",
-        "var": { "kind": "lambda", "varName": "x", "sort": { "kind": "primitive-sort", "name": "Int" }, "body": {
-          "kind": "implies-formula",
-          "antecedent": { "kind": "atomic-formula", "predicate": "is_finite", "args": [
-            { "kind": "ctor-term", "ctor": "parseInt", "args": [{ "kind": "var-term", "name": "x" }] }
-          ]},
-          "consequent": { "kind": "atomic-formula", "predicate": "≥", "args": [
-            { "kind": "ctor-term", "ctor": "abs", "args": [
-              { "kind": "ctor-term", "ctor": "parseInt", "args": [{ "kind": "var-term", "name": "x" }] }
+      "contractName": "parseInt",
+      "outBinding": "out",
+      "pre": {
+        "kind": "forall",
+        "name": "_x0",
+        "sort": { "kind": "primitive", "name": "String" },
+        "body": {
+          "kind": "atomic",
+          "name": ">",
+          "args": [
+            { "kind": "ctor", "name": "length", "args": [
+              { "kind": "var", "name": "_x0" }
             ]},
-            { "kind": "const-term", "value": 0 }
-          ]}
-        }}
+            { "kind": "const", "value": 0,
+              "sort": { "kind": "primitive", "name": "Int" } }
+          ]
+        }
       },
-      "propertyName": "parseInt-non-negative"
+      "post": {
+        "kind": "forall",
+        "name": "_x0",
+        "sort": { "kind": "primitive", "name": "String" },
+        "body": {
+          "kind": "atomic",
+          "name": ">",
+          "args": [
+            { "kind": "var", "name": "out" },
+            { "kind": "const", "value": 0,
+              "sort": { "kind": "primitive", "name": "Int" } }
+          ]
+        }
+      },
+      "preHash": "5a6b7c8d9e0f1a2b",
+      "postHash": "9e0f1a2b3c4d5e6f"
     },
-    "kind": "property-declaration",
+    "kind": "contract",
     "schema": "00000000000000000000000000000c02"
   },
   "inputCids": [],
   "producedAt": "2026-04-30T12:00:00.000Z",
-  "producedBy": "llm:claude-opus@4-7",
+  "producedBy": "provekit-lift@1.0",
   "producerSignature": "MEUCIQ==",
   "propertyHash": "f0e1d2c3b4a59687",
   "verdict": "holds"
 }
 ```
 
-The exact IR-formula JSON shape is governed by the IR Formal Grammar
-spec; the example uses its rule names as a reference. A conforming
-validator imports the IR grammar's `ir-formula` rule and applies it
-to `evidence.body.irFormula` directly.
+The IR-JSON shape is governed by the IR Formal Grammar spec. A
+conforming validator imports the IR grammar's `ir-formula` rule and
+applies it to `evidence.body.pre`, `body.post`, and `body.inv`
+independently.
 
 ## Role: BridgeMemento
 
@@ -435,7 +506,7 @@ function-sort   = { kind: "function",  domain: [* sort], range: sort }
 
 **REFERENT constraints (post-CDDL validator):**
 
-- `inputCids[0]` MUST resolve to a memento whose role is **property**
+- `inputCids[0]` MUST resolve to a memento whose role is **contract**
   OR **catalog** (the deeper-layer contract).
 - `inputCids[0] == evidence.body.targetContractCid`. The redundancy
   is structural so a chain walker can enumerate edges without
@@ -683,7 +754,7 @@ transitional cases, which is outside the role grammar here).
 **REFERENT constraints (post-CDDL validator):**
 
 - Every entry of `inputCids` MUST resolve to a memento whose role
-  is **property**, **verdict**, or **bridge**.
+  is **contract**, **verdict**, or **bridge**.
 
 **Signature.** REQUIRED for swarm-distributed verdicts. OPTIONAL
 for local-only ones.
@@ -778,7 +849,7 @@ audit-body = {
 **REFERENT constraints (post-CDDL validator):**
 
 - Every entry of `inputCids` MUST resolve to a memento whose role is
-  **audit**, **verdict**, **property**, or **bridge**. An audit
+  **audit**, **verdict**, **contract**, or **bridge**. An audit
   memento MUST NOT point at catalog mementos directly (the catalog
   is a publication artifact, not an input to a stage).
 
@@ -867,9 +938,9 @@ retirement-body = {
 **REFERENT constraints (post-CDDL validator):**
 
 - `inputCids[0]` MUST resolve to a memento whose role is
-  **property**.
+  **contract**.
 - `evidence.body.successor`, when present, MUST resolve to a memento
-  whose role is **property**.
+  whose role is **contract**.
 - `evidence.body.retiredPropertyCid == inputCids[0]`. Validators
   reject deprecations whose body and inputCids disagree.
 
@@ -915,6 +986,121 @@ OPTIONAL for local deprecations.
   "producedBy": "llm:claude-opus@4-7",
   "producerSignature": "MEUCIQ==",
   "propertyHash": "0011223344556677",
+  "verdict": "holds"
+}
+```
+
+## Role: ImplicationMemento
+
+A signed Z3 (or other-solver) witness that one IR formula
+universally implies another. Implication mementos are how the
+**handshake algorithm** caches proven facts: once any party has
+discharged `forall x. Q(x) -> P(x)`, the witness is content-
+addressed and shared. Future verifiers that need the same
+implication look it up by the (antecedent, consequent) hash pair,
+verify the producer's signature, and skip the solver entirely.
+
+This memento type is what makes ProvekIt anti-rivalrous: a Z3
+invocation that produces an unsat result becomes a publishable
+artifact, indexable by any party. An external **implication server**
+crawls published `.proof` files, extracts implication mementos, and
+exposes a query API: "given consequent hash H, list contracts whose
+post-formula has antecedent that implies H." The memento format is
+what such a server consumes; the server's specific implementation
+is out of scope for this document.
+
+```cddl
+implication-evidence = {
+  kind:    "implication",
+  schema:  cid,
+  body:    implication-body
+}
+
+implication-body = {
+  antecedentHash: hex16,        ; hash16(canonical(antecedent-formula))
+  consequentHash: hex16,        ; hash16(canonical(consequent-formula))
+  antecedentCid:  cid,          ; CID of a contract memento containing the antecedent
+                                ; as one of its pre/post/inv slots
+  consequentCid:  cid,          ; CID of a contract memento containing the consequent
+  antecedentSlot: ("pre" / "post" / "inv"),
+  consequentSlot: ("pre" / "post" / "inv"),
+  prover:         producer-id,  ; e.g. "z3@4.13.4"
+  proverRunMs:    uint,
+  ? smtLibInput:  tstr,         ; the script the prover was given (for replay)
+  ? proofWitness: tstr          ; solver-specific unsat-proof artifact when available
+}
+```
+
+**Wrapper-field constraints:**
+
+- `verdict = "holds"` (the implication is asserted as true).
+- `inputCids` MUST contain exactly two entries, lex-sorted: the
+  antecedent contract CID and the consequent contract CID. CDDL
+  `[* cid]` is narrowed to exactly-2 in the post-pass.
+
+**REFERENT constraints (post-CDDL validator):**
+
+- Each entry of `inputCids` MUST resolve to a memento whose role is
+  **contract**.
+- `{antecedentCid, consequentCid}` MUST equal the multiset of
+  `inputCids` (the body and inputCids agree on which contracts are
+  involved).
+- The contract at `antecedentCid` MUST contain a slot named by
+  `antecedentSlot`, and the slot's formula's `hash16(canonical(...))`
+  MUST equal `antecedentHash`. Same for `consequentCid` /
+  `consequentSlot` / `consequentHash`. Validators verify both before
+  accepting the implication.
+
+**DERIVED constraints:**
+
+- `bindingHash == hash16(canonical({antecedentHash, consequentHash}))`.
+  The bindingHash is the (ordered) hash pair, which is what an
+  implication server indexes on.
+- `propertyHash == hash16(canonical("implication:" || antecedentHash || ":" || consequentHash))`.
+
+**Signature.** REQUIRED for swarm-distributed implications. An
+unsigned implication has no useful trust property: the verifier
+cannot distinguish a real Z3 witness from a fabrication. Producers
+of implication mementos publish their solver identity (`prover`
+field) and sign with the key they have published as their solver
+identity's public key.
+
+**Replay.** A verifier that wants to re-prove the implication
+locally can decode `smtLibInput` and feed it to its own solver. If
+the local solver disagrees with the published witness, the
+implication is rejected and SHOULD be reported (the producer or the
+solver is buggy or the signature is forged).
+
+### Worked example
+
+```json
+{
+  "schemaVersion": "1",
+  "bindingHash": "8f3a7c0d1e2b4a56",
+  "cid": "bcde0123456789abcdef0123456789ab",
+  "evidence": {
+    "body": {
+      "antecedentCid": "1234567890abcdef1234567890abcdef",
+      "antecedentHash": "9e0f1a2b3c4d5e6f",
+      "antecedentSlot": "post",
+      "consequentCid": "abcd1234ef567890abcd1234ef567890",
+      "consequentHash": "5a6b7c8d9e0f1a2b",
+      "consequentSlot": "pre",
+      "prover": "z3@4.13.4",
+      "proverRunMs": 47,
+      "smtLibInput": "(set-logic ALL) ..."
+    },
+    "kind": "implication",
+    "schema": "00000000000000000000000000000c08"
+  },
+  "inputCids": [
+    "1234567890abcdef1234567890abcdef",
+    "abcd1234ef567890abcd1234ef567890"
+  ],
+  "producedAt": "2026-04-30T12:08:00.000Z",
+  "producedBy": "z3@4.13.4",
+  "producerSignature": "MEUCIQ==",
+  "propertyHash": "0d2e4f6a8b0c1d3e",
   "verdict": "holds"
 }
 ```
@@ -998,12 +1184,13 @@ semantic-declaration =
 CDDL types `inputCids` as `[* cid]`. The post-CDDL referent table:
 
 ```
-catalog.inputCids     -> { bridge, property }                    REQUIRED non-empty
-property.inputCids    -> { property }                            MAY be empty
-bridge.inputCids      -> { property, catalog }                   exactly 1 entry
-verdict.inputCids     -> { property, verdict, bridge }           MAY be empty
-audit.inputCids       -> { audit, verdict, property, bridge }    MAY be empty
-deprecation.inputCids -> { property }                            exactly 1 entry
+catalog.inputCids     -> { bridge, contract }                    REQUIRED non-empty
+contract.inputCids    -> { contract }                            MAY be empty
+bridge.inputCids      -> { contract, catalog }                   exactly 1 entry
+verdict.inputCids     -> { contract, verdict, bridge }           MAY be empty
+audit.inputCids       -> { audit, verdict, contract, bridge }    MAY be empty
+deprecation.inputCids -> { contract }                            exactly 1 entry
+implication.inputCids -> { contract }                            exactly 2 entries
 ```
 
 A role pointing at a forbidden role in `inputCids` is malformed.
@@ -1062,64 +1249,53 @@ work needed to close it.
 
 - **Catalog role.** Protocol requires
   `evidence.kind = "kit-catalog"` with the body matching
-  `catalog-body`. Current TS emits `evidence.kind = "legacy-witness"`
-  with the descriptor embedded as a JSON-encoded string in
-  `body.rawWitness` (see
-  `scripts/cross-language-demo/kit-catalog/build-ts-kit-catalog.ts`).
-  Alignment work: introduce the `kit-catalog` evidence variant in
-  `src/claimEnvelope/types.ts` and switch the catalog builder.
-- **Property role.** Protocol requires
-  `evidence.kind = "property-declaration"` with a `property-body`
-  carrying a structured `irFormula` and a tagged `authoring` block.
-  Current TS encodes property mementos as `llm-proposal`
-  (LLM-authored) or `legacy-witness` (kit/fix-loop-authored).
-  Alignment work: introduce the `property-declaration` variant;
-  migrate LLM-producer code to the `llm-authoring` shape; migrate
-  kit/fix-loop producers similarly.
+  `catalog-body`. Implementations MUST emit this exact shape;
+  legacy `legacy-witness`-wrapped catalogs are not protocol-
+  conformant.
+- **Contract role.** Protocol requires `evidence.kind = "contract"`
+  with a `contract-body` carrying optional `pre`/`post`/`inv`
+  formulas (at least one present), a required `outBinding` name,
+  the DERIVED per-formula hashes (`preHash`/`postHash`/`invHash`),
+  and a tagged `authoring` block. The role replaces the prior
+  `property-declaration` shape entirely; producers MUST NOT emit
+  `kind: "property-declaration"` or use `irFormula` as a body field.
+- **Implication role.** Protocol requires
+  `evidence.kind = "implication"` with a body identifying the
+  antecedent and consequent contract memento CIDs and the
+  per-formula hashes. The handshake algorithm spec
+  (`2026-04-30-handshake-algorithm.md`) defines when verifiers
+  consume these mementos.
 - **Deprecation role.** Protocol requires
-  `evidence.kind = "retirement"` with a structured `retirement-body`.
-  Current TS has no envelope-level deprecation encoding at all;
-  retirement information lives on disk in `StoredInvariant.retired`
-  (`src/fix/runtime/invariantStore.ts`) and does not travel through
-  the memento store. Alignment work: introduce the `retirement`
-  variant, add a `mintDeprecation` helper paralleling `mintBridge`,
-  extend the catalog-diff workflow to surface deprecation mementos
-  as authoritative removals.
+  `evidence.kind = "retirement"` with a structured `retirement-body`
+  pointing at a contract memento CID. Implementations that retire
+  contracts via on-disk state outside the memento store are not
+  protocol-conformant.
 - **Verdict role.** Protocol requires the wrapper `verdict` and the
-  variant body's verdict to satisfy the pairing rules. Current TS
-  types do not enforce the joint constraint at the type level: a
-  producer can emit `verdict: "holds"` paired with
-  `kind: "test-fail"` and the type-checker accepts it. Alignment
-  work: refine the TS types into a discriminated union keyed
-  jointly on `verdict` and `evidence.kind`, or add a runtime
-  validator that rejects mismatched pairs.
-- **Verdict role, `pattern-match` polarity.** Protocol adds
-  `polarity: ("defect-detector" / "feature-detector")` to the
-  pattern-match body so the pairing rule is well-defined. Current
-  TS lacks the `polarity` field. Alignment work: add the field to
-  `PatternMatchEvidence.body` and route producers to populate it.
-- **Property `bindingHash` construction.** Protocol locks the
-  construction to
-  `hash16(canonical({producerId, propertyName, irFormulaCid}))`.
-  Current TS computes `bindingHash` per-producer with no
-  cross-producer agreement. Alignment work: implement the locked
-  construction in the property-declaration mint helper.
+  variant body's verdict to satisfy the pairing rules. Joint
+  constraint enforcement (rejecting `verdict: "holds"` paired with
+  `kind: "test-fail"`) is mandatory at validation time, even if a
+  given language's type system cannot statically express the joint
+  constraint.
+- **Verdict role, `pattern-match` polarity.** Protocol requires
+  `polarity: ("defect-detector" / "feature-detector")` in the
+  pattern-match body so the pairing rule is well-defined.
+- **Contract `bindingHash` construction.** Locked to
+  `hash16(canonical({producerId, contractName, propertyHash}))` per
+  the contract role's DERIVED constraints.
 - **Audit `bindingHash` and `propertyHash` constructions.**
-  Protocol locks both to canonical hashes of body fields. Current
-  TS treats them as caller-supplied. Alignment work: derive both
-  inside the workflow runner instead of accepting caller input.
-- **Bridge role.** Current TS `BridgeEvidence` body shape and the
-  `mintBridge` helper conform to the protocol. No alignment work
-  needed except removing the `notes: null` corner-case allowance
-  if the type permits it.
-- **`legacy-witness` variant.** The variant exists in the universal
-  envelope for backward compatibility with pre-protocol mementos.
-  Producing a `legacy-witness` memento for any of the six roles
-  defined here is a protocol violation. Alignment work: audit
-  callers of `mintLegacyWitness` and route each to the appropriate
-  role-specific variant.
+  Locked to canonical hashes of body fields per the audit role's
+  DERIVED constraints; producers derive these, not callers.
+- **Bridge role.** Body shape conforms to the protocol's
+  `bridge-body`. The `notes: null` shape is non-conformant; the
+  field MUST be omitted entirely when no notes apply.
+- **Removed: the `legacy-witness` variant.** This variant existed
+  for transitional backward compatibility with pre-v1.0.1 mementos.
+  Under the scorched-earth protocol cut (catalog v1.0.2+) it is
+  removed entirely. Producers MUST emit only the role-specific
+  variants defined here. Validators MUST reject mementos with
+  `evidence.kind = "legacy-witness"` as malformed.
 
-These items name what the TypeScript reference implementation must
-become to conform. Implementations in other host languages (Rust,
-Go, C++) MUST conform to the CDDL above as written, regardless of
-the TypeScript implementation's current state.
+These items name what every conforming reference implementation
+(TypeScript, Rust, Go, C++) MUST do. There is no transitional
+window: implementations either match the spec or they don't write
+`.proof` files.

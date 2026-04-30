@@ -1,18 +1,27 @@
 {
   "kind": "catalog",
   "name": "provekit-protocol",
-  "version": "v1.0.2-2026-04-30",
+  "version": "v1.1.0-2026-04-30",
   "properties": {
-    "ir-formal-grammar": "sha256:0c394dbb0bc6da2b",
+    "ir-formal-grammar": "sha256:RECOMPUTE-AFTER-MAXIMAL-IR-CUT",
     "canonicalization-grammar": "sha256:af7e3a96d403936c",
-    "memento-envelope-grammar": "sha256:ff6d03c523b68202",
+    "memento-envelope-grammar": "sha256:RECOMPUTE-AFTER-CONTRACT-CUT",
     "signatures-and-non-repudiation": "sha256:9b9f86ec1795ff90",
     "chain-validity-and-fail-closed": "sha256:7d7777ef5b0017fe",
     "ir-extension-protocol": "sha256:c48b69c15e1eb7e9",
     "proof-file-format": "sha256:1fed4d6da2b42e79",
     "semantic-envelope": "sha256:b667f5c10c37173c",
-    "supply-chain-via-semantic-envelope": "sha256:eefec0fb212ef5f3"
+    "supply-chain-via-semantic-envelope": "sha256:eefec0fb212ef5f3",
+    "handshake-algorithm": "sha256:RECOMPUTE-AFTER-CONTRACT-CUT",
+    "per-language-kit-standard": "sha256:RECOMPUTE-AFTER-CONTRACT-CUT"
   },
   "declaredAt": "2026-04-30T15:00:00Z",
-  "_unsigned": "draft v1; signing requires a published authority key per the signatures spec, which itself is one of the entries above. Self-bootstrap: the first signed protocol catalog will be a v1.0.1 that pins this catalog's CID and is signed by the project's root key."
+  "_unsigned": "draft v1.1.0; minor bump for: (1) property memento role replaced by contract memento (pre/post/inv/outBinding); (2) implication memento role added (with Z3 witness body); (3) handshake algorithm spec added; (4) IR formal grammar maximal-uniformity cut (flat quantifiers, unified connective with operands, no sort on var/ctor, name everywhere). Spec CIDs marked RECOMPUTE will be derived from the canonical bytes after the implementation cut lands; the catalog itself signs after that.",
+  "_breakingChanges": [
+    "Property memento role removed; contract memento role added with body fields {pre?, post?, inv?, outBinding, preHash?, postHash?, invHash?, authoring}",
+    "Implication memento role added; minted by verifiers when Z3 discharges (Q implies P) at handshake time",
+    "IR-JSON shape: forall/exists are flat (no Lambda wrapper); and/or/not/implies use unified `operands` array; var and ctor terms drop `sort`; atomic uses `name` instead of `predicate`; `name` replaces `varName` everywhere",
+    "All previously-derived propertyHashes are invalidated by the IR shape change; cross-language demos and PoCs re-derive CIDs",
+    "legacy-witness wrapper variant removed; producers MUST emit role-specific variants only"
+  ]
 }

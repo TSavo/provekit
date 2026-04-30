@@ -75,7 +75,7 @@ emitter respects the locked key order specified for each node kind.
 ```ebnf
 Document    ::= "[" ( Declaration ( "," Declaration )* )? "]"
 
-Declaration ::= PropertyDeclaration
+Declaration ::= ContractDeclaration
               | BridgeDeclaration
 ```
 
@@ -83,17 +83,36 @@ A document is a JSON array of declarations. Empty (`[]`) is valid.
 
 ## Declarations
 
-### PropertyDeclaration
+### ContractDeclaration
 
-Locked key order: `kind`, `name`, `formula`.
+Locked key order: `kind`, `name`, `outBinding`, `pre`, `post`, `inv`.
+The `pre`, `post`, and `inv` fields are each optional but at least
+one MUST be present. When present, each is an `IrFormula`. When
+absent, the entire key is omitted (never emitted as `null` —
+matches the JCS canonicalization rule "omit absent keys"). The
+`outBinding` field is REQUIRED and names the free variable that
+`post` uses to refer to the function's return value
+(conventionally `"out"`).
 
 ```ebnf
-PropertyDeclaration ::= "{"
-                          "\"kind\"" ":" "\"property\"" ","
+ContractDeclaration ::= "{"
+                          "\"kind\"" ":" "\"contract\"" ","
                           "\"name\"" ":" String ","
-                          "\"formula\"" ":" IrFormula
+                          "\"outBinding\"" ":" String
+                          ( "," "\"pre\"" ":" IrFormula )?
+                          ( "," "\"post\"" ":" IrFormula )?
+                          ( "," "\"inv\"" ":" IrFormula )?
                         "}"
 ```
+
+The `post` formula's body MAY contain free occurrences of a
+variable whose `name` equals `outBinding`. The verifier substitutes
+the call expression's symbolic output for that variable at use
+sites (per the handshake algorithm spec). All other free variables
+in any of `pre`/`post`/`inv` are quantified by an enclosing
+`forall` whose `varName` matches the function's parameter name; a
+ContractDeclaration whose `pre`/`post`/`inv` contains a free
+variable that is neither `outBinding` nor a parameter is malformed.
 
 ### BridgeDeclaration
 
@@ -122,126 +141,96 @@ This rule is what keeps the four kits byte-equal when bridges have no notes.)
 ### IrFormula
 
 ```ebnf
-IrFormula ::= ForallFormula
-            | ExistsFormula
-            | AndFormula
-            | OrFormula
-            | NotFormula
-            | ImpliesFormula
+IrFormula ::= QuantifierFormula
+            | ConnectiveFormula
             | AtomicFormula
 ```
 
-The `kind` field is the discriminator for all formula nodes. It is always the
-first key.
+The `kind` field is the discriminator for every formula and term node. It is
+always the first key.
 
-### ForallFormula
+The maximal-uniformity rule for the IR: every node has `kind`, then `name`
+(when applicable), then payload (`sort` / `body` / `args` / `operands` /
+`value`). There is no `varName` (variable names use `name`); there is no
+`conjuncts` / `disjuncts` / `antecedent` / `consequent` (boolean connectives
+use `operands`); there is no `lambda` wrapper around a quantifier's body
+(the quantifier carries its bound variable directly). The reader holds the
+entire IR in their head.
 
-Locked key order: `kind`, `sort`, `predicate`.
+### QuantifierFormula
 
-```ebnf
-ForallFormula ::= "{"
-                    "\"kind\"" ":" "\"forall\"" ","
-                    "\"sort\"" ":" Sort ","
-                    "\"predicate\"" ":" Lambda
-                  "}"
-```
-
-### ExistsFormula
-
-Locked key order: `kind`, `sort`, `predicate`.
+Locked key order: `kind`, `name`, `sort`, `body`.
 
 ```ebnf
-ExistsFormula ::= "{"
-                    "\"kind\"" ":" "\"exists\"" ","
-                    "\"sort\"" ":" Sort ","
-                    "\"predicate\"" ":" Lambda
-                  "}"
+QuantifierFormula ::= "{"
+                        "\"kind\"" ":" QuantifierKind ","
+                        "\"name\"" ":" String ","
+                        "\"sort\"" ":" Sort ","
+                        "\"body\"" ":" IrFormula
+                      "}"
+
+QuantifierKind ::= "\"forall\"" | "\"exists\""
 ```
 
-### Lambda (predicate body of forall/exists)
+The `name` field is the bound variable's identifier. References to this
+variable inside `body` are `VarTerm` nodes whose `name` matches.
 
-Locked key order: `kind`, `varName`, `sort`, `body`.
+### ConnectiveFormula
+
+Locked key order: `kind`, `operands`.
 
 ```ebnf
-Lambda ::= "{"
-             "\"kind\"" ":" "\"lambda\"" ","
-             "\"varName\"" ":" String ","
-             "\"sort\"" ":" Sort ","
-             "\"body\"" ":" IrFormula
-           "}"
+ConnectiveFormula ::= "{"
+                        "\"kind\"" ":" ConnectiveKind ","
+                        "\"operands\"" ":" "[" IrFormula ( "," IrFormula )* "]"
+                      "}"
+
+ConnectiveKind ::= "\"and\"" | "\"or\"" | "\"not\"" | "\"implies\""
 ```
 
-### AndFormula / OrFormula
+**Arity rules** (post-grammar):
 
-Locked key order: `kind`, `conjuncts` (resp. `disjuncts`).
+- `not` MUST have exactly 1 operand.
+- `implies` MUST have exactly 2 operands; `operands[0]` is the antecedent,
+  `operands[1]` the consequent.
+- `and` and `or` MUST have 2 or more operands. Empty/singleton `and`/`or` is
+  not a valid IR shape; the canonicalizer's AC pass produces 2+ operands or
+  collapses to a non-connective form.
 
-```ebnf
-AndFormula ::= "{"
-                 "\"kind\"" ":" "\"and\"" ","
-                 "\"conjuncts\"" ":" "[" ( IrFormula ( "," IrFormula )* )? "]"
-               "}"
-
-OrFormula ::= "{"
-                "\"kind\"" ":" "\"or\"" ","
-                "\"disjuncts\"" ":" "[" ( IrFormula ( "," IrFormula )* )? "]"
-              "}"
-```
-
-The operand arrays MAY be empty (an empty `and` is `true`, an empty `or` is
-`false`); the grammar permits this and the parser accepts it. The
-canonicalizer's AC pass collapses these.
-
-### NotFormula
-
-Locked key order: `kind`, `body`.
-
-```ebnf
-NotFormula ::= "{"
-                 "\"kind\"" ":" "\"not\"" ","
-                 "\"body\"" ":" IrFormula
-               "}"
-```
-
-### ImpliesFormula
-
-Locked key order: `kind`, `antecedent`, `consequent`.
-
-```ebnf
-ImpliesFormula ::= "{"
-                     "\"kind\"" ":" "\"implies\"" ","
-                     "\"antecedent\"" ":" IrFormula ","
-                     "\"consequent\"" ":" IrFormula
-                   "}"
-```
+Validators reject ConnectiveFormula nodes with arity violations.
 
 ### AtomicFormula
 
-Locked key order: `kind`, `predicate`, `args`.
+Locked key order: `kind`, `name`, `args`.
 
 ```ebnf
 AtomicFormula ::= "{"
                     "\"kind\"" ":" "\"atomic\"" ","
-                    "\"predicate\"" ":" String ","
+                    "\"name\"" ":" String ","
                     "\"args\"" ":" "[" ( IrTerm ( "," IrTerm )* )? "]"
                   "}"
 
-AtomicPredicate ::= "\"=\"" | "\"≠\"" | "\"<\"" | "\"≤\""
-                  | "\">\"" | "\"≥\""
-                  | "\"true\"" | "\"false\""
-                  | "\"subset\"" | "\"member\""
-                  | "\"kind-of\"" | "\"data-flows-to\""
-                  | "\"dominates\"" | "\"post-dominates\""
-                  | "\"transition-from-to\"" | "\"on-path\""
-                  | "\"bvult\"" | "\"bvule\"" | "\"bvugt\"" | "\"bvuge\""
-                  | "\"bvslt\"" | "\"bvsle\"" | "\"bvsgt\"" | "\"bvsge\""
-                  | KitDefinedPredicate
+AtomicName ::= "\"=\"" | "\"≠\"" | "\"<\"" | "\"≤\""
+             | "\">\"" | "\"≥\""
+             | "\"true\"" | "\"false\""
+             | "\"subset\"" | "\"member\""
+             | "\"kind-of\"" | "\"data-flows-to\""
+             | "\"dominates\"" | "\"post-dominates\""
+             | "\"transition-from-to\"" | "\"on-path\""
+             | "\"bvult\"" | "\"bvule\"" | "\"bvugt\"" | "\"bvuge\""
+             | "\"bvslt\"" | "\"bvsle\"" | "\"bvsgt\"" | "\"bvsge\""
+             | KitDefinedAtomicName
 ```
 
-`KitDefinedPredicate` is any String that does not collide with a built-in
-predicate. The parser does **not** reject unknown predicate names: the
-TypeScript IR type allows `string` as an open extension, and kits may define
-new predicates without rev-locking the parser. This is intentional. (Strict
-mode is offered as a parser option; see "Strict mode" below.)
+`KitDefinedAtomicName` is any String that does not collide with a built-in
+atomic name. The parser does **not** reject unknown names: kits may define
+new atomic predicates without rev-locking the parser. (Strict mode is
+offered as a parser option; see "Strict mode" below.)
+
+The use of `name` (not `predicate`) for the atomic's identifier matches
+every other named node in the IR. The kind discriminator (`"atomic"`) carries
+the information that this `name` is an atomic-predicate name; no separate
+field key is needed to communicate that.
 
 ## Terms
 
@@ -253,15 +242,20 @@ IrTerm ::= VarTerm | ConstTerm | CtorTerm
 
 ### VarTerm
 
-Locked key order: `kind`, `name`, `sort`.
+Locked key order: `kind`, `name`.
 
 ```ebnf
 VarTerm ::= "{"
               "\"kind\"" ":" "\"var\"" ","
-              "\"name\"" ":" String ","
-              "\"sort\"" ":" Sort
+              "\"name\"" ":" String
             "}"
 ```
+
+A `VarTerm` carries no sort. The variable's sort is determined by the
+enclosing `QuantifierFormula` whose `name` matches, or — for free variables
+introduced by a contract memento's `outBinding` — by the substitution rule
+at call sites (the substituted expression's sort). Producers MUST NOT add a
+`sort` field; validators MUST reject `VarTerm`s with extra fields.
 
 ### ConstTerm
 
@@ -277,26 +271,35 @@ ConstTerm ::= "{"
 ConstValue ::= Number | String | Bool | Null
 ```
 
-The `value` payload is a free JSON value. The grammar permits Number, String,
-Bool, and Null; the kit emitters generally use Number/String/Bool when the
-sort is Int/Real/String/Bool. Bigint values that exceed JavaScript's safe
-integer range MAY be emitted as a JSON Number (current TS behavior — relies
-on JS number serialization) or as a String with prefix `"bigint:<digits>"`
-(canonicalizer's convention; not currently used by kits at the IR-emission
-boundary). Parsers MUST accept either shape.
+A `ConstTerm` is the only term kind that carries `sort`: the literal value's
+type is not derivable from binding scope or signature. `Number`, `String`,
+`Bool`, and `Null` are the permitted JSON value shapes; the `sort` field
+disambiguates (e.g. `42` could be `Int` or `Real`).
+
+Bigint values that exceed JavaScript's safe integer range MAY be emitted as
+a JSON Number (current TS behavior) or as a String with prefix
+`"bigint:<digits>"` (canonicalizer's convention). Parsers MUST accept either
+shape.
 
 ### CtorTerm
 
-Locked key order: `kind`, `name`, `args`, `sort`.
+Locked key order: `kind`, `name`, `args`.
 
 ```ebnf
 CtorTerm ::= "{"
                "\"kind\"" ":" "\"ctor\"" ","
                "\"name\"" ":" String ","
-               "\"args\"" ":" "[" ( IrTerm ( "," IrTerm )* )? "]" ","
-               "\"sort\"" ":" Sort
+               "\"args\"" ":" "[" ( IrTerm ( "," IrTerm )* )? "]"
              "}"
 ```
+
+A `CtorTerm` carries no sort. The ctor's return sort is determined by its
+declaration in a kit's bridge or extension memento (`irReturnSort` field).
+Producers MUST NOT add a `sort` field; validators MUST reject `CtorTerm`s
+with extra fields. Two `CtorTerm` nodes with the same `name` and `args`
+must hash identically regardless of where they appear; carrying a `sort`
+field would make textually-equal ctor invocations hash differently in
+different scopes, which defeats the canonicalization promise.
 
 `args` MAY be empty (a nullary constructor like `parseInt()` taking no
 arguments — uncommon but permitted by the IR types).

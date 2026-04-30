@@ -80,27 +80,41 @@ import to express invariants in their host language.
 **Required exports** (named by their semantic role; surface syntax
 varies by language):
 
-- `property<TScope>(spec)` constructor — creates an IR formula bound
-  to a code scope.
+- `contract(name, { pre?, post?, inv?, outBinding? })` constructor
+  — creates a behavior contract for a function-shaped binding,
+  carrying any combination of precondition, postcondition, and
+  inductive invariant. At least one of `pre`/`post`/`inv` MUST be
+  provided. `outBinding` defaults to `"out"`. The contract is the
+  unit of behavior specification per the memento envelope grammar
+  spec's contract role.
+- `must(name, formula)` convenience alias — equivalent to
+  `contract(name, { pre: formula })`. Retained because the
+  precondition-only case is overwhelmingly common; the alias keeps
+  the simple case syntactically compact while the full surface
+  goes through `contract`.
 - `forAll`, `exists` quantifiers over typed sorts.
 - `implies`, `and`, `or`, `not` boolean connectives.
-- `assert.equal`, `assert.notEqual`, `assert.greaterThan`, etc. —
-  comparison primitives.
+- `eq`, `gt`, `gte`, `lt`, `lte`, `ne` — comparison primitives.
+- `out()` — references the function's return value within a `post`
+  formula. Compiles to a `var` term whose `name` equals the enclosing
+  contract's `outBinding`.
 - Branded type helpers: `NonZero<T>`, `NonEmpty<T>`, `Sorted<T>`,
   `Validated<T, schema>` — the type-dialect surface.
 - Scope helpers: `function`, `module`, `class`, `transition`, etc. —
-  for binding properties to code locations.
+  for binding contracts to code locations.
 
 The IR library is the *only* required new dependency a kit imposes
 on the host language. It's installable as the host's normal package
 (npm, cargo, etc.).
 
 **Acceptance:** a developer in the host language can write at least
-the following kinds of property without leaving the host language's
+the following kinds of contract without leaving the host language's
 type system or syntax:
-- A type-dialect property using a branded type (`NonZero<T>`).
-- A library-dialect property using a quantifier (`forAll(x => ...)`).
-- A composed property using boolean connectives.
+- A precondition-only contract: `must("non-empty-input", forAll(s => length(s) > 0))`.
+- A pre + post contract: `contract("parseInt", { pre: ..., post: forAll(s => gt(out(), num(0))) })`.
+- A type-dialect contract using a branded type (`NonZero<T>`).
+- A library-dialect contract using a quantifier (`forAll(x => ...)`).
+- A composed contract using boolean connectives.
 
 The library carries no implementation — it produces *data structures*
 (IR formulas as host-language values) that downstream components
