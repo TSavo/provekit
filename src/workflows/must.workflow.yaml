@@ -1,0 +1,72 @@
+# Must workflow — data-driven manifest.
+#
+# `provekit must <file> "<intent>"` adds an invariant to <file>'s
+# .invariant.ts companion based on natural-language intent. Reuses the
+# existing Stages from the bug-fix workflow:
+#   - intake parses the user's intent into an IntentSignal
+#   - locate finds the target file's symbol(s)
+#   - formulate-via-lifter emits the invariant in symbolic-primitives
+#     surface, lifts it through the lifter, canonicalizes
+#
+# The new action is `write-invariant-file`, which writes the surface
+# text to <basename>.invariant.ts. Side-effecting; audit memento
+# records what landed.
+#
+# No do-the-work, no recognize, no bundle: the must workflow is just
+# the invariant authorship path. The user's production code is
+# UNCHANGED; only the invariant file is written.
+
+name: must
+cid: bafy-must-v1
+description: >-
+  Walk a natural-language intent through intake, locate, formulate,
+  and write the resulting invariant to <basename>.invariant.ts. The
+  production-code file is NOT modified.
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # Intake — adapt the user's natural-language intent into an IntentSignal.
+  # ---------------------------------------------------------------------------
+  - id: intake
+    capability: intake
+    input:
+      text: $input.intent
+      source: cli-must
+      context:
+        targetFile: $input.targetFile
+
+  # ---------------------------------------------------------------------------
+  # Locate — pin the target file's symbols. Used by formulate to resolve
+  # which function names are in scope for the invariant.
+  # ---------------------------------------------------------------------------
+  - id: locate
+    capability: locate
+    input:
+      signal: $node.intake.output
+      projectRoot: $input.projectRoot
+
+  # ---------------------------------------------------------------------------
+  # Formulate — LLM emits invariant TS using symbolic primitives; lifter
+  # produces IrFormula; canonicalizer produces propertyHash.
+  # ---------------------------------------------------------------------------
+  - id: formulate
+    capability: formulate-via-lifter
+    input:
+      intent: $node.intake.output
+      investigateReport: $node.locate.output
+      tests: []
+      locus:
+        file: $input.targetFile
+
+actions:
+  # ---------------------------------------------------------------------------
+  # Write the lifted surface text to <basename>.invariant.ts. Side-effecting;
+  # audit-only memento records what landed on disk.
+  # ---------------------------------------------------------------------------
+  - id: write-invariant
+    action: write-invariant-file
+    input:
+      targetFile: $input.targetFile
+      surfaceText: $node.formulate.output.surfaceText
+      append: $input.append
+    runAfter: $node.formulate
