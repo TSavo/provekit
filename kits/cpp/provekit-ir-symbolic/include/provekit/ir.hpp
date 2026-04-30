@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -72,7 +73,63 @@ inline std::shared_ptr<Term> num(int64_t value) {
 inline std::shared_ptr<Term> str_const(std::string value) {
   return std::make_shared<Term>(Term{ConstTerm{std::move(value), String()}});
 }
+
+// ---------------------------------------------------------------------------
+// Extension authoring + primitive-bridge registry
+//
+// Same architectural shape as TS/Rust/Go kits: kit primitives that
+// aren't actually owned by C++ (the basic JSON-shape kit semantics
+// are what they are; deeper layers — LLVM, libcxx, hardware — own
+// the meaning of names like parse_int). The kit BRIDGES via a
+// process-local registry; verifiers resolve through the protocol.
+// ---------------------------------------------------------------------------
+
+struct PrimitiveBridgeDeclaration {
+  std::string ir_name;
+  std::vector<std::string> ir_arg_sorts;
+  std::string ir_return_sort;
+  std::string source_layer;
+  std::string target_contract_cid;
+  std::string target_layer;
+  std::string notes;
+};
+
+inline std::map<std::string, PrimitiveBridgeDeclaration>& bridge_registry() {
+  static std::map<std::string, PrimitiveBridgeDeclaration> r;
+  return r;
+}
+
+inline void register_primitive_bridge(PrimitiveBridgeDeclaration decl) {
+  auto& r = bridge_registry();
+  auto it = r.find(decl.ir_name);
+  if (it == r.end()) {
+    r[decl.ir_name] = std::move(decl);
+  }
+  // Idempotent on collision; production verifier would error on
+  // collision-with-different-target per the protocol's fail-closed gate.
+}
+
+inline std::vector<PrimitiveBridgeDeclaration> list_bridges() {
+  std::vector<PrimitiveBridgeDeclaration> out;
+  for (auto& [_, v] : bridge_registry()) out.push_back(v);
+  return out;
+}
+
+inline void reset_registry() { bridge_registry().clear(); }
+
+inline void ensure_kit_bridges_registered() {
+  static bool done = false;
+  if (done) return;
+  done = true;
+  // The C++ kit's bridges. Targets are placeholders pending the
+  // upstream catalogs being published with signed declarations.
+  register_primitive_bridge({"parseInt", {"String"}, "Int", "cpp-kit",
+                              "bafy_CPP_PARSEINT_PLACEHOLDER",
+                              "libcxx", ""});
+}
+
 inline std::shared_ptr<Term> parse_int(std::shared_ptr<Term> s) {
+  ensure_kit_bridges_registered();
   return std::make_shared<Term>(Term{CtorTerm{"parseInt", {std::move(s)}, Int()}});
 }
 
