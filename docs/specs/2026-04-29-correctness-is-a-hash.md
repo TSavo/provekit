@@ -722,6 +722,123 @@ The cola wars don't end because someone wins. They end because
 unsubstantiated claims stop being viable. **Companies compete on
 proof depth, not on rhetoric.**
 
+## Change the invariant, the hash changes
+
+This is the litmus test for the entire system.
+
+**If an invariant changes — a single character in the predicate body,
+a renamed sort, a different operator — the propertyHash changes.** The
+new memento has a different identity. The old memento is still valid
+(it attests a different claim); the new memento is its own thing.
+
+Three layers, all hash-driven, all mechanically observable:
+
+| What changes | What hashes change | What consumers see |
+|---|---|---|
+| Source code | contentHash | "the package's bytes are different" |
+| Invariant | propertyHash | "the package CLAIMS something different now" |
+| Verdict (rare) | memento CID | "the verification result changed" |
+
+No silent drift anywhere in the stack. Every change to every layer
+produces a different hash. The audit trail is the DAG.
+
+**Concrete consequences:**
+
+- **Invariant pinning is automatic.** Your project's lockfile pins to
+  specific propertyHashes. If a library upgrades and its invariants
+  change, your lock detects the diff before it lands. Same mechanism
+  as content-hash pinning today; one extra coordinate.
+
+- **Silent invariant weakening is impossible.** If an attacker
+  compromises a library and weakens its invariants to allow an
+  exploit, the propertyHash changes. Consumers pinned to the old hash
+  refuse to upgrade. The attack is mechanically detected before it
+  propagates.
+
+- **Invariant evolution is auditable.** "What did this codebase claim
+  in 2026 vs 2030?" is a DAG walk. Every invariant change in the
+  history produces a new memento. The history is content-addressed.
+
+- **Reusing old invariants is structurally safe.** If you compose
+  against propertyHash H, the verification of H is what was attested.
+  The library can change its OTHER invariants; H stays unchanged.
+  You're not affected.
+
+- **Library upgrades become precise diffs.** "Lodash 1.x → 2.x: 5
+  invariants added, 2 removed; here's the punch list of callsites in
+  your code that depend on the removed ones." Mechanical migration.
+
+**The complete content-addressing picture:**
+
+Code is content-addressed. Invariants are content-addressed.
+Verifications are content-addressed. Producers are content-addressed.
+Bindings are content-addressed. The whole stack is hash-equivalence
+all the way down.
+
+Change anything; the corresponding hash changes; the change is visible
+mechanically. There is no opacity in the system. The entire trust
+substrate is structurally transparent because every layer reduces to
+hashes that consumers can verify independently.
+
+## More immutable than Bitcoin
+
+Bitcoin's immutability is socially-economic. The chain stays canonical
+as long as consensus holds. A 51% attack, a hard fork, sufficient miner
+agreement — the chain CAN be rewritten. Bitcoin's immutability is a
+property OF the consensus mechanism; if the consensus mechanism is
+subverted, the chain mutates.
+
+A ProvekIt proof DAG you cite is structurally immutable. The citation
+is `(rootCid, offset)` — bytes hashing to a specific CID. The bytes
+don't have a consensus mechanism that can be subverted. They either
+ARE those bytes or they aren't. There is no fork mechanism that can
+rewrite them, because there is no global chain to fork.
+
+Different verifiers publish different DAGs. Consumers compose against
+whichever DAGs they trust. There IS no "the canonical proof history."
+There are MANY proof DAGs, all coexisting. Each is content-addressed;
+each is unforgeable; none requires consensus to remain valid.
+
+**Forking costs nothing.** If you disagree with a verifier's DAG, fork
+your own. Compose against your own root. Different consumers choose
+different roots. The "chain" doesn't fragment because there was no
+chain to begin with — just a graph of publishers and consumers.
+Bitcoin's hard forks split community and value; ProvekIt's "forks"
+are just different verifiers publishing competing DAGs. No scarcity
+to fragment. No double-spend problem. No consensus to break.
+
+**The deeper structural reason:**
+
+Bitcoin solves "agreement on the canonical truth." ProvekIt solves
+"verifiability of any claim." Different problems require different
+mechanisms. Bitcoin needed consensus because money is fungible —
+preventing double-spend requires global agreement on which transaction
+came first. ProvekIt doesn't need consensus because proofs aren't
+fungible. A memento attesting some claim is unique to its bindings;
+nobody can "double-claim" the same `(propertyHash, bindingHash)` pair
+with conflicting verdicts and have both be globally valid. Conflicts
+surface as competing mementos in the DAG; consumers weight them by
+producer reputation; no protocol-level resolution is required.
+
+**The connection to durability:**
+
+The spec defines the canonical FOL form, the wrapper schema, and the
+CID construction — all byte-deterministic. A memento minted under the
+spec has a hash. Future implementations of the spec produce identical
+hashes for identical content. The memento survives across every
+implementation rewrite, every implementation language, every decade.
+
+Bitcoin's immutability: "the chain stays canonical AS LONG AS consensus
+holds."
+
+ProvekIt's immutability: "the memento exists OR it doesn't, and if it
+exists, its hash is fixed forever."
+
+The proof DAG you cite is valid forever — not because anyone agrees
+to keep it valid, but because the bytes are the bytes. No social
+mechanism. No consensus. No vulnerability surface where humans need
+to keep believing.
+
 ## Adding propositions is free
 
 **Adding a new verifiable claim to the global substrate is a sha256 in
