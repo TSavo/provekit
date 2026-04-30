@@ -1325,6 +1325,20 @@ Specific things ProvekIt explicitly does NOT ship:
 - A "supply-chain auditor" that installs and re-verifies dependencies
 - A "compliance reporter" that walks the DAG and produces audit reports
 
+**Naming discipline: leaves, not walks.**
+
+The framework's local operation is enumeration of its OWN minted
+mementos — `provekit leaves`. From any single proofkit instance's
+perspective, everything outside its local store is a leaf it can
+REFERENCE by hash. The framework mints leaves; it does not walk into
+other proofkits' leaves.
+
+This naming is load-bearing. "Walk" implies traversal across the
+whole DAG, which sounds like the framework's job. It isn't. The
+framework operates on its own LOCAL leaves; everything else is
+referenced. Auditors traverse. Compliance frameworks traverse. The
+framework mints.
+
 Each of those is a valid downstream tool. They build on ProvekIt's
 substrate. They are NOT parts of ProvekIt.
 
