@@ -189,3 +189,136 @@ export function isTrue(b: Liftable): IrFormula {
 export function isFalse(b: Liftable): IrFormula {
   return atom("false", [b]);
 }
+
+// ---------------------------------------------------------------------------
+// Bitvector primitives (SMT-LIB BV theory).
+//
+// `bv(value, width)` constructs a BV<width> constant. The value is
+// normalized to the unsigned representation (modulo 2^width), so
+// `bv(-1n, 8)` and `bv(255n, 8)` produce identical IR. This matches the
+// SMT-LIB convention where bitvector literals are unsigned bit patterns.
+//
+// Term ctors (`bvadd`, `bvxor`, etc.) preserve the operand width as the
+// result sort; binary ops require operand widths to match. `concat`
+// builds a wider BV from two; `extract(hi, lo, x)` takes a slice and
+// produces a BV<hi-lo+1>. Comparison predicates (`bvult`, `bvslt`, ...)
+// return IrFormula.
+// ---------------------------------------------------------------------------
+
+function bvSortOf(t: IrTerm): { kind: "bitvec"; width: number } {
+  const s = t.sort;
+  if (s.kind !== "bitvec") {
+    throw new Error(`bv* primitive: expected a BV-sorted term, got sort kind "${s.kind}"`);
+  }
+  return s;
+}
+
+function requireSameWidth(a: IrTerm, b: IrTerm, op: string): { kind: "bitvec"; width: number } {
+  const sa = bvSortOf(a);
+  const sb = bvSortOf(b);
+  if (sa.width !== sb.width) {
+    throw new Error(
+      `${op}: operand widths must match (got ${sa.width} and ${sb.width})`,
+    );
+  }
+  return sa;
+}
+
+/** Build a BV constant of the given width. Value is normalized to unsigned mod 2^width. */
+export function bv(value: number | bigint, width: number): IrTerm {
+  if (!Number.isInteger(width) || width <= 0) {
+    throw new Error(`bv: width must be a positive integer, got ${width}`);
+  }
+  const big = typeof value === "bigint" ? value : BigInt(value);
+  const modulus = 1n << BigInt(width);
+  let normalized = big % modulus;
+  if (normalized < 0n) normalized += modulus;
+  return { kind: "const", value: normalized, sort: { kind: "bitvec", width } };
+}
+
+// Binary BV term ctors — return BV<w> where w matches both operands.
+
+export function bvadd(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvadd", [a, b], requireSameWidth(a, b, "bvadd"));
+}
+export function bvsub(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvsub", [a, b], requireSameWidth(a, b, "bvsub"));
+}
+export function bvmul(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvmul", [a, b], requireSameWidth(a, b, "bvmul"));
+}
+export function bvudiv(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvudiv", [a, b], requireSameWidth(a, b, "bvudiv"));
+}
+export function bvurem(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvurem", [a, b], requireSameWidth(a, b, "bvurem"));
+}
+export function bvshl(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvshl", [a, b], requireSameWidth(a, b, "bvshl"));
+}
+export function bvlshr(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvlshr", [a, b], requireSameWidth(a, b, "bvlshr"));
+}
+export function bvashr(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvashr", [a, b], requireSameWidth(a, b, "bvashr"));
+}
+export function bvor(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvor", [a, b], requireSameWidth(a, b, "bvor"));
+}
+export function bvand(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvand", [a, b], requireSameWidth(a, b, "bvand"));
+}
+export function bvxor(a: IrTerm, b: IrTerm): IrTerm {
+  return ctor("bvxor", [a, b], requireSameWidth(a, b, "bvxor"));
+}
+
+// Unary BV term ctors.
+
+export function bvnot(a: IrTerm): IrTerm {
+  return ctor("bvnot", [a], bvSortOf(a));
+}
+export function bvneg(a: IrTerm): IrTerm {
+  return ctor("bvneg", [a], bvSortOf(a));
+}
+
+// concat: BV<a> × BV<b> -> BV<a+b>. SMT-LIB ordering: high bits come from
+// the first operand.
+export function concat(a: IrTerm, b: IrTerm): IrTerm {
+  const sa = bvSortOf(a);
+  const sb = bvSortOf(b);
+  return ctor("concat", [a, b], { kind: "bitvec", width: sa.width + sb.width });
+}
+
+// extract(hi, lo, x): slice bits [hi:lo] inclusive, producing BV<hi-lo+1>.
+// hi and lo are encoded as Int constants in the IR; the SMT translator
+// special-cases them as the indexed (_ extract hi lo) operator.
+export function extract(hi: number, lo: number, x: IrTerm): IrTerm {
+  const sx = bvSortOf(x);
+  if (!Number.isInteger(hi) || !Number.isInteger(lo)) {
+    throw new Error(`extract: hi and lo must be integers, got hi=${hi} lo=${lo}`);
+  }
+  if (hi < lo || lo < 0 || hi >= sx.width) {
+    throw new Error(
+      `extract: indices out of range for BV${sx.width} (hi=${hi}, lo=${lo})`,
+    );
+  }
+  const hiTerm: IrTerm = { kind: "const", value: BigInt(hi), sort: Int };
+  const loTerm: IrTerm = { kind: "const", value: BigInt(lo), sort: Int };
+  return ctor("extract", [hiTerm, loTerm, x], { kind: "bitvec", width: hi - lo + 1 });
+}
+
+// BV comparison predicates — return IrFormula.
+
+function bvCmp(predicate: string, a: IrTerm, b: IrTerm): IrFormula {
+  requireSameWidth(a, b, predicate);
+  return { kind: "atomic", predicate, args: [a, b] };
+}
+
+export function bvult(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvult", a, b); }
+export function bvule(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvule", a, b); }
+export function bvugt(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvugt", a, b); }
+export function bvuge(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvuge", a, b); }
+export function bvslt(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvslt", a, b); }
+export function bvsle(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvsle", a, b); }
+export function bvsgt(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvsgt", a, b); }
+export function bvsge(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvsge", a, b); }

@@ -24,6 +24,7 @@ export type PrimitiveSortName =
 
 export type Sort =
   | { kind: "primitive"; name: PrimitiveSortName | string }
+  | { kind: "bitvec"; width: number }
   | { kind: "set"; element: Sort }
   | { kind: "tuple"; elements: Sort[] }
   | { kind: "function"; domain: Sort[]; range: Sort };
@@ -48,6 +49,9 @@ export type AtomicPredicate =
   | "kind-of" | "data-flows-to" | "dominates" | "post-dominates"
   | "transition-from-to"
   | "on-path"
+  // SMT-LIB BV comparison predicates (return Bool).
+  | "bvult" | "bvule" | "bvugt" | "bvuge"
+  | "bvslt" | "bvsle" | "bvsgt" | "bvsge"
   | string; // kit-defined extensions
 
 // ---------------------------------------------------------------------------
