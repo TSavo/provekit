@@ -40,6 +40,7 @@
 
 pub mod canonicalize;
 pub mod connectives;
+pub mod extensions;
 pub mod primitives;
 pub mod property;
 pub mod quantifiers;

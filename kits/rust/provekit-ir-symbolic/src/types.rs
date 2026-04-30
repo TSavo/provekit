@@ -89,6 +89,27 @@ impl IrTerm {
             IrTerm::Var { sort, .. } | IrTerm::Const { sort, .. } | IrTerm::Ctor { sort, .. } => sort,
         }
     }
+
+    /// Build an IrTerm::Ctor with the given name, args, and sort.
+    /// Convenience used by the extension and bridge factories.
+    pub fn ctor(name: &str, args: Vec<IrTerm>, sort: Sort) -> IrTerm {
+        IrTerm::Ctor {
+            name: name.to_string(),
+            args,
+            sort,
+        }
+    }
+}
+
+impl IrFormula {
+    /// Build an atomic IrFormula with the given predicate and args.
+    /// Convenience used by the extension factories.
+    pub fn atomic(predicate: &str, args: Vec<IrTerm>) -> IrFormula {
+        IrFormula::Atomic {
+            predicate: predicate.to_string(),
+            args,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
