@@ -41,12 +41,14 @@ export {
   mintMemento,
   mintBridge,
   mintLegacyWitness,
+  mintProperty,
   mintAndVerifyMemento,
 } from "./mint.js";
 export type {
   MintArgs,
   MintBridgeArgs,
   MintLegacyWitnessArgs,
+  MintPropertyArgs,
 } from "./mint.js";
 
 // Validation

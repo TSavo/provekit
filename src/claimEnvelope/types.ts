@@ -181,6 +181,44 @@ export interface BridgeEvidence {
   };
 }
 
+/**
+ * PropertyEvidence — declares that a property holds: a named claim
+ * whose body is an IrFormula expressed in the canonical IR.
+ *
+ * Property mementos are the load-bearing artifacts that bridges point
+ * at. A bridge memento carries a `targetContractCid`; resolving that
+ * CID yields a property memento; the property memento's `body.irFormula`
+ * is the precondition (or postcondition, or invariant) the verifier
+ * uses to discharge call-site obligations.
+ *
+ * The IrFormula is in pre-canonicalization form (named bound vars).
+ * Producers MAY canonicalize before minting; the propertyHash on the
+ * envelope is computed from the canonicalized formula either way.
+ */
+export interface PropertyEvidence {
+  kind: "property";
+  schema: string;
+  body: {
+    /**
+     * The IR formula stating the property. Stored as a JSON value
+     * conforming to IrFormula (see src/ir/formulas.ts). Embedded
+     * directly; not stringified.
+     */
+    irFormula: unknown;
+    /**
+     * The binding scope this property is attached to (per BindingScope
+     * in src/ir/formulas.ts). Resolves where the property applies.
+     */
+    scope: unknown;
+    /**
+     * Version of the IR kit that produced this formula (e.g.,
+     * "ts-kit@1.0", "cpp-kit@0.2"). Consumers may use this to detect
+     * incompatible versions.
+     */
+    irKitVersion: string;
+  };
+}
+
 export type EvidenceVariant =
   | Z3ModelEvidence
   | Z3UnsatEvidence
@@ -193,7 +231,8 @@ export type EvidenceVariant =
   | MutationWitnessEvidence
   | WorkflowRunEvidence
   | LegacyWitnessEvidence
-  | BridgeEvidence;
+  | BridgeEvidence
+  | PropertyEvidence;
 
 // ---------------------------------------------------------------------------
 // ClaimEnvelope

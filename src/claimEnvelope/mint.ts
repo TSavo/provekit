@@ -24,7 +24,9 @@ import type {
   EvidenceVariant,
   BridgeEvidence,
   LegacyWitnessEvidence,
+  PropertyEvidence,
 } from "./types.js";
+import type { IrFormula, BindingScope } from "../ir/formulas.js";
 import { VARIANT_SCHEMA_CIDS } from "./variants/index.js";
 
 // ---------------------------------------------------------------------------
@@ -137,6 +139,56 @@ export interface MintLegacyWitnessArgs {
   inputCids?: string[];
   privateKey: KeyObject | Buffer | string;
   rawWitness: string;
+}
+
+// ---------------------------------------------------------------------------
+// Property memento helper
+// ---------------------------------------------------------------------------
+
+export interface MintPropertyArgs {
+  bindingHash: string;
+  propertyHash: string;
+  verdict?: Verdict;
+  producedBy: string;
+  producedAt?: string;
+  inputCids?: string[];
+  privateKey: KeyObject | Buffer | string;
+  /** The IrFormula stating the property. Embedded directly. */
+  irFormula: IrFormula;
+  /** The binding scope the property attaches to. */
+  scope: BindingScope;
+  /** IR-kit version that produced the formula (e.g., "ts-kit@1.0"). */
+  irKitVersion: string;
+}
+
+/**
+ * Mint a property memento — a content-addressed assertion that an IR
+ * formula holds in a named binding scope. The formula is the
+ * load-bearing artifact bridges point at; resolving a bridge's
+ * targetContractCid yields a property memento, and its body.irFormula
+ * is the precondition (or postcondition, or invariant) the verifier
+ * uses to discharge call-site obligations.
+ */
+export function mintProperty(args: MintPropertyArgs): ClaimEnvelope {
+  const evidence: PropertyEvidence = {
+    kind: "property",
+    schema: VARIANT_SCHEMA_CIDS["property"]!,
+    body: {
+      irFormula: args.irFormula,
+      scope: args.scope,
+      irKitVersion: args.irKitVersion,
+    },
+  };
+  return mintMemento({
+    bindingHash: args.bindingHash,
+    propertyHash: args.propertyHash,
+    verdict: args.verdict ?? "holds",
+    producedBy: args.producedBy,
+    ...(args.producedAt !== undefined ? { producedAt: args.producedAt } : {}),
+    inputCids: args.inputCids ?? [],
+    evidence,
+    privateKey: args.privateKey,
+  });
 }
 
 /**
