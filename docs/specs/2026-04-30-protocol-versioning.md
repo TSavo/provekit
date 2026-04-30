@@ -12,7 +12,7 @@ CID is the protocol version.
 
 Protocol catalog: `docs/specs/2026-04-30-protocol-catalog.json`
 
-**Protocol version CID: `sha256:e04b7cc466911b1d`**
+**Protocol version CID: `sha256:a2d062341e3ca0f0`** (v1.0.1; was `sha256:e04b7cc466911b1d` for v1.0.0)
 
 **This CID is `provekit.proofHash` for ProvekIt itself.** The same
 field a library carries in its `package.json` to declare its
@@ -29,7 +29,7 @@ This CID names a catalog whose entries are:
 |---|---|
 | ir-formal-grammar | `sha256:0c394dbb0bc6da2b` |
 | canonicalization-grammar | `sha256:cb2367c97b57ba05` |
-| memento-envelope-grammar | `sha256:68f4b1cc55c01667` |
+| memento-envelope-grammar | `sha256:ff6d03c523b68202` |
 | signatures-and-non-repudiation | `sha256:9b9f86ec1795ff90` |
 | chain-validity-and-fail-closed | `sha256:7d7777ef5b0017fe` |
 | ir-extension-protocol | `sha256:c48b69c15e1eb7e9` |

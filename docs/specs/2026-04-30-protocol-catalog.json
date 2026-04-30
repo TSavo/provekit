@@ -5,7 +5,7 @@
   "properties": {
     "ir-formal-grammar": "sha256:0c394dbb0bc6da2b",
     "canonicalization-grammar": "sha256:cb2367c97b57ba05",
-    "memento-envelope-grammar": "sha256:68f4b1cc55c01667",
+    "memento-envelope-grammar": "sha256:ff6d03c523b68202",
     "signatures-and-non-repudiation": "sha256:9b9f86ec1795ff90",
     "chain-validity-and-fail-closed": "sha256:7d7777ef5b0017fe",
     "ir-extension-protocol": "sha256:c48b69c15e1eb7e9",
