@@ -25,8 +25,10 @@ import type {
   BridgeEvidence,
   LegacyWitnessEvidence,
   PropertyEvidence,
+  ExtensionDeclarationEvidence,
 } from "./types.js";
 import type { IrFormula, BindingScope } from "../ir/formulas.js";
+import type { ExtensionDeclaration } from "../ir/extensions/registry.js";
 import { VARIANT_SCHEMA_CIDS } from "./variants/index.js";
 
 // ---------------------------------------------------------------------------
@@ -209,6 +211,52 @@ export function mintLegacyWitness(args: MintLegacyWitnessArgs): ClaimEnvelope {
     body: {
       rawWitness: args.rawWitness,
       legacyProducerId: args.producedBy,
+    },
+  };
+  return mintMemento({
+    bindingHash: args.bindingHash,
+    propertyHash: args.propertyHash,
+    verdict: args.verdict ?? "holds",
+    producedBy: args.producedBy,
+    ...(args.producedAt !== undefined ? { producedAt: args.producedAt } : {}),
+    inputCids: args.inputCids ?? [],
+    evidence,
+    privateKey: args.privateKey,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Extension-declaration memento helper
+// ---------------------------------------------------------------------------
+
+export interface MintExtensionDeclarationArgs {
+  bindingHash: string;
+  propertyHash: string;
+  verdict?: Verdict;
+  producedBy: string;
+  producedAt?: string;
+  inputCids?: string[];
+  privateKey: KeyObject | Buffer | string;
+  /**
+   * The IR extension declaration (sort/predicate/ctor introduction).
+   * The wrapper's producerSignature replaces any embedded signer/
+   * signature; pass declarations without those fields set.
+   */
+  declaration: ExtensionDeclaration;
+}
+
+/**
+ * Mint an extension-declaration memento — a content-addressed claim
+ * that introduces a new sort, predicate, or ctor into the IR
+ * extension protocol. Ships in a kit's `.proof` catalog so consumers
+ * can register the extension at discovery time.
+ */
+export function mintExtensionDeclaration(args: MintExtensionDeclarationArgs): ClaimEnvelope {
+  const evidence: ExtensionDeclarationEvidence = {
+    kind: "extension-declaration",
+    schema: VARIANT_SCHEMA_CIDS["extension-declaration"]!,
+    body: {
+      declaration: args.declaration,
     },
   };
   return mintMemento({

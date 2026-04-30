@@ -229,6 +229,36 @@ export interface PropertyEvidence {
   };
 }
 
+/**
+ * ExtensionDeclarationEvidence — wraps an IR extension declaration
+ * (sort / predicate / ctor introduction) per the IR extension protocol
+ * (protocol/specs/2026-04-30-ir-extension-protocol.md).
+ *
+ * Today's extensions live in ir/extensions/registry.ts with their own
+ * signing path; this variant brings them into the memento envelope so
+ * they can ship in `.proof` catalogs alongside bridges + properties.
+ * Consumers (kitDiscovery) dispatch on evidence.kind === "extension-
+ * declaration" to register them in the local extension registry.
+ *
+ * The wrapped declaration is itself the canonical IR extension shape;
+ * the envelope's producerSignature replaces the declaration's
+ * embedded signer/signature fields (which become redundant).
+ */
+export interface ExtensionDeclarationEvidence {
+  kind: "extension-declaration";
+  schema: string;
+  body: {
+    /**
+     * The IR extension declaration. Conforms to ExtensionDeclaration in
+     * src/ir/extensions/registry.ts (sort | predicate | ctor variants).
+     * Stored as a JSON value; the embedded signer/signature fields (if
+     * any) are unused — the envelope's producerSignature is the
+     * authority.
+     */
+    declaration: unknown;
+  };
+}
+
 export type EvidenceVariant =
   | Z3ModelEvidence
   | Z3UnsatEvidence
@@ -242,7 +272,8 @@ export type EvidenceVariant =
   | WorkflowRunEvidence
   | LegacyWitnessEvidence
   | BridgeEvidence
-  | PropertyEvidence;
+  | PropertyEvidence
+  | ExtensionDeclarationEvidence;
 
 // ---------------------------------------------------------------------------
 // ClaimEnvelope

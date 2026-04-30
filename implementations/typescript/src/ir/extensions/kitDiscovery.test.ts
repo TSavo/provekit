@@ -250,6 +250,72 @@ describe("discoverProtocolKits", () => {
     }
   });
 
+  it("registers extension declarations carried in .proof envelopes (task #41)", async () => {
+    const root = makeFakeProject();
+    try {
+      // Mint an extension-declaration envelope: introduces a new
+      // sort "Currency" with an SMT-LIB-theory semantic.
+      const { mintExtensionDeclaration } = await import("../../claimEnvelope/index.js");
+      const { lookupSort, _resetRegistry } = await import("./registry.js");
+      _resetRegistry();
+      const { privateKey: extKey } = generateKeypair({ seed: randomBytes(32) });
+      const extEnv = mintExtensionDeclaration({
+        bindingHash: hash16("ext:Currency"),
+        propertyHash: hash16("introduces:sort:Currency"),
+        producedBy: "money-kit@1.0",
+        privateKey: extKey,
+        declaration: {
+          introduces: "sort",
+          name: "Currency",
+          semantics: [
+            { kind: "natural-language", text: "Currency: ISO-4217 alpha-3 code." },
+          ],
+          compilers: ["smt-lib"],
+        },
+      });
+
+      // Bundle into a .proof at the package root.
+      const isScoped = "@example/money-kit".startsWith("@");
+      const packageRoot = isScoped
+        ? join(root, "node_modules", "@example", "money-kit")
+        : join(root, "node_modules", "@example/money-kit");
+      mkdirSync(packageRoot, { recursive: true });
+
+      const { privateKey: catalogKey, publicKey: catalogPub } = generateKeypair({
+        seed: randomBytes(32),
+      });
+      const pubDer = catalogPub.export({ type: "spki", format: "der" });
+      const signerCid =
+        "sha256:" + require("node:crypto").createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+      const built = buildProofEnvelope({
+        name: "@example/money-kit",
+        version: "1.0.0",
+        members: new Map([[extEnv.cid, extEnv]]),
+        signerCid,
+        signerPrivateKey: catalogKey,
+      });
+      writeFileSync(join(packageRoot, `${built.cid}.proof`), Buffer.from(built.bytes));
+      writeFileSync(
+        join(packageRoot, "package.json"),
+        JSON.stringify(
+          { name: "@example/money-kit", version: "1.0.0", provekit: { proofHash: built.cid } },
+          null,
+          2,
+        ),
+      );
+
+      // Discovery walks the .proof; the extension declaration registers.
+      await discoverProtocolKits(root);
+
+      const sort = lookupSort("Currency");
+      expect(sort).not.toBeNull();
+      expect(sort!.introduces).toBe("sort");
+      expect(sort!.compilers).toEqual(["smt-lib"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("tags pre-existing bridges as internal kit lazy-init", async () => {
     const root = makeFakeProject();
     try {

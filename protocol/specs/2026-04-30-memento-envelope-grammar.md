@@ -100,6 +100,7 @@ evidence-variant =
   / verdict-evidence
   / audit-evidence
   / deprecation-evidence
+  / extension-declaration-evidence
 
 ; The legacy-witness variant is retained at the wrapper layer for
 ; backward compatibility with pre-protocol mementos. It MUST NOT be
@@ -917,6 +918,80 @@ OPTIONAL for local deprecations.
   "verdict": "holds"
 }
 ```
+
+## Role: ExtensionDeclarationMemento
+
+Wraps an IR extension declaration (sort / predicate / ctor introduction)
+per `protocol/specs/2026-04-30-ir-extension-protocol.md`. Kit-shipped
+extensions ride in catalogs alongside bridges + properties; consumers
+walk the envelope and dispatch to the local extension registry.
+
+```cddl
+extension-declaration-evidence = {
+  kind:   "extension-declaration",
+  schema: cid,
+  body:   extension-declaration-body
+}
+
+extension-declaration-body = {
+  declaration: extension-declaration
+}
+
+; The extension-declaration itself is the IR-extension-protocol's
+; authoring shape, defined in the IR extension protocol spec. The
+; embedded `signer`/`signature` fields (if any) are unused at this
+; layer — the wrapping envelope's producerSignature is the authority.
+extension-declaration = sort-extension / predicate-extension / ctor-extension
+
+sort-extension = {
+  introduces: "sort",
+  name:       tstr,
+  ? params:   [* { name: tstr, paramSort: "Int" / "Bool" / "String" }],
+  semantics:  [* semantic-declaration],
+  compilers:  [* tstr],
+  ? declaredAt: tstr,
+  ? dependsOn:  [* cid]
+}
+
+predicate-extension = {
+  introduces: "predicate",
+  name:       tstr,
+  argSorts:   [* sort-ref],
+  semantics:  [* semantic-declaration],
+  compilers:  [* tstr],
+  ? declaredAt: tstr,
+  ? dependsOn:  [* cid]
+}
+
+ctor-extension = {
+  introduces: "ctor",
+  name:       tstr,
+  argSorts:   [* sort-ref],
+  returnSort: sort-ref,
+  semantics:  [* semantic-declaration],
+  compilers:  [* tstr],
+  ? declaredAt: tstr,
+  ? dependsOn:  [* cid]
+}
+
+semantic-declaration =
+    { kind: "smt-lib-theory",   theory: tstr, ? version: tstr }
+  / { kind: "axiom-set",        axioms: [* any] }
+  / { kind: "proof-assistant",  system: tstr, identifier: tstr, ? proofCid: cid }
+  / { kind: "natural-language", text: tstr }
+```
+
+**Wrapper-field constraints:**
+
+- `verdict = "holds"`.
+- `inputCids` MAY be empty (ground-level introduction) OR list other
+  extension-declaration mementos this declaration depends on
+  (e.g., a ctor extension that depends on a sort extension introducing
+  its return sort).
+
+**REFERENT constraints:**
+
+- Each `inputCids[i]` MUST resolve to an extension-declaration memento.
 
 ## The full role-permission matrix
 

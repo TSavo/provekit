@@ -42,6 +42,7 @@ export {
   mintBridge,
   mintLegacyWitness,
   mintProperty,
+  mintExtensionDeclaration,
   mintAndVerifyMemento,
 } from "./mint.js";
 export type {
@@ -49,6 +50,7 @@ export type {
   MintBridgeArgs,
   MintLegacyWitnessArgs,
   MintPropertyArgs,
+  MintExtensionDeclarationArgs,
 } from "./mint.js";
 
 // Validation

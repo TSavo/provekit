@@ -34,6 +34,8 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { listBridges, primitiveBridge } from "./bridges.js";
 import type { PrimitiveBridgeDeclaration } from "./bridges.js";
+import { registerExtensionDeclaration } from "./registry.js";
+import type { ExtensionDeclaration } from "./registry.js";
 import { decodeProofEnvelope } from "../../proofEnvelope/index.js";
 import { computeEnvelopeCid } from "../../claimEnvelope/cid.js";
 import type { ClaimEnvelope } from "../../claimEnvelope/types.js";
@@ -205,6 +207,8 @@ function walkProofFile(cand: ProtocolPackageCandidate): WalkResult {
 
     if (env.evidence?.kind === "bridge") {
       registerBridgeFromEnvelope(env);
+    } else if (env.evidence?.kind === "extension-declaration") {
+      registerExtensionFromEnvelope(env);
     }
     // Other envelope variants (property, deprecation, public-key, etc.)
     // are silently skipped pending dispatcher implementations.
@@ -240,6 +244,12 @@ function registerBridgeFromEnvelope(env: ClaimEnvelope): void {
     targetLayer,
     ...(notes !== undefined ? { notes } : {}),
   });
+}
+
+function registerExtensionFromEnvelope(env: ClaimEnvelope): void {
+  const body = (env.evidence as { body: { declaration: unknown } }).body;
+  const declaration = body.declaration as ExtensionDeclaration;
+  registerExtensionDeclaration(declaration);
 }
 
 /**
