@@ -11,7 +11,8 @@
   "main": "./lib/provekit.cjs",
   "types": "./src/index.ts",
   "bin": {
-    "provekit": "bin/provekit.cjs"
+    "provekit": "bin/provekit.cjs",
+    "proveit": "bin/provekit.cjs"
   },
   "exports": {
     ".": {

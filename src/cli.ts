@@ -29,8 +29,41 @@ import {
 
 const VERSION = "0.4.0";
 
+/**
+ * Command-name aliases. The brand is "ProvekIt — Prove It," and English
+ * grammar wants different verb forms in different sentences:
+ *   provekit must X    /  proveit must X
+ *   proveit will  X    →  must
+ *   proveit always X   →  must
+ *   proveit verify X   /  proveit verifies X
+ *   proveit change X   /  proveit changes X
+ *   proveit prove  X   /  proveit proves X
+ * The expansion is purely lexical: argv[0] gets rewritten to the
+ * canonical verb before parseArgv sees it. Pure aliasing — no
+ * separate dispatch logic.
+ */
+const COMMAND_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  // Authoring (kit emits IR for an invariant)
+  will: "must",
+  always: "must",
+  shall: "must",
+  // Verification
+  verifies: "verify",
+  // Code-change workflows
+  changes: "change",
+  proves: "prove",
+});
+
+export function expandCommandAlias(argv: string[]): string[] {
+  if (argv.length === 0) return argv;
+  const first = argv[0]!;
+  const canonical = COMMAND_ALIASES[first];
+  if (!canonical) return argv;
+  return [canonical, ...argv.slice(1)];
+}
+
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  const args = expandCommandAlias(process.argv.slice(2));
 
   if (args.includes("--version")) {
     console.log(`provekit v${VERSION}`);
@@ -596,6 +629,18 @@ async function runVerify(args: string[]): Promise<void> {
   const pipeline = new Pipeline();
   const report = await pipeline.runVerifyOnly(projectRoot, verbose);
 
+  // Bridge enforcement: walk .proof files, discharge per-callsite IR
+  // obligations against bridge target preconditions. Composes with the
+  // legacy invariants pass; both contribute to the unified verdict.
+  const { runBridgeEnforcement, formatBridgeEnforcementReport } = await import(
+    "./verifier/bridgeEnforcement.js"
+  );
+  const bridgeReport = await runBridgeEnforcement(projectRoot);
+  if (bridgeReport.totalCallsites > 0 || bridgeReport.loadErrors.length > 0) {
+    console.log("Bridge enforcement:");
+    process.stdout.write(formatBridgeEnforcementReport(bridgeReport));
+  }
+
   if (ci) {
     const { PrincipleStore } = require("./principles");
     const ciPrinciples = new PrincipleStore(projectRoot);
@@ -610,9 +655,16 @@ async function runVerify(args: string[]): Promise<void> {
         if (conf === "high") highCount++;
       }
     }
-    if (highCount > 0) {
+    // Bridge violations are exit-1 in CI mode (any unsatisfied / unresolved
+    // / lift-error / undecidable / disagreement counts as a high-confidence
+    // violation; a discharged callsite is the only "passing" status).
+    if (highCount > 0 || bridgeReport.violations > 0) {
       console.log();
-      console.log(`${highCount} high-confidence violation${highCount === 1 ? "" : "s"} found.`);
+      const total = highCount + bridgeReport.violations;
+      console.log(
+        `${total} high-confidence violation${total === 1 ? "" : "s"} found ` +
+          `(${highCount} contract, ${bridgeReport.violations} bridge).`,
+      );
       process.exit(1);
     }
     process.exit(0);
