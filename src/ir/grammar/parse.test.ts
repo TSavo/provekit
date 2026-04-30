@@ -35,8 +35,9 @@ import {
   implies,
 } from "../symbolic/property.js";
 import { Int, Bool, BV } from "../sorts.js";
-import { eq, gt, gte } from "../symbolic/primitives.js";
-import { num, str, parseInt as parseIntPrim } from "../symbolic/primitives.js";
+import { eq, gt } from "../symbolic/primitives.js";
+import { num } from "../symbolic/primitives.js";
+import { propertyHashFromFormula } from "../../canonicalizer/canonicalize.js";
 
 // ---------------------------------------------------------------------------
 // 1. Cross-language fixture round-trip
@@ -89,11 +90,6 @@ describe("grammar parser — in-memory IR round-trip", () => {
   beforeEach(() => {
     _resetCollector();
   });
-
-  function captureOne(formulaName: string, build: () => Declaration[]): Declaration[] {
-    void formulaName;
-    return build();
-  }
 
   it("round-trips a property declaration assembled in-process", () => {
     const finish = beginCollecting();
@@ -421,10 +417,40 @@ describe("grammar parser — boundary empties", () => {
   });
 });
 
-// Quiet unused-import warning (parseIntPrim, str, eq, gte are loaded but only
-// used in some tests; reference them to ensure tree-shaking does not drop the
-// kit's primitives in the test bundle).
-void parseIntPrim;
-void str;
-void eq;
-void gte;
+// ---------------------------------------------------------------------------
+// 6. Seam test — parser output flows correctly into the canonicalizer
+//
+// The grammar describes the kit-emit JSON layer. The canonicalizer is the
+// next layer in (fixture JSON → IR → propertyHash). This test asserts that
+// IR produced by the parser hashes identically to IR produced in-process —
+// catching any silent drift in field types or kind discriminators that
+// .toEqual() might miss when both sides of the comparison are wrong in the
+// same way.
+// ---------------------------------------------------------------------------
+
+describe("grammar parser — propertyHash seam", () => {
+  beforeEach(() => {
+    _resetCollector();
+  });
+
+  it("propertyHashFromFormula(parsed) === propertyHashFromFormula(in-process)", () => {
+    // Build the same formula two ways: in-process via the symbolic kit, and
+    // by parsing the kit's JSON output.
+    const finish = beginCollecting();
+    property("seam-test", forAll(Int, (x) => gt(x, num(0))));
+    const inProcessDecls = finish();
+    const inFirst = inProcessDecls[0];
+    if (!inFirst || inFirst.kind !== "property") throw new Error("expected property decl");
+
+    const json = emitDocument(inProcessDecls);
+    const parsedDecls = parseDocument(json, { strict: true });
+    const parsedFirst = parsedDecls[0];
+    if (!parsedFirst || parsedFirst.kind !== "property") {
+      throw new Error("expected property decl");
+    }
+
+    expect(propertyHashFromFormula(parsedFirst.formula)).toBe(
+      propertyHashFromFormula(inFirst.formula),
+    );
+  });
+});

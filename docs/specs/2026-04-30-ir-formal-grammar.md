@@ -392,6 +392,15 @@ what makes the grammar **byte-deterministic**.
    the canonicalizer's pass 7 relies on). NaN and ±Infinity are not permitted
    in any IR value and the parser MUST reject them.
 
+   *Note on parser-side number normalization.* `JSON.parse` silently
+   normalizes some non-canonical number forms (e.g. `1.0` becomes the same
+   in-memory `1` as `1`). Hand-crafted JSON containing a non-canonical
+   numeric form will parse, but its re-emit will use the canonical form, so
+   non-canonical input does NOT round-trip byte-identically. This is fine
+   for kit-emitted input (the kits always emit canonical numbers) and is a
+   documented divergence between "what the grammar accepts" and "what the
+   round-trip property guarantees."
+
 5. **String escaping is JSON-standard.** No unnecessary escapes; no `\/`
    solidus escape; non-ASCII characters MAY be emitted literally (UTF-8) or as
    `\uXXXX` escapes — kits are not required to agree on this beyond what their
