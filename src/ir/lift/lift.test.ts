@@ -14,15 +14,27 @@ import ts from "typescript";
 
 import {
   liftProject,
+  liftFile,
   liftFormulaExpression,
   liftTermExpression,
   defaultTsKitRegistry,
+  formatDiagnostic,
   type LiftDiagnostic,
   type LiftedProperty,
 } from "./index.js";
-import { resolveSort } from "./sorts.js";
-import { checkAnchoring, isInvariantFile } from "./anchoring.js";
+import { resolveSort, primitiveSort, isPrimitiveSortName } from "./sorts.js";
+import { checkAnchoring, isInvariantFile, isPropertyCall, isAssertCall } from "./anchoring.js";
 import type { LiftContext } from "./rules.js";
+import {
+  emptyRegistry,
+  extendRegistry,
+  type RegistryEntry,
+} from "./registry.js";
+import {
+  makeDiagnostic,
+  makeFileDiagnostic,
+  LIFT_DIAGNOSTIC_CODE,
+} from "./diagnostics.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — build a tsc.Program from in-memory file contents.
@@ -594,5 +606,243 @@ describe("direct expression API", () => {
     };
     const f = liftFormulaExpression(formulaExpr!, ctx);
     expect(f.kind).toBe("atomic");
+  });
+
+  it("liftTermExpression resolves a numeric literal to a const Int term", () => {
+    const filePath = path.join(FIXTURE_DIR, "termdirect.invariant.ts");
+    const program = buildProgram({
+      [filePath]: `
+        import { property } from "provekit/ir";
+        property("p", 1 === 1);
+      `,
+    });
+    const file = program.getSourceFile(filePath)!;
+    let arg: ts.Expression | undefined;
+    file.forEachChild(function visit(n) {
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken) {
+        arg = n.left;
+      }
+      ts.forEachChild(n, visit);
+    });
+    expect(arg).toBeDefined();
+    const ctx: LiftContext = {
+      checker: program.getTypeChecker(),
+      diagnostics: [],
+      registry: defaultTsKitRegistry(),
+      scope: [],
+    };
+    const t = liftTermExpression(arg!, ctx);
+    expect(t.kind).toBe("const");
+    if (t.kind === "const") expect(t.sort).toEqual({ kind: "primitive", name: "Int" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Diagnostics module — direct API
+// ---------------------------------------------------------------------------
+
+describe("diagnostics module", () => {
+  function makeFile(src: string): ts.SourceFile {
+    return ts.createSourceFile("/tmp/x.invariant.ts", src, ts.ScriptTarget.ES2022, true);
+  }
+
+  it("makeDiagnostic populates standard fields", () => {
+    const file = makeFile("const x = 1;");
+    const decl = file.statements[0];
+    const d = makeDiagnostic(decl, "boom");
+    expect(d.code).toBe(LIFT_DIAGNOSTIC_CODE);
+    expect(d.source).toBe("provekit-lift");
+    expect(d.category).toBe(ts.DiagnosticCategory.Error);
+    expect(d.messageText).toBe("boom");
+    expect(d.file).toBe(file);
+    expect(typeof d.start).toBe("number");
+    expect(typeof d.length).toBe("number");
+  });
+
+  it("makeFileDiagnostic accepts explicit start/length", () => {
+    const file = makeFile("const x = 1;");
+    const d = makeFileDiagnostic(file, 3, 5, "msg");
+    expect(d.start).toBe(3);
+    expect(d.length).toBe(5);
+    expect(d.messageText).toBe("msg");
+    expect(d.code).toBe(LIFT_DIAGNOSTIC_CODE);
+  });
+
+  it("formatDiagnostic returns line:column - message when file is set", () => {
+    const file = makeFile("\nconst x = 1;");
+    const d = makeFileDiagnostic(file, 1, 5, "missing");
+    const formatted = formatDiagnostic(d);
+    // First column of the second line.
+    expect(formatted).toContain("/tmp/x.invariant.ts:2:1");
+    expect(formatted).toContain("missing");
+  });
+
+  it("formatDiagnostic returns just the message when file is missing", () => {
+    const d: LiftDiagnostic = {
+      file: undefined,
+      start: undefined,
+      length: undefined,
+      messageText: "headless",
+      category: ts.DiagnosticCategory.Error,
+      code: LIFT_DIAGNOSTIC_CODE,
+      source: "provekit-lift",
+    };
+    expect(formatDiagnostic(d)).toBe("headless");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Registry helpers — emptyRegistry / extendRegistry
+// ---------------------------------------------------------------------------
+
+describe("registry helpers", () => {
+  it("emptyRegistry has no entries", () => {
+    const r = emptyRegistry();
+    expect(r.has("parseInt")).toBe(false);
+    expect(r.names()).toEqual([]);
+    expect(r.get("anything")).toBeUndefined();
+  });
+
+  it("extendRegistry adds new entries to a base", () => {
+    const base = emptyRegistry();
+    const extra: RegistryEntry = {
+      name: "myFunc",
+      signatureSorts: [{ kind: "primitive", name: "Int" }],
+      returnSort: { kind: "primitive", name: "Bool" },
+      returnKind: "formula",
+    };
+    const extended = extendRegistry(base, [extra]);
+    expect(extended.has("myFunc")).toBe(true);
+    expect(extended.get("myFunc")?.returnKind).toBe("formula");
+    // The base is unchanged.
+    expect(base.has("myFunc")).toBe(false);
+  });
+
+  it("extendRegistry overrides an existing entry by name", () => {
+    const base = defaultTsKitRegistry();
+    const Bool = { kind: "primitive", name: "Bool" } as const;
+    const overridden: RegistryEntry = {
+      name: "Math.abs",
+      signatureSorts: [{ kind: "primitive", name: "Int" }],
+      returnSort: Bool,
+      returnKind: "formula",
+    };
+    const extended = extendRegistry(base, [overridden]);
+    expect(extended.get("Math.abs")?.returnKind).toBe("formula");
+    expect(extended.get("Math.abs")?.returnSort).toEqual(Bool);
+  });
+
+  it("defaultTsKitRegistry includes a representative sample of expected entries", () => {
+    const r = defaultTsKitRegistry();
+    for (const n of ["parseInt", "parseFloat", "Math.abs", "Math.sqrt", "Number.isInteger"]) {
+      expect(r.has(n)).toBe(true);
+    }
+    expect(r.names().length).toBeGreaterThan(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sort helpers (lift/sorts.ts)
+// ---------------------------------------------------------------------------
+
+describe("lift/sorts helpers", () => {
+  it("primitiveSort builds a primitive Sort", () => {
+    expect(primitiveSort("Int")).toEqual({ kind: "primitive", name: "Int" });
+    expect(primitiveSort("Cents")).toEqual({ kind: "primitive", name: "Cents" });
+  });
+
+  it("isPrimitiveSortName recognizes the standard names", () => {
+    for (const n of ["Bool", "Int", "Real", "String", "Ref", "Node", "Edge", "Region", "Time"]) {
+      expect(isPrimitiveSortName(n)).toBe(true);
+    }
+    expect(isPrimitiveSortName("Cents")).toBe(false);
+    expect(isPrimitiveSortName("")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anchoring utility predicates
+// ---------------------------------------------------------------------------
+
+describe("anchoring utility predicates", () => {
+  function makeCall(src: string): ts.CallExpression {
+    const file = ts.createSourceFile("x.ts", src, ts.ScriptTarget.ES2022, true);
+    let result: ts.CallExpression | undefined;
+    file.forEachChild(function visit(n) {
+      if (ts.isExpressionStatement(n) && ts.isCallExpression(n.expression)) {
+        result = n.expression;
+      }
+      if (!result) ts.forEachChild(n, visit);
+    });
+    if (!result) throw new Error("no call expression in: " + src);
+    return result;
+  }
+
+  it("isPropertyCall detects bare property() and namespace.property()", () => {
+    expect(isPropertyCall(makeCall("property('x', true);"))).toBe(true);
+    expect(isPropertyCall(makeCall("provekit.property('x', true);"))).toBe(true);
+    expect(isPropertyCall(makeCall("foo();"))).toBe(false);
+  });
+
+  it("isAssertCall detects bare assert() and namespace.assert()", () => {
+    expect(isAssertCall(makeCall("assert(true);"))).toBe(true);
+    expect(isAssertCall(makeCall("ns.assert(true);"))).toBe(true);
+    expect(isAssertCall(makeCall("foo();"))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// liftFile — direct API
+// ---------------------------------------------------------------------------
+
+describe("liftFile", () => {
+  it("returns the lifted properties for a single file", () => {
+    const filePath = path.join(FIXTURE_DIR, "single.invariant.ts");
+    const src = `
+      import { property } from "provekit/ir";
+      property("alpha", true);
+      property("beta", false);
+    `;
+    const program = buildProgram({ [filePath]: src });
+    const props = liftFile(filePath, program);
+    expect(props.map((p) => p.name)).toEqual(["alpha", "beta"]);
+  });
+
+  it("throws when the file is not in the program", () => {
+    const filePath = path.join(FIXTURE_DIR, "ghost.invariant.ts");
+    const program = buildProgram({});
+    expect(() => liftFile(filePath, program)).toThrow(/No source file/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Visitor — assert() top-level lifting
+// ---------------------------------------------------------------------------
+
+describe("visitor — assert call lifting", () => {
+  it("lifts a top-level assert(...) into a synthetic-named property", () => {
+    const filePath = path.join(FIXTURE_DIR, "assertlevel.invariant.ts");
+    const src = `
+      import { assert } from "provekit/ir";
+      assert(1 === 1);
+    `;
+    const program = buildProgram({ [filePath]: src });
+    const result = liftProject(program);
+    const lifted = result.properties[0];
+    expect(lifted).toBeDefined();
+    expect(lifted!.name.startsWith("assert@")).toBe(true);
+  });
+
+  it("rejects assert() with the wrong arity", () => {
+    const filePath = path.join(FIXTURE_DIR, "badassert.invariant.ts");
+    const src = `
+      // @ts-nocheck
+      import { assert } from "provekit/ir";
+      assert(1 === 1, true);
+    `;
+    const program = buildProgram({ [filePath]: src });
+    const result = liftProject(program);
+    const messages = result.diagnostics.map((d) => String(d.messageText));
+    expect(messages.some((m) => m.includes("expects exactly one"))).toBe(true);
   });
 });

@@ -19,10 +19,39 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { propertyHashFromFormula, formulaToCanonicalAst } from "./canonicalize.js";
-import { serializeCanonicalAst } from "./serialize.js";
-import type { CanonicalFolAst, CanonicalSort } from "./ast.js";
+import {
+  propertyHashFromFormula,
+  formulaToCanonicalAst,
+  propertyHashFromAst,
+} from "./canonicalize.js";
+import { serializeCanonicalAst, SERIALIZATION_FORMAT } from "./serialize.js";
+import { sha256Prefix16 } from "./hash.js";
+import type {
+  CanonicalFolAst,
+  CanonicalSort,
+  CanonicalTerm,
+} from "./ast.js";
 import type { IrFormula, IrTerm, Sort } from "./irFormula.js";
+import { canonicalizeSort } from "./passes/sorts.js";
+import {
+  applyDeBruijn,
+  type DeBruijnFormula,
+  type DeBruijnTerm,
+} from "./passes/deBruijn.js";
+import {
+  canonicalizeTerm,
+  termSortKey,
+  canonicalizePredicate,
+} from "./passes/predicates.js";
+import { toNnf } from "./passes/nnf.js";
+import { acNormalize, astSortKey } from "./passes/acNormalize.js";
+import { removeImplies, type PreNnfAst } from "./passes/impliesRemoval.js";
+import {
+  AstCanonicalizerImpl,
+  canonicalizer,
+  type Bindings,
+  type BindingScope,
+} from "./index.js";
 import {
   forAll as irForAll,
   exists as irExists,
@@ -893,5 +922,694 @@ describe("11. RFC 8785 §3.2.2.3 number serialization", () => {
 
   it("-Infinity throws the §3.2.2.3 prohibition error", () => {
     expect(() => serializeNumberInAst(-Infinity)).toThrow(/non-finite number/);
+  });
+});
+
+// -----------------------------------------------------------------------
+// 12. Pass-level unit tests — passes/sorts.ts (canonicalizeSort)
+// -----------------------------------------------------------------------
+
+describe("12. canonicalizeSort", () => {
+  it("preserves the standard primitive sort name", () => {
+    expect(canonicalizeSort({ kind: "primitive", name: "Int" })).toEqual({
+      kind: "primitive",
+      name: "Int",
+    });
+  });
+
+  it("passes through kit-defined extension sorts", () => {
+    expect(canonicalizeSort({ kind: "primitive", name: "myKit:abc123" })).toEqual({
+      kind: "primitive",
+      name: "myKit:abc123",
+    });
+  });
+
+  it("recursively canonicalizes set element sorts", () => {
+    expect(canonicalizeSort({ kind: "set", element: { kind: "primitive", name: "Int" } })).toEqual({
+      kind: "set",
+      element: { kind: "primitive", name: "Int" },
+    });
+  });
+
+  it("recursively canonicalizes tuple element sorts", () => {
+    expect(
+      canonicalizeSort({
+        kind: "tuple",
+        elements: [
+          { kind: "primitive", name: "Int" },
+          { kind: "primitive", name: "Bool" },
+        ],
+      }),
+    ).toEqual({
+      kind: "tuple",
+      elements: [
+        { kind: "primitive", name: "Int" },
+        { kind: "primitive", name: "Bool" },
+      ],
+    });
+  });
+
+  it("recursively canonicalizes function domain + range", () => {
+    expect(
+      canonicalizeSort({
+        kind: "function",
+        domain: [{ kind: "primitive", name: "Int" }],
+        range: { kind: "primitive", name: "Bool" },
+      }),
+    ).toEqual({
+      kind: "function",
+      domain: [{ kind: "primitive", name: "Int" }],
+      range: { kind: "primitive", name: "Bool" },
+    });
+  });
+
+  it("nested set-of-set survives", () => {
+    expect(
+      canonicalizeSort({
+        kind: "set",
+        element: { kind: "set", element: { kind: "primitive", name: "Int" } },
+      }),
+    ).toEqual({
+      kind: "set",
+      element: { kind: "set", element: { kind: "primitive", name: "Int" } },
+    });
+  });
+});
+
+// -----------------------------------------------------------------------
+// 13. passes/deBruijn.ts — applyDeBruijn
+// -----------------------------------------------------------------------
+
+describe("13. applyDeBruijn", () => {
+  it("assigns index 0 to the innermost binder reference", () => {
+    const f = forall("a", Int, atomicNeq("a", 0));
+    const out = applyDeBruijn(f);
+    if (out.kind !== "forall") throw new Error();
+    if (out.body.kind !== "atomic") throw new Error();
+    const arg0 = out.body.args[0] as DeBruijnTerm;
+    if (arg0.kind !== "var") throw new Error();
+    expect(arg0.deBruijn).toBe(0);
+  });
+
+  it("nested binders increment indices", () => {
+    const f = forall(
+      "a", Int,
+      forall("b", Int, atomicEq("a", "b")),
+    );
+    const out = applyDeBruijn(f);
+    if (out.kind !== "forall") throw new Error();
+    if (out.body.kind !== "forall") throw new Error();
+    if (out.body.body.kind !== "atomic") throw new Error();
+    const args = out.body.body.args as DeBruijnTerm[];
+    if (args[0].kind !== "var" || args[1].kind !== "var") throw new Error();
+    // a is the outer binder → index 1; b is the inner → index 0.
+    expect(args[0].deBruijn).toBe(1);
+    expect(args[1].deBruijn).toBe(0);
+  });
+
+  it("throws on unbound variable", () => {
+    const orphan: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [
+        { kind: "var", name: "free", sort: Int },
+        { kind: "const", value: 0, sort: Int },
+      ],
+    };
+    expect(() => applyDeBruijn(orphan)).toThrow(/unbound variable/);
+  });
+
+  it("recurses through and / or / not / implies", () => {
+    const inner = forall("x", Int, atomicNeq("x", 0));
+    const f: IrFormula = {
+      kind: "and",
+      conjuncts: [
+        { kind: "or", disjuncts: [inner] },
+        { kind: "not", body: inner },
+        { kind: "implies", antecedent: inner, consequent: inner },
+      ],
+    };
+    const out = applyDeBruijn(f);
+    expect(out.kind).toBe("and");
+  });
+
+  it("preserves const and ctor terms", () => {
+    const f: IrFormula = forall("x", Int, {
+      kind: "atomic",
+      predicate: "=",
+      args: [
+        { kind: "ctor", name: "+", args: [
+          { kind: "var", name: "x", sort: Int },
+          { kind: "const", value: 1, sort: Int },
+        ], sort: Int },
+        { kind: "const", value: 5, sort: Int },
+      ],
+    });
+    const out = applyDeBruijn(f);
+    expect(out.kind).toBe("forall");
+  });
+});
+
+// -----------------------------------------------------------------------
+// 14. passes/predicates.ts — canonicalizeTerm, termSortKey, canonicalizePredicate
+// -----------------------------------------------------------------------
+
+describe("14. canonicalizeTerm", () => {
+  it("normalizes -0 to 0 in const number values", () => {
+    const t: DeBruijnTerm = { kind: "const", value: -0, sort: Int };
+    const out = canonicalizeTerm(t);
+    if (out.kind !== "const") throw new Error();
+    expect(Object.is(out.value, 0)).toBe(true);
+  });
+
+  it("preserves bigint values exactly", () => {
+    const t: DeBruijnTerm = { kind: "const", value: 7n, sort: Int };
+    const out = canonicalizeTerm(t);
+    if (out.kind !== "const") throw new Error();
+    expect(out.value).toBe(7n);
+  });
+
+  it("treats undefined / null const value as null", () => {
+    const t: DeBruijnTerm = { kind: "const", value: undefined, sort: Int };
+    const out = canonicalizeTerm(t);
+    if (out.kind !== "const") throw new Error();
+    expect(out.value).toBeNull();
+  });
+
+  it("var carries de Bruijn index, not name, in canonical output", () => {
+    const t: DeBruijnTerm = { kind: "var", name: "ignored", sort: Int, deBruijn: 2 };
+    const out = canonicalizeTerm(t);
+    if (out.kind !== "var") throw new Error();
+    expect(out.index).toBe(2);
+    expect(out).not.toHaveProperty("name");
+  });
+
+  it("ctor recurses into args", () => {
+    const t: DeBruijnTerm = {
+      kind: "ctor",
+      name: "+",
+      args: [
+        { kind: "const", value: 1, sort: Int },
+        { kind: "const", value: 2, sort: Int },
+      ],
+      sort: Int,
+    };
+    const out = canonicalizeTerm(t);
+    if (out.kind !== "ctor") throw new Error();
+    expect(out.args).toHaveLength(2);
+  });
+});
+
+describe("14b. termSortKey", () => {
+  it("differs for differing var indices", () => {
+    const a: CanonicalTerm = { kind: "var", index: 0, sort: { kind: "primitive", name: "Int" } };
+    const b: CanonicalTerm = { kind: "var", index: 1, sort: { kind: "primitive", name: "Int" } };
+    expect(termSortKey(a)).not.toBe(termSortKey(b));
+  });
+
+  it("encodes ctor args structurally", () => {
+    const k1 = termSortKey({
+      kind: "ctor",
+      name: "+",
+      args: [
+        { kind: "const", value: 1, sort: { kind: "primitive", name: "Int" } },
+        { kind: "const", value: 2, sort: { kind: "primitive", name: "Int" } },
+      ],
+      sort: { kind: "primitive", name: "Int" },
+    });
+    expect(k1).toContain("ctor:+");
+  });
+});
+
+describe("14c. canonicalizePredicate", () => {
+  const oneConst: CanonicalTerm = {
+    kind: "const",
+    sort: { kind: "primitive", name: "Int" },
+    value: 1,
+  };
+  const twoConst: CanonicalTerm = {
+    kind: "const",
+    sort: { kind: "primitive", name: "Int" },
+    value: 2,
+  };
+  const xVar: CanonicalTerm = {
+    kind: "var",
+    index: 0,
+    sort: { kind: "primitive", name: "Int" },
+  };
+
+  it("resolves '!=' alias to '≠'", () => {
+    expect(canonicalizePredicate("!=", [oneConst, twoConst]).predicate).toBe("≠");
+  });
+
+  it("resolves 'eq' alias to '='", () => {
+    expect(canonicalizePredicate("eq", [oneConst, twoConst]).predicate).toBe("=");
+  });
+
+  it("resolves 'lessThan' alias to '<'", () => {
+    expect(canonicalizePredicate("lessThan", [xVar, oneConst]).predicate).toBe("<");
+  });
+
+  it("resolves '∈' alias to 'member'", () => {
+    expect(canonicalizePredicate("∈", [oneConst, oneConst]).predicate).toBe("member");
+  });
+
+  it("resolves 'kindOf' alias to 'kind-of'", () => {
+    expect(canonicalizePredicate("kindOf", [oneConst, oneConst]).predicate).toBe("kind-of");
+  });
+
+  it("'=' sorts args by structural key", () => {
+    // termSortKey for const Int 2 is greater than const Int 1 (ASCII '1' < '2').
+    const out = canonicalizePredicate("=", [twoConst, oneConst]);
+    expect((out.args[0] as { value: unknown }).value).toBe(1);
+    expect((out.args[1] as { value: unknown }).value).toBe(2);
+  });
+
+  it("'<' with const-on-left flips to '>' with const-on-right", () => {
+    const out = canonicalizePredicate("<", [oneConst, xVar]);
+    expect(out.predicate).toBe(">");
+    expect(out.args[0].kind).toBe("var");
+    expect(out.args[1].kind).toBe("const");
+  });
+
+  it("unknown predicate name passes through unchanged", () => {
+    const out = canonicalizePredicate("kit:custom", [oneConst]);
+    expect(out.predicate).toBe("kit:custom");
+  });
+});
+
+// -----------------------------------------------------------------------
+// 15. passes/nnf.ts — toNnf
+// -----------------------------------------------------------------------
+
+describe("15. toNnf", () => {
+  const intSort: CanonicalSort = { kind: "primitive", name: "Int" };
+  const trueAtom: CanonicalFolAst = { kind: "atomic", predicate: "true", args: [] };
+  const falseAtom: CanonicalFolAst = { kind: "atomic", predicate: "false", args: [] };
+  const eqAtom: CanonicalFolAst = {
+    kind: "atomic",
+    predicate: "=",
+    args: [
+      { kind: "const", value: 1, sort: intSort },
+      { kind: "const", value: 1, sort: intSort },
+    ],
+  };
+
+  it("not(not(p)) collapses to p", () => {
+    const r = toNnf({ kind: "not", body: { kind: "not", body: eqAtom } });
+    expect(r).toEqual(eqAtom);
+  });
+
+  it("not(true) → false via predicate negation", () => {
+    expect(toNnf({ kind: "not", body: trueAtom })).toEqual(falseAtom);
+  });
+
+  it("not(=) → ≠ via predicate negation", () => {
+    const r = toNnf({ kind: "not", body: eqAtom });
+    if (r.kind !== "atomic") throw new Error();
+    expect(r.predicate).toBe("≠");
+  });
+
+  it("not(<) → ≥ via predicate negation", () => {
+    const lt: CanonicalFolAst = {
+      kind: "atomic",
+      predicate: "<",
+      args: eqAtom.kind === "atomic" ? eqAtom.args : [],
+    };
+    const r = toNnf({ kind: "not", body: lt });
+    if (r.kind !== "atomic") throw new Error();
+    expect(r.predicate).toBe("≥");
+  });
+
+  it("De Morgan: not(and(p,q)) → or(not(p), not(q))", () => {
+    const p = eqAtom;
+    const q: CanonicalFolAst = {
+      kind: "atomic",
+      predicate: "<",
+      args: [
+        { kind: "const", value: 0, sort: intSort },
+        { kind: "const", value: 1, sort: intSort },
+      ],
+    };
+    const r = toNnf({ kind: "not", body: { kind: "and", operands: [p, q] } });
+    if (r.kind !== "or") throw new Error();
+    expect(r.operands).toHaveLength(2);
+  });
+
+  it("not(forall) → exists with negated body", () => {
+    const inside: CanonicalFolAst = { kind: "forall", sort: intSort, body: eqAtom };
+    const r = toNnf({ kind: "not", body: inside });
+    if (r.kind !== "exists") throw new Error();
+    expect(r.body.kind).toBe("atomic");
+  });
+
+  it("not(exists) → forall with negated body", () => {
+    const inside: CanonicalFolAst = { kind: "exists", sort: intSort, body: eqAtom };
+    const r = toNnf({ kind: "not", body: inside });
+    if (r.kind !== "forall") throw new Error();
+  });
+
+  it("not on kit-defined atomic predicate is left as not(atomic)", () => {
+    const a: CanonicalFolAst = { kind: "atomic", predicate: "kit:reads", args: [] };
+    const r = toNnf({ kind: "not", body: a });
+    expect(r.kind).toBe("not");
+  });
+});
+
+// -----------------------------------------------------------------------
+// 16. passes/acNormalize.ts — acNormalize + astSortKey
+// -----------------------------------------------------------------------
+
+describe("16. acNormalize + astSortKey", () => {
+  const intSort: CanonicalSort = { kind: "primitive", name: "Int" };
+  const trueAtom: CanonicalFolAst = { kind: "atomic", predicate: "true", args: [] };
+  const falseAtom: CanonicalFolAst = { kind: "atomic", predicate: "false", args: [] };
+  const eqAtom: CanonicalFolAst = {
+    kind: "atomic",
+    predicate: "=",
+    args: [
+      { kind: "const", value: 1, sort: intSort },
+      { kind: "const", value: 1, sort: intSort },
+    ],
+  };
+
+  it("astSortKey is deterministic for identical inputs", () => {
+    expect(astSortKey(eqAtom)).toBe(astSortKey(eqAtom));
+  });
+
+  it("astSortKey differs across kinds", () => {
+    expect(astSortKey(trueAtom)).not.toBe(astSortKey(falseAtom));
+  });
+
+  it("and() with no operands → true", () => {
+    expect(acNormalize({ kind: "and", operands: [] })).toEqual(trueAtom);
+  });
+
+  it("or() with no operands → false", () => {
+    expect(acNormalize({ kind: "or", operands: [] })).toEqual(falseAtom);
+  });
+
+  it("and(false, p) → false (absorption)", () => {
+    expect(
+      acNormalize({ kind: "and", operands: [falseAtom, eqAtom] }),
+    ).toEqual(falseAtom);
+  });
+
+  it("or(true, p) → true (absorption)", () => {
+    expect(
+      acNormalize({ kind: "or", operands: [trueAtom, eqAtom] }),
+    ).toEqual(trueAtom);
+  });
+
+  it("and(true, p) → p (identity removal)", () => {
+    expect(
+      acNormalize({ kind: "and", operands: [trueAtom, eqAtom] }),
+    ).toEqual(eqAtom);
+  });
+
+  it("and(and(p,q),r) flattens", () => {
+    const p = eqAtom;
+    const q: CanonicalFolAst = { kind: "atomic", predicate: "kit:q", args: [] };
+    const r: CanonicalFolAst = { kind: "atomic", predicate: "kit:r", args: [] };
+    const out = acNormalize({
+      kind: "and",
+      operands: [{ kind: "and", operands: [p, q] }, r],
+    });
+    if (out.kind !== "and") throw new Error();
+    expect(out.operands).toHaveLength(3);
+  });
+
+  it("and dedupes equal operands", () => {
+    const out = acNormalize({ kind: "and", operands: [eqAtom, eqAtom] });
+    expect(out).toEqual(eqAtom);
+  });
+
+  it("recurses into quantifier bodies", () => {
+    const out = acNormalize({
+      kind: "forall",
+      sort: intSort,
+      body: { kind: "and", operands: [trueAtom, eqAtom] },
+    });
+    if (out.kind !== "forall") throw new Error();
+    expect(out.body).toEqual(eqAtom);
+  });
+
+  it("not is preserved through acNormalize", () => {
+    const out = acNormalize({ kind: "not", body: eqAtom });
+    expect(out.kind).toBe("not");
+  });
+});
+
+// -----------------------------------------------------------------------
+// 17. passes/impliesRemoval.ts — removeImplies
+// -----------------------------------------------------------------------
+
+describe("17. removeImplies", () => {
+  const intSort: CanonicalSort = { kind: "primitive", name: "Int" };
+  const trueAtom: PreNnfAst = { kind: "atomic", predicate: "true", args: [] };
+  const falseAtom: PreNnfAst = { kind: "atomic", predicate: "false", args: [] };
+
+  it("rewrites implies(a, c) to or(not(a), c)", () => {
+    const out = removeImplies({
+      kind: "implies",
+      antecedent: trueAtom,
+      consequent: falseAtom,
+    });
+    if (out.kind !== "or") throw new Error();
+    expect(out.operands).toHaveLength(2);
+    expect(out.operands[0].kind).toBe("not");
+    expect(out.operands[1].kind).toBe("atomic");
+  });
+
+  it("recurses into and / or / not / forall / exists", () => {
+    const inner: PreNnfAst = {
+      kind: "implies",
+      antecedent: trueAtom,
+      consequent: falseAtom,
+    };
+    const wrapped: PreNnfAst = {
+      kind: "and",
+      operands: [
+        { kind: "not", body: inner },
+        { kind: "or", operands: [inner] },
+        { kind: "forall", sort: intSort, body: inner },
+        { kind: "exists", sort: intSort, body: inner },
+      ],
+    };
+    const out = removeImplies(wrapped);
+    function hasImplies(a: CanonicalFolAst): boolean {
+      switch (a.kind) {
+        case "and":
+        case "or":
+          return a.operands.some(hasImplies);
+        case "not":
+          return hasImplies(a.body);
+        case "forall":
+        case "exists":
+          return hasImplies(a.body);
+        default:
+          return false;
+      }
+    }
+    expect(hasImplies(out)).toBe(false);
+  });
+
+  it("atomic passes through unchanged", () => {
+    const a: PreNnfAst = {
+      kind: "atomic",
+      predicate: "true",
+      args: [],
+    };
+    expect(removeImplies(a)).toEqual({
+      kind: "atomic",
+      predicate: "true",
+      args: [],
+    });
+  });
+});
+
+// -----------------------------------------------------------------------
+// 18. serialize.ts — SERIALIZATION_FORMAT + bigint encodings
+// -----------------------------------------------------------------------
+
+describe("18. serialize.ts", () => {
+  const intSort: CanonicalSort = { kind: "primitive", name: "Int" };
+
+  it("SERIALIZATION_FORMAT is jcs-json-rfc8785", () => {
+    expect(SERIALIZATION_FORMAT).toBe("jcs-json-rfc8785");
+  });
+
+  it("safe-range bigint serializes as a JSON number", () => {
+    const ast: CanonicalFolAst = {
+      kind: "atomic",
+      predicate: "P",
+      args: [{ kind: "const", value: 100n, sort: intSort }],
+    };
+    const s = serializeCanonicalAst(ast).toString("utf8");
+    expect(s).toContain('"value":100');
+    expect(s).not.toContain('"value":"');
+  });
+
+  it("unsafe-range bigint serializes with bigint: prefix as string", () => {
+    const huge = BigInt(Number.MAX_SAFE_INTEGER) + 10n;
+    const ast: CanonicalFolAst = {
+      kind: "atomic",
+      predicate: "P",
+      args: [{ kind: "const", value: huge, sort: intSort }],
+    };
+    const s = serializeCanonicalAst(ast).toString("utf8");
+    expect(s).toContain(`"value":"bigint:${huge.toString()}"`);
+  });
+
+  it("null const value serializes as null", () => {
+    const ast: CanonicalFolAst = {
+      kind: "atomic",
+      predicate: "P",
+      args: [{ kind: "const", value: null, sort: intSort }],
+    };
+    const s = serializeCanonicalAst(ast).toString("utf8");
+    expect(s).toContain('"value":null');
+  });
+
+  it("boolean const values serialize as true/false", () => {
+    const ast: CanonicalFolAst = {
+      kind: "atomic",
+      predicate: "P",
+      args: [
+        { kind: "const", value: true, sort: { kind: "primitive", name: "Bool" } },
+        { kind: "const", value: false, sort: { kind: "primitive", name: "Bool" } },
+      ],
+    };
+    const s = serializeCanonicalAst(ast).toString("utf8");
+    expect(s).toContain("true");
+    expect(s).toContain("false");
+  });
+
+  it("object keys are sorted lexicographically (RFC 8785 §3.2.3)", () => {
+    const ast: CanonicalFolAst = {
+      kind: "atomic",
+      predicate: "P",
+      args: [],
+    };
+    const s = serializeCanonicalAst(ast).toString("utf8");
+    expect(s.indexOf("args")).toBeLessThan(s.indexOf("kind"));
+    expect(s.indexOf("kind")).toBeLessThan(s.indexOf("predicate"));
+  });
+});
+
+// -----------------------------------------------------------------------
+// 19. hash.ts — sha256Prefix16
+// -----------------------------------------------------------------------
+
+describe("19. sha256Prefix16", () => {
+  it("returns exactly 16 hex characters", () => {
+    const out = sha256Prefix16(Buffer.from("hello", "utf8"));
+    expect(out).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("hashes empty buffer deterministically", () => {
+    const out1 = sha256Prefix16(Buffer.alloc(0));
+    const out2 = sha256Prefix16(Buffer.alloc(0));
+    expect(out1).toBe(out2);
+    expect(out1).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("differs for different bytes", () => {
+    const a = sha256Prefix16(Buffer.from("a", "utf8"));
+    const b = sha256Prefix16(Buffer.from("b", "utf8"));
+    expect(a).not.toBe(b);
+  });
+
+  it("matches the expected sha256 prefix for 'hello'", () => {
+    expect(sha256Prefix16(Buffer.from("hello", "utf8"))).toBe("2cf24dba5fb0a30e");
+  });
+});
+
+// -----------------------------------------------------------------------
+// 20. canonicalize.ts — propertyHashFromAst direct
+// -----------------------------------------------------------------------
+
+describe("20. propertyHashFromAst", () => {
+  it("matches propertyHashFromFormula via the full pipeline", () => {
+    const f = forall("b", Int, atomicNeq("b", 0));
+    const ast = formulaToCanonicalAst(f);
+    expect(propertyHashFromAst(ast)).toBe(propertyHashFromFormula(f));
+  });
+});
+
+// -----------------------------------------------------------------------
+// 21. AstCanonicalizerImpl + canonicalizer default export
+// -----------------------------------------------------------------------
+
+describe("21. AstCanonicalizerImpl + canonicalizer default", () => {
+  it("default canonicalizer instance shares the same hashing as the function", () => {
+    const f = forall("b", Int, atomicNeq("b", 0));
+    expect(canonicalizer.propertyHashFromFormula(f)).toBe(
+      propertyHashFromFormula(f),
+    );
+  });
+
+  it("formulaToCanonicalAst on the impl matches the standalone function", () => {
+    const impl = new AstCanonicalizerImpl();
+    const f = forall("b", Int, atomicNeq("b", 0));
+    expect(impl.formulaToCanonicalAst(f)).toEqual(formulaToCanonicalAst(f));
+  });
+
+  it("scopeOf returns the documented stub shape", () => {
+    const impl = new AstCanonicalizerImpl();
+    const scope = impl.scopeOf({});
+    expect(scope.kind).toBe("function");
+    expect(scope.identifier).toBe("__stub__");
+    expect(scope.filePath).toBe("__stub__");
+  });
+
+  it("bindingHashFromAst is a 16-hex string", () => {
+    const impl = new AstCanonicalizerImpl();
+    const scope: BindingScope = {
+      kind: "function",
+      identifier: "divide",
+      filePath: "/src/divide.ts",
+    };
+    const bindings: Bindings = { b: { kind: "primitive", name: "Int" } };
+    const h = impl.bindingHashFromAst({ scope, bindings, hostAst: null });
+    expect(h).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("bindingHashFromAst is deterministic and order-independent in bindings", () => {
+    const impl = new AstCanonicalizerImpl();
+    const scope: BindingScope = {
+      kind: "function",
+      identifier: "f",
+      filePath: "x.ts",
+    };
+    const Int_: CanonicalSort = { kind: "primitive", name: "Int" };
+    const Bool_: CanonicalSort = { kind: "primitive", name: "Bool" };
+    const a = impl.bindingHashFromAst({
+      scope,
+      bindings: { x: Int_, y: Bool_ },
+      hostAst: null,
+    });
+    const b = impl.bindingHashFromAst({
+      scope,
+      bindings: { y: Bool_, x: Int_ },
+      hostAst: null,
+    });
+    expect(a).toBe(b);
+  });
+
+  it("bindingHashFromAst differs when the scope identifier differs", () => {
+    const impl = new AstCanonicalizerImpl();
+    const Int_: CanonicalSort = { kind: "primitive", name: "Int" };
+    const a = impl.bindingHashFromAst({
+      scope: { kind: "function", identifier: "f", filePath: "x.ts" },
+      bindings: { x: Int_ },
+      hostAst: null,
+    });
+    const b = impl.bindingHashFromAst({
+      scope: { kind: "function", identifier: "g", filePath: "x.ts" },
+      bindings: { x: Int_ },
+      hostAst: null,
+    });
+    expect(a).not.toBe(b);
   });
 });

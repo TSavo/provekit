@@ -11,6 +11,13 @@ import { assert as A } from "../assert.js";
 import type { IrFormula, IrTerm, Sort } from "../formulas.js";
 
 import { emitSmtLib, emitSmtLibProblem } from "./index.js";
+import { emitSort, collectUserSorts, isBuiltInPrimitive } from "./sorts.js";
+import {
+  collectDeclarations,
+  emitSortDeclarations,
+  emitFunctionDeclarations,
+} from "./declarations.js";
+import { emitFormula } from "./emit.js";
 
 beforeEach(() => {
   _resetCounter();
@@ -311,6 +318,260 @@ describe("emitSmtLibProblem", () => {
 // ---------------------------------------------------------------------------
 // Round-trip structural sanity
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// sorts module — direct API
+// ---------------------------------------------------------------------------
+
+describe("smt/sorts — emitSort", () => {
+  it("maps each built-in primitive name correctly", () => {
+    expect(emitSort(Int)).toBe("Int");
+    expect(emitSort(Real)).toBe("Real");
+    expect(emitSort(Bool)).toBe("Bool");
+    expect(emitSort(Str)).toBe("String");
+  });
+
+  it("emits user primitives as bare identifiers", () => {
+    expect(emitSort(cents)).toBe("Cents");
+  });
+
+  it("emits set sorts as (Set T)", () => {
+    expect(emitSort(SetOf(Int))).toBe("(Set Int)");
+  });
+
+  it("emits tuple sorts as (Tuple T1 T2)", () => {
+    expect(emitSort({ kind: "tuple", elements: [Int, Bool] })).toBe(
+      "(Tuple Int Bool)",
+    );
+  });
+
+  it("emits function sorts as (-> dom range)", () => {
+    expect(
+      emitSort({ kind: "function", domain: [Int, Real], range: Bool }),
+    ).toBe("(-> Int Real Bool)");
+  });
+});
+
+describe("smt/sorts — collectUserSorts", () => {
+  it("ignores built-in sorts", () => {
+    const out = new Set<string>();
+    collectUserSorts(Int, out);
+    collectUserSorts(Bool, out);
+    expect(out.size).toBe(0);
+  });
+
+  it("collects nested user-defined primitives from set + tuple + function", () => {
+    const out = new Set<string>();
+    const ux: Sort = { kind: "primitive", name: "USort" };
+    collectUserSorts(SetOf(ux), out);
+    collectUserSorts({ kind: "tuple", elements: [Int, ux] }, out);
+    collectUserSorts({ kind: "function", domain: [ux], range: ux }, out);
+    expect([...out]).toEqual(["USort"]);
+  });
+});
+
+describe("smt/sorts — isBuiltInPrimitive", () => {
+  it("recognizes built-ins", () => {
+    expect(isBuiltInPrimitive("Int")).toBe(true);
+    expect(isBuiltInPrimitive("Bool")).toBe(true);
+    expect(isBuiltInPrimitive("Real")).toBe(true);
+    expect(isBuiltInPrimitive("String")).toBe(true);
+  });
+
+  it("rejects non-built-in names", () => {
+    expect(isBuiltInPrimitive("Cents")).toBe(false);
+    expect(isBuiltInPrimitive("")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// declarations module — direct API
+// ---------------------------------------------------------------------------
+
+describe("smt/declarations — collectDeclarations", () => {
+  it("collects user sorts from quantifier sorts", () => {
+    const f = forAll(cents, (x) => A.equal(x, x));
+    const decls = collectDeclarations([f]);
+    expect(decls.userSorts).toEqual(["Cents"]);
+  });
+
+  it("collects ctor signatures from atomic args", () => {
+    const x: IrTerm = { kind: "var", name: "_x0", sort: Str };
+    const f: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [ctor("parseInt", [x], Int), { kind: "const", value: 42, sort: Int }],
+    };
+    const decls = collectDeclarations([f]);
+    expect(decls.ctors.map((c) => c.name)).toContain("parseInt");
+    expect(decls.predicates.map((p) => p.name)).not.toContain("=");
+  });
+
+  it("collects uninterpreted predicates and skips built-ins", () => {
+    const x: IrTerm = { kind: "var", name: "_x0", sort: Int };
+    const f: IrFormula = {
+      kind: "forall",
+      sort: Int,
+      predicate: {
+        kind: "lambda",
+        varName: "_x0",
+        sort: Int,
+        body: { kind: "atomic", predicate: "isPrime", args: [x] },
+      },
+    };
+    const decls = collectDeclarations([f]);
+    expect(decls.predicates.map((p) => p.name)).toEqual(["isPrime"]);
+  });
+
+  it("throws on conflicting ctor arities for the same name", () => {
+    const f1: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [ctor("foo", [], Int), { kind: "const", value: 0, sort: Int }],
+    };
+    const f2: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [
+        ctor("foo", [{ kind: "const", value: 1, sort: Int }], Int),
+        { kind: "const", value: 0, sort: Int },
+      ],
+    };
+    expect(() => collectDeclarations([f1, f2])).toThrow(/conflicting arities/);
+  });
+
+  it("dedupes ctors that share name + arity", () => {
+    const a: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [ctor("g", [{ kind: "const", value: 1, sort: Int }], Int), { kind: "const", value: 0, sort: Int }],
+    };
+    const b: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [ctor("g", [{ kind: "const", value: 2, sort: Int }], Int), { kind: "const", value: 1, sort: Int }],
+    };
+    const decls = collectDeclarations([a, b]);
+    expect(decls.ctors.filter((c) => c.name === "g")).toHaveLength(1);
+  });
+});
+
+describe("smt/declarations — emitters", () => {
+  it("emitSortDeclarations renders one (declare-sort) line per user sort", () => {
+    const decls = collectDeclarations([forAll(cents, (x) => A.equal(x, x))]);
+    expect(emitSortDeclarations(decls)).toEqual(["(declare-sort Cents 0)"]);
+  });
+
+  it("emitFunctionDeclarations renders ctor declarations and predicate Bool returns", () => {
+    const x: IrTerm = { kind: "var", name: "_x0", sort: Int };
+    const f: IrFormula = {
+      kind: "forall",
+      sort: Int,
+      predicate: {
+        kind: "lambda",
+        varName: "_x0",
+        sort: Int,
+        body: { kind: "atomic", predicate: "isPrime", args: [x] },
+      },
+    };
+    const decls = collectDeclarations([f]);
+    const lines = emitFunctionDeclarations(decls);
+    expect(lines).toContain("(declare-fun isPrime (Int) Bool)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// emit module direct re-export
+// ---------------------------------------------------------------------------
+
+describe("emitFormula (direct emit module)", () => {
+  it("matches emitSmtLib output", () => {
+    const f = and(A.equal(1, 1), A.equal(2, 2));
+    expect(emitFormula(f)).toBe(emitSmtLib(f));
+  });
+
+  it("renders zero-conjunct and as 'true' (compact-out via library)", () => {
+    expect(emitFormula({ kind: "and", conjuncts: [] })).toBe("true");
+  });
+
+  it("renders zero-disjunct or as 'false' (compact-out via library)", () => {
+    expect(emitFormula({ kind: "or", disjuncts: [] })).toBe("false");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Constants — bigint & negative bigint encoding
+// ---------------------------------------------------------------------------
+
+describe("emitSmtLib — bigint constants", () => {
+  it("renders positive bigint as bare integer", () => {
+    const f: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [
+        { kind: "const", value: 100n, sort: Int },
+        { kind: "const", value: 100n, sort: Int },
+      ],
+    };
+    expect(emitSmtLib(f)).toBe("(= 100 100)");
+  });
+
+  it("renders negative bigint with (- n) wrapper", () => {
+    const f: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [
+        { kind: "const", value: -100n, sort: Int },
+        { kind: "const", value: -100n, sort: Int },
+      ],
+    };
+    expect(emitSmtLib(f)).toBe("(= (- 100) (- 100))");
+  });
+});
+
+describe("emitSmtLib — null constant rejection", () => {
+  it("throws when emitting a null const", () => {
+    const f: IrFormula = {
+      kind: "atomic",
+      predicate: "=",
+      args: [
+        { kind: "const", value: null, sort: Int },
+        { kind: "const", value: 0, sort: Int },
+      ],
+    };
+    expect(() => emitSmtLib(f)).toThrow(/null/);
+  });
+});
+
+describe("emitSmtLib — true/false predicate args", () => {
+  it("emits atomic 'true' with no args as the literal true", () => {
+    const f: IrFormula = { kind: "atomic", predicate: "true", args: [] };
+    expect(emitSmtLib(f)).toBe("true");
+  });
+
+  it("emits atomic 'false' with no args as the literal false", () => {
+    const f: IrFormula = { kind: "atomic", predicate: "false", args: [] };
+    expect(emitSmtLib(f)).toBe("false");
+  });
+
+  it("emits atomic 'true' with a Bool arg as the bare term", () => {
+    const f: IrFormula = {
+      kind: "atomic",
+      predicate: "true",
+      args: [{ kind: "const", value: true, sort: Bool }],
+    };
+    expect(emitSmtLib(f)).toBe("true");
+  });
+
+  it("emits atomic 'false' with a Bool arg as (not term)", () => {
+    const f: IrFormula = {
+      kind: "atomic",
+      predicate: "false",
+      args: [{ kind: "const", value: false, sort: Bool }],
+    };
+    expect(emitSmtLib(f)).toBe("(not false)");
+  });
+});
 
 describe("emitSmtLib — structural sanity", () => {
   it("output has balanced parentheses", () => {

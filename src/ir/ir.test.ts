@@ -37,6 +37,16 @@ import { and, or, not, implies, iff } from "./connectives.js";
 import { assert } from "./assert.js";
 import { property } from "./property.js";
 import type { IrFormula, IrTerm } from "./formulas.js";
+import { liftToTerm } from "./formulas.js";
+import {
+  function_,
+  module_,
+  class_,
+  method_,
+  region,
+  transition,
+  whenever,
+} from "./scopes.js";
 
 // ---------------------------------------------------------------------------
 // Reset the variable counter before each test for deterministic names.
@@ -537,6 +547,199 @@ describe("IrFormula round-trip through JSON", () => {
     });
     const roundTripped = JSON.parse(JSON.stringify(p)) as typeof p;
     expect(roundTripped).toEqual(p);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scopes.ts builders
+// ---------------------------------------------------------------------------
+
+describe("scope builders", () => {
+  it("function_ builds a function scope", () => {
+    expect(function_("divide")).toEqual({ kind: "function", name: "divide" });
+  });
+
+  it("module_ builds a module scope", () => {
+    expect(module_("api/billing")).toEqual({ kind: "module", path: "api/billing" });
+  });
+
+  it("class_ builds a class scope", () => {
+    expect(class_("Wallet")).toEqual({ kind: "class", name: "Wallet" });
+  });
+
+  it("method_ builds a method scope", () => {
+    expect(method_("Wallet", "debit")).toEqual({
+      kind: "method",
+      className: "Wallet",
+      methodName: "debit",
+    });
+  });
+
+  it("region builds a region scope", () => {
+    expect(region("BEGIN", "END")).toEqual({
+      kind: "region",
+      start: "BEGIN",
+      end: "END",
+    });
+  });
+
+  it("transition builds a transition scope", () => {
+    expect(transition("CHARGE")).toEqual({ kind: "transition", name: "CHARGE" });
+  });
+
+  it("whenever wraps a predicate", () => {
+    const pred: IrFormula = assert.equal(1, 1);
+    expect(whenever(pred)).toEqual({ kind: "whenever", predicate: pred });
+  });
+
+  it("scope builders integrate with property()", () => {
+    const p = property({
+      name: "rule",
+      scope: method_("Wallet", "debit"),
+      bindings: {},
+      formula: assert.equal(1, 1),
+    });
+    expect(p.scope).toEqual({
+      kind: "method",
+      className: "Wallet",
+      methodName: "debit",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// liftToTerm — direct coverage of every JS-primitive branch
+// ---------------------------------------------------------------------------
+
+describe("liftToTerm", () => {
+  it("number primitive lifts to Int const", () => {
+    expect(liftToTerm(42)).toEqual({
+      kind: "const",
+      value: 42,
+      sort: { kind: "primitive", name: "Int" },
+    });
+  });
+
+  it("bigint primitive lifts to Int const", () => {
+    expect(liftToTerm(9007199254740993n)).toEqual({
+      kind: "const",
+      value: 9007199254740993n,
+      sort: { kind: "primitive", name: "Int" },
+    });
+  });
+
+  it("string primitive lifts to String const", () => {
+    expect(liftToTerm("hi")).toEqual({
+      kind: "const",
+      value: "hi",
+      sort: { kind: "primitive", name: "String" },
+    });
+  });
+
+  it("boolean primitive lifts to Bool const", () => {
+    expect(liftToTerm(true)).toEqual({
+      kind: "const",
+      value: true,
+      sort: { kind: "primitive", name: "Bool" },
+    });
+  });
+
+  it("null primitive lifts to Ref const with null value", () => {
+    expect(liftToTerm(null)).toEqual({
+      kind: "const",
+      value: null,
+      sort: { kind: "primitive", name: "Ref" },
+    });
+  });
+
+  it("returns IrTerm var as-is", () => {
+    const v: IrTerm = { kind: "var", name: "x", sort: Int };
+    expect(liftToTerm(v)).toBe(v);
+  });
+
+  it("returns IrTerm const as-is", () => {
+    const c: IrTerm = { kind: "const", value: 7, sort: Int };
+    expect(liftToTerm(c)).toBe(c);
+  });
+
+  it("returns IrTerm ctor as-is", () => {
+    const c: IrTerm = { kind: "ctor", name: "+", args: [], sort: Int };
+    expect(liftToTerm(c)).toBe(c);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// connectives — edge cases not covered above
+// ---------------------------------------------------------------------------
+
+describe("connectives — edge cases", () => {
+  const a: IrFormula = assert.equal(0, 0);
+
+  it("or with no args returns false atomic", () => {
+    const f = or();
+    expect(f.kind).toBe("atomic");
+    if (f.kind !== "atomic") throw new Error();
+    expect(f.predicate).toBe("false");
+  });
+
+  it("or with single arg returns the arg", () => {
+    expect(or(a)).toBe(a);
+  });
+
+  it("not produces a not node referencing the body", () => {
+    const f = not(a);
+    if (f.kind !== "not") throw new Error();
+    expect(f.body).toBe(a);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// quantifiers — _resetCounter
+// ---------------------------------------------------------------------------
+
+describe("_resetCounter", () => {
+  it("after reset, the next freshVar starts at _x0 again", () => {
+    forAll(Int, (_x) => assert.equal(0, 0));
+    forAll(Int, (_x) => assert.equal(0, 0));
+    _resetCounter();
+    const f = forAll(Int, (_x) => assert.equal(0, 0));
+    if (f.kind !== "forall") throw new Error();
+    expect(f.predicate.varName).toBe("_x0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// assert — additional predicates not covered above
+// ---------------------------------------------------------------------------
+
+describe("assert — remaining predicates", () => {
+  const x: IrTerm = { kind: "var", name: "x", sort: Int };
+  const y: IrTerm = { kind: "var", name: "y", sort: Int };
+
+  it("lessThanOrEqual builds atomic ≤", () => {
+    const f = assert.lessThanOrEqual(x, y);
+    if (f.kind !== "atomic") throw new Error();
+    expect(f.predicate).toBe("≤");
+  });
+
+  it("greaterThan builds atomic >", () => {
+    const f = assert.greaterThan(x, y);
+    if (f.kind !== "atomic") throw new Error();
+    expect(f.predicate).toBe(">");
+  });
+
+  it("dominates builds atomic dominates", () => {
+    const f = assert.dominates(x, y);
+    if (f.kind !== "atomic") throw new Error();
+    expect(f.predicate).toBe("dominates");
+  });
+
+  it("onPath builds three-arg on-path atomic", () => {
+    const z: IrTerm = { kind: "var", name: "z", sort: Int };
+    const f = assert.onPath(x, y, z);
+    if (f.kind !== "atomic") throw new Error();
+    expect(f.predicate).toBe("on-path");
+    expect(f.args).toHaveLength(3);
   });
 });
 
