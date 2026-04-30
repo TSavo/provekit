@@ -1325,19 +1325,38 @@ Specific things ProvekIt explicitly does NOT ship:
 - A "supply-chain auditor" that installs and re-verifies dependencies
 - A "compliance reporter" that walks the DAG and produces audit reports
 
-**Naming discipline: leaves, not walks.**
+**Naming discipline: leaves and roots, not walks.**
 
-The framework's local operation is enumeration of its OWN minted
-mementos — `provekit leaves`. From any single proofkit instance's
-perspective, everything outside its local store is a leaf it can
-REFERENCE by hash. The framework mints leaves; it does not walk into
-other proofkits' leaves.
+A proofkit's DAG is rooted in OTHER proofkits' DAGs. From any single
+proofkit's perspective, the substrate has two boundaries:
+
+- **Leaves** — mementos this proofkit MINTED locally. Signed by us.
+  Downstream consumers reference our leaves by hash.
+- **Roots** — external CIDs that appear in our mementos' `inputCids`.
+  Signed by OTHERS. We composed against them; we did NOT verify them
+  ourselves.
+
+Two local queries:
+
+| Query | Returns | Who cares |
+|---|---|---|
+| `provekit leaves` | Mementos minted locally | Downstream consumers (composability) |
+| `provekit roots` | External CIDs we reference | Auditors (where to walk next) |
+
+Both are LOCAL. Both produce hashes. **Neither walks.**
+
+The audit-direction query is `provekit roots`. An auditor doing
+deep verification takes the output and goes to those external
+codebases independently. The substrate gives the auditor the precise
+list of WHERE audit work needs to happen; the auditor does the
+walking. This is the substrate-vs-tooling boundary: ProvekIt mints
+and lists; auditors walk.
 
 This naming is load-bearing. "Walk" implies traversal across the
 whole DAG, which sounds like the framework's job. It isn't. The
-framework operates on its own LOCAL leaves; everything else is
-referenced. Auditors traverse. Compliance frameworks traverse. The
-framework mints.
+framework operates on its own LOCAL leaves and lists its OWN roots;
+everything else is referenced. Auditors traverse. Compliance
+frameworks traverse. The framework mints.
 
 Each of those is a valid downstream tool. They build on ProvekIt's
 substrate. They are NOT parts of ProvekIt.
