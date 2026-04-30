@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { runFix } from "./cli.fix.js";
 import { runMineHistory } from "./cli.mineHistory.js";
 import { runMint } from "./cli.mint.js";
+import { runAttest } from "./cli.attest.js";
 import { buildSASTForFile } from "./sast/builder.js";
 
 const VERSION = "0.4.0";
@@ -46,10 +47,12 @@ async function main(): Promise<void> {
     case "override": runOverride(rest); break;
     case "fix":     await runFix(rest); break;
     case "prove":   await runFix(rest); break;
+    case "change":  await runFix(rest); break;
     case "lint":    await runLint(rest); break;
     case "invariants": await runInvariants(rest); break;
     case "mine-history": await runMineHistory(rest); break;
     case "mint":         await runMint(rest); break;
+    case "attest":       await runAttest(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
       printHelp();
