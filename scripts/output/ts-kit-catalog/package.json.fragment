@@ -1,0 +1,16 @@
+{
+  "name": "@provekit/ts-kit",
+  "version": "1.0.0",
+  "description": "The TypeScript kit for ProvekIt — built-in symbol bridges to V8 / ECMA-262 / IEEE 754 / hardware",
+  "files": [
+    "dist/",
+    "lib/",
+    ".provekit/"
+  ],
+  "provekit": {
+    "proofHash": "abc1c65292f0ef5cd3e879e464b9073c",
+    "catalogPath": ".provekit/ts-kit-catalog.json",
+    "kitVersion": "ts-kit@1.0",
+    "publicKey": "MCowBQYDK2VwAyEABj0kPhB5ZRz+PMSb420yiwI+ihus4yWjI1ezzH40WkE="
+  }
+}

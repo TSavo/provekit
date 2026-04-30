@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "c57153b61480cbed",
+  "propertyHash": "7d3af1792722d418",
+  "verdict": "holds",
+  "producedBy": "ts-kit@1.0",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [
+    "00000000000000000000000000000000"
+  ],
+  "evidence": {
+    "kind": "bridge",
+    "schema": "0000000000000000c0000000000000c0",
+    "body": {
+      "sourceSymbol": "Math.floor",
+      "sourceLayer": "ts-kit@1.0",
+      "targetContractCid": "00000000000000000000000000000000",
+      "targetLayer": "V8@12.4 Math.floor"
+    }
+  },
+  "producerSignature": "xj6yEHNvkfx1//U1WWDC9LTtrhOTEqx5flPjvo7gXu1VOM6+eDMCDaGiSurTtOMCyVBKMr3KXVEQt6m9izt5Bg==",
+  "cid": "75b012d83d1c15300e851b6c79c65651"
+}

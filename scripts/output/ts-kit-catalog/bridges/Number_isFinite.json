@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "34c73eb012d2f04c",
+  "propertyHash": "e111a042b55c566a",
+  "verdict": "holds",
+  "producedBy": "ts-kit@1.0",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [
+    "11111111111111111111111111111111"
+  ],
+  "evidence": {
+    "kind": "bridge",
+    "schema": "0000000000000000c0000000000000c0",
+    "body": {
+      "sourceSymbol": "Number.isFinite",
+      "sourceLayer": "ts-kit@1.0",
+      "targetContractCid": "11111111111111111111111111111111",
+      "targetLayer": "ECMA-262 Number.isFinite"
+    }
+  },
+  "producerSignature": "Wxs9bu0zAp0oG8NMEaoQwFJfx6qOQPvaM5Xxcc7RRjYz9+EEnTGX6FruCqthFOYtDW8sZEmZ/7ZQ1UbMMGIzAA==",
+  "cid": "aecb14dc321da9d78ee32ac4a8296df9"
+}
