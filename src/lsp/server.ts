@@ -51,6 +51,8 @@ import {
   type InvariantRow,
   type ValidityReport,
 } from "../verifier/index.js";
+import { discoverProtocolKits, type DiscoveryResult } from "../ir/extensions/kitDiscovery.js";
+import { listBridges, lookupBridge } from "../ir/extensions/bridges.js";
 
 // ---------------------------------------------------------------------------
 // LSP wiring
@@ -77,6 +79,26 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
 // verifyProject() per request. Re-verify happens on save.
 const reportCache = new Map<string, ValidityReport>();
 
+// Per-project cache of the most recent kit-discovery result. Re-runs
+// on initialization and on lockfile changes. Provides the bridge
+// provenance the hover renderer surfaces.
+const discoveryCache = new Map<string, DiscoveryResult>();
+
+async function ensureDiscovered(projectRoot: string): Promise<DiscoveryResult> {
+  if (discoveryCache.has(projectRoot)) return discoveryCache.get(projectRoot)!;
+  const discovery = await discoverProtocolKits(projectRoot);
+  discoveryCache.set(projectRoot, discovery);
+  connection.console.info(
+    `[provekit] discovered ${discovery.kits.length} protocol-aware packages, ${Object.keys(discovery.byName).length} bridges in scope`,
+  );
+  for (const kit of discovery.kits) {
+    connection.console.info(
+      `  ${kit.packageName}@${kit.packageVersion} -> ${kit.registeredBridgeNames.length} bridges`,
+    );
+  }
+  return discovery;
+}
+
 // ---------------------------------------------------------------------------
 // Re-verify on save
 // ---------------------------------------------------------------------------
@@ -102,6 +124,10 @@ documents.onDidOpen(async (event) => {
   const docPath = fileURLToPath(event.document.uri);
   const projectRoot = findProjectRoot(docPath);
   if (!projectRoot) return;
+  // Run kit discovery once per project; subsequent opens reuse the
+  // cached result. Lockfile changes (npm/pnpm install) would re-run
+  // this in a fuller implementation; v1 is one-shot.
+  await ensureDiscovered(projectRoot);
   if (!reportCache.has(projectRoot)) {
     try {
       const report = await verifyProject(projectRoot, { timeoutMs: 5000 });
@@ -128,18 +154,38 @@ connection.onHover((params): Hover | null => {
   const projectRoot = findProjectRoot(docPath);
   if (!projectRoot) return null;
   const report = reportCache.get(projectRoot);
-  if (!report) return null;
 
   // LSP positions are 0-based; the verifier's locus is 1-based.
   const line = params.position.line + 1;
-  const rows = rowsAtLine(report, docPath, line);
-  if (rows.length === 0) return null;
+  const rows = report ? rowsAtLine(report, docPath, line) : [];
 
-  const md = renderHover(rows);
+  // Look up any bridge whose IR name appears in the hovered token
+  // range. The LSP doesn't have a TS AST handy here, so we do a coarse
+  // text-based extraction of the symbol under the cursor and check the
+  // registry. A fuller implementation would integrate with tsserver's
+  // semantic tokens.
+  const word = wordAt(doc.getText(), params.position);
+  const bridge = word ? lookupBridge(word) : null;
+
+  if (rows.length === 0 && !bridge) return null;
+
+  const md = renderHover(rows, bridge);
   return {
     contents: { kind: MarkupKind.Markdown, value: md },
   };
 });
+
+function wordAt(source: string, position: { line: number; character: number }): string | null {
+  const lines = source.split("\n");
+  if (position.line >= lines.length) return null;
+  const line = lines[position.line]!;
+  let start = position.character;
+  let end = position.character;
+  while (start > 0 && /[\w.]/.test(line[start - 1] ?? "")) start--;
+  while (end < line.length && /[\w.]/.test(line[end] ?? "")) end++;
+  if (start === end) return null;
+  return line.slice(start, end);
+}
 
 // ---------------------------------------------------------------------------
 // Diagnostics emission
@@ -206,21 +252,46 @@ function truncate(s: string, n: number): string {
 // Hover rendering
 // ---------------------------------------------------------------------------
 
-function renderHover(rows: InvariantRow[]): string {
+function renderHover(
+  rows: InvariantRow[],
+  bridge: import("../ir/extensions/bridges.js").PrimitiveBridgeDeclaration | null,
+): string {
   const parts: string[] = [];
-  parts.push("**ProvekIt — what must be true here**");
-  parts.push("");
-  for (const row of rows) {
-    parts.push(`### ${statusEmoji(row.status)} ${row.intent}`);
+
+  // Bridge-info block (if the hovered word names a registered bridge).
+  if (bridge) {
+    parts.push(`**ProvekIt bridge: \`${bridge.irName}\`**`);
     parts.push("");
-    parts.push(`- **Status:** \`${row.status}\``);
-    parts.push(`- **Invariant ID:** \`${row.invariantId}\``);
-    parts.push(`- **Locus:** \`${row.locus.filePath}:${row.locus.startLine}\` (\`${row.locus.function ?? "(no function)"}\`)`);
-    if (row.reason) parts.push(`- **Reason:** ${row.reason}`);
-    if (row.witness !== undefined) {
-      parts.push(`- **Z3 witness:** \`${truncate(JSON.stringify(row.witness), 200)}\``);
+    parts.push(`- **Source layer:** \`${bridge.sourceLayer}\``);
+    parts.push(`- **Target layer:** \`${bridge.targetLayer}\``);
+    parts.push(`- **Target contract CID:** \`${bridge.targetContractCid}\``);
+    if (bridge.registeredBy) {
+      parts.push(
+        `- **Registered by:** \`${bridge.registeredBy.packageName}@${bridge.registeredBy.packageVersion}\``,
+      );
     }
+    if (bridge.notes) parts.push(`- **Notes:** ${bridge.notes}`);
     parts.push("");
+  }
+
+  // Per-line invariant block.
+  if (rows.length > 0) {
+    parts.push("**ProvekIt — what must be true here**");
+    parts.push("");
+    for (const row of rows) {
+      parts.push(`### ${statusEmoji(row.status)} ${row.intent}`);
+      parts.push("");
+      parts.push(`- **Status:** \`${row.status}\``);
+      parts.push(`- **Invariant ID:** \`${row.invariantId}\``);
+      parts.push(
+        `- **Locus:** \`${row.locus.filePath}:${row.locus.startLine}\` (\`${row.locus.function ?? "(no function)"}\`)`,
+      );
+      if (row.reason) parts.push(`- **Reason:** ${row.reason}`);
+      if (row.witness !== undefined) {
+        parts.push(`- **Z3 witness:** \`${truncate(JSON.stringify(row.witness), 200)}\``);
+      }
+      parts.push("");
+    }
   }
   return parts.join("\n");
 }

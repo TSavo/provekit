@@ -58,6 +58,17 @@ export interface PrimitiveBridgeDeclaration {
   targetLayer: string;
   /** Optional human-readable note explaining the bridge. */
   notes?: string;
+  /**
+   * Optional provenance: which npm package registered this bridge.
+   * Populated by the kit-discovery step (walks node_modules; tags each
+   * loaded package's bridges with its name + version). Hover info in the
+   * LSP renders this so the user sees which installed package owns each
+   * bridge.
+   */
+  registeredBy?: {
+    packageName: string;
+    packageVersion: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
