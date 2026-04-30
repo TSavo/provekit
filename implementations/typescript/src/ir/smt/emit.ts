@@ -67,30 +67,30 @@ function emitFormulaIn(formula: IrFormula, ctx: EmitContext): string {
       return emitQuantifier(formula, ctx);
 
     case "and":
-      if (formula.conjuncts.length === 0) return "true";
-      if (formula.conjuncts.length === 1) {
-        return emitFormulaIn(formula.conjuncts[0], ctx);
+      if (formula.operands.length === 0) return "true";
+      if (formula.operands.length === 1) {
+        return emitFormulaIn(formula.operands[0]!, ctx);
       }
-      return `(and ${formula.conjuncts.map((c) => emitFormulaIn(c, ctx)).join(" ")})`;
+      return `(and ${formula.operands.map((c) => emitFormulaIn(c, ctx)).join(" ")})`;
 
     case "or":
-      if (formula.disjuncts.length === 0) return "false";
-      if (formula.disjuncts.length === 1) {
-        return emitFormulaIn(formula.disjuncts[0], ctx);
+      if (formula.operands.length === 0) return "false";
+      if (formula.operands.length === 1) {
+        return emitFormulaIn(formula.operands[0]!, ctx);
       }
-      return `(or ${formula.disjuncts.map((d) => emitFormulaIn(d, ctx)).join(" ")})`;
+      return `(or ${formula.operands.map((d) => emitFormulaIn(d, ctx)).join(" ")})`;
 
     case "not":
-      return `(not ${emitFormulaIn(formula.body, ctx)})`;
+      return `(not ${emitFormulaIn(formula.operands[0]!, ctx)})`;
 
     case "implies":
-      return `(=> ${emitFormulaIn(formula.antecedent, ctx)} ${emitFormulaIn(
-        formula.consequent,
+      return `(=> ${emitFormulaIn(formula.operands[0]!, ctx)} ${emitFormulaIn(
+        formula.operands[1]!,
         ctx,
       )})`;
 
     case "atomic":
-      return emitAtomic(formula.predicate, formula.args, ctx);
+      return emitAtomic(formula.name, formula.args, ctx);
   }
 }
 
@@ -98,7 +98,7 @@ function emitQuantifier(
   formula: Extract<IrFormula, { kind: "forall" | "exists" }>,
   ctx: EmitContext,
 ): string {
-  const binder = formula.predicate.varName;
+  const binder = formula.name;
   const emittedName = uniquifyBinder(binder, ctx);
 
   // Push the binder; remember whether a rename was needed.
@@ -108,7 +108,7 @@ function emitQuantifier(
     ctx.rename.set(binder, emittedName);
   }
 
-  const body = emitFormulaIn(formula.predicate.body, ctx);
+  const body = emitFormulaIn(formula.body, ctx);
 
   // Pop and restore prior rename mapping.
   ctx.binders.pop();
@@ -136,17 +136,17 @@ function uniquifyBinder(name: string, ctx: EmitContext): string {
   return candidate;
 }
 
-function emitAtomic(predicate: string, args: IrTerm[], ctx: EmitContext): string {
-  if (predicate === "true") {
+function emitAtomic(predicateName: string, args: IrTerm[], ctx: EmitContext): string {
+  if (predicateName === "true") {
     if (args.length === 0) return "true";
-    return emitTerm(args[0], ctx);
+    return emitTerm(args[0]!, ctx);
   }
-  if (predicate === "false") {
+  if (predicateName === "false") {
     if (args.length === 0) return "false";
-    return `(not ${emitTerm(args[0], ctx)})`;
+    return `(not ${emitTerm(args[0]!, ctx)})`;
   }
 
-  const op = PREDICATE_OPERATOR[predicate];
+  const op = PREDICATE_OPERATOR[predicateName];
   if (op !== undefined) {
     const argText = args.map((a) => emitTerm(a, ctx)).join(" ");
     return args.length === 0 ? `(${op})` : `(${op} ${argText})`;
@@ -157,9 +157,9 @@ function emitAtomic(predicate: string, args: IrTerm[], ctx: EmitContext): string
   // matching `(declare-fun member ... Bool)` so the kit's axioms can
   // pin their meaning.
   // Default: treat as an uninterpreted predicate symbol.
-  if (args.length === 0) return `(${predicate})`;
+  if (args.length === 0) return `(${predicateName})`;
   const argText = args.map((a) => emitTerm(a, ctx)).join(" ");
-  return `(${predicate} ${argText})`;
+  return `(${predicateName} ${argText})`;
 }
 
 function emitTerm(term: IrTerm, ctx: EmitContext): string {
@@ -175,9 +175,9 @@ function emitTerm(term: IrTerm, ctx: EmitContext): string {
       // operator, not as ordinary arguments. The IR encodes the indices
       // as Int constants in args[0] and args[1] for self-description.
       if (term.name === "extract" && term.args.length === 3) {
-        const hi = readBigIntConst(term.args[0], "extract hi");
-        const lo = readBigIntConst(term.args[1], "extract lo");
-        const inner = emitTerm(term.args[2], ctx);
+        const hi = readBigIntConst(term.args[0]!, "extract hi");
+        const lo = readBigIntConst(term.args[1]!, "extract lo");
+        const inner = emitTerm(term.args[2]!, ctx);
         return `((_ extract ${hi.toString()} ${lo.toString()}) ${inner})`;
       }
       if (term.args.length === 0) return term.name;

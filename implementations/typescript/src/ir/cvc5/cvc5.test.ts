@@ -13,7 +13,7 @@ import type { IrFormula } from "../formulas.js";
 
 const trueFormula: IrFormula = {
   kind: "atomic",
-  predicate: "=",
+  name: "=",
   args: [
     { kind: "const", value: 1, sort: { kind: "primitive", name: "Int" } },
     { kind: "const", value: 1, sort: { kind: "primitive", name: "Int" } },
@@ -21,21 +21,14 @@ const trueFormula: IrFormula = {
 };
 
 const positiveExists: IrFormula = {
-  kind: "exists",
-  sort: { kind: "primitive", name: "Int" },
-  predicate: {
-    kind: "lambda",
-    varName: "_x0",
-    sort: { kind: "primitive", name: "Int" },
-    body: {
+  kind: "exists", name: "_x0", sort: { kind: "primitive", name: "Int" }, body: {
       kind: "atomic",
-      predicate: ">",
+      name: ">",
       args: [
-        { kind: "var", name: "_x0", sort: { kind: "primitive", name: "Int" } },
+        { kind: "var", name: "_x0" },
         { kind: "const", value: 0, sort: { kind: "primitive", name: "Int" } },
       ],
     },
-  },
 };
 
 describe("emitCvc5SmtLib", () => {
@@ -79,7 +72,7 @@ describe("emitCvc5SmtLibProblem", () => {
   it("threads axioms into the script before the negated assertion", () => {
     const axiom: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 0, sort: { kind: "primitive", name: "Int" } },
         { kind: "const", value: 0, sort: { kind: "primitive", name: "Int" } },

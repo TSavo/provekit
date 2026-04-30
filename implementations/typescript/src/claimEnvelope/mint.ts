@@ -8,26 +8,24 @@
  * These mint helpers compose the lower-level primitives into "common
  * memento shapes" so producers don't have to wire signEnvelope +
  * computeEnvelopeCid + envelope construction manually each time.
- *
- * In keeping with the framework's scope discipline (see
- * protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"),
- * these helpers MINT mementos. They do NOT walk DAGs, traverse
- * bridges, or audit chains. Walking is downstream tooling.
  */
 
 import type { KeyObject } from "node:crypto";
 import { signEnvelope, verifyEnvelopeSignature } from "./sign.js";
 import { computeEnvelopeCid } from "./cid.js";
+import { canonicalEncode } from "./canonicalize.js";
+import { sha256Prefix16 } from "../canonicalizer/hash.js";
 import type {
   ClaimEnvelope,
   Verdict,
   EvidenceVariant,
   BridgeEvidence,
-  LegacyWitnessEvidence,
-  PropertyEvidence,
+  ContractEvidence,
+  ContractAuthoring,
+  ImplicationEvidence,
   ExtensionDeclarationEvidence,
 } from "./types.js";
-import type { IrFormula, BindingScope } from "../ir/formulas.js";
+import type { IrFormula } from "../ir/formulas.js";
 import type { ExtensionDeclaration } from "../ir/extensions/registry.js";
 import { VARIANT_SCHEMA_CIDS } from "./variants/index.js";
 
@@ -53,9 +51,6 @@ export interface MintArgs {
  * 2. Computes the producer signature over the canonical form.
  * 3. Computes the CID over the canonical form.
  * 4. Returns the signed, content-addressed envelope.
- *
- * The caller is responsible for verifying the envelope's signature
- * (via verifyEnvelopeSignature) if they want round-trip confirmation.
  */
 export function mintMemento(args: MintArgs): ClaimEnvelope {
   const unsigned = {
@@ -78,8 +73,6 @@ export function mintMemento(args: MintArgs): ClaimEnvelope {
 // ---------------------------------------------------------------------------
 
 export interface MintBridgeArgs {
-  bindingHash: string;
-  propertyHash: string;
   producedBy: string;
   producedAt?: string;
   privateKey: KeyObject | Buffer | string;
@@ -87,9 +80,7 @@ export interface MintBridgeArgs {
   sourceLayer: string;
   targetContractCid: string;
   targetLayer: string;
-  /** IR argument sorts of the bridged primitive (SortRef[]). Required. */
   irArgSorts: unknown[];
-  /** IR return sort of the bridged primitive (SortRef). Required. */
   irReturnSort: unknown;
   notes?: string;
 }
@@ -98,15 +89,9 @@ export interface MintBridgeArgs {
  * Mint a bridge memento — a content-addressed edge declaring that a
  * host-language symbol bridges to a deeper-layer published contract.
  *
- * The bridge composes by hash: `inputCids: [targetContractCid]`. Walking
- * the bridge means traversing to the deeper layer (which is a different
- * codebase, possibly a different language). That walking work is the
- * AUDITOR's job, not the framework's. ProvekIt mints the bridge; the
- * bridge's verdict is "I am the surface of that hash"; consumers
- * compose against the hash and stop there.
- *
- * See protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
- * for the scope discipline this helper preserves.
+ * Wrapper hashes are DERIVED per the bridge role's spec:
+ *   bindingHash  = hash16(canonical({sourceLayer, sourceSymbol}))
+ *   propertyHash = hash16(canonical("bridge:" + sourceSymbol))
  */
 export function mintBridge(args: MintBridgeArgs): ClaimEnvelope {
   const evidence: BridgeEvidence = {
@@ -122,9 +107,15 @@ export function mintBridge(args: MintBridgeArgs): ClaimEnvelope {
       ...(args.notes !== undefined ? { notes: args.notes } : {}),
     },
   };
+  const bindingHash = sha256Prefix16(
+    canonicalEncode({ sourceLayer: args.sourceLayer, sourceSymbol: args.sourceSymbol }),
+  );
+  const propertyHash = sha256Prefix16(
+    canonicalEncode("bridge:" + args.sourceSymbol),
+  );
   return mintMemento({
-    bindingHash: args.bindingHash,
-    propertyHash: args.propertyHash,
+    bindingHash,
+    propertyHash,
     verdict: "holds",
     producedBy: args.producedBy,
     ...(args.producedAt !== undefined ? { producedAt: args.producedAt } : {}),
@@ -135,62 +126,93 @@ export function mintBridge(args: MintBridgeArgs): ClaimEnvelope {
 }
 
 // ---------------------------------------------------------------------------
-// Legacy-witness memento helper
+// Contract memento helper
 // ---------------------------------------------------------------------------
 
-export interface MintLegacyWitnessArgs {
-  bindingHash: string;
-  propertyHash: string;
-  verdict?: Verdict;
+export interface MintContractArgs {
   producedBy: string;
   producedAt?: string;
   inputCids?: string[];
   privateKey: KeyObject | Buffer | string;
-  rawWitness: string;
-}
-
-// ---------------------------------------------------------------------------
-// Property memento helper
-// ---------------------------------------------------------------------------
-
-export interface MintPropertyArgs {
-  bindingHash: string;
-  propertyHash: string;
-  verdict?: Verdict;
-  producedBy: string;
-  producedAt?: string;
-  inputCids?: string[];
-  privateKey: KeyObject | Buffer | string;
-  /** The IrFormula stating the property. Embedded directly. */
-  irFormula: IrFormula;
-  /** The binding scope the property attaches to. */
-  scope: BindingScope;
-  /** IR-kit version that produced the formula (e.g., "ts-kit@1.0"). */
-  irKitVersion: string;
+  /** The contract's name (e.g., "parseInt"). */
+  contractName: string;
+  /** Variable name the post-formula uses to reference the return value. */
+  outBinding?: string;
+  /** Optional precondition formula (IR-JSON). */
+  pre?: IrFormula;
+  /** Optional postcondition formula (IR-JSON). */
+  post?: IrFormula;
+  /** Optional inductive invariant formula (IR-JSON). */
+  inv?: IrFormula;
+  /** Authoring provenance (kit-author / lift / llm). */
+  authoring: ContractAuthoring;
 }
 
 /**
- * Mint a property memento — a content-addressed assertion that an IR
- * formula holds in a named binding scope. The formula is the
- * load-bearing artifact bridges point at; resolving a bridge's
- * targetContractCid yields a property memento, and its body.irFormula
- * is the precondition (or postcondition, or invariant) the verifier
- * uses to discharge call-site obligations.
+ * Mint a contract memento per the v1.1 protocol cut.
+ *
+ * DERIVED fields (caller does NOT supply):
+ *   preHash      = hash16(canonical(pre))   when pre present
+ *   postHash     = hash16(canonical(post))  when post present
+ *   invHash      = hash16(canonical(inv))   when inv present
+ *   propertyHash = hash16(canonical({pre?, post?, inv?, outBinding}))
+ *   bindingHash  = hash16(canonical({producerId, contractName, propertyHash}))
+ *
+ * `pre`, `post`, `inv` are each optional; at least one MUST be present.
+ * Empty slots are OMITTED from the body (not encoded as null) so the
+ * canonical encoding is JCS-friendly.
  */
-export function mintProperty(args: MintPropertyArgs): ClaimEnvelope {
-  const evidence: PropertyEvidence = {
-    kind: "property",
-    schema: VARIANT_SCHEMA_CIDS["property"]!,
-    body: {
-      irFormula: args.irFormula,
-      scope: args.scope,
-      irKitVersion: args.irKitVersion,
-    },
+export function mintContract(args: MintContractArgs): ClaimEnvelope {
+  if (args.pre === undefined && args.post === undefined && args.inv === undefined) {
+    throw new Error(
+      `mintContract("${args.contractName}"): at least one of pre/post/inv must be provided`,
+    );
+  }
+  const outBinding = args.outBinding ?? "out";
+
+  const body: ContractEvidence["body"] = {
+    contractName: args.contractName,
+    outBinding,
+    authoring: args.authoring,
   };
+  if (args.pre !== undefined) {
+    body.pre = args.pre;
+    body.preHash = sha256Prefix16(canonicalEncode(args.pre));
+  }
+  if (args.post !== undefined) {
+    body.post = args.post;
+    body.postHash = sha256Prefix16(canonicalEncode(args.post));
+  }
+  if (args.inv !== undefined) {
+    body.inv = args.inv;
+    body.invHash = sha256Prefix16(canonicalEncode(args.inv));
+  }
+
+  // propertyHash hashes the semantic identity: {pre?, post?, inv?, outBinding}.
+  const propertyIdentity: Record<string, unknown> = { outBinding };
+  if (args.pre !== undefined) propertyIdentity.pre = args.pre;
+  if (args.post !== undefined) propertyIdentity.post = args.post;
+  if (args.inv !== undefined) propertyIdentity.inv = args.inv;
+  const propertyHash = sha256Prefix16(canonicalEncode(propertyIdentity));
+
+  const bindingHash = sha256Prefix16(
+    canonicalEncode({
+      producerId: args.producedBy,
+      contractName: args.contractName,
+      propertyHash,
+    }),
+  );
+
+  const evidence: ContractEvidence = {
+    kind: "contract",
+    schema: VARIANT_SCHEMA_CIDS["contract"]!,
+    body,
+  };
+
   return mintMemento({
-    bindingHash: args.bindingHash,
-    propertyHash: args.propertyHash,
-    verdict: args.verdict ?? "holds",
+    bindingHash,
+    propertyHash,
+    verdict: "holds",
     producedBy: args.producedBy,
     ...(args.producedAt !== undefined ? { producedAt: args.producedAt } : {}),
     inputCids: args.inputCids ?? [],
@@ -199,27 +221,72 @@ export function mintProperty(args: MintPropertyArgs): ClaimEnvelope {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Implication memento helper
+// ---------------------------------------------------------------------------
+
+export interface MintImplicationArgs {
+  producedBy: string;
+  producedAt?: string;
+  privateKey: KeyObject | Buffer | string;
+  antecedentHash: string;
+  consequentHash: string;
+  antecedentCid: string;
+  consequentCid: string;
+  antecedentSlot: "pre" | "post" | "inv";
+  consequentSlot: "pre" | "post" | "inv";
+  prover: string;
+  proverRunMs: number;
+  smtLibInput?: string;
+  proofWitness?: string;
+}
+
 /**
- * Mint a legacy-witness memento — wraps an opaque producer-private
- * witness (typically the result of a Stage producer's serializeOutput)
- * in the universal envelope.
+ * Mint an implication memento — a signed proof witness that one IR
+ * formula universally implies another. DERIVED fields:
+ *   bindingHash  = hash16(canonical({antecedentHash, consequentHash}))
+ *   propertyHash = hash16(canonical("implication:" + antecedentHash + ":" + consequentHash))
+ *   inputCids    = [antecedentCid, consequentCid] lex-sorted
  */
-export function mintLegacyWitness(args: MintLegacyWitnessArgs): ClaimEnvelope {
-  const evidence: LegacyWitnessEvidence = {
-    kind: "legacy-witness",
-    schema: VARIANT_SCHEMA_CIDS["legacy-witness"]!,
-    body: {
-      rawWitness: args.rawWitness,
-      legacyProducerId: args.producedBy,
-    },
+export function mintImplication(args: MintImplicationArgs): ClaimEnvelope {
+  const body: ImplicationEvidence["body"] = {
+    antecedentHash: args.antecedentHash,
+    consequentHash: args.consequentHash,
+    antecedentCid: args.antecedentCid,
+    consequentCid: args.consequentCid,
+    antecedentSlot: args.antecedentSlot,
+    consequentSlot: args.consequentSlot,
+    prover: args.prover,
+    proverRunMs: args.proverRunMs,
   };
+  if (args.smtLibInput !== undefined) body.smtLibInput = args.smtLibInput;
+  if (args.proofWitness !== undefined) body.proofWitness = args.proofWitness;
+
+  const bindingHash = sha256Prefix16(
+    canonicalEncode({
+      antecedentHash: args.antecedentHash,
+      consequentHash: args.consequentHash,
+    }),
+  );
+  const propertyHash = sha256Prefix16(
+    canonicalEncode(
+      "implication:" + args.antecedentHash + ":" + args.consequentHash,
+    ),
+  );
+
+  const evidence: ImplicationEvidence = {
+    kind: "implication",
+    schema: VARIANT_SCHEMA_CIDS["implication"]!,
+    body,
+  };
+
   return mintMemento({
-    bindingHash: args.bindingHash,
-    propertyHash: args.propertyHash,
-    verdict: args.verdict ?? "holds",
+    bindingHash,
+    propertyHash,
+    verdict: "holds",
     producedBy: args.producedBy,
     ...(args.producedAt !== undefined ? { producedAt: args.producedAt } : {}),
-    inputCids: args.inputCids ?? [],
+    inputCids: [args.antecedentCid, args.consequentCid].sort(),
     evidence,
     privateKey: args.privateKey,
   });
@@ -237,19 +304,14 @@ export interface MintExtensionDeclarationArgs {
   producedAt?: string;
   inputCids?: string[];
   privateKey: KeyObject | Buffer | string;
-  /**
-   * The IR extension declaration (sort/predicate/ctor introduction).
-   * The wrapper's producerSignature replaces any embedded signer/
-   * signature; pass declarations without those fields set.
-   */
+  /** The IR extension declaration (sort/predicate/ctor introduction). */
   declaration: ExtensionDeclaration;
 }
 
 /**
  * Mint an extension-declaration memento — a content-addressed claim
  * that introduces a new sort, predicate, or ctor into the IR
- * extension protocol. Ships in a kit's `.proof` catalog so consumers
- * can register the extension at discovery time.
+ * extension protocol.
  */
 export function mintExtensionDeclaration(args: MintExtensionDeclarationArgs): ClaimEnvelope {
   const evidence: ExtensionDeclarationEvidence = {
@@ -277,9 +339,6 @@ export function mintExtensionDeclaration(args: MintExtensionDeclarationArgs): Cl
 
 /**
  * Mint a memento and verify its signature round-trips.
- *
- * Convenience wrapper for tests and demos that want to assert
- * "signature is valid" before proceeding.
  *
  * Throws if signature verification fails.
  */

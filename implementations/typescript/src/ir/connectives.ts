@@ -8,34 +8,34 @@ import type { IrFormula } from "./formulas.js";
 export function and(...conjuncts: IrFormula[]): IrFormula {
   if (conjuncts.length === 0) {
     // vacuously true
-    return { kind: "atomic", predicate: "true", args: [] };
+    return { kind: "atomic", name: "true", args: [] };
   }
   if (conjuncts.length === 1) {
-    return conjuncts[0];
+    return conjuncts[0]!;
   }
-  return { kind: "and", conjuncts };
+  return { kind: "and", operands: conjuncts };
 }
 
 /** Disjunction. At least one disjunct must hold. */
 export function or(...disjuncts: IrFormula[]): IrFormula {
   if (disjuncts.length === 0) {
     // vacuously false
-    return { kind: "atomic", predicate: "false", args: [] };
+    return { kind: "atomic", name: "false", args: [] };
   }
   if (disjuncts.length === 1) {
-    return disjuncts[0];
+    return disjuncts[0]!;
   }
-  return { kind: "or", disjuncts };
+  return { kind: "or", operands: disjuncts };
 }
 
 /** Negation. */
 export function not(formula: IrFormula): IrFormula {
-  return { kind: "not", body: formula };
+  return { kind: "not", operands: [formula] };
 }
 
 /** Implication: antecedent → consequent. */
 export function implies(antecedent: IrFormula, consequent: IrFormula): IrFormula {
-  return { kind: "implies", antecedent, consequent };
+  return { kind: "implies", operands: [antecedent, consequent] };
 }
 
 /**
@@ -49,9 +49,9 @@ export function implies(antecedent: IrFormula, consequent: IrFormula): IrFormula
 export function iff(a: IrFormula, b: IrFormula): IrFormula {
   return {
     kind: "and",
-    conjuncts: [
-      { kind: "implies", antecedent: a, consequent: b },
-      { kind: "implies", antecedent: b, consequent: a },
+    operands: [
+      { kind: "implies", operands: [a, b] },
+      { kind: "implies", operands: [b, a] },
     ],
   };
 }

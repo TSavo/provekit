@@ -49,17 +49,14 @@ import { parseInt as parseIntPrim, num, eq } from "../ir/symbolic/primitives.js"
 import { must, beginCollecting } from "../ir/symbolic/property.js";
 
 // TS-side mint + bundle (the consumer's own .proof).
-import { mintProperty } from "../claimEnvelope/index.js";
+import { mintContract } from "../claimEnvelope/index.js";
 import { generateKeypair } from "../producerKeys/index.js";
 import { buildProofEnvelope } from "./index.js";
 import { runBridgeEnforcement } from "../verifier/bridgeEnforcement.js";
 import { _resetBridges } from "../ir/extensions/bridges.js";
 
-const CPP_PROOF_PATH = "/tmp/cpp-kit-out/84ca9c7c382cc28d3ca260cd69bda6c1.proof";
-
-function hash16(s: string): string {
-  return createHash("sha256").update(s).digest("hex").slice(0, 16);
-}
+const CPP_PROOF_FILENAME = "bfe74d1a9d836f926058b331002da2f5.proof";
+const CPP_PROOF_PATH = `/tmp/cpp-kit-out-v11/${CPP_PROOF_FILENAME}`;
 
 describe("END-TO-END: TS function calls C++ kit primitive; verify catches violations", () => {
   it.runIf(existsSync(CPP_PROOF_PATH))(
@@ -72,13 +69,13 @@ describe("END-TO-END: TS function calls C++ kit primitive; verify catches violat
         const cppKitDir = join(projectRoot, "node_modules", "@example", "cpp-kit");
         mkdirSync(cppKitDir, { recursive: true });
         const cppProofBytes = readFileSync(CPP_PROOF_PATH);
-        writeFileSync(join(cppKitDir, "84ca9c7c382cc28d3ca260cd69bda6c1.proof"), cppProofBytes);
+        writeFileSync(join(cppKitDir, CPP_PROOF_FILENAME), cppProofBytes);
         writeFileSync(
           join(cppKitDir, "package.json"),
           JSON.stringify({
             name: "@example/cpp-kit",
             version: "1.0.0",
-            provekit: { proofHash: "84ca9c7c382cc28d3ca260cd69bda6c1" },
+            provekit: { proofHash: CPP_PROOF_FILENAME.replace(/\.proof$/, "") },
           }, null, 2),
         );
 
@@ -99,19 +96,18 @@ describe("END-TO-END: TS function calls C++ kit primitive; verify catches violat
         const decls = finishCollect();
         expect(decls).toHaveLength(2);
 
-        // ---- 3. Mint each declaration into a property memento ----
+        // ---- 3. Mint each declaration into a contract memento ----
         const { privateKey } = generateKeypair({ seed: randomBytes(32) });
         const consumerMembers = new Map();
         for (const decl of decls) {
-          if (decl.kind !== "property") continue;
-          const env = mintProperty({
-            bindingHash: hash16("consumer:" + decl.name),
-            propertyHash: hash16("hash:" + decl.name),
+          if (decl.kind !== "contract") continue;
+          if (!decl.pre) continue;
+          const env = mintContract({
             producedBy: "consumer-app@1",
             privateKey,
-            irFormula: decl.formula,
-            scope: { kind: "function", name: decl.name },
-            irKitVersion: "ts-kit@1.0",
+            contractName: decl.name,
+            pre: decl.pre,
+            authoring: { producerKind: "kit-author", author: "consumer-app@1" },
           });
           consumerMembers.set(env.cid, env);
         }

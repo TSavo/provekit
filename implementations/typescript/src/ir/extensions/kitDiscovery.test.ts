@@ -56,8 +56,6 @@ function installFakePackageWithProof(
   const members = new Map<string, ClaimEnvelope>();
   for (const b of bridges) {
     const env = mintBridge({
-      bindingHash: hash16(`${b.sourceLayer}:${b.irName}`),
-      propertyHash: hash16(`bridge:${b.irName}`),
       producedBy: `${b.sourceLayer}@test`,
       privateKey: bridgeKey,
       sourceSymbol: b.irName,

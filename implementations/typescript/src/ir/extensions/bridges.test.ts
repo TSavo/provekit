@@ -36,7 +36,12 @@ describe("primitiveBridge", () => {
     const term = parseInt(str("42"));
     expect(term.kind).toBe("ctor");
     expect((term as { name: string }).name).toBe("parseInt");
-    expect((term as { sort: { name: string } }).sort.name).toBe("Int");
+    // Spec v1.1: ctor terms carry no `sort` field on the wire; the
+    // factory tracks return sort via a non-enumerable side channel.
+    const sortHint = (term as unknown as Record<symbol, unknown>)[
+      Symbol.for("provekit.ir.sortHint")
+    ];
+    expect(sortHint).toEqual(Int);
   });
 
   it("registers the bridge declaration in the registry", () => {

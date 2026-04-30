@@ -1,6 +1,13 @@
 import { test, expect, beforeEach, describe as vDescribe } from "vitest";
+import { inferSortHint } from "./primitives.js";
+import type { IrTerm } from "../formulas.js";
+const property = (name: string, formula: import("../formulas.js").IrFormula) =>
+  contract(name, { pre: formula });
+function termSort(t: IrTerm) {
+  return inferSortHint(t);
+}
 import {
-  property,
+  contract,
   bridge,
   describe,
   must,
@@ -102,23 +109,27 @@ test("str builds a String constant", () => {
 // ---------------------------------------------------------------------------
 
 test("parseInt builds an apply ctor over its argument", () => {
-  expect(parseInt(str("0"))).toEqual({
+  const t = parseInt(str("0"));
+  // Spec v1.1: ctor terms carry no sort field on the wire; the kit
+  // tracks return sort via a non-enumerable side channel (recoverable
+  // through inferSortHint).
+  expect(t).toEqual({
     kind: "ctor",
     name: "parseInt",
     args: [{ kind: "const", value: "0", sort: StringSort }],
-    sort: Int,
   });
+  expect(termSort(t)).toEqual(Int);
 });
 
 test("Math.abs preserves the input's sort", () => {
   const t = abs(num(-3));
-  expect(t.sort).toEqual(Int);
+  expect(termSort(t)).toEqual(Int);
   if (t.kind === "ctor") expect(t.name).toBe("Math.abs");
 });
 
 test("isFinite returns a Bool-typed term", () => {
   const t = isFinite(num(1));
-  if (t.kind === "ctor") expect(t.sort.kind).toBe("primitive");
+  if (t.kind === "ctor") expect(termSort(t)?.kind).toBe("primitive");
 });
 
 // ---------------------------------------------------------------------------
@@ -133,7 +144,6 @@ test("add over numbers lifts to const terms", () => {
       { kind: "const", value: 2, sort: Int },
       { kind: "const", value: 3, sort: Int },
     ],
-    sort: Int,
   });
 });
 
@@ -144,7 +154,7 @@ test("add over numbers lifts to const terms", () => {
 test("eq builds an atomic = formula", () => {
   expect(eq(num(0), num(0))).toEqual({
     kind: "atomic",
-    predicate: "=",
+    name: "=",
     args: [
       { kind: "const", value: 0, sort: Int },
       { kind: "const", value: 0, sort: Int },
@@ -155,7 +165,7 @@ test("eq builds an atomic = formula", () => {
 test("gt builds an atomic > formula with mixed liftable args", () => {
   const f = gt(parseInt(str("0")), 0);
   if (f.kind === "atomic") {
-    expect(f.predicate).toBe(">");
+    expect(f.name).toBe(">");
     expect(f.args).toHaveLength(2);
   }
 });
@@ -169,10 +179,10 @@ test("property() collects a PropertyDeclaration", () => {
   property("zeroIsZero", eq(parseInt(str("0")), num(0)));
   const decls = finish();
   expect(decls).toHaveLength(1);
-  expect(decls[0]!.kind).toBe("property");
-  if (decls[0]!.kind === "property") {
+  expect(decls[0]!.kind).toBe("contract");
+  if (decls[0]!.kind === "contract") {
     expect(decls[0]!.name).toBe("zeroIsZero");
-    expect(decls[0]!.formula.kind).toBe("atomic");
+    expect(decls[0]!.pre?.kind).toBe("atomic");
   }
 });
 
@@ -207,7 +217,7 @@ test("multiple property + bridge calls collect in order", () => {
   });
   property("p2", eq(num(1), num(1)));
   const decls = finish();
-  expect(decls.map((d) => d.kind)).toEqual(["property", "bridge", "property"]);
+  expect(decls.map((d) => d.kind)).toEqual(["contract", "bridge", "contract"]);
   expect(decls.map((d) => d.name)).toEqual(["p1", "b1", "p2"]);
 });
 
@@ -233,7 +243,7 @@ test("forAll wraps a body builder", () => {
   expect(f.kind).toBe("forall");
   if (f.kind === "forall") {
     expect(f.sort).toEqual(Int);
-    expect(f.predicate.body.kind).toBe("atomic");
+    expect(f.body.kind).toBe("atomic");
   }
 });
 
@@ -345,14 +355,14 @@ test("parseFloat builds an apply ctor returning Real", () => {
   const t = parseFloat(str("0.5"));
   if (t.kind !== "ctor") throw new Error();
   expect(t.name).toBe("parseFloat");
-  expect(t.sort).toEqual(Real);
+  expect(termSort(t)).toEqual(Real);
 });
 
 test("isNaN / isInteger return Bool-typed ctor terms", () => {
   const a = isNaN(num(0));
   const b = isInteger(num(0));
   if (a.kind !== "ctor" || b.kind !== "ctor") throw new Error();
-  expect(a.sort).toEqual(Bool);
+  expect(termSort(a)).toEqual(Bool);
   expect(a.name).toBe("isNaN");
   expect(b.name).toBe("isInteger");
 });
@@ -361,10 +371,10 @@ test("max / min preserve the first argument's sort", () => {
   const t = max(num(1), num(2));
   if (t.kind !== "ctor") throw new Error();
   expect(t.name).toBe("Math.max");
-  expect(t.sort).toEqual(Int);
+  expect(termSort(t)).toEqual(Int);
   const t2 = min(real(1.5), real(2.5));
   if (t2.kind !== "ctor") throw new Error();
-  expect(t2.sort).toEqual(Real);
+  expect(termSort(t2)).toEqual(Real);
 });
 
 test("floor / ceil / sign return Int", () => {
@@ -372,15 +382,15 @@ test("floor / ceil / sign return Int", () => {
   const c = ceil(real(1.5));
   const s = sign(num(-3));
   if (f.kind !== "ctor" || c.kind !== "ctor" || s.kind !== "ctor") throw new Error();
-  expect(f.sort).toEqual(Int);
-  expect(c.sort).toEqual(Int);
-  expect(s.sort).toEqual(Int);
+  expect(termSort(f)).toEqual(Int);
+  expect(termSort(c)).toEqual(Int);
+  expect(termSort(s)).toEqual(Int);
 });
 
 test("sqrt returns Real regardless of input sort", () => {
   const t = sqrt(num(4));
   if (t.kind !== "ctor") throw new Error();
-  expect(t.sort).toEqual(Real);
+  expect(termSort(t)).toEqual(Real);
   expect(t.name).toBe("Math.sqrt");
 });
 
@@ -390,10 +400,10 @@ test("stringLength / stringIncludes / arrayLength / arrayIncludes have correct s
   const aLen = arrayLength(str("[]"));
   const aInc = arrayIncludes(str("[]"), num(0));
   if (sLen.kind !== "ctor" || sInc.kind !== "ctor" || aLen.kind !== "ctor" || aInc.kind !== "ctor") throw new Error();
-  expect(sLen.sort).toEqual(Int);
-  expect(sInc.sort).toEqual(Bool);
-  expect(aLen.sort).toEqual(Int);
-  expect(aInc.sort).toEqual(Bool);
+  expect(termSort(sLen)).toEqual(Int);
+  expect(termSort(sInc)).toEqual(Bool);
+  expect(termSort(aLen)).toEqual(Int);
+  expect(termSort(aInc)).toEqual(Bool);
 });
 
 // ---------------------------------------------------------------------------
@@ -412,7 +422,7 @@ test("div produces a Real-typed term", () => {
   const d = div(num(1), num(2));
   if (d.kind !== "ctor") throw new Error();
   expect(d.name).toBe("/");
-  expect(d.sort).toEqual(Real);
+  expect(termSort(d)).toEqual(Real);
 });
 
 test("neg produces a unary - ctor", () => {
@@ -435,8 +445,8 @@ test("neq / lt / lte / gte build atomics with the right predicate names", () => 
     [gte, "≥"],
   ];
   for (const [fn, predicate] of tests) {
-    const f = fn(0, 1) as { kind: "atomic"; predicate: string };
-    expect(f.predicate).toBe(predicate);
+    const f = fn(0, 1) as { kind: "atomic"; name: string };
+    expect(f.name).toBe(predicate);
   }
 });
 
@@ -444,8 +454,8 @@ test("isTrue / isFalse build atomics on Bool-typed args", () => {
   const t = isTrue(true);
   const f = isFalse(false);
   if (t.kind !== "atomic" || f.kind !== "atomic") throw new Error();
-  expect(t.predicate).toBe("true");
-  expect(f.predicate).toBe("false");
+  expect(t.name).toBe("true");
+  expect(f.name).toBe("false");
 });
 
 // ---------------------------------------------------------------------------
@@ -517,12 +527,13 @@ test("worked example: parseInt-can-return-zero composes via runtime evaluation",
   const decls = finish();
   expect(decls).toHaveLength(1);
   const decl = decls[0]!;
-  expect(decl.kind).toBe("property");
-  if (decl.kind === "property") {
+  expect(decl.kind).toBe("contract");
+  if (decl.kind === "contract") {
     expect(decl.name).toBe("parseInt > canReturnZero");
-    expect(decl.formula.kind).toBe("exists");
-    if (decl.formula.kind === "exists") {
-      expect(decl.formula.sort).toEqual(StringSort);
+    if (!decl.pre) throw new Error("expected pre formula");
+    expect(decl.pre.kind).toBe("exists");
+    if (decl.pre.kind === "exists") {
+      expect(decl.pre.sort).toEqual(StringSort);
     }
   }
 });
@@ -588,27 +599,27 @@ vDescribe("BV term operators preserve operand width", () => {
     for (const op of [bvadd, bvsub, bvmul, bvudiv, bvurem]) {
       const t = op(x, y);
       expect(t.kind).toBe("ctor");
-      expect(t.sort).toEqual({ kind: "bitvec", width: 32 });
+      expect(termSort(t)).toEqual({ kind: "bitvec", width: 32 });
     }
   });
 
   test("bvshl / bvlshr / bvashr return BV<width>", () => {
     for (const op of [bvshl, bvlshr, bvashr]) {
       const t = op(x, y);
-      expect(t.sort).toEqual({ kind: "bitvec", width: 32 });
+      expect(termSort(t)).toEqual({ kind: "bitvec", width: 32 });
     }
   });
 
   test("bvand / bvor / bvxor return BV<width>", () => {
     for (const op of [bvand, bvor, bvxor]) {
       const t = op(x, y);
-      expect(t.sort).toEqual({ kind: "bitvec", width: 32 });
+      expect(termSort(t)).toEqual({ kind: "bitvec", width: 32 });
     }
   });
 
   test("bvnot / bvneg are unary and preserve width", () => {
-    expect(bvnot(x).sort).toEqual({ kind: "bitvec", width: 32 });
-    expect(bvneg(x).sort).toEqual({ kind: "bitvec", width: 32 });
+    expect(termSort(bvnot(x))).toEqual({ kind: "bitvec", width: 32 });
+    expect(termSort(bvneg(x))).toEqual({ kind: "bitvec", width: 32 });
   });
 
   test("bvadd uses the ctor name 'bvadd'", () => {
@@ -625,12 +636,12 @@ vDescribe("BV term operators preserve operand width", () => {
 vDescribe("concat and extract widths", () => {
   test("concat(a, b) returns BV<wa + wb>", () => {
     const t = concat(bv(0, 8), bv(0, 16));
-    expect(t.sort).toEqual({ kind: "bitvec", width: 24 });
+    expect(termSort(t)).toEqual({ kind: "bitvec", width: 24 });
   });
 
   test("extract(hi, lo, x) returns BV<hi - lo + 1>", () => {
     const t = extract(7, 0, bv(0, 32));
-    expect(t.sort).toEqual({ kind: "bitvec", width: 8 });
+    expect(termSort(t)).toEqual({ kind: "bitvec", width: 8 });
   });
 
   test("extract encodes hi and lo as Int constants in args", () => {
@@ -665,9 +676,9 @@ vDescribe("BV comparison predicates", () => {
       [bvsge, "bvsge"],
     ];
     for (const [fn, predicate] of cases) {
-      const f = fn(x, y) as { kind: "atomic"; predicate: string };
+      const f = fn(x, y) as { kind: "atomic"; name: string };
       expect(f.kind).toBe("atomic");
-      expect(f.predicate).toBe(predicate);
+      expect(f.name).toBe(predicate);
     }
   });
 
@@ -682,7 +693,7 @@ vDescribe("BV with quantifiers", () => {
     expect(f.kind).toBe("forall");
     if (f.kind === "forall") {
       expect(f.sort).toEqual({ kind: "bitvec", width: 32 });
-      expect(f.predicate.body.kind).toBe("atomic");
+      expect(f.body.kind).toBe("atomic");
     }
   });
 });

@@ -1,27 +1,25 @@
 import { describe, it, expect } from "vitest";
 import { generateKeypair } from "../producerKeys/index.js";
-import { mintLegacyWitness } from "../claimEnvelope/index.js";
+import { mintContract } from "../claimEnvelope/index.js";
 import {
   buildProofEnvelope,
   decodeProofEnvelope,
   verifyProofEnvelope,
 } from "./index.js";
 import { createHash, randomBytes } from "node:crypto";
-
+void hash16;
 function hash16(s: string): string {
   return createHash("sha256").update(s).digest("hex").slice(0, 16);
 }
 
 function makeMember(name: string) {
   const { privateKey } = generateKeypair({ seed: randomBytes(32) });
-  return mintLegacyWitness({
-    bindingHash: hash16(`b:${name}`),
-    propertyHash: hash16(`p:${name}`),
-    verdict: "holds",
-    producedBy: "test",
-    inputCids: [],
+  return mintContract({
+    producedBy: "test@1",
     privateKey,
-    rawWitness: JSON.stringify({ name }),
+    contractName: name,
+    pre: { kind: "atomic", name: "true", args: [] },
+    authoring: { producerKind: "kit-author", author: "test@1" },
   });
 }
 

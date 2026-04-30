@@ -1,30 +1,29 @@
 /**
- * Property formula resolver — given a memento CID, walk all locally-
- * available `.proof` files in a project's node_modules and return the
- * matching member envelope. If the envelope's evidence is a property
- * variant, surface its IrFormula directly; callers walking bridge
- * targets use this to discharge call-site obligations.
+ * Contract precondition resolver — given a contract memento CID, walk
+ * all locally-available `.proof` files in a project's node_modules and
+ * return the matching member envelope's `pre` formula. Callers walking
+ * bridge targets use this to discharge call-site obligations.
  *
- * Pure file IO + CBOR decode + envelope lookup. No network. No
- * solver. No SMT. The IR formula is returned untouched; the caller
- * decides what to do with it (substitute, canonicalize, emit).
+ * Pure file IO + CBOR decode + envelope lookup. No network. No solver.
+ * No SMT. The IR formula is returned untouched.
  *
  * Spec: protocol/specs/2026-04-30-proof-file-format.md (file walk)
- *       memento envelope grammar (envelope shape, property variant body)
+ *       protocol/specs/2026-04-30-memento-envelope-grammar.md (contract role)
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { decodeProofEnvelope } from "../proofEnvelope/index.js";
 import { computeEnvelopeCid } from "../claimEnvelope/cid.js";
-import type { ClaimEnvelope, PropertyEvidence } from "../claimEnvelope/types.js";
-import type { IrFormula, BindingScope } from "../ir/formulas.js";
+import type { ClaimEnvelope, ContractEvidence } from "../claimEnvelope/types.js";
+import type { IrFormula } from "../ir/formulas.js";
 
 export interface ResolvedProperty {
   cid: string;
+  /** Precondition formula extracted from the contract memento's `pre` slot. */
   irFormula: IrFormula;
-  scope: BindingScope;
-  irKitVersion: string;
+  contractName: string;
+  outBinding: string;
   /** Source `.proof` filename the member was found in. */
   proofFile: string;
   /** Package the .proof file belongs to. */
@@ -34,10 +33,11 @@ export interface ResolvedProperty {
 /**
  * Walk node_modules for any `.proof` file, decode each, look for the
  * member envelope whose CID matches `cid`. If found AND its evidence
- * is a property variant, return the resolved property.
+ * is a contract variant with a non-empty `pre` formula, return the
+ * resolved precondition.
  *
- * Returns null if no matching member exists or the matched member is
- * not a property variant.
+ * Returns null if no matching member exists, the matched member is not
+ * a contract variant, or the contract has no precondition.
  */
 export function resolvePropertyFormula(
   projectRoot: string,
@@ -45,13 +45,15 @@ export function resolvePropertyFormula(
 ): ResolvedProperty | null {
   const member = findMemberByCid(projectRoot, cid);
   if (!member) return null;
-  if (member.envelope.evidence.kind !== "property") return null;
-  const ev = member.envelope.evidence as PropertyEvidence;
+  if (member.envelope.evidence.kind !== "contract") return null;
+  const ev = member.envelope.evidence as ContractEvidence;
+  const pre = ev.body.pre as IrFormula | undefined;
+  if (pre === undefined) return null;
   return {
     cid,
-    irFormula: ev.body.irFormula as IrFormula,
-    scope: ev.body.scope as BindingScope,
-    irKitVersion: ev.body.irKitVersion,
+    irFormula: pre,
+    contractName: ev.body.contractName,
+    outBinding: ev.body.outBinding,
     proofFile: member.proofFile,
     packageName: member.packageName,
   };

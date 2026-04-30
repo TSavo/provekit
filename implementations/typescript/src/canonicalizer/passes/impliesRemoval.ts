@@ -25,9 +25,9 @@ export type PreNnfAst =
   | { kind: "exists"; sort: CanonicalSort; body: PreNnfAst }
   | { kind: "and"; operands: PreNnfAst[] }
   | { kind: "or"; operands: PreNnfAst[] }
-  | { kind: "not"; body: PreNnfAst }
-  | { kind: "implies"; antecedent: PreNnfAst; consequent: PreNnfAst }
-  | { kind: "atomic"; predicate: string; args: CanonicalTerm[] };
+  | { kind: "not"; operands: [PreNnfAst] }
+  | { kind: "implies"; operands: [PreNnfAst, PreNnfAst] }
+  | { kind: "atomic"; name: string; args: CanonicalTerm[] };
 
 /**
  * Rewrite `implies(a, c)` → `or(not(a), c)` throughout the tree.
@@ -45,19 +45,19 @@ export function removeImplies(ast: PreNnfAst): CanonicalFolAst {
       return { kind: "or", operands: ast.operands.map(removeImplies) };
 
     case "not":
-      return { kind: "not", body: removeImplies(ast.body) };
+      return { kind: "not", operands: [removeImplies(ast.operands[0])] };
 
     case "implies":
       // implies(a, c) → or(not(a), c)
       return {
         kind: "or",
         operands: [
-          { kind: "not", body: removeImplies(ast.antecedent) },
-          removeImplies(ast.consequent),
+          { kind: "not", operands: [removeImplies(ast.operands[0])] },
+          removeImplies(ast.operands[1]),
         ],
       };
 
     case "atomic":
-      return { kind: "atomic", predicate: ast.predicate, args: ast.args };
+      return { kind: "atomic", name: ast.name, args: ast.args };
   }
 }

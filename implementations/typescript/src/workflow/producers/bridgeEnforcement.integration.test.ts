@@ -33,7 +33,7 @@ import { join } from "path";
 import { randomBytes, createHash } from "node:crypto";
 
 import { generateKeypair } from "../../producerKeys/index.js";
-import { mintProperty, mintBridge } from "../../claimEnvelope/index.js";
+import { mintContract, mintBridge } from "../../claimEnvelope/index.js";
 import { buildProofEnvelope } from "../../proofEnvelope/index.js";
 import { _resetBridges } from "../../ir/extensions/bridges.js";
 import { makeLoadAllProofsStage } from "./loadAllProofs.js";
@@ -108,36 +108,25 @@ describe("bridge enforcement end-to-end", () => {
 
       // ----- C++-style kit: precondition + bridge -----
       const precondition: IrFormula = {
-        kind: "forall",
-        sort: IntSort,
-        predicate: {
-          kind: "lambda",
-          varName: "n",
-          sort: IntSort,
-          body: {
+        kind: "forall", name: "n", sort: IntSort, body: {
             kind: "atomic",
-            predicate: ">",
+            name: ">",
             args: [
-              { kind: "var", name: "n", sort: IntSort },
+              { kind: "var", name: "n"},
               { kind: "const", value: 0, sort: IntSort },
             ],
           },
-        },
       };
 
-      const propertyMemento = mintProperty({
-        bindingHash: hash16("parseInt-precondition"),
-        propertyHash: hash16("parseInt:requires-positive"),
+      const propertyMemento = mintContract({
         producedBy: "cpp-kit@1",
         privateKey,
-        irFormula: precondition,
-        scope: { kind: "function", name: "parseInt-precondition" },
-        irKitVersion: "cpp-kit@1.0",
+        contractName: "parseInt",
+        pre: precondition,
+        authoring: { producerKind: "kit-author", author: "cpp-kit@1" },
       });
 
       const bridgeMemento = mintBridge({
-        bindingHash: hash16("ts:parseInt"),
-        propertyHash: hash16("bridge:parseInt"),
         producedBy: "ts-kit@1",
         privateKey,
         sourceSymbol: "parseInt",
@@ -158,50 +147,44 @@ describe("bridge enforcement end-to-end", () => {
       );
 
       // ----- Consumer's invariant code emitted these via running -----
-      // Property memento with parseInt(5) Ctor
-      const callsitePos = mintProperty({
-        bindingHash: hash16("consumer-callsite-pos"),
-        propertyHash: hash16("consumer:parseInt-pos"),
+      // Contract memento whose pre carries a parseInt(5) Ctor.
+      const callsitePos = mintContract({
         producedBy: "consumer-app@1",
         privateKey,
-        irFormula: {
+        contractName: "calls-parseInt-with-5",
+        pre: {
           kind: "atomic",
-          predicate: "=",
+          name: "=",
           args: [
             {
               kind: "ctor",
               name: "parseInt",
               args: [{ kind: "const", value: 5, sort: IntSort }],
-              sort: IntSort,
             },
             { kind: "const", value: 5, sort: IntSort },
           ],
         },
-        scope: { kind: "function", name: "calls-parseInt-with-5" },
-        irKitVersion: "ts-kit@1.0",
+        authoring: { producerKind: "kit-author", author: "consumer-app@1" },
       });
 
-      // Property memento with parseInt(-3) Ctor
-      const callsiteNeg = mintProperty({
-        bindingHash: hash16("consumer-callsite-neg"),
-        propertyHash: hash16("consumer:parseInt-neg"),
+      // Contract memento whose pre carries a parseInt(-3) Ctor.
+      const callsiteNeg = mintContract({
         producedBy: "consumer-app@1",
         privateKey,
-        irFormula: {
+        contractName: "calls-parseInt-with-neg-3",
+        pre: {
           kind: "atomic",
-          predicate: "=",
+          name: "=",
           args: [
             {
               kind: "ctor",
               name: "parseInt",
               args: [{ kind: "const", value: -3, sort: IntSort }],
-              sort: IntSort,
             },
             { kind: "const", value: -3, sort: IntSort },
           ],
         },
-        scope: { kind: "function", name: "calls-parseInt-with-neg-3" },
-        irKitVersion: "ts-kit@1.0",
+        authoring: { producerKind: "kit-author", author: "consumer-app@1" },
       });
 
       // Consumer's .proof at the project root.

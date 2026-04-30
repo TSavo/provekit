@@ -40,7 +40,6 @@ import { generateKeypair } from "./producerKeys/index.js";
 import {
   mintMemento,
   mintBridge,
-  mintLegacyWitness,
   VARIANT_SCHEMA_CIDS,
 } from "./claimEnvelope/index.js";
 import { buildProofEnvelope } from "./proofEnvelope/index.js";
@@ -141,14 +140,13 @@ function mintPropertyCmd(args: {
 
   const { privateKey, publicKey, ephemeral } = loadPrivateKey(args.keyPath);
 
-  const evidence: EvidenceVariant = spec.evidence ?? {
-    kind: "legacy-witness",
-    schema: VARIANT_SCHEMA_CIDS["legacy-witness"]!,
-    body: {
-      rawWitness: spec.rawWitness ?? "{}",
-      legacyProducerId: spec.producedBy,
-    },
-  };
+  if (!spec.evidence) {
+    process.stderr.write(
+      `error: 'mint property' requires an explicit evidence body. The legacy-witness fallback was removed in protocol v1.1.\n`,
+    );
+    process.exit(1);
+  }
+  const evidence: EvidenceVariant = spec.evidence;
 
   const memento = mintMemento({
     bindingHash: spec.bindingHash,
@@ -185,12 +183,8 @@ function mintBridgeCmd(args: BridgeArgs): ClaimEnvelope {
   const { privateKey, publicKey, ephemeral } = loadPrivateKey(args.keyPath);
 
   const producedBy = args.producedBy ?? `${args.sourceLayer}@cli`;
-  const bindingHash = args.bindingHash ?? hash16(`${args.sourceLayer}:${args.sourceSymbol}`);
-  const propertyHash = args.propertyHash ?? hash16(`bridge:${args.sourceSymbol}`);
 
   const memento = mintBridge({
-    bindingHash,
-    propertyHash,
     producedBy,
     privateKey,
     sourceSymbol: args.sourceSymbol,

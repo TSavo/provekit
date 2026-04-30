@@ -8,16 +8,16 @@
  * produce the obligation formula `nonempty("")` — which the solver
  * dispatcher then decides.
  *
- * Today's IR uses NAMED bound variables (varName field). Substitution
- * by name match is correct provided the substituted term has no free
- * variables that collide with names bound deeper in the formula. For
- * the v1 use case (string literals, integer literals, other Const
- * terms with no free variables), this is automatically safe. A more
- * general substitution that handles variable-substitution-into-a-
- * variable-binding would require alpha-renaming; deferred.
+ * Today's IR uses NAMED bound variables. Substitution by name match is
+ * correct provided the substituted term has no free variables that
+ * collide with names bound deeper in the formula. For the v1 use case
+ * (string literals, integer literals, other Const terms with no free
+ * variables), this is automatically safe. A more general substitution
+ * that handles variable-substitution-into-a-variable-binding would
+ * require alpha-renaming; deferred.
  */
 
-import type { IrFormula, IrTerm, IrFormulaLambda } from "./formulas.js";
+import type { IrFormula, IrTerm } from "./formulas.js";
 
 export class SubstituteError extends Error {
   constructor(message: string) {
@@ -44,15 +44,13 @@ export function instantiateOutermostForall(
       `instantiateOutermostForall expected a forall, got ${formula.kind}`,
     );
   }
-  const lambda = formula.predicate;
-  const boundName = lambda.varName;
+  const boundName = formula.name;
 
   // Capture safety: term must not contain free vars whose names are
-  // bound by lambdas inside the body. v1 callers pass Const terms only,
-  // so this is automatically safe; we still check.
+  // bound by quantifiers inside the body.
   const termFreeVars = collectFreeVarNames(term);
   if (termFreeVars.size > 0) {
-    const innerBindings = collectInnerBoundVarNames(lambda.body);
+    const innerBindings = collectInnerBoundVarNames(formula.body);
     for (const v of termFreeVars) {
       if (innerBindings.has(v)) {
         throw new SubstituteError(
@@ -62,7 +60,7 @@ export function instantiateOutermostForall(
     }
   }
 
-  return substituteInFormula(lambda.body, boundName, term);
+  return substituteInFormula(formula.body, boundName, term);
 }
 
 /** Walk a formula and replace var-references named `name` with `term`. */
@@ -75,39 +73,28 @@ function substituteInFormula(
     case "atomic":
       return {
         kind: "atomic",
-        predicate: formula.predicate,
+        name: formula.name,
         args: formula.args.map((a) => substituteInTerm(a, name, term)),
       };
     case "and":
-      return {
-        kind: "and",
-        conjuncts: formula.conjuncts.map((c) => substituteInFormula(c, name, term)),
-      };
     case "or":
-      return {
-        kind: "or",
-        disjuncts: formula.disjuncts.map((d) => substituteInFormula(d, name, term)),
-      };
     case "not":
-      return { kind: "not", body: substituteInFormula(formula.body, name, term) };
     case "implies":
       return {
-        kind: "implies",
-        antecedent: substituteInFormula(formula.antecedent, name, term),
-        consequent: substituteInFormula(formula.consequent, name, term),
+        kind: formula.kind,
+        operands: formula.operands.map((o) => substituteInFormula(o, name, term)),
       };
     case "forall":
     case "exists": {
-      // Don't shadow: if the inner lambda binds the same name, stop substituting
+      // Don't shadow: if the inner binder uses the same name, stop substituting
       // beneath this binding (the inner var is a different var that happens to share the name).
-      if (formula.predicate.varName === name) return formula;
-      const innerLambda: IrFormulaLambda = {
-        kind: "lambda",
-        varName: formula.predicate.varName,
-        sort: formula.predicate.sort,
-        body: substituteInFormula(formula.predicate.body, name, term),
+      if (formula.name === name) return formula;
+      return {
+        kind: formula.kind,
+        name: formula.name,
+        sort: formula.sort,
+        body: substituteInFormula(formula.body, name, term),
       };
-      return { kind: formula.kind, sort: formula.sort, predicate: innerLambda };
     }
   }
 }
@@ -123,7 +110,6 @@ function substituteInTerm(input: IrTerm, name: string, term: IrTerm): IrTerm {
       kind: "ctor",
       name: input.name,
       args: input.args.map((a) => substituteInTerm(a, name, term)),
-      sort: input.sort,
     };
   }
   return input; // const
@@ -152,21 +138,14 @@ function walkFormulaBindings(formula: IrFormula, visit: (name: string) => void):
   switch (formula.kind) {
     case "forall":
     case "exists":
-      visit(formula.predicate.varName);
-      walkFormulaBindings(formula.predicate.body, visit);
-      return;
-    case "and":
-      formula.conjuncts.forEach((c) => walkFormulaBindings(c, visit));
-      return;
-    case "or":
-      formula.disjuncts.forEach((d) => walkFormulaBindings(d, visit));
-      return;
-    case "not":
+      visit(formula.name);
       walkFormulaBindings(formula.body, visit);
       return;
+    case "and":
+    case "or":
+    case "not":
     case "implies":
-      walkFormulaBindings(formula.antecedent, visit);
-      walkFormulaBindings(formula.consequent, visit);
+      formula.operands.forEach((o) => walkFormulaBindings(o, visit));
       return;
     case "atomic":
       return; // atomics introduce no bindings

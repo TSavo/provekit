@@ -86,7 +86,7 @@ describe("extensionPredicate", () => {
     const formula = isPrime(num(7));
     expect(formula).toEqual({
       kind: "atomic",
-      predicate: "is-prime",
+      name: "is-prime",
       args: [{ kind: "const", value: 7, sort: Int }],
     });
   });
@@ -118,15 +118,19 @@ describe("extensionCtor", () => {
       semantics: [{ kind: "smt-lib-theory", theory: "FixedSizeBitVectors" }],
       compilers: ["smt-lib"],
     });
-    const a = { kind: "var", name: "a", sort: FixedPoint8 } as const;
-    const b = { kind: "var", name: "b", sort: FixedPoint8 } as const;
+    const a = { kind: "var", name: "a" } as const;
+    const b = { kind: "var", name: "b" } as const;
     const term = fixedPointMul(a, b);
     expect(term).toEqual({
       kind: "ctor",
       name: "fixed-point-mul",
       args: [a, b],
-      sort: FixedPoint8,
     });
+    // Spec v1.1: ctor terms carry no `sort` field on the wire.
+    const sortHint = (term as unknown as Record<symbol, unknown>)[
+      Symbol.for("provekit.ir.sortHint")
+    ];
+    expect(sortHint).toEqual(FixedPoint8);
   });
 
   it("lifts JS primitives in args via liftToTerm", () => {

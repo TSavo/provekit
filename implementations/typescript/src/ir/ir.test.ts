@@ -200,12 +200,11 @@ describe("forAll", () => {
     expect(f.sort).toEqual(Int);
   });
 
-  it("predicate is a lambda with the variable name and evaluated body", () => {
+  it("quantifier captures the variable name and evaluated body", () => {
     const f = forAll(Int, (x) => assert.notEqual(x, 0));
     if (f.kind !== "forall") throw new Error("expected forall");
-    expect(f.predicate.kind).toBe("lambda");
-    expect(f.predicate.varName).toBe("_x0");
-    expect(f.predicate.body.kind).toBe("atomic");
+    expect(f.name).toBe("_x0");
+    expect(f.body.kind).toBe("atomic");
   });
 
   it("body receives a var IrTerm with the correct sort", () => {
@@ -216,7 +215,6 @@ describe("forAll", () => {
     });
     expect(capturedTerm).not.toBeNull();
     expect((capturedTerm as unknown as IrTerm).kind).toBe("var");
-    expect((capturedTerm as unknown as IrTerm).sort).toEqual(Int);
   });
 
   it("generates distinct variable names for nested quantifiers", () => {
@@ -224,9 +222,9 @@ describe("forAll", () => {
       exists(Int, (_y) => assert.lessThan(_x, _y)),
     );
     if (f.kind !== "forall") throw new Error();
-    if (f.predicate.body.kind !== "exists") throw new Error();
-    expect(f.predicate.varName).toBe("_x0");
-    expect(f.predicate.body.predicate.varName).toBe("_x1");
+    if (f.body.kind !== "exists") throw new Error();
+    expect(f.name).toBe("_x0");
+    expect(f.body.name).toBe("_x1");
   });
 });
 
@@ -240,11 +238,11 @@ describe("exists", () => {
     expect(f.kind).toBe("exists");
   });
 
-  it("stores the sort and lambda", () => {
+  it("stores the sort and bound name", () => {
     const f = exists(Ref, (x) => assert.kindOf(x, "sanitize"));
     if (f.kind !== "exists") throw new Error();
     expect(f.sort).toEqual(Ref);
-    expect(f.predicate.kind).toBe("lambda");
+    expect(typeof f.name).toBe("string");
   });
 });
 
@@ -254,16 +252,16 @@ describe("exists", () => {
 
 describe("forSome", () => {
   it("constructs a bounded exists node wrapping member + body", () => {
-    const domainTerm: IrTerm = { kind: "var", name: "S", sort: SetOf(Int) };
+    const domainTerm: IrTerm = { kind: "var", name: "S"};
     const f = forSome(domainTerm, Int, (x) => assert.greaterThan(x, 0));
     expect(f.kind).toBe("exists");
     if (f.kind !== "exists") throw new Error();
-    expect(f.predicate.body.kind).toBe("and");
-    if (f.predicate.body.kind !== "and") throw new Error();
-    const [memberFormula] = f.predicate.body.conjuncts;
+    expect(f.body.kind).toBe("and");
+    if (f.body.kind !== "and") throw new Error();
+    const [memberFormula] = f.body.operands;
     expect(memberFormula.kind).toBe("atomic");
     if (memberFormula.kind !== "atomic") throw new Error();
-    expect(memberFormula.predicate).toBe("member");
+    expect(memberFormula.name).toBe("member");
   });
 });
 
@@ -279,7 +277,7 @@ describe("connectives", () => {
     const f = and(a, b);
     expect(f.kind).toBe("and");
     if (f.kind !== "and") throw new Error();
-    expect(f.conjuncts).toHaveLength(2);
+    expect(f.operands).toHaveLength(2);
   });
 
   it("and with single arg returns the arg", () => {
@@ -290,29 +288,29 @@ describe("connectives", () => {
     const f = and();
     expect(f.kind).toBe("atomic");
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("true");
+    expect(f.name).toBe("true");
   });
 
   it("or constructs disjunction", () => {
     const f = or(a, b);
     expect(f.kind).toBe("or");
     if (f.kind !== "or") throw new Error();
-    expect(f.disjuncts).toHaveLength(2);
+    expect(f.operands).toHaveLength(2);
   });
 
   it("not constructs negation", () => {
     const f = not(a);
     expect(f.kind).toBe("not");
     if (f.kind !== "not") throw new Error();
-    expect(f.body).toBe(a);
+    expect(f.operands[0]).toBe(a);
   });
 
   it("implies constructs implication", () => {
     const f = implies(a, b);
     expect(f.kind).toBe("implies");
     if (f.kind !== "implies") throw new Error();
-    expect(f.antecedent).toBe(a);
-    expect(f.consequent).toBe(b);
+    expect(f.operands[0]).toBe(a);
+    expect(f.operands[1]).toBe(b);
   });
 
   it("iff desugars to and(implies(a, b), implies(b, a))", () => {
@@ -322,18 +320,18 @@ describe("connectives", () => {
     const f = iff(a, b);
     expect(f.kind).toBe("and");
     if (f.kind !== "and") throw new Error();
-    expect(f.conjuncts).toHaveLength(2);
+    expect(f.operands).toHaveLength(2);
 
-    const [forward, backward] = f.conjuncts;
+    const [forward, backward] = f.operands;
     expect(forward.kind).toBe("implies");
     if (forward.kind !== "implies") throw new Error();
-    expect(forward.antecedent).toBe(a);
-    expect(forward.consequent).toBe(b);
+    expect(forward.operands[0]).toBe(a);
+    expect(forward.operands[1]).toBe(b);
 
     expect(backward.kind).toBe("implies");
     if (backward.kind !== "implies") throw new Error();
-    expect(backward.antecedent).toBe(b);
-    expect(backward.consequent).toBe(a);
+    expect(backward.operands[0]).toBe(b);
+    expect(backward.operands[1]).toBe(a);
   });
 });
 
@@ -342,33 +340,33 @@ describe("connectives", () => {
 // ---------------------------------------------------------------------------
 
 describe("assert namespace", () => {
-  const x: IrTerm = { kind: "var", name: "x", sort: Int };
-  const y: IrTerm = { kind: "var", name: "y", sort: Int };
+  const x: IrTerm = { kind: "var", name: "x"};
+  const y: IrTerm = { kind: "var", name: "y"};
 
   it("notEqual constructs atomic ≠", () => {
     const f = assert.notEqual(x, y);
     expect(f.kind).toBe("atomic");
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("≠");
+    expect(f.name).toBe("≠");
     expect(f.args).toHaveLength(2);
   });
 
   it("equal constructs atomic =", () => {
     const f = assert.equal(x, y);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("=");
+    expect(f.name).toBe("=");
   });
 
   it("lessThan constructs atomic <", () => {
     const f = assert.lessThan(x, y);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("<");
+    expect(f.name).toBe("<");
   });
 
   it("greaterThanOrEqual constructs atomic ≥", () => {
     const f = assert.greaterThanOrEqual(x, y);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("≥");
+    expect(f.name).toBe("≥");
   });
 
   it("primitives are auto-lifted to const terms", () => {
@@ -380,52 +378,54 @@ describe("assert namespace", () => {
   it("string primitives are lifted with String sort", () => {
     const f = assert.equal(x, "hello");
     if (f.kind !== "atomic") throw new Error();
-    expect(f.args[1].sort).toEqual({ kind: "primitive", name: "String" });
+    const a1 = f.args[1]!;
+    if (a1.kind !== "const") throw new Error();
+    expect(a1.sort).toEqual({ kind: "primitive", name: "String" });
   });
 
   it("kindOf constructs kind-of atomic", () => {
-    const node: IrTerm = { kind: "var", name: "n", sort: { kind: "primitive", name: "Node" } };
+    const node: IrTerm = { kind: "var", name: "n" };
     const f = assert.kindOf(node, "execSync");
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("kind-of");
+    expect(f.name).toBe("kind-of");
     expect(f.args[1]).toEqual({ kind: "const", value: "execSync", sort: { kind: "primitive", name: "String" } });
   });
 
   it("dataFlowsTo constructs data-flows-to atomic", () => {
     const f = assert.dataFlowsTo(x, y);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("data-flows-to");
+    expect(f.name).toBe("data-flows-to");
   });
 
   it("transitionFrom().to() constructs transition-from-to atomic", () => {
     const f = assert.transitionFrom(x).to(y);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("transition-from-to");
+    expect(f.name).toBe("transition-from-to");
     expect(f.args).toHaveLength(2);
   });
 
   it("assert.true and assert.false work as methods", () => {
     const t = assert.true(x);
     if (t.kind !== "atomic") throw new Error();
-    expect(t.predicate).toBe("true");
+    expect(t.name).toBe("true");
 
     const ff = assert.false(x);
     if (ff.kind !== "atomic") throw new Error();
-    expect(ff.predicate).toBe("false");
+    expect(ff.name).toBe("false");
   });
 
   it("subset constructs subset atomic", () => {
-    const s: IrTerm = { kind: "var", name: "S", sort: SetOf(Int) };
+    const s: IrTerm = { kind: "var", name: "S"};
     const f = assert.subset(s, s);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("subset");
+    expect(f.name).toBe("subset");
   });
 
   it("member constructs member atomic", () => {
-    const s: IrTerm = { kind: "var", name: "S", sort: SetOf(Int) };
+    const s: IrTerm = { kind: "var", name: "S"};
     const f = assert.member(x, s);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("member");
+    expect(f.name).toBe("member");
   });
 });
 
@@ -447,7 +447,7 @@ describe("property()", () => {
     expect(p.bindings).toEqual({ b: Int });
     expect(p.formula.kind).toBe("atomic");
     if (p.formula.kind !== "atomic") throw new Error();
-    expect(p.formula.predicate).toBe("≠");
+    expect(p.formula.name).toBe("≠");
   });
 
   it("passes IrTerm handles with correct sort and name", () => {
@@ -465,7 +465,6 @@ describe("property()", () => {
     const t = capturedTerm as unknown as Extract<IrTerm, { kind: "var" }>;
     expect(t.kind).toBe("var");
     expect(t.name).toBe("b");
-    expect(t.sort).toEqual(Int);
   });
 
   it("accepts a plain IrFormula (non-function formula)", () => {
@@ -508,7 +507,7 @@ describe("property()", () => {
 describe("IrFormula round-trip through JSON", () => {
   it("atomic formula survives JSON parse/stringify", () => {
     const f: IrFormula = assert.notEqual(
-      { kind: "var", name: "b", sort: Int },
+      { kind: "var", name: "b"},
       0,
     );
     const roundTripped = JSON.parse(JSON.stringify(f)) as IrFormula;
@@ -653,7 +652,7 @@ describe("liftToTerm", () => {
   });
 
   it("returns IrTerm var as-is", () => {
-    const v: IrTerm = { kind: "var", name: "x", sort: Int };
+    const v: IrTerm = { kind: "var", name: "x"};
     expect(liftToTerm(v)).toBe(v);
   });
 
@@ -663,7 +662,7 @@ describe("liftToTerm", () => {
   });
 
   it("returns IrTerm ctor as-is", () => {
-    const c: IrTerm = { kind: "ctor", name: "+", args: [], sort: Int };
+    const c: IrTerm = { kind: "ctor", name: "+", args: [] };
     expect(liftToTerm(c)).toBe(c);
   });
 });
@@ -679,7 +678,7 @@ describe("connectives — edge cases", () => {
     const f = or();
     expect(f.kind).toBe("atomic");
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("false");
+    expect(f.name).toBe("false");
   });
 
   it("or with single arg returns the arg", () => {
@@ -689,7 +688,7 @@ describe("connectives — edge cases", () => {
   it("not produces a not node referencing the body", () => {
     const f = not(a);
     if (f.kind !== "not") throw new Error();
-    expect(f.body).toBe(a);
+    expect(f.operands[0]).toBe(a);
   });
 });
 
@@ -704,7 +703,7 @@ describe("_resetCounter", () => {
     _resetCounter();
     const f = forAll(Int, (_x) => assert.equal(0, 0));
     if (f.kind !== "forall") throw new Error();
-    expect(f.predicate.varName).toBe("_x0");
+    expect(f.name).toBe("_x0");
   });
 });
 
@@ -713,32 +712,32 @@ describe("_resetCounter", () => {
 // ---------------------------------------------------------------------------
 
 describe("assert — remaining predicates", () => {
-  const x: IrTerm = { kind: "var", name: "x", sort: Int };
-  const y: IrTerm = { kind: "var", name: "y", sort: Int };
+  const x: IrTerm = { kind: "var", name: "x"};
+  const y: IrTerm = { kind: "var", name: "y"};
 
   it("lessThanOrEqual builds atomic ≤", () => {
     const f = assert.lessThanOrEqual(x, y);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("≤");
+    expect(f.name).toBe("≤");
   });
 
   it("greaterThan builds atomic >", () => {
     const f = assert.greaterThan(x, y);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe(">");
+    expect(f.name).toBe(">");
   });
 
   it("dominates builds atomic dominates", () => {
     const f = assert.dominates(x, y);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("dominates");
+    expect(f.name).toBe("dominates");
   });
 
   it("onPath builds three-arg on-path atomic", () => {
-    const z: IrTerm = { kind: "var", name: "z", sort: Int };
+    const z: IrTerm = { kind: "var", name: "z"};
     const f = assert.onPath(x, y, z);
     if (f.kind !== "atomic") throw new Error();
-    expect(f.predicate).toBe("on-path");
+    expect(f.name).toBe("on-path");
     expect(f.args).toHaveLength(3);
   });
 });

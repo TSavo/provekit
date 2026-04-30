@@ -12,13 +12,13 @@
  * construction, not concrete computation.
  *
  * Example:
- *   import { property, forAll, parseInt, eq, num, Int } from "provekit/ir/symbolic";
+ *   import { contract, forAll, parseInt, eq, num, Int } from "provekit/ir/symbolic";
  *
- *   property("zeroIsZero",
- *     eq(parseInt(num("0")), num(0))
- *   );
+ *   contract("zeroIsZero", {
+ *     pre: eq(parseInt(num("0")), num(0)),
+ *   });
  *
- * Running this file runs the property() call. property() collects the
+ * Running this file runs the contract() call. contract() collects the
  * IR. The lifter just imports the file and reads what was collected.
  * No tsc compiler API. No AST walking. Just function calls.
  */
@@ -33,6 +33,39 @@ import { Int, Real, Bool, String as StringSort } from "../sorts.js";
 
 export type Term = IrTerm;
 export type Formula = IrFormula;
+
+// ---------------------------------------------------------------------------
+// Internal sort-hint side channel.
+//
+// Per the protocol's IR-JSON grammar, VarTerm and CtorTerm carry NO sort
+// in the wire format. The sort information needed for BV-width checks
+// (and for downstream emitters' ctor signature collection) is held on a
+// non-enumerable Symbol-keyed property so it never leaks into JSON
+// serialization yet stays available during in-process construction.
+// ---------------------------------------------------------------------------
+
+const SORT_HINT = Symbol.for("provekit.ir.sortHint");
+
+function attachSortHint(term: IrTerm, sort: Sort): IrTerm {
+  Object.defineProperty(term, SORT_HINT, {
+    value: sort,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  return term;
+}
+
+/**
+ * Best-effort sort recovery for an IrTerm. Const carries sort directly;
+ * Var and Ctor carry it only via the SORT_HINT side channel (set by the
+ * primitive that built them). Returns undefined when no hint is present.
+ */
+export function inferSortHint(term: IrTerm): Sort | undefined {
+  if (term.kind === "const") return term.sort;
+  const v = (term as unknown as Record<symbol, unknown>)[SORT_HINT];
+  return (v as Sort | undefined) ?? undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Constants — `num`, `str`, `bool`
@@ -63,32 +96,17 @@ export function bool(value: boolean): IrTerm {
 
 // ---------------------------------------------------------------------------
 // Built-in function primitives.
-//
-// Most of these are NOT owned by the TS kit. Their semantic authority
-// lives in V8 / ECMA-262 / IEEE 754. The kit doesn't load V8 or
-// re-implement parseInt; it BRIDGES to V8's signed claims via a CID,
-// using the primitiveBridge factory. The user's API is unchanged
-// (`parseInt(s)` still returns an IrTerm); the kit's claim about
-// what parseInt MEANS is now explicit: a bridge to the deeper layer.
-//
-// At module load, each primitive registers a bridge declaration in
-// the kit's registry. Verifiers walk the registry to resolve IR
-// names through the protocol's resolver semantics
-// (protocol/specs/2026-04-30-ir-extension-protocol.md §5).
-//
-// `targetContractCid` values here are placeholders today. When the
-// V8 / ECMA-262 catalogs are published with signed declarations,
-// these CIDs get pinned to specific signed mementos.
 // ---------------------------------------------------------------------------
 
 import { primitiveBridge } from "../extensions/bridges.js";
 
 const TS_KIT = "ts-kit";
 const V8 = "v8";
-const ECMA262 = "ecma-262";
 
-function ctor(name: string, args: IrTerm[], sort: Sort): IrTerm {
-  return { kind: "ctor", name, args, sort };
+function ctor(name: string, args: IrTerm[], sortHint?: Sort): IrTerm {
+  const term: IrTerm = { kind: "ctor", name, args };
+  if (sortHint !== undefined) attachSortHint(term, sortHint);
+  return term;
 }
 
 // Number parsing — bridged to V8's ECMA-262 implementation.
@@ -141,17 +159,14 @@ export const isInteger = primitiveBridge({
 });
 
 // Math.* polymorphic primitives — return sort mirrors operand sort.
-// The simple primitiveBridge factory captures a fixed return sort, so
-// abs/max/min stay as raw ctor calls for now. A future per-sort split
-// (Math.abs.int / Math.abs.real) would let them bridge cleanly. TODO.
 export function abs(n: IrTerm): IrTerm {
-  return ctor("Math.abs", [n], n.sort ?? Real);
+  return ctor("Math.abs", [n], inferSortHint(n) ?? Real);
 }
 export function max(a: IrTerm, b: IrTerm): IrTerm {
-  return ctor("Math.max", [a, b], a.sort ?? Real);
+  return ctor("Math.max", [a, b], inferSortHint(a) ?? Real);
 }
 export function min(a: IrTerm, b: IrTerm): IrTerm {
-  return ctor("Math.min", [a, b], a.sort ?? Real);
+  return ctor("Math.min", [a, b], inferSortHint(a) ?? Real);
 }
 
 // Math.* monomorphic primitives — bridged.
@@ -255,8 +270,8 @@ export function neg(a: IrTerm | number): IrTerm {
 
 type Liftable = IrTerm | number | bigint | string | boolean | null;
 
-function atom(predicate: string, args: Liftable[]): IrFormula {
-  return { kind: "atomic", predicate, args: args.map(liftToTerm) };
+function atom(predicateName: string, args: Liftable[]): IrFormula {
+  return { kind: "atomic", name: predicateName, args: args.map(liftToTerm) };
 }
 
 export function eq(a: Liftable, b: Liftable): IrFormula {
@@ -289,23 +304,14 @@ export function isFalse(b: Liftable): IrFormula {
 
 // ---------------------------------------------------------------------------
 // Bitvector primitives (SMT-LIB BV theory).
-//
-// `bv(value, width)` constructs a BV<width> constant. The value is
-// normalized to the unsigned representation (modulo 2^width), so
-// `bv(-1n, 8)` and `bv(255n, 8)` produce identical IR. This matches the
-// SMT-LIB convention where bitvector literals are unsigned bit patterns.
-//
-// Term ctors (`bvadd`, `bvxor`, etc.) preserve the operand width as the
-// result sort; binary ops require operand widths to match. `concat`
-// builds a wider BV from two; `extract(hi, lo, x)` takes a slice and
-// produces a BV<hi-lo+1>. Comparison predicates (`bvult`, `bvslt`, ...)
-// return IrFormula.
 // ---------------------------------------------------------------------------
 
 function bvSortOf(t: IrTerm): { kind: "bitvec"; width: number } {
-  const s = t.sort;
-  if (s.kind !== "bitvec") {
-    throw new Error(`bv* primitive: expected a BV-sorted term, got sort kind "${s.kind}"`);
+  const s = inferSortHint(t);
+  if (!s || s.kind !== "bitvec") {
+    throw new Error(
+      `bv* primitive: expected a BV-sorted term, got ${s ? `sort kind "${s.kind}"` : "no sort hint"}`,
+    );
   }
   return s;
 }
@@ -387,8 +393,6 @@ export function concat(a: IrTerm, b: IrTerm): IrTerm {
 }
 
 // extract(hi, lo, x): slice bits [hi:lo] inclusive, producing BV<hi-lo+1>.
-// hi and lo are encoded as Int constants in the IR; the SMT translator
-// special-cases them as the indexed (_ extract hi lo) operator.
 export function extract(hi: number, lo: number, x: IrTerm): IrTerm {
   const sx = bvSortOf(x);
   if (!Number.isInteger(hi) || !Number.isInteger(lo)) {
@@ -406,9 +410,9 @@ export function extract(hi: number, lo: number, x: IrTerm): IrTerm {
 
 // BV comparison predicates — return IrFormula.
 
-function bvCmp(predicate: string, a: IrTerm, b: IrTerm): IrFormula {
-  requireSameWidth(a, b, predicate);
-  return { kind: "atomic", predicate, args: [a, b] };
+function bvCmp(predicateName: string, a: IrTerm, b: IrTerm): IrFormula {
+  requireSameWidth(a, b, predicateName);
+  return { kind: "atomic", name: predicateName, args: [a, b] };
 }
 
 export function bvult(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvult", a, b); }

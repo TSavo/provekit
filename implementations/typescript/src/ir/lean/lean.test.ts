@@ -31,7 +31,14 @@ beforeEach(() => {
 const cents: Sort = { kind: "primitive", name: "Cents" };
 
 function ctor(name: string, args: IrTerm[], sort: Sort): IrTerm {
-  return { kind: "ctor", name, args, sort };
+  const t: IrTerm = { kind: "ctor", name, args };
+  Object.defineProperty(t, Symbol.for("provekit.ir.sortHint"), {
+    value: sort,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  return t;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,10 +96,10 @@ describe("emitLean — per node kind", () => {
   });
 
   it("emits ctor terms as Lean function application", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Str };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("parseInt", [x], Int), { kind: "const", value: 42, sort: Int }],
     };
     expect(emitLean(f)).toBe("((parseInt _x0) = 42)");
@@ -101,7 +108,7 @@ describe("emitLean — per node kind", () => {
   it("emits zero-arg ctor as bare identifier", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("ZERO", [], Int), { kind: "const", value: 0, sort: Int }],
     };
     expect(emitLean(f)).toBe("(ZERO = 0)");
@@ -122,31 +129,17 @@ describe("emitLean — quantifier scoping", () => {
 
   it("renames inner binder when names clash", () => {
     const inner: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "x",
-        sort: Int,
-        body: {
+      kind: "forall", name: "x", sort: Int, body: {
           kind: "atomic",
-          predicate: "=",
+          name: "=",
           args: [
-            { kind: "var", name: "x", sort: Int },
-            { kind: "var", name: "x", sort: Int },
+            { kind: "var", name: "x"},
+            { kind: "var", name: "x"},
           ],
         },
-      },
     };
     const outer: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "x",
-        sort: Int,
-        body: inner,
-      },
+      kind: "forall", name: "x", sort: Int, body: inner,
     };
     const out = emitLean(outer);
     expect(out).toMatch(/^∀ \(x : Int\), ∀ \(x__d\d+ : Int\),/);
@@ -185,14 +178,7 @@ describe("emitLean — sort mapping", () => {
   it("throws LeanUnsupportedError for tuple sort", () => {
     const tupleSort: Sort = { kind: "tuple", elements: [Int, Bool] };
     const f: IrFormula = {
-      kind: "forall",
-      sort: tupleSort,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: tupleSort,
-        body: { kind: "atomic", predicate: "true", args: [] },
-      },
+      kind: "forall", name: "_x0", sort: tupleSort, body: { kind: "atomic", name: "true", args: [] },
     };
     expect(() => emitLean(f)).toThrow(LeanUnsupportedError);
   });
@@ -200,14 +186,7 @@ describe("emitLean — sort mapping", () => {
   it("throws LeanUnsupportedError for function sort", () => {
     const fnSort: Sort = { kind: "function", domain: [Int], range: Bool };
     const f: IrFormula = {
-      kind: "forall",
-      sort: fnSort,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: fnSort,
-        body: { kind: "atomic", predicate: "true", args: [] },
-      },
+      kind: "forall", name: "_x0", sort: fnSort, body: { kind: "atomic", name: "true", args: [] },
     };
     expect(() => emitLean(f)).toThrow(LeanUnsupportedError);
   });
@@ -229,14 +208,14 @@ describe("emitLean — constants", () => {
   it("renders booleans", () => {
     const lhs: IrTerm = { kind: "const", value: true, sort: Bool };
     const rhs: IrTerm = { kind: "const", value: false, sort: Bool };
-    const f: IrFormula = { kind: "atomic", predicate: "=", args: [lhs, rhs] };
+    const f: IrFormula = { kind: "atomic", name: "=", args: [lhs, rhs] };
     expect(emitLean(f)).toBe("(true = false)");
   });
 
   it("escapes quotes in string literals using backslash escapes", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 'a"b', sort: Str },
         { kind: "const", value: "c", sort: Str },
@@ -248,7 +227,7 @@ describe("emitLean — constants", () => {
   it("renders bigint literals", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 100n, sort: Int },
         { kind: "const", value: 100n, sort: Int },
@@ -260,7 +239,7 @@ describe("emitLean — constants", () => {
   it("renders negative bigint with Int annotation", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: -100n, sort: Int },
         { kind: "const", value: -100n, sort: Int },
@@ -320,16 +299,9 @@ describe("emitLeanTheorem", () => {
   });
 
   it("declares user sorts and uninterpreted predicates as axioms", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Int };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const claim: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: Int,
-        body: { kind: "atomic", predicate: "isPrime", args: [x] },
-      },
+      kind: "forall", name: "_x0", sort: Int, body: { kind: "atomic", name: "isPrime", args: [x] },
     };
     const out = emitLeanTheorem({ axioms: [], assertion: claim });
     expect(out.source).toContain("axiom isPrime : Int -> Prop");
@@ -408,10 +380,10 @@ describe("lean/declarations — collectDeclarations", () => {
   });
 
   it("collects ctor signatures from atomic args", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Str };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("parseInt", [x], Int), { kind: "const", value: 42, sort: Int }],
     };
     const decls = collectDeclarations([f]);
@@ -419,16 +391,9 @@ describe("lean/declarations — collectDeclarations", () => {
   });
 
   it("collects uninterpreted predicates and skips built-ins", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Int };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const f: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: Int,
-        body: { kind: "atomic", predicate: "isPrime", args: [x] },
-      },
+      kind: "forall", name: "_x0", sort: Int, body: { kind: "atomic", name: "isPrime", args: [x] },
     };
     const decls = collectDeclarations([f]);
     expect(decls.predicates.map((p) => p.name)).toEqual(["isPrime"]);
@@ -442,16 +407,9 @@ describe("lean/declarations — emitters", () => {
   });
 
   it("emitFunctionDeclarations renders ctor and predicate Prop axioms", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Int };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const f: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: Int,
-        body: { kind: "atomic", predicate: "isPrime", args: [x] },
-      },
+      kind: "forall", name: "_x0", sort: Int, body: { kind: "atomic", name: "isPrime", args: [x] },
     };
     const decls = collectDeclarations([f]);
     const lines = emitFunctionDeclarations(decls);
@@ -470,11 +428,11 @@ describe("emitFormula (direct emit module)", () => {
   });
 
   it("renders zero-conjunct and as 'True'", () => {
-    expect(emitFormula({ kind: "and", conjuncts: [] })).toBe("True");
+    expect(emitFormula({ kind: "and", operands: [] })).toBe("True");
   });
 
   it("renders zero-disjunct or as 'False'", () => {
-    expect(emitFormula({ kind: "or", disjuncts: [] })).toBe("False");
+    expect(emitFormula({ kind: "or", operands: [] })).toBe("False");
   });
 });
 
@@ -508,7 +466,7 @@ describe("emitLean — null constant rejection", () => {
   it("throws when emitting a null const", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: null, sort: Int },
         { kind: "const", value: 0, sort: Int },
@@ -520,12 +478,12 @@ describe("emitLean — null constant rejection", () => {
 
 describe("emitLean — true/false predicate args", () => {
   it("emits atomic 'true' with no args as the literal True", () => {
-    const f: IrFormula = { kind: "atomic", predicate: "true", args: [] };
+    const f: IrFormula = { kind: "atomic", name: "true", args: [] };
     expect(emitLean(f)).toBe("True");
   });
 
   it("emits atomic 'false' with no args as the literal False", () => {
-    const f: IrFormula = { kind: "atomic", predicate: "false", args: [] };
+    const f: IrFormula = { kind: "atomic", name: "false", args: [] };
     expect(emitLean(f)).toBe("False");
   });
 });

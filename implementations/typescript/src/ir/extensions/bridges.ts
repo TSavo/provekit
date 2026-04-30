@@ -146,12 +146,24 @@ export function primitiveBridge(
   }
 
   const returnSort = resolveSort(input.irReturnSort);
-  return (...args): IrTerm => ({
-    kind: "ctor",
-    name: input.irName,
-    args: args.map((a) => liftToTerm(a as IrTerm | number | bigint | string | boolean)),
-    sort: returnSort,
-  });
+  return (...args): IrTerm => {
+    const term: IrTerm = {
+      kind: "ctor",
+      name: input.irName,
+      args: args.map((a) => liftToTerm(a as IrTerm | number | bigint | string | boolean)),
+    };
+    // Side-channel sort hint: kept off the wire (non-enumerable, symbol
+    // key) so JSON serialization yields the spec-locked CtorTerm shape,
+    // while in-process consumers (BV width checks, declaration
+    // collectors) can still recover the kit-declared return sort.
+    Object.defineProperty(term, Symbol.for("provekit.ir.sortHint"), {
+      value: returnSort,
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+    return term;
+  };
 }
 
 function resolveSort(ref: SortRef): Sort {

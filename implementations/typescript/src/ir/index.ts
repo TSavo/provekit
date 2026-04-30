@@ -15,8 +15,13 @@
 
 export type {
   IrFormula,
-  IrFormulaLambda,
+  QuantifierFormula,
+  ConnectiveFormula,
+  AtomicFormula,
   IrTerm,
+  VarTerm,
+  ConstTerm,
+  CtorTerm,
   Sort,
   AtomicPredicate,
   BindingScope,

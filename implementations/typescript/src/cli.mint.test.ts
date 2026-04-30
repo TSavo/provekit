@@ -141,7 +141,13 @@ describe("runMint", () => {
       verdict: "holds",
       producedBy: "test-producer@v1",
       inputCids: [],
-      rawWitness: "{}",
+      // Protocol v1.1: legacy-witness is removed; producers must supply
+      // an explicit evidence body.
+      evidence: {
+        kind: "z3-unsat",
+        schema: VARIANT_SCHEMA_CIDS["z3-unsat"],
+        body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat", z3RunMs: 1 },
+      },
     };
     const specPath = join(tmpDir, "prop-spec.json");
     writeFileSync(specPath, JSON.stringify(spec), "utf-8");
@@ -155,9 +161,7 @@ describe("runMint", () => {
     expect(memento.propertyHash).toBe(spec.propertyHash);
     expect(memento.verdict).toBe("holds");
     expect(memento.producedBy).toBe(spec.producedBy);
-    // legacy-witness is the default evidence variant when none supplied.
-    expect(memento.evidence?.kind).toBe("legacy-witness");
-    expect(memento.evidence?.schema).toBe(VARIANT_SCHEMA_CIDS["legacy-witness"]);
+    expect(memento.evidence?.kind).toBe("z3-unsat");
     expect(memento.producerSignature).toBeDefined();
   });
 
@@ -167,6 +171,11 @@ describe("runMint", () => {
       propertyHash: "fedcba0987654321",
       verdict: "holds",
       producedBy: "test-producer@v1",
+      evidence: {
+        kind: "z3-unsat",
+        schema: VARIANT_SCHEMA_CIDS["z3-unsat"],
+        body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat", z3RunMs: 1 },
+      },
     };
     const specPath = join(tmpDir, "prop-spec-out.json");
     const outPath = join(tmpDir, "memento-out.json");
@@ -242,15 +251,22 @@ describe("runMint", () => {
   it("'mint catalog' composes a .proof envelope from member memento JSON files", async () => {
     // Mint two member mementos to disk first.
     const catalogDir = mkdtempSync(join(tmpDir, "catalog-"));
+    const z3UnsatEvidence = {
+      kind: "z3-unsat",
+      schema: VARIANT_SCHEMA_CIDS["z3-unsat"],
+      body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat", z3RunMs: 1 },
+    };
     const member1Spec = {
       bindingHash: "aaaa1111aaaa1111",
       propertyHash: "bbbb2222bbbb2222",
       producedBy: "p1@v1",
+      evidence: z3UnsatEvidence,
     };
     const member2Spec = {
       bindingHash: "cccc3333cccc3333",
       propertyHash: "dddd4444dddd4444",
       producedBy: "p2@v1",
+      evidence: z3UnsatEvidence,
     };
     const member1SpecPath = join(catalogDir, "member1.spec.json");
     const member2SpecPath = join(catalogDir, "member2.spec.json");
@@ -363,6 +379,11 @@ describe("runMint", () => {
       propertyHash: "0000ffff0000ffff",
       verdict: "holds",
       producedBy: "ephemeral-test@v1",
+      evidence: {
+        kind: "z3-unsat",
+        schema: VARIANT_SCHEMA_CIDS["z3-unsat"],
+        body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat", z3RunMs: 1 },
+      },
     };
     const specPath = join(tmpDir, "ephem-spec.json");
     writeFileSync(specPath, JSON.stringify(spec), "utf-8");

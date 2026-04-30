@@ -58,11 +58,17 @@ beforeAll(() => {
 async function buildSampleProof(): Promise<string> {
   // Mint two members + a catalog into a fresh dir.
   const dir = mkdtempSync(join(tmpDir, "src-"));
+  const z3UnsatEvidence = {
+    kind: "z3-unsat",
+    schema: "00000000000000020000000000000002",
+    body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat", z3RunMs: 1 },
+  };
   for (const name of ["m1", "m2"]) {
     const spec = {
       bindingHash: name === "m1" ? "aaaa1111aaaa1111" : "cccc3333cccc3333",
       propertyHash: name === "m1" ? "bbbb2222bbbb2222" : "dddd4444dddd4444",
       producedBy: `${name}@v1`,
+      evidence: z3UnsatEvidence,
     };
     const specPath = join(dir, `${name}.spec.json`);
     fsWriteFileSync(specPath, JSON.stringify(spec));

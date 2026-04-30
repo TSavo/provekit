@@ -36,7 +36,7 @@ const REF: Sort = { kind: "primitive", name: "Ref" };
 
 const UNLIFTABLE_FORMULA: IrFormula = {
   kind: "atomic",
-  predicate: "false",
+  name: "false",
   args: [],
 };
 
@@ -45,6 +45,24 @@ const UNLIFTABLE_TERM: IrTerm = {
   value: null,
   sort: REF,
 };
+
+const SORT_HINT = Symbol.for("provekit.ir.sortHint");
+
+function withSortHint(term: IrTerm, sort: Sort): IrTerm {
+  Object.defineProperty(term, SORT_HINT, {
+    value: sort,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  return term;
+}
+
+function readSortHint(term: IrTerm): Sort {
+  if (term.kind === "const") return term.sort;
+  const v = (term as unknown as Record<symbol, unknown>)[SORT_HINT];
+  return (v as Sort | undefined) ?? REF;
+}
 
 function reject(node: ts.Node, message: string, ctx: LiftContext): void {
   ctx.diagnostics.push(makeDiagnostic(node, message));
@@ -94,9 +112,9 @@ function unwrapParens(expr: ts.Expression): ts.Expression {
 function dispatchFormula(node: ts.Expression, ctx: LiftContext): IrFormula {
   switch (node.kind) {
     case ts.SyntaxKind.TrueKeyword:
-      return { kind: "atomic", predicate: "true", args: [] };
+      return { kind: "atomic", name: "true", args: [] };
     case ts.SyntaxKind.FalseKeyword:
-      return { kind: "atomic", predicate: "false", args: [] };
+      return { kind: "atomic", name: "false", args: [] };
     case ts.SyntaxKind.BinaryExpression:
       return liftBinaryFormula(node as ts.BinaryExpression, ctx);
     case ts.SyntaxKind.PrefixUnaryExpression:
@@ -197,7 +215,7 @@ function liftBinaryFormula(node: ts.BinaryExpression, ctx: LiftContext): IrFormu
   if (op === ts.SyntaxKind.AmpersandAmpersandToken) {
     return {
       kind: "and",
-      conjuncts: [
+      operands: [
         liftFormulaExpression(node.left, ctx),
         liftFormulaExpression(node.right, ctx),
       ],
@@ -206,7 +224,7 @@ function liftBinaryFormula(node: ts.BinaryExpression, ctx: LiftContext): IrFormu
   if (op === ts.SyntaxKind.BarBarToken) {
     return {
       kind: "or",
-      disjuncts: [
+      operands: [
         liftFormulaExpression(node.left, ctx),
         liftFormulaExpression(node.right, ctx),
       ],
@@ -216,11 +234,11 @@ function liftBinaryFormula(node: ts.BinaryExpression, ctx: LiftContext): IrFormu
     // a ?? b in formula position — unusual but valid. Desugar.
     return liftNullishCoalescingFormula(node, ctx);
   }
-  const predicate = FORMULA_PREDICATE_BY_OP[op];
-  if (predicate !== undefined) {
+  const predicateName = FORMULA_PREDICATE_BY_OP[op];
+  if (predicateName !== undefined) {
     return {
       kind: "atomic",
-      predicate,
+      name: predicateName,
       args: [
         liftTermExpression(node.left, ctx),
         liftTermExpression(node.right, ctx),
@@ -253,12 +271,11 @@ function liftBinaryTerm(node: ts.BinaryExpression, ctx: LiftContext): IrTerm {
   if (ctor !== undefined) {
     const left = liftTermExpression(node.left, ctx);
     const right = liftTermExpression(node.right, ctx);
-    return {
-      kind: "ctor",
-      name: ctor,
-      args: [left, right],
-      sort: termArithSort(left.sort, right.sort),
-    };
+    const sort = termArithSort(readSortHint(left), readSortHint(right));
+    return withSortHint(
+      { kind: "ctor", name: ctor, args: [left, right] },
+      sort,
+    );
   }
   if (op === ts.SyntaxKind.QuestionQuestionToken) {
     return liftNullishCoalescingTerm(node, ctx);
@@ -288,7 +305,7 @@ function liftPrefixUnaryFormula(
   ctx: LiftContext,
 ): IrFormula {
   if (node.operator === ts.SyntaxKind.ExclamationToken) {
-    return { kind: "not", body: liftFormulaExpression(node.operand, ctx) };
+    return { kind: "not", operands: [liftFormulaExpression(node.operand, ctx)] };
   }
   reject(
     node,
@@ -304,7 +321,10 @@ function liftPrefixUnaryTerm(
 ): IrTerm {
   if (node.operator === ts.SyntaxKind.MinusToken) {
     const inner = liftTermExpression(node.operand, ctx);
-    return { kind: "ctor", name: "negate", args: [inner], sort: inner.sort };
+    return withSortHint(
+      { kind: "ctor", name: "negate", args: [inner] },
+      readSortHint(inner),
+    );
   }
   if (node.operator === ts.SyntaxKind.PlusToken) {
     // unary plus is identity for our purposes
@@ -332,9 +352,9 @@ function liftConditionalFormula(
   const elseBranch = liftFormulaExpression(node.whenFalse, ctx);
   return {
     kind: "or",
-    disjuncts: [
-      { kind: "and", conjuncts: [cond, thenBranch] },
-      { kind: "and", conjuncts: [{ kind: "not", body: cond }, elseBranch] },
+    operands: [
+      { kind: "and", operands: [cond, thenBranch] },
+      { kind: "and", operands: [{ kind: "not", operands: [cond] }, elseBranch] },
     ],
   };
 }
@@ -356,19 +376,20 @@ function liftConditionalTerm(
   const thenT = liftTermExpression(node.whenTrue, ctx);
   const elseT = liftTermExpression(node.whenFalse, ctx);
   const condT = liftFormulaAsTerm(node.condition, ctx);
-  return {
-    kind: "ctor",
-    name: "if",
-    args: [condT, thenT, elseT],
-    sort: thenT.sort,
-  };
+  return withSortHint(
+    { kind: "ctor", name: "if", args: [condT, thenT, elseT] },
+    readSortHint(thenT),
+  );
 }
 
 function liftFormulaAsTerm(expr: ts.Expression, ctx: LiftContext): IrTerm {
   // Wrap a formula in a `formula` ctor so it survives in term position.
   // Used only by ternary's cond and nullish-coalescing's check.
   const f = liftFormulaExpression(expr, ctx);
-  return { kind: "ctor", name: "as-term", args: encodeFormulaIntoArgs(f), sort: BOOL };
+  return withSortHint(
+    { kind: "ctor", name: "as-term", args: encodeFormulaIntoArgs(f) },
+    BOOL,
+  );
 }
 
 function encodeFormulaIntoArgs(_f: IrFormula): IrTerm[] {
@@ -385,12 +406,9 @@ function liftNullishCoalescingFormula(
   node: ts.BinaryExpression,
   ctx: LiftContext,
 ): IrFormula {
-  // a ?? b → if a is null/undefined then b else a
-  // In formula position, a is bool → null check is structural; v1 desugar
-  // treats null/undefined operands as false, so a ?? b ≡ a || b for bools.
   return {
     kind: "or",
-    disjuncts: [
+    operands: [
       liftFormulaExpression(node.left, ctx),
       liftFormulaExpression(node.right, ctx),
     ],
@@ -403,12 +421,10 @@ function liftNullishCoalescingTerm(
 ): IrTerm {
   const left = liftTermExpression(node.left, ctx);
   const right = liftTermExpression(node.right, ctx);
-  return {
-    kind: "ctor",
-    name: "??",
-    args: [left, right],
-    sort: left.sort,
-  };
+  return withSortHint(
+    { kind: "ctor", name: "??", args: [left, right] },
+    readSortHint(left),
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -423,8 +439,8 @@ function liftIdentifierFormula(node: ts.Identifier, ctx: LiftContext): IrFormula
   if (bound) {
     return {
       kind: "atomic",
-      predicate: "is-true",
-      args: [{ kind: "var", name: bound.name, sort: bound.sort }],
+      name: "is-true",
+      args: [withSortHint({ kind: "var", name: bound.name }, bound.sort)],
     };
   }
   reject(node, `Identifier '${node.text}' is not a bound variable or known boolean`, ctx);
@@ -435,7 +451,7 @@ function liftIdentifierTerm(node: ts.Identifier, ctx: LiftContext): IrTerm {
   // Bound lambda param?
   const bound = findScope(ctx, node.text);
   if (bound) {
-    return { kind: "var", name: bound.name, sort: bound.sort };
+    return withSortHint({ kind: "var", name: bound.name }, bound.sort);
   }
 
   // 'undefined' identifier (TS represents it as Identifier, not keyword)
@@ -487,7 +503,7 @@ function liftPropertyAccessFormula(
   // Member access at formula position is unusual; treat as is-true on the
   // projected term.
   const t = liftPropertyAccessTerm(node, ctx);
-  return { kind: "atomic", predicate: "is-true", args: [t] };
+  return { kind: "atomic", name: "is-true", args: [t] };
 }
 
 function liftPropertyAccessTerm(
@@ -498,12 +514,14 @@ function liftPropertyAccessTerm(
   // We project as ctor "project" with args [object, fieldName].
   const obj = liftTermExpression(node.expression, ctx);
   const field = node.name.text;
-  return {
-    kind: "ctor",
-    name: "project",
-    args: [obj, { kind: "const", value: field, sort: STRING_SORT }],
-    sort: REF,
-  };
+  return withSortHint(
+    {
+      kind: "ctor",
+      name: "project",
+      args: [obj, { kind: "const", value: field, sort: STRING_SORT }],
+    },
+    REF,
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -534,14 +552,19 @@ function liftCallFormula(node: ts.CallExpression, ctx: LiftContext): IrFormula {
     if (entry) {
       const args = node.arguments.map((a) => liftTermExpression(a, ctx));
       if (entry.returnKind === "formula") {
-        return { kind: "atomic", predicate: registryName, args };
+        return { kind: "atomic", name: registryName, args };
       }
       // Term-returning registry call appearing in formula position is unusual;
       // treat as is-true on the term.
       return {
         kind: "atomic",
-        predicate: "is-true",
-        args: [{ kind: "ctor", name: registryName, args, sort: entry.returnSort }],
+        name: "is-true",
+        args: [
+          withSortHint(
+            { kind: "ctor", name: registryName, args },
+            entry.returnSort,
+          ),
+        ],
       };
     }
   }
@@ -561,12 +584,10 @@ function liftCallTerm(node: ts.CallExpression, ctx: LiftContext): IrTerm {
     const entry = ctx.registry.get(registryName);
     if (entry) {
       const args = node.arguments.map((a) => liftTermExpression(a, ctx));
-      return {
-        kind: "ctor",
-        name: registryName,
-        args,
-        sort: entry.returnSort,
-      };
+      return withSortHint(
+        { kind: "ctor", name: registryName, args },
+        entry.returnSort,
+      );
     }
   }
   reject(
@@ -712,8 +733,9 @@ function liftLambdaWithSort(
   }
   return {
     kind,
+    name: varName,
     sort,
-    predicate: { kind: "lambda", varName, sort, body },
+    body,
   };
 }
 
@@ -724,8 +746,10 @@ function liftImplies(call: ts.CallExpression, ctx: LiftContext): IrFormula {
   }
   return {
     kind: "implies",
-    antecedent: liftFormulaExpression(call.arguments[0], ctx),
-    consequent: liftFormulaExpression(call.arguments[1], ctx),
+    operands: [
+      liftFormulaExpression(call.arguments[0]!, ctx),
+      liftFormulaExpression(call.arguments[1]!, ctx),
+    ],
   };
 }
 
@@ -734,13 +758,13 @@ function liftIff(call: ts.CallExpression, ctx: LiftContext): IrFormula {
     reject(call, `iff expects two arguments`, ctx);
     return UNLIFTABLE_FORMULA;
   }
-  const a = liftFormulaExpression(call.arguments[0], ctx);
-  const b = liftFormulaExpression(call.arguments[1], ctx);
+  const a = liftFormulaExpression(call.arguments[0]!, ctx);
+  const b = liftFormulaExpression(call.arguments[1]!, ctx);
   return {
     kind: "and",
-    conjuncts: [
-      { kind: "implies", antecedent: a, consequent: b },
-      { kind: "implies", antecedent: b, consequent: a },
+    operands: [
+      { kind: "implies", operands: [a, b] },
+      { kind: "implies", operands: [b, a] },
     ],
   };
 }

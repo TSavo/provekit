@@ -1,11 +1,11 @@
 /**
- * Property and bridge collectors — symbolic primitives that capture IR
+ * Contract and bridge collectors — symbolic primitives that capture IR
  * declarations into a thread-local collection.
  *
- * The user's invariant file imports `property` and `bridge` from this
- * module. When the file runs (e.g., `await import("./parseInt.invariant.ts")`),
- * each call to `property()` and `bridge()` adds an entry to the active
- * collector. The lifter then reads the collector's contents.
+ * The user's invariant file imports `contract` / `must` / `bridge` from
+ * this module. When the file runs (e.g.,
+ * `await import("./parseInt.invariant.ts")`), each call adds an entry to
+ * the active collector. The lifter then reads the collector's contents.
  *
  * No tsc compiler API. No AST walking. The user's code RUNS to produce IR.
  *
@@ -15,16 +15,19 @@
  * language.
  */
 
-import type { IrFormula, IrTerm, Sort } from "../formulas.js";
+import type { IrFormula, IrTerm, Sort, VarTerm } from "../formulas.js";
 
 // ---------------------------------------------------------------------------
 // Declarations captured by the collector
 // ---------------------------------------------------------------------------
 
-export interface PropertyDeclaration {
-  kind: "property";
+export interface ContractDeclaration {
+  kind: "contract";
   name: string;
-  formula: IrFormula;
+  outBinding: string;
+  pre?: IrFormula;
+  post?: IrFormula;
+  inv?: IrFormula;
 }
 
 export interface BridgeDeclaration {
@@ -37,7 +40,7 @@ export interface BridgeDeclaration {
   notes?: string;
 }
 
-export type Declaration = PropertyDeclaration | BridgeDeclaration;
+export type Declaration = ContractDeclaration | BridgeDeclaration;
 
 // ---------------------------------------------------------------------------
 // Active collector — module-scoped, set by the lifter before importing
@@ -63,8 +66,10 @@ export function beginCollecting(): () => Declaration[] {
   }
   const collector: Declaration[] = [];
   activeCollector = collector;
+  contractStack = [];
   return () => {
     activeCollector = null;
+    contractStack = [];
     return collector;
   };
 }
@@ -73,6 +78,7 @@ export function beginCollecting(): () => Declaration[] {
 export function _resetCollector(): void {
   activeCollector = null;
   describePath = [];
+  contractStack = [];
   // Reset the quantifier variable counter so successive runs of the
   // same invariant code produce identical IR (and therefore identical
   // CIDs). The counter generates fresh variable names like `_x0`, `_x1`;
@@ -85,33 +91,12 @@ export function _resetCollector(): void {
 
 // ---------------------------------------------------------------------------
 // describe() / it() — nested-context property declaration sugar.
-//
-// Mirrors vitest / jest / mocha. Authors organize invariants in nested
-// describe blocks; it() declares a single named property whose full
-// name is the path through the describe tree.
-//
-//   describe("parseInt", () => {
-//     it("canReturnZero",
-//       exists(StringSort, s => eq(parseInt(s), num(0)))
-//     );
-//
-//     describe("non-negative integers", () => {
-//       it("round-trip",
-//         forAll(Int, n =>
-//           implies(gte(n, num(0)), eq(parseInt(toString(n)), n))
-//         )
-//       );
-//     });
-//   });
-//
-// Yields property names: "parseInt > canReturnZero" and
-// "parseInt > non-negative integers > round-trip".
 // ---------------------------------------------------------------------------
 
 let describePath: string[] = [];
 
 /**
- * Open a named describe block. The body runs immediately; any property()
+ * Open a named describe block. The body runs immediately; any contract()
  * or it() calls inside register with the describe path prepended.
  *
  * Nesting is supported. The path uses " > " as a separator.
@@ -125,24 +110,74 @@ export function describe(name: string, body: () => void): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// contract() — primary primitive for declaring named contracts.
+// ---------------------------------------------------------------------------
+
 /**
- * Declare a named invariant. The active describe path is used as a
- * prefix for the full name.
+ * Tracks the currently authoring contract so out() can resolve to the
+ * right outBinding name. contract() may not be nested.
+ */
+let contractStack: Array<{ outBinding: string }> = [];
+
+export interface ContractSpec {
+  pre?: IrFormula;
+  post?: IrFormula;
+  inv?: IrFormula;
+  outBinding?: string;
+}
+
+/**
+ * Declare a named behavior contract. Carries any combination of
+ * precondition, postcondition, and inductive invariant. At least one of
+ * pre/post/inv MUST be provided. `outBinding` defaults to "out" and
+ * names the variable the postcondition uses to reference the return
+ * value (see out()).
+ */
+export function contract(name: string, spec: ContractSpec): void {
+  if (activeCollector === null) {
+    throw new Error(
+      `contract("${name}", ...) called outside an active collector.`,
+    );
+  }
+  if (spec.pre === undefined && spec.post === undefined && spec.inv === undefined) {
+    throw new Error(
+      `contract("${name}", ...) requires at least one of pre/post/inv.`,
+    );
+  }
+  const outBinding = spec.outBinding ?? "out";
+  contractStack.push({ outBinding });
+  try {
+    const fullName =
+      describePath.length === 0 ? name : `${describePath.join(" > ")} > ${name}`;
+    const decl: ContractDeclaration = {
+      kind: "contract",
+      name: fullName,
+      outBinding,
+    };
+    if (spec.pre !== undefined) decl.pre = spec.pre;
+    if (spec.post !== undefined) decl.post = spec.post;
+    if (spec.inv !== undefined) decl.inv = spec.inv;
+    activeCollector.push(decl);
+  } finally {
+    contractStack.pop();
+  }
+}
+
+/**
+ * Convenience alias for the precondition-only case:
+ *   must(name, pre)  ===  contract(name, { pre })
  *
  * The verb `must` is non-negotiable: invariants are obligations, not
- * observations. `it("returns zero")` reads as a test ("it does this");
- * `must("never throw on empty input")` reads as a constraint ("this
- * is required"). The framework writes invariants in the obligation
+ * observations. The framework writes invariants in the obligation
  * register; the API forces that register at call sites.
  */
-export function must(name: string, formula: IrFormula): void {
-  const fullName =
-    describePath.length === 0 ? name : `${describePath.join(" > ")} > ${name}`;
-  property(fullName, formula);
+export function must(name: string, pre: IrFormula): void {
+  contract(name, { pre });
 }
 
 /** Skip an invariant. The declaration is acknowledged but not collected. */
-must.skip = function (name: string, _formula: IrFormula): void {
+must.skip = function (name: string, _pre: IrFormula): void {
   void name;
 };
 
@@ -152,23 +187,16 @@ describe.skip = function (name: string, _body: () => void): void {
 };
 
 // ---------------------------------------------------------------------------
-// property() — declares a named property whose body is an IrFormula
+// out() — references the function's return value within a `post` formula.
+//
+// Compiles to a VarTerm whose `name` matches the enclosing contract's
+// outBinding (default "out"). Outside a contract() call, out() defaults
+// to "out" so post-only fragments built before contract() composes work.
 // ---------------------------------------------------------------------------
 
-/**
- * Declare a named property with an IR formula body.
- *
- * @param name — the property's identifier (used for diagnostics + memento naming)
- * @param formula — the IR formula constructed via the kit's symbolic primitives
- */
-export function property(name: string, formula: IrFormula): void {
-  if (activeCollector === null) {
-    throw new Error(
-      `property("${name}", ...) called outside an active collector. ` +
-      `If you're running this file standalone for testing, call beginCollecting() first.`,
-    );
-  }
-  activeCollector.push({ kind: "property", name, formula });
+export function out(): VarTerm {
+  const top = contractStack[contractStack.length - 1];
+  return { kind: "var", name: top?.outBinding ?? "out" };
 }
 
 // ---------------------------------------------------------------------------

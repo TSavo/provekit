@@ -11,12 +11,12 @@
  *
  * Usage:
  *   import {
- *     property, bridge, forAll, exists, eq, parseInt, num, Int
+ *     contract, must, out, bridge, forAll, exists, eq, parseInt, num, Int
  *   } from "@provekit/ir/symbolic";
  *
- *   property("zeroIsZero",
- *     eq(parseInt(num("0")), num(0))
- *   );
+ *   contract("zeroIsZero", {
+ *     pre: eq(parseInt(num("0")), num(0)),
+ *   });
  *
  *   bridge("parseIntBridgesV8", {
  *     sourceSymbol: "global.parseInt",
@@ -51,12 +51,13 @@ export {
 } from "../sorts.js";
 export type { IrFormula, IrTerm, Sort } from "../formulas.js";
 
-// Property + bridge collection
+// Contract + bridge collection
 export {
-  property,
+  contract,
   bridge,
   describe,
   must,
+  out,
   beginCollecting,
   _resetCollector,
   forAll,
@@ -69,9 +70,10 @@ export {
 } from "./property.js";
 export type {
   Declaration,
-  PropertyDeclaration,
+  ContractDeclaration,
   BridgeDeclaration,
   BridgeSpec,
+  ContractSpec,
 } from "./property.js";
 
 // Constants

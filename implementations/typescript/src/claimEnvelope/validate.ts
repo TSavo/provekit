@@ -162,9 +162,60 @@ function validateVariantBody(
       // body.output is type-specific, no constraint
       break;
     }
-    case "legacy-witness": {
-      if (!isString(body.rawWitness)) errors.push("legacy-witness body.rawWitness must be string");
-      if (!isString(body.legacyProducerId)) errors.push("legacy-witness body.legacyProducerId must be string");
+    case "contract": {
+      if (!isString(body.contractName)) errors.push("contract body.contractName must be string");
+      if (!isString(body.outBinding)) errors.push("contract body.outBinding must be string");
+      const hasPre = body.pre !== undefined;
+      const hasPost = body.post !== undefined;
+      const hasInv = body.inv !== undefined;
+      if (!hasPre && !hasPost && !hasInv) {
+        errors.push("contract body must have at least one of pre/post/inv");
+      }
+      if (hasPre && (!isString(body.preHash) || !HEX16.test(body.preHash as string))) {
+        errors.push("contract body.preHash must be hex16 when pre is present");
+      }
+      if (hasPost && (!isString(body.postHash) || !HEX16.test(body.postHash as string))) {
+        errors.push("contract body.postHash must be hex16 when post is present");
+      }
+      if (hasInv && (!isString(body.invHash) || !HEX16.test(body.invHash as string))) {
+        errors.push("contract body.invHash must be hex16 when inv is present");
+      }
+      if (!isObject(body.authoring)) {
+        errors.push("contract body.authoring must be a tagged authoring block");
+      } else {
+        const a = body.authoring as Record<string, unknown>;
+        const pk = a.producerKind;
+        if (pk !== "kit-author" && pk !== "lift" && pk !== "llm") {
+          errors.push(`contract body.authoring.producerKind must be one of "kit-author"|"lift"|"llm" (got ${JSON.stringify(pk)})`);
+        }
+      }
+      break;
+    }
+    case "implication": {
+      if (!isString(body.antecedentHash) || !HEX16.test(body.antecedentHash as string)) {
+        errors.push("implication body.antecedentHash must be hex16");
+      }
+      if (!isString(body.consequentHash) || !HEX16.test(body.consequentHash as string)) {
+        errors.push("implication body.consequentHash must be hex16");
+      }
+      if (!isString(body.antecedentCid) || !HEX32.test(body.antecedentCid as string)) {
+        errors.push("implication body.antecedentCid must be hex32");
+      }
+      if (!isString(body.consequentCid) || !HEX32.test(body.consequentCid as string)) {
+        errors.push("implication body.consequentCid must be hex32");
+      }
+      const slotOk = (s: unknown) => s === "pre" || s === "post" || s === "inv";
+      if (!slotOk(body.antecedentSlot)) errors.push('implication body.antecedentSlot must be "pre"|"post"|"inv"');
+      if (!slotOk(body.consequentSlot)) errors.push('implication body.consequentSlot must be "pre"|"post"|"inv"');
+      if (!isString(body.prover)) errors.push("implication body.prover must be string");
+      if (!isNumber(body.proverRunMs)) errors.push("implication body.proverRunMs must be number");
+      break;
+    }
+    case "legacy-witness":
+    case "property": {
+      errors.push(
+        `evidence.kind "${kind}" was removed in protocol v1.1; producers must emit "contract"`,
+      );
       break;
     }
     default:

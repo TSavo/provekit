@@ -19,7 +19,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createHash } from "node:crypto";
 import {
   beginCollecting,
-  property,
+  contract,
   forAll,
   eq,
   bv,
@@ -28,6 +28,9 @@ import {
   _resetCollector,
 } from "./index.js";
 import { propertyHashFromFormula } from "../../canonicalizer/index.js";
+import type { IrFormula } from "../formulas.js";
+const property = (name: string, formula: IrFormula) =>
+  contract(name, { pre: formula });
 
 const FIXTURE_NAME = "forall_bv32_xor_self_is_zero";
 
@@ -74,8 +77,10 @@ describe("BV cross-language fixture (TS-only golden)", () => {
     // Lock the canonical-form hash. If this drifts, either the IR shape
     // changed intentionally (update the constant) or a regression slipped
     // through (investigate before updating).
+    // Locked under protocol v1.1 IR-JSON shape (contract decl, flat
+    // quantifier, name-renamed atomic, sortless var/ctor).
     expect(sha).toBe(
-      "ed9bfb50ddd623b35cbf78be3867d81bbe0b73c4d896ebde0fbb4bb3370292e5",
+      "0e1f044d908fdc38df919adf3ba36e299ad77beb7fc8c6c86f73e10ea0f53087",
     );
   });
 
@@ -85,12 +90,12 @@ describe("BV cross-language fixture (TS-only golden)", () => {
     const decls = finish();
     expect(decls).toHaveLength(1);
     const d = decls[0]!;
-    expect(d.kind).toBe("property");
-    if (d.kind !== "property") throw new Error();
-    expect(d.formula.kind).toBe("forall");
-    if (d.formula.kind !== "forall") throw new Error();
-    expect(d.formula.sort).toEqual({ kind: "bitvec", width: 32 });
-    expect(d.formula.predicate.body.kind).toBe("atomic");
+    expect(d.kind).toBe("contract");
+    if (d.kind !== "contract") throw new Error();
+    expect(d.pre).toBeDefined();
+    if (!d.pre || d.pre.kind !== "forall") throw new Error();
+    expect(d.pre.sort).toEqual({ kind: "bitvec", width: 32 });
+    expect(d.pre.body.kind).toBe("atomic");
   });
 
   it("propertyHashFromFormula accepts BV formulas without crashing", () => {

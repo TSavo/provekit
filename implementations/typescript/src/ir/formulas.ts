@@ -31,12 +31,16 @@ export type Sort =
 
 // ---------------------------------------------------------------------------
 // Terms
+//
+// VarTerm and CtorTerm carry NO sort. ConstTerm keeps sort because the
+// literal's type is not derivable from binding scope.
 // ---------------------------------------------------------------------------
 
-export type IrTerm =
-  | { kind: "var"; name: string; sort: Sort }
-  | { kind: "const"; value: unknown; sort: Sort }
-  | { kind: "ctor"; name: string; args: IrTerm[]; sort: Sort };
+export type VarTerm = { kind: "var"; name: string };
+export type ConstTerm = { kind: "const"; value: unknown; sort: Sort };
+export type CtorTerm = { kind: "ctor"; name: string; args: IrTerm[] };
+
+export type IrTerm = VarTerm | ConstTerm | CtorTerm;
 
 // ---------------------------------------------------------------------------
 // Atomic predicates
@@ -56,23 +60,31 @@ export type AtomicPredicate =
 
 // ---------------------------------------------------------------------------
 // Formulas
+//
+// Maximal-uniformity flat shape: every quantifier is { kind, name, sort, body },
+// every connective is { kind, operands }, every atomic is { kind, name, args }.
+// No nested Lambda wrapper, no kind-specific operand field names.
 // ---------------------------------------------------------------------------
 
-export type IrFormulaLambda = {
-  kind: "lambda";
-  varName: string;
+export type QuantifierFormula = {
+  kind: "forall" | "exists";
+  name: string;
   sort: Sort;
   body: IrFormula;
 };
 
-export type IrFormula =
-  | { kind: "forall"; sort: Sort; predicate: IrFormulaLambda }
-  | { kind: "exists"; sort: Sort; predicate: IrFormulaLambda }
-  | { kind: "and"; conjuncts: IrFormula[] }
-  | { kind: "or"; disjuncts: IrFormula[] }
-  | { kind: "not"; body: IrFormula }
-  | { kind: "implies"; antecedent: IrFormula; consequent: IrFormula }
-  | { kind: "atomic"; predicate: AtomicPredicate; args: IrTerm[] };
+export type ConnectiveFormula = {
+  kind: "and" | "or" | "not" | "implies";
+  operands: IrFormula[];
+};
+
+export type AtomicFormula = {
+  kind: "atomic";
+  name: AtomicPredicate;
+  args: IrTerm[];
+};
+
+export type IrFormula = QuantifierFormula | ConnectiveFormula | AtomicFormula;
 
 // ---------------------------------------------------------------------------
 // Binding scope (for property declarations)

@@ -59,21 +59,23 @@ function buildPreNnfAst(formula: DeBruijnFormula): PreNnfAst {
       return { kind: "or", operands: formula.disjuncts.map(buildPreNnfAst) };
 
     case "not":
-      return { kind: "not", body: buildPreNnfAst(formula.body) };
+      return { kind: "not", operands: [buildPreNnfAst(formula.body)] };
 
     case "implies":
       return {
         kind: "implies",
-        antecedent: buildPreNnfAst(formula.antecedent),
-        consequent: buildPreNnfAst(formula.consequent),
+        operands: [
+          buildPreNnfAst(formula.antecedent),
+          buildPreNnfAst(formula.consequent),
+        ],
       };
 
     case "atomic": {
       // Canonicalize terms first (pass 2/3 on terms).
       const canonArgs: CanonicalTerm[] = formula.args.map(canonicalizeDeBruijnTerm);
       // Canonicalize predicate and possibly reorder args (pass 2).
-      const { predicate, args } = canonicalizePredicate(formula.predicate, canonArgs);
-      return { kind: "atomic", predicate, args };
+      const { name, args } = canonicalizePredicate(formula.predicate, canonArgs);
+      return { kind: "atomic", name, args };
     }
   }
 }

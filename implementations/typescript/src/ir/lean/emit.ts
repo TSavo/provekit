@@ -59,34 +59,34 @@ function emitFormulaIn(formula: IrFormula, ctx: EmitContext): string {
       return emitQuantifier(formula, ctx);
 
     case "and":
-      if (formula.conjuncts.length === 0) return "True";
-      if (formula.conjuncts.length === 1) {
-        return emitFormulaIn(formula.conjuncts[0], ctx);
+      if (formula.operands.length === 0) return "True";
+      if (formula.operands.length === 1) {
+        return emitFormulaIn(formula.operands[0]!, ctx);
       }
       return (
-        "(" + formula.conjuncts.map((c) => emitFormulaIn(c, ctx)).join(" ∧ ") + ")"
+        "(" + formula.operands.map((c) => emitFormulaIn(c, ctx)).join(" ∧ ") + ")"
       );
 
     case "or":
-      if (formula.disjuncts.length === 0) return "False";
-      if (formula.disjuncts.length === 1) {
-        return emitFormulaIn(formula.disjuncts[0], ctx);
+      if (formula.operands.length === 0) return "False";
+      if (formula.operands.length === 1) {
+        return emitFormulaIn(formula.operands[0]!, ctx);
       }
       return (
-        "(" + formula.disjuncts.map((d) => emitFormulaIn(d, ctx)).join(" ∨ ") + ")"
+        "(" + formula.operands.map((d) => emitFormulaIn(d, ctx)).join(" ∨ ") + ")"
       );
 
     case "not":
-      return `(¬ ${emitFormulaIn(formula.body, ctx)})`;
+      return `(¬ ${emitFormulaIn(formula.operands[0]!, ctx)})`;
 
     case "implies":
-      return `(${emitFormulaIn(formula.antecedent, ctx)} → ${emitFormulaIn(
-        formula.consequent,
+      return `(${emitFormulaIn(formula.operands[0]!, ctx)} → ${emitFormulaIn(
+        formula.operands[1]!,
         ctx,
       )})`;
 
     case "atomic":
-      return emitAtomic(formula.predicate, formula.args, ctx);
+      return emitAtomic(formula.name, formula.args, ctx);
   }
 }
 
@@ -94,7 +94,7 @@ function emitQuantifier(
   formula: Extract<IrFormula, { kind: "forall" | "exists" }>,
   ctx: EmitContext,
 ): string {
-  const binder = formula.predicate.varName;
+  const binder = formula.name;
   const emittedName = uniquifyBinder(binder, ctx);
 
   ctx.binders.push(emittedName);
@@ -103,7 +103,7 @@ function emitQuantifier(
     ctx.rename.set(binder, emittedName);
   }
 
-  const body = emitFormulaIn(formula.predicate.body, ctx);
+  const body = emitFormulaIn(formula.body, ctx);
 
   ctx.binders.pop();
   if (emittedName !== binder) {
@@ -130,38 +130,38 @@ function uniquifyBinder(name: string, ctx: EmitContext): string {
   return candidate;
 }
 
-function emitAtomic(predicate: string, args: IrTerm[], ctx: EmitContext): string {
-  if (predicate === "true") {
+function emitAtomic(predicateName: string, args: IrTerm[], ctx: EmitContext): string {
+  if (predicateName === "true") {
     if (args.length === 0) return "True";
-    return emitTerm(args[0], ctx);
+    return emitTerm(args[0]!, ctx);
   }
-  if (predicate === "false") {
+  if (predicateName === "false") {
     if (args.length === 0) return "False";
-    return `(¬ ${emitTerm(args[0], ctx)})`;
+    return `(¬ ${emitTerm(args[0]!, ctx)})`;
   }
 
-  const op = PREDICATE_INFIX[predicate];
+  const op = PREDICATE_INFIX[predicateName];
   if (op !== undefined) {
     if (args.length === 2) {
-      return `(${emitTerm(args[0], ctx)} ${op} ${emitTerm(args[1], ctx)})`;
+      return `(${emitTerm(args[0]!, ctx)} ${op} ${emitTerm(args[1]!, ctx)})`;
     }
     if (args.length === 0) {
       throw new LeanUnsupportedError(
-        `Lean emit: built-in operator "${predicate}" requires arguments`,
+        `Lean emit: built-in operator "${predicateName}" requires arguments`,
       );
     }
     // Unary or n-ary chains have no Lean built-in; emit prefix as a
     // structured fallback. The kit may not declare these — surface a
     // clear error so the operator is treated like a relation lemma.
     const argText = args.map((a) => emitTerm(a, ctx)).join(" ");
-    return `(${predicate} ${argText})`;
+    return `(${predicateName} ${argText})`;
   }
 
   // Uninterpreted predicate. Emit as prefix application; declarations.ts
   // emits the matching `axiom <pred> : ... -> Prop`.
-  if (args.length === 0) return `${predicate}`;
+  if (args.length === 0) return `${predicateName}`;
   const argText = args.map((a) => emitTerm(a, ctx)).join(" ");
-  return `(${predicate} ${argText})`;
+  return `(${predicateName} ${argText})`;
 }
 
 function emitTerm(term: IrTerm, ctx: EmitContext): string {

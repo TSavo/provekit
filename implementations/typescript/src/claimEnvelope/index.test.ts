@@ -25,15 +25,16 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const SCHEMA_CID = VARIANT_SCHEMA_CIDS["legacy-witness"];
+const SCHEMA_CID = VARIANT_SCHEMA_CIDS["z3-unsat"];
 
 function makeLegacyEvidence(): EvidenceVariant {
   return {
-    kind: "legacy-witness",
+    kind: "z3-unsat",
     schema: SCHEMA_CID,
     body: {
-      rawWitness: '{"z3":"sat"}',
-      legacyProducerId: "z3-symbolic@4.13",
+      smtLibInput: "(check-sat)",
+      z3Verdict: "unsat",
+      z3RunMs: 1,
     },
   };
 }
@@ -500,18 +501,6 @@ describe("Evidence variant round-trips", () => {
       },
       verdict: "holds",
     },
-    {
-      label: "legacy-witness",
-      evidence: {
-        kind: "legacy-witness",
-        schema: VARIANT_SCHEMA_CIDS["legacy-witness"],
-        body: {
-          rawWitness: '{"raw":"data"}',
-          legacyProducerId: "old-producer@1.0",
-        },
-      },
-      verdict: "holds",
-    },
   ];
 
   for (const { label, evidence, verdict } of variants) {
@@ -565,7 +554,7 @@ describe("Edge cases", () => {
     const ev1 = makeLegacyEvidence();
     const ev2 = {
       ...ev1,
-      body: { rawWitness: "different", legacyProducerId: "old@1.0" },
+      body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat" as const, z3RunMs: 2 },
     } as EvidenceVariant;
     const c1 = computeEnvelopeCid(makeEnvelope({ evidence: ev1 }));
     const c2 = computeEnvelopeCid(makeEnvelope({ evidence: ev2 }));
