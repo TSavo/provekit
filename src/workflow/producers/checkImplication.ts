@@ -308,7 +308,7 @@ function classifyVerdict(
  * {{TIMEOUT_S}} and {{TIMEOUT_MS}} placeholders. Adding a new solver
  * (Bitwuzla, Boolector, MathSAT, …) is a YAML edit, not a TS edit.
  */
-async function invokeSolver(
+export async function invokeSolver(
   solver: SolverEntry,
   script: string,
 ): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
