@@ -1249,6 +1249,90 @@ ProvekIt is the natural continuation — the final domain where the
 primitive applies, the one where the substrate of trust itself becomes
 content-addressable, skippable, distributable, lazy-evaluable.
 
+## What ProvekIt is — and what it isn't
+
+The framework's whole service is: **it stops at the hash, and it
+produces hashes that other things stop at.**
+
+That sentence is the framework's scope. The hash is the boundary.
+
+**What the framework provides** (the primitive):
+
+- Mint claim envelopes with content-addressed CIDs
+- Sign envelopes with producer keys
+- Verify signatures (cryptographic round-trip)
+- Mint bridge mementos that reference deeper-layer contracts by CID
+- Compose mementos via `inputCids`
+- Adversarial re-verification of the local claim under the consumer's
+  producer pool
+
+That's it. The framework's surface is small by design. A library. A
+CLI. An optional language server. No SaaS, no central registry, no
+"log in to ProvekIt."
+
+**What the framework does NOT provide** (the consumer's responsibility):
+
+- Walking bridges into deeper-layer codebases
+- Installing remote code to verify the deeper layer
+- Re-running verification across implementation boundaries
+- Cross-jurisdiction trust resolution
+- The audit framework that consumes ProvekIt's substrate
+
+When a verifier walks a bridge memento and sees `targetContractCid:
+ce2b2897...`, the verifier is now staring at "a different codebase,
+in a different language, possibly in a different jurisdiction." The
+deeper layer's verification is the deeper layer's job — done by V8's
+maintainers, by ECMA-262's standards body, by Intel's formal
+verification team. ProvekIt doesn't go there. It stops at the
+bridge.
+
+**An auditor or compliance framework can go further.** That's a
+different tool. To walk the bridge, the auditor:
+
+1. Installs the codebase the bridge points at (V8, ECMA-262 reference
+   impl, IEEE 754 test suites, hardware verification artifacts)
+2. Runs the relevant verifiers in their environment
+3. Produces hashes that compose with what they had — extending the
+   walked DAG with new local mementos
+4. Reports
+
+The auditor's tooling is built ON ProvekIt's substrate. ProvekIt
+provides the primitive (hashes that compose); the auditor provides
+the framework of audit (walk depth, installation, deeper verification,
+reporting).
+
+**This is what makes the framework scale.**
+
+If ProvekIt had to walk every bridge to verify, it would have to
+understand every host language's deeper implementation — V8, glibc,
+the Linux kernel, every chip vendor's verification artifacts.
+Impossible at scale. By stopping at the hash, the framework's
+complexity is bounded: it knows about one layer (the consumer's
+local code) plus references to deeper layers (by CID). The deeper
+layers are somebody else's problem.
+
+**The discipline matters.**
+
+The temptation to build "walking utilities" into the framework is
+real. It feels like the natural extension. But it isn't the
+framework's job. Resisting that extension is what keeps ProvekIt
+focused on the primitive — and keeps the substrate small enough to
+adopt at scale.
+
+Specific things ProvekIt explicitly does NOT ship:
+- A `provekit walk <cid>` command that traverses inputCids deeply
+- A "deep verifier" that re-runs deeper-layer producers
+- A "supply-chain auditor" that installs and re-verifies dependencies
+- A "compliance reporter" that walks the DAG and produces audit reports
+
+Each of those is a valid downstream tool. They build on ProvekIt's
+substrate. They are NOT parts of ProvekIt.
+
+**The framework's deliverable is hashes.** Hashes that stop. Hashes
+that compose. Hashes that bridge to other hashes. Everything else
+the substrate enables — auditing, compliance, supply-chain
+verification — is built ON the substrate by other tools.
+
 ## What this is for
 
 A reader who understands this document understands that ProvekIt is:
