@@ -48,16 +48,23 @@ function termKey(t: CanonicalTerm): string {
     case "var":
       return `v${t.index}:${sortKeySort(t.sort)}`;
     case "const":
-      return `c:${sortKeySort(t.sort)}:${JSON.stringify(t.value)}`;
+      return `c:${sortKeySort(t.sort)}:${stringifyConstValue(t.value)}`;
     case "ctor":
       return `k:${t.name}:${t.args.map(termKey).join(",")}`;
   }
+}
+
+function stringifyConstValue(value: unknown): string {
+  if (typeof value === "bigint") return `"bigint:${value.toString()}"`;
+  return JSON.stringify(value);
 }
 
 function sortKeySort(s: CanonicalSort): string {
   switch (s.kind) {
     case "primitive":
       return `P:${s.name}`;
+    case "bitvec":
+      return `BV:${s.width}`;
     case "set":
       return `S:${sortKeySort(s.element)}`;
     case "tuple":

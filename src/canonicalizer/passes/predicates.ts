@@ -154,16 +154,26 @@ export function termSortKey(term: CanonicalTerm): string {
     case "var":
       return `var:${term.index}:${sortKey(term.sort)}`;
     case "const":
-      return `const:${sortKey(term.sort)}:${JSON.stringify(term.value)}`;
+      return `const:${sortKey(term.sort)}:${stringifyConst(term.value)}`;
     case "ctor":
       return `ctor:${term.name}:${term.args.map(termSortKey).join(",")}`;
   }
+}
+
+function stringifyConst(value: unknown): string {
+  // BigInt values appear in BV constants and out-of-safe-range Int
+  // constants; JSON.stringify throws on bigint, so render those as a
+  // disambiguated string. Other types go through JSON.stringify.
+  if (typeof value === "bigint") return `"bigint:${value.toString()}"`;
+  return JSON.stringify(value);
 }
 
 function sortKey(sort: CanonicalSort): string {
   switch (sort.kind) {
     case "primitive":
       return `P:${sort.name}`;
+    case "bitvec":
+      return `BV:${sort.width}`;
     case "set":
       return `S:${sortKey(sort.element)}`;
     case "tuple":

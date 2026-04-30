@@ -30,7 +30,25 @@
  */
 
 // Sorts (from the existing IR library)
-export { Bool, Int, Real, String, Ref, Node, Edge, SetOf, TupleOf, FuncOf } from "../sorts.js";
+export {
+  Bool,
+  Int,
+  Real,
+  String,
+  Ref,
+  Node,
+  Edge,
+  SetOf,
+  TupleOf,
+  FuncOf,
+  BV,
+  BV8,
+  BV16,
+  BV32,
+  BV64,
+  BV128,
+  BV256,
+} from "../sorts.js";
 export type { IrFormula, IrTerm, Sort } from "../formulas.js";
 
 // Property + bridge collection
@@ -84,3 +102,31 @@ export { add, sub, mul, div, neg } from "./primitives.js";
 
 // Atomic predicates
 export { eq, neq, lt, lte, gt, gte, isTrue, isFalse } from "./primitives.js";
+
+// Bitvector primitives (SMT-LIB BV theory)
+export {
+  bv,
+  bvadd,
+  bvsub,
+  bvmul,
+  bvudiv,
+  bvurem,
+  bvshl,
+  bvlshr,
+  bvashr,
+  bvor,
+  bvand,
+  bvxor,
+  bvnot,
+  bvneg,
+  concat,
+  extract,
+  bvult,
+  bvule,
+  bvugt,
+  bvuge,
+  bvslt,
+  bvsle,
+  bvsgt,
+  bvsge,
+} from "./primitives.js";

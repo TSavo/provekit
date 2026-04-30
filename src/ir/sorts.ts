@@ -19,6 +19,29 @@ export const Node: Sort = { kind: "primitive", name: "Node" };
 export const Edge: Sort = { kind: "primitive", name: "Edge" };
 
 // ---------------------------------------------------------------------------
+// Bitvector sorts — SMT-LIB BV theory.
+//
+// `BV(width)` constructs a bitvector sort of the given bit-width. Common
+// widths are exposed as named singletons for ergonomics. Any positive
+// integer width is valid; the SMT-LIB translator renders these as
+// `(_ BitVec N)`.
+// ---------------------------------------------------------------------------
+
+export function BV(width: number): Sort {
+  if (!Number.isInteger(width) || width <= 0) {
+    throw new Error(`BV width must be a positive integer, got ${width}`);
+  }
+  return { kind: "bitvec", width };
+}
+
+export const BV8: Sort = BV(8);
+export const BV16: Sort = BV(16);
+export const BV32: Sort = BV(32);
+export const BV64: Sort = BV(64);
+export const BV128: Sort = BV(128);
+export const BV256: Sort = BV(256);
+
+// ---------------------------------------------------------------------------
 // Constructed sorts
 // ---------------------------------------------------------------------------
 

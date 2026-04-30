@@ -1,31 +1,22 @@
 /**
- * Walks a set of formulas to collect the SMT-LIB declarations the
- * preamble needs:
+ * Walks a set of formulas to collect Lean preamble declarations:
+ *   - `axiom <UserSort> : Type` for every user-defined primitive sort
+ *   - `axiom <ctorName> : Dom1 -> Dom2 -> ... -> Range` for every
+ *     uninterpreted ctor that appears in any term position
+ *   - `axiom <pred> : Arg1 -> Arg2 -> ... -> Prop` for atomic predicates
+ *     that are not Lean built-ins
  *
- *   - `(declare-sort UserSort 0)` for every user-defined primitive sort
- *   - `(declare-fun ctorName (DomSort1 ...) RangeSort)` for every
- *     uninterpreted ctor that appears in any term position.
+ * Built-in sorts (Bool, Int, Real, String) and built-in atomic predicates
+ * (=, !=, <, <=, >, >=) are not declared.
  *
- * Built-in sorts (Bool, Int, Real, String) and built-in atomic
- * predicates are not declared. Atomic predicates that aren't built-in
- * are declared as `(declare-fun pred (Sort1 ...) Bool)`.
- *
- * The translator does NOT invent semantics — it only declares symbols.
- * Axioms about those symbols are the kit's responsibility.
+ * The translator does NOT invent semantics — it only declares opaque
+ * symbols. Axioms about those symbols are the kit's responsibility, the
+ * same discipline the SMT translator follows.
  */
 
 import type { IrFormula, IrTerm, Sort } from "../formulas.js";
 import { collectUserSorts, emitSort } from "./sorts.js";
 
-/**
- * Atomic predicates that map to SMT-LIB built-in operators and need no
- * `(declare-fun ...)` in the preamble. Notably this does NOT include
- * `member` and `subset`: SMT-LIB has no portable base names for them
- * (Z3 spells them `set.member` / `set.subset`; CVC5 differs again), so
- * we treat them as uninterpreted predicates whose semantics come from
- * the kit's axioms — consistent with the translator's "don't invent
- * semantics" discipline.
- */
 const BUILT_IN_PREDICATES = new Set([
   "=",
   "≠",
@@ -35,40 +26,6 @@ const BUILT_IN_PREDICATES = new Set([
   "≥",
   "true",
   "false",
-  // SMT-LIB BV theory comparison predicates — declared by the theory, not
-  // by us. Treat them as built-ins so collectDeclarations skips emitting
-  // a (declare-fun ...) for them.
-  "bvult",
-  "bvule",
-  "bvugt",
-  "bvuge",
-  "bvslt",
-  "bvsle",
-  "bvsgt",
-  "bvsge",
-]);
-
-/**
- * SMT-LIB BV theory term operators (`bvadd`, `bvxor`, `concat`, ...) plus
- * the indexed `extract` operator. These are theory-provided ctors with
- * no `(declare-fun ...)` requirement.
- */
-const BUILT_IN_CTORS = new Set([
-  "bvadd",
-  "bvsub",
-  "bvmul",
-  "bvudiv",
-  "bvurem",
-  "bvshl",
-  "bvlshr",
-  "bvashr",
-  "bvor",
-  "bvand",
-  "bvxor",
-  "bvnot",
-  "bvneg",
-  "concat",
-  "extract",
 ]);
 
 interface CtorSig {
@@ -85,9 +42,9 @@ interface PredSig {
 export interface Declarations {
   /** User-declared primitive sort names (alphabetically stable order). */
   userSorts: string[];
-  /** Uninterpreted ctor signatures keyed by ctor name. */
+  /** Uninterpreted ctor signatures, sorted by name. */
   ctors: CtorSig[];
-  /** Uninterpreted atomic predicates keyed by name. */
+  /** Uninterpreted atomic predicates, sorted by name. */
   predicates: PredSig[];
 }
 
@@ -98,9 +55,9 @@ interface CollectorState {
 }
 
 /**
- * Collect declarations from a list of formulas. Duplicate ctors with
- * the same signature are deduplicated; mismatched signatures throw —
- * the IR shouldn't reuse a ctor name with two arities.
+ * Collect declarations from a list of formulas. Duplicate ctors with the
+ * same arity are deduplicated; mismatched arities throw — the IR shouldn't
+ * reuse a ctor name with two arities.
  */
 export function collectDeclarations(formulas: IrFormula[]): Declarations {
   const state: CollectorState = {
@@ -155,7 +112,6 @@ function walkTerm(term: IrTerm, state: CollectorState): void {
   collectUserSorts(term.sort, state.userSorts);
   if (term.kind === "ctor") {
     for (const a of term.args) walkTerm(a, state);
-    if (BUILT_IN_CTORS.has(term.name)) return;
     recordCtor(
       state,
       term.name,
@@ -178,7 +134,7 @@ function recordCtor(
   }
   if (existing.argSorts.length !== argSorts.length) {
     throw new Error(
-      `SMT emit: ctor "${name}" used with conflicting arities (${existing.argSorts.length} vs ${argSorts.length})`,
+      `Lean emit: ctor "${name}" used with conflicting arities (${existing.argSorts.length} vs ${argSorts.length})`,
     );
   }
 }
@@ -195,26 +151,56 @@ function recordPredicate(
   }
   if (existing.argSorts.length !== argSorts.length) {
     throw new Error(
-      `SMT emit: predicate "${name}" used with conflicting arities (${existing.argSorts.length} vs ${argSorts.length})`,
+      `Lean emit: predicate "${name}" used with conflicting arities (${existing.argSorts.length} vs ${argSorts.length})`,
     );
   }
 }
 
-/** Emit `(declare-sort Name 0)` for each user-defined sort. */
+/**
+ * Emit `axiom <Name> : Type` lines for user-defined sorts.
+ *
+ * Lean note: we use `axiom` rather than `variable` so the declarations are
+ * self-contained at theorem statement scope (variables are section-scoped
+ * and require a containing `section`). A kit that wants to provide
+ * extensional content for these sorts can add axioms in a separate
+ * preamble; the translator does not attempt that.
+ */
 export function emitSortDeclarations(decls: Declarations): string[] {
-  return decls.userSorts.map((name) => `(declare-sort ${name} 0)`);
+  return decls.userSorts.map((name) => `axiom ${name} : Type`);
 }
 
-/** Emit `(declare-fun name (Args ...) Range)` for each ctor. */
+/**
+ * Emit `axiom <name> : Arg1 -> Arg2 -> ... -> Range` lines for ctors and
+ * `axiom <name> : Arg1 -> Arg2 -> ... -> Prop` lines for predicates.
+ *
+ * Lean's curried-arrow notation is the natural shape: `f : Int -> Int`
+ * declares a unary function from Int to Int. Zero-arg ctors collapse to
+ * `axiom name : Range`, the constant form.
+ */
 export function emitFunctionDeclarations(decls: Declarations): string[] {
   const lines: string[] = [];
   for (const c of decls.ctors) {
-    const args = c.argSorts.map(emitSort).join(" ");
-    lines.push(`(declare-fun ${c.name} (${args}) ${emitSort(c.resultSort)})`);
+    const sig = signatureArrow(c.argSorts, c.resultSort);
+    lines.push(`axiom ${c.name} : ${sig}`);
   }
   for (const p of decls.predicates) {
-    const args = p.argSorts.map(emitSort).join(" ");
-    lines.push(`(declare-fun ${p.name} (${args}) Bool)`);
+    const sig = signatureArrow(p.argSorts, { kind: "primitive", name: "Prop" });
+    lines.push(`axiom ${p.name} : ${sig}`);
   }
   return lines;
+}
+
+function signatureArrow(argSorts: Sort[], resultSort: Sort): string {
+  // The result sort is rendered by emitSort except for the synthetic
+  // "Prop" primitive we use as a sentinel for predicate signatures.
+  const resultText =
+    resultSort.kind === "primitive" && resultSort.name === "Prop"
+      ? "Prop"
+      : emitSort(resultSort);
+  if (argSorts.length === 0) {
+    return resultText;
+  }
+  const parts = argSorts.map((s) => emitSort(s));
+  parts.push(resultText);
+  return parts.join(" -> ");
 }

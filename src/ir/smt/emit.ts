@@ -33,6 +33,15 @@ const PREDICATE_OPERATOR: Record<string, string> = {
   "≤": "<=",
   ">": ">",
   "≥": ">=",
+  // SMT-LIB BV theory predicates use their own names.
+  bvult: "bvult",
+  bvule: "bvule",
+  bvugt: "bvugt",
+  bvuge: "bvuge",
+  bvslt: "bvslt",
+  bvsle: "bvsle",
+  bvsgt: "bvsgt",
+  bvsge: "bvsge",
 };
 
 interface EmitContext {
@@ -162,11 +171,29 @@ function emitTerm(term: IrTerm, ctx: EmitContext): string {
     case "const":
       return emitConst(term.value, term.sort);
     case "ctor": {
+      // SMT-LIB indexed operator: extract takes its hi/lo as part of the
+      // operator, not as ordinary arguments. The IR encodes the indices
+      // as Int constants in args[0] and args[1] for self-description.
+      if (term.name === "extract" && term.args.length === 3) {
+        const hi = readBigIntConst(term.args[0], "extract hi");
+        const lo = readBigIntConst(term.args[1], "extract lo");
+        const inner = emitTerm(term.args[2], ctx);
+        return `((_ extract ${hi.toString()} ${lo.toString()}) ${inner})`;
+      }
       if (term.args.length === 0) return term.name;
       const args = term.args.map((a) => emitTerm(a, ctx)).join(" ");
       return `(${term.name} ${args})`;
     }
   }
+}
+
+function readBigIntConst(t: IrTerm, label: string): bigint {
+  if (t.kind !== "const") {
+    throw new Error(`SMT emit: ${label} must be a constant term, got kind "${t.kind}"`);
+  }
+  if (typeof t.value === "bigint") return t.value;
+  if (typeof t.value === "number" && Number.isInteger(t.value)) return BigInt(t.value);
+  throw new Error(`SMT emit: ${label} must be an integer constant`);
 }
 
 /** Render a literal value in SMT-LIB syntax for its declared sort. */
@@ -177,6 +204,22 @@ function emitConst(value: unknown, sort: Sort): string {
         sort.kind === "primitive" ? sort.name : sort.kind
       }). The kit must model nullability as an explicit ctor.`,
     );
+  }
+  // BV literals: render as the SMT-LIB indexed numeral `(_ bv N W)`.
+  // The sort carries the width; the value is the unsigned bit pattern.
+  if (sort.kind === "bitvec") {
+    let big: bigint;
+    if (typeof value === "bigint") big = value;
+    else if (typeof value === "number" && Number.isInteger(value)) big = BigInt(value);
+    else {
+      throw new Error(
+        `SMT emit: BV constant must be an integer (got ${typeof value})`,
+      );
+    }
+    const modulus = 1n << BigInt(sort.width);
+    let normalized = big % modulus;
+    if (normalized < 0n) normalized += modulus;
+    return `(_ bv${normalized.toString()} ${sort.width})`;
   }
   if (typeof value === "boolean") {
     return value ? "true" : "false";
