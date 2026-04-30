@@ -149,8 +149,8 @@ func TestAtomicPredicateNames(t *testing.T) {
 			t.Errorf("want atomicFormula for %s, got %T", c.want, c.formula)
 			continue
 		}
-		if af.Predicate != c.want {
-			t.Errorf("predicate: want %s, got %s", c.want, af.Predicate)
+		if af.Name != c.want {
+			t.Errorf("name: want %s, got %s", c.want, af.Name)
 		}
 	}
 }
@@ -175,7 +175,8 @@ func TestAddJSONShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"ctor","name":"+","args":[{"kind":"const","value":2,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":3,"sort":{"kind":"primitive","name":"Int"}}],"sort":{"kind":"primitive","name":"Int"}}`
+	// v1.1.0: ctor drops `sort` from JSON.
+	want := `{"kind":"ctor","name":"+","args":[{"kind":"const","value":2,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":3,"sort":{"kind":"primitive","name":"Int"}}]}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestPropertyCollectsDeclaration(t *testing.T) {
+func TestContractCollectsDeclaration(t *testing.T) {
 	ResetCollector()
 	finish := BeginCollecting()
 	Property("zeroIsZero", Eq(ParseInt(StrConst("0")), Num(0)))
@@ -14,12 +14,65 @@ func TestPropertyCollectsDeclaration(t *testing.T) {
 	if len(decls) != 1 {
 		t.Fatalf("want 1 decl, got %d", len(decls))
 	}
-	pd, ok := decls[0].(PropertyDeclaration)
+	cd, ok := decls[0].(ContractDeclaration)
 	if !ok {
-		t.Fatalf("want PropertyDeclaration, got %T", decls[0])
+		t.Fatalf("want ContractDeclaration, got %T", decls[0])
 	}
-	if pd.Name != "zeroIsZero" {
-		t.Errorf("name: want zeroIsZero, got %s", pd.Name)
+	if cd.Name != "zeroIsZero" {
+		t.Errorf("name: want zeroIsZero, got %s", cd.Name)
+	}
+	if cd.OutBinding != "out" {
+		t.Errorf("outBinding: want out, got %s", cd.OutBinding)
+	}
+	if cd.Pre == nil {
+		t.Errorf("Pre should be set by Property()")
+	}
+}
+
+func TestContractWithPostAndInv(t *testing.T) {
+	ResetCollector()
+	finish := BeginCollecting()
+	pre := Eq(Num(1), Num(1))
+	post := Eq(Num(2), Num(2))
+	inv := Eq(Num(3), Num(3))
+	Contract("threeSlots", ContractArgs{Pre: pre, Post: post, Inv: inv})
+	decls := finish()
+
+	cd := decls[0].(ContractDeclaration)
+	if cd.Pre == nil || cd.Post == nil || cd.Inv == nil {
+		t.Errorf("all three slots should be set")
+	}
+}
+
+func TestContractRequiresAtLeastOneSlot(t *testing.T) {
+	ResetCollector()
+	BeginCollecting()
+	defer ResetCollector()
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("want panic when all slots nil, got none")
+		}
+		msg, _ := r.(string)
+		if !strings.Contains(msg, "at least one of Pre / Post / Inv") {
+			t.Errorf("panic message: %v", r)
+		}
+	}()
+	Contract("emptySlots", ContractArgs{})
+}
+
+func TestMustIsPreconditionAlias(t *testing.T) {
+	ResetCollector()
+	finish := BeginCollecting()
+	Must("aliasOfPre", Eq(Num(0), Num(0)))
+	decls := finish()
+
+	cd := decls[0].(ContractDeclaration)
+	if cd.Pre == nil {
+		t.Errorf("Must should set Pre")
+	}
+	if cd.Post != nil || cd.Inv != nil {
+		t.Errorf("Must should not set Post/Inv")
 	}
 }
 
@@ -66,7 +119,7 @@ func TestMultipleDeclsCollectInOrder(t *testing.T) {
 	if len(decls) != 3 {
 		t.Fatalf("want 3 decls, got %d", len(decls))
 	}
-	wantKinds := []string{"property", "bridge", "property"}
+	wantKinds := []string{"contract", "bridge", "contract"}
 	wantNames := []string{"p1", "b1", "p2"}
 	for i, d := range decls {
 		if d.Kind() != wantKinds[i] {
@@ -108,7 +161,7 @@ func TestNestedBeginCollectingPanics(t *testing.T) {
 	BeginCollecting()
 }
 
-func TestForAllWrapsBody(t *testing.T) {
+func TestForAllReturnsFlatQuantifier(t *testing.T) {
 	ResetCollector()
 	BeginCollecting()
 	defer ResetCollector()
@@ -116,19 +169,22 @@ func TestForAllWrapsBody(t *testing.T) {
 	f := ForAll(Int, func(x IrTerm) IrFormula {
 		return Gt(x, Num(0))
 	})
-	fa, ok := f.(forAllFormula)
+	q, ok := f.(quantFormula)
 	if !ok {
-		t.Fatalf("want forAllFormula, got %T", f)
+		t.Fatalf("want quantFormula, got %T", f)
 	}
-	if fa.Sort != Int {
+	if q.Kind != "forall" {
+		t.Errorf("kind: want forall, got %s", q.Kind)
+	}
+	if q.Sort != Int {
 		t.Errorf("sort: want Int")
 	}
-	if _, ok := fa.Predicate.Body.(atomicFormula); !ok {
-		t.Errorf("predicate body: want atomicFormula, got %T", fa.Predicate.Body)
+	if _, ok := q.Body.(atomicFormula); !ok {
+		t.Errorf("body: want atomicFormula, got %T", q.Body)
 	}
 }
 
-func TestExistsWrapsBody(t *testing.T) {
+func TestExistsReturnsFlatQuantifier(t *testing.T) {
 	ResetCollector()
 	BeginCollecting()
 	defer ResetCollector()
@@ -136,8 +192,12 @@ func TestExistsWrapsBody(t *testing.T) {
 	f := Exists(String, func(s IrTerm) IrFormula {
 		return Eq(ParseInt(s), Num(0))
 	})
-	if _, ok := f.(existsFormula); !ok {
-		t.Fatalf("want existsFormula, got %T", f)
+	q, ok := f.(quantFormula)
+	if !ok {
+		t.Fatalf("want quantFormula, got %T", f)
+	}
+	if q.Kind != "exists" {
+		t.Errorf("kind: want exists, got %s", q.Kind)
 	}
 }
 
@@ -262,13 +322,13 @@ func TestQuantifierCounterResetsBetweenCollections(t *testing.T) {
 	f2 := ForAll(Int, func(x IrTerm) IrFormula { return Eq(x, Num(0)) })
 	defer finish2()
 
-	fa1 := f1.(forAllFormula)
-	fa2 := f2.(forAllFormula)
+	q1 := f1.(quantFormula)
+	q2 := f2.(quantFormula)
 
-	if fa1.Predicate.VarName != "_x0" {
-		t.Errorf("first run varName: want _x0, got %s", fa1.Predicate.VarName)
+	if q1.Name != "_x0" {
+		t.Errorf("first run name: want _x0, got %s", q1.Name)
 	}
-	if fa2.Predicate.VarName != "_x0" {
-		t.Errorf("second run varName: want _x0 (counter reset), got %s", fa2.Predicate.VarName)
+	if q2.Name != "_x0" {
+		t.Errorf("second run name: want _x0 (counter reset), got %s", q2.Name)
 	}
 }

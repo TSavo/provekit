@@ -1,37 +1,44 @@
 // Package claim_envelope mints signed ClaimEnvelopes — the protocol's
-// content-addressed memento wrappers. Property + bridge variants live
-// in their own files; this file holds the canonical-input + signing
-// machinery shared by both.
+// content-addressed memento wrappers. Contract / bridge / implication
+// variants live in their own files; this file holds the canonical-input
+// + signing machinery shared by all three.
 //
 // Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
 //       §"CID construction" — cid = sha256(canonical(envelope minus
 //       cid + producerSignature))[:32 hex chars].
 //       §"Producer-signature scheme (v1)" — ed25519 sign over the
 //       same canonical bytes.
+//
+// v1.1.0 cut: contract memento replaces property memento; bindingHash
+// and propertyHash are DERIVED inside the minters (not caller-supplied).
 package claim_envelope
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"sort"
 
 	"github.com/provekit/ir-symbolic/canonicalizer"
 )
 
-// Schema CIDs. Stable values producers must use; mirrors the TS
-// VARIANT_SCHEMA_CIDS table.
+// Schema CIDs. Stable values producers must use; mirrors the C++
+// reference and the (eventual) TS port. The protocol cut renamed
+// "property" → "contract" and added "implication".
 const (
-	SchemaCIDProperty = "0000000000000000d0000000000000d0"
-	SchemaCIDBridge   = "0000000000000000c0000000000000c0"
+	SchemaCIDContract    = "0000000000000000d0000000000000d0"
+	SchemaCIDBridge      = "0000000000000000c0000000000000c0"
+	SchemaCIDImplication = "0000000000000000e0000000000000e0"
 )
 
 // Verdict values defined by the protocol.
 const (
-	VerdictHolds     = "holds"
-	VerdictViolated  = "violated"
-	VerdictDecayed   = "decayed"
-	VerdictUndec     = "undecidable"
-	VerdictError     = "error"
+	VerdictHolds    = "holds"
+	VerdictViolated = "violated"
+	VerdictDecayed  = "decayed"
+	VerdictUndec    = "undecidable"
+	VerdictError    = "error"
 )
 
 // Minted is the output of any mint operation: signed envelope bytes
@@ -90,7 +97,7 @@ func envelopeForHashing(
 }
 
 // finalize is the shared canonicalize → sign → re-canonicalize pipeline.
-// Both MintProperty and MintBridge funnel through here.
+// All three Mint* funnels go through here.
 func (m *Minter) finalize(unsigned map[string]interface{}) (*Minted, error) {
 	canonical, err := m.encoder.Encode(unsigned)
 	if err != nil {
@@ -112,4 +119,26 @@ func (m *Minter) finalize(unsigned map[string]interface{}) (*Minted, error) {
 		return nil, err
 	}
 	return &Minted{CanonicalBytes: finalBytes, CID: cid}, nil
+}
+
+// hash16Value returns hash16(JCS(v)) — the protocol's standard
+// content-address prefix used for preHash/postHash/invHash, propertyHash,
+// bindingHash. v MUST be a JSON-shape value (string, number, bool, nil,
+// []interface{}, map[string]interface{}); the JCS encoder will reject
+// other types.
+func hash16Value(v interface{}) (string, error) {
+	bytes, err := canonicalizer.NewEncoder().Encode(v)
+	if err != nil {
+		return "", err
+	}
+	return canonicalizer.NewHasher().PropertyHash16(bytes), nil
+}
+
+// hash16RawString returns hash16(s) — sha256(raw bytes of s)[:16 hex],
+// NO JCS canonicalization. Used for derived hashes whose pre-image is
+// a literal string composed of other hashes (e.g. bridge propertyHash
+// = hash16("bridge:" || sourceSymbol)).
+func hash16RawString(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])[:16]
 }

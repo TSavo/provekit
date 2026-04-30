@@ -7,10 +7,16 @@ import (
 )
 
 // SMTEmitter translates an IR formula (JSON-shape value tree) to
-// SMT-LIB v2.6 for the solver dispatcher. v1 subset: atomic predicates
-// over Int (=, ≠, <, ≤, >, ≥), plus recursive descent through
-// and/or/not/implies/forall/exists. Sufficient for the parseInt
-// precondition demo.
+// SMT-LIB v2.6 for the solver dispatcher.
+//
+// v1.1.0 IR shape consumed:
+//
+//	atomic     {kind:"atomic", name, args}
+//	connective {kind:"and"|"or"|"not"|"implies", operands}
+//	quantifier {kind:"forall"|"exists", name, sort, body}
+//	var        {kind:"var", name}                 -- no sort
+//	const      {kind:"const", value, sort}
+//	ctor       {kind:"ctor", name, args}          -- no sort
 type SMTEmitter struct{}
 
 // NewSMTEmitter returns a fresh emitter.
@@ -19,8 +25,8 @@ func NewSMTEmitter() *SMTEmitter { return &SMTEmitter{} }
 // EmitProbe builds a complete SMT-LIB script that asks "is (not OBLIGATION) SAT?"
 // — the protocol's solver-discharge probe.
 //
-//   unsat → obligation holds in all models → DISCHARGED
-//   sat   → counter-example exists         → UNSATISFIED
+//	unsat → obligation holds in all models → DISCHARGED
+//	sat   → counter-example exists         → UNSATISFIED
 func (e *SMTEmitter) EmitProbe(obligation interface{}) (string, error) {
 	o, ok := obligation.(map[string]interface{})
 	if !ok {
@@ -30,7 +36,10 @@ func (e *SMTEmitter) EmitProbe(obligation interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Collect free variable declarations from the formula.
+	// Collect free variable declarations from the formula. Var terms no
+	// longer carry a sort field under v1.1.0, so default to Int (the only
+	// quantifier sort the parseInt demo uses). Future commits may infer
+	// from enclosing-quantifier sort context.
 	freeVars := map[string]string{}
 	collectFreeVars(o, freeVars, map[string]bool{})
 
@@ -52,9 +61,10 @@ func (e *SMTEmitter) EmitProbe(obligation interface{}) (string, error) {
 func (e *SMTEmitter) emitFormula(f map[string]interface{}) (string, error) {
 	switch f["kind"] {
 	case "atomic":
-		predicate, _ := f["predicate"].(string)
+		// v1.1.0: atomic uses `name` (was `predicate`).
+		name, _ := f["name"].(string)
+		smtPred := smtPredicate(name)
 		args, _ := f["args"].([]interface{})
-		smtPred := smtPredicate(predicate)
 		argStrs := make([]string, len(args))
 		for i, a := range args {
 			am, ok := a.(map[string]interface{})
@@ -68,38 +78,41 @@ func (e *SMTEmitter) emitFormula(f map[string]interface{}) (string, error) {
 			argStrs[i] = s
 		}
 		return fmt.Sprintf("(%s %s)", smtPred, strings.Join(argStrs, " ")), nil
-	case "and":
-		conjuncts, _ := f["conjuncts"].([]interface{})
-		return e.emitConnective("and", conjuncts)
-	case "or":
-		disjuncts, _ := f["disjuncts"].([]interface{})
-		return e.emitConnective("or", disjuncts)
+	case "and", "or":
+		operands, _ := f["operands"].([]interface{})
+		return e.emitConnective(f["kind"].(string), operands)
 	case "not":
-		body, _ := f["body"].(map[string]interface{})
-		s, err := e.emitFormula(body)
+		operands, _ := f["operands"].([]interface{})
+		if len(operands) != 1 {
+			return "", fmt.Errorf("not: expected 1 operand, got %d", len(operands))
+		}
+		om, _ := operands[0].(map[string]interface{})
+		s, err := e.emitFormula(om)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("(not %s)", s), nil
 	case "implies":
-		a, _ := f["antecedent"].(map[string]interface{})
-		c, _ := f["consequent"].(map[string]interface{})
-		as, err := e.emitFormula(a)
+		operands, _ := f["operands"].([]interface{})
+		if len(operands) != 2 {
+			return "", fmt.Errorf("implies: expected 2 operands, got %d", len(operands))
+		}
+		am, _ := operands[0].(map[string]interface{})
+		cm, _ := operands[1].(map[string]interface{})
+		as, err := e.emitFormula(am)
 		if err != nil {
 			return "", err
 		}
-		cs, err := e.emitFormula(c)
+		cs, err := e.emitFormula(cm)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("(=> %s %s)", as, cs), nil
 	case "forall", "exists":
-		// v1: forall/exists in the obligation should have been instantiated
-		// already; if a quantifier remains, emit it directly.
-		pred, _ := f["predicate"].(map[string]interface{})
-		varName, _ := pred["varName"].(string)
-		sortV, _ := pred["sort"].(map[string]interface{})
-		body, _ := pred["body"].(map[string]interface{})
+		// Flat shape: {kind, name, sort, body} — no Lambda wrapper.
+		varName, _ := f["name"].(string)
+		sortV, _ := f["sort"].(map[string]interface{})
+		body, _ := f["body"].(map[string]interface{})
 		bodyS, err := e.emitFormula(body)
 		if err != nil {
 			return "", err
@@ -110,11 +123,11 @@ func (e *SMTEmitter) emitFormula(f map[string]interface{}) (string, error) {
 	return "", fmt.Errorf("emitFormula: unknown kind %v", f["kind"])
 }
 
-func (e *SMTEmitter) emitConnective(op string, terms []interface{}) (string, error) {
-	parts := make([]string, len(terms))
-	for i, t := range terms {
-		tm, _ := t.(map[string]interface{})
-		s, err := e.emitFormula(tm)
+func (e *SMTEmitter) emitConnective(op string, operands []interface{}) (string, error) {
+	parts := make([]string, len(operands))
+	for i, op := range operands {
+		om, _ := op.(map[string]interface{})
+		s, err := e.emitFormula(om)
 		if err != nil {
 			return "", err
 		}
@@ -171,8 +184,7 @@ func (e *SMTEmitter) emitTerm(t map[string]interface{}) (string, error) {
 	return "", fmt.Errorf("emitTerm: unknown kind %v", t["kind"])
 }
 
-// smtPredicate maps the protocol's predicate name to its SMT-LIB
-// equivalent.
+// smtPredicate maps the protocol's atomic name to its SMT-LIB form.
 func smtPredicate(p string) string {
 	switch p {
 	case "≠":
@@ -182,7 +194,7 @@ func smtPredicate(p string) string {
 	case "≥":
 		return ">="
 	default:
-		return p  // =, <, >, kit-defined predicates passthrough
+		return p // =, <, >, kit-defined names passthrough
 	}
 }
 
@@ -205,8 +217,9 @@ func smtSort(s map[string]interface{}) string {
 	return "Int"
 }
 
-// collectFreeVars walks a formula, recording each `var` term's name + sort.
-// `bound` tracks names introduced by enclosing quantifiers.
+// collectFreeVars walks a formula, recording each `var` term's name.
+// Var terms no longer carry sort under v1.1.0, so we default to Int
+// (the only quantifier sort the parseInt PoC needs).
 func collectFreeVars(f map[string]interface{}, out map[string]string, bound map[string]bool) {
 	switch f["kind"] {
 	case "atomic":
@@ -216,38 +229,21 @@ func collectFreeVars(f map[string]interface{}, out map[string]string, bound map[
 				collectFreeVarsTerm(am, out, bound)
 			}
 		}
-	case "and":
-		for _, c := range arrOf(f, "conjuncts") {
-			if cm, ok := c.(map[string]interface{}); ok {
-				collectFreeVars(cm, out, bound)
+	case "and", "or", "not", "implies":
+		operands, _ := f["operands"].([]interface{})
+		for _, op := range operands {
+			if om, ok := op.(map[string]interface{}); ok {
+				collectFreeVars(om, out, bound)
 			}
-		}
-	case "or":
-		for _, d := range arrOf(f, "disjuncts") {
-			if dm, ok := d.(map[string]interface{}); ok {
-				collectFreeVars(dm, out, bound)
-			}
-		}
-	case "not":
-		if body, ok := f["body"].(map[string]interface{}); ok {
-			collectFreeVars(body, out, bound)
-		}
-	case "implies":
-		if a, ok := f["antecedent"].(map[string]interface{}); ok {
-			collectFreeVars(a, out, bound)
-		}
-		if c, ok := f["consequent"].(map[string]interface{}); ok {
-			collectFreeVars(c, out, bound)
 		}
 	case "forall", "exists":
-		pred, _ := f["predicate"].(map[string]interface{})
-		varName, _ := pred["varName"].(string)
 		newBound := map[string]bool{}
 		for k, v := range bound {
 			newBound[k] = v
 		}
+		varName, _ := f["name"].(string)
 		newBound[varName] = true
-		if body, ok := pred["body"].(map[string]interface{}); ok {
+		if body, ok := f["body"].(map[string]interface{}); ok {
 			collectFreeVars(body, out, newBound)
 		}
 	}
@@ -257,8 +253,7 @@ func collectFreeVarsTerm(t map[string]interface{}, out map[string]string, bound 
 	if t["kind"] == "var" {
 		name, _ := t["name"].(string)
 		if !bound[name] {
-			sortV, _ := t["sort"].(map[string]interface{})
-			out[name] = smtSort(sortV)
+			out[name] = "Int"
 		}
 	}
 	if t["kind"] == "ctor" {
@@ -269,9 +264,4 @@ func collectFreeVarsTerm(t map[string]interface{}, out map[string]string, bound 
 			}
 		}
 	}
-}
-
-func arrOf(m map[string]interface{}, key string) []interface{} {
-	a, _ := m[key].([]interface{})
-	return a
 }

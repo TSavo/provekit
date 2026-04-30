@@ -1,7 +1,11 @@
 // go-kit-publish authors the parseInt precondition in pure Go and
-// publishes it as a .proof file that any conformant verifier can
-// consume. The reverse of the C++ kit: Go is the author, every other
-// language is a downstream consumer.
+// publishes it as a v1.1.0 .proof file that any conformant verifier
+// can consume. The reverse of the C++ kit: Go is the author, every
+// other language is a downstream consumer.
+//
+// Output: a .proof bundle containing one contract memento (parseInt's
+// pre formula `forall n: Int. n > 0`) plus one bridge memento
+// (TS-layer parseInt → that contract).
 //
 // Usage: go run ./cmd/go-kit-publish <out-dir>
 package main
@@ -12,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/provekit/ir-symbolic/canonicalizer"
 	"github.com/provekit/ir-symbolic/claim_envelope"
 	"github.com/provekit/ir-symbolic/ir"
 	"github.com/provekit/ir-symbolic/proof_envelope"
@@ -33,7 +36,7 @@ func main() {
 	ir.ResetCollector()
 	finishCollect := ir.BeginCollecting()
 
-	ir.Must("parseInt-requires-positive",
+	ir.Must("parseInt",
 		ir.ForAll(ir.Int, func(n ir.IrTerm) ir.IrFormula {
 			return ir.Gt(n, ir.Num(0))
 		}))
@@ -44,47 +47,46 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ---- Mint property + bridge in pure Go ----
+	// ---- Mint contract + bridge in pure Go (v1.1.0) ----
 	var seed [32]byte
 	copy(seed[:], []byte("go-kit-author-seed-32-bytes-pad!"))
 	signer := ed25519.NewKeyFromSeed(seed[:])
 	minter := claim_envelope.NewMinter(signer)
 
 	declaredAt := "2026-04-30T14:00:00.000Z"
-	prop := decls[0].(ir.PropertyDeclaration)
+	producedBy := "go-kit@1.0"
 
-	formulaValue, err := claim_envelope.FormulaToValue(prop.Formula)
+	contract := decls[0].(ir.ContractDeclaration)
+
+	preValue, err := claim_envelope.FormulaToValue(contract.Pre)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FormulaToValue: %v\n", err)
 		os.Exit(1)
 	}
 
-	mintedProperty, err := minter.MintProperty(claim_envelope.PropertyMintArgs{
-		BindingHash:  hash16("go-kit-property:" + prop.Name),
-		PropertyHash: hash16("hash-of:" + prop.Name),
-		ProducedBy:   "go-kit@1.0",
-		ProducedAt:   declaredAt,
-		IRFormula:    formulaValue,
-		Scope: map[string]interface{}{
-			"kind": "function",
-			"name": prop.Name,
+	mintedContract, err := minter.MintContract(claim_envelope.ContractMintArgs{
+		ContractName:  contract.Name,
+		Pre:           preValue,
+		OutBinding:    contract.OutBinding,
+		ProducedBy:    producedBy,
+		ProducedAt:    declaredAt,
+		AuthoringKind: claim_envelope.AuthoringKitAuthor,
+		AuthoringKitAuthor: claim_envelope.AuthoringKitAuthorArgs{
+			Author: producedBy,
 		},
-		IRKitVersion: "go-kit@1.0",
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "MintProperty: %v\n", err)
+		fmt.Fprintf(os.Stderr, "MintContract: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("  property minted: %s -> CID %s\n", prop.Name, mintedProperty.CID)
+	fmt.Printf("  contract minted: %s -> CID %s\n", contract.Name, mintedContract.CID)
 
 	mintedBridge, err := minter.MintBridge(claim_envelope.BridgeMintArgs{
-		BindingHash:       hash16("ts:parseInt"),
-		PropertyHash:      hash16("bridge:parseInt"),
-		ProducedBy:        "go-kit@1.0",
+		ProducedBy:        producedBy,
 		ProducedAt:        declaredAt,
 		SourceSymbol:      "parseInt",
 		SourceLayer:       "ts",
-		TargetContractCID: mintedProperty.CID,
+		TargetContractCID: mintedContract.CID,
 		TargetLayer:       "go-kit",
 		IRArgSorts:        []interface{}{"String"},
 		IRReturnSort:      "Int",
@@ -103,7 +105,7 @@ func main() {
 		Name:    "@example/go-kit",
 		Version: "1.0.0",
 		Members: map[string][]byte{
-			mintedProperty.CID: mintedProperty.CanonicalBytes,
+			mintedContract.CID: mintedContract.CanonicalBytes,
 			mintedBridge.CID:   mintedBridge.CanonicalBytes,
 		},
 		SignerCID:  "sha256:go-kit-signer",
@@ -122,9 +124,4 @@ func main() {
 	}
 	fmt.Printf("\n  wrote .proof: %s (%d bytes, cid=%s)\n",
 		outPath, len(out.Bytes), out.FilenameCID)
-}
-
-func hash16(s string) string {
-	bytes, _ := canonicalizer.NewEncoder().Encode(s)
-	return canonicalizer.SHA256Hex(bytes)[:16]
 }

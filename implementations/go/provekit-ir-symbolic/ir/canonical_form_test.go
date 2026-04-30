@@ -5,33 +5,28 @@ import (
 	"testing"
 )
 
-// Fixtures generated from the TS kit's `@provekit/ir/symbolic` module.
-// Reproduce locally:
+// Golden v1.1.0 IR-JSON byte sequences for the Go kit. These are the
+// canonical wire forms after the maximal-uniformity cut:
 //
-//	npx tsx <<'EOF'
-//	import { property, beginCollecting, _resetCollector,
-//	  forAll, exists, parseInt, eq, num, str, Int, String as StringSort
-//	} from "/path/to/src/ir/symbolic/index.js";
+//   - top-level decl is `kind:"contract"` (was `"property"`)
+//   - contract has `outBinding` always; `pre/post/inv` optional, omitted when nil
+//   - quantifier is FLAT: {kind, name, sort, body} — no Lambda wrapper
+//   - var/ctor drop their `sort` field from JSON; const keeps it
+//   - atomic uses `name` (was `predicate`)
+//   - and/or/not/implies all use `operands` (no conjuncts/disjuncts/body/antecedent)
 //
-//	_resetCollector();
-//	const f = beginCollecting();
-//	property("zeroIsZero", eq(parseInt(str("0")), num(0)));
-//	console.log(JSON.stringify(f()));
-//	EOF
-//
-// Cross-language equivalence contract: the Go kit's IR data structure
-// MUST serialize to byte-identical JSON for the same logical claim.
-// JSON parity is a sanity proxy that the AST canonicalizer's input
-// matches across kits — the load-bearing hash is CBOR over the
-// canonical FOL form (see docs/specs/2026-04-29-ast-canonicalizer.md).
+// Locked key orders track the IR formal grammar
+// (protocol/specs/2026-04-30-ir-formal-grammar.md). Sister kits (C++
+// reference, future TS port) must hash to the same JCS bytes for the
+// same logical claim.
 
-const tsFixtureSimpleEq = `[{"kind":"property","name":"zeroIsZero","formula":{"kind":"atomic","predicate":"=","args":[{"kind":"ctor","name":"parseInt","args":[{"kind":"const","value":"0","sort":{"kind":"primitive","name":"String"}}],"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}]`
+const goldenSimpleEq = `[{"kind":"contract","name":"zeroIsZero","outBinding":"out","pre":{"kind":"atomic","name":"=","args":[{"kind":"ctor","name":"parseInt","args":[{"kind":"const","value":"0","sort":{"kind":"primitive","name":"String"}}]},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}]`
 
-const tsFixtureForAllEq = `[{"kind":"property","name":"denominator-nonzero","formula":{"kind":"forall","sort":{"kind":"primitive","name":"Int"},"predicate":{"kind":"lambda","varName":"_x0","sort":{"kind":"primitive","name":"Int"},"body":{"kind":"atomic","predicate":"=","args":[{"kind":"var","name":"_x0","sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}}}]`
+const goldenForAllEq = `[{"kind":"contract","name":"denominator-nonzero","outBinding":"out","pre":{"kind":"forall","name":"_x0","sort":{"kind":"primitive","name":"Int"},"body":{"kind":"atomic","name":"=","args":[{"kind":"var","name":"_x0"},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}}]`
 
-const tsFixtureExistsParseInt = `[{"kind":"property","name":"can-be-zero","formula":{"kind":"exists","sort":{"kind":"primitive","name":"String"},"predicate":{"kind":"lambda","varName":"_x0","sort":{"kind":"primitive","name":"String"},"body":{"kind":"atomic","predicate":"=","args":[{"kind":"ctor","name":"parseInt","args":[{"kind":"var","name":"_x0","sort":{"kind":"primitive","name":"String"}}],"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}}}]`
+const goldenExistsParseInt = `[{"kind":"contract","name":"can-be-zero","outBinding":"out","pre":{"kind":"exists","name":"_x0","sort":{"kind":"primitive","name":"String"},"body":{"kind":"atomic","name":"=","args":[{"kind":"ctor","name":"parseInt","args":[{"kind":"var","name":"_x0"}]},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}}]`
 
-func TestCanonicalFormSimpleEqMatchesTS(t *testing.T) {
+func TestCanonicalFormSimpleEq(t *testing.T) {
 	ResetCollector()
 	finish := BeginCollecting()
 	Property("zeroIsZero", Eq(ParseInt(StrConst("0")), Num(0)))
@@ -41,12 +36,12 @@ func TestCanonicalFormSimpleEqMatchesTS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	if string(got) != tsFixtureSimpleEq {
-		t.Errorf("byte-equivalence with TS kit failed:\n  got:  %s\n  want: %s", got, tsFixtureSimpleEq)
+	if string(got) != goldenSimpleEq {
+		t.Errorf("v1.1.0 IR-JSON shape mismatch:\n  got:  %s\n  want: %s", got, goldenSimpleEq)
 	}
 }
 
-func TestCanonicalFormForAllMatchesTS(t *testing.T) {
+func TestCanonicalFormForAllEq(t *testing.T) {
 	ResetCollector()
 	finish := BeginCollecting()
 	Property("denominator-nonzero", ForAll(Int, func(b IrTerm) IrFormula {
@@ -58,12 +53,12 @@ func TestCanonicalFormForAllMatchesTS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	if string(got) != tsFixtureForAllEq {
-		t.Errorf("byte-equivalence with TS kit failed:\n  got:  %s\n  want: %s", got, tsFixtureForAllEq)
+	if string(got) != goldenForAllEq {
+		t.Errorf("v1.1.0 IR-JSON shape mismatch:\n  got:  %s\n  want: %s", got, goldenForAllEq)
 	}
 }
 
-func TestCanonicalFormExistsParseIntMatchesTS(t *testing.T) {
+func TestCanonicalFormExistsParseInt(t *testing.T) {
 	ResetCollector()
 	finish := BeginCollecting()
 	Property("can-be-zero", Exists(String, func(s IrTerm) IrFormula {
@@ -75,13 +70,12 @@ func TestCanonicalFormExistsParseIntMatchesTS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	if string(got) != tsFixtureExistsParseInt {
-		t.Errorf("byte-equivalence with TS kit failed:\n  got:  %s\n  want: %s", got, tsFixtureExistsParseInt)
+	if string(got) != goldenExistsParseInt {
+		t.Errorf("v1.1.0 IR-JSON shape mismatch:\n  got:  %s\n  want: %s", got, goldenExistsParseInt)
 	}
 }
 
 func TestCanonicalFormDeterministic(t *testing.T) {
-	// Same logical claim built twice must produce byte-identical JSON.
 	build := func() []byte {
 		ResetCollector()
 		finish := BeginCollecting()
@@ -110,7 +104,7 @@ func TestMarshalDeclarationsHelper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalDeclarations error: %v", err)
 	}
-	if string(got) != tsFixtureSimpleEq {
-		t.Errorf("MarshalDeclarations parity:\n  got:  %s\n  want: %s", got, tsFixtureSimpleEq)
+	if string(got) != goldenSimpleEq {
+		t.Errorf("MarshalDeclarations shape:\n  got:  %s\n  want: %s", got, goldenSimpleEq)
 	}
 }

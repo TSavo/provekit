@@ -1,5 +1,7 @@
 package claim_envelope
 
+import "fmt"
+
 // BridgeMintArgs is the input to (*Minter).MintBridge.
 //
 // IRArgSorts: each element is a SortRef — either a primitive sort
@@ -9,9 +11,10 @@ package claim_envelope
 // IRReturnSort: same shape as a SortRef.
 //
 // Notes: optional. Empty string → field omitted from the body.
+//
+// bindingHash and propertyHash are DERIVED per the v1.1.0 spec; callers
+// MUST NOT supply them.
 type BridgeMintArgs struct {
-	BindingHash       string
-	PropertyHash      string
 	ProducedBy        string
 	ProducedAt        string
 	SourceSymbol      string
@@ -23,13 +26,28 @@ type BridgeMintArgs struct {
 	Notes             string
 }
 
-// MintBridge builds + signs a bridge ClaimEnvelope.
+// MintBridge builds + signs a v1.1.0 bridge ClaimEnvelope.
 //
 // A bridge memento declares that a host-language symbol is the surface
 // realization of a deeper-layer published contract. inputCids has
 // exactly one entry equal to TargetContractCID (per the bridge-body
 // REFERENT constraint in the memento envelope grammar).
+//
+// DERIVED per spec:
+//
+//	bindingHash  = hash16(canonical({sourceLayer, sourceSymbol}))
+//	propertyHash = hash16("bridge:" || sourceSymbol)   (raw string, NOT JCS-wrapped)
 func (m *Minter) MintBridge(args BridgeMintArgs) (*Minted, error) {
+	if args.SourceSymbol == "" {
+		return nil, fmt.Errorf("MintBridge: SourceSymbol is required")
+	}
+	if args.SourceLayer == "" {
+		return nil, fmt.Errorf("MintBridge: SourceLayer is required")
+	}
+	if args.TargetContractCID == "" {
+		return nil, fmt.Errorf("MintBridge: TargetContractCID is required")
+	}
+
 	body := map[string]interface{}{
 		"sourceSymbol":      args.SourceSymbol,
 		"sourceLayer":       args.SourceLayer,
@@ -46,8 +64,18 @@ func (m *Minter) MintBridge(args BridgeMintArgs) (*Minted, error) {
 		"schema": SchemaCIDBridge,
 		"body":   body,
 	}
+
+	bindingHash, err := hash16Value(map[string]interface{}{
+		"sourceLayer":  args.SourceLayer,
+		"sourceSymbol": args.SourceSymbol,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("MintBridge: bindingHash: %w", err)
+	}
+	propertyHash := hash16RawString("bridge:" + args.SourceSymbol)
+
 	unsigned := envelopeForHashing(
-		args.BindingHash, args.PropertyHash, VerdictHolds,
+		bindingHash, propertyHash, VerdictHolds,
 		args.ProducedBy, args.ProducedAt,
 		[]string{args.TargetContractCID},
 		evidence,

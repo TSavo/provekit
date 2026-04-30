@@ -62,19 +62,19 @@ func TestFuncOf(t *testing.T) {
 	}
 }
 
-func TestVarTermMarshal(t *testing.T) {
+func TestVarTermMarshalDropsSort(t *testing.T) {
 	v := varTerm{Name: "_x0", Sort: Int}
 	got, err := json.Marshal(v)
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"var","name":"_x0","sort":{"kind":"primitive","name":"Int"}}`
+	want := `{"kind":"var","name":"_x0"}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
-func TestConstTermMarshal(t *testing.T) {
+func TestConstTermMarshalKeepsSort(t *testing.T) {
 	got, err := json.Marshal(Num(42))
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
@@ -85,29 +85,29 @@ func TestConstTermMarshal(t *testing.T) {
 	}
 }
 
-func TestCtorTermMarshal(t *testing.T) {
+func TestCtorTermMarshalDropsSort(t *testing.T) {
 	got, err := json.Marshal(ParseInt(StrConst("0")))
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"ctor","name":"parseInt","args":[{"kind":"const","value":"0","sort":{"kind":"primitive","name":"String"}}],"sort":{"kind":"primitive","name":"Int"}}`
+	want := `{"kind":"ctor","name":"parseInt","args":[{"kind":"const","value":"0","sort":{"kind":"primitive","name":"String"}}]}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
-func TestAtomicFormulaMarshal(t *testing.T) {
+func TestAtomicFormulaMarshalUsesName(t *testing.T) {
 	got, err := json.Marshal(Eq(Num(0), Num(0)))
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"atomic","predicate":"=","args":[{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}`
+	want := `{"kind":"atomic","name":"=","args":[{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
-func TestConnectivesMarshal(t *testing.T) {
+func TestConnectivesMarshalUseOperands(t *testing.T) {
 	a := Eq(Num(0), Num(0))
 	b := Eq(Num(1), Num(1))
 
@@ -115,8 +115,9 @@ func TestConnectivesMarshal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	if string(notF) != `{"kind":"not","body":{"kind":"atomic","predicate":"=","args":[{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}` {
-		t.Errorf("not: %s", notF)
+	wantNot := `{"kind":"not","operands":[{"kind":"atomic","name":"=","args":[{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}]}`
+	if string(notF) != wantNot {
+		t.Errorf("not:\n  got:  %s\n  want: %s", notF, wantNot)
 	}
 
 	andF, err := json.Marshal(And(a, b))
@@ -130,6 +131,9 @@ func TestConnectivesMarshal(t *testing.T) {
 	if roundtrip["kind"] != "and" {
 		t.Errorf("expected kind=and, got %v", roundtrip["kind"])
 	}
+	if _, ok := roundtrip["operands"].([]any); !ok {
+		t.Errorf("expected operands array on and, got %T", roundtrip["operands"])
+	}
 
 	impF, err := json.Marshal(Implies(a, b))
 	if err != nil {
@@ -140,5 +144,32 @@ func TestConnectivesMarshal(t *testing.T) {
 	}
 	if roundtrip["kind"] != "implies" {
 		t.Errorf("expected kind=implies, got %v", roundtrip["kind"])
+	}
+	ops, ok := roundtrip["operands"].([]any)
+	if !ok {
+		t.Fatalf("expected operands array on implies, got %T", roundtrip["operands"])
+	}
+	if len(ops) != 2 {
+		t.Errorf("implies operands: want 2 (antecedent, consequent), got %d", len(ops))
+	}
+}
+
+func TestQuantifierFormulaMarshalIsFlat(t *testing.T) {
+	ResetCollector()
+	BeginCollecting()
+	defer ResetCollector()
+
+	f := ForAll(Int, func(x IrTerm) IrFormula {
+		return Gt(x, Num(0))
+	})
+	// Use the kit's non-escaping encoder (encodeJSON) to match what the
+	// canonicalizer feeds into JCS. stdlib json.Marshal would re-escape `>`.
+	got, err := encodeJSON(f)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	want := `{"kind":"forall","name":"_x0","sort":{"kind":"primitive","name":"Int"},"body":{"kind":"atomic","name":">","args":[{"kind":"var","name":"_x0"},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}`
+	if string(got) != want {
+		t.Errorf("flat quantifier:\n  got:  %s\n  want: %s", got, want)
 	}
 }

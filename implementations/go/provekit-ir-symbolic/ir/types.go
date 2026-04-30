@@ -7,7 +7,7 @@ import (
 
 // encodeJSON marshals a value without HTML escaping (`<`, `>`, `&`),
 // matching JavaScript's default `JSON.stringify` behavior. Required for
-// byte-equivalence with the TS kit when predicates or string values
+// byte-equivalence with sister kits when predicates or string values
 // contain these characters (e.g. the `>` and `<` atomic predicates).
 func encodeJSON(v any) ([]byte, error) {
 	var buf bytes.Buffer
@@ -22,6 +22,10 @@ func encodeJSON(v any) ([]byte, error) {
 	}
 	return out, nil
 }
+
+// ----------------------------------------------------------------------
+// Sort
+// ----------------------------------------------------------------------
 
 type Sort interface {
 	sortMarker()
@@ -116,9 +120,20 @@ var (
 	Edge   Sort = primitiveSort{Name: "Edge"}
 )
 
-func SetOf(element Sort) Sort               { return setSort{Element: element} }
-func TupleOf(elements ...Sort) Sort         { return tupleSort{Elements: elements} }
+func SetOf(element Sort) Sort                { return setSort{Element: element} }
+func TupleOf(elements ...Sort) Sort          { return tupleSort{Elements: elements} }
 func FuncOf(domain []Sort, range_ Sort) Sort { return funcSort{Domain: domain, Range: range_} }
+
+// ----------------------------------------------------------------------
+// Term — VarTerm (no sort in JSON), ConstTerm (sort kept), CtorTerm (no
+// sort in JSON). The Go struct keeps the Sort field for in-process
+// reasoning (e.g. Abs/Max/Min return-sort inference); it just isn't
+// emitted to JSON anymore. Locked key order per the v1.1.0 IR grammar:
+//
+//	var:   {kind, name}
+//	const: {kind, value, sort}
+//	ctor:  {kind, name, args}
+// ----------------------------------------------------------------------
 
 type IrTerm interface {
 	termMarker()
@@ -137,12 +152,6 @@ func (t varTerm) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString(`{"kind":"var","name":`)
 	encoded, err := encodeJSON(t.Name)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteString(`,"sort":`)
-	encoded, err = encodeJSON(t.Sort)
 	if err != nil {
 		return nil, err
 	}
@@ -200,12 +209,6 @@ func (t ctorTerm) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteString(`,"sort":`)
-	encoded, err = encodeJSON(t.Sort)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -227,32 +230,51 @@ func marshalTerms(terms []IrTerm) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// ----------------------------------------------------------------------
+// Formula — three uniform shapes per the v1.1.0 IR grammar:
+//
+//	atomic:     {kind:"atomic", name, args}
+//	connective: {kind, operands}              -- and / or / not / implies
+//	quantifier: {kind, name, sort, body}       -- forall / exists, FLAT
+// ----------------------------------------------------------------------
+
 type IrFormula interface {
 	formulaMarker()
 }
 
-type irLambda struct {
-	VarName string
-	Sort    Sort
-	Body    IrFormula
+// quantFormula is the flat quantifier shape — no Lambda wrapper. The
+// kind discriminator is "forall" or "exists".
+type quantFormula struct {
+	Kind string
+	Name string
+	Sort Sort
+	Body IrFormula
 }
 
-func (l irLambda) MarshalJSON() ([]byte, error) {
+func (quantFormula) formulaMarker() {}
+
+func (f quantFormula) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"lambda","varName":`)
-	encoded, err := encodeJSON(l.VarName)
+	buf.WriteString(`{"kind":`)
+	encoded, err := encodeJSON(f.Kind)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"name":`)
+	encoded, err = encodeJSON(f.Name)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
 	buf.WriteString(`,"sort":`)
-	encoded, err = encodeJSON(l.Sort)
+	encoded, err = encodeJSON(f.Sort)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
 	buf.WriteString(`,"body":`)
-	encoded, err = encodeJSON(l.Body)
+	encoded, err = encodeJSON(f.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -261,48 +283,25 @@ func (l irLambda) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-type forAllFormula struct {
-	Sort      Sort
-	Predicate irLambda
+// connectiveFormula handles all four boolean connectives uniformly.
+// not has 1 operand, implies has 2, and/or have 2+.
+type connectiveFormula struct {
+	Kind     string
+	Operands []IrFormula
 }
 
-func (forAllFormula) formulaMarker() {}
+func (connectiveFormula) formulaMarker() {}
 
-func (f forAllFormula) MarshalJSON() ([]byte, error) {
+func (f connectiveFormula) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"forall","sort":`)
-	encoded, err := encodeJSON(f.Sort)
+	buf.WriteString(`{"kind":`)
+	encoded, err := encodeJSON(f.Kind)
 	if err != nil {
 		return nil, err
 	}
 	buf.Write(encoded)
-	buf.WriteString(`,"predicate":`)
-	encoded, err = encodeJSON(f.Predicate)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
-
-type existsFormula struct {
-	Sort      Sort
-	Predicate irLambda
-}
-
-func (existsFormula) formulaMarker() {}
-
-func (f existsFormula) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"exists","sort":`)
-	encoded, err := encodeJSON(f.Sort)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteString(`,"predicate":`)
-	encoded, err = encodeJSON(f.Predicate)
+	buf.WriteString(`,"operands":`)
+	encoded, err = marshalFormulas(f.Operands)
 	if err != nil {
 		return nil, err
 	}
@@ -311,96 +310,18 @@ func (f existsFormula) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-type andFormula struct {
-	Conjuncts []IrFormula
-}
-
-func (andFormula) formulaMarker() {}
-
-func (f andFormula) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"and","conjuncts":`)
-	encoded, err := marshalFormulas(f.Conjuncts)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
-
-type orFormula struct {
-	Disjuncts []IrFormula
-}
-
-func (orFormula) formulaMarker() {}
-
-func (f orFormula) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"or","disjuncts":`)
-	encoded, err := marshalFormulas(f.Disjuncts)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
-
-type notFormula struct {
-	Body IrFormula
-}
-
-func (notFormula) formulaMarker() {}
-
-func (f notFormula) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"not","body":`)
-	encoded, err := encodeJSON(f.Body)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
-
-type impliesFormula struct {
-	Antecedent IrFormula
-	Consequent IrFormula
-}
-
-func (impliesFormula) formulaMarker() {}
-
-func (f impliesFormula) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"implies","antecedent":`)
-	encoded, err := encodeJSON(f.Antecedent)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteString(`,"consequent":`)
-	encoded, err = encodeJSON(f.Consequent)
-	if err != nil {
-		return nil, err
-	}
-	buf.Write(encoded)
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
-
+// atomicFormula uses `name` (was `predicate` pre-v1.1.0).
 type atomicFormula struct {
-	Predicate string
-	Args      []IrTerm
+	Name string
+	Args []IrTerm
 }
 
 func (atomicFormula) formulaMarker() {}
 
 func (f atomicFormula) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"atomic","predicate":`)
-	encoded, err := encodeJSON(f.Predicate)
+	buf.WriteString(`{"kind":"atomic","name":`)
+	encoded, err := encodeJSON(f.Name)
 	if err != nil {
 		return nil, err
 	}
