@@ -722,6 +722,98 @@ The cola wars don't end because someone wins. They end because
 unsubstantiated claims stop being viable. **Companies compete on
 proof depth, not on rhetoric.**
 
+## Adding propositions is free
+
+**Adding a new verifiable claim to the global substrate is a sha256 in
+package.json that you get for free when you `pnpm install`.**
+
+The framework rides existing distribution infrastructure. There is no
+new package registry. No new SaaS. No new procurement battle. The
+mechanic is concretely:
+
+1. Library author adds `.invariant.<lang>` files to their package source
+2. Library author runs `provekit prove` on their own codebase as part
+   of release CI; that generates the proof DAG for the library
+3. Library author includes the DAG root in `package.json`:
+   ```json
+   {
+     "name": "lodash",
+     "version": "4.18.0",
+     "provekit": {
+       "proofHash": "sha256:a1b2c3...",
+       "kitVersion": "ts-kit@1.0",
+       "publicKey": "..."
+     },
+     "files": [
+       "dist/",
+       "src/",
+       ".provekit/"
+     ]
+   }
+   ```
+4. Library author runs `pnpm publish` (no flags changed; same workflow)
+5. Consumer runs `pnpm install lodash`
+6. Consumer's proofkit reads `package.json`'s `provekit` field
+7. Consumer adversarially re-verifies the published proof DAG under
+   their own producers
+8. Consumer's project's proof DAG composes against the verified root
+
+**Zero additional infrastructure.** The library author publishes to
+npm; npm distributes package.json; package.json carries the proofHash;
+the proofkit reads it. Existing channels carry the new payload.
+
+This is the same adoption mechanic TypeScript types used between 2015
+and 2020. Library authors started shipping `.d.ts` files. The npm
+ecosystem distributed them. Consumers got typed code automatically.
+No new registry. No new tooling beyond a tsc that recognized the
+files. By 2020, shipping types was table stakes for any reputable
+package.
+
+The proof DAG follows the same arc. Some packages ship invariants
+early. Others get auto-generated invariants via a community-maintained
+"DefinitelyVerified" project (the equivalent of DefinitelyTyped). Over
+time, shipping a proof DAG becomes table stakes. The cost of inclusion
+is tiny; the value to consumers is enormous; the market sorts.
+
+**The marginal economics:**
+
+- Library author's cost to include proofs: write some `.invariant.ts`
+  files (one-time, scales with library size), run `provekit prove` in
+  CI (one-time per release, fast for cached cases), publish. Effectively
+  zero ongoing cost.
+- Consumer's cost to use proofs: `pnpm install` runs the proofkit's
+  re-verification on the published DAG. Cost is bounded by the
+  cheapest sufficient producer per claim. Adversarial re-verification
+  is the consumer's verification cost; subsequent uses are free
+  (mementos cache).
+- Marketplace cost: zero. Existing npm infrastructure carries the
+  payload. No new registries, no new SaaS, no new wallets.
+
+**The compounding:**
+
+Each library that ships a proof DAG creates value for every project
+that uses it (transitively). A project with 1000 transitive
+dependencies and 80% proof coverage has 800 dependency DAGs flowing
+into its own proof. The user's authored invariants are 0.1% of their
+verification corpus; 99.9% is inherited from packages they didn't
+write.
+
+The first 100 npm packages to ship proof DAGs create 100x leverage
+for every project that uses any of them. The next 1000 packages
+create another 100x. **The substrate's value compounds quadratically
+in the number of packages with proofs**, because each new package
+multiplies the inherited surface for every other package.
+
+This is also why the framework's adoption is structurally one-way.
+Once enough packages ship proofs, NOT shipping a proof becomes a
+red flag. Consumers prefer packages with proofs. Maintainers add
+proofs to keep adoption. The cycle locks in.
+
+**The npm registry becomes the proof distribution network.** Same as
+it became the type distribution network. No structural change required
+on npm's side; just a convention about what to include in published
+packages.
+
 ## Scalability
 
 **An exabyte-scale DAG is manageable at every level.** The architectural
