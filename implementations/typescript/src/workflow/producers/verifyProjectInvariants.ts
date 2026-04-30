@@ -314,6 +314,8 @@ function mintDeclaration(
     sourceLayer: decl.sourceLayer,
     targetContractCid: decl.targetContractCid,
     targetLayer: decl.targetLayer,
+    irArgSorts: ["String"],
+    irReturnSort: "Int",
     ...(decl.notes !== undefined ? { notes: decl.notes } : {}),
   });
 }

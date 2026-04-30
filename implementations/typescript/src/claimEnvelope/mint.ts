@@ -85,6 +85,10 @@ export interface MintBridgeArgs {
   sourceLayer: string;
   targetContractCid: string;
   targetLayer: string;
+  /** IR argument sorts of the bridged primitive (SortRef[]). Required. */
+  irArgSorts: unknown[];
+  /** IR return sort of the bridged primitive (SortRef). Required. */
+  irReturnSort: unknown;
   notes?: string;
 }
 
@@ -111,6 +115,8 @@ export function mintBridge(args: MintBridgeArgs): ClaimEnvelope {
       sourceLayer: args.sourceLayer,
       targetContractCid: args.targetContractCid,
       targetLayer: args.targetLayer,
+      irArgSorts: args.irArgSorts,
+      irReturnSort: args.irReturnSort,
       ...(args.notes !== undefined ? { notes: args.notes } : {}),
     },
   };

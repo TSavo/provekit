@@ -144,6 +144,8 @@ describe("bridge enforcement end-to-end", () => {
         sourceLayer: "ts",
         targetContractCid: propertyMemento.cid,
         targetLayer: "cpp-kit",
+        irArgSorts: ["String"],
+        irReturnSort: "Int",
       });
 
       bundleAndWrite(

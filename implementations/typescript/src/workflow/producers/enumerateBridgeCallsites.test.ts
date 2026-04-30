@@ -23,6 +23,8 @@ function buildBridge(): ClaimEnvelope {
     sourceLayer: "ts",
     targetContractCid: "sha256:cpp_parseint_contract",
     targetLayer: "v8",
+    irArgSorts: ["String"],
+    irReturnSort: "Int",
   });
 }
 

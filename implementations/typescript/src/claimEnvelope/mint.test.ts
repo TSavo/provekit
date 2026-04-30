@@ -99,6 +99,8 @@ describe("mintBridge", () => {
       sourceLayer: "TS-kit@1.0",
       targetContractCid: targetCid,
       targetLayer: "V8@12.4",
+      irArgSorts: ["String"],
+      irReturnSort: "Int",
     });
     expect(bridge.evidence.kind).toBe("bridge");
     expect(bridge.inputCids).toEqual([targetCid]);
@@ -123,6 +125,8 @@ describe("mintBridge", () => {
       sourceLayer: "L1",
       targetContractCid: "deadbeef".repeat(4),
       targetLayer: "L2",
+      irArgSorts: ["String"],
+      irReturnSort: "Int",
       notes: "verified empirically",
     });
     if (bridge.evidence.kind === "bridge") {
@@ -142,6 +146,8 @@ describe("mintBridge", () => {
       sourceLayer: "L1",
       targetContractCid: "deadbeef".repeat(4),
       targetLayer: "L2",
+      irArgSorts: ["String"],
+      irReturnSort: "Int",
     });
     if (bridge.evidence.kind === "bridge") {
       expect("notes" in bridge.evidence.body).toBe(false);

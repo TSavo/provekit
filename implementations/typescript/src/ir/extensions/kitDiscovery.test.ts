@@ -64,6 +64,8 @@ function installFakePackageWithProof(
       sourceLayer: b.sourceLayer,
       targetContractCid: b.targetCid,
       targetLayer: b.targetLayer,
+      irArgSorts: ["String"],
+      irReturnSort: "Int",
     });
     members.set(env.cid, env);
   }
@@ -164,6 +166,10 @@ describe("discoverProtocolKits", () => {
       expect(parseInt!.sourceLayer).toBe("ts");
       expect(parseInt!.targetContractCid).toBe("sha256:abc");
       expect(parseInt!.targetLayer).toBe("v8");
+      // Task #40: type signature is now carried in the bridge envelope
+      // and round-trips through .proof discovery. No more empty argSorts.
+      expect(parseInt!.irArgSorts).toEqual(["String"]);
+      expect(parseInt!.irReturnSort).toBe("Int");
       expect(parseInt!.registeredBy).toEqual({
         packageName: "@example/kit",
         packageVersion: "1.0.0",

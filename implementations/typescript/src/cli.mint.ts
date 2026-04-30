@@ -195,6 +195,8 @@ function mintBridgeCmd(args: BridgeArgs): ClaimEnvelope {
     sourceLayer: args.sourceLayer,
     targetContractCid: args.targetContractCid,
     targetLayer: args.targetLayer,
+    irArgSorts: ["String"],
+    irReturnSort: "Int",
     ...(args.notes !== undefined ? { notes: args.notes } : {}),
   });
 
@@ -375,6 +377,8 @@ export async function runMint(argv: string[]): Promise<void> {
         sourceLayer: flags["source-layer"] as string,
         targetContractCid: flags["target-cid"] as string,
         targetLayer: flags["target-layer"] as string,
+        irArgSorts: ["String"],
+        irReturnSort: "Int",
         notes: typeof flags.notes === "string" ? flags.notes : undefined,
         producedBy:
           typeof flags["produced-by"] === "string"

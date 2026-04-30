@@ -408,8 +408,22 @@ bridge-body = {
   sourceLayer:       tstr,
   targetContractCid: cid,
   targetLayer:       tstr,
+  irArgSorts:        [* sort-ref],
+  irReturnSort:      sort-ref,
   ? notes:           tstr
 }
+
+; A SortRef is either a builtin primitive sort name (the literal string
+; "Int"/"Bool"/"String"/...) OR a Sort value carrying the canonical
+; sort grammar (per ir-formal-grammar.md §Sort). The discriminator is:
+; tstr = primitive name; map = full Sort grammar.
+sort-ref = tstr / sort
+sort = primitive-sort / bitvec-sort / set-sort / tuple-sort / function-sort
+primitive-sort  = { kind: "primitive", name: tstr }
+bitvec-sort     = { kind: "bitvec",    width: uint }
+set-sort        = { kind: "set",       element: sort }
+tuple-sort      = { kind: "tuple",     elements: [* sort] }
+function-sort   = { kind: "function",  domain: [* sort], range: sort }
 ```
 
 **Wrapper-field constraints (CDDL-checkable via shared rules):**

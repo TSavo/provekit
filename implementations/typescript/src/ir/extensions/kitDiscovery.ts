@@ -223,13 +223,18 @@ function registerBridgeFromEnvelope(env: ClaimEnvelope): void {
   const targetLayer = String(body.targetLayer);
   const notes = typeof body.notes === "string" ? body.notes : undefined;
 
-  // NOTE: irArgSorts and irReturnSort are NOT carried in today's bridge
-  // envelope shape (see task #40). Registering with empty arrays as a
-  // lossy interim; once #40 lands, read these fields from body.
+  // Type signature now carried natively in the envelope (task #40):
+  // irArgSorts is an array of SortRef, irReturnSort is a SortRef.
+  // Both required per the bridge envelope schema.
+  const irArgSorts = Array.isArray(body.irArgSorts)
+    ? (body.irArgSorts as Array<string | { kind: string }>)
+    : [];
+  const irReturnSort = (body.irReturnSort ?? "Int") as string | { kind: string };
+
   primitiveBridge({
     irName: sourceSymbol,
-    irArgSorts: [],
-    irReturnSort: "Int",
+    irArgSorts,
+    irReturnSort,
     sourceLayer,
     targetContractCid,
     targetLayer,

@@ -176,6 +176,16 @@ export interface BridgeEvidence {
     targetContractCid: string;
     /** Description of the deeper layer (e.g., "V8@12.4 parseInt"). */
     targetLayer: string;
+    /**
+     * IR argument sorts of the bridged primitive (each a SortRef per
+     * the IR extension protocol — see ir/extensions/registry.ts).
+     * Required so consumers walking a bridge from a .proof file can
+     * register a fully-typed PrimitiveBridgeDeclaration without
+     * consulting the producer's source code.
+     */
+    irArgSorts: unknown[];
+    /** IR return sort of the bridged primitive (a SortRef). */
+    irReturnSort: unknown;
     /** Optional notes about the bridge. */
     notes?: string;
   };

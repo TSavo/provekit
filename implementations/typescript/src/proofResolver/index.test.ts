@@ -128,6 +128,8 @@ describe("resolvePropertyFormula", () => {
         sourceLayer: "ts",
         targetContractCid: "sha256:something",
         targetLayer: "v8",
+        irArgSorts: ["String"],
+        irReturnSort: "Int",
       });
 
       installPackageWithMembers(root, "fake-kit", new Map([[bridge.cid, bridge]]));
