@@ -1,4 +1,4 @@
-import { test, expect, beforeEach } from "vitest";
+import { test, expect, beforeEach, describe as vDescribe } from "vitest";
 import {
   property,
   bridge,
@@ -26,6 +26,34 @@ import {
   Real,
   Bool,
   String as StringSort,
+  BV,
+  BV8,
+  BV16,
+  BV32,
+  bv,
+  bvadd,
+  bvsub,
+  bvmul,
+  bvudiv,
+  bvurem,
+  bvshl,
+  bvlshr,
+  bvashr,
+  bvor,
+  bvand,
+  bvxor,
+  bvnot,
+  bvneg,
+  concat,
+  extract,
+  bvult,
+  bvule,
+  bvugt,
+  bvuge,
+  bvslt,
+  bvsle,
+  bvsgt,
+  bvsge,
   abs,
   max,
   min,
@@ -497,4 +525,164 @@ test("worked example: parseInt-can-return-zero composes via runtime evaluation",
       expect(decl.formula.sort).toEqual(StringSort);
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Bitvector primitives
+// ---------------------------------------------------------------------------
+
+vDescribe("BV sort builders", () => {
+  test("BV(width) constructs a bitvec sort", () => {
+    expect(BV(8)).toEqual({ kind: "bitvec", width: 8 });
+    expect(BV(32)).toEqual({ kind: "bitvec", width: 32 });
+  });
+
+  test("named BV singletons (BV8, BV16, BV32) carry the correct width", () => {
+    expect(BV8).toEqual({ kind: "bitvec", width: 8 });
+    expect(BV16).toEqual({ kind: "bitvec", width: 16 });
+    expect(BV32).toEqual({ kind: "bitvec", width: 32 });
+  });
+
+  test("BV() rejects non-positive or non-integer widths", () => {
+    expect(() => BV(0)).toThrow(/positive integer/);
+    expect(() => BV(-1)).toThrow(/positive integer/);
+    expect(() => BV(1.5)).toThrow(/positive integer/);
+  });
+});
+
+vDescribe("bv constants", () => {
+  test("bv(value, width) builds a const term tagged with the BV sort", () => {
+    expect(bv(7, 8)).toEqual({
+      kind: "const",
+      value: 7n,
+      sort: { kind: "bitvec", width: 8 },
+    });
+  });
+
+  test("bv() normalizes negative inputs into the unsigned bit range", () => {
+    expect(bv(-1, 8)).toEqual({
+      kind: "const",
+      value: 255n,
+      sort: { kind: "bitvec", width: 8 },
+    });
+  });
+
+  test("bv() accepts a bigint value", () => {
+    expect(bv(10n, 16)).toEqual({
+      kind: "const",
+      value: 10n,
+      sort: { kind: "bitvec", width: 16 },
+    });
+  });
+
+  test("bv() rejects a non-positive width", () => {
+    expect(() => bv(1, 0)).toThrow(/width/);
+  });
+});
+
+vDescribe("BV term operators preserve operand width", () => {
+  const x = bv(0, 32);
+  const y = bv(0, 32);
+
+  test("bvadd / bvsub / bvmul / bvudiv / bvurem return BV<width>", () => {
+    for (const op of [bvadd, bvsub, bvmul, bvudiv, bvurem]) {
+      const t = op(x, y);
+      expect(t.kind).toBe("ctor");
+      expect(t.sort).toEqual({ kind: "bitvec", width: 32 });
+    }
+  });
+
+  test("bvshl / bvlshr / bvashr return BV<width>", () => {
+    for (const op of [bvshl, bvlshr, bvashr]) {
+      const t = op(x, y);
+      expect(t.sort).toEqual({ kind: "bitvec", width: 32 });
+    }
+  });
+
+  test("bvand / bvor / bvxor return BV<width>", () => {
+    for (const op of [bvand, bvor, bvxor]) {
+      const t = op(x, y);
+      expect(t.sort).toEqual({ kind: "bitvec", width: 32 });
+    }
+  });
+
+  test("bvnot / bvneg are unary and preserve width", () => {
+    expect(bvnot(x).sort).toEqual({ kind: "bitvec", width: 32 });
+    expect(bvneg(x).sort).toEqual({ kind: "bitvec", width: 32 });
+  });
+
+  test("bvadd uses the ctor name 'bvadd'", () => {
+    const t = bvadd(x, y);
+    if (t.kind !== "ctor") throw new Error();
+    expect(t.name).toBe("bvadd");
+  });
+
+  test("bvadd rejects mismatched widths", () => {
+    expect(() => bvadd(bv(0, 8), bv(0, 16))).toThrow(/widths/);
+  });
+});
+
+vDescribe("concat and extract widths", () => {
+  test("concat(a, b) returns BV<wa + wb>", () => {
+    const t = concat(bv(0, 8), bv(0, 16));
+    expect(t.sort).toEqual({ kind: "bitvec", width: 24 });
+  });
+
+  test("extract(hi, lo, x) returns BV<hi - lo + 1>", () => {
+    const t = extract(7, 0, bv(0, 32));
+    expect(t.sort).toEqual({ kind: "bitvec", width: 8 });
+  });
+
+  test("extract encodes hi and lo as Int constants in args", () => {
+    const t = extract(15, 4, bv(0, 32));
+    if (t.kind !== "ctor") throw new Error();
+    expect(t.name).toBe("extract");
+    expect(t.args).toHaveLength(3);
+    expect(t.args[0]).toEqual({ kind: "const", value: 15n, sort: Int });
+    expect(t.args[1]).toEqual({ kind: "const", value: 4n, sort: Int });
+  });
+
+  test("extract rejects out-of-range indices", () => {
+    expect(() => extract(32, 0, bv(0, 32))).toThrow(/range/);
+    expect(() => extract(7, -1, bv(0, 32))).toThrow(/range/);
+    expect(() => extract(3, 7, bv(0, 32))).toThrow(/range/);
+  });
+});
+
+vDescribe("BV comparison predicates", () => {
+  const x = bv(0, 8);
+  const y = bv(0, 8);
+
+  test("each comparison builds an atomic with the matching predicate name", () => {
+    const cases: Array<[(a: typeof x, b: typeof y) => unknown, string]> = [
+      [bvult, "bvult"],
+      [bvule, "bvule"],
+      [bvugt, "bvugt"],
+      [bvuge, "bvuge"],
+      [bvslt, "bvslt"],
+      [bvsle, "bvsle"],
+      [bvsgt, "bvsgt"],
+      [bvsge, "bvsge"],
+    ];
+    for (const [fn, predicate] of cases) {
+      const f = fn(x, y) as { kind: "atomic"; predicate: string };
+      expect(f.kind).toBe("atomic");
+      expect(f.predicate).toBe(predicate);
+    }
+  });
+
+  test("comparison rejects mismatched widths", () => {
+    expect(() => bvult(bv(0, 8), bv(0, 16))).toThrow(/widths/);
+  });
+});
+
+vDescribe("BV with quantifiers", () => {
+  test("forAll over BV32 produces an IR with the bitvec sort on the quantifier", () => {
+    const f = forAll(BV32, (x) => eq(bvxor(x, x), bv(0, 32)));
+    expect(f.kind).toBe("forall");
+    if (f.kind === "forall") {
+      expect(f.sort).toEqual({ kind: "bitvec", width: 32 });
+      expect(f.predicate.body.kind).toBe("atomic");
+    }
+  });
 });
