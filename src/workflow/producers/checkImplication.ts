@@ -41,8 +41,17 @@ export interface CheckImplicationInput {
   oldSmt: string;
   /** SMT-LIB body of the NEW claim. */
   newSmt: string;
-  /** Optional Z3 binary path. Default: "z3". */
-  z3Binary?: string;
+  /**
+   * Which SMT solver to invoke. Both consume the same SMT-LIB 2.6 input;
+   * only the binary name and flags differ. Z3 is the default for backward
+   * compatibility; CVC5 is the conformance-test alternative (per the
+   * cross-solver composition rule in docs/specs/2026-04-29-the-semantic-envelope.md).
+   * Future Stages may run both solvers in parallel and assert verdict
+   * agreement.
+   */
+  solver?: "z3" | "cvc5";
+  /** Optional binary path override. Default: same name as `solver`. */
+  binary?: string;
   /** Per-probe timeout in ms. Default: 5000. */
   timeoutMs?: number;
 }
@@ -80,6 +89,7 @@ export function makeCheckImplicationStage(
       return {
         oldSmt: input.oldSmt,
         newSmt: input.newSmt,
+        solver: input.solver ?? "z3",
         timeoutMs: input.timeoutMs ?? 5000,
       };
     },
@@ -93,18 +103,21 @@ export function makeCheckImplicationStage(
     },
 
     async run(input) {
-      const binary = input.z3Binary ?? "z3";
+      const solver = input.solver ?? "z3";
+      const binary = input.binary ?? solver;
       const timeoutMs = input.timeoutMs ?? 5000;
 
       // Probe A: P_new ∧ ¬P_old. unsat → P_new strengthens (or equals) P_old.
-      const newImpliesOld = await z3CheckSat(
+      const newImpliesOld = await solverCheckSat(
+        solver,
         binary,
         wrapImplicationProbe(input.newSmt, input.oldSmt),
         timeoutMs,
       );
 
       // Probe B: P_old ∧ ¬P_new. unsat → P_new weakens (or equals) P_old.
-      const oldImpliesNew = await z3CheckSat(
+      const oldImpliesNew = await solverCheckSat(
+        solver,
         binary,
         wrapImplicationProbe(input.oldSmt, input.newSmt),
         timeoutMs,
@@ -206,15 +219,25 @@ function stripAssertWrapper(line: string): string {
   return m ? m[1] : line;
 }
 
-async function z3CheckSat(
+/**
+ * Solver-agnostic check-sat wrapper. The SMT-LIB body is the same across
+ * Z3 and CVC5 — both consume SMT-LIB 2.6 — only the invocation flags
+ * differ. Adding a third solver (Boolector, Bitwuzla, MathSAT) means
+ * adding one entry to the switch below and nothing else.
+ */
+async function solverCheckSat(
+  solver: "z3" | "cvc5",
   binary: string,
   script: string,
   timeoutMs: number,
 ): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
+  const args = solver === "cvc5"
+    ? ["--lang=smt2", `--tlimit-per=${timeoutMs}`]
+    : ["-in", `-T:${Math.ceil(timeoutMs / 1000)}`];
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, ["-in", "-T:" + Math.ceil(timeoutMs / 1000)], { stdio: ["pipe", "pipe", "pipe"] });
+      child = spawn(binary, args, { stdio: ["pipe", "pipe", "pipe"] });
     } catch {
       resolve("unknown");
       return;

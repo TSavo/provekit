@@ -33,8 +33,8 @@ export const SYNTHESIZE_MEANING_DIFF_CAPABILITY = "synthesize-meaning-diff";
 
 export interface SynthesizeMeaningDiffInput {
   diff: DiffInvariantSnapshotsOutput;
-  /** Optional Z3 binary path. Default: "z3". */
-  z3Binary?: string;
+  /** Which SMT solver runs the implication probes. Default: "z3". */
+  solver?: "z3" | "cvc5";
   /** Per-probe timeout in ms. Default: 5000. */
   timeoutMs?: number;
 }
@@ -113,7 +113,7 @@ export function makeSynthesizeMeaningDiffStage(
     async run(input) {
       const out: ForensicRow[] = [];
       for (const row of input.diff.rows) {
-        out.push(await buildRow(row, checkImpl, input.z3Binary, input.timeoutMs));
+        out.push(await buildRow(row, checkImpl, input.solver, input.timeoutMs));
       }
       const result = {
         fromRef: input.diff.fromRef,
@@ -145,7 +145,7 @@ function rowCacheKey(row: DiffRow): string {
 async function buildRow(
   row: DiffRow,
   checkImpl: ReturnType<typeof makeCheckImplicationStage>,
-  z3Binary: string | undefined,
+  solver: "z3" | "cvc5" | undefined,
   timeoutMs: number | undefined,
 ): Promise<ForensicRow> {
   switch (row.kind) {
@@ -181,7 +181,7 @@ async function buildRow(
       const probe = await checkImpl.run({
         oldSmt: fromInv.smt.assertion,
         newSmt: toInv.smt.assertion,
-        z3Binary,
+        solver,
         timeoutMs,
       });
       return {

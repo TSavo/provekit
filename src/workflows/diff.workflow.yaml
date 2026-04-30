@@ -48,6 +48,9 @@ cli:
     - name: projectRoot
       type: path
       default: "."
+    - name: solver
+      type: string
+      default: "z3"
 
 output: $node.synthesize.output
 
@@ -74,3 +77,4 @@ nodes:
     capability: synthesize-meaning-diff
     input:
       diff: $node.diff-snapshots.output
+      solver: $input.solver
