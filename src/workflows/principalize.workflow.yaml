@@ -1,0 +1,101 @@
+# Principalize workflow — lift a recurring invariant pattern into a
+# candidate principle.
+#
+# Spec: docs/specs/2026-04-27-constraint-driven-development.md (principle
+#       library concept) and docs/specs/2026-04-29-stages-vs-actions.md
+#       (Stage vs Action contracts).
+#
+# Pipeline: collect → cluster → validate → (Action) publish.
+#
+# Stages 1-3 are pure data transformations over StoredInvariant + cluster
+# shapes; the Action is the only side-effecting step (it writes to
+# `.provekit/principles/<id>.json`).
+#
+# Quiet parts:
+#   - The cluster used by validate + publish is the FIRST cluster the
+#     cluster-by-shape stage emits. cluster-by-shape sorts clusters by
+#     member count descending, so this is the largest recurring shape.
+#     Selecting other clusters (or aggregating multiple) is a follow-up
+#     once a manifest reference language gains array-indexing.
+#   - validate-adversarial is the v1 stub per the task's cut list; it
+#     re-uses the local fingerprint check. The Stage exists so the
+#     pipeline shape is correct now and a real cross-codebase adversary
+#     can land later without re-shaping the manifest.
+#   - publish-principle does NOT inspect the verdict — the workflow
+#     declares an unconditional Action because the manifest format has
+#     no conditionals. Callers who want the gate ("don't publish on
+#     false-positive") inspect the bundle's validate output and skip
+#     the workflow rerun, OR run the workflow up to validate and only
+#     invoke publish if the verdict is clean.
+#
+# Cut list (per task):
+#   - No CLI command (separate task)
+#   - No real cross-codebase validator (stub now)
+#   - No LLM (workflow is pure-data + one fs write)
+
+name: principalize
+cid: bafy-principalize-v1
+description: >-
+  Lift a recurring invariant pattern into a candidate principle. Reads
+  StoredInvariants from `.provekit/invariants/`, clusters by structural
+  shape, runs a v1-stub adversarial validation, and publishes a
+  LibraryPrinciple JSON to `.provekit/principles/`.
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # P1 collect-invariants — read the corpus from disk. The Stage is
+  # pure-relative to its input (projectRoot + propertyHashes); the disk
+  # read is treated as the producer's environment, same caveat as
+  # recognize/formulate document.
+  # ---------------------------------------------------------------------------
+  - id: collect
+    capability: collect-invariants
+    input:
+      projectRoot: $input.projectRoot
+      propertyHashes: $input.invariantCorpus
+
+  # ---------------------------------------------------------------------------
+  # P2 cluster-by-shape — fingerprint each invariant by (kind, sortedSorts,
+  # declarationCount) and group. The first cluster in the output is the
+  # most populous, which is what validate + publish consume.
+  # ---------------------------------------------------------------------------
+  - id: cluster
+    capability: cluster-by-shape
+    input:
+      invariants: $node.collect.output.invariants
+
+  # ---------------------------------------------------------------------------
+  # P3 validate-adversarial — v1 stub: check the cluster's fingerprint
+  # against the same corpus and report any non-cluster invariant that
+  # collides. Replaceable with a real cross-codebase walker later.
+  #
+  # The cluster here is `topCluster` — cluster-by-shape's most-populous
+  # cluster, surfaced as a top-level field so the manifest reference
+  # language can pass it without array indexing. Callers needing a
+  # non-top cluster invoke the Stages programmatically; that's a
+  # follow-up once manifest references gain array semantics.
+  # ---------------------------------------------------------------------------
+  - id: validate
+    capability: validate-adversarial
+    input:
+      cluster: $node.cluster.output.topCluster
+      corpus: $node.collect.output.invariants
+
+# ---------------------------------------------------------------------------
+# Actions — side-effecting, run-every-time. Publish writes the candidate
+# principle JSON to `.provekit/principles/`. The workflow's Stage chain
+# terminates at validate; the audit DAG includes the publish invocation.
+# ---------------------------------------------------------------------------
+actions:
+  - id: publish
+    action: publish-principle
+    runAfter: $node.validate
+    input:
+      projectRoot: $input.projectRoot
+      principleName: $input.proposedPrincipleName
+      bugClassId: $input.proposedBugClassId
+      cluster: $node.cluster.output.topCluster
+      description: $input.proposedDescription
+      confidence: $input.proposedConfidence
+
+output: $node.validate.output

@@ -66,7 +66,7 @@ actions:
   - id: write-invariant
     action: write-invariant-file
     input:
-      targetFile: $input.targetFile
+      path: $input.invariantFilePath
       surfaceText: $node.formulate.output.surfaceText
-      append: $input.append
+      mode: overwrite
     runAfter: $node.formulate

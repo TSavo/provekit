@@ -1,57 +1,64 @@
 /**
- * WriteInvariantFile action — write a synthesized invariant's surface
- * text to <basename>.invariant.ts on disk.
+ * WriteInvariantFile action — write `.invariant.ts` source to disk.
  *
- * Action contract per `docs/specs/2026-04-29-stages-vs-actions.md`:
- *   - Side-effecting (writes a file)
- *   - Run every time (different filesystem state across runs)
- *   - Audit memento records WHAT was written (filename + content hash);
- *     the resource is the OS file handle the workflow's downstream
- *     stages can reference
+ * Used by workflows that mutate the on-disk catalog (weaken, strengthen,
+ * retire). The file write is side-effecting, so it ships as an Action
+ * rather than a Stage: the audit memento records the path written and
+ * a digest of the content, and the caller's downstream Stages (e.g.
+ * verification of the new contract) compose against the formula
+ * produced by formulate-via-lifter — NOT against the file path.
  *
- * Scope discipline (per `2026-04-29-correctness-is-a-hash.md` §"What
- * ProvekIt is"): this action mints a write. It does NOT verify the
- * file's content (the lift+canonicalize already happened in the
- * formulate Stage upstream); it does NOT walk into the file's
- * contract-target dependencies (audit work). Output is the file path
- * + the bytes that landed.
+ * Mode semantics:
+ *   - "overwrite": replace the file's contents with `surfaceText`.
+ *   - "append":   append `surfaceText` to the existing file (creating
+ *                 it if missing). retire uses this to splice in a
+ *                 deprecation marker without touching the rest.
+ *
+ * The Action's resource is the absolute path written + a sha256 of
+ * the content. describeResource serializes both; the live filesystem
+ * handle is implicit (the path).
+ *
+ * Spec: docs/specs/2026-04-29-stages-vs-actions.md
  */
 
-import { writeFileSync, existsSync, readFileSync, mkdirSync } from "node:fs";
-import { dirname, basename, join, resolve } from "node:path";
-import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
+import { dirname, isAbsolute } from "path";
+import { createHash } from "crypto";
 import type { Action } from "../types.js";
 
 export const WRITE_INVARIANT_FILE_CAPABILITY = "write-invariant-file";
 
-export interface WriteInvariantFileInput {
-  /** Absolute path of the production-code file the invariant is about. */
-  targetFile: string;
-  /** TypeScript source — the LLM-emitted invariant code, lifted+verified upstream. */
+export interface WriteInvariantFileActionInput {
+  /** Absolute path to the target `.invariant.ts` file. */
+  path: string;
+  /** Source text to write. */
   surfaceText: string;
-  /** Append mode: if a *.invariant.ts file already exists, append to it
-   *  instead of overwriting. Default false (overwrite). */
-  append?: boolean;
+  /**
+   * "overwrite" replaces the file's contents; "append" adds to the
+   * existing contents (creating the file if it doesn't exist).
+   */
+  mode: "overwrite" | "append";
 }
 
-export interface WriteInvariantFileHandle {
-  /** Path of the .invariant.ts file written. */
-  invariantFilePath: string;
-  /** sha256 of the file's final content. */
-  contentHash: string;
-  /** Number of bytes written. */
+export interface WriteInvariantFileResource {
+  /** The absolute path written. */
+  path: string;
+  /** sha256 of the final file contents after the write. */
+  contentSha256: string;
+  /** Number of bytes written by THIS invocation (not total file size). */
   bytesWritten: number;
-  /** True if a previously-existing file was overwritten or appended to. */
-  preExisting: boolean;
+  /** The mode that was used. */
+  mode: "overwrite" | "append";
 }
 
-export interface MakeWriteInvariantFileDeps {
+export interface MakeWriteInvariantFileActionDeps {
+  /** Override producer identity. Default: "writeInvariantFile@v1". */
   producerVersion?: string;
 }
 
 export function makeWriteInvariantFileAction(
-  deps: MakeWriteInvariantFileDeps = {},
-): Action<WriteInvariantFileInput, WriteInvariantFileHandle> {
+  deps: MakeWriteInvariantFileActionDeps = {},
+): Action<WriteInvariantFileActionInput, WriteInvariantFileResource> {
   const producedBy = deps.producerVersion ?? "writeInvariantFile@v1";
 
   return {
@@ -59,59 +66,49 @@ export function makeWriteInvariantFileAction(
     producedBy,
 
     serializeInput(input) {
+      // Hash a digest of the content rather than the content itself so
+      // audit rows stay small for large surface texts. The runner's
+      // _auditSalt makes the row unique per invocation regardless.
       return {
-        targetFile: input.targetFile,
-        surfaceText: input.surfaceText,
-        append: input.append ?? false,
+        path: input.path,
+        mode: input.mode,
+        contentSha256: sha256(input.surfaceText),
       };
     },
 
-    describeResource(handle) {
-      return (
-        `wrote ${handle.bytesWritten} bytes to ${handle.invariantFilePath} ` +
-        `(content sha256: ${handle.contentHash.slice(0, 16)}…; ` +
-        `preExisting: ${handle.preExisting})`
-      );
+    describeResource(resource) {
+      return `wrote ${resource.bytesWritten} bytes (${resource.mode}) to ${resource.path} → sha256:${resource.contentSha256}`;
     },
 
     async run(input) {
-      return writeInvariantFile(input);
+      if (!isAbsolute(input.path)) {
+        throw new Error(
+          `writeInvariantFile.path must be absolute, got "${input.path}"`,
+        );
+      }
+      mkdirSync(dirname(input.path), { recursive: true });
+
+      const bytesWritten = Buffer.byteLength(input.surfaceText, "utf-8");
+      let finalContents: string;
+      if (input.mode === "append" && existsSync(input.path)) {
+        const existing = readFileSync(input.path, "utf-8");
+        finalContents = existing + input.surfaceText;
+        writeFileSync(input.path, finalContents, "utf-8");
+      } else {
+        finalContents = input.surfaceText;
+        writeFileSync(input.path, finalContents, "utf-8");
+      }
+
+      return {
+        path: input.path,
+        contentSha256: sha256(finalContents),
+        bytesWritten,
+        mode: input.mode,
+      };
     },
   };
 }
 
-// ---------------------------------------------------------------------------
-// Implementation
-// ---------------------------------------------------------------------------
-
-export function writeInvariantFile(
-  input: WriteInvariantFileInput,
-): WriteInvariantFileHandle {
-  const target = resolve(input.targetFile);
-  const dir = dirname(target);
-  const base = basename(target).replace(/\.tsx?$/, "");
-  const invariantFilePath = join(dir, `${base}.invariant.ts`);
-
-  const preExisting = existsSync(invariantFilePath);
-  const dirExists = existsSync(dir);
-  if (!dirExists) mkdirSync(dir, { recursive: true });
-
-  let finalContent: string;
-  if (preExisting && input.append) {
-    const existing = readFileSync(invariantFilePath, "utf8");
-    // Append: simple concatenation with a separator. The framework's
-    // collector pattern handles multiple `must()` calls in one file.
-    finalContent = existing.replace(/\n*$/, "\n\n") + input.surfaceText;
-  } else {
-    finalContent = input.surfaceText;
-  }
-
-  writeFileSync(invariantFilePath, finalContent);
-
-  return {
-    invariantFilePath,
-    contentHash: createHash("sha256").update(finalContent).digest("hex"),
-    bytesWritten: Buffer.byteLength(finalContent, "utf8"),
-    preExisting,
-  };
+function sha256(s: string): string {
+  return createHash("sha256").update(s, "utf-8").digest("hex");
 }

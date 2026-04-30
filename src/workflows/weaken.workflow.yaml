@@ -1,0 +1,70 @@
+# Weaken workflow — relax an existing invariant.
+#
+# Workflow shape:
+#   1. formulate-via-lifter (Stage) — given the user's natural-language
+#      relaxation request + the prior invariant text, the LLM emits a
+#      new `.invariant.ts` SURFACE; the lifter canonicalizes to IR.
+#
+#   2. compare-formulas (Stage, terminal) — diffs the prior IrFormula
+#      vs the lifted-new IrFormula in mode=weaken. Output reports
+#      added/removed top-level conjuncts so the consumer sees what
+#      relaxed.
+#
+#   3. write-invariant-file (Action, runAfter compare) — overwrites
+#      the on-disk `.invariant.ts` with the new surface text. Runs
+#      after the diff so the file is touched only when the chain
+#      reached a terminal verdict.
+#
+# Dual to the strengthen workflow. The mode=weaken hint lets downstream
+# consumers render the appropriate language ("relaxed by removing X")
+# without re-deriving the direction from the delta.
+#
+# QUIET PART: structurally diff today; SMT-backed semantic implication
+# (new ⊆ old) lands when the SMT-LIB translator wires through. The
+# Stage slot is data-driven for that future producer.
+
+name: weaken
+cid: bafy-weaken-v1
+description: >-
+  Relax an existing invariant. Lifts the new surface text via the
+  formulate-via-lifter Stage, diffs against the supplied prior
+  IrFormula via compare-formulas (mode=weaken), and overwrites the
+  .invariant.ts file. Terminal artifact: CompareFormulasDelta.
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # Formulate the new (relaxed) invariant via the lifter.
+  # ---------------------------------------------------------------------------
+  - id: formulate
+    capability: formulate-via-lifter
+    input:
+      intent: $input.intent
+      tests: $input.tests
+      diff: $input.diff
+      locus: $input.locus
+
+  # ---------------------------------------------------------------------------
+  # Diff the prior IrFormula against the freshly-lifted formula.
+  # mode=weaken is recorded in the delta; consumers walking from the
+  # workflow output land here directly.
+  # ---------------------------------------------------------------------------
+  - id: compare
+    capability: compare-formulas
+    input:
+      oldFormula: $input.oldFormula
+      newFormula: $node.formulate.output.formula
+      mode: weaken
+
+# ---------------------------------------------------------------------------
+# Actions — write the new surface to disk after the chain terminates.
+# ---------------------------------------------------------------------------
+actions:
+  - id: write
+    action: write-invariant-file
+    input:
+      path: $input.filePath
+      surfaceText: $node.formulate.output.surfaceText
+      mode: overwrite
+    runAfter: $node.compare
+
+output: $node.compare.output
