@@ -35,17 +35,46 @@ spec alone and produce byte-identical hashes.
                   │  parse / construct as host data
                   ▼
             ╔═══════════════════════════╗
-            ║  canonicalization (THIS)  ║
+            ║  canonicalization (THIS)  ║   ← JCS-JSON (RFC 8785), pass 1 → pass 8
             ║  pass 1 ──► pass 8        ║
             ╚═══════════════════════════╝
                   │
                   ▼
             propertyHash  =  16 hex chars
+                  │
+                  │  wrap in memento envelope (JSON-canonical, per envelope grammar)
+                  ▼
+            memento body bytes  →  member CID
+                  │
+                  │  embed bytes (as bstr) in catalog memento; encode envelope as CBOR
+                  ▼
+   ─── .proof file (sibling spec: 2026-04-30-proof-file-format.md) ───
+   Deterministic CBOR (RFC 8949 §4.2.1) container of catalog +
+   embedded member bodies. Bytes hash to filename CID = trust root.
+   ──────────────────────────────────────────────────────────────────
 ```
 
 Mementos that carry a `propertyHash` (catalog entries, verdicts, evidence
 envelopes) are content-addressed by the output of pass 8. Mementos cross
 implementations only when the implementations agree on every pass.
+
+**Scope boundary.** This spec governs the FOL-formula → propertyHash pipeline
+(passes 1–8) and locks JCS-JSON as the encoding at pass 7. It does NOT govern:
+
+- The memento envelope encoding around individual mementos. See
+  `2026-04-30-memento-envelope-grammar.md` (§Encoding: "JSON, canonicalized").
+- The `.proof` envelope used for shipping catalogs of embedded mementos
+  as a single binary distribution artifact. See
+  `2026-04-30-proof-file-format.md` (deterministic CBOR; bstr-embedded
+  member bytes; filename = trust root).
+
+The `.proof` envelope's CBOR layer wraps memento body bytes as opaque
+byte strings; the embedded bytes are still produced by this spec's
+JCS-JSON encoding and the memento envelope grammar's wrapping rules.
+A future migration of pass 7 itself from JCS to CBOR would constitute
+a major version bump (§13) and would re-hash every existing memento; it
+is unrelated to the `.proof` envelope's CBOR choice, which is a new
+layer above the memento body and does NOT change any existing CID.
 
 ## 3. Pipeline overview (eight passes)
 
@@ -551,10 +580,15 @@ versions before composing mementos.
 
 These are flagged for follow-up; they are NOT settled by this spec.
 
-- **CBOR migration.** The 2026-04-29 spec preferred CBOR; the
-  as-implemented v1 ships JCS. A formal CBOR-encoding spec (RFC 8949
-  §4.2 deterministic profile) would be a sibling document and would be
-  incompatible at major-version v1 to v2.
+- **CBOR migration (pass 7).** The 2026-04-29 spec preferred CBOR for
+  individual memento bodies; the as-implemented v1 ships JCS for that
+  layer. Migrating *pass 7* from JCS to CBOR would constitute a major
+  version bump and would re-hash every existing memento. NOTE: the
+  separate `.proof` envelope format (`2026-04-30-proof-file-format.md`)
+  uses deterministic CBOR for its container, which is a new layer above
+  memento bodies and does NOT settle this question. Bodies stay JCS at
+  v1; a future v2 of THIS spec could switch them to CBOR independently
+  of the envelope decision.
 - **BigInt unification.** The split rule in §7.7 (in-safe-range as
   Number, out-of-safe-range as `"bigint:N"` string) is JS-specific. A
   unified rule (e.g. all integer constants serialize as canonical

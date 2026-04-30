@@ -1,14 +1,15 @@
 {
   "kind": "catalog",
   "name": "provekit-protocol",
-  "version": "v1.0.0-2026-04-30",
+  "version": "v1.0.2-2026-04-30",
   "properties": {
     "ir-formal-grammar": "sha256:0c394dbb0bc6da2b",
-    "canonicalization-grammar": "sha256:cb2367c97b57ba05",
+    "canonicalization-grammar": "sha256:af7e3a96d403936c",
     "memento-envelope-grammar": "sha256:ff6d03c523b68202",
     "signatures-and-non-repudiation": "sha256:9b9f86ec1795ff90",
     "chain-validity-and-fail-closed": "sha256:7d7777ef5b0017fe",
     "ir-extension-protocol": "sha256:c48b69c15e1eb7e9",
+    "proof-file-format": "sha256:1fed4d6da2b42e79",
     "semantic-envelope": "sha256:b667f5c10c37173c",
     "supply-chain-via-semantic-envelope": "sha256:eefec0fb212ef5f3"
   },
