@@ -228,6 +228,13 @@ inline void property(std::string name, std::shared_ptr<Formula> formula) {
   collector().push_back(PropertyDecl{std::move(name), std::move(formula)});
 }
 
+// `must` is the obligation-verb alias: `must("input non-empty", forall...)`
+// reads as a constraint ("this is required"), where `property` is the
+// neutral noun. Same storage; different authoring register.
+inline void must(std::string name, std::shared_ptr<Formula> formula) {
+  property(std::move(name), std::move(formula));
+}
+
 inline std::vector<PropertyDecl> finish() {
   std::vector<PropertyDecl> out;
   out.swap(collector());
