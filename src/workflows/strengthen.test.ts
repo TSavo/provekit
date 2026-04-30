@@ -94,7 +94,7 @@ describe("strengthen workflow", () => {
     writeFileSync(target, "// stale prior content\n", "utf-8");
 
     const llm = new StubLLMProvider(
-      new Map([["You are writing invariants for a TypeScript codebase", TIGHTENED_SURFACE]]),
+      new Map([["Write invariants for a TypeScript change", TIGHTENED_SURFACE]]),
     );
     const manifest = loadStrengthenManifest();
     const { registry, actionRegistry } = registerStrengthenRegistries({ llm });
