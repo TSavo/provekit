@@ -350,6 +350,8 @@ name = "provekit-verifier"
 version = "0.1.0"
 dependencies = [
  "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-symbolic",
  "provekit-proof-envelope",
  "rayon",
  "serde_json",

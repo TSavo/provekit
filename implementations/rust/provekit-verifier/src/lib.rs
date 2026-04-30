@@ -1,1 +1,47 @@
-// stub; written next pass
+// SPDX-License-Identifier: Apache-2.0
+//
+// provekit-verifier
+//
+// Six-stage bridge-enforcement pipeline. Mirrors the Go and C++
+// verifiers. Stages:
+//
+//   1. load_all_proofs   — walk <project_root> for *.proof files,
+//                          re-derive each member envelope's CID,
+//                          reject mismatches, index by CID and by
+//                          sourceSymbol (for bridges).
+//   2. enumerate_callsites — for every contract memento, walk
+//                            pre/post/inv looking for ctor terms
+//                            whose name matches a known bridge
+//                            sourceSymbol; emit a CallSite per hit.
+//   3. resolve_target    — look up the CallSite's bridge.targetCid
+//                          in the pool; return the target contract's
+//                          `pre` formula as the discharge target.
+//   4. instantiate       — substitute the call's arg term for the
+//                          forall's bound variable in the resolved
+//                          pre formula (flat quantifier shape).
+//   5. smt_emit          — render the obligation IR to SMT-LIB script
+//                          (set-logic ALL + free-var declarations +
+//                          assert (not BODY) + check-sat).
+//   6. solve_obligation  — invoke the configured z3 binary as a
+//                          subprocess; map "unsat" -> Discharged,
+//                          "sat" -> Unsatisfied, anything else ->
+//                          Undecidable.
+//   7. report            — aggregate per-callsite verdicts plus
+//                          load-error rows.
+//
+// Stages 3-5 fan out per callsite via rayon (mirrors the C++
+// std::async fan-out and Go goroutines).
+
+pub mod cbor_decode;
+pub mod enumerate_callsites;
+pub mod instantiate;
+pub mod load_all_proofs;
+pub mod report;
+pub mod resolve_target;
+pub mod runner;
+pub mod smt_emitter;
+pub mod solve_obligation;
+pub mod types;
+
+pub use runner::{Runner, RunnerConfig};
+pub use types::*;
