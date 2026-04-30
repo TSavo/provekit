@@ -40,3 +40,12 @@ export {
   type SemanticDeclaration,
   type SortRef,
 } from "./registry.js";
+
+export {
+  primitiveBridge,
+  listBridges,
+  lookupBridge,
+  _resetBridges,
+  type PrimitiveBridgeInput,
+  type PrimitiveBridgeDeclaration,
+} from "./bridges.js";
