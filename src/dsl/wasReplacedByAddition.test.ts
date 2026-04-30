@@ -37,7 +37,7 @@ import type { HarvestCandidate } from "../fix/harvest/extractBugs.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = join(__dirname, "..", "..", "drizzle");
 const principleSource = readFileSync(
-  join(__dirname, "..", "..", ".provekit", "principles", "or-chain-extended-by-fix.dsl"),
+  join(__dirname, "..", "..", ".provekit", "principles", "typescript", "or-chain-extended-by-fix.dsl"),
   "utf-8",
 );
 

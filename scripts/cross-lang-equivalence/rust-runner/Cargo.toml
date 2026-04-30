@@ -1,0 +1,12 @@
+[package]
+name = "cross-lang-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+provekit-ir-symbolic = { path = "../../../kits/rust/provekit-ir-symbolic" }
+serde_json = "1"
+
+[[bin]]
+name = "cross-lang-runner"
+path = "src/main.rs"
