@@ -27,6 +27,12 @@ func main() {
 		ir.Property("forall_int_gt_zero", ir.ForAll(ir.Int, func(x ir.IrTerm) ir.IrFormula {
 			return ir.Gt(x, ir.Num(0))
 		}))
+	case "eq_parseint_zero_zero":
+		ir.Property("eq_parseint_zero_zero", ir.Eq(ir.ParseInt(ir.StrConst("0")), ir.Num(0)))
+	case "forall_string_parseint_gte_zero":
+		ir.Property("forall_string_parseint_gte_zero", ir.ForAll(ir.String, func(s ir.IrTerm) ir.IrFormula {
+			return ir.Gte(ir.ParseInt(s), ir.Num(0))
+		}))
 	default:
 		fmt.Fprintf(os.Stderr, "unknown fixture: %s\n", fixture)
 		os.Exit(2)

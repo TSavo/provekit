@@ -28,6 +28,16 @@ int main(int argc, char* argv[]) {
       ir::forall(ir::Int(), [](std::shared_ptr<ir::Term> x) {
         return ir::gt(x, ir::num(0));
       }));
+  } else if (fixture == "eq_parseint_zero_zero") {
+    ir::property(
+      "eq_parseint_zero_zero",
+      ir::eq(ir::parse_int(ir::str_const("0")), ir::num(0)));
+  } else if (fixture == "forall_string_parseint_gte_zero") {
+    ir::property(
+      "forall_string_parseint_gte_zero",
+      ir::forall(ir::String(), [](std::shared_ptr<ir::Term> s) {
+        return ir::gte(ir::parse_int(s), ir::num(0));
+      }));
   } else {
     std::cerr << "unknown fixture: " << fixture << "\n";
     return 2;

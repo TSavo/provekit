@@ -69,6 +69,12 @@ inline std::shared_ptr<Term> make_var(std::string name, Sort sort) {
 inline std::shared_ptr<Term> num(int64_t value) {
   return std::make_shared<Term>(Term{ConstTerm{value, Int()}});
 }
+inline std::shared_ptr<Term> str_const(std::string value) {
+  return std::make_shared<Term>(Term{ConstTerm{std::move(value), String()}});
+}
+inline std::shared_ptr<Term> parse_int(std::shared_ptr<Term> s) {
+  return std::make_shared<Term>(Term{CtorTerm{"parseInt", {std::move(s)}, Int()}});
+}
 
 // ---------------------------------------------------------------------------
 // Formula
@@ -122,6 +128,12 @@ inline void reset_collector() {
 
 inline std::shared_ptr<Formula> gt(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
   return std::make_shared<Formula>(Formula{AtomicFormula{">", {std::move(a), std::move(b)}}});
+}
+inline std::shared_ptr<Formula> gte(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
+  return std::make_shared<Formula>(Formula{AtomicFormula{"\xe2\x89\xa5", {std::move(a), std::move(b)}}});
+}
+inline std::shared_ptr<Formula> eq(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
+  return std::make_shared<Formula>(Formula{AtomicFormula{"=", {std::move(a), std::move(b)}}});
 }
 
 // ---------------------------------------------------------------------------

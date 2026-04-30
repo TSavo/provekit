@@ -9,8 +9,13 @@
 import {
   forAll,
   gt,
+  gte,
+  eq,
   num,
+  str,
+  parseInt as parseIntPrim,
   Int,
+  String as StringSort,
   beginCollecting,
   property,
   _resetCollector,
@@ -28,6 +33,15 @@ const finish = beginCollecting();
 switch (fixture) {
   case "forall_int_gt_zero":
     property("forall_int_gt_zero", forAll(Int, (x) => gt(x, num(0))));
+    break;
+  case "eq_parseint_zero_zero":
+    property("eq_parseint_zero_zero", eq(parseIntPrim(str("0")), num(0)));
+    break;
+  case "forall_string_parseint_gte_zero":
+    property(
+      "forall_string_parseint_gte_zero",
+      forAll(StringSort, (s) => gte(parseIntPrim(s), num(0))),
+    );
     break;
   default:
     console.error(`unknown fixture: ${fixture}`);

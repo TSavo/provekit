@@ -25,6 +25,18 @@ fn main() {
                 forall!(x: sorts::int() => gt(x, num(0_i64))),
             );
         }
+        "eq_parseint_zero_zero" => {
+            property_fn(
+                "eq_parseint_zero_zero",
+                eq(parse_int(str_("0")), num(0_i64)),
+            );
+        }
+        "forall_string_parseint_gte_zero" => {
+            property_fn(
+                "forall_string_parseint_gte_zero",
+                forall!(s: sorts::string() => gte(parse_int(s), num(0_i64))),
+            );
+        }
         _ => {
             eprintln!("unknown fixture: {}", fixture);
             std::process::exit(2);
