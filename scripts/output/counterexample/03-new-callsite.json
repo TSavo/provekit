@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "9918f170c0b7ecd4",
+  "propertyHash": "23520723ca633ce8",
+  "verdict": "undecidable",
+  "producedBy": "ts-lifter@1.0",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [
+    "612cdd5316358938e463e39611f9a534",
+    "a688ae14755a1d1077cc16e665f64bc9"
+  ],
+  "evidence": {
+    "kind": "legacy-witness",
+    "schema": "0000000000000000b0000000000000b0",
+    "body": {
+      "rawWitness": "{\"source\":\"src/cli/configure.ts:5:10\",\"code\":\"const divisor = parseInt(args[1]);\\n const result = divide(amount, divisor);\",\"analysis\":\"callsite combines parseInt's symbolic-range (includes 0) with divide's precondition (d !== 0). Verdict pending solver dispatch.\"}",
+      "legacyProducerId": "ts-lifter@1.0"
+    }
+  },
+  "producerSignature": "E5WDurwHv1ixsQcAsH84mEoE7i8PjBBu6RBKQdEJ3OUALNjMyQKXNMgo9q2kUDTQtA3YSj8PyAKAcxW/uSmGCQ==",
+  "cid": "6929f209386b736a0d2f30efb397edc6"
+}
