@@ -239,7 +239,7 @@ describe("runMint", () => {
     expect(err).toContain("--source-layer required");
   });
 
-  it("'mint catalog' composes a catalog root from member memento JSON files", async () => {
+  it("'mint catalog' composes a .proof envelope from member memento JSON files", async () => {
     // Mint two member mementos to disk first.
     const catalogDir = mkdtempSync(join(tmpDir, "catalog-"));
     const member1Spec = {
@@ -280,7 +280,12 @@ describe("runMint", () => {
     stdio.stderr.reset();
     stdio.stdout.reset();
 
-    // Now compose them.
+    // Read both members' CIDs back so we can assert the .proof contents.
+    const m1 = JSON.parse(readFileSync(join(catalogDir, "member1.json"), "utf-8"));
+    const m2 = JSON.parse(readFileSync(join(catalogDir, "member2.json"), "utf-8"));
+
+    // Now compose them. Output goes to a separate dir so we can find the .proof file.
+    const outDir = mkdtempSync(join(tmpDir, "catalog-out-"));
     await runMint([
       "catalog",
       catalogDir,
@@ -290,19 +295,32 @@ describe("runMint", () => {
       "0.0.1",
       "--key",
       keyPath,
+      "--out-dir",
+      outDir,
     ]);
 
-    const out = stdio.stdout.read();
-    const root = JSON.parse(out);
-    expect(root.cid).toMatch(HEX32);
-    // The catalog root uses legacy-witness evidence with rawWitness
-    // describing the catalog members.
-    expect(root.evidence?.kind).toBe("legacy-witness");
-    const witnessBody = JSON.parse(root.evidence.body.rawWitness);
-    expect(witnessBody.kind).toBe("catalog");
-    expect(witnessBody.name).toBe("test-catalog");
-    expect(witnessBody.memberCount).toBe(2);
-    expect(witnessBody.members).toHaveLength(2);
+    // Find the produced .proof file.
+    const { readdirSync } = await import("fs");
+    const proofFiles = readdirSync(outDir).filter((f) => f.endsWith(".proof"));
+    expect(proofFiles).toHaveLength(1);
+    const proofPath = join(outDir, proofFiles[0]!);
+    const cidFromFilename = proofFiles[0]!.replace(/\.proof$/, "");
+
+    // Verify the file's bytes hash to its filename CID (trust root).
+    const { createHash } = await import("node:crypto");
+    const bytes = readFileSync(proofPath);
+    const derivedCid = createHash("sha256").update(bytes).digest("hex").slice(0, 32);
+    expect(derivedCid).toBe(cidFromFilename);
+
+    // Decode and verify catalog structure.
+    const { decodeProofEnvelope } = await import("./proofEnvelope/index.js");
+    const catalog = decodeProofEnvelope(new Uint8Array(bytes));
+    expect(catalog.kind).toBe("catalog");
+    expect(catalog.name).toBe("test-catalog");
+    expect(catalog.version).toBe("0.0.1");
+    expect(catalog.members.size).toBe(2);
+    expect(catalog.members.has(m1.cid)).toBe(true);
+    expect(catalog.members.has(m2.cid)).toBe(true);
   });
 
   it("'mint catalog' without <dir> exits 1", async () => {

@@ -43,6 +43,7 @@ import {
   mintLegacyWitness,
   VARIANT_SCHEMA_CIDS,
 } from "./claimEnvelope/index.js";
+import { buildProofEnvelope } from "./proofEnvelope/index.js";
 import type { ClaimEnvelope, EvidenceVariant } from "./claimEnvelope/types.js";
 import { createHash } from "node:crypto";
 
@@ -208,55 +209,54 @@ function mintCatalogCmd(args: {
   catalogName?: string;
   catalogVersion?: string;
   keyPath?: string;
-  outPath?: string;
-}): ClaimEnvelope {
+  /** Output directory; the file is written as <cid>.proof inside it. Defaults to cwd. */
+  outDir?: string;
+}): { cid: string; outPath: string; memberCount: number } {
   const dir = resolve(args.dir);
   const files = readdirSync(dir)
-    .filter((f) => f.endsWith(".json") && f !== "catalog.json")
+    .filter((f) => f.endsWith(".json") && !f.endsWith(".proof.json"))
     .sort();
 
-  const memementoFiles = files.filter((f) => {
+  const members = new Map<string, ClaimEnvelope>();
+  for (const f of files) {
+    let env: ClaimEnvelope;
     try {
-      const obj = JSON.parse(readFileSync(join(dir, f), "utf8"));
-      return typeof obj.cid === "string" && typeof obj.bindingHash === "string";
+      env = JSON.parse(readFileSync(join(dir, f), "utf8"));
     } catch {
-      return false;
+      continue;
     }
-  });
-
-  const cids: string[] = [];
-  for (const f of memementoFiles) {
-    const memento: ClaimEnvelope = JSON.parse(readFileSync(join(dir, f), "utf8"));
-    cids.push(memento.cid);
+    if (typeof env.cid !== "string" || typeof env.bindingHash !== "string") continue;
+    members.set(env.cid, env);
   }
-  cids.sort();
 
   const { privateKey, publicKey, ephemeral } = loadPrivateKey(args.keyPath);
 
   const catalogName = args.catalogName ?? "catalog";
   const catalogVersion = args.catalogVersion ?? "0.0.1";
-  const producedBy = args.producedBy ?? `${catalogName}@${catalogVersion}`;
 
-  const root = mintLegacyWitness({
-    bindingHash: hash16(`${catalogName}@${catalogVersion}`),
-    propertyHash: hash16(`catalog-root:${catalogName}@${catalogVersion}`),
-    verdict: "holds",
-    producedBy,
-    inputCids: cids,
-    privateKey,
-    rawWitness: JSON.stringify({
-      kind: "catalog",
-      name: catalogName,
-      version: catalogVersion,
-      memberCount: cids.length,
-      members: cids,
-    }),
+  // Signer CID: deterministic identifier derived from the public key bytes.
+  // (A future revision will replace this with a real public-key memento
+  // embedded in members; today the signer field is a synthetic CID.)
+  const pubDer = publicKey.export({ type: "spki", format: "der" });
+  const signerCid = "sha256:" + createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+
+  const built = buildProofEnvelope({
+    name: catalogName,
+    version: catalogVersion,
+    members,
+    signerCid,
+    signerPrivateKey: privateKey,
   });
 
+  const outDir = resolve(args.outDir ?? ".");
+  const outPath = join(outDir, `${built.cid}.proof`);
+  writeFileSync(outPath, Buffer.from(built.bytes));
+
   emitPublicKeyIfEphemeral(publicKey, ephemeral);
-  writeOutput(root, args.outPath);
-  process.stderr.write(`composed ${cids.length} mementos into catalog root\n`);
-  return root;
+  process.stderr.write(
+    `composed ${members.size} mementos → ${outPath} (cid=${built.cid}, ${built.bytes.length} bytes)\n`,
+  );
+  return { cid: built.cid, outPath, memberCount: members.size };
 }
 
 function genericMintCmd(args: {
@@ -322,7 +322,11 @@ Usage:
                        [--key <path>] [--out <path>]
   provekit mint catalog <dir> [--name <s>] [--version <s>]
                               [--produced-by <id>]
-                              [--key <path>] [--out <path>]
+                              [--key <path>] [--out-dir <path>]
+    Composes all *.json mementos in <dir> into a deterministic-CBOR
+    .proof envelope (per docs/specs/2026-04-30-proof-file-format.md).
+    Output written as <cid>.proof in --out-dir (default cwd); the
+    filename IS the bytes hash and the protocol's trust root.
   provekit mint generic   [--spec <path>] [--key <path>] [--out <path>]
 
 Property and generic read JSON spec from --spec or stdin.
@@ -400,7 +404,7 @@ export async function runMint(argv: string[]): Promise<void> {
             ? (flags["produced-by"] as string)
             : undefined,
         keyPath: typeof flags.key === "string" ? flags.key : undefined,
-        outPath: typeof flags.out === "string" ? flags.out : undefined,
+        outDir: typeof flags["out-dir"] === "string" ? (flags["out-dir"] as string) : undefined,
       });
       break;
     }
