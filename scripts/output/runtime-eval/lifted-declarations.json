@@ -1,0 +1,308 @@
+[
+  {
+    "kind": "property",
+    "name": "parseInt > canReturnZero",
+    "formula": {
+      "kind": "exists",
+      "sort": {
+        "kind": "primitive",
+        "name": "String"
+      },
+      "predicate": {
+        "kind": "lambda",
+        "varName": "_x0",
+        "sort": {
+          "kind": "primitive",
+          "name": "String"
+        },
+        "body": {
+          "kind": "atomic",
+          "predicate": "=",
+          "args": [
+            {
+              "kind": "ctor",
+              "name": "parseInt",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "_x0",
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "String"
+                  }
+                }
+              ],
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "kind": "property",
+    "name": "parseInt > canReturnPositive",
+    "formula": {
+      "kind": "exists",
+      "sort": {
+        "kind": "primitive",
+        "name": "String"
+      },
+      "predicate": {
+        "kind": "lambda",
+        "varName": "_x1",
+        "sort": {
+          "kind": "primitive",
+          "name": "String"
+        },
+        "body": {
+          "kind": "atomic",
+          "predicate": ">",
+          "args": [
+            {
+              "kind": "ctor",
+              "name": "parseInt",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "_x1",
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "String"
+                  }
+                }
+              ],
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "kind": "property",
+    "name": "parseInt > canReturnNegative",
+    "formula": {
+      "kind": "exists",
+      "sort": {
+        "kind": "primitive",
+        "name": "String"
+      },
+      "predicate": {
+        "kind": "lambda",
+        "varName": "_x2",
+        "sort": {
+          "kind": "primitive",
+          "name": "String"
+        },
+        "body": {
+          "kind": "atomic",
+          "predicate": "<",
+          "args": [
+            {
+              "kind": "ctor",
+              "name": "parseInt",
+              "args": [
+                {
+                  "kind": "var",
+                  "name": "_x2",
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "String"
+                  }
+                }
+              ],
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "kind": "property",
+    "name": "parseInt > non-negative integer round-trip > zero",
+    "formula": {
+      "kind": "atomic",
+      "predicate": "=",
+      "args": [
+        {
+          "kind": "ctor",
+          "name": "parseInt",
+          "args": [
+            {
+              "kind": "const",
+              "value": "0",
+              "sort": {
+                "kind": "primitive",
+                "name": "String"
+              }
+            }
+          ],
+          "sort": {
+            "kind": "primitive",
+            "name": "Int"
+          }
+        },
+        {
+          "kind": "const",
+          "value": 0,
+          "sort": {
+            "kind": "primitive",
+            "name": "Int"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "kind": "property",
+    "name": "parseInt > non-negative integer round-trip > idempotent on small positive integers",
+    "formula": {
+      "kind": "forall",
+      "sort": {
+        "kind": "primitive",
+        "name": "Int"
+      },
+      "predicate": {
+        "kind": "lambda",
+        "varName": "_x3",
+        "sort": {
+          "kind": "primitive",
+          "name": "Int"
+        },
+        "body": {
+          "kind": "implies",
+          "antecedent": {
+            "kind": "atomic",
+            "predicate": "≥",
+            "args": [
+              {
+                "kind": "var",
+                "name": "_x3",
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                }
+              },
+              {
+                "kind": "const",
+                "value": 0,
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                }
+              }
+            ]
+          },
+          "consequent": {
+            "kind": "atomic",
+            "predicate": "≥",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "parseInt",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "...",
+                    "sort": {
+                      "kind": "primitive",
+                      "name": "String"
+                    }
+                  }
+                ],
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                }
+              },
+              {
+                "kind": "const",
+                "value": 0,
+                "sort": {
+                  "kind": "primitive",
+                  "name": "Int"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "kind": "property",
+    "name": "Math.abs > non-negative output",
+    "formula": {
+      "kind": "forall",
+      "sort": {
+        "kind": "primitive",
+        "name": "Int"
+      },
+      "predicate": {
+        "kind": "lambda",
+        "varName": "_x4",
+        "sort": {
+          "kind": "primitive",
+          "name": "Int"
+        },
+        "body": {
+          "kind": "atomic",
+          "predicate": "≥",
+          "args": [
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            },
+            {
+              "kind": "const",
+              "value": 0,
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+]
