@@ -36,7 +36,7 @@ safety eval S" WITHOUT releasing model weights.
 The proof is content-addressed; the underlying content is private. The
 ZK proof composes into the DAG; the secret stays secret.
 
-## Use cases
+## Use cases — software domain
 
 - **Private code verification.** Proprietary algorithms prove
   compliance without source disclosure.
@@ -54,6 +54,117 @@ ZK proof composes into the DAG; the secret stays secret.
 - **Marketplace pricing privacy.** Verification payment is on-chain
   (public); the underlying code being verified is private (ZK-
   protected); the verdict composes globally.
+
+## Use cases — industrial / physical domain
+
+The same architectural primitive applies to physical products with
+black-box certification problems. Every regulated industry that has
+this problem becomes a candidate domain.
+
+**The pattern:**
+
+1. The producer commits to a private spec/recipe/formulation via hash
+   (commitment is public; spec is private).
+2. Independent test labs measure the artifact (physical sensors,
+   calibrated instruments, ISO/IEC 17025 accredited).
+3. Measurements compose into mementos against the commitment hash.
+4. ZK proofs attest classification without revealing the spec.
+5. Trust composes globally via DAG walks.
+
+**The shape of an industrial-domain memento:**
+
+```yaml
+bindingHash: hash16(productSerialNumber + specCommitmentHash)
+propertyHash: P_powerOutputAtTemperature
+verdict: holds
+producedBy: testing-lab-X@2026
+inputCids:
+  - <calibration certificate, content-hashed>
+  - <ISO/IEC 17025 lab accreditation memento>
+  - <raw sensor trace, content-hashed>
+evidence:
+  kind: physical-measurement
+  body:
+    instrument: <calibrated multimeter ID + cal-cert hash>
+    measurementSchedule: <time series>
+    operatorSignature: <technician's signature>
+producerSignature: <lab's ed25519>
+```
+
+**Industries that have the black-box certification problem:**
+
+- **Pharmaceutical efficacy** without revealing formulation
+- **Materials science** (alloy strength) without revealing composition
+- **Semiconductor performance** without revealing process node details
+- **Food safety** test results without revealing supply chain
+- **Environmental compliance** emissions without revealing manufacturing
+- **Energy storage** capacity without revealing cell chemistry
+- **Autonomous vehicle safety** without revealing sensor fusion
+- **Cryptographic implementation** correctness without revealing impl
+- **Building materials** structural specs without revealing composition
+- **Medical devices** clinical efficacy without revealing mechanism
+
+Each one has the same shape. Each currently has weak trust solutions:
+
+| Today's solution | Why it's weak |
+|---|---|
+| Trust the producer | Producers lie |
+| Trust a third-party auditor | Auditors collude or err |
+| Submit to regulator with NDA | Regulators leak; trust still needed |
+| Open-source / publish | Defeats trade secrets, kills moat |
+
+ProvekIt + ZK + content-addressed measurements is structurally a fifth
+option: trust becomes mechanical, trade secrets stay private, the
+audit is a DAG walk.
+
+**The substrate becomes the trust layer for commerce itself.**
+
+Not just software. Physical products, industrial outputs, every
+regulated industry, every certified product, every claim about
+manufactured goods. The architectural primitive applies wherever:
+
+- The artifact's behavior can be measured and content-addressed
+- The producer can commit to a spec via hash without disclosing it
+- Independent labs/auditors can attest measurements
+- ZK proofs can attest classification without revealing the spec
+
+Modulo what can be measured and content-addressed (which is
+increasingly everything), the substrate is the trust layer of human
+industrial civilization.
+
+**Worked example — battery certification:**
+
+A battery producer wants to claim "delivers ≥P watts for ≥t seconds
+at ≥T°C ambient temperature" while keeping the cell chemistry
+proprietary.
+
+1. Producer commits to chemistry via `recipeCommitmentHash`.
+2. Independent labs measure batteries with calibrated equipment;
+   each measurement is a memento bound to `(batterySerial,
+   recipeCommitmentHash)`.
+3. ZK proof attests "the chemistry behind this commitment uses
+   technique class X" without revealing the recipe.
+4. Aggregate memento composes the per-battery measurements:
+   "batteries committed via this hash satisfy P with confidence
+   level C."
+5. Customer (utility company, regulator, downstream manufacturer)
+   walks the DAG. Sees:
+   - Hundreds of physical measurements from accredited labs
+   - ZK-attested technique classification
+   - Calibration chain to physics standards
+   - All grounded in measurable, attestable, content-addressed
+     evidence
+
+The chemistry stays in the producer's vault. The trust is
+mechanical end-to-end. Compliance is a DAG walk.
+
+**This is the same primitive as software verification.**
+
+The framework doesn't need to know about batteries. Or pharma. Or
+semiconductors. The substrate accepts any content-hashable artifact
+with attestable claims. Domain-specific producer types (lab
+accreditation memetos, calibration chains, physical-measurement
+evidence variants) extend coverage; the primitive is invariant.
 
 ## The marketplace economics
 
