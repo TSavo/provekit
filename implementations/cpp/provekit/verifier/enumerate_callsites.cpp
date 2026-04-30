@@ -23,24 +23,17 @@ void walk_formula(const Json& f,
         if (f.contains("args") && f["args"].is_array()) {
             for (const auto& a : f["args"]) walk_term(a, property_name, property_cid, pool, out);
         }
-    } else if (kind == "and") {
-        if (f.contains("conjuncts") && f["conjuncts"].is_array()) {
-            for (const auto& c : f["conjuncts"]) walk_formula(c, property_name, property_cid, pool, out);
+        return;
+    }
+    if (kind == "and" || kind == "or" || kind == "not" || kind == "implies") {
+        if (f.contains("operands") && f["operands"].is_array()) {
+            for (const auto& op : f["operands"]) walk_formula(op, property_name, property_cid, pool, out);
         }
-    } else if (kind == "or") {
-        if (f.contains("disjuncts") && f["disjuncts"].is_array()) {
-            for (const auto& d : f["disjuncts"]) walk_formula(d, property_name, property_cid, pool, out);
-        }
-    } else if (kind == "not") {
+        return;
+    }
+    if (kind == "forall" || kind == "exists") {
         if (f.contains("body")) walk_formula(f["body"], property_name, property_cid, pool, out);
-    } else if (kind == "implies") {
-        if (f.contains("antecedent")) walk_formula(f["antecedent"], property_name, property_cid, pool, out);
-        if (f.contains("consequent")) walk_formula(f["consequent"], property_name, property_cid, pool, out);
-    } else if (kind == "forall" || kind == "exists") {
-        if (f.contains("predicate") && f["predicate"].is_object()) {
-            const auto& pred = f["predicate"];
-            if (pred.contains("body")) walk_formula(pred["body"], property_name, property_cid, pool, out);
-        }
+        return;
     }
 }
 
@@ -80,18 +73,24 @@ std::vector<CallSite> EnumerateCallsitesStage::Run(const MementoPool& pool) {
     for (const auto& [cid, env] : pool.mementos) {
         if (!env.contains("evidence") || !env["evidence"].is_object()) continue;
         const auto& ev = env["evidence"];
-        if (ev.value("kind", "") != "property") continue;
+        if (ev.value("kind", "") != "contract") continue;
         if (!ev.contains("body") || !ev["body"].is_object()) continue;
         const auto& body = ev["body"];
-        std::string property_name;
-        if (body.contains("scope") && body["scope"].is_object()) {
-            property_name = body["scope"].value("name", "");
-        }
+        std::string property_name = body.value("contractName", "");
         if (property_name.empty()) {
             property_name = cid.substr(0, 12) + "...";
         }
-        if (!body.contains("irFormula") || !body["irFormula"].is_object()) continue;
-        walk_formula(body["irFormula"], property_name, cid, pool, out);
+        // Walk pre/post/inv (whichever are present). Each can independently
+        // contain ctor invocations of bridge-source symbols (call sites).
+        if (body.contains("pre") && body["pre"].is_object()) {
+            walk_formula(body["pre"], property_name, cid, pool, out);
+        }
+        if (body.contains("post") && body["post"].is_object()) {
+            walk_formula(body["post"], property_name, cid, pool, out);
+        }
+        if (body.contains("inv") && body["inv"].is_object()) {
+            walk_formula(body["inv"], property_name, cid, pool, out);
+        }
     }
     return out;
 }

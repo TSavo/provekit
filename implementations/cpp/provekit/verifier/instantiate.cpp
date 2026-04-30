@@ -18,26 +18,25 @@ Json substitute_formula(const Json& f, const std::string& name, const Json& repl
             for (const auto& a : f["args"]) arr.push_back(substitute_term(a, name, replacement));
             out["args"] = std::move(arr);
         }
-    } else if (kind == "and" || kind == "or") {
-        const std::string key = (kind == "and") ? "conjuncts" : "disjuncts";
-        if (f.contains(key) && f[key].is_array()) {
+        return out;
+    }
+    if (kind == "and" || kind == "or" || kind == "not" || kind == "implies") {
+        if (f.contains("operands") && f["operands"].is_array()) {
             Json arr = Json::array();
-            for (const auto& e : f[key]) arr.push_back(substitute_formula(e, name, replacement));
-            out[key] = std::move(arr);
+            for (const auto& op : f["operands"]) {
+                arr.push_back(substitute_formula(op, name, replacement));
+            }
+            out["operands"] = std::move(arr);
         }
-    } else if (kind == "not") {
-        if (f.contains("body")) out["body"] = substitute_formula(f["body"], name, replacement);
-    } else if (kind == "implies") {
-        if (f.contains("antecedent")) out["antecedent"] = substitute_formula(f["antecedent"], name, replacement);
-        if (f.contains("consequent")) out["consequent"] = substitute_formula(f["consequent"], name, replacement);
-    } else if (kind == "forall" || kind == "exists") {
-        if (f.contains("predicate") && f["predicate"].is_object()) {
-            const auto& pred = f["predicate"];
-            if (pred.value("varName", "") == name) return out;  // shadowed
-            Json new_pred = pred;
-            if (pred.contains("body")) new_pred["body"] = substitute_formula(pred["body"], name, replacement);
-            out["predicate"] = std::move(new_pred);
+        return out;
+    }
+    if (kind == "forall" || kind == "exists") {
+        // Shadowing: don't substitute past a binder that re-introduces `name`.
+        if (f.value("name", "") == name) return out;
+        if (f.contains("body")) {
+            out["body"] = substitute_formula(f["body"], name, replacement);
         }
+        return out;
     }
     return out;
 }
@@ -71,24 +70,20 @@ bool InstantiateStage::Run(const ResolvedProperty& resolved,
     }
     const Json& f = resolved.ir_formula;
     if (!f.is_object() || f.value("kind", "") != "forall") {
-        *err = "property formula is not a forall";
+        *err = "precondition formula is not a forall";
         return false;
     }
-    if (!f.contains("predicate") || !f["predicate"].is_object()) {
-        *err = "forall has no predicate";
-        return false;
-    }
-    const auto& pred = f["predicate"];
-    const std::string var_name = pred.value("varName", "");
+    // Flat quantifier shape: {kind, name, sort, body}. No nested lambda.
+    const std::string var_name = f.value("name", "");
     if (var_name.empty()) {
-        *err = "forall predicate has empty varName";
+        *err = "forall has empty bound-variable name";
         return false;
     }
-    if (!pred.contains("body")) {
-        *err = "forall predicate has no body";
+    if (!f.contains("body")) {
+        *err = "forall has no body";
         return false;
     }
-    out->ir_formula = substitute_formula(pred["body"], var_name, arg_term);
+    out->ir_formula = substitute_formula(f["body"], var_name, arg_term);
     out->property_cid = resolved.cid;
     out->ir_kit_version = resolved.ir_kit_version;
     return true;

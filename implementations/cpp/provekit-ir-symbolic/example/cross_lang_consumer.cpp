@@ -50,9 +50,11 @@ using namespace provekit::ir;
 using ::provekit::canonicalizer::Value;
 using ::provekit::canonicalizer::ValuePtr;
 using ::provekit::canonicalizer::sha256_hex;
-using ::provekit::claim_envelope::MintPropertyArgs;
-using ::provekit::claim_envelope::mint_property;
+using ::provekit::claim_envelope::MintContractArgs;
+using ::provekit::claim_envelope::mint_contract;
 using ::provekit::claim_envelope::formula_to_value;
+using ::provekit::claim_envelope::AuthoringKind;
+using ::provekit::claim_envelope::AuthoringKitAuthor;
 using ::provekit::proof_envelope::Ed25519Seed;
 using ::provekit::proof_envelope::ProofEnvelopeInput;
 using ::provekit::proof_envelope::build_proof_envelope;
@@ -122,32 +124,29 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // ---- 3. Mint each property memento (C++ signs C++) ----
+    // ---- 3. Mint each contract memento (C++ signs C++) ----
     Ed25519Seed signer_seed;
     signer_seed.fill(0x37);
     const std::string declared_at = "2026-04-30T15:00:00.000Z";
     const std::string produced_by = "cpp-consumer@1";
-    const std::string ir_kit_version = "cpp-kit@1.0";
 
     std::map<std::string, std::vector<uint8_t>> members;
     for (const auto& d : decls) {
-        ValuePtr scope = Value::object({
-            {"kind", Value::string("function")},
-            {"name", Value::string(d.name)},
-        });
-        MintPropertyArgs args{
-            .binding_hash = hash16("cpp-consumer:" + d.name),
-            .property_hash = hash16("hash-of:" + d.name),
-            .produced_by = produced_by,
-            .produced_at = declared_at,
-            .input_cids = {},
-            .ir_formula = formula_to_value(*d.formula),
-            .scope = scope,
-            .ir_kit_version = ir_kit_version,
-            .signer_seed = signer_seed,
-        };
-        auto minted = mint_property(args);
-        std::printf("  property minted: %s -> CID %s\n", d.name.c_str(), minted.cid.c_str());
+        MintContractArgs args{};
+        args.contract_name = d.name;
+        if (d.pre) args.pre = formula_to_value(*d.pre);
+        if (d.post) args.post = formula_to_value(*d.post);
+        if (d.inv) args.inv = formula_to_value(*d.inv);
+        args.out_binding = d.outBinding;
+        args.produced_by = produced_by;
+        args.produced_at = declared_at;
+        args.input_cids = {};
+        args.authoring_kind = AuthoringKind::KitAuthor;
+        args.authoring_kit_author = AuthoringKitAuthor{produced_by, ""};
+        args.signer_seed = signer_seed;
+
+        auto minted = mint_contract(args);
+        std::printf("  contract minted: %s -> CID %s\n", d.name.c_str(), minted.cid.c_str());
         members[minted.cid] = minted.canonical_bytes;
     }
 

@@ -21,10 +21,10 @@ ValuePtr term_to_value(const ::provekit::ir::Term& term) {
         [&](const auto& t) -> ValuePtr {
             using T = std::decay_t<decltype(t)>;
             if constexpr (std::is_same_v<T, ::provekit::ir::VarTerm>) {
+                // Locked key order: kind, name. (No sort.)
                 return Value::object({
                     {"kind", Value::string("var")},
                     {"name", Value::string(t.name)},
-                    {"sort", sort_to_value(t.sort)},
                 });
             } else if constexpr (std::is_same_v<T, ::provekit::ir::ConstTerm>) {
                 ValuePtr value_v;
@@ -38,11 +38,11 @@ ValuePtr term_to_value(const ::provekit::ir::Term& term) {
                         } else if constexpr (std::is_same_v<V, bool>) {
                             value_v = Value::boolean(v);
                         } else {
-                            // double — narrow to integer for v1
                             value_v = Value::integer(static_cast<int64_t>(v));
                         }
                     },
                     t.value);
+                // Locked key order: kind, value, sort.
                 return Value::object({
                     {"kind", Value::string("const")},
                     {"value", value_v},
@@ -52,11 +52,11 @@ ValuePtr term_to_value(const ::provekit::ir::Term& term) {
                 std::vector<ValuePtr> arg_values;
                 arg_values.reserve(t.args.size());
                 for (const auto& a : t.args) arg_values.push_back(term_to_value(*a));
+                // Locked key order: kind, name, args. (No sort.)
                 return Value::object({
                     {"kind", Value::string("ctor")},
                     {"name", Value::string(t.name)},
                     {"args", Value::array(arg_values)},
-                    {"sort", sort_to_value(t.sort)},
                 });
             }
         },
@@ -71,22 +71,28 @@ ValuePtr formula_to_value(const ::provekit::ir::Formula& formula) {
                 std::vector<ValuePtr> arg_values;
                 arg_values.reserve(f.args.size());
                 for (const auto& a : f.args) arg_values.push_back(term_to_value(*a));
+                // Locked key order: kind, name, args.
                 return Value::object({
                     {"kind", Value::string("atomic")},
-                    {"predicate", Value::string(f.predicate)},
+                    {"name", Value::string(f.name)},
                     {"args", Value::array(arg_values)},
                 });
-            } else if constexpr (std::is_same_v<F, ::provekit::ir::ForallFormula>) {
-                ValuePtr lambda = Value::object({
-                    {"kind", Value::string("lambda")},
-                    {"varName", Value::string(f.predicate->varName)},
-                    {"sort", sort_to_value(f.predicate->sort)},
-                    {"body", formula_to_value(*f.predicate->body)},
-                });
+            } else if constexpr (std::is_same_v<F, ::provekit::ir::ConnectiveFormula>) {
+                std::vector<ValuePtr> operand_values;
+                operand_values.reserve(f.operands.size());
+                for (const auto& op : f.operands) operand_values.push_back(formula_to_value(*op));
+                // Locked key order: kind, operands.
                 return Value::object({
-                    {"kind", Value::string("forall")},
+                    {"kind", Value::string(f.kind)},
+                    {"operands", Value::array(operand_values)},
+                });
+            } else if constexpr (std::is_same_v<F, ::provekit::ir::QuantifierFormula>) {
+                // Locked key order: kind, name, sort, body. (Flat — no Lambda wrapper.)
+                return Value::object({
+                    {"kind", Value::string(f.kind)},
+                    {"name", Value::string(f.name)},
                     {"sort", sort_to_value(f.sort)},
-                    {"predicate", lambda},
+                    {"body", formula_to_value(*f.body)},
                 });
             }
         },
