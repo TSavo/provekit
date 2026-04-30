@@ -1,10 +1,22 @@
 [package]
 name = "provekit-ir-symbolic"
-version = "0.1.0"
-edition = "2021"
-description = "ProvekIt Rust kit: symbolic primitives for IR emission via runtime-eval lifting."
-license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: Rust kit. Authoring API + IR-JSON serializer for v1.1.0 IR."
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-claim-envelope = { path = "../provekit-claim-envelope" }
+provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-claim-envelope = { path = "../provekit-claim-envelope" }
+provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+
+[[example]]
+name = "parseInt_publish"
+path = "../examples/parseInt_publish.rs"
