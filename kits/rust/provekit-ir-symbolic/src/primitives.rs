@@ -3,10 +3,65 @@
 //! Mirrors `src/ir/symbolic/primitives.ts`. Each function returns an
 //! IrTerm or IrFormula; nothing actually computes. Running user invariant
 //! code produces the IR directly.
+//!
+//! Most "built-ins" here are actually NOT owned by the Rust kit. Their
+//! semantic authority lives in LLVM, the Rust core/std library, or
+//! whatever deeper layer ships them. The kit BRIDGES to those layers
+//! via the primitive_bridge factory in `src/extensions.rs`, registered
+//! lazily on first use of any primitive that needs it. Same shape as
+//! the TS kit's V8 bridges.
 
 use serde_json::Value as JsonValue;
+use std::sync::OnceLock;
 
+use crate::extensions::{
+    register_primitive_bridge, PrimitiveBridgeDeclaration, SortRef,
+};
 use crate::types::{lift_to_term, sorts, IrFormula, IrTerm, Liftable, Sort};
+
+// ---------------------------------------------------------------------------
+// Lazy registration of the kit's built-in V8/LLVM/std bridges.
+//
+// Rust doesn't have JS-style top-level side effects; the registry
+// populates on the first call to any of the bridged primitives. The
+// OnceLock ensures it runs exactly once per process.
+// ---------------------------------------------------------------------------
+
+fn ensure_kit_bridges_registered() {
+    static REGISTERED: OnceLock<()> = OnceLock::new();
+    REGISTERED.get_or_init(|| {
+        // Rust kit's "rustc/core/std" stand-in for the deeper-layer
+        // authority. Real CIDs would point at signed core-library
+        // declarations; placeholders here until the upstream catalogs
+        // are published.
+        let bridges = [
+            ("parseInt",  vec![SortRef::Named("String".into())], SortRef::Named("Int".into()),  "bafy_RUST_PARSEINT_PLACEHOLDER"),
+            ("parseFloat",vec![SortRef::Named("String".into())], SortRef::Named("Real".into()), "bafy_RUST_PARSEFLOAT_PLACEHOLDER"),
+            ("isNaN",     vec![SortRef::Named("Real".into())],   SortRef::Named("Bool".into()), "bafy_RUST_ISNAN_PLACEHOLDER"),
+            ("isFinite",  vec![SortRef::Named("Real".into())],   SortRef::Named("Bool".into()), "bafy_RUST_ISFINITE_PLACEHOLDER"),
+            ("isInteger", vec![SortRef::Named("Real".into())],   SortRef::Named("Bool".into()), "bafy_RUST_ISINTEGER_PLACEHOLDER"),
+            ("Math.floor",vec![SortRef::Named("Real".into())],   SortRef::Named("Int".into()),  "bafy_RUST_FLOOR_PLACEHOLDER"),
+            ("Math.ceil", vec![SortRef::Named("Real".into())],   SortRef::Named("Int".into()),  "bafy_RUST_CEIL_PLACEHOLDER"),
+            ("Math.sqrt", vec![SortRef::Named("Real".into())],   SortRef::Named("Real".into()), "bafy_RUST_SQRT_PLACEHOLDER"),
+            ("Math.sign", vec![SortRef::Named("Real".into())],   SortRef::Named("Int".into()),  "bafy_RUST_SIGN_PLACEHOLDER"),
+            ("String.prototype.length",   vec![SortRef::Named("String".into())], SortRef::Named("Int".into()),  "bafy_RUST_STRLEN_PLACEHOLDER"),
+            ("String.prototype.includes", vec![SortRef::Named("String".into()), SortRef::Named("String".into())], SortRef::Named("Bool".into()), "bafy_RUST_STRINCLUDES_PLACEHOLDER"),
+            ("Array.prototype.length",    vec![SortRef::Named("Array".into())],  SortRef::Named("Int".into()),  "bafy_RUST_ARRLEN_PLACEHOLDER"),
+            ("Array.prototype.includes",  vec![SortRef::Named("Array".into()), SortRef::Named("Any".into())], SortRef::Named("Bool".into()), "bafy_RUST_ARRINCLUDES_PLACEHOLDER"),
+        ];
+        for (ir_name, arg_sorts, return_sort, target_cid) in bridges {
+            let _ = register_primitive_bridge(PrimitiveBridgeDeclaration {
+                ir_name: ir_name.to_string(),
+                ir_arg_sorts: arg_sorts,
+                ir_return_sort: return_sort,
+                source_layer: "rust-kit".to_string(),
+                target_contract_cid: target_cid.to_string(),
+                target_layer: "rust-core".to_string(),
+                notes: None,
+            });
+        }
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -106,12 +161,27 @@ fn ctor(name: &str, args: Vec<IrTerm>, sort: Sort) -> IrTerm {
 // Built-in function primitives
 // ---------------------------------------------------------------------------
 
-pub fn parse_int(s: IrTerm) -> IrTerm { ctor("parseInt", vec![s], sorts::int()) }
-pub fn parse_float(s: IrTerm) -> IrTerm { ctor("parseFloat", vec![s], sorts::real()) }
+pub fn parse_int(s: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("parseInt", vec![s], sorts::int())
+}
+pub fn parse_float(s: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("parseFloat", vec![s], sorts::real())
+}
 
-pub fn is_nan(n: IrTerm) -> IrTerm { ctor("isNaN", vec![n], sorts::bool_()) }
-pub fn is_finite(n: IrTerm) -> IrTerm { ctor("isFinite", vec![n], sorts::bool_()) }
-pub fn is_integer(n: IrTerm) -> IrTerm { ctor("isInteger", vec![n], sorts::bool_()) }
+pub fn is_nan(n: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("isNaN", vec![n], sorts::bool_())
+}
+pub fn is_finite(n: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("isFinite", vec![n], sorts::bool_())
+}
+pub fn is_integer(n: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("isInteger", vec![n], sorts::bool_())
+}
 
 pub fn abs(n: IrTerm) -> IrTerm {
     let s = n.sort().clone();
@@ -125,22 +195,38 @@ pub fn min(a: IrTerm, b: IrTerm) -> IrTerm {
     let s = a.sort().clone();
     ctor("Math.min", vec![a, b], s)
 }
-pub fn floor(n: IrTerm) -> IrTerm { ctor("Math.floor", vec![n], sorts::int()) }
-pub fn ceil(n: IrTerm) -> IrTerm { ctor("Math.ceil", vec![n], sorts::int()) }
-pub fn sqrt(n: IrTerm) -> IrTerm { ctor("Math.sqrt", vec![n], sorts::real()) }
-pub fn sign(n: IrTerm) -> IrTerm { ctor("Math.sign", vec![n], sorts::int()) }
+pub fn floor(n: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("Math.floor", vec![n], sorts::int())
+}
+pub fn ceil(n: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("Math.ceil", vec![n], sorts::int())
+}
+pub fn sqrt(n: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("Math.sqrt", vec![n], sorts::real())
+}
+pub fn sign(n: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
+    ctor("Math.sign", vec![n], sorts::int())
+}
 
 pub fn string_length(s: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
     ctor("String.prototype.length", vec![s], sorts::int())
 }
 pub fn string_includes(s: IrTerm, sub: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
     ctor("String.prototype.includes", vec![s, sub], sorts::bool_())
 }
 
 pub fn array_length(arr: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
     ctor("Array.prototype.length", vec![arr], sorts::int())
 }
 pub fn array_includes(arr: IrTerm, item: IrTerm) -> IrTerm {
+    ensure_kit_bridges_registered();
     ctor("Array.prototype.includes", vec![arr, item], sorts::bool_())
 }
 
