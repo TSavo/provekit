@@ -33,7 +33,7 @@ import type { BugLocus, OverlayHandle } from "../../fix/types.js";
 import type { Db } from "../../db/index.js";
 import type { Action } from "../types.js";
 
-export const OPEN_OVERLAY_CAPABILITY = "openOverlay";
+export const OPEN_OVERLAY_CAPABILITY = "open-overlay";
 
 export interface OpenOverlayActionInput {
   locus: BugLocus;

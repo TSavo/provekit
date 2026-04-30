@@ -3,17 +3,18 @@
  *
  * Asserts:
  *   - The YAML manifest parses + structurally validates.
- *   - `registerBugFixCapabilities` produces a registry with the 7
- *     capabilities whose producers exist on this branch.
- *   - The manifest's full capability set matches the documented list.
+ *   - `registerBugFixRegistries` produces a registry pair with the 10
+ *     stage capabilities and the 1 action capability the manifest names.
+ *   - The manifest's stage + action capability sets match the documented
+ *     constants.
  *   - `runManifest` dispatches the first stage (intake) end-to-end with
- *     a stubbed LLM, then trips on the first un-registered pending
- *     capability with the runner's standard error.
+ *     a stubbed LLM via the registered subset.
  *
  * Most stages need real fixtures (a git repo, a real SAST DB, a real
  * agent-mode LLM) to run; this test does NOT exercise them. It proves
- * the manifest + registry are wired correctly and that workflow dispatch
- * reaches at least the first node.
+ * the manifest + registries are wired correctly and that workflow
+ * dispatch reaches at least the first node. The full end-to-end smoke
+ * lives at src/integration/bug-fix-workflow.smoke.test.ts.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -29,10 +30,13 @@ import { StubLLMProvider } from "../fix/types.js";
 import { WorkflowRunner } from "../workflow/runner.js";
 import { runManifest, manifestToWorkflow } from "../workflow/manifest.js";
 import {
+  BUG_FIX_ACTION_CAPABILITIES,
   BUG_FIX_CAPABILITIES,
+  BUG_FIX_STAGE_CAPABILITIES,
   PENDING_CAPABILITIES,
   loadBugFixManifest,
   registerBugFixCapabilities,
+  registerBugFixRegistries,
 } from "./bug-fix.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -81,67 +85,82 @@ describe("loadBugFixManifest", () => {
     expect(manifest.output).toBe("$node.bundle.output");
   });
 
-  it("references every documented bug-fix capability", () => {
+  it("references every documented bug-fix stage + action capability", () => {
     const manifest = loadBugFixManifest();
-    const caps = new Set(manifest.nodes.map((n) => n.capability));
-    for (const cap of BUG_FIX_CAPABILITIES) {
-      expect(caps.has(cap)).toBe(true);
+    const stageCaps = new Set(manifest.nodes.map((n) => n.capability));
+    for (const cap of BUG_FIX_STAGE_CAPABILITIES) {
+      expect(stageCaps.has(cap)).toBe(true);
     }
-    expect(caps.size).toBe(BUG_FIX_CAPABILITIES.length);
+    expect(stageCaps.size).toBe(BUG_FIX_STAGE_CAPABILITIES.length);
+
+    const actionCaps = new Set(
+      (manifest.actions ?? []).map((a) => a.action),
+    );
+    for (const cap of BUG_FIX_ACTION_CAPABILITIES) {
+      expect(actionCaps.has(cap)).toBe(true);
+    }
+    expect(actionCaps.size).toBe(BUG_FIX_ACTION_CAPABILITIES.length);
   });
 });
 
-describe("registerBugFixCapabilities", () => {
-  it("registers every capability whose producer module exists on this branch", () => {
+describe("registerBugFixRegistries", () => {
+  it("registers every stage capability the manifest names", () => {
     const db = makeDb();
-    const registry = registerBugFixCapabilities({
+    const { registry } = registerBugFixRegistries({
       db,
       llm: makeStubLLM(),
     });
     const registered = new Set(registry.capabilities());
 
-    for (const cap of BUG_FIX_CAPABILITIES) {
-      const isPending = (PENDING_CAPABILITIES as readonly string[]).includes(cap);
-      if (isPending) {
-        expect(registered.has(cap)).toBe(false);
-      } else {
-        expect(registered.has(cap)).toBe(true);
-      }
+    for (const cap of BUG_FIX_STAGE_CAPABILITIES) {
+      expect(registered.has(cap)).toBe(true);
+    }
+  });
+
+  it("registers every action capability the manifest names", () => {
+    const db = makeDb();
+    const { actionRegistry } = registerBugFixRegistries({
+      db,
+      llm: makeStubLLM(),
+    });
+    const registered = new Set(actionRegistry.capabilities());
+
+    for (const cap of BUG_FIX_ACTION_CAPABILITIES) {
+      expect(registered.has(cap)).toBe(true);
+    }
+  });
+
+  it("PENDING_CAPABILITIES is empty — the wiring is complete", () => {
+    expect(PENDING_CAPABILITIES).toEqual([]);
+    // BUG_FIX_CAPABILITIES is the union of stage + action capability
+    // names (back-compat with the prior flat shape of this module).
+    expect(BUG_FIX_CAPABILITIES.length).toBe(
+      BUG_FIX_STAGE_CAPABILITIES.length + BUG_FIX_ACTION_CAPABILITIES.length,
+    );
+  });
+
+  it("registerBugFixCapabilities returns a stage registry that omits actions", () => {
+    // Back-compat shim: registerBugFixCapabilities returns ProducerRegistry.
+    // Action capabilities are NOT in the stage registry, by construction.
+    const db = makeDb();
+    const stageRegistry = registerBugFixCapabilities({
+      db,
+      llm: makeStubLLM(),
+    });
+    const registered = new Set(stageRegistry.capabilities());
+    for (const cap of BUG_FIX_ACTION_CAPABILITIES) {
+      expect(registered.has(cap)).toBe(false);
     }
   });
 });
 
 describe("runManifest dispatch", () => {
-  it("executes intake then trips on the first pending capability", async () => {
-    const db = makeDb();
-    const llm = makeStubLLM();
-    const manifest = loadBugFixManifest();
-    const registry = registerBugFixCapabilities({ db, llm });
-    const runner = new WorkflowRunner(
-      db,
-      manifestToWorkflow(manifest),
-      registry,
-    );
-
-    // The runner surfaces unknown capabilities up front rather than
-    // mid-run (manifest.ts:291-298). One of the four PENDING_CAPABILITIES
-    // is in the manifest, so this should throw before executing any node.
-    await expect(
-      runManifest(runner, registry, manifest, {
-        text: "Division crashes when denominator is 0.",
-        source: "report",
-        projectRoot: "/tmp/does-not-matter",
-      }),
-    ).rejects.toThrow(/not registered/);
-  });
-
   it("dispatches a manifest restricted to the registered subset", async () => {
-    // Construct a small synthetic manifest that uses only registered
-    // capabilities, to prove the dispatch surface works end-to-end with
-    // the bug-fix registry.
+    // Synthetic manifest with only `intake`. Proves the dispatch surface
+    // works end-to-end with the bug-fix registry.
     const db = makeDb();
     const llm = makeStubLLM();
-    const registry = registerBugFixCapabilities({ db, llm });
+    const { registry } = registerBugFixRegistries({ db, llm });
     const { parseManifest } = await import("../workflow/manifest.js");
     const yaml = `
 name: bug-fix-intake-only
@@ -172,5 +191,48 @@ output: $node.intake.output
     };
     expect(signal.summary).toMatch(/Division crashes/);
     expect(signal.codeReferences).toHaveLength(1);
+  });
+
+  it("on the full bug-fix manifest, every named capability resolves (no 'not registered' errors at dispatch)", async () => {
+    // The full manifest declares 10 stages + 1 action. Until all
+    // producers were wired, this call tripped the runner's pre-flight
+    // capability check with /not registered/. With the wiring complete,
+    // the pre-flight passes; the call proceeds into actual stage
+    // execution. We don't assert the run succeeds end-to-end here (that
+    // requires a real fixture; see the integration smoke). We assert
+    // only that the failure mode, if any, is NOT a "not registered"
+    // pre-flight error.
+    const db = makeDb();
+    const llm = makeStubLLM();
+    const manifest = loadBugFixManifest();
+    const { registry, actionRegistry } = registerBugFixRegistries({ db, llm });
+    const runner = new WorkflowRunner(
+      db,
+      manifestToWorkflow(manifest),
+      registry,
+    );
+
+    let caught: unknown = null;
+    try {
+      await runManifest(
+        runner,
+        registry,
+        manifest,
+        {
+          text: "Division crashes when denominator is 0.",
+          source: "report",
+          projectRoot: "/tmp/does-not-matter",
+        },
+        actionRegistry,
+      );
+    } catch (err) {
+      caught = err;
+    }
+    // Whatever failure happens (and one likely does — we passed a
+    // bogus projectRoot), it must NOT be the runner's pre-flight
+    // "capability X not registered" error.
+    if (caught) {
+      expect(String(caught)).not.toMatch(/not registered/);
+    }
   });
 });

@@ -43,7 +43,7 @@ import { WorkflowRunner } from "./workflow/runner.js";
 import { runManifest, manifestToWorkflow } from "./workflow/manifest.js";
 import {
   loadBugFixManifest,
-  registerBugFixCapabilities,
+  registerBugFixRegistries,
   type BugFixWorkflowInput,
 } from "./workflows/bug-fix.js";
 
@@ -342,7 +342,7 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
       }
 
       const manifest = loadBugFixManifest();
-      const registry = registerBugFixCapabilities({
+      const { registry, actionRegistry } = registerBugFixRegistries({
         db,
         llm,
         logger,
@@ -358,7 +358,13 @@ export async function runFixLoopCli(args: RunFixArgs): Promise<number> {
       };
 
       try {
-        const result = await runManifest(runner, registry, manifest, workflowInput);
+        const result = await runManifest(
+          runner,
+          registry,
+          manifest,
+          workflowInput,
+          actionRegistry,
+        );
         const bundle = result.output as {
           bundleType?: string;
           confidence?: number;

@@ -8,20 +8,16 @@
  * manifest's nodes resolve.
  *
  * --- Capability matrix --------------------------------------------------
- * The bug-fix manifest references 11 capabilities. Producers for 7 of
- * them already exist under `src/workflow/producers/`; the remaining 4
- * (recognize, open-overlay, generate-complementary,
- * generate-principle-candidate) are being authored by a parallel agent.
- * Until those producer modules land, `registerBugFixCapabilities` only
- * registers the 7 it can construct. Calling `runManifest` against the
- * full manifest will throw the runner's "capability X not registered"
- * error when topo execution hits one of the missing nodes — that's
- * intentional and surfaces the gap. The manifest itself parses + validates
- * fine because validation is structural and doesn't consult the registry.
+ * The bug-fix manifest references 10 stage capabilities and 1 action
+ * capability. Producer modules for all of them ship under
+ * `src/workflow/producers/`. `registerBugFixRegistries` populates a
+ * ProducerRegistry with the 10 stages and an ActionRegistry with the
+ * single action (open-overlay).
  *
- * Drop-in for the parallel agent: when the four producer modules
- * land, add the corresponding `registry.register(<CAP>, make<Stage>(deps))`
- * calls below — no other change is required.
+ * Action vs Stage: open-overlay is side-effecting (real git worktree +
+ * sqlite handle), so it ships as an Action. Its handle is consumed by
+ * do-the-work, generate-complementary, generate-principle-candidate, and
+ * bundle via $action.open-overlay.resource references in the YAML.
  */
 
 import { readFileSync } from "fs";
@@ -30,7 +26,12 @@ import { fileURLToPath } from "url";
 import type { Db } from "../db/index.js";
 import type { LLMProvider } from "../fix/types.js";
 import type { FixLoopLogger } from "../fix/logger.js";
-import { InMemoryRegistry, type ProducerRegistry } from "../workflow/registry.js";
+import {
+  InMemoryActionRegistry,
+  InMemoryRegistry,
+  type ActionRegistry,
+  type ProducerRegistry,
+} from "../workflow/registry.js";
 import {
   parseManifest,
   type WorkflowManifest,
@@ -47,13 +48,29 @@ import {
   makeClassifyStage,
 } from "../workflow/producers/classify.js";
 import {
+  RECOGNIZE_CAPABILITY,
+  makeRecognizeStage,
+} from "../workflow/producers/recognize.js";
+import {
   FORMULATE_CAPABILITY,
   makeFormulateStage,
 } from "../workflow/producers/formulate.js";
 import {
+  OPEN_OVERLAY_CAPABILITY,
+  makeOpenOverlayAction,
+} from "../workflow/producers/openOverlay.js";
+import {
   DO_THE_WORK_CAPABILITY,
   makeDoTheWorkStage,
 } from "../workflow/producers/doTheWork.js";
+import {
+  GENERATE_COMPLEMENTARY_CAPABILITY,
+  makeGenerateComplementaryStage,
+} from "../workflow/producers/generateComplementary.js";
+import {
+  GENERATE_PRINCIPLE_CANDIDATE_CAPABILITY,
+  makeGeneratePrincipleCandidateStage,
+} from "../workflow/producers/generatePrincipleCandidate.js";
 import { BUNDLE_CAPABILITY, makeBundleStage } from "../workflow/producers/bundle.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -64,32 +81,39 @@ const DEFAULT_MANIFEST_PATH = join(__dirname, "bug-fix.workflow.yaml");
 
 export const BUG_FIX_MANIFEST_PATH = DEFAULT_MANIFEST_PATH;
 
-/** Capabilities the bug-fix manifest references. */
-export const BUG_FIX_CAPABILITIES = [
+/** Stage capabilities the bug-fix manifest references. */
+export const BUG_FIX_STAGE_CAPABILITIES = [
   "intake",
   "investigate",
   "locate",
   "classify",
   "recognize",
   "formulate",
-  "open-overlay",
   "do-the-work",
   "generate-complementary",
   "generate-principle-candidate",
   "bundle",
 ] as const;
 
+/** Action capabilities the bug-fix manifest references. */
+export const BUG_FIX_ACTION_CAPABILITIES = ["open-overlay"] as const;
+
 /**
- * Capabilities not yet wired in this branch (their producer modules are
- * authored by a parallel agent). Surfaces the gap to callers in tests
- * and CLI flows so it can't be silently masked.
+ * Combined capability list (stages + actions). Kept for back-compat with
+ * the prior shape of this module — callers iterating "every capability
+ * the manifest names" still get a single flat list.
  */
-export const PENDING_CAPABILITIES = [
-  "recognize",
-  "open-overlay",
-  "generate-complementary",
-  "generate-principle-candidate",
+export const BUG_FIX_CAPABILITIES = [
+  ...BUG_FIX_STAGE_CAPABILITIES,
+  ...BUG_FIX_ACTION_CAPABILITIES,
 ] as const;
+
+/**
+ * Capabilities not yet wired. Empty now that all producer modules have
+ * been authored and registered. Kept exported as `readonly string[]` so
+ * existing callers and tests that iterate it don't break.
+ */
+export const PENDING_CAPABILITIES: readonly string[] = [];
 
 export interface BugFixDeps {
   db: Db;
@@ -99,15 +123,30 @@ export interface BugFixDeps {
   projectRoot?: string;
 }
 
+export interface BugFixRegistries {
+  registry: ProducerRegistry;
+  actionRegistry: ActionRegistry;
+}
+
 /**
- * Construct a registry pre-populated with every bug-fix capability whose
- * producer module exists on this branch. See PENDING_CAPABILITIES for the
- * gap. The function does not throw on missing producers — it silently
- * leaves them unregistered so that downstream `runManifest` produces a
- * clear "capability X not registered" error at execution time.
+ * Construct a registry pre-populated with every bug-fix stage capability.
+ * Returns a ProducerRegistry by default for back-compat. To also obtain
+ * the ActionRegistry needed for the open-overlay action, call
+ * `registerBugFixRegistries`.
  */
 export function registerBugFixCapabilities(deps: BugFixDeps): ProducerRegistry {
+  return registerBugFixRegistries(deps).registry;
+}
+
+/**
+ * Construct both the stage ProducerRegistry and the ActionRegistry for
+ * the bug-fix workflow, populated with every capability the on-disk
+ * manifest references. Pass both to `runManifest` to execute the full
+ * YAML.
+ */
+export function registerBugFixRegistries(deps: BugFixDeps): BugFixRegistries {
   const registry = new InMemoryRegistry();
+  const actionRegistry = new InMemoryActionRegistry();
 
   registry.register(INTAKE_CAPABILITY, makeIntakeStage(deps.llm));
   registry.register(
@@ -118,6 +157,10 @@ export function registerBugFixCapabilities(deps: BugFixDeps): ProducerRegistry {
   registry.register(
     CLASSIFY_CAPABILITY,
     makeClassifyStage({ llm: deps.llm, projectRoot: deps.projectRoot }),
+  );
+  registry.register(
+    RECOGNIZE_CAPABILITY,
+    makeRecognizeStage({ db: deps.db, logger: deps.logger }),
   );
   registry.register(
     FORMULATE_CAPABILITY,
@@ -136,16 +179,32 @@ export function registerBugFixCapabilities(deps: BugFixDeps): ProducerRegistry {
     }),
   );
   registry.register(
+    GENERATE_COMPLEMENTARY_CAPABILITY,
+    makeGenerateComplementaryStage({
+      db: deps.db,
+      llm: deps.llm,
+      logger: deps.logger,
+    }),
+  );
+  registry.register(
+    GENERATE_PRINCIPLE_CANDIDATE_CAPABILITY,
+    makeGeneratePrincipleCandidateStage({
+      db: deps.db,
+      llm: deps.llm,
+      logger: deps.logger,
+    }),
+  );
+  registry.register(
     BUNDLE_CAPABILITY,
     makeBundleStage({ db: deps.db, logger: deps.logger }),
   );
 
-  // The four pending capabilities (recognize, open-overlay,
-  // generate-complementary, generate-principle-candidate) are intentionally
-  // not registered. When their producer modules land, add the
-  // registry.register(...) calls here.
+  actionRegistry.register(
+    OPEN_OVERLAY_CAPABILITY,
+    makeOpenOverlayAction({ db: deps.db }),
+  );
 
-  return registry;
+  return { registry, actionRegistry };
 }
 
 /**

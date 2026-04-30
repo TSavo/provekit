@@ -48,7 +48,7 @@ import type { Db } from "../../db/index.js";
 import type { FixLoopLogger } from "../../fix/logger.js";
 import type { Stage } from "../types.js";
 
-export const GENERATE_PRINCIPLE_CANDIDATE_CAPABILITY = "generatePrincipleCandidate";
+export const GENERATE_PRINCIPLE_CANDIDATE_CAPABILITY = "generate-principle-candidate";
 
 export interface GeneratePrincipleCandidateStageInput {
   signal: BugSignal;

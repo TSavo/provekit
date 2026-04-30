@@ -49,7 +49,7 @@ import type { Db } from "../../db/index.js";
 import type { FixLoopLogger } from "../../fix/logger.js";
 import type { Stage } from "../types.js";
 
-export const GENERATE_COMPLEMENTARY_CAPABILITY = "generateComplementary";
+export const GENERATE_COMPLEMENTARY_CAPABILITY = "generate-complementary";
 
 export interface GenerateComplementaryStageInput {
   fix: FixCandidate;

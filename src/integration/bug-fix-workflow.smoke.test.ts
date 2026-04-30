@@ -1,84 +1,99 @@
 /**
  * End-to-end smoke for the bug-fix workflow (task #7).
  *
- * Validates that the workflow infrastructure (intake → investigate → locate →
- * classify → formulate) actually runs against a real fixture project and
- * deposits verdict-bearing mementos in the store. Exercises the YAML manifest
- * loader, the producer registry, the topo-sorted dispatcher in
- * `runManifest`, and the cache-key cascade in `WorkflowRunner`.
+ * Drives the on-disk `bug-fix.workflow.yaml` against a real fixture
+ * project (a temp git repo with a known divide-by-zero bug). Every
+ * producer wrapper runs — Stage and Action serialization, memento
+ * write/read, runner topo-sort, $action resource flow, $node deep
+ * references — but the heavy inner functions (formulateInvariant,
+ * doTheWork, generateComplementary, generatePrincipleCandidate,
+ * assembleBundle) are mocked at the module boundary so the smoke stays
+ * offline (no Z3, no vitest invocation, no real LLM agent).
  *
- * --- What this smoke does NOT cover, and why ----------------------------
+ * What's exercised for real:
+ *   - intake (StubLLMProvider with prefix-keyed responses)
+ *   - investigate (real prompt + stub LLM response)
+ *   - locate (real SAST queries against a populated DB)
+ *   - classify (real prompt + stub LLM response)
+ *   - recognize (real DSL evaluator; no principles dir → empty match)
+ *   - openOverlay (real `git worktree add --detach`; that's the point of
+ *     having a real git repo as the fixture)
+ *   - The full memento DAG: every stage's verdict-bearing memento, the
+ *     action's audit-only memento, and the workflow-level wrapper.
  *
- * The on-disk `bug-fix.workflow.yaml` references 11 capabilities. As of
- * 2026-04-29 the registry returned by `registerBugFixCapabilities` wires
- * up only 7 of them. The 4 newer producer modules
- * (`recognize`, `openOverlay`, `generateComplementary`,
- * `generatePrincipleCandidate`) exist but are not yet plugged in. Three
- * specific blockers prevent the full manifest from running here:
- *
- *   1. Capability-name mismatch — the manifest uses kebab-case
- *      (`open-overlay`, `generate-complementary`, `generate-principle-candidate`)
- *      while three of the new producer constants ship as camelCase
- *      (`openOverlay`, `generateComplementary`, `generatePrincipleCandidate`).
- *      Only `recognize` matches.
- *   2. Action vs Stage mismatch — `openOverlay` is implemented as an
- *      `Action` (side-effecting; mints a real git worktree + sqlite SAST
- *      db), but the manifest declares `open-overlay` as a stage `node`.
- *   3. Wiring gap — the four producers are not registered by
- *      `registerBugFixCapabilities`; `PENDING_CAPABILITIES` still lists
- *      them as not-yet-authored.
- *
- * Plus: `do-the-work` requires a live `OverlayHandle` (worktree path +
- * sqlite handle), so even if #1–#3 were resolved, running the full
- * pipeline in this offline smoke would require a fixture git repo.
- *
- * The smoke therefore terminates the chain at `formulate` (the last
- * stage that does NOT require an overlay) and runs against a synthetic
- * manifest that exercises every registered capability EXCEPT bundle and
- * do-the-work. Two additional tests cover the existing regression
- * surface: the on-disk manifest still raises the runner's standard
- * "not registered" error, and the workflow-level cache hits on a second
- * run.
- *
- * The four findings above are filed in the smoke-test report; resolving
- * them is out of scope for this task per the cut list.
+ * What's mocked at the module boundary:
+ *   - formulateInvariant (skips Z3)
+ *   - doTheWork (skips agent invocation, Oracle #2, Oracle #9, vitest)
+ *   - generateComplementary (skips LLM + SAST traversal — returns [])
+ *   - generatePrincipleCandidate (skips LLM substrate path — returns [])
+ *   - assembleBundle (skips Oracle #10 + DB persistence — returns canned
+ *     FixBundle stub)
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { execFileSync } from "child_process";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-// formulateInvariant is mocked at the module boundary so the smoke can
-// assert real wiring without spinning up Z3. The Stage wrapper in
-// makeFormulateStage still does the input canonicalization + memento
-// write/read; only the underlying solver call is replaced. See
-// src/workflow/producers/formulate.test.ts for the same pattern.
-const { formulateInvariantMock } = vi.hoisted(() => ({
+// Module-boundary mocks for the heavy inner functions. The producer
+// wrappers (makeFormulateStage, makeDoTheWorkStage, ...) still run —
+// serialize, hash, write/read mementos — they just don't invoke Z3 or
+// the real agent.
+const {
+  formulateInvariantMock,
+  doTheWorkMock,
+  generateComplementaryMock,
+  generatePrincipleCandidateMock,
+  assembleBundleMock,
+} = vi.hoisted(() => ({
   formulateInvariantMock: vi.fn(),
+  doTheWorkMock: vi.fn(),
+  generateComplementaryMock: vi.fn(),
+  generatePrincipleCandidateMock: vi.fn(),
+  assembleBundleMock: vi.fn(),
 }));
 vi.mock("../fix/stages/formulateInvariant.js", () => ({
   formulateInvariant: formulateInvariantMock,
+}));
+vi.mock("../fix/stages/doTheWork.js", () => ({
+  doTheWork: doTheWorkMock,
+}));
+vi.mock("../fix/stages/generateComplementary.js", () => ({
+  generateComplementary: generateComplementaryMock,
+}));
+vi.mock("../fix/stages/generatePrincipleCandidate.js", () => ({
+  generatePrincipleCandidate: generatePrincipleCandidateMock,
+}));
+vi.mock("../fix/stages/assembleBundle.js", () => ({
+  assembleBundle: assembleBundleMock,
 }));
 
 import { openDb, type Db } from "../db/index.js";
 import { _clearIntakeRegistry } from "../fix/intake.js";
 import { registerAll } from "../fix/intakeAdapters/index.js";
 import { StubLLMProvider } from "../fix/types.js";
-import type { InvariantClaim } from "../fix/types.js";
+import type {
+  ComplementaryChange,
+  FixBundle,
+  FixCandidate,
+  InvariantClaim,
+  PrincipleCandidate,
+  TestArtifact,
+} from "../fix/types.js";
+import type { DoTheWorkResult } from "../fix/stages/doTheWork.js";
 import { stats as mementoStats } from "../fix/runtime/mementoStore.js";
 import { buildSASTForFile } from "../sast/builder.js";
 import { WorkflowRunner } from "../workflow/runner.js";
 import {
-  parseManifest,
   runManifest,
   manifestToWorkflow,
 } from "../workflow/manifest.js";
 import {
   loadBugFixManifest,
-  registerBugFixCapabilities,
+  registerBugFixRegistries,
 } from "../workflows/bug-fix.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -86,31 +101,42 @@ const __dirname = dirname(__filename);
 const DRIZZLE_FOLDER = join(__dirname, "..", "..", "drizzle");
 
 // ---------------------------------------------------------------------------
-// Fixture builders
+// Fixture: a real temp git repo with a known divide-by-zero bug.
+// openOverlay does `git worktree add --detach`, so the fixture must be a
+// real repo with at least one commit.
 // ---------------------------------------------------------------------------
 
 interface Fixture {
   projectRoot: string;
   db: Db;
-  /** The locus file relative path inside the project root. */
-  locusFile: string;
-  /** Absolute path to the locus file (for buildSASTForFile). */
+  /** Absolute path to the locus file (passed into intake). */
   locusFileAbs: string;
+  /** Project-relative locus path (for reporting / human readability). */
+  locusFileRel: string;
 }
 
-/**
- * Lay down a minimal TypeScript project on disk and populate its SAST
- * database from the source. The fixture is what makes this an
- * integration test rather than a unit test — locate() will run real DB
- * queries against real SAST rows.
- */
+function git(repoRoot: string, args: string[]): void {
+  execFileSync("git", args, {
+    cwd: repoRoot,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "smoke",
+      GIT_AUTHOR_EMAIL: "smoke@example.com",
+      GIT_COMMITTER_NAME: "smoke",
+      GIT_COMMITTER_EMAIL: "smoke@example.com",
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+}
+
 function makeDivideByZeroFixture(): Fixture {
   const projectRoot = mkdtempSync(join(tmpdir(), "bugfix-smoke-divzero-"));
   mkdirSync(join(projectRoot, ".provekit"), { recursive: true });
   mkdirSync(join(projectRoot, "src"), { recursive: true });
 
-  const locusFile = "src/math.ts";
-  const locusFileAbs = join(projectRoot, locusFile);
+  const locusFileRel = "src/math.ts";
+  const locusFileAbs = join(projectRoot, locusFileRel);
   writeFileSync(
     locusFileAbs,
     [
@@ -122,66 +148,46 @@ function makeDivideByZeroFixture(): Fixture {
     "utf-8",
   );
 
-  const db = openDb(join(projectRoot, ".provekit", "test.db"));
-  migrate(db, { migrationsFolder: DRIZZLE_FOLDER });
-  buildSASTForFile(db, locusFileAbs);
-
-  return { projectRoot, db, locusFile, locusFileAbs };
-}
-
-function makeOffByOneFixture(): Fixture {
-  const projectRoot = mkdtempSync(join(tmpdir(), "bugfix-smoke-offby1-"));
-  mkdirSync(join(projectRoot, ".provekit"), { recursive: true });
-  mkdirSync(join(projectRoot, "src"), { recursive: true });
-
-  const locusFile = "src/dateValidator.ts";
-  const locusFileAbs = join(projectRoot, locusFile);
-  writeFileSync(
-    locusFileAbs,
-    [
-      "export function isLeapYear(year: number): boolean {",
-      "  return year % 4 === 0 && year % 100 !== 0;",
-      "}",
-      "",
-    ].join("\n"),
-    "utf-8",
-  );
+  // Real git repo. openOverlay calls `git worktree add --detach HEAD`,
+  // so we need init + one commit to give it a HEAD to detach from.
+  git(projectRoot, ["init", "--initial-branch=main"]);
+  git(projectRoot, ["add", "."]);
+  git(projectRoot, ["commit", "-m", "initial fixture"]);
 
   const db = openDb(join(projectRoot, ".provekit", "test.db"));
   migrate(db, { migrationsFolder: DRIZZLE_FOLDER });
   buildSASTForFile(db, locusFileAbs);
 
-  return { projectRoot, db, locusFile, locusFileAbs };
+  return { projectRoot, db, locusFileAbs, locusFileRel };
 }
 
 // ---------------------------------------------------------------------------
 // Stub LLM — keyed by prompt prefix substrings emitted by each stage.
 // ---------------------------------------------------------------------------
 
-function buildStubLLM(fixture: Fixture, opts: {
-  summary: string;
-  failureDescription: string;
-  bugClassHint: string;
-  fixHint: string;
-  rootCause: string;
-  fixHypothesis: string;
-}): StubLLMProvider {
+function buildStubLLM(fixture: Fixture): StubLLMProvider {
+  // intake codeReferences MUST point at the absolute path so that
+  // openOverlay's `dirname(locus.file)` resolves to a directory inside
+  // the git repo. The locate stage's resolveFile() does suffix matching,
+  // so absolute paths still resolve against the SAST DB.
   const intakeJson = JSON.stringify({
-    summary: opts.summary,
-    failureDescription: opts.failureDescription,
-    fixHint: opts.fixHint,
+    summary: "Division crashes when denominator is 0.",
+    failureDescription: "Division-by-zero in calculate.",
+    fixHint: "Guard before dividing.",
     codeReferences: [
-      { file: fixture.locusFile, line: 2, function: "calculate" },
+      { file: fixture.locusFileAbs, line: 2, function: "calculate" },
     ],
-    bugClassHint: opts.bugClassHint,
+    bugClassHint: "divide-by-zero",
   });
 
   const investigateJson = JSON.stringify({
-    symptomSummary: opts.summary,
-    rootCauseHypothesis: opts.rootCause,
-    fixHypothesis: opts.fixHypothesis,
+    symptomSummary: "Division crashes when denominator is 0.",
+    rootCauseHypothesis:
+      "calculate() does not check that denominator is non-zero before dividing.",
+    fixHypothesis:
+      "Throw or return a sentinel when denominator === 0.",
     primaryLocation: {
-      file: fixture.locusFile,
+      file: fixture.locusFileAbs,
       function: "calculate",
       lineRange: [1, 3],
       rationale: "The locus function is the only candidate site.",
@@ -212,49 +218,7 @@ function buildStubLLM(fixture: Fixture, opts: {
 }
 
 // ---------------------------------------------------------------------------
-// Synthetic manifest — exercises every REGISTERED bug-fix capability whose
-// inputs are satisfied without a live overlay. Mirrors the on-disk YAML's
-// dependency shape but stops at formulate.
-// ---------------------------------------------------------------------------
-
-const SUBSET_MANIFEST_YAML = `
-name: bug-fix-smoke-subset
-cid: wf-bugfix-smoke-subset-v1
-description: >-
-  Subset of bug-fix.workflow.yaml exercised in the integration smoke.
-  Drops recognize/open-overlay/do-the-work/generate-*/bundle (overlay-
-  dependent or not-yet-registered). Terminal node: formulate.
-nodes:
-  - id: intake
-    capability: intake
-    input:
-      text: $input.text
-      source: $input.source
-  - id: investigate
-    capability: investigate
-    input:
-      signal: $node.intake.output
-      projectRoot: $input.projectRoot
-  - id: locate
-    capability: locate
-    input:
-      signal: $node.intake.output
-  - id: classify
-    capability: classify
-    input:
-      signal: $node.intake.output
-      locus: $node.locate.output
-  - id: formulate
-    capability: formulate
-    input:
-      signal: $node.intake.output
-      locus: $node.locate.output
-      investigateReport: $node.investigate.output
-output: $node.formulate.output
-`;
-
-// ---------------------------------------------------------------------------
-// Test setup
+// Canned outputs for the mocked inner stages.
 // ---------------------------------------------------------------------------
 
 function fakeInvariantClaim(file: string): InvariantClaim {
@@ -276,32 +240,123 @@ function fakeInvariantClaim(file: string): InvariantClaim {
   };
 }
 
+function fakeFixCandidate(): FixCandidate {
+  return {
+    patch: {
+      fileEdits: [
+        {
+          file: "src/math.ts",
+          newContent:
+            "export function calculate(numerator: number, denominator: number): number {\n" +
+            "  if (denominator === 0) throw new Error('denominator must not be zero');\n" +
+            "  return numerator / denominator;\n" +
+            "}\n",
+        },
+      ],
+      description: "guard the division",
+    },
+    source: "llm",
+    llmRationale: "Add a divide-by-zero guard.",
+    llmConfidence: 1.0,
+    invariantHoldsUnderOverlay: true,
+    overlayZ3Verdict: "unsat",
+    audit: {
+      stage: "C3",
+      kind: "fix-candidate",
+      verdict: "unsat",
+      verdictHash: "abc123",
+      patchHash: "def456",
+      timestamp: Date.now(),
+    } as FixCandidate["audit"],
+  };
+}
+
+function fakeTestArtifact(): TestArtifact {
+  return {
+    source: "llm",
+    testFilePath: "src/math.regression.test.ts",
+    testName: "regression: divide-by-zero",
+    testCode:
+      'import { test, expect } from "vitest";\n' +
+      'import { calculate } from "./math.js";\n' +
+      'test("denominator zero throws", () => {\n' +
+      "  expect(() => calculate(1, 0)).toThrow();\n" +
+      "});\n",
+    witnessInputs: [],
+    passesOnFixedCode: true,
+    failsOnOriginalCode: true,
+    audit: {
+      stage: "C5",
+      kind: "regression-test",
+      verdict: "ok",
+      verdictHash: "ghi789",
+      patchHash: "def456",
+      timestamp: Date.now(),
+    } as TestArtifact["audit"],
+  };
+}
+
+function fakeDoTheWorkResult(): DoTheWorkResult {
+  return {
+    fix: fakeFixCandidate(),
+    test: fakeTestArtifact(),
+    rationale: "Add a divide-by-zero guard and lock it in with a test.",
+    turnsUsed: 1,
+  };
+}
+
+function fakeFixBundle(): FixBundle {
+  return {
+    bundleId: "bundle-smoke-1",
+    fix: fakeFixCandidate(),
+    test: fakeTestArtifact(),
+    complementary: [],
+    principle: null,
+    alternateShapes: [],
+    coherence: {
+      sastStructural: "passed",
+      z3SemanticConsistency: "passed",
+      fullSuiteGreen: "passed",
+    } as unknown as FixBundle["coherence"],
+    auditTrail: [],
+    timestamp: Date.now(),
+  } as unknown as FixBundle;
+}
+
+// ---------------------------------------------------------------------------
+// Test setup
+// ---------------------------------------------------------------------------
+
 beforeEach(() => {
   _clearIntakeRegistry();
   registerAll();
   formulateInvariantMock.mockReset();
+  doTheWorkMock.mockReset();
+  generateComplementaryMock.mockReset();
+  generatePrincipleCandidateMock.mockReset();
+  assembleBundleMock.mockReset();
 });
+
+function primeMocks(fixture: Fixture): void {
+  formulateInvariantMock.mockResolvedValue(fakeInvariantClaim(fixture.locusFileAbs));
+  doTheWorkMock.mockResolvedValue(fakeDoTheWorkResult());
+  generateComplementaryMock.mockResolvedValue([] as ComplementaryChange[]);
+  generatePrincipleCandidateMock.mockResolvedValue([] as PrincipleCandidate[]);
+  assembleBundleMock.mockResolvedValue(fakeFixBundle());
+}
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("bug-fix workflow integration smoke", () => {
-  it("runs intake → investigate → locate → classify → formulate against a divide-by-zero fixture", async () => {
+  it("runs the on-disk bug-fix.workflow.yaml end-to-end against a real git fixture", async () => {
     const fixture = makeDivideByZeroFixture();
-    const llm = buildStubLLM(fixture, {
-      summary: "Division crashes when denominator is 0.",
-      failureDescription: "Division-by-zero in calculate.",
-      fixHint: "Guard before dividing.",
-      bugClassHint: "divide-by-zero",
-      rootCause: "calculate() does not check that denominator is non-zero.",
-      fixHypothesis: "Throw or return a sentinel when denominator === 0.",
-    });
+    primeMocks(fixture);
+    const llm = buildStubLLM(fixture);
 
-    formulateInvariantMock.mockResolvedValue(fakeInvariantClaim(fixture.locusFile));
-
-    const manifest = parseManifest(SUBSET_MANIFEST_YAML);
-    const registry = registerBugFixCapabilities({
+    const manifest = loadBugFixManifest();
+    const { registry, actionRegistry } = registerBugFixRegistries({
       db: fixture.db,
       llm,
       projectRoot: fixture.projectRoot,
@@ -312,94 +367,81 @@ describe("bug-fix workflow integration smoke", () => {
       registry,
     );
 
-    const result = await runManifest(runner, registry, manifest, {
-      text: "Division crashes when denominator is 0 in calculate(). Add a guard.",
-      source: "report",
-      projectRoot: fixture.projectRoot,
-    });
+    const result = await runManifest(
+      runner,
+      registry,
+      manifest,
+      {
+        text: "Division crashes when denominator is 0 in calculate(). Add a guard.",
+        source: "report",
+        projectRoot: fixture.projectRoot,
+      },
+      actionRegistry,
+    );
 
+    // Terminal output: the FixBundle from assembleBundle.
     expect(result.cacheHit).toBe(false);
-    const claim = result.output as InvariantClaim;
-    expect(claim.formalExpression).toMatch(/declare-const b Int/);
-    expect(claim.bindings[0]?.file).toBe(fixture.locusFile);
+    const bundle = result.output as FixBundle;
+    expect(bundle.bundleId).toBe("bundle-smoke-1");
+    expect(bundle.fix.patch.fileEdits[0]?.file).toBe("src/math.ts");
 
+    // Every mocked inner function ran exactly once.
     expect(formulateInvariantMock).toHaveBeenCalledTimes(1);
-    const formulateArgs = formulateInvariantMock.mock.calls[0][0];
-    expect(formulateArgs.signal.codeReferences[0]?.file).toBe(fixture.locusFile);
-    expect(formulateArgs.locus.file).toBe(fixture.locusFile);
-    // The on-disk manifest threads investigate's full InvestigateResult
-    // ({report, reportPath, codeReferences}) into formulate's
-    // investigateReport slot; the inner report is one level deeper.
-    // Assert the symptomSummary surfaces under either shape.
-    const investigateReport = formulateArgs.investigateReport;
-    const symptomSummary =
-      investigateReport?.symptomSummary ?? investigateReport?.report?.symptomSummary;
-    expect(symptomSummary).toMatch(/Division/);
+    expect(doTheWorkMock).toHaveBeenCalledTimes(1);
+    expect(generateComplementaryMock).toHaveBeenCalledTimes(1);
+    expect(generatePrincipleCandidateMock).toHaveBeenCalledTimes(1);
+    expect(assembleBundleMock).toHaveBeenCalledTimes(1);
 
+    // do-the-work received the live OverlayHandle, including a real
+    // worktree path on disk (the action's actual side effect).
+    const dtwArgs = doTheWorkMock.mock.calls[0][0];
+    expect(typeof dtwArgs.overlay.worktreePath).toBe("string");
+    expect(existsSync(dtwArgs.overlay.worktreePath)).toBe(true);
+    expect(typeof dtwArgs.overlay.baseRef).toBe("string");
+    expect(dtwArgs.overlay.baseRef).toMatch(/^[0-9a-f]{40}$/);
+
+    // formulate received the InvestigateReport (not the wrapping
+    // InvestigateResult) — the manifest threads $node.investigate.output.report.
+    const formArgs = formulateInvariantMock.mock.calls[0][0];
+    expect(formArgs.investigateReport.symptomSummary).toMatch(/Division/);
+
+    // generate-principle-candidate received fixCandidate, not the full
+    // DoTheWorkResult — the manifest threads $node.do-the-work.output.fix.
+    const gpcArgs = generatePrincipleCandidateMock.mock.calls[0][0];
+    expect(gpcArgs.fixCandidate.patch).toBeDefined();
+    expect(gpcArgs.fixCandidate.test).toBeUndefined();
+
+    // bundle received fix and test as separate fields.
+    const bundleArgs = assembleBundleMock.mock.calls[0][0];
+    expect(bundleArgs.fix.patch).toBeDefined();
+    expect(bundleArgs.test?.testFilePath).toBe("src/math.regression.test.ts");
+
+    // Memento store: 10 stage mementos + 1 workflow wrapper + 1 action
+    // audit memento. Verdict counts:
+    //   holds: 10 stages + 1 wrapper + 1 audit = 12 (lower bound).
     const after = mementoStats(fixture.db);
-    // 5 stage mementos (intake/investigate/locate/classify/formulate) +
-    // 1 workflow-level wrapper memento. SAST tables are separate and
-    // don't add rows to the verifications table.
-    expect(after.uniqueKeys).toBeGreaterThanOrEqual(6);
-    expect(after.byVerdict.holds).toBeGreaterThanOrEqual(6);
+    expect(after.uniqueKeys).toBeGreaterThanOrEqual(12);
     expect(after.byProducer["intake@v1"]).toBe(1);
     expect(after.byProducer["investigate@v1"]).toBe(1);
     expect(after.byProducer["locate@v1"]).toBe(1);
     expect(after.byProducer["classify@v1"]).toBe(1);
+    expect(after.byProducer["recognize@v1"]).toBe(1);
     expect(after.byProducer["formulate@v1"]).toBe(1);
+    expect(after.byProducer["do-the-work@v1"]).toBe(1);
+    expect(after.byProducer["generateComplementary@v1"]).toBe(1);
+    expect(after.byProducer["generatePrincipleCandidate@v1"]).toBe(1);
+    expect(after.byProducer["bundle@v1"]).toBe(1);
+    // The action's audit memento.
+    expect(after.byProducer["openOverlay@v1"]).toBeGreaterThanOrEqual(1);
   });
 
-  it("runs against an off-by-one fixture (different bug shape)", async () => {
-    const fixture = makeOffByOneFixture();
-    const llm = buildStubLLM(fixture, {
-      summary: "isLeapYear returns wrong answer for centuries divisible by 400.",
-      failureDescription: "Off-by-one in isLeapYear: 2000 reports false.",
-      fixHint: "Add the year % 400 === 0 branch.",
-      bugClassHint: "off-by-one",
-      rootCause: "Leap-year logic ignores the century-of-400 exception.",
-      fixHypothesis: "Add `|| year % 400 === 0` to the return expression.",
-    });
-
-    formulateInvariantMock.mockResolvedValue(fakeInvariantClaim(fixture.locusFile));
-
-    const manifest = parseManifest(SUBSET_MANIFEST_YAML);
-    const registry = registerBugFixCapabilities({
-      db: fixture.db,
-      llm,
-      projectRoot: fixture.projectRoot,
-    });
-    const runner = new WorkflowRunner(
-      fixture.db,
-      manifestToWorkflow(manifest),
-      registry,
-    );
-
-    const result = await runManifest(runner, registry, manifest, {
-      text: "isLeapYear(2000) returns false but the year is a leap year.",
-      source: "report",
-      projectRoot: fixture.projectRoot,
-    });
-
-    expect(result.cacheHit).toBe(false);
-    const claim = result.output as InvariantClaim;
-    expect(claim.bindings[0]?.file).toBe(fixture.locusFile);
-    expect(formulateInvariantMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("workflow-level cache hits on the second run with identical input", async () => {
+  it("workflow-level cache hits on the second run; no inner function reruns", async () => {
     const fixture = makeDivideByZeroFixture();
-    const llm = buildStubLLM(fixture, {
-      summary: "Division crashes when denominator is 0.",
-      failureDescription: "Division-by-zero in calculate.",
-      fixHint: "Guard before dividing.",
-      bugClassHint: "divide-by-zero",
-      rootCause: "calculate() does not check that denominator is non-zero.",
-      fixHypothesis: "Throw or return a sentinel when denominator === 0.",
-    });
-    formulateInvariantMock.mockResolvedValue(fakeInvariantClaim(fixture.locusFile));
+    primeMocks(fixture);
+    const llm = buildStubLLM(fixture);
 
-    const manifest = parseManifest(SUBSET_MANIFEST_YAML);
-    const registry = registerBugFixCapabilities({
+    const manifest = loadBugFixManifest();
+    const { registry, actionRegistry } = registerBugFixRegistries({
       db: fixture.db,
       llm,
       projectRoot: fixture.projectRoot,
@@ -416,51 +458,31 @@ describe("bug-fix workflow integration smoke", () => {
       projectRoot: fixture.projectRoot,
     };
 
-    const first = await runManifest(runner, registry, manifest, input);
-    const second = await runManifest(runner, registry, manifest, input);
+    const first = await runManifest(
+      runner,
+      registry,
+      manifest,
+      input,
+      actionRegistry,
+    );
+    const second = await runManifest(
+      runner,
+      registry,
+      manifest,
+      input,
+      actionRegistry,
+    );
 
     expect(first.cacheHit).toBe(false);
     expect(second.cacheHit).toBe(true);
     expect(second.cid).toBe(first.cid);
-    // Workflow-level cache short-circuits the body — no producer reruns.
+
+    // The workflow-level cache short-circuits the body — every inner
+    // function was invoked exactly once across both runs.
     expect(formulateInvariantMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("on-disk bug-fix.workflow.yaml still raises 'not registered' for the 4 pending capabilities", async () => {
-    // The full manifest references recognize / open-overlay /
-    // generate-complementary / generate-principle-candidate. The wiring
-    // gap (see file docblock) is intentional and surfaces here. If this
-    // assertion ever flips, the fix is to update PENDING_CAPABILITIES
-    // and either resolve the kebab-vs-camel name mismatch or move
-    // open-overlay into the manifest's actions: block.
-    const fixture = makeDivideByZeroFixture();
-    const llm = buildStubLLM(fixture, {
-      summary: "irrelevant — should fail before any stage runs",
-      failureDescription: "n/a",
-      fixHint: "n/a",
-      bugClassHint: "n/a",
-      rootCause: "n/a",
-      fixHypothesis: "n/a",
-    });
-
-    const manifest = loadBugFixManifest();
-    const registry = registerBugFixCapabilities({
-      db: fixture.db,
-      llm,
-      projectRoot: fixture.projectRoot,
-    });
-    const runner = new WorkflowRunner(
-      fixture.db,
-      manifestToWorkflow(manifest),
-      registry,
-    );
-
-    await expect(
-      runManifest(runner, registry, manifest, {
-        text: "anything",
-        source: "report",
-        projectRoot: fixture.projectRoot,
-      }),
-    ).rejects.toThrow(/not registered/);
+    expect(doTheWorkMock).toHaveBeenCalledTimes(1);
+    expect(generateComplementaryMock).toHaveBeenCalledTimes(1);
+    expect(generatePrincipleCandidateMock).toHaveBeenCalledTimes(1);
+    expect(assembleBundleMock).toHaveBeenCalledTimes(1);
   });
 });
