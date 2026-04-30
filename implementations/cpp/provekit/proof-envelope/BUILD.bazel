@@ -22,3 +22,12 @@ cc_test(
     copts = ["-std=c++17"],
     deps = [":cbor"],
 )
+
+# sign_ed25519 + proof_envelope + their conformance test build via
+# `tools/run-proof-envelope-conformance.sh` (direct clang) for now.
+# Bazel can't see /usr/local/opt/openssl@3 because of its workspace-
+# root path validation; rules_foreign_cc + libsodium would fix that
+# but is a follow-up. The conformance test itself is proven (PASS via
+# direct clang).
+#
+# Tracked: γ-step-3 = Bazel-native ed25519 + proof envelope build.
