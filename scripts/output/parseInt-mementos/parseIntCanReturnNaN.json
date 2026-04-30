@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "0eb325fcaf28b012",
+  "propertyHash": "1e50008cf7181cc9",
+  "verdict": "holds",
+  "producedBy": "ts-kit-demo@0.0.1",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [],
+  "evidence": {
+    "kind": "legacy-witness",
+    "schema": "0000000000000000b0000000000000b0",
+    "body": {
+      "rawWitness": "{\"kind\":\"exists\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"s\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"},\"body\":{\"kind\":\"atomic\",\"predicate\":\"Number.isNaN\",\"args\":[{\"kind\":\"ctor\",\"name\":\"parseInt\",\"args\":[{\"kind\":\"var\",\"name\":\"s\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}",
+      "legacyProducerId": "ts-kit-demo@0.0.1"
+    }
+  },
+  "producerSignature": "IDOgRzXoBgymEcm311Y7lRu/z2nHwjq/6cO2xSu/ZOflOf9LU8hDUjB/h4ZC4xRqcwT1RbJykdtXayWY8h3dDg==",
+  "cid": "a675e87d115a748fbdbc7e9456182d6d"
+}
