@@ -1194,6 +1194,61 @@ addressed hash-and-trust applied to correctness — is what every future
 verification system necessarily converges to. We're writing the spec
 that those systems will inherit. The spec is the durable contribution.
 
+## The unifying primitive
+
+Every architectural layer described in this document reduces to one
+operation: **if a memento with this propertyHash exists, skip the work
+and use the memento.**
+
+Hash-based work skipping is the foundational mechanic. The early
+ProvekIt workflow runner pioneered it in the smallest scope — skip a
+Stage if its canonicalized inputs hash to a propertyHash that already
+has a memento. That worked. It was the seed.
+
+The architecture in this document is the same primitive applied
+recursively at every scope:
+
+| Scope | What gets skipped via hash equivalence |
+|---|---|
+| Within a workflow | Stage execution (the producer doesn't run on cache hit) |
+| Across producers | Cross-validation (other producers' work skipped if a verdict already exists) |
+| Across packages | Library re-verification (you stop at the library's hash) |
+| Across installs | Re-fetching, re-validating already-cached mementos |
+| Across languages | Cross-equivalence claims (TS parseInt vs C++ atoi proven once) |
+| Across time | 2026 mementos referenced in 2050 verifications without re-running |
+| Across consumers | Every other consumer free-rides on the same propertyHash |
+| Within demand | Lazy DAG: propertyHash exists, verdict deferred until queried |
+| Across privacy | ZK proof attests verdict without re-running the work on private content |
+
+**Same operation. Different scopes. Compounding effects.**
+
+The framework isn't a collection of features. It's ONE PRIMITIVE
+applied recursively across every dimension where work can be skipped.
+This is what makes the substrate scale economically, scale across
+languages, scale across time, scale across demand. Without hash-based
+work skipping, every consumer would re-do every verification from
+scratch — quadratic, intractable. With it, each verification happens
+ONCE per propertyHash globally, then becomes pure reference forever.
+
+**The career-arc primitive, distilled:**
+
+| Year | Domain | What gets skipped |
+|---|---|---|
+| 1995 | Files (Xdrive) | Storage of duplicate file blocks |
+| 2001 | Distribution (BitTorrent) | Re-fetching already-distributed shares |
+| 2008 | Money (Bitcoin) | Re-validation of already-confirmed transactions |
+| 2014+ | Content (IPFS) | Re-hosting already-hashed content |
+| 2026 | **Correctness (ProvekIt)** | **Re-verification of already-attested proofs** |
+
+Same primitive. Different content. Each layer compounds the prior.
+Each is a content-addressing system that turns "redo work" into "reuse
+hash." Each removes a class of trusted authorities by replacing them
+with hash composition.
+
+ProvekIt is the natural continuation — the final domain where the
+primitive applies, the one where the substrate of trust itself becomes
+content-addressable, skippable, distributable, lazy-evaluable.
+
 ## What this is for
 
 A reader who understands this document understands that ProvekIt is:
