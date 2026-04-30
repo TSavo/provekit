@@ -36,6 +36,19 @@ export { computeEnvelopeCid, envelopeForHashing } from "./cid.js";
 // Signing
 export { signEnvelope, verifyEnvelopeSignature } from "./sign.js";
 
+// Minting helpers
+export {
+  mintMemento,
+  mintBridge,
+  mintLegacyWitness,
+  mintAndVerifyMemento,
+} from "./mint.js";
+export type {
+  MintArgs,
+  MintBridgeArgs,
+  MintLegacyWitnessArgs,
+} from "./mint.js";
+
 // Validation
 export type { KeyResolver, ValidationResult } from "./validate.js";
 export { validateEnvelope } from "./validate.js";
