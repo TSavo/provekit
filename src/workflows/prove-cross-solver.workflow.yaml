@@ -1,4 +1,4 @@
-# prove-cross-solver workflow — propertyHash → two-solver verdict.
+# prove-cross-solver workflow. propertyHash to two-solver verdict.
 #
 # The operational test of cross-solver composition.
 #
@@ -27,11 +27,11 @@
 #                             propertyHash) with inputCids = [sourceCid].
 #
 # Workflow input (ProveCrossSolverWorkflowInput):
-#   propertyHash: string         — the property to verify
-#   axioms?:      IrFormula[]    — kit-supplied axioms (optional)
-#   logic?:       string         — SMT-LIB logic, default "ALL"
-#   timeoutMs?:   number         — solver timeout, default 30000
-#   producedBy?:  string         — verdict producer identity
+#   propertyHash: string         the property to verify
+#   axioms?:      IrFormula[]    kit-supplied axioms (optional)
+#   logic?:       string         SMT-LIB logic, default "ALL"
+#   timeoutMs?:   number         solver timeout, default 30000
+#   producedBy?:  string         verdict producer identity
 #
 # Spec: docs/specs/2026-04-29-the-semantic-envelope.md
 
@@ -61,7 +61,7 @@ cli:
 
 nodes:
   # ---------------------------------------------------------------------------
-  # locate-memento — recover the IrFormula from the memento store.
+  # locate-memento. Recover the IrFormula from the memento store.
   # ---------------------------------------------------------------------------
   - id: locate-memento
     capability: locate-memento
@@ -69,7 +69,7 @@ nodes:
       propertyHash: $input.propertyHash
 
   # ---------------------------------------------------------------------------
-  # emit-z3-smt-lib — Z3-flavored SMT-LIB. Pure Stage. First leaf on the
+  # emit-z3-smt-lib. Z3-flavored SMT-LIB. Pure Stage. First leaf on the
   # IR root.
   # ---------------------------------------------------------------------------
   - id: emit-z3-smt-lib
@@ -80,7 +80,7 @@ nodes:
       logic: $input.logic
 
   # ---------------------------------------------------------------------------
-  # invoke-z3 — Z3 verdict on the SAME IR.
+  # invoke-z3. Z3 verdict on the SAME IR.
   # ---------------------------------------------------------------------------
   - id: invoke-z3
     capability: invoke-z3
@@ -89,7 +89,7 @@ nodes:
       timeoutMs: $input.timeoutMs
 
   # ---------------------------------------------------------------------------
-  # emit-cvc5-smt-lib — CVC5-flavored SMT-LIB. Pure Stage. Second leaf
+  # emit-cvc5-smt-lib. CVC5-flavored SMT-LIB. Pure Stage. Second leaf
   # on the IR root. Same input as emit-z3-smt-lib; distinct producer
   # identity so its memento CID differs.
   # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ nodes:
       logic: $input.logic
 
   # ---------------------------------------------------------------------------
-  # invoke-cvc5 — CVC5 verdict on the SAME IR.
+  # invoke-cvc5. CVC5 verdict on the SAME IR.
   # ---------------------------------------------------------------------------
   - id: invoke-cvc5
     capability: invoke-cvc5
@@ -110,7 +110,7 @@ nodes:
       timeoutMs: $input.timeoutMs
 
   # ---------------------------------------------------------------------------
-  # compare-verdicts — pure Stage. Maps both verdicts to the shared
+  # compare-verdicts. Pure Stage. Maps both verdicts to the shared
   # property-verdict alphabet and reports agreement.
   # ---------------------------------------------------------------------------
   - id: compare-verdicts
@@ -120,7 +120,7 @@ nodes:
       cvc5Verdict: $node.invoke-cvc5.output.cvc5Verdict
 
 # ---------------------------------------------------------------------------
-# Actions — side-effecting. The mint-cross-solver-memento Action writes
+# Actions. Side-effecting. The mint-cross-solver-memento Action writes
 # a memento at the ORIGINAL (bindingHash, propertyHash) recovered by
 # locate-memento, with inputCids threaded to the source IR memento. That
 # attachment is the architectural claim under test.

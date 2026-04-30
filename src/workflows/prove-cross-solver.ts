@@ -1,5 +1,5 @@
 /**
- * prove-cross-solver workflow — registry assembly + manifest loading.
+ * prove-cross-solver workflow. Registry assembly + manifest loading.
  *
  * Wires the cross-solver producers (locate-memento, emit-smt-lib,
  * invoke-z3, emit-cvc5-smt-lib, invoke-cvc5, compare-verdicts,

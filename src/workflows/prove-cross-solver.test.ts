@@ -2,17 +2,17 @@
  * prove-cross-solver workflow end-to-end smoke.
  *
  * Three test classes:
- *   1. Manifest + registry — always runs. Verifies the manifest parses
+ *   1. Manifest + registry. Always runs. Verifies the manifest parses
  *      and all capabilities register.
- *   2. Stub-driven — always runs. Replaces invoke-z3 and invoke-cvc5
+ *   2. Stub-driven. Always runs. Replaces invoke-z3 and invoke-cvc5
  *      with fakes returning canned verdicts. Asserts (a) agreement
  *      mints a memento with the correct verdict, (b) disagreement
  *      mints an "undecidable" memento, (c) the memento's inputCids
  *      contain the source IR memento CID (the architectural claim
  *      under test).
- *   3. Real binaries — only runs when BOTH `z3` and `cvc5` are on
- *      PATH. Drives `forall (x: Int), x >= 0 -> x + 1 > 0` end-to-end
- *      and asserts both solvers say "unsat" on the negation.
+ *   3. Real binaries. Only runs when BOTH `z3` and `cvc5` are on
+ *      PATH. Drives `forall (x: Int), x = x` end-to-end and asserts
+ *      both solvers say "unsat" on the negation.
  */
 
 import { describe, it, expect } from "vitest";
@@ -58,7 +58,7 @@ function makeDb(): Db {
   return db;
 }
 
-// forall (x: Int), x = x — the canonical solver-trivial property.
+// forall (x: Int), x = x. The canonical solver-trivial property.
 // Both Z3 and CVC5 say "unsat" on the negation. Used as the
 // real-binary smoke test; the stub-driven tests don't actually feed
 // SMT-LIB into a solver, so the formula's semantics there don't matter.

@@ -1,12 +1,12 @@
 /**
- * invoke-cvc5 Stage — prove-cross-solver workflow's CVC5 solver
+ * invoke-cvc5 Stage. The prove-cross-solver workflow's CVC5 solver
  * invocation step.
  *
  * Spawns `cvc5 -L smt2 --produce-models`, writes SMT-LIB to stdin,
  * parses sat/unsat. Stage rather than Action because the verdict is a
  * content-addressable claim about a deterministic input: identical
  * SMT-LIB + identical cvc5 version produces the identical verdict, so
- * it caches. This is the same rationale as invokeZ3 — see
+ * it caches. This is the same rationale as invokeZ3; see
  * docs/specs/2026-04-29-stages-vs-actions.md and the docstring on
  * src/workflow/producers/invokeZ3.ts.
  *
@@ -16,7 +16,7 @@
  * operational test of the architectural claim that propertyHash CIDs
  * compose across solver verdicts.
  *
- * Verdict mapping (refute semantics — the SMT-LIB asserts the NEGATION
+ * Verdict mapping (refute semantics; the SMT-LIB asserts the NEGATION
  * for unsat-check, identical to invokeZ3):
  *
  *   cvc5 returns    | property verdict | meaning
@@ -59,7 +59,7 @@ export interface MakeInvokeCvc5StageDeps {
   /** Override producer identity. Default: "cvc5-symbolic@unknown". */
   producerVersion?: string;
   /**
-   * Spawn function override. Test-only seam — production passes the real
+   * Spawn function override. Test-only seam; production passes the real
    * `child_process.spawn`.
    */
   spawnFn?: typeof spawn;
@@ -93,7 +93,7 @@ function runCvc5(
     } catch (err) {
       reject(
         new InvokeCvc5Error(
-          `failed to spawn cvc5 (${binary}): ${(err as Error).message} — install cvc5 to use the prove-cross-solver workflow`,
+          `failed to spawn cvc5 (${binary}): ${(err as Error).message}; install cvc5 to use the prove-cross-solver workflow`,
         ),
       );
       return;
@@ -122,7 +122,7 @@ function runCvc5(
       if (code === "ENOENT") {
         reject(
           new InvokeCvc5Error(
-            `cvc5 binary not found in PATH (${binary}) — install cvc5 to use the prove-cross-solver workflow`,
+            `cvc5 binary not found in PATH (${binary}); install cvc5 to use the prove-cross-solver workflow`,
           ),
         );
         return;

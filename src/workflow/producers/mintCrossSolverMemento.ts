@@ -1,15 +1,15 @@
 /**
- * mint-cross-solver-memento Action — prove-cross-solver workflow's
+ * mint-cross-solver-memento Action. The prove-cross-solver workflow's
  * verdict-side-effect step.
  *
- * Why an Action: same shape as mint-verdict-memento — the side effect is
+ * Why an Action: same shape as mint-verdict-memento. The side effect is
  * writing a memento at the ORIGINAL (bindingHash, propertyHash) the
  * locate-memento Stage recovered, NOT at the workflow-position key the
  * Stage runner would auto-derive. The cross-key write is what doesn't
  * fit Stage caching semantics.
  *
  * The minted memento records both solver verdicts and whether they
- * agreed. Disagreement is captured as data, not raised as an error —
+ * agreed. Disagreement is captured as data, not raised as an error;
  * Z3 and CVC5 disagreeing on undecidable nonlinear arithmetic is real.
  *
  * `inputCids` carries the source IR memento CID (and optionally the
@@ -19,12 +19,12 @@
  * cross-solver memento attach as leaves to it.
  *
  * Verdict mapping:
- *   agree && agreedVerdict      → that verdict (holds / violated / undecidable)
- *   disagree                    → "undecidable" — the cross-solver claim
- *                                 is unresolved, even if individual solvers
- *                                 returned definite verdicts. Downstream
- *                                 consumers can drill into the witness
- *                                 to see who said what.
+ *   agree && agreedVerdict      -> that verdict (holds / violated / undecidable)
+ *   disagree                    -> "undecidable". The cross-solver claim
+ *                                  is unresolved, even if individual solvers
+ *                                  returned definite verdicts. Downstream
+ *                                  consumers can drill into the witness
+ *                                  to see who said what.
  */
 
 import { writeMemento } from "../../fix/runtime/mementoStore.js";

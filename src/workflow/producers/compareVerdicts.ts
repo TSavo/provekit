@@ -1,5 +1,5 @@
 /**
- * compare-verdicts Stage — cross-solver workflow's verdict-agreement step.
+ * compare-verdicts Stage. Cross-solver workflow's verdict-agreement step.
  *
  * Pure Stage. Takes the verdicts from invoke-z3 and invoke-cvc5 (each
  * having run on its own solver-flavored SMT-LIB, but BOTH against the
@@ -8,10 +8,10 @@
  *
  * Why this is its own Stage rather than collapsed into the mint-memento
  * Action: the agreement claim is content-addressable on the two solver
- * verdicts — identical inputs yield the identical comparison, so it
+ * verdicts; identical inputs yield the identical comparison, so it
  * caches. Splitting it out lets a downstream Action mint a memento
  * referencing this Stage's CID, which is the operational test of the
- * "two leaves on one IR root" claim — both invoke-* mementos are leaves
+ * "two leaves on one IR root" claim. Both invoke-* mementos are leaves
  * on the IR CID, and this Stage produces a third leaf that depends on
  * BOTH.
  *

@@ -1,5 +1,5 @@
 /**
- * emit-cvc5-smt-lib Stage — CVC5-flavored IR → SMT-LIB translation step.
+ * emit-cvc5-smt-lib Stage. CVC5-flavored IR to SMT-LIB translation step.
  *
  * Wraps `emitCvc5SmtLibProblem` from `src/ir/cvc5/`. Pure, deterministic,
  * no I/O. Output is a single SMT-LIB string the downstream invoke-cvc5
@@ -8,7 +8,7 @@
  * Parallel to emitSmtLib.ts (Z3-flavored). Both Stages take the SAME
  * IR formula as input but mint distinct output (different cache slot,
  * different CID, different producer identity). Two leaves attached to
- * one IR root — that composition is the load-bearing demonstration of
+ * one IR root. That composition is the load-bearing demonstration of
  * the architectural claim that propertyHash CIDs are solver-agnostic.
  *
  * Spec: docs/specs/2026-04-29-universal-claim-envelope.md
