@@ -753,6 +753,12 @@ function runReport(args: string[]): void {
 // hook — install/uninstall git hook
 // ---------------------------------------------------------------------------
 
+/**
+ * @deprecated Migrated to src/workflows/hook.{ts,workflow.yaml}.
+ * The meta-dispatcher will route `provekit hook` through the YAML
+ * workflow once it lands; until then this imperative path is kept so
+ * existing CLI invocations keep working.
+ */
 function runHook(args: string[]): void {
   const projectRoot = resolveProjectRoot(args);
   const installer = new HookInstaller(projectRoot);
