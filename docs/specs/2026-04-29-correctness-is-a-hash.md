@@ -1366,6 +1366,81 @@ that compose. Hashes that bridge to other hashes. Everything else
 the substrate enables — auditing, compliance, supply-chain
 verification — is built ON the substrate by other tools.
 
+## All operations are YAML workflows
+
+**There are no hand-coded operations in the framework's command surface.**
+Every operation `provekit <command>` can perform is a YAML manifest in
+`src/workflows/`, executed by the workflow runner. This includes the
+CLI dispatcher itself.
+
+The strict rule:
+
+- Every command is a workflow.
+- Every workflow is a YAML manifest in `src/workflows/<name>.workflow.yaml`.
+- The CLI dispatcher (`provekit <command> ...`) is itself a workflow:
+  `src/workflows/_dispatch.workflow.yaml`. Its stages parse argv, look up
+  the target workflow, and invoke it.
+- `src/cli.ts` is a thin runner: load `_dispatch.workflow.yaml`; run it
+  with argv as input. ~30 lines. No switch statement. No per-command
+  dispatch case.
+- Adding a new command means adding a YAML file. Period.
+- The framework's complete command surface is auditable as a directory
+  listing of `src/workflows/`.
+
+**Why this rule matters:**
+
+A hand-coded CLI dispatcher fights the framework's architecture. The
+framework is data-driven: workflows are YAML; producers are registered
+Stages and Actions; the runner topo-sorts and dispatches; mementos
+compose by content-addressed CIDs. The CLI was the last imperative
+hold-out. By making the dispatcher itself a workflow, the framework
+becomes uniformly data-driven down to its own command surface.
+
+This means:
+- The framework's behavior surface is content-addressed alongside
+  everything else
+- Adding a command does not require touching imperative code
+- The dispatch logic becomes a memento-producing operation auditable
+  through the same primitives as any other workflow
+- Auditors verify the CLI by walking the dispatcher's proof DAG, the
+  same way they verify any other operation
+
+**Each workflow declares its CLI surface in its YAML:**
+
+```yaml
+name: must
+cli:
+  description: Add an invariant to a target file from natural-language intent
+  args:
+    - name: targetFile
+      positional: true
+      required: true
+      type: path
+    - name: intent
+      positional: true
+      required: true
+      type: string
+    - name: append
+      flag: true
+      default: false
+```
+
+The dispatcher reads `cli:` blocks, builds an arg parser per workflow,
+generates `provekit help` output from descriptions, and dispatches
+argv to the matching workflow. Workflows without a `cli:` block are
+not exposed as commands (internal-only utilities).
+
+**The architectural anti-pattern this rule forbids:**
+
+- A `case "X": await runX(rest); break;` in `cli.ts`
+- An imperative function that wraps multiple Stages without a manifest
+- A "command" that doesn't compose into the proof DAG
+
+If you need new behavior, write a YAML workflow. If you need a new
+primitive operation, write a Stage or Action and register it. If
+neither fits, the operation is out of scope for the framework's
+command surface.
+
 ## What this is for
 
 A reader who understands this document understands that ProvekIt is:
