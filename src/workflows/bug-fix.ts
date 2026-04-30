@@ -56,6 +56,10 @@ import {
   makeFormulateStage,
 } from "../workflow/producers/formulate.js";
 import {
+  FORMULATE_VIA_LIFTER_CAPABILITY,
+  makeFormulateViaLifterStage,
+} from "../workflow/producers/formulateViaLifter.js";
+import {
   OPEN_OVERLAY_CAPABILITY,
   makeOpenOverlayAction,
 } from "../workflow/producers/openOverlay.js";
@@ -169,6 +173,14 @@ export function registerBugFixRegistries(deps: BugFixDeps): BugFixRegistries {
       llm: deps.llm,
       logger: deps.logger,
     }),
+  );
+  // Architecture-correct path. Registered alongside the legacy
+  // `formulate` capability; the manifest still references `formulate`
+  // for v1, leaving the smoke's module-boundary mock intact. Manifest
+  // swap is a follow-up.
+  registry.register(
+    FORMULATE_VIA_LIFTER_CAPABILITY,
+    makeFormulateViaLifterStage({ llm: deps.llm }),
   );
   registry.register(
     DO_THE_WORK_CAPABILITY,
