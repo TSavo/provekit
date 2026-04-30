@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "30c0ba36780ac55e",
+  "propertyHash": "7e27d931d3b29b3f",
+  "verdict": "holds",
+  "producedBy": "ts-kit@1.0",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [],
+  "evidence": {
+    "kind": "legacy-witness",
+    "schema": "0000000000000000b0000000000000b0",
+    "body": {
+      "rawWitness": "{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"antecedent\":{\"kind\":\"atomic\",\"predicate\":\"≥\",\"args\":[{\"kind\":\"var\",\"name\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},\"consequent\":{\"kind\":\"atomic\",\"predicate\":\"≥\",\"args\":[{\"kind\":\"ctor\",\"name\":\"parseInt\",\"args\":[{\"kind\":\"const\",\"value\":\"...\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}}",
+      "legacyProducerId": "ts-kit@1.0"
+    }
+  },
+  "producerSignature": "m0VvOBuBg511lm025PvlOr//JPHfHdvPUscJ/xnST5PXOiaFGDCF+2o/CsRDF/gtyjUq+ikODzB1EME3H/A9Bg==",
+  "cid": "e08898c12ffa519cfb9f39a872baf5a8"
+}

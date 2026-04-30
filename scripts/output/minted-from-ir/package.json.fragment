@@ -1,0 +1,18 @@
+{
+  "name": "@provekit/proofs/ts-types",
+  "version": "1.0.0",
+  "description": "@provekit/proofs/ts-types proofs catalog",
+  "files": [
+    "dist/",
+    "lib/",
+    ".provekit/"
+  ],
+  "provekit": {
+    "proofHash": "6972629c3cca28aea4cfd40e14fb25cf",
+    "catalogPath": ".provekit/ts-kit-catalog.json",
+    "kitVersion": "ts-kit@1.0",
+    "publicKey": "MCowBQYDK2VwAyEAW4ti3DmNXb8ugOtV0gF52lieU+yqEjySL4sdMcM8FDU=",
+    "sourceFile": "parseInt.invariant.ts",
+    "construction": "mint-from-ir"
+  }
+}

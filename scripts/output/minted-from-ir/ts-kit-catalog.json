@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "d66288ba7b2e628b",
+  "propertyHash": "6fa364a33d5700f2",
+  "verdict": "holds",
+  "producedBy": "ts-kit@1.0",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [
+    "88c3c2d69395067f6697710a36cf63b7",
+    "ac685ef42f915d1d32650847848ddcc8",
+    "d1273b181009b809f33eb7536ef271ac",
+    "d3173537baadedf908cc6774c509b5e6",
+    "ddd678a1f2e3bf1fb288483fcbd0fdf0",
+    "e08898c12ffa519cfb9f39a872baf5a8"
+  ],
+  "evidence": {
+    "kind": "legacy-witness",
+    "schema": "0000000000000000b0000000000000b0",
+    "body": {
+      "rawWitness": "{\"kind\":\"kit-catalog-root\",\"kitName\":\"@provekit/proofs/ts-types\",\"kitVersion\":\"1.0.0\",\"memberCount\":6,\"sourceFile\":\"parseInt.invariant.ts\",\"construction\":\"mint-from-ir\"}",
+      "legacyProducerId": "ts-kit@1.0"
+    }
+  },
+  "producerSignature": "dy2ufpR1gSlC4mKr9y7EmSgJrCNnHj46If9f5L03OwqTIKSL/R3tSzUNzImCUXBjFf8VHQoOV3Ac5993p7QmBA==",
+  "cid": "6972629c3cca28aea4cfd40e14fb25cf"
+}
