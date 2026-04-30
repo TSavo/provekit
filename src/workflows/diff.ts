@@ -26,6 +26,10 @@ import {
   SYNTHESIZE_MEANING_DIFF_CAPABILITY,
   makeSynthesizeMeaningDiffStage,
 } from "../workflow/producers/synthesizeMeaningDiff.js";
+import {
+  LOAD_SOLVER_CONFIG_CAPABILITY,
+  makeLoadSolverConfigStage,
+} from "../workflow/producers/loadSolverConfig.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -40,6 +44,7 @@ export interface DiffRegistries {
 
 export function registerDiffRegistries(_deps: DiffWorkflowDeps): DiffRegistries {
   const registry = new InMemoryRegistry();
+  registry.register(LOAD_SOLVER_CONFIG_CAPABILITY, makeLoadSolverConfigStage());
   registry.register(RESOLVE_INVARIANT_SNAPSHOT_CAPABILITY, makeResolveInvariantSnapshotStage());
   registry.register(DIFF_INVARIANT_SNAPSHOTS_CAPABILITY, makeDiffInvariantSnapshotsStage());
   registry.register(SYNTHESIZE_MEANING_DIFF_CAPABILITY, makeSynthesizeMeaningDiffStage());

@@ -27,16 +27,21 @@ import {
   makeCheckImplicationStage,
   type CheckImplicationOutput,
   type ImplicationVerdict,
+  type Solver,
 } from "./checkImplication.js";
 
 export const SYNTHESIZE_MEANING_DIFF_CAPABILITY = "synthesize-meaning-diff";
 
 export interface SynthesizeMeaningDiffInput {
   diff: DiffInvariantSnapshotsOutput;
-  /** Which SMT solver runs the implication probes. Default: "z3". */
-  solver?: "z3" | "cvc5";
-  /** Per-probe timeout in ms. Default: 5000. */
-  timeoutMs?: number;
+  /**
+   * The framework's solver — one or more SMT-LIB-2.6-conformant entries
+   * composed under agreement semantics. The framework calls it
+   * uniformly; whether it runs one binary or three is internal.
+   *
+   * When omitted, falls back to a single-entry Z3 invocation.
+   */
+  solver?: Solver;
 }
 
 export interface ForensicRow {
@@ -64,11 +69,20 @@ export interface ForensicRow {
    * - undecidable:  Z3 returned unknown/timeout on at least one direction
    */
   directionVerdict?: ImplicationVerdict;
-  /** Underlying Z3 verdicts for transparency. */
+  /** Underlying solver verdicts for transparency. */
   implicationProbes?: {
     newImpliesOld: CheckImplicationOutput["newImpliesOld"];
     oldImpliesNew: CheckImplicationOutput["oldImpliesNew"];
   };
+  /**
+   * Per-solver-entry verdicts when the framework's solver had more than
+   * one entry. Each item pairs the entry's `type` label with its
+   * directional verdict. `allAgreed` true iff every entry returned the
+   * same final verdict.
+   */
+  perSolverVerdicts?: Array<{ solverType: string; verdict: ImplicationVerdict }>;
+  /** True when all per-solver verdicts agree. */
+  allAgreed?: boolean;
 }
 
 export interface SynthesizeMeaningDiffOutput {
@@ -94,11 +108,19 @@ export function makeSynthesizeMeaningDiffStage(
 
     serializeInput(input) {
       // The diff's row identities are content-addressed; serializing the
-      // diff CIDs keeps the cache key compact.
+      // diff CIDs keeps the cache key compact. The solver composition
+      // affects the verdicts, so include it.
+      const solverSig = input.solver
+        ? [...input.solver.entries]
+            .sort((a, b) => a.type.localeCompare(b.type))
+            .map((e) => `${e.type}:${e.binary}:${e.flags.join(",")}:${e.timeoutMs}`)
+            .join("|")
+        : "default";
       return {
         fromRef: input.diff.fromRef,
         toRef: input.diff.toRef,
         rowKey: input.diff.rows.map((r) => rowCacheKey(r)).join("|"),
+        solverSig,
       };
     },
 
@@ -111,9 +133,17 @@ export function makeSynthesizeMeaningDiffStage(
     },
 
     async run(input) {
+      const solver: Solver = input.solver ?? {
+        entries: [{
+          type: "z3",
+          binary: "z3",
+          flags: ["-in", "-T:{{TIMEOUT_S}}"],
+          timeoutMs: 5000,
+        }],
+      };
       const out: ForensicRow[] = [];
       for (const row of input.diff.rows) {
-        out.push(await buildRow(row, checkImpl, input.solver, input.timeoutMs));
+        out.push(await buildRow(row, checkImpl, solver));
       }
       const result = {
         fromRef: input.diff.fromRef,
@@ -145,8 +175,7 @@ function rowCacheKey(row: DiffRow): string {
 async function buildRow(
   row: DiffRow,
   checkImpl: ReturnType<typeof makeCheckImplicationStage>,
-  solver: "z3" | "cvc5" | undefined,
-  timeoutMs: number | undefined,
+  solver: Solver,
 ): Promise<ForensicRow> {
   switch (row.kind) {
     case "preserved":
@@ -174,16 +203,28 @@ async function buildRow(
     }
     case "renamed":
     case "changed": {
-      const fromInv = row.kind === "renamed" ? row.fromInvariant : row.fromInvariant;
-      const toInv = row.kind === "renamed" ? row.toInvariant : row.toInvariant;
+      const fromInv = row.fromInvariant;
+      const toInv = row.toInvariant;
       const fromId = row.kind === "renamed" ? row.fromId : row.id;
       const toId = row.kind === "renamed" ? row.toId : row.id;
+
       const probe = await checkImpl.run({
         oldSmt: fromInv.smt.assertion,
         newSmt: toInv.smt.assertion,
         solver,
-        timeoutMs,
       });
+
+      // The framework's solver may have one or many entries; the
+      // checkImpl Stage handles both uniformly. Per-entry transparency
+      // surfaces only when N > 1 to keep the simple case quiet.
+      const isComposite = solver.entries.length > 1;
+      const perSolverVerdicts = isComposite
+        ? probe.perEntry.map((p) => ({
+            solverType: p.solverType,
+            verdict: classifyEntry(p.newImpliesOld, p.oldImpliesNew),
+          }))
+        : undefined;
+
       return {
         kind: row.kind,
         rowId: row.kind === "renamed" ? `${fromId}→${toId}` : fromId,
@@ -196,9 +237,22 @@ async function buildRow(
           newImpliesOld: probe.newImpliesOld,
           oldImpliesNew: probe.oldImpliesNew,
         },
+        ...(isComposite ? { perSolverVerdicts, allAgreed: probe.allAgreed } : {}),
       };
     }
   }
+}
+
+function classifyEntry(
+  newImpliesOld: "sat" | "unsat" | "unknown" | "timeout",
+  oldImpliesNew: "sat" | "unsat" | "unknown" | "timeout",
+): ImplicationVerdict {
+  if (newImpliesOld === "unknown" || newImpliesOld === "timeout" ||
+      oldImpliesNew === "unknown" || oldImpliesNew === "timeout") return "undecidable";
+  if (newImpliesOld === "unsat" && oldImpliesNew === "unsat") return "equivalent";
+  if (newImpliesOld === "unsat" && oldImpliesNew === "sat") return "strengthened";
+  if (newImpliesOld === "sat" && oldImpliesNew === "unsat") return "weakened";
+  return "incomparable";
 }
 
 function locusOf(inv: ForensicRow extends never ? never : { callsite: { filePath: string; function: string | null; startLine: number; endLine: number } }): ForensicRow["locus"] {

@@ -36,24 +36,51 @@ import type { Stage } from "../types.js";
 
 export const CHECK_IMPLICATION_CAPABILITY = "check-implication";
 
+/**
+ * A leaf solver entry: one binary that consumes some IR-compiled input
+ * language, fully described by binary + compiler choice + flags.
+ *
+ * `compiler` names the IR translator that produces this solver's
+ * input language. SMT solvers all share "smt-lib"; proof-assistant
+ * entries would name "lean" / "coq". The framework dispatches the IR
+ * through the named compiler before handing bytes to the binary.
+ */
+export interface SolverEntry {
+  /** Display label (z3, cvc5, bitwuzla, ...). */
+  type: string;
+  /** Binary path or name. */
+  binary: string;
+  /** IR compiler. Default + only currently supported: "smt-lib". */
+  compiler: string;
+  /** Argv template; {{TIMEOUT_S}} and {{TIMEOUT_MS}} substituted at runtime. */
+  flags: string[];
+  /** Per-probe timeout in ms. */
+  timeoutMs: number;
+}
+
+/**
+ * The framework's solver abstraction. Wraps one or more leaf entries.
+ *
+ * - One entry: that solver's verdict is the verdict.
+ * - Multiple entries: all run in parallel; verdict = agreed value if all
+ *   entries returned the same answer, else "unknown" (forensically the
+ *   row is surfaced as a disagreement and the per-entry verdicts attach
+ *   for transparency).
+ *
+ * The framework doesn't special-case N=1 vs N=many; it always calls
+ * Solver.invoke() and gets back the unified verdict.
+ */
+export interface Solver {
+  entries: SolverEntry[];
+}
+
 export interface CheckImplicationInput {
   /** SMT-LIB body of the OLD claim (declarations + assertion of the property; not the negation). */
   oldSmt: string;
   /** SMT-LIB body of the NEW claim. */
   newSmt: string;
-  /**
-   * Which SMT solver to invoke. Both consume the same SMT-LIB 2.6 input;
-   * only the binary name and flags differ. Z3 is the default for backward
-   * compatibility; CVC5 is the conformance-test alternative (per the
-   * cross-solver composition rule in docs/specs/2026-04-29-the-semantic-envelope.md).
-   * Future Stages may run both solvers in parallel and assert verdict
-   * agreement.
-   */
-  solver?: "z3" | "cvc5";
-  /** Optional binary path override. Default: same name as `solver`. */
-  binary?: string;
-  /** Per-probe timeout in ms. Default: 5000. */
-  timeoutMs?: number;
+  /** The solver (one or more entries composed under agreement semantics). */
+  solver: Solver;
 }
 
 export type ImplicationVerdict =
@@ -63,13 +90,28 @@ export type ImplicationVerdict =
   | "incomparable"
   | "undecidable";
 
+export type SolverProbeVerdict = "unsat" | "sat" | "unknown" | "timeout";
+
+export interface PerSolverProbe {
+  solverType: string;
+  newImpliesOld: SolverProbeVerdict;
+  oldImpliesNew: SolverProbeVerdict;
+}
+
 export interface CheckImplicationOutput {
-  /** Final classification. */
+  /** Composed final classification across all entries. */
   verdict: ImplicationVerdict;
-  /** Z3 verdict on (P_new ∧ ¬P_old). unsat means P_new ⊨ P_old. */
-  newImpliesOld: "unsat" | "sat" | "unknown" | "timeout";
-  /** Z3 verdict on (P_old ∧ ¬P_new). unsat means P_old ⊨ P_new. */
-  oldImpliesNew: "unsat" | "sat" | "unknown" | "timeout";
+  /** When the solver had multiple entries: per-entry probes for transparency. */
+  perEntry: PerSolverProbe[];
+  /** True iff every entry agreed on the same direction verdict. */
+  allAgreed: boolean;
+  /**
+   * Convenience aliases that reflect the consensus probes (or the sole
+   * entry's probes when N=1). Surfaced separately so simple readers can
+   * ignore perEntry.
+   */
+  newImpliesOld: SolverProbeVerdict;
+  oldImpliesNew: SolverProbeVerdict;
 }
 
 export interface MakeCheckImplicationStageDeps {
@@ -86,11 +128,22 @@ export function makeCheckImplicationStage(
     producedBy,
 
     serializeInput(input) {
+      // Cache key includes the full solver composition; a row's verdict
+      // depends on which entries voted on it. Order-independent: sort
+      // entries by type so cache hits across config reorderings.
+      const entries = [...input.solver.entries]
+        .sort((a, b) => a.type.localeCompare(b.type))
+        .map((e) => ({
+          type: e.type,
+          binary: e.binary,
+          compiler: e.compiler,
+          flags: e.flags,
+          timeoutMs: e.timeoutMs,
+        }));
       return {
         oldSmt: input.oldSmt,
         newSmt: input.newSmt,
-        solver: input.solver ?? "z3",
-        timeoutMs: input.timeoutMs ?? 5000,
+        solverEntries: entries,
       };
     },
 
@@ -103,41 +156,60 @@ export function makeCheckImplicationStage(
     },
 
     async run(input) {
-      const solver = input.solver ?? "z3";
-      const binary = input.binary ?? solver;
-      const timeoutMs = input.timeoutMs ?? 5000;
-
-      // Probe A: P_new ∧ ¬P_old. unsat → P_new strengthens (or equals) P_old.
-      const newImpliesOld = await solverCheckSat(
-        solver,
-        binary,
-        wrapImplicationProbe(input.newSmt, input.oldSmt),
-        timeoutMs,
-      );
-
-      // Probe B: P_old ∧ ¬P_new. unsat → P_new weakens (or equals) P_old.
-      const oldImpliesNew = await solverCheckSat(
-        solver,
-        binary,
-        wrapImplicationProbe(input.oldSmt, input.newSmt),
-        timeoutMs,
-      );
-
-      let verdict: ImplicationVerdict;
-      if (newImpliesOld === "unknown" || newImpliesOld === "timeout" ||
-          oldImpliesNew === "unknown" || oldImpliesNew === "timeout") {
-        verdict = "undecidable";
-      } else if (newImpliesOld === "unsat" && oldImpliesNew === "unsat") {
-        verdict = "equivalent";
-      } else if (newImpliesOld === "unsat" && oldImpliesNew === "sat") {
-        verdict = "strengthened";
-      } else if (newImpliesOld === "sat" && oldImpliesNew === "unsat") {
-        verdict = "weakened";
-      } else {
-        verdict = "incomparable";
+      // For each entry, compile the implication probes via that entry's
+      // configured compiler. SMT-LIB-class entries share one compiler;
+      // other compiler classes (lean, coq) would have different probe
+      // shapes and aren't supported here yet — checkImplication is
+      // SMT-shaped. Reject non-smt-lib compilers up front.
+      for (const entry of input.solver.entries) {
+        if (entry.compiler !== "smt-lib") {
+          throw new Error(
+            `checkImplication: solver "${entry.type}" uses compiler "${entry.compiler}", but this Stage only supports "smt-lib". Proof-assistant implication checks are a separate workflow.`,
+          );
+        }
       }
+      const probeAB = wrapImplicationProbe(input.newSmt, input.oldSmt);
+      const probeBA = wrapImplicationProbe(input.oldSmt, input.newSmt);
 
-      return { verdict, newImpliesOld, oldImpliesNew };
+      // Run every entry's two probes in parallel. Same SMT script across
+      // entries; only the binary + flags differ.
+      const entryResults = await Promise.all(
+        input.solver.entries.map(async (entry) => {
+          const [ab, ba] = await Promise.all([
+            invokeSolver(entry, probeAB),
+            invokeSolver(entry, probeBA),
+          ]);
+          return {
+            solverType: entry.type,
+            newImpliesOld: ab,
+            oldImpliesNew: ba,
+            verdict: classifyVerdict(ab, ba),
+          };
+        }),
+      );
+
+      // Consensus: all entries agree on the same final verdict, or the
+      // composed answer collapses to "undecidable" + the per-entry detail
+      // surfaces the disagreement.
+      const verdicts = entryResults.map((r) => r.verdict);
+      const allAgreed = verdicts.every((v) => v === verdicts[0]);
+      const verdict: ImplicationVerdict = allAgreed ? verdicts[0]! : "undecidable";
+
+      // For the convenience aliases: when agreed, surface the consensus
+      // probes; when disagreed, surface the first entry's probes (the
+      // perEntry array holds the full picture).
+      const head = entryResults[0]!;
+      return {
+        verdict,
+        perEntry: entryResults.map((r) => ({
+          solverType: r.solverType,
+          newImpliesOld: r.newImpliesOld,
+          oldImpliesNew: r.oldImpliesNew,
+        })),
+        allAgreed,
+        newImpliesOld: head.newImpliesOld,
+        oldImpliesNew: head.oldImpliesNew,
+      };
     },
   };
 }
@@ -219,25 +291,37 @@ function stripAssertWrapper(line: string): string {
   return m ? m[1] : line;
 }
 
+function classifyVerdict(
+  ab: SolverProbeVerdict,
+  ba: SolverProbeVerdict,
+): ImplicationVerdict {
+  if (ab === "unknown" || ab === "timeout" || ba === "unknown" || ba === "timeout") return "undecidable";
+  if (ab === "unsat" && ba === "unsat") return "equivalent";
+  if (ab === "unsat" && ba === "sat") return "strengthened";
+  if (ab === "sat" && ba === "unsat") return "weakened";
+  return "incomparable";
+}
+
 /**
- * Solver-agnostic check-sat wrapper. The SMT-LIB body is the same across
- * Z3 and CVC5 — both consume SMT-LIB 2.6 — only the invocation flags
- * differ. Adding a third solver (Boolector, Bitwuzla, MathSAT) means
- * adding one entry to the switch below and nothing else.
+ * Solver-agnostic invocation. The SolverEntry describes everything
+ * needed to run any SMT-LIB-2.6-conformant solver: binary + flags with
+ * {{TIMEOUT_S}} and {{TIMEOUT_MS}} placeholders. Adding a new solver
+ * (Bitwuzla, Boolector, MathSAT, …) is a YAML edit, not a TS edit.
  */
-async function solverCheckSat(
-  solver: "z3" | "cvc5",
-  binary: string,
+async function invokeSolver(
+  solver: SolverEntry,
   script: string,
-  timeoutMs: number,
 ): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
-  const args = solver === "cvc5"
-    ? ["--lang=smt2", `--tlimit-per=${timeoutMs}`]
-    : ["-in", `-T:${Math.ceil(timeoutMs / 1000)}`];
+  const timeoutMs = solver.timeoutMs;
+  const args = solver.flags.map((flag) =>
+    flag
+      .replaceAll("{{TIMEOUT_MS}}", String(timeoutMs))
+      .replaceAll("{{TIMEOUT_S}}", String(Math.ceil(timeoutMs / 1000))),
+  );
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(binary, args, { stdio: ["pipe", "pipe", "pipe"] });
+      child = spawn(solver.binary, args, { stdio: ["pipe", "pipe", "pipe"] });
     } catch {
       resolve("unknown");
       return;

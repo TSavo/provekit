@@ -48,13 +48,15 @@ cli:
     - name: projectRoot
       type: path
       default: "."
-    - name: solver
-      type: string
-      default: "z3"
 
 output: $node.synthesize.output
 
 nodes:
+  - id: load-solver
+    capability: load-solver-config
+    input:
+      projectRoot: $input.projectRoot
+
   - id: resolve-from
     capability: resolve-invariant-snapshot
     input:
@@ -77,4 +79,4 @@ nodes:
     capability: synthesize-meaning-diff
     input:
       diff: $node.diff-snapshots.output
-      solver: $input.solver
+      solver: $node.load-solver.output

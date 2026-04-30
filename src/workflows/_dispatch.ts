@@ -180,8 +180,6 @@ export function defaultRegistryFactories(): RegistryFactoryMap {
       ),
     diff: (deps: unknown) =>
       registerDiffRegistries(deps as Parameters<typeof registerDiffRegistries>[0]),
-    "diff-cvc5": (deps: unknown) =>
-      registerDiffRegistries(deps as Parameters<typeof registerDiffRegistries>[0]),
   };
 }
 
