@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { runFix } from "./cli.fix.js";
 import { runMineHistory } from "./cli.mineHistory.js";
 import { runMint } from "./cli.mint.js";
+import { runDump } from "./cli.dump.js";
 import { runAttest } from "./cli.attest.js";
 import { buildSASTForFile } from "./sast/builder.js";
 import { WorkflowRunner } from "./workflow/runner.js";
@@ -144,6 +145,7 @@ async function runLegacyCommand(command: string, rest: string[]): Promise<void> 
     case "invariants": await runInvariants(rest); break;
     case "mine-history": await runMineHistory(rest); break;
     case "mint":         await runMint(rest); break;
+    case "dump":         await runDump(rest); break;
     case "attest":       await runAttest(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
