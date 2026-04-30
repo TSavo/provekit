@@ -13,6 +13,16 @@
  * Scope discipline (per spec): the translator MINTS SMT-LIB. It does
  * NOT invoke a solver, parse solver output, or interpret verdicts.
  * Running the script is the prover stage's job.
+ *
+ * Cross-solver composition: this module is the Z3-flavored leg. The
+ * sibling module at `src/ir/cvc5/` is the CVC5-flavored leg; both take
+ * the SAME IrFormula and emit SMT-LIB v2.6 (mostly identical bytes,
+ * with CVC5 carrying a `produce-models` option preamble). The
+ * prove-cross-solver workflow is the operational test of the
+ * architectural claim that propertyHash CIDs are solver-agnostic:
+ * two translators, two solver verdicts, one IR root. See
+ * `src/workflows/prove-cross-solver.test.ts` and
+ * `docs/specs/2026-04-29-the-semantic-envelope.md`.
  */
 
 import type { IrFormula } from "../formulas.js";
