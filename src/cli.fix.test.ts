@@ -74,12 +74,13 @@ function makeCapture() {
  * Build a StubLLMProvider that handles:
  *   - Intake (report adapter): keys on "Bug report"
  *   - Intake (gap_report adapter): keys on "SAST gap finding"
- *   - Classify: keys on "classifying a bug report"
+ *   - Classify: keys on "classifying an intent"
  */
 function makeStubLLM(overrides?: {
   intakeJson?: string;
   gapIntakeJson?: string;
   classifyJson?: string;
+  investigateJson?: string;
 }): StubLLMProvider {
   const intakeResponse = overrides?.intakeJson ?? JSON.stringify({
     summary: "signup returns 500 when OAuth token missing",
@@ -106,11 +107,31 @@ function makeStubLLM(overrides?: {
     rationale: "The signup function calls an external OAuth endpoint without checking that the required secret is present in process.env.",
   });
 
+  // Investigate runs when the intake's codeReferences don't resolve on disk.
+  // The default stub returns refs that point at "src/auth/signup.ts" which
+  // tests don't always write to disk; the Investigate response below ensures
+  // Investigate succeeds with refs to a non-existent file so Locate can run
+  // and fail naturally (the original test intent).
+  const investigateResponse = overrides?.investigateJson ?? JSON.stringify({
+    symptomSummary: "signup endpoint failure on missing OAuth secret",
+    rootCauseHypothesis: "missing env-var validation at startup",
+    fixHypothesis: "add a startup assertion for GOOGLE_OAUTH_SECRET",
+    primaryLocation: {
+      file: "src/auth/signup.ts",
+      function: "signup",
+      lineRange: [42, 42],
+      confidence: "high",
+      rationale: "matches the failing endpoint path",
+    },
+    candidateLocations: [],
+  });
+
   return new StubLLMProvider(
     new Map([
       ["Bug report", intakeResponse],
       ["SAST gap finding", gapIntakeResponse],
-      ["classifying a bug report", classifyResponse],
+      ["classifying an intent", classifyResponse],
+      ["Investigate stage of an intent loop", investigateResponse],
     ]),
   );
 }
@@ -251,7 +272,7 @@ describe("runFixLoopCli()", () => {
           summary: "Possible null dereference in fetchUser.",
           failureDescription: "Value may be null at line 1.",
         })],
-        ["classifying a bug report", JSON.stringify({
+        ["classifying an intent", JSON.stringify({
           primaryLayer: "code_invariant",
           secondaryLayers: [],
           artifacts: [{ kind: "code_patch" }],
@@ -303,7 +324,7 @@ describe("runFixLoopCli()", () => {
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
         bugClassHint: "config-missing",
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "config",
         secondaryLayers: [],
         artifacts: [{ kind: "startup_assert", envVar: "OAUTH_SECRET" }],
@@ -409,7 +430,9 @@ describe("runFixLoopCli()", () => {
   it("locate null: signal with empty codeReferences returns exit 2", async () => {
     ({ db, tmpDir } = openTestDb());
 
-    // LLM returns signal with no code references
+    // LLM returns signal with no code references. Empty refs trigger
+    // Investigate; its response also returns refs to a non-existent
+    // file so Locate is the stage that fails with the expected message.
     const llm = new StubLLMProvider(new Map([
       ["Bug report", JSON.stringify({
         summary: "Some vague bug",
@@ -418,7 +441,18 @@ describe("runFixLoopCli()", () => {
         fixHint: undefined,
         bugClassHint: undefined,
       })],
-      ["classifying a bug report", "{}"],
+      ["classifying an intent", "{}"],
+      ["Investigate stage of an intent loop", JSON.stringify({
+        symptomSummary: "Some vague bug",
+        rootCauseHypothesis: "unknown",
+        fixHypothesis: "unknown",
+        primaryLocation: {
+          file: "src/does-not-exist.ts",
+          confidence: "low",
+          rationale: "no candidates surfaced",
+        },
+        candidateLocations: [],
+      })],
     ]));
 
     const err = makeCapture();
@@ -447,7 +481,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "it crashes",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "mythical",
         secondaryLayers: [],
         artifacts: [],
@@ -481,7 +515,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "crashes on missing token",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "code_invariant",
         secondaryLayers: [],
         artifacts: [{ kind: "code_patch" }],
@@ -530,7 +564,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "crashes",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "code_invariant",
         secondaryLayers: [],
         artifacts: [],
@@ -564,7 +598,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "crashes",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "code_invariant",
         secondaryLayers: [],
         artifacts: [],
@@ -606,7 +640,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "crashes",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "code_invariant",
         secondaryLayers: [],
         artifacts: [],
@@ -651,7 +685,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "crashes",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "code_invariant",
         secondaryLayers: [],
         artifacts: [],
@@ -699,7 +733,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "crashes",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "code_invariant",
         secondaryLayers: [],
         artifacts: [],
@@ -751,7 +785,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "crashes",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "code_invariant",
         secondaryLayers: [],
         artifacts: [],
@@ -794,7 +828,7 @@ describe("runFixLoopCli()", () => {
         failureDescription: "crashes",
         codeReferences: [{ file: fixturePath, line: 1, function: "signup" }],
       })],
-      ["classifying a bug report", JSON.stringify({
+      ["classifying an intent", JSON.stringify({
         primaryLayer: "code_invariant",
         secondaryLayers: [],
         artifacts: [],
