@@ -1,0 +1,17 @@
+{
+  "kind": "catalog",
+  "name": "provekit-protocol",
+  "version": "v1.0.0-2026-04-30",
+  "properties": {
+    "ir-formal-grammar": "sha256:0c394dbb0bc6da2b",
+    "canonicalization-grammar": "sha256:cb2367c97b57ba05",
+    "memento-envelope-grammar": "sha256:68f4b1cc55c01667",
+    "signatures-and-non-repudiation": "sha256:9b9f86ec1795ff90",
+    "chain-validity-and-fail-closed": "sha256:7d7777ef5b0017fe",
+    "ir-extension-protocol": "sha256:c48b69c15e1eb7e9",
+    "semantic-envelope": "sha256:b667f5c10c37173c",
+    "supply-chain-via-semantic-envelope": "sha256:eefec0fb212ef5f3"
+  },
+  "declaredAt": "2026-04-30T15:00:00Z",
+  "_unsigned": "draft v1; signing requires a published authority key per the signatures spec, which itself is one of the entries above. Self-bootstrap: the first signed protocol catalog will be a v1.0.1 that pins this catalog's CID and is signed by the project's root key."
+}

@@ -2,6 +2,12 @@
   "name": "provekit",
   "version": "0.4.0",
   "description": "ProvekIt: the fourth horseman of the git commit. tsc, lint, test, prove.",
+  "provekit": {
+    "proofHash": "sha256:e04b7cc466911b1d",
+    "proofHashKind": "protocol-catalog",
+    "proofHashCatalog": "docs/specs/2026-04-30-protocol-catalog.json",
+    "comment": "ProvekIt's own proofHash is the CID of its protocol-spec catalog. Recursive content addressing applied to the framework's self-description. See docs/specs/2026-04-30-protocol-versioning.md."
+  },
   "main": "./lib/provekit.cjs",
   "types": "./src/index.ts",
   "bin": {
