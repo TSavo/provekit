@@ -59,7 +59,7 @@ describe("grammar parser — cross-language fixtures", () => {
   function runTsRunner(fixture: string): string {
     const runnerPath = path.resolve(
       __dirname,
-      "../../../scripts/cross-lang-equivalence/ts-runner.ts",
+      "../../../../../scripts/cross-lang-equivalence/ts-runner.ts",
     );
     return execSync(`npx tsx "${runnerPath}" ${fixture}`, {
       encoding: "utf8",

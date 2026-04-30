@@ -35,7 +35,7 @@ import { createHash } from "node:crypto";
 import { listBridges, primitiveBridge } from "./bridges.js";
 import type { PrimitiveBridgeDeclaration } from "./bridges.js";
 import { registerExtensionDeclaration } from "./registry.js";
-import type { ExtensionDeclaration } from "./registry.js";
+import type { ExtensionDeclaration, SortRef } from "./registry.js";
 import { decodeProofEnvelope } from "../../proofEnvelope/index.js";
 import { computeEnvelopeCid } from "../../claimEnvelope/cid.js";
 import type { ClaimEnvelope } from "../../claimEnvelope/types.js";
@@ -230,10 +230,8 @@ function registerBridgeFromEnvelope(env: ClaimEnvelope): void {
   // Type signature now carried natively in the envelope (task #40):
   // irArgSorts is an array of SortRef, irReturnSort is a SortRef.
   // Both required per the bridge envelope schema.
-  const irArgSorts = Array.isArray(body.irArgSorts)
-    ? (body.irArgSorts as Array<string | { kind: string }>)
-    : [];
-  const irReturnSort = (body.irReturnSort ?? "Int") as string | { kind: string };
+  const irArgSorts = (Array.isArray(body.irArgSorts) ? body.irArgSorts : []) as SortRef[];
+  const irReturnSort = (body.irReturnSort ?? "Int") as SortRef;
 
   primitiveBridge({
     irName: sourceSymbol,

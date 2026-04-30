@@ -19,7 +19,7 @@ import {
   beginCollecting,
   property,
   _resetCollector,
-} from "../../src/ir/symbolic/index.js";
+} from "../../implementations/typescript/src/ir/symbolic/index.js";
 
 const fixture = process.argv[2];
 if (!fixture) {

@@ -56,6 +56,8 @@ export function emitSort(sort: Sort): string {
       throw new LeanUnsupportedError(
         "Lean translator: function sorts are not first-class in the FOL fragment. Declare an opaque function symbol via `axiom f : T1 -> T2` in the kit and use it as a ctor.",
       );
+    default:
+      throw new LeanUnsupportedError(`Lean translator: unknown sort kind ${(sort as { kind: string }).kind}`);
   }
 }
 

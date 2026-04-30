@@ -563,10 +563,10 @@ describe("Edge cases", () => {
 
   it("changing evidence body changes the CID", () => {
     const ev1 = makeLegacyEvidence();
-    const ev2: EvidenceVariant = {
+    const ev2 = {
       ...ev1,
       body: { rawWitness: "different", legacyProducerId: "old@1.0" },
-    };
+    } as EvidenceVariant;
     const c1 = computeEnvelopeCid(makeEnvelope({ evidence: ev1 }));
     const c2 = computeEnvelopeCid(makeEnvelope({ evidence: ev2 }));
     expect(c1).not.toBe(c2);

@@ -171,6 +171,8 @@ interface BridgeArgs {
   sourceLayer: string;
   targetContractCid: string;
   targetLayer: string;
+  irArgSorts?: unknown[];
+  irReturnSort?: unknown;
   notes?: string;
   producedBy?: string;
   bindingHash?: string;
@@ -195,8 +197,8 @@ function mintBridgeCmd(args: BridgeArgs): ClaimEnvelope {
     sourceLayer: args.sourceLayer,
     targetContractCid: args.targetContractCid,
     targetLayer: args.targetLayer,
-    irArgSorts: ["String"],
-    irReturnSort: "Int",
+    irArgSorts: args.irArgSorts ?? ["String"],
+    irReturnSort: args.irReturnSort ?? "Int",
     ...(args.notes !== undefined ? { notes: args.notes } : {}),
   });
 
