@@ -1,0 +1,92 @@
+# Migrate workflow — produce a punch list when a kit's proofHash changes.
+#
+# Spec: docs/specs/2026-04-29-correctness-is-a-hash.md §"Library upgrades
+#       are proof-hash diffs". Two catalogs whose proofHashes differ get
+#       diffed; project invariants that reference Removed or Modified
+#       propertyHashes are surfaced as impacted callsites.
+#
+# Pipeline: load-old + load-new (parallel) → diff → find-impacts →
+# (Action) mint-migration-plan.
+#
+# Quiet parts:
+#   - The framework's discipline says ProvekIt does not walk bridges to
+#     fetch deeper-layer codebases (see "What ProvekIt is — and what it
+#     isn't" in 2026-04-29-correctness-is-a-hash.md). load-catalog
+#     therefore reads from the LOCAL memento store. When the consumer's
+#     proofkit hasn't imported the kit's mementos, load-catalog returns
+#     `found: false` and the migration plan flags this in its preamble.
+#     Fetching kit mementos from a registry is an auditor's job.
+#
+#   - find-impacted-callsites uses a v1 collision heuristic
+#     (propertyHash-collision-v1). Real composition-walking via
+#     project-invariant inputCids is a follow-up — the StoredInvariant
+#     schema today does not record those edges. The migration plan
+#     repeats this caveat in its "Method" footer.
+#
+#   - migrate is read + diff + report. It does NOT modify user code.
+#     The user runs `provekit must` (or other workflows) to close each
+#     punch-list item.
+
+name: migrate
+cid: bafy-migrate-v1
+description: >-
+  When a kit's proofHash changes, produce a markdown migration plan
+  listing properties added, removed, or modified, plus the project
+  invariants that depend on the Removed/Modified propertyHashes.
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # M1a load-old-catalog — reads the OLD catalog memento by proofHash.
+  # Stage; pure relative to (proofHash, db). Runs in parallel with
+  # load-new-catalog.
+  # ---------------------------------------------------------------------------
+  - id: load-old-catalog
+    capability: load-catalog
+    input:
+      proofHash: $input.oldProofHash
+
+  # ---------------------------------------------------------------------------
+  # M1b load-new-catalog — reads the NEW catalog memento by proofHash.
+  # ---------------------------------------------------------------------------
+  - id: load-new-catalog
+    capability: load-catalog
+    input:
+      proofHash: $input.newProofHash
+
+  # ---------------------------------------------------------------------------
+  # M2 diff-catalogs — content-addressable diff between the two
+  # declaration sets. Pure data transformation; cacheable.
+  # ---------------------------------------------------------------------------
+  - id: diff
+    capability: diff-catalogs
+    input:
+      oldCatalog: $node.load-old-catalog.output
+      newCatalog: $node.load-new-catalog.output
+
+  # ---------------------------------------------------------------------------
+  # M3 find-impacted-callsites — scan project's `.provekit/invariants/`
+  # and report invariants whose id (== propertyHash) appears in the
+  # diff's Removed or Modified lists.
+  # ---------------------------------------------------------------------------
+  - id: find-impacts
+    capability: find-impacted-callsites
+    input:
+      projectRoot: $input.projectRoot
+      diff: $node.diff.output
+
+# ---------------------------------------------------------------------------
+# M4 mint-migration-plan — write a markdown file under
+# `.provekit/migrations/<old>-to-<new>.md`. Action — side-effecting
+# write. The audit memento records counts + path so a forensic walk
+# can reach the file without parsing it.
+# ---------------------------------------------------------------------------
+actions:
+  - id: emit-plan
+    action: mint-migration-plan
+    runAfter: $node.find-impacts
+    input:
+      projectRoot: $input.projectRoot
+      diff: $node.diff.output
+      impacts: $node.find-impacts.output
+
+output: $node.find-impacts.output
