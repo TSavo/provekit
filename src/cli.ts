@@ -12,6 +12,7 @@ import { gapReports, clauses, runtimeValues } from "./db/schema/index.js";
 import { eq } from "drizzle-orm";
 import { runFix } from "./cli.fix.js";
 import { runMineHistory } from "./cli.mineHistory.js";
+import { runMint } from "./cli.mint.js";
 import { buildSASTForFile } from "./sast/builder.js";
 
 const VERSION = "0.4.0";
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
     case "lint":    await runLint(rest); break;
     case "invariants": await runInvariants(rest); break;
     case "mine-history": await runMineHistory(rest); break;
+    case "mint":         await runMint(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
       printHelp();
