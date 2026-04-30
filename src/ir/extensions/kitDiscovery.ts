@@ -1,50 +1,60 @@
 /**
  * Kit discovery — walks a project's node_modules looking for packages
- * that ship ProvekIt bridges, and loads them into the registry with
- * provenance tags.
+ * that ship a ProvekIt `.proof` file at their root, and registers the
+ * bridges (and, in a future revision, extension declarations) carried
+ * inside.
  *
- * The protocol-aware shape: a package's `package.json` carries a
- * `provekit` metadata field. Today we recognize:
+ * Spec: docs/specs/2026-04-30-proof-file-format.md
  *
- *   {
- *     "provekit": {
- *       "shimRole": "trojan-horse",
- *       "registersBridges": ["parseInt", "abs", ...]
- *     }
- *   }
+ * Per-package shape: a package opts in by setting a `provekit` field
+ * in its package.json. The field MAY include a `proofHash` hint
+ * naming the `.proof` file; if absent, discovery falls back to an
+ * extension scan at the package root and selects any *.proof file.
  *
- * When discoverProtocolKits walks node_modules and finds a package with
- * a `provekit` field, it dynamic-imports the package's main entry point
- * (which is expected to register bridges as a side effect at module
- * load) and tags the resulting bridge declarations with the package's
- * name + version.
+ * Trust root: the file's filename CID equals its bytes hash. This
+ * shape mirrors the protocol exactly — no language runtime is loaded;
+ * verification is pure file IO + CBOR decode + SHA-256.
  *
- * The LSP calls this on initialization and on lockfile changes. Each
- * project's bridge set comes from its own installed packages — same
- * way TypeScript reads `node_modules/@types/*` to determine the type
- * surface.
+ * Spec rules enforced by this walker:
+ *   1. Filename CID matches content (rejects on mismatch)
+ *   2. Each member envelope's CID matches its identity
  *
- * Multi-project caveat: the bridge registry is process-global, so a
- * multi-workspace LSP must reset the registry between project
- * activations. Single-workspace use is the v1 contract.
+ * Spec rule deferred to a follow-up:
+ *   3. Catalog signature (requires public-key memento walking; see TODO).
+ *
+ * Today's implementation registers BRIDGE envelopes only
+ * (evidence.kind === "bridge"). Extension-declaration envelopes are not
+ * yet a wire format (extensions sign separately today; task #41).
+ * Other envelope variants are silently skipped pending dispatcher
+ * implementations.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
-import { join } from "path";
-import { listBridges } from "./bridges.js";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { listBridges, primitiveBridge } from "./bridges.js";
 import type { PrimitiveBridgeDeclaration } from "./bridges.js";
+import { decodeProofEnvelope } from "../../proofEnvelope/index.js";
+import { computeEnvelopeCid } from "../../claimEnvelope/cid.js";
+import type { ClaimEnvelope } from "../../claimEnvelope/types.js";
 
 export interface DiscoveredKit {
   packageName: string;
   packageVersion: string;
   packageRoot: string;
-  /** Which bridge names this package added to the registry on load. */
+  /** Full path to the .proof file walked. */
+  proofPath: string;
+  /** Filename CID = bytes hash; the file's trust root. */
+  proofCid: string;
+  /** Bridge IR-names this package contributed. */
   registeredBridgeNames: string[];
+  /** Verification errors encountered while walking. Empty = clean walk. */
+  errors: string[];
 }
 
 export interface DiscoveryResult {
   kits: DiscoveredKit[];
-  /** Bridge collisions detected during discovery (different packages registering the same name with different targets). */
+  /** Bridge collisions detected during discovery. */
   collisions: BridgeCollision[];
   /** Bridges currently in the registry, keyed by IR name. */
   byName: Record<string, PrimitiveBridgeDeclaration>;
@@ -56,9 +66,9 @@ export interface BridgeCollision {
 }
 
 /**
- * Walk the project's node_modules looking for packages that ship
- * ProvekIt bridges; load them; tag their bridges with provenance;
- * surface conflicts.
+ * Walk the project's node_modules looking for packages that ship a
+ * `.proof` file; verify each file's trust root; decode embedded
+ * member envelopes; register the bridges.
  */
 export async function discoverProtocolKits(projectRoot: string): Promise<DiscoveryResult> {
   const kits: DiscoveredKit[] = [];
@@ -67,22 +77,11 @@ export async function discoverProtocolKits(projectRoot: string): Promise<Discove
   const candidates = enumerateProtocolPackages(projectRoot);
   for (const cand of candidates) {
     const before = new Set(listBridges().map((b) => b.irName));
-    try {
-      // Dynamic import triggers side-effect bridge registration. The
-      // package is expected to import its kit at load time.
-      await import(cand.entrypointPath);
-    } catch (err) {
-      // Loading failed (TS source, syntax error, missing dep). The kit
-      // is unusable; skip but record nothing — the absence of the
-      // package's bridges in the registry IS the failure signal.
-      // Production verifiers may want to surface this as a fail-closed
-      // diagnostic.
-      continue;
-    }
+    const result = walkProofFile(cand);
     const after = new Set(listBridges().map((b) => b.irName));
     const newlyRegistered = [...after].filter((n) => !before.has(n));
 
-    // Tag the package's bridges with provenance.
+    // Tag this package's bridges with provenance from package.json.
     for (const bridge of listBridges()) {
       if (newlyRegistered.includes(bridge.irName) && !bridge.registeredBy) {
         bridge.registeredBy = {
@@ -96,13 +95,16 @@ export async function discoverProtocolKits(projectRoot: string): Promise<Discove
       packageName: cand.packageName,
       packageVersion: cand.packageVersion,
       packageRoot: cand.packageRoot,
+      proofPath: result.proofPath,
+      proofCid: result.proofCid,
       registeredBridgeNames: newlyRegistered,
+      errors: result.errors,
     });
   }
 
-  // Bridges that were already registered before discovery (kit's
-  // built-in lazy-init from being imported elsewhere in the LSP
-  // process) get a synthetic "internal" provenance tag.
+  // Pre-existing bridges (registered in-process before discovery, e.g.
+  // by an internal kit's lazy init) get a synthetic provenance tag so
+  // the LSP hover renderer always has a "registered by" answer.
   for (const bridge of listBridges()) {
     if (beforeNames.has(bridge.irName) && !bridge.registeredBy) {
       bridge.registeredBy = {
@@ -112,11 +114,6 @@ export async function discoverProtocolKits(projectRoot: string): Promise<Discove
     }
   }
 
-  // Build the final byName index + collision detection. The registry
-  // throws on collision-with-different-target at registration time, so
-  // by the time we get here the registry is collision-free; we surface
-  // the collision check anyway in case a future registry impl relaxes
-  // throw-on-collision into surface-then-decide.
   const byName: Record<string, PrimitiveBridgeDeclaration> = {};
   const collisions: BridgeCollision[] = [];
   for (const bridge of listBridges()) {
@@ -130,15 +127,120 @@ interface ProtocolPackageCandidate {
   packageName: string;
   packageVersion: string;
   packageRoot: string;
-  entrypointPath: string;
+  /** From package.json's provekit.proofHash if present; else null. */
+  proofHashHint: string | null;
+}
+
+interface WalkResult {
+  proofPath: string;
+  proofCid: string;
+  errors: string[];
+}
+
+function walkProofFile(cand: ProtocolPackageCandidate): WalkResult {
+  // Discovery: hint first, extension scan fallback.
+  let proofPath = "";
+  if (cand.proofHashHint) {
+    const hinted = join(cand.packageRoot, `${cand.proofHashHint}.proof`);
+    if (existsSync(hinted)) proofPath = hinted;
+  }
+  if (!proofPath) {
+    const proofs = readdirSync(cand.packageRoot).filter((f) => f.endsWith(".proof"));
+    if (proofs.length > 0) proofPath = join(cand.packageRoot, proofs[0]!);
+  }
+  if (!proofPath) {
+    return { proofPath: "", proofCid: "", errors: ["no .proof file at package root"] };
+  }
+
+  const filename = proofPath.split("/").pop()!;
+  const m = filename.match(/^([0-9a-f]+)\.proof$/);
+  const filenameCid = m ? m[1]! : null;
+
+  const errors: string[] = [];
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(proofPath);
+  } catch (e) {
+    return {
+      proofPath,
+      proofCid: "",
+      errors: [`cannot read .proof: ${(e as Error).message}`],
+    };
+  }
+  const derivedCid = createHash("sha256").update(bytes).digest("hex").slice(0, 32);
+
+  // Spec rule 1: filename matches content.
+  if (filenameCid === null) {
+    errors.push(`filename "${filename}" does not match <cid>.proof pattern`);
+  } else if (filenameCid !== derivedCid) {
+    errors.push(
+      `rule 1 (trust root): filename CID ${filenameCid} != content hash ${derivedCid}`,
+    );
+    return { proofPath, proofCid: derivedCid, errors };
+  }
+
+  let catalog;
+  try {
+    catalog = decodeProofEnvelope(new Uint8Array(bytes));
+  } catch (e) {
+    errors.push(`decode: ${(e as Error).message}`);
+    return { proofPath, proofCid: derivedCid, errors };
+  }
+
+  // Spec rule 2: each member's CID matches its envelope identity.
+  // Dispatch on evidence.kind to register what we know how to.
+  for (const [cid, memberBytes] of catalog.members) {
+    let env: ClaimEnvelope;
+    try {
+      env = JSON.parse(Buffer.from(memberBytes).toString("utf8")) as ClaimEnvelope;
+    } catch (e) {
+      errors.push(`member ${cid.slice(0, 12)}…: failed to parse: ${(e as Error).message}`);
+      continue;
+    }
+    const derived = computeEnvelopeCid(env);
+    if (derived !== cid) {
+      errors.push(`rule 2: member ${cid.slice(0, 12)}… bytes derive to ${derived}`);
+      continue;
+    }
+
+    if (env.evidence?.kind === "bridge") {
+      registerBridgeFromEnvelope(env);
+    }
+    // Other envelope variants (property, deprecation, public-key, etc.)
+    // are silently skipped pending dispatcher implementations.
+  }
+
+  // Spec rule 3 (signature) deferred — requires public-key memento walking.
+
+  return { proofPath, proofCid: derivedCid, errors };
+}
+
+function registerBridgeFromEnvelope(env: ClaimEnvelope): void {
+  const body = (env.evidence as { body: Record<string, unknown> }).body;
+  const sourceSymbol = String(body.sourceSymbol);
+  const sourceLayer = String(body.sourceLayer);
+  const targetContractCid = String(body.targetContractCid);
+  const targetLayer = String(body.targetLayer);
+  const notes = typeof body.notes === "string" ? body.notes : undefined;
+
+  // NOTE: irArgSorts and irReturnSort are NOT carried in today's bridge
+  // envelope shape (see task #40). Registering with empty arrays as a
+  // lossy interim; once #40 lands, read these fields from body.
+  primitiveBridge({
+    irName: sourceSymbol,
+    irArgSorts: [],
+    irReturnSort: "Int",
+    sourceLayer,
+    targetContractCid,
+    targetLayer,
+    ...(notes !== undefined ? { notes } : {}),
+  });
 }
 
 /**
- * Walk node_modules and enumerate packages that declare a `provekit`
- * field in their package.json. Returns absolute paths to each package's
- * main entry point (resolvable for dynamic import).
- *
- * Walks one level into @scoped directories (e.g., @provekit/ts-types-proof).
+ * Walk node_modules and enumerate packages whose package.json carries
+ * a `provekit` field. Returns each candidate with the package metadata
+ * and any proofHash hint.
  */
 function enumerateProtocolPackages(projectRoot: string): ProtocolPackageCandidate[] {
   const out: ProtocolPackageCandidate[] = [];
@@ -157,7 +259,6 @@ function enumerateProtocolPackages(projectRoot: string): ProtocolPackageCandidat
     if (!entryStat.isDirectory()) continue;
 
     if (entry.startsWith("@")) {
-      // Scoped: walk one level deeper.
       let scopedEntries: string[];
       try {
         scopedEntries = readdirSync(entryPath);
@@ -165,8 +266,7 @@ function enumerateProtocolPackages(projectRoot: string): ProtocolPackageCandidat
         continue;
       }
       for (const sub of scopedEntries) {
-        const subPath = join(entryPath, sub);
-        const cand = inspectPackage(subPath);
+        const cand = inspectPackage(join(entryPath, sub));
         if (cand) out.push(cand);
       }
     } else {
@@ -180,12 +280,7 @@ function enumerateProtocolPackages(projectRoot: string): ProtocolPackageCandidat
 function inspectPackage(packageRoot: string): ProtocolPackageCandidate | null {
   const pkgJsonPath = join(packageRoot, "package.json");
   if (!existsSync(pkgJsonPath)) return null;
-  let pkg: {
-    name?: string;
-    version?: string;
-    main?: string;
-    provekit?: unknown;
-  };
+  let pkg: { name?: string; version?: string; provekit?: unknown };
   try {
     pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
   } catch {
@@ -194,14 +289,14 @@ function inspectPackage(packageRoot: string): ProtocolPackageCandidate | null {
   if (!pkg.provekit || typeof pkg.provekit !== "object") return null;
   if (!pkg.name || !pkg.version) return null;
 
-  const main = pkg.main ?? "index.js";
-  const entrypointPath = join(packageRoot, main);
-  if (!existsSync(entrypointPath)) return null;
+  const provekitField = pkg.provekit as Record<string, unknown>;
+  const proofHashHint =
+    typeof provekitField.proofHash === "string" ? provekitField.proofHash : null;
 
   return {
     packageName: pkg.name,
     packageVersion: pkg.version,
     packageRoot,
-    entrypointPath,
+    proofHashHint,
   };
 }
