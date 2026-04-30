@@ -1,0 +1,17 @@
+// Go consumer of the C++ divide library, via cgo.
+
+package divide_consumer
+
+// #cgo CFLAGS: -I../cpp-library
+// #cgo LDFLAGS: -L../cpp-library -ldivide
+// #include "divide.h"
+import "C"
+
+import "errors"
+
+func SafeDivide(n, d int) (int, error) {
+    if d == 0 {
+        return 0, errors.New("denominator must not be zero")
+    }
+    return int(C.divide(C.int(n), C.int(d))), nil
+}

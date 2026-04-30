@@ -1,0 +1,11 @@
+// C++ consumer of the C++ divide library — direct call.
+
+#include "divide.h"
+#include <stdexcept>
+
+int safe_divide(int n, int d) {
+    if (d == 0) {
+        throw std::runtime_error("denominator must not be zero");
+    }
+    return divide(n, d);
+}

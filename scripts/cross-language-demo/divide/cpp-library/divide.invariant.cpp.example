@@ -1,0 +1,34 @@
+// C++ kit's contract for the divide library.
+//
+// This is the SOURCE FORM the hypothetical C++ kit's lifter consumes.
+// The lifter projects this into canonical FOL; the canonicalizer hashes
+// it; the result is propertyHash H_divide. Every consumer in every
+// language references this propertyHash in their inputCids.
+//
+// In the framework's universal contract format, this file's role is
+// identical to TS-kit's parseInt.invariant.ts — different surface
+// language; same FOL; same hash; same architectural primitive.
+
+#include "divide.h"
+#include <provekit/ir.hpp>
+
+// Property: divide requires its denominator to be non-zero.
+//
+// FOL: forall n: Int, d: Int. d != 0 -> isFinite(divide(n, d))
+PROVEKIT_PROPERTY("divideRequiresNonZeroDenominator",
+    forall<Int>(n => forall<Int>(d => implies(d != 0, isFinite(divide(n, d)))))
+)
+
+// Property: the result is the integer quotient.
+//
+// FOL: forall n: Int, d: Int. d != 0 -> divide(n, d) * d + (n - divide(n, d) * d) == n
+PROVEKIT_PROPERTY("divideReturnsQuotient",
+    forall<Int>(n => forall<Int>(d => implies(d != 0, divide(n, d) * d + (n - divide(n, d) * d) == n)))
+)
+
+// Note: the C++ kit's lifter does not yet exist. This file documents
+// the surface form a C++ kit would consume. The propertyHashes shown
+// in dag-demo.ts are produced by canonicalizing the equivalent
+// IrFormula values in the existing TS canonicalizer — demonstrating
+// that hash equivalence holds across the spec, not just within one
+// implementation.

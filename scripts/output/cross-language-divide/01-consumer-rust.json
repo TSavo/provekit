@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "cf85dec3d6aaee8e",
+  "propertyHash": "a0761924418042cd",
+  "verdict": "holds",
+  "producedBy": "rust-kit-demo@0.0.1",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [
+    "955a580b755c85a2fb8915ec24f90456"
+  ],
+  "evidence": {
+    "kind": "legacy-witness",
+    "schema": "0000000000000000b0000000000000b0",
+    "body": {
+      "rawWitness": "{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x4\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x5\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"antecedent\":{\"kind\":\"atomic\",\"predicate\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x5\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},\"consequent\":{\"kind\":\"atomic\",\"predicate\":\"is-defined\",\"args\":[{\"kind\":\"ctor\",\"name\":\"safe_divide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x4\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"var\",\"name\":\"_x5\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}}}}",
+      "legacyProducerId": "rust-kit-demo@0.0.1"
+    }
+  },
+  "producerSignature": "gTpF4l2clHg7y6eX/4vYvg+U1qpDHmmANhAgqlJQATABsFWRvxK53o2TmGtMpQ+DompzvTF9+m88qu/ktfg1AA==",
+  "cid": "ab31be903137674318aba1ba41346768"
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "524e51d5dffd38aa",
+  "propertyHash": "3ee1b732d6e26169",
+  "verdict": "holds",
+  "producedBy": "ts-kit-demo@0.0.1",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [
+    "955a580b755c85a2fb8915ec24f90456"
+  ],
+  "evidence": {
+    "kind": "legacy-witness",
+    "schema": "0000000000000000b0000000000000b0",
+    "body": {
+      "rawWitness": "{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x2\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"antecedent\":{\"kind\":\"atomic\",\"predicate\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},\"consequent\":{\"kind\":\"atomic\",\"predicate\":\"is-defined\",\"args\":[{\"kind\":\"ctor\",\"name\":\"safeDivide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x2\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"var\",\"name\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}}}}",
+      "legacyProducerId": "ts-kit-demo@0.0.1"
+    }
+  },
+  "producerSignature": "5sLveCZMLv60LpU76z6SmnaEH8d9JgNrp/RCoEGQUSSk0iAXklkyNleC3+vFlk22hMerDOz5bfXS2Hp3nuDGDw==",
+  "cid": "35281e7faa7fac1a35374005b9aff22b"
+}
