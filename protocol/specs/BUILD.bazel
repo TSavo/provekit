@@ -1,0 +1,33 @@
+# Protocol specifications — the durable artifact, language-agnostic.
+#
+# This target groups every spec doc + grammar file under protocol/specs/.
+# Downstream Bazel targets that consume "the protocol" depend on
+# //protocol/specs:specs, ensuring the spec is a tracked input to
+# every conformance test, every catalog mint, every implementation
+# build that pins a protocol version.
+#
+# Spec catalog: 2026-04-30-protocol-catalog.json maps protocol piece
+# names → CIDs; the catalog's CID is the single hash that pins the
+# whole protocol (recursive content addressing applied to the
+# framework's own description).
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "specs",
+    srcs = glob(
+        include = ["**/*.md", "**/*.json"],
+        # When CDDL grammars become standalone files (task #39 wires
+        # CDDL→runtime validators), add **/*.cddl, **/*.abnf, **/*.dlog
+        # to the include list. Today the grammars are inline in the
+        # markdown spec docs.
+    ),
+)
+
+# Convenience alias: //protocol/specs:catalog → the catalog JSON only.
+# Downstream targets that need only the catalog file (e.g., to bake
+# its CID into a binary) can depend on this.
+filegroup(
+    name = "catalog",
+    srcs = ["2026-04-30-protocol-catalog.json"],
+)

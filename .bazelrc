@@ -1,0 +1,29 @@
+# ProvekIt Bazel configuration.
+#
+# bzlmod (MODULE.bazel) is the source of truth for external deps;
+# the legacy WORKSPACE format is disabled. Keeps the dep graph honest
+# and matches Bazel 7+ defaults.
+
+# Use the modern bzlmod resolver only.
+common --enable_bzlmod
+common --noenable_workspace
+
+# Build tooling: don't surface upstream warnings for vendor dirs
+# (node_modules etc. — those aren't Bazel inputs anyway).
+build --incompatible_strict_action_env
+
+# Stamp build with VCS info for reproducibility / forensic traceability.
+build --workspace_status_command=tools/bazel/workspace-status.sh
+
+# Test output: show test logs on failure (not just the summary line).
+test --test_output=errors
+
+# Default test summary verbosity.
+test --test_summary=short
+
+# Local disk cache so repeat builds don't re-execute everything.
+build --disk_cache=~/.cache/bazel/disk
+test  --disk_cache=~/.cache/bazel/disk
+
+# Local config overrides (.bazelrc.local) are gitignored; per-developer.
+try-import %workspace%/.bazelrc.local

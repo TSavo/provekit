@@ -1,0 +1,29 @@
+# Bazel ignores these subtrees when discovering BUILD files. Native
+# build artifacts and dep caches that Bazel shouldn't touch.
+
+# Node ecosystem
+node_modules
+.pnpm-store
+
+# Rust
+implementations/rust/target
+
+# Go
+implementations/go/**/vendor
+
+# C++ build trees
+implementations/cpp/build
+implementations/cpp/**/build
+
+# Project-local caches and ephemeral state
+.claude
+.provekit
+prompts.db-shm
+prompts.db-wal
+.neurallog
+
+# Existing test fixtures and demo scratch
+.worktrees
+diff
+diff-cvc5
+must

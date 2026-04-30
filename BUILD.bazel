@@ -1,0 +1,10 @@
+# Root BUILD.bazel — the workspace boundary marker. No targets here
+# yet; per-package BUILD.bazel files declare targets.
+#
+# Layout:
+#   //protocol/specs:specs           - the protocol grammar files (filegroup)
+#   //protocol/conformance:vectors   - cross-language test vectors (placeholder)
+#   //implementations/typescript/...  - TS reference impl (after Phase 2 carve)
+#   //implementations/rust/...        - Rust reference impl (after Phase 3)
+#   //implementations/go/...          - Go reference impl (after Phase 3)
+#   //implementations/cpp/...         - C++ reference impl (after Phase 3)

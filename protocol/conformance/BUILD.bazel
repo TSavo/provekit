@@ -1,0 +1,8 @@
+# Cross-language conformance test vectors.
+#
+# Empty for now (placeholder). Populated as task #37 lands: each
+# vector is a .proof file + an oracle (expected verdict). Per-impl
+# Bazel test targets consume the vectors and report pass/fail.
+#
+# Spec for the vector format: docs to be written; expected shape is
+# {input: .proof bytes, oracle: {must_accept | must_reject | verdict}}.

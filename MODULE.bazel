@@ -1,0 +1,44 @@
+"""ProvekIt — protocol-first polyglot monorepo.
+
+The protocol (CDDL/ABNF/Datalog grammars + conformance test vectors)
+is the durable artifact under protocol/. Reference implementations
+live as siblings under implementations/{typescript,rust,go,cpp}/,
+each with their native tooling AND Bazel BUILD files for the
+unified cross-language test surface.
+
+Spec: protocol/specs/2026-04-30-protocol-catalog.json (the catalog
+of protocol grammars + their CIDs).
+"""
+
+module(
+    name = "provekit",
+    version = "0.4.0",
+)
+
+# ----- TypeScript / Node ecosystem -----
+# aspect_rules_js + rules_ts are the modern, well-maintained ts/js
+# Bazel rules. They pull pnpm-managed node_modules into Bazel-land
+# without re-implementing the resolver.
+bazel_dep(name = "aspect_rules_js", version = "3.0.3")
+bazel_dep(name = "aspect_rules_ts", version = "3.8.8")
+bazel_dep(name = "rules_nodejs", version = "6.7.4")
+
+# ----- Rust ecosystem -----
+# rules_rust + crate_universe; the Cargo workspace under
+# implementations/rust/ stays canonical for non-Bazel cargo users,
+# Bazel reads it via crate_universe.
+bazel_dep(name = "rules_rust", version = "0.70.0")
+
+# ----- Go ecosystem -----
+# rules_go + gazelle; Gazelle auto-generates BUILD files from
+# go.mod/go.sum, keeping Bazel's view in sync with native Go tooling.
+bazel_dep(name = "rules_go", version = "0.60.0")
+bazel_dep(name = "gazelle", version = "0.50.0")
+
+# ----- C++ ecosystem -----
+# rules_cc is the baseline; rules_foreign_cc handles CMake/Make
+# passthrough for the C++ kit which uses CMake natively.
+bazel_dep(name = "rules_cc", version = "0.2.18")
+
+# ----- Skylib (helpers) -----
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
