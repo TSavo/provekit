@@ -1,0 +1,88 @@
+# Refute workflow — propertyHash → counterexample (or proof).
+#
+# Given a propertyHash, recover the IrFormula from the memento store,
+# translate to SMT-LIB, ask Z3 to find a satisfying assignment to the
+# NEGATION of the assertion under the kit's axioms. If z3 returns:
+#   sat   → counterexample exists; mint a "violated" verdict memento
+#   unsat → assertion holds; mint a "holds" verdict memento
+#   unknown / timeout → mint an "undecidable" verdict memento
+#
+# Workflow input shape (RefuteWorkflowInput):
+#   propertyHash: string         — the property to refute
+#   axioms?:      IrFormula[]    — kit-supplied axioms (optional)
+#   logic?:       string         — SMT-LIB logic, default "ALL"
+#   timeoutMs?:   number         — z3 timeout, default 30000
+#   producedBy?:  string         — verdict producer identity
+#
+# Terminal output: invoke-z3's StageOutput. The Z3-driven property
+# memento is written by the mint-verdict-memento Action as a side
+# effect, keyed at the ORIGINAL (bindingHash, propertyHash) the
+# locate-memento Stage recovered.
+
+name: refute
+cid: bafy-refute-v1
+description: >-
+  Recover an IrFormula by propertyHash, translate to SMT-LIB, invoke Z3,
+  and mint a verdict memento for the original (bindingHash, propertyHash).
+  Terminal artifact: invoke-z3's StageOutput.
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # locate-memento — recover the IrFormula from the memento store. Reads
+  # the legacy-witness rawWitness as FormulateViaLifterStageOutput; first
+  # candidate that round-trips a usable formula wins.
+  # ---------------------------------------------------------------------------
+  - id: locate-memento
+    capability: locate-memento
+    input:
+      propertyHash: $input.propertyHash
+
+  # ---------------------------------------------------------------------------
+  # emit-smt-lib — translate the recovered IrFormula to a full SMT-LIB
+  # script with declarations, axioms, and (assert (not assertion)). Pure
+  # function; per scope discipline, mints SMT-LIB but does not invoke a
+  # solver.
+  # ---------------------------------------------------------------------------
+  - id: emit-smt-lib
+    capability: emit-smt-lib
+    input:
+      formula: $node.locate-memento.output.formula
+      axioms: $input.axioms
+      logic: $input.logic
+
+  # ---------------------------------------------------------------------------
+  # invoke-z3 — spawn the z3 binary, write SMT-LIB to stdin, parse the
+  # verdict and (on sat) the counterexample model. Stage rather than
+  # Action because the verdict is a content-addressable claim about a
+  # deterministic input.
+  # ---------------------------------------------------------------------------
+  - id: invoke-z3
+    capability: invoke-z3
+    input:
+      smtLib: $node.emit-smt-lib.output.smtLib
+      timeoutMs: $input.timeoutMs
+
+# ---------------------------------------------------------------------------
+# Actions — side-effecting, run-every-time. The mint-verdict-memento
+# Action writes a verdict memento at the ORIGINAL (bindingHash,
+# propertyHash) the locate-memento Stage recovered, materializing the
+# property's actual verdict. The Stage memento for invoke-z3 is at the
+# workflow-position key; the property memento here is at the original
+# code-shape key.
+# ---------------------------------------------------------------------------
+actions:
+  - id: mint-verdict-memento
+    action: mint-verdict-memento
+    input:
+      bindingHash: $node.locate-memento.output.bindingHash
+      propertyHash: $node.locate-memento.output.propertyHash
+      z3Verdict: $node.invoke-z3.output.z3Verdict
+      smtLib: $node.emit-smt-lib.output.smtLib
+      z3RunMs: $node.invoke-z3.output.z3RunMs
+      counterexample: $node.invoke-z3.output.counterexample
+      producedBy: $input.producedBy
+      inputCids:
+        - $node.locate-memento.output.sourceCid
+    runAfter: $node.invoke-z3
+
+output: $node.invoke-z3.output

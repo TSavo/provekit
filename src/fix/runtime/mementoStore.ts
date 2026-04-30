@@ -377,6 +377,26 @@ export function findMementoByBindingHash(
   return rows.map(rowToMemento);
 }
 
+/**
+ * All mementos sharing a propertyHash, across producers and bindings.
+ *
+ * The refute workflow uses this: given a propertyHash, find any
+ * memento claiming that property — typically a formulate-via-lifter
+ * legacy-witness memento that carries the IrFormula in its rawWitness.
+ * The first row's binding identifies the code shape under test.
+ */
+export function findMementoByPropertyHash(
+  db: Db,
+  propertyHash: string,
+): Memento[] {
+  const rows = db
+    .select()
+    .from(verifications)
+    .where(eq(verifications.propertyHash, propertyHash))
+    .all();
+  return rows.map(rowToMemento);
+}
+
 function findExact(
   db: Db,
   bindingHash: string,
