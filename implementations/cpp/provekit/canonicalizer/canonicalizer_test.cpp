@@ -15,14 +15,15 @@
 //    "kind":"atomic","predicate":">"}
 //
 // (rendered with all keys sorted per §7.3, no whitespace per §7.4,
-//  numbers per §7.6 — for integer 0, the digit "0").
+//  numbers per §7.6, integer 0 emits digit "0").
 //
-// SHA-256 of those bytes (computed via shasum -a 256 — system tool,
-// no implementation involved):
-//   818cc781bf4356554c10d65b46112bd9210e41f1605ef071a877bbff7d9ca237
+// BLAKE3-512 of those bytes (v1.1.0 protocol hash, full 64-byte digest,
+// computed by feeding the bytes to the official BLAKE3 C library):
+//   c592f83501c1cfbb9ae69fe89b7738896d0309f1493e3b3f89dbbe78ebbcdb5d
+//   6a519307b558b89e37a68d0443a564719d57f30e6a53f4d014b48e9d7fba23a5
 //
-// propertyHash (first 16 hex chars per §11):
-//   818cc781bf435655
+// propertyHash per §11 (self-identifying tag + full hex):
+//   blake3-512:c592...23a5
 //
 // Any conformant implementation in any language must produce these
 // exact bytes and this exact hash. If C++ doesn't match, EITHER the
@@ -74,9 +75,12 @@ constexpr const char* EXPECTED_BYTES =
     R"({"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],)"
     R"("kind":"atomic","predicate":">"})";
 
-// Spec-derived expected propertyHash. Derived from `shasum -a 256`
-// over EXPECTED_BYTES, taking the first 16 hex chars per §11.
-constexpr const char* EXPECTED_PROPERTY_HASH = "818cc781bf435655";
+// Spec-derived expected propertyHash for v1.1.0: BLAKE3-512 over
+// EXPECTED_BYTES, prefixed with the self-identifying tag "blake3-512:".
+constexpr const char* EXPECTED_PROPERTY_HASH =
+    "blake3-512:"
+    "c592f83501c1cfbb9ae69fe89b7738896d0309f1493e3b3f89dbbe78ebbcdb5d"
+    "6a519307b558b89e37a68d0443a564719d57f30e6a53f4d014b48e9d7fba23a5";
 
 bool check(const char* name, bool ok, const std::string& got, const std::string& want) {
     if (ok) {

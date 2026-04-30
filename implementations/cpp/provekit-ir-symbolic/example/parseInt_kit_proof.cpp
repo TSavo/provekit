@@ -9,8 +9,8 @@
 //   2. Kit primitives emit IR via the collector.
 //   3. Each declaration is minted as a signed ClaimEnvelope.
 //   4. Contracts minted first (so bridges can reference their CIDs).
-//   5. Catalog memento bundles all members → deterministic-CBOR .proof.
-//   6. Filename = sha256(bytes)[:32 hex] = trust root.
+//   5. Catalog memento bundles all members into a deterministic-CBOR .proof.
+//   6. Filename = "blake3-512:" + 128 hex = full self-identifying CID = trust root.
 //
 // Spec stack (catalog v1.1.0):
 //   protocol/specs/2026-04-30-proof-file-format.md
@@ -19,7 +19,7 @@
 //   protocol/specs/2026-04-30-handshake-algorithm.md
 
 #include "provekit/ir.hpp"
-#include "provekit/canonicalizer/sha256.hpp"
+#include "provekit/canonicalizer/hash.hpp"
 #include "provekit/canonicalizer/value.hpp"
 #include "provekit/claim-envelope/mint.hpp"
 #include "provekit/claim-envelope/value_from_kit.hpp"
@@ -35,7 +35,7 @@
 using namespace provekit::ir;
 using ::provekit::canonicalizer::Value;
 using ::provekit::canonicalizer::ValuePtr;
-using ::provekit::canonicalizer::sha256_hex;
+using ::provekit::canonicalizer::compute_cid;
 using ::provekit::claim_envelope::MintContractArgs;
 using ::provekit::claim_envelope::MintBridgeArgs;
 using ::provekit::claim_envelope::mint_contract;
@@ -116,11 +116,17 @@ int main(int argc, char* argv[]) {
     members[minted_bridge.cid] = minted_bridge.canonical_bytes;
 
     // ----- 4. Bundle the catalog into a .proof file -----
+    // signer_cid is a placeholder for the v1.1.0 demo: a syntactically
+    // valid self-identifying hash ("blake3-512:" + 128 hex chars). It
+    // does not resolve to a real key memento yet.
     ProofEnvelopeInput proof_input{
         .name = "@example/cpp-kit",
         .version = "1.0.0",
         .members = members,
-        .signer_cid = "sha256:cpp-kit-signer",
+        .signer_cid =
+            "blake3-512:"
+            "63707020d09b8c5cab0fb7d6a1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f"
+            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
         .signer_seed = signer_seed,
         .declared_at = declared_at,
     };

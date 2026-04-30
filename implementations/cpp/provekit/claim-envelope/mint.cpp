@@ -2,8 +2,8 @@
 
 #include "mint.hpp"
 
+#include "../canonicalizer/hash.hpp"
 #include "../canonicalizer/jcs.hpp"
-#include "../canonicalizer/sha256.hpp"
 
 #include <algorithm>
 #include <stdexcept>
@@ -17,9 +17,20 @@ using ::provekit::canonicalizer::ValuePtr;
 
 namespace {
 
-constexpr const char* SCHEMA_CID_CONTRACT    = "0000000000000000d0000000000000d0";
-constexpr const char* SCHEMA_CID_BRIDGE      = "0000000000000000c0000000000000c0";
-constexpr const char* SCHEMA_CID_IMPLICATION = "0000000000000000e0000000000000e0";
+// Schema CIDs are placeholders for the v1.1.0 demo; they are valid
+// self-identifying hashes ("blake3-512:" + 128 hex chars) so they pass
+// the memento envelope grammar's regex even though the bytes do not
+// resolve to a real schema memento yet. A future cut substitutes the
+// real schema-memento CIDs.
+constexpr const char* SCHEMA_CID_CONTRACT =
+    "blake3-512:00000000000000000000000000000000000000000000000000000000000000d0"
+                "00000000000000000000000000000000000000000000000000000000000000d0";
+constexpr const char* SCHEMA_CID_BRIDGE =
+    "blake3-512:00000000000000000000000000000000000000000000000000000000000000c0"
+                "00000000000000000000000000000000000000000000000000000000000000c0";
+constexpr const char* SCHEMA_CID_IMPLICATION =
+    "blake3-512:00000000000000000000000000000000000000000000000000000000000000e0"
+                "00000000000000000000000000000000000000000000000000000000000000e0";
 
 std::string base64_encode(const uint8_t* data, size_t len) {
     static constexpr char A[] =
@@ -50,13 +61,16 @@ std::string base64_encode(const uint8_t* data, size_t len) {
     return out;
 }
 
-std::string hash16(const ValuePtr& v) {
+// hash_value computes the self-identifying CID over the JCS bytes of a
+// canonical AST. Per protocol v1.1.0: full BLAKE3-512, no truncation,
+// "blake3-512:" prefix.
+std::string hash_value(const ValuePtr& v) {
     const std::string canonical = ::provekit::canonicalizer::encode_jcs(*v);
-    return ::provekit::canonicalizer::sha256_hex(canonical).substr(0, 16);
+    return ::provekit::canonicalizer::compute_cid(canonical);
 }
 
-std::string hash16_string(const std::string& s) {
-    return ::provekit::canonicalizer::sha256_hex(s).substr(0, 16);
+std::string hash_string(const std::string& s) {
+    return ::provekit::canonicalizer::compute_cid(s);
 }
 
 ValuePtr build_envelope_for_hashing(
@@ -97,15 +111,17 @@ MintedEnvelope mint_internal(
         binding_hash, property_hash, verdict, produced_by, produced_at,
         input_cids, evidence);
     const std::string canonical = ::provekit::canonicalizer::encode_jcs(*unsigned_v);
-    const std::string sha = ::provekit::canonicalizer::sha256_hex(canonical);
-    const std::string cid = sha.substr(0, 32);
+    // CID = "blake3-512:" + full 128 hex chars (no truncation).
+    const std::string cid = ::provekit::canonicalizer::compute_cid(canonical);
     auto sig = ::provekit::proof_envelope::ed25519_sign_with_seed(
         signer_seed,
         reinterpret_cast<const uint8_t*>(canonical.data()),
         canonical.size());
-    const std::string sig_b64 = base64_encode(sig.data(), sig.size());
+    // Self-identifying signature: "ed25519:" + base64(sig bytes).
+    const std::string sig_str =
+        std::string("ed25519:") + base64_encode(sig.data(), sig.size());
     std::vector<std::pair<std::string, ValuePtr>> kvs = unsigned_v->as_object();
-    kvs.emplace_back("producerSignature", Value::string(sig_b64));
+    kvs.emplace_back("producerSignature", Value::string(sig_str));
     kvs.emplace_back("cid", Value::string(cid));
     ValuePtr signed_v = Value::object(kvs);
     const std::string final_bytes = ::provekit::canonicalizer::encode_jcs(*signed_v);
@@ -178,15 +194,15 @@ MintedEnvelope mint_contract(const MintContractArgs& args) {
     };
     if (args.pre) {
         body_kvs.emplace_back("pre", args.pre);
-        body_kvs.emplace_back("preHash", Value::string(hash16(args.pre)));
+        body_kvs.emplace_back("preHash", Value::string(hash_value(args.pre)));
     }
     if (args.post) {
         body_kvs.emplace_back("post", args.post);
-        body_kvs.emplace_back("postHash", Value::string(hash16(args.post)));
+        body_kvs.emplace_back("postHash", Value::string(hash_value(args.post)));
     }
     if (args.inv) {
         body_kvs.emplace_back("inv", args.inv);
-        body_kvs.emplace_back("invHash", Value::string(hash16(args.inv)));
+        body_kvs.emplace_back("invHash", Value::string(hash_value(args.inv)));
     }
     body_kvs.emplace_back("authoring", build_authoring(args));
     ValuePtr body = Value::object(body_kvs);
@@ -198,21 +214,21 @@ MintedEnvelope mint_contract(const MintContractArgs& args) {
     });
 
     // DERIVED:
-    //   propertyHash = hash16(canonical({pre?, post?, inv?, outBinding}))
-    //   bindingHash  = hash16(canonical({producerId, contractName, propertyHash}))
+    //   propertyHash = hash_value(canonical({pre?, post?, inv?, outBinding}))
+    //   bindingHash  = hash_value(canonical({producerId, contractName, propertyHash}))
     std::vector<std::pair<std::string, ValuePtr>> ph_kvs;
     if (args.pre) ph_kvs.emplace_back("pre", args.pre);
     if (args.post) ph_kvs.emplace_back("post", args.post);
     if (args.inv) ph_kvs.emplace_back("inv", args.inv);
     ph_kvs.emplace_back("outBinding", Value::string(args.out_binding));
-    const std::string property_hash = hash16(Value::object(ph_kvs));
+    const std::string property_hash = hash_value(Value::object(ph_kvs));
 
     ValuePtr bh_obj = Value::object({
         {"producerId", Value::string(args.produced_by)},
         {"contractName", Value::string(args.contract_name)},
         {"propertyHash", Value::string(property_hash)},
     });
-    const std::string binding_hash = hash16(bh_obj);
+    const std::string binding_hash = hash_value(bh_obj);
 
     return mint_internal(
         binding_hash, property_hash, "holds",
@@ -245,14 +261,14 @@ MintedEnvelope mint_bridge(const MintBridgeArgs& args) {
     });
 
     // DERIVED per spec:
-    //   bindingHash  = hash16(canonical({sourceLayer, sourceSymbol}))
-    //   propertyHash = hash16(canonical("bridge:" || sourceSymbol))
+    //   bindingHash  = hash_value(canonical({sourceLayer, sourceSymbol}))
+    //   propertyHash = hash_value(canonical("bridge:" || sourceSymbol))
     ValuePtr bh_obj = Value::object({
         {"sourceLayer", Value::string(args.source_layer)},
         {"sourceSymbol", Value::string(args.source_symbol)},
     });
-    const std::string binding_hash = hash16(bh_obj);
-    const std::string property_hash = hash16_string("bridge:" + args.source_symbol);
+    const std::string binding_hash = hash_value(bh_obj);
+    const std::string property_hash = hash_string("bridge:" + args.source_symbol);
 
     return mint_internal(
         binding_hash, property_hash, "holds",
@@ -287,14 +303,14 @@ MintedEnvelope mint_implication(const MintImplicationArgs& args) {
     });
 
     // DERIVED per spec:
-    //   bindingHash  = hash16(canonical({antecedentHash, consequentHash}))
-    //   propertyHash = hash16(canonical("implication:" || antecedentHash || ":" || consequentHash))
+    //   bindingHash  = hash_value(canonical({antecedentHash, consequentHash}))
+    //   propertyHash = hash_value(canonical("implication:" || antecedentHash || ":" || consequentHash))
     ValuePtr bh_obj = Value::object({
         {"antecedentHash", Value::string(args.antecedent_hash)},
         {"consequentHash", Value::string(args.consequent_hash)},
     });
-    const std::string binding_hash = hash16(bh_obj);
-    const std::string property_hash = hash16_string(
+    const std::string binding_hash = hash_value(bh_obj);
+    const std::string property_hash = hash_string(
         "implication:" + args.antecedent_hash + ":" + args.consequent_hash);
 
     // inputCids = [antecedentCid, consequentCid] (lex-sorted by mint_internal).

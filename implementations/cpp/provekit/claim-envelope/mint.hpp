@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Mint signed ClaimEnvelopes — pure C++. Roles: contract, bridge,
+// Mint signed ClaimEnvelopes, pure C++. Roles: contract, bridge,
 // implication. Per protocol/specs/2026-04-30-memento-envelope-grammar.md
 // (catalog v1.1.0).
 //
-// CID rule: cid = sha256(JCS(envelope minus cid minus producerSignature))[:32 hex chars]
-// Signature: ed25519 over the same canonical bytes the CID hashes.
+// CID rule: cid = "blake3-512:" + hex(BLAKE3_512(JCS(envelope minus cid
+// minus producerSignature))). Full 64-byte digest, 128 hex chars, self-
+// identifying tag.
+//
+// Signature: ed25519 over the same canonical bytes the CID hashes; the
+// envelope's `producerSignature` field is "ed25519:" + base64(sig).
 
 #pragma once
 
@@ -21,7 +25,7 @@ namespace provekit::claim_envelope {
 
 struct MintedEnvelope {
     std::vector<uint8_t> canonical_bytes;  // JCS bytes of the signed envelope
-    std::string cid;                        // 32 lowercase hex chars
+    std::string cid;                        // "blake3-512:" + 128 lowercase hex chars
 };
 
 // ---- Authoring metadata (matches the spec's authoring-block union) -------
@@ -91,8 +95,8 @@ MintedEnvelope mint_bridge(const MintBridgeArgs& args);
 struct MintImplicationArgs {
     std::string produced_by;
     std::string produced_at;
-    std::string antecedent_hash;        // hex16
-    std::string consequent_hash;        // hex16
+    std::string antecedent_hash;        // "blake3-512:" + 128 hex
+    std::string consequent_hash;        // "blake3-512:" + 128 hex
     std::string antecedent_cid;         // contract memento CID
     std::string consequent_cid;         // contract memento CID
     std::string antecedent_slot;        // "pre" | "post" | "inv"

@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// .proof envelope builder. Per RFC 8949 §4.2.1 + the .proof spec:
+// .proof envelope builder. Per RFC 8949 §4.2.1 + the .proof spec
+// (protocol/specs/2026-04-30-proof-file-format.md):
 //   1. Build the unsigned body as a CBOR map with sorted keys
 //      (sorted by bytewise order of CBOR-encoded key).
 //   2. ed25519-sign the unsigned-body bytes.
 //   3. Re-emit the body with the signature added; the keys are
-//      re-sorted (sig sits between "signature" and other keys per
-//      bytewise lex).
-//   4. SHA-256 the final bytes; first 32 hex chars = filename CID.
+//      re-sorted by bytewise lex.
+//   4. BLAKE3-512 the final bytes; filename CID =
+//      "blake3-512:" + 128 lowercase hex chars (full digest, no truncation).
 
 #include "proof_envelope.hpp"
 
-#include "../canonicalizer/sha256.hpp"
+#include "../canonicalizer/hash.hpp"
 #include "cbor.hpp"
 
 #include <algorithm>
@@ -103,12 +104,10 @@ std::vector<CborPair> body_pairs_unsigned(const ProofEnvelopeInput& in) {
     return pairs;
 }
 
-std::string sha256_hex_prefix32(const std::vector<uint8_t>& bytes) {
-    // sha256_hex from canonicalizer/sha256.hpp expects a std::string;
-    // construct one directly over the raw bytes (not UTF-8 — just
-    // a byte container — sha256_hex doesn't interpret).
+std::string compute_proof_cid(const std::vector<uint8_t>& bytes) {
+    // BLAKE3-512 over the raw CBOR bytes; output is "blake3-512:" + 128 hex.
     std::string view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-    return provekit::canonicalizer::sha256_hex(view).substr(0, 32);
+    return provekit::canonicalizer::compute_cid(view);
 }
 
 }  // namespace
@@ -131,8 +130,8 @@ ProofEnvelopeOutput build_proof_envelope(const ProofEnvelopeInput& input) {
     std::vector<uint8_t> final_bytes;
     emit_sorted_map(final_bytes, signed_pairs);
 
-    // Step 4: filename CID.
-    std::string cid = sha256_hex_prefix32(final_bytes);
+    // Step 4: filename CID = "blake3-512:" + full hex (no truncation).
+    std::string cid = compute_proof_cid(final_bytes);
     return {std::move(final_bytes), std::move(cid)};
 }
 

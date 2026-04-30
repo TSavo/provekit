@@ -2,11 +2,12 @@
 
 #include "load_all_proofs.hpp"
 
+#include "../canonicalizer/hash.hpp"
 #include "../canonicalizer/jcs.hpp"
-#include "../canonicalizer/sha256.hpp"
 #include "../canonicalizer/value.hpp"
 #include "../proof-envelope/cbor_decoder.hpp"
 
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <regex>
@@ -17,6 +18,18 @@ namespace fs = std::filesystem;
 namespace provekit::verifier {
 
 namespace {
+
+// v1.1.0: the only permitted hash tag is "blake3-512" and the only
+// permitted signature/key tag is "ed25519". Any other tag fails verify
+// loud, per protocol/specs/2026-04-30-memento-envelope-grammar.md
+// §"Self-identifying cryptographic primitives".
+constexpr const char* kHashTagPrefix = "blake3-512:";
+constexpr const char* kSigTagPrefix = "ed25519:";
+
+bool has_prefix(const std::string& s, const char* prefix) {
+    const size_t n = std::strlen(prefix);
+    return s.size() >= n && std::memcmp(s.data(), prefix, n) == 0;
+}
 
 // Read entire file as bytes.
 std::vector<uint8_t> read_file(const std::string& path) {
@@ -54,13 +67,14 @@ std::vector<uint8_t> read_file(const std::string& path) {
 }
 
 // Recompute envelope CID from JSON envelope (minus cid + producerSignature).
+// Per v1.1.0: "blake3-512:" + full BLAKE3-512 hex (no truncation).
 std::string compute_envelope_cid(const Json& env) {
     Json stripped = env;
     stripped.erase("cid");
     stripped.erase("producerSignature");
     auto value_tree = json_to_value(stripped);
     const std::string canonical = ::provekit::canonicalizer::encode_jcs(*value_tree);
-    return ::provekit::canonicalizer::sha256_hex(canonical).substr(0, 32);
+    return ::provekit::canonicalizer::compute_cid(canonical);
 }
 
 }  // namespace
@@ -80,21 +94,31 @@ MementoPool LoadAllProofsStage::Run(const std::string& project_root) {
 void LoadAllProofsStage::load_one(const std::string& proof_path, MementoPool& pool) {
     auto bytes = read_file(proof_path);
 
-    // Rule 1: filename CID matches content (trust root).
+    // Rule 1: filename CID matches content (trust root). Per v1.1.0,
+    // the only valid filename shape is `blake3-512:<128 hex>.proof`.
+    // Any other algorithm tag is rejected loud.
     fs::path p(proof_path);
     const std::string filename = p.filename().string();
-    static const std::regex re(R"(^([0-9a-f]+)\.proof$)");
+    static const std::regex re_v1(R"(^(blake3-512:[0-9a-f]{128})\.proof$)");
+    static const std::regex re_anytag(R"(^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$)");
     std::smatch m;
-    if (std::regex_match(filename, m, re)) {
+    if (std::regex_match(filename, m, re_v1)) {
         const std::string filenameCid = m[1].str();
         const std::string s(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-        const std::string derived = ::provekit::canonicalizer::sha256_hex(s).substr(0, 32);
+        const std::string derived = ::provekit::canonicalizer::compute_cid(s);
         if (derived != filenameCid) {
             pool.load_errors.push_back({proof_path,
                 "rule 1 (trust root): filename CID " + filenameCid +
                     " != content hash " + derived});
             return;
         }
+    } else if (std::regex_match(filename, m, re_anytag)) {
+        // Filename uses a self-identifying tag we do not recognize.
+        // Reject loud per task spec; v1.1.0 ships blake3-512 only.
+        pool.load_errors.push_back({proof_path,
+            "rule 1 (trust root): unsupported hash tag in filename '" + m[1].str() +
+                "'; v1.1.0 requires `blake3-512:`"});
+        return;
     }
 
     ::provekit::proof_envelope::CBORDecoder dec(bytes);
@@ -110,6 +134,13 @@ void LoadAllProofsStage::load_one(const std::string& proof_path, MementoPool& po
         return;
     }
     for (const auto& [cid, val] : it->second->as_map()) {
+        // Tag-dispatch: every member CID MUST be self-identifying. v1.1.0
+        // permits "blake3-512:" only; reject anything else loud.
+        if (!has_prefix(cid, kHashTagPrefix)) {
+            pool.load_errors.push_back({proof_path,
+                "member " + cid + ": unsupported hash tag; v1.1.0 requires `blake3-512:`"});
+            continue;
+        }
         if (!val->is_bstr()) {
             pool.load_errors.push_back({proof_path, "member " + cid + ": value is not bstr"});
             continue;
@@ -123,6 +154,15 @@ void LoadAllProofsStage::load_one(const std::string& proof_path, MementoPool& po
             pool.load_errors.push_back({proof_path,
                 "member " + cid + ": JSON parse: " + e.what()});
             continue;
+        }
+        // Tag-dispatch on producerSignature: v1.1.0 permits "ed25519:" only.
+        if (env.contains("producerSignature") && env["producerSignature"].is_string()) {
+            const std::string sig_str = env["producerSignature"].get<std::string>();
+            if (!has_prefix(sig_str, kSigTagPrefix)) {
+                pool.load_errors.push_back({proof_path,
+                    "member " + cid + ": unsupported signature tag; v1.1.0 requires `ed25519:`"});
+                continue;
+            }
         }
         // Rule 2: re-derive envelope CID.
         const std::string derived = compute_envelope_cid(env);

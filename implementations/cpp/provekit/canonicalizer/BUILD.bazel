@@ -1,6 +1,6 @@
-# C++ canonicalizer — clean-room implementation of
+# C++ canonicalizer: clean-room implementation of
 # protocol/specs/2026-04-30-canonicalization-grammar.md (JCS encoder
-# + SHA-256 prefix-16 propertyHash).
+# + BLAKE3-512 self-identifying propertyHash).
 #
 # All source here is derived from the spec only. The TypeScript
 # reference implementation under implementations/typescript/ is NOT
@@ -18,10 +18,18 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+# `hash` wraps BLAKE3-512 (the official BLAKE3 C library, system-linked
+# via `-lblake3` from `brew install blake3`). Public API:
+#   - blake3_512_hex(bytes) returns 128 lowercase hex chars
+#   - compute_cid(bytes) returns "blake3-512:" + 128 hex chars
+# Bazel-side, this still requires rules_foreign_cc + libblake3; today
+# the canonicalizer + downstream demos build via the direct-clang
+# scripts in `tools/`. γ-step-3 wires Bazel.
 cc_library(
-    name = "sha256",
-    srcs = ["sha256.cpp"],
-    hdrs = ["sha256.hpp"],
+    name = "hash",
+    srcs = ["hash.cpp"],
+    hdrs = ["hash.hpp"],
+    linkopts = ["-lblake3"],
     visibility = ["//visibility:public"],
 )
 
@@ -38,8 +46,8 @@ cc_library(
     srcs = ["property_hash.cpp"],
     hdrs = ["property_hash.hpp"],
     deps = [
+        ":hash",
         ":jcs",
-        ":sha256",
         ":value",
     ],
     visibility = ["//visibility:public"],

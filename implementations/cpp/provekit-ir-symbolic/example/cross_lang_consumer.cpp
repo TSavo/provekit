@@ -28,7 +28,7 @@
 // the Go kit produced, walked by the C++ verifier, closed by Z3.
 
 #include "provekit/ir.hpp"
-#include "provekit/canonicalizer/sha256.hpp"
+#include "provekit/canonicalizer/hash.hpp"
 #include "provekit/canonicalizer/value.hpp"
 #include "provekit/claim-envelope/mint.hpp"
 #include "provekit/claim-envelope/value_from_kit.hpp"
@@ -49,7 +49,7 @@ namespace fs = std::filesystem;
 using namespace provekit::ir;
 using ::provekit::canonicalizer::Value;
 using ::provekit::canonicalizer::ValuePtr;
-using ::provekit::canonicalizer::sha256_hex;
+using ::provekit::canonicalizer::compute_cid;
 using ::provekit::claim_envelope::MintContractArgs;
 using ::provekit::claim_envelope::mint_contract;
 using ::provekit::claim_envelope::formula_to_value;
@@ -60,10 +60,6 @@ using ::provekit::proof_envelope::ProofEnvelopeInput;
 using ::provekit::proof_envelope::build_proof_envelope;
 
 namespace {
-
-std::string hash16(const std::string& s) {
-    return sha256_hex(s).substr(0, 16);
-}
 
 bool copy_file(const std::string& src, const std::string& dst) {
     std::ifstream in(src, std::ios::binary);
@@ -157,7 +153,10 @@ int main(int argc, char* argv[]) {
         .name = "@example/cpp-consumer",
         .version = "1.0.0",
         .members = members,
-        .signer_cid = "sha256:cpp-consumer-signer",
+        .signer_cid =
+            "blake3-512:"
+            "63707020636f6e73756d65720000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000000000000000000",
         .signer_seed = catalog_seed,
         .declared_at = declared_at,
     };
