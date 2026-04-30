@@ -3,23 +3,24 @@
  *
  * Drives the on-disk `bug-fix.workflow.yaml` against a real fixture
  * project (a temp git repo with a known divide-by-zero bug). Every
- * producer wrapper runs — Stage and Action serialization, memento
- * write/read, runner topo-sort, $action resource flow, $node deep
- * references — but the heavy inner functions (formulateInvariant,
- * doTheWork, generateComplementary, generatePrincipleCandidate,
- * assembleBundle) are mocked at the module boundary so the smoke stays
- * offline (no Z3, no vitest invocation, no real LLM agent).
+ * producer wrapper (10 stages + 1 action) runs — serialize, hash,
+ * memento write/read, runner topo-sort, $action resource flow,
+ * $node deep references. Heavy inner functions are mocked at the
+ * module boundary so the smoke stays offline.
  *
  * What's exercised for real:
  *   - intake (StubLLMProvider with prefix-keyed responses)
- *   - investigate (real prompt + stub LLM response)
+ *   - investigate (real prompt + stub LLM response, persists report file)
  *   - locate (real SAST queries against a populated DB)
  *   - classify (real prompt + stub LLM response)
  *   - recognize (real DSL evaluator; no principles dir → empty match)
- *   - openOverlay (real `git worktree add --detach`; that's the point of
- *     having a real git repo as the fixture)
- *   - The full memento DAG: every stage's verdict-bearing memento, the
- *     action's audit-only memento, and the workflow-level wrapper.
+ *   - openOverlay (real `git worktree add --detach`; the fixture is a
+ *     real git repo for exactly this reason)
+ *   - WorkflowRunner topo-sort + memento writes for all 11 producers
+ *   - Claim envelope shape (16-hex bindingHash/propertyHash, 32-hex cid,
+ *     verdict=holds, evidence variant present) on every memento
+ *   - Proof DAG walk from the workflow-wrapper terminal CID
+ *   - Patch + test artifact roundtrip via second-run cache hit
  *
  * What's mocked at the module boundary:
  *   - formulateInvariant (skips Z3)
@@ -28,6 +29,14 @@
  *   - generatePrincipleCandidate (skips LLM substrate path — returns [])
  *   - assembleBundle (skips Oracle #10 + DB persistence — returns canned
  *     FixBundle stub)
+ *
+ * Load-bearing invariant pinned by this smoke: the proof DAG (walkable
+ * from any Stage memento) and the audit DAG (which carries Action
+ * invocations) are DISJOINT by construction. Walking from the
+ * workflow-wrapper CID reaches the 10 Stage mementos via inputCids;
+ * the openOverlay action's audit memento is NOT reachable. This is
+ * enforced in src/workflow/manifest.ts collectInputCids — the test
+ * here will break if that boundary slips.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -84,7 +93,14 @@ import type {
   TestArtifact,
 } from "../fix/types.js";
 import type { DoTheWorkResult } from "../fix/stages/doTheWork.js";
-import { stats as mementoStats } from "../fix/runtime/mementoStore.js";
+import {
+  findByCid,
+  findMementoByBindingHash,
+  hashCanonical,
+  stats as mementoStats,
+  walk,
+  type Memento,
+} from "../fix/runtime/mementoStore.js";
 import { buildSASTForFile } from "../sast/builder.js";
 import { WorkflowRunner } from "../workflow/runner.js";
 import {
@@ -416,22 +432,83 @@ describe("bug-fix workflow integration smoke", () => {
     expect(bundleArgs.fix.patch).toBeDefined();
     expect(bundleArgs.test?.testFilePath).toBe("src/math.regression.test.ts");
 
-    // Memento store: 10 stage mementos + 1 workflow wrapper + 1 action
-    // audit memento. Verdict counts:
-    //   holds: 10 stages + 1 wrapper + 1 audit = 12 (lower bound).
+    // ---- DAG walk from the workflow-wrapper terminal CID ----
+    //
+    // The proof DAG and the audit DAG are DISJOINT by construction
+    // (manifest.ts collectInputCids docblock). Walking from the
+    // workflow-wrapper memento traverses the 10 stage mementos via
+    // their threaded inputCids; the open-overlay action's audit
+    // memento is NOT reachable. That separation is load-bearing and
+    // we pin it here.
+    const reachable = walk(fixture.db, result.cid);
+    const reachableByProducer = new Map<string, Memento>();
+    for (const m of reachable) {
+      reachableByProducer.set(m.producedBy, m);
+    }
+
+    const expectedStageProducers = [
+      "intake@v1",
+      "investigate@v1",
+      "locate@v1",
+      "classify@v1",
+      "recognize@v1",
+      "formulate@v1",
+      "do-the-work@v1",
+      "generateComplementary@v1",
+      "generatePrincipleCandidate@v1",
+      "bundle@v1",
+    ];
+    for (const producer of expectedStageProducers) {
+      expect(reachableByProducer.has(producer)).toBe(true);
+    }
+    // The workflow wrapper memento is the walk's seed. producedBy
+    // looks like "workflow:bug-fix@bafy-bugfix-v1".
+    const wrapper = reachable.find((m) =>
+      m.producedBy.startsWith("workflow:bug-fix"),
+    );
+    expect(wrapper).toBeDefined();
+    expect(wrapper?.cid).toBe(result.cid);
+
+    // Action audit memento is OUTSIDE the proof DAG by design but
+    // still present in the store (forensic trail). Bind by
+    // (workflow.cid, action.name) and confirm it landed.
+    const actionBindingHash = hashCanonical({
+      workflow: manifest.cid,
+      stage: "openOverlay",
+    });
+    const actionRows = findMementoByBindingHash(fixture.db, actionBindingHash, {
+      producedBy: "openOverlay@v1",
+    });
+    expect(actionRows).toHaveLength(1);
+    expect(actionRows[0].producedBy).toBe("openOverlay@v1");
+    expect(reachableByProducer.has("openOverlay@v1")).toBe(false);
+
+    // ---- Envelope-conforming shape on every walked memento ----
+    const HEX16 = /^[0-9a-f]{16}$/;
+    const HEX32 = /^[0-9a-f]{32}$/;
+    for (const m of reachable) {
+      expect(m.cid, `${m.producedBy} cid`).toMatch(HEX32);
+      expect(m.bindingHash, `${m.producedBy} bindingHash`).toMatch(HEX16);
+      expect(m.propertyHash, `${m.producedBy} propertyHash`).toMatch(HEX16);
+      expect(m.verdict).toBe("holds");
+      expect(Array.isArray(m.inputCids ?? [])).toBe(true);
+      // Every row written by the runner ships with a typed envelope
+      // (see writeMemento → buildEvidence). Producers that don't
+      // supply an evidenceHint get a `legacy-witness` variant; the
+      // wrapper still has structural envelope shape.
+      expect(m.evidence, `${m.producedBy} evidence`).toBeDefined();
+      expect(typeof m.evidence?.kind).toBe("string");
+    }
+    // The action audit memento has the same shape.
+    expect(actionRows[0].cid).toMatch(HEX32);
+    expect(actionRows[0].bindingHash).toMatch(HEX16);
+    expect(actionRows[0].propertyHash).toMatch(HEX16);
+    expect(actionRows[0].verdict).toBe("holds");
+    expect(actionRows[0].evidence).toBeDefined();
+
+    // ---- Stats sanity (kept as a coarse counter) ----
     const after = mementoStats(fixture.db);
     expect(after.uniqueKeys).toBeGreaterThanOrEqual(12);
-    expect(after.byProducer["intake@v1"]).toBe(1);
-    expect(after.byProducer["investigate@v1"]).toBe(1);
-    expect(after.byProducer["locate@v1"]).toBe(1);
-    expect(after.byProducer["classify@v1"]).toBe(1);
-    expect(after.byProducer["recognize@v1"]).toBe(1);
-    expect(after.byProducer["formulate@v1"]).toBe(1);
-    expect(after.byProducer["do-the-work@v1"]).toBe(1);
-    expect(after.byProducer["generateComplementary@v1"]).toBe(1);
-    expect(after.byProducer["generatePrincipleCandidate@v1"]).toBe(1);
-    expect(after.byProducer["bundle@v1"]).toBe(1);
-    // The action's audit memento.
     expect(after.byProducer["openOverlay@v1"]).toBeGreaterThanOrEqual(1);
   });
 
@@ -484,5 +561,38 @@ describe("bug-fix workflow integration smoke", () => {
     expect(generateComplementaryMock).toHaveBeenCalledTimes(1);
     expect(generatePrincipleCandidateMock).toHaveBeenCalledTimes(1);
     expect(assembleBundleMock).toHaveBeenCalledTimes(1);
+
+    // ---- Roundtrip: patch + test artifacts survive serialize ↔ witness
+    // ↔ deserialize ----
+    //
+    // The second run reconstructs result.output entirely from the
+    // workflow-wrapper memento's witness column — none of the mocks
+    // were re-invoked. Byte-level equality between first and second
+    // proves the FixBundle (including its nested fix.patch and test
+    // artifacts) round-trips losslessly through the envelope.
+    const firstBundle = first.output as FixBundle;
+    const secondBundle = second.output as FixBundle;
+    expect(JSON.stringify(secondBundle)).toBe(JSON.stringify(firstBundle));
+    expect(secondBundle.fix.patch).toEqual(firstBundle.fix.patch);
+    expect(secondBundle.fix.patch.fileEdits[0]?.newContent).toBe(
+      firstBundle.fix.patch.fileEdits[0]?.newContent,
+    );
+    expect(secondBundle.test?.testCode).toBe(firstBundle.test?.testCode);
+    expect(secondBundle.test?.testFilePath).toBe(firstBundle.test?.testFilePath);
+
+    // ---- Per-stage roundtrip via the wrapper's inputCids ----
+    //
+    // The bundle stage's memento is reachable from result.cid; its
+    // witness column carries the canonical envelope. Read it directly
+    // via findByCid and confirm it's intact.
+    const wrapperMemento = findByCid(fixture.db, first.cid);
+    expect(wrapperMemento).not.toBeNull();
+    expect(wrapperMemento?.inputCids).toBeDefined();
+    expect(wrapperMemento?.inputCids?.length).toBe(1);
+    const bundleCid = wrapperMemento?.inputCids?.[0];
+    expect(bundleCid).toBeDefined();
+    const bundleMemento = findByCid(fixture.db, bundleCid!);
+    expect(bundleMemento).not.toBeNull();
+    expect(bundleMemento?.producedBy).toBe("bundle@v1");
   });
 });
