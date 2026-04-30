@@ -4,7 +4,7 @@ import "fmt"
 
 // BridgeMintArgs is the input to (*Minter).MintBridge.
 //
-// IRArgSorts: each element is a SortRef — either a primitive sort
+// IRArgSorts: each element is a SortRef; either a primitive sort
 // name as a string ("Int" / "Bool" / "String" / ...) or a sort object
 // (map[string]interface{} with a kind discriminator).
 //

@@ -114,7 +114,7 @@ type BridgeSpec struct {
 	Notes             string
 }
 
-// BridgeDeclaration is unchanged across the v1.1.0 cut — bridges still
+// BridgeDeclaration is unchanged across the v1.1.0 cut; bridges still
 // declare host-language symbol → contract-memento CID linkage.
 type BridgeDeclaration struct {
 	Name              string
@@ -185,7 +185,7 @@ var (
 
 // BeginCollecting starts a new collection scope. Returns a finalizer that
 // retrieves the captured declarations and clears collector state. Not
-// re-entrant — calling while another collection is active panics.
+// re-entrant; calling while another collection is active panics.
 //
 // Resets the quantifier counter so successive runs of the same invariant
 // produce byte-identical IR.
@@ -302,7 +302,7 @@ func MustSkip(name string, formula IrFormula) {
 	_ = formula
 }
 
-// Property is a back-compat alias — same shape as Must but skips
+// Property is a back-compat alias; same shape as Must but skips
 // describe-path expansion. Mirrors the TS kit's `property()` primitive.
 //
 // Deprecated: prefer Contract or Must. Retained so existing tests + lift

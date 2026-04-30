@@ -6,9 +6,9 @@
 //
 // Architecture:
 //   1. C++ kit shipped a v1.1.0 .proof file with parseInt's contract
-//      (pre = `forall n: Int. n > 0`) — produced by parseInt_kit_proof.cpp.
-//   2. Go consumer authors invariants via kit primitives ParseInt(Num(...))
-//      — every call emits a Ctor("parseInt", [arg]) IrTerm.
+//      (pre = `forall n: Int. n > 0`), produced by parseInt_kit_proof.cpp.
+//   2. Go consumer authors invariants via kit primitives ParseInt(Num(...));
+//      every call emits a Ctor("parseInt", [arg]) IrTerm.
 //   3. Go consumer mints + signs its contract mementos in pure Go.
 //   4. Go consumer bundles them into its own .proof file in pure Go.
 //   5. Go bridge enforcement runner walks both .proofs:
@@ -48,7 +48,7 @@ const cppProofPath = "/tmp/cpp-kit-out-v11/bfe74d1a9d836f926058b331002da2f5.proo
 
 func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 	if _, err := os.Stat(cppProofPath); err != nil {
-		t.Skipf("C++ .proof not found at %s — regenerate from the C++ kit on v1.1.0", cppProofPath)
+		t.Skipf("C++ .proof not found at %s; regenerate from the C++ kit on v1.1.0", cppProofPath)
 	}
 
 	projectRoot, err := os.MkdirTemp("", "go-cross-lang-")
@@ -76,11 +76,11 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 	ir.ResetCollector()
 	finishCollect := ir.BeginCollecting()
 
-	// ParseInt(Num(5)) — should DISCHARGE
+	// ParseInt(Num(5)); should DISCHARGE
 	ir.Must("calls-parseInt-with-positive-5",
 		ir.Eq(ir.ParseInt(ir.Num(5)), ir.Num(5)))
 
-	// ParseInt(Num(0)) — should be UNSATISFIED (catches the C++ precondition)
+	// ParseInt(Num(0)); should be UNSATISFIED (catches the C++ precondition)
 	ir.Must("calls-parseInt-with-zero",
 		ir.Eq(ir.ParseInt(ir.Num(0)), ir.Num(0)))
 

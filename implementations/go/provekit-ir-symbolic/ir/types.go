@@ -125,7 +125,7 @@ func TupleOf(elements ...Sort) Sort          { return tupleSort{Elements: elemen
 func FuncOf(domain []Sort, range_ Sort) Sort { return funcSort{Domain: domain, Range: range_} }
 
 // ----------------------------------------------------------------------
-// Term — VarTerm (no sort in JSON), ConstTerm (sort kept), CtorTerm (no
+// Term: VarTerm (no sort in JSON), ConstTerm (sort kept), CtorTerm (no
 // sort in JSON). The Go struct keeps the Sort field for in-process
 // reasoning (e.g. Abs/Max/Min return-sort inference); it just isn't
 // emitted to JSON anymore. Locked key order per the v1.1.0 IR grammar:
@@ -231,7 +231,7 @@ func marshalTerms(terms []IrTerm) ([]byte, error) {
 }
 
 // ----------------------------------------------------------------------
-// Formula — three uniform shapes per the v1.1.0 IR grammar:
+// Formula: three uniform shapes per the v1.1.0 IR grammar:
 //
 //	atomic:     {kind:"atomic", name, args}
 //	connective: {kind, operands}              -- and / or / not / implies
@@ -242,7 +242,7 @@ type IrFormula interface {
 	formulaMarker()
 }
 
-// quantFormula is the flat quantifier shape — no Lambda wrapper. The
+// quantFormula is the flat quantifier shape; no Lambda wrapper. The
 // kind discriminator is "forall" or "exists".
 type quantFormula struct {
 	Kind string

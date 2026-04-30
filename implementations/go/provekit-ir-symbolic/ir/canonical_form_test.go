@@ -10,7 +10,7 @@ import (
 //
 //   - top-level decl is `kind:"contract"` (was `"property"`)
 //   - contract has `outBinding` always; `pre/post/inv` optional, omitted when nil
-//   - quantifier is FLAT: {kind, name, sort, body} — no Lambda wrapper
+//   - quantifier is FLAT: {kind, name, sort, body}; no Lambda wrapper
 //   - var/ctor drop their `sort` field from JSON; const keeps it
 //   - atomic uses `name` (was `predicate`)
 //   - and/or/not/implies all use `operands` (no conjuncts/disjuncts/body/antecedent)

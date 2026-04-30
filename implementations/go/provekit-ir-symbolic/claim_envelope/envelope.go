@@ -1,12 +1,12 @@
-// Package claim_envelope mints signed ClaimEnvelopes — the protocol's
+// Package claim_envelope mints signed ClaimEnvelopes; the protocol's
 // content-addressed memento wrappers. Contract / bridge / implication
 // variants live in their own files; this file holds the canonical-input
 // + signing machinery shared by all three.
 //
 // Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
-//       §"CID construction" — cid = sha256(canonical(envelope minus
+//       §"CID construction"; cid = sha256(canonical(envelope minus
 //       cid + producerSignature))[:32 hex chars].
-//       §"Producer-signature scheme (v1)" — ed25519 sign over the
+//       §"Producer-signature scheme (v1)"; ed25519 sign over the
 //       same canonical bytes.
 //
 // v1.1.0 cut: contract memento replaces property memento; bindingHash
@@ -121,7 +121,7 @@ func (m *Minter) finalize(unsigned map[string]interface{}) (*Minted, error) {
 	return &Minted{CanonicalBytes: finalBytes, CID: cid}, nil
 }
 
-// hash16Value returns hash16(JCS(v)) — the protocol's standard
+// hash16Value returns hash16(JCS(v)); the protocol's standard
 // content-address prefix used for preHash/postHash/invHash, propertyHash,
 // bindingHash. v MUST be a JSON-shape value (string, number, bool, nil,
 // []interface{}, map[string]interface{}); the JCS encoder will reject
@@ -134,7 +134,7 @@ func hash16Value(v interface{}) (string, error) {
 	return canonicalizer.NewHasher().PropertyHash16(bytes), nil
 }
 
-// hash16RawString returns hash16(s) — sha256(raw bytes of s)[:16 hex],
+// hash16RawString returns hash16(s); sha256(raw bytes of s)[:16 hex],
 // NO JCS canonicalization. Used for derived hashes whose pre-image is
 // a literal string composed of other hashes (e.g. bridge propertyHash
 // = hash16("bridge:" || sourceSymbol)).

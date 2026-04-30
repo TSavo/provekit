@@ -43,7 +43,7 @@ type AuthoringLLMArgs struct {
 // required and is conventionally "out".
 //
 // Pre / Post / Inv are JSON-shape values (typically map[string]any
-// or wrappers around the IR types — use FormulaToValue to convert
+// or wrappers around the IR types; use FormulaToValue to convert
 // from a kit IrFormula).
 //
 // preHash / postHash / invHash, propertyHash and bindingHash are all

@@ -22,8 +22,8 @@ type SMTEmitter struct{}
 // NewSMTEmitter returns a fresh emitter.
 func NewSMTEmitter() *SMTEmitter { return &SMTEmitter{} }
 
-// EmitProbe builds a complete SMT-LIB script that asks "is (not OBLIGATION) SAT?"
-// — the protocol's solver-discharge probe.
+// EmitProbe builds a complete SMT-LIB script that asks "is (not OBLIGATION) SAT?".
+// This is the protocol's solver-discharge probe.
 //
 //	unsat → obligation holds in all models → DISCHARGED
 //	sat   → counter-example exists         → UNSATISFIED
@@ -109,7 +109,7 @@ func (e *SMTEmitter) emitFormula(f map[string]interface{}) (string, error) {
 		}
 		return fmt.Sprintf("(=> %s %s)", as, cs), nil
 	case "forall", "exists":
-		// Flat shape: {kind, name, sort, body} — no Lambda wrapper.
+		// Flat shape: {kind, name, sort, body}; no Lambda wrapper.
 		varName, _ := f["name"].(string)
 		sortV, _ := f["sort"].(map[string]interface{})
 		body, _ := f["body"].(map[string]interface{})

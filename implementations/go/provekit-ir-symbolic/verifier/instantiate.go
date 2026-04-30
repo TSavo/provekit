@@ -9,7 +9,7 @@ import "fmt"
 //	forall n: Int. n > 0    instantiated at Const 0
 //	→                       0 > 0
 //
-// v1.1.0 IR shape: quantifier is FLAT — {kind, name, sort, body} with
+// v1.1.0 IR shape: quantifier is FLAT; {kind, name, sort, body} with
 // no Lambda wrapper. The bound variable's identifier is the top-level
 // `name` field (was `predicate.varName` pre-v1.1.0).
 type InstantiateStage struct{}

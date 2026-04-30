@@ -1,8 +1,8 @@
 package verifier
 
 // ResolveTargetStage hash-looks-up a bridge's targetContractCid in the
-// pool and returns the resolved contract memento's `pre` formula. O(1)
-// — no file IO; pool was built once at LoadAllProofsStage.
+// pool and returns the resolved contract memento's `pre` formula. O(1):
+// no file IO; pool was built once at LoadAllProofsStage.
 //
 // v1.1.0 cut: the bridge target is a CONTRACT memento; the consumer-side
 // discharge targets the contract's `pre` slot (the precondition the

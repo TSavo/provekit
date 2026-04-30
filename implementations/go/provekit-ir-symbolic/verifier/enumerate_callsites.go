@@ -2,7 +2,7 @@ package verifier
 
 // EnumerateCallsitesStage walks every contract memento in the pool,
 // finds Ctor terms whose name matches a bridge envelope's sourceSymbol,
-// and emits CallSite records — one per bridge call discovered inside
+// and emits CallSite records; one per bridge call discovered inside
 // any of the contract's pre/post/inv slots.
 //
 // v1.1.0 IR shape consumed:
