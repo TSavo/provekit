@@ -71,6 +71,26 @@ async function main(): Promise<void> {
   }
 
   const dbPath = resolveDbPath(args);
+  // Ensure the DB schema is up-to-date before any dispatched workflow
+  // tries to read/write through it. migrate() is idempotent — applying
+  // already-applied migrations is a no-op — so paying this cost on
+  // every dispatcher invocation is cheap and lets `provekit diff`
+  // (or any workflow) work in projects that haven't run `provekit init`
+  // explicitly. The init command continues to do extra setup (signal
+  // index, sample principles); this just guarantees the DB schema is
+  // present so commands don't crash with "no such table".
+  {
+    const { mkdirSync } = await import("fs");
+    const { dirname: pathDirname } = await import("path");
+    const { migrate: runMigrate } = await import("drizzle-orm/better-sqlite3/migrator");
+    mkdirSync(pathDirname(dbPath), { recursive: true });
+    const initDb = openDb(dbPath);
+    try {
+      runMigrate(initDb, { migrationsFolder: join(__dirname, "..", "drizzle") });
+    } finally {
+      initDb.$client.close();
+    }
+  }
   const db = openDb(dbPath);
   try {
     const llm = process.env.PROVEKIT_LLM ? createProvider(process.env.PROVEKIT_LLM) : undefined;

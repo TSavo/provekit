@@ -52,6 +52,7 @@ import { registerBugFixRegistries } from "./bug-fix.js";
 import { registerExplainRegistries } from "./explain.js";
 import { registerMustRegistries } from "./must.js";
 import { registerReevaluateInvariantRegistries } from "./reevaluate-invariant.js";
+import { registerDiffRegistries } from "./diff.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -177,6 +178,8 @@ export function defaultRegistryFactories(): RegistryFactoryMap {
       registerReevaluateInvariantRegistries(
         deps as Parameters<typeof registerReevaluateInvariantRegistries>[0],
       ),
+    diff: (deps: unknown) =>
+      registerDiffRegistries(deps as Parameters<typeof registerDiffRegistries>[0]),
   };
 }
 

@@ -1,0 +1,76 @@
+# Diff workflow — meaning-layer counterpart to `git diff`.
+#
+# `git diff` shows byte changes between two trees. `provekit diff` shows
+# the meaning changes — which content-addressed contracts (invariants)
+# were preserved, added, retired, renamed, or strengthened/weakened —
+# between two git references.
+#
+# Default arg shape mirrors git diff: HEAD vs working-tree when no
+# arguments. Future ranges (HEAD~5..HEAD), branches (main..feature), and
+# arbitrary ref pairs (sha1 sha2) all flow through the same pipeline.
+#
+# 100% LLM-free by design. Direction verdicts (strengthened/weakened/
+# equivalent/incomparable) come from Z3 implication probes, not LLM
+# judgment. An optional --report=llm flag (separate Stage, opt-in) can
+# narrate the structured forensic rows into prose, but the mechanical
+# truth is always available without any LLM running.
+#
+# Three stages:
+#   - resolve-from-snapshot   : list every invariant at the "from" ref
+#   - resolve-to-snapshot     : list every invariant at the "to" ref
+#   - diff-invariant-snapshots: set-difference + name-pair the rows
+#   - synthesize-meaning-diff : per-row, attach Z3 direction verdicts
+#
+# Output is structured: {fromRef, toRef, rows: ForensicRow[], summary}.
+# Each row carries kind (preserved/added/removed/renamed/changed),
+# locus, propertyHash CIDs, originatingBug, and (for renamed/changed)
+# direction verdict + Z3 probe details.
+
+name: diff
+cid: bafy-diff-v1
+description: >-
+  Show the meaning changes between two git references — which
+  content-addressed contracts were preserved, added, retired, or
+  semantically changed (strengthened/weakened/incomparable) — in the
+  same UX shape as `git diff`.
+
+cli:
+  description: Show meaning-level changes between two git refs (the meaning-layer counterpart to git diff)
+  args:
+    - name: from
+      positional: true
+      type: string
+      default: "HEAD"
+    - name: to
+      positional: true
+      type: string
+      default: "WORKING_TREE"
+    - name: projectRoot
+      type: path
+      default: "."
+
+output: $node.synthesize.output
+
+nodes:
+  - id: resolve-from
+    capability: resolve-invariant-snapshot
+    input:
+      projectRoot: $input.projectRoot
+      ref: $input.from
+
+  - id: resolve-to
+    capability: resolve-invariant-snapshot
+    input:
+      projectRoot: $input.projectRoot
+      ref: $input.to
+
+  - id: diff-snapshots
+    capability: diff-invariant-snapshots
+    input:
+      from: $node.resolve-from.output
+      to: $node.resolve-to.output
+
+  - id: synthesize
+    capability: synthesize-meaning-diff
+    input:
+      diff: $node.diff-snapshots.output
