@@ -35,28 +35,43 @@ impl NumLike for i32 {
 }
 impl NumLike for f64 {
     fn into_const_term(self) -> IrTerm {
-        let sort = if self.fract() == 0.0 && self.is_finite() {
-            sorts::int()
+        // Integer-valued f64 must serialize as integer JSON for cross-
+        // language byte-equivalence: JS has no int/float split, so
+        // JSON.stringify(3.0) emits "3", and TS num(3.0) produces an Int-
+        // sorted const with value 3. Rust's serde_json::Number::from_f64
+        // would emit "3.0" instead. Round-trip through i64 when lossless.
+        let (value, sort) = if self.fract() == 0.0
+            && self.is_finite()
+            && (self as i64) as f64 == self
+        {
+            (JsonValue::Number((self as i64).into()), sorts::int())
         } else {
-            sorts::real()
+            (
+                serde_json::Number::from_f64(self)
+                    .map(JsonValue::Number)
+                    .unwrap_or(JsonValue::Null),
+                sorts::real(),
+            )
         };
-        IrTerm::Const {
-            value: serde_json::Number::from_f64(self)
-                .map(JsonValue::Number)
-                .unwrap_or(JsonValue::Null),
-            sort,
-        }
+        IrTerm::Const { value, sort }
     }
 }
 
-/// Build a Real constant term unconditionally.
+/// Build a Real constant term unconditionally. Note: integer-valued f64
+/// inputs serialize as integer JSON (e.g., `real(3.0)` emits `"value": 3`)
+/// so the JSON byte-matches TS, even though the sort is Real.
 pub fn real(value: f64) -> IrTerm {
-    IrTerm::Const {
-        value: serde_json::Number::from_f64(value)
+    let json_value = if value.fract() == 0.0
+        && value.is_finite()
+        && (value as i64) as f64 == value
+    {
+        JsonValue::Number((value as i64).into())
+    } else {
+        serde_json::Number::from_f64(value)
             .map(JsonValue::Number)
-            .unwrap_or(JsonValue::Null),
-        sort: sorts::real(),
-    }
+            .unwrap_or(JsonValue::Null)
+    };
+    IrTerm::Const { value: json_value, sort: sorts::real() }
 }
 
 /// Build a String constant term.
