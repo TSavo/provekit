@@ -1,14 +1,25 @@
 /**
  * intent-from-diff stage — diff-driven IR formula proposal.
  *
- * Given a unified diff, its commit message, and optional linked-ticket
- * summaries, ask an LLM what property the developer was asserting and
- * emit a proposed IR formula as a memento. The proposal is content-
- * addressed via (diffHash, commitMessage, ticketContent, hostLanguageHint,
- * llmIdentifier, promptCid). When the prompt is revised, the promptCid
- * changes, the property hash changes, and prior cache entries miss
- * correctly — so a new question to the LLM does not return a stale
- * answer to the old question.
+ * Given a unified diff, its commit message, optional linked-ticket
+ * summaries, and optional related test sources, ask an LLM what
+ * property the developer was asserting and emit a proposed IR formula
+ * as a memento. The proposal is content-addressed via (diffHash,
+ * commitMessage, ticketContent, testsHashed, hostLanguageHint,
+ * llmIdentifier, promptCid). When the prompt is revised, the
+ * promptCid changes, the property hash changes, and prior cache
+ * entries miss correctly — so a new question to the LLM does not
+ * return a stale answer to the old question.
+ *
+ * Tests are existential evidence ("for THIS input, output is THIS").
+ * The producer renders them as a `== TESTS ==` block so the LLM
+ * weighs them when generalising to a universal invariant. See spec
+ * `docs/specs/2026-04-29-ts-ir-language.md` §15 ("Three-Step Unit of
+ * Work" — tests are the highest-value intent source). NOTE: §2 ("Two
+ * LLM Calls") currently names only LLM #2 as the consumer of tests;
+ * threading them into intent-extraction (an LLM #1-side producer) is
+ * a deliberate strengthening that flows the test signal upstream as
+ * well. Reported as a spec gap.
  *
  * The witness column stores the LlmProposalEvidence body shape from the
  * universal claim envelope spec, plus an extension field
@@ -33,11 +44,49 @@ export interface TicketRef {
   summary?: string;
 }
 
+/**
+ * How a test relates to the diff. Treated as a hint by the LLM, not a
+ * strict typing — the relationship shapes the prompt section header
+ * so the model knows whether the test was just authored ("added"),
+ * carried forward ("preserves"), etc.
+ *
+ * - "added"     — new test introduced by the diff (strongest signal:
+ *                 the developer wrote it as part of this change).
+ * - "modified"  — pre-existing test the diff changed.
+ * - "preserves" — pre-existing test in the modified file's parallel
+ *                 test file. Must still pass after the change.
+ * - "calls"     — test in another file that imports the modified
+ *                 symbol. Constraint from the caller's perspective.
+ */
+export type TestRelationship =
+  | "added"
+  | "modified"
+  | "preserves"
+  | "calls";
+
+export interface TestSource {
+  /** Raw test source code. */
+  source: string;
+  /** Names of test functions extracted from `source` (best-effort). */
+  testNames: string[];
+  /** Where the test lives, relative to the project root. */
+  filePath: string;
+  /** How this test relates to the diff. */
+  relationship: TestRelationship;
+}
+
 export interface IntentFromDiffInput {
   diff: string;
   commitMessage: string;
   linkedTickets?: TicketRef[];
   hostLanguageHint?: string;
+  /**
+   * Existential intent evidence: tests authored alongside or
+   * surrounding the diff. The runner sorts and hashes test sources
+   * for the cache key so order is irrelevant; the rendered prompt
+   * also presents tests in a stable order.
+   */
+  tests?: TestSource[];
 }
 
 export interface IntentProposal {
@@ -70,9 +119,17 @@ Given:
   - a unified diff (the change)
   - the commit message (what the dev said they were doing)
   - optional linked tickets (the reported symptom)
+  - optional related tests (existential evidence: "for THIS input, output is THIS")
   - optional host-language hint
 
 You output JSON describing the underlying invariant the change encodes.
+
+Tests, when supplied, are the strongest signal. Each test is a concrete
+point the universal invariant must cover. Use them to anchor the
+predicate, then generalise. The "added" relationship is strongest (the
+developer wrote it as part of this change); "preserves" tells you the
+prior behaviour must still hold; "calls" constrains the symbol from a
+caller's perspective.
 
 Output schema (JSON, no prose, no code fences):
 {
@@ -142,6 +199,11 @@ export function makeIntentFromDiffStage(
                 .sort()
                 .join("|")
             : null,
+        // Test sources can be arbitrarily large; hash each source and
+        // sort by filePath so the cache key is stable under filesystem
+        // ordering and shuffled discovery output. `undefined` and `[]`
+        // both normalise to `null` so the two have identical hashes.
+        tests: hashTests(input.tests),
         hostLanguageHint: input.hostLanguageHint ?? null,
         llmIdentifier: deps.llmIdentifier,
         promptCid: deps.promptCid,
@@ -236,8 +298,53 @@ function renderPrompt(template: string, input: IntentFromDiffInput): string {
     `Diff:\n${input.diff}\n\n` +
     `Commit message: ${input.commitMessage}\n\n` +
     `Linked tickets:\n${ticketBlock}\n\n` +
+    `== TESTS ==\n${renderTestsBlock(input.tests)}\n\n` +
     `Host-language hint: ${input.hostLanguageHint ?? "(unspecified)"}\n`
   );
+}
+
+/**
+ * Hash each test's source and file path so the cache key is bounded
+ * regardless of how large the test files are. Returns `null` for both
+ * undefined and empty arrays so they collide.
+ */
+function hashTests(tests: TestSource[] | undefined): unknown {
+  if (!tests || tests.length === 0) return null;
+  return tests
+    .map((t) => ({
+      filePathHash: hashCanonical(t.filePath),
+      sourceHash: hashCanonical(t.source),
+      testNames: [...t.testNames].sort(),
+      relationship: t.relationship,
+    }))
+    .sort((a, b) => a.filePathHash.localeCompare(b.filePathHash));
+}
+
+/**
+ * Render tests as numbered, fenced blocks. Sorted by filePath for
+ * deterministic prompt content (the cache key already sorts; this
+ * keeps the LLM-visible text in lockstep so cache hits aren't
+ * polluted by reordered prompts in the LLM provider's own logs).
+ */
+function renderTestsBlock(tests: TestSource[] | undefined): string {
+  if (!tests || tests.length === 0) return "(none)";
+  const sorted = [...tests].sort((a, b) =>
+    a.filePath.localeCompare(b.filePath),
+  );
+  return sorted
+    .map((t, i) => {
+      const namesPart =
+        t.testNames.length > 0
+          ? ` (test names: ${[...t.testNames].sort().join(", ")})`
+          : "";
+      return [
+        `[${i + 1}] ${t.relationship} test in ${t.filePath}${namesPart}:`,
+        "```ts",
+        t.source,
+        "```",
+      ].join("\n");
+    })
+    .join("\n\n");
 }
 
 function splitLlmIdentifier(id: string): [string, string] {

@@ -30,6 +30,19 @@ description: >-
   formulate, open-overlay, do-the-work, generate-complementary,
   generate-principle-candidate, and bundle. Terminal artifact: a FixBundle.
 
+cli:
+  description: Drive a bug report through the full fix pipeline
+  args:
+    - name: text
+      positional: true
+      required: true
+      type: string
+    - name: projectRoot
+      type: path
+      default: "."
+    - name: source
+      type: string
+
 nodes:
   # ---------------------------------------------------------------------------
   # Intake — adapt the user's report into a structured IntentSignal.

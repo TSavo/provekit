@@ -23,6 +23,23 @@ description: >-
   and write the resulting invariant to <basename>.invariant.ts. The
   production-code file is NOT modified.
 
+cli:
+  description: Add an invariant to a target file from natural-language intent
+  args:
+    - name: targetFile
+      positional: true
+      required: true
+      type: path
+    - name: intent
+      positional: true
+      required: true
+      type: string
+    - name: invariantFilePath
+      type: path
+    - name: projectRoot
+      type: path
+      default: "."
+
 nodes:
   # ---------------------------------------------------------------------------
   # Intake — adapt the user's natural-language intent into an IntentSignal.

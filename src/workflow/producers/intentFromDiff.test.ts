@@ -7,7 +7,10 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { openDb } from "../../db/index.js";
 import { StubLLMProvider } from "../../fix/types.js";
 import { WorkflowRunner } from "../runner.js";
-import { makeIntentFromDiffStage } from "./intentFromDiff.js";
+import {
+  makeIntentFromDiffStage,
+  type TestSource,
+} from "./intentFromDiff.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -253,5 +256,191 @@ describe("intent-from-diff Stage", () => {
 
     expect(result.cacheHit).toBe(false);
     expect(result.output.proposedIrFormula).toMatch(/CalculateCall/);
+  });
+
+  // ---- tests as intent (existential evidence) -----------------------
+
+  const ADDED_TEST: TestSource = {
+    source: [
+      "import { calculate } from './math';",
+      "test('returns error for zero denominator', () => {",
+      "  expect(calculate(10, 0)).toEqual({ error: 'divide by zero' });",
+      "});",
+    ].join("\n"),
+    testNames: ["returns error for zero denominator"],
+    filePath: "src/math.test.ts",
+    relationship: "added",
+  };
+
+  const PRESERVES_TEST: TestSource = {
+    source: [
+      "import { calculate } from './math';",
+      "test('divides positive integers', () => {",
+      "  expect(calculate(10, 2)).toBe(5);",
+      "});",
+    ].join("\n"),
+    testNames: ["divides positive integers"],
+    filePath: "src/math.legacy.test.ts",
+    relationship: "preserves",
+  };
+
+  it("renders tests in the prompt with the relationship label", async () => {
+    const seenPrompts: string[] = [];
+    const llm = {
+      async complete(params: { prompt: string }) {
+        seenPrompts.push(params.prompt);
+        return JSON.stringify({
+          inferredIntent: "calculate must error on zero denominator",
+          proposedIrFormula:
+            "forAll(call: CalculateCall) => call.b !== 0 OR call.returnsError()",
+          confidence: 0.9,
+          rationale: "ok",
+        });
+      },
+    };
+    const db = makeDb();
+    const stage = makeIntentFromDiffStage({
+      llm: llm as never,
+      promptCid: "a".repeat(32),
+      llmIdentifier: "claude-opus@4-7",
+    });
+    const runner = new WorkflowRunner(db, wf);
+
+    await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+      tests: [ADDED_TEST, PRESERVES_TEST],
+    });
+
+    expect(seenPrompts).toHaveLength(1);
+    const prompt = seenPrompts[0]!;
+    expect(prompt).toMatch(/== TESTS ==/);
+    // Order is sorted by filePath for deterministic prompt content
+    // (math.legacy.test.ts < math.test.ts).
+    expect(prompt).toContain(
+      "[1] preserves test in src/math.legacy.test.ts",
+    );
+    expect(prompt).toContain("[2] added test in src/math.test.ts");
+    expect(prompt).toContain("returns error for zero denominator");
+    expect(prompt).toContain("divides positive integers");
+  });
+
+  it("renders (none) when no tests are supplied", async () => {
+    const seenPrompts: string[] = [];
+    const llm = {
+      async complete(params: { prompt: string }) {
+        seenPrompts.push(params.prompt);
+        return JSON.stringify({
+          inferredIntent: "x",
+          proposedIrFormula: "true",
+          confidence: 0.5,
+          rationale: "y",
+        });
+      },
+    };
+    const db = makeDb();
+    const stage = makeIntentFromDiffStage({
+      llm: llm as never,
+      promptCid: "a".repeat(32),
+      llmIdentifier: "claude-opus@4-7",
+    });
+    const runner = new WorkflowRunner(db, wf);
+
+    await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix",
+    });
+
+    expect(seenPrompts[0]).toMatch(/== TESTS ==\n\(none\)/);
+  });
+
+  it("test order does not affect cache key (shuffled tests → cache hit)", async () => {
+    const db = makeDb();
+    const stage = makeIntentFromDiffStage(DEFAULT_DEPS(divzeroLlm()));
+    const runner = new WorkflowRunner(db, wf);
+
+    const a = await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+      tests: [ADDED_TEST, PRESERVES_TEST],
+    });
+    const b = await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+      tests: [PRESERVES_TEST, ADDED_TEST],
+    });
+
+    expect(a.cacheHit).toBe(false);
+    expect(b.cacheHit).toBe(true);
+    expect(b.cid).toBe(a.cid);
+  });
+
+  it("undefined and empty tests collide on cache key", async () => {
+    const db = makeDb();
+    const stage = makeIntentFromDiffStage(DEFAULT_DEPS(divzeroLlm()));
+    const runner = new WorkflowRunner(db, wf);
+
+    const a = await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+    });
+    const b = await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+      tests: [],
+    });
+
+    expect(a.cacheHit).toBe(false);
+    expect(b.cacheHit).toBe(true);
+    expect(b.cid).toBe(a.cid);
+  });
+
+  it("changing test source content invalidates the cache", async () => {
+    const db = makeDb();
+    const stage = makeIntentFromDiffStage(DEFAULT_DEPS(divzeroLlm()));
+    const runner = new WorkflowRunner(db, wf);
+
+    const a = await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+      tests: [ADDED_TEST],
+    });
+    const b = await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+      tests: [
+        {
+          ...ADDED_TEST,
+          source:
+            ADDED_TEST.source +
+            "\ntest('extra case', () => { expect(calculate(0, 1)).toBe(0); });",
+        },
+      ],
+    });
+
+    expect(a.cacheHit).toBe(false);
+    expect(b.cacheHit).toBe(false);
+    expect(b.cid).not.toBe(a.cid);
+  });
+
+  it("changing relationship invalidates the cache", async () => {
+    const db = makeDb();
+    const stage = makeIntentFromDiffStage(DEFAULT_DEPS(divzeroLlm()));
+    const runner = new WorkflowRunner(db, wf);
+
+    const a = await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+      tests: [ADDED_TEST],
+    });
+    const b = await runner.runStage(stage, {
+      diff: DIVZERO_DIFF,
+      commitMessage: "fix divide-by-zero crash",
+      tests: [{ ...ADDED_TEST, relationship: "preserves" }],
+    });
+
+    expect(a.cacheHit).toBe(false);
+    expect(b.cacheHit).toBe(false);
+    expect(b.cid).not.toBe(a.cid);
   });
 });

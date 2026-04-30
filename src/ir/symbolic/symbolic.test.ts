@@ -9,15 +9,47 @@ import {
   forAll,
   exists,
   parseInt,
+  parseFloat,
   num,
+  real,
   str,
+  bool,
   eq,
+  neq,
+  lt,
+  lte,
   gt,
+  gte,
+  isTrue,
+  isFalse,
   Int,
+  Real,
+  Bool,
   String as StringSort,
   abs,
+  max,
+  min,
+  floor,
+  ceil,
+  sqrt,
+  sign,
   add,
+  sub,
+  mul,
+  div,
+  neg,
   isFinite,
+  isNaN,
+  isInteger,
+  stringLength,
+  stringIncludes,
+  arrayLength,
+  arrayIncludes,
+  and,
+  or,
+  not,
+  implies,
+  iff,
   type Declaration,
 } from "./index.js";
 
@@ -255,6 +287,199 @@ test("must.skip is a no-op", () => {
 // ---------------------------------------------------------------------------
 // the worked example
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// remaining constants (real, bool) and integer/non-integer detection in num
+// ---------------------------------------------------------------------------
+
+test("num builds a Real constant when value is non-integer", () => {
+  expect(num(1.5)).toEqual({ kind: "const", value: 1.5, sort: Real });
+});
+
+test("num accepts a bigint and tags it as Int", () => {
+  expect(num(7n)).toEqual({ kind: "const", value: 7n, sort: Int });
+});
+
+test("real always builds a Real constant", () => {
+  expect(real(3)).toEqual({ kind: "const", value: 3, sort: Real });
+});
+
+test("bool builds a Bool constant", () => {
+  expect(bool(true)).toEqual({ kind: "const", value: true, sort: Bool });
+  expect(bool(false)).toEqual({ kind: "const", value: false, sort: Bool });
+});
+
+// ---------------------------------------------------------------------------
+// remaining built-in function primitives
+// ---------------------------------------------------------------------------
+
+test("parseFloat builds an apply ctor returning Real", () => {
+  const t = parseFloat(str("0.5"));
+  if (t.kind !== "ctor") throw new Error();
+  expect(t.name).toBe("parseFloat");
+  expect(t.sort).toEqual(Real);
+});
+
+test("isNaN / isInteger return Bool-typed ctor terms", () => {
+  const a = isNaN(num(0));
+  const b = isInteger(num(0));
+  if (a.kind !== "ctor" || b.kind !== "ctor") throw new Error();
+  expect(a.sort).toEqual(Bool);
+  expect(a.name).toBe("isNaN");
+  expect(b.name).toBe("isInteger");
+});
+
+test("max / min preserve the first argument's sort", () => {
+  const t = max(num(1), num(2));
+  if (t.kind !== "ctor") throw new Error();
+  expect(t.name).toBe("Math.max");
+  expect(t.sort).toEqual(Int);
+  const t2 = min(real(1.5), real(2.5));
+  if (t2.kind !== "ctor") throw new Error();
+  expect(t2.sort).toEqual(Real);
+});
+
+test("floor / ceil / sign return Int", () => {
+  const f = floor(real(1.5));
+  const c = ceil(real(1.5));
+  const s = sign(num(-3));
+  if (f.kind !== "ctor" || c.kind !== "ctor" || s.kind !== "ctor") throw new Error();
+  expect(f.sort).toEqual(Int);
+  expect(c.sort).toEqual(Int);
+  expect(s.sort).toEqual(Int);
+});
+
+test("sqrt returns Real regardless of input sort", () => {
+  const t = sqrt(num(4));
+  if (t.kind !== "ctor") throw new Error();
+  expect(t.sort).toEqual(Real);
+  expect(t.name).toBe("Math.sqrt");
+});
+
+test("stringLength / stringIncludes / arrayLength / arrayIncludes have correct sorts", () => {
+  const sLen = stringLength(str("hi"));
+  const sInc = stringIncludes(str("hi"), str("h"));
+  const aLen = arrayLength(str("[]"));
+  const aInc = arrayIncludes(str("[]"), num(0));
+  if (sLen.kind !== "ctor" || sInc.kind !== "ctor" || aLen.kind !== "ctor" || aInc.kind !== "ctor") throw new Error();
+  expect(sLen.sort).toEqual(Int);
+  expect(sInc.sort).toEqual(Bool);
+  expect(aLen.sort).toEqual(Int);
+  expect(aInc.sort).toEqual(Bool);
+});
+
+// ---------------------------------------------------------------------------
+// remaining arithmetic
+// ---------------------------------------------------------------------------
+
+test("sub / mul build their respective ctors", () => {
+  const s = sub(5, 3);
+  const m = mul(2, 4);
+  if (s.kind !== "ctor" || m.kind !== "ctor") throw new Error();
+  expect(s.name).toBe("-");
+  expect(m.name).toBe("*");
+});
+
+test("div produces a Real-typed term", () => {
+  const d = div(num(1), num(2));
+  if (d.kind !== "ctor") throw new Error();
+  expect(d.name).toBe("/");
+  expect(d.sort).toEqual(Real);
+});
+
+test("neg produces a unary - ctor", () => {
+  const n = neg(num(5));
+  if (n.kind !== "ctor") throw new Error();
+  expect(n.name).toBe("-");
+  expect(n.args).toHaveLength(1);
+});
+
+// ---------------------------------------------------------------------------
+// remaining atomic predicates
+// ---------------------------------------------------------------------------
+
+test("neq / lt / lte / gte build atomics with the right predicate names", () => {
+  expect(neq(0, 1).kind).toBe("atomic");
+  const tests: Array<[(a: number, b: number) => unknown, string]> = [
+    [neq, "≠"],
+    [lt, "<"],
+    [lte, "≤"],
+    [gte, "≥"],
+  ];
+  for (const [fn, predicate] of tests) {
+    const f = fn(0, 1) as { kind: "atomic"; predicate: string };
+    expect(f.predicate).toBe(predicate);
+  }
+});
+
+test("isTrue / isFalse build atomics on Bool-typed args", () => {
+  const t = isTrue(true);
+  const f = isFalse(false);
+  if (t.kind !== "atomic" || f.kind !== "atomic") throw new Error();
+  expect(t.predicate).toBe("true");
+  expect(f.predicate).toBe("false");
+});
+
+// ---------------------------------------------------------------------------
+// connectives re-export
+// ---------------------------------------------------------------------------
+
+test("symbolic and/or/not/implies/iff are re-exported correctly", () => {
+  const a = eq(num(0), num(0));
+  const b = eq(num(1), num(1));
+  expect(and(a, b).kind).toBe("and");
+  expect(or(a, b).kind).toBe("or");
+  expect(not(a).kind).toBe("not");
+  expect(implies(a, b).kind).toBe("implies");
+  // iff desugars to and(implies, implies)
+  expect(iff(a, b).kind).toBe("and");
+});
+
+// ---------------------------------------------------------------------------
+// describe.skip
+// ---------------------------------------------------------------------------
+
+test("describe.skip is a no-op (its body is not invoked)", () => {
+  const finish = beginCollecting();
+  let bodyRan = false;
+  describe.skip("never", () => {
+    bodyRan = true;
+    must("ignored", eq(num(0), num(0)));
+  });
+  const decls = finish();
+  expect(decls).toHaveLength(0);
+  expect(bodyRan).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// bridge() rejection outside collector
+// ---------------------------------------------------------------------------
+
+test("bridge() outside an active collector throws", () => {
+  expect(() =>
+    bridge("orphan", {
+      sourceSymbol: "x",
+      sourceLayer: "L1",
+      targetContractCid: "0".repeat(32),
+      targetLayer: "L2",
+    }),
+  ).toThrow(/outside an active collector/);
+});
+
+// ---------------------------------------------------------------------------
+// _resetCollector clears in-progress state
+// ---------------------------------------------------------------------------
+
+test("_resetCollector lets a new beginCollecting succeed even if previous was leaked", () => {
+  beginCollecting();
+  // Don't call finish — simulate an exception leaking the active collector.
+  _resetCollector();
+  // Now this must NOT throw "already active".
+  const finish = beginCollecting();
+  property("ok", eq(num(0), num(0)));
+  const decls = finish();
+  expect(decls).toHaveLength(1);
+});
 
 test("worked example: parseInt-can-return-zero composes via runtime evaluation", () => {
   const finish = beginCollecting();

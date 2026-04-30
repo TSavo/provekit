@@ -41,6 +41,27 @@ description: >-
   shape, runs a v1-stub adversarial validation, and publishes a
   LibraryPrinciple JSON to `.provekit/principles/`.
 
+cli:
+  description: Lift a recurring invariant cluster into a candidate principle
+  args:
+    - name: proposedPrincipleName
+      positional: true
+      required: true
+      type: string
+    - name: proposedBugClassId
+      positional: true
+      required: true
+      type: string
+    - name: proposedDescription
+      type: string
+      required: true
+    - name: proposedConfidence
+      type: int
+      default: 70
+    - name: projectRoot
+      type: path
+      default: "."
+
 nodes:
   # ---------------------------------------------------------------------------
   # P1 collect-invariants — read the corpus from disk. The Stage is

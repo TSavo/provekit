@@ -20,6 +20,16 @@ description: >-
   read; surfaces unresolved CIDs without chasing them. Terminal artifact:
   RenderProofChainOutput { mementos, unresolvedInputCids, text }.
 
+cli:
+  description: Render a memento's local proof chain
+  args:
+    - name: startCid
+      positional: true
+      required: true
+      type: string
+    - name: maxDepth
+      type: int
+
 nodes:
   - id: render
     capability: render-proof-chain

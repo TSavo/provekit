@@ -397,6 +397,19 @@ export function findMementoByPropertyHash(
   return rows.map(rowToMemento);
 }
 
+/**
+ * All mementos stored locally. Used by leaves/roots enumeration: the
+ * proofkit's local mementos are what `provekit leaves` lists, and the
+ * set difference between their inputCids and their CIDs is what
+ * `provekit roots` lists. Per the substrate-vs-tooling boundary in
+ * docs/specs/2026-04-29-correctness-is-a-hash.md §"Naming discipline:
+ * leaves AND roots, not walks", both queries are LOCAL by design.
+ */
+export function listAllMementos(db: Db): Memento[] {
+  const rows = db.select().from(verifications).all();
+  return rows.map(rowToMemento);
+}
+
 function findExact(
   db: Db,
   bindingHash: string,

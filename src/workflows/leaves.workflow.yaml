@@ -1,0 +1,51 @@
+# Leaves workflow — list mementos this proofkit minted locally.
+#
+# Pure read; no side effects; no LLM. Enumerates the local memento store,
+# applies optional filters (evidence kind, producer identity), and returns
+# a stable projection ordered by CID. Downstream consumers reference these
+# leaves by hash to compose against the proofkit's contributions.
+#
+# Scope discipline (CRITICAL):
+#   docs/specs/2026-04-29-correctness-is-a-hash.md
+#     §"What ProvekIt is" — the framework MINTS local mementos and
+#     ENUMERATES local state; it does NOT walk into external proofs.
+#     `provekit leaves` answers "what did we contribute?" — that question
+#     is local, free, and complete.
+#     §"Naming discipline: leaves AND roots, not walks" — the substrate
+#     hands out the list; auditors traverse externally with their own tooling.
+
+name: leaves
+cid: bafy-leaves-v1
+description: >-
+  List mementos this proofkit minted locally, with optional filters by
+  evidence variant `kind` and producer identity. Pure local enumeration;
+  no network walk. Output: { format, body } with `body` rendered as text
+  (default) or JSON.
+
+cli:
+  description: List mementos this proofkit minted locally
+  args:
+    - name: format
+      flag: true
+      type: string
+    - name: kind
+      flag: true
+      type: string
+    - name: producedBy
+      flag: true
+      type: string
+
+nodes:
+  - id: enumerate-leaves
+    capability: enumerate-local-leaves
+    input:
+      kindFilter: $input.kind
+      producedByFilter: $input.producedBy
+
+  - id: format-output
+    capability: format-leaves-output
+    input:
+      leaves: $node.enumerate-leaves.output.leaves
+      format: $input.format
+
+output: $node.format-output.output

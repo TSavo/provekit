@@ -26,6 +26,22 @@ description: >-
   and mint a verdict memento for the original (bindingHash, propertyHash).
   Terminal artifact: invoke-z3's StageOutput.
 
+cli:
+  description: Find a Z3 counterexample (or proof) for a propertyHash
+  args:
+    - name: propertyHash
+      positional: true
+      required: true
+      type: string
+    - name: timeoutMs
+      type: int
+      default: 30000
+    - name: logic
+      type: string
+      default: "ALL"
+    - name: producedBy
+      type: string
+
 nodes:
   # ---------------------------------------------------------------------------
   # locate-memento — recover the IrFormula from the memento store. Reads

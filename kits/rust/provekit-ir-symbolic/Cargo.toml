@@ -1,0 +1,10 @@
+[package]
+name = "provekit-ir-symbolic"
+version = "0.1.0"
+edition = "2021"
+description = "ProvekIt Rust kit: symbolic primitives for IR emission via runtime-eval lifting."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
