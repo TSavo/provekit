@@ -86,80 +86,94 @@ export interface MakeFormulateViaLifterStageDeps {
 // Appendix-C template
 // ---------------------------------------------------------------------------
 
-const APPENDIX_C_TEMPLATE = `You are writing invariants for a TypeScript codebase using the ProvekIt framework.
+const APPENDIX_C_TEMPLATE = `Write invariants for a TypeScript change.
 
-Below is a code diff. Below that is the test code added or modified in the same
-diff. Below that is a description of the developer's intent for this change.
+An invariant is a statement that must be true for all inputs the function
+receives. You write them as predicate functions. Use \`must("name", predicate)\`
+to declare each one. Group related invariants with \`describe()\`.
 
-Your task: write invariants in TypeScript using the symbolic-primitives API.
-Each must() call captures a property the modified code should satisfy. The
-framework runs your output to emit the IR; running each primitive (parseInt,
-abs, eq, gt, forAll, etc.) builds an IR data structure rather than computing
-a value.
+Use these functions, imported from 'provekit/ir/symbolic':
 
-- Pass for all the listed tests (the tests are existential examples of intent)
-- Be consistent with the diff's intended semantics
-- Capture properties the modified function should satisfy for ALL inputs in the domain
-- Use ONLY the symbolic primitives below; do not call native parseInt or Math.abs
+  describe(name, body)            // group invariants
+  must(name, predicate)           // declare an invariant
 
-Output: TypeScript source for a \`.invariant.ts\` file. Do not output anything else.
+  // Quantifiers — universal/existential claims over a sort
+  forAll(sort, x => predicate)    // "for all x of sort, predicate is true"
+  exists(sort, x => predicate)    // "there exists x of sort where predicate is true"
 
-== API (use these, exactly these) ==
+  // Connectives
+  implies(a, b)                   // a => b
+  and(a, b), or(a, b), not(a), iff(a, b)
+
+  // Numbers
+  num(n)                          // an integer constant
+  real(n)                         // a real constant
+  str(s)                          // a string constant
+  bool(b)                         // a boolean constant
+  add(a, b), sub(a, b), mul(a, b), div(a, b), neg(a)
+
+  // Comparisons
+  eq(a, b)                        // a === b
+  neq(a, b)                       // a !== b
+  lt(a, b), lte(a, b), gt(a, b), gte(a, b)
+
+  // Built-ins (use these instead of native parseInt, Math.abs, etc.)
+  parseInt(s), parseFloat(s)
+  isNaN(n), isFinite(n), isInteger(n)
+  abs(n), max(a, b), min(a, b), floor(n), ceil(n), sqrt(n), sign(n)
+  stringLength(s), stringIncludes(s, sub)
+  arrayLength(a), arrayIncludes(a, item)
+
+  // Sorts
+  Int, Real, Bool, String as StringSort
+
+== HOW TO WRITE AN INVARIANT ==
 
 import {
-  describe, must,                           // structure + invariant declarations
-  forAll, exists, implies, iff, and, or, not, // quantifiers + connectives
-  parseInt, parseFloat,                     // number-parsing primitives
-  abs, max, min, floor, ceil, sqrt, sign,   // Math primitives
-  isNaN, isFinite, isInteger,               // predicate primitives
-  num, real, str, bool,                     // constants
-  add, sub, mul, div, neg,                  // term arithmetic
-  eq, neq, lt, lte, gt, gte,                // atomic predicates
-  Int, Real, Bool, String as StringSort,    // sorts
+  describe, must, forAll, exists, eq, gt, gte, parseInt, num, str, abs, Int,
+  String as StringSort,
 } from 'provekit/ir/symbolic';
 
-Each primitive returns an IR data structure. Running your file inside the
-framework's collector produces the IR; no AST walking, no tsc Compiler API.
-
-== USAGE SHAPE ==
-
-describe("topic", () => {
-  must("invariant-name",
-    forAll(Int, (x) => gt(abs(x), num(-1)))
+describe("parseInt", () => {
+  must("zero string parses to zero",
+    eq(parseInt(str("0")), num(0))
   );
 
-  describe("nested topic", () => {
-    must("nested-invariant",
-      exists(StringSort, (s) => eq(parseInt(s), num(0)))
-    );
-  });
+  must("preserves non-negative integers",
+    forAll(Int, (n) =>
+      gte(n, num(0))   // for all n where n >= 0
+        ? eq(parseInt(/* toString(n) */), n)
+        : forAll(Int, (k) => gt(num(1), num(0)))  // (placeholder, no toString primitive yet)
+    )
+  );
 });
 
-== FORBIDDEN ==
+describe("Math.abs", () => {
+  must("never returns negative",
+    forAll(Int, (x) => gte(abs(x), num(0)))
+  );
+});
 
-- Native operators (===, +, *, etc.) — use eq(), add(), mul() etc. instead
-- async/await, generators, Promise
-- for/while/do loops — use forAll / exists / .every / .some
-- Mutations (=, ++, --, .push, etc.)
-- try/catch/throw
-- this, new, prototype access, classes
-- Side-effecting calls (the symbolic primitives are pure IR builders)
-- Closure over mutable bindings (let/var); only const closures (resolved at lift)
+== RULES ==
+
+- Use \`must\`, not \`it\` (invariants are obligations, not test observations).
+- Use \`eq\`, \`gt\`, \`add\`, etc. — never the native ===, >, +, *, etc.
+- Use \`parseInt\`, \`abs\`, etc. from the import — never \`global.parseInt\` or \`Math.abs\`.
+- No async, no loops, no try/catch, no this/new, no mutations.
 
 == DIFF ==
 {{diff}}
 
-== TESTS (existential intent) ==
+== TESTS ==
 {{tests}}
 
-== INTENT (universal context) ==
+== INTENT ==
 {{intent_text}}
 
-== TARGET FILES ==
+== TARGET FILE ==
 {{file_paths_for_invariant_files}}
 
-Output the .invariant.ts source. The verb is must, not it: invariants are
-obligations, not observations. Wrap related invariants in describe blocks.
+Output: TypeScript source for a \`.invariant.ts\` file. Nothing else.
 `;
 
 function renderTests(tests: { source: string; testNames: string[] }[] | undefined): string {
