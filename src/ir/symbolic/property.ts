@@ -118,19 +118,23 @@ export function describe(name: string, body: () => void): void {
 }
 
 /**
- * Declare a named property. Equivalent to `property()` but uses the
- * active describe path as a prefix.
+ * Declare a named invariant. The active describe path is used as a
+ * prefix for the full name.
+ *
+ * The verb `must` is non-negotiable: invariants are obligations, not
+ * observations. `it("returns zero")` reads as a test ("it does this");
+ * `must("never throw on empty input")` reads as a constraint ("this
+ * is required"). The framework writes invariants in the obligation
+ * register; the API forces that register at call sites.
  */
-export function it(name: string, formula: IrFormula): void {
+export function must(name: string, formula: IrFormula): void {
   const fullName =
     describePath.length === 0 ? name : `${describePath.join(" > ")} > ${name}`;
   property(fullName, formula);
 }
 
-/** Skip an invariant (analogous to xit / it.skip in test runners). */
-it.skip = function (name: string, _formula: IrFormula): void {
-  // No-op: the invariant is declared but not collected. Useful for
-  // gradually adopting invariants on legacy code.
+/** Skip an invariant. The declaration is acknowledged but not collected. */
+must.skip = function (name: string, _formula: IrFormula): void {
   void name;
 };
 

@@ -38,7 +38,7 @@ export {
   property,
   bridge,
   describe,
-  it,
+  must,
   beginCollecting,
   _resetCollector,
   forAll,
