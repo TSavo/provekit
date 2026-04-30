@@ -357,3 +357,58 @@ This is the same property that made content-addressed dedup work in
 provides value to anyone who can verify it*, with no central
 coordination. The semantic envelope is the same primitive applied to
 behavior instead of bytes.
+
+## Scaling: cache invalidation is O(N) with no LLM
+
+A natural objection to per-library propertyHash adoption is "doesn't
+this get expensive as the catalog grows?" The honest answer is no, and
+the reason is that content addressing turns invariant bookkeeping into
+hash probes.
+
+The cost model decomposes:
+
+| Operation                                     | Cost                | LLM?              |
+|-----------------------------------------------|---------------------|-------------------|
+| Resolve one invariant's binding (cases 1-3)   | O(1) hash probe     | No                |
+| Verify N invariants haven't decayed           | O(N) hash probes    | No                |
+| Identify which invariants need re-eval        | O(N) set-diff       | No                |
+| Re-evaluate one decayed invariant (case 4)    | O(1) LLM call       | Yes, on the diff  |
+
+**The LLM cost scales with the size of the semantic edit, not the
+catalog.** Adding 10,000 invariants to a library doesn't add a single
+LLM call when nothing changed — it adds 10,000 hash probes, which run
+in milliseconds. Editing one function with one bound invariant fires
+one LLM call. Three bindings fires three. Linear in actual change;
+zero in steady state.
+
+Compare:
+
+- **Refinement-typed languages** (F*, Liquid Haskell, Idris): every
+  typecheck re-elaborates the module's proof obligations. Adding
+  invariants slows typechecking globally.
+- **Model checkers** (TLA+, SPIN): state-space exploration grows
+  multiplicatively with conjoined invariants. Adding claims is
+  exponentially expensive.
+- **SMT-driven verifiers** (Dafny, Why3): each verification condition
+  is generated from scratch every run. N claims means N solver runs,
+  regardless of what changed.
+- **Property-based tests**: cost scales with N claims × test cases. No
+  diff awareness.
+
+ProvekIt's complexity comes from content addressing being the binding
+primitive. The substrate is a hash index; the invariant store is a list
+of hash references; "is this still bound?" is a hash probe. The LLM is
+reserved for the place where reasoning is genuinely required, and that
+place is mechanically isolatable in O(N) without any LLM at all.
+
+This matters institutionally: a library with 5,000 published
+propertyHashes does not make consumer verification expensive. The
+consumer's bridge mementos reference specific CIDs. "Are these CIDs
+still in the library's catalog?" is set membership. A library bump
+that edits one function affects only the bridges referencing that one
+function's hash. Every other binding stays cached.
+
+The scaling story is what makes propertyHash composition feasible at
+ecosystem size. Without it, the framework would be valuable in
+isolation but unusable as a cross-library substrate. With it, a
+codebase with 50,000 invariants verifies in time linear in the diff.
