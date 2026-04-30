@@ -20,7 +20,7 @@
  *       §"All operations are YAML workflows"
  */
 
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync, existsSync } from "fs";
+import { mkdtempSync, readdirSync, rmSync, readFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join, relative, resolve } from "path";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -243,5 +243,3 @@ function walkProject(projectRoot: string): string[] {
   walk(projectRoot);
   return out;
 }
-
-void mkdirSync; // kept for future symmetry with runLint (creates scratch parent)

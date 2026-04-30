@@ -248,7 +248,5 @@ function hash16(s: string): string {
   return createHash("sha256").update(s).digest("hex").slice(0, 16);
 }
 
-void (mintBridgeFlow as (s: BridgeMintFields, k: KeyObject) => ClaimEnvelope);
-
 // Re-export MintKind for convenience.
 export type { MintKind };
