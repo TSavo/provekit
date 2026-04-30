@@ -11,10 +11,29 @@
  *   - Same input → same output, byte-deterministic
  *
  * Null roots are NOT just audit suggestions — they are explicit
- * incompleteness in the proof chain. Each null root is a code path
- * the framework cannot prove correct locally because the upstream
- * contract its verification depends on is not present. The completeness
- * metric is binary:
+ * incompleteness in the proof chain. Each null root names a FUNCTION
+ * CALL BOUNDARY in the AST where the proof chain terminates without
+ * grounding. A function call is the natural verification frontier:
+ * the framework asks "does this callee have a contract in scope?"
+ * Yes → compose against it. No → this specific call is a null root.
+ *
+ * Null roots come in two classes:
+ *
+ *   External null roots: dependencies whose proof catalogs are not
+ *     installed. The kit's published contracts aren't in the local
+ *     store; upstream verification is unavailable.
+ *
+ *   Internal null roots: your own code paths that are not constrained
+ *     by any invariant. You wrote a function; no must() declaration
+ *     references it; the framework cannot say anything about it.
+ *
+ * Both classes are reported uniformly. The set difference doesn't
+ * distinguish "your uncovered code" from "missing upstream kits" — it
+ * names every CID referenced in any minted memento's inputCids that
+ * isn't locally available. The developer or auditor reads the list
+ * and decides how to close each gap.
+ *
+ * The completeness metric is binary:
  *
  *   - 0 null roots → every minted memento's inputCids resolves to a
  *     locally-verified upstream. Provably correct.
