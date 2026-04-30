@@ -72,7 +72,7 @@ describe("formulate-via-lifter Stage", () => {
 
   beforeEach(() => {
     llm = new StubLLMProvider(
-      new Map([["You are writing invariants for a TypeScript codebase", SURFACE_OK]]),
+      new Map([["Write invariants for a TypeScript change", SURFACE_OK]]),
     );
   });
 
@@ -95,7 +95,7 @@ describe("formulate-via-lifter Stage", () => {
 
   it("strips Markdown fences from the LLM response before lifting", async () => {
     const fencedLLM = new StubLLMProvider(
-      new Map([["You are writing invariants", SURFACE_OK_FENCED]]),
+      new Map([["Write invariants", SURFACE_OK_FENCED]]),
     );
     const stage = makeFormulateViaLifterStage({ llm: fencedLLM });
     const runner = new WorkflowRunner(makeDb(), wf);
@@ -143,7 +143,7 @@ describe("formulate-via-lifter Stage", () => {
 
   it("raises FormulateViaLifterError when surface contains an unliftable construct", async () => {
     const errLLM = new StubLLMProvider(
-      new Map([["You are writing invariants", SURFACE_UNLIFTABLE]]),
+      new Map([["Write invariants", SURFACE_UNLIFTABLE]]),
     );
     const stage = makeFormulateViaLifterStage({ llm: errLLM });
     const runner = new WorkflowRunner(makeDb(), wf);
@@ -155,7 +155,7 @@ describe("formulate-via-lifter Stage", () => {
 
   it("raises FormulateViaLifterError when surface emits no property()", async () => {
     const emptyLLM = new StubLLMProvider(
-      new Map([["You are writing invariants", SURFACE_NO_PROPERTY]]),
+      new Map([["Write invariants", SURFACE_NO_PROPERTY]]),
     );
     const stage = makeFormulateViaLifterStage({ llm: emptyLLM });
     const runner = new WorkflowRunner(makeDb(), wf);
