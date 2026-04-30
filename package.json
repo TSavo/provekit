@@ -87,7 +87,9 @@
     "@vitest/ui": "^4.1.4",
     "drizzle-kit": "^0.31.10",
     "fast-check": "^4.7.0",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.12"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
