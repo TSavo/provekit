@@ -187,10 +187,10 @@ describe("symbolic primitives", () => {
 
   describe("describe() + it() ergonomics", () => {
     it("registers a single it() under a describe", async () => {
-      const { describe: pkDescribe, it: pkIt } = await import("./index.js");
+      const pk = await import("./index.js");
       const finish = beginCollecting();
-      pkDescribe("parseInt", () => {
-        pkIt("canReturnZero",
+      pk.describe("parseInt", () => {
+        pk.it("canReturnZero",
           exists(StringSort, (s) => eq(parseInt(s), num(0))),
         );
       });
@@ -200,11 +200,11 @@ describe("symbolic primitives", () => {
     });
 
     it("nested describes build a path", async () => {
-      const { describe: pkDescribe, it: pkIt } = await import("./index.js");
+      const pk = await import("./index.js");
       const finish = beginCollecting();
-      pkDescribe("Math", () => {
-        pkDescribe("abs", () => {
-          pkIt("non-negative", forAll(Int, (x) => gt(abs(x), num(-1))));
+      pk.describe("Math", () => {
+        pk.describe("abs", () => {
+          pk.it("non-negative", forAll(Int, (x) => gt(abs(x), num(-1))));
         });
       });
       const decls = finish();
@@ -213,11 +213,11 @@ describe("symbolic primitives", () => {
     });
 
     it("multiple it() in one describe", async () => {
-      const { describe: pkDescribe, it: pkIt } = await import("./index.js");
+      const pk = await import("./index.js");
       const finish = beginCollecting();
-      pkDescribe("parseInt", () => {
-        pkIt("canReturnZero", eq(num(0), num(0)));
-        pkIt("canReturnPositive", eq(num(1), num(1)));
+      pk.describe("parseInt", () => {
+        pk.it("canReturnZero", eq(num(0), num(0)));
+        pk.it("canReturnPositive", eq(num(1), num(1)));
       });
       const decls = finish();
       expect(decls).toHaveLength(2);
@@ -228,12 +228,12 @@ describe("symbolic primitives", () => {
     });
 
     it("describe pops its segment after body returns", async () => {
-      const { describe: pkDescribe, it: pkIt } = await import("./index.js");
+      const pk = await import("./index.js");
       const finish = beginCollecting();
-      pkDescribe("a", () => {
-        pkIt("inner", eq(num(0), num(0)));
+      pk.describe("a", () => {
+        pk.it("inner", eq(num(0), num(0)));
       });
-      pkIt("outer", eq(num(1), num(1)));
+      pk.it("outer", eq(num(1), num(1)));
       const decls = finish();
       expect(decls.map((d) => d.name)).toEqual(["a > inner", "outer"]);
     });
