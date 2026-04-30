@@ -1,0 +1,24 @@
+# C++ proof-envelope builder — produces deterministic CBOR .proof
+# bytes per protocol/specs/2026-04-30-proof-file-format.md.
+#
+# γ-step-1: deterministic CBOR encoder (this BUILD).
+# γ-step-2 (next): catalog body assembly + ed25519 signing.
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//implementations/cpp:__subpackages__"])
+
+cc_library(
+    name = "cbor",
+    srcs = ["cbor.cpp"],
+    hdrs = ["cbor.hpp"],
+    copts = ["-std=c++17"],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "cbor_conformance_test",
+    srcs = ["cbor_test.cpp"],
+    copts = ["-std=c++17"],
+    deps = [":cbor"],
+)
