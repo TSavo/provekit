@@ -56,6 +56,35 @@ export interface WorkflowManifest {
    * uncacheable live handles.
    */
   output: InputRef;
+  /**
+   * Optional CLI binding metadata. Consumed by the meta-dispatcher to
+   * route `provekit <name>` through to this workflow. The runner does
+   * NOT consume this — it is passthrough for tooling that walks
+   * manifests to assemble a CLI surface.
+   */
+  cli?: CliBlock;
+}
+
+export interface CliBlock {
+  /** Short one-line description shown in `provekit --help`. */
+  description: string;
+  /** Positional args + flags the dispatcher should accept. */
+  args?: CliArg[];
+}
+
+export interface CliArg {
+  /** Flag name (without leading dashes) or positional arg name. */
+  name: string;
+  /** Positional (true) or flag (false/omitted). */
+  positional?: boolean;
+  /** Required for positional / required-flag semantics. */
+  required?: boolean;
+  /** "path" | "string" | "int" | "bool". */
+  type?: "path" | "string" | "int" | "bool";
+  /** Boolean flags (no value); takes-no-argument switches. */
+  flag?: boolean;
+  /** Default value when not supplied. */
+  default?: unknown;
 }
 
 export interface NodeSpec {
@@ -248,6 +277,8 @@ export function validateManifest(value: unknown): WorkflowManifest {
   // Acyclicity: topo sort throws if a cycle exists.
   topoSort(nodes, actions);
 
+  const cli = parseCliBlock(m.cli);
+
   return {
     name: m.name,
     cid: m.cid,
@@ -255,7 +286,49 @@ export function validateManifest(value: unknown): WorkflowManifest {
     nodes,
     actions,
     output: m.output,
+    ...(cli !== undefined ? { cli } : {}),
   };
+}
+
+function parseCliBlock(value: unknown): CliBlock | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("manifest.cli must be an object when present");
+  }
+  const c = value as Record<string, unknown>;
+  if (typeof c.description !== "string") {
+    throw new Error("manifest.cli.description must be a string");
+  }
+  let args: CliArg[] | undefined;
+  if (c.args !== undefined) {
+    if (!Array.isArray(c.args)) {
+      throw new Error("manifest.cli.args must be an array when present");
+    }
+    args = c.args.map((raw, i) => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new Error(`manifest.cli.args[${i}] must be an object`);
+      }
+      const a = raw as Record<string, unknown>;
+      if (typeof a.name !== "string") {
+        throw new Error(`manifest.cli.args[${i}].name must be a string`);
+      }
+      if (a.type !== undefined &&
+          a.type !== "path" && a.type !== "string" &&
+          a.type !== "int" && a.type !== "bool") {
+        throw new Error(
+          `manifest.cli.args[${i}].type must be one of path|string|int|bool`,
+        );
+      }
+      const out: CliArg = { name: a.name };
+      if (typeof a.positional === "boolean") out.positional = a.positional;
+      if (typeof a.required === "boolean") out.required = a.required;
+      if (a.type !== undefined) out.type = a.type as CliArg["type"];
+      if (typeof a.flag === "boolean") out.flag = a.flag;
+      if (a.default !== undefined) out.default = a.default;
+      return out;
+    });
+  }
+  return args !== undefined ? { description: c.description, args } : { description: c.description };
 }
 
 function assertReferenceValid(

@@ -1088,6 +1088,12 @@ async function runLint(args: string[]): Promise<void> {
   if (ci && violations.length > 0) process.exit(1);
 }
 
+/**
+ * @deprecated Migrated to src/workflows/override.{ts,workflow.yaml}.
+ * The meta-dispatcher will route `provekit override` through the YAML
+ * workflow once it lands; until then this imperative path is kept so
+ * existing CLI invocations keep working.
+ */
 function runOverride(args: string[]): void {
   const reason = getFlag(args, "--reason");
   if (!reason) {
