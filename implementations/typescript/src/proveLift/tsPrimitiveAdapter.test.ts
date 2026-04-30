@@ -79,7 +79,11 @@ describe("proveLift / Propose (stub)", () => {
     const { shape } = detect(FIX("parseInt.ts"));
     const r = await propose(shape);
     expect(r.prompt).toContain("Function: `parseInt`");
-    expect(r.prompt).toContain("forall s: String");
+    // Binder sort = RETURN sort, not parameter sort. parseInt: string -> number
+    // means the property ranges over Int (the return sort), and `String(n)` shows
+    // up in the body via kit-registry coercion. This matches the hand-authored
+    // fixture at propertyHash 8c38f05152707736.
+    expect(r.prompt).toContain("forall n: Int");
     expect(r.prompt).toContain("export function parseInt");
   });
 

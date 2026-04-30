@@ -102,36 +102,38 @@ function substituteIntakePlaceholders(
 }
 
 /**
- * Compose the fixed forall scaffold from the function's parameter
- * sorts. v0 quantifies over Int parameters and treats String / Bool
- * params as opaque "any value of that sort." Run-2 may refine this
- * (e.g. quantify only over the parameter whose name matches the LLM's
- * proposed body, or all parameters if multivariate).
+ * Compose the fixed forall scaffold.
+ *
+ * Important design correction (v0): the binder sort is the function's
+ * RETURN sort, not a parameter sort. Lift expresses "what must hold of
+ * the function's output." For parseInt(s: string): number, the binder
+ * is `n: Int` so the property can read `parseInt(String(n)) === n` -
+ * that matches the hand-authored fixture (propertyHash 8c38f05152707736).
+ *
+ * Quantifying over parameter sorts (the obvious-but-wrong rule) makes
+ * the parseInt CID-equivalence acceptance gate impossible: the
+ * hand-authored fixture quantifies over Int and reaches String via the
+ * `String(n)` coercion in the body, not via the binder.
+ *
+ * The legal-sort universe surfaced to the LLM is `{returnSort} U
+ * {paramSorts}`. v0 scaffold picks the return sort as the binder; run-2
+ * generalizes to "LLM proposes binder sort, Detect constrains to the
+ * legal universe."
  */
 function buildQuantifierShape(shape: FunctionShape): string {
-  // For v0 + parseInt, the binder is `n: Int` so the body can refer to
-  // both `n` and the function call `parseInt(String(n))`. We choose `n`
-  // as the canonical Int binder name for the parseInt fixture; for
-  // String parameters we use `s`, for Bool we use `b`. Multi-arg cases
-  // produce numbered binders. None of this is normative; the LLM is
-  // told what the binders are and writes a body that uses them.
-  if (shape.params.length === 0) {
+  if (shape.params.length === 0 && shape.returnSort === undefined) {
     return `forall: <PREDICATE_BODY>`;
   }
-  if (shape.params.length === 1) {
-    const sort = shape.params[0]!.sort.name;
-    const binder = sort === "Int" ? "n" : sort === "String" ? "s" : "b";
-    return `forall ${binder}: ${sort}.\n  <PREDICATE_BODY>`;
-  }
-  const binders = shape.params
-    .map((p, i) => `${pickBinder(p.sort.name, i)}: ${p.sort.name}`)
-    .join(", ");
-  return `forall ${binders}.\n  <PREDICATE_BODY>`;
+  const sort = shape.returnSort.name;
+  const binder = canonicalBinder(sort);
+  return `forall ${binder}: ${sort}.\n  <PREDICATE_BODY>`;
 }
 
-function pickBinder(sort: string, idx: number): string {
-  const base = sort === "Int" ? "n" : sort === "String" ? "s" : "b";
-  return idx === 0 ? base : `${base}${idx}`;
+function canonicalBinder(sort: string): string {
+  if (sort === "Int") return "n";
+  if (sort === "String") return "s";
+  if (sort === "Bool") return "b";
+  return "x";
 }
 
 function stubCandidatesFor(shape: FunctionShape): Candidate[] {

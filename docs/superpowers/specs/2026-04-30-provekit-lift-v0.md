@@ -144,13 +144,25 @@ load-bearing: it must enforce that the LLM ONLY fills the predicate
 body, never the quantifier shape. The shape is forced by the function
 shape detected in stage 1.
 
-For parseInt with shape `parseInt(s: string) -> number`, the
-quantifier scaffold is:
+**Quantifier-shape rule (v0):** the binder sort is the function's
+RETURN sort, not a parameter sort. Lift expresses "what must hold of
+the function's output." Quantifying over the parameter sort (the
+obvious-but-wrong rule) makes the parseInt CID-equivalence acceptance
+gate impossible: the hand-authored fixture quantifies over Int and
+reaches String via the `String(n)` coercion in the body. So for
+parseInt with shape `parseInt(s: string) -> number`, the scaffold is:
 
 ```
 forall n: Int.
   <PREDICATE_BODY_OVER_n_AND_parseInt>
 ```
+
+The legal-sort universe surfaced to the LLM is the union of return
+sort and parameter sorts. The body may invoke kit-registered
+coercions (`String(n)`, `Number(s)`, `Boolean(x)`) to bridge between
+sorts. v0 scaffold picks the return sort as the binder; run-2 may
+generalize to "LLM proposes binder sort, Detect constrains to the
+legal universe" (Open Question 4).
 
 The LLM is asked: *what must be true of `n` for `parseInt(String(n))`
 to round-trip?* It returns candidate body strings, e.g.:
@@ -287,7 +299,15 @@ and the specific reason. No silent skip. No best-effort defaults.
    either. When a second adapter (Rust, Go) lands, the registry can be
    promoted to a shared dispatcher.
 
-3. **LLM provider injection.** ProvekIt has no LLM client today (the
+3. **`prompts/intake.md` packaging.** `tsc` only emits `.js`/`.d.ts`,
+   so the editable prompt file is missing from `dist/`. Vitest runs
+   from source and hides this. Run-2 must either (a) copy non-TS
+   assets to dist via a build step, (b) read from a packaged location
+   resolvable at runtime (`require.resolve` then walk up to source),
+   or (c) inline the prompt as a TS string export. Option (a) keeps
+   the "editable prose" promise intact for installed consumers.
+
+4. **LLM provider injection.** ProvekIt has no LLM client today (the
    `formulate` stage's LLM is in `src/fix/stages/formulateInvariant.ts`
    and is owned by the bug-fix workflow). v0 lift takes a `LiftLLM`
    interface as a constructor arg; the CLI wiring uses an
