@@ -155,6 +155,66 @@ output: $node.b.output
       }),
     ).toThrow(/\$-prefixed reference/);
   });
+
+  it("preserves a cli: block when present", () => {
+    const yaml = `
+name: hookable
+cid: wf-hookable-v1
+cli:
+  description: install or remove the git hook
+  args:
+    - name: project
+      positional: true
+      type: path
+      default: "."
+    - name: uninstall
+      flag: true
+nodes:
+  - id: only
+    capability: passthrough
+    input: $input
+output: $node.only.output
+`;
+    const m = parseManifest(yaml);
+    expect(m.cli).toBeDefined();
+    expect(m.cli!.description).toBe("install or remove the git hook");
+    expect(m.cli!.args).toHaveLength(2);
+    expect(m.cli!.args![0]).toEqual({
+      name: "project", positional: true, type: "path", default: ".",
+    });
+    expect(m.cli!.args![1]).toEqual({ name: "uninstall", flag: true });
+  });
+
+  it("omits cli when not present", () => {
+    const m = validateManifest({
+      name: "x", cid: "y",
+      output: "$node.a.output",
+      nodes: [{ id: "a", capability: "c", input: "$input" }],
+    });
+    expect(m.cli).toBeUndefined();
+  });
+
+  it("rejects malformed cli.description", () => {
+    expect(() =>
+      validateManifest({
+        name: "x", cid: "y",
+        output: "$node.a.output",
+        nodes: [{ id: "a", capability: "c", input: "$input" }],
+        cli: { args: [] },
+      }),
+    ).toThrow(/cli.description must be a string/);
+  });
+
+  it("rejects unknown cli arg type", () => {
+    expect(() =>
+      validateManifest({
+        name: "x", cid: "y",
+        output: "$node.a.output",
+        nodes: [{ id: "a", capability: "c", input: "$input" }],
+        cli: { description: "x", args: [{ name: "n", type: "bogus" }] },
+      }),
+    ).toThrow(/cli.args\[0\].type must be one of/);
+  });
 });
 
 describe("topoSort", () => {
