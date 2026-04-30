@@ -88,36 +88,54 @@ export interface MakeFormulateViaLifterStageDeps {
 
 const APPENDIX_C_TEMPLATE = `Write invariants for a TypeScript change.
 
-An invariant is a statement that must be true for all inputs the function
-receives. You write them as predicate functions. Use \`must("name", predicate)\`
-to declare each one. Group related invariants with \`describe()\`.
+== WHAT YOU ARE DOING ==
 
-Use these functions, imported from 'provekit/ir/symbolic':
+A code change is being committed. You will write the invariants that the
+change must satisfy. The framework will verify your invariants against
+installed kit catalogs; if they hold, the change is accepted; if not, the
+commit is rejected with a counterexample. Your invariants are the
+formal claim about what the change should do — for ALL inputs in the
+function's domain, not just the test cases.
+
+The tests below are existential evidence: "for THIS specific input, the
+output is THIS." Your invariants are the universal generalization: "for
+ALL inputs in the domain, the predicate holds." The tests are points;
+your invariants are the curve through the points.
+
+== HOW THE PRIMITIVES WORK ==
+
+You write predicate functions using imported primitives. The primitives
+LOOK like they compute values (parseInt("0") returns 0, eq(a, b) is
+true if a equals b) but they actually capture the call into a structured
+declaration that the framework verifies. Like jest mocks: the call shape
+is recorded, no real computation happens.
+
+You don't need to think about IR or SAT solvers. Write predicates as if
+they computed values; the framework does the rest.
+
+== THE API (import these from 'provekit/ir/symbolic') ==
 
   describe(name, body)            // group invariants
   must(name, predicate)           // declare an invariant
 
-  // Quantifiers — universal/existential claims over a sort
-  forAll(sort, x => predicate)    // "for all x of sort, predicate is true"
-  exists(sort, x => predicate)    // "there exists x of sort where predicate is true"
+  // Quantifiers — universal/existential
+  forAll(sort, x => predicate)    // "for all x of sort"
+  exists(sort, x => predicate)    // "there exists x of sort"
 
   // Connectives
   implies(a, b)                   // a => b
   and(a, b), or(a, b), not(a), iff(a, b)
 
-  // Numbers
-  num(n)                          // an integer constant
-  real(n)                         // a real constant
-  str(s)                          // a string constant
-  bool(b)                         // a boolean constant
+  // Constants
+  num(n), real(n), str(s), bool(b)
+
+  // Arithmetic (term-level)
   add(a, b), sub(a, b), mul(a, b), div(a, b), neg(a)
 
-  // Comparisons
-  eq(a, b)                        // a === b
-  neq(a, b)                       // a !== b
-  lt(a, b), lte(a, b), gt(a, b), gte(a, b)
+  // Comparisons (formula-level)
+  eq(a, b), neq(a, b), lt(a, b), lte(a, b), gt(a, b), gte(a, b)
 
-  // Built-ins (use these instead of native parseInt, Math.abs, etc.)
+  // Built-ins — use these instead of global parseInt, Math.abs, etc.
   parseInt(s), parseFloat(s)
   isNaN(n), isFinite(n), isInteger(n)
   abs(n), max(a, b), min(a, b), floor(n), ceil(n), sqrt(n), sign(n)
@@ -127,39 +145,141 @@ Use these functions, imported from 'provekit/ir/symbolic':
   // Sorts
   Int, Real, Bool, String as StringSort
 
-== HOW TO WRITE AN INVARIANT ==
+== EXAMPLE 1 — bug fix (off-by-one in leap-year check) ==
 
-import {
-  describe, must, forAll, exists, eq, gt, gte, parseInt, num, str, abs, Int,
-  String as StringSort,
-} from 'provekit/ir/symbolic';
+Diff: function isLeapYear(year) corrected to handle year % 100 === 0
+exception for non-400-divisible years.
 
-describe("parseInt", () => {
-  must("zero string parses to zero",
-    eq(parseInt(str("0")), num(0))
-  );
+Tests added:
+  expect(isLeapYear(2024)).toBe(true);
+  expect(isLeapYear(2100)).toBe(false);
+  expect(isLeapYear(2000)).toBe(true);
 
-  must("preserves non-negative integers",
-    forAll(Int, (n) =>
-      gte(n, num(0))   // for all n where n >= 0
-        ? eq(parseInt(/* toString(n) */), n)
-        : forAll(Int, (k) => gt(num(1), num(0)))  // (placeholder, no toString primitive yet)
+Your invariants:
+
+  import {
+    describe, must, forAll, eq, num, isLeapYear, Int,
+  } from 'provekit/ir/symbolic';
+
+  describe("isLeapYear", () => {
+    must("Gregorian rule",
+      forAll(Int, (year) =>
+        eq(
+          isLeapYear(year),
+          // year is a leap year iff (divisible by 400) or (divisible by 4 and not 100)
+          // (in real code this would be the symbolic equivalent; example shows the shape)
+          eq(year, num(0)) // placeholder — real invariant would express the rule
+        )
+      )
+    );
+
+    must("year 2100 is not a leap year (Gregorian century non-divisible-by-400)",
+      not(isLeapYear(num(2100)))
+    );
+  });
+
+The point-cases (2024, 2100, 2000) are tests. The Gregorian rule
+universal claim is the invariant — it holds for the test cases AND for
+all other years.
+
+== EXAMPLE 2 — feature add (new helper function) ==
+
+Diff: added function safeDivide(n, d) that throws if d === 0.
+
+Tests added:
+  expect(safeDivide(10, 2)).toBe(5);
+  expect(() => safeDivide(10, 0)).toThrow();
+
+Your invariants:
+
+  import {
+    describe, must, forAll, implies, eq, neq, num, Int, safeDivide,
+  } from 'provekit/ir/symbolic';
+
+  describe("safeDivide", () => {
+    must("returns the quotient for non-zero denominator",
+      forAll(Int, (n) =>
+        forAll(Int, (d) =>
+          implies(neq(d, num(0)), eq(safeDivide(n, d), div(n, d)))
+        )
+      )
+    );
+
+    must("zero denominator is the only error case",
+      forAll(Int, (n) => safeDivide(n, num(0)) /* throws */)
+    );
+  });
+
+== EXAMPLE 3 — refactor (renamed but behavior preserved) ==
+
+Diff: renamed calculateTotal → totalCents (and changed to integer cents).
+
+Tests added (just regression):
+  expect(totalCents(items)).toBe(calculateTotalLegacyResult);
+
+Your invariants:
+
+  import {
+    describe, must, forAll, eq, totalCents, calculateTotal, Int,
+  } from 'provekit/ir/symbolic';
+
+  describe("totalCents (refactored from calculateTotal)", () => {
+    must("preserves the legacy result",
+      forAll(/* LineItem[] */ Int, (items) =>
+        eq(totalCents(items), calculateTotal(items))
+      )
+    );
+
+    must("returns a non-negative integer",
+      forAll(Int, (items) => gte(totalCents(items), num(0)))
+    );
+  });
+
+The refactor's invariant pins the OLD behavior surface as still-required.
+Anyone changing the new function is now constrained by the contract that
+matched the old function.
+
+== COMMON MISTAKES (and how to fix them) ==
+
+  ✗ must("zero", eq(parseInt(str("0")), num(0)))
+    Only checks one point; not a universal claim.
+  ✓ must("preserves zero", eq(parseInt(str("0")), num(0)))
+    AND
+    must("preserves all non-negative integers",
+      forAll(Int, (n) => implies(gte(n, num(0)), eq(parseInt(toString(n)), n)))
     )
-  );
-});
 
-describe("Math.abs", () => {
-  must("never returns negative",
-    forAll(Int, (x) => gte(abs(x), num(0)))
-  );
-});
+  ✗ must("test", parseInt(str("0")) === 0)
+    Native === computes a boolean. The framework can't see what you claimed.
+  ✓ must("test", eq(parseInt(str("0")), num(0)))
+    eq(...) builds the framework's equality predicate.
+
+  ✗ it("zero string parses", ...)
+    The verb is must, not it. Tests use it; invariants use must.
+  ✓ must("zero string parses", ...)
+
+  ✗ const limit = userInput; must("...", lt(x, limit))
+    Closure over reassignable userInput; breaks determinism.
+  ✓ const LIMIT = 100; must("...", lt(x, num(LIMIT)))
+    Const closure with a literal; resolved at lift time.
+
+  ✗ must("works", await someAsyncFn(x))
+    No async, no awaits — invariants are timeless propositions.
+  ✓ must("works", forAll(Int, (x) => predicate))
+
+  ✗ must("works", Math.abs(x) >= 0)
+    Native Math.abs computes; framework can't see the call.
+  ✓ must("works", gte(abs(x), num(0)))
+    Symbolic abs() builds the call.
 
 == RULES ==
 
-- Use \`must\`, not \`it\` (invariants are obligations, not test observations).
-- Use \`eq\`, \`gt\`, \`add\`, etc. — never the native ===, >, +, *, etc.
-- Use \`parseInt\`, \`abs\`, etc. from the import — never \`global.parseInt\` or \`Math.abs\`.
-- No async, no loops, no try/catch, no this/new, no mutations.
+- Use must, not it.
+- Use eq, gt, add, gte etc. — never native ===, >, +, >=.
+- Use parseInt, abs, etc. from the import — never global.parseInt or Math.abs.
+- forAll/exists for universal/existential claims; tests cover specific points.
+- No async, no loops (use forAll/exists), no try/catch, no this/new, no mutations.
+- Const closure only; no let/var closure.
 
 == DIFF ==
 {{diff}}
@@ -173,7 +293,14 @@ describe("Math.abs", () => {
 == TARGET FILE ==
 {{file_paths_for_invariant_files}}
 
-Output: TypeScript source for a \`.invariant.ts\` file. Nothing else.
+== OUTPUT ==
+
+TypeScript source for a single .invariant.ts file. Nothing else — no
+explanation, no markdown fences, no comments outside the source.
+
+Each describe()/must() group should anchor on a function or symbol from
+the diff. The invariants should be true for the listed test cases AND
+true for all other inputs in the function's domain.
 `;
 
 function renderTests(tests: { source: string; testNames: string[] }[] | undefined): string {
