@@ -1,0 +1,45 @@
+# Hook workflow — install, remove, or report on the pre-commit gate.
+#
+# Lifts the imperative `runHook` from src/cli.ts into a Stage + Action
+# pair. The Stage (plan-hook-operation) records the developer's intent
+# as a content-addressable claim; the Action (manage-git-hook) performs
+# the filesystem mutation via HookInstaller.
+#
+# Why split: the plan is the durable claim ("hook should be installed
+# at /Users/me/repo"); the filesystem touch is a side effect that may
+# be re-applied or rolled back without changing the claim.
+
+name: hook
+cid: bafy-hook-v1
+description: >-
+  Install, remove, or report on the provekit pre-commit hook.
+  Terminal artifact: a hook-operation plan; the manage-git-hook Action
+  applies it to the filesystem.
+
+cli:
+  description: Install / remove / status the provekit pre-commit hook
+  args:
+    - name: project
+      positional: true
+      type: path
+      default: "."
+    - name: uninstall
+      flag: true
+    - name: status
+      flag: true
+
+nodes:
+  - id: plan
+    capability: plan-hook-operation
+    input:
+      operation: $input.operation
+      projectRoot: $input.projectRoot
+
+actions:
+  - id: apply
+    action: manage-git-hook
+    input:
+      operation: $node.plan.output.operation
+      projectRoot: $node.plan.output.projectRoot
+
+output: $node.plan.output
