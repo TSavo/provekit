@@ -722,6 +722,97 @@ The cola wars don't end because someone wins. They end because
 unsubstantiated claims stop being viable. **Companies compete on
 proof depth, not on rhetoric.**
 
+## Unverified is first class
+
+The propertyHash exists the moment the lifter computes it from the IR
+formula. That computation is deterministic and cheap — canonicalization
+plus a hash. Essentially free.
+
+The VERDICT is what's expensive. The verdict is what happens when a
+producer attests "this property holds for this binding" — by running an
+SMT solver, by running a test suite, by signing on the kit author's
+domain knowledge, by cross-referencing a spec leaf.
+
+**The propertyHash exists; the verdict is optional.**
+
+The framework treats unverified propertyHashes as first-class
+citizens. You can compose against propertyHashes whose verdicts
+haven't been minted yet. The composition produces a new propertyHash.
+Walking the DAG to an unverified node returns "no verdict yet —
+needs verification" rather than "this is unverifiable."
+
+**This is lazy evaluation applied to the proof DAG.** The DAG describes
+what COULD be verified; only the parts actually queried get verified.
+The rest stays potential indefinitely.
+
+**Worked example — parseInt in TS vs atoi in C++:**
+
+The TS-kit's `parseIntCanReturnZero` has propertyHash H_jsZero. A C++
+kit's equivalent has H_cppZero. A cross-equivalence claim "JS parseInt
+and C++ atoi are behaviorally equivalent for the can-return-zero
+property" has its own propertyHash, H_crossEquiv.
+
+H_crossEquiv exists the moment the lifter sees the cross-equivalence
+statement. Verifying it requires real work — a formal cross-language
+prover, or sampled behavioral comparison. **That work does not have to
+happen until someone composes a multi-language claim that depends on
+it.**
+
+Until then, H_crossEquiv is a propertyHash with no signed memento. A
+"promise" in the DAG. Anyone composing against it sees "depends on
+cross-equivalence; no verdict yet — produce one if you need it."
+
+**Compute-on-demand semantics:**
+
+When a consumer's proofkit verifies their codebase's root:
+
+1. Walk the DAG from the root toward leaves
+2. For each propertyHash visited, check: "do I have a signed memento
+   with a verdict I trust?"
+3. If yes: use it
+4. If no: invoke a producer to mint one, OR mark the verification
+   incomplete and report
+5. The consumer's policy determines which producers are acceptable,
+   which propertyHashes can stay unverified, which require verdicts
+   before commit/deploy/audit
+
+Different consumers, different policies. Same framework.
+
+| Consumer | Policy | Cost profile |
+|---|---|---|
+| Bank compliance audit | Every propertyHash on the verify-before-prod path requires a verdict from a 3-of-5 producer quorum | Expensive, thorough |
+| Hobbyist commit gate | Trust the kit author's signature; don't run SMT | Cheap |
+| AI agent self-check | Run cheap producers; mark expensive paths "deferred" | Bounded |
+| Open-source release | Run all producers in CI; cache verdicts globally | One-time cost, public good |
+
+**The deeper structural property:**
+
+The global DAG is mostly UNVERIFIED at any given moment. The exabyte
+substrate isn't "exabytes of computed verifications" — it's "exabytes
+of POTENTIAL verifications." Each propertyHash exists structurally;
+each verdict is minted only when forced.
+
+This is how the substrate scales economically. If every propertyHash
+had to be eagerly verified, the cost would be unbounded. With lazy
+verification, only the propertyHashes someone actually queries get
+verdicts. **The cost is bounded by demand, not by the size of the
+global graph.**
+
+It also matches how mathematical proofs work in practice.
+Mathematicians don't verify every theorem in the world. They verify
+the ones relevant to their work. Other theorems exist as propositions
+in the literature; they're verified only when someone needs them.
+The substrate inherits the same pattern.
+
+**The implication for cross-language and cross-domain composition:**
+
+Bridges between kits (cross-equivalence), bridges between domains
+(software → physical → legal → financial), bridges between time
+periods (2026 mementos referenced in 2050 proofs) — all exist as
+unverified propertyHashes the moment they're claimed. They become
+verified only when a downstream consumer pulls them. The substrate's
+coverage grows by accretion of demand, not by speculative computation.
+
 ## Change the invariant, the hash changes
 
 This is the litmus test for the entire system.

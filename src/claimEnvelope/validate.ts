@@ -250,7 +250,7 @@ export function validateEnvelope(
       errors.push("evidence.schema must be a 32-char hex string");
     }
     if (ev.kind && !errors.some((e) => e.startsWith("evidence"))) {
-      validateVariantBody(env.evidence as EvidenceVariant, errors);
+      validateVariantBody(env.evidence as unknown as EvidenceVariant, errors);
     }
   }
 

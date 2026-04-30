@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "fe22db762c9d8462",
+  "propertyHash": "095c40dc514291c8",
+  "verdict": "holds",
+  "producedBy": "ts-kit-demo@0.0.1",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [],
+  "evidence": {
+    "kind": "legacy-witness",
+    "schema": "0000000000000000b0000000000000b0",
+    "body": {
+      "rawWitness": "{\"kind\":\"exists\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"s\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"},\"body\":{\"kind\":\"atomic\",\"predicate\":\">\",\"args\":[{\"kind\":\"ctor\",\"name\":\"parseInt\",\"args\":[{\"kind\":\"var\",\"name\":\"s\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}",
+      "legacyProducerId": "ts-kit-demo@0.0.1"
+    }
+  },
+  "producerSignature": "ww67RlQUAAZeQR5sDe4idkB7puR3poFNABwukKAtlDybrOKayizh08+pg5fzsPdqEnbRtKyVeVbM7LNUapSDDQ==",
+  "cid": "998ffa8eed226a13988dd1b9da4ee208"
+}
