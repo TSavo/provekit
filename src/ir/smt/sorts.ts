@@ -38,6 +38,8 @@ export function emitSort(sort: Sort): string {
       const mapped = PRIMITIVE_TO_SMT[sort.name];
       return mapped ?? sort.name;
     }
+    case "bitvec":
+      return `(_ BitVec ${sort.width})`;
     case "set":
       return `(Set ${emitSort(sort.element)})`;
     case "tuple":
@@ -61,6 +63,9 @@ export function collectUserSorts(sort: Sort, out: Set<string>): void {
       if (!BUILT_IN_PRIMITIVES.has(sort.name)) {
         out.add(sort.name);
       }
+      return;
+    case "bitvec":
+      // (_ BitVec N) is an SMT-LIB built-in; no declaration needed.
       return;
     case "set":
       collectUserSorts(sort.element, out);

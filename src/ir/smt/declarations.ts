@@ -35,6 +35,40 @@ const BUILT_IN_PREDICATES = new Set([
   "≥",
   "true",
   "false",
+  // SMT-LIB BV theory comparison predicates — declared by the theory, not
+  // by us. Treat them as built-ins so collectDeclarations skips emitting
+  // a (declare-fun ...) for them.
+  "bvult",
+  "bvule",
+  "bvugt",
+  "bvuge",
+  "bvslt",
+  "bvsle",
+  "bvsgt",
+  "bvsge",
+]);
+
+/**
+ * SMT-LIB BV theory term operators (`bvadd`, `bvxor`, `concat`, ...) plus
+ * the indexed `extract` operator. These are theory-provided ctors with
+ * no `(declare-fun ...)` requirement.
+ */
+const BUILT_IN_CTORS = new Set([
+  "bvadd",
+  "bvsub",
+  "bvmul",
+  "bvudiv",
+  "bvurem",
+  "bvshl",
+  "bvlshr",
+  "bvashr",
+  "bvor",
+  "bvand",
+  "bvxor",
+  "bvnot",
+  "bvneg",
+  "concat",
+  "extract",
 ]);
 
 interface CtorSig {
@@ -121,6 +155,7 @@ function walkTerm(term: IrTerm, state: CollectorState): void {
   collectUserSorts(term.sort, state.userSorts);
   if (term.kind === "ctor") {
     for (const a of term.args) walkTerm(a, state);
+    if (BUILT_IN_CTORS.has(term.name)) return;
     recordCtor(
       state,
       term.name,
