@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "ee86f897eed7a9e6",
+  "propertyHash": "876bca9ed2627b76",
+  "verdict": "holds",
+  "producedBy": "ieee-standards@2019",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [
+    "ce358633fac81409523d9fce0294d4e4"
+  ],
+  "evidence": {
+    "kind": "bridge",
+    "schema": "0000000000000000c0000000000000c0",
+    "body": {
+      "sourceSymbol": "IEEE 754 integer conversion",
+      "sourceLayer": "IEEE 754:2019 §5.4",
+      "targetContractCid": "ce358633fac81409523d9fce0294d4e4",
+      "targetLayer": "Intel/AMD/Apple FPU verification artifacts",
+      "notes": "Standards body publishes the spec; hardware vendors verify implementations"
+    }
+  },
+  "producerSignature": "4a4SykQnAswUGck3Gv0n2x0wixS/HwsbRa0sT4AnUJp1LWSjP2zFUFosO2Twa8ljS/GXdm88V9NmEn6URAsOCg==",
+  "cid": "1d3ee0889814410d307fc0e683aa3ac8"
+}

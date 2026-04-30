@@ -22,6 +22,7 @@ export type {
   MutationWitnessEvidence,
   WorkflowRunEvidence,
   LegacyWitnessEvidence,
+  BridgeEvidence,
   EvidenceVariant,
 } from "../types.js";
 
@@ -44,6 +45,7 @@ export const VARIANT_SCHEMA_CIDS: Readonly<Record<string, string>> = {
   "mutation-witness": "00000000000000090000000000000009",
   "workflow-run":     "0000000000000000a0000000000000a0",
   "legacy-witness":   "0000000000000000b0000000000000b0",
+  "bridge":           "0000000000000000c0000000000000c0",
 } as const;
 
 export type VariantKind = keyof typeof VARIANT_SCHEMA_CIDS;

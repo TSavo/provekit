@@ -21,6 +21,7 @@ export type {
   MutationWitnessEvidence,
   WorkflowRunEvidence,
   LegacyWitnessEvidence,
+  BridgeEvidence,
   ClaimEnvelope,
 } from "./types.js";
 

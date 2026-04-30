@@ -150,6 +150,37 @@ export interface LegacyWitnessEvidence {
   };
 }
 
+/**
+ * BridgeEvidence — declares that a host-language symbol is the surface
+ * realization of a deeper-layer published contract. The bridge composes
+ * by hash; it does NOT redefine the contract.
+ *
+ * A TS-kit's parseInt.invariant.ts authored as a bridge file says
+ * "global.parseInt is bridged to V8's published parseInt contract,
+ * which bridges to ECMA-262's spec leaf." Each bridge is a small
+ * memento; the deep contracts live at the canonical layer.
+ *
+ * The verifier walks bridge mementos transitively: to verify a TS
+ * callsite of parseInt, walk to the TS-kit bridge memento, walk to
+ * V8's contract memento, walk to ECMA-262's spec leaf, ground.
+ */
+export interface BridgeEvidence {
+  kind: "bridge";
+  schema: string;
+  body: {
+    /** Symbol name in the host language (e.g., "global.parseInt"). */
+    sourceSymbol: string;
+    /** Description of the host-language layer (e.g., "TS-kit@1.0"). */
+    sourceLayer: string;
+    /** The CID of the deeper-layer contract memento this bridges to. */
+    targetContractCid: string;
+    /** Description of the deeper layer (e.g., "V8@12.4 parseInt"). */
+    targetLayer: string;
+    /** Optional notes about the bridge. */
+    notes?: string;
+  };
+}
+
 export type EvidenceVariant =
   | Z3ModelEvidence
   | Z3UnsatEvidence
@@ -161,7 +192,8 @@ export type EvidenceVariant =
   | LlmProposalEvidence
   | MutationWitnessEvidence
   | WorkflowRunEvidence
-  | LegacyWitnessEvidence;
+  | LegacyWitnessEvidence
+  | BridgeEvidence;
 
 // ---------------------------------------------------------------------------
 // ClaimEnvelope

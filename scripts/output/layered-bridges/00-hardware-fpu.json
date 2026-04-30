@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "e5b773d9b9357f24",
+  "propertyHash": "82b0207f04aee449",
+  "verdict": "holds",
+  "producedBy": "intel-formal-verification@2024.1",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [],
+  "evidence": {
+    "kind": "legacy-witness",
+    "schema": "0000000000000000b0000000000000b0",
+    "body": {
+      "rawWitness": "{\"chip\":\"Intel i7-13700K\",\"verifiedSubset\":\"IEEE 754 binary64 add/sub/mul/div\",\"methodology\":\"TCAD simulation + Forte formal verification\"}",
+      "legacyProducerId": "intel-formal-verification@2024.1"
+    }
+  },
+  "producerSignature": "UDVqXCimiFmRyr+vIh00Ggv6zykgoIVs0fvbIhnPws/RW5hx/66eH3LIw9F4b52fvZS1N7QAqptHYPLNN8s9Bw==",
+  "cid": "ce358633fac81409523d9fce0294d4e4"
+}
