@@ -28,34 +28,11 @@ export function openSubstrateDb(projectRoot: string): Db | null {
 }
 
 /**
- * Resolve a (filePath, line) pair to a substrate node id. Returns the
- * smallest node whose span covers the given line — typically a
- * statement, expression, or call site at that line. Used by the path
- * enumerator to translate the invariant store's file+line callsite
- * reference into a node id the data_flow graph can be walked from.
- *
- * Returns null when no node matches (file not in substrate, line out
- * of range, etc.). Caller surfaces that as a substrate-staleness
- * decay signal.
+ * Direct line lookup. Returns the smallest-span node at the given line, or
+ * null. Used by both the canonical resolve path and the recovery path that
+ * recomputes a target line from a function's current startLine + offset.
  */
-export function resolveCallsiteNodeId(
-  db: Db,
-  filePath: string,
-  line: number,
-): string | null {
-  // Translate the file path through the substrate's `files` table to a
-  // file id, then find the node at the given line. Substrate node spans
-  // are recorded by character (sourceStart, sourceEnd) plus the starting
-  // line; we approximate "node covers this line" by selecting nodes
-  // whose recorded sourceLine equals the target. v1 best-effort —
-  // substrate enrichment in step 4 will tighten the geometry.
-  const fileRow = db
-    .select({ id: files.id })
-    .from(files)
-    .where(eq(files.path, filePath))
-    .get();
-  if (!fileRow) return null;
-
+function resolveByLine(db: Db, fileId: number, line: number): string | null {
   const candidates = db
     .select({
       id: nodes.id,
@@ -64,9 +41,8 @@ export function resolveCallsiteNodeId(
       sourceLine: nodes.sourceLine,
     })
     .from(nodes)
-    .where(eq(nodes.fileId, fileRow.id))
+    .where(eq(nodes.fileId, fileId))
     .all();
-
   let best: { id: string; span: number } | null = null;
   for (const c of candidates) {
     if (c.sourceLine !== line) continue;
@@ -76,4 +52,83 @@ export function resolveCallsiteNodeId(
     }
   }
   return best?.id ?? null;
+}
+
+/**
+ * Find the function-shaped node in `filePath` whose `subtreeHash` matches
+ * `functionHash`. Returns its current sourceLine (or null if no such
+ * function exists in the substrate). Used by the resolver's recovery path
+ * when the recorded line no longer hits a node directly.
+ */
+export function findFunctionLineByHash(
+  db: Db,
+  filePath: string,
+  functionHash: string,
+): number | null {
+  const fileRow = db
+    .select({ id: files.id })
+    .from(files)
+    .where(eq(files.path, filePath))
+    .get();
+  if (!fileRow) return null;
+  const candidates = db
+    .select({
+      id: nodes.id,
+      sourceLine: nodes.sourceLine,
+      subtreeHash: nodes.subtreeHash,
+      kind: nodes.kind,
+    })
+    .from(nodes)
+    .where(eq(nodes.fileId, fileRow.id))
+    .all();
+  for (const c of candidates) {
+    if (c.subtreeHash === functionHash) return c.sourceLine;
+  }
+  return null;
+}
+
+/**
+ * Resolve a callsite reference to a substrate node id, with self-healing.
+ *
+ * Four-way state machine:
+ *   1. Line directly resolves → return node id (HOLDS)
+ *   2. Line missed; functionHash + functionOffset recover the new line →
+ *      return node id at the recovered line (HOLDS, self-heal)
+ *   3. functionHash present but no node has that hash anymore → null
+ *      (DECAYED — content changed; semantic decay)
+ *   4. functionHash absent and direct line missed → null (GONE under the
+ *      legacy line-only contract; caller can decide retire vs reauthor)
+ *
+ * `recoveryHints` is optional; when omitted the resolver falls back to
+ * line-only behavior (case 1 only; misses report null = decay). New
+ * writers should pass functionHash + functionOffset so cases 2-4 become
+ * distinguishable upstream.
+ */
+export function resolveCallsiteNodeId(
+  db: Db,
+  filePath: string,
+  line: number,
+  recoveryHints?: { functionHash?: string | null; functionOffset?: number | null },
+): string | null {
+  const fileRow = db
+    .select({ id: files.id })
+    .from(files)
+    .where(eq(files.path, filePath))
+    .get();
+  if (!fileRow) return null;
+
+  const direct = resolveByLine(db, fileRow.id, line);
+  if (direct) return direct;
+
+  const fh = recoveryHints?.functionHash;
+  const fo = recoveryHints?.functionOffset;
+  if (fh != null && fo != null) {
+    const fnLine = findFunctionLineByHash(db, filePath, fh);
+    if (fnLine !== null) {
+      const recoveredLine = fnLine + fo;
+      const recovered = resolveByLine(db, fileRow.id, recoveredLine);
+      if (recovered) return recovered;
+    }
+  }
+  return null;
 }

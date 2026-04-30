@@ -97,6 +97,11 @@ export class ClaudeAgentProvider implements LLMProvider {
 
     let toolUseCounter = 0;
 
+    // PROVEKIT_LLM_VERBOSE=1 dumps every SDK message as it arrives. Use to
+    // diagnose hangs (e.g. agent is generating text/thinking with no tool
+    // calls vs. genuinely stuck waiting on the API).
+    const verbose = process.env.PROVEKIT_LLM_VERBOSE === "1";
+
     for await (const message of query({
       prompt,
       options: {
@@ -105,6 +110,7 @@ export class ClaudeAgentProvider implements LLMProvider {
         allowedTools,
         maxTurns,
         systemPrompt: options.systemPrompt,
+        includePartialMessages: verbose,
         // bypassPermissions accepts every tool action without prompting.
         // acceptEdits rejected Write to scratch /var/folders paths even
         // with allowedTools=[".*"] — observed across C1 + Investigate
@@ -122,6 +128,17 @@ export class ClaudeAgentProvider implements LLMProvider {
         thinking: { type: "enabled", budgetTokens: 4096 },
       },
     })) {
+      if (verbose) {
+        const mtype = message.type;
+        const mstub = mtype === "assistant" || mtype === "user"
+          ? `${mtype} content_blocks=${(message as any).message?.content?.length ?? 0}`
+          : mtype === "stream_event"
+            ? `stream_event ${(message as any).event?.type ?? "?"}`
+            : mtype === "result"
+              ? `result subtype=${(message as any).subtype}`
+              : mtype;
+        console.log(`[llm:${this.name}:event] ${mstub}`);
+      }
       if (message.type === "assistant") {
         turnsUsed++;
         const content = (message as any).message?.content;

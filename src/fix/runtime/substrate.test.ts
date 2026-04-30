@@ -18,7 +18,7 @@ import { fileURLToPath } from "url";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { openDb } from "../../db/index.js";
 import { files, nodes } from "../../sast/schema/nodes.js";
-import { openSubstrateDb, resolveCallsiteNodeId } from "./substrate.js";
+import { openSubstrateDb, resolveCallsiteNodeId, findFunctionLineByHash } from "./substrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -190,5 +190,96 @@ describe("resolveCallsiteNodeId", () => {
     expect(resolveCallsiteNodeId(db, "src/bar.ts", 7)).toBe("line-7-node");
     expect(resolveCallsiteNodeId(db, "src/bar.ts", 3)).toBe("line-3-node");
     expect(resolveCallsiteNodeId(db, "src/bar.ts", 5)).toBeNull();
+  });
+});
+
+describe("self-healing binding (functionHash + functionOffset recovery)", () => {
+  function setupFnSubstrate(): { db: ReturnType<typeof openDb>; fnLine: number; offset: number } {
+    const root = makeProjectRoot();
+    const db = setUpSubstrate(root);
+    db.insert(files).values({ path: "src/x.ts", contentHash: "h", parsedAt: 0, rootNodeId: "r" }).run();
+    const fileRow = db.select().from(files).all()[0];
+    // Function declaration whose body shifted from line 14 (mint time) to line
+    // 17 (current). Both rows live in the substrate; the resolver must use
+    // functionHash to find the function's current line then add the recorded
+    // offset to recompute the callsite's current line.
+    db.insert(nodes)
+      .values([
+        {
+          id: "fn-current",
+          fileId: fileRow.id,
+          sourceStart: 200,
+          sourceEnd: 400,
+          sourceLine: 17,
+          sourceCol: 0,
+          subtreeHash: "fn-content-hash-abc",
+          kind: "FunctionDeclaration",
+        },
+        {
+          id: "stmt-at-19",
+          fileId: fileRow.id,
+          sourceStart: 250,
+          sourceEnd: 270,
+          sourceLine: 19,
+          sourceCol: 2,
+          subtreeHash: "stmt-h",
+          kind: "ExpressionStatement",
+        },
+      ])
+      .run();
+    // mint time: function was at line 14, callsite at line 16 → offset 2.
+    // current: function moved to line 17, so callsite is at 17 + 2 = 19.
+    return { db, fnLine: 14, offset: 2 };
+  }
+
+  it("findFunctionLineByHash returns the function's current line", () => {
+    const { db } = setupFnSubstrate();
+    expect(findFunctionLineByHash(db, "src/x.ts", "fn-content-hash-abc")).toBe(17);
+    expect(findFunctionLineByHash(db, "src/x.ts", "no-such-hash")).toBeNull();
+    expect(findFunctionLineByHash(db, "src/missing.ts", "any")).toBeNull();
+  });
+
+  it("case 1: direct line still resolves; recovery path is not used", () => {
+    const { db } = setupFnSubstrate();
+    // The recorded line 19 still has a node directly. Returns immediately.
+    expect(
+      resolveCallsiteNodeId(db, "src/x.ts", 19, {
+        functionHash: "fn-content-hash-abc",
+        functionOffset: 2,
+      }),
+    ).toBe("stmt-at-19");
+  });
+
+  it("case 2: recorded line missed; functionHash + offset recover the new line", () => {
+    const { db } = setupFnSubstrate();
+    // Recorded line 16 (mint time) doesn't hit anything any more, but the
+    // function moved to line 17 and the recorded offset 2 places the callsite
+    // at line 19, which DOES exist.
+    expect(
+      resolveCallsiteNodeId(db, "src/x.ts", 16, {
+        functionHash: "fn-content-hash-abc",
+        functionOffset: 2,
+      }),
+    ).toBe("stmt-at-19");
+  });
+
+  it("case 3: functionHash present but no node has that hash → null (semantic decay)", () => {
+    const { db } = setupFnSubstrate();
+    // Recorded line missed AND function hash isn't in the substrate any more.
+    // The function got edited; semantic decay. Resolver returns null; the
+    // caller routes this to the LLM-driven re-evaluation workflow.
+    expect(
+      resolveCallsiteNodeId(db, "src/x.ts", 16, {
+        functionHash: "fn-content-hash-was-edited",
+        functionOffset: 2,
+      }),
+    ).toBeNull();
+  });
+
+  it("case 4: legacy invariant with no recovery hints, line missed → null (decayed)", () => {
+    const { db } = setupFnSubstrate();
+    // No recovery hints. Pure line lookup. Misses report null exactly as
+    // they did before this feature landed.
+    expect(resolveCallsiteNodeId(db, "src/x.ts", 16)).toBeNull();
   });
 });

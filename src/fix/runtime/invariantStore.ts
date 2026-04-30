@@ -147,10 +147,28 @@ export interface StoredInvariant {
    * discriminant.
    */
   bindings: Array<Binding>;
-  /** Where the patch landed. Path enumeration runs from this site by default. */
+  /**
+   * Where the patch landed. Path enumeration runs from this site by default.
+   *
+   * Self-healing binding: `startLine` is the canonical pointer; `functionHash`
+   * + `functionOffset` carry recovery information when the file shifts. The
+   * resolver's four-way state machine:
+   *
+   *   1. Line resolves      → holds (direct hit)
+   *   2. Line missed but functionHash + offset recover → holds, line self-heals
+   *   3. functionHash present but no longer in substrate (content changed) → decayed
+   *   4. functionHash present but the function's gone entirely → gone (retire candidate)
+   *
+   * `function` (name) and the hash/offset pair are optional for backward
+   * compatibility with invariants minted before the recovery shape landed.
+   */
   callsite: {
     filePath: string;
     function: string | null;
+    /** Substrate `subtreeHash` of the containing function at write time. */
+    functionHash?: string | null;
+    /** `startLine - containingFunction.startLine` at write time. */
+    functionOffset?: number | null;
     startLine: number;
     endLine: number;
   };
@@ -267,6 +285,19 @@ export function buildStoredInvariant(args: {
     endLine: number;
   };
   /**
+   * Containing function snapshot at write time, for self-healing binding.
+   * The caller looks up the function-shaped substrate node that contains
+   * the callsite line and passes its `subtreeHash` plus its `startLine`.
+   * The mint computes `functionOffset = callsite.startLine - fn.startLine`,
+   * which the resolver later uses to recompute the line when the file
+   * shifts. Optional for backward compatibility; absent values mean the
+   * binding is line-only and cannot self-heal.
+   */
+  containingFunction?: {
+    hash: string;
+    startLine: number;
+  } | null;
+  /**
    * Per-binding location override. Keyed by smt_constant. When a key is
    * present, the binding's `node.filePath` and `node.startLine` /
    * `node.endLine` come from this map instead of `locus.file` and
@@ -292,6 +323,7 @@ export function buildStoredInvariant(args: {
     bindingNodeHashes,
     callsiteOverride,
     bindingLocations,
+    containingFunction,
   } = args;
 
   const bindings: StoredInvariant["bindings"] = claim.bindings.map((b) => {
@@ -319,16 +351,25 @@ export function buildStoredInvariant(args: {
 
   const id = hashInvariant({ smt, bindings });
 
+  const baseLine = callsiteOverride ? callsiteOverride.startLine : locus.line;
+  const fnHash = containingFunction?.hash ?? null;
+  const fnOffset =
+    containingFunction != null ? baseLine - containingFunction.startLine : null;
+
   const callsite: StoredInvariant["callsite"] = callsiteOverride
     ? {
         filePath: callsiteOverride.filePath,
         function: locus.function ?? null,
+        functionHash: fnHash,
+        functionOffset: fnOffset,
         startLine: callsiteOverride.startLine,
         endLine: callsiteOverride.endLine,
       }
     : {
         filePath: locus.file,
         function: locus.function ?? null,
+        functionHash: fnHash,
+        functionOffset: fnOffset,
         startLine: locus.line,
         endLine: locus.line,
       };
