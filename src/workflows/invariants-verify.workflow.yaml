@@ -1,0 +1,56 @@
+# Invariants-verify workflow — Z3-driven verification of every standing
+# invariant.
+#
+# Replaces `provekit invariants verify`. Mode 5 (Z3, no LLM) — the
+# standing-invariant gate. Wraps the verifyAllCached / verifyAll
+# entrypoints so the gate becomes auditable as a memento DAG instead of
+# an imperative call.
+
+name: invariants-verify
+cid: bafy-invariants-verify-v1
+description: >-
+  Run the standing-invariant gate. Z3-driven verification of every
+  invariant in `.provekit/invariants/`. Produces a per-invariant verdict
+  set and an exit code suitable for CI gating.
+
+cli:
+  description: Run the standing-invariant gate (Z3, no LLM). Use --ci to fail on violations.
+  args:
+    - name: projectRoot
+      positional: true
+      required: false
+      type: path
+      default: "."
+    - name: timeout
+      flag: true
+      type: int
+    - name: maxPaths
+      flag: true
+      type: int
+    - name: adversarial
+      flag: true
+      type: bool
+      default: false
+    - name: ci
+      flag: true
+      type: bool
+      default: false
+    - name: json
+      flag: true
+      type: bool
+      default: false
+    - name: verbose
+      flag: true
+      type: bool
+      default: false
+
+nodes:
+  - id: verify
+    capability: verify-invariants
+    input:
+      projectRoot: $input.projectRoot
+      timeoutMs: $input.timeoutMs
+      maxPaths: $input.maxPaths
+      adversarial: $input.adversarial
+
+output: $node.verify.output
