@@ -1,0 +1,105 @@
+# prove-with-lean workflow — propertyHash + Lean proof -> verdict memento.
+#
+# The cross-paradigm composition test. Z3 is one verdict source; Lean is
+# another. Both attach as leaves to the same IR CID. This workflow is the
+# Lean leg.
+#
+# Pipeline:
+#   1. locate-memento  : recover the IrFormula by propertyHash.
+#   2. emit-lean       : translate IrFormula -> Lean 4 theorem statement
+#                        with `sorry` proof placeholder. Pure Stage.
+#   3. provideLeanProof: Action — splice the user-supplied proof into
+#                        the source, run `lean --json`, parse verdict.
+#   4. mint-lean-verdict-memento : Action — write a verdict memento at
+#                        the original (bindingHash, propertyHash) the
+#                        locate-memento Stage recovered.
+#
+# Workflow input (ProveWithLeanWorkflowInput):
+#   propertyHash: string         — the property to prove
+#   proofText:    string         — Lean tactic block / term replacing `sorry`
+#   axioms?:      IrFormula[]    — kit-supplied axioms
+#   timeoutMs?:   number         — lean timeout (default 60_000)
+#   producedBy?:  string         — verdict producer identity
+#
+# Terminal output: provideLeanProof's resource is not a Stage output (it
+# is a side-effect resource, can't be terminal). The terminal Stage is
+# emit-lean's output (the source bytes), surfaced for callers that want
+# to inspect the rendered Lean.
+
+name: prove-with-lean
+cid: bafy-prove-with-lean-v1
+description: >-
+  Recover an IrFormula by propertyHash, translate to a Lean 4 theorem
+  statement, splice an externally-supplied proof, run `lean --json`, and
+  mint a verdict memento for the original (bindingHash, propertyHash).
+
+cli:
+  description: Prove a propertyHash via a user-supplied Lean 4 proof
+  args:
+    - name: propertyHash
+      positional: true
+      required: true
+      type: string
+    - name: proofText
+      type: string
+      required: true
+    - name: timeoutMs
+      type: int
+      default: 60000
+    - name: producedBy
+      type: string
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # locate-memento — recover the IrFormula from the memento store.
+  # ---------------------------------------------------------------------------
+  - id: locate-memento
+    capability: locate-memento
+    input:
+      propertyHash: $input.propertyHash
+
+  # ---------------------------------------------------------------------------
+  # emit-lean — translate the recovered IrFormula to Lean 4 source for a
+  # theorem statement. Pure Stage. The proof body is `sorry`; the Action
+  # below splices in the user's proof.
+  # ---------------------------------------------------------------------------
+  - id: emit-lean
+    capability: emit-lean
+    input:
+      formula: $node.locate-memento.output.formula
+      axioms: $input.axioms
+
+actions:
+  # ---------------------------------------------------------------------------
+  # provideLeanProof — Action. Splices the user-supplied proof into the
+  # theorem source, writes a tmp .lean file, spawns `lean --json`, parses
+  # the verdict.
+  # ---------------------------------------------------------------------------
+  - id: provideLeanProof
+    action: provide-lean-proof
+    input:
+      theoremSource: $node.emit-lean.output.source
+      theoremName: $node.emit-lean.output.theoremName
+      proofText: $input.proofText
+      timeoutMs: $input.timeoutMs
+    runAfter: $node.emit-lean
+
+  # ---------------------------------------------------------------------------
+  # mint-lean-verdict-memento — Action. Writes the verdict memento at the
+  # original (bindingHash, propertyHash) recovered by locate-memento.
+  # ---------------------------------------------------------------------------
+  - id: mint-lean-verdict-memento
+    action: mint-lean-verdict-memento
+    input:
+      bindingHash: $node.locate-memento.output.bindingHash
+      propertyHash: $node.locate-memento.output.propertyHash
+      leanVerdict: $action.provideLeanProof.resource.verdict
+      leanSource: $action.provideLeanProof.resource.combinedSource
+      leanRunMs: $action.provideLeanProof.resource.leanRunMs
+      leanVersion: $action.provideLeanProof.resource.leanVersion
+      producedBy: $input.producedBy
+      inputCids:
+        - $node.locate-memento.output.sourceCid
+    runAfter: $action.provideLeanProof
+
+output: $node.emit-lean.output
