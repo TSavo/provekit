@@ -1,0 +1,17 @@
+{
+  "name": "lsp-from-spec",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Prototype LSP server built from the ProvekIt protocol spec alone (no provekit framework dependency). Companion to docs/specs/2026-04-30-lsp-from-protocol.md.",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "demo": "node demo.mjs",
+    "server": "node server.mjs --stdio"
+  },
+  "dependencies": {
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11"
+  },
+  "comment_no_provekit_dep": "Intentionally no dependency on the provekit package, no relative imports from ../../src, no kits/* imports. The whole point of this prototype is to demonstrate that the protocol spec is sufficient on its own."
+}
