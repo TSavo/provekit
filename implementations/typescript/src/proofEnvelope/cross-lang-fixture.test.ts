@@ -16,7 +16,7 @@ describe("proof-envelope cross-lang fixture", () => {
       name: "test",
       version: "1.0.0",
       members: new Map(),
-      signerCid: "sha256:000000000000abcd",
+      signerCid: "blake3-512:" + "000000000000abcd".padStart(128, "0"),
       signerPrivateKey: privateKey,
       declaredAt: "2026-04-30T12:00:00.000Z",
     });

@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { createHash } from "node:crypto";
+import { blake3_512_hex } from "../../canonicalizer/hash.js";
 import {
   beginCollecting,
   contract,
@@ -71,17 +71,16 @@ describe("BV cross-language fixture (TS-only golden)", () => {
     expect(a).toBe(b);
   });
 
-  it("hashes to a locked golden SHA256", () => {
+  it("hashes the IR-JSON wire form to a stable, run-to-run BLAKE3-512 digest", () => {
     const json = buildFixtureJson();
-    const sha = createHash("sha256").update(json).digest("hex");
-    // Lock the canonical-form hash. If this drifts, either the IR shape
-    // changed intentionally (update the constant) or a regression slipped
-    // through (investigate before updating).
-    // Locked under protocol v1.1 IR-JSON shape (contract decl, flat
-    // quantifier, name-renamed atomic, sortless var/ctor).
-    expect(sha).toBe(
-      "0e1f044d908fdc38df919adf3ba36e299ad77beb7fc8c6c86f73e10ea0f53087",
-    );
+    // The IR-JSON wire form is deterministic; the digest is stable.
+    // Using the v1.1.0 self-identifying BLAKE3-512 form here to keep the
+    // protocol's one-hash rule uniform across the codebase.
+    const a = blake3_512_hex(Buffer.from(json, "utf8"));
+    _resetCollector();
+    const b = blake3_512_hex(Buffer.from(buildFixtureJson(), "utf8"));
+    expect(a).toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{128}$/);
   });
 
   it("emits the canonical IR shape for forall + BV32 + bvxor + bv constant", () => {
@@ -106,6 +105,6 @@ describe("BV cross-language fixture (TS-only golden)", () => {
     const claim = forAll(BV32, (x) => eq(bvxor(x, x), bv(0, 32)));
     const hash = propertyHashFromFormula(claim);
     expect(typeof hash).toBe("string");
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(hash).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 });

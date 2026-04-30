@@ -6,6 +6,7 @@ members = [
     "provekit-claim-envelope",
     "provekit-ir-symbolic",
     "provekit-verifier",
+    "provekit-self-contracts",
 ]
 
 [workspace.package]

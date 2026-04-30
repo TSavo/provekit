@@ -44,11 +44,7 @@ import {
 } from "./claimEnvelope/index.js";
 import { buildProofEnvelope } from "./proofEnvelope/index.js";
 import type { ClaimEnvelope, EvidenceVariant } from "./claimEnvelope/types.js";
-import { createHash } from "node:crypto";
-
-function hash16(s: string): string {
-  return createHash("sha256").update(s).digest("hex").slice(0, 16);
-}
+import { computeCid } from "./canonicalizer/hash.js";
 
 function readStdin(): string {
   // Synchronous stdin read for CLI use.
@@ -235,8 +231,11 @@ function mintCatalogCmd(args: {
   // Signer CID: deterministic identifier derived from the public key bytes.
   // (A future revision will replace this with a real public-key memento
   // embedded in members; today the signer field is a synthetic CID.)
+  // Signer CID is the BLAKE3-512 self-identifying hash of the SPKI-DER
+  // bytes of the producer's public key. The "blake3-512:" prefix makes
+  // it dispatch-discriminable from any future algorithm.
   const pubDer = publicKey.export({ type: "spki", format: "der" });
-  const signerCid = "sha256:" + createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+  const signerCid = computeCid(pubDer);
 
   const built = buildProofEnvelope({
     name: catalogName,

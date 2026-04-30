@@ -14,7 +14,7 @@ import type { KeyObject } from "node:crypto";
 import { signEnvelope, verifyEnvelopeSignature } from "./sign.js";
 import { computeEnvelopeCid } from "./cid.js";
 import { canonicalEncode } from "./canonicalize.js";
-import { sha256Prefix16 } from "../canonicalizer/hash.js";
+import { computeCid } from "../canonicalizer/hash.js";
 import type {
   ClaimEnvelope,
   Verdict,
@@ -90,8 +90,8 @@ export interface MintBridgeArgs {
  * host-language symbol bridges to a deeper-layer published contract.
  *
  * Wrapper hashes are DERIVED per the bridge role's spec:
- *   bindingHash  = hash16(canonical({sourceLayer, sourceSymbol}))
- *   propertyHash = hash16(canonical("bridge:" + sourceSymbol))
+ *   bindingHash  = computeCid(canonical({sourceLayer, sourceSymbol}))
+ *   propertyHash = computeCid(canonical("bridge:" + sourceSymbol))
  */
 export function mintBridge(args: MintBridgeArgs): ClaimEnvelope {
   const evidence: BridgeEvidence = {
@@ -107,10 +107,10 @@ export function mintBridge(args: MintBridgeArgs): ClaimEnvelope {
       ...(args.notes !== undefined ? { notes: args.notes } : {}),
     },
   };
-  const bindingHash = sha256Prefix16(
+  const bindingHash = computeCid(
     canonicalEncode({ sourceLayer: args.sourceLayer, sourceSymbol: args.sourceSymbol }),
   );
-  const propertyHash = sha256Prefix16(
+  const propertyHash = computeCid(
     canonicalEncode("bridge:" + args.sourceSymbol),
   );
   return mintMemento({
@@ -152,11 +152,11 @@ export interface MintContractArgs {
  * Mint a contract memento per the v1.1 protocol cut.
  *
  * DERIVED fields (caller does NOT supply):
- *   preHash      = hash16(canonical(pre))   when pre present
- *   postHash     = hash16(canonical(post))  when post present
- *   invHash      = hash16(canonical(inv))   when inv present
- *   propertyHash = hash16(canonical({pre?, post?, inv?, outBinding}))
- *   bindingHash  = hash16(canonical({producerId, contractName, propertyHash}))
+ *   preHash      = computeCid(canonical(pre))   when pre present
+ *   postHash     = computeCid(canonical(post))  when post present
+ *   invHash      = computeCid(canonical(inv))   when inv present
+ *   propertyHash = computeCid(canonical({pre?, post?, inv?, outBinding}))
+ *   bindingHash  = computeCid(canonical({producerId, contractName, propertyHash}))
  *
  * `pre`, `post`, `inv` are each optional; at least one MUST be present.
  * Empty slots are OMITTED from the body (not encoded as null) so the
@@ -177,15 +177,15 @@ export function mintContract(args: MintContractArgs): ClaimEnvelope {
   };
   if (args.pre !== undefined) {
     body.pre = args.pre;
-    body.preHash = sha256Prefix16(canonicalEncode(args.pre));
+    body.preHash = computeCid(canonicalEncode(args.pre));
   }
   if (args.post !== undefined) {
     body.post = args.post;
-    body.postHash = sha256Prefix16(canonicalEncode(args.post));
+    body.postHash = computeCid(canonicalEncode(args.post));
   }
   if (args.inv !== undefined) {
     body.inv = args.inv;
-    body.invHash = sha256Prefix16(canonicalEncode(args.inv));
+    body.invHash = computeCid(canonicalEncode(args.inv));
   }
 
   // propertyHash hashes the semantic identity: {pre?, post?, inv?, outBinding}.
@@ -193,9 +193,9 @@ export function mintContract(args: MintContractArgs): ClaimEnvelope {
   if (args.pre !== undefined) propertyIdentity.pre = args.pre;
   if (args.post !== undefined) propertyIdentity.post = args.post;
   if (args.inv !== undefined) propertyIdentity.inv = args.inv;
-  const propertyHash = sha256Prefix16(canonicalEncode(propertyIdentity));
+  const propertyHash = computeCid(canonicalEncode(propertyIdentity));
 
-  const bindingHash = sha256Prefix16(
+  const bindingHash = computeCid(
     canonicalEncode({
       producerId: args.producedBy,
       contractName: args.contractName,
@@ -244,8 +244,8 @@ export interface MintImplicationArgs {
 /**
  * Mint an implication memento — a signed proof witness that one IR
  * formula universally implies another. DERIVED fields:
- *   bindingHash  = hash16(canonical({antecedentHash, consequentHash}))
- *   propertyHash = hash16(canonical("implication:" + antecedentHash + ":" + consequentHash))
+ *   bindingHash  = computeCid(canonical({antecedentHash, consequentHash}))
+ *   propertyHash = computeCid(canonical("implication:" + antecedentHash + ":" + consequentHash))
  *   inputCids    = [antecedentCid, consequentCid] lex-sorted
  */
 export function mintImplication(args: MintImplicationArgs): ClaimEnvelope {
@@ -262,13 +262,13 @@ export function mintImplication(args: MintImplicationArgs): ClaimEnvelope {
   if (args.smtLibInput !== undefined) body.smtLibInput = args.smtLibInput;
   if (args.proofWitness !== undefined) body.proofWitness = args.proofWitness;
 
-  const bindingHash = sha256Prefix16(
+  const bindingHash = computeCid(
     canonicalEncode({
       antecedentHash: args.antecedentHash,
       consequentHash: args.consequentHash,
     }),
   );
-  const propertyHash = sha256Prefix16(
+  const propertyHash = computeCid(
     canonicalEncode(
       "implication:" + args.antecedentHash + ":" + args.consequentHash,
     ),

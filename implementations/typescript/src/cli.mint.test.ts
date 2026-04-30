@@ -76,8 +76,13 @@ function captureExit(): { code: () => number | undefined; restore: () => void } 
   };
 }
 
-const HEX32 = /^[0-9a-f]{32}$/;
-const HEX16 = /^[0-9a-f]{16}$/;
+const SELF_ID_HASH = /^[a-z0-9]+-[0-9]+:[0-9a-f]+$/;
+const BLAKE3_512_CID = /^blake3-512:[0-9a-f]{128}$/;
+
+/** Pad a short suffix into a self-identifying BLAKE3-512 placeholder hash. */
+function fakeCid(suffix: string): string {
+  return `blake3-512:${suffix.padStart(128, "0")}`;
+}
 
 let tmpDir: string;
 let keyPath: string;
@@ -136,8 +141,8 @@ describe("runMint", () => {
 
   it("'mint property' with --spec writes a signed memento to stdout", async () => {
     const spec = {
-      bindingHash: "deadbeefdeadbeef",
-      propertyHash: "cafef00dcafef00d",
+      bindingHash: fakeCid("deadbeefdeadbeef"),
+      propertyHash: fakeCid("cafef00dcafef00d"),
       verdict: "holds",
       producedBy: "test-producer@v1",
       inputCids: [],
@@ -156,7 +161,7 @@ describe("runMint", () => {
 
     const out = stdio.stdout.read();
     const memento = JSON.parse(out);
-    expect(memento.cid).toMatch(HEX32);
+    expect(memento.cid).toMatch(BLAKE3_512_CID);
     expect(memento.bindingHash).toBe(spec.bindingHash);
     expect(memento.propertyHash).toBe(spec.propertyHash);
     expect(memento.verdict).toBe("holds");
@@ -167,8 +172,8 @@ describe("runMint", () => {
 
   it("'mint property' with --out writes the memento to disk and not stdout", async () => {
     const spec = {
-      bindingHash: "1234567890abcdef",
-      propertyHash: "fedcba0987654321",
+      bindingHash: fakeCid("1234567890abcdef"),
+      propertyHash: fakeCid("fedcba0987654321"),
       verdict: "holds",
       producedBy: "test-producer@v1",
       evidence: {
@@ -194,7 +199,7 @@ describe("runMint", () => {
     expect(existsSync(outPath)).toBe(true);
     const memento = JSON.parse(readFileSync(outPath, "utf-8"));
     expect(memento.bindingHash).toBe(spec.bindingHash);
-    expect(memento.cid).toMatch(HEX32);
+    expect(memento.cid).toMatch(BLAKE3_512_CID);
 
     // stdout was not used for the memento.
     expect(stdio.stdout.read()).toBe("");
@@ -210,7 +215,7 @@ describe("runMint", () => {
       "--source-layer",
       "ts-lang",
       "--target-cid",
-      "abc123",
+      fakeCid("abc123"),
       "--target-layer",
       "math-kit",
       "--key",
@@ -219,9 +224,9 @@ describe("runMint", () => {
 
     const out = stdio.stdout.read();
     const memento = JSON.parse(out);
-    expect(memento.cid).toMatch(HEX32);
-    expect(memento.bindingHash).toMatch(HEX16);
-    expect(memento.propertyHash).toMatch(HEX16);
+    expect(memento.cid).toMatch(BLAKE3_512_CID);
+    expect(memento.bindingHash).toMatch(SELF_ID_HASH);
+    expect(memento.propertyHash).toMatch(SELF_ID_HASH);
     // Bridge mementos use the bridge evidence variant.
     expect(memento.evidence?.kind).toBe("bridge");
   });
@@ -235,7 +240,7 @@ describe("runMint", () => {
         "calculate",
         // omit --source-layer
         "--target-cid",
-        "abc123",
+        fakeCid("abc123"),
         "--target-layer",
         "math-kit",
       ]);
@@ -257,14 +262,14 @@ describe("runMint", () => {
       body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat", z3RunMs: 1 },
     };
     const member1Spec = {
-      bindingHash: "aaaa1111aaaa1111",
-      propertyHash: "bbbb2222bbbb2222",
+      bindingHash: fakeCid("aaaa1111aaaa1111"),
+      propertyHash: fakeCid("bbbb2222bbbb2222"),
       producedBy: "p1@v1",
       evidence: z3UnsatEvidence,
     };
     const member2Spec = {
-      bindingHash: "cccc3333cccc3333",
-      propertyHash: "dddd4444dddd4444",
+      bindingHash: fakeCid("cccc3333cccc3333"),
+      propertyHash: fakeCid("dddd4444dddd4444"),
       producedBy: "p2@v1",
       evidence: z3UnsatEvidence,
     };
@@ -323,9 +328,9 @@ describe("runMint", () => {
     const cidFromFilename = proofFiles[0]!.replace(/\.proof$/, "");
 
     // Verify the file's bytes hash to its filename CID (trust root).
-    const { createHash } = await import("node:crypto");
+    const { computeCid } = await import("./canonicalizer/hash.js");
     const bytes = readFileSync(proofPath);
-    const derivedCid = createHash("sha256").update(bytes).digest("hex").slice(0, 32);
+    const derivedCid = computeCid(bytes);
     expect(derivedCid).toBe(cidFromFilename);
 
     // Decode and verify catalog structure.
@@ -375,8 +380,8 @@ describe("runMint", () => {
 
   it("ephemeral key fallback warns to stderr and emits the public key", async () => {
     const spec = {
-      bindingHash: "ffff0000ffff0000",
-      propertyHash: "0000ffff0000ffff",
+      bindingHash: fakeCid("ffff0000ffff0000"),
+      propertyHash: fakeCid("0000ffff0000ffff"),
       verdict: "holds",
       producedBy: "ephemeral-test@v1",
       evidence: {
@@ -400,26 +405,25 @@ describe("runMint", () => {
 
       const out = stdio.stdout.read();
       const memento = JSON.parse(out);
-      expect(memento.cid).toMatch(HEX32);
+      expect(memento.cid).toMatch(BLAKE3_512_CID);
     } finally {
       if (savedEnv !== undefined) process.env.PROVEKIT_KEY = savedEnv;
     }
   });
 
-  it("'mint generic' with full evidence variant in spec is honored", async () => {
+  it("'mint generic' with a full evidence variant in spec is honored", async () => {
     const spec = {
-      bindingHash: "9999888877776666",
-      propertyHash: "5555444433332222",
+      bindingHash: fakeCid("9999888877776666"),
+      propertyHash: fakeCid("5555444433332222"),
       verdict: "holds",
       producedBy: "generic-test@v1",
       inputCids: [],
+      // Protocol v1.1: legacy-witness is removed. Generic mode passes
+      // the full standard variant body straight through.
       evidence: {
-        kind: "legacy-witness",
-        schema: VARIANT_SCHEMA_CIDS["legacy-witness"],
-        body: {
-          rawWitness: '{"explicit":"override"}',
-          legacyProducerId: "generic-test@v1",
-        },
+        kind: "z3-unsat",
+        schema: VARIANT_SCHEMA_CIDS["z3-unsat"],
+        body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat", z3RunMs: 7 },
       },
     };
     const specPath = join(tmpDir, "generic-spec.json");
@@ -428,7 +432,7 @@ describe("runMint", () => {
     await runMint(["generic", "--spec", specPath, "--key", keyPath]);
     const out = stdio.stdout.read();
     const memento = JSON.parse(out);
-    expect(memento.evidence?.kind).toBe("legacy-witness");
-    expect(memento.evidence?.body?.rawWitness).toContain("explicit");
+    expect(memento.evidence?.kind).toBe("z3-unsat");
+    expect(memento.evidence?.body?.z3RunMs).toBe(7);
   });
 });

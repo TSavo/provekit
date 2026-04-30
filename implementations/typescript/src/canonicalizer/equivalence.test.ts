@@ -25,7 +25,7 @@ import {
   propertyHashFromAst,
 } from "./canonicalize.js";
 import { serializeCanonicalAst, SERIALIZATION_FORMAT } from "./serialize.js";
-import { sha256Prefix16 } from "./hash.js";
+import { computeCid, blake3_512_hex } from "./hash.js";
 import type {
   CanonicalFolAst,
   CanonicalSort,
@@ -680,7 +680,7 @@ describe("9. Hash format", () => {
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const h = propertyHashFromFormula(f);
-    expect(h).toMatch(/^[0-9a-f]{16}$/);
+    expect(h).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 
   it("formulaToCanonicalAst returns a CanonicalFolAst with no implies", () => {
@@ -750,10 +750,14 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
     // accepts IrFormula. Alignment is "this line type-checks".
     const hash = propertyHashFromFormula(formula);
 
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
-    // Pinned fixture under protocol v1.1 canonical-AST grammar
-    // (atomic.name + not.operands).
-    expect(hash).toBe("18a6d85dddf094d9");
+    expect(hash).toMatch(/^blake3-512:[0-9a-f]{128}$/);
+    // Pinned fixture under protocol v1.1.0 canonical-AST grammar
+    // (atomic.name + not.operands) plus the BLAKE3-512 self-identifying
+    // hash widening. Update only when the canonical-AST shape or the
+    // hash function changes intentionally.
+    expect(hash).toBe(
+      "blake3-512:3c87a7f850ab31498ead7a5ce1b603d41e470fc6034afd2bef31f393a4b1d7d5e1b3304c784c708cf48a64a5acd3dfa5aa6c1faa458ee646395dfab0ddc1b651",
+    );
   });
 
   it("IR-library forAll matches hand-built equivalent", () => {
@@ -784,7 +788,7 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
       irImplies(irAssert.equal(x, 0), irAssert.notEqual(x, 0)),
     );
     const hash = propertyHashFromFormula(formula);
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(hash).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 
   it("IR-library iff desugar reaches the same canonical hash as explicit and(implies, implies)", () => {
@@ -1491,30 +1495,39 @@ describe("18. serialize.ts", () => {
 });
 
 // -----------------------------------------------------------------------
-// 19. hash.ts — sha256Prefix16
+// 19. hash.ts — BLAKE3-512 self-identifying hash (protocol v1.1.0)
 // -----------------------------------------------------------------------
 
-describe("19. sha256Prefix16", () => {
-  it("returns exactly 16 hex characters", () => {
-    const out = sha256Prefix16(Buffer.from("hello", "utf8"));
-    expect(out).toMatch(/^[0-9a-f]{16}$/);
+describe("19. computeCid (BLAKE3-512 self-identifying hash)", () => {
+  // Format: "blake3-512:" prefix + 128 lowercase hex chars (full 64-byte digest).
+  const SELF_ID = /^blake3-512:[0-9a-f]{128}$/;
+
+  it("returns a self-identifying string with the blake3-512 prefix and full digest", () => {
+    const out = computeCid(Buffer.from("hello", "utf8"));
+    expect(out).toMatch(SELF_ID);
   });
 
   it("hashes empty buffer deterministically", () => {
-    const out1 = sha256Prefix16(Buffer.alloc(0));
-    const out2 = sha256Prefix16(Buffer.alloc(0));
+    const out1 = computeCid(Buffer.alloc(0));
+    const out2 = computeCid(Buffer.alloc(0));
     expect(out1).toBe(out2);
-    expect(out1).toMatch(/^[0-9a-f]{16}$/);
+    expect(out1).toMatch(SELF_ID);
   });
 
   it("differs for different bytes", () => {
-    const a = sha256Prefix16(Buffer.from("a", "utf8"));
-    const b = sha256Prefix16(Buffer.from("b", "utf8"));
+    const a = computeCid(Buffer.from("a", "utf8"));
+    const b = computeCid(Buffer.from("b", "utf8"));
     expect(a).not.toBe(b);
   });
 
-  it("matches the expected sha256 prefix for 'hello'", () => {
-    expect(sha256Prefix16(Buffer.from("hello", "utf8"))).toBe("2cf24dba5fb0a30e");
+  it("matches the canonical BLAKE3-512 digest for the empty input", () => {
+    // Reference value from BLAKE3 spec (XOF output of length 64 for ""):
+    expect(blake3_512_hex(Buffer.alloc(0))).toBe(
+      "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262e00f03e7b69af26b7faaf09fcd333050338ddfe085b8cc869ca98b206c08243a",
+    );
+    expect(computeCid(Buffer.alloc(0))).toBe(
+      "blake3-512:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262e00f03e7b69af26b7faaf09fcd333050338ddfe085b8cc869ca98b206c08243a",
+    );
   });
 });
 
@@ -1565,7 +1578,7 @@ describe("21. AstCanonicalizerImpl + canonicalizer default", () => {
     };
     const bindings: Bindings = { b: { kind: "primitive", name: "Int" } };
     const h = impl.bindingHashFromAst({ scope, bindings, hostAst: null });
-    expect(h).toMatch(/^[0-9a-f]{16}$/);
+    expect(h).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 
   it("bindingHashFromAst is deterministic and order-independent in bindings", () => {

@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { generateKeypair } from "../producerKeys/index.js";
 import { mintContract, mintBridge } from "../claimEnvelope/index.js";
 import { buildProofEnvelope } from "../proofEnvelope/index.js";
+import { computeCid } from "../canonicalizer/hash.js";
 import { resolvePropertyFormula } from "./index.js";
 import type { IrFormula } from "../ir/formulas.js";
 import type { ClaimEnvelope } from "../claimEnvelope/types.js";
@@ -33,7 +34,7 @@ function installPackageWithMembers(
     seed: randomBytes(32),
   });
   const pubDer = catalogPub.export({ type: "spki", format: "der" });
-  const signerCid = "sha256:" + createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+  const signerCid = computeCid(pubDer);
 
   const built = buildProofEnvelope({
     name: packageName,
@@ -70,7 +71,10 @@ describe("resolvePropertyFormula", () => {
   it("returns null when no .proof file exists in any package", () => {
     const root = makeFakeProject();
     try {
-      const result = resolvePropertyFormula(root, "deadbeef".repeat(4));
+      const result = resolvePropertyFormula(
+        root,
+        "blake3-512:" + "deadbeef".repeat(16),
+      );
       expect(result).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -115,7 +119,7 @@ describe("resolvePropertyFormula", () => {
         privateKey,
         sourceSymbol: "parseInt",
         sourceLayer: "ts",
-        targetContractCid: "0".repeat(32),
+        targetContractCid: "blake3-512:" + "0".repeat(128),
         targetLayer: "v8",
         irArgSorts: ["String"],
         irReturnSort: "Int",

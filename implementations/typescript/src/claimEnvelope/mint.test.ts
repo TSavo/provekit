@@ -18,6 +18,17 @@ import type { IrFormula } from "../ir/formulas.js";
 
 const SEED = Buffer.from("mint-test-seed-32-bytes-padding!").subarray(0, 32);
 
+const SELF_ID_HASH = /^[a-z0-9]+-[0-9]+:[0-9a-f]+$/;
+const BLAKE3_512_CID = /^blake3-512:[0-9a-f]{128}$/;
+
+/**
+ * Build a placeholder self-identifying hash so test fixtures pass the
+ * v1.1.0 regex without needing a real BLAKE3 computation.
+ */
+function fakeCid(suffix: string): string {
+  return `blake3-512:${suffix.padStart(128, "0")}`;
+}
+
 function makeUnsatEvidence(): Z3UnsatEvidence {
   return {
     kind: "z3-unsat",
@@ -34,8 +45,8 @@ describe("mintMemento", () => {
   it("produces a signed, content-addressed envelope", () => {
     const kp = generateKeypair({ seed: SEED });
     const memento = mintMemento({
-      bindingHash: "0123456789abcdef",
-      propertyHash: "fedcba9876543210",
+      bindingHash: fakeCid("0123456789abcdef"),
+      propertyHash: fakeCid("fedcba9876543210"),
       verdict: "holds",
       producedBy: "test@1",
       producedAt: new Date(0).toISOString(),
@@ -43,43 +54,46 @@ describe("mintMemento", () => {
       evidence: makeUnsatEvidence(),
       privateKey: kp.privateKey,
     });
-    expect(memento.cid).toMatch(/^[0-9a-f]{32}$/);
+    expect(memento.cid).toMatch(BLAKE3_512_CID);
     expect(memento.producerSignature).toBeTruthy();
     expect(verifyEnvelopeSignature(memento, kp.publicKey)).toBe(true);
   });
 
   it("sorts inputCids deterministically", () => {
     const kp = generateKeypair({ seed: SEED });
+    const cidA = fakeCid("a".repeat(64));
+    const cidB = fakeCid("b".repeat(64));
+    const cidC = fakeCid("c".repeat(64));
     const a = mintMemento({
-      bindingHash: "0000000000000001",
-      propertyHash: "0000000000000002",
+      bindingHash: fakeCid("01"),
+      propertyHash: fakeCid("02"),
       verdict: "holds",
       producedBy: "test@1",
       producedAt: new Date(0).toISOString(),
-      inputCids: ["c".repeat(32), "a".repeat(32), "b".repeat(32)],
+      inputCids: [cidC, cidA, cidB],
       evidence: makeUnsatEvidence(),
       privateKey: kp.privateKey,
     });
     const b = mintMemento({
-      bindingHash: "0000000000000001",
-      propertyHash: "0000000000000002",
+      bindingHash: fakeCid("01"),
+      propertyHash: fakeCid("02"),
       verdict: "holds",
       producedBy: "test@1",
       producedAt: new Date(0).toISOString(),
-      inputCids: ["a".repeat(32), "b".repeat(32), "c".repeat(32)],
+      inputCids: [cidA, cidB, cidC],
       evidence: makeUnsatEvidence(),
       privateKey: kp.privateKey,
     });
     expect(a.cid).toBe(b.cid);
-    expect(a.inputCids).toEqual(["a".repeat(32), "b".repeat(32), "c".repeat(32)]);
+    expect(a.inputCids).toEqual([cidA, cidB, cidC]);
   });
 
   it("defaults producedAt to now", () => {
     const kp = generateKeypair({ seed: SEED });
     const before = Date.now();
     const memento = mintMemento({
-      bindingHash: "0000000000000001",
-      propertyHash: "0000000000000002",
+      bindingHash: fakeCid("01"),
+      propertyHash: fakeCid("02"),
       verdict: "holds",
       producedBy: "test@1",
       inputCids: [],
@@ -96,7 +110,7 @@ describe("mintMemento", () => {
 describe("mintBridge", () => {
   it("produces a bridge memento with targetContractCid in inputCids", () => {
     const kp = generateKeypair({ seed: SEED });
-    const targetCid = "abcdef0123456789abcdef0123456789";
+    const targetCid = fakeCid("abcdef0123456789abcdef0123456789");
     const bridge = mintBridge({
       producedBy: "ts-kit@1.0",
       producedAt: new Date(0).toISOString(),
@@ -127,7 +141,7 @@ describe("mintBridge", () => {
       privateKey: kp.privateKey,
       sourceSymbol: "x",
       sourceLayer: "L1",
-      targetContractCid: "deadbeef".repeat(4),
+      targetContractCid: fakeCid("deadbeef".repeat(16)),
       targetLayer: "L2",
       irArgSorts: ["String"],
       irReturnSort: "Int",
@@ -146,7 +160,7 @@ describe("mintBridge", () => {
       privateKey: kp.privateKey,
       sourceSymbol: "x",
       sourceLayer: "L1",
-      targetContractCid: "deadbeef".repeat(4),
+      targetContractCid: fakeCid("deadbeef".repeat(16)),
       targetLayer: "L2",
       irArgSorts: ["String"],
       irReturnSort: "Int",
@@ -183,9 +197,9 @@ describe("mintContract", () => {
     expect(ev.body.contractName).toBe("parseInt");
     expect(ev.body.outBinding).toBe("out");
     expect(ev.body.pre).toEqual(irFormula);
-    expect(ev.body.preHash).toMatch(/^[0-9a-f]{16}$/);
-    expect(memento.bindingHash).toMatch(/^[0-9a-f]{16}$/);
-    expect(memento.propertyHash).toMatch(/^[0-9a-f]{16}$/);
+    expect(ev.body.preHash).toMatch(BLAKE3_512_CID);
+    expect(memento.bindingHash).toMatch(SELF_ID_HASH);
+    expect(memento.propertyHash).toMatch(SELF_ID_HASH);
     expect(verifyEnvelopeSignature(memento, kp.publicKey)).toBe(true);
   });
 
@@ -205,13 +219,15 @@ describe("mintContract", () => {
 describe("mintImplication", () => {
   it("derives bindingHash, propertyHash, and inputCids from antecedent/consequent", () => {
     const kp = generateKeypair({ seed: SEED });
-    const aCid = "1".repeat(32);
-    const cCid = "2".repeat(32);
+    const aCid = fakeCid("1".repeat(64));
+    const cCid = fakeCid("2".repeat(64));
+    const aHash = fakeCid("a".repeat(64));
+    const bHash = fakeCid("b".repeat(64));
     const memento = mintImplication({
       producedBy: "z3@4.13.4",
       privateKey: kp.privateKey,
-      antecedentHash: "aaaaaaaaaaaaaaaa",
-      consequentHash: "bbbbbbbbbbbbbbbb",
+      antecedentHash: aHash,
+      consequentHash: bHash,
       antecedentCid: cCid, // intentionally swapped to verify lex-sort
       consequentCid: aCid,
       antecedentSlot: "post",
@@ -222,7 +238,7 @@ describe("mintImplication", () => {
     expect(memento.evidence.kind).toBe("implication");
     expect(memento.inputCids).toEqual([aCid, cCid]);
     const ev = memento.evidence as ImplicationEvidence;
-    expect(ev.body.antecedentHash).toBe("aaaaaaaaaaaaaaaa");
+    expect(ev.body.antecedentHash).toBe(aHash);
     expect(verifyEnvelopeSignature(memento, kp.publicKey)).toBe(true);
   });
 });
@@ -232,8 +248,8 @@ describe("mintAndVerifyMemento", () => {
     const kp = generateKeypair({ seed: SEED });
     const memento = mintAndVerifyMemento(
       {
-        bindingHash: "5555555555555555",
-        propertyHash: "6666666666666666",
+        bindingHash: fakeCid("55"),
+        propertyHash: fakeCid("66"),
         verdict: "holds",
         producedBy: "test@1",
         producedAt: new Date(0).toISOString(),
@@ -253,8 +269,8 @@ describe("mintAndVerifyMemento", () => {
     expect(() =>
       mintAndVerifyMemento(
         {
-          bindingHash: "5555555555555555",
-          propertyHash: "6666666666666666",
+          bindingHash: fakeCid("55"),
+          propertyHash: fakeCid("66"),
           verdict: "holds",
           producedBy: "test@1",
           producedAt: new Date(0).toISOString(),

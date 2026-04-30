@@ -8,40 +8,59 @@
 // IR formula extraction).
 
 import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync } from "fs";
-import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { decodeProofEnvelope } from "./index.js";
 import { computeEnvelopeCid } from "../claimEnvelope/cid.js";
 import { canonicalEncode } from "../claimEnvelope/canonicalize.js";
-import { sha256Prefix16 } from "../canonicalizer/hash.js";
+import { computeCid } from "../canonicalizer/hash.js";
 import type {
   ClaimEnvelope,
   ContractEvidence,
   BridgeEvidence,
 } from "../claimEnvelope/types.js";
 
-describe("cross-language: TS verifies a C++-produced .proof", () => {
-  const PROOF_FILENAME = "bfe74d1a9d836f926058b331002da2f5";
-  const PROOF_PATH = `/tmp/cpp-kit-out-v11/${PROOF_FILENAME}.proof`;
+/**
+ * Discover a v1.1.0-shaped C++ kit `.proof` file in the agent's drop
+ * directory. v1.1.0 filenames are
+ * `"<algorithm>-<bits>:<hex>.proof"` (e.g.
+ * `"blake3-512:af13...3a.proof"`). The C++ hash-widening agent runs in
+ * parallel with this TS port; if the agent has not yet written a fresh
+ * proof, the test below is skipped at runtime.
+ */
+const CPP_OUT_DIR = "/tmp/cpp-kit-out-v11";
+const PROOF_FILENAME_RE = /^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$/;
 
-  it.runIf(existsSync(PROOF_PATH))(
+function findV11ProofFile(): { path: string; cid: string } | null {
+  if (!existsSync(CPP_OUT_DIR)) return null;
+  for (const entry of readdirSync(CPP_OUT_DIR)) {
+    const m = entry.match(PROOF_FILENAME_RE);
+    if (m) return { path: `${CPP_OUT_DIR}/${entry}`, cid: m[1]! };
+  }
+  return null;
+}
+
+describe("cross-language: TS verifies a C++-produced .proof", () => {
+  const proof = findV11ProofFile();
+
+  it.runIf(proof !== null)(
     "TS decodes + verifies the C++-generated .proof end-to-end",
     () => {
+      const { path: PROOF_PATH, cid: PROOF_FILENAME_CID } = proof!;
       const bytes = readFileSync(PROOF_PATH);
 
       // Rule 1: filename CID = bytes hash (trust root).
-      const derivedCid = createHash("sha256")
-        .update(bytes)
-        .digest("hex")
-        .slice(0, 32);
-      expect(derivedCid).toBe(PROOF_FILENAME);
+      const derivedCid = computeCid(bytes);
+      expect(derivedCid).toBe(PROOF_FILENAME_CID);
 
       // Decode the catalog envelope (deterministic CBOR, RFC 8949 §4.2.1).
       const catalog = decodeProofEnvelope(new Uint8Array(bytes));
       expect(catalog.kind).toBe("catalog");
       expect(catalog.name).toBe("@example/cpp-kit");
       expect(catalog.version).toBe("1.0.0");
-      expect(catalog.signer).toBe("sha256:cpp-kit-signer");
+      // Signer CID is now self-identifying ("ed25519:..." or
+      // "blake3-512:..."); the C++ kit writes a synthetic CID over the
+      // public-key DER bytes.
+      expect(catalog.signer).toMatch(/^[a-z0-9]+(?:-[0-9]+)?:.+$/);
       expect(catalog.declaredAt).toBe("2026-04-30T12:00:00.000Z");
       expect(catalog.signature.length).toBe(64); // ed25519 sig
 
@@ -74,11 +93,11 @@ describe("cross-language: TS verifies a C++-produced .proof", () => {
       expect(pre.kind).toBe("forall");
       expect(pre.body.kind).toBe("atomic");
       expect(pre.body.name).toBe(">");
-      expect(contractEv.body.preHash).toMatch(/^[0-9a-f]{16}$/);
+      expect(contractEv.body.preHash).toMatch(/^blake3-512:[0-9a-f]{128}$/);
       // Cross-language hash agreement: TS recomputes preHash from the
       // C++-published formula and gets the same bytes. Catches any drift
       // in JCS canonical encoding between TS and C++.
-      expect(sha256Prefix16(canonicalEncode(contractEv.body.pre))).toBe(
+      expect(computeCid(canonicalEncode(contractEv.body.pre))).toBe(
         contractEv.body.preHash,
       );
       // Authoring is a kit-author block.

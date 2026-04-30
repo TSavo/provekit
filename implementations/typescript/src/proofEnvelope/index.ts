@@ -9,10 +9,11 @@
  * IS the bytes hash (CID), and that hash is the protocol's trust root.
  */
 
-import { createHash, sign as cryptoSign, verify as cryptoVerify, KeyObject } from "node:crypto";
+import { sign as cryptoSign, verify as cryptoVerify, KeyObject } from "node:crypto";
 import { encode as cborEncode, decode as cborDecode } from "@ipld/dag-cbor";
 import { canonicalEncode } from "../claimEnvelope/canonicalize.js";
 import { computeEnvelopeCid } from "../claimEnvelope/cid.js";
+import { computeCid } from "../canonicalizer/hash.js";
 import type { ClaimEnvelope } from "../claimEnvelope/types.js";
 
 export interface ProofEnvelopeInput {
@@ -32,7 +33,11 @@ export interface ProofEnvelopeInput {
 export interface ProofEnvelope {
   /** CBOR-encoded bytes; hash equals `cid`. */
   bytes: Uint8Array;
-  /** sha256(bytes) hex-prefix-32; matches the .proof filename without extension. */
+  /**
+   * Self-identifying CID of the bytes
+   * (`"blake3-512:" + hex(BLAKE3_512(bytes))`); matches the `.proof`
+   * filename without extension.
+   */
   cid: string;
 }
 
@@ -95,7 +100,8 @@ export function buildProofEnvelope(input: ProofEnvelopeInput): ProofEnvelope {
   const signedBody = { ...unsignedBody, signature: new Uint8Array(sigBuf) };
   const bytes = cborEncode(signedBody);
 
-  const cid = createHash("sha256").update(Buffer.from(bytes)).digest("hex").slice(0, 32);
+  // Filename CID: full BLAKE3-512 self-identifying hash, no truncation.
+  const cid = computeCid(Buffer.from(bytes));
   return { bytes, cid };
 }
 
@@ -140,10 +146,7 @@ export function verifyProofEnvelope(
   signerPublicKey: KeyObject,
 ): VerifyResult {
   const errors: string[] = [];
-  const derivedCid = createHash("sha256")
-    .update(Buffer.from(bytes))
-    .digest("hex")
-    .slice(0, 32);
+  const derivedCid = computeCid(Buffer.from(bytes));
 
   // Rule 1: filename matches content (trust root).
   if (derivedCid !== filenameCid) {

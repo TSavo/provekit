@@ -22,11 +22,13 @@
  *
  * Theorem naming: the theorem statement needs a name for the proof file
  * to reference. The caller may pass one explicitly; otherwise a stable
- * deterministic name is derived from the formula body (a sha256 prefix
- * of the rendered expression). Pure: identical formula -> identical name.
+ * deterministic name is derived from the formula body (a BLAKE3-512
+ * prefix of the rendered expression). Pure: identical formula ->
+ * identical name. The protocol-wide hash is BLAKE3-512 (v1.1.0); we
+ * use it here too to keep one hash function across the codebase.
  */
 
-import { createHash } from "crypto";
+import { blake3_512_hex } from "../../canonicalizer/hash.js";
 import type { IrFormula } from "../formulas.js";
 import { emitFormula } from "./emit.js";
 import {
@@ -49,7 +51,7 @@ export interface LeanTheoremArgs {
   assertion: IrFormula;
   /**
    * Theorem identifier. Must be a valid Lean identifier. If omitted, a
-   * stable name `prop_<sha256-prefix>` is derived from the rendered
+   * stable name `prop_<blake3-512-prefix>` is derived from the rendered
    * assertion so the same formula always yields the same theorem name.
    */
   name?: string;
@@ -121,6 +123,6 @@ export function emitLeanTheorem(args: LeanTheoremArgs): LeanTheoremOutput {
 }
 
 function deriveTheoremName(rendered: string): string {
-  const h = createHash("sha256").update(rendered, "utf-8").digest("hex");
+  const h = blake3_512_hex(Buffer.from(rendered, "utf-8"));
   return `prop_${h.slice(0, 16)}`;
 }

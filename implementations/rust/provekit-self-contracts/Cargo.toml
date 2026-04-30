@@ -1,0 +1,22 @@
+[package]
+name = "provekit-self-contracts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: self-applied contracts for the Rust impl's IR-JSON parser. Dogfooding."
+
+[dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-claim-envelope = { path = "../provekit-claim-envelope" }
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+provekit-verifier = { path = "../provekit-verifier" }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.5"
+
+[[example]]
+name = "scan_self"
+path = "../examples/scan_self.rs"

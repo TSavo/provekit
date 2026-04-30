@@ -27,7 +27,7 @@ export const VERDICTS: ReadonlySet<Verdict> = new Set([
 
 export interface Z3ModelEvidence {
   kind: "z3-model";
-  schema: string; // hex32 CID of the variant schema definition
+  schema: string; // self-identifying CID of the variant schema definition (e.g. "blake3-512:...")
   body: {
     smtLibInput: string;
     z3Verdict: "sat";
@@ -76,7 +76,7 @@ export interface LintPassEvidence {
   body: {
     linter: string;
     linterVersion: string;
-    rulesetHash: string; // hex32
+    rulesetHash: string; // self-identifying hash
     warnings: 0;
   };
 }
@@ -112,7 +112,7 @@ export interface LlmProposalEvidence {
   body: {
     llm: string;
     llmVersion: string;
-    promptCid: string; // hex32
+    promptCid: string; // self-identifying hash
     proposedIrFormula: string;
     confidence: number; // 0..1
     rationale?: string;
@@ -123,8 +123,8 @@ export interface MutationWitnessEvidence {
   kind: "mutation-witness";
   schema: string;
   body: {
-    testCid: string; // hex32
-    mutationCid: string; // hex32
+    testCid: string; // self-identifying hash
+    mutationCid: string; // self-identifying hash
     failsOnOriginal: boolean;
     passesOnFixed: boolean;
   };
@@ -135,7 +135,7 @@ export interface WorkflowRunEvidence {
   schema: string;
   body: {
     workflowName: string;
-    workflowCid: string; // hex32
+    workflowCid: string; // self-identifying hash
     inputCanonicalForm: Record<string, unknown>;
     output: unknown;
   };
@@ -215,11 +215,11 @@ export interface ContractEvidence {
     post?: unknown;
     /** Optional inductive invariant formula (IR-JSON). */
     inv?: unknown;
-    /** DERIVED: hash16(canonical(pre)) — present iff pre is present. */
+    /** DERIVED: computeCid(canonical(pre)) — present iff pre is present. */
     preHash?: string;
-    /** DERIVED: hash16(canonical(post)) — present iff post is present. */
+    /** DERIVED: computeCid(canonical(post)) — present iff post is present. */
     postHash?: string;
-    /** DERIVED: hash16(canonical(inv)) — present iff inv is present. */
+    /** DERIVED: computeCid(canonical(inv)) — present iff inv is present. */
     invHash?: string;
     /** Authoring provenance — typed union per spec. */
     authoring: ContractAuthoring;

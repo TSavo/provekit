@@ -24,9 +24,9 @@
 
 import { readFileSync } from "node:fs";
 import { resolve, basename } from "node:path";
-import { createHash } from "node:crypto";
 import { decodeProofEnvelope } from "./proofEnvelope/index.js";
 import { computeEnvelopeCid } from "./claimEnvelope/cid.js";
+import { computeCid } from "./canonicalizer/hash.js";
 import type { ClaimEnvelope } from "./claimEnvelope/types.js";
 
 interface DumpFlags {
@@ -74,7 +74,9 @@ export async function runDump(argv: string[]): Promise<void> {
 
   const absPath = resolve(filePath);
   const filename = basename(absPath);
-  const m = filename.match(/^([0-9a-f]+)\.proof$/);
+  // Self-identifying CID filenames: "<algorithm>-<bits>:<hex>.proof".
+  // v1.1.0 uses "blake3-512:<128-hex>.proof".
+  const m = filename.match(/^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$/);
   const filenameCid = m ? m[1]! : null;
 
   let bytes: Buffer;
@@ -85,7 +87,7 @@ export async function runDump(argv: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const derivedCid = createHash("sha256").update(bytes).digest("hex").slice(0, 32);
+  const derivedCid = computeCid(bytes);
 
   const errors: string[] = [];
 

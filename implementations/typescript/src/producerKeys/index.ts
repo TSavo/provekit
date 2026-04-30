@@ -60,16 +60,54 @@ export function generateKeypair(options?: { seed?: Buffer }): ProducerKeypair {
   return { publicKey, privateKey };
 }
 
-/** Export a public key as base64 SPKI DER. Useful for embedding in mementos. */
+/** v1.1.0 algorithm tag for ed25519 public keys. */
+export const PUBKEY_ALGORITHM_TAG = "ed25519";
+/** Self-identifying prefix attached to public-key strings. */
+export const PUBKEY_PREFIX = PUBKEY_ALGORITHM_TAG + ":";
+
+/**
+ * Export a public key as base64 SPKI DER (raw payload only, no
+ * algorithm tag). Prefer `publicKeyToSelfIdentifying` for any value
+ * that crosses the protocol surface.
+ */
 export function publicKeyToBase64(key: KeyObject): string {
   return key.export({ format: "der", type: "spki" }).toString("base64");
 }
 
-/** Reconstruct a public KeyObject from a base64 SPKI DER string. */
+/**
+ * Export a public key as a self-identifying string per protocol v1.1.0:
+ *   "ed25519:" + base64(SPKI DER)
+ *
+ * This is the only form that should appear in mementos or `.proof`
+ * catalogs; verifiers dispatch on the prefix.
+ */
+export function publicKeyToSelfIdentifying(key: KeyObject): string {
+  return PUBKEY_PREFIX + publicKeyToBase64(key);
+}
+
+/** Reconstruct a public KeyObject from a base64 SPKI DER string (no prefix). */
 export function publicKeyFromBase64(b64: string): KeyObject {
   return createPublicKey({
     key: Buffer.from(b64, "base64"),
     format: "der",
     type: "spki",
   });
+}
+
+/**
+ * Reconstruct a public KeyObject from a self-identifying string
+ * (`"ed25519:<base64-spki-der>"`). Throws on unknown algorithm tags.
+ */
+export function publicKeyFromSelfIdentifying(s: string): KeyObject {
+  const colon = s.indexOf(":");
+  if (colon < 0) {
+    throw new Error(`pubkey missing algorithm tag prefix: ${JSON.stringify(s)}`);
+  }
+  const tag = s.slice(0, colon);
+  if (tag !== PUBKEY_ALGORITHM_TAG) {
+    throw new Error(
+      `unsupported pubkey algorithm tag ${JSON.stringify(tag)}; v1.1.0 supports only "ed25519"`,
+    );
+  }
+  return publicKeyFromBase64(s.slice(colon + 1));
 }

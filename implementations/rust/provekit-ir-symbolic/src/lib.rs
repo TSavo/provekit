@@ -26,6 +26,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+pub mod parse;
 pub mod serialize;
 
 // ---------------------------------------------------------------------------

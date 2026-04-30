@@ -39,10 +39,10 @@
 // C++ kit produced, discharges obligations against them.
 
 import { describe, it, expect } from "vitest";
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
+import { existsSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 // Kit primitive: parseInt is a bridged Ctor; calling it emits IR.
 import { parseInt as parseIntPrim, num, eq } from "../ir/symbolic/primitives.js";
@@ -52,17 +52,30 @@ import { must, beginCollecting } from "../ir/symbolic/property.js";
 import { mintContract } from "../claimEnvelope/index.js";
 import { generateKeypair } from "../producerKeys/index.js";
 import { buildProofEnvelope } from "./index.js";
+import { computeCid } from "../canonicalizer/hash.js";
 import { runBridgeEnforcement } from "../verifier/bridgeEnforcement.js";
 import { _resetBridges } from "../ir/extensions/bridges.js";
 
-const CPP_PROOF_FILENAME = "bfe74d1a9d836f926058b331002da2f5.proof";
-const CPP_PROOF_PATH = `/tmp/cpp-kit-out-v11/${CPP_PROOF_FILENAME}`;
+const CPP_OUT_DIR = "/tmp/cpp-kit-out-v11";
+const PROOF_FILENAME_RE = /^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$/;
+
+function findV11CppProof(): { filename: string; path: string; cid: string } | null {
+  if (!existsSync(CPP_OUT_DIR)) return null;
+  for (const entry of readdirSync(CPP_OUT_DIR)) {
+    const m = entry.match(PROOF_FILENAME_RE);
+    if (m) return { filename: entry, path: `${CPP_OUT_DIR}/${entry}`, cid: m[1]! };
+  }
+  return null;
+}
 
 describe("END-TO-END: TS function calls C++ kit primitive; verify catches violations", () => {
-  it.runIf(existsSync(CPP_PROOF_PATH))(
+  const cppProof = findV11CppProof();
+  it.runIf(cppProof !== null)(
     "parseInt(num(5)) discharges; parseInt(num(0)) is caught by the C++ precondition",
     async () => {
       _resetBridges();
+      const { filename: CPP_PROOF_FILENAME, path: CPP_PROOF_PATH, cid: CPP_PROOF_CID } =
+        cppProof!;
       const projectRoot = mkdtempSync(join(tmpdir(), "cross-lang-e2e-"));
       try {
         // ---- 1. Install the C++-produced .proof in node_modules ----
@@ -75,7 +88,7 @@ describe("END-TO-END: TS function calls C++ kit primitive; verify catches violat
           JSON.stringify({
             name: "@example/cpp-kit",
             version: "1.0.0",
-            provekit: { proofHash: CPP_PROOF_FILENAME.replace(/\.proof$/, "") },
+            provekit: { proofHash: CPP_PROOF_CID },
           }, null, 2),
         );
 
@@ -115,7 +128,7 @@ describe("END-TO-END: TS function calls C++ kit primitive; verify catches violat
         // ---- 4. Bundle the consumer's mementos into its own .proof ----
         const { privateKey: catalogKey, publicKey: catalogPub } = generateKeypair({ seed: randomBytes(32) });
         const pubDer = catalogPub.export({ type: "spki", format: "der" });
-        const signerCid = "sha256:" + createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+        const signerCid = computeCid(pubDer);
         const built = buildProofEnvelope({
           name: "consumer-app",
           version: "1.0.0",

@@ -6,11 +6,15 @@ import {
   decodeProofEnvelope,
   verifyProofEnvelope,
 } from "./index.js";
-import { createHash, randomBytes } from "node:crypto";
-void hash16;
-function hash16(s: string): string {
-  return createHash("sha256").update(s).digest("hex").slice(0, 16);
-}
+import { randomBytes } from "node:crypto";
+
+/**
+ * Placeholder self-identifying signer CID for tests. v1.1.0 hashes are
+ * full BLAKE3-512 digests prefixed with "blake3-512:"; this is a
+ * shape-conformant test stub (`s` repeated to 128 hex chars worth of
+ * `1`s — the value never gets re-derived in these unit tests).
+ */
+const SIGNER_CID = "blake3-512:" + "1".repeat(128);
 
 function makeMember(name: string) {
   const { privateKey } = generateKeypair({ seed: randomBytes(32) });
@@ -34,7 +38,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
       declaredAt,
     });
@@ -42,7 +46,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
       declaredAt,
     });
@@ -60,7 +64,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
     const decoded = decodeProofEnvelope(built.bytes);
@@ -81,7 +85,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
     const result = verifyProofEnvelope(built.bytes, built.cid, publicKey);
@@ -98,10 +102,14 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
-    const result = verifyProofEnvelope(built.bytes, "deadbeef".repeat(4), publicKey);
+    const result = verifyProofEnvelope(
+      built.bytes,
+      "blake3-512:" + "deadbeef".repeat(16),
+      publicKey,
+    );
     expect(result.ok).toBe(false);
     expect(result.errors[0]).toMatch(/rule 1/);
   });
@@ -117,7 +125,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
     const result = verifyProofEnvelope(built.bytes, built.cid, publicKey);
@@ -135,7 +143,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
     const result = verifyProofEnvelope(built.bytes, built.cid, wrongKey);

@@ -30,7 +30,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { generateKeypair } from "../../producerKeys/index.js";
 import { mintContract, mintBridge } from "../../claimEnvelope/index.js";
@@ -52,9 +52,13 @@ import type { ClaimEnvelope } from "../../claimEnvelope/types.js";
 
 const IntSort = { kind: "primitive" as const, name: "Int" };
 
-function hash16(s: string): string {
-  return createHash("sha256").update(s).digest("hex").slice(0, 16);
+// Test helper retained for any future hash-of-string needs; switches to
+// the v1.1.0 self-identifying BLAKE3-512 form.
+import { computeCid as computeCidImpl } from "../../canonicalizer/hash.js";
+function hashString(s: string): string {
+  return computeCidImpl(Buffer.from(s, "utf8"));
 }
+void hashString;
 
 const Z3_SOLVER: Solver = {
   entries: [
@@ -77,7 +81,7 @@ function bundleAndWrite(
     seed: randomBytes(32),
   });
   const pubDer = catalogPub.export({ type: "spki", format: "der" });
-  const signerCid = "sha256:" + createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+  const signerCid = computeCidImpl(pubDer);
 
   const built = buildProofEnvelope({
     name: packageName,

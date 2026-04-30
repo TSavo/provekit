@@ -10,6 +10,12 @@ import { join } from "path";
 
 import { runMint } from "./cli.mint.js";
 import { runDump } from "./cli.dump.js";
+import { VARIANT_SCHEMA_CIDS } from "./claimEnvelope/index.js";
+
+/** Pad a short suffix into a self-identifying BLAKE3-512 placeholder hash. */
+function fakeCid(suffix: string): string {
+  return `blake3-512:${suffix.padStart(128, "0")}`;
+}
 
 function captureStdio() {
   let out: string[] = [];
@@ -60,13 +66,17 @@ async function buildSampleProof(): Promise<string> {
   const dir = mkdtempSync(join(tmpDir, "src-"));
   const z3UnsatEvidence = {
     kind: "z3-unsat",
-    schema: "00000000000000020000000000000002",
+    schema: VARIANT_SCHEMA_CIDS["z3-unsat"],
     body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat", z3RunMs: 1 },
   };
   for (const name of ["m1", "m2"]) {
     const spec = {
-      bindingHash: name === "m1" ? "aaaa1111aaaa1111" : "cccc3333cccc3333",
-      propertyHash: name === "m1" ? "bbbb2222bbbb2222" : "dddd4444dddd4444",
+      bindingHash: name === "m1"
+        ? fakeCid("aaaa1111aaaa1111")
+        : fakeCid("cccc3333cccc3333"),
+      propertyHash: name === "m1"
+        ? fakeCid("bbbb2222bbbb2222")
+        : fakeCid("dddd4444dddd4444"),
       producedBy: `${name}@v1`,
       evidence: z3UnsatEvidence,
     };
@@ -134,7 +144,7 @@ describe("runDump", () => {
     const out = stdio.stdout.read();
     expect(out).toContain("dump-test");
     expect(out).toContain("members (2)");
-    expect(out).toMatch(/✓ [0-9a-f]{32}/);
+    expect(out).toMatch(/✓ blake3-512:[0-9a-f]{128}/);
     expect(out).not.toContain("✗");
   });
 

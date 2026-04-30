@@ -31,7 +31,7 @@ import { removeImplies } from "./passes/impliesRemoval.js";
 import { toNnf } from "./passes/nnf.js";
 import { acNormalize } from "./passes/acNormalize.js";
 import { serializeCanonicalAst } from "./serialize.js";
-import { sha256Prefix16 } from "./hash.js";
+import { computeCid } from "./hash.js";
 
 // -----------------------------------------------------------------------
 // Pass 1+2+3 collapsed: DeBruijnFormula → PreNnfAst
@@ -115,12 +115,13 @@ export function formulaToCanonicalAst(formula: IrFormula): CanonicalFolAst {
 
 /**
  * Serialize and hash a formula to its propertyHash.
- * Returns a 16-character hex string.
+ * Returns a self-identifying string of the form
+ * `"blake3-512:" + hex(BLAKE3_512(bytes))` (139 chars).
  */
 export function propertyHashFromFormula(formula: IrFormula): string {
   const ast = formulaToCanonicalAst(formula);
   const bytes = serializeCanonicalAst(ast);
-  return sha256Prefix16(bytes);
+  return computeCid(bytes);
 }
 
 /**
@@ -129,5 +130,5 @@ export function propertyHashFromFormula(formula: IrFormula): string {
  */
 export function propertyHashFromAst(ast: CanonicalFolAst): string {
   const bytes = serializeCanonicalAst(ast);
-  return sha256Prefix16(bytes);
+  return computeCid(bytes);
 }

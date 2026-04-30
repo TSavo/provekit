@@ -43,8 +43,20 @@ export interface ValidationResult {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const HEX16 = /^[0-9a-f]{16}$/;
-const HEX32 = /^[0-9a-f]{32}$/;
+/**
+ * Protocol v1.1.0 self-identifying hash:
+ *   <algorithm>-<bits>:<lowercase-hex-digest>
+ * v1.1.0 ships with `blake3-512` (full 64-byte / 128 hex BLAKE3 digest)
+ * as the only permitted tag. Every hash field in the protocol uses this
+ * one regex.
+ */
+const SELF_IDENTIFYING_HASH = /^[a-z0-9]+-[0-9]+:[0-9a-f]+$/;
+/**
+ * Protocol v1.1.0 self-identifying signature/pubkey:
+ *   <algorithm>:<base64-payload>
+ * v1.1.0 ships with `ed25519` as the only permitted tag.
+ */
+const SELF_IDENTIFYING_SIG = /^[a-z0-9]+:[A-Za-z0-9+/]+=*$/;
 /** producedBy format: <name>@<version>; name may include colons, slashes, dots. */
 const PRODUCED_BY = /^[^@\s]+@[^@\s]+$/;
 /** ISO-8601 UTC basic check */
@@ -118,7 +130,7 @@ function validateVariantBody(
     case "lint-pass": {
       if (!isString(body.linter)) errors.push("lint-pass body.linter must be string");
       if (!isString(body.linterVersion)) errors.push("lint-pass body.linterVersion must be string");
-      if (!isString(body.rulesetHash) || !HEX32.test(body.rulesetHash as string)) errors.push("lint-pass body.rulesetHash must be hex32");
+      if (!isString(body.rulesetHash) || !SELF_IDENTIFYING_HASH.test(body.rulesetHash as string)) errors.push("lint-pass body.rulesetHash must be a self-identifying hash");
       if (body.warnings !== 0) errors.push("lint-pass body.warnings must be 0");
       break;
     }
@@ -142,22 +154,22 @@ function validateVariantBody(
     case "llm-proposal": {
       if (!isString(body.llm)) errors.push("llm-proposal body.llm must be string");
       if (!isString(body.llmVersion)) errors.push("llm-proposal body.llmVersion must be string");
-      if (!isString(body.promptCid) || !HEX32.test(body.promptCid as string)) errors.push("llm-proposal body.promptCid must be hex32");
+      if (!isString(body.promptCid) || !SELF_IDENTIFYING_HASH.test(body.promptCid as string)) errors.push("llm-proposal body.promptCid must be a self-identifying hash");
       if (!isString(body.proposedIrFormula)) errors.push("llm-proposal body.proposedIrFormula must be string");
       if (!isNumber(body.confidence) || (body.confidence as number) < 0 || (body.confidence as number) > 1) errors.push("llm-proposal body.confidence must be number 0..1");
       if (body.rationale !== undefined && !isString(body.rationale)) errors.push("llm-proposal body.rationale must be string when present");
       break;
     }
     case "mutation-witness": {
-      if (!isString(body.testCid) || !HEX32.test(body.testCid as string)) errors.push("mutation-witness body.testCid must be hex32");
-      if (!isString(body.mutationCid) || !HEX32.test(body.mutationCid as string)) errors.push("mutation-witness body.mutationCid must be hex32");
+      if (!isString(body.testCid) || !SELF_IDENTIFYING_HASH.test(body.testCid as string)) errors.push("mutation-witness body.testCid must be a self-identifying hash");
+      if (!isString(body.mutationCid) || !SELF_IDENTIFYING_HASH.test(body.mutationCid as string)) errors.push("mutation-witness body.mutationCid must be a self-identifying hash");
       if (!isBoolean(body.failsOnOriginal)) errors.push("mutation-witness body.failsOnOriginal must be boolean");
       if (!isBoolean(body.passesOnFixed)) errors.push("mutation-witness body.passesOnFixed must be boolean");
       break;
     }
     case "workflow-run": {
       if (!isString(body.workflowName)) errors.push("workflow-run body.workflowName must be string");
-      if (!isString(body.workflowCid) || !HEX32.test(body.workflowCid as string)) errors.push("workflow-run body.workflowCid must be hex32");
+      if (!isString(body.workflowCid) || !SELF_IDENTIFYING_HASH.test(body.workflowCid as string)) errors.push("workflow-run body.workflowCid must be a self-identifying hash");
       if (!isObject(body.inputCanonicalForm)) errors.push("workflow-run body.inputCanonicalForm must be object");
       // body.output is type-specific, no constraint
       break;
@@ -171,14 +183,14 @@ function validateVariantBody(
       if (!hasPre && !hasPost && !hasInv) {
         errors.push("contract body must have at least one of pre/post/inv");
       }
-      if (hasPre && (!isString(body.preHash) || !HEX16.test(body.preHash as string))) {
-        errors.push("contract body.preHash must be hex16 when pre is present");
+      if (hasPre && (!isString(body.preHash) || !SELF_IDENTIFYING_HASH.test(body.preHash as string))) {
+        errors.push("contract body.preHash must be a self-identifying hash when pre is present");
       }
-      if (hasPost && (!isString(body.postHash) || !HEX16.test(body.postHash as string))) {
-        errors.push("contract body.postHash must be hex16 when post is present");
+      if (hasPost && (!isString(body.postHash) || !SELF_IDENTIFYING_HASH.test(body.postHash as string))) {
+        errors.push("contract body.postHash must be a self-identifying hash when post is present");
       }
-      if (hasInv && (!isString(body.invHash) || !HEX16.test(body.invHash as string))) {
-        errors.push("contract body.invHash must be hex16 when inv is present");
+      if (hasInv && (!isString(body.invHash) || !SELF_IDENTIFYING_HASH.test(body.invHash as string))) {
+        errors.push("contract body.invHash must be a self-identifying hash when inv is present");
       }
       if (!isObject(body.authoring)) {
         errors.push("contract body.authoring must be a tagged authoring block");
@@ -192,17 +204,17 @@ function validateVariantBody(
       break;
     }
     case "implication": {
-      if (!isString(body.antecedentHash) || !HEX16.test(body.antecedentHash as string)) {
-        errors.push("implication body.antecedentHash must be hex16");
+      if (!isString(body.antecedentHash) || !SELF_IDENTIFYING_HASH.test(body.antecedentHash as string)) {
+        errors.push("implication body.antecedentHash must be a self-identifying hash");
       }
-      if (!isString(body.consequentHash) || !HEX16.test(body.consequentHash as string)) {
-        errors.push("implication body.consequentHash must be hex16");
+      if (!isString(body.consequentHash) || !SELF_IDENTIFYING_HASH.test(body.consequentHash as string)) {
+        errors.push("implication body.consequentHash must be a self-identifying hash");
       }
-      if (!isString(body.antecedentCid) || !HEX32.test(body.antecedentCid as string)) {
-        errors.push("implication body.antecedentCid must be hex32");
+      if (!isString(body.antecedentCid) || !SELF_IDENTIFYING_HASH.test(body.antecedentCid as string)) {
+        errors.push("implication body.antecedentCid must be a self-identifying hash");
       }
-      if (!isString(body.consequentCid) || !HEX32.test(body.consequentCid as string)) {
-        errors.push("implication body.consequentCid must be hex32");
+      if (!isString(body.consequentCid) || !SELF_IDENTIFYING_HASH.test(body.consequentCid as string)) {
+        errors.push("implication body.consequentCid must be a self-identifying hash");
       }
       const slotOk = (s: unknown) => s === "pre" || s === "post" || s === "inv";
       if (!slotOk(body.antecedentSlot)) errors.push('implication body.antecedentSlot must be "pre"|"post"|"inv"');
@@ -262,12 +274,12 @@ export function validateEnvelope(
     errors.push(`schemaVersion must be "1", got: ${JSON.stringify(env.schemaVersion)}`);
   }
 
-  if (!isString(env.bindingHash) || !HEX16.test(env.bindingHash)) {
-    errors.push(`bindingHash must be a 16-char hex string, got: ${JSON.stringify(env.bindingHash)}`);
+  if (!isString(env.bindingHash) || !SELF_IDENTIFYING_HASH.test(env.bindingHash)) {
+    errors.push(`bindingHash must be a self-identifying hash (e.g. "blake3-512:..."), got: ${JSON.stringify(env.bindingHash)}`);
   }
 
-  if (!isString(env.propertyHash) || !HEX16.test(env.propertyHash)) {
-    errors.push(`propertyHash must be a 16-char hex string, got: ${JSON.stringify(env.propertyHash)}`);
+  if (!isString(env.propertyHash) || !SELF_IDENTIFYING_HASH.test(env.propertyHash)) {
+    errors.push(`propertyHash must be a self-identifying hash (e.g. "blake3-512:..."), got: ${JSON.stringify(env.propertyHash)}`);
   }
 
   if (!isString(env.verdict) || !VERDICTS.has(env.verdict as any)) {
@@ -286,8 +298,8 @@ export function validateEnvelope(
     errors.push(`producedAt must be an ISO-8601 UTC string, got: ${JSON.stringify(env.producedAt)}`);
   }
 
-  if (!Array.isArray(env.inputCids) || !env.inputCids.every((x: unknown) => isString(x) && HEX32.test(x))) {
-    errors.push("inputCids must be an array of 32-char hex strings");
+  if (!Array.isArray(env.inputCids) || !env.inputCids.every((x: unknown) => isString(x) && SELF_IDENTIFYING_HASH.test(x))) {
+    errors.push("inputCids must be an array of self-identifying hash strings");
   }
 
   if (!isObject(env.evidence)) {
@@ -297,20 +309,22 @@ export function validateEnvelope(
     if (!isString(ev.kind)) {
       errors.push("evidence.kind must be a string");
     }
-    if (!isString(ev.schema) || !HEX32.test(ev.schema)) {
-      errors.push("evidence.schema must be a 32-char hex string");
+    if (!isString(ev.schema) || !SELF_IDENTIFYING_HASH.test(ev.schema)) {
+      errors.push("evidence.schema must be a self-identifying hash string");
     }
     if (ev.kind && !errors.some((e) => e.startsWith("evidence"))) {
       validateVariantBody(env.evidence as unknown as EvidenceVariant, errors);
     }
   }
 
-  if (!isString(env.cid) || !HEX32.test(env.cid)) {
-    errors.push(`cid must be a 32-char hex string, got: ${JSON.stringify(env.cid)}`);
+  if (!isString(env.cid) || !SELF_IDENTIFYING_HASH.test(env.cid)) {
+    errors.push(`cid must be a self-identifying hash (e.g. "blake3-512:..."), got: ${JSON.stringify(env.cid)}`);
   }
 
-  if (env.producerSignature !== undefined && !isString(env.producerSignature)) {
-    errors.push("producerSignature must be a string when present");
+  if (env.producerSignature !== undefined) {
+    if (!isString(env.producerSignature) || !SELF_IDENTIFYING_SIG.test(env.producerSignature)) {
+      errors.push(`producerSignature must be a self-identifying signature (e.g. "ed25519:..."), got: ${JSON.stringify(env.producerSignature)}`);
+    }
   }
 
   // ------------------------------------------------------------------

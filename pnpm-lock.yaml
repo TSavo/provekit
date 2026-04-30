@@ -17,6 +17,9 @@ importers:
       '@ipld/dag-cbor':
         specifier: ^9.2.6
         version: 9.2.6
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
       '@opencode-ai/sdk':
         specifier: ^1.4.3
         version: 1.14.29
@@ -674,6 +677,10 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1
       '@emnapi/runtime': ^1.7.1
+
+  '@noble/hashes@2.2.0':
+    resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
+    engines: {node: '>= 20.19.0'}
 
   '@opencode-ai/sdk@1.14.29':
     resolution: {integrity: sha512-y6wNTlHhgfwLdp01EwdnMFVxUS1FLgz7MZh7H3+jROG2v02GqGDy/gPH3ME0kI+sqQ4qSlk/9AJ+YbKAruPaZw==}
@@ -2416,6 +2423,8 @@ snapshots:
       '@emnapi/runtime': 1.10.0
       '@tybys/wasm-util': 0.10.1
     optional: true
+
+  '@noble/hashes@2.2.0': {}
 
   '@opencode-ai/sdk@1.14.29':
     dependencies:
