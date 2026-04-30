@@ -51,6 +51,7 @@ import type { FixLoopLogger } from "../fix/logger.js";
 import { registerBugFixRegistries } from "./bug-fix.js";
 import { registerExplainRegistries } from "./explain.js";
 import { registerMustRegistries } from "./must.js";
+import { registerReevaluateInvariantRegistries } from "./reevaluate-invariant.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -172,6 +173,10 @@ export function defaultRegistryFactories(): RegistryFactoryMap {
       registerExplainRegistries(deps as Parameters<typeof registerExplainRegistries>[0]),
     must: (deps: unknown) =>
       registerMustRegistries(deps as Parameters<typeof registerMustRegistries>[0]),
+    "reevaluate-invariant": (deps: unknown) =>
+      registerReevaluateInvariantRegistries(
+        deps as Parameters<typeof registerReevaluateInvariantRegistries>[0],
+      ),
   };
 }
 

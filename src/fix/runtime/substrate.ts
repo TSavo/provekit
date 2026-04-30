@@ -57,8 +57,11 @@ function resolveByLine(db: Db, fileId: number, line: number): string | null {
 /**
  * Find the function-shaped node in `filePath` whose `subtreeHash` matches
  * `functionHash`. Returns its current sourceLine (or null if no such
- * function exists in the substrate). Used by the resolver's recovery path
+ * function exists in the file). Used by the resolver's recovery path
  * when the recorded line no longer hits a node directly.
+ *
+ * Use `findFunctionByHashGlobal` instead when the function may have moved
+ * to a different file.
  */
 export function findFunctionLineByHash(
   db: Db,
@@ -88,21 +91,59 @@ export function findFunctionLineByHash(
 }
 
 /**
+ * Search the entire substrate for a function-shaped node whose
+ * `subtreeHash` matches `functionHash`. Returns the file path and current
+ * sourceLine when found, regardless of which file currently houses it.
+ *
+ * The file path on the original binding is a hint, not a constraint.
+ * Functions move between files (extraction refactors, file splits,
+ * organization changes) without changing meaning. The substrate's
+ * subtreeHash index is global; search it globally so a moved function
+ * stays bound.
+ *
+ * Returns null when no node has that hash anywhere in the substrate.
+ */
+export function findFunctionByHashGlobal(
+  db: Db,
+  functionHash: string,
+): { filePath: string; sourceLine: number } | null {
+  // Single join across nodes + files indexed by nodes.subtree_hash.
+  const candidates = db
+    .select({
+      sourceLine: nodes.sourceLine,
+      subtreeHash: nodes.subtreeHash,
+      filePath: files.path,
+    })
+    .from(nodes)
+    .innerJoin(files, eq(files.id, nodes.fileId))
+    .all();
+  for (const c of candidates) {
+    if (c.subtreeHash === functionHash) {
+      return { filePath: c.filePath, sourceLine: c.sourceLine };
+    }
+  }
+  return null;
+}
+
+/**
  * Resolve a callsite reference to a substrate node id, with self-healing.
  *
- * Four-way state machine:
+ * Five-way state machine:
  *   1. Line directly resolves → return node id (HOLDS)
- *   2. Line missed; functionHash + functionOffset recover the new line →
- *      return node id at the recovered line (HOLDS, self-heal)
- *   3. functionHash present but no node has that hash anymore → null
- *      (DECAYED — content changed; semantic decay)
- *   4. functionHash absent and direct line missed → null (GONE under the
- *      legacy line-only contract; caller can decide retire vs reauthor)
+ *   2. Line missed; functionHash + functionOffset recover the new line in
+ *      the SAME file → return recovered node id (HOLDS, self-heal)
+ *   3. Same-file recovery missed; functionHash matches a node in a
+ *      DIFFERENT file → return recovered node id (HOLDS, self-heal across
+ *      file move)
+ *   4. functionHash present but no node has that hash anywhere in the
+ *      substrate → null (DECAYED — content changed; semantic decay,
+ *      LLM re-eval workflow handles this)
+ *   5. functionHash absent and direct line missed → null (legacy line-
+ *      only invariant degrades the same way it did before this feature)
  *
  * `recoveryHints` is optional; when omitted the resolver falls back to
- * line-only behavior (case 1 only; misses report null = decay). New
- * writers should pass functionHash + functionOffset so cases 2-4 become
- * distinguishable upstream.
+ * line-only behavior (case 1 only). New writers should pass
+ * functionHash + functionOffset so cases 2-5 become distinguishable.
  */
 export function resolveCallsiteNodeId(
   db: Db,
@@ -115,20 +156,43 @@ export function resolveCallsiteNodeId(
     .from(files)
     .where(eq(files.path, filePath))
     .get();
-  if (!fileRow) return null;
 
-  const direct = resolveByLine(db, fileRow.id, line);
-  if (direct) return direct;
+  // Case 1: same file, direct line hit.
+  if (fileRow) {
+    const direct = resolveByLine(db, fileRow.id, line);
+    if (direct) return direct;
+  }
 
   const fh = recoveryHints?.functionHash;
   const fo = recoveryHints?.functionOffset;
   if (fh != null && fo != null) {
-    const fnLine = findFunctionLineByHash(db, filePath, fh);
-    if (fnLine !== null) {
-      const recoveredLine = fnLine + fo;
-      const recovered = resolveByLine(db, fileRow.id, recoveredLine);
-      if (recovered) return recovered;
+    // Case 2: same file, recover via functionHash + offset.
+    if (fileRow) {
+      const fnLine = findFunctionLineByHash(db, filePath, fh);
+      if (fnLine !== null) {
+        const recovered = resolveByLine(db, fileRow.id, fnLine + fo);
+        if (recovered) return recovered;
+      }
+    }
+
+    // Case 3: function moved to a different file. Search the substrate
+    // globally by hash; if found, recover at the new file's location.
+    const moved = findFunctionByHashGlobal(db, fh);
+    if (moved) {
+      const movedFileRow = db
+        .select({ id: files.id })
+        .from(files)
+        .where(eq(files.path, moved.filePath))
+        .get();
+      if (movedFileRow) {
+        const recovered = resolveByLine(db, movedFileRow.id, moved.sourceLine + fo);
+        if (recovered) return recovered;
+      }
     }
   }
+
+  // Case 4 (hash given but globally missing) and case 5 (no recovery
+  // hints, line miss) both report null. Caller distinguishes them by
+  // looking at the original recoveryHints + the substrate state.
   return null;
 }

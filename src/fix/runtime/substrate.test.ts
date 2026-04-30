@@ -18,7 +18,7 @@ import { fileURLToPath } from "url";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { openDb } from "../../db/index.js";
 import { files, nodes } from "../../sast/schema/nodes.js";
-import { openSubstrateDb, resolveCallsiteNodeId, findFunctionLineByHash } from "./substrate.js";
+import { openSubstrateDb, resolveCallsiteNodeId, findFunctionLineByHash, findFunctionByHashGlobal } from "./substrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -276,10 +276,90 @@ describe("self-healing binding (functionHash + functionOffset recovery)", () => 
     ).toBeNull();
   });
 
-  it("case 4: legacy invariant with no recovery hints, line missed → null (decayed)", () => {
+  it("case 4: functionHash present but no node has that hash → null (semantic decay)", () => {
+    const { db } = setupFnSubstrate();
+    // Recorded line missed AND function hash isn't anywhere in the
+    // substrate. The function got edited; semantic decay.
+    expect(
+      resolveCallsiteNodeId(db, "src/x.ts", 16, {
+        functionHash: "fn-content-hash-was-edited",
+        functionOffset: 2,
+      }),
+    ).toBeNull();
+  });
+
+  it("case 5: legacy invariant with no recovery hints, line missed → null", () => {
     const { db } = setupFnSubstrate();
     // No recovery hints. Pure line lookup. Misses report null exactly as
     // they did before this feature landed.
     expect(resolveCallsiteNodeId(db, "src/x.ts", 16)).toBeNull();
+  });
+
+  it("findFunctionByHashGlobal locates a function regardless of file", () => {
+    const { db } = setupFnSubstrate();
+    // Move the function to a different file: insert another file +
+    // another function-shaped node with the SAME subtreeHash.
+    db.insert(files).values({ path: "src/moved.ts", contentHash: "h", parsedAt: 0, rootNodeId: "r" }).run();
+    const movedFileRow = db.select().from(files).all().find((f) => f.path === "src/moved.ts")!;
+    db.insert(nodes)
+      .values({
+        id: "fn-moved",
+        fileId: movedFileRow.id,
+        sourceStart: 0,
+        sourceEnd: 200,
+        sourceLine: 8,
+        sourceCol: 0,
+        subtreeHash: "fn-content-hash-abc-2",
+        kind: "FunctionDeclaration",
+      })
+      .run();
+    const found = findFunctionByHashGlobal(db, "fn-content-hash-abc-2");
+    expect(found).toEqual({ filePath: "src/moved.ts", sourceLine: 8 });
+
+    expect(findFunctionByHashGlobal(db, "no-such-hash-anywhere")).toBeNull();
+  });
+
+  it("case 3 (cross-file recovery): function moved to another file, hash matches there", () => {
+    const root = makeProjectRoot();
+    const db = setUpSubstrate(root);
+    // Original file is empty: no function-shaped node, just a stale rec.
+    db.insert(files).values({ path: "src/old.ts", contentHash: "h1", parsedAt: 0, rootNodeId: "r1" }).run();
+    // New file has the function with the recorded hash, plus a node at
+    // the recovered (function-startLine + offset) position.
+    db.insert(files).values({ path: "src/new.ts", contentHash: "h2", parsedAt: 0, rootNodeId: "r2" }).run();
+    const newFile = db.select().from(files).all().find((f) => f.path === "src/new.ts")!;
+    db.insert(nodes)
+      .values([
+        {
+          id: "fn-at-new",
+          fileId: newFile.id,
+          sourceStart: 0,
+          sourceEnd: 300,
+          sourceLine: 30,
+          sourceCol: 0,
+          subtreeHash: "fn-hash-shared",
+          kind: "FunctionDeclaration",
+        },
+        {
+          id: "stmt-recovered",
+          fileId: newFile.id,
+          sourceStart: 50,
+          sourceEnd: 70,
+          sourceLine: 35,
+          sourceCol: 2,
+          subtreeHash: "stmt-h",
+          kind: "ExpressionStatement",
+        },
+      ])
+      .run();
+    // Mint-time recorded the callsite as src/old.ts:14, function at line
+    // 9 → offset 5. Now the function is at src/new.ts:30, so the recovered
+    // line is 35. resolver MUST return the new-file node.
+    expect(
+      resolveCallsiteNodeId(db, "src/old.ts", 14, {
+        functionHash: "fn-hash-shared",
+        functionOffset: 5,
+      }),
+    ).toBe("stmt-recovered");
   });
 });
