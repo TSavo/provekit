@@ -123,11 +123,11 @@ DAG IS the integration.
 ## Spec references
 
 - `docs/MANIFESTO.md` — outward-facing thesis
-- `docs/specs/2026-04-29-correctness-is-a-hash.md` — the architectural
+- `protocol/specs/2026-04-29-correctness-is-a-hash.md` — the architectural
   punchline (cross-language section)
-- `docs/specs/2026-04-29-implementation-fungibility.md` — the framework's
+- `protocol/specs/2026-04-29-implementation-fungibility.md` — the framework's
   identity is the spec, not the implementation
-- `docs/specs/2026-04-29-per-language-kit-standard.md` — what each kit
+- `protocol/specs/2026-04-29-per-language-kit-standard.md` — what each kit
   must provide
-- `docs/specs/2026-04-29-ast-canonicalizer.md` — the byte-identical
+- `protocol/specs/2026-04-29-ast-canonicalizer.md` — the byte-identical
   hash construction every kit conforms to

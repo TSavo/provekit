@@ -7,7 +7,7 @@
  * of any Stage's input — same pattern as explain / leaves.
  *
  * Scope discipline:
- *   docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
+ *   protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
  *   `provekit roots` surfaces "where audit needs to happen" without
  *   walking external CIDs. The framework hands out the list; auditors
  *   take it and traverse externally with their own tooling.

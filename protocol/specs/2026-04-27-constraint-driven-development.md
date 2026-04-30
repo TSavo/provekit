@@ -1720,7 +1720,7 @@ Underneath that one line:
 Every word is mechanically true once the standing-invariant-runtime spec
 is implemented. The dogfood proof shipped 2026-04-27 against the planted
 asc/desc bug demonstrates the existence claim for the fix-loop half. The
-spec at `docs/specs/2026-04-27-standing-invariant-runtime.md` is the
+spec at `protocol/specs/2026-04-27-standing-invariant-runtime.md` is the
 dependency-ordered build plan for the enforcement half.
 
 ## What this paper is for

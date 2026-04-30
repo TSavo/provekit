@@ -12,7 +12,7 @@ produces canonical `IrFormula` values from in-subset TypeScript expressions.
 
 Without the lifter:
 - `.invariant.ts` files are markdown — they don't produce verification artifacts
-- The catalog seeds (`docs/specs/builtins-catalog/parseInt.invariant.ts`,
+- The catalog seeds (`protocol/specs/builtins-catalog/parseInt.invariant.ts`,
   `Math.invariant.ts`) cannot be loaded by anything
 - User invariants cannot be verified
 - `provekit prove` and `provekit generate` cannot be built
@@ -30,7 +30,7 @@ THE plumbing. Get it right; the rest of the framework cashes out from here.
 
 In order. One-line rationale per file:
 
-1. **`docs/specs/2026-04-29-ts-ir-language.md`** — THE SPEC. The canonical
+1. **`protocol/specs/2026-04-29-ts-ir-language.md`** — THE SPEC. The canonical
    description of the TS subset, the lift rules, the file-anchoring constraint,
    the API. Read sections 3, 4, 5, 6, 9 carefully (file anchoring, quantifier
    syntax, sort marking, the IN/OUT subset, the lifter's per-AST-node dispatch
@@ -51,12 +51,12 @@ In order. One-line rationale per file:
    input. The lifter's output flows directly into this. Sanity-check that the
    shapes line up.
 
-6. **`docs/specs/builtins-catalog/parseInt.invariant.ts`** — the worked
+6. **`protocol/specs/builtins-catalog/parseInt.invariant.ts`** — the worked
    example. The lifter MUST be able to consume this file and produce the
    expected IrFormula values for each property declaration. Use it as the
    primary fixture for tests.
 
-7. **`docs/specs/builtins-catalog/Math.invariant.ts`** — second fixture.
+7. **`protocol/specs/builtins-catalog/Math.invariant.ts`** — second fixture.
    Demonstrates `forAll`, `exists`, `implies`, member access, registry calls
    (`Math.abs`, `Number.isInteger`).
 
@@ -276,7 +276,7 @@ In `src/ir/lift/index.ts`, expose the public API. Add a fixture-based
 integration test that:
 
 1. Constructs a `tsc.Program` from a temporary directory containing a copy
-   of `docs/specs/builtins-catalog/parseInt.invariant.ts` (or use that file
+   of `protocol/specs/builtins-catalog/parseInt.invariant.ts` (or use that file
    directly via project root configuration).
 2. Calls `liftProject(program)`.
 3. Asserts:
@@ -449,7 +449,7 @@ These are non-obvious from the spec but matter:
    tuples, or read from a JSON manifest). Future work expands the registry;
    make extension trivial.
 
-7. **The catalog files at `docs/specs/builtins-catalog/` use the SURFACE form.**
+7. **The catalog files at `protocol/specs/builtins-catalog/` use the SURFACE form.**
    They will not type-check against the current `provekit/ir` library because
    they use `provekit/ir`'s SPEC'D surface API, not its existing builder API.
    This is expected. The lifter you're building is what makes them lift-able.
@@ -458,7 +458,7 @@ These are non-obvious from the spec but matter:
 
 8. **Test fixtures should NOT be the catalog files directly.** Copy minimal
    versions into `src/ir/lift/__fixtures__/` for testing. The catalog files
-   at `docs/specs/builtins-catalog/` are spec artifacts; they shouldn't be
+   at `protocol/specs/builtins-catalog/` are spec artifacts; they shouldn't be
    coupled to the lifter's test suite (different change cadence).
 
 9. **`registry calls` lift to atomic predicates.** `Math.abs(x)` lifts to
@@ -538,7 +538,7 @@ Single commit. Conventional commit format:
 ```
 feat(lift): TS predicate lifter — projects type-checked TS into IrFormula
 
-Implements src/ir/lift/ per docs/specs/2026-04-29-ts-ir-language.md. The
+Implements src/ir/lift/ per protocol/specs/2026-04-29-ts-ir-language.md. The
 lifter is the operational realization of the spec's "TypeScript IS the IR"
 claim — visitor pass over tsc.Program, dispatches per AST node type, produces
 IrFormula values that flow into the existing canonicalizer.

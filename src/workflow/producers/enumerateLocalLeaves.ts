@@ -1,7 +1,7 @@
 /**
  * enumerate-local-leaves Stage — list mementos this proofkit minted locally.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"Naming discipline: leaves AND roots, not walks"
  *
  * Leaves are the mementos the local proofkit signed. Downstream consumers

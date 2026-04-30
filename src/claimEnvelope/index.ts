@@ -1,7 +1,7 @@
 /**
  * Universal claim envelope — main entrypoint.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
  *
  * Re-exports all public types and functions for consumers.
  */

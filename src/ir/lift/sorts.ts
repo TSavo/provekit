@@ -6,7 +6,7 @@
  * (Int, Real, Bool, StringSort) which carry a `__sort` property.
  * User-defined branded types follow the same shape.
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md §5
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md §5
  */
 
 import ts from "typescript";

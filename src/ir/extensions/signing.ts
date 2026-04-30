@@ -3,7 +3,7 @@
  * and primitive bridges.
  *
  * Per the signatures-and-non-repudiation spec
- * (docs/specs/2026-04-30-signatures-and-non-repudiation.md):
+ * (protocol/specs/2026-04-30-signatures-and-non-repudiation.md):
  * extension declarations and bridge declarations are signed with
  * Ed25519. The signature payload is the canonical bytes of the
  * declaration with the signature field removed; verifiers

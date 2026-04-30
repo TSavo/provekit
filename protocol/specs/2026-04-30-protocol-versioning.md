@@ -10,7 +10,7 @@ CID is the protocol version.
 
 ## v1.0.0
 
-Protocol catalog: `docs/specs/2026-04-30-protocol-catalog.json`
+Protocol catalog: `protocol/specs/2026-04-30-protocol-catalog.json`
 
 **Protocol version CID: `sha256:a2d062341e3ca0f0`** (v1.0.1; was `sha256:e04b7cc466911b1d` for v1.0.0)
 

@@ -4,7 +4,7 @@
  * Logical claim: for all integers x, the successor x+1 is greater than x.
  *
  * This file is the input to the TypeScript kit's lifter. It uses the
- * IR subset described in docs/specs/2026-04-29-ts-ir-language.md. The
+ * IR subset described in protocol/specs/2026-04-29-ts-ir-language.md. The
  * lifter produces an IrFormula. The canonicalizer hashes that to a
  * propertyHash.
  *

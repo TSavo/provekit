@@ -6,7 +6,7 @@
  * structures; the CBOR encoding of these structures is byte-identical
  * across host languages when the formula is logically equivalent.
  *
- * Grammar (from spec docs/specs/2026-04-29-ast-canonicalizer.md):
+ * Grammar (from spec protocol/specs/2026-04-29-ast-canonicalizer.md):
  *
  *   CanonicalFolAst := Quantifier | Connective | Atomic
  *

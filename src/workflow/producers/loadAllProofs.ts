@@ -10,7 +10,7 @@
  * Also indexes the bridge envelopes separately so the
  * enumerate-callsites stage can match Ctor names to bridges in O(1).
  *
- * Spec: docs/specs/2026-04-30-proof-file-format.md (file walking +
+ * Spec: protocol/specs/2026-04-30-proof-file-format.md (file walking +
  * trust-root verification)
  */
 

@@ -1,7 +1,7 @@
 /**
  * Extension registry — process-local store of extension declarations.
  *
- * Per the IR extension protocol (docs/specs/2026-04-30-ir-extension-protocol.md):
+ * Per the IR extension protocol (protocol/specs/2026-04-30-ir-extension-protocol.md):
  * a kit that authors invariants using extensions registers each extension
  * declaration here, then emits IR formulas referencing the extension by
  * name. Verifiers consult this registry (via the resolver) to look up

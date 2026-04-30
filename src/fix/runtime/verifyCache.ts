@@ -1,7 +1,7 @@
 /**
  * Step 6 of the standing-invariant-runtime spec: cache layer.
  *
- * Per docs/specs/2026-04-27-standing-invariant-runtime.md (section 7,
+ * Per protocol/specs/2026-04-27-standing-invariant-runtime.md (section 7,
  * "Cache layer") the verifier needs a content-addressable cache so a
  * pre-commit hook only re-runs the expensive path-enumeration / Z3 /
  * decay work for invariants whose bindings touch changed files.

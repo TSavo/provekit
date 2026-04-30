@@ -3,7 +3,7 @@
  * `property(name, formula)` calls. Each call site produces one
  * LiftedProperty.
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md §9 (top-level entry)
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md §9 (top-level entry)
  */
 
 import ts from "typescript";

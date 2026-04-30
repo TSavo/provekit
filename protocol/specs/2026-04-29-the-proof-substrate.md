@@ -574,7 +574,7 @@ The architectural foundation landed during one session on 2026-04-29:
   substrate, career arc closing.
 
 The technical foundations are 79+ tests passing. The strategic
-foundations are six canonical specs in `docs/specs/`. The market
+foundations are six canonical specs in `protocol/specs/`. The market
 positioning is set. The window is open.
 
 Next moves are concrete:

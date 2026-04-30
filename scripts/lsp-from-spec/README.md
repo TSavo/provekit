@@ -2,13 +2,13 @@
 
 Prototype Language Server demonstrating that a third-party IDE vendor can implement ProvekIt-aware features by reading the protocol spec stack alone, without depending on the `provekit` framework or its TypeScript reference implementation.
 
-Companion to `docs/specs/2026-04-30-lsp-from-protocol.md`.
+Companion to `protocol/specs/2026-04-30-lsp-from-protocol.md`.
 
 ## What this prototype does
 
-1. **Parses** a `.provekit/invariants/<id>.json` file per `docs/specs/2026-04-30-ir-formal-grammar.md`. The parser is inline (`parse.mjs`); it does not import from `src/`.
+1. **Parses** a `.provekit/invariants/<id>.json` file per `protocol/specs/2026-04-30-ir-formal-grammar.md`. The parser is inline (`parse.mjs`); it does not import from `src/`.
 
-2. **Computes propertyHash** per `docs/specs/2026-04-30-canonicalization-grammar.md`:
+2. **Computes propertyHash** per `protocol/specs/2026-04-30-canonicalization-grammar.md`:
    - Passes 1..6 (de Bruijn, predicate canonicalization, sort canonicalization, implies removal, NNF, AC normalization) per §8.
    - JCS encoding per §7.3 (sorted keys, no whitespace, RFC 8785 strings, decimal-point form for `Real(N.0)`).
    - SHA-256-prefix-16 per §9.
@@ -63,9 +63,9 @@ Per the analysis doc §3, every standard LSP capability is implementable from th
 
 4. **Extension resolver.** Once gap **G1** is closed in the spec, walk a workspace-relative directory of extension-declaration mementos and offer go-to-definition / hover for extension predicates and constructors.
 
-5. **Memento-store integration.** For verdict-aware code lens annotations (`"holds, 3 mins ago"`), read verdict mementos per `docs/specs/2026-04-30-memento-envelope-grammar.md` and render their `verdict` field.
+5. **Memento-store integration.** For verdict-aware code lens annotations (`"holds, 3 mins ago"`), read verdict mementos per `protocol/specs/2026-04-30-memento-envelope-grammar.md` and render their `verdict` field.
 
-6. **Chain-validity gate diagnostics.** Surface chain-validity reject cases R1..R15 (per `docs/specs/2026-04-30-chain-validity-and-fail-closed.md`) as in-editor diagnostics.
+6. **Chain-validity gate diagnostics.** Surface chain-validity reject cases R1..R15 (per `protocol/specs/2026-04-30-chain-validity-and-fail-closed.md`) as in-editor diagnostics.
 
 None of these requires reading `src/`. Each is sourced entirely from the protocol spec stack, plus the seven gap edits enumerated in the analysis doc.
 

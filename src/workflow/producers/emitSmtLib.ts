@@ -5,7 +5,7 @@
  * I/O. Output is a single SMT-LIB string the downstream invoke-z3 stage
  * feeds to z3 on stdin.
  *
- * Per scope discipline (docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Per scope discipline (protocol/specs/2026-04-29-correctness-is-a-hash.md
  * §"What ProvekIt is"), this stage MINTS SMT-LIB. It does not invoke a
  * solver — that's invoke-z3's job.
  */

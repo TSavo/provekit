@@ -1,7 +1,7 @@
 /**
  * Workflow runner — the work-skipping engine.
  *
- * Spec: docs/specs/2026-04-29-workflows-as-first-class-primitive.md
+ * Spec: protocol/specs/2026-04-29-workflows-as-first-class-primitive.md
  *
  * Single primitive: runStage(). Hash the input, look up the memento
  * store, return cached output on hit, run + persist on miss. The
@@ -99,7 +99,7 @@ export class WorkflowRunner {
    *   _auditSalt: randomUUID() } — unique per invocation so every call
    *   gets a distinct audit row regardless of identical input.
    *
-   * Spec: docs/specs/2026-04-29-stages-vs-actions.md
+   * Spec: protocol/specs/2026-04-29-stages-vs-actions.md
    */
   async runAction<TInput, TResource>(
     action: Action<TInput, TResource>,

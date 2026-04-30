@@ -1,7 +1,7 @@
 /**
  * Reference parser + emitter for the IR's external JSON encoding.
  *
- * Spec: docs/specs/2026-04-30-ir-formal-grammar.md
+ * Spec: protocol/specs/2026-04-30-ir-formal-grammar.md
  *
  * The parser ingests JSON conforming to the grammar and produces typed IR
  * values (IrFormula, IrTerm, Sort, Declaration). The emitter takes typed IR

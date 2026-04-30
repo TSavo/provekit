@@ -14,7 +14,7 @@
  * Tests are existential evidence ("for THIS input, output is THIS").
  * The producer renders them as a `== TESTS ==` block so the LLM
  * weighs them when generalising to a universal invariant. See spec
- * `docs/specs/2026-04-29-ts-ir-language.md` §15 ("Three-Step Unit of
+ * `protocol/specs/2026-04-29-ts-ir-language.md` §15 ("Three-Step Unit of
  * Work" — tests are the highest-value intent source). NOTE: §2 ("Two
  * LLM Calls") currently names only LLM #2 as the consumer of tests;
  * threading them into intent-extraction (an LLM #1-side producer) is
@@ -27,8 +27,8 @@
  * envelope wrapper itself is constructed downstream; this Stage owns
  * only the witness shape.
  *
- * Spec: docs/specs/2026-04-29-next-wave-prompts.md (Prompt 1).
- * Evidence shape: docs/specs/2026-04-29-universal-claim-envelope.md
+ * Spec: protocol/specs/2026-04-29-next-wave-prompts.md (Prompt 1).
+ * Evidence shape: protocol/specs/2026-04-29-universal-claim-envelope.md
  * (LlmProposalEvidence body).
  */
 

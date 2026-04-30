@@ -7,8 +7,8 @@
  * for canonicalizer internals; the canonical type definitions live
  * in the IR library.
  *
- * Spec: docs/specs/2026-04-29-ir-library.md §"Internal representation"
- *       docs/specs/2026-04-29-ast-canonicalizer.md §"The canonical FOL AST"
+ * Spec: protocol/specs/2026-04-29-ir-library.md §"Internal representation"
+ *       protocol/specs/2026-04-29-ast-canonicalizer.md §"The canonical FOL AST"
  */
 
 export type {

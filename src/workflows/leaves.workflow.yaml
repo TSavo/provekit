@@ -6,7 +6,7 @@
 # leaves by hash to compose against the proofkit's contributions.
 #
 # Scope discipline (CRITICAL):
-#   docs/specs/2026-04-29-correctness-is-a-hash.md
+#   protocol/specs/2026-04-29-correctness-is-a-hash.md
 #     §"What ProvekIt is" — the framework MINTS local mementos and
 #     ENUMERATES local state; it does NOT walk into external proofs.
 #     `provekit leaves` answers "what did we contribute?" — that question

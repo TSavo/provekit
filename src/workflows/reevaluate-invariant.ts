@@ -11,7 +11,7 @@
  *   - locate-current-function (substrate hash search + body readback)
  *   - reevaluate-invariant (LLM judgment, structured verdict)
  *
- * Spec: docs/specs/2026-04-29-the-semantic-envelope.md (case 4 routing
+ * Spec: protocol/specs/2026-04-29-the-semantic-envelope.md (case 4 routing
  * for the binding state machine).
  */
 

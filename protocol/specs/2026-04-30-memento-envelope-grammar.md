@@ -66,7 +66,7 @@ but fails a post-pass constraint is **invalid**.
 ; ============================================================
 
 ; Reference: ProvekitIrFormula (rule name `ir-formula`) is defined in
-; docs/specs/2026-04-30-ir-formal-grammar.md and imported by name.
+; protocol/specs/2026-04-30-ir-formal-grammar.md and imported by name.
 
 ; ----- Scalars and CIDs --------------------------------------
 
@@ -731,7 +731,7 @@ for local-only ones.
 ## Role: AuditMemento
 
 A Stage's input/output trace, captured for the cache-key purposes
-of the workflow runner (`docs/specs/2026-04-29-workflows-as-first-class-primitive.md`).
+of the workflow runner (`protocol/specs/2026-04-29-workflows-as-first-class-primitive.md`).
 An audit memento says "I ran this stage with these inputs and got
 this output, at this time." The framework uses audit mementos for
 deterministic replay and for reconstructing the provenance chain

@@ -13,7 +13,7 @@
  *   1   — one or more null roots; the project's correctness is
  *         incomplete (specific code paths reported)
  *
- * Scope discipline (per docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Scope discipline (per protocol/specs/2026-04-29-correctness-is-a-hash.md
  * §"What ProvekIt is"): this command MINTS local mementos and IDENTIFIES
  * null roots. It does NOT walk into external bridge targets (audit work,
  * downstream tooling). It does NOT invoke Z3 (proof-stage tooling, not

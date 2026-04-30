@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-provekit-ir-symbolic = { path = "../../../kits/rust/provekit-ir-symbolic" }
+provekit-ir-symbolic = { path = "../../../implementations/rust/provekit-ir-symbolic" }
 serde_json = "1"
 
 [[bin]]

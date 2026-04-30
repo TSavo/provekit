@@ -6,7 +6,7 @@
  * is `sorry`); the downstream `provideLeanProof` Action concatenates the
  * caller's proof file and runs `lean` on the combined input.
  *
- * Per scope discipline (docs/specs/2026-04-29-the-semantic-envelope.md),
+ * Per scope discipline (protocol/specs/2026-04-29-the-semantic-envelope.md),
  * this stage MINTS Lean source. It does not invoke `lean` — that's the
  * Action's job.
  */

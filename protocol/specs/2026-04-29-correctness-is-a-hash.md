@@ -1127,7 +1127,7 @@ What survives every rewrite:
 - **The trust posture** (adversarial re-verification; chain to physics)
 - **The architectural primitive** (content-addressed hash-and-trust)
 
-These live in `docs/specs/`. They are the framework. The code in `src/`
+These live in `protocol/specs/`. They are the framework. The code in `src/`
 is the FIRST IMPLEMENTATION OF the framework — load-bearing for
 operational existence today, replaceable in ten years, irrelevant in
 fifty.

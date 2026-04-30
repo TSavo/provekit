@@ -1,7 +1,7 @@
 /**
  * Tests for the universal claim envelope module.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
  */
 
 import { describe, it, expect } from "vitest";

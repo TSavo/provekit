@@ -2,7 +2,7 @@
   "name": "lsp-from-spec",
   "version": "0.0.1",
   "private": true,
-  "description": "Prototype LSP server built from the ProvekIt protocol spec alone (no provekit framework dependency). Companion to docs/specs/2026-04-30-lsp-from-protocol.md.",
+  "description": "Prototype LSP server built from the ProvekIt protocol spec alone (no provekit framework dependency). Companion to protocol/specs/2026-04-30-lsp-from-protocol.md.",
   "type": "module",
   "main": "server.mjs",
   "scripts": {

@@ -1,7 +1,7 @@
 /**
  * Verifications table — the relational memento store.
  *
- * Spec: docs/specs/2026-04-29-relational-memento-store.md
+ * Spec: protocol/specs/2026-04-29-relational-memento-store.md
  *
  * Each row is a deterministic verdict on a (binding_hash, property_hash)
  * pair, produced by some named producer. The framework's runtime work

@@ -1,7 +1,7 @@
 /**
  * Producer-signature key management for the ProvekIt framework.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
  *       (§ "Producer-signature scheme (v1)")
  *
  * What this module owns:

@@ -1,6 +1,6 @@
 /**
  * IntentReport contract: the canonical artifact every Part B stage produces
- * and consumes. The spec at docs/specs/2026-04-27-constraint-driven-development.md
+ * and consumes. The spec at protocol/specs/2026-04-27-constraint-driven-development.md
  * (§ "The intent report" + § "Intent report schema") names this surface as the
  * stage-to-stage contract; this module is the runtime form.
  *

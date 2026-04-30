@@ -1,9 +1,9 @@
 /**
  * Workflow manifests — workflows as data, loaded from YAML.
  *
- * Spec: docs/specs/2026-04-29-workflows-as-first-class-primitive.md
- *       docs/specs/2026-04-29-stages-vs-actions.md
- *       docs/specs/2026-04-29-per-language-kit-standard.md
+ * Spec: protocol/specs/2026-04-29-workflows-as-first-class-primitive.md
+ *       protocol/specs/2026-04-29-stages-vs-actions.md
+ *       protocol/specs/2026-04-29-per-language-kit-standard.md
  *
  * The manifest is a graph of capability calls. Each node names the
  * capability to invoke and the inputs to feed it. Inputs are a small
@@ -836,7 +836,7 @@ export function manifestToWorkflow(manifest: WorkflowManifest): Workflow {
  * version and content-addressed CID. Same lockfile + same code = same
  * mementos across machines.
  *
- * Spec: docs/specs/2026-04-29-per-language-kit-standard.md
+ * Spec: protocol/specs/2026-04-29-per-language-kit-standard.md
  */
 export interface KitLock {
   [kitName: string]: { version: string; cid: string };

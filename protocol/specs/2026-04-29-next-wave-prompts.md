@@ -87,7 +87,7 @@ from prior runs). All three of these failures are silent.
    `signEnvelope`, `verifyEnvelopeSignature`, `validateEnvelope`,
    `computeEnvelopeCid`, and all variant types.
 
-7. `docs/specs/2026-04-29-universal-claim-envelope.md` — the
+7. `protocol/specs/2026-04-29-universal-claim-envelope.md` — the
    `llm-proposal` evidence variant section. The `evidence.schema` field
    must be a hex32 CID of the variant schema definition. For v1, you
    can use a deterministic placeholder CID computed from the string
@@ -408,7 +408,7 @@ spec is explicit on this; the validation must be enforced in code.
 2. `src/workflow/manifest.test.ts` — READ ALL TESTS. Your changes must
    not break any existing test. New tests extend this file.
 
-3. `docs/specs/2026-04-29-stages-vs-actions.md` — the "YAML manifest
+3. `protocol/specs/2026-04-29-stages-vs-actions.md` — the "YAML manifest
    syntax" section and the "Reference forms" table. The key rules:
    - `$action.<id>.resource` — allowed in Stage inputs and Action inputs,
      but ONLY in a DISTINGUISHED FIELD that the runner strips before
@@ -419,7 +419,7 @@ spec is explicit on this; the validation must be enforced in code.
    - The topo-sort must handle Stage→Stage, Stage→Action, Action→Stage,
      Action→Action edges. Cycles forbidden.
 
-4. `docs/specs/2026-04-29-per-language-kit-standard.md` — the "Kit
+4. `protocol/specs/2026-04-29-per-language-kit-standard.md` — the "Kit
    registry" section and the `.provekit/kits.lock` format:
    ```yaml
    typescript: { version: "0.5.2", cid: hex32 }
@@ -756,7 +756,7 @@ accept. Both failures are silent and catastrophic.
    — the full export list. Understand what the claim-envelope module
    already provides before adding anything.
 
-4. `docs/specs/2026-04-29-universal-claim-envelope.md` — the
+4. `protocol/specs/2026-04-29-universal-claim-envelope.md` — the
    "Producer-signature scheme (v1)" section. The exact scheme:
    - ed25519 keypair per producer-id.
    - Public key published as a content-addressed artifact

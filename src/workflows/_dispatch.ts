@@ -1,7 +1,7 @@
 /**
  * Meta-dispatcher — registry assembly + manifest loading + factory map.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  *
  * The dispatcher is itself a workflow. cli.ts loads

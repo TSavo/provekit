@@ -25,7 +25,7 @@
  *   the audit memento's witness without holding a reference to the
  *   live resource.
  *
- * Spec: docs/specs/2026-04-29-stages-vs-actions.md
+ * Spec: protocol/specs/2026-04-29-stages-vs-actions.md
  */
 
 import { openOverlay as openOverlayImpl } from "../../fix/stages/openOverlay.js";

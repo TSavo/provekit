@@ -11,7 +11,7 @@
  * the next miss. Acceptable: attest is run by users who expect the
  * walk to reflect current disk state.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  */
 

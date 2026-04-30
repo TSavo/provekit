@@ -1,7 +1,7 @@
 /**
  * The memento store — write/read interface for the verifications table.
  *
- * Spec: docs/specs/2026-04-29-relational-memento-store.md
+ * Spec: protocol/specs/2026-04-29-relational-memento-store.md
  *
  * v1 scope: schema + insert + lookup + cross-validation join. Cache-
  * miss dispatch and swarm-distribution are later phases. This module
@@ -181,7 +181,7 @@ function buildEvidence(memento: Memento): EvidenceVariant {
  * change in the audit metadata.
  *
  * The row's `witness` column stores the canonicalized claim envelope
- * (per docs/specs/2026-04-29-universal-claim-envelope.md). The CID
+ * (per protocol/specs/2026-04-29-universal-claim-envelope.md). The CID
  * column is the envelope CID — sha256-prefix-32 of the canonicalized
  * envelope with `cid` and `producerSignature` elided. Producers that
  * want a typed evidence variant set `evidenceHint` on the memento;
@@ -402,7 +402,7 @@ export function findMementoByPropertyHash(
  * proofkit's local mementos are what `provekit leaves` lists, and the
  * set difference between their inputCids and their CIDs is what
  * `provekit roots` lists. Per the substrate-vs-tooling boundary in
- * docs/specs/2026-04-29-correctness-is-a-hash.md §"Naming discipline:
+ * protocol/specs/2026-04-29-correctness-is-a-hash.md §"Naming discipline:
  * leaves AND roots, not walks", both queries are LOCAL by design.
  */
 export function listAllMementos(db: Db): Memento[] {

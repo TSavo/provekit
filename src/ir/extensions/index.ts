@@ -1,7 +1,7 @@
 /**
  * Extension authoring + registry — public surface.
  *
- * See docs/specs/2026-04-30-ir-extension-protocol.md.
+ * See protocol/specs/2026-04-30-ir-extension-protocol.md.
  *
  * The framework's commitment: the IR is total via the protocol.
  * Anything that can't be expressed in bootstrapping core (Int, Real,

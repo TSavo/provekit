@@ -6,7 +6,7 @@
  * the proof chain. Pure read; no fs writes; no network.
  *
  * Scope discipline (CRITICAL):
- *   docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
+ *   protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
  *
  *   The framework operates on its OWN local leaves and lists its OWN
  *   roots. It does NOT walk into deeper-layer codebases. If a CID

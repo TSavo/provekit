@@ -7,7 +7,7 @@
  * explain / load-catalog.
  *
  * Scope discipline:
- *   docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
+ *   protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
  *   The framework MINTS local mementos and ENUMERATES local state. The
  *   leaves query is the "what did we contribute?" surface — local, free,
  *   complete.

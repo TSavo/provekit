@@ -16,7 +16,7 @@
  * keyed on the (projectRoot, principlesDir) pair; the consumer flushes
  * the cache by changing either.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  */
 

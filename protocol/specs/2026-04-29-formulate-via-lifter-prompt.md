@@ -11,8 +11,8 @@ the LEGACY shape — Z3-targeted IR formulas via the old IR-library
 builder API, with an `InvariantClaim` shape that doesn't go through
 the new lifter and doesn't compose against kit catalog bridges.
 
-The architecture-correct shape (per `docs/specs/2026-04-29-ts-ir-language.md`
-and `docs/specs/2026-04-29-correctness-is-a-hash.md`):
+The architecture-correct shape (per `protocol/specs/2026-04-29-ts-ir-language.md`
+and `protocol/specs/2026-04-29-correctness-is-a-hash.md`):
 
 1. The LLM produces TS-IR-language SURFACE text — the same TypeScript
    subset humans would write in `.invariant.ts` files.
@@ -32,13 +32,13 @@ the same way as any other published invariant.
 
 In order. One-line rationale per file:
 
-1. **`docs/specs/2026-04-29-ts-ir-language.md`** — Sections 2 (the
+1. **`protocol/specs/2026-04-29-ts-ir-language.md`** — Sections 2 (the
    two-LLM-call architecture), 9 (the lifter dispatch table), 13
    (verification cadence at git commit), 15 (three-step unit of work),
    Appendix C (the one-size-fits-all LLM template). Especially
    Appendix C — that's the prompt template the new formulate uses.
 
-2. **`docs/specs/2026-04-29-correctness-is-a-hash.md`** — Sections
+2. **`protocol/specs/2026-04-29-correctness-is-a-hash.md`** — Sections
    "What ProvekIt is" (scope discipline), "Adding propositions is
    free" (the proofHash composition), "More immutable than Bitcoin"
    (immutability properties).
@@ -270,7 +270,7 @@ Out of scope:
 feat(formulate): synthesize invariants in TS-IR-language surface
 
 Refactor the formulate stage to produce invariants in the architecture-
-correct shape per docs/specs/2026-04-29-ts-ir-language.md §2 (two-LLM-
+correct shape per protocol/specs/2026-04-29-ts-ir-language.md §2 (two-LLM-
 call architecture) and §15 (three-step unit of work).
 
 The new formulate:

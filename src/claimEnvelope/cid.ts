@@ -1,7 +1,7 @@
 /**
  * CID construction for claim envelopes.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md §CID construction
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md §CID construction
  *
  * cid = sha256(canonicalize(envelope_without_cid_and_signature))[:32 hex chars]
  *

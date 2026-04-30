@@ -524,7 +524,7 @@ backend engineering.
 ## Implementation notes
 
 - The kit's reference implementation lives in the framework's
-  `kits/go/` directory. Published to Go modules as
+  `implementations/go/` directory. Published to Go modules as
   `github.com/provekit/ir`.
 - Brands use Go 1.18+ generics. For Go versions <1.18, fall back to
   per-type brand structs (less ergonomic but functional).

@@ -749,7 +749,7 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
   it("forAll(Int, b => assert.notEqual(b, 0)) — spec example, pinned hash", () => {
     // Surface (TypeScript): forAll<Int>(b => assert.notEqual(b, 0))
     // Canonical FOL:        forall(b: Int).¬(b = 0)
-    // Spec:                 docs/specs/2026-04-29-ir-library.md §"Cross-language equivalence"
+    // Spec:                 protocol/specs/2026-04-29-ir-library.md §"Cross-language equivalence"
     const formula = irForAll(IrInt, (b) => irAssert.notEqual(b, 0));
 
     // No cast — the IR library returns IrFormula, the canonicalizer

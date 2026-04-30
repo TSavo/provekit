@@ -17,9 +17,9 @@
  * assembly). This module's only side effect is the temporary git overlay
  * worktree it opens to drive C5's agent + reads back the produced test code.
  *
- * Reference: docs/specs/2026-04-27-standing-invariant-runtime.md
+ * Reference: protocol/specs/2026-04-27-standing-invariant-runtime.md
  *            (Intake unification, outputBundle.addedTests)
- *            docs/specs/2026-04-27-constraint-driven-development.md
+ *            protocol/specs/2026-04-27-constraint-driven-development.md
  *            (the retrospective intake direction)
  *
  * Pipeline shape:

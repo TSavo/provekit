@@ -4,7 +4,7 @@
  * bridges (and, in a future revision, extension declarations) carried
  * inside.
  *
- * Spec: docs/specs/2026-04-30-proof-file-format.md
+ * Spec: protocol/specs/2026-04-30-proof-file-format.md
  *
  * Per-package shape: a package opts in by setting a `provekit` field
  * in its package.json. The field MAY include a `proofHash` hint

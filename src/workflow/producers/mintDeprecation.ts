@@ -21,7 +21,7 @@
  * directly.
  *
  * Spec:
- *   docs/specs/2026-04-29-correctness-is-a-hash.md §"Change the
+ *   protocol/specs/2026-04-29-correctness-is-a-hash.md §"Change the
  *     invariant, the hash changes" — silent deprecation is impossible;
  *     the propertyHash diff surfaces the change.
  */

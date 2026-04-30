@@ -26,7 +26,7 @@
  *
  * No LLM. The Stage's job is adjudication, not synthesis.
  *
- * Spec: docs/specs/2026-04-29-the-semantic-envelope.md (case 4 routing
+ * Spec: protocol/specs/2026-04-29-the-semantic-envelope.md (case 4 routing
  * via mechanical implication; the forensic report's directionVerdict
  * field is this Stage's output).
  */

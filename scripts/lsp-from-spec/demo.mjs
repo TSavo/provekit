@@ -39,7 +39,7 @@ for (const d of decls) {
   console.log(`    formula kind:   ${d.formula.kind}`);
   console.log(`    propertyHash:   ${cid}`);
   console.log(`    canonicalForm:  jcs-rfc8785`);
-  console.log(`    spec source:    docs/specs/2026-04-30-canonicalization-grammar.md §3, §7.3, §9`);
+  console.log(`    spec source:    protocol/specs/2026-04-30-canonicalization-grammar.md §3, §7.3, §9`);
 }
 
 console.log("\n=== Demonstration complete. ===");

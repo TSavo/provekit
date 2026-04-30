@@ -2,7 +2,7 @@
 
 Parallel to `src/ir/smt/`. Z3 and CVC5 are SMT-shaped verdict sources;
 Lean 4 is the proof-assistant leg of the cross-paradigm composition test
-(see `docs/specs/2026-04-29-the-semantic-envelope.md`). All three attach
+(see `protocol/specs/2026-04-29-the-semantic-envelope.md`). All three attach
 as leaves to the same IR CID.
 
 ## Public surface

@@ -1,8 +1,8 @@
 # Principalize workflow — lift a recurring invariant pattern into a
 # candidate principle.
 #
-# Spec: docs/specs/2026-04-27-constraint-driven-development.md (principle
-#       library concept) and docs/specs/2026-04-29-stages-vs-actions.md
+# Spec: protocol/specs/2026-04-27-constraint-driven-development.md (principle
+#       library concept) and protocol/specs/2026-04-29-stages-vs-actions.md
 #       (Stage vs Action contracts).
 #
 # Pipeline: collect → cluster → validate → (Action) publish.

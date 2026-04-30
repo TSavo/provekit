@@ -1,7 +1,7 @@
 /**
  * .proof file format — protocol-level binary distribution artifact.
  *
- * Spec: docs/specs/2026-04-30-proof-file-format.md
+ * Spec: protocol/specs/2026-04-30-proof-file-format.md
  *
  * Build, encode, decode, and verify .proof envelopes. The envelope is
  * a deterministic CBOR (RFC 8949 §4.2.1) encoding of a catalog memento

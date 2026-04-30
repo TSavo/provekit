@@ -26,7 +26,7 @@
  * Re-running with the same inputs returns the same verdict; the runner
  * caches under those keys.
  *
- * Spec: docs/specs/2026-04-29-the-semantic-envelope.md (case 3 routing
+ * Spec: protocol/specs/2026-04-29-the-semantic-envelope.md (case 3 routing
  * is a corollary of "code-invariant claims compose by CID; verdicts on
  * those claims are downstream Stages").
  */

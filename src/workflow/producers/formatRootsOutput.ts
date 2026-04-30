@@ -5,7 +5,7 @@
  * enumerate-local-roots and stringifies for an auditor's consumption
  * (`text`, default) or for tooling (`json`).
  *
- * Per docs/specs/2026-04-29-correctness-is-a-hash.md §"Naming discipline:
+ * Per protocol/specs/2026-04-29-correctness-is-a-hash.md §"Naming discipline:
  * leaves AND roots, not walks", the framework's job here is to surface
  * the precise list of external CIDs an auditor must walk; the auditor
  * does the walking.

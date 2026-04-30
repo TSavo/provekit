@@ -6,7 +6,7 @@
  * definition files in `evidence-schemas/`. Producers bake the CIDs
  * from this registry into their variant emitters.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md §Evidence variants
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md §Evidence variants
  */
 
 // Re-export variant types from the main types file for convenience.

@@ -1,6 +1,6 @@
 /**
  * Trimmed parseInt fixture for lifter tests. Mirrors the catalog spine
- * (docs/specs/builtins-catalog/parseInt.invariant.ts) at a smaller
+ * (protocol/specs/builtins-catalog/parseInt.invariant.ts) at a smaller
  * surface area so the lifter test suite has stable change cadence.
  */
 

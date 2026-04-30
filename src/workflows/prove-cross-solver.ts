@@ -14,7 +14,7 @@
  * reference the SAME IR sourceCid, and the cross-solver memento composes
  * over both.
  *
- * Spec: docs/specs/2026-04-29-the-semantic-envelope.md
+ * Spec: protocol/specs/2026-04-29-the-semantic-envelope.md
  */
 
 import { readFileSync } from "fs";

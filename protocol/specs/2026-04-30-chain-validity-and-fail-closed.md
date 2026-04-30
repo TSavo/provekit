@@ -24,25 +24,25 @@ drift; see "Drift from current implementation" at the end.
 
 This spec depends on, and references by name:
 
-- `docs/specs/2026-04-29-the-semantic-envelope.md`: why semantic-layer
+- `protocol/specs/2026-04-29-the-semantic-envelope.md`: why semantic-layer
   composition exists at all.
-- `docs/specs/2026-04-29-supply-chain-via-semantic-envelope.md`: the
+- `protocol/specs/2026-04-29-supply-chain-via-semantic-envelope.md`: the
   attack classes the fail-closed gate must detect.
-- `docs/specs/2026-04-29-stages-vs-actions.md`: why audit mementos
+- `protocol/specs/2026-04-29-stages-vs-actions.md`: why audit mementos
   exist alongside claim mementos.
-- `docs/specs/2026-04-29-universal-claim-envelope.md`: wrapper schema,
+- `protocol/specs/2026-04-29-universal-claim-envelope.md`: wrapper schema,
   CID construction, and the v1 producer-signature scheme. This spec
   references the signature scheme defined in the
   "Producer-signature scheme (v1)" section of that document. A
   standalone signatures-and-non-repudiation spec is anticipated; when
   it lands, it will need a back-reference to this spec for chain-level
   signature gating semantics.
-- `docs/specs/2026-04-29-correctness-is-a-hash.md`: the leaves vs
+- `protocol/specs/2026-04-29-correctness-is-a-hash.md`: the leaves vs
   roots boundary, and the explicit non-shipping of a deep walker.
-- `docs/specs/2026-04-29-attack-surfaces.md`: adversarial taxonomy.
-- `docs/specs/2026-04-30-ir-formal-grammar.md`: IR canonical form,
+- `protocol/specs/2026-04-29-attack-surfaces.md`: adversarial taxonomy.
+- `protocol/specs/2026-04-30-ir-formal-grammar.md`: IR canonical form,
   required for IR-CID equality checks.
-- `docs/specs/2026-04-29-ast-canonicalizer.md`: AST canonicalization.
+- `protocol/specs/2026-04-29-ast-canonicalizer.md`: AST canonicalization.
 
 ## Terminology
 

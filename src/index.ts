@@ -6,7 +6,7 @@
 // this file is internal and may break without notice.
 //
 // The four canonical entry points named in
-// docs/specs/2026-04-27-standing-invariant-runtime.md (Distribution surface,
+// protocol/specs/2026-04-27-standing-invariant-runtime.md (Distribution surface,
 // Artifact 2) are:
 //
 //   runFixLoop      — the full LLM-touching pipeline
@@ -29,7 +29,7 @@ export type { RunFixLoopArgs, FixLoopResultWithArtifacts } from "./fix/orchestra
 // Individual pipeline stages (channel 2 — call them directly without the
 // orchestrator).
 //
-// Per docs/specs/2026-04-27-constraint-driven-development.md "The pipeline
+// Per protocol/specs/2026-04-27-constraint-driven-development.md "The pipeline
 // as a composition of swappable processes": every stage's input/output type
 // is a public, documented contract. The library entry points expose stages
 // individually, not just runFixLoop. An integrator who wants only our C5

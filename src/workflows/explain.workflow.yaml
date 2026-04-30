@@ -6,7 +6,7 @@
 # rendering of the chain.
 #
 # Scope discipline (CRITICAL):
-#   docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
+#   protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
 #
 #   This workflow does NOT walk into deeper-layer codebases. CIDs that
 #   appear in `inputCids` but are not present in the local store are

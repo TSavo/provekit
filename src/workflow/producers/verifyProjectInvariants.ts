@@ -4,7 +4,7 @@
  * per declaration, compose them into a project root memento, and report
  * any null roots (upstream CIDs referenced but not locally available).
  *
- * Stage contract per `docs/specs/2026-04-29-stages-vs-actions.md`:
+ * Stage contract per `protocol/specs/2026-04-29-stages-vs-actions.md`:
  *   - Pure, cacheable
  *   - Input: invariant-file content (path + source) + locally-known CIDs
  *   - Output: minted CIDs + project root CID + null roots list

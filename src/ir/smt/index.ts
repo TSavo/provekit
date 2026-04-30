@@ -22,7 +22,7 @@
  * architectural claim that propertyHash CIDs are solver-agnostic:
  * two translators, two solver verdicts, one IR root. See
  * `src/workflows/prove-cross-solver.test.ts` and
- * `docs/specs/2026-04-29-the-semantic-envelope.md`.
+ * `protocol/specs/2026-04-29-the-semantic-envelope.md`.
  */
 
 import type { IrFormula } from "../formulas.js";

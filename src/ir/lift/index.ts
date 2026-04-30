@@ -5,7 +5,7 @@
  * `.invariant.ts` files into canonical IrFormula values that the
  * canonicalizer (src/canonicalizer/) consumes verbatim.
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md
  *
  * Entry points:
  *   liftProject(program)         - lift every .invariant.ts in the program

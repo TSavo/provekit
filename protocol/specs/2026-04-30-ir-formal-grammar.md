@@ -471,7 +471,7 @@ to the grammar.
 | TypeScript       | yes              | Manual object literals with deterministic key order; runs in `src/ir/symbolic/`.            |
 | Rust             | yes              | `serde::Serialize` with field declaration order matching this document.                    |
 | Go               | yes              | `encoding/json` with struct field order matching this document.                             |
-| C++              | yes              | Hand-written JSON serialization in `kits/cpp/provekit-ir-symbolic/include/`.                |
+| C++              | yes              | Hand-written JSON serialization in `implementations/cpp/provekit-ir-symbolic/include/`.                |
 
 Conformance today is a *fact* (the harness verifies byte-equality on three
 fixtures). This grammar promotes it to a *contract* — any future kit, or any

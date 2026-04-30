@@ -12,7 +12,7 @@
  * produce resources — a stdout write does not yield a resource handle
  * the audit DAG can refer to.
  *
- * Spec: docs/specs/2026-04-29-stages-vs-actions.md
+ * Spec: protocol/specs/2026-04-29-stages-vs-actions.md
  */
 
 import { writeFileSync, mkdirSync } from "fs";

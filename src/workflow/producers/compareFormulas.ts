@@ -20,7 +20,7 @@
  * relaxation vs tightening — used by downstream consumers (the
  * workflow's terminal verdict) but not interpreted by this Stage.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md §"Change the
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md §"Change the
  *       invariant, the hash changes"
  */
 

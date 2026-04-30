@@ -8,7 +8,7 @@
  * the rest of the framework reads; mutating it is impure and must not
  * be cached.
  *
- * Spec: docs/specs/2026-04-29-stages-vs-actions.md (Action contract)
+ * Spec: protocol/specs/2026-04-29-stages-vs-actions.md (Action contract)
  *       src/fix/stages/recognize.ts (LibraryPrinciple loader)
  *
  * The Action's resource is the path to the file written. The audit

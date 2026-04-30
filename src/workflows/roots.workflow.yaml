@@ -6,7 +6,7 @@
 # locally verifying. Auditors take this list and traverse externally.
 #
 # Scope discipline (CRITICAL):
-#   docs/specs/2026-04-29-correctness-is-a-hash.md
+#   protocol/specs/2026-04-29-correctness-is-a-hash.md
 #     §"What ProvekIt is" — the framework explicitly does NOT ship a deep
 #     verifier. `provekit roots` surfaces the precise audit boundary; the
 #     auditor's tooling does the walking.

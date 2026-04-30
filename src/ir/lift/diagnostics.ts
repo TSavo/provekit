@@ -3,7 +3,7 @@
  * pipelines can consume them with the same machinery they already use
  * for type errors.
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md §9 "Error reporting"
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md §9 "Error reporting"
  */
 
 import ts from "typescript";

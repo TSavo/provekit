@@ -14,7 +14,7 @@
  * on disk has been through the same correctness story (just deferred until
  * `provekit verify` re-resolves bindings and re-checks paths).
  *
- * Reference: docs/specs/2026-04-27-standing-invariant-runtime.md, §
+ * Reference: protocol/specs/2026-04-27-standing-invariant-runtime.md, §
  * "Implementation order" item 11.
  *
  * v1 scope:

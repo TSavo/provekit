@@ -2,7 +2,7 @@
  * enumerate-local-roots Stage — list external CIDs the proofkit references
  * but did not mint locally.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"Naming discipline: leaves AND roots, not walks"
  *
  * The set difference IS the framework's completeness primitive: walk every

@@ -33,7 +33,7 @@
 #   timeoutMs?:   number         — solver timeout, default 30000
 #   producedBy?:  string         — verdict producer identity
 #
-# Spec: docs/specs/2026-04-29-the-semantic-envelope.md
+# Spec: protocol/specs/2026-04-29-the-semantic-envelope.md
 
 name: prove-cross-solver
 cid: bafy-prove-cross-solver-v1

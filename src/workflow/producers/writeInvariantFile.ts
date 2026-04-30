@@ -18,7 +18,7 @@
  * the content. describeResource serializes both; the live filesystem
  * handle is implicit (the path).
  *
- * Spec: docs/specs/2026-04-29-stages-vs-actions.md
+ * Spec: protocol/specs/2026-04-29-stages-vs-actions.md
  */
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";

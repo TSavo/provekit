@@ -1,7 +1,7 @@
 /**
  * Producer registry — capability dispatch.
  *
- * Spec: docs/specs/2026-04-29-workflows-as-first-class-primitive.md
+ * Spec: protocol/specs/2026-04-29-workflows-as-first-class-primitive.md
  *
  * Workflows reference work by capability name ("intake", "verify",
  * "patch") rather than by concrete Stage. The registry resolves a

@@ -7,7 +7,7 @@
  * `.invariant.ts` extension so the lifter's anchoring check (spec §3)
  * permits `property()` calls inside it.
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md §9 (the lifter)
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md §9 (the lifter)
  *
  * The helper bundles ambient declarations for `provekit/ir` and
  * `provekit/sorts` so surface text that imports those modules

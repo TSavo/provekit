@@ -4,7 +4,7 @@
  * Looks up a kit-catalog memento by proofHash from the local memento
  * store and reads its bridge children's propertyHashes. The catalog
  * is a memento whose `cid` IS the kit's proofHash (per
- * docs/specs/2026-04-29-correctness-is-a-hash.md §"Three-coordinate
+ * protocol/specs/2026-04-29-correctness-is-a-hash.md §"Three-coordinate
  * artifact identity") and whose `inputCids` list the bridge mementos
  * the kit publishes.
  *

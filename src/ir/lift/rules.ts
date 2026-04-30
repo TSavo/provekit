@@ -10,7 +10,7 @@
  * while `===`, `<`, etc. are atomic IrFormula values whose args are
  * IrTerm.
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md §9
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md §9
  */
 
 import ts from "typescript";

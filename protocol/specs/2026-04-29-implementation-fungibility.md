@@ -52,7 +52,7 @@ disagree on the verdict, the disagreement is itself a quality signal.
 
 ## What "the spec remains durable" means
 
-The framework's specs in `docs/specs/` are the canonical artifact.
+The framework's specs in `protocol/specs/` are the canonical artifact.
 Each spec has its own CID (content-hash of its canonicalized
 contents). The collection of specs at a given commit defines "what
 the framework is" at that point in time.

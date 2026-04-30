@@ -3,7 +3,7 @@
  * browser extension) calls into. Wraps the existing per-invariant Z3
  * verification (verifyAllCached) with the protocol's structured
  * fail-closed report shape per
- * docs/specs/2026-04-30-chain-validity-and-fail-closed.md.
+ * protocol/specs/2026-04-30-chain-validity-and-fail-closed.md.
  *
  * Callable from any TS context. No CLI ceremony, no workflow runner.
  * The LSP calls this on every save (or every keystroke, with debounce)

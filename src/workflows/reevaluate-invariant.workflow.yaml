@@ -21,7 +21,7 @@
 #   gone         → retire workflow
 #   uncertain    → human review; no auto-route
 #
-# Spec: docs/specs/2026-04-29-the-semantic-envelope.md (case 3 of the
+# Spec: protocol/specs/2026-04-29-the-semantic-envelope.md (case 3 of the
 # binding state machine)
 
 name: reevaluate-invariant

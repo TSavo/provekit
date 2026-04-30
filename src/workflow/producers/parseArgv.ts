@@ -1,7 +1,7 @@
 /**
  * parse-argv Stage — first node of the meta-dispatcher workflow.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  *
  * Pure over `(argv, cliBlocks)`. The dispatcher cli.ts walks

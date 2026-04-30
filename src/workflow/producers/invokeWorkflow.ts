@@ -1,7 +1,7 @@
 /**
  * invoke-workflow Action — terminal node of the meta-dispatcher.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  *
  * Side-effecting: invokes a real workflow against a real DB / LLM /

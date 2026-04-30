@@ -9,10 +9,10 @@
  * a stable, documented shape that integrators can target.
  *
  * Spec citations:
- *   docs/specs/2026-04-27-constraint-driven-development.md
+ *   protocol/specs/2026-04-27-constraint-driven-development.md
  *     "The pipeline as a composition of swappable processes"
  *     "Part B as a plugin: the constraint-minting interface"
- *   docs/specs/2026-04-27-standing-invariant-runtime.md
+ *   protocol/specs/2026-04-27-standing-invariant-runtime.md
  *     "Distribution surface" / "What integrators can swap"
  *
  * Design notes:

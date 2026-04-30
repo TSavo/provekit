@@ -74,7 +74,7 @@ export function bool(value: boolean): IrTerm {
 // At module load, each primitive registers a bridge declaration in
 // the kit's registry. Verifiers walk the registry to resolve IR
 // names through the protocol's resolver semantics
-// (docs/specs/2026-04-30-ir-extension-protocol.md §5).
+// (protocol/specs/2026-04-30-ir-extension-protocol.md §5).
 //
 // `targetContractCid` values here are placeholders today. When the
 // V8 / ECMA-262 catalogs are published with signed declarations,

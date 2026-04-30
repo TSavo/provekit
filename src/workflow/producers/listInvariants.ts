@@ -9,7 +9,7 @@
  * pure given the on-disk content. Cache key is (projectRoot,
  * includeRetired).
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  */
 

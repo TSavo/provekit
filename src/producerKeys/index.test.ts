@@ -1,8 +1,8 @@
 /**
  * Tests for src/producerKeys/index.ts.
  *
- * Spec: docs/specs/2026-04-29-next-wave-prompts.md (Prompt 3)
- *       docs/specs/2026-04-29-universal-claim-envelope.md
+ * Spec: protocol/specs/2026-04-29-next-wave-prompts.md (Prompt 3)
+ *       protocol/specs/2026-04-29-universal-claim-envelope.md
  *         (§ "Producer-signature scheme (v1)")
  *
  * Coverage:

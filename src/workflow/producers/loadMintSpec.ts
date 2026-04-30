@@ -12,7 +12,7 @@
  * into the input shape this Stage accepts; it does NOT itself read
  * argv.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  */
 

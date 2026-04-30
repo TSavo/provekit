@@ -53,6 +53,6 @@ server; the substrate is here.
 This LSP imports `verifyProject` from the reference TypeScript
 implementation in this repo. An alternative LSP could implement
 ProvekIt's protocol from spec alone (no provekit dependency); see
-`docs/specs/2026-04-30-lsp-from-protocol.md` (in flight) for the
+`protocol/specs/2026-04-30-lsp-from-protocol.md` (in flight) for the
 investigation. Both shapes are valid; this LSP is the convenience
 implementation that ships with the kit.

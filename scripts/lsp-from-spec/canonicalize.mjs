@@ -1,5 +1,5 @@
 // Inline canonicalizer + propertyHash, derived from
-// docs/specs/2026-04-30-canonicalization-grammar.md.
+// protocol/specs/2026-04-30-canonicalization-grammar.md.
 //
 // Scope of this prototype: a CORRECT implementation of passes 1..6 + pass 7 JCS
 // + pass 8 sha256-prefix-16 is mechanical but >300 lines. For the demo we

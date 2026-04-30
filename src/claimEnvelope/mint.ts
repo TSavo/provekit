@@ -10,7 +10,7 @@
  * computeEnvelopeCid + envelope construction manually each time.
  *
  * In keeping with the framework's scope discipline (see
- * docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"),
+ * protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"),
  * these helpers MINT mementos. They do NOT walk DAGs, traverse
  * bridges, or audit chains. Walking is downstream tooling.
  */
@@ -99,7 +99,7 @@ export interface MintBridgeArgs {
  * bridge's verdict is "I am the surface of that hash"; consumers
  * compose against the hash and stop there.
  *
- * See docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
+ * See protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
  * for the scope discipline this helper preserves.
  */
 export function mintBridge(args: MintBridgeArgs): ClaimEnvelope {

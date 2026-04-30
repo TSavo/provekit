@@ -14,9 +14,9 @@
  * no-existing-violation) are identical regardless of which intake direction
  * fed the pipeline.
  *
- * Reference: docs/specs/2026-04-27-standing-invariant-runtime.md
+ * Reference: protocol/specs/2026-04-27-standing-invariant-runtime.md
  *            ("Intake unification (v1)" section, B0 stage).
- *            docs/specs/2026-04-27-constraint-driven-development.md
+ *            protocol/specs/2026-04-27-constraint-driven-development.md
  *            ("The intent report" section, schema source-of-truth).
  *
  * v1 scope: intent extraction only. This module is independently testable;

@@ -1,7 +1,7 @@
 /**
  * Canonical JSON encoding for claim envelopes.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md §CID construction
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md §CID construction
  * (line ~271): "Canonical encoding: JSON with sorted keys, no whitespace, UTF-8."
  *
  * Encoding choice: canonical JSON rather than CBOR. The spec is explicit

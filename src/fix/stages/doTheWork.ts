@@ -3,7 +3,7 @@
  * single work product; the verification gates (Oracle #2, Oracle #9) stay
  * separate and run mechanically after the LLM returns.
  *
- * Architectural rationale: see docs/specs/2026-04-27-constraint-driven-development.md
+ * Architectural rationale: see protocol/specs/2026-04-27-constraint-driven-development.md
  * §"One fork: the verifier's verdict" and the do-the-work prompt at
  * src/fix/prompts/doTheWork.ts. The framework operates on intents; "fix this
  * bug" and "add this feature" are the same shape (intent → change + test

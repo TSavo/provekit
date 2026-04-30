@@ -1,7 +1,7 @@
 /**
  * Workflow primitive — the layer above the memento store.
  *
- * Spec: docs/specs/2026-04-29-workflows-as-first-class-primitive.md
+ * Spec: protocol/specs/2026-04-29-workflows-as-first-class-primitive.md
  *
  * A Stage is a single unit of work: hash its input, look up the memento
  * store, return the cached output if it exists, otherwise run and cache.
@@ -26,7 +26,7 @@
  *   only memento (write-only — no cache lookup ever happens). Does not
  *   compose into binding hashes downstream.
  *
- * Spec: docs/specs/2026-04-29-stages-vs-actions.md
+ * Spec: protocol/specs/2026-04-29-stages-vs-actions.md
  */
 export interface Action<TInput, TResource> {
   /** Action identity within a workflow. */

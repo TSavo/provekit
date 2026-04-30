@@ -3,7 +3,7 @@
  * relevant to a diff so they can flow through `intent-from-diff` (and
  * downstream into `formulate-via-lifter`) as existential evidence.
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md §15 — tests are the
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md §15 — tests are the
  * highest-value intent source.
  *
  * The helper is intentionally cheap. No LLM, no network. It walks the

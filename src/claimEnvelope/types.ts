@@ -1,7 +1,7 @@
 /**
  * Universal claim envelope — TypeScript types.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
  *
  * The wrapper schema is fixed. New evidence kinds slot into the
  * EvidenceVariant discriminated union without changing wrapper fields.

@@ -5,10 +5,10 @@
  * v2 lifter (`src/ir/lift/`), canonicalizes, and emits a propertyHash.
  *
  * Spec:
- *   docs/specs/2026-04-29-ts-ir-language.md §2 (two-LLM-call architecture)
- *   docs/specs/2026-04-29-ts-ir-language.md §9 (lifter dispatch)
- *   docs/specs/2026-04-29-ts-ir-language.md §15 (three-step unit of work)
- *   docs/specs/2026-04-29-ts-ir-language.md Appendix C (LLM template)
+ *   protocol/specs/2026-04-29-ts-ir-language.md §2 (two-LLM-call architecture)
+ *   protocol/specs/2026-04-29-ts-ir-language.md §9 (lifter dispatch)
+ *   protocol/specs/2026-04-29-ts-ir-language.md §15 (three-step unit of work)
+ *   protocol/specs/2026-04-29-ts-ir-language.md Appendix C (LLM template)
  *
  * Note on path A: this Stage is registered alongside the legacy
  * `formulate` capability under a NEW capability name. The legacy

@@ -4,7 +4,7 @@
  * subset. Calls not in the registry are diagnostic-rejected per spec
  * §6.2 "Side-effecting calls".
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md §11
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md §11
  *
  * v1 stores only sort signatures. Symbolic-range contracts (the
  * downstream prover input) are out of scope per cut list.

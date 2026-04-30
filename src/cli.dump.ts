@@ -1,7 +1,7 @@
 /**
  * `provekit dump` — inspect a binary `.proof` file.
  *
- * A `.proof` file is deterministic CBOR (per docs/specs/2026-04-30-proof-file-format.md).
+ * A `.proof` file is deterministic CBOR (per protocol/specs/2026-04-30-proof-file-format.md).
  * Without an inspection tool, the format is hostile. This command:
  *
  *   1. Reads the .proof file's bytes

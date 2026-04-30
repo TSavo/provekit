@@ -1,7 +1,7 @@
 /**
  * Validation rules for claim envelopes.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md §Validation rules
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md §Validation rules
  *
  * Validates:
  * 1. Wrapper shape (required fields, types, verdict enum, producedBy format).

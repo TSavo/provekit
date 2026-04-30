@@ -20,7 +20,7 @@
  * when one solver returns "unknown" while the other resolves. The Stage
  * captures the disagreement as data so downstream consumers can audit it.
  *
- * Spec: docs/specs/2026-04-29-the-semantic-envelope.md §"propertyHash
+ * Spec: protocol/specs/2026-04-29-the-semantic-envelope.md §"propertyHash
  * CID is canonical identity; solver verdicts are downstream Stages
  * that compose against it."
  */

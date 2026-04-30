@@ -11,7 +11,7 @@
  * one IR root — that composition is the load-bearing demonstration of
  * the architectural claim that propertyHash CIDs are solver-agnostic.
  *
- * Spec: docs/specs/2026-04-29-universal-claim-envelope.md
+ * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
  */
 
 import { emitCvc5SmtLibProblem } from "../../ir/cvc5/index.js";

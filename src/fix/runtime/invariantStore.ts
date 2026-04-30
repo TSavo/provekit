@@ -1,7 +1,7 @@
 /**
  * Invariant store — step 1 of the standing-invariant-runtime spec.
  *
- * Per docs/specs/2026-04-27-standing-invariant-runtime.md: the fix loop's
+ * Per protocol/specs/2026-04-27-standing-invariant-runtime.md: the fix loop's
  * derived constraint must live as a source-controlled, content-addressable
  * artifact at `.provekit/invariants/<sha>.json`. Two runs producing the
  * same constraint write the same file (idempotent). The patch commit and

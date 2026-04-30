@@ -50,9 +50,9 @@ toolchains (npx, cargo, go, clang++) are present, and skips otherwise.
 | Kit  | Compiler   | Source                                        |
 |------|------------|-----------------------------------------------|
 | TS   | tsx (Node) | `src/ir/symbolic/`                            |
-| Rust | cargo      | `kits/rust/provekit-ir-symbolic/`             |
-| Go   | go         | `kits/go/provekit-ir-symbolic/`               |
-| C++  | clang++    | `kits/cpp/provekit-ir-symbolic/include/`      |
+| Rust | cargo      | `implementations/rust/provekit-ir-symbolic/`             |
+| Go   | go         | `implementations/go/provekit-ir-symbolic/`               |
+| C++  | clang++    | `implementations/cpp/provekit-ir-symbolic/include/`      |
 
 The C++ kit is currently minimum-viable (header-only, only the types
 required for the fixture set). Connectives, exists, bridge, parseInt,

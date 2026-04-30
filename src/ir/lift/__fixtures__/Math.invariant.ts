@@ -1,6 +1,6 @@
 /**
  * Trimmed Math fixture for lifter tests. Mirrors the catalog spine
- * (docs/specs/builtins-catalog/Math.invariant.ts).
+ * (protocol/specs/builtins-catalog/Math.invariant.ts).
  */
 
 import { property, forAll, implies } from "provekit/ir";

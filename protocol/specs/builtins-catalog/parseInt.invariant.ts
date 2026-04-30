@@ -20,8 +20,8 @@
  * redefine.
  *
  * This is exactly the architectural pattern described in:
- *   docs/specs/2026-04-29-correctness-is-a-hash.md §"Adding propositions"
- *   docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
+ *   protocol/specs/2026-04-29-correctness-is-a-hash.md §"Adding propositions"
+ *   protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
  *
  * --------------------------------------------------------------------------
  * The previous form of this file (~120 lines redefining 17 properties)

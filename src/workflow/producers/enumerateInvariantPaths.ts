@@ -6,7 +6,7 @@
  * surface: useful for debugging the enumerator before / alongside the
  * Z3 path checker.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  */
 

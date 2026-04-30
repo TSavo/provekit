@@ -7,7 +7,7 @@
  * content-addressable claim about a deterministic input: identical
  * SMT-LIB + identical cvc5 version produces the identical verdict, so
  * it caches. This is the same rationale as invokeZ3 — see
- * docs/specs/2026-04-29-stages-vs-actions.md and the docstring on
+ * protocol/specs/2026-04-29-stages-vs-actions.md and the docstring on
  * src/workflow/producers/invokeZ3.ts.
  *
  * The two solver Stages take the SAME IR (different SMT-LIB byte

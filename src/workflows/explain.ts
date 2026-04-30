@@ -7,7 +7,7 @@
  * network calls. Reuses the shared `renderProofChain` producer.
  *
  * Scope discipline:
- *   docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
+ *   protocol/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
  *   The framework operates on its OWN local leaves and lists its OWN
  *   roots — it does not traverse external CIDs. This workflow makes
  *   that boundary visible by surfacing `unresolvedInputCids` rather

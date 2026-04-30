@@ -3,7 +3,7 @@
  * files whose path ends in `.invariant.ts`. Production code must
  * remain bit-identical to its pre-ProvekIt state.
  *
- * Spec: docs/specs/2026-04-29-ts-ir-language.md §3
+ * Spec: protocol/specs/2026-04-29-ts-ir-language.md §3
  */
 
 import ts from "typescript";

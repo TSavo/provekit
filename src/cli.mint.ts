@@ -28,7 +28,7 @@
  *   default        ephemeral keypair generated, public key emitted
  *                  alongside (warning emitted to stderr)
  *
- * Scope discipline (per docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Scope discipline (per protocol/specs/2026-04-29-correctness-is-a-hash.md
  * §"What ProvekIt is"): this command MINTS. It does NOT walk DAGs or
  * audit deeper layers.
  */
@@ -324,7 +324,7 @@ Usage:
                               [--produced-by <id>]
                               [--key <path>] [--out-dir <path>]
     Composes all *.json mementos in <dir> into a deterministic-CBOR
-    .proof envelope (per docs/specs/2026-04-30-proof-file-format.md).
+    .proof envelope (per protocol/specs/2026-04-30-proof-file-format.md).
     Output written as <cid>.proof in --out-dir (default cwd); the
     filename IS the bytes hash and the protocol's trust root.
   provekit mint generic   [--spec <path>] [--key <path>] [--out <path>]

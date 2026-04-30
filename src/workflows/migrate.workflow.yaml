@@ -1,6 +1,6 @@
 # Migrate workflow — produce a punch list when a kit's proofHash changes.
 #
-# Spec: docs/specs/2026-04-29-correctness-is-a-hash.md §"Library upgrades
+# Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md §"Library upgrades
 #       are proof-hash diffs". Two catalogs whose proofHashes differ get
 #       diffed; project invariants that reference Removed or Modified
 #       propertyHashes are surfaced as impacted callsites.

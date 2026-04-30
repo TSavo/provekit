@@ -1,7 +1,7 @@
 /**
  * locate-workflow Stage — second node of the meta-dispatcher.
  *
- * Spec: docs/specs/2026-04-29-correctness-is-a-hash.md
+ * Spec: protocol/specs/2026-04-29-correctness-is-a-hash.md
  *       §"All operations are YAML workflows"
  *
  * Pure over `(command, manifestPaths)`. Given a command name and a

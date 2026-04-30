@@ -7,7 +7,7 @@
  * + the project root CID + the null-root count so auditors can confirm
  * what shipped without re-running the verification.
  *
- * Spec: docs/specs/2026-04-29-stages-vs-actions.md
+ * Spec: protocol/specs/2026-04-29-stages-vs-actions.md
  */
 
 import { writeFileSync, mkdirSync } from "fs";

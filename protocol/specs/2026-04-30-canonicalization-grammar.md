@@ -492,8 +492,8 @@ spec major bump.
 ## 12. Conformance
 
 Today's reality: only the TypeScript canonicalizer at
-`src/canonicalizer/` implements this spec. The kits in `kits/rust/`,
-`kits/go/`, `kits/cpp/` implement the *IR-emission* layer (sibling spec)
+`src/canonicalizer/` implements this spec. The kits in `implementations/rust/`,
+`implementations/go/`, `implementations/cpp/` implement the *IR-emission* layer (sibling spec)
 but not the canonical layer. The cross-language harness in
 `scripts/cross-lang-equivalence/` validates IR-JSON parity, NOT
 `propertyHash` parity.

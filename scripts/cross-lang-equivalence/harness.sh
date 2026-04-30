@@ -35,7 +35,7 @@ RUST_BIN="$SCRIPT_DIR/rust-runner/target/release/cross-lang-runner"
 
 echo "[harness] building cpp runner..."
 clang++ -std=c++17 -O2 \
-  -I "$SCRIPT_DIR/../../kits/cpp/provekit-ir-symbolic/include" \
+  -I "$SCRIPT_DIR/../../implementations/cpp/provekit-ir-symbolic/include" \
   "$SCRIPT_DIR/cpp-runner/main.cpp" \
   -o "$SCRIPT_DIR/cpp-runner/cross-lang-runner" \
   || { echo "cpp build failed"; exit 2; }
