@@ -1,0 +1,30 @@
+{
+  "consumer": "consumer-project@local",
+  "installedPackage": "@provekit/ts-kit@1.0.0",
+  "catalogCid": "abc1c65292f0ef5cd3e879e464b9073c",
+  "publishedProofHash": "abc1c65292f0ef5cd3e879e464b9073c",
+  "bridgesAvailable": [
+    "0e5e5c48978f4f7b62696436aec777ad",
+    "0ee40455c1c95c33284768496e76125f",
+    "0fdb2039a4ff333a6e7516ded444ed44",
+    "5f699b60e282be34b6b8196d3bc6dcc7",
+    "75b012d83d1c15300e851b6c79c65651",
+    "7e3914ee83dd48df0020f6bb7cf609e3",
+    "90c2a4c18a7738866acc435752246dbe",
+    "9858ad41aa4ece6d7383414b53205043",
+    "9f59e7d50c42381f374c9fec484ad471",
+    "aecb14dc321da9d78ee32ac4a8296df9",
+    "b9096cb45e90a417ba483f4f2498810d",
+    "ba953dfdff89252cb4cd9017716bf05b",
+    "bb561e0528937a0ba54da5b9c3f07faa",
+    "dace8849143f8ccbda9dc9009cfda89c",
+    "df5166e4f3f7c12ac7b8b0bdb73aa7cc",
+    "f270d26e4160c8f04889b5e37cfdae20",
+    "ffae96ab9403b2f815ffd9d5d79dc8f1"
+  ],
+  "verifiedAt": "1970-01-01T00:00:00.000Z",
+  "verdict": "holds",
+  "signatureValidated": true,
+  "cidMatchesProofHash": true,
+  "recomputedCidMatches": true
+}
