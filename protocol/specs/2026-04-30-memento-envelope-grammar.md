@@ -49,7 +49,7 @@ CDDL cannot express:
   validator resolves the CID against a memento store and checks the
   referent's role.
 - **DERIVED constraints.** "`propertyHash` MUST equal
-  `hash16(canonical(evidence.body.irFormula))`." A validator
+  `hash(canonical(evidence.body.irFormula))`." A validator
   recomputes the hash and compares.
 - **ORDERING constraints.** "`inputCids` MUST be lexicographically
   sorted." CDDL types `inputCids` as an array of CIDs but cannot
@@ -78,12 +78,30 @@ but fails a post-pass constraint is **invalid**.
 ; protocol/specs/2026-04-30-ir-formal-grammar.md and imported by name.
 
 ; ----- Scalars and CIDs --------------------------------------
+;
+; **Self-identifying cryptographic primitives.** Every hash and every
+; signature carries its algorithm tag inline. Migration to new
+; primitives (e.g. post-quantum signatures) is additive: new bytes
+; carry new tags, old bytes keep their tags, verifiers dispatch by
+; tag. There is no truncation. There are no per-purpose lengths.
+; The hash IS the trust AND tells you how to check it.
+;
+; Format:
+;   hash:      <algorithm>-<bits>:<lowercase-hex-digest>
+;   signature: <algorithm>:<base64-payload>
+;   pubkey:    <algorithm>:<base64-payload>
+;
+; v1.1.0 ships with `blake3-512` (hash) and `ed25519` (signature/key)
+; as the only permitted tags. The protocol catalog lists permitted
+; tags; future catalogs add tags additively.
 
-hex16        = tstr .regexp "^[0-9a-f]{16}$"
-hex32        = tstr .regexp "^[0-9a-f]{32}$"
-cid          = hex32
-binding-hash = hex16
-property-hash = hex16
+; All hashes in the protocol — bindingHash, propertyHash, preHash,
+; postHash, invHash, antecedentHash, consequentHash, cid, member-CID,
+; schema-CID, and every other hash field — are this exact shape.
+hash         = tstr .regexp "^[a-z0-9]+-[0-9]+:[0-9a-f]+$"
+cid          = hash
+binding-hash = hash
+property-hash = hash
 
 ; ISO-8601 UTC timestamp with millisecond precision and trailing 'Z'.
 iso8601      = tstr .regexp "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
@@ -91,8 +109,11 @@ iso8601      = tstr .regexp "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]
 ; producer-id format: <name>@<version>
 producer-id  = tstr .regexp "^[A-Za-z][A-Za-z0-9_./:@-]*@[A-Za-z0-9._:+-]+$"
 
-; ed25519 signature, base64-encoded.
-ed25519-sig  = tstr .regexp "^[A-Za-z0-9+/]+=*$"
+; Self-identifying signature: <algorithm>:<base64>. v1.1.0: ed25519.
+signature    = tstr .regexp "^[a-z0-9]+:[A-Za-z0-9+/]+=*$"
+
+; Self-identifying public key: <algorithm>:<base64>. v1.1.0: ed25519.
+pubkey       = tstr .regexp "^[a-z0-9]+:[A-Za-z0-9+/]+=*$"
 
 ; ----- Wrapper verdict and version --------------------------
 
@@ -128,18 +149,20 @@ claim-envelope = {
   producedAt:        iso8601,
   inputCids:         [* cid],          ; ORDERING: lex-sorted
   evidence:          evidence-variant,
-  ? producerSignature: ed25519-sig,
-  cid:               hex32
+  ? producerSignature: signature,
+  cid:               hash
 }
 ```
 
 **ORDERING (wrapper):** `inputCids` MUST be lexicographically
 ascending. Validators reject envelopes with unsorted `inputCids`.
 
-**DERIVED (wrapper):** `cid` MUST equal `sha256-prefix-32` of the
-canonicalized envelope with `cid` and `producerSignature` elided.
-Computation is specified in `2026-04-29-universal-claim-envelope.md`
-§"CID construction".
+**DERIVED (wrapper):** `cid` MUST equal `"blake3-512:" + hex(blake3_512(canonical))`
+where `canonical` is the JCS encoding of the envelope with `cid`
+and `producerSignature` elided. Computation is specified in
+`2026-04-29-universal-claim-envelope.md` §"CID construction". The
+algorithm tag (`blake3-512`) is part of the CID, not metadata about
+it; verifiers dispatch on the tag at verification time.
 
 ## Role taxonomy at a glance
 
@@ -204,9 +227,9 @@ catalog-entry = {
 
 **DERIVED constraints (post-CDDL validator):**
 
-- `bindingHash == hash16(canonical("<kitName>@<kitVersion>"))` where
+- `bindingHash == hash(canonical("<kitName>@<kitVersion>"))` where
   `kitName` and `kitVersion` are taken from `evidence.body`.
-- `propertyHash == hash16(canonical("kit-catalog-root:<kitName>@<kitVersion>"))`.
+- `propertyHash == hash(canonical("kit-catalog-root:<kitName>@<kitVersion>"))`.
 - The multiset of `evidence.body.entries[*].cid` MUST equal the
   multiset of `inputCids`. (CDDL types each separately; the equality
   is post-CDDL.)
@@ -315,9 +338,9 @@ contract-body = {
   ? inv:        ir-formula,
   outBinding:   tstr,              ; name of the free-variable post uses for the return value
                                    ; conventionally "out"; required even when post is absent
-  ? preHash:    hex16,             ; DERIVED: hash16(canonical(pre)) when pre is present
-  ? postHash:   hex16,             ; DERIVED: hash16(canonical(post)) when post is present
-  ? invHash:    hex16,             ; DERIVED: hash16(canonical(inv)) when inv is present
+  ? preHash:    hash,              ; DERIVED: hash(canonical(pre)) when pre is present
+  ? postHash:   hash,              ; DERIVED: hash(canonical(post)) when post is present
+  ? invHash:    hash,              ; DERIVED: hash(canonical(inv)) when inv is present
   authoring:    authoring-block
 }
 
@@ -370,10 +393,10 @@ lift-authoring = {
 
 - `preHash`, `postHash`, `invHash` MUST be present iff their
   corresponding `pre`/`post`/`inv` formula is present, AND MUST equal
-  `hash16(canonical(formula))` under JCS canonicalization. Validators
+  `hash(canonical(formula))` under JCS canonicalization. Validators
   recompute and reject mismatches. The redundancy makes the
   per-formula handshake index O(1) per memento at load time.
-- `propertyHash == hash16(canonical({pre?, post?, inv?, outBinding}))`
+- `propertyHash == hash(canonical({pre?, post?, inv?, outBinding}))`
   — the wrapper-level `propertyHash` is the whole-contract identity,
   computed over the semantic fields (formulas + binding name) with
   JCS-canonical key order and `omit absent` semantics. The
@@ -382,7 +405,7 @@ lift-authoring = {
   produced under different names or by different authors share the
   same propertyHash, which is the point — the propertyHash is the
   canonical identity of the contract's behavior, not its provenance.
-- `bindingHash == hash16(canonical({producerId, contractName,
+- `bindingHash == hash(canonical({producerId, contractName,
   propertyHash}))` where `producerId = wrapper.producedBy`,
   `contractName = evidence.body.contractName`,
   `propertyHash = wrapper.propertyHash`. Locking the construction
@@ -514,8 +537,8 @@ function-sort   = { kind: "function",  domain: [* sort], range: sort }
 
 **DERIVED constraints (post-CDDL validator):**
 
-- `bindingHash == hash16(canonical({sourceLayer, sourceSymbol}))`.
-- `propertyHash == hash16(canonical("bridge:<sourceSymbol>"))`.
+- `bindingHash == hash(canonical({sourceLayer, sourceSymbol}))`.
+- `propertyHash == hash(canonical("bridge:<sourceSymbol>"))`.
 
 **ORDERING constraints:**
 
@@ -855,10 +878,10 @@ audit-body = {
 
 **DERIVED constraints (post-CDDL validator):**
 
-- `propertyHash == hash16(canonical(evidence.body.workflowCid))`.
+- `propertyHash == hash(canonical(evidence.body.workflowCid))`.
   The wrapper-level `propertyHash` MUST agree with the body's
   workflow identity.
-- `bindingHash == hash16(canonical(evidence.body.inputCanonicalForm))`.
+- `bindingHash == hash(canonical(evidence.body.inputCanonicalForm))`.
   The wrapper-level `bindingHash` MUST agree with the input
   identity, which is what the cache lookup keys against.
 
@@ -946,8 +969,8 @@ retirement-body = {
 
 **DERIVED constraints (post-CDDL validator):**
 
-- `bindingHash == hash16(canonical(evidence.body.retiredPropertyCid))`.
-- `propertyHash == hash16(canonical("retirement:" || retiredPropertyHash))`
+- `bindingHash == hash(canonical(evidence.body.retiredPropertyCid))`.
+- `propertyHash == hash(canonical("retirement:" || retiredPropertyHash))`
   where `retiredPropertyHash` is the `propertyHash` field of the
   retired property memento (looked up via `retiredPropertyCid`).
 
@@ -1017,8 +1040,8 @@ implication-evidence = {
 }
 
 implication-body = {
-  antecedentHash: hex16,        ; hash16(canonical(antecedent-formula))
-  consequentHash: hex16,        ; hash16(canonical(consequent-formula))
+  antecedentHash: hash,         ; hash(canonical(antecedent-formula))
+  consequentHash: hash,         ; hash(canonical(consequent-formula))
   antecedentCid:  cid,          ; CID of a contract memento containing the antecedent
                                 ; as one of its pre/post/inv slots
   consequentCid:  cid,          ; CID of a contract memento containing the consequent
@@ -1046,17 +1069,17 @@ implication-body = {
   `inputCids` (the body and inputCids agree on which contracts are
   involved).
 - The contract at `antecedentCid` MUST contain a slot named by
-  `antecedentSlot`, and the slot's formula's `hash16(canonical(...))`
+  `antecedentSlot`, and the slot's formula's `hash(canonical(...))`
   MUST equal `antecedentHash`. Same for `consequentCid` /
   `consequentSlot` / `consequentHash`. Validators verify both before
   accepting the implication.
 
 **DERIVED constraints:**
 
-- `bindingHash == hash16(canonical({antecedentHash, consequentHash}))`.
+- `bindingHash == hash(canonical({antecedentHash, consequentHash}))`.
   The bindingHash is the (ordered) hash pair, which is what an
   implication server indexes on.
-- `propertyHash == hash16(canonical("implication:" || antecedentHash || ":" || consequentHash))`.
+- `propertyHash == hash(canonical("implication:" || antecedentHash || ":" || consequentHash))`.
 
 **Signature.** REQUIRED for swarm-distributed implications. An
 unsigned implication has no useful trust property: the verifier
@@ -1280,7 +1303,7 @@ work needed to close it.
   `polarity: ("defect-detector" / "feature-detector")` in the
   pattern-match body so the pairing rule is well-defined.
 - **Contract `bindingHash` construction.** Locked to
-  `hash16(canonical({producerId, contractName, propertyHash}))` per
+  `hash(canonical({producerId, contractName, propertyHash}))` per
   the contract role's DERIVED constraints.
 - **Audit `bindingHash` and `propertyHash` constructions.**
   Locked to canonical hashes of body fields per the audit role's

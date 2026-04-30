@@ -2,26 +2,32 @@
   "kind": "catalog",
   "name": "provekit-protocol",
   "version": "v1.1.0-2026-04-30",
+  "algorithms": {
+    "hash": ["blake3-512"],
+    "signature": ["ed25519"],
+    "pubkey": ["ed25519"]
+  },
   "properties": {
-    "ir-formal-grammar": "sha256:RECOMPUTE-AFTER-MAXIMAL-IR-CUT",
-    "canonicalization-grammar": "sha256:af7e3a96d403936c",
-    "memento-envelope-grammar": "sha256:RECOMPUTE-AFTER-CONTRACT-CUT",
-    "signatures-and-non-repudiation": "sha256:9b9f86ec1795ff90",
-    "chain-validity-and-fail-closed": "sha256:7d7777ef5b0017fe",
-    "ir-extension-protocol": "sha256:c48b69c15e1eb7e9",
-    "proof-file-format": "sha256:1fed4d6da2b42e79",
-    "semantic-envelope": "sha256:b667f5c10c37173c",
-    "supply-chain-via-semantic-envelope": "sha256:eefec0fb212ef5f3",
-    "handshake-algorithm": "sha256:RECOMPUTE-AFTER-CONTRACT-CUT",
-    "per-language-kit-standard": "sha256:RECOMPUTE-AFTER-CONTRACT-CUT"
+    "ir-formal-grammar": "blake3-512:RECOMPUTE-AFTER-MAXIMAL-IR-CUT",
+    "canonicalization-grammar": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
+    "memento-envelope-grammar": "blake3-512:RECOMPUTE-AFTER-CONTRACT-CUT",
+    "signatures-and-non-repudiation": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
+    "chain-validity-and-fail-closed": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
+    "ir-extension-protocol": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
+    "proof-file-format": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
+    "semantic-envelope": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
+    "supply-chain-via-semantic-envelope": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
+    "handshake-algorithm": "blake3-512:RECOMPUTE-AFTER-CONTRACT-CUT",
+    "per-language-kit-standard": "blake3-512:RECOMPUTE-AFTER-CONTRACT-CUT"
   },
   "declaredAt": "2026-04-30T15:00:00Z",
-  "_unsigned": "draft v1.1.0; minor bump for: (1) property memento role replaced by contract memento (pre/post/inv/outBinding); (2) implication memento role added (with Z3 witness body); (3) handshake algorithm spec added; (4) IR formal grammar maximal-uniformity cut (flat quantifiers, unified connective with operands, no sort on var/ctor, name everywhere). Spec CIDs marked RECOMPUTE will be derived from the canonical bytes after the implementation cut lands; the catalog itself signs after that.",
+  "_unsigned": "draft v1.1.0; minor bump for: (1) property memento role replaced by contract memento (pre/post/inv/outBinding); (2) implication memento role added (with Z3 witness body); (3) handshake algorithm spec added; (4) IR formal grammar maximal-uniformity cut (flat quantifiers, unified connective with operands, no sort on var/ctor, name everywhere); (5) cryptographic primitives are self-identifying — every hash and signature carries an algorithm tag inline; v1.1.0 ships with blake3-512 (hash) and ed25519 (signature/pubkey) as the only permitted tags. Migration to additional algorithms (post-quantum signatures, alternative hash functions) is additive: future catalogs add tags without invalidating any v1.1.0 bytes. Spec CIDs marked RECOMPUTE will be derived from the canonical bytes after the implementation cut lands; the catalog itself signs after that.",
   "_breakingChanges": [
     "Property memento role removed; contract memento role added with body fields {pre?, post?, inv?, outBinding, preHash?, postHash?, invHash?, authoring}",
     "Implication memento role added; minted by verifiers when Z3 discharges (Q implies P) at handshake time",
     "IR-JSON shape: forall/exists are flat (no Lambda wrapper); and/or/not/implies use unified `operands` array; var and ctor terms drop `sort`; atomic uses `name` instead of `predicate`; `name` replaces `varName` everywhere",
-    "All previously-derived propertyHashes are invalidated by the IR shape change; cross-language demos and PoCs re-derive CIDs",
+    "Cryptographic primitives are self-identifying: hashes are `blake3-512:<128-hex-char-digest>` (no truncation, no per-purpose lengths); signatures are `ed25519:<base64>`; pubkeys are `ed25519:<base64>`. The hex16/hex32 type distinction is removed; one regex governs all hashes",
+    "All previously-derived propertyHashes/CIDs are invalidated by the IR shape change AND by the hash widening; cross-language demos and PoCs re-derive everything",
     "legacy-witness wrapper variant removed; producers MUST emit role-specific variants only"
   ]
 }
