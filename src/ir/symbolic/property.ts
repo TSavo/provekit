@@ -73,6 +73,14 @@ export function beginCollecting(): () => Declaration[] {
 export function _resetCollector(): void {
   activeCollector = null;
   describePath = [];
+  // Reset the quantifier variable counter so successive runs of the
+  // same invariant code produce identical IR (and therefore identical
+  // CIDs). The counter generates fresh variable names like `_x0`, `_x1`;
+  // without resetting it across runs, the second run gets `_x2`, `_x3`,
+  // and the evidence-body raw IR differs even though the canonical FOL
+  // is the same. The propertyHash (canonical, de-Bruijn-indexed) is
+  // unaffected, but the envelope CID hashes the raw evidence body.
+  _resetQuantifierCounter();
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +216,7 @@ export function bridge(name: string, spec: BridgeSpec): void {
 import {
   forAll as _forAll,
   exists as _exists,
+  _resetCounter as _resetQuantifierCounter,
 } from "../quantifiers.js";
 
 export function forAll(sort: Sort, body: (x: IrTerm) => IrFormula): IrFormula {
