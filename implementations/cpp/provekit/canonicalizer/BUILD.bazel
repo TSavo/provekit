@@ -1,0 +1,60 @@
+# C++ canonicalizer — clean-room implementation of
+# protocol/specs/2026-04-30-canonicalization-grammar.md (JCS encoder
+# + SHA-256 prefix-16 propertyHash).
+#
+# All source here is derived from the spec only. The TypeScript
+# reference implementation under implementations/typescript/ is NOT
+# consulted; conformance is verified by both impls producing the
+# byte-identical canonical bytes + propertyHash on the same input,
+# both deriving the expected value from the spec independently.
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//implementations/cpp:__subpackages__"])
+
+cc_library(
+    name = "value",
+    hdrs = ["value.hpp"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "sha256",
+    srcs = ["sha256.cpp"],
+    hdrs = ["sha256.hpp"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "jcs",
+    srcs = ["jcs.cpp"],
+    hdrs = ["jcs.hpp"],
+    deps = [":value"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "property_hash",
+    srcs = ["property_hash.cpp"],
+    hdrs = ["property_hash.hpp"],
+    deps = [
+        ":jcs",
+        ":sha256",
+        ":value",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Cross-language conformance test: asserts the C++ canonicalizer
+# produces byte-identical JCS + propertyHash to the spec-derived
+# expected values for a fixed canonical AST. See
+# canonicalizer_test.cpp's header comment for the spec citations.
+cc_test(
+    name = "canonicalizer_conformance_test",
+    srcs = ["canonicalizer_test.cpp"],
+    deps = [
+        ":jcs",
+        ":property_hash",
+        ":value",
+    ],
+)
