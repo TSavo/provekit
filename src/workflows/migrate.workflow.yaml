@@ -34,6 +34,21 @@ description: >-
   listing properties added, removed, or modified, plus the project
   invariants that depend on the Removed/Modified propertyHashes.
 
+cli:
+  description: Diff a kit's old vs new proofHash and emit a migration plan
+  args:
+    - name: oldProofHash
+      positional: true
+      required: true
+      type: string
+    - name: newProofHash
+      positional: true
+      required: true
+      type: string
+    - name: projectRoot
+      type: path
+      default: "."
+
 nodes:
   # ---------------------------------------------------------------------------
   # M1a load-old-catalog — reads the OLD catalog memento by proofHash.

@@ -36,6 +36,18 @@ description: >-
   IrFormula via compare-formulas (mode=strengthen), and overwrites
   the .invariant.ts file. Terminal artifact: CompareFormulasDelta.
 
+cli:
+  description: Tighten an existing invariant; produces a strengthen-mode delta
+  args:
+    - name: filePath
+      positional: true
+      required: true
+      type: path
+    - name: intent
+      positional: true
+      required: true
+      type: string
+
 nodes:
   # ---------------------------------------------------------------------------
   # Formulate the new (tightened) invariant via the lifter.

@@ -15,16 +15,21 @@ import { runMineHistory } from "./cli.mineHistory.js";
 import { runMint } from "./cli.mint.js";
 import { runAttest } from "./cli.attest.js";
 import { buildSASTForFile } from "./sast/builder.js";
+import { WorkflowRunner } from "./workflow/runner.js";
+import { runManifest } from "./workflow/manifest.js";
+import { parseArgv } from "./workflow/producers/parseArgv.js";
+import {
+  defaultRegistryFactories,
+  discoverWorkflows,
+  loadDispatchManifest,
+  registerDispatchRegistries,
+  WORKFLOWS_DIR,
+} from "./workflows/_dispatch.js";
 
 const VERSION = "0.4.0";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-
-  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-    printHelp();
-    process.exit(0);
-  }
 
   if (args.includes("--version")) {
     console.log(`provekit v${VERSION}`);
@@ -32,9 +37,76 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const command = args[0]!;
-  const rest = args.slice(1);
+  // Walk src/workflows/ once at startup. Workflows with a `cli:` block
+  // become addressable as `provekit <name>`; the rest are internals.
+  const { cliBlocks, manifestPaths } = discoverWorkflows(WORKFLOWS_DIR);
+  const factories = defaultRegistryFactories();
 
+  // Pre-parse argv. parse-argv is the meta-dispatcher's first Stage,
+  // exported as a pure function so the CLI entry can intercept help
+  // and unknown-command paths without invoking the dispatcher manifest
+  // (the manifest format has no conditionals; only the happy path runs
+  // through it).
+  const parsed = parseArgv(args, cliBlocks);
+
+  if (parsed.kind === "help") {
+    console.log(parsed.helpText);
+    process.exit(0);
+  }
+  if (parsed.kind === "unknown") {
+    // Fall through to the legacy switch for commands the meta-dispatcher
+    // doesn't yet route. Migration of legacy commands to YAML happens
+    // incrementally; the switch shrinks per commit.
+    await runLegacyCommand(parsed.command, args.slice(1));
+    return;
+  }
+
+  // Dispatchable command. If the workflow has a registered factory,
+  // route through the meta-dispatcher manifest. If not, fall through
+  // to legacy (the cli: block exists but the workflow's factory hasn't
+  // been wired into _dispatch.ts yet).
+  if (!factories[parsed.command]) {
+    await runLegacyCommand(parsed.command, args.slice(1));
+    return;
+  }
+
+  const dbPath = resolveDbPath(args);
+  const db = openDb(dbPath);
+  try {
+    const llm = process.env.PROVEKIT_LLM ? createProvider(process.env.PROVEKIT_LLM) : undefined;
+    const projectRoot = resolveProjectRoot(args);
+    const dispatcher = loadDispatchManifest();
+    const { registry, actionRegistry } = registerDispatchRegistries({ db });
+    const runner = new WorkflowRunner(
+      db,
+      { name: dispatcher.name, cid: dispatcher.cid },
+      registry,
+    );
+    await runManifest(
+      runner,
+      registry,
+      dispatcher,
+      {
+        argv: args,
+        cliBlocks,
+        manifestPaths,
+        factories,
+        deps: { db, llm, projectRoot },
+      },
+      actionRegistry,
+    );
+  } finally {
+    db.$client.close();
+  }
+}
+
+/**
+ * Legacy fallback. Routes commands not yet migrated to YAML workflows
+ * through the prior imperative implementations. Each entry shrinks
+ * the switch as the corresponding workflow lands a `cli:` block AND
+ * a registered factory in `defaultRegistryFactories()`.
+ */
+async function runLegacyCommand(command: string, rest: string[]): Promise<void> {
   switch (command) {
     case "init":     await runInit(rest); break;
     case "analyze":  await runAnalyze(rest); break;
@@ -55,9 +127,14 @@ async function main(): Promise<void> {
     case "attest":       await runAttest(rest); break;
     default:
       console.error(`Unknown command: ${command}`);
-      printHelp();
+      console.error("Run `provekit --help` to see available commands.");
       process.exit(1);
   }
+}
+
+function resolveDbPath(args: string[]): string {
+  const projectRoot = resolveProjectRoot(args);
+  return join(projectRoot, ".provekit", "provekit.db");
 }
 
 // ---------------------------------------------------------------------------

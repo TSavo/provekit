@@ -24,6 +24,26 @@ description: >-
   .invariant.ts file as a human-readable hint. The memento is the
   authoritative record; the source marker is documentation.
 
+cli:
+  description: Deprecate an invariant by propertyHash with a reason
+  args:
+    - name: retiredPropertyHash
+      positional: true
+      required: true
+      type: string
+    - name: propertyName
+      positional: true
+      required: true
+      type: string
+    - name: reason
+      type: string
+      required: true
+    - name: filePath
+      type: path
+      required: true
+    - name: skipMarker
+      type: string
+
 nodes:
   # ---------------------------------------------------------------------------
   # Mint the deprecation record. Terminal Stage; carries the
