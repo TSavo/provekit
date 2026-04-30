@@ -27,6 +27,7 @@ import {
   BV32,
   _resetCollector,
 } from "./index.js";
+import { propertyHashFromFormula } from "../../canonicalizer/index.js";
 
 const FIXTURE_NAME = "forall_bv32_xor_self_is_zero";
 
@@ -90,5 +91,16 @@ describe("BV cross-language fixture (TS-only golden)", () => {
     if (d.formula.kind !== "forall") throw new Error();
     expect(d.formula.sort).toEqual({ kind: "bitvec", width: 32 });
     expect(d.formula.predicate.body.kind).toBe("atomic");
+  });
+
+  it("propertyHashFromFormula accepts BV formulas without crashing", () => {
+    // The canonicalizer must walk the bitvec Sort variant, the BV ctor,
+    // and the BV constant (whose value is bigint) without throwing. Pre-fix,
+    // canonicalizeSort's switch fell through and the next pass crashed on
+    // a sort.kind read of undefined.
+    const claim = forAll(BV32, (x) => eq(bvxor(x, x), bv(0, 32)));
+    const hash = propertyHashFromFormula(claim);
+    expect(typeof hash).toBe("string");
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
   });
 });

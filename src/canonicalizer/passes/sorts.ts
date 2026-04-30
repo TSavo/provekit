@@ -48,6 +48,9 @@ export function canonicalizeSort(sort: Sort): CanonicalSort {
       return { kind: "primitive", name };
     }
 
+    case "bitvec":
+      return { kind: "bitvec", width: sort.width };
+
     case "set":
       return { kind: "set", element: canonicalizeSort(sort.element) };
 
