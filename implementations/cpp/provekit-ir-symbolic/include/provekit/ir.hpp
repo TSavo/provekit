@@ -235,6 +235,44 @@ inline void must(std::string name, std::shared_ptr<Formula> formula) {
   property(std::move(name), std::move(formula));
 }
 
+// ---------------------------------------------------------------------------
+// Bridge declaration collector
+// ---------------------------------------------------------------------------
+//
+// Bridges declared via `bridge_decl(...)` ride alongside property
+// declarations in the kit's emit stream. The TS mint adapter resolves
+// `target_property_name` → minted property memento CID after the
+// properties have been minted (chicken-and-egg: the bridge references
+// the property's CID, but we don't have it until we mint).
+struct BridgeDecl {
+  std::string source_symbol;
+  std::string source_layer;
+  std::string target_property_name;  // resolved by the mint adapter
+  std::string target_layer;
+  std::vector<std::string> ir_arg_sorts;  // e.g. {"String"}
+  std::string ir_return_sort;             // e.g. "Int"
+  std::string notes;                       // optional
+};
+
+inline std::vector<BridgeDecl>& bridge_collector() {
+  static std::vector<BridgeDecl> v;
+  return v;
+}
+
+inline void bridge_decl(BridgeDecl d) {
+  bridge_collector().push_back(std::move(d));
+}
+
+inline std::vector<BridgeDecl> finish_bridges() {
+  std::vector<BridgeDecl> out;
+  out.swap(bridge_collector());
+  return out;
+}
+
+inline void reset_bridge_collector() {
+  bridge_collector().clear();
+}
+
 inline std::vector<PropertyDecl> finish() {
   std::vector<PropertyDecl> out;
   out.swap(collector());
