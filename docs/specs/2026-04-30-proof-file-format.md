@@ -38,12 +38,14 @@ catalog-memento-with-embedded-members = {
   name: tstr,
   version: tstr,
 
-  ; Map from member CID to the member's full memento body. The body
-  ; itself is whatever canonical encoding that memento type specifies
-  ; (most are JCS; some are CBOR). The map's value is the bytes of
-  ; that canonical encoding, embedded as a CBOR byte string. The CID
-  ; MUST equal the hash of those bytes; verifiers re-hash on load and
-  ; reject on mismatch.
+  ; Map from member CID to the member's full SIGNED envelope, encoded
+  ; as canonical bytes (JCS for memento envelopes per the memento
+  ; envelope grammar) and embedded as a CBOR byte string. The map key
+  ; MUST equal the envelope's own CID per the memento envelope grammar's
+  ; CID rule (sha256(canonical(envelope_without_cid_and_signature))[:N]).
+  ; Verifiers re-derive the CID from the embedded envelope's body fields
+  ; (with cid + signature elided) and reject on mismatch. They also
+  ; verify each member's signature against its declared signer.
   members: { + cid => bstr },
 
   ; Optional dependency manifest: catalogs this catalog references
@@ -110,9 +112,12 @@ A `.proof` file passes integrity verification iff:
    reject mismatches. This is the trust root; failing this rule
    invalidates everything.
 
-2. **Embedded member CIDs match member bodies.** For each entry
-   `members[cid] = bytes`, the bytes MUST hash to `cid`. Verifiers
-   MUST recompute and reject mismatches.
+2. **Embedded member CIDs match envelope identities.** For each entry
+   `members[cid] = bytes`, the bytes decode as a memento envelope, and
+   `computeEnvelopeCid(decoded)` (per the memento envelope grammar's
+   CID rule: `sha256(canonical(envelope_without_cid_and_signature))[:N]`)
+   MUST equal `cid` (the map key). Verifiers MUST recompute and reject
+   mismatches.
 
 3. **Catalog signature is valid.** `signer` resolves to a public-key
    memento (which may itself be embedded in `members`); `signature` is
