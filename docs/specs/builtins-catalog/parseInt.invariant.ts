@@ -1,151 +1,62 @@
 /**
- * Built-in contract: parseInt
+ * Built-in contract: parseInt — BRIDGE FORM
  *
- * Spec source: ECMA-262 §19.2.5 (Number conversion: parseInt)
+ * Spec source: ECMA-262 §7.1.4.1 (parseInt)
  * Kit: provekit-ts@1.0
- * Status: SEED MEMENTO of the global proof DAG.
+ * Status: SEED MEMENTO of the global proof DAG (bridge form).
  *
- * This file describes the behavior of the JavaScript / Node.js / V8 built-in
- * `parseInt`. Every TypeScript codebase using parseInt transitively depends
- * on the mementos minted from this file. Their content hashes will appear
- * in the inputCids of millions of downstream verification mementos.
+ * --------------------------------------------------------------------------
+ * Why this file is short
+ * --------------------------------------------------------------------------
  *
- * Get this right. Get it WRONG and the entire ecosystem inherits the bug.
+ * The TS-kit's job for parseInt is NOT to redefine parseInt's contract.
+ * parseInt's behavior is specified by ECMA-262 §7.1.4.1, implemented by
+ * V8 (and SpiderMonkey, JavaScriptCore, etc.), grounded in IEEE 754 for
+ * numeric edge cases, ultimately rooted in hardware FPU verification.
  *
- * The kit author signs each property with the kit's producer key. Consumers
- * adversarially re-verify under their own proofkit before trusting any
- * verdict. The signature attests to identity; the consumer's re-verification
- * attests to validity.
+ * Each of those layers publishes its own contract once. The TS-kit
+ * BRIDGES from the TypeScript surface symbol `global.parseInt` to the
+ * deeper-layer contract. The bridge composes by hash; it does NOT
+ * redefine.
  *
- * Spec form (when the lifter ships, this file moves to src/builtins/ and
- * is consumed verbatim by the TS-kit's lifter). Until then, this file is
- * SPECIFICATION as code — it documents the format, the properties, and the
- * audit trail. It does not type-check against the current builder API.
+ * This is exactly the architectural pattern described in:
+ *   docs/specs/2026-04-29-correctness-is-a-hash.md §"Adding propositions"
+ *   docs/specs/2026-04-29-correctness-is-a-hash.md §"What ProvekIt is"
+ *
+ * --------------------------------------------------------------------------
+ * The previous form of this file (~120 lines redefining 17 properties)
+ * was REDUNDANT WORK. It restated what V8 / ECMA-262 / IEEE 754 already
+ * specify. The bridge form points at those specifications by hash.
+ *
+ * Run `npx tsx scripts/cross-language-demo/bridges/layered-bridges-demo.ts`
+ * for an operational demo of the layered chain.
+ * --------------------------------------------------------------------------
  */
 
-import { property, forAll, exists, implies, Int, StringSort } from 'provekit/ir';
+import { property, bridge } from 'provekit/ir';
 
-// ---------------------------------------------------------------------------
-// Existence properties — what parseInt's range CAN include.
-// These are load-bearing for shadow AST walking: when the prover encounters
-// `parseInt(userInput)` in user code, it consults the existence properties
-// to determine the symbolic value range. The divide-by-zero counterexample
-// in the spec (§14 of ts-ir-language) is driven by `parseIntCanReturnZero`.
-// ---------------------------------------------------------------------------
-
-property("parseIntCanReturnZero",
-  exists<StringSort>(s => parseInt(s) === 0)
-);
-
-property("parseIntCanReturnNaN",
-  exists<StringSort>(s => Number.isNaN(parseInt(s)))
-);
-
-property("parseIntCanReturnPositiveInteger",
-  exists<StringSort>(s => parseInt(s) > 0)
-);
-
-property("parseIntCanReturnNegativeInteger",
-  exists<StringSort>(s => parseInt(s) < 0)
-);
-
-// ---------------------------------------------------------------------------
-// Specific input/output relationships — pinned point cases.
-// These act as fixtures: the prover can use them as concrete values when
-// symbolic reasoning needs grounding. Compliance auditors verify each
-// against ECMA-262 directly.
-// ---------------------------------------------------------------------------
-
-property("parseIntZeroStringIsZero",
-  parseInt("0") === 0
-);
-
-property("parseIntZeroPaddedStringIsZero",
-  parseInt("00") === 0
-);
-
-property("parseIntEmptyStringIsNaN",
-  Number.isNaN(parseInt(""))
-);
-
-property("parseIntWhitespaceOnlyIsNaN",
-  Number.isNaN(parseInt("   "))
-);
-
-property("parseIntNonNumericIsNaN",
-  Number.isNaN(parseInt("hello"))
-);
-
-// ---------------------------------------------------------------------------
-// Universal properties — what parseInt guarantees for ALL inputs in domain.
-// These compose into invariants that downstream callsites depend on.
-// ---------------------------------------------------------------------------
-
-property("parseIntReturnsIntOrNaN",
-  forAll<StringSort>(s =>
-    Number.isInteger(parseInt(s)) || Number.isNaN(parseInt(s))
+property("parseIntBridgesV8",
+  bridge(
+    "global.parseInt",          // TS surface symbol
+    "v8::Number::parseInt@12.4" // V8's published contract identity
   )
 );
 
-property("parseIntIsDeterministic",
-  forAll<StringSort>(s => parseInt(s) === parseInt(s))
-);
-
-property("parseIntPreservesNonNegativeIntegers",
-  forAll<Int>(n =>
-    implies(n >= 0, parseInt(String(n)) === n)
-  )
-);
-
-property("parseIntPreservesNegativeIntegers",
-  forAll<Int>(n =>
-    implies(n < 0, parseInt(String(n)) === n)
-  )
-);
-
-// ---------------------------------------------------------------------------
-// Behavioral edge cases — pinned because they are common bug sources.
-// Each property here was chosen because it represents a known surprise in
-// parseInt's behavior. Documenting them as invariants converts surprise
-// into mechanical verification.
-// ---------------------------------------------------------------------------
-
-property("parseIntTruncatesFractionalPart",
-  parseInt("3.7") === 3
-);
-
-property("parseIntStopsAtFirstNonDigit",
-  parseInt("42abc") === 42
-);
-
-property("parseIntIgnoresLeadingWhitespace",
-  parseInt("  42") === 42
-);
-
-property("parseIntHandlesLeadingPlus",
-  parseInt("+42") === 42
-);
-
-property("parseIntHandlesLeadingMinus",
-  parseInt("-42") === -42
-);
-
-// ---------------------------------------------------------------------------
-// What this file's mementos contribute to the global proof DAG.
+// Cross-engine: the same TS-kit's parseInt also bridges to other
+// JavaScript engines that ship parseInt contracts. SpiderMonkey,
+// JavaScriptCore, ChakraCore — each may publish their own parseInt
+// contract grounded in ECMA-262. Consumers running on Bun (uses
+// JavaScriptCore) inherit a different mid-chain than Node (uses V8),
+// but both ground at the same ECMA-262 spec leaf.
 //
-// inputCids of the mementos minted from this file include:
-//   - ECMA-262 §19.2.5 source-text content hash (the spec leaf)
-//   - vitest-producer mementos for each property (empirical demonstrations)
-//   - tsc-producer memento confirming this file type-checks
+// property("parseIntBridgesJSC",
+//   bridge("global.parseInt", "jsc::Number::parseInt@latest"));
 //
-// Mementos minted: ~17 (one per property declaration above)
-// Composite DAG root: hash of the proof DAG containing all the above
-// Maintainer signature: ed25519 over the canonicalized DAG, signed by
-//                       provekit-ts-kit@1.0 producer key
-//
-// Downstream consumers (every TS codebase that calls parseInt) walk to
-// THIS file's mementos when verifying their callsites. Adversarial
-// re-verification: the consumer's proofkit re-runs each property under
-// its own producer pool. If any property fails to re-verify, the consumer
-// rejects the kit catalog and refuses to compose.
-// ---------------------------------------------------------------------------
+// property("parseIntBridgesSpiderMonkey",
+//   bridge("global.parseInt", "sm::Number::parseInt@latest"));
+
+// What's left for the TS-kit to attest directly: nothing structural.
+// Behavioral edge cases ABOVE the JS engine level (e.g., behavior in
+// a specific TS-typed surface like `parseInt(unknown)` requiring a
+// type narrowing) might warrant TS-kit-specific properties. For
+// purely runtime behavior, the bridges are sufficient.
