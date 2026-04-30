@@ -20,12 +20,27 @@ func ctor(name string, args []IrTerm, sort Sort) IrTerm {
 	return ctorTerm{Name: name, Args: args, Sort: sort}
 }
 
-func ParseInt(s IrTerm) IrTerm   { return ctor("parseInt", []IrTerm{s}, Int) }
-func ParseFloat(s IrTerm) IrTerm { return ctor("parseFloat", []IrTerm{s}, Real) }
+func ParseInt(s IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("parseInt", []IrTerm{s}, Int)
+}
+func ParseFloat(s IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("parseFloat", []IrTerm{s}, Real)
+}
 
-func IsNaN(n IrTerm) IrTerm     { return ctor("isNaN", []IrTerm{n}, Bool) }
-func IsFinite(n IrTerm) IrTerm  { return ctor("isFinite", []IrTerm{n}, Bool) }
-func IsInteger(n IrTerm) IrTerm { return ctor("isInteger", []IrTerm{n}, Bool) }
+func IsNaN(n IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("isNaN", []IrTerm{n}, Bool)
+}
+func IsFinite(n IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("isFinite", []IrTerm{n}, Bool)
+}
+func IsInteger(n IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("isInteger", []IrTerm{n}, Bool)
+}
 
 func Abs(n IrTerm) IrTerm {
 	s := n.TermSort()
@@ -51,15 +66,39 @@ func Min(a, b IrTerm) IrTerm {
 	return ctor("Math.min", []IrTerm{a, b}, s)
 }
 
-func Floor(n IrTerm) IrTerm { return ctor("Math.floor", []IrTerm{n}, Int) }
-func Ceil(n IrTerm) IrTerm  { return ctor("Math.ceil", []IrTerm{n}, Int) }
-func Sqrt(n IrTerm) IrTerm  { return ctor("Math.sqrt", []IrTerm{n}, Real) }
-func Sign(n IrTerm) IrTerm  { return ctor("Math.sign", []IrTerm{n}, Int) }
+func Floor(n IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("Math.floor", []IrTerm{n}, Int)
+}
+func Ceil(n IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("Math.ceil", []IrTerm{n}, Int)
+}
+func Sqrt(n IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("Math.sqrt", []IrTerm{n}, Real)
+}
+func Sign(n IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("Math.sign", []IrTerm{n}, Int)
+}
 
-func StringLength(s IrTerm) IrTerm           { return ctor("String.prototype.length", []IrTerm{s}, Int) }
-func StringIncludes(s, sub IrTerm) IrTerm    { return ctor("String.prototype.includes", []IrTerm{s, sub}, Bool) }
-func ArrayLength(arr IrTerm) IrTerm          { return ctor("Array.prototype.length", []IrTerm{arr}, Int) }
-func ArrayIncludes(arr, item IrTerm) IrTerm  { return ctor("Array.prototype.includes", []IrTerm{arr, item}, Bool) }
+func StringLength(s IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("String.prototype.length", []IrTerm{s}, Int)
+}
+func StringIncludes(s, sub IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("String.prototype.includes", []IrTerm{s, sub}, Bool)
+}
+func ArrayLength(arr IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("Array.prototype.length", []IrTerm{arr}, Int)
+}
+func ArrayIncludes(arr, item IrTerm) IrTerm {
+	ensureKitBridgesRegistered()
+	return ctor("Array.prototype.includes", []IrTerm{arr, item}, Bool)
+}
 
 func Add(a, b IrTerm) IrTerm { return ctor("+", []IrTerm{a, b}, Int) }
 func Sub(a, b IrTerm) IrTerm { return ctor("-", []IrTerm{a, b}, Int) }
