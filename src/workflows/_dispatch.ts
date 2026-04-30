@@ -50,6 +50,7 @@ import type { LLMProvider } from "../fix/types.js";
 import type { FixLoopLogger } from "../fix/logger.js";
 import { registerBugFixRegistries } from "./bug-fix.js";
 import { registerExplainRegistries } from "./explain.js";
+import { registerMustRegistries } from "./must.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -169,6 +170,8 @@ export function defaultRegistryFactories(): RegistryFactoryMap {
       registerBugFixRegistries(deps as Parameters<typeof registerBugFixRegistries>[0]),
     explain: (deps: unknown) =>
       registerExplainRegistries(deps as Parameters<typeof registerExplainRegistries>[0]),
+    must: (deps: unknown) =>
+      registerMustRegistries(deps as Parameters<typeof registerMustRegistries>[0]),
   };
 }
 

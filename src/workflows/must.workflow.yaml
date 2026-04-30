@@ -23,6 +23,12 @@ description: >-
   and write the resulting invariant to <basename>.invariant.ts. The
   production-code file is NOT modified.
 
+# The terminal artifact is the write-invariant Action's resource —
+# we surface the formulate Stage's output (surfaceText + propertyHash)
+# as the workflow's value so callers can audit what got minted before
+# inspecting the on-disk file.
+output: $node.formulate.output
+
 cli:
   description: Add an invariant to a target file from natural-language intent
   args:
