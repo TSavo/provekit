@@ -62,38 +62,88 @@ export function bool(value: boolean): IrTerm {
 }
 
 // ---------------------------------------------------------------------------
-// Built-in function primitives — return IrTerm with kind="ctor"
+// Built-in function primitives.
 //
-// Each primitive represents a CALL to a kit-registered built-in function.
-// The kit's catalog publishes axioms (in SMT-LIB) describing each.
-// Consumers' invariants reference these primitives; running the invariant
-// produces the IR; SMT solver uses the kit's axioms during verification.
+// Most of these are NOT owned by the TS kit. Their semantic authority
+// lives in V8 / ECMA-262 / IEEE 754. The kit doesn't load V8 or
+// re-implement parseInt; it BRIDGES to V8's signed claims via a CID,
+// using the primitiveBridge factory. The user's API is unchanged
+// (`parseInt(s)` still returns an IrTerm); the kit's claim about
+// what parseInt MEANS is now explicit: a bridge to the deeper layer.
+//
+// At module load, each primitive registers a bridge declaration in
+// the kit's registry. Verifiers walk the registry to resolve IR
+// names through the protocol's resolver semantics
+// (docs/specs/2026-04-30-ir-extension-protocol.md §5).
+//
+// `targetContractCid` values here are placeholders today. When the
+// V8 / ECMA-262 catalogs are published with signed declarations,
+// these CIDs get pinned to specific signed mementos.
 // ---------------------------------------------------------------------------
+
+import { primitiveBridge } from "../extensions/bridges.js";
+
+const TS_KIT = "ts-kit";
+const V8 = "v8";
+const ECMA262 = "ecma-262";
 
 function ctor(name: string, args: IrTerm[], sort: Sort): IrTerm {
   return { kind: "ctor", name, args, sort };
 }
 
-// Number parsing
-export function parseInt(s: IrTerm): IrTerm {
-  return ctor("parseInt", [s], Int);
-}
-export function parseFloat(s: IrTerm): IrTerm {
-  return ctor("parseFloat", [s], Real);
-}
+// Number parsing — bridged to V8's ECMA-262 implementation.
+export const parseInt = primitiveBridge({
+  irName: "parseInt",
+  irArgSorts: [StringSort],
+  irReturnSort: Int,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_PARSEINT_PLACEHOLDER",
+  targetLayer: V8,
+  notes: "ECMA-262 parseInt; bridged to V8's signed declaration.",
+});
 
-// Number predicates as primitives (return Bool-typed terms; combine via eq if needed)
-export function isNaN(n: IrTerm): IrTerm {
-  return ctor("isNaN", [n], Bool);
-}
-export function isFinite(n: IrTerm): IrTerm {
-  return ctor("isFinite", [n], Bool);
-}
-export function isInteger(n: IrTerm): IrTerm {
-  return ctor("isInteger", [n], Bool);
-}
+export const parseFloat = primitiveBridge({
+  irName: "parseFloat",
+  irArgSorts: [StringSort],
+  irReturnSort: Real,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_PARSEFLOAT_PLACEHOLDER",
+  targetLayer: V8,
+  notes: "ECMA-262 parseFloat.",
+});
 
-// Math.* primitives — sort-correct for Int / Real
+// Number predicates — bridged.
+export const isNaN = primitiveBridge({
+  irName: "isNaN",
+  irArgSorts: [Real],
+  irReturnSort: Bool,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_ISNAN_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+export const isFinite = primitiveBridge({
+  irName: "isFinite",
+  irArgSorts: [Real],
+  irReturnSort: Bool,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_ISFINITE_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+export const isInteger = primitiveBridge({
+  irName: "isInteger",
+  irArgSorts: [Real],
+  irReturnSort: Bool,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_ISINTEGER_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+// Math.* polymorphic primitives — return sort mirrors operand sort.
+// The simple primitiveBridge factory captures a fixed return sort, so
+// abs/max/min stay as raw ctor calls for now. A future per-sort split
+// (Math.abs.int / Math.abs.real) would let them bridge cleanly. TODO.
 export function abs(n: IrTerm): IrTerm {
   return ctor("Math.abs", [n], n.sort ?? Real);
 }
@@ -103,34 +153,81 @@ export function max(a: IrTerm, b: IrTerm): IrTerm {
 export function min(a: IrTerm, b: IrTerm): IrTerm {
   return ctor("Math.min", [a, b], a.sort ?? Real);
 }
-export function floor(n: IrTerm): IrTerm {
-  return ctor("Math.floor", [n], Int);
-}
-export function ceil(n: IrTerm): IrTerm {
-  return ctor("Math.ceil", [n], Int);
-}
-export function sqrt(n: IrTerm): IrTerm {
-  return ctor("Math.sqrt", [n], Real);
-}
-export function sign(n: IrTerm): IrTerm {
-  return ctor("Math.sign", [n], Int);
-}
 
-// String.* primitives
-export function stringLength(s: IrTerm): IrTerm {
-  return ctor("String.prototype.length", [s], Int);
-}
-export function stringIncludes(s: IrTerm, sub: IrTerm): IrTerm {
-  return ctor("String.prototype.includes", [s, sub], Bool);
-}
+// Math.* monomorphic primitives — bridged.
+export const floor = primitiveBridge({
+  irName: "Math.floor",
+  irArgSorts: [Real],
+  irReturnSort: Int,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_MATH_FLOOR_PLACEHOLDER",
+  targetLayer: V8,
+});
 
-// Array.* primitives (element type carried via the array's sort)
-export function arrayLength(arr: IrTerm): IrTerm {
-  return ctor("Array.prototype.length", [arr], Int);
-}
-export function arrayIncludes(arr: IrTerm, item: IrTerm): IrTerm {
-  return ctor("Array.prototype.includes", [arr, item], Bool);
-}
+export const ceil = primitiveBridge({
+  irName: "Math.ceil",
+  irArgSorts: [Real],
+  irReturnSort: Int,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_MATH_CEIL_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+export const sqrt = primitiveBridge({
+  irName: "Math.sqrt",
+  irArgSorts: [Real],
+  irReturnSort: Real,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_MATH_SQRT_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+export const sign = primitiveBridge({
+  irName: "Math.sign",
+  irArgSorts: [Real],
+  irReturnSort: Int,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_MATH_SIGN_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+// String.* primitives — bridged.
+export const stringLength = primitiveBridge({
+  irName: "String.prototype.length",
+  irArgSorts: [StringSort],
+  irReturnSort: Int,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_STRING_LENGTH_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+export const stringIncludes = primitiveBridge({
+  irName: "String.prototype.includes",
+  irArgSorts: [StringSort, StringSort],
+  irReturnSort: Bool,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_STRING_INCLUDES_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+// Array.* primitives — bridged. Element type carried by the array's sort.
+export const arrayLength = primitiveBridge({
+  irName: "Array.prototype.length",
+  irArgSorts: ["Array"],
+  irReturnSort: Int,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_ARRAY_LENGTH_PLACEHOLDER",
+  targetLayer: V8,
+});
+
+export const arrayIncludes = primitiveBridge({
+  irName: "Array.prototype.includes",
+  irArgSorts: ["Array", "Any"],
+  irReturnSort: Bool,
+  sourceLayer: TS_KIT,
+  targetContractCid: "bafy_V8_ARRAY_INCLUDES_PLACEHOLDER",
+  targetLayer: V8,
+});
 
 // ---------------------------------------------------------------------------
 // Term-level arithmetic — return IrTerm
