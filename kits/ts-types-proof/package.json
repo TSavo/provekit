@@ -1,0 +1,47 @@
+{
+  "name": "@provekit/ts-types-proof",
+  "version": "0.1.0",
+  "description": "Drop-in shim that adds the ProvekIt protocol substrate to TypeScript projects. Wraps @provekit/ir-symbolic; auto-registers V8 bridge declarations at module load. Deprecates when upstream ts-types adopts the protocol natively.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "provekit",
+    "invariants",
+    "verification",
+    "smt",
+    "typescript",
+    "types",
+    "proof"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/provekit/provekit",
+    "directory": "kits/ts-types-proof"
+  },
+  "provekit": {
+    "shimRole": "trojan-horse",
+    "deprecatesWhen": "upstream ts-types adopts the protocol natively",
+    "registersBridges": [
+      "parseInt", "parseFloat",
+      "isNaN", "isFinite", "isInteger",
+      "Math.floor", "Math.ceil", "Math.sqrt", "Math.sign",
+      "String.prototype.length", "String.prototype.includes",
+      "Array.prototype.length", "Array.prototype.includes"
+    ],
+    "targetLayer": "v8",
+    "comment": "13 bridge declarations register on module load; the IR ctor names hash to the same canonical bytes whether produced by ts-types-proof or by a future protocol-aware ts-types. Migration is a one-line dependency swap with no proof chain breaks."
+  }
+}
