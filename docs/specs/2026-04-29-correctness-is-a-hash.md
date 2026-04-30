@@ -601,6 +601,210 @@ The framework provides the substrate over which AI scales without
 trust collapse. That's the load-bearing claim. That's what makes
 ProvekIt the inevitable trust substrate for the next era of computing.
 
+## Citations become hashes
+
+Every claim that depends on prior content can reference that content via
+`(rootCid, offset)` — the DAG root plus the path within. You don't haul
+the whole DAG; you reference and verify selectively. Same primitive as
+Bitcoin's SPV (Simplified Payment Verification) and IPFS's path
+resolution.
+
+A scientific paper's citation today: "Smith et al. 2023, Nature, accessed
+2025-03-15." URL rot. Page edits. Editorial drift. The citation might
+point at something different in 5 years.
+
+A scientific paper's citation tomorrow: `(rootCid, offset)`. ~96 bytes.
+Forever stable. Verifiable by anyone with the rootCid plus a Merkle
+inclusion proof. The citation becomes content-addressed; the cited
+claim is fixed at the moment of attestation.
+
+**Wikipedia as a producer.** Some verification cooperative (or several
+competing ones) attests a subset of Wikipedia's claims. Each verified
+claim is a memento. The mementos compose into a DAG. The DAG's root is
+published. Anyone with the root can compose against any specific claim
+via `(rootCid, offset)`.
+
+A contract that says "the German market entry shall begin in Berlin"
+includes `(H_wiki, offset_to_berlin_capital_claim)` in its inputCids.
+The contract transitively inherits Wikipedia's verification. Walking
+the DAG from the contract's verdict memento eventually reaches
+Wikipedia's verified-claim memento. Trust composes mechanically.
+
+Different cooperatives can verify different subsets. Their DAGs may
+overlap (multiple producers attesting the same claim — strengthening
+confidence) or disagree (one says holds, another says violated —
+surfacing disputes mechanically). The framework doesn't pick winners;
+it surfaces the structure of attestation.
+
+**The compactness consequence:**
+
+Citations become 96-byte references. The verifier's DAG might be
+petabytes; the citation is small. Selective retrieval makes
+civilization-scale usage tractable. Same scalability properties as
+Bitcoin's lightweight clients and IPFS's path resolution. Same
+primitives.
+
+## Verification economics
+
+**Verification cost = `min(any sufficient analysis cost) / consumers`.**
+
+The cheapest producer that can mint a memento for a propertyHash sets
+the floor. Static analysis is usually cheaper than dynamic. Type
+checking is cheaper than full SMT. A simple regex assertion is cheaper
+than property-based testing. **Producers compete on cost-per-novel-
+verification.** Once a producer mints the memento, every future
+consumer hashing to the same propertyHash pulls for free.
+
+As adoption grows, the average per-consumer verification cost
+approaches zero asymptotically. The deflation curve. BitTorrent's
+economics applied to correctness — once a producer has done the work,
+infinite consumers free-ride.
+
+The producer pool sorts naturally:
+- Cheap, high-volume producers (regex, type-check, simple LLM eval)
+  handle 99% of routine verification
+- Expensive, low-volume producers (frontier LLMs, formal SMT, formal
+  proof) handle the genuinely novel 1%
+
+The framework's economic logic flips today's AI compute curve.
+Today: more queries = more revenue per query. Tomorrow: more queries
+= less revenue per query (most hit cache). The bottleneck shifts from
+compute to NOVELTY. The infrastructure that captures value is the one
+that COORDINATES the swarm, not the one that serves the bytes.
+
+## Commercial truth claims
+
+Once the substrate is operational for software, it absorbs commercial
+truth claims by the same primitive. **"Pepsi is better than Coke"
+stops being marketing and becomes a propertyHash.**
+
+```
+P_pepsiPreferenceOverCoke =
+  hash("in blind double-blind taste tests at sample size ≥ 10000,
+        with ISO-accredited methodology,
+        statistical significance p < 0.01,
+        more than half of testers prefer Pepsi over Coke")
+```
+
+The propertyHash is precise, content-addressed, public. The producer
+(Pepsi, or an independent firm Pepsi commissions) runs the test. Each
+test is a memento. The aggregate memento says "verdict: holds for
+P_pepsiPreferenceOverCoke." The DAG composes to ISO accreditation
+mementos, calibrated instrument mementos, statistical methodology
+mementos.
+
+**Coke can mint counter-mementos.** Their own labs, their own studies,
+attesting different verdicts (or attesting different propertyHashes
+that define "preference" under different conditions). The DAG composes
+both. Consumers see the disagreement. Different proofkits weight the
+mementos differently — by funding source, by methodology rigor, by
+accreditation level.
+
+**The framework doesn't pick a winner.** It surfaces the STRUCTURE of
+the attestation. Walk the DAG; weight the producers; see the funding
+source; see the methodology; see the rigor. Marketing becomes
+archaeology of evidence.
+
+**The implications:**
+
+- Vague marketing ("America's favorite!") gets crowded out by precise
+  marketing ("verdict: holds for propertyHash H, witnessed by N
+  independent labs, signed by W").
+- False advertising becomes mechanically falsifiable. The FTC
+  investigation is a DAG walk.
+- Comparative advertising becomes precise. "Better" is bound to a
+  specific propertyHash. The bindingHash is the comparison; the
+  propertyHash is the metric.
+- Brand wars become proof wars. Companies compete on the depth and
+  rigor of their proof DAGs.
+
+The cola wars don't end because someone wins. They end because
+unsubstantiated claims stop being viable. **Companies compete on
+proof depth, not on rhetoric.**
+
+## Scalability
+
+**An exabyte-scale DAG is manageable at every level.** The architectural
+property that makes this work: a 32-byte CID encodes a reference to any
+node in the DAG, regardless of the DAG's total size. A complete claim
+envelope reference — `(rootCid, propertyHash, bindingHash)` — fits in
+64 bytes. Plus signature, verdict, producer identity, the whole envelope
+is well under 256 bytes.
+
+256 bytes encodes the entire chain.
+
+The DAG itself might be petabytes or exabytes globally — billions of
+claims composed across decades of verification work. But:
+
+- **No single node holds the whole DAG.** Each consumer holds only the
+  roots they care about plus the sub-trees they've pulled on demand.
+- **Selective retrieval scales sub-linearly.** A specific claim's
+  verification requires walking O(log n) hashes via Merkle inclusion
+  proofs, not the full graph.
+- **The chain is built incrementally.** Each claim's verification work
+  happens ONCE, by some producer at some moment. After that, the claim
+  is pure reference — `(rootCid, offset)`, 96 bytes, eternally valid.
+- **The DAG grows monotonically by accretion.** New claims add new
+  leaves; old claims stay valid forever. The graph never re-computes;
+  it only extends.
+
+This is the same scalability property as Bitcoin (a lightweight client
+holds only block headers and selective transaction proofs, not the full
+blockchain) and IPFS (a node holds only the CIDs it pins or has
+recently fetched, not the entire content network).
+
+The substrate becomes manageable at civilization scale because:
+
+- The CHAIN OF VERIFICATION is built once per claim. Done forever.
+- The REFERENCE is small (32 bytes per CID).
+- The RETRIEVAL is selective (Merkle paths, not full traversal).
+- The DAG GROWS as things become verifiable — not all at once, but
+  incrementally, organically, as producers attest claims they can
+  verify.
+
+A scientific paper from 2050 references claims attested in 2026. The
+2026 mementos are still valid; their verification work was done once.
+The 2050 paper composes (rootCid, offset) references; 64-96 bytes per
+citation. The verification chain from the 2050 paper to its 2026
+ancestors walks a few thousand hashes, not the full DAG.
+
+**The exabyte DAG fits on every laptop because the laptop only needs
+the roots it cares about plus the paths it walks.**
+
+## The substrate's reach
+
+The architectural primitive — content-addressed hash-and-trust with
+adversarial re-verification — applies wherever:
+
+- The artifact's behavior can be measured and content-addressed
+- Producers can attest claims about it
+- ZK proofs can attest classification without revealing private content
+- Hardware can attest to physical observations
+
+That set includes essentially everything in the digital age, modulo
+what can be measured. The substrate is the trust layer for:
+
+- **Software correctness** (v1 — what we're building)
+- **Library trust and supply chain** (immediate downstream)
+- **Hardware attestation** (chain extension to physics)
+- **Knowledge claims** (Wikipedia subset, scientific papers)
+- **Industrial certification** (pharma, materials, batteries — see
+  `2026-04-29-zk-verification-economy.md`)
+- **Commercial truth** (marketing claims, comparative advertising)
+- **Identity, governance, supply chain, AI provenance** — all
+  downstream consequences of the v1 substrate
+
+These are not parallel concerns. They are the SAME concern at
+different scales. The framework's value cashes out in software
+first; the broader implications follow because the architectural
+primitive is universal. Discipline matters: lead with software;
+let downstream consequences accumulate as adoption locks in.
+
+Bitcoin's discipline — "electronic cash," not "blockchain for
+everything" — is what made the core thesis durable. ProvekIt's
+discipline is the same: software correctness, not "trust substrate
+for everything verifiable." The latter follows from the former.
+
 ## What's durable
 
 **The codebase is not durable. The spec is.**
