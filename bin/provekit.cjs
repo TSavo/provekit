@@ -15,7 +15,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 
 const tsxCli = require.resolve("tsx/cli");
-const target = path.resolve(__dirname, "..", "src", "cli.ts");
+const target = path.resolve(__dirname, "..", "implementations", "typescript", "src", "cli.ts");
 
 const child = spawn(
   process.execPath,

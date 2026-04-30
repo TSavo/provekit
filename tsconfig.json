@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "rootDir": "src",
+    "rootDir": "implementations/typescript/src",
     "outDir": "dist",
     "module": "commonjs",
     "target": "es2022",
@@ -13,5 +13,5 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*"]
+  "include": ["implementations/typescript/src/**/*"]
 }

@@ -9,14 +9,14 @@
     "comment": "Hint only — the trust root is the .proof file at the package root, not this field. See protocol/specs/2026-04-30-proof-file-format.md."
   },
   "main": "./lib/provekit.cjs",
-  "types": "./src/index.ts",
+  "types": "./implementations/typescript/src/index.ts",
   "bin": {
     "provekit": "bin/provekit.cjs",
     "proveit": "bin/provekit.cjs"
   },
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": "./implementations/typescript/src/index.ts",
       "import": "./lib/provekit.mjs",
       "require": "./lib/provekit.cjs",
       "default": "./lib/provekit.cjs"
@@ -26,7 +26,7 @@
   "files": [
     "bin/",
     "lib/",
-    "src/",
+    "implementations/typescript/src/",
     "drizzle/",
     ".provekit/principles/",
     "tsconfig.json",
