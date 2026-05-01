@@ -175,6 +175,20 @@ QuantifierKind ::= "\"forall\"" | "\"exists\""
 The `name` field is the bound variable's identifier. References to this
 variable inside `body` are `VarTerm` nodes whose `name` matches.
 
+**INVARIANT QuantifierFormula.HasSort:**
+```
+∀q: QuantifierFormula → HasKey(q, "sort") ∧ IsSort(q.sort)
+```
+Every quantifier (forall/exists) MUST have a `sort` field specifying the type
+of its bound variable. This sort is authoritative for all VarTerms within
+the quantifier's body that have matching name.
+
+**INVARIANT QuantifierFormula.HasBody:**
+```
+∀q: QuantifierFormula → HasKey(q, "body") ∧ IsIrFormula(q.body)
+```
+Every quantifier MUST have a non-null `body` field containing a valid IrFormula.
+
 ### ConnectiveFormula
 
 Locked key order: `kind`, `operands`.
@@ -198,6 +212,29 @@ ConnectiveKind ::= "\"and\"" | "\"or\"" | "\"not\"" | "\"implies\""
   collapses to a non-connective form.
 
 Validators reject ConnectiveFormula nodes with arity violations.
+
+**INVARIANT ConnectiveFormula.NotArity:**
+```
+∀c: ConnectiveFormula
+  (c.kind = "not") → Len(c.operands) = 1
+```
+The `not` connective must have exactly one operand.
+
+**INVARIANT ConnectiveFormula.ImpliesArity:**
+```
+∀c: ConnectiveFormula
+  (c.kind = "implies") → Len(c.operands) = 2
+```
+The `implies` connective must have exactly two operands, where the first is
+the antecedent and the second is the consequent.
+
+**INVARIANT ConnectiveFormula.AndOrArity:**
+```
+∀c: ConnectiveFormula
+  (c.kind = "and" ∨ c.kind = "or") → Len(c.operands) ≥ 2
+```
+The `and` and `or` connectives must have at least two operands. Empty or
+singleton connectives are not valid IR.
 
 ### AtomicFormula
 
@@ -231,6 +268,26 @@ The use of `name` (not `predicate`) for the atomic's identifier matches
 every other named node in the IR. The kind discriminator (`"atomic"`) carries
 the information that this `name` is an atomic-predicate name; no separate
 field key is needed to communicate that.
+
+**INVARIANT AtomicFormula.HasName:**
+```
+∀a: AtomicFormula → HasKey(a, "name") ∧ IsString(a.name)
+```
+Every atomic formula MUST have a non-empty `name` field identifying the predicate.
+
+**INVARIANT AtomicFormula.HasArgs:**
+```
+∀a: AtomicFormula → HasKey(a, "args") ∧ IsArray(a.args)
+```
+Every atomic formula MUST have an `args` field containing an array of IrTerms.
+
+**INVARIANT AtomicFormula.KnownPredicate:**
+```
+∀a: AtomicFormula → IsBuiltInPredicate(a.name) ∨ IsKitDefinedPredicate(a.name)
+```
+The atomic's `name` must be either a built-in predicate (standard SMT-LIB
+operators like =, <, >, etc.) or a kit-defined predicate. Unknown predicates
+are only rejected in strict mode.
 
 ## Terms
 
