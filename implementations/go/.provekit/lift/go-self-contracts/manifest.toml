@@ -1,0 +1,10 @@
+name = "go-self-contracts"
+version = "1.0.0"
+protocol_version = "provekit-lift/1"
+command = ["go", "run", "./cmd/mint-go-self-contracts"]
+working_dir = "provekit-self-contracts"
+
+[capabilities]
+authoring_surfaces = ["go-self-contracts"]
+ir_version = "v1.1.0"
+emits_signed_mementos = true

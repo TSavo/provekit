@@ -26,12 +26,29 @@ WORKSPACE="$(cd "$(dirname "$0")/.." && pwd)"
 CPP="$WORKSPACE/implementations/cpp/provekit"
 KIT_INC="$WORKSPACE/implementations/cpp/provekit-ir-symbolic/include"
 
-OUT_DIR="${1:-/tmp/provekit-cpp-self-out}"
-rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR"
+# --build-only writes the binary to a stable path and exits without
+# running. Used by the lift-plugin protocol manifest to provide a
+# prebuilt entry point.
+BUILD_ONLY=0
+if [ "${1:-}" = "--build-only" ]; then
+    BUILD_ONLY=1
+    shift
+fi
 
-OUT_BIN="$(mktemp -t mint_cpp_self_contracts.XXXXXX)"
-trap 'rm -f "$OUT_BIN"' EXIT
+OUT_DIR="${1:-/tmp/provekit-cpp-self-out}"
+if [ "$BUILD_ONLY" = "0" ]; then
+    rm -rf "$OUT_DIR"
+    mkdir -p "$OUT_DIR"
+fi
+
+if [ "$BUILD_ONLY" = "1" ]; then
+    STABLE_BIN="$WORKSPACE/implementations/cpp/target/mint_cpp_self_contracts"
+    mkdir -p "$(dirname "$STABLE_BIN")"
+    OUT_BIN="$STABLE_BIN"
+else
+    OUT_BIN="$(mktemp -t mint_cpp_self_contracts.XXXXXX)"
+    trap 'rm -f "$OUT_BIN"' EXIT
+fi
 
 clang++ -std=c++17 -O2 -Wall -Wextra \
     -I"$OPENSSL_PREFIX/include" \
@@ -64,5 +81,10 @@ clang++ -std=c++17 -O2 -Wall -Wextra \
     "$WORKSPACE/implementations/cpp/provekit-self-contracts/mint_cpp_self_contracts.cpp" \
     -lcrypto -lblake3 \
     -o "$OUT_BIN"
+
+if [ "$BUILD_ONLY" = "1" ]; then
+    echo "built: $OUT_BIN"
+    exit 0
+fi
 
 "$OUT_BIN" "$OUT_DIR"

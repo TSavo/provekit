@@ -24,10 +24,14 @@
 #include "provekit/proof-envelope/proof_envelope.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 using namespace provekit::ir;
 using ::provekit::claim_envelope::MintContractArgs;
@@ -140,7 +144,182 @@ static std::string mint_one_run(const std::string& out_dir, bool verbose) {
     return built.filename_cid;
 }
 
+// Base64 (standard) encoder for binary -> JSON-safe string. Sufficient
+// for proof-envelope payload over JSON-RPC. No padding tricks, no URL-safe
+// variant; matches Rust/Go base64::engine::general_purpose::STANDARD.
+static std::string base64_encode(const std::vector<uint8_t>& data) {
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((data.size() + 2) / 3) * 4);
+    size_t i = 0;
+    for (; i + 3 <= data.size(); i += 3) {
+        uint32_t triple = (uint32_t(data[i]) << 16) | (uint32_t(data[i+1]) << 8) | uint32_t(data[i+2]);
+        out.push_back(alphabet[(triple >> 18) & 0x3F]);
+        out.push_back(alphabet[(triple >> 12) & 0x3F]);
+        out.push_back(alphabet[(triple >> 6) & 0x3F]);
+        out.push_back(alphabet[triple & 0x3F]);
+    }
+    if (i < data.size()) {
+        uint32_t triple = uint32_t(data[i]) << 16;
+        if (i + 1 < data.size()) triple |= uint32_t(data[i+1]) << 8;
+        out.push_back(alphabet[(triple >> 18) & 0x3F]);
+        out.push_back(alphabet[(triple >> 12) & 0x3F]);
+        out.push_back((i + 1 < data.size()) ? alphabet[(triple >> 6) & 0x3F] : '=');
+        out.push_back('=');
+    }
+    return out;
+}
+
+// JSON string escape for the small set of control chars + quote/backslash.
+// Sufficient for our protocol fields (CIDs are hex; base64 has no specials).
+static std::string json_escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    out.push_back('"');
+    for (char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out.push_back(c);
+                }
+        }
+    }
+    out.push_back('"');
+    return out;
+}
+
+// Extremely thin JSON-RPC scan. We don't pull in nlohmann/json for the
+// orchestrator binary; the protocol's request shape is small and fixed:
+//   { "jsonrpc":"2.0", "id":<id>, "method":"<name>", "params":<obj> }
+// We only need `id` (passthrough) and `method`.
+struct ParsedReq {
+    std::string id_raw;     // verbatim JSON value (number, string, or null)
+    std::string method;     // unquoted method name
+    bool valid = false;
+};
+
+static std::string find_field(const std::string& body, const std::string& key) {
+    // Returns the verbatim field value (with surrounding quotes for strings,
+    // bare digits for numbers, "null" for null). Naive: assumes top-level
+    // shape and no escaped quotes inside the value.
+    size_t kpos = body.find("\"" + key + "\"");
+    if (kpos == std::string::npos) return "";
+    size_t colon = body.find(':', kpos);
+    if (colon == std::string::npos) return "";
+    size_t i = colon + 1;
+    while (i < body.size() && (body[i] == ' ' || body[i] == '\t')) i++;
+    if (i >= body.size()) return "";
+    if (body[i] == '"') {
+        size_t end = body.find('"', i + 1);
+        if (end == std::string::npos) return "";
+        return body.substr(i, end - i + 1);
+    }
+    // number / null / bool: scan until comma/brace/whitespace
+    size_t end = i;
+    while (end < body.size() && body[end] != ',' && body[end] != '}' && body[end] != ' ' && body[end] != '\n' && body[end] != '\r') end++;
+    return body.substr(i, end - i);
+}
+
+static ParsedReq parse_req(const std::string& line) {
+    ParsedReq r;
+    std::string id = find_field(line, "id");
+    std::string method_raw = find_field(line, "method");
+    if (method_raw.size() < 2 || method_raw.front() != '"') return r;
+    r.id_raw = id.empty() ? std::string("null") : id;
+    r.method = method_raw.substr(1, method_raw.size() - 2);
+    r.valid = true;
+    return r;
+}
+
+static void run_rpc_mode() {
+    std::ios::sync_with_stdio(false);
+    std::string line;
+    while (std::getline(std::cin, line)) {
+        if (line.empty()) continue;
+        ParsedReq req = parse_req(line);
+        if (!req.valid) continue;
+
+        if (req.method == "initialize") {
+            std::ostringstream out;
+            out << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw << ",\"result\":{"
+                << "\"name\":\"cpp-self-contracts\","
+                << "\"version\":\"1.0.0\","
+                << "\"protocol_version\":\"provekit-lift/1\","
+                << "\"capabilities\":{"
+                << "\"authoring_surfaces\":[\"cpp-self-contracts\"],"
+                << "\"ir_version\":\"v1.1.0\","
+                << "\"emits_signed_mementos\":true}}}";
+            std::cout << out.str() << "\n" << std::flush;
+        } else if (req.method == "lift") {
+            // Mint into a unique temp dir; capture CID + bytes.
+            char tmpl[] = "/tmp/provekit-cpp-rpc-XXXXXX";
+            char* tmp = mkdtemp(tmpl);
+            if (!tmp) {
+                std::ostringstream err;
+                err << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw
+                    << ",\"error\":{\"code\":-32603,\"message\":\"mkdtemp failed\"}}";
+                std::cout << err.str() << "\n" << std::flush;
+                continue;
+            }
+            const std::string tmp_dir(tmp);
+            const std::string cid = mint_one_run(tmp_dir, /*verbose=*/false);
+            const std::string proof_path = tmp_dir + "/" + cid + ".proof";
+            std::ifstream f(proof_path, std::ios::binary);
+            if (!f) {
+                std::ostringstream err;
+                err << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw
+                    << ",\"error\":{\"code\":-32603,\"message\":\"read .proof failed\"}}";
+                std::cout << err.str() << "\n" << std::flush;
+                std::system(("rm -rf '" + tmp_dir + "'").c_str());
+                continue;
+            }
+            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)),
+                                        std::istreambuf_iterator<char>());
+            f.close();
+            std::system(("rm -rf '" + tmp_dir + "'").c_str());
+
+            const std::string b64 = base64_encode(bytes);
+            std::ostringstream out;
+            out << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw << ",\"result\":{"
+                << "\"kind\":\"proof-envelope\","
+                << "\"filename_cid\":" << json_escape(cid) << ","
+                << "\"bytes_base64\":" << json_escape(b64) << ","
+                << "\"diagnostics\":[]}}";
+            std::cout << out.str() << "\n" << std::flush;
+        } else if (req.method == "shutdown") {
+            std::ostringstream out;
+            out << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw << ",\"result\":null}";
+            std::cout << out.str() << "\n" << std::flush;
+            return;
+        } else {
+            std::ostringstream err;
+            err << "{\"jsonrpc\":\"2.0\",\"id\":" << req.id_raw
+                << ",\"error\":{\"code\":-32601,\"message\":\"METHOD_NOT_FOUND: "
+                << req.method << "\"}}";
+            std::cout << err.str() << "\n" << std::flush;
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
+    // --rpc takes over stdin/stdout for the lift-plugin protocol.
+    for (int i = 1; i < argc; i++) {
+        if (std::string(argv[i]) == "--rpc") {
+            run_rpc_mode();
+            return 0;
+        }
+    }
+
     const std::string out_dir = (argc >= 2) ? argv[1] : ".";
 
     std::printf("== ProvekIt C++ self-contracts orchestrator ==\n\n");

@@ -224,6 +224,16 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 
 func main() {
 	argv := os.Args
+
+	// --rpc takes over stdin/stdout for the lift-plugin protocol.
+	// Spec: protocol/specs/2026-04-30-lift-plugin-protocol.md
+	for _, a := range argv {
+		if a == "--rpc" {
+			runRPCMode()
+			return
+		}
+	}
+
 	var outDir string
 	if len(argv) >= 2 {
 		outDir = argv[1]
