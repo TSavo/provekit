@@ -15,7 +15,7 @@ use provekit_agent::{
 use serde_json::json;
 
 use crate::project_config::{read_project_config, read_user_config};
-use crate::prompts::{resolve_prompt, PromptCommand, PromptOverrides};
+use crate::prompts::{resolve_prompt, substitute, PromptCommand, PromptOverrides};
 use crate::{LiftArgs, OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 /// Extended args for the agent-driven path. The legacy `LiftArgs`
@@ -96,6 +96,20 @@ pub fn run_agent(args: AgentLiftArgs) -> u8 {
         surface: surface.as_deref(),
     };
     let prompt = resolve_prompt(PromptCommand::Lift, &overrides);
+    let file_path_str = args.file.display().to_string();
+    let function_str = args.function.clone().unwrap_or_default();
+    let rendered = substitute(
+        &prompt.body,
+        &[
+            ("user_input", ""),
+            ("source_file_path", file_path_str.as_str()),
+            ("source_file_contents", source_text.as_str()),
+            ("function_name", function_str.as_str()),
+            ("previous_rejection", ""),
+            ("existing_contracts", ""),
+            ("ir_grammar", ""),
+        ],
+    );
 
     let agent: Box<dyn ProvekitAgent> = match agent_name.as_str() {
         "stub" => Box::new(StubAgent::new()),
@@ -112,7 +126,7 @@ pub fn run_agent(args: AgentLiftArgs) -> u8 {
         source_path: args.file.clone(),
         source_text,
         function_name: args.function.clone(),
-        authoring_api_doc: prompt.body.clone(),
+        authoring_api_doc: rendered,
         existing_contract_names: vec![],
         previous_rejection: None,
     };

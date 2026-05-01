@@ -14,7 +14,7 @@ use provekit_agent::loop_fix::{
 use provekit_agent::{FilePatch, FixContext, ProvekitAgent, StubAgent};
 
 use crate::project_config::{read_project_config, read_user_config};
-use crate::prompts::{resolve_prompt, PromptCommand, PromptOverrides};
+use crate::prompts::{resolve_prompt, substitute, PromptCommand, PromptOverrides};
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 #[derive(Parser, Debug, Clone)]
@@ -84,6 +84,26 @@ pub fn run(args: FixArgs) -> u8 {
         surface: surface.as_deref(),
     };
     let prompt = resolve_prompt(PromptCommand::Fix, &overrides);
+    let repo_str = repo_root.display().to_string();
+    let allowed_str = args
+        .allow
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let _rendered_prompt = substitute(
+        &prompt.body,
+        &[
+            ("user_input", args.bug.as_str()),
+            ("repo_root", repo_str.as_str()),
+            ("allowed_paths", allowed_str.as_str()),
+            ("violated_contracts", ""),
+            ("previous_rejection", ""),
+        ],
+    );
+    // The fix loop does not yet thread a rendered prompt to the agent
+    // (FixContext has no `authoring_api_doc` field). Templates are
+    // rendered for parity with must/lift; v2 plumbs them through.
 
     let agent: Box<dyn ProvekitAgent> = match agent_name.as_str() {
         "stub" => Box::new(StubAgent::new()),

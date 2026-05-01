@@ -12,7 +12,7 @@ use provekit_agent::{
 };
 
 use crate::project_config::{read_project_config, read_user_config};
-use crate::prompts::{resolve_prompt, PromptCommand, PromptOverrides};
+use crate::prompts::{resolve_prompt, substitute, PromptCommand, PromptOverrides};
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 #[derive(Parser, Debug, Clone)]
@@ -78,6 +78,18 @@ pub fn run(args: MustArgs) -> u8 {
         surface: surface.as_deref(),
     };
     let prompt = resolve_prompt(PromptCommand::Must, &overrides);
+    let file_path_str = args.file.display().to_string();
+    let rendered = substitute(
+        &prompt.body,
+        &[
+            ("user_input", args.description.as_str()),
+            ("source_file_path", file_path_str.as_str()),
+            ("source_file_contents", source_text.as_str()),
+            ("previous_rejection", ""),
+            ("existing_contracts", ""),
+            ("ir_grammar", ""),
+        ],
+    );
 
     // Build the agent. v1: only the stub is bundled in-tree; other
     // backends are expected to be installed as plugins via
@@ -99,7 +111,7 @@ pub fn run(args: MustArgs) -> u8 {
         source_path: args.file.clone(),
         source_text,
         description: args.description.clone(),
-        authoring_api_doc: prompt.body.clone(),
+        authoring_api_doc: rendered,
         previous_rejection: None,
     };
 

@@ -268,6 +268,26 @@ mod tests {
     }
 
     #[test]
+    fn bundled_must_placeholders_get_replaced() {
+        let rp = resolve_prompt(PromptCommand::Must, &PromptOverrides::default());
+        // Sanity: bundled prompt mentions the canonical placeholders.
+        assert!(rp.body.contains("{{user_input}}"));
+        assert!(rp.body.contains("{{source_file_path}}"));
+        let rendered = substitute(
+            &rp.body,
+            &[
+                ("user_input", "not lose money"),
+                ("source_file_path", "doubleledger.ts"),
+            ],
+        );
+        assert!(rendered.contains("not lose money"));
+        assert!(rendered.contains("doubleledger.ts"));
+        // The replaced sites are gone.
+        assert!(!rendered.contains("{{user_input}}"));
+        assert!(!rendered.contains("{{source_file_path}}"));
+    }
+
+    #[test]
     fn substitute_leaves_unknown_keys_visible() {
         let s = substitute("Got {{unknown}} and {{name}}", &[("name", "Sir")]);
         assert!(s.contains("{{unknown}}"));
