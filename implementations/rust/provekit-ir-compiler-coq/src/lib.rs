@@ -205,8 +205,9 @@ Definition parseInt (s : string) : nat := parse_nat s.
         if kind == "var" {
             if let Some(name) = ir.get("name").and_then(|v| v.as_str()) {
                 if !bound.contains(name) {
-                    // Use quantifier's sort if available, otherwise default to Int
-                    let sort = ctx_quant_sort.unwrap_or("Int");
+                    // Use quantifier's sort if available, otherwise default to String
+                    // (most kit predicates like roundTrips, isErr, etc. work on strings)
+                    let sort = ctx_quant_sort.unwrap_or("String");
                     out.entry(name.to_string()).or_insert(sort.to_string());
                 }
             }

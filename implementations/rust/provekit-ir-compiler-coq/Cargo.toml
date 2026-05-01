@@ -13,6 +13,10 @@ serde_json.workspace = true
 [dev-dependencies]
 provekit-ir-compiler = { path = "../provekit-ir-compiler" }
 
+[[bin]]
+name = "provekit-ir-coq"
+path = "src/main.rs"
+
 [lib]
 name = "provekit_ir_compiler_coq"
 path = "src/lib.rs"
