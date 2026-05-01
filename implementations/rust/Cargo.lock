@@ -708,6 +708,7 @@ name = "provekit-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "owo-colors",
  "provekit-agent",
@@ -913,6 +914,7 @@ dependencies = [
 name = "provekit-self-contracts"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "proptest",
  "provekit-canonicalizer",
  "provekit-claim-envelope",

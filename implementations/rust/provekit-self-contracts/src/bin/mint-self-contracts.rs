@@ -38,8 +38,119 @@ use std::process::ExitCode;
 use provekit_self_contracts::{author_all_invariants, mint_self_proof};
 use provekit_verifier::{Runner, RunnerConfig};
 
+/// `--rpc` mode: speak the lift-plugin protocol over NDJSON-on-stdio.
+/// Returns the proof-envelope shape (the plugin owns the full pipeline).
+/// Spec: protocol/specs/2026-04-30-lift-plugin-protocol.md
+fn run_rpc_mode() -> ExitCode {
+    use std::io::{BufRead, BufReader, Write};
+    let stdin = std::io::stdin();
+    let mut reader = BufReader::new(stdin.lock());
+    let stdout = std::io::stdout();
+
+    loop {
+        let mut line = String::new();
+        let n = match reader.read_line(&mut line) {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("rpc: read stdin: {e}");
+                return ExitCode::from(1);
+            }
+        };
+        if n == 0 {
+            return ExitCode::from(0); // EOF
+        }
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let req: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("rpc: parse: {e}");
+                continue;
+            }
+        };
+        let id = req.get("id").cloned().unwrap_or(serde_json::Value::Null);
+        let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+        let resp = match method {
+            "initialize" => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "name": "rust-self-contracts",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "protocol_version": "provekit-lift/1",
+                    "capabilities": {
+                        "authoring_surfaces": ["rust-self-contracts"],
+                        "ir_version": "v1.1.0",
+                        "emits_signed_mementos": true
+                    }
+                }
+            }),
+            "lift" => {
+                let tmp = std::env::temp_dir().join(format!("provekit-rpc-mint-{}", std::process::id()));
+                let _ = std::fs::remove_dir_all(&tmp);
+                let _ = std::fs::create_dir_all(&tmp);
+                match mint_self_proof(&tmp) {
+                    Ok(m) => {
+                        let bytes = match std::fs::read(&m.path) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                eprintln!("rpc: read proof bytes: {e}");
+                                let err = serde_json::json!({"jsonrpc":"2.0","id":id,
+                                    "error":{"code":-32603,"message":format!("read proof bytes: {e}")}});
+                                let _ = writeln!(stdout.lock(), "{err}");
+                                continue;
+                            }
+                        };
+                        let _ = std::fs::remove_dir_all(&tmp);
+                        use base64::Engine;
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": {
+                                "kind": "proof-envelope",
+                                "filename_cid": m.cid,
+                                "bytes_base64": b64,
+                                "diagnostics": []
+                            }
+                        })
+                    }
+                    Err(e) => serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {"code": 1005, "message": format!("LIFT_FAILED: {e}")}
+                    }),
+                }
+            }
+            "shutdown" => {
+                let resp = serde_json::json!({"jsonrpc": "2.0", "id": id, "result": null});
+                let _ = writeln!(stdout.lock(), "{resp}");
+                return ExitCode::from(0);
+            }
+            other => serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {"code": -32601, "message": format!("METHOD_NOT_FOUND: {other}")}
+            }),
+        };
+        if writeln!(stdout.lock(), "{resp}").is_err() {
+            return ExitCode::from(1);
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
+
+    // --rpc takes over stdin/stdout for the lift-plugin protocol; do not
+    // print human-readable banners in that mode.
+    if argv.iter().any(|a| a == "--rpc") {
+        return run_rpc_mode();
+    }
+
     let out_dir: PathBuf = if argv.len() >= 2 {
         PathBuf::from(&argv[1])
     } else {

@@ -26,6 +26,7 @@ mod cmd_hash;
 mod cmd_implicate;
 mod cmd_init;
 mod cmd_lift;
+mod cmd_mint;
 mod cmd_must;
 mod cmd_prove;
 mod cmd_search;
@@ -92,6 +93,8 @@ enum Cmd {
     Lift(LiftArgs),
     /// Run the LLM-assisted lift loop on a source file.
     AgentLift(cmd_lift::AgentLiftArgs),
+    /// Dispatch the lift-plugin protocol: spawn the configured plugin, write its `.proof`.
+    Mint(cmd_mint::MintArgs),
     /// Translate an English description to a verified ProvekIt contract via the configured agent.
     Must(cmd_must::MustArgs),
     /// Hand the configured agent a bug; verify a fix in a sandbox; report.
@@ -230,6 +233,7 @@ fn main() -> ExitCode {
         Cmd::Init(a) => cmd_init::run(a),
         Cmd::Lift(a) => cmd_lift::run(a),
         Cmd::AgentLift(a) => cmd_lift::run_agent(a),
+        Cmd::Mint(a) => cmd_mint::run(a),
         Cmd::Must(a) => cmd_must::run(a),
         Cmd::Fix(a) => cmd_fix::run(a),
         Cmd::Agent(a) => cmd_agent::run(a),
