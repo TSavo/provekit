@@ -37,6 +37,24 @@ func ForAll(sort Sort, body func(x IrTerm) IrFormula) IrFormula {
 	}
 }
 
+// ForAllNamed constructs a flat universal quantifier with an explicit
+// bound-variable name. Lift adapters use this to preserve a host-
+// language loop-variable identifier in the canonical IR (so the same
+// `for x in ...` always content-addresses to the same CID).
+//
+// Sister kits (Rust / TS) build the same shape by directly constructing
+// the quantifier node with a chosen name; this is the Go-idiomatic
+// equivalent.
+func ForAllNamed(name string, sort Sort, body func(x IrTerm) IrFormula) IrFormula {
+	v := varTerm{Name: name, Sort: sort}
+	return quantFormula{
+		Kind: "forall",
+		Name: name,
+		Sort: sort,
+		Body: body(v),
+	}
+}
+
 // Exists constructs a flat existential quantifier: {kind, name, sort, body}.
 func Exists(sort Sort, body func(x IrTerm) IrFormula) IrFormula {
 	v := freshVar(sort)
@@ -46,6 +64,34 @@ func Exists(sort Sort, body func(x IrTerm) IrFormula) IrFormula {
 		Sort: sort,
 		Body: body(v),
 	}
+}
+
+// ExistsNamed mirrors ForAllNamed for existential quantifiers.
+func ExistsNamed(name string, sort Sort, body func(x IrTerm) IrFormula) IrFormula {
+	v := varTerm{Name: name, Sort: sort}
+	return quantFormula{
+		Kind: "exists",
+		Name: name,
+		Sort: sort,
+		Body: body(v),
+	}
+}
+
+// MakeVar constructs a free variable term with an explicit name and
+// sort. Used by lift adapters when a host-language identifier (loop
+// variable, parameter, free symbol) must be preserved in the IR.
+func MakeVar(name string, sort Sort) IrTerm {
+	return varTerm{Name: name, Sort: sort}
+}
+
+// MakeCtor constructs a generic n-ary constructor term carrying name,
+// args, and a sort tag. Used by lift adapters that recognize a host-
+// language single-arg call expression `f(x)` and need to emit the
+// canonical {kind:"ctor", name, args} term shape without registering
+// `f` in the extension/bridge registry. The Sort field is in-process
+// only (not emitted to JSON), matching the IR's locked ctor key order.
+func MakeCtor(name string, args []IrTerm, sort Sort) IrTerm {
+	return ctorTerm{Name: name, Args: args, Sort: sort}
 }
 
 // And builds a connective with operands. The v1.1.0 grammar requires
