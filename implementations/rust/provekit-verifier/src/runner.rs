@@ -281,6 +281,30 @@ fn work_one(
         &pool.bridges_by_symbol,
     );
 
+    // Tier 0: Memento IS verification. Look up the formula CID in the pool.
+    // The hash IS the boundary: we verify by hash lookup, not by solving.
+    if let Some(pre_formula) = consumer_pre {
+        if let Some(memento) = pool.verify(pre_formula) {
+            n_hash.fetch_add(1, Ordering::Relaxed);
+            let memento_cid = memento.get("cid").and_then(|v| v.as_str()).unwrap_or("unknown");
+            return (
+                cs.clone(),
+                ObligationVerdict::Discharged,
+                format!("tier0: memento-is-verification (cid={})", short(memento_cid)),
+            );
+        }
+        
+        // Tier 0b: Sub-formula composition. If parts of the formula are
+        // already verified, note them for partial discharge.
+        let verified_subs = pool.find_verified_subformulas(pre_formula);
+        if !verified_subs.is_empty() {
+            // TODO: In v1, use verified_subs to build a reduced obligation
+            // for the solver. For now, we just note it in telemetry.
+            let sub_cids: Vec<String> = verified_subs.into_iter().map(|(cid, _)| short(&cid)).collect();
+            eprintln!("info: formula has {} verified sub-formulas: {}", sub_cids.len(), sub_cids.join(", "));
+        }
+    }
+
     if let (Some(pre_hash), Some((_post_formula, post_hash))) =
         (consumer_pre_hash.as_ref(), producer_post.as_ref())
     {

@@ -5,6 +5,16 @@ import { mintContract, mintBridge } from "../../claimEnvelope/index.js";
 import { makeEnumerateBridgeCallsitesStage } from "./enumerateBridgeCallsites.js";
 import type { ClaimEnvelope } from "../../claimEnvelope/types.js";
 import type { IrFormula } from "../../ir/formulas.js";
+import { createMementoPool, insertMemento } from "../../verifier/mementoPool.js";
+import type { MementoPool } from "../../verifier/mementoPool.js";
+
+function poolFromEnvelopes(envelopes: ClaimEnvelope[]): MementoPool {
+  const pool = createMementoPool();
+  for (const env of envelopes) {
+    insertMemento(pool, env.cid, env);
+  }
+  return pool;
+}
 
 const IntSort = { kind: "primitive" as const, name: "Int" };
 
@@ -51,7 +61,7 @@ describe("enumerateBridgeCallsites stage (pool-based)", () => {
     });
 
     const result = await stage.run({
-      mementoPool: { [propEnv.cid]: propEnv, [bridgeEnv.cid]: bridgeEnv },
+      mementoPool: poolFromEnvelopes([propEnv, bridgeEnv]),
       bridgesBySymbol: { parseInt: bridgeEnv },
     });
     expect(result.callsites).toHaveLength(1);
@@ -99,7 +109,7 @@ describe("enumerateBridgeCallsites stage (pool-based)", () => {
       },
     });
     const result = await stage.run({
-      mementoPool: { [propEnv.cid]: propEnv, [bridgeEnv.cid]: bridgeEnv },
+      mementoPool: poolFromEnvelopes([propEnv, bridgeEnv]),
       bridgesBySymbol: { parseInt: bridgeEnv },
     });
     expect(result.callsites).toHaveLength(1);
@@ -125,7 +135,7 @@ describe("enumerateBridgeCallsites stage (pool-based)", () => {
       ],
     });
     const result = await stage.run({
-      mementoPool: { [propEnv.cid]: propEnv, [bridgeEnv.cid]: bridgeEnv },
+      mementoPool: poolFromEnvelopes([propEnv, bridgeEnv]),
       bridgesBySymbol: { parseInt: bridgeEnv },
     });
     expect(result.callsites).toEqual([]);
@@ -135,7 +145,7 @@ describe("enumerateBridgeCallsites stage (pool-based)", () => {
     const stage = makeEnumerateBridgeCallsitesStage();
     const bridgeEnv = buildBridge();
     const result = await stage.run({
-      mementoPool: { [bridgeEnv.cid]: bridgeEnv },
+      mementoPool: poolFromEnvelopes([bridgeEnv]),
       bridgesBySymbol: { parseInt: bridgeEnv },
     });
     expect(result.callsites).toEqual([]);
@@ -161,7 +171,7 @@ describe("enumerateBridgeCallsites stage (pool-based)", () => {
       ],
     });
     const result = await stage.run({
-      mementoPool: { [propEnv.cid]: propEnv, [bridgeEnv.cid]: bridgeEnv },
+      mementoPool: poolFromEnvelopes([propEnv, bridgeEnv]),
       bridgesBySymbol: { parseInt: bridgeEnv },
     });
     expect(result.callsites).toHaveLength(2);

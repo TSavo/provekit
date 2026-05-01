@@ -16,12 +16,13 @@
 import type { Stage } from "../types.js";
 import type { ClaimEnvelope, ContractEvidence } from "../../claimEnvelope/types.js";
 import type { IrFormula } from "../../ir/formulas.js";
+import type { MementoPool } from "../../verifier/mementoPool.js";
 
 export const RESOLVE_BRIDGE_TARGET_CAPABILITY = "resolve-bridge-target";
 
 export interface ResolveBridgeTargetInput {
   bridgeTargetContractCid: string;
-  mementoPool: Record<string, ClaimEnvelope>;
+  mementoPool: MementoPool;
 }
 
 export interface ResolvedProperty {
@@ -57,7 +58,7 @@ export function makeResolveBridgeTargetStage(
     serializeInput(input) {
       return {
         bridgeTargetContractCid: input.bridgeTargetContractCid,
-        poolCids: Object.keys(input.mementoPool).sort(),
+        poolCids: Object.keys(input.mementoPool.mementos).sort(),
       };
     },
 
@@ -70,7 +71,7 @@ export function makeResolveBridgeTargetStage(
     },
 
     async run(input) {
-      const envelope = input.mementoPool[input.bridgeTargetContractCid];
+      const envelope = input.mementoPool.mementos[input.bridgeTargetContractCid];
       if (!envelope) {
         return { resolved: null, failureReason: "not-in-pool" };
       }

@@ -14,12 +14,13 @@
 import type { Stage } from "../types.js";
 import type { ClaimEnvelope, ContractEvidence, BridgeEvidence } from "../../claimEnvelope/types.js";
 import type { IrFormula, IrTerm } from "../../ir/formulas.js";
+import type { MementoPool } from "../../verifier/mementoPool.js";
 
 export const ENUMERATE_BRIDGE_CALLSITES_CAPABILITY = "enumerate-bridge-callsites";
 
 export interface EnumerateBridgeCallsitesInput {
-  /** From load-all-proofs: every member memento, CID-keyed. */
-  mementoPool: Record<string, ClaimEnvelope>;
+  /** From load-all-proofs: the memento pool (mementos IS verification). */
+  mementoPool: MementoPool;
   /** From load-all-proofs: bridge envelopes indexed by sourceSymbol (IR name). */
   bridgesBySymbol: Record<string, ClaimEnvelope>;
 }
@@ -58,7 +59,7 @@ export function makeEnumerateBridgeCallsitesStage(
       // Cache key: sorted list of member CIDs in the pool + sorted list
       // of bridge symbols. Pool contents change → cache invalidates.
       return {
-        mementoPoolCids: Object.keys(input.mementoPool).sort(),
+        mementoPoolCids: Object.keys(input.mementoPool.mementos).sort(),
         bridgeSymbols: Object.keys(input.bridgesBySymbol).sort(),
       };
     },
@@ -73,7 +74,9 @@ export function makeEnumerateBridgeCallsitesStage(
 
     async run(input) {
       const out: BridgeCallSite[] = [];
-      for (const [cid, envelope] of Object.entries(input.mementoPool)) {
+      // The memento IS the verification; we walk the pool to find
+      // contract mementos that reference bridges via their formulas.
+      for (const [cid, envelope] of Object.entries(input.mementoPool.mementos)) {
         if (envelope.evidence?.kind !== "contract") continue;
         const ev = envelope.evidence as ContractEvidence;
         const propertyName = ev.body.contractName ?? cid.slice(0, 12);

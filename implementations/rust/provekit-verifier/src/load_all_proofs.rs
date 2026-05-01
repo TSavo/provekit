@@ -158,8 +158,9 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
             });
             continue;
         }
-        // Index for handshake.
-        pool.mementos.insert(cid.clone(), env.clone());
+        // Index for handshake. The memento IS the verification;
+        // inserting it into the pool IS caching the verification result.
+        pool.insert(cid.clone(), env.clone());
         if let Some(ev) = env.get("evidence") {
             if ev.get("kind").and_then(|k| k.as_str()) == Some("bridge") {
                 if let Some(body) = ev.get("body") {

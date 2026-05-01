@@ -28,6 +28,7 @@ import {
   type ReportBridgeViolationsOutput,
 } from "../workflow/producers/reportBridgeViolations.js";
 import type { Solver } from "../workflow/producers/checkImplication.js";
+import { verifyFormula, findVerifiedSubformulas } from "./mementoPool.js";
 
 export interface BridgeEnforcementReport extends ReportBridgeViolationsOutput {
   /** Errors encountered loading .proof files (failed trust root, decode errors, etc.). */
@@ -99,6 +100,28 @@ export async function runBridgeEnforcement(projectRoot: string): Promise<BridgeE
       });
       continue;
     }
+
+    // Tier 0: The memento IS the verification. Look up the obligation
+    // formula CID in the pool. The hash IS the boundary.
+    const verifiedMemento = verifyFormula(pool.mementoPool, obligation.obligation);
+    if (verifiedMemento) {
+      const mementoCid = verifiedMemento.cid ?? "unknown";
+      rows.push({
+        callsite: cs as unknown as BridgeReportRow["callsite"],
+        status: "discharged",
+        reason: `tier0: memento-is-verification (cid=${mementoCid.slice(0, 16)}…)`,
+      });
+      continue;
+    }
+
+    // Tier 0b: Sub-formula composition. If parts of the obligation are
+    // already verified, note them for telemetry (future: partial discharge).
+    const verifiedSubs = findVerifiedSubformulas(pool.mementoPool, obligation.obligation);
+    if (verifiedSubs.length > 0) {
+      const subCids = verifiedSubs.map((s) => s.cid.slice(0, 16) + "…").join(", ");
+      console.error(`info: obligation has ${verifiedSubs.length} verified sub-formulas: ${subCids}`);
+    }
+
     const solveResult = await solveStage.run({
       obligation: obligation.obligation,
       solver,

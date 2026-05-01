@@ -21,6 +21,7 @@ import type { Stage } from "../types.js";
 import { decodeProofEnvelope } from "../../proofEnvelope/index.js";
 import { computeEnvelopeCid } from "../../claimEnvelope/cid.js";
 import type { ClaimEnvelope, BridgeEvidence } from "../../claimEnvelope/types.js";
+import { createMementoPool, insertMemento, type MementoPool } from "../../verifier/mementoPool.js";
 
 export const LOAD_ALL_PROOFS_CAPABILITY = "load-all-proofs";
 
@@ -29,11 +30,11 @@ export interface LoadAllProofsInput {
 }
 
 export interface LoadAllProofsOutput {
-  /** CID → memento envelope. Every member of every .proof file. */
-  mementoPool: Record<string, ClaimEnvelope>;
-  /** sourceSymbol (IR name) → bridge envelope. Index for callsite enumeration. */
+  /** The memento pool: mementos IS verification, .proof IS cache, hash IS boundary. */
+  mementoPool: MementoPool;
+  /** @deprecated Use mementoPool.bridgesBySymbol */
   bridgesBySymbol: Record<string, ClaimEnvelope>;
-  /** Per-file errors encountered during the walk (failed trust root, etc.). */
+  /** Per-file errors encountered during the walk (failed trust root, decode errors, etc.). */
   errors: Array<{ proofFile: string; reason: string }>;
 }
 
@@ -63,8 +64,7 @@ export function makeLoadAllProofsStage(
     },
 
     async run(input) {
-      const mementoPool: Record<string, ClaimEnvelope> = {};
-      const bridgesBySymbol: Record<string, ClaimEnvelope> = {};
+      const pool = createMementoPool();
       const errors: Array<{ proofFile: string; reason: string }> = [];
 
       const proofPaths = enumerateProofFiles(input.projectRoot);
@@ -121,15 +121,17 @@ export function makeLoadAllProofsStage(
             });
             continue;
           }
-          mementoPool[memberCid] = env;
+          // The memento IS the verification; inserting it IS caching.
+          insertMemento(pool, memberCid, env);
           if (env.evidence?.kind === "bridge") {
             const ev = env.evidence as BridgeEvidence;
-            bridgesBySymbol[ev.body.sourceSymbol] = env;
+            pool.bridgesBySymbol[ev.body.sourceSymbol] = env;
           }
         }
       }
 
-      return { mementoPool, bridgesBySymbol, errors };
+      pool.errors = errors;
+      return { mementoPool: pool, bridgesBySymbol: pool.bridgesBySymbol, errors };
     },
   };
 }

@@ -205,7 +205,7 @@ describe("bridge enforcement end-to-end", () => {
       const loadStage = makeLoadAllProofsStage();
       const pool = await loadStage.run({ projectRoot });
       expect(pool.errors).toEqual([]);
-      expect(Object.keys(pool.mementoPool).length).toBe(4); // 2 from kit + 2 from consumer
+      expect(Object.keys(pool.mementoPool.mementos).length).toBe(4); // 2 from kit + 2 from consumer
       expect(pool.bridgesBySymbol.parseInt).toBeDefined();
 
       // ----- Stage 2: enumerate bridge callsites in the pool -----
