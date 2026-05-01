@@ -2,7 +2,7 @@
 //
 // recompute-spec-cids
 //
-// v1.1.0 catalog freeze tool. Computes BLAKE3-512 CIDs for every protocol
+// Catalog freeze tool (current target: v1.2.0). Computes BLAKE3-512 CIDs for every protocol
 // spec file listed in `protocol/specs/2026-04-30-protocol-catalog.json`,
 // substitutes them into the catalog (replacing `RECOMPUTE-AFTER-*`
 // placeholders), then computes the catalog's own CID as
@@ -204,7 +204,7 @@ fn run(verify: bool) -> Result<(), String> {
     }
 
     // 5. Compute catalog CID over JCS-canonical bytes of the substituted
-    //    catalog. This is the single value that names protocol v1.1.0.
+    //    catalog. This is the single value that names the current protocol version.
     let canonical_value = to_canonical(&catalog);
     let jcs_bytes = encode_jcs(&canonical_value);
     let catalog_cid = blake3_512_of(jcs_bytes.as_bytes());
@@ -246,7 +246,7 @@ fn run(verify: bool) -> Result<(), String> {
     }
 
     // 7. Report.
-    println!("# Protocol catalog freeze (v1.1.0)");
+    println!("# Protocol catalog freeze (v1.2.0)");
     println!();
     println!("Catalog file:    {}", catalog_path.display());
     println!("Catalog CID:     {}", catalog_cid);

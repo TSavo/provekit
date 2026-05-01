@@ -200,7 +200,7 @@ pub struct VerifyProtocolArgs {
     /// Also verify the signed catalog attestation (Ed25519 signature
     /// over the catalog's CID by the ProvekIt Foundation Root Key).
     /// Default uses the embedded `foundation-v0.pub` and embedded
-    /// `catalog-signature-v1.1.0.json`; override via `--pubkey-file`
+    /// `catalog-signature-v1.2.0.json`; override via `--pubkey-file`
     /// and `--signature-file`.
     #[arg(long)]
     pub signed: bool,

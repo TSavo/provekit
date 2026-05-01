@@ -1,7 +1,7 @@
 {
   "kind": "catalog",
   "name": "provekit-protocol",
-  "version": "v1.1.0-2026-04-30",
+  "version": "v1.2.0-2026-04-30",
   "algorithms": {
     "hash": [
       "blake3-512"
@@ -26,16 +26,28 @@
     "handshake-algorithm": "blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925",
     "per-language-kit-standard": "blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88",
     "lattice-tractability-theorem": "blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07",
-    "contract-merge-semantics": "blake3-512:aeb9e2c56603f56372c29cdcbbb11ec3ae6fada0b2004d9fb99955e21230b03a72d02fc7051eea09ed24b7271b758909011948b531b668bb5c20e8ab8a268bee"
+    "contract-merge-semantics": "blake3-512:aeb9e2c56603f56372c29cdcbbb11ec3ae6fada0b2004d9fb99955e21230b03a72d02fc7051eea09ed24b7271b758909011948b531b668bb5c20e8ab8a268bee",
+    "protocol-catalog-format": "blake3-512:6d610d405cdd41a50425ec45cc5c3599ec372dfed17e41e89cb2f5cca03937989881ac34b1e8f039c9766934307ac42618100818fa8ae2ccf86bd8623eb2243c",
+    "agent-plugin-protocol": "blake3-512:ff1dface88c0ba11cc8b4d7d05e002b240108fb4dc0b7447551f20994cd74086c66839071f14d15835b6d3992047a7e80db2038f57b0c96fb85e866eb60c2e30",
+    "ir-compiler-protocol": "blake3-512:27d3b0affccd0f814d79f2adfce08ca8898a40ceeeb9703cf611edc58d0b0dd13869be1aeaff13d74fb4bc2401f72757a96e16807ce490c70f80b4348abbbb18",
+    "multi-solver-protocol": "blake3-512:71fc7ac22997938629d835f87e4e8a322026d77c1e1f834c9fbe0f79cca4e903792c628e96d3004c88d29706f4d87bc042ff837fef571c0cb3012495a03003d3",
+    "lift-plugin-protocol": "blake3-512:8f6597f8d85fc1940ce093626d046bec85af0cdb2e44544a32ae91012a1abd2d5107eaaac787f7bb2727191cb2938a9d6d121d1335e410cd382e4579c52d03d1"
   },
   "declaredAt": "2026-04-30T15:00:00Z",
-  "_unsigned": "draft v1.1.0; minor bump for: (1) property memento role replaced by contract memento (pre/post/inv/outBinding); (2) implication memento role added (with Z3 witness body); (3) handshake algorithm spec added; (4) IR formal grammar maximal-uniformity cut (flat quantifiers, unified connective with operands, no sort on var/ctor, name everywhere); (5) cryptographic primitives are self-identifying — every hash and signature carries an algorithm tag inline; v1.1.0 ships with blake3-512 (hash) and ed25519 (signature/pubkey) as the only permitted tags. Migration to additional algorithms (post-quantum signatures, alternative hash functions) is additive: future catalogs add tags without invalidating any v1.1.0 bytes. Spec CIDs marked RECOMPUTE will be derived from the canonical bytes after the implementation cut lands; the catalog itself signs after that.",
-  "_breakingChanges": [
+  "_unsigned": "v1.2.0 minor bump (additive over v1.1.0): adds four pluggability protocols — agent-plugin-protocol (LSP-shape JSON-RPC seam for coding agents), ir-compiler-protocol (per-solver IR translators), multi-solver-protocol (single/chain/portfolio dispatch), lift-plugin-protocol (one Rust CLI + per-language plugins via stdio JSON-RPC). All four are additive: any v1.1.0 memento or .proof remains valid under v1.2.0. The reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via toolchain (vitest), not as a CLI peer. v1.1.0's own catalog CID (5b770182...19f05cd4) remains the version anyone pinned to it. v1.2.0's catalog is signed under the same foundation key.",
+  "_breakingChanges": [],
+  "_v1_1_0_breakingChanges": [
     "Property memento role removed; contract memento role added with body fields {pre?, post?, inv?, outBinding, preHash?, postHash?, invHash?, authoring}",
     "Implication memento role added; minted by verifiers when Z3 discharges (Q implies P) at handshake time",
     "IR-JSON shape: forall/exists are flat (no Lambda wrapper); and/or/not/implies use unified `operands` array; var and ctor terms drop `sort`; atomic uses `name` instead of `predicate`; `name` replaces `varName` everywhere",
     "Cryptographic primitives are self-identifying: hashes are `blake3-512:<128-hex-char-digest>` (no truncation, no per-purpose lengths); signatures are `ed25519:<base64>`; pubkeys are `ed25519:<base64>`. The hex16/hex32 type distinction is removed; one regex governs all hashes",
     "All previously-derived propertyHashes/CIDs are invalidated by the IR shape change AND by the hash widening; cross-language demos and PoCs re-derive everything",
     "legacy-witness wrapper variant removed; producers MUST emit role-specific variants only"
+  ],
+  "_v1_2_0_additiveChanges": [
+    "agent-plugin-protocol: LSP-shape JSON-RPC seam for coding agents (Claude Code, Codex, OpenCode, OpenAI, ollama, custom)",
+    "ir-compiler-protocol: per-solver IR translators (SMT-LIB v2.6 reference; TPTP / Lean / Coq pluggable)",
+    "multi-solver-protocol: single / chain / portfolio-first-wins / portfolio-consensus / per-fragment-dispatch modes",
+    "lift-plugin-protocol: one Rust CLI dispatches to per-language lift plugins via stdio JSON-RPC. Reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via its own toolchain (vitest), not as a peer CLI"
   ]
 }
