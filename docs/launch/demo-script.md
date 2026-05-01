@@ -128,8 +128,8 @@ The narrator says:
 
 ```sh
 $ provekit verify-protocol --signed
-protocol catalog: blake3-512:bf6b1831f71e44c1fefd065df1e3a025b343327443ea9abc7737ffc829f087b6d0e56997523d23583823fba38b1dfd4e23d61e342d0db5b8c8f3179bbec6122a
-peer claim:       blake3-512:bf6b1831f71e44c1fefd065df1e3a025b343327443ea9abc7737ffc829f087b6d0e56997523d23583823fba38b1dfd4e23d61e342d0db5b8c8f3179bbec6122a
+protocol catalog: blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
+peer claim:       blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
 match:            yes
 peer signature:   ed25519:... (verified against publishing key)
 ok

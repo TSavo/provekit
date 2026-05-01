@@ -57,6 +57,10 @@ const SPEC_MAP: &[(&str, &str)] = &[
         "contract-merge-semantics",
         "2026-04-30-contract-merge-semantics.md",
     ),
+    (
+        "protocol-catalog-format",
+        "2026-04-30-protocol-catalog-format.md",
+    ),
 ];
 
 use std::collections::BTreeMap;

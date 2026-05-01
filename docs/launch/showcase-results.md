@@ -109,10 +109,13 @@ Same seed, same numbers (within nanosecond noise on Tier 1, microsecond noise on
 
 ## Spec catalog CIDs (computed from this checkout)
 
-The `provekit-showcase hash-spec <path>` helper computes the BLAKE3-512 of any spec file. Used to verify the citations in `docs/launch/bluepaper.md` and `docs/launch/whitepaper.md`:
+Two distinct hashing rules apply (see `protocol/specs/2026-04-30-protocol-catalog-format.md`):
+
+- **Spec files** (.md): raw-bytes BLAKE3-512 — `provekit-showcase hash-spec <path>`
+- **The catalog itself** (.json): JCS-canonical BLAKE3-512 — `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify`
 
 ```
-protocol catalog        blake3-512:bf6b1831f71e44c1fefd065df1e3a025b343327443ea9abc7737ffc829f087b6d0e56997523d23583823fba38b1dfd4e23d61e342d0db5b8c8f3179bbec6122a
+protocol catalog (JCS)  blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
 lattice tractability    blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07
 proof substrate         blake3-512:ad53d6c59ee08270a48715376cc211f964ff44a55b3318d68a402e9c915ff593d5a5bbbd424f7777e2bcfe89d6c5bd2b49efcb5aae7de24752f3bcabb90484ae
 handshake algorithm     blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925
@@ -121,6 +124,7 @@ memento envelope        blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad53
 proof file format       blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3
 signatures              blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c
 canonicalization        blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830
+catalog format          blake3-512:6d610d405cdd41a50425ec45cc5c3599ec372dfed17e41e89cb2f5cca03937989881ac34b1e8f039c9766934307ac42618100818fa8ae2ccf86bd8623eb2243c
 ```
 
 To verify any of these locally:

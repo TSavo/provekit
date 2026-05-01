@@ -12,18 +12,18 @@ The reader verifies this document's authority by computing the BLAKE3-512 hash o
 
 ```
 protocol catalog (v1.1.0)
-  blake3-512:bf6b1831f71e44c1fefd065df1e3a025b343327443ea9abc7737ffc829f087b6d0e56997523d23583823fba38b1dfd4e23d61e342d0db5b8c8f3179bbec6122a
+  blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
 ```
+
+This is `BLAKE3-512(JCS(catalog-json))`, not `BLAKE3-512(catalog-file-bytes)`. The catalog is canonicalized first per RFC 8785 (sorted keys, no whitespace, deterministic number form), then hashed. Anything else gets a different number.
 
 Recompute locally:
 
 ```sh
-cd implementations/rust
-cargo build --release -p provekit-showcase
-./target/release/provekit-showcase hash-spec /path/to/protocol/specs/2026-04-30-protocol-catalog.json
+cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify
 ```
 
-If the computed value matches, this bluepaper's authority over those bytes is verified by the hash itself. The protocol's version IS the hash of its own catalog. Recursion is the point.
+`--verify` reads the on-disk catalog, recomputes every CID (each spec file by raw bytes, the catalog itself by JCS-canonical bytes), and exits 0 only if the on-disk values match. Run it. If the computed catalog CID matches the value above, this bluepaper's authority over those bytes is verified by the hash itself. The protocol's version IS the hash of its own catalog. Recursion is the point.
 
 ---
 
@@ -282,7 +282,7 @@ $ cd implementations/rust
 $ cargo build --release -p provekit-showcase
 $ ./target/release/provekit-showcase hash-spec \
     /path/to/provekit/protocol/specs/2026-04-30-protocol-catalog.json
-blake3-512:bf6b1831f71e44c1fefd065df1e3a025b343327443ea9abc7737ffc829f087b6d0e56997523d23583823fba38b1dfd4e23d61e342d0db5b8c8f3179bbec6122a
+blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
 ```
 
 If the output matches the value pinned in §0, the bluepaper has just verified its own authority.
@@ -321,7 +321,7 @@ lattice tractability theorem   blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f
 memento envelope grammar       blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5
 proof substrate                blake3-512:ad53d6c59ee08270a48715376cc211f964ff44a55b3318d68a402e9c915ff593d5a5bbbd424f7777e2bcfe89d6c5bd2b49efcb5aae7de24752f3bcabb90484ae
 proof file format              blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3
-protocol catalog (v1.1.0)      blake3-512:bf6b1831f71e44c1fefd065df1e3a025b343327443ea9abc7737ffc829f087b6d0e56997523d23583823fba38b1dfd4e23d61e342d0db5b8c8f3179bbec6122a
+protocol catalog (v1.1.0)      blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
 self-contracts (v1.1.0)        blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
 signatures and non-repudiation blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c
 ```
