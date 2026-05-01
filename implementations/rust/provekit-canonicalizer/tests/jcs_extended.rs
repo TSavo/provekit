@@ -131,21 +131,18 @@ fn forward_slash_is_not_escaped() {
 }
 
 #[test]
-fn non_ascii_strings_encode_deterministically() {
-    // BUG NOTE: jcs.rs line 84 (`out.push(c as char)`) interprets each
-    // input byte as a Latin-1 codepoint and re-encodes as UTF-8, which
-    // double-encodes multi-byte UTF-8. This is a bug versus the spec
-    // ("Verbatim UTF-8 byte") and the C++ peer; but since we can only
-    // add tests, this test pins the deterministic-but-buggy behavior so
-    // that any future fix to jcs.rs gets flagged loud here.
-    //
-    // Once jcs.rs is fixed to emit verbatim UTF-8 bytes, this test
-    // should be replaced with a true round-trip assertion.
-    let s1 = encode_jcs(&Value::String("héllo".into()));
-    let s2 = encode_jcs(&Value::String("héllo".into()));
-    assert_eq!(s1, s2, "encoder must be deterministic");
-    assert!(s1.starts_with('"'));
-    assert!(s1.ends_with('"'));
+fn non_ascii_strings_round_trip_byte_faithful() {
+    // RFC 8785: non-ASCII Unicode emits as verbatim UTF-8 bytes. The
+    // earlier byte-iteration form double-encoded multi-byte UTF-8;
+    // commit c4a2ef5 fixed it by iterating chars instead. This test
+    // locks the fixed behavior so any regression is loud.
+    let s = encode_jcs(&Value::String("héllo".into()));
+    assert_eq!(s, "\"héllo\"");
+    // And the bytes themselves are exactly the source's UTF-8.
+    assert_eq!(s.as_bytes(), b"\"h\xc3\xa9llo\"");
+
+    let j = encode_jcs(&Value::String("日本語".into()));
+    assert_eq!(j, "\"日本語\"");
 }
 
 #[test]

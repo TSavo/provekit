@@ -194,17 +194,26 @@ fn parseint_pre_canonical_bytes_pin_known_hash() {
          \"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}"
     );
 
-    // And the BLAKE3-512 of those exact bytes.
+    // And the BLAKE3-512 of those exact bytes — pinned so the C++/Go/TS
+    // peers can use this as their cross-language reference. Any drift
+    // in the IR shape, the JCS encoder, or the hash function flips
+    // this exact byte string and breaks the test loud.
     let h = blake3_512_of(canonical.as_bytes());
-    // Self-locking: compute and pin. The test catches drift in EITHER
-    // the encoder or the hash function via the inner string above.
-    assert!(h.starts_with("blake3-512:"));
-    assert_eq!(h.len(), "blake3-512:".len() + 128);
+    assert_eq!(h, EXPECTED_PARSEINT_PRE_HASH);
 
-    // Independently recomputed from the same inputs (sanity).
-    let v2 = formula_to_value(&forall(Int(), |n| gt(n, num(1)))); // different
+    // Independently recomputed from a different formula (sanity: the
+    // hash is genuinely a function of the canonical bytes).
+    let v2 = formula_to_value(&forall(Int(), |n| gt(n, num(1))));
     assert_ne!(blake3_512_of(encode_jcs(&v2).as_bytes()), h);
 }
+
+/// Pinned BLAKE3-512 of the JCS-canonical encoding of
+/// `forall n: Int. n > 0` with bound name "_x0" (the kit's first
+/// quantifier name after reset_collector). Cross-language peers MUST
+/// produce this exact value when they hash the same byte sequence
+/// asserted in `parseint_pre_canonical_bytes_pin_known_hash`.
+const EXPECTED_PARSEINT_PRE_HASH: &str =
+    "blake3-512:d1bb4fdb761efb53eefdd046c3a17773174c9ae67a58a990eff89dc3adaa1acd26893d16b17b38c820f98065f4fc73e3a3536eefd80629e14b34927457a409b9";
 
 #[test]
 fn forall_n_gt_0_hash_is_independently_reproducible() {
