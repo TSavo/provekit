@@ -6,7 +6,7 @@
 //   * `makeLoadAllProofsStage() -> Stage`
 //   * `enumerateProofFiles(projectRoot) -> string[]`
 
-import { must, forAll, gte, num, String as StringSort } from "../../ir/symbolic/index.js";
+import { must, forAll, gte, num, eq, String as StringSort } from "../../ir/symbolic/index.js";
 
 function ctor(name: string, ...args: any[]): any {
   return { kind: "ctor", name, args };

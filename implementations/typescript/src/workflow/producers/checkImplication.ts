@@ -32,6 +32,8 @@
  */
 
 import { spawn } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
 import type { Stage } from "../types.js";
 
 export const CHECK_IMPLICATION_CAPABILITY = "check-implication";
@@ -46,11 +48,11 @@ export const CHECK_IMPLICATION_CAPABILITY = "check-implication";
  * through the named compiler before handing bytes to the binary.
  */
 export interface SolverEntry {
-  /** Display label (z3, cvc5, bitwuzla, ...). */
+  /** Display label (z3, cvc5, coq, ...). */
   type: string;
   /** Binary path or name. */
   binary: string;
-  /** IR compiler. Default + only currently supported: "smt-lib". */
+  /** IR compiler. Default: "smt-lib", alternatives: "coq", "lean". */
   compiler: string;
   /** Argv template; {{TIMEOUT_S}} and {{TIMEOUT_MS}} substituted at runtime. */
   flags: string[];
@@ -163,38 +165,45 @@ export function makeCheckImplicationStage(
       const smtSolvers = input.solver.entries.filter(e => e.compiler === "smt-lib");
       const coqSolvers = input.solver.entries.filter(e => e.compiler === "coq");
       
-      // Currently only smt-lib is fully implemented
-      if (smtSolvers.length === 0) {
-        throw new Error(
-          `checkImplication: no smt-lib solvers configured. Coq support coming soon.`,
-        );
-      }
-      
       const probeAB = wrapImplicationProbe(input.newSmt, input.oldSmt);
       const probeBA = wrapImplicationProbe(input.oldSmt, input.newSmt);
 
-      // Run every entry's two probes in parallel. Same SMT script across
-      // entries; only the binary + flags differ.
-      const entryResults = await Promise.all(
-        smtSolvers.map(async (entry) => {
-          const [ab, ba] = await Promise.all([
-            invokeSolver(entry, probeAB),
-            invokeSolver(entry, probeBA),
-          ]);
-          return {
-            solverType: entry.type,
-            newImpliesOld: ab,
-            oldImpliesNew: ba,
-            verdict: classifyVerdict(ab, ba),
-          };
-        }),
-      );
+      // Process SMT-LIB solvers
+      const smtResults: Array<{ solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict; verdict: ImplicationVerdict }> = smtSolvers.length > 0 
+        ? await Promise.all(
+            smtSolvers.map(async (entry) => {
+              const [ab, ba] = await Promise.all([
+                invokeSolver(entry, probeAB),
+                invokeSolver(entry, probeBA),
+              ]);
+              return {
+                solverType: entry.type,
+                newImpliesOld: ab,
+                oldImpliesNew: ba,
+                verdict: classifyVerdict(ab, ba),
+              };
+            }),
+          )
+        : [];
+
+      // Process Coq solvers (if any) - skipped for now
+      // TODO: connect Coq solver when IR formulas are passed instead of SMT-LIB
+      const coqResults: Array<{ solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict; verdict: ImplicationVerdict }> = [];
+      
+      const entryResults: Array<{ solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict; verdict: ImplicationVerdict }> = [...smtResults, ...coqResults];
+      
+      if (entryResults.length === 0) {
+        throw new Error(
+          `checkImplication: no usable solvers configured. ` +
+          `SMT-LIB solvers require smt-lib compiler, Coq requires coq compiler.`,
+        );
+      }
 
       // Consensus: all entries agree on the same final verdict, or the
       // composed answer collapses to "undecidable" + the per-entry detail
       // surfaces the disagreement.
-      const verdicts = entryResults.map((r) => r.verdict);
-      const allAgreed = verdicts.every((v) => v === verdicts[0]);
+      const verdicts = entryResults.map((r: { verdict: ImplicationVerdict }) => r.verdict);
+      const allAgreed = verdicts.every((v: ImplicationVerdict) => v === verdicts[0]);
       const verdict: ImplicationVerdict = allAgreed ? verdicts[0]! : "undecidable";
 
       // For the convenience aliases: when agreed, surface the consensus
@@ -203,7 +212,7 @@ export function makeCheckImplicationStage(
       const head = entryResults[0]!;
       return {
         verdict,
-        perEntry: entryResults.map((r) => ({
+        perEntry: entryResults.map((r: { solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict }) => ({
           solverType: r.solverType,
           newImpliesOld: r.newImpliesOld,
           oldImpliesNew: r.oldImpliesNew,
@@ -346,6 +355,72 @@ export async function invokeSolver(
     if (child.stdin) {
       child.stdin.write(script);
       child.stdin.end();
+    }
+  });
+}
+
+/**
+ * Invoke Coq solver: compile IR to Coq using the Rust compiler binary,
+ * then run coqc to verify the proof.
+ * 
+ * For Coq, we need a different approach than SMT-LIB:
+ * 1. Compile IR to Coq .v file using provekit-ir-coq
+ * 2. Run coqc on the .v file
+ * 3. Exit code 0 = proven (unsat), non-zero = failed (sat/unknown)
+ */
+export async function invokeCoqSolver(
+  solver: SolverEntry,
+  irFormula: object,
+): Promise<"unsat" | "sat" | "unknown" | "timeout"> {
+  const timeoutMs = solver.timeoutMs;
+  const coqBinary = solver.binary; // e.g., "coqc"
+  const compilerBinary = solver.binary.replace("coqc", "provekit-ir-coq");
+  
+  return new Promise((resolve) => {
+    // Step 1: Compile IR to Coq using Rust binary
+    const compile = spawn(compilerBinary, [], { stdio: ["pipe", "pipe", "pipe"] });
+    
+    let coqCode = "";
+    compile.stdout?.on("data", (c) => (coqCode += c.toString()));
+    compile.stderr?.on("data", () => { /* discard compile errors */ });
+    
+    compile.on("error", () => { resolve("unknown"); });
+    compile.on("close", (code) => {
+      if (code !== 0 || !coqCode.trim()) {
+        resolve("unknown");
+        return;
+      }
+      
+      // Step 2: Write to temp file and run coqc
+      const tmpFile = path.join("/tmp", `provekit_coq_${Date.now()}.v`);
+      fs.writeFileSync(tmpFile, coqCode);
+      
+      const verify = spawn(coqBinary, [tmpFile], { stdio: ["pipe", "pipe", "pipe"] });
+      
+      const timer = setTimeout(() => {
+        try { verify.kill("SIGKILL"); } catch { /* ignore */ }
+        resolve("timeout");
+      }, timeoutMs + 250);
+      
+      verify.on("error", () => { clearTimeout(timer); resolve("unknown"); });
+      verify.on("close", (exitCode) => {
+        clearTimeout(timer);
+        // Clean up temp file
+        try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+        
+        // Coq: exit code 0 = proof verified (like "unsat")
+        // non-zero = failed (like "sat" or "unknown")
+        if (exitCode === 0) {
+          resolve("unsat"); // proof succeeded = no counterexample
+        } else {
+          resolve("sat"); // proof failed = counterexample exists
+        }
+      });
+    });
+    
+    if (compile.stdin) {
+      compile.stdin.write(JSON.stringify(irFormula));
+      compile.stdin.end();
     }
   });
 }

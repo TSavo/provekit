@@ -52,15 +52,21 @@ import { parse as parseYaml } from "yaml";
  * last non-empty line of stdout (sat / unsat / unknown for SMT-LIB).
  */
 export interface SolverEntry {
-  /** Display label for forensic output (e.g. "z3", "cvc5", "bitwuzla"). */
+  /** Display label for forensic output (e.g. "z3", "cvc5", "coq"). */
   type: string;
   /** Path or name of the binary (default: same as `type`). */
   binary?: string;
   /**
    * IR compiler that produces this solver's input language. Default:
    * "smt-lib" (covers Z3, CVC5, MathSAT, Bitwuzla, Boolector, Yices).
+   * Alternatives: "coq", "lean".
    */
   compiler?: string;
+  /**
+   * Dialect for the compiler (e.g., "smt-lib-v2.6", "coq"). 
+   * Passed to the compiler to select the output format.
+   */
+  dialect?: string;
   /** Argv flags template; supports {{TIMEOUT_S}} and {{TIMEOUT_MS}}. */
   flags: string[];
   /** Per-probe timeout in ms. */
@@ -146,6 +152,7 @@ function mergeWithDefaults(raw: unknown): ProvekitConfig {
         type: e.type,
         binary: typeof e.binary === "string" ? e.binary : e.type,
         compiler: typeof e.compiler === "string" ? e.compiler : "smt-lib",
+        dialect: typeof e.dialect === "string" ? e.dialect : undefined,
         flags,
         timeoutMs: typeof e.timeoutMs === "number" ? e.timeoutMs : 5000,
       });
