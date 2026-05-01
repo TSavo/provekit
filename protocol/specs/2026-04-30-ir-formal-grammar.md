@@ -630,6 +630,29 @@ Strict mode is what cross-language fixtures are validated under. Non-strict
 mode is the parser's default (kits ship new predicates between releases; the
 parser doesn't need a rev to ingest them).
 
+**INVARIANT StrictMode.KeyOrder:**
+```
+∀d: Document, n: Node
+  InStrictMode → EmitOrder(n) = ExpectedKeyOrder(n.kind)
+```
+In strict mode, the parser enforces that keys appear in the exact order
+specified in the grammar for each node kind.
+
+**INVARIANT StrictMode.PredicateName:**
+```
+∀a: AtomicFormula
+  InStrictMode → (IsBuiltInPredicate(a.name) ∨ ValidIdentifier(a.name))
+```
+In strict mode, predicate names must be either built-in or match the regex
+`^[a-zA-Z_][a-zA-Z0-9_-]*$`.
+
+**INVARIANT StrictMode.PrimitiveSortName:**
+```
+∀s: PrimitiveSort
+  InStrictMode → s.name ∈ {"Bool", "Int", "Real", "String", "Ref", "Node", "Edge", "Region", "Time"}
+```
+In strict mode, primitive sort names must be one of the nine canonical names.
+
 ### Round-trip property
 
 The parser-emitter pair satisfies the following fixed-point property:
@@ -640,6 +663,27 @@ The parser-emitter pair satisfies the following fixed-point property:
 This is verified at test time against the three locked cross-language
 fixtures (`scripts/cross-lang-equivalence/fixtures.txt`) and against
 hand-built coverage examples for every node kind.
+
+**INVARIANT RoundTrip.ParserPreservesStructure:**
+```
+∀B: ByteString
+  (GrammarAccepts(B) ∧ ParseDocument(B) = d) → IsValidDocument(d)
+```
+If the grammar accepts a byte sequence, parsing it produces a valid document.
+
+**INVARIANT RoundTrip.EmitterPreservesOrder:**
+```
+∀d: Document
+  (IsValidDocument(d) ∧ Emit(d) = B) → GrammarAccepts(B)
+```
+If a document is valid, re-emitting it produces a byte sequence that the grammar accepts.
+
+**INVARIANT RoundTrip.FixedPoint:**
+```
+∀B: ByteString
+  (GrammarAccepts(B) ∧ ParseDocument(B) = d ∧ Emit(d) = B') → B = B'
+```
+Parsing then emitting returns the original bytes. This is the formal statement of the round-trip property.
 
 ## Relationship to the existing kits
 
@@ -682,6 +726,20 @@ cross-language equivalence harness:
    tuple sort, function sort, lambda, property declaration, bridge
    declaration) has at least one positive fixture and at least one negative
    fixture.
+
+**INVARIANT TestPlan.CoverageComplete:**
+```
+∀k: NodeKind → (PositiveFixtures(k) ≠ ∅) ∧ (NegativeFixtures(k) ≠ ∅)
+```
+Every node kind must have at least one positive test case (valid input that
+should parse) and one negative test case (invalid input that should be rejected).
+
+**INVARIANT TestPlan.NegativeTestsReject:**
+```
+∀n: NegativeTestCase
+  (ParseDocument(n.input) throws GrammarParseError)
+```
+All negative test cases must be rejected by the parser with a GrammarParseError.
 
 Step (1) is the load-bearing one for cross-language drift detection. Today
 the harness in `scripts/cross-lang-equivalence/` verifies kit-vs-kit
