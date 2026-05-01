@@ -21,3 +21,7 @@ provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 [[example]]
 name = "parseInt_publish"
 path = "../examples/parseInt_publish.rs"
+
+[[example]]
+name = "layer2_py_probe"
+path = "../examples/layer2_py_probe.rs"

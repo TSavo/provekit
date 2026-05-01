@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "provekit-lift-py-tests"
+version = "0.1.0"
+description = "ProvekIt: Layer 2 structural lift adapter for Python pytest/unittest. Bounded loops, helper inlining, multi-assertion characterization, and parametrize as forall over the parameter set."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.8"
+authors = [{ name = "ProvekIt" }]
+dependencies = [
+    "blake3>=0.3.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
