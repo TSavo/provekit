@@ -181,6 +181,20 @@ pub struct VerifyProtocolArgs {
     /// Override the expected catalog CID.
     #[arg(long)]
     pub catalog: Option<String>,
+    /// Also verify the signed catalog attestation (Ed25519 signature
+    /// over the catalog's CID by the ProvekIt Foundation Root Key).
+    /// Default uses the embedded `foundation-v0.pub` and embedded
+    /// `catalog-signature-v1.1.0.json`; override via `--pubkey-file`
+    /// and `--signature-file`.
+    #[arg(long)]
+    pub signed: bool,
+    /// Override the public key file used to verify the signature.
+    /// Format: `ed25519:<base64>`, possibly with surrounding whitespace.
+    #[arg(long, requires = "signed")]
+    pub pubkey_file: Option<PathBuf>,
+    /// Override the signed attestation file.
+    #[arg(long, requires = "signed")]
+    pub signature_file: Option<PathBuf>,
     #[command(flatten)]
     pub out: OutputFlags,
 }

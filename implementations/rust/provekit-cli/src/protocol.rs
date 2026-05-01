@@ -11,8 +11,9 @@
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
+use provekit_proof_envelope::ed25519_verify_string;
 use serde_json::Value as Json;
 
 /// The protocol catalog CID this CLI declares conformance to. Kept in
@@ -28,6 +29,19 @@ pub const EXPECTED_CATALOG_CID: &str =
 pub const EMBEDDED_CATALOG_BYTES: &[u8] =
     include_bytes!("../assets/protocol-catalog.json");
 
+/// Foundation public key bytes (`ed25519:<base64>` form) embedded at
+/// compile time so `verify-protocol --signed` works for an installed
+/// binary anywhere on disk. Mirrors the committed
+/// `.provekit/keys/foundation-v0.pub`.
+pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] =
+    include_bytes!("../assets/foundation-v0.pub");
+
+/// Signed attestation bytes (the JSON object) embedded at compile
+/// time. Mirrors the committed
+/// `.provekit/catalog-signatures/v1.1.0.json`.
+pub const EMBEDDED_CATALOG_SIGNATURE: &[u8] =
+    include_bytes!("../assets/catalog-signature-v1.1.0.json");
+
 /// Recompute the embedded catalog's CID using the same routine
 /// `tools/recompute-spec-cids` uses: parse JSON, JCS-encode, BLAKE3-512.
 pub fn compute_embedded_catalog_cid() -> Result<String> {
@@ -36,6 +50,106 @@ pub fn compute_embedded_catalog_cid() -> Result<String> {
     let canonical = json_to_value(&json)?;
     let jcs = encode_jcs(&canonical);
     Ok(blake3_512_of(jcs.as_bytes()))
+}
+
+/// Verification result for a signed catalog attestation. Each field
+/// describes one of the three checks `--signed` performs.
+#[derive(Debug, Clone)]
+pub struct SignedCatalogVerdict {
+    /// The catalog CID embedded in the binary.
+    pub expected_cid: String,
+    /// The catalog CID claimed by the signed attestation.
+    pub claimed_cid: String,
+    /// The public key string read from the .pub source.
+    pub signer_pubkey: String,
+    /// True iff the attestation's `signer` matches `signer_pubkey`.
+    pub signer_matches: bool,
+    /// True iff the Ed25519 signature verifies against the rebuilt
+    /// JCS-encoded six-field message.
+    pub signature_ok: bool,
+    /// True iff the attestation's claimed CID matches the embedded
+    /// expected CID.
+    pub cid_matches: bool,
+}
+
+impl SignedCatalogVerdict {
+    pub fn ok(&self) -> bool {
+        self.signer_matches && self.signature_ok && self.cid_matches
+    }
+}
+
+/// Parse a `foundation-v0.pub` style file: the first non-empty,
+/// non-comment line is expected to be `ed25519:<base64>`.
+pub fn parse_pubkey_bytes(bytes: &[u8]) -> Result<String> {
+    let text = std::str::from_utf8(bytes).context("pubkey file is not UTF-8")?;
+    for line in text.lines() {
+        let s = line.trim();
+        if s.is_empty() || s.starts_with('#') {
+            continue;
+        }
+        if !s.starts_with("ed25519:") {
+            bail!("pubkey line missing `ed25519:` prefix: {:?}", s);
+        }
+        return Ok(s.to_string());
+    }
+    bail!("no pubkey line found in pubkey file")
+}
+
+/// Verify a signed catalog attestation. The attestation message is
+/// rebuilt from the file's six non-signature fields, JCS-encoded, and
+/// verified via Ed25519 against `pubkey_string`.
+pub fn verify_signed_attestation(
+    signature_file_bytes: &[u8],
+    pubkey_string: &str,
+    expected_cid: &str,
+) -> Result<SignedCatalogVerdict> {
+    let attestation: Json = serde_json::from_slice(signature_file_bytes)
+        .context("parse signed attestation JSON")?;
+    let obj = attestation
+        .as_object()
+        .ok_or_else(|| anyhow!("signed attestation must be a JSON object"))?;
+
+    let get_str = |k: &str| -> Result<String> {
+        obj.get(k)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow!("signed attestation missing string field `{k}`"))
+    };
+
+    let schema_version = get_str("schemaVersion")?;
+    let protocol_name = get_str("protocolName")?;
+    let protocol_version = get_str("protocolVersion")?;
+    let catalog_cid = get_str("catalogCid")?;
+    let declared_at = get_str("declaredAt")?;
+    let signer = get_str("signer")?;
+    let signature = get_str("signature")?;
+
+    // Rebuild the six-field message in canonical order. Field order
+    // does not affect JCS output (keys are re-sorted by code point),
+    // but we keep the original spec order for readability.
+    let entries: Vec<(String, Arc<Value>)> = vec![
+        ("schemaVersion".to_string(), Value::string(schema_version)),
+        ("protocolName".to_string(), Value::string(protocol_name)),
+        ("protocolVersion".to_string(), Value::string(protocol_version)),
+        ("catalogCid".to_string(), Value::string(catalog_cid.clone())),
+        ("declaredAt".to_string(), Value::string(declared_at)),
+        ("signer".to_string(), Value::string(signer.clone())),
+    ];
+    let msg_obj = Value::object(entries);
+    let jcs = encode_jcs(&msg_obj);
+
+    let signature_ok = ed25519_verify_string(pubkey_string, &signature, jcs.as_bytes());
+    let signer_matches = signer == pubkey_string;
+    let cid_matches = catalog_cid == expected_cid;
+
+    Ok(SignedCatalogVerdict {
+        expected_cid: expected_cid.to_string(),
+        claimed_cid: catalog_cid,
+        signer_pubkey: pubkey_string.to_string(),
+        signer_matches,
+        signature_ok,
+        cid_matches,
+    })
 }
 
 fn json_to_value(j: &Json) -> Result<Arc<Value>> {
@@ -99,5 +213,79 @@ mod tests {
         let hex = &EXPECTED_CATALOG_CID["blake3-512:".len()..];
         assert_eq!(hex.len(), 128);
         assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn embedded_pubkey_parses() {
+        let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
+        assert!(pk.starts_with("ed25519:"));
+    }
+
+    #[test]
+    fn embedded_signature_verifies_against_embedded_pubkey() {
+        let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
+        let verdict = verify_signed_attestation(
+            EMBEDDED_CATALOG_SIGNATURE,
+            &pk,
+            EXPECTED_CATALOG_CID,
+        )
+        .expect("verify");
+        assert!(verdict.signer_matches, "signer must match pubkey");
+        assert!(verdict.cid_matches, "claimed CID must match expected");
+        assert!(verdict.signature_ok, "Ed25519 signature must verify");
+        assert!(verdict.ok());
+    }
+
+    #[test]
+    fn tampered_signature_fails_verification() {
+        // Decode the embedded JSON, mutate the `signature` value (flip
+        // a base64 character that's still valid base64 but produces
+        // different bytes), re-serialize, and re-verify. The result
+        // must fail verification.
+        let mut v: Json = serde_json::from_slice(EMBEDDED_CATALOG_SIGNATURE).expect("parse");
+        let obj = v.as_object_mut().unwrap();
+        let sig = obj.get("signature").unwrap().as_str().unwrap().to_string();
+        // Replace the first base64 byte after the "ed25519:" prefix
+        // with one that's both valid base64 and produces a different
+        // 64-byte signature.
+        let prefix = "ed25519:";
+        let body = &sig[prefix.len()..];
+        let first = body.chars().next().unwrap();
+        let replacement = if first == 'A' { 'B' } else { 'A' };
+        let mut tampered = String::from(prefix);
+        tampered.push(replacement);
+        tampered.push_str(&body[1..]);
+        obj.insert("signature".into(), Json::String(tampered));
+        let bytes = serde_json::to_vec(&v).unwrap();
+
+        let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
+        let verdict =
+            verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
+        assert!(verdict.cid_matches, "CID untouched");
+        assert!(verdict.signer_matches, "signer untouched");
+        assert!(!verdict.signature_ok, "tampered signature must fail");
+        assert!(!verdict.ok());
+    }
+
+    #[test]
+    fn tampered_cid_fails_verification() {
+        let mut v: Json = serde_json::from_slice(EMBEDDED_CATALOG_SIGNATURE).expect("parse");
+        let obj = v.as_object_mut().unwrap();
+        obj.insert(
+            "catalogCid".into(),
+            Json::String(
+                "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".into(),
+            ),
+        );
+        let bytes = serde_json::to_vec(&v).unwrap();
+
+        let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
+        let verdict =
+            verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
+        // Both CID-mismatch AND signature-fail surface; verifier must
+        // refuse on either.
+        assert!(!verdict.cid_matches);
+        assert!(!verdict.signature_ok);
+        assert!(!verdict.ok());
     }
 }

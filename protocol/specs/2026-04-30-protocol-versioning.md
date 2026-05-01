@@ -83,6 +83,99 @@ each spec entry, that the corresponding spec's bytes hash to the
 listed CID. If any drift, the implementation has changed the spec
 without bumping the version — a protocol violation.
 
+## Signing
+
+The catalog itself is JSON, not a memento envelope, and is shipped
+with an `_unsigned` field that retains its original draft notes (see
+the bootstrap subsection below). Catalog **attestation** lives in a
+separate sidecar file:
+
+```
+.provekit/catalog-signatures/v1.1.0.json
+```
+
+The attestation is the canonical bytes of a six-field JSON object,
+signed under the ProvekIt Foundation Root Key:
+
+```json
+{
+  "schemaVersion": "1",
+  "protocolName": "provekit-protocol",
+  "protocolVersion": "v1.1.0",
+  "catalogCid": "blake3-512:<hex>",
+  "declaredAt": "<iso8601>",
+  "signer": "ed25519:<base64-pubkey>"
+}
+```
+
+The signature is computed over the JCS-canonical bytes (RFC 8785) of
+that six-field object, then attached as a seventh field (`signature`,
+`ed25519:<base64>`). Verifiers reconstruct the six-field message from
+the file (dropping `signature`), JCS-encode, and verify against the
+foundation public key.
+
+### Foundation Root Key (v0)
+
+```
+public key: ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=
+```
+
+Pinned at `.provekit/keys/foundation-v0.pub`. The CLI binary embeds
+this file at compile time so `verify-protocol --signed` works without
+filesystem state.
+
+**v0 uses a deterministic, publicly-known test seed (`[0x42; 32]`).**
+The seed is checked into `tools/foundation-keygen/src/lib.rs` as
+`FOUNDATION_V0_SEED`. Anyone running `cargo run --release --bin
+foundation-keygen && cargo run --release --bin sign-catalog` produces
+the identical keypair and identical signature byte-for-byte.
+
+This is the bootstrap solution, not the production solution. A
+signature under the v0 key is structurally valid but the trust anchor
+is "the bytes match the public seed in this repo." Anyone can forge
+a v0 attestation. v0 exists to prove the signature path works
+end-to-end before a real key is provisioned.
+
+### Bootstrap problem (v1.1.0)
+
+The protocol catalog itself contains the `signatures-and-non-repudiation`
+spec; signing the catalog requires the signature machinery defined
+inside it. v1.1.0 resolves this by treating the catalog as JSON (still
+flagged `_unsigned` in its inline metadata) and shipping a separate
+**signed attestation** file that references the catalog's CID. The
+attestation can use the signature machinery the catalog itself
+defines, because the attestation is not the catalog.
+
+The remaining gap in v1.1.0 is the trust anchor: the v0 foundation
+seed is publicly known. v1.1.0 has the right structure with the
+wrong key. Future versions will rotate to a real HSM-backed key, with
+the rotation event itself being a signed attestation referencing
+both the old and new keys (so verifiers that trusted v0 can chain
+forward to v1).
+
+## Signature verification procedure
+
+```
+provekit verify-protocol --signed
+```
+
+The CLI checks four things and reports each:
+
+1. **CID match** — recomputed CID of the embedded catalog equals the
+   expected CID.
+2. **attested CID** — the CID claimed by the signed attestation
+   matches the expected CID.
+3. **signer match** — the attestation's `signer` field matches the
+   embedded `foundation-v0.pub`.
+4. **signature** — the Ed25519 signature, computed over the
+   JCS-canonical six-field message (no `signature` field), verifies
+   against the signer's public key.
+
+All four must pass. Override the embedded sources with
+`--pubkey-file <path>` and `--signature-file <path>` to verify against
+external artifacts (useful for verifying a freshly re-signed catalog
+without rebuilding the CLI).
+
 ## Versioning rules
 
 1. **Any spec change requires a new catalog CID.** Changing a spec's
@@ -99,11 +192,14 @@ without bumping the version — a protocol violation.
    v1.0.1 that adds a single spec doc can be supported alongside
    v1.0.0 by an implementation that declares both CIDs.
 
-4. **Bootstrap signing.** v1.0.0 is unsigned (the signatures spec is
-   itself one of the entries; signing the v1.0.0 catalog requires the
-   signature machinery defined inside it). v1.0.1 will re-issue the
-   catalog as a signed memento, with the v1.0.0 unsigned catalog's
-   CID embedded in the signed v1.0.1 as the bootstrap reference.
+4. **Bootstrap signing.** v1.1.0's catalog JSON is still flagged
+   `_unsigned` in its own metadata, but a signed attestation
+   (`.provekit/catalog-signatures/v1.1.0.json`) over the catalog's
+   CID exists, signed by the v0 foundation key. The signature path
+   is real and verifiable; the trust anchor is the deterministic
+   test seed `[0x42; 32]`. v1.2 may promote the catalog itself into
+   a memento-envelope shape; for v1.1.0 the JSON catalog plus
+   sidecar attestation is the shipped contract.
 
 5. **Spec evolution is mechanical.** A working group editing a spec
    produces a new bytes; a new CID; a new catalog candidate; the
@@ -111,6 +207,13 @@ without bumping the version — a protocol violation.
    is published. Implementations decide whether to upgrade by reading
    the diff of the catalog (which spec CIDs changed) and the
    migration spec (if any) for that bump.
+
+6. **Key rotation.** A future v1 foundation key (HSM-backed) will be
+   introduced via a rotation attestation: a signed message that
+   references both the old (v0) and new (v1) public keys. Verifiers
+   that trusted v0 can chain forward; verifiers that only trust v1
+   can ignore v0 attestations. The rotation attestation file format
+   is a future spec.
 
 ## The recursive payoff
 
