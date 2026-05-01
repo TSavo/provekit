@@ -1,0 +1,76 @@
+[workspace]
+resolver = "2"
+members = [
+    "provekit-canonicalizer",
+    "provekit-proof-envelope",
+    "provekit-claim-envelope",
+    "provekit-ir-symbolic",
+    "provekit-ir-compiler",
+    "provekit-ir-compiler-smt-lib",
+    "provekit-ir-compiler-stub",
+    "provekit-verifier",
+    "provekit-self-contracts",
+    "provekit-cli",
+    "provekit-macros",
+    "provekit-macros-rt",
+    "provekit-lift",
+    "provekit-lift-proptest",
+    "provekit-lift-contracts",
+    "provekit-lift-kani",
+    "provekit-lift-prusti",
+    "provekit-lift-creusot",
+    "provekit-lift-flux",
+    "provekit-lift-quickcheck",
+    "provekit-lift-verus",
+    "provekit-lift-rust-tests",
+    "provekit-build",
+    "provekit-agent",
+    "provekit-agent-claude-code",
+    "provekit-agent-openai",
+    "provekit-showcase",
+    "examples/build_script_demo",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["ProvekIt"]
+description = "ProvekIt Rust peer implementation of protocol v1.1.0."
+
+[workspace.dependencies]
+# Hashing
+blake3 = "1.5"
+# CBOR primitives. We do NOT rely on ciborium for the .proof
+# top-level encoding (it does not enforce RFC 8949 §4.2.1 map-key
+# sort by bytewise CBOR-encoded form). We hand-roll the small
+# amount we need; ciborium is kept available for future decode
+# work but is currently unused.
+# ciborium = "0.2"
+# Signatures
+ed25519-dalek = { version = "2.1", default-features = false, features = ["std", "rand_core"] }
+sha2 = "0.10" # used by ed25519-dalek's hashing internals; not by us
+# Encoding helpers
+hex = "0.4"
+base64 = "0.22"
+# Error handling
+thiserror = "1"
+# JSON for IR text emission
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+# Verifier glue
+walkdir = "2"
+rayon = "1.10"
+# Proc-macro authoring stack
+syn = { version = "2", features = ["full", "extra-traits", "visit"] }
+quote = "1"
+proc-macro2 = "1"
+# Distributed-slice registration for #[provekit::contract] / #[provekit::verify]
+inventory = "0.3"
+# Trybuild for compile-fail / pass UI tests on the macros
+trybuild = "1"
+
+[profile.release]
+opt-level = 3
+lto = false
+debug = false

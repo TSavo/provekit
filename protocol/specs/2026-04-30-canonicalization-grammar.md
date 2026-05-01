@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-30
 **Status:** Specification of the deterministic byte sequence that produces `propertyHash` and related content-addressed memento hashes.
-**Scope:** The eight-pass pipeline from `IrFormula` to canonical bytes, the JCS-JSON encoding rules applied to the resulting AST, and the SHA-256 prefix-16 contract. Conformance constraints for any new kit canonicalizer.
+**Scope:** The eight-pass pipeline from `IrFormula` to canonical bytes, the JCS-JSON encoding rules applied to the resulting AST, and the BLAKE3-512 self-identifying hash contract. Conformance constraints for any new kit canonicalizer.
 **Supersedes (in part):** the serialization-and-hash sections of `2026-04-29-ast-canonicalizer.md`. The structural grammar (canonical FOL AST, de Bruijn, sort/predicate canonicalization, AC, NNF) is reaffirmed; the encoding choice is changed from "CBOR preferred, JSON fallback" to "JCS-JSON locked at v1".
 **Sibling spec:** `2026-04-30-ir-formal-grammar.md` describes the *kit-emitted* IR-JSON encoding. That layer is not the canonical layer. This spec begins downstream of it.
 
@@ -92,7 +92,7 @@ multi-pass form described here.
 | 5 | Negation-normal form | Push negations inward via De Morgan and predicate-specific negation |
 | 6 | AC normalization | Flatten, sort, deduplicate, identity-remove `and`/`or` |
 | 7 | Serialization | Encode the canonical AST as JCS-JSON (RFC 8785) |
-| 8 | Hash | `SHA-256(bytes)[:16 hex chars]` |
+| 8 | Hash | `"blake3-512:" + hex(BLAKE3_512(bytes))` |
 
 Passes 1-6 are described in `2026-04-29-ast-canonicalizer.md` and are not
 restated in full here; this spec adds the rules that affect the byte form
@@ -480,13 +480,13 @@ in-memory representations; only the post-pass-7 bytes must match.
 ```
 canonicalAst   =  passes_1_through_6(IrFormula)
 canonicalBytes =  jcs_json_serialize(canonicalAst)             /* pass 7 */
-propertyHash   =  hex(SHA-256(canonicalBytes))[0:16]           /* pass 8 */
+propertyHash   =  "blake3-512:" + hex(BLAKE3_512(canonicalBytes))           /* pass 8 */
 ```
 
 `propertyHash` is a 16-character lowercase hexadecimal string (64 bits of
-entropy). The first 64 bits of SHA-256 are sufficient for the corpus
+entropy). The full 512 bits of BLAKE3 are required for the corpus
 scales the framework operates at; high-assurance deployments MAY adopt
-the reserved 32-character form (`hex(SHA-256(canonicalBytes))[0:32]`) at
+the reserved 32-character form (`"blake3-512:" + hex(BLAKE3_512(canonicalBytes))`) at
 spec major bump.
 
 ## 12. Conformance
@@ -551,7 +551,7 @@ cross-comparable across all conforming implementations of v1.
 Conditions that constitute a major version bump:
 
 - Switching from JCS-JSON to CBOR (or any other encoding) for pass 7.
-- Changing the SHA-256 prefix-16 contract (e.g. switching to BLAKE3 or
+- Changing the BLAKE3-512 self-identifying hash contract (e.g. switching from BLAKE3 to a different algorithm or
   to a longer prefix).
 - Changing the de Bruijn convention (e.g. from "innermost binder is
   index 0" to "outermost binder is index 0").
@@ -599,7 +599,7 @@ These are flagged for follow-up; they are NOT settled by this spec.
   separate stages for clarity; nothing requires them to be physically
   separate. This is documented as informative, not normative.
 - **`bindingHash` canonical bytes.** The 2026-04-29 spec defines
-  `bindingHash = SHA-256(canonical-scope-bytes)[:16]` over a different
+  `bindingHash = "blake3-512:" + hex(BLAKE3_512(canonical-scope-bytes))` over a different
   data shape (`CanonicalScope` rather than `CanonicalFolAst`). The
   encoding rules in this spec (UTF-8, JCS object-key ordering, no HTML
   escaping, RFC 8785 §3.2.2.3 numbers) apply identically. A separate

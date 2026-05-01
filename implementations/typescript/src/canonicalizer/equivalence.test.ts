@@ -25,7 +25,7 @@ import {
   propertyHashFromAst,
 } from "./canonicalize.js";
 import { serializeCanonicalAst, SERIALIZATION_FORMAT } from "./serialize.js";
-import { sha256Prefix16 } from "./hash.js";
+import { computeCid, blake3_512_hex } from "./hash.js";
 import type {
   CanonicalFolAst,
   CanonicalSort,
@@ -72,59 +72,53 @@ const Bool: Sort = { kind: "primitive", name: "Bool" };
 const Real: Sort = { kind: "primitive", name: "Real" };
 const Ref: Sort = { kind: "primitive", name: "Ref" };
 
-function varTerm(name: string, sort: Sort): IrTerm {
-  return { kind: "var", name, sort };
+function varTerm(name: string, _sort: Sort): IrTerm {
+  void _sort;
+  return { kind: "var", name };
 }
 function constTerm(value: unknown, sort: Sort): IrTerm {
   return { kind: "const", value, sort };
 }
 
-function atomicEq(a: Parameters<typeof varTerm>[0], b: Parameters<typeof varTerm>[0], sort: Sort = Int): IrFormula {
+function atomicEq(a: Parameters<typeof varTerm>[0], b: Parameters<typeof varTerm>[0], _sort: Sort = Int): IrFormula {
+  void _sort;
   return {
     kind: "atomic",
-    predicate: "=",
-    args: [{ kind: "var", name: a, sort }, { kind: "var", name: b, sort }],
+    name: "=",
+    args: [{ kind: "var", name: a }, { kind: "var", name: b }],
   };
 }
 
 function atomicNeq(a: string, b: number, sort: Sort = Int): IrFormula {
   return {
     kind: "atomic",
-    predicate: "≠",
-    args: [{ kind: "var", name: a, sort }, { kind: "const", value: b, sort }],
+    name: "≠",
+    args: [{ kind: "var", name: a }, { kind: "const", value: b, sort }],
   };
 }
 
 function forall(varName: string, sort: Sort, body: IrFormula): IrFormula {
-  return {
-    kind: "forall",
-    sort,
-    predicate: { kind: "lambda", varName, sort, body },
-  };
+  return { kind: "forall", name: varName, sort, body };
 }
 
 function exists_(varName: string, sort: Sort, body: IrFormula): IrFormula {
-  return {
-    kind: "exists",
-    sort,
-    predicate: { kind: "lambda", varName, sort, body },
-  };
+  return { kind: "exists", name: varName, sort, body };
 }
 
 function and_(...formulas: IrFormula[]): IrFormula {
-  return { kind: "and", conjuncts: formulas };
+  return { kind: "and", operands: formulas };
 }
 
 function or_(...formulas: IrFormula[]): IrFormula {
-  return { kind: "or", disjuncts: formulas };
+  return { kind: "or", operands: formulas };
 }
 
 function not_(f: IrFormula): IrFormula {
-  return { kind: "not", body: f };
+  return { kind: "not", operands: [f] };
 }
 
 function implies_(ante: IrFormula, cons: IrFormula): IrFormula {
-  return { kind: "implies", antecedent: ante, consequent: cons };
+  return { kind: "implies", operands: [ante, cons]};
 }
 
 // -----------------------------------------------------------------------
@@ -141,12 +135,12 @@ describe("1. Pure quantifier-free formulas", () => {
     // formulas we compare against a literal with the same name.
     const f1: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const f2: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     expect(propertyHashFromFormula(f1)).toBe(propertyHashFromFormula(f2));
@@ -155,12 +149,12 @@ describe("1. Pure quantifier-free formulas", () => {
   it("alias resolution: notEqual alias maps to ≠", () => {
     const f1: IrFormula = {
       kind: "atomic",
-      predicate: "notEqual",
+      name: "notEqual",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const f2: IrFormula = {
       kind: "atomic",
-      predicate: "≠",
+      name: "≠",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     expect(propertyHashFromFormula(f1)).toBe(propertyHashFromFormula(f2));
@@ -169,12 +163,12 @@ describe("1. Pure quantifier-free formulas", () => {
   it("alias resolution: != alias maps to ≠", () => {
     const f1: IrFormula = {
       kind: "atomic",
-      predicate: "!=",
+      name: "!=",
       args: [{ kind: "const", value: 5, sort: Int }, { kind: "const", value: 3, sort: Int }],
     };
     const f2: IrFormula = {
       kind: "atomic",
-      predicate: "≠",
+      name: "≠",
       args: [{ kind: "const", value: 5, sort: Int }, { kind: "const", value: 3, sort: Int }],
     };
     expect(propertyHashFromFormula(f1)).toBe(propertyHashFromFormula(f2));
@@ -183,12 +177,12 @@ describe("1. Pure quantifier-free formulas", () => {
   it("equality argument sorting: =(a, b) ≡ =(b, a) for constants", () => {
     const f1: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 2, sort: Int }],
     };
     const f2: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 2, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     expect(propertyHashFromFormula(f1)).toBe(propertyHashFromFormula(f2));
@@ -197,11 +191,11 @@ describe("1. Pure quantifier-free formulas", () => {
   it("identity removal: and(true, p) ≡ p", () => {
     const p: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const withTrue: IrFormula = and_(
-      { kind: "atomic", predicate: "true", args: [] },
+      { kind: "atomic", name: "true", args: [] },
       p,
     );
     expect(propertyHashFromFormula(withTrue)).toBe(propertyHashFromFormula(p));
@@ -210,11 +204,11 @@ describe("1. Pure quantifier-free formulas", () => {
   it("identity removal: or(false, p) ≡ p", () => {
     const p: IrFormula = {
       kind: "atomic",
-      predicate: "<",
+      name: "<",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const withFalse: IrFormula = or_(
-      { kind: "atomic", predicate: "false", args: [] },
+      { kind: "atomic", name: "false", args: [] },
       p,
     );
     expect(propertyHashFromFormula(withFalse)).toBe(propertyHashFromFormula(p));
@@ -223,7 +217,7 @@ describe("1. Pure quantifier-free formulas", () => {
   it("deduplication: and(p, p) ≡ p", () => {
     const p: IrFormula = {
       kind: "atomic",
-      predicate: "<",
+      name: "<",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const doubled = and_(p, p);
@@ -255,13 +249,13 @@ describe("2. Single-quantifier / alpha-equivalence", () => {
   it("exists(y => y = 0) ≡ exists(z => z = 0)", () => {
     const f1 = exists_("y", Int, {
       kind: "atomic",
-      predicate: "=",
-      args: [{ kind: "var", name: "y", sort: Int }, { kind: "const", value: 0, sort: Int }],
+      name: "=",
+      args: [{ kind: "var", name: "y"}, { kind: "const", value: 0, sort: Int }],
     });
     const f2 = exists_("z", Int, {
       kind: "atomic",
-      predicate: "=",
-      args: [{ kind: "var", name: "z", sort: Int }, { kind: "const", value: 0, sort: Int }],
+      name: "=",
+      args: [{ kind: "var", name: "z"}, { kind: "const", value: 0, sort: Int }],
     });
     expect(propertyHashFromFormula(f1)).toBe(propertyHashFromFormula(f2));
   });
@@ -270,8 +264,8 @@ describe("2. Single-quantifier / alpha-equivalence", () => {
     const intFormula = forall("x", Int, atomicNeq("x", 0, Int));
     const realFormula = forall("x", Real, {
       kind: "atomic",
-      predicate: "≠",
-      args: [{ kind: "var", name: "x", sort: Real }, { kind: "const", value: 0, sort: Real }],
+      name: "≠",
+      args: [{ kind: "var", name: "x"}, { kind: "const", value: 0, sort: Real }],
     });
     expect(propertyHashFromFormula(intFormula)).not.toBe(propertyHashFromFormula(realFormula));
   });
@@ -324,13 +318,13 @@ describe("3. Multi-quantifier / nested binders", () => {
     // b < a: b is inner (index 0), a is outer (index 1)
     const ltAB = forall("a", Int, forall("b", Int, {
       kind: "atomic",
-      predicate: "<",
-      args: [{ kind: "var", name: "a", sort: Int }, { kind: "var", name: "b", sort: Int }],
+      name: "<",
+      args: [{ kind: "var", name: "a"}, { kind: "var", name: "b"}],
     }));
     const ltBA = forall("a", Int, forall("b", Int, {
       kind: "atomic",
-      predicate: "<",
-      args: [{ kind: "var", name: "b", sort: Int }, { kind: "var", name: "a", sort: Int }],
+      name: "<",
+      args: [{ kind: "var", name: "b"}, { kind: "var", name: "a"}],
     }));
     expect(propertyHashFromFormula(ltAB)).not.toBe(propertyHashFromFormula(ltBA));
   });
@@ -343,17 +337,17 @@ describe("3. Multi-quantifier / nested binders", () => {
 describe("4. AC normalization", () => {
   const p: IrFormula = {
     kind: "atomic",
-    predicate: "<",
+    name: "<",
     args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
   };
   const q: IrFormula = {
     kind: "atomic",
-    predicate: "<",
+    name: "<",
     args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 2, sort: Int }],
   };
   const r: IrFormula = {
     kind: "atomic",
-    predicate: "<",
+    name: "<",
     args: [{ kind: "const", value: 2, sort: Int }, { kind: "const", value: 3, sort: Int }],
   };
 
@@ -387,16 +381,16 @@ describe("4. AC normalization", () => {
   });
 
   it("and(false, p) → false", () => {
-    const f = and_({ kind: "atomic", predicate: "false", args: [] }, p);
+    const f = and_({ kind: "atomic", name: "false", args: [] }, p);
     expect(propertyHashFromFormula(f)).toBe(
-      propertyHashFromFormula({ kind: "atomic", predicate: "false", args: [] }),
+      propertyHashFromFormula({ kind: "atomic", name: "false", args: [] }),
     );
   });
 
   it("or(true, p) → true", () => {
-    const f = or_({ kind: "atomic", predicate: "true", args: [] }, p);
+    const f = or_({ kind: "atomic", name: "true", args: [] }, p);
     expect(propertyHashFromFormula(f)).toBe(
-      propertyHashFromFormula({ kind: "atomic", predicate: "true", args: [] }),
+      propertyHashFromFormula({ kind: "atomic", name: "true", args: [] }),
     );
   });
 });
@@ -408,12 +402,12 @@ describe("4. AC normalization", () => {
 describe("5. De Morgan / NNF", () => {
   const p: IrFormula = {
     kind: "atomic",
-    predicate: "=",
+    name: "=",
     args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
   };
   const q: IrFormula = {
     kind: "atomic",
-    predicate: "<",
+    name: "<",
     args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
   };
 
@@ -436,12 +430,12 @@ describe("5. De Morgan / NNF", () => {
   it("not(p = q) ≡ p ≠ q", () => {
     const notEq: IrFormula = not_({
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 2, sort: Int }],
     });
     const neq: IrFormula = {
       kind: "atomic",
-      predicate: "≠",
+      name: "≠",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 2, sort: Int }],
     };
     expect(propertyHashFromFormula(notEq)).toBe(propertyHashFromFormula(neq));
@@ -450,12 +444,12 @@ describe("5. De Morgan / NNF", () => {
   it("not(p < q) ≡ p ≥ q", () => {
     const notLt: IrFormula = not_({
       kind: "atomic",
-      predicate: "<",
+      name: "<",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 5, sort: Int }],
     });
     const gte: IrFormula = {
       kind: "atomic",
-      predicate: "≥",
+      name: "≥",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 5, sort: Int }],
     };
     expect(propertyHashFromFormula(notLt)).toBe(propertyHashFromFormula(gte));
@@ -465,7 +459,7 @@ describe("5. De Morgan / NNF", () => {
     const lhs = not_(forall("x", Int, atomicNeq("x", 0)));
     const rhs = exists_("x", Int, {
       kind: "not",
-      body: atomicNeq("x", 0),
+      operands: [atomicNeq("x", 0)],
     });
     expect(propertyHashFromFormula(lhs)).toBe(propertyHashFromFormula(rhs));
   });
@@ -478,12 +472,12 @@ describe("5. De Morgan / NNF", () => {
 describe("6. Implies removal", () => {
   const p: IrFormula = {
     kind: "atomic",
-    predicate: "=",
+    name: "=",
     args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
   };
   const q: IrFormula = {
     kind: "atomic",
-    predicate: "<",
+    name: "<",
     args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
   };
 
@@ -496,7 +490,7 @@ describe("6. Implies removal", () => {
   it("implies(p, implies(q, r)) ≡ or(not(p), or(not(q), r)) [chained]", () => {
     const r: IrFormula = {
       kind: "atomic",
-      predicate: "≠",
+      name: "≠",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const impl = implies_(p, implies_(q, r));
@@ -514,12 +508,12 @@ describe("7. Equality argument sorting", () => {
   it("=(const:1, const:2) ≡ =(const:2, const:1)", () => {
     const f1: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 2, sort: Int }],
     };
     const f2: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 2, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     expect(propertyHashFromFormula(f1)).toBe(propertyHashFromFormula(f2));
@@ -528,12 +522,12 @@ describe("7. Equality argument sorting", () => {
   it("≠(const:1, const:2) ≡ ≠(const:2, const:1)", () => {
     const f1: IrFormula = {
       kind: "atomic",
-      predicate: "≠",
+      name: "≠",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 2, sort: Int }],
     };
     const f2: IrFormula = {
       kind: "atomic",
-      predicate: "≠",
+      name: "≠",
       args: [{ kind: "const", value: 2, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     expect(propertyHashFromFormula(f1)).toBe(propertyHashFromFormula(f2));
@@ -545,13 +539,13 @@ describe("7. Equality argument sorting", () => {
     // Both should produce the same canonical form.
     const constLtVar: IrFormula = forall("x", Int, {
       kind: "atomic",
-      predicate: "<",
-      args: [{ kind: "const", value: 5, sort: Int }, { kind: "var", name: "x", sort: Int }],
+      name: "<",
+      args: [{ kind: "const", value: 5, sort: Int }, { kind: "var", name: "x"}],
     });
     const varGtConst: IrFormula = forall("x", Int, {
       kind: "atomic",
-      predicate: ">",
-      args: [{ kind: "var", name: "x", sort: Int }, { kind: "const", value: 5, sort: Int }],
+      name: ">",
+      args: [{ kind: "var", name: "x"}, { kind: "const", value: 5, sort: Int }],
     });
     expect(propertyHashFromFormula(constLtVar)).toBe(propertyHashFromFormula(varGtConst));
   });
@@ -565,12 +559,12 @@ describe("8. Negative cases — formulas that must differ", () => {
   it("different predicate: < vs ≤", () => {
     const lt: IrFormula = {
       kind: "atomic",
-      predicate: "<",
+      name: "<",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const lte: IrFormula = {
       kind: "atomic",
-      predicate: "≤",
+      name: "≤",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     expect(propertyHashFromFormula(lt)).not.toBe(propertyHashFromFormula(lte));
@@ -579,12 +573,12 @@ describe("8. Negative cases — formulas that must differ", () => {
   it("different sort: Int vs Real", () => {
     const intFormula: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const realFormula: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Real }, { kind: "const", value: 1, sort: Real }],
     };
     expect(propertyHashFromFormula(intFormula)).not.toBe(propertyHashFromFormula(realFormula));
@@ -593,12 +587,12 @@ describe("8. Negative cases — formulas that must differ", () => {
   it("different constant value: 0 vs 1", () => {
     const zero: IrFormula = {
       kind: "atomic",
-      predicate: "≠",
+      name: "≠",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const two: IrFormula = {
       kind: "atomic",
-      predicate: "≠",
+      name: "≠",
       args: [{ kind: "const", value: 2, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     expect(propertyHashFromFormula(zero)).not.toBe(propertyHashFromFormula(two));
@@ -607,7 +601,7 @@ describe("8. Negative cases — formulas that must differ", () => {
   it("different quantifier depth: forall(p) vs forall(forall(p))", () => {
     const p: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const single = forall("x", Int, p);
@@ -625,12 +619,12 @@ describe("8. Negative cases — formulas that must differ", () => {
   it("and vs or: different connective", () => {
     const p: IrFormula = {
       kind: "atomic",
-      predicate: "<",
+      name: "<",
       args: [{ kind: "const", value: 0, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const q: IrFormula = {
       kind: "atomic",
-      predicate: "<",
+      name: "<",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 2, sort: Int }],
     };
     expect(propertyHashFromFormula(and_(p, q))).not.toBe(propertyHashFromFormula(or_(p, q)));
@@ -642,13 +636,13 @@ describe("8. Negative cases — formulas that must differ", () => {
     // < is not commutative so these differ
     const outerLtInner = forall("a", Int, forall("b", Int, {
       kind: "atomic",
-      predicate: "<",
-      args: [{ kind: "var", name: "a", sort: Int }, { kind: "var", name: "b", sort: Int }],
+      name: "<",
+      args: [{ kind: "var", name: "a"}, { kind: "var", name: "b"}],
     }));
     const innerLtOuter = forall("a", Int, forall("b", Int, {
       kind: "atomic",
-      predicate: "<",
-      args: [{ kind: "var", name: "b", sort: Int }, { kind: "var", name: "a", sort: Int }],
+      name: "<",
+      args: [{ kind: "var", name: "b"}, { kind: "var", name: "a"}],
     }));
     expect(propertyHashFromFormula(outerLtInner)).not.toBe(propertyHashFromFormula(innerLtOuter));
   });
@@ -656,7 +650,7 @@ describe("8. Negative cases — formulas that must differ", () => {
   it("different string constant value", () => {
     const f1: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: "hello", sort: { kind: "primitive", name: "String" } },
         { kind: "const", value: "hello", sort: { kind: "primitive", name: "String" } },
@@ -664,7 +658,7 @@ describe("8. Negative cases — formulas that must differ", () => {
     };
     const f2: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: "world", sort: { kind: "primitive", name: "String" } },
         { kind: "const", value: "world", sort: { kind: "primitive", name: "String" } },
@@ -682,23 +676,23 @@ describe("9. Hash format", () => {
   it("propertyHash is exactly 16 hex characters", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [{ kind: "const", value: 1, sort: Int }, { kind: "const", value: 1, sort: Int }],
     };
     const h = propertyHashFromFormula(f);
-    expect(h).toMatch(/^[0-9a-f]{16}$/);
+    expect(h).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 
   it("formulaToCanonicalAst returns a CanonicalFolAst with no implies", () => {
     const f: IrFormula = implies_(
-      { kind: "atomic", predicate: "true", args: [] },
-      { kind: "atomic", predicate: "false", args: [] },
+      { kind: "atomic", name: "true", args: [] },
+      { kind: "atomic", name: "false", args: [] },
     );
     const ast = formulaToCanonicalAst(f);
     // After implies removal + NNF + AC, implies(true, false) →
     // or(not(true), false) → or(false, false) → false
     // not(true) → false via NNF predicate negation
-    expect(ast).toEqual({ kind: "atomic", predicate: "false", args: [] });
+    expect(ast).toEqual({ kind: "atomic", name: "false", args: [] });
   });
 
   it("forall body formula: spec example — forAll(b => b ≠ 0)", () => {
@@ -756,10 +750,14 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
     // accepts IrFormula. Alignment is "this line type-checks".
     const hash = propertyHashFromFormula(formula);
 
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
-    // Pinned fixture: regenerate intentionally if the canonical-AST
-    // grammar changes (a major-version event).
-    expect(hash).toBe("d2569af7719024b3");
+    expect(hash).toMatch(/^blake3-512:[0-9a-f]{128}$/);
+    // Pinned fixture under protocol v1.1.0 canonical-AST grammar
+    // (atomic.name + not.operands) plus the BLAKE3-512 self-identifying
+    // hash widening. Update only when the canonical-AST shape or the
+    // hash function changes intentionally.
+    expect(hash).toBe(
+      "blake3-512:3c87a7f850ab31498ead7a5ce1b603d41e470fc6034afd2bef31f393a4b1d7d5e1b3304c784c708cf48a64a5acd3dfa5aa6c1faa458ee646395dfab0ddc1b651",
+    );
   });
 
   it("IR-library forAll matches hand-built equivalent", () => {
@@ -790,7 +788,7 @@ describe("10. IR-library → canonicalizer roundtrip", () => {
       irImplies(irAssert.equal(x, 0), irAssert.notEqual(x, 0)),
     );
     const hash = propertyHashFromFormula(formula);
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(hash).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 
   it("IR-library iff desugar reaches the same canonical hash as explicit and(implies, implies)", () => {
@@ -849,7 +847,7 @@ describe("11. RFC 8785 §3.2.2.3 number serialization", () => {
   function serializeNumberInAst(n: number): string {
     const ast: CanonicalFolAst = {
       kind: "atomic",
-      predicate: "P",
+      name: "P",
       args: [{ kind: "const", sort: RealSort, value: n }],
     };
     return serializeCanonicalAst(ast).toString("utf8");
@@ -1030,9 +1028,9 @@ describe("13. applyDeBruijn", () => {
   it("throws on unbound variable", () => {
     const orphan: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
-        { kind: "var", name: "free", sort: Int },
+        { kind: "var", name: "free"},
         { kind: "const", value: 0, sort: Int },
       ],
     };
@@ -1043,10 +1041,10 @@ describe("13. applyDeBruijn", () => {
     const inner = forall("x", Int, atomicNeq("x", 0));
     const f: IrFormula = {
       kind: "and",
-      conjuncts: [
-        { kind: "or", disjuncts: [inner] },
-        { kind: "not", body: inner },
-        { kind: "implies", antecedent: inner, consequent: inner },
+      operands: [
+        { kind: "or", operands: [inner] },
+        { kind: "not", operands: [inner] },
+        { kind: "implies", operands: [inner, inner]},
       ],
     };
     const out = applyDeBruijn(f);
@@ -1056,12 +1054,12 @@ describe("13. applyDeBruijn", () => {
   it("preserves const and ctor terms", () => {
     const f: IrFormula = forall("x", Int, {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "ctor", name: "+", args: [
-          { kind: "var", name: "x", sort: Int },
+          { kind: "var", name: "x" },
           { kind: "const", value: 1, sort: Int },
-        ], sort: Int },
+        ] },
         { kind: "const", value: 5, sort: Int },
       ],
     });
@@ -1159,23 +1157,23 @@ describe("14c. canonicalizePredicate", () => {
   };
 
   it("resolves '!=' alias to '≠'", () => {
-    expect(canonicalizePredicate("!=", [oneConst, twoConst]).predicate).toBe("≠");
+    expect(canonicalizePredicate("!=", [oneConst, twoConst]).name).toBe("≠");
   });
 
   it("resolves 'eq' alias to '='", () => {
-    expect(canonicalizePredicate("eq", [oneConst, twoConst]).predicate).toBe("=");
+    expect(canonicalizePredicate("eq", [oneConst, twoConst]).name).toBe("=");
   });
 
   it("resolves 'lessThan' alias to '<'", () => {
-    expect(canonicalizePredicate("lessThan", [xVar, oneConst]).predicate).toBe("<");
+    expect(canonicalizePredicate("lessThan", [xVar, oneConst]).name).toBe("<");
   });
 
   it("resolves '∈' alias to 'member'", () => {
-    expect(canonicalizePredicate("∈", [oneConst, oneConst]).predicate).toBe("member");
+    expect(canonicalizePredicate("∈", [oneConst, oneConst]).name).toBe("member");
   });
 
   it("resolves 'kindOf' alias to 'kind-of'", () => {
-    expect(canonicalizePredicate("kindOf", [oneConst, oneConst]).predicate).toBe("kind-of");
+    expect(canonicalizePredicate("kindOf", [oneConst, oneConst]).name).toBe("kind-of");
   });
 
   it("'=' sorts args by structural key", () => {
@@ -1187,14 +1185,14 @@ describe("14c. canonicalizePredicate", () => {
 
   it("'<' with const-on-left flips to '>' with const-on-right", () => {
     const out = canonicalizePredicate("<", [oneConst, xVar]);
-    expect(out.predicate).toBe(">");
+    expect(out.name).toBe(">");
     expect(out.args[0].kind).toBe("var");
     expect(out.args[1].kind).toBe("const");
   });
 
   it("unknown predicate name passes through unchanged", () => {
     const out = canonicalizePredicate("kit:custom", [oneConst]);
-    expect(out.predicate).toBe("kit:custom");
+    expect(out.name).toBe("kit:custom");
   });
 });
 
@@ -1204,11 +1202,11 @@ describe("14c. canonicalizePredicate", () => {
 
 describe("15. toNnf", () => {
   const intSort: CanonicalSort = { kind: "primitive", name: "Int" };
-  const trueAtom: CanonicalFolAst = { kind: "atomic", predicate: "true", args: [] };
-  const falseAtom: CanonicalFolAst = { kind: "atomic", predicate: "false", args: [] };
+  const trueAtom: CanonicalFolAst = { kind: "atomic", name: "true", args: [] };
+  const falseAtom: CanonicalFolAst = { kind: "atomic", name: "false", args: [] };
   const eqAtom: CanonicalFolAst = {
     kind: "atomic",
-    predicate: "=",
+    name: "=",
     args: [
       { kind: "const", value: 1, sort: intSort },
       { kind: "const", value: 1, sort: intSort },
@@ -1216,62 +1214,62 @@ describe("15. toNnf", () => {
   };
 
   it("not(not(p)) collapses to p", () => {
-    const r = toNnf({ kind: "not", body: { kind: "not", body: eqAtom } });
+    const r = toNnf({ kind: "not", operands: [{ kind: "not", operands: [eqAtom] }] });
     expect(r).toEqual(eqAtom);
   });
 
   it("not(true) → false via predicate negation", () => {
-    expect(toNnf({ kind: "not", body: trueAtom })).toEqual(falseAtom);
+    expect(toNnf({ kind: "not", operands: [trueAtom] })).toEqual(falseAtom);
   });
 
   it("not(=) → ≠ via predicate negation", () => {
-    const r = toNnf({ kind: "not", body: eqAtom });
+    const r = toNnf({ kind: "not", operands: [eqAtom] });
     if (r.kind !== "atomic") throw new Error();
-    expect(r.predicate).toBe("≠");
+    expect(r.name).toBe("≠");
   });
 
   it("not(<) → ≥ via predicate negation", () => {
     const lt: CanonicalFolAst = {
       kind: "atomic",
-      predicate: "<",
+      name: "<",
       args: eqAtom.kind === "atomic" ? eqAtom.args : [],
     };
-    const r = toNnf({ kind: "not", body: lt });
+    const r = toNnf({ kind: "not", operands: [lt] });
     if (r.kind !== "atomic") throw new Error();
-    expect(r.predicate).toBe("≥");
+    expect(r.name).toBe("≥");
   });
 
   it("De Morgan: not(and(p,q)) → or(not(p), not(q))", () => {
     const p = eqAtom;
     const q: CanonicalFolAst = {
       kind: "atomic",
-      predicate: "<",
+      name: "<",
       args: [
         { kind: "const", value: 0, sort: intSort },
         { kind: "const", value: 1, sort: intSort },
       ],
     };
-    const r = toNnf({ kind: "not", body: { kind: "and", operands: [p, q] } });
+    const r = toNnf({ kind: "not", operands: [{ kind: "and", operands: [p, q] }] });
     if (r.kind !== "or") throw new Error();
     expect(r.operands).toHaveLength(2);
   });
 
   it("not(forall) → exists with negated body", () => {
     const inside: CanonicalFolAst = { kind: "forall", sort: intSort, body: eqAtom };
-    const r = toNnf({ kind: "not", body: inside });
+    const r = toNnf({ kind: "not", operands: [inside] });
     if (r.kind !== "exists") throw new Error();
     expect(r.body.kind).toBe("atomic");
   });
 
   it("not(exists) → forall with negated body", () => {
     const inside: CanonicalFolAst = { kind: "exists", sort: intSort, body: eqAtom };
-    const r = toNnf({ kind: "not", body: inside });
+    const r = toNnf({ kind: "not", operands: [inside] });
     if (r.kind !== "forall") throw new Error();
   });
 
   it("not on kit-defined atomic predicate is left as not(atomic)", () => {
-    const a: CanonicalFolAst = { kind: "atomic", predicate: "kit:reads", args: [] };
-    const r = toNnf({ kind: "not", body: a });
+    const a: CanonicalFolAst = { kind: "atomic", name: "kit:reads", args: [] };
+    const r = toNnf({ kind: "not", operands: [a] });
     expect(r.kind).toBe("not");
   });
 });
@@ -1282,11 +1280,11 @@ describe("15. toNnf", () => {
 
 describe("16. acNormalize + astSortKey", () => {
   const intSort: CanonicalSort = { kind: "primitive", name: "Int" };
-  const trueAtom: CanonicalFolAst = { kind: "atomic", predicate: "true", args: [] };
-  const falseAtom: CanonicalFolAst = { kind: "atomic", predicate: "false", args: [] };
+  const trueAtom: CanonicalFolAst = { kind: "atomic", name: "true", args: [] };
+  const falseAtom: CanonicalFolAst = { kind: "atomic", name: "false", args: [] };
   const eqAtom: CanonicalFolAst = {
     kind: "atomic",
-    predicate: "=",
+    name: "=",
     args: [
       { kind: "const", value: 1, sort: intSort },
       { kind: "const", value: 1, sort: intSort },
@@ -1329,8 +1327,8 @@ describe("16. acNormalize + astSortKey", () => {
 
   it("and(and(p,q),r) flattens", () => {
     const p = eqAtom;
-    const q: CanonicalFolAst = { kind: "atomic", predicate: "kit:q", args: [] };
-    const r: CanonicalFolAst = { kind: "atomic", predicate: "kit:r", args: [] };
+    const q: CanonicalFolAst = { kind: "atomic", name: "kit:q", args: [] };
+    const r: CanonicalFolAst = { kind: "atomic", name: "kit:r", args: [] };
     const out = acNormalize({
       kind: "and",
       operands: [{ kind: "and", operands: [p, q] }, r],
@@ -1355,7 +1353,7 @@ describe("16. acNormalize + astSortKey", () => {
   });
 
   it("not is preserved through acNormalize", () => {
-    const out = acNormalize({ kind: "not", body: eqAtom });
+    const out = acNormalize({ kind: "not", operands: [eqAtom] });
     expect(out.kind).toBe("not");
   });
 });
@@ -1366,31 +1364,29 @@ describe("16. acNormalize + astSortKey", () => {
 
 describe("17. removeImplies", () => {
   const intSort: CanonicalSort = { kind: "primitive", name: "Int" };
-  const trueAtom: PreNnfAst = { kind: "atomic", predicate: "true", args: [] };
-  const falseAtom: PreNnfAst = { kind: "atomic", predicate: "false", args: [] };
+  const trueAtom: PreNnfAst = { kind: "atomic", name: "true", args: [] };
+  const falseAtom: PreNnfAst = { kind: "atomic", name: "false", args: [] };
 
   it("rewrites implies(a, c) to or(not(a), c)", () => {
     const out = removeImplies({
       kind: "implies",
-      antecedent: trueAtom,
-      consequent: falseAtom,
+      operands: [trueAtom, falseAtom],
     });
     if (out.kind !== "or") throw new Error();
     expect(out.operands).toHaveLength(2);
-    expect(out.operands[0].kind).toBe("not");
-    expect(out.operands[1].kind).toBe("atomic");
+    expect(out.operands[0]!.kind).toBe("not");
+    expect(out.operands[1]!.kind).toBe("atomic");
   });
 
   it("recurses into and / or / not / forall / exists", () => {
     const inner: PreNnfAst = {
       kind: "implies",
-      antecedent: trueAtom,
-      consequent: falseAtom,
+      operands: [trueAtom, falseAtom],
     };
     const wrapped: PreNnfAst = {
       kind: "and",
       operands: [
-        { kind: "not", body: inner },
+        { kind: "not", operands: [inner] },
         { kind: "or", operands: [inner] },
         { kind: "forall", sort: intSort, body: inner },
         { kind: "exists", sort: intSort, body: inner },
@@ -1403,7 +1399,7 @@ describe("17. removeImplies", () => {
         case "or":
           return a.operands.some(hasImplies);
         case "not":
-          return hasImplies(a.body);
+          return hasImplies(a.operands[0]);
         case "forall":
         case "exists":
           return hasImplies(a.body);
@@ -1417,12 +1413,12 @@ describe("17. removeImplies", () => {
   it("atomic passes through unchanged", () => {
     const a: PreNnfAst = {
       kind: "atomic",
-      predicate: "true",
+      name: "true",
       args: [],
     };
     expect(removeImplies(a)).toEqual({
       kind: "atomic",
-      predicate: "true",
+      name: "true",
       args: [],
     });
   });
@@ -1442,7 +1438,7 @@ describe("18. serialize.ts", () => {
   it("safe-range bigint serializes as a JSON number", () => {
     const ast: CanonicalFolAst = {
       kind: "atomic",
-      predicate: "P",
+      name: "P",
       args: [{ kind: "const", value: 100n, sort: intSort }],
     };
     const s = serializeCanonicalAst(ast).toString("utf8");
@@ -1454,7 +1450,7 @@ describe("18. serialize.ts", () => {
     const huge = BigInt(Number.MAX_SAFE_INTEGER) + 10n;
     const ast: CanonicalFolAst = {
       kind: "atomic",
-      predicate: "P",
+      name: "P",
       args: [{ kind: "const", value: huge, sort: intSort }],
     };
     const s = serializeCanonicalAst(ast).toString("utf8");
@@ -1464,7 +1460,7 @@ describe("18. serialize.ts", () => {
   it("null const value serializes as null", () => {
     const ast: CanonicalFolAst = {
       kind: "atomic",
-      predicate: "P",
+      name: "P",
       args: [{ kind: "const", value: null, sort: intSort }],
     };
     const s = serializeCanonicalAst(ast).toString("utf8");
@@ -1474,7 +1470,7 @@ describe("18. serialize.ts", () => {
   it("boolean const values serialize as true/false", () => {
     const ast: CanonicalFolAst = {
       kind: "atomic",
-      predicate: "P",
+      name: "P",
       args: [
         { kind: "const", value: true, sort: { kind: "primitive", name: "Bool" } },
         { kind: "const", value: false, sort: { kind: "primitive", name: "Bool" } },
@@ -1488,40 +1484,50 @@ describe("18. serialize.ts", () => {
   it("object keys are sorted lexicographically (RFC 8785 §3.2.3)", () => {
     const ast: CanonicalFolAst = {
       kind: "atomic",
-      predicate: "P",
+      name: "P",
       args: [],
     };
     const s = serializeCanonicalAst(ast).toString("utf8");
+    // Field "name" is the v1.1 grammar's renamed "predicate".
     expect(s.indexOf("args")).toBeLessThan(s.indexOf("kind"));
-    expect(s.indexOf("kind")).toBeLessThan(s.indexOf("predicate"));
+    expect(s.indexOf("kind")).toBeLessThan(s.indexOf("name"));
   });
 });
 
 // -----------------------------------------------------------------------
-// 19. hash.ts — sha256Prefix16
+// 19. hash.ts — BLAKE3-512 self-identifying hash (protocol v1.1.0)
 // -----------------------------------------------------------------------
 
-describe("19. sha256Prefix16", () => {
-  it("returns exactly 16 hex characters", () => {
-    const out = sha256Prefix16(Buffer.from("hello", "utf8"));
-    expect(out).toMatch(/^[0-9a-f]{16}$/);
+describe("19. computeCid (BLAKE3-512 self-identifying hash)", () => {
+  // Format: "blake3-512:" prefix + 128 lowercase hex chars (full 64-byte digest).
+  const SELF_ID = /^blake3-512:[0-9a-f]{128}$/;
+
+  it("returns a self-identifying string with the blake3-512 prefix and full digest", () => {
+    const out = computeCid(Buffer.from("hello", "utf8"));
+    expect(out).toMatch(SELF_ID);
   });
 
   it("hashes empty buffer deterministically", () => {
-    const out1 = sha256Prefix16(Buffer.alloc(0));
-    const out2 = sha256Prefix16(Buffer.alloc(0));
+    const out1 = computeCid(Buffer.alloc(0));
+    const out2 = computeCid(Buffer.alloc(0));
     expect(out1).toBe(out2);
-    expect(out1).toMatch(/^[0-9a-f]{16}$/);
+    expect(out1).toMatch(SELF_ID);
   });
 
   it("differs for different bytes", () => {
-    const a = sha256Prefix16(Buffer.from("a", "utf8"));
-    const b = sha256Prefix16(Buffer.from("b", "utf8"));
+    const a = computeCid(Buffer.from("a", "utf8"));
+    const b = computeCid(Buffer.from("b", "utf8"));
     expect(a).not.toBe(b);
   });
 
-  it("matches the expected sha256 prefix for 'hello'", () => {
-    expect(sha256Prefix16(Buffer.from("hello", "utf8"))).toBe("2cf24dba5fb0a30e");
+  it("matches the canonical BLAKE3-512 digest for the empty input", () => {
+    // Reference value from BLAKE3 spec (XOF output of length 64 for ""):
+    expect(blake3_512_hex(Buffer.alloc(0))).toBe(
+      "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262e00f03e7b69af26b7faaf09fcd333050338ddfe085b8cc869ca98b206c08243a",
+    );
+    expect(computeCid(Buffer.alloc(0))).toBe(
+      "blake3-512:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262e00f03e7b69af26b7faaf09fcd333050338ddfe085b8cc869ca98b206c08243a",
+    );
   });
 });
 
@@ -1572,7 +1578,7 @@ describe("21. AstCanonicalizerImpl + canonicalizer default", () => {
     };
     const bindings: Bindings = { b: { kind: "primitive", name: "Int" } };
     const h = impl.bindingHashFromAst({ scope, bindings, hostAst: null });
-    expect(h).toMatch(/^[0-9a-f]{16}$/);
+    expect(h).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 
   it("bindingHashFromAst is deterministic and order-independent in bindings", () => {

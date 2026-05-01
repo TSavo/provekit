@@ -26,7 +26,14 @@ beforeEach(() => {
 const cents: Sort = { kind: "primitive", name: "Cents" };
 
 function ctor(name: string, args: IrTerm[], sort: Sort): IrTerm {
-  return { kind: "ctor", name, args, sort };
+  const t: IrTerm = { kind: "ctor", name, args };
+  Object.defineProperty(t, Symbol.for("provekit.ir.sortHint"), {
+    value: sort,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  return t;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,10 +91,10 @@ describe("emitSmtLib — per node kind", () => {
   });
 
   it("emits ctor terms as application", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Str };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("parseInt", [x], Int), { kind: "const", value: 42, sort: Int }],
     };
     expect(emitSmtLib(f)).toBe("(= (parseInt _x0) 42)");
@@ -96,7 +103,7 @@ describe("emitSmtLib — per node kind", () => {
   it("emits zero-arg ctor as bare identifier", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("ZERO", [], Int), { kind: "const", value: 0, sort: Int }],
     };
     expect(emitSmtLib(f)).toBe("(= ZERO 0)");
@@ -118,31 +125,17 @@ describe("emitSmtLib — quantifier scoping", () => {
   it("renames inner binder when names clash", () => {
     // Hand-roll a clashing IR (the standard builders never produce this).
     const inner: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "x",
-        sort: Int,
-        body: {
+      kind: "forall", name: "x", sort: Int, body: {
           kind: "atomic",
-          predicate: "=",
+          name: "=",
           args: [
-            { kind: "var", name: "x", sort: Int },
-            { kind: "var", name: "x", sort: Int },
+            { kind: "var", name: "x"},
+            { kind: "var", name: "x"},
           ],
         },
-      },
     };
     const outer: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "x",
-        sort: Int,
-        body: inner,
-      },
+      kind: "forall", name: "x", sort: Int, body: inner,
     };
     const out = emitSmtLib(outer);
     // Outer binder keeps name "x"; inner is renamed because "x" is in scope.
@@ -196,14 +189,14 @@ describe("emitSmtLib — constants", () => {
   it("renders booleans", () => {
     const lhs: IrTerm = { kind: "const", value: true, sort: Bool };
     const rhs: IrTerm = { kind: "const", value: false, sort: Bool };
-    const f: IrFormula = { kind: "atomic", predicate: "=", args: [lhs, rhs] };
+    const f: IrFormula = { kind: "atomic", name: "=", args: [lhs, rhs] };
     expect(emitSmtLib(f)).toBe("(= true false)");
   });
 
   it("quotes string literals and doubles embedded quotes", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 'a"b', sort: Str },
         { kind: "const", value: "c", sort: Str },
@@ -215,7 +208,7 @@ describe("emitSmtLib — constants", () => {
   it("renders Real integers with a decimal point", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 3, sort: Real },
         { kind: "const", value: -2, sort: Real },
@@ -260,16 +253,9 @@ describe("emitSmtLibProblem", () => {
   });
 
   it("declares uninterpreted predicates as Bool-valued functions", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Int };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const assertion: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: Int,
-        body: { kind: "atomic", predicate: "isPrime", args: [x] },
-      },
+      kind: "forall", name: "_x0", sort: Int, body: { kind: "atomic", name: "isPrime", args: [x] },
     };
     const out = emitSmtLibProblem({ axioms: [], assertion });
     expect(out).toContain("(declare-fun isPrime (Int) Bool)");
@@ -279,7 +265,7 @@ describe("emitSmtLibProblem", () => {
   it("declares member/subset as uninterpreted Bool predicates (not SMT-LIB base names)", () => {
     // forSome injects a `member` atomic predicate. Verify the emitted
     // problem declares it rather than referencing an undefined symbol.
-    const setVar: IrTerm = { kind: "var", name: "S", sort: SetOf(Int) };
+    const setVar: IrTerm = { kind: "var", name: "S"};
     // Wrap in an exists so the var binder is in scope for the body's
     // member call. We use a hand-rolled IR to keep the set var free.
     const body = forSome(setVar, Int, (x) => A.equal(x, 0));
@@ -287,8 +273,9 @@ describe("emitSmtLibProblem", () => {
       axioms: [],
       assertion: {
         kind: "exists",
+        name: "S",
         sort: SetOf(Int),
-        predicate: { kind: "lambda", varName: "S", sort: SetOf(Int), body },
+        body,
       },
     });
     expect(out).toContain("(declare-fun member (Int (Set Int)) Bool)");
@@ -396,10 +383,10 @@ describe("smt/declarations — collectDeclarations", () => {
   });
 
   it("collects ctor signatures from atomic args", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Str };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("parseInt", [x], Int), { kind: "const", value: 42, sort: Int }],
     };
     const decls = collectDeclarations([f]);
@@ -408,16 +395,9 @@ describe("smt/declarations — collectDeclarations", () => {
   });
 
   it("collects uninterpreted predicates and skips built-ins", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Int };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const f: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: Int,
-        body: { kind: "atomic", predicate: "isPrime", args: [x] },
-      },
+      kind: "forall", name: "_x0", sort: Int, body: { kind: "atomic", name: "isPrime", args: [x] },
     };
     const decls = collectDeclarations([f]);
     expect(decls.predicates.map((p) => p.name)).toEqual(["isPrime"]);
@@ -426,12 +406,12 @@ describe("smt/declarations — collectDeclarations", () => {
   it("throws on conflicting ctor arities for the same name", () => {
     const f1: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("foo", [], Int), { kind: "const", value: 0, sort: Int }],
     };
     const f2: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         ctor("foo", [{ kind: "const", value: 1, sort: Int }], Int),
         { kind: "const", value: 0, sort: Int },
@@ -443,12 +423,12 @@ describe("smt/declarations — collectDeclarations", () => {
   it("dedupes ctors that share name + arity", () => {
     const a: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("g", [{ kind: "const", value: 1, sort: Int }], Int), { kind: "const", value: 0, sort: Int }],
     };
     const b: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("g", [{ kind: "const", value: 2, sort: Int }], Int), { kind: "const", value: 1, sort: Int }],
     };
     const decls = collectDeclarations([a, b]);
@@ -463,16 +443,9 @@ describe("smt/declarations — emitters", () => {
   });
 
   it("emitFunctionDeclarations renders ctor declarations and predicate Bool returns", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: Int };
+    const x: IrTerm = { kind: "var", name: "_x0"};
     const f: IrFormula = {
-      kind: "forall",
-      sort: Int,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: Int,
-        body: { kind: "atomic", predicate: "isPrime", args: [x] },
-      },
+      kind: "forall", name: "_x0", sort: Int, body: { kind: "atomic", name: "isPrime", args: [x] },
     };
     const decls = collectDeclarations([f]);
     const lines = emitFunctionDeclarations(decls);
@@ -491,11 +464,11 @@ describe("emitFormula (direct emit module)", () => {
   });
 
   it("renders zero-conjunct and as 'true' (compact-out via library)", () => {
-    expect(emitFormula({ kind: "and", conjuncts: [] })).toBe("true");
+    expect(emitFormula({ kind: "and", operands: [] })).toBe("true");
   });
 
   it("renders zero-disjunct or as 'false' (compact-out via library)", () => {
-    expect(emitFormula({ kind: "or", disjuncts: [] })).toBe("false");
+    expect(emitFormula({ kind: "or", operands: [] })).toBe("false");
   });
 });
 
@@ -507,7 +480,7 @@ describe("emitSmtLib — bigint constants", () => {
   it("renders positive bigint as bare integer", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 100n, sort: Int },
         { kind: "const", value: 100n, sort: Int },
@@ -519,7 +492,7 @@ describe("emitSmtLib — bigint constants", () => {
   it("renders negative bigint with (- n) wrapper", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: -100n, sort: Int },
         { kind: "const", value: -100n, sort: Int },
@@ -533,7 +506,7 @@ describe("emitSmtLib — null constant rejection", () => {
   it("throws when emitting a null const", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: null, sort: Int },
         { kind: "const", value: 0, sort: Int },
@@ -545,19 +518,19 @@ describe("emitSmtLib — null constant rejection", () => {
 
 describe("emitSmtLib — true/false predicate args", () => {
   it("emits atomic 'true' with no args as the literal true", () => {
-    const f: IrFormula = { kind: "atomic", predicate: "true", args: [] };
+    const f: IrFormula = { kind: "atomic", name: "true", args: [] };
     expect(emitSmtLib(f)).toBe("true");
   });
 
   it("emits atomic 'false' with no args as the literal false", () => {
-    const f: IrFormula = { kind: "atomic", predicate: "false", args: [] };
+    const f: IrFormula = { kind: "atomic", name: "false", args: [] };
     expect(emitSmtLib(f)).toBe("false");
   });
 
   it("emits atomic 'true' with a Bool arg as the bare term", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "true",
+      name: "true",
       args: [{ kind: "const", value: true, sort: Bool }],
     };
     expect(emitSmtLib(f)).toBe("true");
@@ -566,7 +539,7 @@ describe("emitSmtLib — true/false predicate args", () => {
   it("emits atomic 'false' with a Bool arg as (not term)", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "false",
+      name: "false",
       args: [{ kind: "const", value: false, sort: Bool }],
     };
     expect(emitSmtLib(f)).toBe("(not false)");
@@ -622,7 +595,7 @@ describe("emitSmtLib — BV constants", () => {
   it("renders a BV literal as (_ bv<N> <W>)", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 7n, sort: BV8 },
         { kind: "const", value: 7n, sort: BV8 },
@@ -634,7 +607,7 @@ describe("emitSmtLib — BV constants", () => {
   it("normalizes negative BV constants modulo 2^width before emission", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: -1n, sort: BV8 },
         { kind: "const", value: 255n, sort: BV8 },
@@ -646,7 +619,7 @@ describe("emitSmtLib — BV constants", () => {
   it("accepts a number-typed BV value", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 42, sort: BV(16) },
         { kind: "const", value: 42n, sort: BV(16) },
@@ -658,7 +631,7 @@ describe("emitSmtLib — BV constants", () => {
   it("rejects a non-integer BV value", () => {
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [
         { kind: "const", value: 1.5, sort: BV8 },
         { kind: "const", value: 0n, sort: BV8 },
@@ -669,8 +642,9 @@ describe("emitSmtLib — BV constants", () => {
 });
 
 describe("emitSmtLib — BV term operators", () => {
-  function bvVar(name: string, width: number): IrTerm {
-    return { kind: "var", name, sort: BV(width) };
+  function bvVar(name: string, _width: number): IrTerm {
+    void _width;
+    return { kind: "var", name };
   }
 
   it("renders bvadd / bvxor / bvand as bare s-expression applications", () => {
@@ -678,7 +652,7 @@ describe("emitSmtLib — BV term operators", () => {
     const y = bvVar("y", 32);
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("bvadd", [x, y], BV32), ctor("bvxor", [x, y], BV32)],
     };
     expect(emitSmtLib(f)).toBe("(= (bvadd x y) (bvxor x y))");
@@ -689,7 +663,7 @@ describe("emitSmtLib — BV term operators", () => {
     const y = bvVar("y", 8);
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("concat", [x, y], BV(16)), { kind: "const", value: 0n, sort: BV(16) }],
     };
     expect(emitSmtLib(f)).toBe("(= (concat x y) (_ bv0 16))");
@@ -702,7 +676,7 @@ describe("emitSmtLib — BV term operators", () => {
     const slice = ctor("extract", [hi, lo, x], BV8);
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [slice, { kind: "const", value: 0n, sort: BV8 }],
     };
     expect(emitSmtLib(f)).toBe("(= ((_ extract 7 0) x) (_ bv0 8))");
@@ -710,8 +684,9 @@ describe("emitSmtLib — BV term operators", () => {
 });
 
 describe("emitSmtLib — BV comparison predicates", () => {
-  function bvVar(name: string, width: number): IrTerm {
-    return { kind: "var", name, sort: BV(width) };
+  function bvVar(name: string, _width: number): IrTerm {
+    void _width;
+    return { kind: "var", name };
   }
 
   it("renders bvult / bvule / bvugt / bvuge as their SMT-LIB names", () => {
@@ -724,7 +699,7 @@ describe("emitSmtLib — BV comparison predicates", () => {
       ["bvuge", "(bvuge x y)"],
     ];
     for (const [pred, expected] of cases) {
-      const f: IrFormula = { kind: "atomic", predicate: pred, args: [x, y] };
+      const f: IrFormula = { kind: "atomic", name: pred, args: [x, y] };
       expect(emitSmtLib(f)).toBe(expected);
     }
   });
@@ -739,32 +714,26 @@ describe("emitSmtLib — BV comparison predicates", () => {
       ["bvsge", "(bvsge x y)"],
     ];
     for (const [pred, expected] of cases) {
-      const f: IrFormula = { kind: "atomic", predicate: pred, args: [x, y] };
+      const f: IrFormula = { kind: "atomic", name: pred, args: [x, y] };
       expect(emitSmtLib(f)).toBe(expected);
     }
   });
 });
 
 describe("emitSmtLibProblem — BV theory built-ins are not declared", () => {
-  function bvVar(name: string, width: number): IrTerm {
-    return { kind: "var", name, sort: BV(width) };
+  function bvVar(name: string, _width: number): IrTerm {
+    void _width;
+    return { kind: "var", name };
   }
 
   it("does not emit declare-fun for BV term operators or comparisons", () => {
     const x = bvVar("_x0", 32);
     const assertion: IrFormula = {
-      kind: "forall",
-      sort: BV32,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: BV32,
-        body: {
+      kind: "forall", name: "_x0", sort: BV32, body: {
           kind: "atomic",
-          predicate: "=",
+          name: "=",
           args: [ctor("bvxor", [x, x], BV32), { kind: "const", value: 0n, sort: BV32 }],
         },
-      },
     };
     const out = emitSmtLibProblem({ axioms: [], assertion });
     expect(out).not.toContain("(declare-fun bvxor");
@@ -776,20 +745,12 @@ describe("emitSmtLibProblem — BV theory built-ins are not declared", () => {
   it("does not emit declare-fun for BV comparison predicates", () => {
     const x = bvVar("_x0", 8);
     const y = bvVar("_x1", 8);
-    const inner: IrFormula = { kind: "atomic", predicate: "bvult", args: [x, y] };
+    const inner: IrFormula = { kind: "atomic", name: "bvult", args: [x, y] };
     const assertion: IrFormula = {
       kind: "forall",
+      name: "_x0",
       sort: BV8,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: BV8,
-        body: {
-          kind: "exists",
-          sort: BV8,
-          predicate: { kind: "lambda", varName: "_x1", sort: BV8, body: inner },
-        },
-      },
+      body: inner,
     };
     const out = emitSmtLibProblem({ axioms: [], assertion });
     expect(out).not.toContain("(declare-fun bvult");
@@ -797,19 +758,15 @@ describe("emitSmtLibProblem — BV theory built-ins are not declared", () => {
   });
 
   it("accepts QF_BV as the SMT-LIB logic for BV-only problems", () => {
-    const x: IrTerm = { kind: "var", name: "_x0", sort: BV32 };
+    const x: IrTerm = { kind: "var", name: "_x0" };
     const assertion: IrFormula = {
       kind: "forall",
+      name: "_x0",
       sort: BV32,
-      predicate: {
-        kind: "lambda",
-        varName: "_x0",
-        sort: BV32,
-        body: {
-          kind: "atomic",
-          predicate: "=",
-          args: [ctor("bvxor", [x, x], BV32), { kind: "const", value: 0n, sort: BV32 }],
-        },
+      body: {
+        kind: "atomic",
+        name: "=",
+        args: [ctor("bvxor", [x, x], BV32), { kind: "const", value: 0n, sort: BV32 }],
       },
     };
     const out = emitSmtLibProblem({ axioms: [], assertion, logic: "QF_BV" });
@@ -819,10 +776,10 @@ describe("emitSmtLibProblem — BV theory built-ins are not declared", () => {
 
 describe("collectDeclarations — BV theory dedup", () => {
   it("does not record bvadd / bvxor / extract as ctor declarations", () => {
-    const x: IrTerm = { kind: "var", name: "x", sort: BV32 };
+    const x: IrTerm = { kind: "var", name: "x"};
     const f: IrFormula = {
       kind: "atomic",
-      predicate: "=",
+      name: "=",
       args: [ctor("bvadd", [x, x], BV32), ctor("bvxor", [x, x], BV32)],
     };
     const decls = collectDeclarations([f]);
@@ -831,9 +788,9 @@ describe("collectDeclarations — BV theory dedup", () => {
   });
 
   it("does not record BV comparison predicates as predicate declarations", () => {
-    const x: IrTerm = { kind: "var", name: "x", sort: BV8 };
-    const y: IrTerm = { kind: "var", name: "y", sort: BV8 };
-    const f: IrFormula = { kind: "atomic", predicate: "bvult", args: [x, y] };
+    const x: IrTerm = { kind: "var", name: "x"};
+    const y: IrTerm = { kind: "var", name: "y"};
+    const f: IrFormula = { kind: "atomic", name: "bvult", args: [x, y] };
     const decls = collectDeclarations([f]);
     expect(decls.predicates.map((p) => p.name)).not.toContain("bvult");
   });

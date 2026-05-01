@@ -40,12 +40,12 @@ type CallSite struct {
 }
 
 // ResolvedProperty is what resolve-bridge-target returns: the IR
-// formula the precondition lives in plus its scope + kit version.
+// formula of the contract's `pre` slot. v1.1.0: the resolved memento
+// is a contract; scope + kitVersion are gone (the contract memento
+// body doesn't carry them).
 type ResolvedProperty struct {
-	CID          string
-	IRFormula    interface{}  // JSON-shape value; an IrFormula
-	Scope        interface{}
-	IRKitVersion string
+	CID       string
+	IRFormula interface{} // JSON-shape value; an IrFormula
 }
 
 // ObligationVerdict is the outcome of solve-obligation.

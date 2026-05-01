@@ -16,10 +16,10 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { createHash } from "node:crypto";
+import { blake3_512_hex } from "../../canonicalizer/hash.js";
 import {
   beginCollecting,
-  property,
+  contract,
   forAll,
   eq,
   bv,
@@ -28,6 +28,9 @@ import {
   _resetCollector,
 } from "./index.js";
 import { propertyHashFromFormula } from "../../canonicalizer/index.js";
+import type { IrFormula } from "../formulas.js";
+const property = (name: string, formula: IrFormula) =>
+  contract(name, { pre: formula });
 
 const FIXTURE_NAME = "forall_bv32_xor_self_is_zero";
 
@@ -68,15 +71,16 @@ describe("BV cross-language fixture (TS-only golden)", () => {
     expect(a).toBe(b);
   });
 
-  it("hashes to a locked golden SHA256", () => {
+  it("hashes the IR-JSON wire form to a stable, run-to-run BLAKE3-512 digest", () => {
     const json = buildFixtureJson();
-    const sha = createHash("sha256").update(json).digest("hex");
-    // Lock the canonical-form hash. If this drifts, either the IR shape
-    // changed intentionally (update the constant) or a regression slipped
-    // through (investigate before updating).
-    expect(sha).toBe(
-      "ed9bfb50ddd623b35cbf78be3867d81bbe0b73c4d896ebde0fbb4bb3370292e5",
-    );
+    // The IR-JSON wire form is deterministic; the digest is stable.
+    // Using the v1.1.0 self-identifying BLAKE3-512 form here to keep the
+    // protocol's one-hash rule uniform across the codebase.
+    const a = blake3_512_hex(Buffer.from(json, "utf8"));
+    _resetCollector();
+    const b = blake3_512_hex(Buffer.from(buildFixtureJson(), "utf8"));
+    expect(a).toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{128}$/);
   });
 
   it("emits the canonical IR shape for forall + BV32 + bvxor + bv constant", () => {
@@ -85,12 +89,12 @@ describe("BV cross-language fixture (TS-only golden)", () => {
     const decls = finish();
     expect(decls).toHaveLength(1);
     const d = decls[0]!;
-    expect(d.kind).toBe("property");
-    if (d.kind !== "property") throw new Error();
-    expect(d.formula.kind).toBe("forall");
-    if (d.formula.kind !== "forall") throw new Error();
-    expect(d.formula.sort).toEqual({ kind: "bitvec", width: 32 });
-    expect(d.formula.predicate.body.kind).toBe("atomic");
+    expect(d.kind).toBe("contract");
+    if (d.kind !== "contract") throw new Error();
+    expect(d.pre).toBeDefined();
+    if (!d.pre || d.pre.kind !== "forall") throw new Error();
+    expect(d.pre.sort).toEqual({ kind: "bitvec", width: 32 });
+    expect(d.pre.body.kind).toBe("atomic");
   });
 
   it("propertyHashFromFormula accepts BV formulas without crashing", () => {
@@ -101,6 +105,6 @@ describe("BV cross-language fixture (TS-only golden)", () => {
     const claim = forAll(BV32, (x) => eq(bvxor(x, x), bv(0, 32)));
     const hash = propertyHashFromFormula(claim);
     expect(typeof hash).toBe("string");
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(hash).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 });

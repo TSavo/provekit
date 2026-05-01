@@ -25,15 +25,26 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const SCHEMA_CID = VARIANT_SCHEMA_CIDS["legacy-witness"];
+const SCHEMA_CID = VARIANT_SCHEMA_CIDS["z3-unsat"];
+
+/**
+ * Build a placeholder self-identifying hash so test fixtures pass the
+ * v1.1.0 regex `^[a-z0-9]+-[0-9]+:[0-9a-f]+$` without needing a real
+ * BLAKE3 computation. Pad the supplied suffix on the left to 128 hex
+ * chars (full BLAKE3-512 digest length).
+ */
+function fakeCid(suffix: string): string {
+  return `blake3-512:${suffix.padStart(128, "0")}`;
+}
 
 function makeLegacyEvidence(): EvidenceVariant {
   return {
-    kind: "legacy-witness",
+    kind: "z3-unsat",
     schema: SCHEMA_CID,
     body: {
-      rawWitness: '{"z3":"sat"}',
-      legacyProducerId: "z3-symbolic@4.13",
+      smtLibInput: "(check-sat)",
+      z3Verdict: "unsat",
+      z3RunMs: 1,
     },
   };
 }
@@ -41,8 +52,8 @@ function makeLegacyEvidence(): EvidenceVariant {
 function makeEnvelope(overrides: Partial<ClaimEnvelope> = {}): Omit<ClaimEnvelope, "cid"> {
   return {
     schemaVersion: "1",
-    bindingHash: "a1b2c3d4e5f6a7b8",
-    propertyHash: "b2c3d4e5f6a7b8c9",
+    bindingHash: fakeCid("a1b2c3d4e5f6a7b8"),
+    propertyHash: fakeCid("b2c3d4e5f6a7b8c9"),
     verdict: "holds",
     producedBy: "z3-symbolic@4.13.4",
     producedAt: "2026-04-29T12:00:00Z",
@@ -122,9 +133,9 @@ describe("computeEnvelopeCid", () => {
     expect(cid1).toBe(cid2);
   });
 
-  it("returns 32 hex chars", () => {
+  it("returns a self-identifying BLAKE3-512 CID", () => {
     const cid = computeEnvelopeCid(makeEnvelope());
-    expect(cid).toMatch(/^[0-9a-f]{32}$/);
+    expect(cid).toMatch(/^blake3-512:[0-9a-f]{128}$/);
   });
 
   it("changes when any wrapper field changes", () => {
@@ -138,8 +149,8 @@ describe("computeEnvelopeCid", () => {
   });
 
   it("is order-independent for inputCids", () => {
-    const cidA = "a".repeat(32);
-    const cidB = "b".repeat(32);
+    const cidA = fakeCid("a".repeat(64));
+    const cidB = fakeCid("b".repeat(64));
     const e1 = computeEnvelopeCid(makeEnvelope({ inputCids: [cidA, cidB] }));
     const e2 = computeEnvelopeCid(makeEnvelope({ inputCids: [cidB, cidA] }));
     expect(e1).toBe(e2);
@@ -148,14 +159,14 @@ describe("computeEnvelopeCid", () => {
   it("does not include the cid field itself in the hash", () => {
     const env = makeEnvelope();
     const cid1 = computeEnvelopeCid({ ...env, cid: undefined });
-    const cid2 = computeEnvelopeCid({ ...env, cid: "deadbeefdeadbeefdeadbeefdeadbeef" });
+    const cid2 = computeEnvelopeCid({ ...env, cid: fakeCid("deadbeef") });
     expect(cid1).toBe(cid2);
   });
 
   it("does not include producerSignature in the hash", () => {
     const env = makeEnvelope();
     const cid1 = computeEnvelopeCid({ ...env, producerSignature: undefined });
-    const cid2 = computeEnvelopeCid({ ...env, producerSignature: "some-sig" });
+    const cid2 = computeEnvelopeCid({ ...env, producerSignature: "ed25519:dGVzdA==" });
     expect(cid1).toBe(cid2);
   });
 });
@@ -167,12 +178,12 @@ describe("computeEnvelopeCid", () => {
 describe("signEnvelope / verifyEnvelopeSignature", () => {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 
-  it("produces a non-empty base64 signature", () => {
+  it("produces a self-identifying ed25519 signature", () => {
     const sig = signEnvelope(makeEnvelope(), privateKey);
     expect(typeof sig).toBe("string");
     expect(sig.length).toBeGreaterThan(0);
-    // Base64: only alphanumeric + / + = allowed
-    expect(sig).toMatch(/^[A-Za-z0-9+/]+=*$/);
+    // Self-identifying signatures: "ed25519:" + base64.
+    expect(sig).toMatch(/^ed25519:[A-Za-z0-9+/]+=*$/);
   });
 
   it("verifies a valid signature", () => {
@@ -184,7 +195,8 @@ describe("signEnvelope / verifyEnvelopeSignature", () => {
 
   it("rejects a forged signature", () => {
     const env = makeEnvelope();
-    const forgedSig = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    const forgedSig =
+      "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     const withSig = { ...env, producerSignature: forgedSig };
     expect(verifyEnvelopeSignature(withSig, publicKey)).toBe(false);
   });
@@ -243,14 +255,14 @@ describe("validateEnvelope", () => {
     expect(result.errors.some((e) => e.includes("schemaVersion"))).toBe(true);
   });
 
-  it("rejects bindingHash that is not 16 hex chars", () => {
+  it("rejects bindingHash that is not a self-identifying hash", () => {
     const env = { ...makeFullEnvelope(), bindingHash: "tooshort" };
     const result = validateEnvelope(env);
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes("bindingHash"))).toBe(true);
   });
 
-  it("rejects propertyHash that is not 16 hex chars", () => {
+  it("rejects propertyHash that is not a self-identifying hash", () => {
     const env = { ...makeFullEnvelope(), propertyHash: "ZZZ" };
     const result = validateEnvelope(env);
     expect(result.valid).toBe(false);
@@ -283,13 +295,13 @@ describe("validateEnvelope", () => {
 
   it("rejects mismatched CID", () => {
     const env = makeFullEnvelope();
-    const tampered = { ...env, cid: "deadbeefdeadbeefdeadbeefdeadbeef" };
+    const tampered = { ...env, cid: fakeCid("deadbeef") };
     const result = validateEnvelope(tampered);
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes("CID integrity"))).toBe(true);
   });
 
-  it("rejects inputCids with non-hex32 entries", () => {
+  it("rejects inputCids with non-self-identifying entries", () => {
     const raw = makeEnvelope({ inputCids: ["tooshort"] });
     const cid = computeEnvelopeCid(raw);
     const result = validateEnvelope({ ...raw, cid });
@@ -297,8 +309,10 @@ describe("validateEnvelope", () => {
     expect(result.errors.some((e) => e.includes("inputCids"))).toBe(true);
   });
 
-  it("accepts inputCids with valid hex32 entries", () => {
-    const raw = makeEnvelope({ inputCids: ["a".repeat(32), "b".repeat(32)] });
+  it("accepts inputCids with valid self-identifying entries", () => {
+    const raw = makeEnvelope({
+      inputCids: [fakeCid("a".repeat(64)), fakeCid("b".repeat(64))],
+    });
     const cid = computeEnvelopeCid(raw);
     const result = validateEnvelope({ ...raw, cid });
     expect(result.errors.filter((e) => e.includes("inputCids"))).toHaveLength(0);
@@ -421,7 +435,7 @@ describe("Evidence variant round-trips", () => {
         body: {
           linter: "biome",
           linterVersion: "1.2.3",
-          rulesetHash: "c".repeat(32),
+          rulesetHash: fakeCid("c".repeat(64)),
           warnings: 0,
         },
       },
@@ -464,7 +478,7 @@ describe("Evidence variant round-trips", () => {
         body: {
           llm: "claude-opus",
           llmVersion: "4-7",
-          promptCid: "d".repeat(32),
+          promptCid: fakeCid("d".repeat(64)),
           proposedIrFormula: "(forall x (> x 0))",
           confidence: 0.92,
           rationale: "looks correct",
@@ -478,8 +492,8 @@ describe("Evidence variant round-trips", () => {
         kind: "mutation-witness",
         schema: VARIANT_SCHEMA_CIDS["mutation-witness"],
         body: {
-          testCid: "e".repeat(32),
-          mutationCid: "f".repeat(32),
+          testCid: fakeCid("e".repeat(64)),
+          mutationCid: fakeCid("f".repeat(64)),
           failsOnOriginal: false,
           passesOnFixed: true,
         },
@@ -493,21 +507,9 @@ describe("Evidence variant round-trips", () => {
         schema: VARIANT_SCHEMA_CIDS["workflow-run"],
         body: {
           workflowName: "bug-fix",
-          workflowCid: "0".repeat(32),
+          workflowCid: fakeCid("0".repeat(64)),
           inputCanonicalForm: { issue: 42 },
           output: { status: "done" },
-        },
-      },
-      verdict: "holds",
-    },
-    {
-      label: "legacy-witness",
-      evidence: {
-        kind: "legacy-witness",
-        schema: VARIANT_SCHEMA_CIDS["legacy-witness"],
-        body: {
-          rawWitness: '{"raw":"data"}',
-          legacyProducerId: "old-producer@1.0",
         },
       },
       verdict: "holds",
@@ -554,18 +556,20 @@ describe("Edge cases", () => {
   });
 
   it("envelopeForHashing sorts inputCids lexicographically", () => {
-    const env = makeEnvelope({ inputCids: ["zzz" + "0".repeat(29), "aaa" + "0".repeat(29)] });
+    const cidA = fakeCid("aaa" + "0".repeat(61));
+    const cidZ = fakeCid("zzz" + "0".repeat(61));
+    const env = makeEnvelope({ inputCids: [cidZ, cidA] });
     const forHash = envelopeForHashing(env);
     const cids = forHash.inputCids as string[];
-    expect(cids[0]).toBe("aaa" + "0".repeat(29));
-    expect(cids[1]).toBe("zzz" + "0".repeat(29));
+    expect(cids[0]).toBe(cidA);
+    expect(cids[1]).toBe(cidZ);
   });
 
   it("changing evidence body changes the CID", () => {
     const ev1 = makeLegacyEvidence();
     const ev2 = {
       ...ev1,
-      body: { rawWitness: "different", legacyProducerId: "old@1.0" },
+      body: { smtLibInput: "(check-sat)\n", z3Verdict: "unsat" as const, z3RunMs: 2 },
     } as EvidenceVariant;
     const c1 = computeEnvelopeCid(makeEnvelope({ evidence: ev1 }));
     const c2 = computeEnvelopeCid(makeEnvelope({ evidence: ev2 }));

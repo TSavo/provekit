@@ -12,7 +12,7 @@
  */
 
 import type { Stage } from "../types.js";
-import type { ClaimEnvelope, PropertyEvidence, BridgeEvidence } from "../../claimEnvelope/types.js";
+import type { ClaimEnvelope, ContractEvidence, BridgeEvidence } from "../../claimEnvelope/types.js";
 import type { IrFormula, IrTerm } from "../../ir/formulas.js";
 
 export const ENUMERATE_BRIDGE_CALLSITES_CAPABILITY = "enumerate-bridge-callsites";
@@ -74,12 +74,16 @@ export function makeEnumerateBridgeCallsitesStage(
     async run(input) {
       const out: BridgeCallSite[] = [];
       for (const [cid, envelope] of Object.entries(input.mementoPool)) {
-        if (envelope.evidence?.kind !== "property") continue;
-        const ev = envelope.evidence as PropertyEvidence;
-        const formula = ev.body.irFormula as IrFormula;
-        const scope = ev.body.scope as { kind: string; name?: string };
-        const propertyName = scope.name ?? cid.slice(0, 12);
-        walkFormulaForBridgeCalls(formula, propertyName, cid, input.bridgesBySymbol, out);
+        if (envelope.evidence?.kind !== "contract") continue;
+        const ev = envelope.evidence as ContractEvidence;
+        const propertyName = ev.body.contractName ?? cid.slice(0, 12);
+        // Walk every present formula slot — pre / post / inv — for bridge call sites.
+        for (const slot of ["pre", "post", "inv"] as const) {
+          const f = ev.body[slot] as IrFormula | undefined;
+          if (f) {
+            walkFormulaForBridgeCalls(f, propertyName, cid, input.bridgesBySymbol, out);
+          }
+        }
       }
       return { callsites: out };
     },
@@ -98,21 +102,14 @@ function walkFormulaForBridgeCalls(
       for (const arg of formula.args) walkTermForBridgeCalls(arg, propertyName, propertyCid, bridgesBySymbol, out);
       return;
     case "and":
-      for (const c of formula.conjuncts) walkFormulaForBridgeCalls(c, propertyName, propertyCid, bridgesBySymbol, out);
-      return;
     case "or":
-      for (const d of formula.disjuncts) walkFormulaForBridgeCalls(d, propertyName, propertyCid, bridgesBySymbol, out);
-      return;
     case "not":
-      walkFormulaForBridgeCalls(formula.body, propertyName, propertyCid, bridgesBySymbol, out);
-      return;
     case "implies":
-      walkFormulaForBridgeCalls(formula.antecedent, propertyName, propertyCid, bridgesBySymbol, out);
-      walkFormulaForBridgeCalls(formula.consequent, propertyName, propertyCid, bridgesBySymbol, out);
+      for (const o of formula.operands) walkFormulaForBridgeCalls(o, propertyName, propertyCid, bridgesBySymbol, out);
       return;
     case "forall":
     case "exists":
-      walkFormulaForBridgeCalls(formula.predicate.body, propertyName, propertyCid, bridgesBySymbol, out);
+      walkFormulaForBridgeCalls(formula.body, propertyName, propertyCid, bridgesBySymbol, out);
       return;
   }
 }

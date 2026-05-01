@@ -42,7 +42,7 @@ catalog-memento-with-embedded-members = {
   ; as canonical bytes (JCS for memento envelopes per the memento
   ; envelope grammar) and embedded as a CBOR byte string. The map key
   ; MUST equal the envelope's own CID per the memento envelope grammar's
-  ; CID rule (sha256(canonical(envelope_without_cid_and_signature))[:N]).
+  ; CID rule ("blake3-512:" + hex(blake3_512(canonical(envelope_without_cid_and_signature)))).
   ; Verifiers re-derive the CID from the embedded envelope's body fields
   ; (with cid + signature elided) and reject on mismatch. They also
   ; verify each member's signature against its declared signer.
@@ -115,7 +115,7 @@ A `.proof` file passes integrity verification iff:
 2. **Embedded member CIDs match envelope identities.** For each entry
    `members[cid] = bytes`, the bytes decode as a memento envelope, and
    `computeEnvelopeCid(decoded)` (per the memento envelope grammar's
-   CID rule: `sha256(canonical(envelope_without_cid_and_signature))[:N]`)
+   CID rule: `"blake3-512:" + hex(blake3_512(canonical(envelope_without_cid_and_signature)))`)
    MUST equal `cid` (the map key). Verifiers MUST recompute and reject
    mismatches.
 
@@ -151,7 +151,7 @@ A package ships its `.proof` file alongside its source. For npm:
     "*.proof"           // include .proof files in the published tarball
   ],
   "provekit": {
-    "proofHash": "sha256:e04b..."
+    "proofHash": "blake3-512:e04b..."
   }
 }
 ```
@@ -207,9 +207,11 @@ not best-effort interpretation.
 A producer conforms to this format iff it:
 
 1. Outputs a single file with extension `.proof`.
-2. Names the file `<cid>.proof` where `cid` is the hash of the file's
-   bytes (per the canonicalization grammar — currently SHA-256 with
-   16-hex-char prefix).
+2. Names the file `<cid>.proof` where `cid` is the self-identifying
+   hash of the file's bytes per the canonicalization grammar:
+   `<algorithm-tag>:<lowercase-hex-digest>`. v1.1.0 uses
+   `blake3-512:<128 hex chars>` — full 64-byte BLAKE3 digest, no
+   truncation. Filenames are ~150 chars; that is intentional.
 3. Encodes the envelope as deterministic CBOR (RFC 8949 §4.2.1).
 4. Embeds every member memento body referenced by the catalog as an
    opaque byte string (no dangling CIDs).

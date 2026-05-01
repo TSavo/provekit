@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Provekit.ProofEnvelope</RootNamespace>
+    <AssemblyName>Provekit.ProofEnvelope</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NSec.Cryptography" Version="24.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Provekit.Canonicalizer\Provekit.Canonicalizer.csproj" />
+  </ItemGroup>
+
+  <!-- Sidecar invariant files compile into Provekit.SelfContracts, not the lib. -->
+  <ItemGroup>
+    <Compile Remove="**/*.invariant.cs" />
+  </ItemGroup>
+
+</Project>

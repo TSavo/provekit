@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// IR compiler protocol core. Defines the trait every compiler
+// implements, the registry that dispatches by dialect name, the
+// JSON-RPC subprocess client used for plugins, and the manifest
+// loader that walks ~/.config/provekit/ir-compilers/.
+//
+// Spec: protocol/specs/2026-04-30-ir-compiler-protocol.md.
+
+pub mod error;
+pub mod registry;
+pub mod subprocess;
+pub mod manifest;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
+
+pub use error::CompileError;
+
+/// Result of compiling one canonical IR-JSON formula to a target
+/// dialect. Wire-equivalent to the JSON returned by
+/// `provekit.ir.compile`.
+///
+/// Contract: `preamble + body` is the complete script the verifier
+/// hands to the solver.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompiledFormula {
+    /// Logic declaration plus all `declare-const` (or dialect-equivalent)
+    /// lines for free variables.
+    pub preamble: String,
+    /// The obligation assertion plus the dialect's driver terminator
+    /// (e.g. `(check-sat)\n` for SMT-LIB).
+    pub body: String,
+    /// Free variables the compiler had to declare in `preamble`. Sort
+    /// strings are dialect-native.
+    pub free_vars: Vec<FreeVar>,
+}
+
+/// One declared free variable in the compiled output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FreeVar {
+    pub name: String,
+    pub sort: String,
+}
+
+/// Capability descriptor returned by `provekit.ir.handshake`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Capabilities {
+    pub name: String,
+    pub version: String,
+    pub protocol_version: String,
+    pub dialects: Vec<String>,
+    pub supported_sorts: Vec<String>,
+    pub supported_predicates: Vec<String>,
+}
+
+/// Canonical protocol identifier, used in handshake and manifests.
+pub const PROTOCOL_VERSION: &str = "provekit-ir-compiler/1";
+
+/// The trait every IR compiler implements, whether it lives in-process
+/// or speaks JSON-RPC over a subprocess pipe.
+pub trait IrCompiler: Send + Sync {
+    /// Translate one IR-JSON formula to the target dialect's surface syntax.
+    fn compile(&self, ir: &Json, dialect: &str) -> Result<CompiledFormula, CompileError>;
+
+    /// Capability descriptor: dialects served, sorts and predicates
+    /// supported. Cached by the registry on insert.
+    fn capabilities(&self) -> Capabilities;
+}

@@ -75,18 +75,21 @@ export type CanonicalQuantifier = {
 
 /**
  * Connective node. After the full pipeline:
- * - `not` wraps only Atomic nodes.
+ * - `not` wraps only Atomic nodes (operands.length === 1).
  * - `and`/`or` have `operands` sorted, flattened, deduped.
  * - `implies` does not appear.
+ *
+ * Field naming aligns with the v1.1 IR-JSON grammar so canonical-AST
+ * shape and external-IR shape share field names.
  */
 export type CanonicalConnective =
   | { kind: "and"; operands: CanonicalFolAst[] }
   | { kind: "or"; operands: CanonicalFolAst[] }
-  | { kind: "not"; body: CanonicalFolAst };
+  | { kind: "not"; operands: [CanonicalFolAst] };
 
 export type CanonicalAtomic = {
   kind: "atomic";
-  predicate: CanonicalPredicate;
+  name: CanonicalPredicate;
   args: CanonicalTerm[];
 };
 

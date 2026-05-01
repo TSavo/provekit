@@ -31,7 +31,7 @@
  * nodes remain.
  */
 
-import type { CanonicalFolAst, CanonicalAtomic } from "../ast.js";
+import type { CanonicalFolAst } from "../ast.js";
 
 const NEGATE_PREDICATE: Record<string, string> = {
   "≠": "=",
@@ -60,7 +60,7 @@ export function toNnf(ast: CanonicalFolAst): CanonicalFolAst {
       return { kind: "or", operands: ast.operands.map(toNnf) };
 
     case "not":
-      return pushNot(ast.body);
+      return pushNot(ast.operands[0]);
 
     case "atomic":
       return ast;
@@ -74,7 +74,7 @@ function pushNot(inner: CanonicalFolAst): CanonicalFolAst {
   switch (inner.kind) {
     case "not":
       // not(not(p)) → p  (then recursively normalize p)
-      return toNnf(inner.body);
+      return toNnf(inner.operands[0]);
 
     case "and":
       // not(and(p, q, ...)) → or(not(p), not(q), ...)
@@ -100,13 +100,13 @@ function pushNot(inner: CanonicalFolAst): CanonicalFolAst {
 
     case "atomic": {
       // Predicate-specific negation.
-      const negPred = NEGATE_PREDICATE[inner.predicate];
+      const negPred = NEGATE_PREDICATE[inner.name];
       if (negPred !== undefined) {
         // Replace predicate; args unchanged.
-        return { kind: "atomic", predicate: negPred, args: inner.args };
+        return { kind: "atomic", name: negPred, args: inner.args };
       }
       // For kit-defined / unknown predicates: leave as not(atomic).
-      return { kind: "not", body: inner };
+      return { kind: "not", operands: [inner] };
     }
   }
 }

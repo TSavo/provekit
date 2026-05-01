@@ -1,27 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { generateKeypair } from "../producerKeys/index.js";
-import { mintLegacyWitness } from "../claimEnvelope/index.js";
+import { mintContract } from "../claimEnvelope/index.js";
 import {
   buildProofEnvelope,
   decodeProofEnvelope,
   verifyProofEnvelope,
 } from "./index.js";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
-function hash16(s: string): string {
-  return createHash("sha256").update(s).digest("hex").slice(0, 16);
-}
+/**
+ * Placeholder self-identifying signer CID for tests. v1.1.0 hashes are
+ * full BLAKE3-512 digests prefixed with "blake3-512:"; this is a
+ * shape-conformant test stub (`s` repeated to 128 hex chars worth of
+ * `1`s — the value never gets re-derived in these unit tests).
+ */
+const SIGNER_CID = "blake3-512:" + "1".repeat(128);
 
 function makeMember(name: string) {
   const { privateKey } = generateKeypair({ seed: randomBytes(32) });
-  return mintLegacyWitness({
-    bindingHash: hash16(`b:${name}`),
-    propertyHash: hash16(`p:${name}`),
-    verdict: "holds",
-    producedBy: "test",
-    inputCids: [],
+  return mintContract({
+    producedBy: "test@1",
     privateKey,
-    rawWitness: JSON.stringify({ name }),
+    contractName: name,
+    pre: { kind: "atomic", name: "true", args: [] },
+    authoring: { producerKind: "kit-author", author: "test@1" },
   });
 }
 
@@ -36,7 +38,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
       declaredAt,
     });
@@ -44,7 +46,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
       declaredAt,
     });
@@ -62,7 +64,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
     const decoded = decodeProofEnvelope(built.bytes);
@@ -83,7 +85,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
     const result = verifyProofEnvelope(built.bytes, built.cid, publicKey);
@@ -100,10 +102,14 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
-    const result = verifyProofEnvelope(built.bytes, "deadbeef".repeat(4), publicKey);
+    const result = verifyProofEnvelope(
+      built.bytes,
+      "blake3-512:" + "deadbeef".repeat(16),
+      publicKey,
+    );
     expect(result.ok).toBe(false);
     expect(result.errors[0]).toMatch(/rule 1/);
   });
@@ -119,7 +125,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
     const result = verifyProofEnvelope(built.bytes, built.cid, publicKey);
@@ -137,7 +143,7 @@ describe("proofEnvelope", () => {
       name: "test",
       version: "1",
       members,
-      signerCid: "sha256:signer",
+      signerCid: SIGNER_CID,
       signerPrivateKey: privateKey,
     });
     const result = verifyProofEnvelope(built.bytes, built.cid, wrongKey);

@@ -3,15 +3,15 @@
  *
  * Each takes a Sort and a callback that receives an IrTerm (the bound
  * variable) and returns an IrFormula. The callback is called immediately
- * at construction time; the resulting IrFormulaLambda stores the
- * already-evaluated body as pure data (no JS closures in the IR tree).
+ * at construction time; the resulting body is stored as pure data
+ * (no JS closures in the IR tree).
  *
  * Variable names generated here are NOT semantically meaningful — the
  * AST canonicalizer replaces them with de Bruijn indices. We generate
  * stable monotonically-incrementing names to make debug output readable.
  */
 
-import type { IrFormula, IrTerm, Sort } from "./formulas.js";
+import type { IrFormula, IrTerm, Sort, VarTerm } from "./formulas.js";
 
 // ---------------------------------------------------------------------------
 // Fresh variable name generator
@@ -24,10 +24,23 @@ export function _resetCounter(): void {
   _counter = 0;
 }
 
-type VarTerm = Extract<IrTerm, { kind: "var" }>;
+function freshVarName(): string {
+  return `_x${_counter++}`;
+}
 
-function freshVar(sort: Sort): VarTerm {
-  return { kind: "var", name: `_x${_counter++}`, sort };
+const SORT_HINT = Symbol.for("provekit.ir.sortHint");
+
+function makeVar(name: string, sort?: Sort): VarTerm {
+  const v: VarTerm = { kind: "var", name };
+  if (sort !== undefined) {
+    Object.defineProperty(v, SORT_HINT, {
+      value: sort,
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return v;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,16 +52,13 @@ function freshVar(sort: Sort): VarTerm {
  * `forAll(sort, body)` asserts that `body(x)` holds for all `x` of `sort`.
  */
 export function forAll(sort: Sort, body: (x: IrTerm) => IrFormula): IrFormula {
-  const v = freshVar(sort);
+  const name = freshVarName();
+  const v = makeVar(name, sort);
   return {
     kind: "forall",
+    name,
     sort,
-    predicate: {
-      kind: "lambda",
-      varName: v.name,
-      sort,
-      body: body(v),
-    },
+    body: body(v),
   };
 }
 
@@ -57,16 +67,13 @@ export function forAll(sort: Sort, body: (x: IrTerm) => IrFormula): IrFormula {
  * `exists(sort, body)` asserts that `body(x)` holds for some `x` of `sort`.
  */
 export function exists(sort: Sort, body: (x: IrTerm) => IrFormula): IrFormula {
-  const v = freshVar(sort);
+  const name = freshVarName();
+  const v = makeVar(name, sort);
   return {
     kind: "exists",
+    name,
     sort,
-    predicate: {
-      kind: "lambda",
-      varName: v.name,
-      sort,
-      body: body(v),
-    },
+    body: body(v),
   };
 }
 
@@ -83,23 +90,20 @@ export function forSome(
   elementSort: Sort,
   body: (x: IrTerm) => IrFormula,
 ): IrFormula {
-  const v = freshVar(elementSort);
+  const name = freshVarName();
+  const v = makeVar(name, elementSort);
   const memberAtom: IrFormula = {
     kind: "atomic",
-    predicate: "member",
+    name: "member",
     args: [v, domain],
   };
   return {
     kind: "exists",
+    name,
     sort: elementSort,
-    predicate: {
-      kind: "lambda",
-      varName: v.name,
-      sort: elementSort,
-      body: {
-        kind: "and",
-        conjuncts: [memberAtom, body(v)],
-      },
+    body: {
+      kind: "and",
+      operands: [memberAtom, body(v)],
     },
   };
 }

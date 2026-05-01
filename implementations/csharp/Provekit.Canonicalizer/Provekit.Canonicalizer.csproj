@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Provekit.Canonicalizer</RootNamespace>
+    <AssemblyName>Provekit.Canonicalizer</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Blake3" Version="1.1.0" />
+  </ItemGroup>
+
+  <!-- Sidecar invariant files compile into Provekit.SelfContracts, not the lib. -->
+  <ItemGroup>
+    <Compile Remove="**/*.invariant.cs" />
+  </ItemGroup>
+
+</Project>

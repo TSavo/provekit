@@ -1,94 +1,368 @@
-//! # provekit-ir-symbolic
-//!
-//! Rust kit's IR-emission surface — the runtime-eval lifting model from
-//! `src/ir/symbolic/` (TS reference) ported to Rust idiom.
-//!
-//! Users authoring `.invariant.rs` files import primitives from this
-//! crate, write invariant code using them, and *running* the code
-//! produces the IR. No syn/quote AST walking. Just function calls and
-//! macro forms.
-//!
-//! Cross-language equivalence: the IR data structures' serde-JSON shape
-//! is byte-equivalent to the TS kit's IrFormula JSON for the same
-//! logical claim. That equivalence is the substrate for propertyHash
-//! agreement across host languages.
-//!
-//! ## Example
-//!
-//! ```ignore
-//! use provekit_ir_symbolic::{
-//!     property::{begin_collecting, BridgeSpec},
-//!     prelude::*,
-//! };
-//! use provekit_ir_symbolic::{must, describe, exists, forall};
-//!
-//! let handle = begin_collecting();
-//!
-//! describe!("parseInt", {
-//!     must!("can return zero",
-//!         exists!(s: sorts::string() => eq(parse_int(s), num(0_i64))));
-//!
-//!     must!("preserves int",
-//!         forall!(n: sorts::int() =>
-//!             implies(gte(n.clone(), num(0_i64)),
-//!                     eq(parse_int(str_("0")), num(0_i64)))));
-//! });
-//!
-//! let decls = handle.finish();
-//! assert_eq!(decls.len(), 2);
-//! ```
+// SPDX-License-Identifier: Apache-2.0
+//
+// provekit-ir-symbolic — Rust kit. Mirrors the C++ kit at
+// implementations/cpp/provekit-ir-symbolic/include/provekit/ir.hpp.
+//
+// Maximal-uniformity IR per protocol/specs/2026-04-30-ir-formal-grammar.md
+// (catalog v1.1.0). Every node has `kind`, then `name` (when applicable),
+// then payload. Five formula kinds (atomic / and / or / not / implies /
+// forall / exists, the four connectives sharing one struct), three term
+// kinds (var / const / ctor).
+//
+// Authoring surface:
+//
+//   contract(name, ContractArgs { pre, post, inv, out_binding? })
+//   must(name, precondition)            -- alias for contract(.., {pre})
+//   forall(sort, |v| body) / exists(sort, |v| body)
+//   and_(vec![..]), or_(vec![..]), not_(a), implies(a, b)
+//   eq, ne, gt, gte, lt, lte            -- atomic predicates
+//   num, str_const, parse_int           -- term primitives
+//   out()                               -- references the post return value
+//
+// We use `Rc` (not `Box`) for formula and term nodes; sub-trees are
+// shared between primitives (e.g. `out()` reused in two atomics) and
+// the kit's authoring style returns owned smart pointers.
 
-pub mod canonicalize;
-pub mod connectives;
-pub mod extensions;
-pub mod primitives;
-pub mod property;
-pub mod quantifiers;
-pub mod types;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+pub mod parse;
+pub mod serialize;
 
 // ---------------------------------------------------------------------------
-// Re-exports — public surface mirroring `src/ir/symbolic/index.ts`
+// Sort
 // ---------------------------------------------------------------------------
 
-// Types
-pub use types::{lift_to_term, sorts, BindingScope, IrFormula, IrFormulaLambda, IrTerm, LambdaKind, Liftable, Sort};
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sort {
+    pub name: String, // "Int" / "Real" / "String" / "Bool"
+}
 
-// Constants
-pub use primitives::{bool_, num, real, str_};
+impl Sort {
+    pub fn int() -> Self {
+        Self { name: "Int".into() }
+    }
+    pub fn real() -> Self {
+        Self { name: "Real".into() }
+    }
+    pub fn string() -> Self {
+        Self { name: "String".into() }
+    }
+    pub fn bool() -> Self {
+        Self { name: "Bool".into() }
+    }
+}
 
-// Built-in function primitives
-pub use primitives::{
-    abs, array_includes, array_length, ceil, floor, is_finite, is_integer, is_nan, max, min,
-    parse_float, parse_int, sign, sqrt, string_includes, string_length,
-};
+#[allow(non_snake_case)]
+pub fn Int() -> Sort {
+    Sort::int()
+}
+#[allow(non_snake_case)]
+pub fn Real() -> Sort {
+    Sort::real()
+}
+#[allow(non_snake_case)]
+pub fn String_() -> Sort {
+    Sort::string()
+}
+#[allow(non_snake_case)]
+pub fn Bool() -> Sort {
+    Sort::bool()
+}
 
-// Term arithmetic
-pub use primitives::{add, div, mul, neg, sub};
+// ---------------------------------------------------------------------------
+// Term — VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort)
+// ---------------------------------------------------------------------------
 
-// Atomic predicates
-pub use primitives::{eq, gt, gte, is_false, is_true, lt, lte, neq};
+#[derive(Debug, Clone)]
+pub enum ConstValue {
+    Int(i64),
+    String(String),
+    Bool(bool),
+}
 
-// Connectives
-pub use connectives::{and, iff, implies, not, or};
+#[derive(Debug, Clone)]
+pub enum Term {
+    Var { name: String },
+    Const { value: ConstValue, sort: Sort },
+    Ctor { name: String, args: Vec<Rc<Term>> },
+}
 
-// Quantifier function forms (macros are exported via #[macro_export] from
-// quantifiers.rs and property.rs; they live at the crate root namespace).
-pub use quantifiers::{exists_with, for_some, forall_with};
+pub fn make_var<S: Into<String>>(name: S) -> Rc<Term> {
+    Rc::new(Term::Var { name: name.into() })
+}
 
-// Collector + obligations
-pub use property::{
-    begin_collecting, bridge, describe, describe_skip, must, must_skip, property as property_fn,
-    BridgeSpec, Declaration, FinishHandle,
-};
+pub fn num(value: i64) -> Rc<Term> {
+    Rc::new(Term::Const {
+        value: ConstValue::Int(value),
+        sort: Sort::int(),
+    })
+}
 
-/// Convenience prelude — common imports for invariant files.
-pub mod prelude {
-    pub use crate::connectives::{and, iff, implies, not, or};
-    pub use crate::primitives::{
-        abs, add, array_includes, array_length, bool_, ceil, div, eq, floor, gt, gte, is_false,
-        is_finite, is_integer, is_nan, is_true, lt, lte, max, min, mul, neg, neq, num, parse_float,
-        parse_int, real, sign, sqrt, str_, string_includes, string_length, sub,
-    };
-    pub use crate::quantifiers::{exists_with, for_some, forall_with};
-    pub use crate::types::{sorts, IrFormula, IrTerm, Sort};
+pub fn str_const<S: Into<String>>(value: S) -> Rc<Term> {
+    Rc::new(Term::Const {
+        value: ConstValue::String(value.into()),
+        sort: Sort::string(),
+    })
+}
+
+/// `out()` references the return value within a post formula. Compiles
+/// to a VarTerm whose name matches the enclosing contract's outBinding
+/// (default "out").
+pub fn out() -> Rc<Term> {
+    make_var("out")
+}
+
+/// `parse_int(s)` — bridge primitive. Registers with the bridge
+/// registry on first call (process-local). Returns a CtorTerm.
+pub fn parse_int(s: Rc<Term>) -> Rc<Term> {
+    ensure_kit_bridges_registered();
+    Rc::new(Term::Ctor {
+        name: "parseInt".into(),
+        args: vec![s],
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Formula — three kinds: atomic / connective / quantifier
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub enum Formula {
+    Atomic {
+        name: String,
+        args: Vec<Rc<Term>>,
+    },
+    Connective {
+        kind: String, // "and" / "or" / "not" / "implies"
+        operands: Vec<Rc<Formula>>,
+    },
+    Quantifier {
+        kind: String, // "forall" / "exists"
+        name: String,
+        sort: Sort,
+        body: Rc<Formula>,
+    },
+}
+
+pub fn atomic_<S: Into<String>>(name: S, args: Vec<Rc<Term>>) -> Rc<Formula> {
+    Rc::new(Formula::Atomic {
+        name: name.into(),
+        args,
+    })
+}
+
+pub fn gt(a: Rc<Term>, b: Rc<Term>) -> Rc<Formula> {
+    atomic_(">", vec![a, b])
+}
+pub fn gte(a: Rc<Term>, b: Rc<Term>) -> Rc<Formula> {
+    atomic_("\u{2265}", vec![a, b])
+}
+pub fn lt(a: Rc<Term>, b: Rc<Term>) -> Rc<Formula> {
+    atomic_("<", vec![a, b])
+}
+pub fn lte(a: Rc<Term>, b: Rc<Term>) -> Rc<Formula> {
+    atomic_("\u{2264}", vec![a, b])
+}
+pub fn eq(a: Rc<Term>, b: Rc<Term>) -> Rc<Formula> {
+    atomic_("=", vec![a, b])
+}
+pub fn ne(a: Rc<Term>, b: Rc<Term>) -> Rc<Formula> {
+    atomic_("\u{2260}", vec![a, b])
+}
+
+pub fn connective_<S: Into<String>>(kind: S, operands: Vec<Rc<Formula>>) -> Rc<Formula> {
+    Rc::new(Formula::Connective {
+        kind: kind.into(),
+        operands,
+    })
+}
+pub fn not_(a: Rc<Formula>) -> Rc<Formula> {
+    connective_("not", vec![a])
+}
+pub fn implies(antecedent: Rc<Formula>, consequent: Rc<Formula>) -> Rc<Formula> {
+    connective_("implies", vec![antecedent, consequent])
+}
+pub fn and_(operands: Vec<Rc<Formula>>) -> Rc<Formula> {
+    connective_("and", operands)
+}
+pub fn or_(operands: Vec<Rc<Formula>>) -> Rc<Formula> {
+    connective_("or", operands)
+}
+
+// ---------------------------------------------------------------------------
+// Quantifier counter — fresh names for bound variables
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static QUANTIFIER_COUNTER: RefCell<i32> = const { RefCell::new(0) };
+}
+
+pub fn fresh_var_name() -> String {
+    QUANTIFIER_COUNTER.with(|c| {
+        let mut n = c.borrow_mut();
+        let v = *n;
+        *n = v + 1;
+        format!("_x{v}")
+    })
+}
+
+pub fn reset_collector() {
+    QUANTIFIER_COUNTER.with(|c| *c.borrow_mut() = 0);
+    CONTRACT_COLLECTOR.with(|c| c.borrow_mut().clear());
+    BRIDGE_COLLECTOR.with(|c| c.borrow_mut().clear());
+}
+
+pub fn forall<F>(sort: Sort, body: F) -> Rc<Formula>
+where
+    F: FnOnce(Rc<Term>) -> Rc<Formula>,
+{
+    let vname = fresh_var_name();
+    let var = make_var(&vname);
+    let inner = body(var);
+    Rc::new(Formula::Quantifier {
+        kind: "forall".into(),
+        name: vname,
+        sort,
+        body: inner,
+    })
+}
+
+pub fn exists<F>(sort: Sort, body: F) -> Rc<Formula>
+where
+    F: FnOnce(Rc<Term>) -> Rc<Formula>,
+{
+    let vname = fresh_var_name();
+    let var = make_var(&vname);
+    let inner = body(var);
+    Rc::new(Formula::Quantifier {
+        kind: "exists".into(),
+        name: vname,
+        sort,
+        body: inner,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Contract collector
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default)]
+pub struct ContractArgs {
+    pub pre: Option<Rc<Formula>>,
+    pub post: Option<Rc<Formula>>,
+    pub inv: Option<Rc<Formula>>,
+    pub out_binding: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContractDecl {
+    pub name: String,
+    pub pre: Option<Rc<Formula>>,
+    pub post: Option<Rc<Formula>>,
+    pub inv: Option<Rc<Formula>>,
+    pub out_binding: String,
+}
+
+thread_local! {
+    static CONTRACT_COLLECTOR: RefCell<Vec<ContractDecl>> = const { RefCell::new(Vec::new()) };
+}
+
+pub fn begin_collecting() {
+    CONTRACT_COLLECTOR.with(|c| c.borrow_mut().clear());
+}
+
+pub fn contract<S: Into<String>>(name: S, args: ContractArgs) {
+    if args.pre.is_none() && args.post.is_none() && args.inv.is_none() {
+        // Validate at mint time and fail loud, per Sir's instruction.
+        panic!(
+            "contract: at least one of pre/post/inv must be non-null (name was {})",
+            name.into()
+        );
+    }
+    CONTRACT_COLLECTOR.with(|c| {
+        c.borrow_mut().push(ContractDecl {
+            name: name.into(),
+            pre: args.pre,
+            post: args.post,
+            inv: args.inv,
+            out_binding: args.out_binding.unwrap_or_else(|| "out".into()),
+        });
+    });
+}
+
+/// Precondition-only convenience alias.
+pub fn must<S: Into<String>>(name: S, precondition: Rc<Formula>) {
+    contract(
+        name,
+        ContractArgs {
+            pre: Some(precondition),
+            ..Default::default()
+        },
+    )
+}
+
+pub fn finish() -> Vec<ContractDecl> {
+    CONTRACT_COLLECTOR.with(|c| std::mem::take(&mut *c.borrow_mut()))
+}
+
+// ---------------------------------------------------------------------------
+// Bridge declaration collector + registry (process-local)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct BridgeDecl {
+    pub source_symbol: String,
+    pub source_layer: String,
+    pub target_contract_name: String,
+    pub target_layer: String,
+    pub ir_arg_sorts: Vec<String>,
+    pub ir_return_sort: String,
+    pub notes: String,
+}
+
+thread_local! {
+    static BRIDGE_COLLECTOR: RefCell<Vec<BridgeDecl>> = const { RefCell::new(Vec::new()) };
+    static BRIDGE_REGISTERED_DEFAULTS: RefCell<bool> = const { RefCell::new(false) };
+}
+
+pub fn bridge_decl(d: BridgeDecl) {
+    BRIDGE_COLLECTOR.with(|c| c.borrow_mut().push(d));
+}
+
+pub fn finish_bridges() -> Vec<BridgeDecl> {
+    BRIDGE_COLLECTOR.with(|c| std::mem::take(&mut *c.borrow_mut()))
+}
+
+pub fn ensure_kit_bridges_registered() {
+    BRIDGE_REGISTERED_DEFAULTS.with(|done| {
+        let mut d = done.borrow_mut();
+        if *d {
+            return;
+        }
+        *d = true;
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn must_pushes_into_collector() {
+        reset_collector();
+        must("parseInt", forall(Int(), |n| gt(n, num(0))));
+        let decls = finish();
+        assert_eq!(decls.len(), 1);
+        assert_eq!(decls[0].name, "parseInt");
+        assert!(decls[0].pre.is_some());
+        assert_eq!(decls[0].out_binding, "out");
+    }
+
+    #[test]
+    #[should_panic]
+    fn empty_contract_panics() {
+        reset_collector();
+        contract("noop", ContractArgs::default());
+    }
 }

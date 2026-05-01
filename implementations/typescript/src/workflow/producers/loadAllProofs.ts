@@ -16,7 +16,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { computeCid } from "../../canonicalizer/hash.js";
 import type { Stage } from "../types.js";
 import { decodeProofEnvelope } from "../../proofEnvelope/index.js";
 import { computeEnvelopeCid } from "../../claimEnvelope/cid.js";
@@ -78,10 +78,12 @@ export function makeLoadAllProofsStage(
         }
         // Trust-root check: filename CID matches bytes hash.
         const filename = proofPath.split("/").pop()!;
-        const m = filename.match(/^([0-9a-f]+)\.proof$/);
+        // Self-identifying CID filenames per protocol v1.1.0:
+        //   "<algorithm>-<bits>:<hex>.proof"
+        const m = filename.match(/^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$/);
         if (m) {
           const filenameCid = m[1]!;
-          const derivedCid = createHash("sha256").update(bytes).digest("hex").slice(0, 32);
+          const derivedCid = computeCid(bytes);
           if (derivedCid !== filenameCid) {
             errors.push({
               proofFile: proofPath,

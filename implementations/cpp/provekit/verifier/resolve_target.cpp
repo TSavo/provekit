@@ -17,15 +17,18 @@ ResolveResult ResolveTargetStage::Run(const CallSite& cs, const MementoPool& poo
         return r;
     }
     const auto& ev = env["evidence"];
-    if (ev.value("kind", "") != "property") {
-        r.error = "target memento is not a property memento";
+    if (ev.value("kind", "") != "contract") {
+        r.error = "target memento is not a contract memento";
         return r;
     }
     const auto& body = ev["body"];
     r.resolved.cid = cs.bridge_target_cid;
-    if (body.contains("irFormula")) r.resolved.ir_formula = body["irFormula"];
-    if (body.contains("scope")) r.resolved.scope = body["scope"];
-    r.resolved.ir_kit_version = body.value("irKitVersion", "");
+    // Resolve the consumer-side discharge to the contract's `pre` formula
+    // (the precondition the caller must establish at the call site).
+    // Postconditions and invariants live alongside but participate in
+    // the handshake algorithm via their own slots; this stage targets pre.
+    if (body.contains("pre")) r.resolved.ir_formula = body["pre"];
+    r.resolved.ir_kit_version = "";  // contract memento doesn't carry irKitVersion
     r.ok = true;
     return r;
 }

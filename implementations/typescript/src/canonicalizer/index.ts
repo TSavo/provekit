@@ -18,7 +18,7 @@ import {
   propertyHashFromFormula,
 } from "./canonicalize.js";
 import { serializeCanonicalAst, SERIALIZATION_FORMAT } from "./serialize.js";
-import { sha256Prefix16 } from "./hash.js";
+import { computeCid } from "./hash.js";
 
 // Re-export types for consumers.
 export type { IrFormula, Sort } from "./irFormula.js";
@@ -73,7 +73,7 @@ export type HostAstNode = any;
  * Implements the full canonicalization pipeline:
  *   IrFormula → de Bruijn → predicate/sort canonicalization
  *               → implies removal → NNF → AC normalization
- *               → JCS-JSON serialization → SHA-256 prefix-16
+ *               → JCS-JSON serialization → BLAKE3-512 self-identifying hash
  *
  * STUB NOTICE: `scopeOf` and `bindingHashFromAst` are partially
  * stubbed. The SAST integration (host-AST → BindingScope extraction)
@@ -93,7 +93,8 @@ export class AstCanonicalizerImpl {
 
   /**
    * Compute the propertyHash for an IR formula.
-   * Returns a 16-character hex string (sha256-prefix-16 of canonical JCS-JSON bytes).
+   * Returns a self-identifying string of the form
+   * `"blake3-512:" + hex(BLAKE3_512(canonicalJcsBytes))` (139 chars).
    */
   propertyHashFromFormula(formula: IrFormula): string {
     return propertyHashFromFormula(formula);
@@ -130,7 +131,8 @@ export class AstCanonicalizerImpl {
    * hashes the scope kind/identifier/filePath and the bindings map as
    * canonical JSON. The `hostAst` parameter is accepted but not used.
    *
-   * Returns a 16-character hex string (sha256-prefix-16).
+   * Returns a self-identifying hash string
+   * (`"blake3-512:" + 128 hex chars`).
    */
   bindingHashFromAst(input: {
     scope: BindingScope;
@@ -145,7 +147,7 @@ export class AstCanonicalizerImpl {
     };
     const json = canonicalJsonStringify(canonicalScope);
     const bytes = Buffer.from(json, "utf8");
-    return sha256Prefix16(bytes);
+    return computeCid(bytes);
   }
 }
 
@@ -192,4 +194,55 @@ function canonicalJsonStringify(value: unknown): string {
 // Export pipeline functions directly for convenience.
 export { formulaToCanonicalAst, propertyHashFromFormula } from "./canonicalize.js";
 export { serializeCanonicalAst } from "./serialize.js";
-export { sha256Prefix16 } from "./hash.js";
+export {
+  blake3_512_hex,
+  computeCid,
+  HASH_ALGORITHM_TAG,
+  HASH_PREFIX,
+  SELF_IDENTIFYING_HASH_RE,
+} from "./hash.js";
+
+// -----------------------------------------------------------------------
+// Protocol v1.1 hash helpers (raw IR-JSON canonical encoding).
+//
+// Per the contract memento spec:
+//   preHash  = computeCid(canonical(pre))
+//   postHash = computeCid(canonical(post))
+//   invHash  = computeCid(canonical(inv))
+//   propertyHash = computeCid(canonical({pre?, post?, inv?, outBinding}))
+// where `canonical` is JCS over the IR-JSON shape (NOT the de Bruijn /
+// AC-normalized canonical FOL AST). Same algorithm every kit uses.
+// All hashes are full BLAKE3-512 self-identifying with the
+// "blake3-512:" prefix.
+// -----------------------------------------------------------------------
+
+import { canonicalEncode as canonicalEncodeJcs } from "../claimEnvelope/canonicalize.js";
+import { computeCid as computeCidImpl } from "./hash.js";
+
+/**
+ * Hash an IR-JSON value (formula, term, or any plain object) under JCS.
+ * Returns the self-identifying string `"blake3-512:" + 128 hex chars`.
+ */
+export function hashIrJson(value: unknown): string {
+  return computeCidImpl(canonicalEncodeJcs(value));
+}
+
+export interface ContractBodySemantics {
+  pre?: unknown;
+  post?: unknown;
+  inv?: unknown;
+  outBinding: string;
+}
+
+/**
+ * Compute the wrapper-level `propertyHash` for a contract memento body.
+ * Hashes the canonical encoding of {pre?, post?, inv?, outBinding} only,
+ * with absent slots omitted (NOT serialized as null).
+ */
+export function contractPropertyHash(spec: ContractBodySemantics): string {
+  const obj: Record<string, unknown> = { outBinding: spec.outBinding };
+  if (spec.pre !== undefined) obj.pre = spec.pre;
+  if (spec.post !== undefined) obj.post = spec.post;
+  if (spec.inv !== undefined) obj.inv = spec.inv;
+  return hashIrJson(obj);
+}

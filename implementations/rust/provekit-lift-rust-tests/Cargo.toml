@@ -1,0 +1,17 @@
+[package]
+name = "provekit-lift-rust-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt lift adapter: walk #[test] / #[tokio::test] functions and lift each assert_eq!/assert_ne!/assert! invocation to its own point-specific ContractDecl."
+
+[dependencies]
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+syn = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+
+[dev-dependencies]
+provekit-lift = { path = "../provekit-lift" }
+provekit-verifier = { path = "../provekit-verifier" }

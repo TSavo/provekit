@@ -3,10 +3,11 @@
  *
  * Spec: protocol/specs/2026-04-30-ir-formal-grammar.md
  *
- * The parser ingests JSON conforming to the grammar and produces typed IR
- * values (IrFormula, IrTerm, Sort, Declaration). The emitter takes typed IR
- * values and produces canonical JSON that matches the spec's locked
- * key-order rules. The pair satisfies a fixed-point property:
+ * The parser ingests JSON conforming to the maximal-uniformity grammar
+ * and produces typed IR values (IrFormula, IrTerm, Sort, Declaration).
+ * The emitter takes typed IR values and produces canonical JSON that
+ * matches the spec's locked key-order rules. The pair satisfies a
+ * fixed-point property:
  *
  *   emit(parseDocument(text)) === text   (when text is grammar-conformant)
  *   parseDocument(emit(value))           is structurally equal to value
@@ -18,7 +19,6 @@
 import type {
   AtomicPredicate,
   IrFormula,
-  IrFormulaLambda,
   IrTerm,
   PrimitiveSortName,
   Sort,
@@ -59,7 +59,8 @@ function stringifyForError(value: unknown): string {
 // Locked key orders (must match the spec doc and every kit's emit order)
 // ---------------------------------------------------------------------------
 
-const PROPERTY_DECL_KEYS = ["kind", "name", "formula"] as const;
+const CONTRACT_DECL_REQUIRED_KEYS = ["kind", "name", "outBinding"] as const;
+const CONTRACT_DECL_OPTIONAL_KEYS = ["pre", "post", "inv"] as const;
 const BRIDGE_DECL_REQUIRED_KEYS = [
   "kind",
   "name",
@@ -70,18 +71,13 @@ const BRIDGE_DECL_REQUIRED_KEYS = [
 ] as const;
 const BRIDGE_DECL_OPTIONAL_KEYS = ["notes"] as const;
 
-const FORALL_KEYS = ["kind", "sort", "predicate"] as const;
-const EXISTS_KEYS = ["kind", "sort", "predicate"] as const;
-const LAMBDA_KEYS = ["kind", "varName", "sort", "body"] as const;
-const AND_KEYS = ["kind", "conjuncts"] as const;
-const OR_KEYS = ["kind", "disjuncts"] as const;
-const NOT_KEYS = ["kind", "body"] as const;
-const IMPLIES_KEYS = ["kind", "antecedent", "consequent"] as const;
-const ATOMIC_KEYS = ["kind", "predicate", "args"] as const;
+const QUANTIFIER_KEYS = ["kind", "name", "sort", "body"] as const;
+const CONNECTIVE_KEYS = ["kind", "operands"] as const;
+const ATOMIC_KEYS = ["kind", "name", "args"] as const;
 
-const VAR_TERM_KEYS = ["kind", "name", "sort"] as const;
+const VAR_TERM_KEYS = ["kind", "name"] as const;
 const CONST_TERM_KEYS = ["kind", "value", "sort"] as const;
-const CTOR_TERM_KEYS = ["kind", "name", "args", "sort"] as const;
+const CTOR_TERM_KEYS = ["kind", "name", "args"] as const;
 
 const PRIMITIVE_SORT_KEYS = ["kind", "name"] as const;
 const BITVEC_SORT_KEYS = ["kind", "width"] as const;
@@ -210,29 +206,59 @@ function parseDeclarationValue(
   const obj = expectObject(value, path);
   const kind = expectKindString(obj, path);
   switch (kind) {
-    case "property":
-      return parsePropertyDeclaration(obj, path, opts);
+    case "contract":
+      return parseContractDeclaration(obj, path, opts);
     case "bridge":
       return parseBridgeDeclaration(obj, path, opts);
     default:
       throw new GrammarParseError({
         path: `${path}/kind`,
-        expected: '"property" | "bridge"',
+        expected: '"contract" | "bridge"',
         actual: kind,
       });
   }
 }
 
-function parsePropertyDeclaration(
+function parseContractDeclaration(
   obj: Record<string, unknown>,
   path: string,
   opts: ParseOptions,
 ): Declaration {
-  enforceClosedKeys(obj, path, PROPERTY_DECL_KEYS, []);
-  if (opts.strict) enforceKeyOrder(obj, path, PROPERTY_DECL_KEYS);
-  const name = expectString(obj["name"], `${path}/name`, "string property name");
-  const formula = parseFormulaValue(obj["formula"], `${path}/formula`, opts);
-  return { kind: "property", name, formula };
+  enforceClosedKeys(obj, path, CONTRACT_DECL_REQUIRED_KEYS, CONTRACT_DECL_OPTIONAL_KEYS);
+  if (opts.strict) {
+    const observed = Object.keys(obj);
+    const expected = ["kind", "name", "outBinding"] as string[];
+    if (observed.includes("pre")) expected.push("pre");
+    if (observed.includes("post")) expected.push("post");
+    if (observed.includes("inv")) expected.push("inv");
+    if (observed.join(",") !== expected.join(",")) {
+      throw new GrammarParseError({
+        path,
+        expected: `keys in order [${expected.join(", ")}]`,
+        actual: observed,
+      });
+    }
+  }
+  const name = expectString(obj["name"], `${path}/name`, "string contract name");
+  const outBinding = expectString(obj["outBinding"], `${path}/outBinding`, "string outBinding");
+  const decl: Declaration = { kind: "contract", name, outBinding };
+  if ("pre" in obj) {
+    decl.pre = parseFormulaValue(obj["pre"], `${path}/pre`, opts);
+  }
+  if ("post" in obj) {
+    decl.post = parseFormulaValue(obj["post"], `${path}/post`, opts);
+  }
+  if ("inv" in obj) {
+    decl.inv = parseFormulaValue(obj["inv"], `${path}/inv`, opts);
+  }
+  if (decl.pre === undefined && decl.post === undefined && decl.inv === undefined) {
+    throw new GrammarParseError({
+      path,
+      expected: "at least one of pre/post/inv",
+      actual: "none",
+    });
+  }
+  return decl;
 }
 
 function parseBridgeDeclaration(
@@ -299,17 +325,13 @@ function parseFormulaValue(value: unknown, path: string, opts: ParseOptions): Ir
   const kind = expectKindString(obj, path);
   switch (kind) {
     case "forall":
-      return parseQuantifiedFormula(obj, path, opts, "forall");
     case "exists":
-      return parseQuantifiedFormula(obj, path, opts, "exists");
+      return parseQuantifiedFormula(obj, path, opts, kind);
     case "and":
-      return parseAndFormula(obj, path, opts);
     case "or":
-      return parseOrFormula(obj, path, opts);
     case "not":
-      return parseNotFormula(obj, path, opts);
     case "implies":
-      return parseImpliesFormula(obj, path, opts);
+      return parseConnectiveFormula(obj, path, opts, kind);
     case "atomic":
       return parseAtomicFormula(obj, path, opts);
     default:
@@ -328,79 +350,40 @@ function parseQuantifiedFormula(
   opts: ParseOptions,
   kind: "forall" | "exists",
 ): IrFormula {
-  const expected = kind === "forall" ? FORALL_KEYS : EXISTS_KEYS;
-  enforceClosedKeys(obj, path, expected, []);
-  if (opts.strict) enforceKeyOrder(obj, path, expected);
+  enforceClosedKeys(obj, path, QUANTIFIER_KEYS, []);
+  if (opts.strict) enforceKeyOrder(obj, path, QUANTIFIER_KEYS);
+  const name = expectString(obj["name"], `${path}/name`, "string quantifier var name");
   const sort = parseSortValue(obj["sort"], `${path}/sort`, opts);
-  const predicate = parseLambdaValue(obj["predicate"], `${path}/predicate`, opts);
-  return { kind, sort, predicate };
+  const body = parseFormulaValue(obj["body"], `${path}/body`, opts);
+  return { kind, name, sort, body };
 }
 
-function parseLambdaValue(
-  value: unknown,
+function parseConnectiveFormula(
+  obj: Record<string, unknown>,
   path: string,
   opts: ParseOptions,
-): IrFormulaLambda {
-  const obj = expectObject(value, path);
-  const kind = expectKindString(obj, path);
-  if (kind !== "lambda") {
-    throw new GrammarParseError({ path: `${path}/kind`, expected: '"lambda"', actual: kind });
+  kind: "and" | "or" | "not" | "implies",
+): IrFormula {
+  enforceClosedKeys(obj, path, CONNECTIVE_KEYS, []);
+  if (opts.strict) enforceKeyOrder(obj, path, CONNECTIVE_KEYS);
+  const operands = expectArray(obj["operands"], `${path}/operands`).map((o, i) =>
+    parseFormulaValue(o, `${path}/operands/${i}`, opts),
+  );
+  if (kind === "not" && operands.length !== 1) {
+    throw new GrammarParseError({
+      path: `${path}/operands`,
+      expected: "exactly 1 operand for not",
+      actual: operands.length,
+    });
   }
-  enforceClosedKeys(obj, path, LAMBDA_KEYS, []);
-  if (opts.strict) enforceKeyOrder(obj, path, LAMBDA_KEYS);
-  const varName = expectString(obj["varName"], `${path}/varName`, "string varName");
-  const sort = parseSortValue(obj["sort"], `${path}/sort`, opts);
-  const body = parseFormulaValue(obj["body"], `${path}/body`, opts);
-  return { kind: "lambda", varName, sort, body };
-}
-
-function parseAndFormula(
-  obj: Record<string, unknown>,
-  path: string,
-  opts: ParseOptions,
-): IrFormula {
-  enforceClosedKeys(obj, path, AND_KEYS, []);
-  if (opts.strict) enforceKeyOrder(obj, path, AND_KEYS);
-  const conjuncts = expectArray(obj["conjuncts"], `${path}/conjuncts`).map((c, i) =>
-    parseFormulaValue(c, `${path}/conjuncts/${i}`, opts),
-  );
-  return { kind: "and", conjuncts };
-}
-
-function parseOrFormula(
-  obj: Record<string, unknown>,
-  path: string,
-  opts: ParseOptions,
-): IrFormula {
-  enforceClosedKeys(obj, path, OR_KEYS, []);
-  if (opts.strict) enforceKeyOrder(obj, path, OR_KEYS);
-  const disjuncts = expectArray(obj["disjuncts"], `${path}/disjuncts`).map((d, i) =>
-    parseFormulaValue(d, `${path}/disjuncts/${i}`, opts),
-  );
-  return { kind: "or", disjuncts };
-}
-
-function parseNotFormula(
-  obj: Record<string, unknown>,
-  path: string,
-  opts: ParseOptions,
-): IrFormula {
-  enforceClosedKeys(obj, path, NOT_KEYS, []);
-  if (opts.strict) enforceKeyOrder(obj, path, NOT_KEYS);
-  const body = parseFormulaValue(obj["body"], `${path}/body`, opts);
-  return { kind: "not", body };
-}
-
-function parseImpliesFormula(
-  obj: Record<string, unknown>,
-  path: string,
-  opts: ParseOptions,
-): IrFormula {
-  enforceClosedKeys(obj, path, IMPLIES_KEYS, []);
-  if (opts.strict) enforceKeyOrder(obj, path, IMPLIES_KEYS);
-  const antecedent = parseFormulaValue(obj["antecedent"], `${path}/antecedent`, opts);
-  const consequent = parseFormulaValue(obj["consequent"], `${path}/consequent`, opts);
-  return { kind: "implies", antecedent, consequent };
+  if (kind === "implies" && operands.length !== 2) {
+    throw new GrammarParseError({
+      path: `${path}/operands`,
+      expected: "exactly 2 operands for implies",
+      actual: operands.length,
+    });
+  }
+  return { kind, operands };
 }
 
 function parseAtomicFormula(
@@ -410,23 +393,23 @@ function parseAtomicFormula(
 ): IrFormula {
   enforceClosedKeys(obj, path, ATOMIC_KEYS, []);
   if (opts.strict) enforceKeyOrder(obj, path, ATOMIC_KEYS);
-  const predicate = expectString(
-    obj["predicate"],
-    `${path}/predicate`,
+  const name = expectString(
+    obj["name"],
+    `${path}/name`,
     "string predicate name",
   );
-  if (opts.strict && !isAcceptedPredicate(predicate)) {
+  if (opts.strict && !isAcceptedPredicate(name)) {
     throw new GrammarParseError({
-      path: `${path}/predicate`,
+      path: `${path}/name`,
       expected:
         "canonical predicate name or kit-extension matching /^[a-zA-Z_][a-zA-Z0-9_-]*$/",
-      actual: predicate,
+      actual: name,
     });
   }
   const args = expectArray(obj["args"], `${path}/args`).map((a, i) =>
     parseTermValue(a, `${path}/args/${i}`, opts),
   );
-  return { kind: "atomic", predicate: predicate as AtomicPredicate, args };
+  return { kind: "atomic", name: name as AtomicPredicate, args };
 }
 
 // ---------------------------------------------------------------------------
@@ -460,8 +443,7 @@ function parseVarTerm(
   enforceClosedKeys(obj, path, VAR_TERM_KEYS, []);
   if (opts.strict) enforceKeyOrder(obj, path, VAR_TERM_KEYS);
   const name = expectString(obj["name"], `${path}/name`, "string var name");
-  const sort = parseSortValue(obj["sort"], `${path}/sort`, opts);
-  return { kind: "var", name, sort };
+  return { kind: "var", name };
 }
 
 function parseConstTerm(
@@ -501,8 +483,7 @@ function parseCtorTerm(
   const args = expectArray(obj["args"], `${path}/args`).map((a, i) =>
     parseTermValue(a, `${path}/args/${i}`, opts),
   );
-  const sort = parseSortValue(obj["sort"], `${path}/sort`, opts);
-  return { kind: "ctor", name, args, sort };
+  return { kind: "ctor", name, args };
 }
 
 // ---------------------------------------------------------------------------
@@ -721,14 +702,23 @@ function isAcceptedPredicate(name: string): boolean {
 // ---------------------------------------------------------------------------
 
 function emitDeclaration(decl: Declaration): string {
-  if (decl.kind === "property") {
-    return (
+  if (decl.kind === "contract") {
+    let out =
       "{" +
-      `"kind":"property",` +
+      `"kind":"contract",` +
       `"name":${JSON.stringify(decl.name)},` +
-      `"formula":${emitFormula(decl.formula)}` +
-      "}"
-    );
+      `"outBinding":${JSON.stringify(decl.outBinding)}`;
+    if (decl.pre !== undefined) {
+      out += `,"pre":${emitFormula(decl.pre)}`;
+    }
+    if (decl.post !== undefined) {
+      out += `,"post":${emitFormula(decl.post)}`;
+    }
+    if (decl.inv !== undefined) {
+      out += `,"inv":${emitFormula(decl.inv)}`;
+    }
+    out += "}";
+    return out;
   }
   let out =
     "{" +
@@ -745,71 +735,46 @@ function emitDeclaration(decl: Declaration): string {
   return out;
 }
 
-function emitFormula(f: IrFormula): string {
+export function emitFormula(f: IrFormula): string {
   switch (f.kind) {
     case "forall":
     case "exists":
       return (
         "{" +
         `"kind":"${f.kind}",` +
+        `"name":${JSON.stringify(f.name)},` +
         `"sort":${emitSort(f.sort)},` +
-        `"predicate":${emitLambda(f.predicate)}` +
+        `"body":${emitFormula(f.body)}` +
         "}"
       );
     case "and":
-      return (
-        "{" +
-        `"kind":"and",` +
-        `"conjuncts":[${f.conjuncts.map(emitFormula).join(",")}]` +
-        "}"
-      );
     case "or":
-      return (
-        "{" +
-        `"kind":"or",` +
-        `"disjuncts":[${f.disjuncts.map(emitFormula).join(",")}]` +
-        "}"
-      );
     case "not":
-      return "{" + `"kind":"not",` + `"body":${emitFormula(f.body)}` + "}";
     case "implies":
       return (
         "{" +
-        `"kind":"implies",` +
-        `"antecedent":${emitFormula(f.antecedent)},` +
-        `"consequent":${emitFormula(f.consequent)}` +
+        `"kind":"${f.kind}",` +
+        `"operands":[${f.operands.map(emitFormula).join(",")}]` +
         "}"
       );
     case "atomic":
       return (
         "{" +
         `"kind":"atomic",` +
-        `"predicate":${JSON.stringify(f.predicate)},` +
+        `"name":${JSON.stringify(f.name)},` +
         `"args":[${f.args.map(emitTerm).join(",")}]` +
         "}"
       );
   }
 }
 
-function emitLambda(lam: IrFormulaLambda): string {
-  return (
-    "{" +
-    `"kind":"lambda",` +
-    `"varName":${JSON.stringify(lam.varName)},` +
-    `"sort":${emitSort(lam.sort)},` +
-    `"body":${emitFormula(lam.body)}` +
-    "}"
-  );
-}
-
-function emitTerm(t: IrTerm): string {
+export function emitTerm(t: IrTerm): string {
   switch (t.kind) {
     case "var":
       return (
         "{" +
         `"kind":"var",` +
-        `"name":${JSON.stringify(t.name)},` +
-        `"sort":${emitSort(t.sort)}` +
+        `"name":${JSON.stringify(t.name)}` +
         "}"
       );
     case "const":
@@ -825,8 +790,7 @@ function emitTerm(t: IrTerm): string {
         "{" +
         `"kind":"ctor",` +
         `"name":${JSON.stringify(t.name)},` +
-        `"args":[${t.args.map(emitTerm).join(",")}],` +
-        `"sort":${emitSort(t.sort)}` +
+        `"args":[${t.args.map(emitTerm).join(",")}]` +
         "}"
       );
   }
@@ -853,7 +817,7 @@ function emitConstValue(v: unknown): string {
   });
 }
 
-function emitSort(s: Sort): string {
+export function emitSort(s: Sort): string {
   switch (s.kind) {
     case "primitive":
       return "{" + `"kind":"primitive",` + `"name":${JSON.stringify(s.name)}` + "}";

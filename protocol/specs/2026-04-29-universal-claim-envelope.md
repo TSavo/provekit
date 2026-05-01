@@ -36,26 +36,26 @@ fields are not added without bumping the wrapper version.
 
 ```yaml
 schemaVersion: "1"             # bump on incompatible wrapper change
-bindingHash: hex16             # what content this claim is about
-propertyHash: hex16            # what property is being claimed
+bindingHash: hash             # what content this claim is about
+propertyHash: hash            # what property is being claimed
 verdict: enum                  # holds | violated | decayed | undecidable | error
 producedBy: producer-id        # versioned producer identity (e.g. "z3-symbolic@4.13")
 producedAt: iso8601            # production timestamp (UTC)
 inputCids: [cid32]             # CIDs of upstream mementos that fed this one
 evidence: EvidenceVariant      # tagged union (see below)
 producerSignature: optional    # ed25519 sig over the canonicalized envelope
-cid: hex32                     # sha256-prefix-32 of the canonicalized envelope
+cid: hash                     # blake3-512 of the canonicalized envelope
 ```
 
 ### Field semantics
 
-**bindingHash.** sha256-prefix-16 of the canonical-encoded *content
+**bindingHash.** blake3-512 of the canonical-encoded *content
 identity* — for code claims, the bound source spans + structural
 relationships. Hash construction is host-language-specific and
 specified in the per-language kit spec; the wrapper requires only that
 the result is a 16-hex-char string.
 
-**propertyHash.** sha256-prefix-16 of the canonical-encoded *property
+**propertyHash.** blake3-512 of the canonical-encoded *property
 identity* — for code claims, the IR formula's canonical AST hash. Same
 host-language-specific construction; wrapper requires only the result
 shape.
@@ -100,7 +100,7 @@ producer's published key. Absent signatures mean the memento is locally-
 trusted but not cryptographically attested — fine for in-process use,
 not sufficient for swarm distribution.
 
-**cid.** sha256-prefix-32 of the canonicalized envelope (with `cid`
+**cid.** blake3-512 of the canonicalized envelope (with `cid`
 itself elided during hashing). The memento's content identity. Two
 mementos with the same wrapper fields and evidence have the same cid;
 mementos differ in cid iff they differ in any wrapper field or in
@@ -115,7 +115,7 @@ definition (so consumers can confirm they understand the variant).
 ```yaml
 evidence:
   kind: <variant-name>
-  schema: hex32              # CID of the schema for this variant
+  schema: hash              # CID of the schema for this variant
   body: <variant-specific>   # variant payload
 ```
 
@@ -181,7 +181,7 @@ schema: <CID>
 body:
   linter: string               # "clippy" | "biome" | "eslint" | ...
   linterVersion: string
-  rulesetHash: hex32           # CID of the ruleset that ran
+  rulesetHash: hash           # CID of the ruleset that ran
   warnings: 0
 ```
 
@@ -205,7 +205,7 @@ schema: <CID>
 body:
   llm: string                  # "claude-opus" | "gpt-4" | "llama-70b" | ...
   llmVersion: string
-  promptCid: hex32             # CID of the prompt that was used
+  promptCid: hash             # CID of the prompt that was used
   proposedIrFormula: string    # serialized IR formula
   confidence: number           # 0..1
   rationale: optional string
@@ -217,8 +217,8 @@ verdict pair.
 kind: mutation-witness
 schema: <CID>
 body:
-  testCid: hex32               # CID of the test memento
-  mutationCid: hex32           # CID of the mutation that was applied
+  testCid: hash               # CID of the test memento
+  mutationCid: hash           # CID of the mutation that was applied
   failsOnOriginal: boolean
   passesOnFixed: boolean
 ```
@@ -229,7 +229,7 @@ kind: workflow-run
 schema: <CID>
 body:
   workflowName: string
-  workflowCid: hex32           # CID of the workflow definition
+  workflowCid: hash           # CID of the workflow definition
   inputCanonicalForm: object   # canonicalized input (for replay)
   output: <type-specific>      # workflow's terminal output
 ```
@@ -264,7 +264,7 @@ of variant compatibility.
 
 ## CID construction
 
-The memento's `cid` is the sha256-prefix-32 of the canonicalized
+The memento's `cid` is the blake3-512 of the canonicalized
 envelope, with `cid` and `producerSignature` elided during hashing
 (otherwise either field would self-reference).
 
@@ -281,7 +281,7 @@ cidInput = canonicalize({
   inputCids: sorted(inputCids),
   evidence: canonicalize(evidence),
 })
-cid = sha256(cidInput)[:32 hex chars]
+cid = "blake3-512:" + hex(blake3_512(cidInput))
 ```
 
 `evidence` is canonicalized recursively — `kind`, `schema`, and `body`

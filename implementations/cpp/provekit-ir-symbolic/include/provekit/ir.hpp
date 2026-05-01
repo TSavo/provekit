@@ -1,20 +1,24 @@
-// provekit-ir-symbolic — C++ kit (header-only, minimal v0).
+// provekit-ir-symbolic — C++ kit (header-only).
 //
-// Mirrors the IR shape used by the TS reference (src/ir/symbolic/) and the
-// Rust kit (kits/rust/provekit-ir-symbolic/). The contract is byte-identical
-// compact JSON for the same logical claim.
+// Maximal-uniformity IR per protocol/specs/2026-04-30-ir-formal-grammar.md
+// (v1.1.0 catalog). Every node has `kind`, then `name` (when applicable),
+// then payload. Five formula kinds, three term kinds. Reader holds the
+// entire IR in their head.
 //
-// Scope: enough types and serialization to express the cross-language
-// regression fixtures. Not a full parallel of the TS/Rust kits yet —
-// missing connectives, exists, bridge, parseInt, full primitive set, AST
-// canonicalizer. Tracked for future expansion. The minimum-viable surface
-// here proves the architecture composes across four languages, which is
-// the load-bearing claim.
+// Authoring surface follows the per-language kit standard:
+//   contract(name, { pre, post, inv, outBinding? })
+//   must(name, precondition)         -- alias for contract(.., {pre: precondition})
+//   forall(sort, body) / exists(sort, body)
+//   and_(...), or_(...), not_(...), implies(antecedent, consequent)
+//   eq, ne, gt, gte, lt, lte         -- atomic predicates
+//   num, str_const, parse_int        -- term primitives
+//   out()                            -- references the return value in a post
 
 #pragma once
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -30,7 +34,7 @@ namespace provekit::ir {
 // ---------------------------------------------------------------------------
 
 struct Sort {
-  std::string name; // "Int", "Real", "String", "Bool"
+  std::string name;  // "Int", "Real", "String", "Bool"
 };
 
 inline Sort Int() { return Sort{"Int"}; }
@@ -39,14 +43,13 @@ inline Sort String() { return Sort{"String"}; }
 inline Sort Bool() { return Sort{"Bool"}; }
 
 // ---------------------------------------------------------------------------
-// Term
+// Term — VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort).
 // ---------------------------------------------------------------------------
 
 struct Term;
 
 struct VarTerm {
   std::string name;
-  Sort sort;
 };
 
 struct ConstTerm {
@@ -57,15 +60,14 @@ struct ConstTerm {
 struct CtorTerm {
   std::string name;
   std::vector<std::shared_ptr<Term>> args;
-  Sort sort;
 };
 
 struct Term {
   std::variant<VarTerm, ConstTerm, CtorTerm> v;
 };
 
-inline std::shared_ptr<Term> make_var(std::string name, Sort sort) {
-  return std::make_shared<Term>(Term{VarTerm{std::move(name), std::move(sort)}});
+inline std::shared_ptr<Term> make_var(std::string name) {
+  return std::make_shared<Term>(Term{VarTerm{std::move(name)}});
 }
 inline std::shared_ptr<Term> num(int64_t value) {
   return std::make_shared<Term>(Term{ConstTerm{value, Int()}});
@@ -75,13 +77,7 @@ inline std::shared_ptr<Term> str_const(std::string value) {
 }
 
 // ---------------------------------------------------------------------------
-// Extension authoring + primitive-bridge registry
-//
-// Same architectural shape as TS/Rust/Go kits: kit primitives that
-// aren't actually owned by C++ (the basic JSON-shape kit semantics
-// are what they are; deeper layers — LLVM, libcxx, hardware — own
-// the meaning of names like parse_int). The kit BRIDGES via a
-// process-local registry; verifiers resolve through the protocol.
+// Bridge registry (process-local; serialized into bridge mementos at mint).
 // ---------------------------------------------------------------------------
 
 struct PrimitiveBridgeDeclaration {
@@ -101,12 +97,9 @@ inline std::map<std::string, PrimitiveBridgeDeclaration>& bridge_registry() {
 
 inline void register_primitive_bridge(PrimitiveBridgeDeclaration decl) {
   auto& r = bridge_registry();
-  auto it = r.find(decl.ir_name);
-  if (it == r.end()) {
+  if (r.find(decl.ir_name) == r.end()) {
     r[decl.ir_name] = std::move(decl);
   }
-  // Idempotent on collision; production verifier would error on
-  // collision-with-different-target per the protocol's fail-closed gate.
 }
 
 inline std::vector<PrimitiveBridgeDeclaration> list_bridges() {
@@ -121,46 +114,52 @@ inline void ensure_kit_bridges_registered() {
   static bool done = false;
   if (done) return;
   done = true;
-  // The C++ kit's bridges. Targets are placeholders pending the
-  // upstream catalogs being published with signed declarations.
   register_primitive_bridge({"parseInt", {"String"}, "Int", "cpp-kit",
-                              "bafy_CPP_PARSEINT_PLACEHOLDER",
-                              "libcxx", ""});
+                             "bafy_CPP_PARSEINT_PLACEHOLDER", "libcxx", ""});
 }
 
 inline std::shared_ptr<Term> parse_int(std::shared_ptr<Term> s) {
   ensure_kit_bridges_registered();
-  return std::make_shared<Term>(Term{CtorTerm{"parseInt", {std::move(s)}, Int()}});
+  return std::make_shared<Term>(Term{CtorTerm{"parseInt", {std::move(s)}}});
+}
+
+// out() — references the return value within a post formula. Compiles to
+// a VarTerm whose `name` matches the enclosing contract's outBinding
+// (default "out"). The kit's contract() primitive enforces outBinding=out;
+// custom outBindings can use make_var(name) directly.
+inline std::shared_ptr<Term> out() {
+  return std::make_shared<Term>(Term{VarTerm{"out"}});
 }
 
 // ---------------------------------------------------------------------------
-// Formula
+// Formula — three kinds: AtomicFormula, ConnectiveFormula, QuantifierFormula.
 // ---------------------------------------------------------------------------
 
 struct Formula;
 
 struct AtomicFormula {
-  std::string predicate;
+  std::string name;  // ">", "=", "≥", "≠", "<", "≤", or kit-defined
   std::vector<std::shared_ptr<Term>> args;
 };
 
-struct LambdaFormula {
-  std::string varName;
+struct ConnectiveFormula {
+  std::string kind;  // "and" / "or" / "not" / "implies"
+  std::vector<std::shared_ptr<Formula>> operands;
+};
+
+struct QuantifierFormula {
+  std::string kind;  // "forall" / "exists"
+  std::string name;  // bound variable identifier
   Sort sort;
   std::shared_ptr<Formula> body;
 };
 
-struct ForallFormula {
-  Sort sort;
-  std::shared_ptr<LambdaFormula> predicate;
-};
-
 struct Formula {
-  std::variant<AtomicFormula, ForallFormula> v;
+  std::variant<AtomicFormula, ConnectiveFormula, QuantifierFormula> v;
 };
 
 // ---------------------------------------------------------------------------
-// Quantifier counter — thread-local mirror of TS / Rust kits.
+// Quantifier counter — fresh names for bound variables.
 // ---------------------------------------------------------------------------
 
 inline std::atomic<int>& quantifier_counter() {
@@ -183,40 +182,86 @@ inline void reset_collector() {
 // Atomic predicates
 // ---------------------------------------------------------------------------
 
+inline std::shared_ptr<Formula> atomic_(std::string name, std::vector<std::shared_ptr<Term>> args) {
+  return std::make_shared<Formula>(Formula{AtomicFormula{std::move(name), std::move(args)}});
+}
 inline std::shared_ptr<Formula> gt(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
-  return std::make_shared<Formula>(Formula{AtomicFormula{">", {std::move(a), std::move(b)}}});
+  return atomic_(">", {std::move(a), std::move(b)});
 }
 inline std::shared_ptr<Formula> gte(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
-  return std::make_shared<Formula>(Formula{AtomicFormula{"\xe2\x89\xa5", {std::move(a), std::move(b)}}});
+  return atomic_("\xe2\x89\xa5", {std::move(a), std::move(b)});  // ≥
+}
+inline std::shared_ptr<Formula> lt(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
+  return atomic_("<", {std::move(a), std::move(b)});
+}
+inline std::shared_ptr<Formula> lte(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
+  return atomic_("\xe2\x89\xa4", {std::move(a), std::move(b)});  // ≤
 }
 inline std::shared_ptr<Formula> eq(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
-  return std::make_shared<Formula>(Formula{AtomicFormula{"=", {std::move(a), std::move(b)}}});
+  return atomic_("=", {std::move(a), std::move(b)});
+}
+inline std::shared_ptr<Formula> ne(std::shared_ptr<Term> a, std::shared_ptr<Term> b) {
+  return atomic_("\xe2\x89\xa0", {std::move(a), std::move(b)});  // ≠
 }
 
 // ---------------------------------------------------------------------------
-// Quantifiers
+// Connectives — unified shape with `operands` array.
+// ---------------------------------------------------------------------------
+
+inline std::shared_ptr<Formula> connective_(std::string kind,
+                                              std::vector<std::shared_ptr<Formula>> operands) {
+  return std::make_shared<Formula>(Formula{ConnectiveFormula{std::move(kind), std::move(operands)}});
+}
+inline std::shared_ptr<Formula> not_(std::shared_ptr<Formula> a) {
+  return connective_("not", {std::move(a)});
+}
+inline std::shared_ptr<Formula> implies(std::shared_ptr<Formula> antecedent,
+                                         std::shared_ptr<Formula> consequent) {
+  return connective_("implies", {std::move(antecedent), std::move(consequent)});
+}
+inline std::shared_ptr<Formula> and_(std::vector<std::shared_ptr<Formula>> operands) {
+  return connective_("and", std::move(operands));
+}
+inline std::shared_ptr<Formula> or_(std::vector<std::shared_ptr<Formula>> operands) {
+  return connective_("or", std::move(operands));
+}
+
+// ---------------------------------------------------------------------------
+// Quantifiers — flat shape, no Lambda wrapper.
 // ---------------------------------------------------------------------------
 
 template <typename Body>
 std::shared_ptr<Formula> forall(Sort sort, Body body) {
   std::string vname = fresh_var_name();
-  auto var = make_var(vname, sort);
-  auto innerFormula = body(var);
-  auto lam = std::make_shared<LambdaFormula>(LambdaFormula{vname, sort, std::move(innerFormula)});
-  return std::make_shared<Formula>(Formula{ForallFormula{std::move(sort), std::move(lam)}});
+  auto var = make_var(vname);
+  auto inner = body(var);
+  return std::make_shared<Formula>(Formula{
+      QuantifierFormula{"forall", std::move(vname), std::move(sort), std::move(inner)}});
+}
+
+template <typename Body>
+std::shared_ptr<Formula> exists(Sort sort, Body body) {
+  std::string vname = fresh_var_name();
+  auto var = make_var(vname);
+  auto inner = body(var);
+  return std::make_shared<Formula>(Formula{
+      QuantifierFormula{"exists", std::move(vname), std::move(sort), std::move(inner)}});
 }
 
 // ---------------------------------------------------------------------------
-// Property collector
+// Contract collector
 // ---------------------------------------------------------------------------
 
-struct PropertyDecl {
+struct ContractDecl {
   std::string name;
-  std::shared_ptr<Formula> formula;
+  std::shared_ptr<Formula> pre;   // nullable
+  std::shared_ptr<Formula> post;  // nullable
+  std::shared_ptr<Formula> inv;   // nullable
+  std::string outBinding;         // conventionally "out"
 };
 
-inline std::vector<PropertyDecl>& collector() {
-  static std::vector<PropertyDecl> v;
+inline std::vector<ContractDecl>& collector() {
+  static std::vector<ContractDecl> v;
   return v;
 }
 
@@ -224,34 +269,47 @@ inline void begin_collecting() {
   collector().clear();
 }
 
-inline void property(std::string name, std::shared_ptr<Formula> formula) {
-  collector().push_back(PropertyDecl{std::move(name), std::move(formula)});
+// contract() is the full authoring primitive; pre/post/inv each optional but
+// at least one must be non-null (kit-side check below fails fast).
+inline void contract(std::string name,
+                     std::shared_ptr<Formula> pre = nullptr,
+                     std::shared_ptr<Formula> post = nullptr,
+                     std::shared_ptr<Formula> inv = nullptr,
+                     std::string outBinding = "out") {
+  if (!pre && !post && !inv) {
+    std::fprintf(stderr,
+                 "ERROR: contract(\"%s\"): at least one of pre/post/inv must be non-null\n",
+                 name.c_str());
+    std::abort();
+  }
+  collector().push_back(ContractDecl{
+      std::move(name), std::move(pre), std::move(post), std::move(inv),
+      std::move(outBinding)});
 }
 
-// `must` is the obligation-verb alias: `must("input non-empty", forall...)`
-// reads as a constraint ("this is required"), where `property` is the
-// neutral noun. Same storage; different authoring register.
-inline void must(std::string name, std::shared_ptr<Formula> formula) {
-  property(std::move(name), std::move(formula));
+// must() is the precondition-only convenience alias.
+inline void must(std::string name, std::shared_ptr<Formula> precondition) {
+  contract(std::move(name), std::move(precondition));
+}
+
+inline std::vector<ContractDecl> finish() {
+  std::vector<ContractDecl> out;
+  out.swap(collector());
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Bridge declaration collector
+// Bridge declaration collector (kit-side; processed by mint adapter).
 // ---------------------------------------------------------------------------
-//
-// Bridges declared via `bridge_decl(...)` ride alongside property
-// declarations in the kit's emit stream. The TS mint adapter resolves
-// `target_property_name` → minted property memento CID after the
-// properties have been minted (chicken-and-egg: the bridge references
-// the property's CID, but we don't have it until we mint).
+
 struct BridgeDecl {
   std::string source_symbol;
   std::string source_layer;
-  std::string target_property_name;  // resolved by the mint adapter
+  std::string target_contract_name;
   std::string target_layer;
-  std::vector<std::string> ir_arg_sorts;  // e.g. {"String"}
-  std::string ir_return_sort;             // e.g. "Int"
-  std::string notes;                       // optional
+  std::vector<std::string> ir_arg_sorts;
+  std::string ir_return_sort;
+  std::string notes;
 };
 
 inline std::vector<BridgeDecl>& bridge_collector() {
@@ -273,14 +331,8 @@ inline void reset_bridge_collector() {
   bridge_collector().clear();
 }
 
-inline std::vector<PropertyDecl> finish() {
-  std::vector<PropertyDecl> out;
-  out.swap(collector());
-  return out;
-}
-
 // ---------------------------------------------------------------------------
-// JSON serialization (compact, byte-identical with TS/Rust/Go kits)
+// JSON serialization — emits the protocol-locked uniform IR shape.
 // ---------------------------------------------------------------------------
 
 inline void write_string(std::ostringstream& out, const std::string& s) {
@@ -316,10 +368,9 @@ inline void write_sort(std::ostringstream& out, const Sort& s) {
 inline void write_term(std::ostringstream& out, const Term& t);
 
 inline void write_var(std::ostringstream& out, const VarTerm& v) {
+  // Locked key order: kind, name. (No sort.)
   out << "{\"kind\":\"var\",\"name\":";
   write_string(out, v.name);
-  out << ",\"sort\":";
-  write_sort(out, v.sort);
   out << "}";
 }
 
@@ -331,7 +382,7 @@ inline void write_const(std::ostringstream& out, const ConstTerm& c) {
     else if constexpr (std::is_same_v<T, double>) out << val;
     else if constexpr (std::is_same_v<T, bool>) out << (val ? "true" : "false");
     else if constexpr (std::is_same_v<T, std::string>) {
-      out << '"' << val << '"';
+      write_string(out, val);
     }
   }, c.value);
   out << ",\"sort\":";
@@ -340,6 +391,7 @@ inline void write_const(std::ostringstream& out, const ConstTerm& c) {
 }
 
 inline void write_ctor(std::ostringstream& out, const CtorTerm& c) {
+  // Locked key order: kind, name, args. (No sort.)
   out << "{\"kind\":\"ctor\",\"name\":";
   write_string(out, c.name);
   out << ",\"args\":[";
@@ -347,9 +399,7 @@ inline void write_ctor(std::ostringstream& out, const CtorTerm& c) {
     if (i > 0) out << ",";
     write_term(out, *c.args[i]);
   }
-  out << "],\"sort\":";
-  write_sort(out, c.sort);
-  out << "}";
+  out << "]}";
 }
 
 inline void write_term(std::ostringstream& out, const Term& t) {
@@ -364,8 +414,9 @@ inline void write_term(std::ostringstream& out, const Term& t) {
 inline void write_formula(std::ostringstream& out, const Formula& f);
 
 inline void write_atomic(std::ostringstream& out, const AtomicFormula& a) {
-  out << "{\"kind\":\"atomic\",\"predicate\":";
-  write_string(out, a.predicate);
+  // Locked key order: kind, name, args. (Field renamed predicate→name.)
+  out << "{\"kind\":\"atomic\",\"name\":";
+  write_string(out, a.name);
   out << ",\"args\":[";
   for (size_t i = 0; i < a.args.size(); i++) {
     if (i > 0) out << ",";
@@ -374,21 +425,28 @@ inline void write_atomic(std::ostringstream& out, const AtomicFormula& a) {
   out << "]}";
 }
 
-inline void write_lambda(std::ostringstream& out, const LambdaFormula& l) {
-  out << "{\"kind\":\"lambda\",\"varName\":";
-  write_string(out, l.varName);
-  out << ",\"sort\":";
-  write_sort(out, l.sort);
-  out << ",\"body\":";
-  write_formula(out, *l.body);
-  out << "}";
+inline void write_connective(std::ostringstream& out, const ConnectiveFormula& c) {
+  // Locked key order: kind, operands.
+  out << "{\"kind\":";
+  write_string(out, c.kind);
+  out << ",\"operands\":[";
+  for (size_t i = 0; i < c.operands.size(); i++) {
+    if (i > 0) out << ",";
+    write_formula(out, *c.operands[i]);
+  }
+  out << "]}";
 }
 
-inline void write_forall(std::ostringstream& out, const ForallFormula& fa) {
-  out << "{\"kind\":\"forall\",\"sort\":";
-  write_sort(out, fa.sort);
-  out << ",\"predicate\":";
-  write_lambda(out, *fa.predicate);
+inline void write_quantifier(std::ostringstream& out, const QuantifierFormula& q) {
+  // Locked key order: kind, name, sort, body.
+  out << "{\"kind\":";
+  write_string(out, q.kind);
+  out << ",\"name\":";
+  write_string(out, q.name);
+  out << ",\"sort\":";
+  write_sort(out, q.sort);
+  out << ",\"body\":";
+  write_formula(out, *q.body);
   out << "}";
 }
 
@@ -396,23 +454,40 @@ inline void write_formula(std::ostringstream& out, const Formula& f) {
   std::visit([&out](const auto& v) {
     using T = std::decay_t<decltype(v)>;
     if constexpr (std::is_same_v<T, AtomicFormula>) write_atomic(out, v);
-    else if constexpr (std::is_same_v<T, ForallFormula>) write_forall(out, v);
+    else if constexpr (std::is_same_v<T, ConnectiveFormula>) write_connective(out, v);
+    else if constexpr (std::is_same_v<T, QuantifierFormula>) write_quantifier(out, v);
   }, f.v);
 }
 
-inline std::string marshal_declarations(const std::vector<PropertyDecl>& decls) {
+// Marshal an array of ContractDecl into the IR-JSON Document shape:
+//   [{"kind":"contract","name":"...","outBinding":"out","pre":..,"post":..,"inv":..}, ...]
+// pre/post/inv are omitted when null (matches JCS canonicalization "omit absent" rule).
+// Locked key order per ContractDeclaration: kind, name, outBinding, pre?, post?, inv?.
+inline std::string marshal_declarations(const std::vector<ContractDecl>& decls) {
   std::ostringstream out;
   out << "[";
   for (size_t i = 0; i < decls.size(); i++) {
     if (i > 0) out << ",";
-    out << "{\"kind\":\"property\",\"name\":";
+    out << "{\"kind\":\"contract\",\"name\":";
     write_string(out, decls[i].name);
-    out << ",\"formula\":";
-    write_formula(out, *decls[i].formula);
+    out << ",\"outBinding\":";
+    write_string(out, decls[i].outBinding);
+    if (decls[i].pre) {
+      out << ",\"pre\":";
+      write_formula(out, *decls[i].pre);
+    }
+    if (decls[i].post) {
+      out << ",\"post\":";
+      write_formula(out, *decls[i].post);
+    }
+    if (decls[i].inv) {
+      out << ",\"inv\":";
+      write_formula(out, *decls[i].inv);
+    }
     out << "}";
   }
   out << "]";
   return out.str();
 }
 
-} // namespace provekit::ir
+}  // namespace provekit::ir

@@ -106,8 +106,8 @@ func Mul(a, b IrTerm) IrTerm { return ctor("*", []IrTerm{a, b}, Int) }
 func Div(a, b IrTerm) IrTerm { return ctor("/", []IrTerm{a, b}, Real) }
 func Neg(a IrTerm) IrTerm    { return ctor("-", []IrTerm{a}, Int) }
 
-func atom(predicate string, args []IrTerm) IrFormula {
-	return atomicFormula{Predicate: predicate, Args: args}
+func atom(name string, args []IrTerm) IrFormula {
+	return atomicFormula{Name: name, Args: args}
 }
 
 func Eq(a, b IrTerm) IrFormula  { return atom("=", []IrTerm{a, b}) }

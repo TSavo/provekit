@@ -40,16 +40,11 @@ import { generateKeypair } from "./producerKeys/index.js";
 import {
   mintMemento,
   mintBridge,
-  mintLegacyWitness,
   VARIANT_SCHEMA_CIDS,
 } from "./claimEnvelope/index.js";
 import { buildProofEnvelope } from "./proofEnvelope/index.js";
 import type { ClaimEnvelope, EvidenceVariant } from "./claimEnvelope/types.js";
-import { createHash } from "node:crypto";
-
-function hash16(s: string): string {
-  return createHash("sha256").update(s).digest("hex").slice(0, 16);
-}
+import { computeCid } from "./canonicalizer/hash.js";
 
 function readStdin(): string {
   // Synchronous stdin read for CLI use.
@@ -141,14 +136,13 @@ function mintPropertyCmd(args: {
 
   const { privateKey, publicKey, ephemeral } = loadPrivateKey(args.keyPath);
 
-  const evidence: EvidenceVariant = spec.evidence ?? {
-    kind: "legacy-witness",
-    schema: VARIANT_SCHEMA_CIDS["legacy-witness"]!,
-    body: {
-      rawWitness: spec.rawWitness ?? "{}",
-      legacyProducerId: spec.producedBy,
-    },
-  };
+  if (!spec.evidence) {
+    process.stderr.write(
+      `error: 'mint property' requires an explicit evidence body. The legacy-witness fallback was removed in protocol v1.1.\n`,
+    );
+    process.exit(1);
+  }
+  const evidence: EvidenceVariant = spec.evidence;
 
   const memento = mintMemento({
     bindingHash: spec.bindingHash,
@@ -185,12 +179,8 @@ function mintBridgeCmd(args: BridgeArgs): ClaimEnvelope {
   const { privateKey, publicKey, ephemeral } = loadPrivateKey(args.keyPath);
 
   const producedBy = args.producedBy ?? `${args.sourceLayer}@cli`;
-  const bindingHash = args.bindingHash ?? hash16(`${args.sourceLayer}:${args.sourceSymbol}`);
-  const propertyHash = args.propertyHash ?? hash16(`bridge:${args.sourceSymbol}`);
 
   const memento = mintBridge({
-    bindingHash,
-    propertyHash,
     producedBy,
     privateKey,
     sourceSymbol: args.sourceSymbol,
@@ -241,8 +231,11 @@ function mintCatalogCmd(args: {
   // Signer CID: deterministic identifier derived from the public key bytes.
   // (A future revision will replace this with a real public-key memento
   // embedded in members; today the signer field is a synthetic CID.)
+  // Signer CID is the BLAKE3-512 self-identifying hash of the SPKI-DER
+  // bytes of the producer's public key. The "blake3-512:" prefix makes
+  // it dispatch-discriminable from any future algorithm.
   const pubDer = publicKey.export({ type: "spki", format: "der" });
-  const signerCid = "sha256:" + createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+  const signerCid = computeCid(pubDer);
 
   const built = buildProofEnvelope({
     name: catalogName,

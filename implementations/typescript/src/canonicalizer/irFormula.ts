@@ -16,6 +16,5 @@ export type {
   PrimitiveSortName,
   IrTerm,
   AtomicPredicate,
-  IrFormulaLambda,
   IrFormula,
 } from "../ir/formulas.js";

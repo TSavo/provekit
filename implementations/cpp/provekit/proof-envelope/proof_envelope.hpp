@@ -7,11 +7,12 @@
 // Inputs:
 //   name, version, members map, signer CID, signer seed, declaredAt
 // Outputs:
-//   final CBOR bytes + filename CID (sha256(bytes)[:32 hex chars])
+//   final CBOR bytes + filename CID = "blake3-512:" + 128 hex chars
+//   (full BLAKE3-512 digest, self-identifying, no truncation).
 //
-// Determinism: same inputs → byte-identical output. Conformance with
-// other implementations is proved by both producing the same bytes for
-// the same input.
+// Determinism: same inputs produce byte-identical output. Conformance
+// with other implementations is proved by both producing the same bytes
+// for the same input.
 
 #pragma once
 
@@ -37,7 +38,7 @@ struct ProofEnvelopeInput {
 
 struct ProofEnvelopeOutput {
     std::vector<uint8_t> bytes;
-    std::string filename_cid;  // 32 lowercase hex chars
+    std::string filename_cid;  // "blake3-512:" + 128 lowercase hex chars
 };
 
 ProofEnvelopeOutput build_proof_envelope(const ProofEnvelopeInput& input);

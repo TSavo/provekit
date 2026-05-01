@@ -1,20 +1,24 @@
-// THE GO END-TO-END DEMO.
+// THE GO END-TO-END DEMO (v1.1.0, four-way conformance).
 //
 //   Go signs Go.
-//   Go calls C++ (via the bridged kit primitive).
+//   Go calls a peer language (via the bridged kit primitive).
 //   Go detects parseInt(num(0)).
 //
+//   Parameterized over peer kits in /tmp/{cpp,rust}-kit-out-v11/.
+//   Every peer-published .proof discovered runs as its own subtest;
+//   each cell of the four-way matrix reports independently.
+//
 // Architecture:
-//   1. C++ kit shipped a .proof file with parseInt's precondition
-//      (forall n: Int. n > 0) — produced by parseInt_kit_proof.cpp.
-//   2. Go consumer authors invariants via kit primitives ParseInt(Num(...))
-//      — every call emits a Ctor("parseInt", [arg]) IrTerm.
-//   3. Go consumer mints + signs its property mementos in pure Go.
+//   1. C++ kit shipped a v1.1.0 .proof file with parseInt's contract
+//      (pre = `forall n: Int. n > 0`), produced by parseInt_kit_proof.cpp.
+//   2. Go consumer authors invariants via kit primitives ParseInt(Num(...));
+//      every call emits a Ctor("parseInt", [arg]) IrTerm.
+//   3. Go consumer mints + signs its contract mementos in pure Go.
 //   4. Go consumer bundles them into its own .proof file in pure Go.
 //   5. Go bridge enforcement runner walks both .proofs:
 //        - load-all-proofs builds a unified CID pool.
-//        - enumerate-callsites finds Ctor("parseInt", ...) inside Go's properties.
-//        - resolve-bridge-target hash-looks-up the bridge → C++'s property memento.
+//        - enumerate-callsites finds Ctor("parseInt", ...) inside Go's contracts.
+//        - resolve-bridge-target hash-looks-up the bridge → C++'s contract memento.
 //        - instantiate-obligation substitutes the call's arg into `forall n. n > 0`.
 //        - solve-obligation invokes z3.
 //        - report aggregates.
@@ -33,39 +37,73 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/provekit/ir-symbolic/canonicalizer"
 	"github.com/provekit/ir-symbolic/claim_envelope"
 	"github.com/provekit/ir-symbolic/ir"
 	"github.com/provekit/ir-symbolic/proof_envelope"
 )
 
-const cppProofPath = "/tmp/cpp-kit-out/84ca9c7c382cc28d3ca260cd69bda6c1.proof"
+// peerProofDirs holds every peer-language reference impl's v1.1.0
+// output directory. The filename CID is full BLAKE3-512 with
+// "blake3-512:" prefix; we discover dynamically rather than
+// hard-coding. Regenerate the C++/Rust kits via their respective
+// publishers (the tools/run-*.sh scripts walk this).
+var peerProofDirs = []struct {
+	dir    string
+	family string // "cpp" / "rust"
+}{
+	{dir: "/tmp/cpp-kit-out-v11", family: "cpp"},
+	{dir: "/tmp/rust-kit-out-v11", family: "rust"},
+}
 
-func TestCrossLangGoVerifiesCppProof(t *testing.T) {
-	if _, err := os.Stat(cppProofPath); err != nil {
-		t.Skipf("C++ .proof not found at %s — run tools/run-proof-envelope-conformance.sh first", cppProofPath)
+func TestCrossLangGoVerifiesPeerProof(t *testing.T) {
+	type peerProof struct {
+		path   string
+		family string
+	}
+	var found []peerProof
+	for _, p := range peerProofDirs {
+		matches, err := filepath.Glob(filepath.Join(p.dir, "*.proof"))
+		if err != nil {
+			t.Fatalf("glob %s: %v", p.dir, err)
+		}
+		for _, m := range matches {
+			found = append(found, peerProof{path: m, family: p.family})
+		}
+	}
+	if len(found) == 0 {
+		t.Skipf("no peer .proof files found in any of %v", peerProofDirs)
 	}
 
-	projectRoot, err := os.MkdirTemp("", "go-cross-lang-")
+	for _, peer := range found {
+		peer := peer
+		t.Run(peer.family+"_"+filepath.Base(peer.path), func(t *testing.T) {
+			runOnePeer(t, peer.path, peer.family)
+		})
+	}
+}
+
+func runOnePeer(t *testing.T, peerProofPath, family string) {
+	projectRoot, err := os.MkdirTemp("", "go-cross-lang-"+family+"-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(projectRoot)
 
-	// ----- 1. Install the C++-produced .proof in node_modules -----
-	cppKitDir := filepath.Join(projectRoot, "node_modules", "@example", "cpp-kit")
-	if err := os.MkdirAll(cppKitDir, 0o755); err != nil {
+	// ----- 1. Install the peer-produced .proof in node_modules -----
+	peerKitDir := filepath.Join(projectRoot, "node_modules", "@example", family+"-kit")
+	if err := os.MkdirAll(peerKitDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cppBytes, err := os.ReadFile(cppProofPath)
+	peerBytes, err := os.ReadFile(peerProofPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cppProofDest := filepath.Join(cppKitDir, "84ca9c7c382cc28d3ca260cd69bda6c1.proof")
-	if err := os.WriteFile(cppProofDest, cppBytes, 0o644); err != nil {
+	peerProofDest := filepath.Join(peerKitDir, filepath.Base(peerProofPath))
+	if err := os.WriteFile(peerProofDest, peerBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,11 +112,11 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 	ir.ResetCollector()
 	finishCollect := ir.BeginCollecting()
 
-	// ParseInt(Num(5)) — should DISCHARGE
+	// ParseInt(Num(5)); should DISCHARGE
 	ir.Must("calls-parseInt-with-positive-5",
 		ir.Eq(ir.ParseInt(ir.Num(5)), ir.Num(5)))
 
-	// ParseInt(Num(0)) — should be UNSATISFIED (catches the C++ precondition)
+	// ParseInt(Num(0)); should be UNSATISFIED (catches the peer's precondition)
 	ir.Must("calls-parseInt-with-zero",
 		ir.Eq(ir.ParseInt(ir.Num(0)), ir.Num(0)))
 
@@ -87,36 +125,36 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 		t.Fatalf("expected 2 declarations, got %d", len(decls))
 	}
 
-	// ----- 3. Mint Go's property mementos (Go signs Go) -----
+	// ----- 3. Mint Go's contract mementos (Go signs Go) -----
 	consumerSigner := makeDeterministicKey([]byte("go-consumer-signer-seed"))
 	minter := claim_envelope.NewMinter(consumerSigner)
 
 	declaredAt := "2026-04-30T13:00:00.000Z"
+	producedBy := "go-consumer@1"
 	consumerMembers := map[string][]byte{}
 
 	for _, d := range decls {
-		prop, ok := d.(ir.PropertyDeclaration)
+		contract, ok := d.(ir.ContractDeclaration)
 		if !ok {
 			continue
 		}
-		formulaValue, err := claim_envelope.FormulaToValue(prop.Formula)
+		preValue, err := claim_envelope.FormulaToValue(contract.Pre)
 		if err != nil {
 			t.Fatalf("FormulaToValue: %v", err)
 		}
-		minted, err := minter.MintProperty(claim_envelope.PropertyMintArgs{
-			BindingHash:  hash16("go-consumer:" + prop.Name),
-			PropertyHash: hash16("hash-of:" + prop.Name),
-			ProducedBy:   "go-consumer@1",
-			ProducedAt:   declaredAt,
-			IRFormula:    formulaValue,
-			Scope: map[string]interface{}{
-				"kind": "function",
-				"name": prop.Name,
+		minted, err := minter.MintContract(claim_envelope.ContractMintArgs{
+			ContractName:  contract.Name,
+			Pre:           preValue,
+			OutBinding:    contract.OutBinding,
+			ProducedBy:    producedBy,
+			ProducedAt:    declaredAt,
+			AuthoringKind: claim_envelope.AuthoringKitAuthor,
+			AuthoringKitAuthor: claim_envelope.AuthoringKitAuthorArgs{
+				Author: producedBy,
 			},
-			IRKitVersion: "go-kit@1.0",
 		})
 		if err != nil {
-			t.Fatalf("mint property: %v", err)
+			t.Fatalf("mint contract: %v", err)
 		}
 		consumerMembers[minted.CID] = minted.CanonicalBytes
 	}
@@ -129,7 +167,7 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 		Name:       "go-consumer-app",
 		Version:    "1.0.0",
 		Members:    consumerMembers,
-		SignerCID:  "sha256:go-consumer-signer",
+		SignerCID:  "blake3-512:" + strings.Repeat("0", 127) + "2",
 		SignerSeed: catalogSeed,
 		DeclaredAt: declaredAt,
 	})
@@ -142,7 +180,7 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 	}
 	t.Logf("Go consumer .proof: %s (%d bytes)", consumerProofPath, len(out.Bytes))
 
-	// ----- 5. Run the Go bridge enforcement runner (Go calls C++ via the bridge) -----
+	// ----- 5. Run the Go bridge enforcement runner (Go calls peer via the bridge) -----
 	solver := &Solver{
 		Entries: []SolverEntry{
 			{
@@ -193,10 +231,10 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 			failing.Status, failing.Reason)
 	}
 
-	t.Logf("\n  ✓ DEMO: Go verifier caught ParseInt(Num(0)) using the C++-authored precondition.\n"+
+	t.Logf("\n  DEMO: Go verifier caught ParseInt(Num(0)) using the %s-authored precondition.\n"+
 		"    Discharged calls:  %d\n"+
 		"    Caught violations: %d\n",
-		report.Discharged, report.Violations)
+		family, report.Discharged, report.Violations)
 }
 
 // makeDeterministicKey derives an ed25519 private key from a seed-like
@@ -214,13 +252,7 @@ func makeDeterministicKey(seed []byte) ed25519.PrivateKey {
 	return ed25519.NewKeyFromSeed(ed25519Seed[:])
 }
 
-// hash16 derives a 16-char hex hash from the given string.
-func hash16(s string) string {
-	bytes, _ := canonicalizer.NewEncoder().Encode(s)
-	full := canonicalizer.SHA256Hex(bytes)
-	return full[:16]
-}
-
-// fmt is referenced indirectly via Sprintf'd test logs; this no-op
-// import retained explicitly to avoid breakage if the file evolves.
+// fmt is referenced via Sprintf'd test logs; this no-op import is
+// retained so a future caller can add diagnostic output without
+// re-importing.
 var _ = fmt.Sprintf

@@ -1,17 +1,19 @@
 /**
- * CID construction for claim envelopes.
+ * CID construction for claim envelopes (protocol v1.1.0).
  *
  * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md §CID construction
+ *       protocol/specs/2026-04-30-memento-envelope-grammar.md §"Self-identifying"
  *
- * cid = sha256(canonicalize(envelope_without_cid_and_signature))[:32 hex chars]
+ * cid = "blake3-512:" + hex(BLAKE3_512(canonicalize(envelope_without_cid_and_signature)))
  *
  * The fields `cid` and `producerSignature` are ELIDED (not set to null/undefined,
  * just omitted from the input object) before canonicalization. This avoids
- * self-reference and signature dependency.
+ * self-reference and signature dependency. The resulting hash carries the
+ * algorithm tag inline so verifiers dispatch on the prefix.
  */
 
-import { createHash } from "node:crypto";
 import { canonicalEncode } from "./canonicalize.js";
+import { computeCid } from "../canonicalizer/hash.js";
 import type { ClaimEnvelope } from "./types.js";
 
 /**
@@ -50,13 +52,13 @@ export function envelopeForHashing(
 /**
  * Compute the CID for a claim envelope.
  *
- * sha256-prefix-32 (32 hex chars = first 128 bits of sha256) of the
- * canonicalized envelope with `cid` and `producerSignature` elided.
+ * Returns the self-identifying string
+ * `"blake3-512:" + hex(BLAKE3_512(canonical_bytes))`.
  */
 export function computeEnvelopeCid(
   envelope: Omit<ClaimEnvelope, "cid"> & { cid?: string },
 ): string {
   const input = envelopeForHashing(envelope);
   const bytes = canonicalEncode(input);
-  return createHash("sha256").update(bytes).digest("hex").slice(0, 32);
+  return computeCid(bytes);
 }

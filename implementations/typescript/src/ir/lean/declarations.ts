@@ -77,46 +77,62 @@ export function collectDeclarations(formulas: IrFormula[]): Declarations {
   };
 }
 
-function walkFormula(formula: IrFormula, state: CollectorState): void {
+const REF_SORT: Sort = { kind: "primitive", name: "Ref" };
+const SORT_HINT = Symbol.for("provekit.ir.sortHint");
+
+function inferTermSort(t: IrTerm, scope: Map<string, Sort>): Sort {
+  if (t.kind === "const") return t.sort;
+  if (t.kind === "var") return scope.get(t.name) ?? REF_SORT;
+  const v = (t as unknown as Record<symbol, unknown>)[SORT_HINT];
+  return (v as Sort | undefined) ?? REF_SORT;
+}
+
+function walkFormula(
+  formula: IrFormula,
+  state: CollectorState,
+  scope: Map<string, Sort> = new Map(),
+): void {
   switch (formula.kind) {
     case "forall":
-    case "exists":
+    case "exists": {
       collectUserSorts(formula.sort, state.userSorts);
-      walkFormula(formula.predicate.body, state);
+      const next = new Map(scope);
+      next.set(formula.name, formula.sort);
+      walkFormula(formula.body, state, next);
       return;
+    }
     case "and":
-      for (const c of formula.conjuncts) walkFormula(c, state);
-      return;
     case "or":
-      for (const d of formula.disjuncts) walkFormula(d, state);
+    case "implies":
+      for (const o of formula.operands) walkFormula(o, state, scope);
       return;
     case "not":
-      walkFormula(formula.body, state);
-      return;
-    case "implies":
-      walkFormula(formula.antecedent, state);
-      walkFormula(formula.consequent, state);
+      walkFormula(formula.operands[0]!, state, scope);
       return;
     case "atomic": {
-      for (const t of formula.args) walkTerm(t, state);
-      if (!BUILT_IN_PREDICATES.has(formula.predicate)) {
-        const argSorts = formula.args.map((a) => a.sort);
-        recordPredicate(state, formula.predicate, argSorts);
+      for (const t of formula.args) walkTerm(t, state, scope);
+      if (!BUILT_IN_PREDICATES.has(formula.name)) {
+        const argSorts = formula.args.map((a) => inferTermSort(a, scope));
+        recordPredicate(state, formula.name, argSorts);
       }
       return;
     }
   }
 }
 
-function walkTerm(term: IrTerm, state: CollectorState): void {
-  collectUserSorts(term.sort, state.userSorts);
+function walkTerm(
+  term: IrTerm,
+  state: CollectorState,
+  scope: Map<string, Sort>,
+): void {
+  collectUserSorts(inferTermSort(term, scope), state.userSorts);
   if (term.kind === "ctor") {
-    for (const a of term.args) walkTerm(a, state);
+    for (const a of term.args) walkTerm(a, state, scope);
     recordCtor(
       state,
       term.name,
-      term.args.map((a) => a.sort),
-      term.sort,
+      term.args.map((a) => inferTermSort(a, scope)),
+      inferTermSort(term, scope),
     );
   }
 }

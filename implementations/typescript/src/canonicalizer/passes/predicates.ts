@@ -188,7 +188,9 @@ function sortKey(sort: CanonicalSort): string {
 // -----------------------------------------------------------------------
 
 export interface NormalizedAtomic {
-  predicate: CanonicalPredicate;
+  /** Canonical predicate name (formerly `predicate`; renamed to align
+   * with the v1.1 IR-JSON grammar). */
+  name: CanonicalPredicate;
   args: CanonicalTerm[];
 }
 
@@ -211,10 +213,10 @@ export function canonicalizePredicate(
       const ak = termSortKey(a);
       const bk = termSortKey(b);
       if (ak > bk) {
-        return { predicate: canonical, args: [b, a] };
+        return { name: canonical, args: [b, a] };
       }
     }
-    return { predicate: canonical, args };
+    return { name: canonical, args };
   }
 
   if (canonical === "<" || canonical === "≤" || canonical === ">" || canonical === "≥") {
@@ -224,12 +226,12 @@ export function canonicalizePredicate(
       if (a.kind === "const" && b.kind !== "const") {
         const flipped = FLIP_PREDICATE[canonical];
         if (flipped) {
-          return { predicate: flipped, args: [b, a] };
+          return { name: flipped, args: [b, a] };
         }
       }
     }
-    return { predicate: canonical, args };
+    return { name: canonical, args };
   }
 
-  return { predicate: canonical, args };
+  return { name: canonical, args };
 }

@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// End-to-end Rust kit-as-author: writes a real .proof file containing
+// a contract memento (parseInt's pre) + a bridge memento (TS-layer
+// parseInt -> that contract). All signed, all in pure Rust.
+//
+// Mirrors implementations/cpp/provekit-ir-symbolic/example/parseInt_kit_proof.cpp.
+//
+// Pipeline:
+//   1. Author the contract via kit primitives.
+//   2. Mint each contract as a signed ClaimEnvelope (memento).
+//   3. Mint the bridge referencing the contract's CID.
+//   4. Bundle into a .proof catalog (deterministic CBOR).
+//   5. Write <hex>.proof to the directory passed as argv[1].
+//   6. Print the full self-identifying CID to stdout.
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use provekit_claim_envelope::{
+    mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
+};
+use provekit_ir_symbolic::serialize::formula_to_value;
+use provekit_ir_symbolic::{
+    begin_collecting, finish, forall, gt, must, num, reset_collector, Int,
+};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
+
+fn main() -> ExitCode {
+    let argv: Vec<String> = std::env::args().collect();
+    let out_dir = if argv.len() >= 2 {
+        PathBuf::from(&argv[1])
+    } else {
+        PathBuf::from(".")
+    };
+
+    if let Err(e) = fs::create_dir_all(&out_dir) {
+        eprintln!("ERROR: cannot create out_dir {}: {e}", out_dir.display());
+        return ExitCode::from(1);
+    }
+
+    // ----- 1. Author the contract via kit primitives -----
+    reset_collector();
+    begin_collecting();
+
+    // parseInt's pre: forall n. n > 0. (Mirrors the C++ demo.)
+    must("parseInt", forall(Int(), |n| gt(n, num(0))));
+
+    let contract_decls = finish();
+
+    // ----- 2. Mint each contract as a signed ClaimEnvelope -----
+    let signer_seed: Ed25519Seed = [0x42; 32]; // deterministic for the demo
+    let declared_at = "2026-04-30T12:00:00.000Z";
+    let produced_by = "rust-kit@1.0";
+
+    let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut contract_name_to_cid = std::collections::HashMap::<String, String>::new();
+
+    for d in &contract_decls {
+        let args = MintContractArgs {
+            contract_name: d.name.clone(),
+            pre: d.pre.as_deref().map(formula_to_value),
+            post: d.post.as_deref().map(formula_to_value),
+            inv: d.inv.as_deref().map(formula_to_value),
+            out_binding: d.out_binding.clone(),
+            produced_by: produced_by.into(),
+            produced_at: declared_at.into(),
+            input_cids: vec![],
+            authoring: Authoring::KitAuthor {
+                author: produced_by.into(),
+                note: None,
+            },
+            signer_seed,
+        };
+        let minted = match mint_contract(&args) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("ERROR: mint_contract({}): {e}", d.name);
+                return ExitCode::from(1);
+            }
+        };
+        println!("  contract minted: {} -> CID {}", d.name, minted.cid);
+        members.insert(minted.cid.clone(), minted.canonical_bytes);
+        contract_name_to_cid.insert(d.name.clone(), minted.cid);
+    }
+
+    // ----- 3. Mint the bridge: parseInt (TS surface) -> contract memento -----
+    let parseint_target_cid = match contract_name_to_cid.get("parseInt") {
+        Some(c) => c.clone(),
+        None => {
+            eprintln!("ERROR: parseInt contract was not minted");
+            return ExitCode::from(1);
+        }
+    };
+    let bridge_args = MintBridgeArgs {
+        produced_by: produced_by.into(),
+        produced_at: declared_at.into(),
+        source_symbol: "parseInt".into(),
+        source_layer: "ts".into(),
+        target_contract_cid: parseint_target_cid,
+        target_layer: "rust-kit".into(),
+        ir_arg_sorts: vec!["String".into()],
+        ir_return_sort: "Int".into(),
+        notes: String::new(),
+        signer_seed,
+    };
+    let minted_bridge = mint_bridge(&bridge_args);
+    println!(
+        "  bridge   minted: parseInt -> CID {}",
+        minted_bridge.cid
+    );
+    members.insert(minted_bridge.cid.clone(), minted_bridge.canonical_bytes);
+
+    // ----- 4. Bundle into a .proof catalog -----
+    // Compute a real signer CID: hash the producer's public key bytes
+    // (the public-key memento isn't authored in this demo, but we
+    // produce a content-addressed signer reference).
+    let signer_pubkey = ed25519_pubkey_string(&signer_seed);
+    let signer_cid =
+        provekit_canonicalizer::blake3_512_of(signer_pubkey.as_bytes());
+
+    let proof_input = ProofEnvelopeInput {
+        name: "@example/rust-kit".into(),
+        version: "1.0.0".into(),
+        members,
+        signer_cid,
+        signer_seed,
+        declared_at: declared_at.into(),
+    };
+    let built = build_proof_envelope(&proof_input);
+
+    // ----- 5. Write <full-cid>.proof to disk -----
+    // v1.1.0 filename shape is `blake3-512:<hex>.proof` — same as the
+    // C++ and Go peers. Self-identifying so cross-language verifiers
+    // can match by regex. The full self-identifying CID is also printed
+    // to stdout for downstream consumers.
+    let out_path = out_dir.join(format!("{}.proof", built.cid));
+    if let Err(e) = fs::write(&out_path, &built.bytes) {
+        eprintln!("ERROR: write to {} failed: {e}", out_path.display());
+        return ExitCode::from(1);
+    }
+    println!(
+        "\n  wrote .proof: {} ({} bytes, cid={})",
+        out_path.display(),
+        built.bytes.len(),
+        built.cid
+    );
+    ExitCode::SUCCESS
+}

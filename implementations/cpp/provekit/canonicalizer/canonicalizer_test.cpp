@@ -15,14 +15,15 @@
 //    "kind":"atomic","predicate":">"}
 //
 // (rendered with all keys sorted per §7.3, no whitespace per §7.4,
-//  numbers per §7.6 — for integer 0, the digit "0").
+//  numbers per §7.6, integer 0 emits digit "0").
 //
-// SHA-256 of those bytes (computed via shasum -a 256 — system tool,
-// no implementation involved):
-//   818cc781bf4356554c10d65b46112bd9210e41f1605ef071a877bbff7d9ca237
+// BLAKE3-512 of those bytes (v1.1.0 protocol hash, full 64-byte digest,
+// computed by feeding the bytes to the official BLAKE3 C library):
+//   c592f83501c1cfbb9ae69fe89b7738896d0309f1493e3b3f89dbbe78ebbcdb5d
+//   6a519307b558b89e37a68d0443a564719d57f30e6a53f4d014b48e9d7fba23a5
 //
-// propertyHash (first 16 hex chars per §11):
-//   818cc781bf435655
+// propertyHash per §11 (self-identifying tag + full hex):
+//   blake3-512:c592...23a5
 //
 // Any conformant implementation in any language must produce these
 // exact bytes and this exact hash. If C++ doesn't match, EITHER the
@@ -74,9 +75,12 @@ constexpr const char* EXPECTED_BYTES =
     R"({"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],)"
     R"("kind":"atomic","predicate":">"})";
 
-// Spec-derived expected propertyHash. Derived from `shasum -a 256`
-// over EXPECTED_BYTES, taking the first 16 hex chars per §11.
-constexpr const char* EXPECTED_PROPERTY_HASH = "818cc781bf435655";
+// Spec-derived expected propertyHash for v1.1.0: BLAKE3-512 over
+// EXPECTED_BYTES, prefixed with the self-identifying tag "blake3-512:".
+constexpr const char* EXPECTED_PROPERTY_HASH =
+    "blake3-512:"
+    "c592f83501c1cfbb9ae69fe89b7738896d0309f1493e3b3f89dbbe78ebbcdb5d"
+    "6a519307b558b89e37a68d0443a564719d57f30e6a53f4d014b48e9d7fba23a5";
 
 bool check(const char* name, bool ok, const std::string& got, const std::string& want) {
     if (ok) {
@@ -116,6 +120,48 @@ int main() {
                actual_hash,
                EXPECTED_PROPERTY_HASH)) {
         failures++;
+    }
+
+    // Normative conformance test per protocol-catalog-format §5: the
+    // unicode atomic predicates (≥, ≤, ≠) MUST round-trip verbatim.
+    // The kit's atomic predicate names use exactly these UTF-8
+    // sequences. Cross-language hash agreement depends on this.
+    //
+    // U+2265 ≥ encodes as e2 89 a5; U+2264 ≤ as e2 89 a4; U+2260 ≠
+    // as e2 89 a0. Any encoder that re-encodes per byte (treating
+    // each continuation byte as a code point) will corrupt these.
+    {
+        const char* unicode_predicates[] = {"\xe2\x89\xa5", "\xe2\x89\xa4", "\xe2\x89\xa0"};
+        for (const char* sym : unicode_predicates) {
+            auto v = Value::string(sym);
+            std::string encoded = encode_jcs(*v);
+            // Encoded form is "<sym>" — the input plus surrounding quotes.
+            std::string expected = std::string("\"") + sym + "\"";
+            std::string label = std::string("unicode predicate round-trip: ") + sym;
+            if (!check(label.c_str(), encoded == expected, encoded, expected)) {
+                failures++;
+            }
+        }
+    }
+    {
+        // Mixed ASCII + unicode in one string, as appears in IR atomic
+        // names like "x ≥ 0" if ever used as a name field.
+        auto v = Value::string("x \xe2\x89\xa5 0");
+        std::string encoded = encode_jcs(*v);
+        std::string expected = "\"x \xe2\x89\xa5 0\"";
+        if (!check("mixed ASCII + unicode preserved", encoded == expected, encoded, expected)) {
+            failures++;
+        }
+    }
+    {
+        // Object with a unicode name field, mirroring an IR atomic node:
+        // {"name":"≥"} canonicalizes to literally those bytes.
+        auto v = Value::object({{"name", Value::string("\xe2\x89\xa5")}});
+        std::string encoded = encode_jcs(*v);
+        std::string expected = "{\"name\":\"\xe2\x89\xa5\"}";
+        if (!check("unicode in object name field", encoded == expected, encoded, expected)) {
+            failures++;
+        }
     }
 
     std::printf("\n");

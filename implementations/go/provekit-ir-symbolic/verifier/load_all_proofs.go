@@ -1,8 +1,6 @@
 package verifier
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,7 +20,18 @@ import (
 // (member CIDs match envelope identities). Rule 3 (catalog signature
 // verify) is deferred — needs a public-key memento walker that v1
 // doesn't yet have.
+//
+// v1.1.0: every protocol-surface hash is BLAKE3-512 with the
+// "blake3-512:" tag; every signature is "ed25519:" + base64(sig).
+// Unknown algorithm tags fail-loud per the verifier-dispatch contract
+// in protocol/specs/2026-04-30-memento-envelope-grammar.md.
 type LoadAllProofsStage struct{}
+
+// Tag prefixes permitted on the v1.1.0 protocol surface.
+const (
+	hashTagPrefix = "blake3-512:"
+	sigTagPrefix  = "ed25519:"
+)
 
 // Run loads every .proof in projectRoot and returns the unified pool.
 func (s *LoadAllProofsStage) Run(projectRoot string) (*MementoPool, error) {
@@ -38,22 +47,54 @@ func (s *LoadAllProofsStage) Run(projectRoot string) (*MementoPool, error) {
 	return pool, nil
 }
 
-var proofFilenameRE = regexp.MustCompile(`^([0-9a-f]+)\.proof$`)
+// proofFilenameV11RE matches the v1.1.0 filename shape:
+//
+//	blake3-512:<128 hex>.proof
+var proofFilenameV11RE = regexp.MustCompile(`^(blake3-512:[0-9a-f]{128})\.proof$`)
+
+// proofFilenameAnyTagRE matches any self-identifying-tag filename so
+// we can reject unknown tags loud (mirrors C++ load_all_proofs.cpp
+// re_anytag).
+var proofFilenameAnyTagRE = regexp.MustCompile(`^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$`)
+
+// proofFilenameLegacyRE matches the pre-v1.1.0 sha256 32-hex shape
+// (no algorithm tag). Treated as a legacy fixture: filename-shape
+// passes (no rule-1 hash check), but the member envelopes inside
+// will lack "blake3-512:" prefixes and fail loud at the member-tag
+// check below. This mirrors the C++ verifier's permissive filename
+// behavior for unmarked files while still hard-rejecting v0 hashes.
+var proofFilenameLegacyRE = regexp.MustCompile(`^[0-9a-f]+\.proof$`)
 
 func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error {
 	bytes, err := os.ReadFile(proofPath)
 	if err != nil {
 		return fmt.Errorf("read: %w", err)
 	}
-	// Rule 1: filename CID matches content.
+
+	// Rule 1: filename CID matches content (trust root).
+	// v1.1.0 prefers `blake3-512:<128 hex>.proof`. We also tolerate
+	// bare `<hex>.proof` (legacy path; the hash-tag check below catches
+	// any v0 mementos inside it). Any OTHER self-identifying tag is
+	// rejected loud — mirrors implementations/cpp/provekit/verifier/
+	// load_all_proofs.cpp.
 	filename := filepath.Base(proofPath)
-	if m := proofFilenameRE.FindStringSubmatch(filename); m != nil {
-		sum := sha256.Sum256(bytes)
-		derived := hex.EncodeToString(sum[:])[:32]
-		if derived != m[1] {
-			return fmt.Errorf("rule 1: filename CID %s != content hash %s", m[1], derived)
+	if m := proofFilenameV11RE.FindStringSubmatch(filename); m != nil {
+		filenameCID := m[1]
+		derived := canonicalizer.ComputeCID(bytes)
+		if derived != filenameCID {
+			return fmt.Errorf("rule 1 (trust root): filename CID %s != content hash %s",
+				filenameCID, derived)
 		}
+	} else if m := proofFilenameAnyTagRE.FindStringSubmatch(filename); m != nil {
+		// Self-identifying tag we do not recognize. Reject loud.
+		return fmt.Errorf("rule 1 (trust root): unsupported hash tag in filename %q; v1.1.0 requires `blake3-512:`",
+			m[1])
+	} else if !proofFilenameLegacyRE.MatchString(filename) {
+		// Filename doesn't match any known shape; ignore (don't
+		// surface as an error — non-.proof file got into the
+		// enumerator? shouldn't happen but be lenient).
 	}
+
 	dec := proof_envelope.NewCBORDecoder(bytes)
 	catalog, err := dec.DecodeCatalog()
 	if err != nil {
@@ -64,6 +105,15 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 		return fmt.Errorf("catalog has no `members` map")
 	}
 	for cid, raw := range membersAny {
+		// Tag-dispatch: every member CID MUST be self-identifying.
+		// v1.1.0 permits only "blake3-512:"; reject anything else loud.
+		if !strings.HasPrefix(cid, hashTagPrefix) {
+			pool.LoadErrors = append(pool.LoadErrors, LoadError{
+				ProofPath: proofPath,
+				Reason:    fmt.Sprintf("member %s: unsupported hash tag; v1.1.0 requires `blake3-512:`", cid),
+			})
+			continue
+		}
 		envBytes, ok := raw.([]byte)
 		if !ok {
 			pool.LoadErrors = append(pool.LoadErrors, LoadError{
@@ -79,6 +129,16 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 				Reason:    fmt.Sprintf("member %s: parse: %s", cid, err),
 			})
 			continue
+		}
+		// Tag-dispatch on producerSignature: v1.1.0 permits "ed25519:" only.
+		if sigRaw, ok := env["producerSignature"].(string); ok {
+			if !strings.HasPrefix(sigRaw, sigTagPrefix) {
+				pool.LoadErrors = append(pool.LoadErrors, LoadError{
+					ProofPath: proofPath,
+					Reason:    fmt.Sprintf("member %s: unsupported signature tag; v1.1.0 requires `ed25519:`", cid),
+				})
+				continue
+			}
 		}
 		// Rule 2: re-derive member CID from envelope JCS.
 		derived, err := computeEnvelopeCID(env)
@@ -105,7 +165,10 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 }
 
 // computeEnvelopeCID re-derives the envelope's CID by JCS-encoding the
-// envelope minus cid + producerSignature. This is the spec's CID rule
+// envelope minus cid + producerSignature. Per v1.1.0:
+//
+//	"blake3-512:" + hex(BLAKE3_512(canonical-bytes))
+//
 // (universal-claim-envelope.md §CID construction).
 func computeEnvelopeCID(env map[string]interface{}) (string, error) {
 	stripped := make(map[string]interface{}, len(env))
@@ -120,7 +183,7 @@ func computeEnvelopeCID(env map[string]interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return canonicalizer.NewHasher().EnvelopeCID32(bytes), nil
+	return canonicalizer.ComputeCID(bytes), nil
 }
 
 // enumerateProofFiles walks projectRoot + node_modules/{*,@*/*}/ for

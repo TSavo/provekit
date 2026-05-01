@@ -1,0 +1,129 @@
+# ProvekIt — cross-language conformance gate
+#
+# Runs the same gate as `make ci` on every push and PR. Source of truth
+# for "is the protocol byte-deterministic across all 5 peer languages on
+# Linux x86_64 today" — answer is committed to the repo, not asserted.
+#
+# Languages exercised:
+#   Rust 1.x stable, Go 1.22, .NET 10 (preview), Node 22 + pnpm 10,
+#   Python 3.12, clang++ via apt + vendored portable BLAKE3.
+#
+# The Makefile is the contract. CI installs toolchains then calls `make`
+# targets so local dev and CI run the same code path. If you can run
+# `make ci` locally, this workflow runs the same thing.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same branch / PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    name: Cross-language conformance gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------
+      # Toolchain setup (parallelizable from GH's perspective; ordered
+      # here for log readability).
+      # ---------------------------------------------------------------
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target dirs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+          cache-dependency-path: |
+            implementations/go/provekit-ir-symbolic/go.sum
+            implementations/go/provekit-self-contracts/go.sum
+            implementations/go/provekit-lift-go-tests/go.sum
+
+      - name: Set up .NET 10 (preview)
+        uses: actions/setup-dotnet@v4
+        with:
+          # net10.0 is pre-stable; setup-dotnet@v4 needs an explicit quality
+          # tag plus the major version. The 'preview' channel resolves to
+          # the latest 10.0.x SDK from the official Microsoft feed.
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          # NOT Node 25; @ipld/dag-cbor ESM-only + tsx CJS bridge fights
+          # on Node 25 (see the broken bin/provekit*.cjs launchers). The
+          # vitest path used by mint-ts is fine on 22.
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      # ---------------------------------------------------------------
+      # System-level deps: openssl, nlohmann-json. BLAKE3 is vendored
+      # at tools/blake3-vendored/, no system package required.
+      # ---------------------------------------------------------------
+
+      - name: Install C++ system deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            libssl-dev \
+            nlohmann-json3-dev
+
+      # ---------------------------------------------------------------
+      # The gate.
+      # ---------------------------------------------------------------
+
+      - name: make help (sanity)
+        run: make help
+
+      - name: make conformance
+        # Catalog v1.2.0 hash equality, signed protocol verify, and all 5
+        # peer self-contract CIDs equal their pinned values. Failure here
+        # means the protocol has drifted and the PR is not mergeable.
+        run: make conformance
+
+      - name: make test-all
+        # Per-language native test suites. test-rust runs the Rust
+        # workspace + the two tools crates; test-go iterates the three
+        # Go modules; test-ts runs vitest; test-csharp runs xUnit;
+        # test-python runs pytest after a local pip install.
+        run: make test-all

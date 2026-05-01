@@ -14,8 +14,8 @@ function lift(v: Liftable): IrTerm {
   return liftToTerm(v);
 }
 
-function atom(predicate: string, args: Liftable[]): IrFormula {
-  return { kind: "atomic", predicate, args: args.map(lift) };
+function atom(predicateName: string, args: Liftable[]): IrFormula {
+  return { kind: "atomic", name: predicateName, args: args.map(lift) };
 }
 
 // ---------------------------------------------------------------------------

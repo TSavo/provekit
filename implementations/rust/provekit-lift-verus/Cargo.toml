@@ -1,0 +1,13 @@
+[package]
+name = "provekit-lift-verus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt lift adapter: detect verus! { ... } blocks and emit structured skip warnings (verus has its own syntax-extension layer; v0 documents the gap)."
+
+[dependencies]
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+syn = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }

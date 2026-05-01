@@ -14,6 +14,7 @@ import { _resetBridges, lookupBridge, primitiveBridge } from "./bridges.js";
 import { mintBridge } from "../../claimEnvelope/index.js";
 import { buildProofEnvelope } from "../../proofEnvelope/index.js";
 import { generateKeypair } from "../../producerKeys/index.js";
+import { computeCid } from "../../canonicalizer/hash.js";
 import type { ClaimEnvelope } from "../../claimEnvelope/types.js";
 
 beforeEach(() => {
@@ -56,8 +57,6 @@ function installFakePackageWithProof(
   const members = new Map<string, ClaimEnvelope>();
   for (const b of bridges) {
     const env = mintBridge({
-      bindingHash: hash16(`${b.sourceLayer}:${b.irName}`),
-      propertyHash: hash16(`bridge:${b.irName}`),
       producedBy: `${b.sourceLayer}@test`,
       privateKey: bridgeKey,
       sourceSymbol: b.irName,
@@ -75,9 +74,7 @@ function installFakePackageWithProof(
     seed: randomBytes(32),
   });
   const pubDer = catalogPub.export({ type: "spki", format: "der" });
-  const { createHash } = require("node:crypto");
-  const signerCid =
-    "sha256:" + createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+  const signerCid = computeCid(pubDer);
 
   const built = buildProofEnvelope({
     name,
@@ -102,9 +99,8 @@ function installFakePackageWithProof(
   return { packageRoot, proofCid: built.cid };
 }
 
-function hash16(s: string): string {
-  const { createHash } = require("node:crypto");
-  return createHash("sha256").update(s).digest("hex").slice(0, 16);
+function hashString(s: string): string {
+  return computeCid(Buffer.from(s, "utf8"));
 }
 
 describe("discoverProtocolKits", () => {
@@ -149,8 +145,18 @@ describe("discoverProtocolKits", () => {
     const root = makeFakeProject();
     try {
       installFakePackageWithProof(root, "@example/kit", "1.0.0", [
-        { irName: "parseInt", sourceLayer: "ts", targetCid: "sha256:abc", targetLayer: "v8" },
-        { irName: "abs", sourceLayer: "ts", targetCid: "sha256:def", targetLayer: "v8" },
+        {
+          irName: "parseInt",
+          sourceLayer: "ts",
+          targetCid: "blake3-512:" + "abc".padStart(128, "0"),
+          targetLayer: "v8",
+        },
+        {
+          irName: "abs",
+          sourceLayer: "ts",
+          targetCid: "blake3-512:" + "def".padStart(128, "0"),
+          targetLayer: "v8",
+        },
       ]);
 
       const result = await discoverProtocolKits(root);
@@ -164,7 +170,9 @@ describe("discoverProtocolKits", () => {
       const parseInt = lookupBridge("parseInt");
       expect(parseInt).not.toBeNull();
       expect(parseInt!.sourceLayer).toBe("ts");
-      expect(parseInt!.targetContractCid).toBe("sha256:abc");
+      expect(parseInt!.targetContractCid).toBe(
+        "blake3-512:" + "abc".padStart(128, "0"),
+      );
       expect(parseInt!.targetLayer).toBe("v8");
       // Task #40: type signature is now carried in the bridge envelope
       // and round-trips through .proof discovery. No more empty argSorts.
@@ -190,7 +198,14 @@ describe("discoverProtocolKits", () => {
         root,
         "no-hint-kit",
         "0.1.0",
-        [{ irName: "noHintFn", sourceLayer: "ts", targetCid: "sha256:xyz", targetLayer: "v8" }],
+        [
+          {
+            irName: "noHintFn",
+            sourceLayer: "ts",
+            targetCid: "blake3-512:" + "fff".padStart(128, "0"),
+            targetLayer: "v8",
+          },
+        ],
       );
       // Strip the hint from package.json to force the extension scan path.
       writeFileSync(
@@ -216,7 +231,14 @@ describe("discoverProtocolKits", () => {
         root,
         "tampered-kit",
         "0.1.0",
-        [{ irName: "tampered", sourceLayer: "ts", targetCid: "sha256:t", targetLayer: "v8" }],
+        [
+          {
+            irName: "tampered",
+            sourceLayer: "ts",
+            targetCid: "blake3-512:" + "aaa".padStart(128, "0"),
+            targetLayer: "v8",
+          },
+        ],
       );
       // Flip a byte in the .proof file (without renaming it).
       const fs = await import("fs");
@@ -260,8 +282,8 @@ describe("discoverProtocolKits", () => {
       _resetRegistry();
       const { privateKey: extKey } = generateKeypair({ seed: randomBytes(32) });
       const extEnv = mintExtensionDeclaration({
-        bindingHash: hash16("ext:Currency"),
-        propertyHash: hash16("introduces:sort:Currency"),
+        bindingHash: hashString("ext:Currency"),
+        propertyHash: hashString("introduces:sort:Currency"),
         producedBy: "money-kit@1.0",
         privateKey: extKey,
         declaration: {
@@ -285,8 +307,8 @@ describe("discoverProtocolKits", () => {
         seed: randomBytes(32),
       });
       const pubDer = catalogPub.export({ type: "spki", format: "der" });
-      const signerCid =
-        "sha256:" + require("node:crypto").createHash("sha256").update(pubDer).digest("hex").slice(0, 16);
+      const { computeCid } = await import("../../canonicalizer/hash.js");
+      const signerCid = computeCid(pubDer);
       const built = buildProofEnvelope({
         name: "@example/money-kit",
         version: "1.0.0",
@@ -327,7 +349,7 @@ describe("discoverProtocolKits", () => {
         irArgSorts: ["Int"],
         irReturnSort: "Int",
         sourceLayer: "test",
-        targetContractCid: "cid",
+        targetContractCid: "blake3-512:" + "ccc".padStart(128, "0"),
         targetLayer: "test-layer",
       });
       const result = await discoverProtocolKits(root);

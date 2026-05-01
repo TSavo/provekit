@@ -13,7 +13,7 @@
  *
  * Trust root: the file's filename CID equals its bytes hash. This
  * shape mirrors the protocol exactly — no language runtime is loaded;
- * verification is pure file IO + CBOR decode + SHA-256.
+ * verification is pure file IO + CBOR decode + BLAKE3-512.
  *
  * Spec rules enforced by this walker:
  *   1. Filename CID matches content (rejects on mismatch)
@@ -31,7 +31,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { computeCid } from "../../canonicalizer/hash.js";
 import { listBridges, primitiveBridge } from "./bridges.js";
 import type { PrimitiveBridgeDeclaration } from "./bridges.js";
 import { registerExtensionDeclaration } from "./registry.js";
@@ -155,7 +155,9 @@ function walkProofFile(cand: ProtocolPackageCandidate): WalkResult {
   }
 
   const filename = proofPath.split("/").pop()!;
-  const m = filename.match(/^([0-9a-f]+)\.proof$/);
+  // Self-identifying CID filenames per protocol v1.1.0:
+  //   "<algorithm>-<bits>:<hex>.proof"
+  const m = filename.match(/^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$/);
   const filenameCid = m ? m[1]! : null;
 
   const errors: string[] = [];
@@ -169,7 +171,7 @@ function walkProofFile(cand: ProtocolPackageCandidate): WalkResult {
       errors: [`cannot read .proof: ${(e as Error).message}`],
     };
   }
-  const derivedCid = createHash("sha256").update(bytes).digest("hex").slice(0, 32);
+  const derivedCid = computeCid(bytes);
 
   // Spec rule 1: filename matches content.
   if (filenameCid === null) {

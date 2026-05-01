@@ -1,0 +1,38 @@
+[package]
+name = "provekit-verifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: six-stage verifier pipeline (load, enumerate, resolve, instantiate, smt-emit, solve, report)."
+
+[dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+provekit-ir-compiler-smt-lib = { path = "../provekit-ir-compiler-smt-lib" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+walkdir = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+toml = "0.8"
+
+[dev-dependencies]
+provekit-claim-envelope = { path = "../provekit-claim-envelope" }
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+
+[[example]]
+name = "rust_round_trip"
+path = "../examples/rust_round_trip.rs"
+
+[[example]]
+name = "cross_lang_consume"
+path = "../examples/cross_lang_consume.rs"
+
+[[example]]
+name = "stage4_driver"
+path = "../../../examples/stage4-handshake-demo/stage4_driver.rs"
+
+[[example]]
+name = "multi_solver_demo"
+path = "../../../examples/multi-solver-demo/multi_solver_driver.rs"

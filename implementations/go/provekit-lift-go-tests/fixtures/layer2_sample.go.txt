@@ -1,0 +1,85 @@
+// Fixture: Layer 2 lift patterns. Used by integration tests in
+// provekit-lift-go-tests. Stored with a .txt extension so the Go
+// toolchain doesn't try to compile it as part of the package; the
+// adapter parses it as text via go/parser.
+//
+// Layer 2 catches structural patterns Layer 0 cannot:
+//   - Pattern 1: bounded loop as universal quantifier
+//   - Pattern 2: inlined helper functions
+//   - Pattern 3: multi-assertion characterization conjunction
+//
+// One test deliberately exercises a SKIP path so the integration test
+// can assert the structured warning surface.
+
+package fixture
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+var (
+	_ = assert.Equal
+	_ = require.Equal
+)
+
+// ---- Pattern 1: bounded loops ----------------------------------------
+
+func TestSquaresAreNonneg(t *testing.T) {
+	for x := 0; x < 100; x++ {
+		assert.True(t, x >= 0)
+	}
+}
+
+func TestDivmodInRange(t *testing.T) {
+	for x := 1; x <= 50; x++ {
+		assert.True(t, x > 0)
+	}
+}
+
+func TestSmallWindow(t *testing.T) {
+	for x := 0; x < 16; x++ {
+		assert.True(t, x < 100)
+	}
+}
+
+// ---- Pattern 2: helper inlining --------------------------------------
+
+func assertIs42(x int64) {
+	assert.Equal(nil, x, int64(42))
+}
+
+func assertInRange(y int64) {
+	assert.True(nil, y >= 0)
+}
+
+func TestMany42s(t *testing.T) {
+	assertIs42(42)
+	assertIs42(42)
+	assertIs42(42)
+}
+
+func TestRangesOk(t *testing.T) {
+	assertInRange(0)
+	assertInRange(1)
+}
+
+// ---- Pattern 3: multi-assertion characterization ---------------------
+
+func TestParseIntCharacterization(t *testing.T) {
+	assert.Equal(t, parseInt("0"), 0)
+	assert.Equal(t, parseInt("42"), 42)
+	assert.NotEqual(t, parseInt("99"), 0)
+}
+
+// ---- Pattern 1 deliberately-skipped: nested loop (Layer 2.5) ---------
+
+func TestNestedLoopSkipped(t *testing.T) {
+	for x := 0; x < 10; x++ {
+		for y := 0; y < 10; y++ {
+			assert.True(t, x >= 0)
+		}
+	}
+}

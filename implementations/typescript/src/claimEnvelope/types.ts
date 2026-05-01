@@ -27,7 +27,7 @@ export const VERDICTS: ReadonlySet<Verdict> = new Set([
 
 export interface Z3ModelEvidence {
   kind: "z3-model";
-  schema: string; // hex32 CID of the variant schema definition
+  schema: string; // self-identifying CID of the variant schema definition (e.g. "blake3-512:...")
   body: {
     smtLibInput: string;
     z3Verdict: "sat";
@@ -76,7 +76,7 @@ export interface LintPassEvidence {
   body: {
     linter: string;
     linterVersion: string;
-    rulesetHash: string; // hex32
+    rulesetHash: string; // self-identifying hash
     warnings: 0;
   };
 }
@@ -112,7 +112,7 @@ export interface LlmProposalEvidence {
   body: {
     llm: string;
     llmVersion: string;
-    promptCid: string; // hex32
+    promptCid: string; // self-identifying hash
     proposedIrFormula: string;
     confidence: number; // 0..1
     rationale?: string;
@@ -123,8 +123,8 @@ export interface MutationWitnessEvidence {
   kind: "mutation-witness";
   schema: string;
   body: {
-    testCid: string; // hex32
-    mutationCid: string; // hex32
+    testCid: string; // self-identifying hash
+    mutationCid: string; // self-identifying hash
     failsOnOriginal: boolean;
     passesOnFixed: boolean;
   };
@@ -135,18 +135,9 @@ export interface WorkflowRunEvidence {
   schema: string;
   body: {
     workflowName: string;
-    workflowCid: string; // hex32
+    workflowCid: string; // self-identifying hash
     inputCanonicalForm: Record<string, unknown>;
     output: unknown;
-  };
-}
-
-export interface LegacyWitnessEvidence {
-  kind: "legacy-witness";
-  schema: string;
-  body: {
-    rawWitness: string;
-    legacyProducerId: string;
   };
 }
 
@@ -154,15 +145,6 @@ export interface LegacyWitnessEvidence {
  * BridgeEvidence — declares that a host-language symbol is the surface
  * realization of a deeper-layer published contract. The bridge composes
  * by hash; it does NOT redefine the contract.
- *
- * A TS-kit's parseInt.invariant.ts authored as a bridge file says
- * "global.parseInt is bridged to V8's published parseInt contract,
- * which bridges to ECMA-262's spec leaf." Each bridge is a small
- * memento; the deep contracts live at the canonical layer.
- *
- * The verifier walks bridge mementos transitively: to verify a TS
- * callsite of parseInt, walk to the TS-kit bridge memento, walk to
- * V8's contract memento, walk to ECMA-262's spec leaf, ground.
  */
 export interface BridgeEvidence {
   kind: "bridge";
@@ -176,13 +158,7 @@ export interface BridgeEvidence {
     targetContractCid: string;
     /** Description of the deeper layer (e.g., "V8@12.4 parseInt"). */
     targetLayer: string;
-    /**
-     * IR argument sorts of the bridged primitive (each a SortRef per
-     * the IR extension protocol — see ir/extensions/registry.ts).
-     * Required so consumers walking a bridge from a .proof file can
-     * register a fully-typed PrimitiveBridgeDeclaration without
-     * consulting the producer's source code.
-     */
+    /** IR argument sorts of the bridged primitive (each a SortRef). */
     irArgSorts: unknown[];
     /** IR return sort of the bridged primitive (a SortRef). */
     irReturnSort: unknown;
@@ -191,41 +167,84 @@ export interface BridgeEvidence {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Authoring blocks for ContractEvidence (typed union per spec).
+// ---------------------------------------------------------------------------
+
+export interface KitAuthorAuthoring {
+  producerKind: "kit-author";
+  author: string;
+  note?: string;
+}
+
+export interface LiftAuthoring {
+  producerKind: "lift";
+  lifter: string;
+  evidence: "tests" | "types" | "docs" | "symbolic-exec";
+  sourceCid?: string;
+}
+
+export interface LlmAuthoring {
+  producerKind: "llm";
+  llm: string;
+  llmVersion: string;
+  promptCid: string;
+  confidence: number;
+  rationale?: string;
+}
+
+export type ContractAuthoring = KitAuthorAuthoring | LiftAuthoring | LlmAuthoring;
+
 /**
- * PropertyEvidence — declares that a property holds: a named claim
- * whose body is an IrFormula expressed in the canonical IR.
+ * ContractEvidence — a behavior contract for a function-shaped binding.
+ * Carries any combination of precondition (pre), postcondition (post),
+ * and inductive invariant (inv); at least one MUST be present.
  *
- * Property mementos are the load-bearing artifacts that bridges point
- * at. A bridge memento carries a `targetContractCid`; resolving that
- * CID yields a property memento; the property memento's `body.irFormula`
- * is the precondition (or postcondition, or invariant) the verifier
- * uses to discharge call-site obligations.
- *
- * The IrFormula is in pre-canonicalization form (named bound vars).
- * Producers MAY canonicalize before minting; the propertyHash on the
- * envelope is computed from the canonicalized formula either way.
+ * Per the v1.1 protocol cut, this replaces the previous
+ * PropertyEvidence shape entirely.
  */
-export interface PropertyEvidence {
-  kind: "property";
+export interface ContractEvidence {
+  kind: "contract";
   schema: string;
   body: {
-    /**
-     * The IR formula stating the property. Stored as a JSON value
-     * conforming to IrFormula (see src/ir/formulas.ts). Embedded
-     * directly; not stringified.
-     */
-    irFormula: unknown;
-    /**
-     * The binding scope this property is attached to (per BindingScope
-     * in src/ir/formulas.ts). Resolves where the property applies.
-     */
-    scope: unknown;
-    /**
-     * Version of the IR kit that produced this formula (e.g.,
-     * "ts-kit@1.0", "cpp-kit@0.2"). Consumers may use this to detect
-     * incompatible versions.
-     */
-    irKitVersion: string;
+    contractName: string;
+    outBinding: string;
+    /** Optional precondition formula (IR-JSON). */
+    pre?: unknown;
+    /** Optional postcondition formula (IR-JSON). */
+    post?: unknown;
+    /** Optional inductive invariant formula (IR-JSON). */
+    inv?: unknown;
+    /** DERIVED: computeCid(canonical(pre)) — present iff pre is present. */
+    preHash?: string;
+    /** DERIVED: computeCid(canonical(post)) — present iff post is present. */
+    postHash?: string;
+    /** DERIVED: computeCid(canonical(inv)) — present iff inv is present. */
+    invHash?: string;
+    /** Authoring provenance — typed union per spec. */
+    authoring: ContractAuthoring;
+  };
+}
+
+/**
+ * ImplicationEvidence — a signed proof witness that one IR formula
+ * universally implies another. Cached implication mementos are how the
+ * handshake algorithm shortcuts a future solver call.
+ */
+export interface ImplicationEvidence {
+  kind: "implication";
+  schema: string;
+  body: {
+    antecedentHash: string;
+    consequentHash: string;
+    antecedentCid: string;
+    consequentCid: string;
+    antecedentSlot: "pre" | "post" | "inv";
+    consequentSlot: "pre" | "post" | "inv";
+    prover: string;
+    proverRunMs: number;
+    smtLibInput?: string;
+    proofWitness?: string;
   };
 }
 
@@ -270,9 +289,9 @@ export type EvidenceVariant =
   | LlmProposalEvidence
   | MutationWitnessEvidence
   | WorkflowRunEvidence
-  | LegacyWitnessEvidence
   | BridgeEvidence
-  | PropertyEvidence
+  | ContractEvidence
+  | ImplicationEvidence
   | ExtensionDeclarationEvidence;
 
 // ---------------------------------------------------------------------------

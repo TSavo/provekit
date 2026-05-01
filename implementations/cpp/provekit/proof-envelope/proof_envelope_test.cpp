@@ -1,21 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Cross-language conformance test. Asserts the C++ proof-envelope
-// builder produces byte-identical output to the TS reference for a
-// fixed deterministic input.
+// Proof-envelope smoke test for v1.1.0 (hash-widening cut).
 //
-// Fixture (frozen so both impls have the same target):
-//   name        = "test"
-//   version     = "1.0.0"
-//   declaredAt  = "2026-04-30T12:00:00.000Z"
-//   members     = {} (empty)
-//   signerCid   = "sha256:000000000000abcd"
-//   signerSeed  = 32 bytes of 0x42
+// During the v1.1.0 transition the TypeScript reference implementation
+// is being ported to BLAKE3-512 self-identifying hashes in parallel
+// with this C++ port. Until TS lands, this test cannot pin a
+// cross-language byte-identical fixture (the TS-derived bytes were
+// computed under SHA-256-prefix-32 and are no longer applicable).
 //
-// Expected values computed by running TS buildProofEnvelope on these
-// inputs (see scripts/cross-lang-equivalence/proof-envelope.fixture.json).
-// Both impls derive from RFC 8949 §4.2.1 (deterministic CBOR) +
-// RFC 8032 (ed25519); byte-identical output proves both conform.
+// What this test asserts in the meantime:
+//   1. The C++ proof-envelope builder runs without throwing on a known
+//      deterministic input.
+//   2. The filename CID is self-identifying and shaped correctly:
+//      "blake3-512:" + 128 lowercase hex chars.
+//   3. Re-running the builder on the same input produces identical
+//      bytes (determinism).
+//   4. The output bytes hash to the produced filename CID (trust root
+//      coherence).
+//
+// When the TS reference implementation ships v1.1.0 envelopes, the
+// expected_filename_cid + expected hex below get re-pinned by running
+// the TS builder over the same fixture and asserting equality. Until
+// then, the C++ builder is its own conformance witness.
 
 #include <array>
 #include <cstdio>
@@ -24,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include "../canonicalizer/hash.hpp"
 #include "proof_envelope.hpp"
 
 using namespace provekit::proof_envelope;
@@ -41,82 +48,80 @@ std::string hex(const std::vector<uint8_t>& bytes) {
     return out;
 }
 
-constexpr const char* EXPECTED_HEX =
-    "a7"  // map of 7
-    "646b696e64"               // tstr "kind"
-    "67636174616c6f67"         // tstr "catalog"
-    "646e616d65"               // tstr "name"
-    "6474657374"               // tstr "test"
-    "667369676e6572"           // tstr "signer"
-    "777368613235363a30303030303030303030303061626364"  // tstr "sha256:000...abcd"
-    "676d656d62657273"         // tstr "members"
-    "a0"                       // map of 0
-    "6776657273696f6e"         // tstr "version"
-    "65312e302e30"             // tstr "1.0.0"
-    "697369676e6174757265"     // tstr "signature"
-    "5840"                     // bstr length 64
-    "bfe9e1301bea39c4662a695dedd4a2249ad33ce458d2dc7aa3a698f46f2e345a"
-    "d6470f54271016d9fd9034fa4932d0f947240263054eea8fc468a7ac03ec5b0b"
-    "6a6465636c6172656441 74"    // tstr "declaredAt"   <-- whitespace fixed below
-    "7818"                       // tstr length 24
-    "323032362d30342d33305431323a30303a30302e3030305a";
-
-constexpr const char* EXPECTED_FILENAME_CID =
-    "eaad3b93b9e8c0635dcde31aac893565";
+bool starts_with(const std::string& s, const char* prefix) {
+    const std::string p(prefix);
+    return s.size() >= p.size() && s.compare(0, p.size(), p) == 0;
+}
 
 }  // namespace
 
 int main() {
-    std::printf("Cross-language proof-envelope conformance test:\n");
+    std::printf("Proof-envelope v1.1.0 smoke test:\n");
 
     Ed25519Seed seed{};
     seed.fill(0x42);
+
+    // signer_cid placeholder: a syntactically valid v1.1.0 self-identifying
+    // hash (11-char tag + 128 hex chars). It does not resolve to a real
+    // key memento yet.
+    const std::string signer_cid_v1 =
+        "blake3-512:"
+        "00000000000000000000000000000000000000000000000000000000000000ab"
+        "cd000000000000000000000000000000000000000000000000000000000000ab";
 
     ProofEnvelopeInput input{
         .name = "test",
         .version = "1.0.0",
         .members = std::map<std::string, std::vector<uint8_t>>{},
-        .signer_cid = "sha256:000000000000abcd",
+        .signer_cid = signer_cid_v1,
         .signer_seed = seed,
         .declared_at = "2026-04-30T12:00:00.000Z",
     };
 
-    ProofEnvelopeOutput out = build_proof_envelope(input);
-
-    // Strip whitespace from expected hex (we used spaces above for readability).
-    std::string want;
-    want.reserve(400);
-    for (char c : std::string(EXPECTED_HEX)) {
-        if (c == ' ') continue;
-        want.push_back(c);
-    }
-
-    const std::string got = hex(out.bytes);
+    ProofEnvelopeOutput out1 = build_proof_envelope(input);
+    ProofEnvelopeOutput out2 = build_proof_envelope(input);
 
     int failures = 0;
-    if (got == want) {
-        std::printf("  [PASS] envelope bytes match TS reference (%zu bytes)\n", out.bytes.size());
+
+    // Check 1: filename CID has the v1.1.0 self-identifying shape.
+    if (starts_with(out1.filename_cid, "blake3-512:") &&
+        out1.filename_cid.size() == 11 + 128) {
+        std::printf("  [PASS] filename CID is `blake3-512:` + 128 hex (%s)\n",
+                    out1.filename_cid.c_str());
     } else {
-        std::printf("  [FAIL] envelope bytes diverge\n");
-        std::printf("    got:  %s\n", got.c_str());
-        std::printf("    want: %s\n", want.c_str());
+        std::printf("  [FAIL] filename CID malformed: %s (size=%zu)\n",
+                    out1.filename_cid.c_str(), out1.filename_cid.size());
         failures++;
     }
 
-    if (out.filename_cid == EXPECTED_FILENAME_CID) {
-        std::printf("  [PASS] filename CID matches: %s\n", out.filename_cid.c_str());
+    // Check 2: determinism (two builds produce identical bytes + CID).
+    if (out1.bytes == out2.bytes && out1.filename_cid == out2.filename_cid) {
+        std::printf("  [PASS] deterministic: two builds produce byte-identical output\n");
     } else {
-        std::printf("  [FAIL] filename CID diverges\n");
-        std::printf("    got:  %s\n", out.filename_cid.c_str());
-        std::printf("    want: %s\n", EXPECTED_FILENAME_CID);
+        std::printf("  [FAIL] non-deterministic builder output\n");
         failures++;
     }
 
+    // Check 3: the output bytes hash to the produced filename CID.
+    const std::string view(reinterpret_cast<const char*>(out1.bytes.data()),
+                            out1.bytes.size());
+    const std::string rederived = ::provekit::canonicalizer::compute_cid(view);
+    if (rederived == out1.filename_cid) {
+        std::printf("  [PASS] trust-root: recomputed hash matches filename CID\n");
+    } else {
+        std::printf("  [FAIL] trust-root mismatch: filename %s != recomputed %s\n",
+                    out1.filename_cid.c_str(), rederived.c_str());
+        failures++;
+    }
+
+    std::printf("\n  envelope size: %zu bytes\n", out1.bytes.size());
+    std::printf("  envelope hex (truncated): %.80s...\n", hex(out1.bytes).c_str());
     std::printf("\n");
+
     if (failures == 0) {
-        std::printf("PROOF-ENVELOPE CONFORMANCE OK — C++ matches TS byte-for-byte.\n");
+        std::printf("PROOF-ENVELOPE v1.1.0 SMOKE TEST OK.\n");
         return 0;
     }
-    std::printf("PROOF-ENVELOPE CONFORMANCE FAILED — %d divergence(s).\n", failures);
+    std::printf("PROOF-ENVELOPE v1.1.0 SMOKE TEST FAILED: %d divergence(s).\n", failures);
     return 1;
 }

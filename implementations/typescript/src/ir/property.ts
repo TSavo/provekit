@@ -10,7 +10,6 @@ import type {
   CompilationHint,
   IrFormula,
   IrTerm,
-  Sort,
 } from "./formulas.js";
 
 // Re-export types that consumers need to spell `Property` etc.
@@ -56,10 +55,11 @@ export function property(spec: {
   let formula: IrFormula;
 
   if (typeof spec.formula === "function") {
-    // Build IrTerm handles from the bindings map.
+    // Build IrTerm handles from the bindings map. (Sort lives on the
+    // enclosing quantifier in the protocol IR; the handle is name-only.)
     const termHandles: Record<string, IrTerm> = {};
-    for (const [name, sort] of Object.entries(spec.bindings)) {
-      termHandles[name] = buildVarTerm(name, sort);
+    for (const name of Object.keys(spec.bindings)) {
+      termHandles[name] = buildVarTerm(name);
     }
     formula = spec.formula(termHandles);
   } else {
@@ -79,6 +79,6 @@ export function property(spec: {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function buildVarTerm(name: string, sort: Sort): IrTerm {
-  return { kind: "var", name, sort };
+function buildVarTerm(name: string): IrTerm {
+  return { kind: "var", name };
 }

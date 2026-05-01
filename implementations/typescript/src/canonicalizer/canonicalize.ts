@@ -31,7 +31,7 @@ import { removeImplies } from "./passes/impliesRemoval.js";
 import { toNnf } from "./passes/nnf.js";
 import { acNormalize } from "./passes/acNormalize.js";
 import { serializeCanonicalAst } from "./serialize.js";
-import { sha256Prefix16 } from "./hash.js";
+import { computeCid } from "./hash.js";
 
 // -----------------------------------------------------------------------
 // Pass 1+2+3 collapsed: DeBruijnFormula → PreNnfAst
@@ -59,21 +59,23 @@ function buildPreNnfAst(formula: DeBruijnFormula): PreNnfAst {
       return { kind: "or", operands: formula.disjuncts.map(buildPreNnfAst) };
 
     case "not":
-      return { kind: "not", body: buildPreNnfAst(formula.body) };
+      return { kind: "not", operands: [buildPreNnfAst(formula.body)] };
 
     case "implies":
       return {
         kind: "implies",
-        antecedent: buildPreNnfAst(formula.antecedent),
-        consequent: buildPreNnfAst(formula.consequent),
+        operands: [
+          buildPreNnfAst(formula.antecedent),
+          buildPreNnfAst(formula.consequent),
+        ],
       };
 
     case "atomic": {
       // Canonicalize terms first (pass 2/3 on terms).
       const canonArgs: CanonicalTerm[] = formula.args.map(canonicalizeDeBruijnTerm);
       // Canonicalize predicate and possibly reorder args (pass 2).
-      const { predicate, args } = canonicalizePredicate(formula.predicate, canonArgs);
-      return { kind: "atomic", predicate, args };
+      const { name, args } = canonicalizePredicate(formula.predicate, canonArgs);
+      return { kind: "atomic", name, args };
     }
   }
 }
@@ -113,12 +115,13 @@ export function formulaToCanonicalAst(formula: IrFormula): CanonicalFolAst {
 
 /**
  * Serialize and hash a formula to its propertyHash.
- * Returns a 16-character hex string.
+ * Returns a self-identifying string of the form
+ * `"blake3-512:" + hex(BLAKE3_512(bytes))` (139 chars).
  */
 export function propertyHashFromFormula(formula: IrFormula): string {
   const ast = formulaToCanonicalAst(formula);
   const bytes = serializeCanonicalAst(ast);
-  return sha256Prefix16(bytes);
+  return computeCid(bytes);
 }
 
 /**
@@ -127,5 +130,5 @@ export function propertyHashFromFormula(formula: IrFormula): string {
  */
 export function propertyHashFromAst(ast: CanonicalFolAst): string {
   const bytes = serializeCanonicalAst(ast);
-  return sha256Prefix16(bytes);
+  return computeCid(bytes);
 }

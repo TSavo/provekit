@@ -1,7 +1,7 @@
 /**
  * Universal claim envelope — main entrypoint.
  *
- * Spec: protocol/specs/2026-04-29-universal-claim-envelope.md
+ * Spec: protocol/specs/2026-04-30-memento-envelope-grammar.md
  *
  * Re-exports all public types and functions for consumers.
  */
@@ -20,8 +20,14 @@ export type {
   LlmProposalEvidence,
   MutationWitnessEvidence,
   WorkflowRunEvidence,
-  LegacyWitnessEvidence,
   BridgeEvidence,
+  ContractEvidence,
+  ContractAuthoring,
+  KitAuthorAuthoring,
+  LiftAuthoring,
+  LlmAuthoring,
+  ImplicationEvidence,
+  ExtensionDeclarationEvidence,
   ClaimEnvelope,
 } from "./types.js";
 
@@ -40,16 +46,16 @@ export { signEnvelope, verifyEnvelopeSignature } from "./sign.js";
 export {
   mintMemento,
   mintBridge,
-  mintLegacyWitness,
-  mintProperty,
+  mintContract,
+  mintImplication,
   mintExtensionDeclaration,
   mintAndVerifyMemento,
 } from "./mint.js";
 export type {
   MintArgs,
   MintBridgeArgs,
-  MintLegacyWitnessArgs,
-  MintPropertyArgs,
+  MintContractArgs,
+  MintImplicationArgs,
   MintExtensionDeclarationArgs,
 } from "./mint.js";
 

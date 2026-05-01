@@ -1,0 +1,33 @@
+[package]
+name = "build-script-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt build-script integration demo: shows the 4-line opt-in shape and a deliberately-violating call site that surfaces in the verifier's report."
+build = "build.rs"
+
+# Note: this demo crate is a workspace MEMBER so it picks up workspace
+# deps via path. In a real consumer, the entry would be a published
+# `provekit-build = "0.1"` line under `[build-dependencies]`.
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+provekit-macros = { path = "../../provekit-macros" }
+provekit-macros-rt = { path = "../../provekit-macros-rt" }
+provekit-ir-symbolic = { path = "../../provekit-ir-symbolic" }
+
+[build-dependencies]
+provekit-build = { path = "../../provekit-build" }
+
+[package.metadata.provekit]
+# Opportunistic Tier-3 verification at build time. `strict = false`
+# means the deliberate-violation call site shows up as a
+# `cargo:warning=...` line but does not fail the build. Set
+# `strict = true` to upgrade to a hard build failure.
+strict = false
+mint_proof = true
+verify_targets = "**/*"
+z3_timeout_ms = 3000

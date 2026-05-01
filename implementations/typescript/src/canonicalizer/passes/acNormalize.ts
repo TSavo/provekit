@@ -37,9 +37,9 @@ export function astSortKey(ast: CanonicalFolAst): string {
     case "or":
       return `C:|:${ast.operands.map(astSortKey).join("|")}`;
     case "not":
-      return `C:!:${astSortKey(ast.body)}`;
+      return `C:!:${astSortKey(ast.operands[0])}`;
     case "atomic":
-      return `A:${ast.predicate}:${ast.args.map(termKey).join(",")}`;
+      return `A:${ast.name}:${ast.args.map(termKey).join(",")}`;
   }
 }
 
@@ -78,15 +78,15 @@ function sortKeySort(s: CanonicalSort): string {
 // Identity constants as CanonicalFolAst
 // -----------------------------------------------------------------------
 
-const TRUE_ATOMIC: CanonicalFolAst = { kind: "atomic", predicate: "true", args: [] };
-const FALSE_ATOMIC: CanonicalFolAst = { kind: "atomic", predicate: "false", args: [] };
+const TRUE_ATOMIC: CanonicalFolAst = { kind: "atomic", name: "true", args: [] };
+const FALSE_ATOMIC: CanonicalFolAst = { kind: "atomic", name: "false", args: [] };
 
 function isTrue(ast: CanonicalFolAst): boolean {
-  return ast.kind === "atomic" && ast.predicate === "true" && ast.args.length === 0;
+  return ast.kind === "atomic" && ast.name === "true" && ast.args.length === 0;
 }
 
 function isFalse(ast: CanonicalFolAst): boolean {
-  return ast.kind === "atomic" && ast.predicate === "false" && ast.args.length === 0;
+  return ast.kind === "atomic" && ast.name === "false" && ast.args.length === 0;
 }
 
 // -----------------------------------------------------------------------
@@ -104,7 +104,7 @@ export function acNormalize(ast: CanonicalFolAst): CanonicalFolAst {
       return { kind: ast.kind, sort: ast.sort, body: acNormalize(ast.body) };
 
     case "not":
-      return { kind: "not", body: acNormalize(ast.body) };
+      return { kind: "not", operands: [acNormalize(ast.operands[0])] };
 
     case "atomic":
       return ast;
@@ -156,7 +156,7 @@ function normalizeAnd(operands: CanonicalFolAst[]): CanonicalFolAst {
     }
   }
 
-  if (deduped.length === 1) return deduped[0];
+  if (deduped.length === 1) return deduped[0]!;
   return { kind: "and", operands: deduped };
 }
 
@@ -194,6 +194,6 @@ function normalizeOr(operands: CanonicalFolAst[]): CanonicalFolAst {
     }
   }
 
-  if (deduped.length === 1) return deduped[0];
+  if (deduped.length === 1) return deduped[0]!;
   return { kind: "or", operands: deduped };
 }

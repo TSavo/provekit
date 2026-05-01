@@ -1,0 +1,12 @@
+# Standard .NET ignores
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Test artifacts
+TestResults/
+coverage/
+*.coverage
+*.coveragexml

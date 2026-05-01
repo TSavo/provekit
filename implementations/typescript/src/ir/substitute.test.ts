@@ -9,24 +9,17 @@ describe("instantiateOutermostForall", () => {
   it("substitutes a Const into the body of a forall", () => {
     // forall s: String. nonempty(s)
     const formula: IrFormula = {
-      kind: "forall",
-      sort: StringSort,
-      predicate: {
-        kind: "lambda",
-        varName: "s",
-        sort: StringSort,
-        body: {
+      kind: "forall", name: "s", sort: StringSort, body: {
           kind: "atomic",
-          predicate: "nonempty",
-          args: [{ kind: "var", name: "s", sort: StringSort }],
+          name: "nonempty",
+          args: [{ kind: "var", name: "s"}],
         },
-      },
     };
     const term: IrTerm = { kind: "const", value: "hello", sort: StringSort };
     const result = instantiateOutermostForall(formula, term);
     expect(result).toEqual({
       kind: "atomic",
-      predicate: "nonempty",
+      name: "nonempty",
       args: [{ kind: "const", value: "hello", sort: StringSort }],
     });
   });
@@ -34,85 +27,69 @@ describe("instantiateOutermostForall", () => {
   it("preserves untouched conjuncts and substitutes only matching var refs", () => {
     // forall x: Int. (x > 0) ∧ (positive(other))
     const formula: IrFormula = {
-      kind: "forall",
-      sort: IntSort,
-      predicate: {
-        kind: "lambda",
-        varName: "x",
-        sort: IntSort,
-        body: {
+      kind: "forall", name: "x", sort: IntSort, body: {
           kind: "and",
-          conjuncts: [
+          operands: [
             {
               kind: "atomic",
-              predicate: ">",
+              name: ">",
               args: [
-                { kind: "var", name: "x", sort: IntSort },
+                { kind: "var", name: "x"},
                 { kind: "const", value: 0, sort: IntSort },
               ],
             },
             {
               kind: "atomic",
-              predicate: "positive",
-              args: [{ kind: "var", name: "other", sort: IntSort }],
+              name: "positive",
+              args: [{ kind: "var", name: "other"}],
             },
           ],
         },
-      },
     };
     const term: IrTerm = { kind: "const", value: 5, sort: IntSort };
     const result = instantiateOutermostForall(formula, term);
     expect(result.kind).toBe("and");
     if (result.kind !== "and") throw new Error();
-    expect(result.conjuncts[0]).toEqual({
+    expect(result.operands[0]).toEqual({
       kind: "atomic",
-      predicate: ">",
+      name: ">",
       args: [
         { kind: "const", value: 5, sort: IntSort },
         { kind: "const", value: 0, sort: IntSort },
       ],
     });
-    expect(result.conjuncts[1]).toEqual({
+    expect(result.operands[1]).toEqual({
       kind: "atomic",
-      predicate: "positive",
-      args: [{ kind: "var", name: "other", sort: IntSort }],
+      name: "positive",
+      args: [{ kind: "var", name: "other"}],
     });
   });
 
   it("substitutes inside ctor terms", () => {
     // forall s: String. nonempty(parseInt(s))
     const formula: IrFormula = {
-      kind: "forall",
-      sort: StringSort,
-      predicate: {
-        kind: "lambda",
-        varName: "s",
-        sort: StringSort,
-        body: {
+      kind: "forall", name: "s", sort: StringSort, body: {
           kind: "atomic",
-          predicate: "nonempty",
+          name: "nonempty",
           args: [
             {
               kind: "ctor",
               name: "parseInt",
-              args: [{ kind: "var", name: "s", sort: StringSort }],
-              sort: IntSort,
+              args: [{ kind: "var", name: "s" }],
             },
           ],
         },
-      },
     };
     const term: IrTerm = { kind: "const", value: "42", sort: StringSort };
     const result = instantiateOutermostForall(formula, term);
     expect(result).toEqual({
       kind: "atomic",
-      predicate: "nonempty",
+      name: "nonempty",
       args: [
         {
           kind: "ctor",
           name: "parseInt",
           args: [{ kind: "const", value: "42", sort: StringSort }],
-          sort: IntSort,
         },
       ],
     });
@@ -124,24 +101,16 @@ describe("instantiateOutermostForall", () => {
     // because the inner s is a different variable that happens to share the name.
     const formula: IrFormula = {
       kind: "forall",
+      name: "s",
       sort: StringSort,
-      predicate: {
-        kind: "lambda",
-        varName: "s",
+      body: {
+        kind: "exists",
+        name: "s",
         sort: StringSort,
         body: {
-          kind: "exists",
-          sort: StringSort,
-          predicate: {
-            kind: "lambda",
-            varName: "s",
-            sort: StringSort,
-            body: {
-              kind: "atomic",
-              predicate: "nonempty",
-              args: [{ kind: "var", name: "s", sort: StringSort }],
-            },
-          },
+          kind: "atomic",
+          name: "nonempty",
+          args: [{ kind: "var", name: "s" }],
         },
       },
     };
@@ -150,16 +119,12 @@ describe("instantiateOutermostForall", () => {
     // The inner s is unaffected.
     expect(result).toEqual({
       kind: "exists",
+      name: "s",
       sort: StringSort,
-      predicate: {
-        kind: "lambda",
-        varName: "s",
-        sort: StringSort,
-        body: {
-          kind: "atomic",
-          predicate: "nonempty",
-          args: [{ kind: "var", name: "s", sort: StringSort }],
-        },
+      body: {
+        kind: "atomic",
+        name: "nonempty",
+        args: [{ kind: "var", name: "s" }],
       },
     });
   });
@@ -167,7 +132,7 @@ describe("instantiateOutermostForall", () => {
   it("throws when input is not a forall", () => {
     const notAForall: IrFormula = {
       kind: "atomic",
-      predicate: "true",
+      name: "true",
       args: [],
     };
     expect(() =>
@@ -179,31 +144,23 @@ describe("instantiateOutermostForall", () => {
     // forall s. forall t. nonempty(s, t)  where we substitute s with var "t"
     const formula: IrFormula = {
       kind: "forall",
+      name: "s",
       sort: StringSort,
-      predicate: {
-        kind: "lambda",
-        varName: "s",
+      body: {
+        kind: "forall",
+        name: "t",
         sort: StringSort,
         body: {
-          kind: "forall",
-          sort: StringSort,
-          predicate: {
-            kind: "lambda",
-            varName: "t",
-            sort: StringSort,
-            body: {
-              kind: "atomic",
-              predicate: "rel",
-              args: [
-                { kind: "var", name: "s", sort: StringSort },
-                { kind: "var", name: "t", sort: StringSort },
-              ],
-            },
-          },
+          kind: "atomic",
+          name: "rel",
+          args: [
+            { kind: "var", name: "s" },
+            { kind: "var", name: "t" },
+          ],
         },
       },
     };
-    const collidingTerm: IrTerm = { kind: "var", name: "t", sort: StringSort };
+    const collidingTerm: IrTerm = { kind: "var", name: "t" };
     expect(() => instantiateOutermostForall(formula, collidingTerm)).toThrow(
       /capture/,
     );

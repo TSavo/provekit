@@ -108,7 +108,7 @@ export function extensionPredicate(
   registerExtensionDeclaration(decl);
   return (...args: IrTerm[]): IrFormula => ({
     kind: "atomic",
-    predicate: input.name,
+    name: input.name,
     args,
   });
 }
@@ -145,12 +145,20 @@ export function extensionCtor(
   };
   registerExtensionDeclaration(decl);
   const returnSort = resolveSort(input.returnSort);
-  return (...args): IrTerm => ({
-    kind: "ctor",
-    name: input.name,
-    args: args.map((a) => liftToTerm(a as IrTerm | number | bigint | string | boolean)),
-    sort: returnSort,
-  });
+  return (...args): IrTerm => {
+    const term: IrTerm = {
+      kind: "ctor",
+      name: input.name,
+      args: args.map((a) => liftToTerm(a as IrTerm | number | bigint | string | boolean)),
+    };
+    Object.defineProperty(term, Symbol.for("provekit.ir.sortHint"), {
+      value: returnSort,
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+    return term;
+  };
 }
 
 // ---------------------------------------------------------------------------

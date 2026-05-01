@@ -1,9 +1,17 @@
 package verifier
 
-// EnumerateCallsitesStage walks every property memento in the pool,
+// EnumerateCallsitesStage walks every contract memento in the pool,
 // finds Ctor terms whose name matches a bridge envelope's sourceSymbol,
-// and emits CallSite records — one per bridge call discovered inside
-// a property memento's IR formula.
+// and emits CallSite records; one per bridge call discovered inside
+// any of the contract's pre/post/inv slots.
+//
+// v1.1.0 IR shape consumed:
+//
+//	atomic     {kind:"atomic", name, args}
+//	connective {kind:"and"|"or"|"not"|"implies", operands}
+//	quantifier {kind:"forall"|"exists", name, sort, body}
+//	var        {kind:"var", name}
+//	ctor       {kind:"ctor", name, args}
 type EnumerateCallsitesStage struct{}
 
 // Run produces CallSite records.
@@ -11,27 +19,28 @@ func (s *EnumerateCallsitesStage) Run(pool *MementoPool) []CallSite {
 	var out []CallSite
 	for cid, env := range pool.Mementos {
 		ev, ok := env["evidence"].(map[string]interface{})
-		if !ok || ev["kind"] != "property" {
+		if !ok || ev["kind"] != "contract" {
 			continue
 		}
 		body, _ := ev["body"].(map[string]interface{})
 		if body == nil {
 			continue
 		}
-		formula, _ := body["irFormula"].(map[string]interface{})
-		if formula == nil {
-			continue
-		}
-		var propertyName string
-		if scope, ok := body["scope"].(map[string]interface{}); ok {
-			if name, ok := scope["name"].(string); ok {
-				propertyName = name
-			}
-		}
+		propertyName, _ := body["contractName"].(string)
 		if propertyName == "" {
-			propertyName = cid[:12] + "…"
+			propertyName = cid[:12] + "..."
 		}
-		s.walkFormula(formula, propertyName, cid, pool.BridgesBySymbol, &out)
+		// Walk pre/post/inv (whichever are present). Each can independently
+		// contain ctor invocations of bridge-source symbols (call sites).
+		if pre, ok := body["pre"].(map[string]interface{}); ok {
+			s.walkFormula(pre, propertyName, cid, pool.BridgesBySymbol, &out)
+		}
+		if post, ok := body["post"].(map[string]interface{}); ok {
+			s.walkFormula(post, propertyName, cid, pool.BridgesBySymbol, &out)
+		}
+		if inv, ok := body["inv"].(map[string]interface{}); ok {
+			s.walkFormula(inv, propertyName, cid, pool.BridgesBySymbol, &out)
+		}
 	}
 	return out
 }
@@ -51,38 +60,17 @@ func (s *EnumerateCallsitesStage) walkFormula(
 				}
 			}
 		}
-	case "and":
-		if conjuncts, ok := f["conjuncts"].([]interface{}); ok {
-			for _, c := range conjuncts {
-				if cm, ok := c.(map[string]interface{}); ok {
-					s.walkFormula(cm, propertyName, propertyCID, bridges, out)
+	case "and", "or", "not", "implies":
+		if operands, ok := f["operands"].([]interface{}); ok {
+			for _, op := range operands {
+				if om, ok := op.(map[string]interface{}); ok {
+					s.walkFormula(om, propertyName, propertyCID, bridges, out)
 				}
 			}
-		}
-	case "or":
-		if disjuncts, ok := f["disjuncts"].([]interface{}); ok {
-			for _, d := range disjuncts {
-				if dm, ok := d.(map[string]interface{}); ok {
-					s.walkFormula(dm, propertyName, propertyCID, bridges, out)
-				}
-			}
-		}
-	case "not":
-		if body, ok := f["body"].(map[string]interface{}); ok {
-			s.walkFormula(body, propertyName, propertyCID, bridges, out)
-		}
-	case "implies":
-		if a, ok := f["antecedent"].(map[string]interface{}); ok {
-			s.walkFormula(a, propertyName, propertyCID, bridges, out)
-		}
-		if c, ok := f["consequent"].(map[string]interface{}); ok {
-			s.walkFormula(c, propertyName, propertyCID, bridges, out)
 		}
 	case "forall", "exists":
-		if pred, ok := f["predicate"].(map[string]interface{}); ok {
-			if body, ok := pred["body"].(map[string]interface{}); ok {
-				s.walkFormula(body, propertyName, propertyCID, bridges, out)
-			}
+		if body, ok := f["body"].(map[string]interface{}); ok {
+			s.walkFormula(body, propertyName, propertyCID, bridges, out)
 		}
 	}
 }

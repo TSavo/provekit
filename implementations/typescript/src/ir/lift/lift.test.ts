@@ -247,7 +247,7 @@ describe("lift rules — formula position", () => {
   it("=== lifts to atomic '='", () => {
     const { formula } = lift(`1 === 1`);
     if (formula?.kind === "atomic") {
-      expect(formula.predicate).toBe("=");
+      expect(formula.name).toBe("=");
       expect(formula.args.length).toBe(2);
     } else {
       throw new Error("expected atomic");
@@ -257,7 +257,7 @@ describe("lift rules — formula position", () => {
   it("!== lifts to atomic '≠'", () => {
     const { formula } = lift(`1 !== 2`);
     if (formula?.kind === "atomic") {
-      expect(formula.predicate).toBe("≠");
+      expect(formula.name).toBe("≠");
     } else {
       throw new Error("expected atomic");
     }
@@ -265,25 +265,25 @@ describe("lift rules — formula position", () => {
 
   it("< lifts to atomic '<'", () => {
     const { formula } = lift(`1 < 2`);
-    if (formula?.kind === "atomic") expect(formula.predicate).toBe("<");
+    if (formula?.kind === "atomic") expect(formula.name).toBe("<");
     else throw new Error("expected atomic");
   });
 
   it("<= lifts to atomic '≤'", () => {
     const { formula } = lift(`1 <= 2`);
-    if (formula?.kind === "atomic") expect(formula.predicate).toBe("≤");
+    if (formula?.kind === "atomic") expect(formula.name).toBe("≤");
     else throw new Error("expected atomic");
   });
 
   it("> lifts to atomic '>'", () => {
     const { formula } = lift(`2 > 1`);
-    if (formula?.kind === "atomic") expect(formula.predicate).toBe(">");
+    if (formula?.kind === "atomic") expect(formula.name).toBe(">");
     else throw new Error("expected atomic");
   });
 
   it(">= lifts to atomic '≥'", () => {
     const { formula } = lift(`2 >= 1`);
-    if (formula?.kind === "atomic") expect(formula.predicate).toBe("≥");
+    if (formula?.kind === "atomic") expect(formula.name).toBe("≥");
     else throw new Error("expected atomic");
   });
 
@@ -296,7 +296,7 @@ describe("lift rules — formula position", () => {
     const { formula } = lift(`forAll<Int>((x) => x > 0)`);
     if (formula?.kind === "forall") {
       expect(formula.sort).toEqual({ kind: "primitive", name: "Int" });
-      expect(formula.predicate.body.kind).toBe("atomic");
+      expect(formula.body.kind).toBe("atomic");
     } else {
       throw new Error("expected forall");
     }
@@ -316,7 +316,7 @@ describe("lift rules — formula position", () => {
     const { formula } = lift(`iff(true, false)`);
     expect(formula?.kind).toBe("and");
     if (formula?.kind === "and") {
-      expect(formula.conjuncts.every((c) => c.kind === "implies")).toBe(true);
+      expect(formula.operands.every((c) => c.kind === "implies")).toBe(true);
     }
   });
 
@@ -328,7 +328,7 @@ describe("lift rules — formula position", () => {
   it("registry call (Number.isInteger) lifts to atomic with predicate name", () => {
     const { formula } = lift(`Number.isInteger(42)`);
     if (formula?.kind === "atomic") {
-      expect(formula.predicate).toBe("Number.isInteger");
+      expect(formula.name).toBe("Number.isInteger");
     } else {
       throw new Error("expected atomic");
     }
@@ -337,7 +337,7 @@ describe("lift rules — formula position", () => {
   it("nested registry call inside comparison", () => {
     const { formula } = lift(`Math.abs(0) === 0`);
     if (formula?.kind === "atomic") {
-      expect(formula.predicate).toBe("=");
+      expect(formula.name).toBe("=");
       expect(formula.args[0].kind).toBe("ctor");
       if (formula.args[0].kind === "ctor") {
         expect(formula.args[0].name).toBe("Math.abs");
