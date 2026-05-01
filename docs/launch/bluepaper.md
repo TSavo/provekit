@@ -351,7 +351,7 @@ $ go run ./cmd/mint-go-self-contracts | grep "catalog CID:"
 
 ```sh
 $ tools/build-cpp-self-contracts.sh /tmp/provekit-cpp-self-out
-  catalog CID:        blake3-512:52bc62f7e70c7caa3220b2c789a75a744bc94660c36a920d53da1a6128eff660cd81dfae6a39d802d108e037f1234f202160d54aea81fb407f1a46f5cd323ae0
+  catalog CID:        blake3-512:9335e6376d776819cfd3b2458da29bc258e7c2ebaad542a8613dd84f50c51c31d6e1a4346cea3903b8ad12294d96aef445d0ed838aa630835b9be0bc17e62842
 ```
 
 **TypeScript** — 59 contracts across 13 `.invariant.ts` slab files (one per public-API TS source file). The repo's tsx-driven launchers currently fail on Node 25 because `@ipld/dag-cbor` is ESM-only and tsx's CJS bridge cannot resolve it; vitest's Vite ESM loader handles it cleanly, so the working invocation is the test driver:

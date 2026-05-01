@@ -28,6 +28,18 @@ std::shared_ptr<Term> ctor2(const std::string& name,
     return std::make_shared<Term>(Term{CtorTerm{name, {std::move(a), std::move(b)}}});
 }
 
+std::shared_ptr<Term> ctor3(const std::string& name,
+                              std::shared_ptr<Term> a,
+                              std::shared_ptr<Term> b,
+                              std::shared_ptr<Term> c) {
+    return std::make_shared<Term>(Term{CtorTerm{name,
+        {std::move(a), std::move(b), std::move(c)}}});
+}
+
+std::shared_ptr<Term> bool_true() {
+    return std::make_shared<Term>(Term{CtorTerm{"true", {}}});
+}
+
 }  // namespace
 
 extern "C" void sign_invariants() {
@@ -57,5 +69,25 @@ extern "C" void sign_invariants() {
          forall(String(), [](std::shared_ptr<Term> seed) {
              return eq(ctor1("ed25519_pubkey_from_seed", seed),
                        ctor1("ed25519_pubkey_from_seed", seed));
+         }));
+
+    // f(x(a)) = a — the round-trip identity. Verify(Sign(msg, seed),
+    // PubkeyFromSeed(seed), msg) MUST equal true. This is the missing
+    // invariant the placeholder-signer_cid bug exposed: without this
+    // contract, the construction `signer_cid = compute_cid(pubkey_string_from_seed(seed))`
+    // could (and did) drift to a hardcoded constant, and no content-
+    // addressed gate caught it. The IR can express the round-trip
+    // algebraically; Z3 cannot discharge cryptographic semantics, but
+    // the contract IS minted, IS content-addressed, and IS available
+    // for any verifier (LLM, formal-methods tool, manual auditor) to
+    // check.
+    must("cpp_ed25519_sign_verify_roundtrip",
+         forall(String(), [](std::shared_ptr<Term> seed) {
+             return eq(
+                 ctor3("ed25519_verify",
+                       ctor2("ed25519_sign_with_seed", seed, str_const("msg")),
+                       ctor1("ed25519_pubkey_from_seed", seed),
+                       str_const("msg")),
+                 bool_true());
          }));
 }

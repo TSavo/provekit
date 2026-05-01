@@ -18,10 +18,12 @@
 // Rust and Go peers.
 
 #include "provekit/ir.hpp"
+#include "provekit/canonicalizer/hash.hpp"
 #include "provekit/canonicalizer/value.hpp"
 #include "provekit/claim-envelope/mint.hpp"
 #include "provekit/claim-envelope/value_from_kit.hpp"
 #include "provekit/proof-envelope/proof_envelope.hpp"
+#include "provekit/proof-envelope/sign_ed25519.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -42,6 +44,8 @@ using ::provekit::claim_envelope::AuthoringKitAuthor;
 using ::provekit::proof_envelope::Ed25519Seed;
 using ::provekit::proof_envelope::ProofEnvelopeInput;
 using ::provekit::proof_envelope::build_proof_envelope;
+using ::provekit::proof_envelope::ed25519_pubkey_string_from_seed;
+using ::provekit::canonicalizer::compute_cid;
 
 // Each .invariant.cpp file defines an extern "C" registrar that calls
 // must()/contract() to push ContractDecls into the kit-side collector.
@@ -108,14 +112,22 @@ static std::string mint_one_run(const std::string& out_dir, bool verbose) {
     }
 
     // 3. Bundle the catalog into a deterministic-CBOR .proof.
+    //
+    // signer_cid = BLAKE3-512(JCS-canonical bytes of the signer's
+    // self-identifying pubkey string `ed25519:<base64>`). This matches
+    // the protocol-correct pattern Rust/Go/TS/C# peers use, NOT the
+    // hardcoded placeholder the parseInt_kit_proof example carried.
+    // The .proof's signer_cid now actually corresponds to the
+    // foundation v0 key bytes; a verifier walking signer_cid -> key
+    // memento gets the right answer.
+    const std::string signer_pubkey = ed25519_pubkey_string_from_seed(signer_seed);
+    const std::string signer_cid = compute_cid(signer_pubkey);
+
     ProofEnvelopeInput proof_input{
         .name = "@example/cpp-self-contracts",
         .version = "1.0.0",
         .members = members,
-        .signer_cid =
-            "blake3-512:"
-            "63707020d09b8c5cab0fb7d6a1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f"
-            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        .signer_cid = signer_cid,
         .signer_seed = signer_seed,
         .declared_at = declared_at,
     };

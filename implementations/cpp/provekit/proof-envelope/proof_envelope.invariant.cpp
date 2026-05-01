@@ -48,4 +48,21 @@ extern "C" void proof_envelope_invariants() {
     contract("cpp_proof_envelope_filename_starts_with_blake3_prefix",
              /*pre=*/nullptr,
              /*post=*/eq(ctor1("len", str_const("blake3-512:")), num(11)));
+
+    // Construction invariant — f(x(a)) = a shape. The proof envelope's
+    // signer_cid field MUST equal compute_cid(pubkey_string_from_seed(seed))
+    // for the signing seed used to build it. Without this contract, a
+    // hardcoded placeholder signer_cid drifts undetected (this is exactly
+    // the bug Sir caught in the orchestrator: signer_cid was a constant
+    // from the parseInt example for weeks; no content-addressed gate flagged
+    // it). With this contract minted, any verifier walking the
+    // proof envelope can refuse it if the field doesn't match the
+    // derivation. The invariant is content-addressed; the bug class
+    // becomes refutable at mint-time.
+    must("cpp_proof_envelope_signer_cid_matches_seed_derivation",
+         forall(String(), [](std::shared_ptr<Term> seed) {
+             return eq(
+                 ctor1("proof_envelope_signer_cid_for_seed", seed),
+                 ctor1("compute_cid", ctor1("pubkey_string_from_seed", seed)));
+         }));
 }
