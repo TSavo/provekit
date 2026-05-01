@@ -28,6 +28,7 @@ use std::rc::Rc;
 
 pub mod parse;
 pub mod serialize;
+pub mod invariants;
 
 // ---------------------------------------------------------------------------
 // Sort
