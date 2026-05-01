@@ -81,6 +81,10 @@ export interface CheckImplicationInput {
   oldSmt: string;
   /** SMT-LIB body of the NEW claim. */
   newSmt: string;
+  /** IR formula of the OLD claim (for Coq compiler). Optional - used when compiler is not smt-lib. */
+  oldIr?: object;
+  /** IR formula of the NEW claim (for Coq compiler). Optional - used when compiler is not smt-lib. */
+  newIr?: object;
   /** The solver (one or more entries composed under agreement semantics). */
   solver: Solver;
 }
@@ -186,9 +190,34 @@ export function makeCheckImplicationStage(
           )
         : [];
 
-      // Process Coq solvers (if any) - skipped for now
-      // TODO: connect Coq solver when IR formulas are passed instead of SMT-LIB
-      const coqResults: Array<{ solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict; verdict: ImplicationVerdict }> = [];
+      // Process Coq solvers (if any)
+      let coqResults: Array<{ solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict; verdict: ImplicationVerdict }> = [];
+      
+      if (coqSolvers.length > 0) {
+        // Check if we have IR formulas for Coq
+        if (!input.newIr || !input.oldIr) {
+          console.warn("checkImplication: Coq solvers configured but no IR provided - skipping Coq");
+        } else {
+          // Process each Coq solver with IR
+          coqResults = await Promise.all(
+            coqSolvers.map(async (entry) => {
+              // For implication, we need to check both directions with Coq
+              // Coq verification: if coqc succeeds (exit 0), it means "proved" (like unsat)
+              const newImpliesOld = await invokeCoqSolver(entry, input.newIr);
+              const oldImpliesNew = await invokeCoqSolver(entry, input.oldIr);
+              
+              // For Coq: unsat (proved) means implication holds
+              // sat (failed to prove) means implication doesn't hold
+              return {
+                solverType: entry.type,
+                newImpliesOld,
+                oldImpliesNew,
+                verdict: classifyVerdict(newImpliesOld, oldImpliesNew),
+              };
+            }),
+          );
+        }
+      }
       
       const entryResults: Array<{ solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict; verdict: ImplicationVerdict }> = [...smtResults, ...coqResults];
       
