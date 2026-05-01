@@ -425,3 +425,25 @@ fn quantifier_without_body_returns_err() {
     let r = smt_emitter::emit(&f);
     assert!(r.is_err());
 }
+
+#[test]
+fn undeclared_predicate_gets_declare_fun() {
+    // roundTrips is a kit-defined predicate, not standard SMT
+    let f = json!({
+        "kind": "forall",
+        "name": "x",
+        "sort": {"kind": "primitive", "name": "String"},
+        "body": {
+            "kind": "atomic",
+            "name": "roundTrips",
+            "args": [
+                {"kind": "var", "name": "x"}
+            ]
+        }
+    });
+    let s = smt_emitter::emit(&f).expect("emit");
+    println!("{}", s);
+    // Should declare roundTrips as an uninterpreted function with String arg
+    assert!(s.contains("roundTrips"), "missing roundTrips declaration");
+    assert!(s.contains("String"), "missing String in declaration");
+}

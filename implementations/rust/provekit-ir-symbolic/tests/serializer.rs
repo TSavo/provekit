@@ -14,7 +14,7 @@ use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_ir_symbolic::serialize::{formula_to_value, marshal_declarations, sort_to_value, term_to_value};
 use provekit_ir_symbolic::{
     and_, eq, exists, forall, gt, implies, must, not_, num, or_, out, parse_int, reset_collector,
-    str_const, ConstValue, Formula, Int, Sort, Term,
+    str_const, ConstValue, Int, Sort, Term,
 };
 
 // ---------------------------------------------------------------------------

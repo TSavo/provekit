@@ -14,8 +14,6 @@
 //     by the wrapper)
 //   - antecedentSlot / consequentSlot are stored verbatim (no validation)
 
-use std::sync::Arc;
-
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{
     mint_bridge, mint_implication, MintBridgeArgs, MintImplicationArgs,

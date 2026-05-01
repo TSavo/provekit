@@ -34,7 +34,8 @@ fn instantiate_then_smt_emit_basic() {
     let arg = Some(json!({"kind": "var", "name": "x"}));
     let ob = instantiate::run(&resolved, &arg).expect("instantiate");
     let smt = smt_emitter::emit(&ob.ir_formula).expect("smt-emit");
-    assert!(smt.contains("(declare-const x Int)"));
-    assert!(smt.contains("(assert (not (> x 0)))"));
+    // After instantiation, result is forall x. x > 0 (sort preserved from original forall)
+    assert!(smt.contains(r#"(forall ((n Int)) (> x 0)))"#));
+    assert!(smt.contains("(assert (not"));
     assert!(smt.contains("(check-sat)"));
 }

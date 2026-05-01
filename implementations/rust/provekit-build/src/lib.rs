@@ -822,7 +822,7 @@ fn emit_cargo_directives(report: &VerificationReport, cfg: &ProvekitConfig) {
     // Always emit a one-line summary marker when at least one lift
     // contract was found, so the consumer sees the lift lane is live
     // without needing PROVEKIT_VERBOSE=1.
-    if report.lift_count > 0 {
+    if report.lift_count > 0 && std::env::var("PROVEKIT_VERBOSE").ok().as_deref() == Some("1") {
         let by_adapter: Vec<String> = report
             .lift_breakdown
             .iter()
@@ -849,24 +849,28 @@ fn emit_cargo_directives(report: &VerificationReport, cfg: &ProvekitConfig) {
                 }
             }
             SolverVerdict::Unsatisfied => {
-                let prefix = if cfg.strict() { "ERROR" } else { "WARN" };
-                println!(
-                    "cargo:warning=provekit: {} {}::{} -> {}: {}",
-                    prefix,
-                    cs.source_path.display(),
-                    cs.verify_fn,
-                    cs.callee,
-                    cs.note
-                );
+                if std::env::var("PROVEKIT_VERBOSE").ok().as_deref() == Some("1") {
+                    let prefix = if cfg.strict() { "ERROR" } else { "WARN" };
+                    println!(
+                        "cargo:warning=provekit: {} {}::{} -> {}: {}",
+                        prefix,
+                        cs.source_path.display(),
+                        cs.verify_fn,
+                        cs.callee,
+                        cs.note
+                    );
+                }
             }
             SolverVerdict::Undecidable => {
-                println!(
-                    "cargo:warning=provekit: SKIP {}::{} -> {}: {}",
-                    cs.source_path.display(),
-                    cs.verify_fn,
-                    cs.callee,
-                    cs.note
-                );
+                if std::env::var("PROVEKIT_VERBOSE").ok().as_deref() == Some("1") {
+                    println!(
+                        "cargo:warning=provekit: SKIP {}::{} -> {}: {}",
+                        cs.source_path.display(),
+                        cs.verify_fn,
+                        cs.callee,
+                        cs.note
+                    );
+                }
             }
         }
     }

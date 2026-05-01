@@ -454,7 +454,12 @@ fn build_implication_obligation(
     let sort = post_obj
         .get("sort")
         .cloned()
-        .unwrap_or_else(|| serde_json::json!({"kind":"primitive","name":"Int"}));
+        .unwrap_or_else(|| {
+            pre_obj
+                .get("sort")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({"kind":"primitive","name":"Int"}))
+        });
     let post_body = post_obj.get("body").cloned().ok_or("post body missing")?;
     let pre_body = pre_obj.get("body").cloned().ok_or("pre body missing")?;
 

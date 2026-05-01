@@ -96,12 +96,46 @@ pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileErr
 
     let mut free_vars: BTreeMap<String, String> = BTreeMap::new();
     let bound: BTreeSet<String> = BTreeSet::new();
-    collect_free_vars(ir_formula, &mut free_vars, &bound);
+    collect_free_vars(ir_formula, &mut free_vars, &bound, None);
+
+    // Collect undeclared atomic predicates (kit-defined like roundTrips, len, etc.)
+    let (undeclared_preds, var_sorts_from_preds) = collect_undeclared_atomics(ir_formula);
+    // Merge: prefer explicit var sorts from collect_free_vars, fill gaps from predicate usage
+for (var_name, sort) in &var_sorts_from_preds {
+        free_vars.entry(var_name.clone()).or_insert(sort.clone());
+    }
+    eprintln!("DEBUG ir_formula sample: {}", serde_json::to_string(ir_formula).unwrap_or_default().chars().take(500).collect::<String>());
+    eprintln!("DEBUG var_sorts_from_preds = {:?}", var_sorts_from_preds);
+    eprintln!("DEBUG full_preamble:\n{}", { 
+        let mut p = String::new();
+        p.push_str("(set-logic ALL)\n");
+        for (name, srt) in &free_vars {
+            p.push_str(&format!("(declare-const {name} {srt})\n"));
+        }
+        for (name, arg_sorts, ret_sort) in &undeclared_preds {
+            let args: String = arg_sorts
+                .iter()
+                .map(|s| format!("({s})"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            p.push_str(&format!("(declare-fun {name} ({args}) {ret_sort})\n"));
+        }
+        p
+    });
 
     let mut preamble = String::new();
     preamble.push_str("(set-logic ALL)\n");
     for (name, srt) in &free_vars {
         preamble.push_str(&format!("(declare-const {name} {srt})\n"));
+    }
+    // Declare kit-defined predicates as uninterpreted functions
+    for (name, arg_sorts, ret_sort) in undeclared_preds.into_iter() {
+        let args: String = arg_sorts
+            .iter()
+            .map(|s| format!("({s})"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        preamble.push_str(&format!("(declare-fun {name} ({args}) {ret_sort})\n"));
     }
 
     let mut body = String::new();
@@ -252,6 +286,7 @@ fn collect_free_vars(
     f: &Json,
     out: &mut BTreeMap<String, String>,
     bound: &BTreeSet<String>,
+    ctx_quant_sort: Option<&str>,
 ) {
     if !f.is_object() {
         return;
@@ -261,24 +296,30 @@ fn collect_free_vars(
         "atomic" => {
             if let Some(args) = f.get("args").and_then(|v| v.as_array()) {
                 for a in args {
-                    collect_free_vars_term(a, out, bound);
+                    collect_free_vars_term(a, out, bound, ctx_quant_sort);
                 }
             }
         }
         "and" | "or" | "not" | "implies" => {
             if let Some(ops) = f.get("operands").and_then(|v| v.as_array()) {
                 for op in ops {
-                    collect_free_vars(op, out, bound);
+                    collect_free_vars(op, out, bound, ctx_quant_sort);
                 }
             }
         }
         "forall" | "exists" => {
-            let mut nb = bound.clone();
+            // Quantifier's sort is authoritative for bound vars, but we DON'T
+            // add them to free_vars - they're bound by the quantifier itself.
+            let quant_sort = f
+                .get("sort")
+                .and_then(|s| s.get("name"))
+                .and_then(|n| n.as_str());
             if let Some(n) = f.get("name").and_then(|v| v.as_str()) {
+                let mut nb = bound.clone();
                 nb.insert(n.to_string());
-            }
-            if let Some(b) = f.get("body") {
-                collect_free_vars(b, out, &nb);
+                if let Some(b) = f.get("body") {
+                    collect_free_vars(b, out, &nb, quant_sort);
+                }
             }
         }
         _ => {}
@@ -289,6 +330,7 @@ fn collect_free_vars_term(
     t: &Json,
     out: &mut BTreeMap<String, String>,
     bound: &BTreeSet<String>,
+    ctx_quant_sort: Option<&str>,
 ) {
     if !t.is_object() {
         return;
@@ -297,16 +339,118 @@ fn collect_free_vars_term(
     if kind == "var" {
         if let Some(n) = t.get("name").and_then(|v| v.as_str()) {
             if !bound.contains(n) {
-                // VarTerm carries no sort under the new IR; default to
-                // Int (mirrors the C++ peer's choice for v1).
-                out.insert(n.to_string(), "Int".into());
+                // Try to get sort from the term itself - IR may have sort field
+                let sort = t
+                    .get("sort")
+                    .and_then(|s| s.get("name"))
+                    .and_then(|n| n.as_str())
+                    .or(ctx_quant_sort)  // Fall back to enclosing quantifier's sort
+                    .unwrap_or("Int");
+                out.insert(n.to_string(), sort.to_string());
             }
         }
     } else if kind == "ctor" {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             for a in args {
-                collect_free_vars_term(a, out, bound);
+                collect_free_vars_term(a, out, bound, ctx_quant_sort);
             }
         }
+    }
+}
+
+/// Standard SMT predicates that don't need declaration.
+fn is_standard_predicate(name: &str) -> bool {
+    matches!(
+        name,
+        "=" | "distinct" | "<" | "<=" | ">" | ">="
+            | "and" | "or" | "not" | "implies"
+            | "forall" | "exists"
+            | "\u{2260}" // ≠
+            | "\u{2264}" // ≤
+            | "\u{2265}" // ≥
+    )
+}
+
+/// Collect atomic predicates that need to be declared as uninterpreted functions.
+/// Also collects var sorts from atomic predicate argument usage.
+fn collect_undeclared_atomics(formula: &Json) -> (Vec<(String, Vec<String>, String)>, BTreeMap<String, String>) {
+    let mut preds: BTreeSet<(String, Vec<String>, String)> = BTreeSet::new();
+    let mut var_sorts: BTreeMap<String, String> = BTreeMap::new();
+    collect_atomics_with_context(formula, &mut preds, None);
+    // Merge: prefer explicit var sorts, fill gaps from predicate usage
+    let pred_sorts: BTreeMap<String, String> = preds.iter()
+        .filter_map(|(name, args, _)| {
+            if args.len() == 1 {
+                Some((name.clone(), args[0].clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    for (pred_name, pred_sort) in pred_sorts {
+        var_sorts.entry(pred_name).or_insert(pred_sort);
+    }
+    (preds.into_iter().collect(), var_sorts)
+}
+
+fn collect_atomics_with_context(
+    f: &Json,
+    out: &mut BTreeSet<(String, Vec<String>, String)>,
+    ctx_sort: Option<&str>,
+) {
+    if !f.is_object() {
+        return;
+    }
+    let kind = f.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
+    match kind {
+        "atomic" => {
+            let name = f.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+            if !is_standard_predicate(name) {
+                // Determine arg sorts: try each arg's sort field, or use context sort
+                let arg_sorts: Vec<String> = f
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .map(|args| {
+                        args.iter()
+                            .filter_map(|a| {
+                                // Try to get sort from the term itself
+                                a.get("sort")
+                                    .and_then(|s| s.get("name"))
+                                    .and_then(|n| n.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                // If no args had explicit sort, use context sort for each bound var
+                let final_sorts = if arg_sorts.is_empty() {
+                    if let Some(s) = ctx_sort {
+                        vec![s.to_string()]
+                    } else {
+                        vec!["String".to_string()]
+                    }
+                } else {
+                    arg_sorts
+                };
+                out.insert((name.to_string(), final_sorts, "Bool".to_string()));
+            }
+        }
+        "and" | "or" | "not" | "implies" => {
+            if let Some(ops) = f.get("operands").and_then(|v| v.as_array()) {
+                for op in ops {
+                    collect_atomics_with_context(op, out, ctx_sort);
+                }
+            }
+        }
+        "forall" | "exists" => {
+            let quant_sort = f
+                .get("sort")
+                .and_then(|s| s.get("name"))
+                .and_then(|n| n.as_str());
+            if let Some(b) = f.get("body") {
+                collect_atomics_with_context(b, out, quant_sort);
+            }
+        }
+        _ => {}
     }
 }

@@ -7,7 +7,7 @@
 //
 // Mirrors .../verifier/instantiate.cpp.
 
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 
 use crate::types::{Obligation, ResolvedProperty};
 
@@ -26,13 +26,24 @@ pub fn run(resolved: &ResolvedProperty, arg_term: &Option<Json>) -> Result<Oblig
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or("forall has empty bound-variable name")?;
+    let sort = f
+        .get("sort")
+        .ok_or("forall has no sort")?
+        .clone();
     let body = f
         .get("body")
         .ok_or("forall has no body")?;
+    let substituted_body = substitute_formula(body, var_name, arg);
+    let forall_with_sort = json!({
+        "kind": "forall",
+        "name": var_name,
+        "sort": sort,
+        "body": substituted_body
+    });
     Ok(Obligation {
         property_cid: resolved.cid.clone(),
         ir_kit_version: resolved.ir_kit_version.clone(),
-        ir_formula: substitute_formula(body, var_name, arg),
+        ir_formula: forall_with_sort,
     })
 }
 
