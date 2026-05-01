@@ -326,7 +326,9 @@ Note on the catalog pin. The CID above is the JCS-canonical BLAKE3-512 of the ca
 
 ### Appendix A.1 Self-contracts: how to reproduce
 
-The framework dogfoods itself. 67 hand-written contracts across 13 `.invariant.rs` files (one per public-API Rust source file) get minted into a single `.proof` bundle whose filename IS its catalog CID:
+The framework dogfoods itself. Each conformant peer ships hand-written contracts about its own public surface, mints them as signed mementos under the foundation key, and bundles them into a single `.proof` whose filename IS its catalog CID. Every peer's mint-binary asserts byte-determinism by minting twice into separate output directories and comparing CIDs.
+
+**Rust** — 67 contracts across 13 `.invariant.rs` files:
 
 ```sh
 $ cargo build --release \
@@ -337,7 +339,15 @@ $ implementations/rust/target/release/mint-self-contracts | \
   catalog CID:        blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
 ```
 
-The binary asserts byte-determinism by minting twice into separate output directories and comparing CIDs. Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If the value above does not match, your bytes are not the bytes this bluepaper was written against.
+**Go** — 47 contracts across 13 slab files (one per public-API Go source file):
+
+```sh
+$ cd implementations/go/provekit-self-contracts
+$ go run ./cmd/mint-go-self-contracts | grep "catalog CID:"
+  catalog CID:        blake3-512:906fa4f3ca32d97710e327c9e6e914e5c476a3cfdc326459b31dade24d9625c96f7f0595e3d91f316f73e2709a7f05ac79dd0ca768b6ff23cc2b384923487ac3
+```
+
+Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a value above does not match, your bytes are not the bytes this bluepaper was written against. Each peer's CID is independent: contracts cover that peer's surface, but the bytes (canonical IR-JSON, BLAKE3-512, foundation-key signature, deterministic CBOR catalog) are produced by the protocol's own primitives.
 
 ## Appendix B: empirical witness
 
