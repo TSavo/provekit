@@ -23,17 +23,6 @@ namespace provekit::proof_envelope {
 
 namespace {
 
-// CBOR-encode a single (string-key, body-bytes) pair into out.
-//   out += tstr(key) + body-bytes
-// The body-bytes must already be a complete CBOR-encoded value.
-void emit_pair_with_raw_value(
-    std::vector<uint8_t>& out,
-    const std::string& key,
-    const std::vector<uint8_t>& cbor_value) {
-    cbor_encode_tstr(out, key);
-    out.insert(out.end(), cbor_value.begin(), cbor_value.end());
-}
-
 // Construct a sorted-by-bytewise-CBOR-form pair list.
 // Each entry has a key (string) and a fully-cbor-encoded value blob.
 struct CborPair {

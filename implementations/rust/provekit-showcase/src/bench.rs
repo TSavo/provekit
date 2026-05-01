@@ -53,6 +53,7 @@ pub enum BenchError {
 /// In-memory record describing one implication memento we loaded.
 #[derive(Debug, Clone)]
 struct ImpRecord {
+    #[allow(dead_code)] // captured for diagnostic/debugging; bench currently uses hashes only
     cid: String,
     antecedent_hash: String,
     consequent_hash: String,
@@ -568,6 +569,7 @@ impl<'a> Cursor<'a> {
         }
         self.read_uint(b & 0x1F)
     }
+    #[allow(dead_code)] // symmetric to read_map_head; bench data only exercises maps but the API pair stays
     fn read_array_head(&mut self) -> Option<u64> {
         let b = self.read_byte()?;
         let major = b >> 5;
@@ -680,7 +682,6 @@ fn strip_signed_fields(s: &str) -> String {
     while i < bytes.len() {
         if bytes[i] == b'}' {
             out.push('}');
-            i += 1;
             break;
         }
         // skip leading comma

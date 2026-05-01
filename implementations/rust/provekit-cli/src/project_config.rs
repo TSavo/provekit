@@ -160,6 +160,7 @@ fn strip_comment(s: &str) -> &str {
 
 /// Merge: `project` wins over `user`. Either side's `None` falls
 /// through; both `None` becomes `None`.
+#[allow(dead_code)] // public API; consumed by `provekit init` interactive flow (TODO: wire up)
 pub fn merged_for_command(
     project: &ProjectConfig,
     user: &ProjectConfig,
@@ -171,6 +172,7 @@ pub fn merged_for_command(
 }
 
 /// Surface menu shown by `provekit init`.
+#[allow(dead_code)] // public API; menu data for `provekit init` interactive flow (TODO: wire up)
 pub const KNOWN_SURFACES: &[&str] = &[
     "default",
     "rust-provekit-decorator",
@@ -199,6 +201,7 @@ pub const KNOWN_SURFACES: &[&str] = &[
 ];
 
 /// Agent menu shown by `provekit init`.
+#[allow(dead_code)] // public API; menu data for `provekit init` interactive flow (TODO: wire up)
 pub const KNOWN_AGENTS: &[&str] = &[
     "stub",
     "claude-code",
@@ -212,6 +215,7 @@ pub const KNOWN_AGENTS: &[&str] = &[
 /// support (Z3); the chain / portfolio / consensus modes are
 /// captured in the config schema but not yet implemented in the
 /// verifier (TODO: see protocol/specs/2026-04-30-agent-plugin-protocol.md).
+#[allow(dead_code)] // public API; menu data for `provekit init` interactive flow (TODO: wire up)
 pub const KNOWN_SOLVERS: &[&str] = &["z3", "cvc5", "bitwuzla", "yices2", "mathsat"];
 
 #[cfg(test)]
