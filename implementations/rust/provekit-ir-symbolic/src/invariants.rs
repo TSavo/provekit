@@ -16,7 +16,7 @@
 
 use std::rc::Rc;
 
-use crate::{
+use provekit_ir_symbolic::{
     and_, atomic_, contract, forall, make_var, num, not_, implies,
     ContractArgs, Int, String_, Term,
 };
@@ -73,7 +73,7 @@ pub fn invariants() {
         ContractArgs {
             post: Some(forall(String_(), |_s| {
                 let v = make_var("s");
-                let c = crate::parse_int(v);
+                let c = provekit_ir_symbolic::parse_int(v);
                 atomic_("roundTrips", vec![c])
             })),
             ..Default::default()
@@ -112,7 +112,7 @@ pub fn invariants() {
     // Expressed as: "not(true) is a valid formula"
     // -------------------------------------------------------------------------
     contract(
-        "not_arity_eq_one",
+        "kit_not_arity_eq_one",
         ContractArgs {
             post: Some(forall(Int(), |_n| {
                 let f = not_(atomic_("true", vec![]));
@@ -129,7 +129,7 @@ pub fn invariants() {
     // Expressed as: "implies(true, true) is a valid formula"
     // -------------------------------------------------------------------------
     contract(
-        "implies_arity_eq_two",
+        "kit_implies_arity_eq_two",
         ContractArgs {
             post: Some(forall(Int(), |_n| {
                 let _f = implies(

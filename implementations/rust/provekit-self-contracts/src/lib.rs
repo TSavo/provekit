@@ -80,6 +80,9 @@ mod parse_invariants;
 #[path = "../../provekit-ir-symbolic/src/serialize.invariant.rs"]
 mod serialize_invariants;
 
+#[path = "../../provekit-ir-symbolic/src/invariants.rs"]
+mod kit_invariants;
+
 #[path = "../../provekit-verifier/src/load_all_proofs.invariant.rs"]
 mod load_all_proofs_invariants;
 
@@ -186,6 +189,13 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
                 path: "provekit-ir-symbolic/src/serialize.invariant.rs",
             },
             serialize_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "kit-invariants",
+                path: "provekit-ir-symbolic/src/invariants.rs",
+            },
+            kit_invariants::invariants,
         ),
         run_one_slab(
             InvariantSource {
