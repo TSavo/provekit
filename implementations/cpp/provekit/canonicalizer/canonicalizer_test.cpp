@@ -122,6 +122,48 @@ int main() {
         failures++;
     }
 
+    // Normative conformance test per protocol-catalog-format §5: the
+    // unicode atomic predicates (≥, ≤, ≠) MUST round-trip verbatim.
+    // The kit's atomic predicate names use exactly these UTF-8
+    // sequences. Cross-language hash agreement depends on this.
+    //
+    // U+2265 ≥ encodes as e2 89 a5; U+2264 ≤ as e2 89 a4; U+2260 ≠
+    // as e2 89 a0. Any encoder that re-encodes per byte (treating
+    // each continuation byte as a code point) will corrupt these.
+    {
+        const char* unicode_predicates[] = {"\xe2\x89\xa5", "\xe2\x89\xa4", "\xe2\x89\xa0"};
+        for (const char* sym : unicode_predicates) {
+            auto v = Value::string(sym);
+            std::string encoded = encode_jcs(*v);
+            // Encoded form is "<sym>" — the input plus surrounding quotes.
+            std::string expected = std::string("\"") + sym + "\"";
+            std::string label = std::string("unicode predicate round-trip: ") + sym;
+            if (!check(label.c_str(), encoded == expected, encoded, expected)) {
+                failures++;
+            }
+        }
+    }
+    {
+        // Mixed ASCII + unicode in one string, as appears in IR atomic
+        // names like "x ≥ 0" if ever used as a name field.
+        auto v = Value::string("x \xe2\x89\xa5 0");
+        std::string encoded = encode_jcs(*v);
+        std::string expected = "\"x \xe2\x89\xa5 0\"";
+        if (!check("mixed ASCII + unicode preserved", encoded == expected, encoded, expected)) {
+            failures++;
+        }
+    }
+    {
+        // Object with a unicode name field, mirroring an IR atomic node:
+        // {"name":"≥"} canonicalizes to literally those bytes.
+        auto v = Value::object({{"name", Value::string("\xe2\x89\xa5")}});
+        std::string encoded = encode_jcs(*v);
+        std::string expected = "{\"name\":\"\xe2\x89\xa5\"}";
+        if (!check("unicode in object name field", encoded == expected, encoded, expected)) {
+            failures++;
+        }
+    }
+
     std::printf("\n");
     if (failures == 0) {
         std::printf("CONFORMANCE OK — C++ canonicalizer matches the protocol spec.\n");

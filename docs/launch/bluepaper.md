@@ -277,31 +277,27 @@ The protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json` enumer
 
 ### §5.1 Reader's recipe to verify this bluepaper
 
+The catalog and the spec files use two different hashing rules (see `protocol/specs/2026-04-30-protocol-catalog-format.md`). The single command that applies both rules correctly is:
+
 ```sh
-$ cd implementations/rust
-$ cargo build --release -p provekit-showcase
-$ ./target/release/provekit-showcase hash-spec \
-    /path/to/provekit/protocol/specs/2026-04-30-protocol-catalog.json
-blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
+$ cargo run --release \
+    --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify
 ```
 
-If the output matches the value pinned in §0, the bluepaper has just verified its own authority.
+`--verify` reads every spec file in raw bytes, hashes each, then reads the catalog, JCS-canonicalizes it, hashes that, and compares all values to what the on-disk catalog declares. Exit 0 if every value matches. The tool prints the catalog CID; that value MUST match the value pinned in §0. If it does, the bluepaper has just verified its own authority.
 
 ### §5.2 Per-spec verification
 
-Repeat with each spec path. Outputs should match the CIDs cited inline in §1, §2, §3.
+Spec files are content-addressed by raw bytes (the protocol-catalog-format spec §2.1). Any tool that computes BLAKE3-512 of a file's bytes verifies one spec at a time:
 
 ```sh
-$ ./target/release/provekit-showcase hash-spec /.../specs/2026-04-30-lattice-tractability-theorem.md
-$ ./target/release/provekit-showcase hash-spec /.../specs/2026-04-30-memento-envelope-grammar.md
-$ ./target/release/provekit-showcase hash-spec /.../specs/2026-04-30-handshake-algorithm.md
-$ ./target/release/provekit-showcase hash-spec /.../specs/2026-04-30-proof-file-format.md
-$ ./target/release/provekit-showcase hash-spec /.../specs/2026-04-30-signatures-and-non-repudiation.md
-$ ./target/release/provekit-showcase hash-spec /.../specs/2026-04-30-canonicalization-grammar.md
-$ ./target/release/provekit-showcase hash-spec /.../specs/2026-04-29-the-proof-substrate.md
+$ ./target/release/provekit-showcase hash-spec \
+    protocol/specs/2026-04-30-lattice-tractability-theorem.md
 ```
 
-If every output matches, every claim in this bluepaper applies to your bytes. If any output differs, the bytes you have are not the bytes this bluepaper was written against, and no claim applies to your bytes.
+The output must match the CID cited in §1, §2, §3, or Appendix A for that spec. The catalog itself is the only artifact that uses JCS-canonical hashing, so it is NOT verified by `hash-spec`; use `--verify` for that.
+
+If every per-spec output and the catalog CID match, every claim in this bluepaper applies to your bytes. If any output differs, the bytes you have are not the bytes this bluepaper was written against, and no claim applies to your bytes.
 
 ### §5.3 The recursion
 
@@ -326,7 +322,22 @@ self-contracts (v1.1.0)        blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad
 signatures and non-repudiation blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c
 ```
 
-Note on the catalog pin. The CID above is what `provekit-showcase hash-spec` computed against the spec catalog file as committed in this branch. Earlier external announcements may reference the catalog by a different prefix; if the values diverge, the canonical authority is the value any peer can recompute by running `hash-spec` against the file in the repo. Recompute. Compare. Trust nothing else.
+Note on the catalog pin. The CID above is the JCS-canonical BLAKE3-512 of the catalog file in this branch, computed by `tools/recompute-spec-cids -- --verify` (see §5.1). The catalog uses JCS-canonical hashing; spec files use raw-bytes hashing; the two rules are not interchangeable (see `protocol/specs/2026-04-30-protocol-catalog-format.md`). Earlier external announcements may reference the catalog by a different prefix because they used a different rule; if the values diverge, the canonical authority is the value any peer can recompute by running `--verify`. Recompute. Compare. Trust nothing else.
+
+### Appendix A.1 Self-contracts: how to reproduce
+
+The framework dogfoods itself. 67 hand-written contracts across 13 `.invariant.rs` files (one per public-API Rust source file) get minted into a single `.proof` bundle whose filename IS its catalog CID:
+
+```sh
+$ cargo build --release \
+    --manifest-path implementations/rust/Cargo.toml \
+    --bin mint-self-contracts
+$ implementations/rust/target/release/mint-self-contracts | \
+    grep "catalog CID:"
+  catalog CID:        blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
+```
+
+The binary asserts byte-determinism by minting twice into separate output directories and comparing CIDs. Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If the value above does not match, your bytes are not the bytes this bluepaper was written against.
 
 ## Appendix B: empirical witness
 
