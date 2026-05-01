@@ -347,7 +347,14 @@ $ go run ./cmd/mint-go-self-contracts | grep "catalog CID:"
   catalog CID:        blake3-512:906fa4f3ca32d97710e327c9e6e914e5c476a3cfdc326459b31dade24d9625c96f7f0595e3d91f316f73e2709a7f05ac79dd0ca768b6ff23cc2b384923487ac3
 ```
 
-Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a value above does not match, your bytes are not the bytes this bluepaper was written against. Each peer's CID is independent: contracts cover that peer's surface, but the bytes (canonical IR-JSON, BLAKE3-512, foundation-key signature, deterministic CBOR catalog) are produced by the protocol's own primitives.
+**C++** — 40 contracts across 11 `.invariant.cpp` slab files (one per public-API C++ source file):
+
+```sh
+$ tools/build-cpp-self-contracts.sh /tmp/provekit-cpp-self-out
+  catalog CID:        blake3-512:52bc62f7e70c7caa3220b2c789a75a744bc94660c36a920d53da1a6128eff660cd81dfae6a39d802d108e037f1234f202160d54aea81fb407f1a46f5cd323ae0
+```
+
+Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a value above does not match, your bytes are not the bytes this bluepaper was written against. Each peer's CID is independent: contracts cover that peer's surface, but the bytes (canonical IR-JSON, BLAKE3-512, foundation-key signature, deterministic CBOR catalog) are produced by the protocol's own primitives. Three peers, three CIDs, one protocol.
 
 ## Appendix B: empirical witness
 
