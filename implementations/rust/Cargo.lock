@@ -714,6 +714,7 @@ dependencies = [
  "provekit-lift-proptest",
  "provekit-lift-prusti",
  "provekit-lift-quickcheck",
+ "provekit-lift-rust-tests",
  "provekit-lift-verus",
  "provekit-proof-envelope",
  "provekit-verifier",
@@ -791,6 +792,18 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "provekit-ir-symbolic",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "provekit-lift-rust-tests"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "provekit-ir-symbolic",
+ "provekit-lift",
+ "provekit-verifier",
  "quote",
  "syn",
 ]

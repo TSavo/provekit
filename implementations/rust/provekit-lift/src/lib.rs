@@ -52,6 +52,7 @@ pub use provekit_lift_kani as adapter_kani;
 pub use provekit_lift_proptest as adapter_proptest;
 pub use provekit_lift_prusti as adapter_prusti;
 pub use provekit_lift_quickcheck as adapter_quickcheck;
+pub use provekit_lift_rust_tests as adapter_rust_tests;
 pub use provekit_lift_verus as adapter_verus;
 
 /// Per-adapter outcome. Counts what each adapter saw and what was
@@ -142,6 +143,9 @@ pub fn lift_path(root: &Path) -> LiftReport {
     let mut verus_seen = 0usize;
     let mut verus_lifted = 0usize;
     let mut verus_warnings: Vec<AdapterWarning> = Vec::new();
+    let mut rust_tests_seen = 0usize;
+    let mut rust_tests_lifted = 0usize;
+    let mut rust_tests_warnings: Vec<AdapterWarning> = Vec::new();
 
     for path in enumerate_rs_files(root) {
         report.files_scanned += 1;
@@ -280,6 +284,20 @@ pub fn lift_path(root: &Path) -> LiftReport {
             });
         }
         report.decls.extend(vr_out.decls);
+
+        // Adapter: rust-tests (#[test] / #[tokio::test] -> per-assertion mementos).
+        let rt_out = adapter_rust_tests::lift_file(&file, &path_str);
+        rust_tests_seen += rt_out.seen;
+        rust_tests_lifted += rt_out.lifted;
+        for w in rt_out.warnings {
+            rust_tests_warnings.push(AdapterWarning {
+                adapter: "rust-tests",
+                source_path: w.source_path,
+                item_name: w.item_name,
+                reason: w.reason,
+            });
+        }
+        report.decls.extend(rt_out.decls);
     }
 
     report.adapter_reports.push(AdapterReport {
@@ -329,6 +347,12 @@ pub fn lift_path(root: &Path) -> LiftReport {
         seen: verus_seen,
         lifted: verus_lifted,
         warnings: verus_warnings,
+    });
+    report.adapter_reports.push(AdapterReport {
+        adapter: "rust-tests",
+        seen: rust_tests_seen,
+        lifted: rust_tests_lifted,
+        warnings: rust_tests_warnings,
     });
     report
 }

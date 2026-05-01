@@ -36,6 +36,7 @@ import { computeCid } from "../canonicalizer/hash.js";
 import { liftFile as liftZodFile } from "./adapters/zod.js";
 import { liftFile as liftFastCheckFile } from "./adapters/fast-check.js";
 import { liftFile as liftClassValidatorFile } from "./adapters/class-validator.js";
+import { liftFile as liftVitestTestsFile } from "./adapters/vitest-tests.js";
 import type { ContractDecl, LiftReport, AdapterReport } from "./types.js";
 
 export type {
@@ -46,7 +47,7 @@ export type {
   AdapterWarning,
 } from "./types.js";
 
-export { liftZodFile, liftFastCheckFile, liftClassValidatorFile };
+export { liftZodFile, liftFastCheckFile, liftClassValidatorFile, liftVitestTestsFile };
 
 /** Default ed25519 dev seed: same value as Rust (`[0x42; 32]`) for cross-impl
  * CID determinism in fixtures. */
@@ -148,6 +149,7 @@ export function liftPath(root: string): LiftReport {
     zod: { adapter: "zod", seen: 0, lifted: 0, warnings: [] },
     "fast-check": { adapter: "fast-check", seen: 0, lifted: 0, warnings: [] },
     "class-validator": { adapter: "class-validator", seen: 0, lifted: 0, warnings: [] },
+    "vitest-tests": { adapter: "vitest-tests", seen: 0, lifted: 0, warnings: [] },
   };
   let filesScanned = 0;
   const parseErrors: Array<{ path: string; message: string }> = [];
@@ -180,6 +182,12 @@ export function liftPath(root: string): LiftReport {
     adapterReports["class-validator"]!.lifted += cv.lifted;
     adapterReports["class-validator"]!.warnings.push(...cv.warnings);
     decls.push(...cv.decls);
+
+    const vt = liftVitestTestsFile(sf, filePath);
+    adapterReports["vitest-tests"]!.seen += vt.seen;
+    adapterReports["vitest-tests"]!.lifted += vt.lifted;
+    adapterReports["vitest-tests"]!.warnings.push(...vt.warnings);
+    decls.push(...vt.decls);
   }
 
   return {
@@ -188,6 +196,7 @@ export function liftPath(root: string): LiftReport {
       adapterReports.zod!,
       adapterReports["fast-check"]!,
       adapterReports["class-validator"]!,
+      adapterReports["vitest-tests"]!,
     ],
     filesScanned,
     parseErrors,
@@ -239,7 +248,8 @@ export function mintProof(decls: ContractDecl[], opts: LiftOptions): MintOutput 
         lifter: opts.lifter,
         // The protocol enum is constrained to {tests, types, docs, symbolic-exec}.
         // zod schemas express types; fast-check properties express tests.
-        evidence: d.adapter === "fast-check" ? "tests" : "types",
+        evidence:
+          d.adapter === "fast-check" || d.adapter === "vitest-tests" ? "tests" : "types",
       },
     });
 

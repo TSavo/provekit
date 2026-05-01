@@ -38,6 +38,7 @@ provekit-lift-creusot = { path = "../provekit-lift-creusot" }
 provekit-lift-flux = { path = "../provekit-lift-flux" }
 provekit-lift-quickcheck = { path = "../provekit-lift-quickcheck" }
 provekit-lift-verus = { path = "../provekit-lift-verus" }
+provekit-lift-rust-tests = { path = "../provekit-lift-rust-tests" }
 
 # External.
 syn = { workspace = true }

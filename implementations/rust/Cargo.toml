@@ -19,6 +19,7 @@ members = [
     "provekit-lift-flux",
     "provekit-lift-quickcheck",
     "provekit-lift-verus",
+    "provekit-lift-rust-tests",
     "provekit-build",
     "examples/build_script_demo",
 ]
