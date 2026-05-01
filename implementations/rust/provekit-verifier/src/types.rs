@@ -28,6 +28,11 @@ pub struct MementoPool {
     pub load_errors: Vec<LoadError>,
 }
 
+/// Key for implication lookups: (antecedent CID, consequent CID).
+/// The implication memento itself has a CID derived from this pair.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ImplicationKey(pub String, pub String);
+
 impl MementoPool {
     /// The fundamental verification operation: look up a formula by its
     /// content hash. The memento IS the verification; if found, the
@@ -45,6 +50,113 @@ impl MementoPool {
     pub fn verify(&self, formula: &Json) -> Option<&Json> {
         let cid = compute_formula_cid(formula);
         self.verify_by_hash(&cid)
+    }
+
+    /// Check if P → Q is already proven in the pool.
+    /// Looks for an implication memento whose evidence body contains
+    /// both antecedentHash = P and consequentHash = Q.
+    ///
+    /// This is the core of bridge enforcement: "does the publisher's
+    /// post imply the consumer's pre?"
+    pub fn verify_implication(&self, antecedent_cid: &str, consequent_cid: &str) -> Option<&Json> {
+        // Direct lookup: find a memento that indexes both hashes
+        // and is an implication evidence kind.
+        let _ant_memento = self.verify_by_hash(antecedent_cid)?;
+        let _con_memento = self.verify_by_hash(consequent_cid)?;
+
+        // Scan for implication mementos that link these two
+        for (_, envelope) in &self.mementos {
+            if let Some(evidence) = envelope.get("evidence") {
+                if evidence.get("kind").and_then(|v| v.as_str()) == Some("implication") {
+                    if let Some(body) = evidence.get("body") {
+                        let ant = body.get("antecedentHash").and_then(|v| v.as_str());
+                        let con = body.get("consequentHash").and_then(|v| v.as_str());
+                        if ant == Some(antecedent_cid) && con == Some(consequent_cid) {
+                            return Some(envelope);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if P → Q via transitive chaining.
+    /// If P → R and R → Q are both in the pool, then P → Q.
+    /// Uses BFS on the implication graph.
+    pub fn implies_transitive(&self, antecedent_cid: &str, consequent_cid: &str) -> Option<Vec<String>> {
+        if antecedent_cid == consequent_cid {
+            return Some(vec![antecedent_cid.to_string()]);
+        }
+
+        // Build implication graph adjacency list on-the-fly
+        let mut graph: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (_, envelope) in &self.mementos {
+            if let Some(evidence) = envelope.get("evidence") {
+                if evidence.get("kind").and_then(|v| v.as_str()) == Some("implication") {
+                    if let Some(body) = evidence.get("body") {
+                        if let (Some(ant), Some(con)) = (
+                            body.get("antecedentHash").and_then(|v| v.as_str()),
+                            body.get("consequentHash").and_then(|v| v.as_str()),
+                        ) {
+                            graph.entry(ant.to_string()).or_default().push(con.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // BFS
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        let mut path_map = BTreeMap::new();
+
+        queue.push_back(antecedent_cid.to_string());
+        visited.insert(antecedent_cid.to_string());
+        path_map.insert(antecedent_cid.to_string(), vec![antecedent_cid.to_string()]);
+
+        while let Some(current) = queue.pop_front() {
+            if let Some(neighbors) = graph.get(&current) {
+                for neighbor in neighbors {
+                    if neighbor == consequent_cid {
+                        let mut path = path_map.get(&current).unwrap().clone();
+                        path.push(neighbor.clone());
+                        return Some(path);
+                    }
+                    if visited.insert(neighbor.clone()) {
+                        let mut path = path_map.get(&current).unwrap().clone();
+                        path.push(neighbor.clone());
+                        path_map.insert(neighbor.clone(), path);
+                        queue.push_back(neighbor.clone());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Full implication check: direct, transitive, or via sub-formula composition.
+    /// Returns the proof path if P → Q holds.
+    pub fn can_implies(&self, antecedent_cid: &str, consequent_cid: &str) -> ImplicationResult {
+        // 1. Direct implication
+        if let Some(memento) = self.verify_implication(antecedent_cid, consequent_cid) {
+            return ImplicationResult::ProvenDirect {
+                memento_cid: memento.get("cid").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+            };
+        }
+
+        // 2. Transitive implication
+        if let Some(path) = self.implies_transitive(antecedent_cid, consequent_cid) {
+            return ImplicationResult::ProvenTransitive { path };
+        }
+
+        // 3. Reflexivity: P → P always holds
+        if antecedent_cid == consequent_cid {
+            return ImplicationResult::ProvenReflexive;
+        }
+
+        ImplicationResult::Unknown
     }
 
     /// Insert a memento into the pool and index it by formula hash.
@@ -111,6 +223,25 @@ impl MementoPool {
         }
 
         verified
+    }
+}
+
+/// Result of an implication check.
+#[derive(Debug, Clone)]
+pub enum ImplicationResult {
+    /// Direct implication memento found in pool.
+    ProvenDirect { memento_cid: String },
+    /// Transitive chain of implications found.
+    ProvenTransitive { path: Vec<String> },
+    /// Trivial: P → P.
+    ProvenReflexive,
+    /// No known implication path.
+    Unknown,
+}
+
+impl ImplicationResult {
+    pub fn is_proven(&self) -> bool {
+        !matches!(self, Self::Unknown)
     }
 }
 

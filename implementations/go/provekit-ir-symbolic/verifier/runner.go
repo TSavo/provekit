@@ -28,10 +28,10 @@ func NewRunner(solver *Solver) *Runner {
 }
 
 // RunBridgeEnforcement executes the full pipeline:
-//   1. load-all-proofs
-//   2. enumerate-callsites
-//   3+4+5. for each callsite (in parallel): resolve, instantiate, solve
-//   6. report
+//  1. load-all-proofs
+//  2. enumerate-callsites
+//     3+4+5. for each callsite (in parallel): resolve, instantiate, solve
+//  6. report
 func (r *Runner) RunBridgeEnforcement(projectRoot string) (*Report, error) {
 	pool, err := r.loadStage.Run(projectRoot)
 	if err != nil {
@@ -73,6 +73,17 @@ func (r *Runner) processCallSite(cs CallSite, pool *MementoPool) ReportRow {
 	if err != nil {
 		return ReportRow{CallSite: cs, Status: "lift-error", Reason: err.Error()}
 	}
+
+	// Tier 0: Check if obligation formula itself is verified in the pool.
+	if _, ok := pool.Verify(obligation); ok {
+		return ReportRow{CallSite: cs, Status: "discharged", Reason: "tier0: memento-is-verification"}
+	}
+
+	// Tier 0c: Check if post → pre implication is already proven.
+	// This requires computing CIDs for the post and pre formulas.
+	// For now, we skip to Tier 3 (solver) if no direct verification.
+	// Future: extract postHash from bridge and preHash from resolved.
+
 	solveResult, err := r.solveStage.Run(obligation, r.solver)
 	if err != nil {
 		return ReportRow{CallSite: cs, Status: "lift-error", Reason: err.Error()}

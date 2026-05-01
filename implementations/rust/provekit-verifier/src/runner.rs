@@ -308,6 +308,37 @@ fn work_one(
     if let (Some(pre_hash), Some((_post_formula, post_hash))) =
         (consumer_pre_hash.as_ref(), producer_post.as_ref())
     {
+        // Tier 0c: Implication composition. Is postA → preB already
+        // proven in the memento pool? Direct or transitive?
+        match pool.can_implies(post_hash, pre_hash) {
+            crate::types::ImplicationResult::ProvenDirect { memento_cid } => {
+                n_hash.fetch_add(1, Ordering::Relaxed);
+                return (
+                    cs.clone(),
+                    ObligationVerdict::Discharged,
+                    format!("tier0c: implication proven direct (memento {})", short(&memento_cid)),
+                );
+            }
+            crate::types::ImplicationResult::ProvenTransitive { path } => {
+                n_hash.fetch_add(1, Ordering::Relaxed);
+                let path_str = path.iter().map(|s| short(s)).collect::<Vec<_>>().join(" → ");
+                return (
+                    cs.clone(),
+                    ObligationVerdict::Discharged,
+                    format!("tier0c: implication proven transitive ({path_str})"),
+                );
+            }
+            crate::types::ImplicationResult::ProvenReflexive => {
+                n_hash.fetch_add(1, Ordering::Relaxed);
+                return (
+                    cs.clone(),
+                    ObligationVerdict::Discharged,
+                    "tier0c: implication reflexive (post == pre)".into(),
+                );
+            }
+            crate::types::ImplicationResult::Unknown => {}
+        }
+
         if try_tier1(post_hash, pre_hash) {
             n_hash.fetch_add(1, Ordering::Relaxed);
             return (

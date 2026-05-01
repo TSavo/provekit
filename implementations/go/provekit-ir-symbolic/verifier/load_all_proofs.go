@@ -35,10 +35,7 @@ const (
 
 // Run loads every .proof in projectRoot and returns the unified pool.
 func (s *LoadAllProofsStage) Run(projectRoot string) (*MementoPool, error) {
-	pool := &MementoPool{
-		Mementos:        map[string]map[string]interface{}{},
-		BridgesBySymbol: map[string]map[string]interface{}{},
-	}
+	pool := NewMementoPool()
 	for _, pp := range enumerateProofFiles(projectRoot) {
 		if err := s.loadOne(pp, pool); err != nil {
 			pool.LoadErrors = append(pool.LoadErrors, LoadError{ProofPath: pp, Reason: err.Error()})
@@ -149,7 +146,7 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 			})
 			continue
 		}
-		pool.Mementos[cid] = env
+		pool.Insert(cid, env)
 		// If it's a bridge envelope, index by sourceSymbol.
 		if ev, ok := env["evidence"].(map[string]interface{}); ok {
 			if ev["kind"] == "bridge" {
