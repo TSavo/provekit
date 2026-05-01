@@ -133,16 +133,12 @@ fn main() -> ExitCode {
     };
     let built = build_proof_envelope(&proof_input);
 
-    // ----- 5. Write <hex>.proof to disk -----
-    // Filename uses the hex digest only (no "blake3-512:" prefix in the
-    // filename — colons are valid POSIX but make pasting awkward and
-    // the C++ peer used hex-only filenames). The full self-identifying
-    // CID is printed to stdout for downstream consumers.
-    let cid_hex = built
-        .cid
-        .strip_prefix("blake3-512:")
-        .expect("cid prefix invariant");
-    let out_path = out_dir.join(format!("{cid_hex}.proof"));
+    // ----- 5. Write <full-cid>.proof to disk -----
+    // v1.1.0 filename shape is `blake3-512:<hex>.proof` — same as the
+    // C++ and Go peers. Self-identifying so cross-language verifiers
+    // can match by regex. The full self-identifying CID is also printed
+    // to stdout for downstream consumers.
+    let out_path = out_dir.join(format!("{}.proof", built.cid));
     if let Err(e) = fs::write(&out_path, &built.bytes) {
         eprintln!("ERROR: write to {} failed: {e}", out_path.display());
         return ExitCode::from(1);

@@ -21,3 +21,7 @@ provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 [[example]]
 name = "rust_round_trip"
 path = "../examples/rust_round_trip.rs"
+
+[[example]]
+name = "cross_lang_consume"
+path = "../examples/cross_lang_consume.rs"

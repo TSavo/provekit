@@ -1,8 +1,12 @@
-// THE GO END-TO-END DEMO (v1.1.0).
+// THE GO END-TO-END DEMO (v1.1.0, four-way conformance).
 //
 //   Go signs Go.
-//   Go calls C++ (via the bridged kit primitive).
+//   Go calls a peer language (via the bridged kit primitive).
 //   Go detects parseInt(num(0)).
+//
+//   Parameterized over peer kits in /tmp/{cpp,rust}-kit-out-v11/.
+//   Every peer-published .proof discovered runs as its own subtest;
+//   each cell of the four-way matrix reports independently.
 //
 // Architecture:
 //   1. C++ kit shipped a v1.1.0 .proof file with parseInt's contract
@@ -42,43 +46,64 @@ import (
 	"github.com/provekit/ir-symbolic/proof_envelope"
 )
 
-// cppProofDir holds the C++ reference impl's v1.1.0 output. The
-// filename CID changed shape under v1.1.0 (full BLAKE3-512 with
-// "blake3-512:" prefix), so we discover dynamically rather than
-// hard-coding. Regenerate with the C++ kit's parseInt_kit_proof
-// binary, e.g. `tools/run-cpp-kit-publish.sh /tmp/cpp-kit-out-v11`.
-const cppProofDir = "/tmp/cpp-kit-out-v11"
+// peerProofDirs holds every peer-language reference impl's v1.1.0
+// output directory. The filename CID is full BLAKE3-512 with
+// "blake3-512:" prefix; we discover dynamically rather than
+// hard-coding. Regenerate the C++/Rust kits via their respective
+// publishers (the tools/run-*.sh scripts walk this).
+var peerProofDirs = []struct {
+	dir    string
+	family string // "cpp" / "rust"
+}{
+	{dir: "/tmp/cpp-kit-out-v11", family: "cpp"},
+	{dir: "/tmp/rust-kit-out-v11", family: "rust"},
+}
 
-func TestCrossLangGoVerifiesCppProof(t *testing.T) {
-	matches, err := filepath.Glob(filepath.Join(cppProofDir, "*.proof"))
-	if err != nil {
-		t.Fatalf("glob %s: %v", cppProofDir, err)
+func TestCrossLangGoVerifiesPeerProof(t *testing.T) {
+	type peerProof struct {
+		path   string
+		family string
 	}
-	if len(matches) == 0 {
-		t.Skipf("no C++ .proof in %s; regenerate from the C++ kit on v1.1.0", cppProofDir)
+	var found []peerProof
+	for _, p := range peerProofDirs {
+		matches, err := filepath.Glob(filepath.Join(p.dir, "*.proof"))
+		if err != nil {
+			t.Fatalf("glob %s: %v", p.dir, err)
+		}
+		for _, m := range matches {
+			found = append(found, peerProof{path: m, family: p.family})
+		}
 	}
-	if len(matches) > 1 {
-		t.Fatalf("expected exactly one C++ .proof in %s, got %d: %v", cppProofDir, len(matches), matches)
+	if len(found) == 0 {
+		t.Skipf("no peer .proof files found in any of %v", peerProofDirs)
 	}
-	cppProofPath := matches[0]
 
-	projectRoot, err := os.MkdirTemp("", "go-cross-lang-")
+	for _, peer := range found {
+		peer := peer
+		t.Run(peer.family+"_"+filepath.Base(peer.path), func(t *testing.T) {
+			runOnePeer(t, peer.path, peer.family)
+		})
+	}
+}
+
+func runOnePeer(t *testing.T, peerProofPath, family string) {
+	projectRoot, err := os.MkdirTemp("", "go-cross-lang-"+family+"-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(projectRoot)
 
-	// ----- 1. Install the C++-produced .proof in node_modules -----
-	cppKitDir := filepath.Join(projectRoot, "node_modules", "@example", "cpp-kit")
-	if err := os.MkdirAll(cppKitDir, 0o755); err != nil {
+	// ----- 1. Install the peer-produced .proof in node_modules -----
+	peerKitDir := filepath.Join(projectRoot, "node_modules", "@example", family+"-kit")
+	if err := os.MkdirAll(peerKitDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cppBytes, err := os.ReadFile(cppProofPath)
+	peerBytes, err := os.ReadFile(peerProofPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cppProofDest := filepath.Join(cppKitDir, filepath.Base(cppProofPath))
-	if err := os.WriteFile(cppProofDest, cppBytes, 0o644); err != nil {
+	peerProofDest := filepath.Join(peerKitDir, filepath.Base(peerProofPath))
+	if err := os.WriteFile(peerProofDest, peerBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -91,7 +116,7 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 	ir.Must("calls-parseInt-with-positive-5",
 		ir.Eq(ir.ParseInt(ir.Num(5)), ir.Num(5)))
 
-	// ParseInt(Num(0)); should be UNSATISFIED (catches the C++ precondition)
+	// ParseInt(Num(0)); should be UNSATISFIED (catches the peer's precondition)
 	ir.Must("calls-parseInt-with-zero",
 		ir.Eq(ir.ParseInt(ir.Num(0)), ir.Num(0)))
 
@@ -155,7 +180,7 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 	}
 	t.Logf("Go consumer .proof: %s (%d bytes)", consumerProofPath, len(out.Bytes))
 
-	// ----- 5. Run the Go bridge enforcement runner (Go calls C++ via the bridge) -----
+	// ----- 5. Run the Go bridge enforcement runner (Go calls peer via the bridge) -----
 	solver := &Solver{
 		Entries: []SolverEntry{
 			{
@@ -206,10 +231,10 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 			failing.Status, failing.Reason)
 	}
 
-	t.Logf("\n  DEMO: Go verifier caught ParseInt(Num(0)) using the C++-authored precondition.\n"+
+	t.Logf("\n  DEMO: Go verifier caught ParseInt(Num(0)) using the %s-authored precondition.\n"+
 		"    Discharged calls:  %d\n"+
 		"    Caught violations: %d\n",
-		report.Discharged, report.Violations)
+		family, report.Discharged, report.Violations)
 }
 
 // makeDeterministicKey derives an ed25519 private key from a seed-like

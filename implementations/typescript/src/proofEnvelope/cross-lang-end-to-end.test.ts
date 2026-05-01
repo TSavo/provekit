@@ -1,9 +1,11 @@
-// THE END-TO-END DEMO.
+// THE END-TO-END DEMO (four-way conformance).
 //
-// A TS function calls into the C++ kit (via the kit's bridged TS
-// primitive), authors a property memento, and `provekit verify`
-// (bridge enforcement) catches violations of the C++-published
-// precondition.
+// A TS function calls into a peer-language kit (via the kit's bridged
+// TS primitive), authors a property memento, and `provekit verify`
+// (bridge enforcement) catches violations of the peer-published
+// precondition. Parameterized over every peer kit found in
+// /tmp/{cpp,go,rust}-kit-out-v11/ so each cell of the four-way matrix
+// reports independently.
 //
 // Architecture, end-to-end:
 //
@@ -56,133 +58,153 @@ import { computeCid } from "../canonicalizer/hash.js";
 import { runBridgeEnforcement } from "../verifier/bridgeEnforcement.js";
 import { _resetBridges } from "../ir/extensions/bridges.js";
 
-const CPP_OUT_DIR = "/tmp/cpp-kit-out-v11";
+const PEER_DIRS: { dir: string; family: "cpp" | "go" | "rust" }[] = [
+  { dir: "/tmp/cpp-kit-out-v11", family: "cpp" },
+  { dir: "/tmp/go-kit-out-v11", family: "go" },
+  { dir: "/tmp/rust-kit-out-v11", family: "rust" },
+];
 const PROOF_FILENAME_RE = /^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$/;
 
-function findV11CppProof(): { filename: string; path: string; cid: string } | null {
-  if (!existsSync(CPP_OUT_DIR)) return null;
-  for (const entry of readdirSync(CPP_OUT_DIR)) {
-    const m = entry.match(PROOF_FILENAME_RE);
-    if (m) return { filename: entry, path: `${CPP_OUT_DIR}/${entry}`, cid: m[1]! };
-  }
-  return null;
+interface PeerProof {
+  filename: string;
+  path: string;
+  cid: string;
+  family: "cpp" | "go" | "rust";
 }
 
-describe("END-TO-END: TS function calls C++ kit primitive; verify catches violations", () => {
-  const cppProof = findV11CppProof();
-  it.runIf(cppProof !== null)(
-    "parseInt(num(5)) discharges; parseInt(num(0)) is caught by the C++ precondition",
-    async () => {
-      _resetBridges();
-      const { filename: CPP_PROOF_FILENAME, path: CPP_PROOF_PATH, cid: CPP_PROOF_CID } =
-        cppProof!;
-      const projectRoot = mkdtempSync(join(tmpdir(), "cross-lang-e2e-"));
-      try {
-        // ---- 1. Install the C++-produced .proof in node_modules ----
-        const cppKitDir = join(projectRoot, "node_modules", "@example", "cpp-kit");
-        mkdirSync(cppKitDir, { recursive: true });
-        const cppProofBytes = readFileSync(CPP_PROOF_PATH);
-        writeFileSync(join(cppKitDir, CPP_PROOF_FILENAME), cppProofBytes);
-        writeFileSync(
-          join(cppKitDir, "package.json"),
-          JSON.stringify({
-            name: "@example/cpp-kit",
-            version: "1.0.0",
-            provekit: { proofHash: CPP_PROOF_CID },
-          }, null, 2),
-        );
+function findAllPeerProofs(): PeerProof[] {
+  const out: PeerProof[] = [];
+  for (const { dir, family } of PEER_DIRS) {
+    if (!existsSync(dir)) continue;
+    for (const entry of readdirSync(dir)) {
+      const m = entry.match(PROOF_FILENAME_RE);
+      if (m) out.push({ filename: entry, path: `${dir}/${entry}`, cid: m[1]!, family });
+    }
+  }
+  return out;
+}
 
-        // ---- 2. The TS consumer's invariants (the "TS function that calls C++") ----
-        // These calls into the bridged kit primitive `parseIntPrim` produce
-        // Ctor("parseInt", [arg]) IrTerms. That's what "calling C++" means at
-        // the protocol level: the kit primitive emits the IR ctor that hashes
-        // back into the C++-published bridge.
-        const finishCollect = beginCollecting();
-        must(
-          "consumer-calls-parseInt-with-positive-5",
-          eq(parseIntPrim(num(5)), num(5)),
-        );
-        must(
-          "consumer-calls-parseInt-with-zero",
-          eq(parseIntPrim(num(0)), num(0)),
-        );
-        const decls = finishCollect();
-        expect(decls).toHaveLength(2);
+describe("END-TO-END: TS function calls peer kit primitive; verify catches violations", () => {
+  const proofs = findAllPeerProofs();
 
-        // ---- 3. Mint each declaration into a contract memento ----
-        const { privateKey } = generateKeypair({ seed: randomBytes(32) });
-        const consumerMembers = new Map();
-        for (const decl of decls) {
-          if (decl.kind !== "contract") continue;
-          if (!decl.pre) continue;
-          const env = mintContract({
-            producedBy: "consumer-app@1",
-            privateKey,
-            contractName: decl.name,
-            pre: decl.pre,
-            authoring: { producerKind: "kit-author", author: "consumer-app@1" },
-          });
-          consumerMembers.set(env.cid, env);
-        }
+  it.runIf(proofs.length === 0)("(skipped) no peer .proof files discovered", () => {
+    // pass-through
+  });
 
-        // ---- 4. Bundle the consumer's mementos into its own .proof ----
-        const { privateKey: catalogKey, publicKey: catalogPub } = generateKeypair({ seed: randomBytes(32) });
-        const pubDer = catalogPub.export({ type: "spki", format: "der" });
-        const signerCid = computeCid(pubDer);
-        const built = buildProofEnvelope({
-          name: "consumer-app",
-          version: "1.0.0",
-          members: consumerMembers,
-          signerCid,
-          signerPrivateKey: catalogKey,
-        });
-        writeFileSync(join(projectRoot, `${built.cid}.proof`), Buffer.from(built.bytes));
-        writeFileSync(
-          join(projectRoot, "package.json"),
-          JSON.stringify({
+  for (const peer of proofs) {
+    it(
+      `${peer.family}: parseInt(num(5)) discharges; parseInt(num(0)) is caught by the ${peer.family} precondition`,
+      async () => {
+        _resetBridges();
+        const { filename: PEER_FILENAME, path: PEER_PATH, cid: PEER_CID, family } = peer;
+        const projectRoot = mkdtempSync(join(tmpdir(), `cross-lang-e2e-${family}-`));
+        try {
+          // ---- 1. Install the peer-produced .proof in node_modules ----
+          const peerKitDir = join(projectRoot, "node_modules", "@example", `${family}-kit`);
+          mkdirSync(peerKitDir, { recursive: true });
+          const peerProofBytes = readFileSync(PEER_PATH);
+          writeFileSync(join(peerKitDir, PEER_FILENAME), peerProofBytes);
+          writeFileSync(
+            join(peerKitDir, "package.json"),
+            JSON.stringify({
+              name: `@example/${family}-kit`,
+              version: "1.0.0",
+              provekit: { proofHash: PEER_CID },
+            }, null, 2),
+          );
+
+          // ---- 2. The TS consumer's invariants (the "TS function that calls peer") ----
+          // These calls into the bridged kit primitive `parseIntPrim` produce
+          // Ctor("parseInt", [arg]) IrTerms. That's what "calling the peer" means at
+          // the protocol level: the kit primitive emits the IR ctor that hashes
+          // back into the peer-published bridge.
+          const finishCollect = beginCollecting();
+          must(
+            "consumer-calls-parseInt-with-positive-5",
+            eq(parseIntPrim(num(5)), num(5)),
+          );
+          must(
+            "consumer-calls-parseInt-with-zero",
+            eq(parseIntPrim(num(0)), num(0)),
+          );
+          const decls = finishCollect();
+          expect(decls).toHaveLength(2);
+
+          // ---- 3. Mint each declaration into a contract memento ----
+          const { privateKey } = generateKeypair({ seed: randomBytes(32) });
+          const consumerMembers = new Map();
+          for (const decl of decls) {
+            if (decl.kind !== "contract") continue;
+            if (!decl.pre) continue;
+            const env = mintContract({
+              producedBy: "consumer-app@1",
+              privateKey,
+              contractName: decl.name,
+              pre: decl.pre,
+              authoring: { producerKind: "kit-author", author: "consumer-app@1" },
+            });
+            consumerMembers.set(env.cid, env);
+          }
+
+          // ---- 4. Bundle the consumer's mementos into its own .proof ----
+          const { privateKey: catalogKey, publicKey: catalogPub } = generateKeypair({ seed: randomBytes(32) });
+          const pubDer = catalogPub.export({ type: "spki", format: "der" });
+          const signerCid = computeCid(pubDer);
+          const built = buildProofEnvelope({
             name: "consumer-app",
             version: "1.0.0",
-            provekit: { proofHash: built.cid },
-          }, null, 2),
-        );
+            members: consumerMembers,
+            signerCid,
+            signerPrivateKey: catalogKey,
+          });
+          writeFileSync(join(projectRoot, `${built.cid}.proof`), Buffer.from(built.bytes));
+          writeFileSync(
+            join(projectRoot, "package.json"),
+            JSON.stringify({
+              name: "consumer-app",
+              version: "1.0.0",
+              provekit: { proofHash: built.cid },
+            }, null, 2),
+          );
 
-        // ---- 5. Run the protocol-first verifier ----
-        const report = await runBridgeEnforcement(projectRoot);
+          // ---- 5. Run the protocol-first verifier ----
+          const report = await runBridgeEnforcement(projectRoot);
 
-        // The C++-produced bridge for parseInt was discovered.
-        expect(report.totalCallsites).toBe(2);
+          // The peer-produced bridge for parseInt was discovered.
+          expect(report.totalCallsites).toBe(2);
 
-        const passingRow = report.rows.find((r) =>
-          (r.callsite as { propertyName: string }).propertyName.includes("with-positive-5"),
-        )!;
-        const failingRow = report.rows.find((r) =>
-          (r.callsite as { propertyName: string }).propertyName.includes("with-zero"),
-        )!;
+          const passingRow = report.rows.find((r) =>
+            (r.callsite as { propertyName: string }).propertyName.includes("with-positive-5"),
+          )!;
+          const failingRow = report.rows.find((r) =>
+            (r.callsite as { propertyName: string }).propertyName.includes("with-zero"),
+          )!;
 
-        // 5 > 0 → discharged via Z3.
-        expect(passingRow.status).toBe("discharged");
+          // 5 > 0 -> discharged via Z3.
+          expect(passingRow.status).toBe("discharged");
 
-        // 0 > 0 → UNSAT failed → the C++-declared precondition catches the
-        // TS code that calls parseInt with 0.
-        expect(failingRow.status).toBe("unsatisfied");
+          // 0 > 0 -> UNSAT failed -> the peer-declared precondition catches the
+          // TS code that calls parseInt with 0.
+          expect(failingRow.status).toBe("unsatisfied");
 
-        // The protocol's complete claim:
-        //   - C++ author wrote the precondition.
-        //   - C++ kit signed + sealed it in a .proof file.
-        //   - TS consumer called parseInt(num(0)).
-        //   - TS verifier discovered the C++-published bridge, instantiated
-        //     the C++-authored precondition at the call site, and proved
-        //     UNSAT — entirely via the protocol; no language-specific glue.
-        console.log(
-          `\n  ✓ DEMO: TS verifier caught parseInt(num(0)) using the C++-authored precondition.\n` +
-            `    Discharged calls:  ${report.discharged}\n` +
-            `    Caught violations: ${report.violations}\n`,
-        );
-      } finally {
-        rmSync(projectRoot, { recursive: true, force: true });
-        _resetBridges();
-      }
-    },
-    30000,
-  );
+          // The protocol's complete claim:
+          //   - peer author wrote the precondition.
+          //   - peer kit signed + sealed it in a .proof file.
+          //   - TS consumer called parseInt(num(0)).
+          //   - TS verifier discovered the peer-published bridge, instantiated
+          //     the peer-authored precondition at the call site, and proved
+          //     UNSAT entirely via the protocol; no language-specific glue.
+          console.log(
+            `\n  DEMO: TS verifier caught parseInt(num(0)) using the ${family}-authored precondition.\n` +
+              `    Discharged calls:  ${report.discharged}\n` +
+              `    Caught violations: ${report.violations}\n`,
+          );
+        } finally {
+          rmSync(projectRoot, { recursive: true, force: true });
+          _resetBridges();
+        }
+      },
+      30000,
+    );
+  }
 });
