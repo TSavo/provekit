@@ -23,3 +23,8 @@ providers:
       binary: cvc5
       flags: ["--lang=smt2", "--tlimit-per={{TIMEOUT_MS}}"]
       timeoutMs: 5000
+    - type: coq
+      binary: coqc
+      flags: ["{{INPUT_FILE}}"]
+      timeoutMs: 30000
+      dialect: coq

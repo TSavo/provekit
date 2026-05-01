@@ -157,24 +157,26 @@ export function makeCheckImplicationStage(
 
     async run(input) {
       // For each entry, compile the implication probes via that entry's
-      // configured compiler. SMT-LIB-class entries share one compiler;
-      // other compiler classes (lean, coq) would have different probe
-      // shapes and aren't supported here yet — checkImplication is
-      // SMT-shaped. Reject non-smt-lib compilers up front.
-      for (const entry of input.solver.entries) {
-        if (entry.compiler !== "smt-lib") {
-          throw new Error(
-            `checkImplication: solver "${entry.type}" uses compiler "${entry.compiler}", but this Stage only supports "smt-lib". Proof-assistant implication checks are a separate workflow.`,
-          );
-        }
+      // configured compiler. SMT-LIB-class entries use smt-lib compiler;
+      // Coq uses coq compiler with .v file + coqc.
+      
+      const smtSolvers = input.solver.entries.filter(e => e.compiler === "smt-lib");
+      const coqSolvers = input.solver.entries.filter(e => e.compiler === "coq");
+      
+      // Currently only smt-lib is fully implemented
+      if (smtSolvers.length === 0) {
+        throw new Error(
+          `checkImplication: no smt-lib solvers configured. Coq support coming soon.`,
+        );
       }
+      
       const probeAB = wrapImplicationProbe(input.newSmt, input.oldSmt);
       const probeBA = wrapImplicationProbe(input.oldSmt, input.newSmt);
 
       // Run every entry's two probes in parallel. Same SMT script across
       // entries; only the binary + flags differ.
       const entryResults = await Promise.all(
-        input.solver.entries.map(async (entry) => {
+        smtSolvers.map(async (entry) => {
           const [ab, ba] = await Promise.all([
             invokeSolver(entry, probeAB),
             invokeSolver(entry, probeBA),

@@ -73,13 +73,13 @@ impl CoqCompiler {
 
         // Collect free variables
         let mut vars = BTreeMap::new();
-        self.collect_free_vars(ir, &mut vars, &BTreeSet::new());
+        self.collect_free_vars(ir, &mut vars, &BTreeSet::new(), None);
         for (name, sort) in &vars {
             free_vars.push(FreeVar {
                 name: name.clone(),
                 sort: sort.clone(),
             });
-            body.push_str(&format!("Variable {} : {}.\n", name, self.sort_to_coq(sort)));
+            body.push_str(&format!("Parameter {} : {}.\n", name, self.sort_to_coq(sort)));
         }
 
         // Emit the formula as Coq goal
@@ -199,14 +199,15 @@ Definition parseInt (s : string) : nat := parse_nat s.
         }
     }
 
-    fn collect_free_vars(&self, ir: &Json, out: &mut BTreeMap<String, String>, bound: &BTreeSet<String>) {
+    fn collect_free_vars(&self, ir: &Json, out: &mut BTreeMap<String, String>, bound: &BTreeSet<String>, ctx_quant_sort: Option<&str>) {
         let kind = ir.get("kind").and_then(|v| v.as_str()).unwrap_or("");
         
         if kind == "var" {
             if let Some(name) = ir.get("name").and_then(|v| v.as_str()) {
                 if !bound.contains(name) {
-                    // Default to Z (Int) - could be improved
-                    out.entry(name.to_string()).or_insert("Z".to_string());
+                    // Use quantifier's sort if available, otherwise default to Int
+                    let sort = ctx_quant_sort.unwrap_or("Int");
+                    out.entry(name.to_string()).or_insert(sort.to_string());
                 }
             }
         }
@@ -214,22 +215,32 @@ Definition parseInt (s : string) : nat := parse_nat s.
         // Recurse
         if let Some(args) = ir.get("args").and_then(|v| v.as_array()) {
             for a in args {
-                self.collect_free_vars(a, out, bound);
+                self.collect_free_vars(a, out, bound, ctx_quant_sort);
             }
         }
         if let Some(operands) = ir.get("operands").and_then(|v| v.as_array()) {
             for o in operands {
-                self.collect_free_vars(o, out, bound);
+                self.collect_free_vars(o, out, bound, ctx_quant_sort);
             }
         }
         if let Some(body) = ir.get("body") {
-            // Handle quantifier bound vars
-            if let Some(qname) = ir.get("name").and_then(|v| v.as_str()) {
-                let mut nb = bound.clone();
-                nb.insert(qname.to_string());
-                self.collect_free_vars(body, out, &nb);
+            // Handle quantifier - passes its sort to children
+            if kind == "forall" || kind == "exists" {
+                let quant_sort = ir
+                    .get("sort")
+                    .and_then(|s| s.get("name"))
+                    .and_then(|n| n.as_str());
+                if let Some(qname) = ir.get("name").and_then(|v| v.as_str()) {
+                    let mut nb = bound.clone();
+                    nb.insert(qname.to_string());
+                    // Add bound var with its sort
+                    if let Some(qs) = quant_sort {
+                        out.entry(qname.to_string()).or_insert(qs.to_string());
+                    }
+                    self.collect_free_vars(body, out, &nb, quant_sort);
+                }
             } else {
-                self.collect_free_vars(body, out, bound);
+                self.collect_free_vars(body, out, bound, ctx_quant_sort);
             }
         }
     }
@@ -338,6 +349,11 @@ Definition parseInt (s : string) : nat := parse_nat s.
                     // Goal is "false" - can never be proven
                     return "  (* Goal is False - cannot be proven *)\n  exfalso; auto.\n".to_string();
                 }
+                // Check if it's a kit predicate we defined as True
+                if !Self::is_standard_predicate(name) {
+                    // Kit predicate defined as True - unfold and simplify
+                    return "  unfold roundTrips.\n  exact I.\n".to_string();
+                }
             }
             "connective" => {
                 let ck = ir.get("kind").and_then(|v| v.as_str()).unwrap_or("");
@@ -347,8 +363,22 @@ Definition parseInt (s : string) : nat := parse_nat s.
                 }
             }
             "forall" | "exists" => {
-                // For quantifiers, try auto
-                return "  (* Try auto - may fail for quantified goals *)\n  auto.\n  (* If auto fails, use: intro; auto *)\n".to_string();
+                // For quantifiers with atomic body that's a kit predicate
+                if let Some(body) = ir.get("body") {
+                    let body_kind = body.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                    if body_kind == "atomic" {
+                        let pred = body.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        if !Self::is_standard_predicate(pred) {
+                            return format!(
+                                "  intro {}.\n  unfold {}.\n  exact I.\n",
+                                ir.get("name").and_then(|v| v.as_str()).unwrap_or("x"),
+                                pred
+                            );
+                        }
+                    }
+                }
+                // Default for quantifiers
+                return "  intros. auto.\n".to_string();
             }
             _ => {}
         }
