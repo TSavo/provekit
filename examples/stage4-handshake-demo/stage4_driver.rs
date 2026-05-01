@@ -318,9 +318,10 @@ fn run() -> Result<(), String> {
 
     println!("  callsites:  total={} discharged={} violations={}",
         report.total_callsites, report.discharged, report.violations);
-    println!("  tier-stats: hash={} cache={} z3+mint={} residue={} violations={} z3-invocations={}",
+    println!("  tier-stats: hash={} cache={} vacuous={} z3+mint={} residue={} violations={} z3-invocations={}",
         stats.discharged_by_hash,
         stats.discharged_by_cache,
+        stats.vacuous_discharge,
         stats.solved_and_minted,
         stats.residue,
         stats.violations,
@@ -361,10 +362,11 @@ fn run() -> Result<(), String> {
     // Demo emits structured machine-readable summary on the last
     // line so run.sh can parse the per-run numbers.
     println!(
-        "STAGE4_SUMMARY label={:?} hash={} cache={} solved_minted={} residue={} violations={} z3_invocations={} total_callsites={}",
+        "STAGE4_SUMMARY label={:?} hash={} cache={} vacuous={} solved_minted={} residue={} violations={} z3_invocations={} total_callsites={}",
         args.label,
         stats.discharged_by_hash,
         stats.discharged_by_cache,
+        stats.vacuous_discharge,
         stats.solved_and_minted,
         stats.residue,
         stats.violations,

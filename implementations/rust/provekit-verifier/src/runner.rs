@@ -47,10 +47,20 @@ pub struct RunnerConfig {
 /// Per-tier discharge counters. Reported alongside the per-callsite
 /// rows so launch-post metrics ("M discharged-by-hash, K cached, L
 /// solved+minted") can be read directly off the report.
+///
+/// `discharged_by_hash` and `discharged_by_cache` count *real
+/// handshake* discharge events: a publisher post and a consumer pre
+/// were paired and either agreed on hash (Tier 1) or had a cached
+/// implication memento (Tier 2). `vacuous_discharge` separately
+/// counts call sites whose bridged target contract has no `pre` slot
+/// — those are vacuously discharged but don't represent real
+/// handshake work, so launch-post metrics quote `discharged_by_hash`
+/// for the M/N "by hash equality" headline.
 #[derive(Debug, Default, Clone)]
 pub struct TierStats {
     pub discharged_by_hash: usize,
     pub discharged_by_cache: usize,
+    pub vacuous_discharge: usize,
     pub solved_and_minted: usize,
     pub residue: usize,
     pub violations: usize,
@@ -90,6 +100,7 @@ impl Runner {
         // end.
         let n_hash = AtomicUsize::new(0);
         let n_cache = AtomicUsize::new(0);
+        let n_vacuous = AtomicUsize::new(0);
         let n_solved = AtomicUsize::new(0);
         let n_residue = AtomicUsize::new(0);
         let n_z3 = AtomicUsize::new(0);
@@ -102,7 +113,8 @@ impl Runner {
             .par_iter()
             .map(|cs| {
                 work_one(
-                    cs, &pool, &z3, cfg, &n_hash, &n_cache, &n_solved, &n_residue, &n_z3,
+                    cs, &pool, &z3, cfg, &n_hash, &n_cache, &n_vacuous, &n_solved, &n_residue,
+                    &n_z3,
                 )
             })
             .collect();
@@ -120,6 +132,7 @@ impl Runner {
         let stats = TierStats {
             discharged_by_hash: n_hash.load(Ordering::Relaxed),
             discharged_by_cache: n_cache.load(Ordering::Relaxed),
+            vacuous_discharge: n_vacuous.load(Ordering::Relaxed),
             solved_and_minted: n_solved.load(Ordering::Relaxed),
             residue: n_residue.load(Ordering::Relaxed),
             violations,
@@ -145,6 +158,7 @@ fn work_one(
     cfg: &RunnerConfig,
     n_hash: &AtomicUsize,
     n_cache: &AtomicUsize,
+    n_vacuous: &AtomicUsize,
     n_solved: &AtomicUsize,
     n_residue: &AtomicUsize,
     n_z3: &AtomicUsize,
@@ -163,13 +177,15 @@ fn work_one(
 
     // If the target contract has no `pre` slot at all, the call site
     // has nothing to discharge; the publisher has only a post.
-    // Vacuously discharged. (Counts as Tier-1 free work.)
+    // Vacuously discharged — kept separate from the real handshake
+    // counters so launch-post metrics quote the M/N "by hash equality"
+    // headline cleanly.
     if resolved.ir_formula.is_none() {
-        n_hash.fetch_add(1, Ordering::Relaxed);
+        n_vacuous.fetch_add(1, Ordering::Relaxed);
         return (
             cs.clone(),
             ObligationVerdict::Discharged,
-            "tier1: no precondition on target (publisher post-only): vacuously discharged".into(),
+            "vacuous: no precondition on target (publisher post-only)".into(),
         );
     }
 

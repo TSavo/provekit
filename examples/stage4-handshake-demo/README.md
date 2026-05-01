@@ -106,19 +106,27 @@ shape did.
 ## Headline metrics
 
 ```
-format: hash=M cache=K z3+mint=L residue=J violations=V z3_invocations=Z
+format: hash=M cache=K vacuous=W z3+mint=L residue=J violations=V z3_invocations=Z
 
-Run A (hash equality):  hash=2 cache=0 solved_minted=0 residue=0 violations=0 z3_invocations=0
-Run B (cold, mint):     hash=1 cache=0 solved_minted=1 residue=0 violations=0 z3_invocations=1
-Run B (warm, cached):   hash=1 cache=1 solved_minted=0 residue=0 violations=0 z3_invocations=0
-Run C (violation):      hash=1 cache=0 solved_minted=0 residue=1 violations=1 z3_invocations=1
-Run D (re-cached):      hash=1 cache=1 solved_minted=0 residue=0 violations=0 z3_invocations=0
+Run A (hash equality):  hash=1 cache=0 vacuous=1 solved_minted=0 residue=0 violations=0 z3_invocations=0
+Run B (cold, mint):     hash=0 cache=0 vacuous=1 solved_minted=1 residue=0 violations=0 z3_invocations=1
+Run B (warm, cached):   hash=0 cache=1 vacuous=1 solved_minted=0 residue=0 violations=0 z3_invocations=0
+Run C (violation):      hash=0 cache=0 vacuous=1 solved_minted=0 residue=1 violations=1 z3_invocations=1
+Run D (re-cached):      hash=0 cache=1 vacuous=1 solved_minted=0 residue=0 violations=0 z3_invocations=0
 ```
 
-(`hash=2` in Run A includes one real handshake hit on the
-`parseInt` callsite plus one vacuous "no-precondition" discharge on
-the `validateInput` callsite. The headline pitch quotes the Z3
-invocation column.)
+The `hash` and `cache` columns count *real handshake* discharge
+events: a publisher post and a consumer pre were paired, and either
+their canonical hashes matched (Tier 1) or a signed implication
+memento covering the pair was on disk (Tier 2). `vacuous` separately
+counts call sites whose bridged target had only a `post` slot —
+those are vacuously discharged, but they don't represent real
+handshake work, so they get their own counter.
+
+The headline pitch reads off Z3 invocations: **0 / 1 / 0 / 1 / 0**.
+A from-scratch verification of Runs A through D would have spawned
+five Z3 processes per call site; the handshake reduces it to two
+across the full sequence.
 
 ## Files
 
