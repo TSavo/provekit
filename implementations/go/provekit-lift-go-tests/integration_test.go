@@ -98,6 +98,62 @@ func TestIntegration_FixtureMintsAtLeastEightDistinctMementos(t *testing.T) {
 	}
 }
 
+// TestIntegration_CrossKitByteShape pins the exact canonical bytes for
+// a single Pattern-1 memento. This is the protocol's byte-equivalence
+// guard: any change to predicate name, operand order, key order, or
+// JSON escaping in the lift adapter (or the underlying ir package)
+// flips the bytes and trips this test before a hash comparison with
+// Rust/TS catches it downstream.
+//
+// Pinned shape: TestSquaresAreNonneg ->
+//   forall x:Int. (x ≥ 0 AND x < 100) implies (x ≥ 0)
+//
+// The unicode predicate names (≥, <) MUST appear verbatim in the
+// canonical bytes; any HTML-escaped form (<, >) means the
+// JCS path is misconfigured and cross-kit hashes will diverge.
+func TestIntegration_CrossKitByteShape(t *testing.T) {
+	src := `package x
+import "testing"
+import "github.com/stretchr/testify/assert"
+var _ = assert.Equal
+func TestSquaresAreNonneg(t *testing.T) {
+	for x := 0; x < 100; x++ {
+		assert.True(t, x >= 0)
+	}
+}
+`
+	out, err := LiftFile([]byte(src), "t_test.go")
+	if err != nil {
+		t.Fatalf("lift: %v", err)
+	}
+	if len(out.Decls) != 1 {
+		t.Fatalf("expected 1 decl, got %d", len(out.Decls))
+	}
+	body, err := ir.MarshalDeclarations([]ir.Declaration{out.Decls[0]})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `[{"kind":"contract","name":"TestSquaresAreNonneg","outBinding":"out","inv":{"kind":"forall","name":"x","sort":{"kind":"primitive","name":"Int"},"body":{"kind":"implies","operands":[{"kind":"and","operands":[{"kind":"atomic","name":"≥","args":[{"kind":"var","name":"x"},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]},{"kind":"atomic","name":"<","args":[{"kind":"var","name":"x"},{"kind":"const","value":100,"sort":{"kind":"primitive","name":"Int"}}]}]},{"kind":"atomic","name":"≥","args":[{"kind":"var","name":"x"},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}]}}}]`
+	if string(body) != want {
+		t.Fatalf("canonical bytes diverged:\n got: %s\nwant: %s", string(body), want)
+	}
+	// Reject any HTML-escape leak in the canonical bytes. The JSON
+	// stdlib's default SetEscapeHTML(true) emits the six-byte escape
+	// "&" + "#" + "6" + "0" + ";" for "<" inside string values; the
+	// ir package disables that behavior (encodeJSON sets
+	// SetEscapeHTML(false)) because cross-kit byte equivalence
+	// depends on verbatim emission of the unicode atomic predicates
+	// and other bare special characters inside name fields.
+	htmlLT := "\\u003c"
+	htmlGT := "\\u003e"
+	htmlAMP := "\\u0026"
+	for _, esc := range []string{htmlLT, htmlGT, htmlAMP} {
+		if strings.Contains(string(body), esc) {
+			t.Fatalf("canonical bytes contain HTML-escape leak %q; JCS path misconfigured", esc)
+		}
+	}
+}
+
 func TestIntegration_PerPatternSplit(t *testing.T) {
 	bytes, err := os.ReadFile(filepath.Join("fixtures", "layer2_sample.go.txt"))
 	if err != nil {

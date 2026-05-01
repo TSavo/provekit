@@ -251,9 +251,14 @@ func classifyForLoop(forStmt *ast.ForStmt, testName, sourcePath string, out *Lay
 		return
 	}
 
-	// Build forall i:Int. (lo <= i AND i </<= hi) -> inner.
+	// Build forall i:Int. (i >= lo AND i </<= hi) -> inner.
+	// Order of operands and the choice of >= vs <= must match the Rust
+	// reference adapter EXACTLY: the Rust impl uses `gte(var, lo)` for
+	// the lower bound, NOT `lte(lo, var)`. Logically equivalent,
+	// canonicalizes to different bytes (different predicate name +
+	// different arg order). Cross-kit byte equivalence depends on this.
 	quant := ir.ForAllNamed(varName, ir.Int, func(x ir.IrTerm) ir.IrFormula {
-		lower := ir.Lte(loTerm, x)
+		lower := ir.Gte(x, loTerm)
 		var upper ir.IrFormula
 		if inclusive {
 			upper = ir.Lte(x, hiTerm)
