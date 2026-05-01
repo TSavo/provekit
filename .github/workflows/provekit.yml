@@ -15,8 +15,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y z3
       - name: Install pnpm
         run: npm install -g pnpm
-      - name: Install
-        run: npm ci || npm install
+      - name: Install dependencies
+        run: pnpm install
       - name: Run tests
         run: pnpm test
       - name: ProvekIt verify
