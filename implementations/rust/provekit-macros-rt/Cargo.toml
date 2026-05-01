@@ -1,0 +1,11 @@
+[package]
+name = "provekit-macros-rt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt: runtime support for #[provekit::contract] / #[provekit::verify]. Holds the inventory registration types collected by provekit-self-contracts."
+
+[dependencies]
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+inventory = { workspace = true }

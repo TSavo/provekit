@@ -25,7 +25,8 @@
     "supply-chain-via-semantic-envelope": "blake3-512:b924576310bf2defcc2e346e01bdaff6dbdb2a33b2554178e3786e484cb4a4da136443f17675a6cd939fcbcff8afb27396222b5b6649a6eaa31672f5446b15d0",
     "handshake-algorithm": "blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925",
     "per-language-kit-standard": "blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88",
-    "lattice-tractability-theorem": "blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07"
+    "lattice-tractability-theorem": "blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07",
+    "contract-merge-semantics": "RECOMPUTE"
   },
   "declaredAt": "2026-04-30T15:00:00Z",
   "_unsigned": "draft v1.1.0; minor bump for: (1) property memento role replaced by contract memento (pre/post/inv/outBinding); (2) implication memento role added (with Z3 witness body); (3) handshake algorithm spec added; (4) IR formal grammar maximal-uniformity cut (flat quantifiers, unified connective with operands, no sort on var/ctor, name everywhere); (5) cryptographic primitives are self-identifying — every hash and signature carries an algorithm tag inline; v1.1.0 ships with blake3-512 (hash) and ed25519 (signature/pubkey) as the only permitted tags. Migration to additional algorithms (post-quantum signatures, alternative hash functions) is additive: future catalogs add tags without invalidating any v1.1.0 bytes. Spec CIDs marked RECOMPUTE will be derived from the canonical bytes after the implementation cut lands; the catalog itself signs after that.",
