@@ -102,6 +102,97 @@ worse than under-coverage. When the kit IR grows the predicates these
 shapes need (string `len`, container `contains`, etc.), the adapters
 add them.
 
+## Lift layers (Layer 0, Layer 2, Layer 3)
+
+Adapters dispatch in three progressively richer passes. A test that
+the cheaper layer cannot reach falls through to the next.
+
+### Layer 0: mechanical pattern matching
+
+Walks the AST for shapes the translator can lift in a single pass with
+zero search. For Rust unit tests:
+- `assert_eq!(<lhs>, <rhs>)`, `assert_ne!`, `assert!(<binop>)`,
+  `assert_matches!` against a literal-leaf pattern.
+- Each side must be an identifier, integer/string literal, or
+  single-arg ctor call.
+
+Anything outside the whitelist skips with a structured warning. Each
+matched assertion mints its own contract memento named
+`<test>::<index>`.
+
+### Layer 2: structural lift
+
+Three patterns Layer 0 cannot reach but a structural recognizer can.
+Layer 2 runs FIRST; tests it claims are excluded from Layer 0 so we
+never double-count.
+
+**Pattern 1: bounded loop as universal quantifier.**
+
+```rust
+#[test]
+fn squares_are_nonneg() {
+    for x in 0..100 {
+        assert!(x >= 0);
+    }
+}
+```
+
+Lifts to `forall x:Int. (0 <= x AND x < 100) implies (x >= 0)`. The
+loop variable name is preserved (not renamed to `_xN`) so the
+canonical IR is stable across runs. Range endpoints accept literal
+integers and bare identifiers; `RangeFrom` / `RangeTo` / `RangeFull`
+skip with a warning. Nested for-loops are deferred to Layer 2.5.
+
+**Pattern 2: helper-function inlining.**
+
+```rust
+fn assert_is_42(x: i64) {
+    assert_eq!(x, 42);
+}
+
+#[test]
+fn many_42s() {
+    assert_is_42(42);
+    assert_is_42(42);
+}
+```
+
+Lifts to one contract memento per call site, named
+`<test>::call::<i>`. The helper's assertion is lifted with the formal
+parameter substituted by the literal argument. Helpers must be
+single-parameter, single-statement, single-assertion functions defined
+in the same source file. Multi-arg helpers, side-effecting helpers,
+and cross-crate helpers skip.
+
+**Pattern 3: multi-assertion characterization conjunction.**
+
+```rust
+#[test]
+fn parse_int_characterization() {
+    assert_eq!(parse_int("0"), 0);
+    assert_eq!(parse_int("42"), 42);
+    assert_ne!(parse_int("99"), 0);
+}
+```
+
+Lifts to one contract memento named `<test>` whose body is
+`and(...)` of every liftable assertion. Triggered only when every
+top-level statement in the body is a recognized assertion AND there
+are at least two of them. If only one atom is liftable, the claim is
+released so Layer 0 can fall back.
+
+### Layer 3: LLM-assisted lift (future work)
+
+Tests that neither Layer 0 nor Layer 2 claims fall through to a
+(planned) LLM-assisted lift. The skip log surfaces what it would have
+to handle: method-call chains, multi-statement loop bodies, nested
+quantifiers, characterization conjunctions whose atoms exceed the v0
+operand whitelist.
+
+The TypeScript `vitest-tests.ts` adapter mirrors the same three
+patterns for `for (let i = lo; i </<= hi; i++)` loops, helper-function
+calls, and multi-`expect()` characterization.
+
 ## Content-addressed dedup
 
 If two source files express the same property, both lift to the same

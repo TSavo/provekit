@@ -63,42 +63,210 @@ pub struct AdapterOutput {
 
 /// Walk a parsed syn::File for `proptest! { ... }` macro invocations
 /// and lift each contained `#[test] fn` whose body matches the
-/// whitelist.
+/// whitelist. Helper functions defined in the same file are gathered
+/// in a first pass for Pattern 2 inlining.
 pub fn lift_file(file: &syn::File, source_path: &str) -> AdapterOutput {
     let mut out = AdapterOutput::default();
-    walk_items(&file.items, source_path, &mut out);
+    let helpers = collect_helpers(&file.items);
+    walk_items(&file.items, source_path, &helpers, &mut out);
     out
 }
 
-fn walk_items(items: &[syn::Item], source_path: &str, out: &mut AdapterOutput) {
+fn collect_helpers(items: &[syn::Item]) -> std::collections::BTreeMap<String, HelperDef> {
+    let mut map = std::collections::BTreeMap::new();
     for item in items {
         match item {
-            syn::Item::Macro(m) => visit_macro(&m.mac, source_path, out),
+            syn::Item::Fn(f) => {
+                // Skip #[test] functions; they are not helpers.
+                if f.attrs.iter().any(|a| {
+                    let p = path_to_string(a.path());
+                    p == "test" || p.ends_with("::test")
+                }) {
+                    continue;
+                }
+                if f.sig.inputs.len() != 1 {
+                    continue;
+                }
+                let pname = match f.sig.inputs.first().unwrap() {
+                    syn::FnArg::Typed(pt) => match &*pt.pat {
+                        syn::Pat::Ident(pi) => pi.ident.to_string(),
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+                if f.block.stmts.len() != 1 {
+                    continue;
+                }
+                let mac = match &f.block.stmts[0] {
+                    syn::Stmt::Macro(sm) => sm.mac.clone(),
+                    syn::Stmt::Expr(syn::Expr::Macro(em), _) => em.mac.clone(),
+                    _ => continue,
+                };
+                let p = path_to_string(&mac.path);
+                if p != "prop_assert" && p != "prop_assert_eq" && p != "prop_assert_ne" {
+                    continue;
+                }
+                map.insert(
+                    f.sig.ident.to_string(),
+                    HelperDef {
+                        param_name: pname,
+                        assertion: mac,
+                    },
+                );
+            }
             syn::Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
-                    walk_items(items, source_path, out);
+                    let inner = collect_helpers(items);
+                    for (k, v) in inner {
+                        map.entry(k).or_insert(v);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    map
+}
+
+fn try_inline_helper_call(
+    stmt: &syn::Stmt,
+    helpers: &std::collections::BTreeMap<String, HelperDef>,
+) -> Result<Option<Rc<Formula>>, String> {
+    let expr = match stmt {
+        syn::Stmt::Expr(e, _) => e,
+        _ => return Ok(None),
+    };
+    let call = match expr {
+        syn::Expr::Call(c) => c,
+        _ => return Ok(None),
+    };
+    let name = match &*call.func {
+        syn::Expr::Path(p) => match p.path.get_ident() {
+            Some(id) => id.to_string(),
+            None => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
+    let helper = match helpers.get(&name) {
+        Some(h) => h,
+        None => return Ok(None),
+    };
+    if call.args.len() != 1 {
+        return Ok(None);
+    }
+    let arg_term = translate_term(call.args.first().unwrap())?;
+    let formula = match lift_assert_macro(&helper.assertion)? {
+        Some(f) => f,
+        None => return Ok(None),
+    };
+    Ok(Some(subst_var_in_formula(
+        &formula,
+        &helper.param_name,
+        &arg_term,
+    )))
+}
+
+fn subst_var_in_formula(f: &Rc<Formula>, formal: &str, actual: &Rc<Term>) -> Rc<Formula> {
+    match &**f {
+        Formula::Atomic { name, args } => {
+            let new_args: Vec<Rc<Term>> = args
+                .iter()
+                .map(|a| subst_var_in_term(a, formal, actual))
+                .collect();
+            atomic_(name.clone(), new_args)
+        }
+        Formula::Connective { kind, operands } => {
+            let new_ops: Vec<Rc<Formula>> = operands
+                .iter()
+                .map(|o| subst_var_in_formula(o, formal, actual))
+                .collect();
+            Rc::new(Formula::Connective {
+                kind: kind.clone(),
+                operands: new_ops,
+            })
+        }
+        Formula::Quantifier {
+            kind,
+            name,
+            sort,
+            body,
+        } => {
+            if name == formal {
+                f.clone()
+            } else {
+                Rc::new(Formula::Quantifier {
+                    kind: kind.clone(),
+                    name: name.clone(),
+                    sort: sort.clone(),
+                    body: subst_var_in_formula(body, formal, actual),
+                })
+            }
+        }
+    }
+}
+
+fn subst_var_in_term(t: &Rc<Term>, formal: &str, actual: &Rc<Term>) -> Rc<Term> {
+    match &**t {
+        Term::Var { name } if name == formal => actual.clone(),
+        Term::Var { .. } => t.clone(),
+        Term::Const { .. } => t.clone(),
+        Term::Ctor { name, args } => {
+            let new_args: Vec<Rc<Term>> = args
+                .iter()
+                .map(|a| subst_var_in_term(a, formal, actual))
+                .collect();
+            Rc::new(Term::Ctor {
+                name: name.clone(),
+                args: new_args,
+            })
+        }
+    }
+}
+
+fn walk_items(
+    items: &[syn::Item],
+    source_path: &str,
+    helpers: &std::collections::BTreeMap<String, HelperDef>,
+    out: &mut AdapterOutput,
+) {
+    for item in items {
+        match item {
+            syn::Item::Macro(m) => visit_macro(&m.mac, source_path, helpers, out),
+            syn::Item::Mod(m) => {
+                if let Some((_, items)) = &m.content {
+                    walk_items(items, source_path, helpers, out);
                 }
             }
             syn::Item::Fn(f) => {
-                walk_block(&f.block, source_path, out);
+                walk_block(&f.block, source_path, helpers, out);
             }
             _ => {}
         }
     }
 }
 
-fn walk_block(block: &syn::Block, source_path: &str, out: &mut AdapterOutput) {
+fn walk_block(
+    block: &syn::Block,
+    source_path: &str,
+    helpers: &std::collections::BTreeMap<String, HelperDef>,
+    out: &mut AdapterOutput,
+) {
     for stmt in &block.stmts {
         if let syn::Stmt::Macro(m) = stmt {
-            visit_macro(&m.mac, source_path, out);
+            visit_macro(&m.mac, source_path, helpers, out);
         }
         if let syn::Stmt::Item(item) = stmt {
-            walk_items(std::slice::from_ref(item), source_path, out);
+            walk_items(std::slice::from_ref(item), source_path, helpers, out);
         }
     }
 }
 
-fn visit_macro(mac: &syn::Macro, source_path: &str, out: &mut AdapterOutput) {
+fn visit_macro(
+    mac: &syn::Macro,
+    source_path: &str,
+    helpers: &std::collections::BTreeMap<String, HelperDef>,
+    out: &mut AdapterOutput,
+) {
     let path = path_to_string(&mac.path);
     if path != "proptest" {
         return;
@@ -113,7 +281,7 @@ fn visit_macro(mac: &syn::Macro, source_path: &str, out: &mut AdapterOutput) {
         // same tokens by retrying with a leading skip of inner attrs.
         let stripped = strip_inner_attrs(mac.tokens.clone());
         match syn::parse2::<ProptestBody>(stripped) {
-            Ok(b) => visit_proptest_body(&b, source_path, out),
+            Ok(b) => visit_proptest_body(&b, source_path, helpers, out),
             Err(e) => {
                 out.warnings.push(LiftWarning {
                     source_path: source_path.into(),
@@ -124,7 +292,7 @@ fn visit_macro(mac: &syn::Macro, source_path: &str, out: &mut AdapterOutput) {
         }
         return;
     };
-    visit_proptest_body(&body, source_path, out);
+    visit_proptest_body(&body, source_path, helpers, out);
 }
 
 struct ProptestBody {
@@ -176,7 +344,12 @@ fn strip_inner_attrs(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStre
     iter.collect()
 }
 
-fn visit_proptest_body(body: &ProptestBody, source_path: &str, out: &mut AdapterOutput) {
+fn visit_proptest_body(
+    body: &ProptestBody,
+    source_path: &str,
+    helpers: &std::collections::BTreeMap<String, HelperDef>,
+    out: &mut AdapterOutput,
+) {
     for item in &body.items {
         if let syn::Item::Fn(f) = item {
             // Only accept items annotated #[test].
@@ -185,7 +358,7 @@ fn visit_proptest_body(body: &ProptestBody, source_path: &str, out: &mut Adapter
             }
             out.seen += 1;
             let name = f.sig.ident.to_string();
-            match lift_test_fn(f) {
+            match lift_test_fn_with_helpers(f, helpers) {
                 Ok(decl) => {
                     out.decls.push(decl);
                     out.lifted += 1;
@@ -207,13 +380,25 @@ fn has_test_attr(attrs: &[syn::Attribute]) -> bool {
     })
 }
 
+/// Helper definition for Pattern 2 inlining: a non-test fn with one
+/// typed parameter and a body that is a single `prop_assert*` macro.
+#[derive(Debug, Clone)]
+pub(crate) struct HelperDef {
+    pub(crate) param_name: String,
+    pub(crate) assertion: syn::Macro,
+}
+
 /// Lift a single proptest #[test] function. Strategy: pull the
 /// universally-quantified parameters from the signature (proptest uses
 /// `name in strategy` in the param list, parsed as a normal sig). For
 /// each `prop_assert*` macro invocation in the body, translate the
-/// expression to a Formula. Combine multiple asserts via `and`. Wrap
-/// the whole body in a `forall` per parameter.
-fn lift_test_fn(f: &syn::ItemFn) -> Result<ContractDecl, String> {
+/// expression to a Formula. ALSO inline single-arg calls to helper
+/// functions whose body is a single `prop_assert*` (Layer 2 Pattern 2).
+/// Combine multiple atoms via `and`. Wrap with `forall` per parameter.
+fn lift_test_fn_with_helpers(
+    f: &syn::ItemFn,
+    helpers: &std::collections::BTreeMap<String, HelperDef>,
+) -> Result<ContractDecl, String> {
     let name = f.sig.ident.to_string();
 
     // Collect parameters as (name, sort).
@@ -227,13 +412,21 @@ fn lift_test_fn(f: &syn::ItemFn) -> Result<ContractDecl, String> {
         }
     }
 
-    // Walk the function body for prop_assert* macro invocations.
+    // Walk the function body for prop_assert* macro invocations and
+    // helper-call expressions.
     let mut atoms: Vec<Rc<Formula>> = Vec::new();
     for stmt in &f.block.stmts {
         if let syn::Stmt::Macro(sm) = stmt {
             if let Some(formula) = lift_assert_macro(&sm.mac)? {
                 atoms.push(formula);
+                continue;
             }
+        }
+        // Layer 2 helper-inlining: a single-arg call to a known helper
+        // with a single prop_assert* body. Substitute the actual arg
+        // for the formal parameter and add the lifted atom.
+        if let Some(formula) = try_inline_helper_call(stmt, helpers)? {
+            atoms.push(formula);
         }
     }
 
@@ -565,6 +758,34 @@ mod tests {
         assert_eq!(out.lifted, 0);
         assert_eq!(out.warnings.len(), 1);
         assert!(out.warnings[0].reason.contains("not in v0 lift whitelist") || out.warnings[0].reason.contains("liftable"));
+    }
+
+    #[test]
+    fn layer2_helper_inlines_into_proptest_body() {
+        // Pattern 2 (helper inlining) inside a proptest! block. The
+        // helper assertion is `prop_assert!(x >= 0)`; the proptest test
+        // body calls `check_nonneg(some_arg)`. We expect the substituted
+        // form: forall some_arg:Int. some_arg >= 0.
+        let src = r#"
+            fn check_nonneg(x: i64) {
+                prop_assert!(x >= 0);
+            }
+            proptest! {
+                #[test]
+                fn delegates(some_arg: i64) {
+                    check_nonneg(some_arg);
+                }
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "test.rs");
+        assert_eq!(
+            out.lifted, 1,
+            "expected 1 helper-inlined proptest, warnings: {:?}",
+            out.warnings
+        );
+        assert_eq!(out.decls[0].name, "delegates");
+        assert!(out.decls[0].inv.is_some());
     }
 
     #[test]

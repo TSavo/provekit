@@ -62,7 +62,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 walkdir = "2"
 rayon = "1.10"
 # Proc-macro authoring stack
-syn = { version = "2", features = ["full", "extra-traits"] }
+syn = { version = "2", features = ["full", "extra-traits", "visit"] }
 quote = "1"
 proc-macro2 = "1"
 # Distributed-slice registration for #[provekit::contract] / #[provekit::verify]

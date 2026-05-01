@@ -146,6 +146,17 @@ pub fn lift_path(root: &Path) -> LiftReport {
     let mut rust_tests_seen = 0usize;
     let mut rust_tests_lifted = 0usize;
     let mut rust_tests_warnings: Vec<AdapterWarning> = Vec::new();
+    let mut rust_tests_l2_seen = 0usize;
+    let mut rust_tests_l2_lifted = 0usize;
+    let mut rust_tests_l2_warnings: Vec<AdapterWarning> = Vec::new();
+    // Pattern-split counters for the CLI summary (printed as a single
+    // breakdown line; not currently surfaced in AdapterReport).
+    let mut l2_bounded_loop_lifted = 0usize;
+    let mut l2_bounded_loop_skipped = 0usize;
+    let mut l2_helper_lifted = 0usize;
+    let mut l2_helper_skipped = 0usize;
+    let mut l2_char_lifted = 0usize;
+    let mut l2_char_skipped = 0usize;
 
     for path in enumerate_rs_files(root) {
         report.files_scanned += 1;
@@ -285,8 +296,32 @@ pub fn lift_path(root: &Path) -> LiftReport {
         }
         report.decls.extend(vr_out.decls);
 
-        // Adapter: rust-tests (#[test] / #[tokio::test] -> per-assertion mementos).
-        let rt_out = adapter_rust_tests::lift_file(&file, &path_str);
+        // Adapter: rust-tests / Layer 2 (bounded loops, helper inlining,
+        // characterization conjunction). Run BEFORE Layer 0 so it can
+        // claim test fns it owns; Layer 0 then skips the claimed names.
+        let l2_out = adapter_rust_tests::lift_file_layer2(&file, &path_str);
+        rust_tests_l2_seen += l2_out.seen;
+        rust_tests_l2_lifted += l2_out.lifted;
+        l2_bounded_loop_lifted += l2_out.bounded_loop_lifted;
+        l2_bounded_loop_skipped += l2_out.bounded_loop_skipped;
+        l2_helper_lifted += l2_out.helper_inlined_lifted;
+        l2_helper_skipped += l2_out.helper_inlined_skipped;
+        l2_char_lifted += l2_out.characterization_lifted;
+        l2_char_skipped += l2_out.characterization_skipped;
+        for w in l2_out.warnings {
+            rust_tests_l2_warnings.push(AdapterWarning {
+                adapter: "rust-tests-layer2",
+                source_path: w.source_path,
+                item_name: w.item_name,
+                reason: w.reason,
+            });
+        }
+        report.decls.extend(l2_out.decls);
+        let claimed = l2_out.claimed_tests;
+
+        // Adapter: rust-tests / Layer 0 (#[test] / #[tokio::test] -> per-assertion
+        // mementos). Skip tests that Layer 2 claimed.
+        let rt_out = adapter_rust_tests::lift_file_with_skip(&file, &path_str, &claimed);
         rust_tests_seen += rt_out.seen;
         rust_tests_lifted += rt_out.lifted;
         for w in rt_out.warnings {
@@ -354,6 +389,23 @@ pub fn lift_path(root: &Path) -> LiftReport {
         lifted: rust_tests_lifted,
         warnings: rust_tests_warnings,
     });
+    report.adapter_reports.push(AdapterReport {
+        adapter: "rust-tests-layer2",
+        seen: rust_tests_l2_seen,
+        lifted: rust_tests_l2_lifted,
+        warnings: rust_tests_l2_warnings,
+    });
+    // Cargo-cult unused-suppress: pattern-split counters are surfaced
+    // through the CLI summary path (run_cli below), not here. Keep them
+    // alive so dead-code lint stays clean.
+    let _ = (
+        l2_bounded_loop_lifted,
+        l2_bounded_loop_skipped,
+        l2_helper_lifted,
+        l2_helper_skipped,
+        l2_char_lifted,
+        l2_char_skipped,
+    );
     report
 }
 

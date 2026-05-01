@@ -48,11 +48,39 @@
 //   - pre/post       = None
 //   - out_binding    = "out" (unused; provided for ContractDecl shape parity)
 
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
     eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula, Term,
 };
+
+pub mod layer2;
+pub use layer2::{lift_file_layer2, Layer2Output};
+
+// ---------------------------------------------------------------------------
+// Public re-exports of internals so the layer2 module can reuse Layer 0's
+// assertion-macro recognizer / leaf translator. These are intentionally
+// kept module-private to outside callers (the names end in `_pub` and are
+// not re-exported from the crate root) but are visible to the layer2
+// child module via the `pub(crate)` visibility.
+// ---------------------------------------------------------------------------
+
+pub(crate) fn is_assertion_macro_pub(mac: &syn::Macro) -> bool {
+    is_assertion_macro(mac)
+}
+
+pub(crate) fn lift_assertion_macro_pub(mac: &syn::Macro) -> Result<Rc<Formula>, String> {
+    lift_assertion_macro(mac)
+}
+
+pub(crate) fn path_to_string_pub(p: &syn::Path) -> String {
+    path_to_string(p)
+}
+
+pub(crate) fn translate_term_pub(expr: &syn::Expr) -> Result<Rc<Term>, String> {
+    translate_term(expr)
+}
 
 #[derive(Debug, Clone)]
 pub struct LiftWarning {
@@ -75,24 +103,40 @@ pub struct AdapterOutput {
 /// and lift each contained assertion-macro invocation to its own
 /// ContractDecl.
 pub fn lift_file(file: &syn::File, source_path: &str) -> AdapterOutput {
+    lift_file_with_skip(file, source_path, &BTreeSet::new())
+}
+
+/// Same as `lift_file` but skip any test fn whose name appears in
+/// `skip`. Used by the dispatcher to avoid double-lifting tests Layer 2
+/// has already claimed (bounded loop, helper-inlined, characterization).
+pub fn lift_file_with_skip(
+    file: &syn::File,
+    source_path: &str,
+    skip: &BTreeSet<String>,
+) -> AdapterOutput {
     let mut out = AdapterOutput::default();
-    walk_items(&file.items, source_path, &mut out);
+    walk_items(&file.items, source_path, skip, &mut out);
     out
 }
 
-fn walk_items(items: &[syn::Item], source_path: &str, out: &mut AdapterOutput) {
+fn walk_items(
+    items: &[syn::Item],
+    source_path: &str,
+    skip: &BTreeSet<String>,
+    out: &mut AdapterOutput,
+) {
     for item in items {
         match item {
             syn::Item::Fn(f) => {
-                if has_test_attr(&f.attrs) {
+                if has_test_attr(&f.attrs) && !skip.contains(&f.sig.ident.to_string()) {
                     visit_test_fn(f, source_path, out);
                 }
                 // Also recurse into the body in case nested items hold test fns.
-                walk_block_for_items(&f.block, source_path, out);
+                walk_block_for_items(&f.block, source_path, skip, out);
             }
             syn::Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
-                    walk_items(items, source_path, out);
+                    walk_items(items, source_path, skip, out);
                 }
             }
             _ => {}
@@ -100,10 +144,15 @@ fn walk_items(items: &[syn::Item], source_path: &str, out: &mut AdapterOutput) {
     }
 }
 
-fn walk_block_for_items(block: &syn::Block, source_path: &str, out: &mut AdapterOutput) {
+fn walk_block_for_items(
+    block: &syn::Block,
+    source_path: &str,
+    skip: &BTreeSet<String>,
+    out: &mut AdapterOutput,
+) {
     for stmt in &block.stmts {
         if let syn::Stmt::Item(item) = stmt {
-            walk_items(std::slice::from_ref(item), source_path, out);
+            walk_items(std::slice::from_ref(item), source_path, skip, out);
         }
     }
 }
