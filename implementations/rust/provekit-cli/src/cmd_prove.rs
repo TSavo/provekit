@@ -24,6 +24,7 @@ pub fn run(args: ProveArgs) -> u8 {
     let cfg = RunnerConfig {
         project_root: project_root.clone(),
         z3_path: args.z3,
+        ..Default::default()
     };
     let runner = Runner::new(cfg);
     let report = runner.run();

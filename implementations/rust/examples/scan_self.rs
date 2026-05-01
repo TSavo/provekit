@@ -92,6 +92,7 @@ fn main() -> ExitCode {
     let cfg = RunnerConfig {
         project_root: out_dir.clone(),
         z3_path: std::env::var("PROVEKIT_Z3").unwrap_or_else(|_| "z3".into()),
+        ..Default::default()
     };
     let runner = Runner::new(cfg);
 
@@ -128,6 +129,7 @@ fn main() -> ExitCode {
     let report = Runner::new(RunnerConfig {
         project_root: out_dir.clone(),
         z3_path: std::env::var("PROVEKIT_Z3").unwrap_or_else(|_| "z3".into()),
+        ..Default::default()
     })
     .run();
 

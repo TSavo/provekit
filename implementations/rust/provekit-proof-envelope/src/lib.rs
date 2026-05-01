@@ -28,8 +28,8 @@ pub use cbor::{
 };
 pub use proof::{build_proof_envelope, ProofEnvelopeInput, ProofEnvelopeOutput};
 pub use sign::{
-    ed25519_pubkey_string, ed25519_sign_string, ed25519_sign_with_seed, Ed25519PublicKey,
-    Ed25519Seed, Ed25519Signature, ED25519_SIG_PREFIX,
+    ed25519_pubkey_string, ed25519_sign_string, ed25519_sign_with_seed, ed25519_verify_string,
+    Ed25519PublicKey, Ed25519Seed, Ed25519Signature, ED25519_KEY_PREFIX, ED25519_SIG_PREFIX,
 };
 
 #[derive(Debug, thiserror::Error)]

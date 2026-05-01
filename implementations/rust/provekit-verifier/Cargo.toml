@@ -25,3 +25,7 @@ path = "../examples/rust_round_trip.rs"
 [[example]]
 name = "cross_lang_consume"
 path = "../examples/cross_lang_consume.rs"
+
+[[example]]
+name = "stage4_driver"
+path = "../../../examples/stage4-handshake-demo/stage4_driver.rs"

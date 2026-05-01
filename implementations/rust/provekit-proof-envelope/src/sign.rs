@@ -12,7 +12,7 @@
 // memento envelopes are JCS-JSON.
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 
 pub type Ed25519Seed = [u8; 32];
 pub type Ed25519Signature = [u8; 64];
@@ -51,6 +51,44 @@ pub fn ed25519_pubkey_string(seed: &Ed25519Seed) -> String {
     s
 }
 
+/// Verify `message` against `sig_string` (spec form
+/// `"ed25519:" + base64(sig)`) using `pubkey_string`
+/// (spec form `"ed25519:" + base64(pubkey)`).
+/// Returns `true` iff the signature is valid. Returns `false` for any
+/// malformed input rather than panicking — verifiers must fail
+/// closed, but on a separate code path.
+pub fn ed25519_verify_string(pubkey_string: &str, sig_string: &str, message: &[u8]) -> bool {
+    let pk_b64 = match pubkey_string.strip_prefix(ED25519_KEY_PREFIX) {
+        Some(s) => s,
+        None => return false,
+    };
+    let sig_b64 = match sig_string.strip_prefix(ED25519_SIG_PREFIX) {
+        Some(s) => s,
+        None => return false,
+    };
+    let pk_bytes = match B64.decode(pk_b64) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let sig_bytes = match B64.decode(sig_b64) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    if pk_bytes.len() != 32 || sig_bytes.len() != 64 {
+        return false;
+    }
+    let mut pk_arr = [0u8; 32];
+    pk_arr.copy_from_slice(&pk_bytes);
+    let mut sig_arr = [0u8; 64];
+    sig_arr.copy_from_slice(&sig_bytes);
+    let vk = match VerifyingKey::from_bytes(&pk_arr) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let sig = Signature::from_bytes(&sig_arr);
+    vk.verify(message, &sig).is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +113,21 @@ mod tests {
         let seed: Ed25519Seed = [0x42; 32];
         let s = ed25519_pubkey_string(&seed);
         assert!(s.starts_with(ED25519_KEY_PREFIX));
+    }
+
+    #[test]
+    fn verify_round_trip() {
+        let seed: Ed25519Seed = [0x42; 32];
+        let pk = ed25519_pubkey_string(&seed);
+        let sig = ed25519_sign_string(&seed, b"hello world");
+        assert!(ed25519_verify_string(&pk, &sig, b"hello world"));
+        assert!(!ed25519_verify_string(&pk, &sig, b"goodbye world"));
+    }
+
+    #[test]
+    fn verify_rejects_malformed() {
+        assert!(!ed25519_verify_string("not-prefixed", "ed25519:AAAA", b"x"));
+        assert!(!ed25519_verify_string("ed25519:AAAA", "not-prefixed", b"x"));
+        assert!(!ed25519_verify_string("ed25519:!!!!", "ed25519:!!!!", b"x"));
     }
 }

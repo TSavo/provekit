@@ -34,6 +34,7 @@
 
 pub mod cbor_decode;
 pub mod enumerate_callsites;
+pub mod handshake;
 pub mod instantiate;
 pub mod load_all_proofs;
 pub mod report;
@@ -43,5 +44,5 @@ pub mod smt_emitter;
 pub mod solve_obligation;
 pub mod types;
 
-pub use runner::{Runner, RunnerConfig};
+pub use runner::{Runner, RunnerConfig, TierStats};
 pub use types::*;

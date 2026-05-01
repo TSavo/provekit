@@ -36,6 +36,13 @@ pub fn run(resolved: &ResolvedProperty, arg_term: &Option<Json>) -> Result<Oblig
     })
 }
 
+/// Public adapter so other stages (notably the handshake's
+/// implication-form obligation builder) can reuse the same
+/// alpha-renaming helper.
+pub fn substitute_formula_pub(f: &Json, name: &str, replacement: &Json) -> Json {
+    substitute_formula(f, name, replacement)
+}
+
 fn substitute_formula(f: &Json, name: &str, replacement: &Json) -> Json {
     let mut out = f.clone();
     let kind = f.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
