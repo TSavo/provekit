@@ -723,6 +723,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-ir-compiler"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "provekit-ir-compiler-smt-lib"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-ir-compiler-stub"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-ir-symbolic"
 version = "0.1.0"
 dependencies = [
@@ -897,16 +923,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-showcase"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "hex",
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-proof-envelope",
+ "rayon",
+ "thiserror",
+ "walkdir",
+]
+
+[[package]]
 name = "provekit-verifier"
 version = "0.1.0"
 dependencies = [
  "provekit-canonicalizer",
  "provekit-claim-envelope",
+ "provekit-ir-compiler-smt-lib",
  "provekit-ir-symbolic",
  "provekit-proof-envelope",
  "rayon",
+ "serde",
  "serde_json",
  "thiserror",
+ "toml 0.8.23",
  "walkdir",
 ]
 

@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Verifier runner — composes the six stages and fans out stages 3-5
-// per callsite using rayon (mirrors the C++ std::async fan-out and
-// the Go goroutine fan-out).
+// Verifier runner. Composes the seven stages and fans out per
+// callsite via rayon. Stage 6 (solve) is now driven by the
+// `solvers::run_plan` multi-solver layer (see
+// `protocol/specs/2026-04-30-multi-solver-protocol.md`); the
+// legacy single-Z3 path is preserved when no `.provekit/config.toml`
+// is found.
 //
-// On top of the six stages this runner also implements the Stage 4
-// handshake: Tier 1 (publisher-post hash == consumer-pre hash, zero
-// solver work) and Tier 2 (signed implication memento in
-// `cfg.cache_dir` keyed by the publisher-post / consumer-pre pair).
-// Tier 3 is the existing Z3 path; on unsat we mint + write a fresh
-// implication memento into `cfg.cache_dir` so the next run hits Tier 2.
+// Stage 4 handshake is unchanged: Tier 1 (publisher-post hash ==
+// consumer-pre hash, zero solver work) -> Tier 2 (signed implication
+// memento in `cache_dir`) -> Tier 3 (the configured solver plan). On
+// Tier 3 unsat we mint+cache a fresh implication memento PER SOLVER
+// so the lattice records each independent witness.
 
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::time::Duration;
 
 use rayon::prelude::*;
 use serde_json::Value as Json;
@@ -20,42 +25,52 @@ use serde_json::Value as Json;
 use crate::handshake::{
     formula_hash, implication_property_hash, locate_producer_post, try_tier1, try_tier2,
 };
+use crate::solvers::{
+    plan::SolverInvocation, registry, run_plan, SolverHandle, SolverPlan, SolversConfig,
+};
 use crate::types::{CallSite, MementoPool, ObligationVerdict, Report};
 use crate::{
     enumerate_callsites, instantiate, load_all_proofs, report as report_stage, resolve_target,
-    smt_emitter, solve_obligation,
+    smt_emitter,
 };
 
 #[derive(Debug, Clone, Default)]
 pub struct RunnerConfig {
     pub project_root: PathBuf,
+    /// Legacy: path to z3 binary. Used as a fallback when no
+    /// `.provekit/config.toml` `[solvers]` table is found. Existing
+    /// examples and tests pass this directly.
     pub z3_path: String,
-    /// Per-project implication-memento cache directory. `.proof`
-    /// files placed here are searched in Tier 2; new mementos minted
-    /// in Tier 3 are written here so subsequent runs become Tier-2
-    /// cache hits. `None` disables the handshake (legacy mode).
+    /// Per-project implication-memento cache directory.
     pub cache_dir: Option<PathBuf>,
-    /// Ed25519 seed used to sign minted implication mementos. The
-    /// public key is embedded in the implication body so any Tier-2
-    /// reader can verify the signature without an external key store.
-    /// Required when `cache_dir` is `Some`.
+    /// Ed25519 seed used to sign minted implication mementos.
     pub mint_seed: Option<[u8; 32]>,
     /// Producer id stamped into minted implication mementos.
     pub mint_producer_id: Option<String>,
+    /// Optional pre-loaded SolversConfig. If set, bypasses
+    /// `.provekit/config.toml` discovery (used by tests and the
+    /// multi-solver demo).
+    pub solvers_config: Option<SolversConfig>,
 }
 
-/// Per-tier discharge counters. Reported alongside the per-callsite
-/// rows so launch-post metrics ("M discharged-by-hash, K cached, L
-/// solved+minted") can be read directly off the report.
-///
-/// `discharged_by_hash` and `discharged_by_cache` count *real
-/// handshake* discharge events: a publisher post and a consumer pre
-/// were paired and either agreed on hash (Tier 1) or had a cached
-/// implication memento (Tier 2). `vacuous_discharge` separately
-/// counts call sites whose bridged target contract has no `pre` slot
-/// — those are vacuously discharged but don't represent real
-/// handshake work, so launch-post metrics quote `discharged_by_hash`
-/// for the M/N "by hash equality" headline.
+/// Per-solver telemetry, surfaced in the report alongside the legacy
+/// per-tier counters.
+#[derive(Debug, Default, Clone)]
+pub struct SolverStats {
+    /// How many call sites this solver discharged (returned unsat).
+    pub discharged: usize,
+    /// How many call sites this solver returned sat (counterexample).
+    pub unsatisfied: usize,
+    /// How many call sites this solver returned unknown / parse-error.
+    pub undecidable: usize,
+    /// Subset of `undecidable`: returned because of timeout.
+    pub timeouts: usize,
+    /// Cumulative wall-clock spent in this solver across the run.
+    pub wall_clock: Duration,
+    /// Solver version string (as configured).
+    pub version: String,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct TierStats {
     pub discharged_by_hash: usize,
@@ -64,62 +79,89 @@ pub struct TierStats {
     pub solved_and_minted: usize,
     pub residue: usize,
     pub violations: usize,
-    pub z3_invocations: usize,
+    pub disagreements: usize,
+    /// Cumulative number of solver invocations across all call sites.
+    /// Replaces the old `z3_invocations` (kept as alias for back-compat).
+    pub solver_invocations: usize,
+    /// Per-solver breakdown.
+    pub per_solver: BTreeMap<String, SolverStats>,
+}
+
+impl TierStats {
+    /// Back-compat alias for the old `z3_invocations` counter.
+    pub fn z3_invocations(&self) -> usize {
+        self.solver_invocations
+    }
 }
 
 pub struct Runner {
     cfg: RunnerConfig,
+    plan: SolverPlan,
+    registry: HashMap<String, SolverHandle>,
 }
 
 impl Runner {
     pub fn new(cfg: RunnerConfig) -> Self {
-        Self { cfg }
+        // Resolve solver config. Precedence:
+        //   1. cfg.solvers_config (test/demo override)
+        //   2. .provekit/config.toml under project_root
+        //   3. fallback: single Z3 at cfg.z3_path
+        let (plan, registry) = build_plan_and_registry(&cfg);
+        Self {
+            cfg,
+            plan,
+            registry,
+        }
     }
 
-    /// Legacy entry point: returns the per-callsite Report. Tier
-    /// counters are not surfaced; use `run_with_tiers` for those.
     pub fn run(&self) -> Report {
         let (report, _stats) = self.run_with_tiers();
         report
     }
 
-    /// Full Stage 4 pipeline: returns both the per-callsite report
-    /// and the tier-discharge counters that drive the demo's headline
-    /// metrics.
     pub fn run_with_tiers(&self) -> (Report, TierStats) {
         let mut report = Report::default();
-
-        // Stage 1.
         let pool = load_all_proofs::run(&self.cfg.project_root);
-
-        // Stage 2.
         let callsites = enumerate_callsites::run(&pool);
 
-        // Atomic counters so the rayon parallel fan-out stays
-        // contention-free; we collapse them into a TierStats at the
-        // end.
         let n_hash = AtomicUsize::new(0);
         let n_cache = AtomicUsize::new(0);
         let n_vacuous = AtomicUsize::new(0);
         let n_solved = AtomicUsize::new(0);
         let n_residue = AtomicUsize::new(0);
-        let n_z3 = AtomicUsize::new(0);
+        let n_disagree = AtomicUsize::new(0);
+        let n_invoc = AtomicUsize::new(0);
 
-        let z3 = self.cfg.z3_path.clone();
+        // Per-solver telemetry sink. Mutex-guarded; rayon workers append
+        // their per-callsite SolverInvocations here.
+        let invs_sink: Mutex<Vec<SolverInvocation>> = Mutex::new(vec![]);
+
         let cfg = &self.cfg;
+        let plan = &self.plan;
+        let registry = &self.registry;
 
-        // Stages 3-5 (+ Tier 1/2 shortcut + Tier 3 mint) per callsite.
         let per_results: Vec<(CallSite, ObligationVerdict, String)> = callsites
             .par_iter()
             .map(|cs| {
                 work_one(
-                    cs, &pool, &z3, cfg, &n_hash, &n_cache, &n_vacuous, &n_solved, &n_residue,
-                    &n_z3,
+                    cs,
+                    &pool,
+                    plan,
+                    registry,
+                    cfg,
+                    &n_hash,
+                    &n_cache,
+                    &n_vacuous,
+                    &n_solved,
+                    &n_residue,
+                    &n_disagree,
+                    &n_invoc,
+                    &invs_sink,
                 )
             })
             .collect();
 
-        // Stage 6 (report aggregation).
+        // Aggregate report rows.
         let mut violations = 0usize;
         for (cs, verdict, reason) in per_results {
             if verdict != ObligationVerdict::Discharged {
@@ -129,6 +171,25 @@ impl Runner {
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
 
+        // Aggregate per-solver stats from telemetry sink.
+        let invs = invs_sink.into_inner().unwrap_or_default();
+        let mut per_solver: BTreeMap<String, SolverStats> = BTreeMap::new();
+        for inv in &invs {
+            let r = &inv.result;
+            let entry = per_solver.entry(r.solver_name.clone()).or_default();
+            entry.version = r.solver_version.clone();
+            entry.wall_clock += r.wall_clock;
+            match r.verdict {
+                ObligationVerdict::Discharged => entry.discharged += 1,
+                ObligationVerdict::Unsatisfied => entry.unsatisfied += 1,
+                ObligationVerdict::Undecidable => entry.undecidable += 1,
+                ObligationVerdict::Disagreement => entry.undecidable += 1,
+            }
+            if r.timed_out {
+                entry.timeouts += 1;
+            }
+        }
+
         let stats = TierStats {
             discharged_by_hash: n_hash.load(Ordering::Relaxed),
             discharged_by_cache: n_cache.load(Ordering::Relaxed),
@@ -136,32 +197,60 @@ impl Runner {
             solved_and_minted: n_solved.load(Ordering::Relaxed),
             residue: n_residue.load(Ordering::Relaxed),
             violations,
-            z3_invocations: n_z3.load(Ordering::Relaxed),
+            disagreements: n_disagree.load(Ordering::Relaxed),
+            solver_invocations: n_invoc.load(Ordering::Relaxed),
+            per_solver,
         };
         (report, stats)
     }
 
-    /// Loads the pool but stops short of solving — useful for the
-    /// Rust round-trip example (asserts callsite resolution works).
     pub fn run_load_and_enumerate(&self) -> (MementoPool, Vec<CallSite>) {
         let pool = load_all_proofs::run(&self.cfg.project_root);
         let cs = enumerate_callsites::run(&pool);
         (pool, cs)
     }
+
+    pub fn plan(&self) -> &SolverPlan {
+        &self.plan
+    }
+}
+
+fn build_plan_and_registry(
+    cfg: &RunnerConfig,
+) -> (SolverPlan, HashMap<String, SolverHandle>) {
+    if let Some(sc) = &cfg.solvers_config {
+        return (SolverPlan::from_config(sc), registry::build(sc));
+    }
+    if let Ok(Some(sc)) = SolversConfig::load(&cfg.project_root) {
+        return (SolverPlan::from_config(&sc), registry::build(&sc));
+    }
+    // Fallback: legacy single-Z3 plan.
+    let z3 = if cfg.z3_path.is_empty() {
+        "z3".to_string()
+    } else {
+        cfg.z3_path.clone()
+    };
+    (
+        SolverPlan::Single("z3".into()),
+        registry::build_default_z3(&z3),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn work_one(
     cs: &CallSite,
     pool: &MementoPool,
-    z3_path: &str,
+    plan: &SolverPlan,
+    registry: &HashMap<String, SolverHandle>,
     cfg: &RunnerConfig,
     n_hash: &AtomicUsize,
     n_cache: &AtomicUsize,
     n_vacuous: &AtomicUsize,
     n_solved: &AtomicUsize,
     n_residue: &AtomicUsize,
-    n_z3: &AtomicUsize,
+    n_disagree: &AtomicUsize,
+    n_invoc: &AtomicUsize,
+    invs_sink: &Mutex<Vec<SolverInvocation>>,
 ) -> (CallSite, ObligationVerdict, String) {
     let resolved = match resolve_target::run(cs, pool) {
         Ok(r) => r,
@@ -175,11 +264,6 @@ fn work_one(
         }
     };
 
-    // If the target contract has no `pre` slot at all, the call site
-    // has nothing to discharge; the publisher has only a post.
-    // Vacuously discharged — kept separate from the real handshake
-    // counters so launch-post metrics quote the M/N "by hash equality"
-    // headline cleanly.
     if resolved.ir_formula.is_none() {
         n_vacuous.fetch_add(1, Ordering::Relaxed);
         return (
@@ -189,13 +273,6 @@ fn work_one(
         );
     }
 
-    // ----- Stage 4 handshake: Tier 1 + Tier 2 ----------------------
-    // We only attempt the handshake when:
-    //   (a) the consumer's resolved-pre formula is a forall (so it
-    //       has a single canonical body shape we can hash), and
-    //   (b) the callsite's arg_term is itself a Ctor whose name maps
-    //       to a producer bridge (whose targetContractCid points at
-    //       a contract memento with a `post` slot).
     let consumer_pre = resolved.ir_formula.as_ref();
     let consumer_pre_hash = consumer_pre.map(formula_hash);
     let producer_post = locate_producer_post(
@@ -207,7 +284,6 @@ fn work_one(
     if let (Some(pre_hash), Some((_post_formula, post_hash))) =
         (consumer_pre_hash.as_ref(), producer_post.as_ref())
     {
-        // Tier 1: literal hash equality.
         if try_tier1(post_hash, pre_hash) {
             n_hash.fetch_add(1, Ordering::Relaxed);
             return (
@@ -216,7 +292,6 @@ fn work_one(
                 format!("tier1: hash equality (post == pre, hash={})", short(pre_hash)),
             );
         }
-        // Tier 2: cached implication memento (post -> pre).
         if let Some(cache_dir) = &cfg.cache_dir {
             if let Some(impl_cid) = try_tier2(cache_dir, post_hash, pre_hash) {
                 n_cache.fetch_add(1, Ordering::Relaxed);
@@ -229,31 +304,15 @@ fn work_one(
         }
     }
 
-    // ----- Tier 3: Z3 path ----------------------------------------
-    //
-    // Two shapes of obligation:
-    //
-    // (a) Implication form (when both producer.post and consumer.pre
-    //     are present): query `forall x. producer.post(x) -> consumer.pre(x)`.
-    //     This is the cross-language handshake's deep query: does the
-    //     producer's output guarantee imply the consumer's input
-    //     requirement? On unsat we mint an implication memento.
-    //
-    // (b) Instantiation form (legacy): substitute the call's arg term
-    //     into consumer.pre and ask Z3. Used when arg is a literal
-    //     and there's no producer-side post we can pair with.
+    // Tier 3: build SMT-LIB and run the configured plan.
     let smt: String;
-    let res: solve_obligation::SolveResult;
+    let formula_for_dispatch: Option<Json>;
     let used_implication_form: bool;
 
     if let (Some((post_formula, _)), Some(pre_formula)) =
         (producer_post.as_ref(), consumer_pre)
     {
         used_implication_form = true;
-        // Build the implication formula. We want
-        //   forall x. post[x/v_post] -> pre[x/v_pre]
-        // Since both come from a `forall` quantifier of the same sort,
-        // we substitute their bodies onto a shared bound name.
         let implication = match build_implication_obligation(post_formula, pre_formula) {
             Ok(f) => f,
             Err(e) => {
@@ -276,8 +335,7 @@ fn work_one(
                 );
             }
         };
-        n_z3.fetch_add(1, Ordering::Relaxed);
-        res = solve_obligation::run(z3_path, &smt);
+        formula_for_dispatch = Some(implication);
     } else {
         used_implication_form = false;
         let ob = match instantiate::run(&resolved, &cs.arg_term) {
@@ -302,60 +360,67 @@ fn work_one(
                 );
             }
         };
-        n_z3.fetch_add(1, Ordering::Relaxed);
-        res = solve_obligation::run(z3_path, &smt);
+        formula_for_dispatch = Some(ob.ir_formula);
     }
 
-    // On Tier 3 unsat with handshake hashes available AND the
-    // implication form was used, mint and cache an implication
-    // memento so the next run becomes Tier 2.
-    if res.verdict == ObligationVerdict::Discharged && used_implication_form {
-        n_solved.fetch_add(1, Ordering::Relaxed);
-        if let (
-            Some(post_hash),
-            Some(pre_hash),
-            Some(cache_dir),
-            Some(seed),
-            Some(producer),
-        ) = (
+    let (verdict, reason, invs) =
+        run_plan(plan, registry, &smt, formula_for_dispatch.as_ref());
+
+    n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
+
+    if verdict == ObligationVerdict::Disagreement {
+        n_disagree.fetch_add(1, Ordering::Relaxed);
+        n_residue.fetch_add(1, Ordering::Relaxed);
+    }
+
+    // Mint per-solver mementos for every solver that returned unsat
+    // when the implication form was used.
+    if used_implication_form {
+        if let (Some(post_hash), Some(pre_hash), Some(cache_dir), Some(seed), Some(producer)) = (
             producer_post.as_ref().map(|(_, h)| h.clone()),
             consumer_pre_hash.clone(),
             cfg.cache_dir.as_ref(),
             cfg.mint_seed.as_ref(),
             cfg.mint_producer_id.as_ref(),
         ) {
-            if let Err(e) = mint_and_cache(
-                cache_dir,
-                seed,
-                producer,
-                &post_hash,
-                &pre_hash,
-                producer_post.as_ref().map(|(p, _)| p.clone()),
-                consumer_pre.cloned(),
-                &smt,
-            ) {
-                eprintln!("warning: mint_and_cache: {e}");
+            for inv in &invs {
+                if inv.result.verdict == ObligationVerdict::Discharged {
+                    let prover_tag = format!(
+                        "{}@{}",
+                        inv.result.solver_name, inv.result.solver_version
+                    );
+                    if let Err(e) = mint_and_cache(
+                        cache_dir,
+                        seed,
+                        producer,
+                        &post_hash,
+                        &pre_hash,
+                        producer_post.as_ref().map(|(p, _)| p.clone()),
+                        consumer_pre.cloned(),
+                        &smt,
+                        &prover_tag,
+                        inv.result.wall_clock.as_millis() as i64,
+                    ) {
+                        eprintln!("warning: mint_and_cache: {e}");
+                    }
+                }
             }
         }
     }
 
-    let reason = if !res.error.is_empty() {
-        res.error
-    } else {
-        match res.verdict {
-            ObligationVerdict::Discharged => {
-                "tier3: solver returned unsat: obligation holds (memento minted into cache)".into()
-            }
-            ObligationVerdict::Unsatisfied => {
-                "tier3: solver returned sat (counterexample found): obligation falsifiable".into()
-            }
-            _ => String::new(),
-        }
-    };
-    if res.verdict != ObligationVerdict::Discharged {
+    if verdict == ObligationVerdict::Discharged && used_implication_form {
+        n_solved.fetch_add(1, Ordering::Relaxed);
+    }
+    if verdict != ObligationVerdict::Discharged && verdict != ObligationVerdict::Disagreement {
         n_residue.fetch_add(1, Ordering::Relaxed);
     }
-    (cs.clone(), res.verdict, reason)
+
+    // Push telemetry into the sink.
+    if let Ok(mut g) = invs_sink.lock() {
+        g.extend(invs);
+    }
+
+    (cs.clone(), verdict, reason)
 }
 
 fn short(s: &str) -> String {
@@ -364,9 +429,6 @@ fn short(s: &str) -> String {
     format!("blake3-512:{take}...")
 }
 
-/// Build the implication `forall x: Int. post(x) -> pre(x)` from two
-/// `forall`-headed formulas. We renormalize both bound names onto a
-/// single fresh name, then assemble the wrapping forall + implies.
 fn build_implication_obligation(
     post_formula: &Json,
     pre_formula: &Json,
@@ -424,6 +486,8 @@ fn mint_and_cache(
     post_formula: Option<Json>,
     pre_formula: Option<Json>,
     smt_lib_input: &str,
+    prover_tag: &str,
+    prover_run_ms: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
     use provekit_proof_envelope::{
@@ -431,15 +495,9 @@ fn mint_and_cache(
     };
 
     std::fs::create_dir_all(cache_dir)?;
-    let now = "2026-04-30T00:00:00.000Z"; // deterministic for the demo
-
+    let now = "2026-04-30T00:00:00.000Z";
     let pubkey = ed25519_pubkey_string(seed);
-
-    // Build the implication evidence.body manually (mirrors
-    // provekit-claim-envelope::mint_implication but adds
-    // `producerPubkey` so tier-2 lookups can verify the signature
-    // without a pubkey directory).
-    let _ = (post_formula, pre_formula); // Reserved for richer body in v1.2.
+    let _ = (post_formula, pre_formula);
 
     let mut body_kvs: Vec<(String, std::sync::Arc<Value>)> = vec![
         ("antecedentHash".into(), Value::string(post_hash.to_string())),
@@ -448,8 +506,8 @@ fn mint_and_cache(
         ("consequentCid".into(), Value::string("blake3-512:0000".to_string())),
         ("antecedentSlot".into(), Value::string("post".to_string())),
         ("consequentSlot".into(), Value::string("pre".to_string())),
-        ("prover".into(), Value::string("z3@4.x".to_string())),
-        ("proverRunMs".into(), Value::integer(0)),
+        ("prover".into(), Value::string(prover_tag.to_string())),
+        ("proverRunMs".into(), Value::integer(prover_run_ms)),
         ("producerPubkey".into(), Value::string(pubkey.clone())),
     ];
     if !smt_lib_input.is_empty() {
@@ -473,8 +531,6 @@ fn mint_and_cache(
         ("body", body),
     ]);
 
-    // bindingHash = hash(canonical({antecedentHash, consequentHash}))
-    // propertyHash = hash("implication:" || ah || ":" || ch)
     let bh = Value::object([
         ("antecedentHash", Value::string(post_hash.to_string())),
         ("consequentHash", Value::string(pre_hash.to_string())),
@@ -482,7 +538,6 @@ fn mint_and_cache(
     let binding_hash = blake3_512_of(encode_jcs(&bh).as_bytes());
     let property_hash = implication_property_hash(post_hash, pre_hash);
 
-    // input_cids per spec: [antecedentCid, consequentCid] lex-sorted.
     let mut input_cids = vec![
         "blake3-512:0000".to_string(),
         "blake3-512:0000".to_string(),
@@ -505,7 +560,6 @@ fn mint_and_cache(
     let cid = blake3_512_of(unsigned_canonical.as_bytes());
     let producer_sig = ed25519_sign_string(seed, unsigned_canonical.as_bytes());
 
-    // Re-emit signed.
     let mut entries = match unsigned_v.as_ref() {
         Value::Object(kvs) => kvs.clone(),
         _ => unreachable!("envelope is an object"),
@@ -518,13 +572,21 @@ fn mint_and_cache(
     let signed_v = std::sync::Arc::new(Value::Object(entries));
     let final_canonical = encode_jcs(&signed_v).into_bytes();
 
-    // Wrap in a single-member .proof catalog so it's picked up by the
-    // standard load_all_proofs / Tier 2 scanner.
-    let mut members: std::collections::BTreeMap<String, Vec<u8>> = std::collections::BTreeMap::new();
+    let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     members.insert(cid.clone(), final_canonical);
     let signer_cid = blake3_512_of(pubkey.as_bytes());
+    // Encode prover_tag into the filename to disambiguate per-solver
+    // mementos for the same (antecedent, consequent) pair.
+    let safe_prover: String = prover_tag
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
     let proof_input = ProofEnvelopeInput {
-        name: format!("@cache/implication-{}", short(&property_hash)),
+        name: format!(
+            "@cache/implication-{}-{}",
+            short(&property_hash),
+            safe_prover
+        ),
         version: "1.0.0".into(),
         members,
         signer_cid,
@@ -533,10 +595,7 @@ fn mint_and_cache(
     };
     let built = build_proof_envelope(&proof_input);
 
-    // File name: the implication memento's propertyHash, so callers
-    // can spot it visually. Tier 2 scans by content not filename, but
-    // this makes the cache directory readable.
-    let fname = format!("{}.proof", property_hash);
+    let fname = format!("{}-{}.proof", property_hash, safe_prover);
     let path = cache_dir.join(fname);
     std::fs::write(path, built.bytes)?;
     Ok(())

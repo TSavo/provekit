@@ -312,6 +312,7 @@ fn run() -> Result<(), String> {
         cache_dir: Some(cache_dir.clone()),
         mint_seed: Some([0x44; 32]),
         mint_producer_id: Some("rust-verifier@1.0".into()),
+        solvers_config: None,
     };
     let runner = Runner::new(cfg);
     let (report, stats) = runner.run_with_tiers();
@@ -325,7 +326,7 @@ fn run() -> Result<(), String> {
         stats.solved_and_minted,
         stats.residue,
         stats.violations,
-        stats.z3_invocations,
+        stats.z3_invocations(),
     );
 
     // List any cached implication mementos.
@@ -370,7 +371,7 @@ fn run() -> Result<(), String> {
         stats.solved_and_minted,
         stats.residue,
         stats.violations,
-        stats.z3_invocations,
+        stats.z3_invocations(),
         report.total_callsites,
     );
 

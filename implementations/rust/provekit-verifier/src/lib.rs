@@ -42,7 +42,12 @@ pub mod resolve_target;
 pub mod runner;
 pub mod smt_emitter;
 pub mod solve_obligation;
+pub mod solvers;
 pub mod types;
 
-pub use runner::{Runner, RunnerConfig, TierStats};
+pub use runner::{Runner, RunnerConfig, SolverStats, TierStats};
+pub use solvers::{
+    DispatchConfig, PortfolioMode, SolveResult, Solver, SolverConfig, SolverHandle, SolverPlan,
+    SolversConfig, StubSolver, SubprocessSolver,
+};
 pub use types::*;

@@ -32,3 +32,7 @@ path = "../examples/cross_lang_consume.rs"
 [[example]]
 name = "stage4_driver"
 path = "../../../examples/stage4-handshake-demo/stage4_driver.rs"
+
+[[example]]
+name = "multi_solver_demo"
+path = "../../../examples/multi-solver-demo/multi_solver_driver.rs"

@@ -1,0 +1,259 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Solver-configuration model. Mirrors the `[solvers]` table in
+// `.provekit/config.toml`:
+//
+//   [solvers]
+//   default = "z3"                            # OR
+//   chain = ["z3", "cvc5"]                    # OR
+//   portfolio = ["z3", "cvc5", "bitwuzla"]    # OR
+//   mode = "first-wins"  or  "consensus"
+//
+//   [solvers.z3]
+//   binary = "z3"
+//   ir_compiler = "smt-lib-v2.6"
+//   timeout_seconds = 5
+//   flags = ["-T:5"]
+//
+//   [solvers.dispatch]
+//   "strings" = "cvc5"
+//   "bitvectors" = "bitwuzla"
+//   "linear-arithmetic" = "z3"
+//   "default" = "z3"
+//
+// Exactly one of {default, chain, portfolio, dispatch} should be set;
+// `default` wins if multiple are present (single-solver fallback).
+
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SolverConfig {
+    /// Path to the solver binary (or solver shorthand for builtin
+    /// stubs: `stub:unsat`, `stub:sat`, `stub:undecidable`).
+    #[serde(default)]
+    pub binary: String,
+    /// Logical IR compiler tag; the verifier uses this to pick which
+    /// emitter to run. `smt-lib-v2.6` (default) goes through the
+    /// existing in-Rust SMT emitter. The IR-compiler agent will land
+    /// alternative compilers (e.g. `smt-lib-v2.6-bv`); when that lands
+    /// the verifier dispatches by this string with no other code
+    /// changes.
+    #[serde(default = "default_ir_compiler")]
+    pub ir_compiler: String,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub flags: Vec<String>,
+    /// Optional version pin to surface in the report and in minted
+    /// implication-memento `body.prover` strings. Defaults to `0`.
+    #[serde(default = "default_version")]
+    pub version: String,
+}
+
+fn default_ir_compiler() -> String {
+    "smt-lib-v2.6".into()
+}
+fn default_version() -> String {
+    "0".into()
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PortfolioMode {
+    FirstWins,
+    Consensus,
+}
+
+impl Default for PortfolioMode {
+    fn default() -> Self {
+        Self::FirstWins
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DispatchConfig {
+    #[serde(default)]
+    pub strings: Option<String>,
+    #[serde(default)]
+    pub bitvectors: Option<String>,
+    #[serde(rename = "linear-arithmetic", default)]
+    pub linear_arithmetic: Option<String>,
+    #[serde(default)]
+    pub default: Option<String>,
+}
+
+/// Top-level `[solvers]` table model.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SolversConfig {
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub chain: Option<Vec<String>>,
+    #[serde(default)]
+    pub portfolio: Option<Vec<String>>,
+    #[serde(default)]
+    pub mode: Option<PortfolioMode>,
+    /// Min number of distinct solvers that must have signed an
+    /// implication memento before a Tier-2 cache hit is honored. Spec
+    /// only in v0; the verifier does not yet enforce this gate.
+    #[serde(default)]
+    pub min_solver_witnesses: Option<usize>,
+    #[serde(default)]
+    pub dispatch: Option<DispatchConfig>,
+    /// Per-solver configs, keyed by logical solver name.
+    #[serde(flatten)]
+    pub solvers: BTreeMap<String, SolverConfig>,
+}
+
+impl SolversConfig {
+    /// Load from `.provekit/config.toml` under `project_root`. Returns
+    /// `Ok(None)` if the file or `[solvers]` table is absent.
+    pub fn load(project_root: &Path) -> Result<Option<Self>, String> {
+        let path = project_root.join(".provekit").join("config.toml");
+        if !path.exists() {
+            return Ok(None);
+        }
+        let body = std::fs::read_to_string(&path)
+            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        Self::from_toml(&body).map(Some)
+    }
+
+    pub fn from_toml(body: &str) -> Result<Self, String> {
+        #[derive(Deserialize)]
+        struct Outer {
+            #[serde(default)]
+            solvers: Option<SolversConfig>,
+        }
+        let outer: Outer = toml::from_str(body).map_err(|e| format!("parse toml: {e}"))?;
+        Ok(outer.solvers.unwrap_or_default())
+    }
+}
+
+/// Compiled execution plan derived from `SolversConfig`. The runner
+/// matches on this directly.
+#[derive(Debug, Clone)]
+pub enum SolverPlan {
+    Single(String),
+    Chain(Vec<String>),
+    Portfolio {
+        names: Vec<String>,
+        mode: PortfolioMode,
+    },
+    Dispatch(DispatchConfig),
+}
+
+impl SolverPlan {
+    /// Derive a plan from a parsed `SolversConfig`. Precedence (first
+    /// match wins): `default` -> `chain` -> `portfolio` -> `dispatch`.
+    /// If none are set we fall back to single-solver `"z3"`.
+    pub fn from_config(cfg: &SolversConfig) -> Self {
+        if let Some(d) = &cfg.default {
+            return SolverPlan::Single(d.clone());
+        }
+        if let Some(c) = &cfg.chain {
+            if !c.is_empty() {
+                return SolverPlan::Chain(c.clone());
+            }
+        }
+        if let Some(p) = &cfg.portfolio {
+            if !p.is_empty() {
+                return SolverPlan::Portfolio {
+                    names: p.clone(),
+                    mode: cfg.mode.unwrap_or_default(),
+                };
+            }
+        }
+        if let Some(d) = &cfg.dispatch {
+            return SolverPlan::Dispatch(d.clone());
+        }
+        SolverPlan::Single("z3".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_default_only() {
+        let s = r#"
+[solvers]
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+"#;
+        let c = SolversConfig::from_toml(s).unwrap();
+        assert_eq!(c.default.as_deref(), Some("z3"));
+        assert_eq!(c.solvers.get("z3").unwrap().binary, "z3");
+        match SolverPlan::from_config(&c) {
+            SolverPlan::Single(n) => assert_eq!(n, "z3"),
+            _ => panic!("expected Single"),
+        }
+    }
+
+    #[test]
+    fn parse_chain() {
+        let s = r#"
+[solvers]
+chain = ["z3", "cvc5"]
+"#;
+        let c = SolversConfig::from_toml(s).unwrap();
+        match SolverPlan::from_config(&c) {
+            SolverPlan::Chain(v) => assert_eq!(v, vec!["z3", "cvc5"]),
+            _ => panic!("expected Chain"),
+        }
+    }
+
+    #[test]
+    fn parse_portfolio_consensus() {
+        let s = r#"
+[solvers]
+portfolio = ["z3", "cvc5", "bitwuzla"]
+mode = "consensus"
+"#;
+        let c = SolversConfig::from_toml(s).unwrap();
+        match SolverPlan::from_config(&c) {
+            SolverPlan::Portfolio { names, mode } => {
+                assert_eq!(names.len(), 3);
+                assert_eq!(mode, PortfolioMode::Consensus);
+            }
+            _ => panic!("expected Portfolio"),
+        }
+    }
+
+    #[test]
+    fn parse_dispatch() {
+        let s = r#"
+[solvers]
+[solvers.dispatch]
+strings = "cvc5"
+bitvectors = "bitwuzla"
+"linear-arithmetic" = "z3"
+default = "z3"
+"#;
+        let c = SolversConfig::from_toml(s).unwrap();
+        match SolverPlan::from_config(&c) {
+            SolverPlan::Dispatch(d) => {
+                assert_eq!(d.strings.as_deref(), Some("cvc5"));
+                assert_eq!(d.bitvectors.as_deref(), Some("bitwuzla"));
+                assert_eq!(d.linear_arithmetic.as_deref(), Some("z3"));
+                assert_eq!(d.default.as_deref(), Some("z3"));
+            }
+            _ => panic!("expected Dispatch"),
+        }
+    }
+
+    #[test]
+    fn no_solvers_table_yields_default_z3() {
+        let s = "";
+        let c = SolversConfig::from_toml(s).unwrap();
+        match SolverPlan::from_config(&c) {
+            SolverPlan::Single(n) => assert_eq!(n, "z3"),
+            _ => panic!("expected Single z3 fallback"),
+        }
+    }
+}
