@@ -12,7 +12,8 @@
   "types": "./implementations/typescript/src/index.ts",
   "bin": {
     "provekit": "bin/provekit.cjs",
-    "proveit": "bin/provekit.cjs"
+    "proveit": "bin/provekit.cjs",
+    "provekit-lift": "bin/provekit-lift.cjs"
   },
   "exports": {
     ".": {
