@@ -363,7 +363,15 @@ $ pnpm vitest run \
   catalog CID:        blake3-512:449339930add6457bf25542f2117a025daada4a4bd1de704737750ad6d1c1be814c284d31bb97159ca0b2d2c52f8c043a64533d3432195f5a0f338c5d4904d44
 ```
 
-Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a value above does not match, your bytes are not the bytes this bluepaper was written against. Each peer's CID is independent: contracts cover that peer's surface, but the bytes (canonical IR-JSON, BLAKE3-512, foundation-key signature, deterministic CBOR catalog) are produced by the protocol's own primitives. Four peers, four CIDs, one protocol.
+**C#** — 70 contracts across 15 `.invariant.cs` sidecar files (one per public-API C# source file). The orchestrator is a `dotnet` console project that links the sidecars in via `<Compile Include>` so the four lib assemblies stay free of test-only IR dependencies:
+
+```sh
+$ dotnet run --project implementations/csharp/Provekit.SelfContracts -- /tmp/csharp-self-out | \
+    grep "catalog CID:"
+  catalog CID:        blake3-512:45d7cdbd0d5bfba5a1ee9e8386eb4d7dc1eab0882105753504a1f5c06de6f9fc4bd7038f56c7fcea693b152e2ab83de40ca4964a920816142ea43d5b9076415c
+```
+
+Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a value above does not match, your bytes are not the bytes this bluepaper was written against. Each peer's CID is independent: contracts cover that peer's surface, but the bytes (canonical IR-JSON, BLAKE3-512, foundation-key signature, deterministic CBOR catalog) are produced by the protocol's own primitives. Five peers, five CIDs, one protocol.
 
 ## Appendix B: empirical witness
 

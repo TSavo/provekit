@@ -13,4 +13,9 @@
     <ProjectReference Include="..\Provekit.Canonicalizer\Provekit.Canonicalizer.csproj" />
   </ItemGroup>
 
+  <!-- Sidecar invariant files compile into Provekit.SelfContracts, not the lib. -->
+  <ItemGroup>
+    <Compile Remove="**/*.invariant.cs" />
+  </ItemGroup>
+
 </Project>

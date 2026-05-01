@@ -29,6 +29,7 @@ using static Provekit.IR.Collector;
 
 namespace Provekit.Tests;
 
+[Collection("CollectorSerial")]
 public class IrKitConformanceTests
 {
     private const string ExpectedKitJcsBytes =
