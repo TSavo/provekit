@@ -13,6 +13,12 @@ members = [
     "provekit-lift",
     "provekit-lift-proptest",
     "provekit-lift-contracts",
+    "provekit-lift-kani",
+    "provekit-lift-prusti",
+    "provekit-lift-creusot",
+    "provekit-lift-flux",
+    "provekit-lift-quickcheck",
+    "provekit-lift-verus",
     "provekit-build",
     "examples/build_script_demo",
 ]

@@ -32,6 +32,7 @@ provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 # Adapter crates (each owns its own shape walker).
 provekit-lift-proptest = { path = "../provekit-lift-proptest" }
 provekit-lift-contracts = { path = "../provekit-lift-contracts" }
+provekit-lift-kani = { path = "../provekit-lift-kani" }
 
 # External.
 syn = { workspace = true }

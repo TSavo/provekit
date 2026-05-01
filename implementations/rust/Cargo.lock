@@ -699,6 +699,7 @@ dependencies = [
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
  "provekit-lift-contracts",
+ "provekit-lift-kani",
  "provekit-lift-proptest",
  "provekit-proof-envelope",
  "provekit-verifier",
@@ -719,7 +720,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lift-kani"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "provekit-ir-symbolic",
+ "provekit-lift",
+ "provekit-verifier",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "provekit-lift-proptest"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "provekit-ir-symbolic",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "provekit-lift-quickcheck"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "provekit-ir-symbolic",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "provekit-lift-verus"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",

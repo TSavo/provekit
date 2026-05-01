@@ -46,6 +46,7 @@ use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl};
 use provekit_proof_envelope::{build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput};
 
 pub use provekit_lift_contracts as adapter_contracts;
+pub use provekit_lift_kani as adapter_kani;
 pub use provekit_lift_proptest as adapter_proptest;
 
 /// Per-adapter outcome. Counts what each adapter saw and what was
@@ -118,6 +119,9 @@ pub fn lift_path(root: &Path) -> LiftReport {
     let mut contracts_seen = 0usize;
     let mut contracts_lifted = 0usize;
     let mut contracts_warnings: Vec<AdapterWarning> = Vec::new();
+    let mut kani_seen = 0usize;
+    let mut kani_lifted = 0usize;
+    let mut kani_warnings: Vec<AdapterWarning> = Vec::new();
 
     for path in enumerate_rs_files(root) {
         report.files_scanned += 1;
@@ -172,6 +176,20 @@ pub fn lift_path(root: &Path) -> LiftReport {
             });
         }
         report.decls.extend(c_out.decls);
+
+        // Adapter: kani.
+        let k_out = adapter_kani::lift_file(&file, &path_str);
+        kani_seen += k_out.seen;
+        kani_lifted += k_out.lifted;
+        for w in k_out.warnings {
+            kani_warnings.push(AdapterWarning {
+                adapter: "kani",
+                source_path: w.source_path,
+                item_name: w.item_name,
+                reason: w.reason,
+            });
+        }
+        report.decls.extend(k_out.decls);
     }
 
     report.adapter_reports.push(AdapterReport {
@@ -185,6 +203,12 @@ pub fn lift_path(root: &Path) -> LiftReport {
         seen: contracts_seen,
         lifted: contracts_lifted,
         warnings: contracts_warnings,
+    });
+    report.adapter_reports.push(AdapterReport {
+        adapter: "kani",
+        seen: kani_seen,
+        lifted: kani_lifted,
+        warnings: kani_warnings,
     });
     report
 }
