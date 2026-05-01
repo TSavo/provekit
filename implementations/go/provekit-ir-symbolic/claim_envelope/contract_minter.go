@@ -70,9 +70,9 @@ type ContractMintArgs struct {
 // (Role: ContractMemento). At mint time the minter:
 //
 //  1. computes preHash / postHash / invHash from each present formula
-//     (hash16 of JCS-canonical bytes);
-//  2. computes propertyHash = hash16(canonical({pre?, post?, inv?, outBinding}));
-//  3. computes bindingHash  = hash16(canonical({producerId, contractName, propertyHash}));
+//     (full BLAKE3-512 of JCS-canonical bytes; "blake3-512:" prefix);
+//  2. computes propertyHash = ComputeCID(canonical({pre?, post?, inv?, outBinding}));
+//  3. computes bindingHash  = ComputeCID(canonical({producerId, contractName, propertyHash}));
 //  4. assembles + signs the envelope.
 //
 // The protocol cut is scorched-earth: callers no longer pass any hash
@@ -96,25 +96,25 @@ func (m *Minter) MintContract(args ContractMintArgs) (*Minted, error) {
 	}
 	if args.Pre != nil {
 		body["pre"] = args.Pre
-		ph, err := hash16Value(args.Pre)
+		ph, err := hashValue(args.Pre)
 		if err != nil {
-			return nil, fmt.Errorf("MintContract: pre hash16: %w", err)
+			return nil, fmt.Errorf("MintContract: preHash: %w", err)
 		}
 		body["preHash"] = ph
 	}
 	if args.Post != nil {
 		body["post"] = args.Post
-		ph, err := hash16Value(args.Post)
+		ph, err := hashValue(args.Post)
 		if err != nil {
-			return nil, fmt.Errorf("MintContract: post hash16: %w", err)
+			return nil, fmt.Errorf("MintContract: postHash: %w", err)
 		}
 		body["postHash"] = ph
 	}
 	if args.Inv != nil {
 		body["inv"] = args.Inv
-		ih, err := hash16Value(args.Inv)
+		ih, err := hashValue(args.Inv)
 		if err != nil {
-			return nil, fmt.Errorf("MintContract: inv hash16: %w", err)
+			return nil, fmt.Errorf("MintContract: invHash: %w", err)
 		}
 		body["invHash"] = ih
 	}
@@ -131,7 +131,7 @@ func (m *Minter) MintContract(args ContractMintArgs) (*Minted, error) {
 	}
 
 	// DERIVED:
-	//   propertyHash = hash16(canonical({pre?, post?, inv?, outBinding}))
+	//   propertyHash = ComputeCID(canonical({pre?, post?, inv?, outBinding}))
 	phObj := map[string]interface{}{
 		"outBinding": args.OutBinding,
 	}
@@ -144,19 +144,19 @@ func (m *Minter) MintContract(args ContractMintArgs) (*Minted, error) {
 	if args.Inv != nil {
 		phObj["inv"] = args.Inv
 	}
-	propertyHash, err := hash16Value(phObj)
+	propertyHash, err := hashValue(phObj)
 	if err != nil {
 		return nil, fmt.Errorf("MintContract: propertyHash: %w", err)
 	}
 
 	// DERIVED:
-	//   bindingHash = hash16(canonical({producerId, contractName, propertyHash}))
+	//   bindingHash = ComputeCID(canonical({producerId, contractName, propertyHash}))
 	bhObj := map[string]interface{}{
 		"producerId":   args.ProducedBy,
 		"contractName": args.ContractName,
 		"propertyHash": propertyHash,
 	}
-	bindingHash, err := hash16Value(bhObj)
+	bindingHash, err := hashValue(bhObj)
 	if err != nil {
 		return nil, fmt.Errorf("MintContract: bindingHash: %w", err)
 	}

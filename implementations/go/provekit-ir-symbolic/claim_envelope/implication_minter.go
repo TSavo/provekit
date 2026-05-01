@@ -10,19 +10,22 @@ import "fmt"
 // SmtLibInput / ProofWitness are optional; "" → field omitted.
 //
 // bindingHash and propertyHash are DERIVED.
+//
+// AntecedentHash / ConsequentHash are full BLAKE3-512 CIDs in v1.1.0
+// self-identifying form ("blake3-512:" + 128 hex chars).
 type ImplicationMintArgs struct {
-	ProducedBy      string
-	ProducedAt      string
-	AntecedentHash  string // hex16
-	ConsequentHash  string // hex16
-	AntecedentCID   string // contract memento CID
-	ConsequentCID   string // contract memento CID
-	AntecedentSlot  string // "pre" | "post" | "inv"
-	ConsequentSlot  string // "pre" | "post" | "inv"
-	Prover          string // e.g. "z3@4.13.4"
-	ProverRunMs     int64
-	SmtLibInput     string // optional
-	ProofWitness    string // optional
+	ProducedBy     string
+	ProducedAt     string
+	AntecedentHash string // "blake3-512:" + 128 hex
+	ConsequentHash string // "blake3-512:" + 128 hex
+	AntecedentCID  string // contract memento CID
+	ConsequentCID  string // contract memento CID
+	AntecedentSlot string // "pre" | "post" | "inv"
+	ConsequentSlot string // "pre" | "post" | "inv"
+	Prover         string // e.g. "z3@4.13.4"
+	ProverRunMs    int64
+	SmtLibInput    string // optional
+	ProofWitness   string // optional
 }
 
 // MintImplication builds + signs a v1.1.0 implication ClaimEnvelope.
@@ -32,10 +35,11 @@ type ImplicationMintArgs struct {
 // witness is content-addressed and shared. Future verifiers hit the
 // cache (Tier 2) instead of re-running the solver (Tier 3).
 //
-// Per spec (memento envelope grammar §Role: ImplicationMemento):
+// Per spec (memento envelope grammar §Role: ImplicationMemento), v1.1.0
+// full-BLAKE3-512 self-identifying form:
 //
-//	bindingHash  = hash16(canonical({antecedentHash, consequentHash}))
-//	propertyHash = hash16("implication:" || antecedentHash || ":" || consequentHash)
+//	bindingHash  = ComputeCID(canonical({antecedentHash, consequentHash}))
+//	propertyHash = ComputeCID("implication:" || antecedentHash || ":" || consequentHash)
 //	inputCids    = [antecedentCid, consequentCid] (lex-sorted by envelopeForHashing)
 func (m *Minter) MintImplication(args ImplicationMintArgs) (*Minted, error) {
 	if args.AntecedentHash == "" || args.ConsequentHash == "" {
@@ -67,14 +71,14 @@ func (m *Minter) MintImplication(args ImplicationMintArgs) (*Minted, error) {
 		"body":   body,
 	}
 
-	bindingHash, err := hash16Value(map[string]interface{}{
+	bindingHash, err := hashValue(map[string]interface{}{
 		"antecedentHash": args.AntecedentHash,
 		"consequentHash": args.ConsequentHash,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("MintImplication: bindingHash: %w", err)
 	}
-	propertyHash := hash16RawString("implication:" + args.AntecedentHash + ":" + args.ConsequentHash)
+	propertyHash := hashRawString("implication:" + args.AntecedentHash + ":" + args.ConsequentHash)
 
 	unsigned := envelopeForHashing(
 		bindingHash, propertyHash, VerdictHolds,

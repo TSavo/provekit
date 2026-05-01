@@ -1,50 +1,52 @@
 package canonicalizer
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
+
+	"lukechampine.com/blake3"
 )
 
-// Hasher computes the protocol's content-address hashes:
-//   - PropertyHash: 16-char hex prefix (binding/property hashes).
-//   - EnvelopeCID:  32-char hex prefix (memento envelope CIDs).
-//   - FilenameCID:  32-char hex prefix (.proof file's bytes hash).
+// Hasher computes the protocol's content-address hashes under v1.1.0.
 //
-// All three are SHA-256[:N] over canonical bytes; the prefix length
-// is the only thing that varies. Spec §11 (canonicalization grammar)
-// + §3 of the proof-file-format spec.
+// v1.1.0 hash-widening cut: every protocol-surface hash is BLAKE3-512
+// (full 64-byte / 128-hex digest) with the self-identifying tag prefix
+// "blake3-512:". No truncation, no per-purpose length parameter, no
+// SHA-256 anywhere on the protocol path.
+//
+// Spec: protocol/specs/2026-04-30-canonicalization-grammar.md §11
+//	   protocol/specs/2026-04-30-memento-envelope-grammar.md §"Self-identifying"
 type Hasher struct{}
+
+// HashTagPrefix is the only permitted v1.1.0 hash tag.
+const HashTagPrefix = "blake3-512:"
 
 // NewHasher returns a fresh hasher. The zero value is also valid.
 func NewHasher() *Hasher { return &Hasher{} }
 
-// Hex returns the full SHA-256 hex digest.
-func (h *Hasher) Hex(bytes []byte) string {
-	sum := sha256.Sum256(bytes)
+// Blake3_512Hex returns the full 128-character lowercase hex digest of
+// BLAKE3-512 over bytes. NOT prefixed.
+func (h *Hasher) Blake3_512Hex(bytes []byte) string {
+	sum := blake3.Sum512(bytes)
 	return hex.EncodeToString(sum[:])
 }
 
-// PropertyHash16 returns the 16-char hex prefix.
-func (h *Hasher) PropertyHash16(bytes []byte) string {
-	return h.Hex(bytes)[:16]
-}
-
-// EnvelopeCID32 returns the 32-char hex prefix.
-func (h *Hasher) EnvelopeCID32(bytes []byte) string {
-	return h.Hex(bytes)[:32]
-}
-
-// FilenameCID32 is the same shape as EnvelopeCID32; named separately
-// because callers think of the .proof filename CID as a different role
-// even though the bytes are the same.
-func (h *Hasher) FilenameCID32(bytes []byte) string {
-	return h.Hex(bytes)[:32]
+// ComputeCID returns the self-identifying CID for canonical bytes:
+//
+//	"blake3-512:" + blake3_512_hex(bytes)
+//
+// Used for every hash field on the protocol surface: bindingHash,
+// propertyHash, preHash / postHash / invHash, antecedentHash /
+// consequentHash, member CIDs, filename CIDs.
+func (h *Hasher) ComputeCID(bytes []byte) string {
+	return HashTagPrefix + h.Blake3_512Hex(bytes)
 }
 
 // Package-level convenience wrappers (delegate to a singleton Hasher).
 var defaultHasher = NewHasher()
 
-func SHA256Hex(b []byte) string        { return defaultHasher.Hex(b) }
-func PropertyHash16(b []byte) string   { return defaultHasher.PropertyHash16(b) }
-func EnvelopeCID32(b []byte) string    { return defaultHasher.EnvelopeCID32(b) }
-func FilenameCID32(b []byte) string    { return defaultHasher.FilenameCID32(b) }
+// ComputeCID is the package-level helper for the public API documented
+// on the v1.1.0 cut.
+func ComputeCID(canonical []byte) string { return defaultHasher.ComputeCID(canonical) }
+
+// Blake3_512Hex returns the un-prefixed full BLAKE3-512 hex digest.
+func Blake3_512Hex(b []byte) string { return defaultHasher.Blake3_512Hex(b) }

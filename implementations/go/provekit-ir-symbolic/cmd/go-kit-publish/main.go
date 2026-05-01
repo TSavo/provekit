@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/provekit/ir-symbolic/claim_envelope"
 	"github.com/provekit/ir-symbolic/ir"
@@ -108,7 +109,10 @@ func main() {
 			mintedContract.CID: mintedContract.CanonicalBytes,
 			mintedBridge.CID:   mintedBridge.CanonicalBytes,
 		},
-		SignerCID:  "sha256:go-kit-signer",
+		// SignerCID is a content-address of a signer-pubkey memento.
+		// v1.1.0 placeholder: real key-binding plumbing lands later;
+		// for now a sentinel under the v1.1.0 hash tag.
+		SignerCID:  "blake3-512:" + strings.Repeat("0", 127) + "1",
 		SignerSeed: catalogSeed,
 		DeclaredAt: declaredAt,
 	})

@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,15 +42,25 @@ import (
 	"github.com/provekit/ir-symbolic/proof_envelope"
 )
 
-// cppProofPath points at the C++ reference impl's v1.1.0 output.
-// Regenerate with the C++ kit's parseInt_kit_proof binary; commit
-// the resulting CID here.
-const cppProofPath = "/tmp/cpp-kit-out-v11/bfe74d1a9d836f926058b331002da2f5.proof"
+// cppProofDir holds the C++ reference impl's v1.1.0 output. The
+// filename CID changed shape under v1.1.0 (full BLAKE3-512 with
+// "blake3-512:" prefix), so we discover dynamically rather than
+// hard-coding. Regenerate with the C++ kit's parseInt_kit_proof
+// binary, e.g. `tools/run-cpp-kit-publish.sh /tmp/cpp-kit-out-v11`.
+const cppProofDir = "/tmp/cpp-kit-out-v11"
 
 func TestCrossLangGoVerifiesCppProof(t *testing.T) {
-	if _, err := os.Stat(cppProofPath); err != nil {
-		t.Skipf("C++ .proof not found at %s; regenerate from the C++ kit on v1.1.0", cppProofPath)
+	matches, err := filepath.Glob(filepath.Join(cppProofDir, "*.proof"))
+	if err != nil {
+		t.Fatalf("glob %s: %v", cppProofDir, err)
 	}
+	if len(matches) == 0 {
+		t.Skipf("no C++ .proof in %s; regenerate from the C++ kit on v1.1.0", cppProofDir)
+	}
+	if len(matches) > 1 {
+		t.Fatalf("expected exactly one C++ .proof in %s, got %d: %v", cppProofDir, len(matches), matches)
+	}
+	cppProofPath := matches[0]
 
 	projectRoot, err := os.MkdirTemp("", "go-cross-lang-")
 	if err != nil {
@@ -131,7 +142,7 @@ func TestCrossLangGoVerifiesCppProof(t *testing.T) {
 		Name:       "go-consumer-app",
 		Version:    "1.0.0",
 		Members:    consumerMembers,
-		SignerCID:  "sha256:go-consumer-signer",
+		SignerCID:  "blake3-512:" + strings.Repeat("0", 127) + "2",
 		SignerSeed: catalogSeed,
 		DeclaredAt: declaredAt,
 	})

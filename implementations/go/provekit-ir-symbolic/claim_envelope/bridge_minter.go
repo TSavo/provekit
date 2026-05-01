@@ -33,10 +33,10 @@ type BridgeMintArgs struct {
 // exactly one entry equal to TargetContractCID (per the bridge-body
 // REFERENT constraint in the memento envelope grammar).
 //
-// DERIVED per spec:
+// DERIVED per spec (v1.1.0; full BLAKE3-512 with "blake3-512:" prefix):
 //
-//	bindingHash  = hash16(canonical({sourceLayer, sourceSymbol}))
-//	propertyHash = hash16("bridge:" || sourceSymbol)   (raw string, NOT JCS-wrapped)
+//	bindingHash  = ComputeCID(canonical({sourceLayer, sourceSymbol}))
+//	propertyHash = ComputeCID("bridge:" || sourceSymbol)   (raw string, NOT JCS-wrapped)
 func (m *Minter) MintBridge(args BridgeMintArgs) (*Minted, error) {
 	if args.SourceSymbol == "" {
 		return nil, fmt.Errorf("MintBridge: SourceSymbol is required")
@@ -65,14 +65,14 @@ func (m *Minter) MintBridge(args BridgeMintArgs) (*Minted, error) {
 		"body":   body,
 	}
 
-	bindingHash, err := hash16Value(map[string]interface{}{
+	bindingHash, err := hashValue(map[string]interface{}{
 		"sourceLayer":  args.SourceLayer,
 		"sourceSymbol": args.SourceSymbol,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("MintBridge: bindingHash: %w", err)
 	}
-	propertyHash := hash16RawString("bridge:" + args.SourceSymbol)
+	propertyHash := hashRawString("bridge:" + args.SourceSymbol)
 
 	unsigned := envelopeForHashing(
 		bindingHash, propertyHash, VerdictHolds,

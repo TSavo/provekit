@@ -10,11 +10,15 @@ import (
 
 // Builder assembles a complete .proof file from inputs.
 //
-// Per protocol/specs/2026-04-30-proof-file-format.md:
+// Per protocol/specs/2026-04-30-proof-file-format.md (v1.1.0):
 //   1. Build the unsigned body as a CBOR map with sorted keys.
 //   2. ed25519-sign the unsigned-body bytes.
 //   3. Re-emit with the signature added (keys re-sorted bytewise).
-//   4. SHA-256 the final bytes; first 32 hex chars = filename CID.
+//      The envelope's `signature` field is RAW 64-byte CBOR bstr
+//      (mirrors C++; the self-identifying "ed25519:" prefix is for
+//      member-envelope `producerSignature` strings, not the catalog).
+//   4. ComputeCID over the final bytes; filename CID =
+//      "blake3-512:" + 128 hex (full BLAKE3-512 digest, no truncation).
 type Builder struct {
 	hasher *canonicalizer.Hasher
 }
@@ -129,7 +133,7 @@ func (b *Builder) Build(in *Input) (*Output, error) {
 	emitSortedMap(finalEnc, signedPairs)
 	finalBytes := finalEnc.Bytes()
 
-	// 4. Filename CID.
-	cid := b.hasher.FilenameCID32(finalBytes)
+	// 4. Filename CID = "blake3-512:" + 128 hex (full digest, no truncation).
+	cid := b.hasher.ComputeCID(finalBytes)
 	return &Output{Bytes: finalBytes, FilenameCID: cid}, nil
 }
