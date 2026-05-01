@@ -38,7 +38,7 @@ A canonical bytewise representation for any verifiable proposition. One and only
 Anchors: `2026-04-30-ir-formal-grammar.md` and `2026-04-30-canonicalization-grammar.md`. Spec CIDs:
 
 ```
-ir-formal-grammar          (cited inline at §2.1, recompute via hash-spec)
+ir-formal-grammar          blake3-512:6c0127e0d24946d7be75861db20507ccdcfdf968d3333f8aa34083e849d8238d73b3acfaa31880648995a024112182ed6b6002cd489548b4b18f5d4c3768dd96
 canonicalization-grammar   blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830
 ```
 
@@ -86,6 +86,16 @@ Decoration that uses the two pillars without changing them:
 - The proof DAG is the lattice that grows as producers mint mementos. Edges via `inputCids`; nodes are mementos; verification walks the DAG.
 
 The two pillars are non-pluggable. The decoration is. This is the architectural division of labor.
+
+### §1.4 Self-contracts: the protocol proves things about itself
+
+The Rust workspace at `implementations/rust/provekit-self-contracts/` carries the kit's own contracts: invariants over the JCS encoder's key-sort order, the CBOR encoder's integer-shortest-form rule, the canonicalizer's idempotence under double-application, the signer's deterministic output for a fixed seed. The published `.proof` of the self-contracts is pinned at:
+
+```
+self-contracts (v1.1.0)    blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
+```
+
+A peer that runs `provekit verify --target self` performs the recursive verification: the protocol verifying the protocol. Success demonstrates that the implementation satisfies the formal claims the protocol makes about itself. The pinned CID is what such a successful run produces over the v1.1.0 source tree.
 
 ---
 
@@ -306,13 +316,17 @@ Every spec referenced by content hash. Recompute locally to verify each.
 ```
 canonicalization grammar       blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830
 handshake algorithm            blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925
+ir formal grammar              blake3-512:6c0127e0d24946d7be75861db20507ccdcfdf968d3333f8aa34083e849d8238d73b3acfaa31880648995a024112182ed6b6002cd489548b4b18f5d4c3768dd96
 lattice tractability theorem   blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07
 memento envelope grammar       blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5
 proof substrate                blake3-512:ad53d6c59ee08270a48715376cc211f964ff44a55b3318d68a402e9c915ff593d5a5bbbd424f7777e2bcfe89d6c5bd2b49efcb5aae7de24752f3bcabb90484ae
 proof file format              blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3
 protocol catalog (v1.1.0)      blake3-512:bf6b1831f71e44c1fefd065df1e3a025b343327443ea9abc7737ffc829f087b6d0e56997523d23583823fba38b1dfd4e23d61e342d0db5b8c8f3179bbec6122a
+self-contracts (v1.1.0)        blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
 signatures and non-repudiation blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c
 ```
+
+Note on the catalog pin. The CID above is what `provekit-showcase hash-spec` computed against the spec catalog file as committed in this branch. Earlier external announcements may reference the catalog by a different prefix; if the values diverge, the canonical authority is the value any peer can recompute by running `hash-spec` against the file in the repo. Recompute. Compare. Trust nothing else.
 
 ## Appendix B: empirical witness
 
