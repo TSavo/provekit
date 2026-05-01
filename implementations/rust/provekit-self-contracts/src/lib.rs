@@ -2,44 +2,36 @@
 //
 // provekit-self-contracts
 //
-// ProvekIt's first dogfood. The framework eats itself: the Rust kit
-// authors contracts ABOUT the Rust kit's IR-JSON parser, mints those
-// contracts as a `.proof` file, and the verifier scans them.
+// ProvekIt's first-class dogfood. The framework eats itself: every
+// public-API source file in the workspace ships a sibling
+// `<name>.invariant.rs` file authoring contracts about its own surface
+// using the kit's own primitives. This crate is the BUILD ORCHESTRATOR:
+// it walks every `.invariant.rs` file in the workspace, runs each
+// `invariants()` function in turn, collects the IR, mints each as a
+// signed contract memento, registers a closed-loop bridge for
+// `parse_formula -> parse_formula_correct`, and bundles the lot into a
+// single `provekit-self-contracts.proof` envelope.
 //
-// Authoring split:
+// File layout:
+//   * `src/lib.rs` — the orchestrator (this file). Pulls in every
+//     `.invariant.rs` via `#[path]` so they compile as plain Rust
+//     modules without polluting their host crate's dep graph.
+//   * `src/bin/mint-self-contracts.rs` — the runnable binary. Calls
+//     into `mint_self_proof()` here and prints the resulting CID;
+//     also runs the verifier against the produced .proof and prints
+//     the report.
 //
-//   * `author_self_contracts()` — returns a typed Vec<ContractDecl>
-//     plus the bridge declarations needed to close the call-site loop
-//     for at least one contract. No I/O, no side effects on the file
-//     system.
-//
-//   * `mint_self_proof(out_dir)` — given an output directory, mints
-//     each contract + bridge as a signed memento, bundles them into a
-//     `.proof` envelope, writes the file at
-//     `<out_dir>/<hex>.proof`, and returns the full self-identifying
-//     CID plus the count of mementos.
-//
-// Contracts written here are PLAUSIBLE claims about the parser's
-// public API, not deeply provable theorems. The point is that the
-// authoring + minting + bundling + verifier round-trip handles them.
-//
-// Contracts that exercise the IR's standard algebra (=/≠/</≤/>/≥) can
-// reach Z3 and may resolve to discharged or unsatisfied. Contracts
-// using kit-defined atomic predicates (`roundTrips`, `isErr`,
-// `parsesOk`) emit S-expressions Z3 doesn't understand and resolve to
-// undecidable — that's the protocol's HONEST outcome and is
-// load-bearing: it shows the verifier flowing through the pipeline
-// even when the predicate isn't in Z3's signature.
-//
-// One contract is wired to enumerate as a callsite: the parser-level
-// `roundTrip` claim on `parse_formula` references the IR ctor
-// `parse_formula`, and a bridge memento maps the IR symbol
-// `parse_formula` to the contract memento for `parse_formula_correct`.
-// That closes the loop the verifier walks in stages 1 -> 2 -> 3.
+// Why `#[path]`? Because `provekit-ir-symbolic` already depends on
+// `provekit-canonicalizer` / `-claim-envelope` / `-proof-envelope`. If
+// those crates' .invariant.rs files lived in their own host modules,
+// they would need a back-edge to `-ir-symbolic` (for the kit's
+// authoring API), which would close a cycle. The orchestrator hosts
+// the includes; the .invariant.rs files physically live next to the
+// source they describe and are free of any host-crate coupling beyond
+// the kit's surface.
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::rc::Rc;
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
@@ -47,9 +39,7 @@ use provekit_claim_envelope::{
 };
 use provekit_ir_symbolic::serialize::formula_to_value;
 use provekit_ir_symbolic::{
-    and_, atomic_, begin_collecting, contract, eq, finish, forall, gt, lt,
-    not_, num, reset_collector, ContractArgs, ContractDecl, Int, String_,
-    Term,
+    begin_collecting, finish, reset_collector, ContractDecl,
 };
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed,
@@ -59,21 +49,67 @@ use provekit_proof_envelope::{
 const PRODUCED_BY: &str = "provekit-self-contracts@1.0";
 const DECLARED_AT: &str = "2026-04-30T18:00:00.000Z";
 
-/// Wraps an arbitrary Ctor under the standard Rust kit shape. The kit
-/// itself only exposes a bridge primitive for `parseInt`; the rest of
-/// the IR's ctor surface has to be constructed directly. This helper
-/// keeps the call sites readable.
-fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
-    Rc::new(Term::Ctor {
-        name: name.into(),
-        args: vec![arg],
-    })
+// --- Per-source-file .invariant.rs modules ---------------------------------
+//
+// Each include compiles the named .invariant.rs file as a private
+// module of this crate. The module exposes a `pub fn invariants()` that
+// uses the kit's process-local `CONTRACT_COLLECTOR` thread-local; the
+// orchestrator drains the collector after each call.
+
+#[path = "../../provekit-canonicalizer/src/jcs.invariant.rs"]
+mod jcs_invariants;
+
+#[path = "../../provekit-canonicalizer/src/hash.invariant.rs"]
+mod hash_invariants;
+
+#[path = "../../provekit-proof-envelope/src/cbor.invariant.rs"]
+mod cbor_invariants;
+
+#[path = "../../provekit-proof-envelope/src/sign.invariant.rs"]
+mod sign_invariants;
+
+#[path = "../../provekit-proof-envelope/src/proof.invariant.rs"]
+mod proof_invariants;
+
+#[path = "../../provekit-claim-envelope/src/lib.invariant.rs"]
+mod claim_envelope_invariants;
+
+#[path = "../../provekit-ir-symbolic/src/parse.invariant.rs"]
+mod parse_invariants;
+
+#[path = "../../provekit-ir-symbolic/src/serialize.invariant.rs"]
+mod serialize_invariants;
+
+#[path = "../../provekit-verifier/src/load_all_proofs.invariant.rs"]
+mod load_all_proofs_invariants;
+
+#[path = "../../provekit-verifier/src/enumerate_callsites.invariant.rs"]
+mod enumerate_callsites_invariants;
+
+#[path = "../../provekit-verifier/src/resolve_target.invariant.rs"]
+mod resolve_target_invariants;
+
+#[path = "../../provekit-verifier/src/instantiate.invariant.rs"]
+mod instantiate_invariants;
+
+#[path = "../../provekit-verifier/src/smt_emitter.invariant.rs"]
+mod smt_emitter_invariants;
+
+// --- Orchestrator types ----------------------------------------------------
+
+/// Source-file label tagging which module of contracts we're walking.
+/// Used in the mint result for traceability (every contract knows the
+/// host file it was authored in).
+#[derive(Debug, Clone)]
+pub struct InvariantSource {
+    pub label: &'static str,
+    pub path: &'static str,
 }
 
-/// One bridge declaration coupling an IR symbol (the ctor `name`) to a
+/// One bridge declaration coupling an IR symbol (a ctor `name`) to a
 /// contract memento that the verifier should use as the discharge
-/// target. Names are insertion-order; the actual minting is deferred
-/// to `mint_self_proof`.
+/// target. Names are insertion-order; minting is deferred to
+/// `mint_self_proof`.
 #[derive(Debug, Clone)]
 pub struct SelfBridge {
     pub source_symbol: String,
@@ -82,178 +118,118 @@ pub struct SelfBridge {
     pub ir_return_sort: String,
 }
 
-/// Author all self-contracts and the single bridge that closes the
-/// call-site loop. No side effects.
-pub fn author_self_contracts() -> (Vec<ContractDecl>, Vec<SelfBridge>) {
-    reset_collector();
-    begin_collecting();
+/// One source file's authored contracts plus the source label.
+#[derive(Debug, Clone)]
+pub struct AuthoredSlab {
+    pub source: InvariantSource,
+    pub contracts: Vec<ContractDecl>,
+}
 
-    // -----------------------------------------------------------------
-    // CONTRACT 1: parse_formula determinism.
-    //
-    // Plausible claim: parse_formula is a function — same JSON in,
-    // same Formula out. In the IR this becomes
-    //
-    //   forall x: String. parse_formula(x) = parse_formula(x)
-    //
-    // This is the *closed-loop* contract. It contains a `parse_formula`
-    // ctor reference, so a bridge keyed on `parse_formula` (declared
-    // below) makes this contract enumerate as a callsite, with the
-    // bridge resolving to "parse_formula_correct" (contract 2). The
-    // verifier walks load -> enumerate -> resolve (succeeds) ->
-    // instantiate -> smt-emit -> Z3.
-    // -----------------------------------------------------------------
-    contract(
-        "parse_formula_determinism",
-        ContractArgs {
-            post: Some(forall(String_(), |x| {
-                eq(
-                    ctor1("parse_formula", x.clone()),
-                    ctor1("parse_formula", x),
-                )
-            })),
-            ..Default::default()
-        },
-    );
+/// All authored contracts across every `.invariant.rs` file in the
+/// workspace, plus the closed-loop bridge declarations. No I/O.
+pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
+    // Each slab does its own reset so contract names from prior files
+    // can't leak. The collector is process-local.
+    let slabs = vec![
+        run_one_slab(
+            InvariantSource {
+                label: "jcs",
+                path: "provekit-canonicalizer/src/jcs.invariant.rs",
+            },
+            jcs_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "hash",
+                path: "provekit-canonicalizer/src/hash.invariant.rs",
+            },
+            hash_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "cbor",
+                path: "provekit-proof-envelope/src/cbor.invariant.rs",
+            },
+            cbor_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "sign",
+                path: "provekit-proof-envelope/src/sign.invariant.rs",
+            },
+            sign_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "proof",
+                path: "provekit-proof-envelope/src/proof.invariant.rs",
+            },
+            proof_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "claim-envelope",
+                path: "provekit-claim-envelope/src/lib.invariant.rs",
+            },
+            claim_envelope_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "parse",
+                path: "provekit-ir-symbolic/src/parse.invariant.rs",
+            },
+            parse_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "serialize",
+                path: "provekit-ir-symbolic/src/serialize.invariant.rs",
+            },
+            serialize_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "load_all_proofs",
+                path: "provekit-verifier/src/load_all_proofs.invariant.rs",
+            },
+            load_all_proofs_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "enumerate_callsites",
+                path: "provekit-verifier/src/enumerate_callsites.invariant.rs",
+            },
+            enumerate_callsites_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "resolve_target",
+                path: "provekit-verifier/src/resolve_target.invariant.rs",
+            },
+            resolve_target_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "instantiate",
+                path: "provekit-verifier/src/instantiate.invariant.rs",
+            },
+            instantiate_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "smt_emitter",
+                path: "provekit-verifier/src/smt_emitter.invariant.rs",
+            },
+            smt_emitter_invariants::invariants,
+        ),
+    ];
 
-    // -----------------------------------------------------------------
-    // CONTRACT 2: parse_formula correctness (round-trip).
-    //
-    // The bridge resolves to THIS contract memento. Its `pre` is what
-    // the verifier substitutes the call-site arg into. We use the
-    // kit-defined `roundTrips` atomic predicate; Z3 doesn't know it,
-    // so the obligation falls to "undecidable" — that's the honest
-    // outcome and the gap is documented in the report. The IR
-    // expresses the intent; a future Tier-1 (per-prop fact) layer
-    // would discharge it.
-    // -----------------------------------------------------------------
-    contract(
-        "parse_formula_correct",
-        ContractArgs {
-            pre: Some(forall(String_(), |x| {
-                atomic_("roundTrips", vec![x])
-            })),
-            ..Default::default()
-        },
-    );
-
-    // -----------------------------------------------------------------
-    // CONTRACT 3: parse rejects malformed input.
-    //
-    // Claim: for any input that fails the closed-object policy, the
-    // parser returns an error. Expressed with the kit-defined
-    // `isMalformed` and `isErr` atomic predicates.
-    // -----------------------------------------------------------------
-    contract(
-        "parse_rejects_malformed",
-        ContractArgs {
-            post: Some(forall(String_(), |x| {
-                let malformed = atomic_("isMalformed", vec![x.clone()]);
-                let parse_err = atomic_("isErr", vec![ctor1("parse_formula", x)]);
-                provekit_ir_symbolic::implies(malformed, parse_err)
-            })),
-            ..Default::default()
-        },
-    );
-
-    // -----------------------------------------------------------------
-    // CONTRACT 4: BLAKE3-512 output length.
-    //
-    // Plausible quantitative claim: BLAKE3-512 produces a 64-byte
-    // digest, which the kit emits as 128 lowercase hex chars under the
-    // `blake3-512:` tag, so the full self-identifying CID has length
-    // exactly 139.
-    //
-    // We express this with `len` as a kit-defined ctor returning Int;
-    // the result `=` 139.
-    // -----------------------------------------------------------------
-    contract(
-        "compute_cid_length",
-        ContractArgs {
-            post: Some(forall(String_(), |x| {
-                eq(ctor1("len", ctor1("compute_cid", x)), num(139))
-            })),
-            ..Default::default()
-        },
-    );
-
-    // -----------------------------------------------------------------
-    // CONTRACT 5: arity claim about parse_formula's `not`
-    // operand handling.
-    //
-    // Plausible: a valid `not` formula has exactly one operand. We
-    // express this with standard ASCII algebra:
-    //   forall n: Int. n = 1.
-    // This is FALSIFIABLE (n = 0, n = 7, ...) — Z3 should return SAT,
-    // which the verifier maps to "unsatisfied". That's the negative
-    // case landing through the pipeline cleanly: the verifier proved a
-    // counterexample exists, the obligation does NOT discharge.
-    //
-    // Avoid ≥/≤/≠ predicates: the JCS encoder in this Rust peer
-    // mishandles non-ASCII bytes (round-trip mangles UTF-8) which
-    // breaks Rule 2 envelope-CID re-derivation in the verifier.
-    // Tracked as a finding from the dogfood run; for now the
-    // self-contracts use ASCII-only atomics.
-    // -----------------------------------------------------------------
-    contract(
-        "not_arity_eq_one",
-        ContractArgs {
-            post: Some(forall(Int(), |n| eq(n, num(1)))),
-            ..Default::default()
-        },
-    );
-
-    // -----------------------------------------------------------------
-    // CONTRACT 6: implies-arity claim — disjunction over n=2.
-    //
-    // forall n: Int. NOT (n < 2) AND NOT (n > 2)
-    // (i.e., n = 2 expressed via ASCII-only predicates < and >).
-    //
-    // FALSIFIABLE (any n != 2). Z3 returns SAT → "unsatisfied".
-    // -----------------------------------------------------------------
-    contract(
-        "implies_arity_eq_two",
-        ContractArgs {
-            post: Some(forall(Int(), |n| {
-                and_(vec![
-                    not_(lt(n.clone(), num(2))),
-                    not_(gt(n, num(2))),
-                ])
-            })),
-            ..Default::default()
-        },
-    );
-
-    // -----------------------------------------------------------------
-    // CONTRACT 7: serialize is total (a function).
-    //
-    // forall f: Int. serialize(f) = serialize(f). Trivially true; Z3
-    // expected to discharge.
-    // -----------------------------------------------------------------
-    contract(
-        "serialize_is_a_function",
-        ContractArgs {
-            post: Some(forall(Int(), |f| {
-                eq(ctor1("serialize", f.clone()), ctor1("serialize", f))
-            })),
-            ..Default::default()
-        },
-    );
-
-    let decls = finish();
-
-    // -----------------------------------------------------------------
-    // BRIDGES
-    //
-    // We register one bridge here: parse_formula -> parse_formula_correct.
-    // Stage 2 (enumerate_callsites) walks every contract memento's
-    // pre/post/inv looking for ctor terms whose `name` is in
-    // `pool.bridges_by_symbol`. Every contract above that mentions
-    // `parse_formula` (contracts 1 and 3) will produce callsites.
-    //
-    // The bridge target is a CONTRACT name; mint_self_proof resolves
-    // contract names to CIDs at minting time.
-    // -----------------------------------------------------------------
+    // The single closed-loop bridge from the original dogfood. The
+    // parse.invariant.rs file authors `parse_formula_determinism`
+    // (which contains a `parse_formula` ctor) and
+    // `parse_formula_correct` (the bridge target with a `roundTrips`
+    // pre). The bridge below makes the verifier walk:
+    //   load -> enumerate -> resolve -> instantiate -> smt-emit -> Z3.
     let bridges = vec![SelfBridge {
         source_symbol: "parse_formula".into(),
         target_contract_name: "parse_formula_correct".into(),
@@ -261,7 +237,18 @@ pub fn author_self_contracts() -> (Vec<ContractDecl>, Vec<SelfBridge>) {
         ir_return_sort: "Formula".into(),
     }];
 
-    (decls, bridges)
+    (slabs, bridges)
+}
+
+fn run_one_slab(
+    source: InvariantSource,
+    f: fn(),
+) -> AuthoredSlab {
+    reset_collector();
+    begin_collecting();
+    f();
+    let contracts = finish();
+    AuthoredSlab { source, contracts }
 }
 
 /// Result from minting the self-proof.
@@ -277,14 +264,19 @@ pub struct MintResult {
     pub member_count: usize,
     /// Map from contract name to its memento CID.
     pub contract_cids: BTreeMap<String, String>,
+    /// Per-source-file count of contracts authored, for the report.
+    pub per_source_counts: Vec<(String, usize)>,
+    /// Total contracts authored (sum of per_source_counts).
+    pub total_contracts: usize,
 }
 
-/// Mint all self-contracts as signed mementos, bundle into a .proof,
-/// write to `<out_dir>/<hex>.proof`, and return the result.
+/// Mint all `.invariant.rs` contracts as signed mementos, register the
+/// closed-loop bridge memento, bundle into a `.proof`, write to
+/// `<out_dir>/<hex>.proof`, and return the result.
 pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
     std::fs::create_dir_all(out_dir).map_err(|e| format!("create_dir_all: {e}"))?;
 
-    let (contract_decls, bridge_decls) = author_self_contracts();
+    let (slabs, bridge_decls) = author_all_invariants();
 
     // Deterministic seed for reproducibility. Ed25519 is fine; the
     // signer CID is hash(pubkey_string) so a fixed seed yields a
@@ -293,29 +285,43 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
 
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut contract_cids: BTreeMap<String, String> = BTreeMap::new();
+    let mut per_source_counts: Vec<(String, usize)> = Vec::new();
+    let mut total_contracts: usize = 0;
 
-    // Mint each contract.
-    for d in &contract_decls {
-        let args = MintContractArgs {
-            contract_name: d.name.clone(),
-            pre: d.pre.as_deref().map(formula_to_value),
-            post: d.post.as_deref().map(formula_to_value),
-            inv: d.inv.as_deref().map(formula_to_value),
-            out_binding: d.out_binding.clone(),
-            produced_by: PRODUCED_BY.into(),
-            produced_at: DECLARED_AT.into(),
-            input_cids: vec![],
-            authoring: Authoring::KitAuthor {
-                author: PRODUCED_BY.into(),
-                note: Some(format!(
-                    "self-contract: dogfooding ProvekIt's Rust impl on its own IR-JSON parser"
-                )),
-            },
-            signer_seed,
-        };
-        let m = mint_contract(&args).map_err(|e| format!("mint_contract({}): {e}", d.name))?;
-        contract_cids.insert(d.name.clone(), m.cid.clone());
-        members.insert(m.cid, m.canonical_bytes);
+    for slab in &slabs {
+        per_source_counts.push((slab.source.label.into(), slab.contracts.len()));
+        total_contracts += slab.contracts.len();
+        for d in &slab.contracts {
+            let args = MintContractArgs {
+                contract_name: d.name.clone(),
+                pre: d.pre.as_deref().map(formula_to_value),
+                post: d.post.as_deref().map(formula_to_value),
+                inv: d.inv.as_deref().map(formula_to_value),
+                out_binding: d.out_binding.clone(),
+                produced_by: PRODUCED_BY.into(),
+                produced_at: DECLARED_AT.into(),
+                input_cids: vec![],
+                authoring: Authoring::KitAuthor {
+                    author: PRODUCED_BY.into(),
+                    note: Some(format!(
+                        "self-contract from {}",
+                        slab.source.path
+                    )),
+                },
+                signer_seed,
+            };
+            let m = mint_contract(&args)
+                .map_err(|e| format!("mint_contract({}): {e}", d.name))?;
+            // Detect duplicate names ACROSS slabs and fail loud.
+            if contract_cids.contains_key(&d.name) {
+                return Err(format!(
+                    "duplicate contract name `{}` across .invariant.rs files",
+                    d.name
+                ));
+            }
+            contract_cids.insert(d.name.clone(), m.cid.clone());
+            members.insert(m.cid, m.canonical_bytes);
+        }
     }
 
     // Mint each bridge, resolving contract-name targets to CIDs.
@@ -364,11 +370,15 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
     };
     let built = build_proof_envelope(&proof_input);
 
-    let cid_hex = built
-        .cid
-        .strip_prefix("blake3-512:")
-        .ok_or("internal: cid missing blake3-512 prefix")?;
-    let path = out_dir.join(format!("{cid_hex}.proof"));
+    // The bundled filename IS the CID (per protocol/specs/2026-04-30-proof-file-format.md).
+    // Convention is `<full-cid>.proof`, where `<full-cid>` includes the
+    // `blake3-512:` prefix. The verifier tolerates the bare-hex form,
+    // but every C++/Go/TS publisher emits the prefixed form, so we
+    // match.
+    if !built.cid.starts_with("blake3-512:") {
+        return Err("internal: cid missing blake3-512 prefix".into());
+    }
+    let path = out_dir.join(format!("{cid}.proof", cid = built.cid));
     std::fs::write(&path, &built.bytes)
         .map_err(|e| format!("write {}: {e}", path.display()))?;
 
@@ -378,6 +388,8 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
         path,
         member_count,
         contract_cids,
+        per_source_counts,
+        total_contracts,
     })
 }
 
@@ -388,14 +400,14 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
 // The .proof verifier scans static IR. Behavioral parser invariants
 // (round-trip identity, deterministic output, malformed-input
 // rejection) live here as proptest properties because the IR doesn't
-// yet have a "this string is JSON-shaped" atomic predicate.
+// yet have "this string is JSON-shaped" / "this byte sequence equals
+// the deterministic CBOR" predicates.
 //
 // Documented gap: contracts above with `roundTrips` / `isErr` /
-// `isMalformed` are kit-defined predicate names that the SMT emitter
+// `isMalformed` and friends are kit-defined names that the SMT emitter
 // passes through verbatim; Z3 has no semantics for them, so callsites
 // resolving against those contracts land at undecidable. The proptest
-// block below is the *operational* enforcement of those same
-// invariants.
+// block below is the OPERATIONAL enforcement of those same invariants.
 
 #[cfg(test)]
 mod tests {
@@ -405,14 +417,12 @@ mod tests {
     use provekit_ir_symbolic::parse::{parse_formula, ParseError};
     use provekit_ir_symbolic::serialize::{formula_to_value, marshal_declarations};
     use provekit_ir_symbolic::{
-        and_, finish, gt, make_var, must, not_, num, or_, reset_collector,
-        str_const, ContractDecl, Formula,
+        and_, atomic_, finish, gt, lt, make_var, must, not_, num, or_,
+        reset_collector, str_const, ContractDecl, Formula, Int, Term,
     };
+    use std::rc::Rc;
 
     // -- proptest generators for IrFormula values ----------------------------
-    //
-    // We bound depth to keep the search tractable and to avoid
-    // pathologically nested terms that aren't realistic kit output.
 
     fn arb_var_term() -> impl Strategy<Value = Rc<Term>> {
         "[a-z][a-z0-9]{0,4}".prop_map(make_var)
@@ -438,13 +448,6 @@ mod tests {
     }
 
     fn arb_atomic() -> impl Strategy<Value = Rc<Formula>> {
-        // Ascii-only predicates. The JCS encoder in the canonicalizer
-        // mishandles non-ASCII bytes (treats each UTF-8 byte as a
-        // Latin-1 code point at re-encode time); using `\u{2260}`,
-        // `\u{2264}`, `\u{2265}` here breaks round-trip even though
-        // the IR happily authors them. That is a finding from this
-        // dogfood run, tracked separately; the proptest property
-        // here is over the round-tripping ASCII subset.
         let preds = prop_oneof![Just("="), Just(">"), Just("<")];
         (preds, arb_term(), arb_term()).prop_map(|(p, a, b)| atomic_(p, vec![a, b]))
     }
@@ -497,8 +500,6 @@ mod tests {
             prop_assert_eq!(s1, s2);
         }
 
-        // -- INVARIANT 4: determinism ----------------------------------------
-
         #[test]
         fn parse_is_deterministic(f in arb_formula()) {
             let s = jcs_string(&f);
@@ -544,10 +545,6 @@ mod tests {
     }
 
     // -- INVARIANT 3: locked key order on serialize ---------------------------
-    //
-    // The kit's marshal_declarations produces insertion-order keys per
-    // the EBNF. The grammar locks the order kind/name/outBinding/pre.
-    // We assert the substring layout directly.
 
     #[test]
     fn marshal_emits_locked_key_order_for_contract() {
@@ -555,7 +552,6 @@ mod tests {
         must("foo", forall_with_name("x".into(), gt(make_var("x"), num(0))));
         let decls = finish();
         let s = marshal_declarations(&decls);
-        // Order must be: kind first, then name, then outBinding, then pre.
         let i_kind = s.find(r#""kind":"contract""#).expect("kind first");
         let i_name = s.find(r#""name":"foo""#).expect("name");
         let i_out = s.find(r#""outBinding":"#).expect("outBinding");
@@ -565,27 +561,63 @@ mod tests {
         assert!(i_out < i_pre);
     }
 
-    // -- mint_self_proof end-to-end happy-path test --------------------------
+    // -- author_all_invariants happy path ------------------------------------
 
     #[test]
-    fn author_self_contracts_returns_expected_count() {
-        let (decls, bridges) = author_self_contracts();
-        assert!(decls.len() >= 5, "expected 5+ self-contracts, got {}", decls.len());
+    fn author_all_invariants_yields_30_plus_contracts() {
+        let (slabs, bridges) = author_all_invariants();
+        let total: usize = slabs.iter().map(|s| s.contracts.len()).sum();
+        assert!(
+            total >= 30,
+            "expected 30+ contracts across all .invariant.rs files, got {total}"
+        );
         assert_eq!(bridges.len(), 1, "expected exactly one closed-loop bridge");
     }
 
     #[test]
-    fn self_contract_names_are_distinct() {
-        let (decls, _) = author_self_contracts();
-        let mut names: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
-        names.sort();
-        let original_len = names.len();
-        names.dedup();
-        assert_eq!(names.len(), original_len, "duplicate contract names");
+    fn invariant_module_names_are_distinct_per_file() {
+        // Within each slab the contract names must be distinct.
+        let (slabs, _) = author_all_invariants();
+        for slab in &slabs {
+            let mut names: Vec<&str> =
+                slab.contracts.iter().map(|d| d.name.as_str()).collect();
+            names.sort();
+            let original_len = names.len();
+            names.dedup();
+            assert_eq!(
+                names.len(),
+                original_len,
+                "duplicate contract names within `{}`",
+                slab.source.label
+            );
+        }
     }
 
-    // Silence unused-import warnings for symbols imported for clarity
-    // even though the proptest! macro hides them inside its module.
+    // -- Determinism: minting twice yields the SAME CID ----------------------
+
+    #[test]
+    fn mint_self_proof_is_deterministic() {
+        let dir1 = tempdir();
+        let dir2 = tempdir();
+        let m1 = mint_self_proof(&dir1).expect("mint 1");
+        let m2 = mint_self_proof(&dir2).expect("mint 2");
+        assert_eq!(m1.cid, m2.cid, "CID must be byte-deterministic across runs");
+        assert_eq!(m1.member_count, m2.member_count);
+        let _ = std::fs::remove_dir_all(&dir1);
+        let _ = std::fs::remove_dir_all(&dir2);
+    }
+
+    fn tempdir() -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        p.push(format!("provekit-self-test-{nanos}-{}", std::process::id()));
+        p
+    }
+
+    // Silence unused-import warnings for symbols imported for clarity.
     #[allow(dead_code)]
     fn _exercise_imports() {
         let _ = lt(num(0), num(1));

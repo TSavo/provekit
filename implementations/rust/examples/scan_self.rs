@@ -31,7 +31,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use provekit_self_contracts::{author_self_contracts, mint_self_proof};
+use provekit_self_contracts::{author_all_invariants, mint_self_proof};
 use provekit_verifier::{Runner, RunnerConfig};
 
 fn main() -> ExitCode {
@@ -50,16 +50,20 @@ fn main() -> ExitCode {
     let _ = std::fs::remove_dir_all(&out_dir);
 
     // ---- 1. Author -----------------------------------------------------------
-    let (decls, bridges) = author_self_contracts();
+    let (slabs, bridges) = author_all_invariants();
+    let total: usize = slabs.iter().map(|s| s.contracts.len()).sum();
     println!();
     println!("authored:");
-    println!("  contracts: {}", decls.len());
-    for d in &decls {
-        let pre = d.pre.as_ref().map(|_| "pre").unwrap_or("");
-        let post = d.post.as_ref().map(|_| "post").unwrap_or("");
-        let inv = d.inv.as_ref().map(|_| "inv").unwrap_or("");
-        let slots: Vec<&str> = [pre, post, inv].into_iter().filter(|s| !s.is_empty()).collect();
-        println!("    - {} ({})", d.name, slots.join(", "));
+    println!("  contracts: {} across {} .invariant.rs files", total, slabs.len());
+    for s in &slabs {
+        println!("    [{}]", s.source.label);
+        for d in &s.contracts {
+            let pre = d.pre.as_ref().map(|_| "pre").unwrap_or("");
+            let post = d.post.as_ref().map(|_| "post").unwrap_or("");
+            let inv = d.inv.as_ref().map(|_| "inv").unwrap_or("");
+            let slots: Vec<&str> = [pre, post, inv].into_iter().filter(|s| !s.is_empty()).collect();
+            println!("      - {} ({})", d.name, slots.join(", "));
+        }
     }
     println!("  bridges:   {}", bridges.len());
     for b in &bridges {
