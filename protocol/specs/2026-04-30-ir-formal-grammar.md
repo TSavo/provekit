@@ -304,6 +304,48 @@ different scopes, which defeats the canonicalization promise.
 `args` MAY be empty (a nullary constructor like `parseInt()` taking no
 arguments — uncommon but permitted by the IR types).
 
+### Formal Invariants
+
+**INVARIANT VarTerm.NoSortField:**
+```
+∀t: VarTerm → ¬HasKey(t, "sort")
+```
+Every VarTerm MUST NOT contain a `sort` field. This is required because the
+variable's sort is determined by its lexical context, not by the term itself.
+
+**INVARIANT VarTerm.SortFromQuantifier:**
+```
+∀v: VarTerm, q: QuantifierFormula, env: Environment
+  (InScope(v, q) ∧ v.name = q.name) → Sort(v, env) = q.sort
+```
+A variable that appears in the body of a quantifier with matching name inherits
+its sort from that quantifier's `sort` field. This is the authoritative source
+for bound variable sorts.
+
+**INVARIANT VarTerm.SortFromSubstitution:**
+```
+∀v: VarTerm, s: Substitution, env: Environment
+  (v ∈ FreeVars(s) ∧ SubstitutedBy(s, v) = e) → Sort(v, env) = Sort(e, env)
+```
+A free variable introduced by outBinding substitution derives its sort from
+the substituting expression. The sort of the argument expression propagates to
+the variable it replaces.
+
+**INVARIANT ConstTerm.HasSort:**
+```
+∀t: ConstTerm → HasKey(t, "sort") ∧ IsSort(t.sort)
+```
+Every ConstTerm MUST have a `sort` field containing a valid Sort. This is required
+because literal values (like `42`) are ambiguous without type information.
+
+**INVARIANT CtorTerm.NoSortField:**
+```
+∀t: CtorTerm → ¬HasKey(t, "sort")
+```
+A CtorTerm MUST NOT contain a `sort` field. The return sort is determined by
+the constructor's declaration in the kit's bridge, not by the term itself.
+Including a sort field would break canonicalization guarantees.
+
 ## Sorts
 
 ### Sort
