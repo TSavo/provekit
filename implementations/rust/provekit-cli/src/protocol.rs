@@ -19,7 +19,7 @@ use serde_json::Value as Json;
 /// sync with `protocol/specs/2026-04-30-protocol-versioning.md`. If
 /// the catalog changes, bump this string AND ship a new CLI.
 pub const EXPECTED_CATALOG_CID: &str =
-    "blake3-512:67961c8772930809589adb795c4bfe4104e6510cbafe7ed57d9dd8ce598eee5888d1e4b037b637e22f91a2ca5636188529e9d2451139c264691c5624c31d9cda";
+    "blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106";
 
 /// Catalog JSON bytes embedded at compile time. The CLI never reads
 /// the on-disk spec file at runtime; `verify-protocol` recomputes from

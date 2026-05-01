@@ -53,6 +53,10 @@ const SPEC_MAP: &[(&str, &str)] = &[
         "lattice-tractability-theorem",
         "2026-04-30-lattice-tractability-theorem.md",
     ),
+    (
+        "contract-merge-semantics",
+        "2026-04-30-contract-merge-semantics.md",
+    ),
 ];
 
 use std::collections::BTreeMap;

@@ -15,7 +15,7 @@ Protocol catalog: `protocol/specs/2026-04-30-protocol-catalog.json`
 **Protocol version CID:**
 
 ```
-blake3-512:67961c8772930809589adb795c4bfe4104e6510cbafe7ed57d9dd8ce598eee5888d1e4b037b637e22f91a2ca5636188529e9d2451139c264691c5624c31d9cda
+blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106
 ```
 
 (v1.1.0; previous was `sha256:a2d062341e3ca0f0` for v1.0.1, and
@@ -64,6 +64,7 @@ over the raw .md file bytes, no canonicalization):
 | handshake-algorithm | `blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925` |
 | per-language-kit-standard | `blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88` |
 | lattice-tractability-theorem | `blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07` |
+| contract-merge-semantics | `blake3-512:aeb9e2c56603f56372c29cdcbbb11ec3ae6fada0b2004d9fb99955e21230b03a72d02fc7051eea09ed24b7271b758909011948b531b668bb5c20e8ab8a268bee` |
 
 ## Conformance declarations
 
@@ -73,7 +74,7 @@ conforms to via the same shape any consumer references a library:
 ```yaml
 # in an implementation's metadata
 provekit-protocol-conformance:
-  - cid: blake3-512:67961c8772930809589adb795c4bfe4104e6510cbafe7ed57d9dd8ce598eee5888d1e4b037b637e22f91a2ca5636188529e9d2451139c264691c5624c31d9cda
+  - cid: blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106
     version: v1.1.0
 ```
 
@@ -119,7 +120,7 @@ machinery. The version of the protocol is a CID. Implementations
 verify their conformance via CID comparison. There is no
 out-of-protocol authority deciding what "v1.1.0" means; v1.1.0 is
 the bytes whose JCS-canonical form hashes (BLAKE3-512) to
-`67961c8772930809589adb795c4bfe4104e6510cbafe7ed57d9dd8ce598eee5888d1e4b037b637e22f91a2ca5636188529e9d2451139c264691c5624c31d9cda`.
+`9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106`.
 
 This is the same self-reference shape as Git (commit hashes refer to
 trees that may include other commits), IPFS (DAG addresses include
