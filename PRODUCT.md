@@ -1,320 +1,137 @@
-# provekit: Product Spec
+# ProvekIt: Product
 
-## What It Is
+## What ProvekIt is
 
-A CLI tool that derives SMT-LIB claims from the informal specifications already in your code — log statements, type annotations, function names, comments — and checks them with Z3, a runtime harness, and (when available) your existing test suite. Findings are calibrated by how many of the three oracles agree; "proven by Z3 alone" is a weaker signal than "proven by Z3, corroborated by runtime, corroborated by existing tests." The UX surface is designed around that calibration.
+ProvekIt is a content-addressed verification protocol. It defines four things: a canonical IR for behavioral formulas, a signed memento envelope wrapping IR with provenance, a published `.proof` catalog of mementos addressed by CID, and a three-tier handshake algorithm that verifies a consumer's call sites against a publisher's contracts in time decoupled from the size of the dependency graph.
 
-## Installation
+Verification reduces to hash comparison. When the publisher's post-condition and the consumer's pre-condition canonicalize to identical bytes, the call site is discharged for free. When they don't, a signed implication memento may exist that bridges them; the verifier checks the signature once and discharges every call site that shares the same `(post, pre)` pair. When neither path applies, Z3 runs once per novel pair, mints the result as a fresh implication memento, and every future verifier hits the cached path.
 
-```
-npm install -D provekit
-```
+ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libraries (verifier, IR, canonicalizer) for Rust, TypeScript, Go, and C++. The protocol version is itself a CID: v1.1.0 is shorthand for `blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106`. Anyone with the spec bytes can verify that label locally.
 
-## First Run
+## Who it's for
 
-```
-$ npx provekit init
+Three audiences, in order of immediate fit:
 
-Scanning your codebase...
+**Library authors who want their behavioral guarantees to ship.** Today, a Rust crate that uses `proptest` invariants or `contracts` pre/post-conditions communicates those guarantees to whoever reads the crate's source. ProvekIt's lift adapter promotes the existing annotations to signed contract mementos that ship in a `.proof` catalog alongside the crate's bytes. Downstream consumers verify against the mementos without ever running the original test suite or invoking the original solver. The author's annotations stay where they are; the verification is now portable.
 
-Found 247 signals across 34 files:
-  189 log statements
-   32 typed function signatures
-   14 TODO/FIXME comments
-   12 assertion-style error throws
+**Application teams that depend on libraries they did not write.** A consumer's verifier walks the dependency tree, loads every `.proof` it finds, and discharges call sites against the cached contract mementos. The Tier-1 hash-discharge fraction is the headline metric: a high fraction means the consumer's expectations and the library's guarantees agree on shape. A low fraction means there is real work to do, and the work is the residue, not the average case. The verifier's cost is decoupled from the depth of the dependency tree.
 
-What would you like to do?
+**Build-tool maintainers and language teams.** Per-language kits emit canonical IR. Per-language libs verify. The Rust CLI is one shipping implementation; alternative CLIs in any language are conforming as long as they accept the v1.1.0 catalog CID. The protocol is the contract; implementations are interchangeable.
 
-  1. Preview — show what would be analyzed (instant, no LLM)
-  2. Analyze — derive proofs and show findings (~10 min for 247 signals)
-  3. Full setup — analyze + install git hook
+## What ProvekIt replaces
 
-> 3
+Nothing. ProvekIt does not replace `cargo test`, `npm test`, `go test`, or any other test runner. It does not replace `clippy`, `eslint`, `golangci-lint`, or any other linter. It does not replace Kani, Prusti, F\*, Dafny, TLA+, or any other formal verifier.
 
-Deriving contracts for 34 files in dependency order (this step calls the
-configured LLM and will cost tokens)...
-  src/utils/validate.ts ............ 12 Z3-proven, 3 violations, 2 encoding-gaps
-  src/db/queries.ts ................ 8 Z3-proven, 5 violations
-  src/api/billing.ts ............... 27 Z3-proven, 14 violations, 1 encoding-gap
-  src/api/orders.ts ................ 18 Z3-proven, 9 violations
-  ...
+ProvekIt replaces the absence of a portable, signed, composable substrate underneath those tools. Today, when `proptest` finds an invariant, that invariant lives in the test runner's output; nothing else can use it. When Kani proves a property, that property lives in Kani's output; nothing downstream can carry it forward. ProvekIt is the missing layer: lift the existing tool's output into a signed memento, address it by content, publish it in a `.proof`, and the next tool in the pipeline sees a cached fact instead of a fresh problem.
 
-Done. 187 Z3 verdicts, 43 violations, 3 encoding-gaps flagged for review.
+## What ProvekIt complements
 
-Top findings (high-confidence — corroborated by runtime harness):
-  1. src/billing.ts:602  credential exposure in token hint [P6]
-  2. src/orders.ts:47    discount can exceed order total [P5]
-  3. src/inventory.ts:18 stock can go negative [P1]
+This list is comprehensive on purpose. ProvekIt sits beneath every annotation library; it does not compete with any of them. Adoption pattern is uniform: the lift adapter walks the source library's annotations, emits canonical IR, mints a signed contract memento, and publishes.
 
-Encoding-gap findings (Z3 said safe, runtime disagreed — encoder bug):
-  1. src/math.ts:44      0/0 claim proves unsat, runtime returns NaN [P2]
+**Rust:**
+- `proptest` (lift adapter shipping in v1.1)
+- `contracts` (lift adapter shipping in v1.1)
+- `kani`, `prusti` (lift adapters planned for v1.2)
+- `creusot`, `flux` (lift adapters under evaluation)
+- `quickcheck` (idiom maps to `proptest` adapter shape)
 
-Git hook installed. Commits will be verified against cached contracts
-(no LLM, Z3 only).
-Contracts saved to .provekit/ — commit principles; artifacts are ignored.
+**TypeScript / JavaScript:**
+- `zod`, `class-validator`, `fast-check` (lift adapters planned for v1.2)
+- `io-ts`, `runtypes`, `valibot`, `ajv` schemas (planned)
+- TypeScript's own type system (the `ts-types-proof` lib lifts type annotations)
 
-Run  provekit report               for the full coverage report
-Run  provekit explain src/billing.ts:602  for any finding
-```
+**Python:**
+- `pydantic`, `attrs`, `dataclasses-json` schemas (lift adapters planned for v1.2)
+- `deal`, `hypothesis`, `icontract` (planned)
+- `mypy` and `pyright` annotations (planned)
 
-The developer ran one command and got a pipeline output calibrated to
-how much they should trust each finding. They didn't write a spec. They
-didn't learn the tool. They didn't get the word "formal" attached to
-their code without qualification.
+**Java / JVM:**
+- Bean Validation (`jakarta.validation`, `javax.validation`) (planned for v1.2)
+- JML, Cofoja (planned)
+- KeY-style annotations, OpenJML (planned)
 
-## Daily Use
+**Go:**
+- `go-playground/validator` (planned for v1.2)
+- `ozzo-validation`, `validator.v9` (planned)
+- Build-tag-based assertions (planned)
 
-The developer writes code. They commit. The hook runs.
+**C++:**
+- C++26 contract attributes `[[expects:]]`, `[[ensures:]]` (kit shipping; lift adapter planned)
+- `assert.h` patterns (planned)
+- Boost.Hana and Boost.Contract (under evaluation)
 
-### When everything's fine:
+The pattern is uniform across host languages. Whatever annotation library a codebase already uses, ProvekIt promotes those annotations to content-addressed signed contracts, with no rewrites and no parallel spec to maintain.
 
-```
-$ git commit -m "refactor pricing logic"
+## What ProvekIt is not
 
-provekit: verifying 2 changed files...
-  ✓ src/pricing.ts: 11 proofs hold
-  ✓ src/utils/math.ts: 4 proofs hold
-```
+ProvekIt is not a soundness-certified compliance tool. If a regulator requires output from Coq, Isabelle, F\*, or another tool whose own correctness is itself certified, those tools remain the right choice. ProvekIt's correctness rests on (a) BLAKE3-512 collision resistance, (b) Ed25519 unforgeability, (c) the underlying solver's correctness on the IR fragment used, and (d) the per-language lift adapter's faithful translation of the source library's idiom. Each of these is an honest assumption; none of them produces a regulator-accepted certificate.
 
-The commit lands. The developer didn't think about provekit.
+ProvekIt is not a replacement for runtime testing. Tests cover concrete inputs; contracts cover the input domain. A high Tier-1 hash-discharge fraction is a strong signal that contracts compose, but adapter coverage is empirical; the per-language lift adapter only sees what it knows how to walk. Anything outside the adapter's idiom remains as untouched as it was before ProvekIt arrived.
 
-### When a verdict regresses:
+ProvekIt is not a database. There is no central registry, no service to call, no party that decides what counts as a valid contract. The protocol asks no one's permission to publish; it provides bytes that verify themselves. The implication server, if one exists, is a passive indexer over published `.proof` files, not an authority.
 
-```
-$ git commit -m "add bulk discount"
+ProvekIt is not a coding-agent guardrail or an LLM proof harness. The protocol does not invoke an LLM at any step. The Rust CLI invokes Z3 at Tier 3 of the handshake, and only there. Cache hits at Tier 1 and Tier 2 are network-free, solver-free, and constant-time per call site.
 
-provekit: verifying 2 changed files...
-  ✓ src/pricing.ts: 11 Z3-verified contracts hold
-  ✗ src/orders.ts:47 — Z3-verified claim regressed
+## Adoption surfaces
 
-  discount can exceed order total (high-confidence violation —
-  runtime harness reproduces the arithmetic path).
-  Previously Z3 proved this unreachable under the existing code.
-  Your change made the counterexample reachable.
+ProvekIt ships through three install paths.
 
-  Verify the Z3 verdict yourself: echo '(declare-const discount Real)
-  (declare-const total Real)
-  (assert (> discount total))
-  (check-sat)' | z3 -in
-  ; sat
+**1. Library author publishes a `.proof` alongside their crate.**
 
-  Run  provekit explain src/orders.ts:47  for the full harness output
-
-Commit blocked. Fix, or: provekit override --reason "intentional"
+```bash
+cargo install provekit
+cd my-crate
+cargo provekit-lift   # walks proptest! and #[contracts::ensures] annotations
+                      # emits target/.proof
+provekit prove        # local verification of the catalog
 ```
 
-The developer sees:
-- What broke (one sentence)
-- That it was previously proven safe (this is a regression, not a pre-existing issue)
-- How to verify independently (copy-paste command)
-- How to learn more (explain command)
-- How to override if intentional
+The `.proof` is a signed catalog of contract mementos. Ship it alongside the crate's bytes (in `target/release/` or in the published crate, depending on the publisher's policy). Consumers find it during their own verifier walk.
 
-### The explain command:
+**2. Application team verifies a dependency tree at build time.**
 
-```
-$ provekit explain src/orders.ts:47
-
-┌─────────────────────────────────────────────────┐
-│  discount can exceed order total                │
-│  Signal: console.log(`Applied discount: ${d}`)  │
-│  Principle: Semantic Correctness                 │
-│  Status: VIOLATION (sat)                         │
-└─────────────────────────────────────────────────┘
-
-The code at line 47 applies a discount to the order total
-without checking that the discount doesn't exceed the total.
-When discount > orderTotal, the customer pays a negative amount.
-
-Path conditions at line 47:
-  1. order.items.length > 0    (guard at line 32)
-  2. couponCode validated      (check at line 38)
-  3. discount > 0              (computed at line 44)
-
-These are guaranteed true. What's NOT guaranteed:
-  discount <= orderTotal
-
-Proof (Z3 confirmed reachable):
-
-  (declare-const discount Real)
-  (declare-const orderTotal Real)
-  (declare-const netAmount Real)
-  (assert (> orderTotal 0))
-  (assert (> discount 0))
-  (assert (= netAmount (- orderTotal discount)))
-  (assert (< netAmount 0))
-  (check-sat)
-  ; sat — negative payment is reachable
-
-Verify yourself:
-  echo '<above>' | z3 -in
-
-Suggested: add guard at line 46
-  if (discount > orderTotal) discount = orderTotal;
+```bash
+cd my-app
+provekit prove
 ```
 
-The explain command gives the developer everything:
-- What's wrong (one paragraph, plain English)
-- What the code guarantees at the signal point (path conditions from AST)
-- What Z3 says is not guaranteed (the gap)
-- The SMT block Z3 ran on (re-runnable via `echo ... | z3 -in`)
-- The runtime harness outcome (whether runtime reproduces or refutes
-  the counterexample — a refuted counterexample means the SMT encoded
-  a gap that doesn't exist in the actual code)
-- The test-oracle outcome if your project has tests for this function
-- A suggested fix
+The verifier walks `<projectRoot>` and the dependency tree's `.proof` files, indexes the memento pool, runs the handshake at every call site, and reports the discharge breakdown. Exit code is 0 (everything discharged), 1 (violations or unresolved residue), 2 (user error), or 3 (solver unavailable / timeout).
 
-### The report command:
+**3. Build-script integration (planned for v1.2).**
 
-```
-$ provekit report
-
-provekit coverage: src/
-──────────────────────────────────────────
-Signals found:              247
-  ├─ Strong proofs:         143  (58%)
-  ├─ Violations:             43  (17%)
-  ├─ Weak (no cross-file):   38  (15%)
-  ├─ Trivial:                23  (10%)
-
-By signal type:
-  Log statements:     189 signals → 112 proofs, 31 violations
-  Type annotations:    32 signals →  18 proofs,  7 violations
-  TODO/FIXME:          14 signals →   8 proofs,  3 violations
-  Error throws:        12 signals →   5 proofs,  2 violations
-
-Files with most violations:
-  src/api/billing.ts       14 violations
-  src/api/orders.ts         9 violations
-  src/services/payment.ts   7 violations
-
-Since last commit: 2 new proofs, 1 violation fixed, 0 regressions
-Since last week:   12 new proofs, 4 violations fixed, 1 regression
-```
-
-### The diff command:
-
-```
-$ provekit diff HEAD~5
-
-Proof changes since HEAD~5:
-
-  + src/pricing.ts:23    NEW: unit price is positive (proven)
-  + src/pricing.ts:45    NEW: total = sum of line items (proven)
-  ~ src/orders.ts:47     CHANGED: discount guard added (was violation, now proven)
-  - src/billing.ts:112   REMOVED: function deleted
-  ! src/inventory.ts:18  REGRESSION: quantity check removed (was proven, now violation)
-```
-
-Code diff shows what changed. Proof diff shows what it means for correctness.
-
-## CI Integration
-
-```yaml
-# GitHub Actions
-- name: Verify proofs
-  run: npx provekit verify --ci
-
-# That's it. Exit 0 or exit 1.
-```
-
-Optional: file issues for violations
-
-```yaml
-- name: Verify and file issues
-  run: npx provekit verify --ci --issues
-```
-
-## Runtime Mode (Optional)
-
-For production monitoring. Add the transport to your logger:
-
-```typescript
-import pino from 'pino';
-import { provekit } from 'provekit/transport';
-
-const logger = pino({}, provekit());
-```
-
-Normal logging works exactly as before. Behind the scenes, provekit evaluates contracts against live values. Proof entries stream alongside log lines.
-
-When a violation fires in production:
-- The proof entry includes the values that triggered it
-- If `--issues` is configured, a GitHub issue is filed automatically
-- The issue includes the proof, the values, and a verification command
-
-## Progressive Disclosure
-
-The developer sees exactly as much as they need:
-
-| Level | What they see | When |
-|---|---|---|
-| Nothing | ✓ after commit | Everything's fine |
-| One line | ✗ proof regressed at file:line | Something broke |
-| One paragraph | `provekit explain` | They want to understand |
-| Full proof | The SMT-LIB block | They want to verify |
-| `echo \| z3 -in` | sat or unsat | They trust nothing |
-| `.provekit/` | All artifacts | They're a power user |
-| SIGNALS.md | Six signal layers | They want the theory |
-
-Most developers never go past level 2. The tool is invisible when it passes and clear when it fails.
-
-## Configuration
-
-```json
-// .provekit/config.json (created by init)
-{
-  "signals": ["logs", "types"],          // which signal layers to analyze
-  "hook": "pre-commit",                   // when to verify
-  "model": "sonnet",                      // LLM for derivation
-  "strict": false,                        // block commits on violations?
-  "ci": true,                             // exit 1 on violations in CI?
-  "issues": false                         // auto-file GitHub issues?
+```rust
+// build.rs
+fn main() {
+    provekit_build::verify_or_fail();
 }
 ```
 
-Defaults work for everyone. Power users tune.
+Contract violations become compile-time errors in the same stream as type errors. ProvekIt is the proof gate, enforced at the same boundary as the type system.
 
-## The Verification Dial (Internal, Not User-Facing)
+## Configuration
 
-The user doesn't see "levels." They see behavior:
+A repository declares its conformance via a `provekit.config.yaml` at the project root:
 
-- **Just installed:** scan shows findings, nothing enforced
-- **Hook enabled, strict: false:** warnings on commit, doesn't block
-- **Hook enabled, strict: true:** blocks commits on proof regression
-- **CI enabled:** blocks PRs on violations
-- **Runtime transport:** catches violations in production
-- **Issues enabled:** auto-files bugs with proofs
+```yaml
+protocol:
+  cid: blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106
+  version: v1.1.0
 
-The user turns up enforcement gradually. They never see the word "dial."
+publish:
+  implications:
+    target: project    # one of: local, project, registry
+```
 
-## What the User Never Sees
+The conformance CID is the protocol version. An implementation that declares a different CID is a different protocol; implementations may declare multiple CIDs to support cross-version operation.
 
-- Z3 (unless they want to verify a proof)
-- SMT-LIB (unless they ask for the proof)
-- Axiom templates (implementation detail)
-- Hoare logic (implementation detail)
-- The five-phase pipeline (implementation detail)
-- The LLM's reasoning (unless --verbose)
-- The dependency graph (unless they inspect .provekit/)
-- Signal layers by name (the tool just "finds more things" over time)
+## What you actually get
 
-The tool is invisible infrastructure. Like a compiler warning system that gets smarter.
+You don't get "mathematical certainty that your code is correct." You get:
 
-## What Makes It Different
+- A signed `.proof` catalog of contract mementos that ships with your library.
+- A verifier that walks consumer call sites and reports the hash-discharge fraction.
+- A growing lattice of cached implication mementos that amortize solver cost across the ecosystem.
+- A per-call-site report identifying the residue that genuinely needs your attention.
+- A protocol that does not require permission, does not need invalidation, does not call home, and does not depend on any party but the bytes you and your peers published.
 
-- **No specs to write.** The informal specs are already in your code — logs, type annotations, function names, comments. provekit extracts and formalises them. The formalisation is LLM-produced, which means it can be wrong, which is why the tool runs a harness and a test oracle to check.
-- **No tests to maintain.** Contracts re-derive on code change. Contract derivation uses an LLM and costs money. Verification against already-derived contracts is free.
-- **No new workflow.** You commit. The hook runs Z3 against cached contracts (no LLM at commit-time). Derivation happens on demand or in CI.
-- **Every finding is a re-runnable Z3 verdict.** `echo '...' | z3 -in` verifies the math Z3 did. It does not verify that the SMT block faithfully models your TypeScript — that's the harness's job. The difference matters; the tool's UX labels it.
-- **Verify step runs locally.** Z3 is local, offline, deterministic. Derivation and harness synthesis call the configured LLM provider; your code does leave your machine for those steps.
-- **Gets more efficient over time.** New AST-pattern principles are synthesised from recurring bugs under adversarial validation. Once a principle is in the library, its future matches are mechanical — no LLM — which means per-contract cost drops as the library matures.
-- **Exit code.** 0 or 1. That's the CI API. The confidence-tier information is in the JSON artifacts for tooling that wants finer distinctions.
-
-## The Pitch
-
-Your log statements, type annotations, function names, and TODO comments describe the behaviour your code is supposed to have. provekit turns that informal specification into a checkable one — an LLM writes the SMT encoding, Z3 checks it, a runtime harness tests whether the encoding faithfully models your code, and your existing tests cross-validate when available.
-
-The central honesty: the LLM's encoding can be wrong, and the tool actively looks for the cases where it is. You don't get mathematical certainty. You get calibrated confidence with the disagreements surfaced rather than hidden.
-
-`npm install -D provekit && npx provekit init`
+The proof gate fits underneath the tools your team already runs. The compounding value comes from adoption: every published `.proof` raises the Tier-1 discharge fraction for everyone who consumes the library. Software ages backwards.
