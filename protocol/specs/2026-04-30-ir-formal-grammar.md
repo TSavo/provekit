@@ -70,6 +70,109 @@ The grammar is *deterministic* (one parse tree per valid input) and
 *reverse-deterministic* (one canonical text per valid IR value), provided the
 emitter respects the locked key order specified for each node kind.
 
+## Formal Invariants Index
+
+This section provides a cross-reference index of all formal invariants defined
+throughout this specification. Each invariant is expressed in first-order logic
+with accompanying English explanation.
+
+### Invariants by Section
+
+**ContractDeclaration** (Section: Declarations)
+| Invariant | Formula |
+|-----------|---------|
+| HasOutBinding | `∀c → HasKey(c, "outBinding") ∧ IsString ∧ c ≠ ""` |
+| HasAtLeastOneFormula | `∀c → (IsIrFormula(pre) ∨ IsIrFormula(post) ∨ IsIrFormula(inv))` |
+| ValidFreeVariables | `∀c,f → f = outBinding ∨ IsParam(f)` |
+
+**BridgeDeclaration** (Section: Declarations)
+| Invariant | Formula |
+|-----------|---------|
+| RequiredFields | `∀b → HasKey(name) ∧ HasKey(sourceSymbol) ∧ ...` |
+| ValidCidFormat | `∀b → IsValidCidFormat(targetContractCid)` |
+
+**QuantifierFormula** (Section: Formulas)
+| Invariant | Formula |
+|-----------|---------|
+| HasSort | `∀q → HasKey("sort") ∧ IsSort(q.sort)` |
+| HasBody | `∀q → HasKey("body") ∧ IsIrFormula(q.body)` |
+
+**ConnectiveFormula** (Section: Formulas)
+| Invariant | Formula |
+|-----------|---------|
+| NotArity | `∀c (c.kind="not") → Len(operands)=1` |
+| ImpliesArity | `∀c (c.kind="implies") → Len(operands)=2` |
+| AndOrArity | `∀c (c.kind="and"∨c.kind="or") → Len(operands)≥2` |
+
+**AtomicFormula** (Section: Formulas)
+| Invariant | Formula |
+|-----------|---------|
+| HasName | `∀a → HasKey("name") ∧ IsString(a.name)` |
+| HasArgs | `∀a → HasKey("args") ∧ IsArray(a.args)` |
+| KnownPredicate | `∀a → IsBuiltIn(a.name) ∨ IsKitDefined(a.name)` |
+
+**VarTerm** (Section: Terms)
+| Invariant | Formula |
+|-----------|---------|
+| NoSortField | `∀t → ¬HasKey(t, "sort")` |
+| SortFromQuantifier | `∀v,q,env (InScope(v,q) ∧ v.name=q.name) → Sort(v)=q.sort` |
+| SortFromSubstitution | `∀v,s,env (v∈FreeVars(s) ∧ SubstitutedBy(s,v)=e) → Sort(v)=Sort(e)` |
+
+**ConstTerm** (Section: Terms)
+| Invariant | Formula |
+|-----------|---------|
+| HasSort | `∀t → HasKey("sort") ∧ IsSort(t.sort)` |
+
+**CtorTerm** (Section: Terms)
+| Invariant | Formula |
+|-----------|---------|
+| NoSortField | `∀t → ¬HasKey(t, "sort")` |
+
+**PrimitiveSort** (Section: Sorts)
+| Invariant | Formula |
+|-----------|---------|
+| ValidName | `∀s → HasKey("kind")∧s.kind="primitive"∧HasKey("name")∧IsString` |
+
+**BitvecSort** (Section: Sorts)
+| Invariant | Formula |
+|-----------|---------|
+| ValidWidth | `∀s → HasKey("kind")∧s.kind="bitvec"∧HasKey("width")∧width>0` |
+
+**SetSort** (Section: Sorts)
+| Invariant | Formula |
+|-----------|---------|
+| ValidElement | `∀s → HasKey("element") ∧ IsSort(s.element)` |
+
+**TupleSort** (Section: Sorts)
+| Invariant | Formula |
+|-----------|---------|
+| ValidElements | `∀s → HasKey("elements") ∧ ∀e∈elements → IsSort(e)` |
+
+**FunctionSort** (Section: Sorts)
+| Invariant | Formula |
+|-----------|---------|
+| ValidDomainAndRange | `∀s → HasKey("domain")∧∀d∈domain→IsSort(d) ∧ HasKey("range")∧IsSort(range)` |
+
+**Strict Mode** (Section: Reference Parser)
+| Invariant | Formula |
+|-----------|---------|
+| KeyOrder | `∀n InStrict → EmitOrder(n)=ExpectedKeyOrder(n.kind)` |
+| PredicateName | `∀a InStrict → IsBuiltIn(a.name) ∨ ValidIdentifier(a.name)` |
+| PrimitiveSortName | `∀s InStrict → s.name ∈ CanonicalNames` |
+
+**Round-trip Property** (Section: Reference Parser)
+| Invariant | Formula |
+|-----------|---------|
+| ParserPreservesStructure | `∀B GrammarAccepts(B) → IsValidDocument(Parse(B))` |
+| EmitterPreservesOrder | `∀d IsValidDocument(d) → GrammarAccepts(Emit(d))` |
+| FixedPoint | `∀B GrammarAccepts(B) → Emit(Parse(B)) = B` |
+
+**Test Plan** (Section: Conformance Test Plan)
+| Invariant | Formula |
+|-----------|---------|
+| CoverageComplete | `∀k NodeKind → PosFixtures(k)≠∅ ∧ NegFixtures(k)≠∅` |
+| NegativeTestsReject | `∀n NegTestCase → ThrowsGrammarParseError` |
+
 ## Top-level production
 
 ```ebnf
