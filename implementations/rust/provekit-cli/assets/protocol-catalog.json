@@ -1,0 +1,40 @@
+{
+  "kind": "catalog",
+  "name": "provekit-protocol",
+  "version": "v1.1.0-2026-04-30",
+  "algorithms": {
+    "hash": [
+      "blake3-512"
+    ],
+    "signature": [
+      "ed25519"
+    ],
+    "pubkey": [
+      "ed25519"
+    ]
+  },
+  "properties": {
+    "ir-formal-grammar": "blake3-512:6c0127e0d24946d7be75861db20507ccdcfdf968d3333f8aa34083e849d8238d73b3acfaa31880648995a024112182ed6b6002cd489548b4b18f5d4c3768dd96",
+    "canonicalization-grammar": "blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830",
+    "memento-envelope-grammar": "blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5",
+    "signatures-and-non-repudiation": "blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c",
+    "chain-validity-and-fail-closed": "blake3-512:dd905e8660d855c0c8140ceaafb0e189391234ff981422e714644b23642b24d7ca0253c76d09b46e58c5f8d8362cc8efca436baf2be927ab63a7bacf356e7673",
+    "ir-extension-protocol": "blake3-512:cff64b923879548fd54efb63c5ea116ba184adadec126e956387f1ee9d0f7907edbdb1a05866d62442a6fb2142948654464e63830a061efdaed8af9403bb0c13",
+    "proof-file-format": "blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3",
+    "semantic-envelope": "blake3-512:6b14a0c4a36877ea77a609f5262257fb4c65940e8e5eefc03647746525d052216761b1707384bffec5fb3c021ac0e07e45d390efefa2c7f5c67c045d93352b56",
+    "supply-chain-via-semantic-envelope": "blake3-512:b924576310bf2defcc2e346e01bdaff6dbdb2a33b2554178e3786e484cb4a4da136443f17675a6cd939fcbcff8afb27396222b5b6649a6eaa31672f5446b15d0",
+    "handshake-algorithm": "blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925",
+    "per-language-kit-standard": "blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88",
+    "lattice-tractability-theorem": "blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07"
+  },
+  "declaredAt": "2026-04-30T15:00:00Z",
+  "_unsigned": "draft v1.1.0; minor bump for: (1) property memento role replaced by contract memento (pre/post/inv/outBinding); (2) implication memento role added (with Z3 witness body); (3) handshake algorithm spec added; (4) IR formal grammar maximal-uniformity cut (flat quantifiers, unified connective with operands, no sort on var/ctor, name everywhere); (5) cryptographic primitives are self-identifying — every hash and signature carries an algorithm tag inline; v1.1.0 ships with blake3-512 (hash) and ed25519 (signature/pubkey) as the only permitted tags. Migration to additional algorithms (post-quantum signatures, alternative hash functions) is additive: future catalogs add tags without invalidating any v1.1.0 bytes. Spec CIDs marked RECOMPUTE will be derived from the canonical bytes after the implementation cut lands; the catalog itself signs after that.",
+  "_breakingChanges": [
+    "Property memento role removed; contract memento role added with body fields {pre?, post?, inv?, outBinding, preHash?, postHash?, invHash?, authoring}",
+    "Implication memento role added; minted by verifiers when Z3 discharges (Q implies P) at handshake time",
+    "IR-JSON shape: forall/exists are flat (no Lambda wrapper); and/or/not/implies use unified `operands` array; var and ctor terms drop `sort`; atomic uses `name` instead of `predicate`; `name` replaces `varName` everywhere",
+    "Cryptographic primitives are self-identifying: hashes are `blake3-512:<128-hex-char-digest>` (no truncation, no per-purpose lengths); signatures are `ed25519:<base64>`; pubkeys are `ed25519:<base64>`. The hex16/hex32 type distinction is removed; one regex governs all hashes",
+    "All previously-derived propertyHashes/CIDs are invalidated by the IR shape change AND by the hash widening; cross-language demos and PoCs re-derive everything",
+    "legacy-witness wrapper variant removed; producers MUST emit role-specific variants only"
+  ]
+}
