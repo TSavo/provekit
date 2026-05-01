@@ -15,8 +15,8 @@ importers:
         specifier: ^0.88.0
         version: 0.88.0(zod@4.3.6)
       '@ipld/dag-cbor':
-        specifier: ^9.2.6
-        version: 9.2.6
+        specifier: 7.0.0
+        version: 7.0.0
       '@opencode-ai/sdk':
         specifier: ^1.4.3
         version: 1.14.29
@@ -645,9 +645,8 @@ packages:
     peerDependencies:
       hono: ^4
 
-  '@ipld/dag-cbor@9.2.6':
-    resolution: {integrity: sha512-vZGJ84Em2jCVAS7td5gc08YTVN8/s4bTQxg4pU77PAXDAR/yLYOthOvkCu01fdl1lrZwz47RdUterxdkrs3p5A==}
-    engines: {node: '>=16.0.0', npm: '>=7.0.0'}
+  '@ipld/dag-cbor@7.0.0':
+    resolution: {integrity: sha512-us/dagGvfQ+acO8uyAfozUQ21xxvI6ZrCWwfbOuk+o+cSpCIKY30lUYRuN3kzWLvTJHvbuCVPVEH38ynM1ZBgw==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -965,8 +964,8 @@ packages:
     resolution: {integrity: sha512-TO9xmyXTZ9HUHI8M1OnvExxYB0eYVS/1e5s7IDMTAoIcwUd+aNcFODs6Xk83mobk0velyHFQgA1yIrvYc6wclw==}
     engines: {node: '>=20'}
 
-  cborg@5.1.1:
-    resolution: {integrity: sha512-BDbSRIp6XrQXkTc7g+DN0RB9RrDPTUfals2ecWUlt3juPLjbAvy/V72mJcXY0Ehu0Dq/3WpNCOCT68HUTbW+lw==}
+  cborg@1.10.2:
+    resolution: {integrity: sha512-b3tFPA9pUr2zCUiCfRd2+wok2/LBSNUMKOuRRok+WlvvAgEt/PlbgPTsZUcwCOs53IJvLgTp0eotwtosE6njug==}
     hasBin: true
 
   cddl@0.20.1:
@@ -1517,8 +1516,8 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  multiformats@13.4.2:
-    resolution: {integrity: sha512-eh6eHCrRi1+POZ3dA+Dq1C6jhP1GNtr9CRINMb67OKzqW9I5DUuZM/3jLPlzhgpGeiNUlEGEbkCYChXMCc/8DQ==}
+  multiformats@9.9.0:
+    resolution: {integrity: sha512-HoMUjhH9T8DDBNT+6xzkrd9ga/XiBI4xLr58LJACwK6G3HTOPeMz4nB4KJs33L2BelrIJa7P0VuNaVF3hMYfjg==}
 
   nanoid@3.3.11:
     resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
@@ -2374,10 +2373,10 @@ snapshots:
     dependencies:
       hono: 4.12.15
 
-  '@ipld/dag-cbor@9.2.6':
+  '@ipld/dag-cbor@7.0.0':
     dependencies:
-      cborg: 5.1.1
-      multiformats: 13.4.2
+      cborg: 1.10.2
+      multiformats: 9.9.0
 
   '@jridgewell/resolve-uri@3.1.2': {}
 
@@ -2700,7 +2699,7 @@ snapshots:
 
   camelcase@9.0.0: {}
 
-  cborg@5.1.1: {}
+  cborg@1.10.2: {}
 
   cddl@0.20.1:
     dependencies:
@@ -3160,7 +3159,7 @@ snapshots:
 
   ms@2.1.3: {}
 
-  multiformats@13.4.2: {}
+  multiformats@9.9.0: {}
 
   nanoid@3.3.11: {}
 

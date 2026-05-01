@@ -64,7 +64,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.107",
     "@anthropic-ai/sdk": "^0.88.0",
-    "@ipld/dag-cbor": "^9.2.6",
+    "@ipld/dag-cbor": "7.0.0",
     "@opencode-ai/sdk": "^1.4.3",
     "@types/node": "^25.6.0",
     "@wopr-network/better-prompts": "^0.1.0",
