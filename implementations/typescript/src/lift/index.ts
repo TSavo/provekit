@@ -35,6 +35,7 @@ import { computeCid } from "../canonicalizer/hash.js";
 
 import { liftFile as liftZodFile } from "./adapters/zod.js";
 import { liftFile as liftFastCheckFile } from "./adapters/fast-check.js";
+import { liftFile as liftClassValidatorFile } from "./adapters/class-validator.js";
 import type { ContractDecl, LiftReport, AdapterReport } from "./types.js";
 
 export type {
@@ -45,7 +46,7 @@ export type {
   AdapterWarning,
 } from "./types.js";
 
-export { liftZodFile, liftFastCheckFile };
+export { liftZodFile, liftFastCheckFile, liftClassValidatorFile };
 
 /** Default ed25519 dev seed: same value as Rust (`[0x42; 32]`) for cross-impl
  * CID determinism in fixtures. */
@@ -146,6 +147,7 @@ export function liftPath(root: string): LiftReport {
   const adapterReports: Record<string, AdapterReport> = {
     zod: { adapter: "zod", seen: 0, lifted: 0, warnings: [] },
     "fast-check": { adapter: "fast-check", seen: 0, lifted: 0, warnings: [] },
+    "class-validator": { adapter: "class-validator", seen: 0, lifted: 0, warnings: [] },
   };
   let filesScanned = 0;
   const parseErrors: Array<{ path: string; message: string }> = [];
@@ -172,11 +174,21 @@ export function liftPath(root: string): LiftReport {
     adapterReports["fast-check"]!.lifted += f.lifted;
     adapterReports["fast-check"]!.warnings.push(...f.warnings);
     decls.push(...f.decls);
+
+    const cv = liftClassValidatorFile(sf, filePath);
+    adapterReports["class-validator"]!.seen += cv.seen;
+    adapterReports["class-validator"]!.lifted += cv.lifted;
+    adapterReports["class-validator"]!.warnings.push(...cv.warnings);
+    decls.push(...cv.decls);
   }
 
   return {
     decls,
-    adapterReports: [adapterReports.zod!, adapterReports["fast-check"]!],
+    adapterReports: [
+      adapterReports.zod!,
+      adapterReports["fast-check"]!,
+      adapterReports["class-validator"]!,
+    ],
     filesScanned,
     parseErrors,
   };
