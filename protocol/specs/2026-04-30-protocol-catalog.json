@@ -18,7 +18,8 @@
     "semantic-envelope": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
     "supply-chain-via-semantic-envelope": "blake3-512:RECOMPUTE-AFTER-HASH-CUT",
     "handshake-algorithm": "blake3-512:RECOMPUTE-AFTER-CONTRACT-CUT",
-    "per-language-kit-standard": "blake3-512:RECOMPUTE-AFTER-CONTRACT-CUT"
+    "per-language-kit-standard": "blake3-512:RECOMPUTE-AFTER-CONTRACT-CUT",
+    "lattice-tractability-theorem": "blake3-512:RECOMPUTE"
   },
   "declaredAt": "2026-04-30T15:00:00Z",
   "_unsigned": "draft v1.1.0; minor bump for: (1) property memento role replaced by contract memento (pre/post/inv/outBinding); (2) implication memento role added (with Z3 witness body); (3) handshake algorithm spec added; (4) IR formal grammar maximal-uniformity cut (flat quantifiers, unified connective with operands, no sort on var/ctor, name everywhere); (5) cryptographic primitives are self-identifying — every hash and signature carries an algorithm tag inline; v1.1.0 ships with blake3-512 (hash) and ed25519 (signature/pubkey) as the only permitted tags. Migration to additional algorithms (post-quantum signatures, alternative hash functions) is additive: future catalogs add tags without invalidating any v1.1.0 bytes. Spec CIDs marked RECOMPUTE will be derived from the canonical bytes after the implementation cut lands; the catalog itself signs after that.",
