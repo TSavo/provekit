@@ -21,6 +21,9 @@ members = [
     "provekit-lift-verus",
     "provekit-lift-rust-tests",
     "provekit-build",
+    "provekit-agent",
+    "provekit-agent-claude-code",
+    "provekit-agent-openai",
     "examples/build_script_demo",
 ]
 

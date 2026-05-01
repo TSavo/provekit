@@ -626,6 +626,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-agent"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-symbolic",
+ "provekit-proof-envelope",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "provekit-agent-claude-code"
+version = "0.1.0"
+dependencies = [
+ "provekit-agent",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "provekit-agent-openai"
+version = "0.1.0"
+dependencies = [
+ "provekit-agent",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "provekit-build"
 version = "0.1.0"
 dependencies = [
@@ -677,6 +710,7 @@ dependencies = [
  "anyhow",
  "clap",
  "owo-colors",
+ "provekit-agent",
  "provekit-canonicalizer",
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
