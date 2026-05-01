@@ -699,8 +699,13 @@ dependencies = [
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
  "provekit-lift-contracts",
+ "provekit-lift-creusot",
+ "provekit-lift-flux",
  "provekit-lift-kani",
  "provekit-lift-proptest",
+ "provekit-lift-prusti",
+ "provekit-lift-quickcheck",
+ "provekit-lift-verus",
  "provekit-proof-envelope",
  "provekit-verifier",
  "quote",
@@ -711,6 +716,26 @@ dependencies = [
 
 [[package]]
 name = "provekit-lift-contracts"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "provekit-ir-symbolic",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "provekit-lift-creusot"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "provekit-ir-symbolic",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "provekit-lift-flux"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
@@ -733,6 +758,16 @@ dependencies = [
 
 [[package]]
 name = "provekit-lift-proptest"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "provekit-ir-symbolic",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "provekit-lift-prusti"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",

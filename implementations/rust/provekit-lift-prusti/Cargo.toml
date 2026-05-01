@@ -1,0 +1,13 @@
+[package]
+name = "provekit-lift-prusti"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt lift adapter: walk #[prusti::requires]/#[prusti::ensures] attributes and lift to ContractDecls."
+
+[dependencies]
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+syn = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }

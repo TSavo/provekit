@@ -45,6 +45,103 @@ fn lifts_proptest_and_contracts_from_fixtures() {
 }
 
 #[test]
+fn lifts_prusti_creusot_flux_quickcheck_verus_from_fixtures() {
+    let report = lift_path(&fixtures_dir());
+
+    let find = |name: &str| {
+        report
+            .adapter_reports
+            .iter()
+            .find(|a| a.adapter == name)
+            .unwrap_or_else(|| panic!("missing adapter report: {name}"))
+    };
+
+    let prusti = find("prusti");
+    let creusot = find("creusot");
+    let flux = find("flux");
+    let quickcheck = find("quickcheck");
+    let verus = find("verus");
+
+    assert!(
+        prusti.lifted >= 3,
+        "expected >=3 prusti lifts, got {} ({} seen, {} warnings)",
+        prusti.lifted,
+        prusti.seen,
+        prusti.warnings.len()
+    );
+    assert!(
+        creusot.lifted >= 3,
+        "expected >=3 creusot lifts, got {}",
+        creusot.lifted
+    );
+    assert!(
+        flux.lifted >= 3,
+        "expected >=3 flux lifts, got {}",
+        flux.lifted
+    );
+    assert!(
+        quickcheck.lifted >= 3,
+        "expected >=3 quickcheck lifts, got {}",
+        quickcheck.lifted
+    );
+
+    // verus v0 is "skip everything with structured warning". Lift count
+    // is 0 by design; we instead assert non-empty warnings.
+    assert_eq!(verus.lifted, 0, "verus v0 must not lift anything");
+    assert!(
+        !verus.warnings.is_empty(),
+        "verus v0 must emit at least one structured warning"
+    );
+
+    // Each non-verus adapter has exactly one deliberately-skipped
+    // pattern in its fixture. That gives at least one warning each.
+    assert!(
+        !prusti.warnings.is_empty(),
+        "prusti fixture has a #[prusti::predicate] item that should warn"
+    );
+    assert!(
+        !creusot.warnings.is_empty(),
+        "creusot fixture has a #[creusot::law] item that should warn"
+    );
+    assert!(
+        !flux.warnings.is_empty(),
+        "flux fixture has a #[flux::trusted] item that should warn"
+    );
+    assert!(
+        !quickcheck.warnings.is_empty(),
+        "quickcheck fixture has a TestResult-returning property that should warn"
+    );
+}
+
+#[test]
+fn proof_cid_is_deterministic_across_runs() {
+    // Run lift_and_mint twice over the same fixture tree and assert the
+    // resulting catalog CID is identical. This pins content-addressed
+    // determinism: same inputs, same canonical IR, same blake3-512 CID.
+    let nanos1 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir1 = std::env::temp_dir()
+        .join(format!("provekit-lift-det1-{}-{nanos1}", std::process::id()));
+    let dir2 = std::env::temp_dir()
+        .join(format!("provekit-lift-det2-{}-{nanos1}", std::process::id()));
+    let opts = LiftOptions::default();
+    let (_r1, m1, _p1) = lift_and_mint(&fixtures_dir(), &dir1, &opts).expect("first run");
+    let (_r2, m2, _p2) = lift_and_mint(&fixtures_dir(), &dir2, &opts).expect("second run");
+    assert_eq!(
+        m1.cid, m2.cid,
+        "lift catalog CID must be deterministic across runs"
+    );
+    assert_eq!(
+        m1.member_count, m2.member_count,
+        "member count must be stable across runs"
+    );
+    let _ = std::fs::remove_dir_all(&dir1);
+    let _ = std::fs::remove_dir_all(&dir2);
+}
+
+#[test]
 fn lifted_proof_loads_through_verifier() {
     // Use a tempdir keyed off the test name + nanos so parallel tests
     // don't collide.

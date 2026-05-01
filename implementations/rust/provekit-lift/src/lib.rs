@@ -46,8 +46,13 @@ use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl};
 use provekit_proof_envelope::{build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput};
 
 pub use provekit_lift_contracts as adapter_contracts;
+pub use provekit_lift_creusot as adapter_creusot;
+pub use provekit_lift_flux as adapter_flux;
 pub use provekit_lift_kani as adapter_kani;
 pub use provekit_lift_proptest as adapter_proptest;
+pub use provekit_lift_prusti as adapter_prusti;
+pub use provekit_lift_quickcheck as adapter_quickcheck;
+pub use provekit_lift_verus as adapter_verus;
 
 /// Per-adapter outcome. Counts what each adapter saw and what was
 /// liftable. The `warnings` are the honest "I saw it but couldn't
@@ -122,6 +127,21 @@ pub fn lift_path(root: &Path) -> LiftReport {
     let mut kani_seen = 0usize;
     let mut kani_lifted = 0usize;
     let mut kani_warnings: Vec<AdapterWarning> = Vec::new();
+    let mut prusti_seen = 0usize;
+    let mut prusti_lifted = 0usize;
+    let mut prusti_warnings: Vec<AdapterWarning> = Vec::new();
+    let mut creusot_seen = 0usize;
+    let mut creusot_lifted = 0usize;
+    let mut creusot_warnings: Vec<AdapterWarning> = Vec::new();
+    let mut flux_seen = 0usize;
+    let mut flux_lifted = 0usize;
+    let mut flux_warnings: Vec<AdapterWarning> = Vec::new();
+    let mut quickcheck_seen = 0usize;
+    let mut quickcheck_lifted = 0usize;
+    let mut quickcheck_warnings: Vec<AdapterWarning> = Vec::new();
+    let mut verus_seen = 0usize;
+    let mut verus_lifted = 0usize;
+    let mut verus_warnings: Vec<AdapterWarning> = Vec::new();
 
     for path in enumerate_rs_files(root) {
         report.files_scanned += 1;
@@ -190,6 +210,76 @@ pub fn lift_path(root: &Path) -> LiftReport {
             });
         }
         report.decls.extend(k_out.decls);
+
+        // Adapter: prusti.
+        let pr_out = adapter_prusti::lift_file(&file, &path_str);
+        prusti_seen += pr_out.seen;
+        prusti_lifted += pr_out.lifted;
+        for w in pr_out.warnings {
+            prusti_warnings.push(AdapterWarning {
+                adapter: "prusti",
+                source_path: w.source_path,
+                item_name: w.item_name,
+                reason: w.reason,
+            });
+        }
+        report.decls.extend(pr_out.decls);
+
+        // Adapter: creusot.
+        let cr_out = adapter_creusot::lift_file(&file, &path_str);
+        creusot_seen += cr_out.seen;
+        creusot_lifted += cr_out.lifted;
+        for w in cr_out.warnings {
+            creusot_warnings.push(AdapterWarning {
+                adapter: "creusot",
+                source_path: w.source_path,
+                item_name: w.item_name,
+                reason: w.reason,
+            });
+        }
+        report.decls.extend(cr_out.decls);
+
+        // Adapter: flux.
+        let fx_out = adapter_flux::lift_file(&file, &path_str);
+        flux_seen += fx_out.seen;
+        flux_lifted += fx_out.lifted;
+        for w in fx_out.warnings {
+            flux_warnings.push(AdapterWarning {
+                adapter: "flux",
+                source_path: w.source_path,
+                item_name: w.item_name,
+                reason: w.reason,
+            });
+        }
+        report.decls.extend(fx_out.decls);
+
+        // Adapter: quickcheck.
+        let qc_out = adapter_quickcheck::lift_file(&file, &path_str);
+        quickcheck_seen += qc_out.seen;
+        quickcheck_lifted += qc_out.lifted;
+        for w in qc_out.warnings {
+            quickcheck_warnings.push(AdapterWarning {
+                adapter: "quickcheck",
+                source_path: w.source_path,
+                item_name: w.item_name,
+                reason: w.reason,
+            });
+        }
+        report.decls.extend(qc_out.decls);
+
+        // Adapter: verus.
+        let vr_out = adapter_verus::lift_file(&file, &path_str);
+        verus_seen += vr_out.seen;
+        verus_lifted += vr_out.lifted;
+        for w in vr_out.warnings {
+            verus_warnings.push(AdapterWarning {
+                adapter: "verus",
+                source_path: w.source_path,
+                item_name: w.item_name,
+                reason: w.reason,
+            });
+        }
+        report.decls.extend(vr_out.decls);
     }
 
     report.adapter_reports.push(AdapterReport {
@@ -209,6 +299,36 @@ pub fn lift_path(root: &Path) -> LiftReport {
         seen: kani_seen,
         lifted: kani_lifted,
         warnings: kani_warnings,
+    });
+    report.adapter_reports.push(AdapterReport {
+        adapter: "prusti",
+        seen: prusti_seen,
+        lifted: prusti_lifted,
+        warnings: prusti_warnings,
+    });
+    report.adapter_reports.push(AdapterReport {
+        adapter: "creusot",
+        seen: creusot_seen,
+        lifted: creusot_lifted,
+        warnings: creusot_warnings,
+    });
+    report.adapter_reports.push(AdapterReport {
+        adapter: "flux",
+        seen: flux_seen,
+        lifted: flux_lifted,
+        warnings: flux_warnings,
+    });
+    report.adapter_reports.push(AdapterReport {
+        adapter: "quickcheck",
+        seen: quickcheck_seen,
+        lifted: quickcheck_lifted,
+        warnings: quickcheck_warnings,
+    });
+    report.adapter_reports.push(AdapterReport {
+        adapter: "verus",
+        seen: verus_seen,
+        lifted: verus_lifted,
+        warnings: verus_warnings,
     });
     report
 }

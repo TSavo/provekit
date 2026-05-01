@@ -33,6 +33,11 @@ provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 provekit-lift-proptest = { path = "../provekit-lift-proptest" }
 provekit-lift-contracts = { path = "../provekit-lift-contracts" }
 provekit-lift-kani = { path = "../provekit-lift-kani" }
+provekit-lift-prusti = { path = "../provekit-lift-prusti" }
+provekit-lift-creusot = { path = "../provekit-lift-creusot" }
+provekit-lift-flux = { path = "../provekit-lift-flux" }
+provekit-lift-quickcheck = { path = "../provekit-lift-quickcheck" }
+provekit-lift-verus = { path = "../provekit-lift-verus" }
 
 # External.
 syn = { workspace = true }
