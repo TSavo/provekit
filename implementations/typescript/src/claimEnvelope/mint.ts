@@ -25,7 +25,7 @@ import type {
   ImplicationEvidence,
   ExtensionDeclarationEvidence,
 } from "./types.js";
-import type { IrFormula } from "../ir/formulas.js";
+import type { EvidenceTerm, IrFormula } from "../ir/formulas.js";
 import type { ExtensionDeclaration } from "../ir/extensions/registry.js";
 import { VARIANT_SCHEMA_CIDS } from "./variants/index.js";
 
@@ -144,6 +144,8 @@ export interface MintContractArgs {
   post?: IrFormula;
   /** Optional inductive invariant formula (IR-JSON). */
   inv?: IrFormula;
+  /** Optional IR-level proof certificate (EvidenceTerm) attached at authoring time. */
+  evidence?: EvidenceTerm;
   /** Authoring provenance (kit-author / lift / llm). */
   authoring: ContractAuthoring;
 }
@@ -186,6 +188,9 @@ export function mintContract(args: MintContractArgs): ClaimEnvelope {
   if (args.inv !== undefined) {
     body.inv = args.inv;
     body.invHash = computeCid(canonicalEncode(args.inv));
+  }
+  if (args.evidence !== undefined) {
+    body.irEvidence = args.evidence;
   }
 
   // propertyHash hashes the semantic identity: {pre?, post?, inv?, outBinding}.

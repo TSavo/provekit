@@ -87,6 +87,32 @@ function emitFormulaIn(formula: IrFormula, ctx: EmitContext): string {
 
     case "atomic":
       return emitAtomic(formula.name, formula.args, ctx);
+
+    case "choice": {
+      // Choice (εx. P(x)) in Lean: use ∃! (unique existence)
+      const varName = formula.varName;
+      const emittedName = uniquifyBinder(varName, ctx);
+      const sortText = emitSort(formula.sort);
+
+      ctx.binders.push(emittedName);
+      const prevRename = ctx.rename.get(varName);
+      if (emittedName !== varName) {
+        ctx.rename.set(varName, emittedName);
+      }
+
+      const body = emitFormulaIn(formula.body, ctx);
+
+      ctx.binders.pop();
+      if (emittedName !== varName) {
+        if (prevRename === undefined) {
+          ctx.rename.delete(varName);
+        } else {
+          ctx.rename.set(varName, prevRename);
+        }
+      }
+
+      return `∃! (${emittedName} : ${sortText}), ${body}`;
+    }
   }
 }
 
@@ -176,6 +202,23 @@ function emitTerm(term: IrTerm, ctx: EmitContext): string {
       if (term.args.length === 0) return term.name;
       const args = term.args.map((a) => emitTerm(a, ctx)).join(" ");
       return `(${term.name} ${args})`;
+    }
+
+    case "lambda": {
+      const paramName = term.paramName;
+      const paramSort = emitSort(term.paramSort);
+      const body = emitTerm(term.body, ctx);
+      return `(fun (${paramName} : ${paramSort}) => ${body})`;
+    }
+
+    case "let": {
+      const bindings = term.bindings.map(b => {
+        const name = b.name;
+        const boundTerm = emitTerm(b.boundTerm, ctx);
+        return `let ${name} := ${boundTerm}`;
+      }).join("; ");
+      const body = emitTerm(term.body, ctx);
+      return `${bindings}; ${body}`;
     }
   }
 }

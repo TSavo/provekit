@@ -42,5 +42,9 @@ public static class FormulaInvariants
 
         Contract("csharp_connective_implies_kind",
             post: Eq(Ctor("ConnectiveKind", Ctor("Implies")), StrConst("implies")));
+
+        // ChoiceFormula is tested via serialization round-trips in the
+        // cross-language equivalence suite; the Ctor-term accessor DSL
+        // cannot embed Formula-typed nodes.
     }
 }

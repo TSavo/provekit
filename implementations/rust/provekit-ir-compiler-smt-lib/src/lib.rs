@@ -90,9 +90,18 @@ pub fn emit(ir_formula: &Json) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+fn is_term_kind(kind: &str) -> bool {
+    matches!(kind, "var" | "const" | "ctor" | "lambda" | "let")
+}
+
 /// Compile to (preamble, body, free_vars). Pure; no I/O.
 pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileError> {
-    let body_expr = emit_formula(ir_formula).map_err(CompileError::MalformedIr)?;
+    let kind = ir_formula.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
+    let body_expr = if is_term_kind(kind) {
+        emit_term(ir_formula).map_err(CompileError::MalformedIr)?
+    } else {
+        emit_formula(ir_formula).map_err(CompileError::MalformedIr)?
+    };
 
     let mut free_vars: BTreeMap<String, String> = BTreeMap::new();
     let bound: BTreeSet<String> = BTreeSet::new();
@@ -204,6 +213,36 @@ fn emit_term(t: &Json) -> Result<String, String> {
                 }
             }
         }
+        "lambda" => {
+            // SMT-LIB is first-order - lambdas must be encoded as uninterpreted functions
+            // We encode as: ((_ forEach x) body) where x is the parameter
+            let param_name = t.get("paramName").and_then(|v| v.as_str()).unwrap_or_default();
+            let param_sort = t.get("paramSort").map(smt_sort).unwrap_or_else(|| "String".to_string());
+            let body = t.get("body").ok_or("lambda: missing body")?;
+            
+            // For now, encode as a lambda expression using SMT-LIB's lambda
+            // (available in newer SMT-LIB versions)
+            let body_str = emit_term(body)?;
+            Ok(format!("(lambda ((_ {param_name} {param_sort})) {body_str})"))
+        }
+        "let" => {
+            // SMT-LIB supports let expressions
+            let bindings = t.get("bindings").and_then(|v| v.as_array())
+                .ok_or("let: missing bindings")?;
+            let body = t.get("body").ok_or("let: missing body")?;
+            
+            let mut binding_strs = Vec::new();
+            for b in bindings {
+                let name = b.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+                let bound_term = b.get("boundTerm").ok_or("let: missing boundTerm")?;
+                let term_str = emit_term(bound_term)?;
+                binding_strs.push(format!("({name} {term_str})"));
+            }
+            
+            let body_str = emit_term(body)?;
+            let bindings_part = binding_strs.join(" ");
+            Ok(format!("(let ({bindings_part}) {body_str})"))
+        }
         other => Err(format!("emit_term: unknown kind '{other}'")),
     }
 }
@@ -278,6 +317,27 @@ fn emit_formula(f: &Json) -> Result<String, String> {
             let body_s = emit_formula(body)?;
             Ok(format!("({kind} (({vn} {srt})) {body_s})"))
         }
+        "choice" => {
+            // Choice (εx. P(x)) in first-order = exists unique x. P(x)
+            // Encode as: exists x. P(x) ∧ (forall y. P(y) => y = x)
+            let var_name = f.get("varName").and_then(|v| v.as_str()).unwrap_or_default();
+            let sort = f
+                .get("sort")
+                .map(smt_sort)
+                .unwrap_or_else(|| "Int".into());
+            let body = f
+                .get("body")
+                .ok_or_else(|| String::from("choice: missing body"))?;
+            let body_s = emit_formula(body)?;
+            
+            // Encode uniqueness: exists x. P(x) ∧ (forall y. P(y) => y = x)
+            let var_name_y = format!("{}_y", var_name);
+            let body_s_y = body_s.replace(var_name, &var_name_y);
+            let unique_body = format!(
+                "(and {body_s} (forall (({var_name_y} {sort})) (=> {body_s_y} (= {var_name_y} {var_name}))))"
+            );
+            Ok(format!("(exists (({var_name} {sort})) {unique_body})"))
+        }
         other => Err(format!("emit_formula: unknown kind '{other}'")),
     }
 }
@@ -322,6 +382,20 @@ fn collect_free_vars(
                 }
             }
         }
+        "choice" => {
+            // Choice binds varName like a quantifier
+            let choice_sort = f
+                .get("sort")
+                .and_then(|s| s.get("name"))
+                .and_then(|n| n.as_str());
+            if let Some(n) = f.get("varName").and_then(|v| v.as_str()) {
+                let mut nb = bound.clone();
+                nb.insert(n.to_string());
+                if let Some(b) = f.get("body") {
+                    collect_free_vars(b, out, &nb, choice_sort);
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -353,6 +427,34 @@ fn collect_free_vars_term(
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             for a in args {
                 collect_free_vars_term(a, out, bound, ctx_quant_sort);
+            }
+        }
+    } else if kind == "lambda" {
+        // Lambda binds paramName in its body
+        if let Some(param_name) = t.get("paramName").and_then(|v| v.as_str()) {
+            let mut nb = bound.clone();
+            nb.insert(param_name.to_string());
+            if let Some(body) = t.get("body") {
+                collect_free_vars_term(body, out, &nb, ctx_quant_sort);
+            }
+        }
+    } else if kind == "let" {
+        // Let bindings are sequential: later bindings can see earlier ones
+        if let Some(bindings) = t.get("bindings").and_then(|v| v.as_array()) {
+            let mut current_bound = bound.clone();
+            for b in bindings {
+                // First collect free vars in the bound term (using current scope)
+                if let Some(bound_term) = b.get("boundTerm") {
+                    collect_free_vars_term(bound_term, out, &current_bound, ctx_quant_sort);
+                }
+                // Then add the binding name to scope for subsequent bindings and body
+                if let Some(name) = b.get("name").and_then(|v| v.as_str()) {
+                    current_bound.insert(name.to_string());
+                }
+            }
+            // Body uses the final scope with all bindings
+            if let Some(body) = t.get("body") {
+                collect_free_vars_term(body, out, &current_bound, ctx_quant_sort);
             }
         }
     }
@@ -449,6 +551,15 @@ fn collect_atomics_with_context(
                 .and_then(|n| n.as_str());
             if let Some(b) = f.get("body") {
                 collect_atomics_with_context(b, out, quant_sort);
+            }
+        }
+        "choice" => {
+            let choice_sort = f
+                .get("sort")
+                .and_then(|s| s.get("name"))
+                .and_then(|n| n.as_str());
+            if let Some(b) = f.get("body") {
+                collect_atomics_with_context(b, out, choice_sort);
             }
         }
         _ => {}

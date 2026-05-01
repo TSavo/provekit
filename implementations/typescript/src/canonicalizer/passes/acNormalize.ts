@@ -40,6 +40,8 @@ export function astSortKey(ast: CanonicalFolAst): string {
       return `C:!:${astSortKey(ast.operands[0])}`;
     case "atomic":
       return `A:${ast.name}:${ast.args.map(termKey).join(",")}`;
+    case "choice":
+      return `Q:C:${sortKeySort(ast.sort)}:${astSortKey(ast.body)}`;
   }
 }
 
@@ -51,6 +53,10 @@ function termKey(t: CanonicalTerm): string {
       return `c:${sortKeySort(t.sort)}:${stringifyConstValue(t.value)}`;
     case "ctor":
       return `k:${t.name}:${t.args.map(termKey).join(",")}`;
+    case "lambda":
+      return `L:${sortKeySort(t.paramSort)}:${termKey(t.body)}`;
+    case "let":
+      return `l:${t.bindings.map((b) => `${b.name}=${termKey(b.boundTerm)}`).join(",")}:${termKey(t.body)}`;
   }
 }
 
@@ -108,6 +114,9 @@ export function acNormalize(ast: CanonicalFolAst): CanonicalFolAst {
 
     case "atomic":
       return ast;
+
+    case "choice":
+      return { kind: "choice", sort: ast.sort, body: acNormalize(ast.body) };
 
     case "and": {
       // Recursively normalize children first.

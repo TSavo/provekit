@@ -77,6 +77,13 @@ function buildPreNnfAst(formula: DeBruijnFormula): PreNnfAst {
       const { name, args } = canonicalizePredicate(formula.predicate, canonArgs);
       return { kind: "atomic", name, args };
     }
+
+    case "choice":
+      return {
+        kind: "choice",
+        sort: canonicalizeSort(formula.sort),
+        body: buildPreNnfAst(formula.body),
+      };
   }
 }
 

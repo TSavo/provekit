@@ -86,6 +86,14 @@ pub enum Term {
     Var { name: String },
     Const { value: ConstValue, sort: Sort },
     Ctor { name: String, args: Vec<Rc<Term>> },
+    Lambda { param_name: String, param_sort: Sort, body: Rc<Term> },
+    Let { bindings: Vec<LetBinding>, body: Rc<Term> },
+}
+
+#[derive(Debug, Clone)]
+pub struct LetBinding {
+    pub name: String,
+    pub bound_term: Rc<Term>,
 }
 
 pub fn make_var<S: Into<String>>(name: S) -> Rc<Term> {
@@ -140,6 +148,11 @@ pub enum Formula {
     Quantifier {
         kind: String, // "forall" / "exists"
         name: String,
+        sort: Sort,
+        body: Rc<Formula>,
+    },
+    Choice {
+        var_name: String,
         sort: Sort,
         body: Rc<Formula>,
     },
@@ -244,6 +257,61 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// Lambda terms (first-class functions)
+// ---------------------------------------------------------------------------
+
+pub fn lambda(param_name: String, param_sort: Sort, body: Rc<Term>) -> Rc<Term> {
+    Rc::new(Term::Lambda {
+        param_name,
+        param_sort,
+        body,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Let terms (local bindings)
+// ---------------------------------------------------------------------------
+
+pub fn let_term(bindings: Vec<LetBinding>, body: Rc<Term>) -> Rc<Term> {
+    Rc::new(Term::Let { bindings, body })
+}
+
+// ---------------------------------------------------------------------------
+// Choice formula (definite description)
+// ---------------------------------------------------------------------------
+
+pub fn choice<F>(var_name: String, sort: Sort, body: F) -> Rc<Formula>
+where
+    F: FnOnce(Rc<Term>) -> Rc<Formula>,
+{
+    let var = make_var(&var_name);
+    let inner = body(var);
+    Rc::new(Formula::Choice {
+        var_name,
+        sort,
+        body: inner,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Evidence
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceCertificate {
+    pub tool: String,
+    pub version: String,
+    pub formula_hash: String,
+    pub proof_data: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceTerm {
+    pub proof_type: String, // "smt-lib" | "coq" | "custom"
+    pub certificate: EvidenceCertificate,
+}
+
+// ---------------------------------------------------------------------------
 // Contract collector
 // ---------------------------------------------------------------------------
 
@@ -253,6 +321,7 @@ pub struct ContractArgs {
     pub post: Option<Rc<Formula>>,
     pub inv: Option<Rc<Formula>>,
     pub out_binding: Option<String>,
+    pub evidence: Option<EvidenceTerm>,
 }
 
 #[derive(Debug, Clone)]
@@ -262,6 +331,7 @@ pub struct ContractDecl {
     pub post: Option<Rc<Formula>>,
     pub inv: Option<Rc<Formula>>,
     pub out_binding: String,
+    pub evidence: Option<EvidenceTerm>,
 }
 
 thread_local! {
@@ -287,6 +357,7 @@ pub fn contract<S: Into<String>>(name: S, args: ContractArgs) {
             post: args.post,
             inv: args.inv,
             out_binding: args.out_binding.unwrap_or_else(|| "out".into()),
+            evidence: args.evidence,
         });
     });
 }

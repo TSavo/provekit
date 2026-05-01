@@ -27,7 +27,7 @@ use serde_json::Value as Json;
 use crate::{
     and_, atomic_, contract, exists, finish, forall, implies, make_var, not_,
     num, or_, reset_collector, str_const, ConstValue, ContractArgs,
-    ContractDecl, Formula, Sort, Term,
+    ContractDecl, EvidenceCertificate, EvidenceTerm, Formula, Sort, Term,
 };
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -117,7 +117,7 @@ pub fn parse_sort(v: &Json) -> Result<Sort, ParseError> {
 
 fn parse_contract_into_collector(v: &Json, path: &str) -> Result<(), ParseError> {
     let obj = require_object(v, path, "contract")?;
-    let allowed = &["kind", "name", "outBinding", "pre", "post", "inv"];
+    let allowed = &["kind", "name", "outBinding", "pre", "post", "inv", "evidence"];
     reject_extra_keys(obj, allowed, path, "contract")?;
 
     let kind = require_string(obj, "kind", path)?;
@@ -150,6 +150,10 @@ fn parse_contract_into_collector(v: &Json, path: &str) -> Result<(), ParseError>
         .get("inv")
         .map(|f| parse_formula_at(f, &format!("{path}.inv")))
         .transpose()?;
+    let evidence = obj
+        .get("evidence")
+        .map(|e| parse_evidence_at(e, &format!("{path}.evidence")))
+        .transpose()?;
 
     if pre.is_none() && post.is_none() && inv.is_none() {
         return Err(ParseError::EmptyContract { path: path.into() });
@@ -162,9 +166,42 @@ fn parse_contract_into_collector(v: &Json, path: &str) -> Result<(), ParseError>
             post,
             inv,
             out_binding: Some(out_binding),
+            evidence,
         },
     );
     Ok(())
+}
+
+fn parse_evidence_at(v: &Json, path: &str) -> Result<EvidenceTerm, ParseError> {
+    let obj = require_object(v, path, "evidence")?;
+    reject_extra_keys(obj, &["kind", "proofType", "certificate"], path, "evidence")?;
+    let kind = require_string(obj, "kind", path)?;
+    if kind != "evidence" {
+        return Err(ParseError::Mismatch {
+            path: format!("{path}.kind"),
+            expected: "\"evidence\"".into(),
+            actual: format!("\"{kind}\""),
+        });
+    }
+    let proof_type = require_string(obj, "proofType", path)?;
+    let cert_v = require_field(obj, "certificate", path)?;
+    let cert_obj = require_object(cert_v, &format!("{path}.certificate"), "certificate")?;
+    reject_extra_keys(
+        cert_obj,
+        &["tool", "version", "formulaHash", "proofData"],
+        &format!("{path}.certificate"),
+        "certificate",
+    )?;
+    let certificate = EvidenceCertificate {
+        tool: require_string(cert_obj, "tool", &format!("{path}.certificate"))?,
+        version: require_string(cert_obj, "version", &format!("{path}.certificate"))?,
+        formula_hash: require_string(cert_obj, "formulaHash", &format!("{path}.certificate"))?,
+        proof_data: require_string(cert_obj, "proofData", &format!("{path}.certificate"))?,
+    };
+    Ok(EvidenceTerm {
+        proof_type,
+        certificate,
+    })
 }
 
 fn parse_formula_at(v: &Json, path: &str) -> Result<Rc<Formula>, ParseError> {
@@ -250,6 +287,15 @@ fn parse_formula_at(v: &Json, path: &str) -> Result<Rc<Formula>, ParseError> {
                 body,
             }))
         }
+        "choice" => {
+            reject_extra_keys(obj, &["kind", "varName", "sort", "body"], path, "choice")?;
+            let var_name = require_string(obj, "varName", path)?;
+            let sort_v = require_field(obj, "sort", path)?;
+            let sort = parse_sort_at(sort_v, &format!("{path}.sort"))?;
+            let body_v = require_field(obj, "body", path)?;
+            let body = parse_formula_at(body_v, &format!("{path}.body"))?;
+            Ok(Rc::new(Formula::Choice { var_name, sort, body }))
+        }
         other => Err(ParseError::UnknownKind {
             path: path.into(),
             kind: other.into(),
@@ -317,6 +363,31 @@ fn parse_term_at(v: &Json, path: &str) -> Result<Rc<Term>, ParseError> {
                 terms.push(parse_term_at(a, &format!("{path}.args[{i}]"))?);
             }
             Ok(Rc::new(Term::Ctor { name, args: terms }))
+        }
+        "lambda" => {
+            reject_extra_keys(obj, &["kind", "paramName", "paramSort", "body"], path, "lambda")?;
+            let param_name = require_string(obj, "paramName", path)?;
+            let param_sort_v = require_field(obj, "paramSort", path)?;
+            let param_sort = parse_sort_at(param_sort_v, &format!("{path}.paramSort"))?;
+            let body_v = require_field(obj, "body", path)?;
+            let body = parse_term_at(body_v, &format!("{path}.body"))?;
+            Ok(Rc::new(Term::Lambda { param_name, param_sort, body }))
+        }
+        "let" => {
+            reject_extra_keys(obj, &["kind", "bindings", "body"], path, "let")?;
+            let bindings_v = require_field(obj, "bindings", path)?;
+            let bindings_arr = require_array(bindings_v, &format!("{path}.bindings"), "let.bindings")?;
+            let mut bindings = Vec::with_capacity(bindings_arr.len());
+            for (i, b) in bindings_arr.iter().enumerate() {
+                let b_obj = require_object(b, &format!("{path}.bindings[{i}]"), "binding")?;
+                let b_name = require_string(b_obj, "name", &format!("{path}.bindings[{i}]"))?;
+                let b_term_v = require_field(b_obj, "boundTerm", &format!("{path}.bindings[{i}]"))?;
+                let b_term = parse_term_at(b_term_v, &format!("{path}.bindings[{i}].boundTerm"))?;
+                bindings.push(crate::LetBinding { name: b_name, bound_term: b_term });
+            }
+            let body_v = require_field(obj, "body", path)?;
+            let body = parse_term_at(body_v, &format!("{path}.body"))?;
+            Ok(Rc::new(Term::Let { bindings, body }))
         }
         other => Err(ParseError::UnknownKind {
             path: path.into(),

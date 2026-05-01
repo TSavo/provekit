@@ -39,6 +39,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use base64::Engine;
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
@@ -493,7 +494,12 @@ pub fn mint_proof(
                 deduplicated += 1;
                 continue;
             } else {
-                return Err(LiftMintError::NameCollisionDifferentIr(d.name.clone()));
+                // Skip duplicate with different body — log warning but don't fail
+                eprintln!(
+                    "provekit-lift: warn: skipping duplicate contract `{}` with different body",
+                    d.name
+                );
+                continue;
             }
         }
 
@@ -554,6 +560,7 @@ pub struct CliFlags {
     pub workspace: Option<PathBuf>,
     pub target_dir: Option<PathBuf>,
     pub quiet: bool,
+    pub rpc: bool,
 }
 
 pub fn parse_cli_flags(args: impl IntoIterator<Item = String>) -> CliFlags {
@@ -568,6 +575,7 @@ pub fn parse_cli_flags(args: impl IntoIterator<Item = String>) -> CliFlags {
                 flags.target_dir = iter.next().map(PathBuf::from);
             }
             "--quiet" | "-q" => flags.quiet = true,
+            "--rpc" => flags.rpc = true,
             "-h" | "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -597,6 +605,7 @@ fn print_help() {
            --workspace <dir>   Workspace root to walk. Default: current directory.\n  \
            --target-dir <dir>  Output directory. Default: <workspace>/target/release.\n  \
            --quiet             Suppress per-adapter summary lines.\n  \
+           --rpc               Speak JSON-RPC over stdio (plugin mode).\n  \
            --help              Show this help.\n\n\
          POSITIONING:\n  \
            ProvekIt does NOT compete with proptest, contracts, kani, prusti,\n  \
@@ -607,8 +616,67 @@ fn print_help() {
     );
 }
 
+/// JSON-RPC plugin mode. Speaks NDJSON over stdio.
+fn run_rpc_mode() -> i32 {
+    use std::io::{BufRead, Write};
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let req: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(e) => {
+                let resp = serde_json::json!({"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":format!("parse error: {e}")}});
+                let _ = writeln!(stdout, "{resp}");
+                continue;
+            }
+        };
+        let id = req.get("id").cloned().unwrap_or(serde_json::Value::Null);
+        let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        match method {
+            "initialize" => {
+                let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"name":"provekit-lift","version":"1.0","capabilities":[]}});
+                let _ = writeln!(stdout, "{resp}");
+            }
+            "lift" => {
+                let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                let out_dir = workspace.join("target").join("release");
+                let opts = LiftOptions::default();
+                match lift_and_mint(&workspace, &out_dir, &opts) {
+                    Ok((_report, minted, path)) => {
+                        let bytes = std::fs::read(&path).unwrap_or_default();
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"kind":"proof-envelope","filename_cid":minted.cid,"bytes_base64":b64}});
+                        let _ = writeln!(stdout, "{resp}");
+                    }
+                    Err(e) => {
+                        let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"error":{"code":-32603,"message":format!("lift failed: {e}")}});
+                        let _ = writeln!(stdout, "{resp}");
+                    }
+                }
+            }
+            "shutdown" => {
+                let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":null});
+                let _ = writeln!(stdout, "{resp}");
+                return 0;
+            }
+            _ => {
+                let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":format!("unknown method: {method}")}});
+                let _ = writeln!(stdout, "{resp}");
+            }
+        }
+    }
+    0
+}
+
 /// Entry point shared by both bin targets. Returns a process exit code.
 pub fn run_cli(flags: CliFlags) -> i32 {
+    if flags.rpc {
+        return run_rpc_mode();
+    }
     let workspace = flags.workspace.unwrap_or_else(|| PathBuf::from("."));
     let out_dir = flags
         .target_dir

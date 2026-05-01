@@ -429,6 +429,17 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
                 })
             }
         }
+        Formula::Choice { var_name, sort, body } => {
+            if var_name == from {
+                f.clone() // shadowed
+            } else {
+                Rc::new(Formula::Choice {
+                    var_name: var_name.clone(),
+                    sort: sort.clone(),
+                    body: subst_var_name(body, from, to),
+                })
+            }
+        }
     }
 }
 
@@ -441,6 +452,39 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
             name: name.clone(),
             args: args.iter().map(|a| subst_term(a, from, to)).collect(),
         }),
+        Term::Lambda { param_name, param_sort, body } => {
+            if param_name == from {
+                t.clone() // shadowed
+            } else {
+                Rc::new(Term::Lambda {
+                    param_name: param_name.clone(),
+                    param_sort: param_sort.clone(),
+                    body: subst_term(body, from, to),
+                })
+            }
+        }
+        Term::Let { bindings, body } => {
+            let mut new_bindings = Vec::new();
+            let mut shadowed = false;
+            for b in bindings {
+                if !shadowed {
+                    new_bindings.push(provekit_ir_symbolic::LetBinding {
+                        name: b.name.clone(),
+                        bound_term: subst_term(&b.bound_term, from, to),
+                    });
+                    if b.name == from {
+                        shadowed = true;
+                    }
+                } else {
+                    new_bindings.push(provekit_ir_symbolic::LetBinding {
+                        name: b.name.clone(),
+                        bound_term: b.bound_term.clone(),
+                    });
+                }
+            }
+            let new_body = if shadowed { body.clone() } else { subst_term(body, from, to) };
+            Rc::new(Term::Let { bindings: new_bindings, body: new_body })
+        }
     }
 }
 

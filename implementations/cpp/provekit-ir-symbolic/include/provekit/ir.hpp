@@ -62,8 +62,24 @@ struct CtorTerm {
   std::vector<std::shared_ptr<Term>> args;
 };
 
+struct LambdaTerm {
+  std::string paramName;
+  Sort paramSort;
+  std::shared_ptr<Term> body;
+};
+
+struct LetBinding {
+  std::string name;
+  std::shared_ptr<Term> boundTerm;
+};
+
+struct LetTerm {
+  std::vector<LetBinding> bindings;
+  std::shared_ptr<Term> body;
+};
+
 struct Term {
-  std::variant<VarTerm, ConstTerm, CtorTerm> v;
+  std::variant<VarTerm, ConstTerm, CtorTerm, LambdaTerm, LetTerm> v;
 };
 
 inline std::shared_ptr<Term> make_var(std::string name) {
@@ -154,8 +170,14 @@ struct QuantifierFormula {
   std::shared_ptr<Formula> body;
 };
 
+struct ChoiceFormula {
+  std::string varName;
+  Sort sort;
+  std::shared_ptr<Formula> body;
+};
+
 struct Formula {
-  std::variant<AtomicFormula, ConnectiveFormula, QuantifierFormula> v;
+  std::variant<AtomicFormula, ConnectiveFormula, QuantifierFormula, ChoiceFormula> v;
 };
 
 // ---------------------------------------------------------------------------
@@ -246,6 +268,34 @@ std::shared_ptr<Formula> exists(Sort sort, Body body) {
   auto inner = body(var);
   return std::make_shared<Formula>(Formula{
       QuantifierFormula{"exists", std::move(vname), std::move(sort), std::move(inner)}});
+}
+
+// ---------------------------------------------------------------------------
+// Lambda terms (first-class functions)
+// ---------------------------------------------------------------------------
+
+inline std::shared_ptr<Term> lambda(std::string paramName, Sort paramSort, std::shared_ptr<Term> body) {
+  return std::make_shared<Term>(Term{LambdaTerm{std::move(paramName), std::move(paramSort), std::move(body)}});
+}
+
+// ---------------------------------------------------------------------------
+// Let terms (local bindings)
+// ---------------------------------------------------------------------------
+
+inline std::shared_ptr<Term> let_(std::vector<LetBinding> bindings, std::shared_ptr<Term> body) {
+  return std::make_shared<Term>(Term{LetTerm{std::move(bindings), std::move(body)}});
+}
+
+// ---------------------------------------------------------------------------
+// Choice formula (definite description)
+// ---------------------------------------------------------------------------
+
+template <typename Body>
+std::shared_ptr<Formula> choice(std::string varName, Sort sort, Body body) {
+  auto var = make_var(varName);
+  auto inner = body(var);
+  return std::make_shared<Formula>(Formula{
+      ChoiceFormula{std::move(varName), std::move(sort), std::move(inner)}});
 }
 
 // ---------------------------------------------------------------------------
@@ -402,12 +452,39 @@ inline void write_ctor(std::ostringstream& out, const CtorTerm& c) {
   out << "]}";
 }
 
+inline void write_lambda(std::ostringstream& out, const LambdaTerm& l) {
+  out << "{\"kind\":\"lambda\",\"paramName\":";
+  write_string(out, l.paramName);
+  out << ",\"paramSort\":";
+  write_sort(out, l.paramSort);
+  out << ",\"body\":";
+  write_term(out, *l.body);
+  out << "}";
+}
+
+inline void write_let(std::ostringstream& out, const LetTerm& l) {
+  out << "{\"kind\":\"let\",\"bindings\":[";
+  for (size_t i = 0; i < l.bindings.size(); i++) {
+    if (i > 0) out << ",";
+    out << "{\"name\":";
+    write_string(out, l.bindings[i].name);
+    out << ",\"boundTerm\":";
+    write_term(out, *l.bindings[i].boundTerm);
+    out << "}";
+  }
+  out << "],\"body\":";
+  write_term(out, *l.body);
+  out << "}";
+}
+
 inline void write_term(std::ostringstream& out, const Term& t) {
   std::visit([&out](const auto& v) {
     using T = std::decay_t<decltype(v)>;
     if constexpr (std::is_same_v<T, VarTerm>) write_var(out, v);
     else if constexpr (std::is_same_v<T, ConstTerm>) write_const(out, v);
     else if constexpr (std::is_same_v<T, CtorTerm>) write_ctor(out, v);
+    else if constexpr (std::is_same_v<T, LambdaTerm>) write_lambda(out, v);
+    else if constexpr (std::is_same_v<T, LetTerm>) write_let(out, v);
   }, t.v);
 }
 
@@ -450,12 +527,23 @@ inline void write_quantifier(std::ostringstream& out, const QuantifierFormula& q
   out << "}";
 }
 
+inline void write_choice(std::ostringstream& out, const ChoiceFormula& c) {
+  out << "{\"kind\":\"choice\",\"varName\":";
+  write_string(out, c.varName);
+  out << ",\"sort\":";
+  write_sort(out, c.sort);
+  out << ",\"body\":";
+  write_formula(out, *c.body);
+  out << "}";
+}
+
 inline void write_formula(std::ostringstream& out, const Formula& f) {
   std::visit([&out](const auto& v) {
     using T = std::decay_t<decltype(v)>;
     if constexpr (std::is_same_v<T, AtomicFormula>) write_atomic(out, v);
     else if constexpr (std::is_same_v<T, ConnectiveFormula>) write_connective(out, v);
     else if constexpr (std::is_same_v<T, QuantifierFormula>) write_quantifier(out, v);
+    else if constexpr (std::is_same_v<T, ChoiceFormula>) write_choice(out, v);
   }, f.v);
 }
 

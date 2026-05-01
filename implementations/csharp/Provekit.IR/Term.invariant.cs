@@ -43,5 +43,16 @@ public static class TermInvariants
         Must("csharp_terms_str_const_round_trips_value",
             ForAll(Sort.String, s =>
                 Eq(Ctor("ConstStrValue", Ctor("StrConst", s)), s)));
+
+        // Lambda(paramName, paramSort, body).ParamName == paramName
+        Must("csharp_terms_lambda_round_trips_param_name",
+            ForAll(Sort.String, pn =>
+                ForAll(Sort.Int, body =>
+                    Eq(Ctor("LambdaParamName", Ctor("Lambda", pn, StrConst("Int"), body)), pn))));
+
+        // Let with bindings round-trips
+        Must("csharp_terms_let_has_bindings",
+            ForAll(Sort.Int, x =>
+                Eq(Ctor("LetBindingCount", Ctor("Let", Ctor("Binding", StrConst("x"), x), x)), Num(1))));
     }
 }

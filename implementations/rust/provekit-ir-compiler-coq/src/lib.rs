@@ -82,9 +82,14 @@ impl CoqCompiler {
             body.push_str(&format!("Parameter {} : {}.\n", name, self.sort_to_coq(sort)));
         }
 
-        // Emit the formula as Coq goal
+        // Emit the formula as Coq goal - handle both terms and formulas
         body.push_str("\nGoal ");
-        body.push_str(&self.emit_formula(ir));
+        let kind = ir.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        if Self::is_term_kind(kind) {
+            body.push_str(&self.emit_term(ir));
+        } else {
+            body.push_str(&self.emit_formula(ir));
+        }
         body.push_str(".\n");
         
         // Generate a proof strategy based on the formula
@@ -139,6 +144,10 @@ impl CoqCompiler {
                 | "true" | "false"
                 | "and" | "or" | "not" | "implies"
         )
+    }
+
+    fn is_term_kind(kind: &str) -> bool {
+        matches!(kind, "var" | "const" | "ctor" | "lambda" | "let")
     }
 
     fn kit_predicate_definition(name: &str) -> String {
@@ -296,6 +305,18 @@ Definition parseInt (s : string) : nat := parse_nat s.
                 
                 format!("{} {} : {}, {}", quant, name, coq_sort, body)
             }
+            "choice" => {
+                // Choice (εx. P(x)) - Coq's definite description operator
+                // Use sig (unique existence) or classical choice
+                let var_name = ir.get("varName").and_then(|v| v.as_str()).unwrap_or("x");
+                let sort = ir.get("sort").and_then(|s| s.get("name")).and_then(|n| n.as_str()).unwrap_or("Int");
+                let body = ir.get("body").map(|b| self.emit_formula(b)).unwrap_or_else(|| "True".to_string());
+                let coq_sort = self.sort_to_coq(sort);
+                
+                // Encode as: exists unique x : sort. body
+                // Using Coq's "exists" with uniqueness
+                format!("@sig {var_name} {coq_sort} (fun {var_name} => {body})")
+            }
             _ => "True".to_string(),
         }
     }
@@ -321,6 +342,29 @@ Definition parseInt (s : string) : nat := parse_nat s.
                 let args: Vec<Json> = term.get("args").and_then(|v| v.as_array()).cloned().unwrap_or_default();
                 let args_str: Vec<String> = args.iter().map(|a| self.emit_term(a)).collect();
                 format!("{} {}", name, args_str.join(" "))
+            }
+            "lambda" => {
+                let param_name = term.get("paramName").and_then(|v| v.as_str()).unwrap_or("x");
+                let param_sort = term.get("paramSort")
+                    .and_then(|s| s.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("String");
+                let body = term.get("body").map(|b| self.emit_term(b)).unwrap_or("x".to_string());
+                let coq_sort = self.sort_to_coq(param_sort);
+                format!("fun ({param_name} : {coq_sort}) => {body}")
+            }
+            "let" => {
+                let default_empty: Vec<Json> = vec![];
+                let bindings = term.get("bindings").and_then(|v| v.as_array()).unwrap_or(&default_empty);
+                let body = term.get("body").map(|b| self.emit_term(b)).unwrap_or("x".to_string());
+                
+                let mut let_parts = Vec::new();
+                for b in bindings {
+                    let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("x");
+                    let bound_term = b.get("boundTerm").map(|t| self.emit_term(t)).unwrap_or("x".to_string());
+                    let_parts.push(format!("let {name} := {bound_term} in"));
+                }
+                format!("{} {}", let_parts.join(" "), body)
             }
             _ => "x".to_string(),
         }

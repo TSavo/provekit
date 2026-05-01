@@ -74,6 +74,14 @@ func substituteFormula(f map[string]interface{}, name string, replacement interf
 		if body, ok := f["body"].(map[string]interface{}); ok {
 			out["body"] = substituteFormula(body, name, replacement)
 		}
+	case "choice":
+		// Shadowing: don't substitute past a binder that re-introduces `name`.
+		if f["varName"] == name {
+			return out
+		}
+		if body, ok := f["body"].(map[string]interface{}); ok {
+			out["body"] = substituteFormula(body, name, replacement)
+		}
 	}
 	return out
 }
@@ -94,6 +102,52 @@ func substituteTerm(t map[string]interface{}, name string, replacement interface
 				}
 			}
 			out["args"] = newArgs
+		}
+		return out
+	}
+	if t["kind"] == "lambda" {
+		// Shadowing: don't substitute past a binder that re-introduces `name`.
+		if t["paramName"] == name {
+			return t
+		}
+		out := cloneMap(t)
+		if body, ok := t["body"].(map[string]interface{}); ok {
+			out["body"] = substituteTerm(body, name, replacement)
+		}
+		return out
+	}
+	if t["kind"] == "let" {
+		out := cloneMap(t)
+		shadowed := false
+		if bindings, ok := t["bindings"].([]interface{}); ok {
+			newBindings := make([]interface{}, len(bindings))
+			for i, b := range bindings {
+				if bm, ok := b.(map[string]interface{}); ok {
+					if !shadowed {
+						newBoundTerm := bm["boundTerm"]
+						if btm, ok := bm["boundTerm"].(map[string]interface{}); ok {
+							newBoundTerm = substituteTerm(btm, name, replacement)
+						}
+						newBindings[i] = map[string]interface{}{
+							"name":      bm["name"],
+							"boundTerm": newBoundTerm,
+						}
+						if bm["name"] == name {
+							shadowed = true
+						}
+					} else {
+						newBindings[i] = b
+					}
+				} else {
+					newBindings[i] = b
+				}
+			}
+			out["bindings"] = newBindings
+		}
+		if !shadowed {
+			if body, ok := t["body"].(map[string]interface{}); ok {
+				out["body"] = substituteTerm(body, name, replacement)
+			}
 		}
 		return out
 	}

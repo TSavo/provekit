@@ -23,6 +23,12 @@ public sealed record ConstTerm(ConstValue Value, Sort Sort) : Term;
 
 public sealed record CtorTerm(string Name, IReadOnlyList<Term> Args) : Term;
 
+public sealed record LambdaTerm(string ParamName, Sort ParamSort, Term Body) : Term;
+
+public sealed record LetBinding(string Name, Term BoundTerm);
+
+public sealed record LetTerm(IReadOnlyList<LetBinding> Bindings, Term Body) : Term;
+
 public static class Terms
 {
     public static Term Var(string name) => new VarTerm(name);
@@ -38,6 +44,15 @@ public static class Terms
 
     public static Term Ctor(string name, params Term[] args) =>
         new CtorTerm(name, args);
+
+    public static Term Lambda(string paramName, Sort paramSort, Term body) =>
+        new LambdaTerm(paramName, paramSort, body);
+
+    public static LetBinding Binding(string name, Term boundTerm) =>
+        new LetBinding(name, boundTerm);
+
+    public static Term Let(IReadOnlyList<LetBinding> bindings, Term body) =>
+        new LetTerm(bindings, body);
 
     /// <summary>
     /// References the return value within a post formula. Compiles to a

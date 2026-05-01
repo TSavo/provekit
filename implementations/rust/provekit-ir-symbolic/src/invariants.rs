@@ -18,6 +18,7 @@ use std::rc::Rc;
 
 use provekit_ir_symbolic::{
     and_, atomic_, contract, forall, make_var, num, not_, implies,
+    lambda, let_term, choice,
     ContractArgs, Int, String_, Term,
 };
 
@@ -75,6 +76,110 @@ pub fn invariants() {
                 let v = make_var("s");
                 let c = provekit_ir_symbolic::parse_int(v);
                 atomic_("roundTrips", vec![c])
+            })),
+            ..Default::default()
+        },
+    );
+
+    // =========================================================================
+    // Lambda Term Invariants
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // INVARIANT LambdaTerm.HasParamSort: Lambda has paramSort field.
+    // Every LambdaTerm MUST have a paramSort specifying the parameter type.
+    //
+    // Expressed as: "lambda(x: Int, 42) round-trips"
+    // -------------------------------------------------------------------------
+    contract(
+        "lambda_has_param_sort",
+        ContractArgs {
+            post: Some(forall(Int(), |_n| {
+                let lam = lambda("x".into(), Int(), num(42));
+                atomic_("roundTrips", vec![lam])
+            })),
+            ..Default::default()
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // INVARIANT LambdaTerm.HasBody: Lambda has body field.
+    // Every LambdaTerm MUST have a body term.
+    //
+    // Expressed as: "lambda(x, x) has body"
+    // -------------------------------------------------------------------------
+    contract(
+        "lambda_has_body",
+        ContractArgs {
+            post: Some(forall(Int(), |x| {
+                let lam = lambda("x".into(), Int(), x);
+                atomic_("roundTrips", vec![lam])
+            })),
+            ..Default::default()
+        },
+    );
+
+    // =========================================================================
+    // Let Term Invariants
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // INVARIANT LetTerm.NonEmptyBindings: Let has at least one binding.
+    // A LetTerm MUST have at least one binding.
+    //
+    // Expressed as: "let x = 1 in x round-trips"
+    // -------------------------------------------------------------------------
+    contract(
+        "let_non_empty_bindings",
+        ContractArgs {
+            post: Some(forall(Int(), |x| {
+                let let_expr = let_term(
+                    vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+                    x,
+                );
+                atomic_("roundTrips", vec![let_expr])
+            })),
+            ..Default::default()
+        },
+    );
+
+    // =========================================================================
+    // Choice Formula Invariants
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // INVARIANT ChoiceFormula.HasVarName: Choice has varName field.
+    // Every ChoiceFormula MUST have a varName identifying the chosen variable.
+    //
+    // Expressed as: "εx:Int. x > 0 round-trips"
+    // -------------------------------------------------------------------------
+    contract(
+        "choice_has_var_name",
+        ContractArgs {
+            post: Some(forall(Int(), |x| {
+                let c = choice("x".into(), Int(), |_v| {
+                    atomic_(">", vec![x.clone(), num(0)])
+                });
+                atomic_("roundTrips", vec![make_var("choice_result")])
+            })),
+            ..Default::default()
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // INVARIANT ChoiceFormula.HasSort: Choice has sort field.
+    // Every ChoiceFormula MUST have a sort specifying the chosen element type.
+    //
+    // Expressed as: "εx:String. true has String sort"
+    // -------------------------------------------------------------------------
+    contract(
+        "choice_has_sort",
+        ContractArgs {
+            post: Some(forall(String_(), |s| {
+                let _c = choice("x".into(), String_(), |_v| {
+                    atomic_("true", vec![])
+                });
+                atomic_("roundTrips", vec![s])
             })),
             ..Default::default()
         },

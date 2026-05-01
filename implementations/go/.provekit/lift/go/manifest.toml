@@ -1,0 +1,2 @@
+name = "go-lift"
+command = ["/Users/tsavo/provekit/implementations/go/provekit-lift-go-tests/provekit-lift-go", "--rpc"]

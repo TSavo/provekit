@@ -425,3 +425,59 @@ fn quantifier_without_body_returns_err() {
     });
     assert!(emit(&f).is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Lambda terms
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lambda_emits_smt_lib_lambda() {
+    let f = json!({
+        "kind": "lambda",
+        "paramName": "x",
+        "paramSort": {"kind": "primitive", "name": "Int"},
+        "body": {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}
+    });
+    let s = emit(&f).expect("emit");
+    assert!(s.contains("(lambda"));
+    assert!(s.contains("x"));
+    assert!(s.contains("42"));
+}
+
+// ---------------------------------------------------------------------------
+// Let terms
+// ---------------------------------------------------------------------------
+
+#[test]
+fn let_emits_smt_lib_let() {
+    let f = json!({
+        "kind": "let",
+        "bindings": [
+            {"name": "x", "boundTerm": {"kind": "const", "value": 1, "sort": {"kind": "primitive", "name": "Int"}}}
+        ],
+        "body": {"kind": "var", "name": "x"}
+    });
+    let s = emit(&f).expect("emit");
+    assert!(s.contains("(let"));
+    assert!(s.contains("(x 1)"));
+    assert!(s.contains("x"));
+}
+
+// ---------------------------------------------------------------------------
+// Choice formulas
+// ---------------------------------------------------------------------------
+
+#[test]
+fn choice_emits_exists_with_uniqueness() {
+    let f = json!({
+        "kind": "choice",
+        "varName": "x",
+        "sort": {"kind": "primitive", "name": "Int"},
+        "body": {"kind": "atomic", "name": "true", "args": []}
+    });
+    let s = emit(&f).expect("emit");
+    // Choice encodes as: exists x. body ∧ (forall y. body[y/x] => y = x)
+    assert!(s.contains("(exists"));
+    assert!(s.contains("(and"));
+    assert!(s.contains("(forall"));
+}

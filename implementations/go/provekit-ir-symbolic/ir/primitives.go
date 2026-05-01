@@ -119,3 +119,24 @@ func Gte(a, b IrTerm) IrFormula { return atom("≥", []IrTerm{a, b}) }
 
 func IsTrue(b IrTerm) IrFormula  { return atom("true", []IrTerm{b}) }
 func IsFalse(b IrTerm) IrFormula { return atom("false", []IrTerm{b}) }
+
+// Lambda creates a first-class function term: λx: τ. body
+func Lambda(paramName string, paramSort Sort, body IrTerm) IrTerm {
+	return lambdaTerm{ParamName: paramName, ParamSort: paramSort, Body: body, Sort: body.TermSort()}
+}
+
+// LetBinding creates a name-term pair for let expressions
+func LetBinding(name string, boundTerm IrTerm) letBinding {
+	return letBinding{Name: name, BoundTerm: boundTerm}
+}
+
+// Let creates a let term: let bindings in body
+func Let(bindings []letBinding, body IrTerm) IrTerm {
+	return letTerm{Bindings: bindings, Body: body, Sort: body.TermSort()}
+}
+
+// Choice creates a definite description formula: εx. P(x)
+func Choice(varName string, sort Sort, body func(x IrTerm) IrFormula) IrFormula {
+	x := varTerm{Name: varName, Sort: sort}
+	return choiceFormula{VarName: varName, Sort: sort, Body: body(x)}
+}

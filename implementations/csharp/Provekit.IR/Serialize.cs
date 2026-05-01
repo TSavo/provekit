@@ -48,6 +48,20 @@ public static class Serialize
             ("name", V.String(c.Name)),
             ("args", V.Array(c.Args.Select(TermToValue).ToArray()))
         ),
+        LambdaTerm l => V.Object(
+            ("kind", V.String("lambda")),
+            ("paramName", V.String(l.ParamName)),
+            ("paramSort", SortToValue(l.ParamSort)),
+            ("body", TermToValue(l.Body))
+        ),
+        LetTerm l => V.Object(
+            ("kind", V.String("let")),
+            ("bindings", V.Array(l.Bindings.Select(b => V.Object(
+                ("name", V.String(b.Name)),
+                ("boundTerm", TermToValue(b.BoundTerm))
+            )).ToArray())),
+            ("body", TermToValue(l.Body))
+        ),
         _ => throw new InvalidOperationException($"unknown term kind: {t.GetType()}"),
     };
 
@@ -75,6 +89,12 @@ public static class Serialize
             ("name", V.String(q.Name)),
             ("sort", SortToValue(q.Sort)),
             ("body", FormulaToValue(q.Body))
+        ),
+        ChoiceFormula c => V.Object(
+            ("kind", V.String("choice")),
+            ("varName", V.String(c.VarName)),
+            ("sort", SortToValue(c.Sort)),
+            ("body", FormulaToValue(c.Body))
         ),
         _ => throw new InvalidOperationException($"unknown formula kind: {f.GetType()}"),
     };
@@ -175,6 +195,30 @@ public static class Serialize
                 }
                 sb.Append("]}");
                 return;
+            case LambdaTerm l:
+                sb.Append("{\"kind\":\"lambda\",\"paramName\":");
+                WriteString(sb, l.ParamName);
+                sb.Append(",\"paramSort\":");
+                WriteSort(sb, l.ParamSort);
+                sb.Append(",\"body\":");
+                WriteTerm(sb, l.Body);
+                sb.Append('}');
+                return;
+            case LetTerm l:
+                sb.Append("{\"kind\":\"let\",\"bindings\":[");
+                for (var i = 0; i < l.Bindings.Count; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append("{\"name\":");
+                    WriteString(sb, l.Bindings[i].Name);
+                    sb.Append(",\"boundTerm\":");
+                    WriteTerm(sb, l.Bindings[i].BoundTerm);
+                    sb.Append('}');
+                }
+                sb.Append("],\"body\":");
+                WriteTerm(sb, l.Body);
+                sb.Append('}');
+                return;
         }
         throw new InvalidOperationException($"unknown term: {t.GetType()}");
     }
@@ -214,6 +258,15 @@ public static class Serialize
                 WriteSort(sb, q.Sort);
                 sb.Append(",\"body\":");
                 WriteFormula(sb, q.Body);
+                sb.Append('}');
+                return;
+            case ChoiceFormula c:
+                sb.Append("{\"kind\":\"choice\",\"varName\":");
+                WriteString(sb, c.VarName);
+                sb.Append(",\"sort\":");
+                WriteSort(sb, c.Sort);
+                sb.Append(",\"body\":");
+                WriteFormula(sb, c.Body);
                 sb.Append('}');
                 return;
         }

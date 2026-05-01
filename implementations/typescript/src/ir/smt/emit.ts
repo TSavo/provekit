@@ -91,6 +91,17 @@ function emitFormulaIn(formula: IrFormula, ctx: EmitContext): string {
 
     case "atomic":
       return emitAtomic(formula.name, formula.args, ctx);
+
+    case "choice": {
+      // Choice (εx. P(x)) in first-order = exists unique x. P(x)
+      const varName = formula.varName;
+      const sort = emitSort(formula.sort);
+      const body = emitFormulaIn(formula.body, ctx);
+      const varNameY = `${varName}_y`;
+      const bodyY = body.replace(new RegExp(`\\b${varName}\\b`, "g"), varNameY);
+      const uniqueBody = `(and ${body} (forall ((${varNameY} ${sort})) (=> ${bodyY} (= ${varNameY} ${varName}))))`;
+      return `(exists ((${varName} ${sort})) ${uniqueBody})`;
+    }
   }
 }
 
@@ -183,6 +194,24 @@ function emitTerm(term: IrTerm, ctx: EmitContext): string {
       if (term.args.length === 0) return term.name;
       const args = term.args.map((a) => emitTerm(a, ctx)).join(" ");
       return `(${term.name} ${args})`;
+    }
+
+    case "lambda": {
+      // SMT-LIB lambda (available in newer versions)
+      const paramName = term.paramName;
+      const paramSort = emitSort(term.paramSort);
+      const body = emitTerm(term.body, ctx);
+      return `(lambda ((${paramName} ${paramSort})) ${body})`;
+    }
+
+    case "let": {
+      const bindings = term.bindings.map(b => {
+        const name = b.name;
+        const boundTerm = emitTerm(b.boundTerm, ctx);
+        return `(${name} ${boundTerm})`;
+      }).join(" ");
+      const body = emitTerm(term.body, ctx);
+      return `(let (${bindings}) ${body})`;
     }
   }
 }

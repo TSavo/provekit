@@ -14,7 +14,7 @@ use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_ir_symbolic::serialize::{formula_to_value, marshal_declarations, sort_to_value, term_to_value};
 use provekit_ir_symbolic::{
     and_, eq, exists, forall, gt, implies, must, not_, num, or_, out, parse_int, reset_collector,
-    str_const, ConstValue, Int, Sort, Term,
+    str_const, ConstValue, Int, Sort, Term, lambda, let_term, choice,
 };
 
 // ---------------------------------------------------------------------------
@@ -406,5 +406,89 @@ fn structurally_equivalent_formulas_with_same_bound_names_hash_equal() {
     let f2 = forall(Int(), |n| gt(n, num(0)));
     let h1 = blake3_512_of(encode_jcs(&formula_to_value(&f1)).as_bytes());
     let h2 = blake3_512_of(encode_jcs(&formula_to_value(&f2)).as_bytes());
+    assert_eq!(h1, h2);
+}
+
+// ---------------------------------------------------------------------------
+// Lambda term serialization
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lambda_serializes_to_value_with_param_sort_and_body() {
+    let lam = lambda("x".into(), Int(), num(42));
+    let v = term_to_value(&lam);
+    let s = encode_jcs(&v);
+    assert!(s.contains("\"kind\":\"lambda\""));
+    assert!(s.contains("\"paramName\":\"x\""));
+    assert!(s.contains("\"paramSort\":{\"kind\":\"primitive\",\"name\":\"Int\"}"));
+    assert!(s.contains("\"body\":{\"kind\":\"const\""));
+}
+
+#[test]
+fn lambda_hash_is_deterministic() {
+    let lam1 = lambda("x".into(), Int(), num(42));
+    let lam2 = lambda("x".into(), Int(), num(42));
+    let h1 = blake3_512_of(encode_jcs(&term_to_value(&lam1)).as_bytes());
+    let h2 = blake3_512_of(encode_jcs(&term_to_value(&lam2)).as_bytes());
+    assert_eq!(h1, h2);
+}
+
+// ---------------------------------------------------------------------------
+// Let term serialization
+// ---------------------------------------------------------------------------
+
+#[test]
+fn let_serializes_to_value_with_bindings_and_body() {
+    let let_expr = let_term(
+        vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+        num(2),
+    );
+    let v = term_to_value(&let_expr);
+    let s = encode_jcs(&v);
+    assert!(s.contains("\"kind\":\"let\""));
+    assert!(s.contains("\"bindings\""));
+    assert!(s.contains("\"name\":\"x\""));
+    assert!(s.contains("\"body\":{\"kind\":\"const\""));
+}
+
+#[test]
+fn let_hash_is_deterministic() {
+    let l1 = let_term(
+        vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+        num(2),
+    );
+    let l2 = let_term(
+        vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+        num(2),
+    );
+    let h1 = blake3_512_of(encode_jcs(&term_to_value(&l1)).as_bytes());
+    let h2 = blake3_512_of(encode_jcs(&term_to_value(&l2)).as_bytes());
+    assert_eq!(h1, h2);
+}
+
+// ---------------------------------------------------------------------------
+// Choice formula serialization
+// ---------------------------------------------------------------------------
+
+#[test]
+fn choice_serializes_to_value_with_var_name_sort_and_body() {
+    let c = choice("x".into(), Int(), |v| eq(v, num(0)));
+    let v = formula_to_value(&c);
+    let s = encode_jcs(&v);
+    println!("choice serialization: {}", s);
+    assert!(s.contains("\"kind\":\"choice\""));
+    assert!(s.contains("\"varName\":\"x\""));
+    assert!(s.contains("\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}"));
+    // JCS sorts keys; body may appear before or after other fields
+    assert!(s.contains("\"body\":"));
+    assert!(s.contains("\"kind\":\"atomic\""));
+}
+
+#[test]
+fn choice_hash_is_deterministic() {
+    let c1 = choice("x".into(), Int(), |v| eq(v, num(0)));
+    let c2 = choice("x".into(), Int(), |v| eq(v, num(0)));
+    let h1 = blake3_512_of(encode_jcs(&formula_to_value(&c1)).as_bytes());
+    let h2 = blake3_512_of(encode_jcs(&formula_to_value(&c2)).as_bytes());
     assert_eq!(h1, h2);
 }

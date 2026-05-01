@@ -733,6 +733,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-ir-compiler-coq"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-compiler",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-ir-compiler-smt-lib"
 version = "0.1.0"
 dependencies = [
@@ -764,6 +772,7 @@ dependencies = [
 name = "provekit-lift"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "proc-macro2",
  "provekit-canonicalizer",
  "provekit-claim-envelope",
@@ -780,6 +789,7 @@ dependencies = [
  "provekit-proof-envelope",
  "provekit-verifier",
  "quote",
+ "serde_json",
  "syn",
  "thiserror",
  "walkdir",

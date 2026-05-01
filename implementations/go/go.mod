@@ -1,0 +1,13 @@
+module github.com/tsavo/provekit/go
+
+go 1.22
+
+require (
+	github.com/tsavo/provekit/go/provekit-ir-symbolic v0.0.0
+	github.com/tsavo/provekit/go/provekit-lift-go-tests v0.0.0
+)
+
+replace (
+	github.com/tsavo/provekit/go/provekit-ir-symbolic => ./provekit-ir-symbolic
+	github.com/tsavo/provekit/go/provekit-lift-go-tests => ./provekit-lift-go-tests
+)

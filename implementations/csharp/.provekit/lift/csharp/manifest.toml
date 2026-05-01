@@ -1,0 +1,3 @@
+name = "csharp-lift"
+command = ["dotnet", "run", "--project", "implementations/csharp/Provekit.SelfContracts/Provekit.SelfContracts.csproj", "--", "--rpc"]
+working_dir = "."

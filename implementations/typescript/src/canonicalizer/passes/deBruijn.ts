@@ -26,7 +26,11 @@ const REF_SORT: Sort = { kind: "primitive", name: "Ref" };
 export type DeBruijnTerm =
   | { kind: "var"; name: string; sort: Sort; deBruijn: number }
   | { kind: "const"; value: unknown; sort: Sort }
-  | { kind: "ctor"; name: string; args: DeBruijnTerm[]; sort: Sort };
+  | { kind: "ctor"; name: string; args: DeBruijnTerm[]; sort: Sort }
+  | { kind: "lambda"; paramName: string; paramSort: Sort; body: DeBruijnTerm; sort: Sort }
+  | { kind: "let"; bindings: DeBruijnBinding[]; body: DeBruijnTerm; sort: Sort };
+
+export type DeBruijnBinding = { name: string; boundTerm: DeBruijnTerm };
 
 export type DeBruijnFormula =
   | { kind: "forall"; sort: Sort; varName: string; body: DeBruijnFormula }
@@ -35,7 +39,8 @@ export type DeBruijnFormula =
   | { kind: "or"; disjuncts: DeBruijnFormula[] }
   | { kind: "not"; body: DeBruijnFormula }
   | { kind: "implies"; antecedent: DeBruijnFormula; consequent: DeBruijnFormula }
-  | { kind: "atomic"; predicate: string; args: DeBruijnTerm[] };
+  | { kind: "atomic"; predicate: string; args: DeBruijnTerm[] }
+  | { kind: "choice"; sort: Sort; varName: string; body: DeBruijnFormula };
 
 // -----------------------------------------------------------------------
 // Implementation
@@ -92,6 +97,16 @@ export function applyDeBruijn(formula: IrFormula, stack: BinderEntry[] = []): De
         predicate: formula.name,
         args: formula.args.map((t) => applyDeBruijnTerm(t, stack)),
       };
+
+    case "choice": {
+      const newStack: BinderEntry[] = [{ name: formula.varName, sort: formula.sort }, ...stack];
+      return {
+        kind: "choice",
+        sort: formula.sort,
+        varName: formula.varName,
+        body: applyDeBruijn(formula.body, newStack),
+      };
+    }
   }
 }
 
@@ -115,5 +130,34 @@ function applyDeBruijnTerm(term: IrTerm, stack: BinderEntry[]): DeBruijnTerm {
         args: term.args.map((a) => applyDeBruijnTerm(a, stack)),
         sort: readSortHint(term) ?? REF_SORT,
       };
+
+    case "lambda": {
+      const newStack: BinderEntry[] = [{ name: term.paramName, sort: term.paramSort }, ...stack];
+      return {
+        kind: "lambda",
+        paramName: term.paramName,
+        paramSort: term.paramSort,
+        body: applyDeBruijnTerm(term.body, newStack),
+        sort: readSortHint(term) ?? REF_SORT,
+      };
+    }
+
+    case "let": {
+      const bindings: DeBruijnBinding[] = [];
+      let currentStack = stack;
+      for (const b of term.bindings) {
+        bindings.push({
+          name: b.name,
+          boundTerm: applyDeBruijnTerm(b.boundTerm, currentStack),
+        });
+        currentStack = [{ name: b.name, sort: REF_SORT }, ...currentStack];
+      }
+      return {
+        kind: "let",
+        bindings,
+        body: applyDeBruijnTerm(term.body, currentStack),
+        sort: readSortHint(term) ?? REF_SORT,
+      };
+    }
   }
 }

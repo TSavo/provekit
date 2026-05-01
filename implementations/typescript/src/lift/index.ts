@@ -259,7 +259,13 @@ export function mintProof(decls: ContractDecl[], opts: LiftOptions): MintOutput 
         deduplicated += 1;
         continue;
       }
-      throw new NameCollisionDifferentIrError(d.name);
+      // Skip duplicate with different body — log warning but don't fail
+      if (!opts.quiet) {
+        process.stderr.write(
+          `provekit-lift: warn: skipping duplicate contract "${d.name}" with different body (from ${d.sourcePath})\n`,
+        );
+      }
+      continue;
     }
     contractCids[d.name] = env.cid;
 

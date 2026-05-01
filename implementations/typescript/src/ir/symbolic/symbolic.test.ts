@@ -85,6 +85,9 @@ import {
   not,
   implies,
   iff,
+  lambda,
+  letTerm,
+  choice,
   type Declaration,
 } from "./index.js";
 
@@ -694,6 +697,66 @@ vDescribe("BV with quantifiers", () => {
     if (f.kind === "forall") {
       expect(f.sort).toEqual({ kind: "bitvec", width: 32 });
       expect(f.body.kind).toBe("atomic");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lambda terms
+// ---------------------------------------------------------------------------
+
+vDescribe("lambda", () => {
+  test("lambda builds a lambda term with paramName, paramSort, body", () => {
+    const lam = lambda("x", Int, num(42));
+    expect(lam.kind).toBe("lambda");
+    if (lam.kind === "lambda") {
+      expect(lam.paramName).toBe("x");
+      expect(lam.paramSort).toEqual(Int);
+      expect(lam.body).toEqual(num(42));
+    }
+  });
+
+  test("lambda infers function sort from param and body", () => {
+    const lam = lambda("x", Int, num(42));
+    expect(termSort(lam)).toEqual({ kind: "function", domain: [Int], range: Int });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Let terms
+// ---------------------------------------------------------------------------
+
+vDescribe("let", () => {
+  test("letTerm builds a let with bindings and body", () => {
+    const l = letTerm([{ name: "x", boundTerm: num(1) }], num(2));
+    expect(l.kind).toBe("let");
+    if (l.kind === "let") {
+      expect(l.bindings).toHaveLength(1);
+      expect(l.bindings[0]!.name).toBe("x");
+      expect(l.bindings[0]!.boundTerm).toEqual(num(1));
+      expect(l.body).toEqual(num(2));
+    }
+  });
+
+  test("letTerm infers sort from body", () => {
+    const l = letTerm([{ name: "x", boundTerm: num(1) }], num(2));
+    expect(termSort(l)).toEqual(Int);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Choice formulas
+// ---------------------------------------------------------------------------
+
+vDescribe("choice", () => {
+  test("choice builds a choice formula with varName, sort, body", () => {
+    const body = eq({ kind: "var", name: "x" }, num(0));
+    const c = choice("x", Int, body);
+    expect(c.kind).toBe("choice");
+    if (c.kind === "choice") {
+      expect(c.varName).toBe("x");
+      expect(c.sort).toEqual(Int);
+      expect(c.body.kind).toBe("atomic");
     }
   });
 });

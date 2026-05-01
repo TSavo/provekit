@@ -18,6 +18,7 @@
 
 import type {
   AtomicPredicate,
+  EvidenceTerm,
   IrFormula,
   IrTerm,
   PrimitiveSortName,
@@ -60,7 +61,7 @@ function stringifyForError(value: unknown): string {
 // ---------------------------------------------------------------------------
 
 const CONTRACT_DECL_REQUIRED_KEYS = ["kind", "name", "outBinding"] as const;
-const CONTRACT_DECL_OPTIONAL_KEYS = ["pre", "post", "inv"] as const;
+const CONTRACT_DECL_OPTIONAL_KEYS = ["pre", "post", "inv", "evidence"] as const;
 const BRIDGE_DECL_REQUIRED_KEYS = [
   "kind",
   "name",
@@ -78,6 +79,11 @@ const ATOMIC_KEYS = ["kind", "name", "args"] as const;
 const VAR_TERM_KEYS = ["kind", "name"] as const;
 const CONST_TERM_KEYS = ["kind", "value", "sort"] as const;
 const CTOR_TERM_KEYS = ["kind", "name", "args"] as const;
+const LAMBDA_TERM_KEYS = ["kind", "paramName", "paramSort", "body"] as const;
+const LET_TERM_KEYS = ["kind", "bindings", "body"] as const;
+const LET_BINDING_KEYS = ["name", "boundTerm"] as const;
+
+const CHOICE_KEYS = ["kind", "varName", "sort", "body"] as const;
 
 const PRIMITIVE_SORT_KEYS = ["kind", "name"] as const;
 const BITVEC_SORT_KEYS = ["kind", "width"] as const;
@@ -231,6 +237,7 @@ function parseContractDeclaration(
     if (observed.includes("pre")) expected.push("pre");
     if (observed.includes("post")) expected.push("post");
     if (observed.includes("inv")) expected.push("inv");
+    if (observed.includes("evidence")) expected.push("evidence");
     if (observed.join(",") !== expected.join(",")) {
       throw new GrammarParseError({
         path,
@@ -250,6 +257,9 @@ function parseContractDeclaration(
   }
   if ("inv" in obj) {
     decl.inv = parseFormulaValue(obj["inv"], `${path}/inv`, opts);
+  }
+  if ("evidence" in obj) {
+    decl.evidence = parseEvidenceValue(obj["evidence"], `${path}/evidence`, opts);
   }
   if (decl.pre === undefined && decl.post === undefined && decl.inv === undefined) {
     throw new GrammarParseError({
@@ -317,6 +327,42 @@ function parseBridgeDeclaration(
 }
 
 // ---------------------------------------------------------------------------
+// Evidence
+// ---------------------------------------------------------------------------
+
+const ACCEPTED_PROOF_TYPES = new Set<EvidenceTerm["proofType"]>(["smt-lib", "coq", "custom"]);
+
+function parseEvidenceValue(value: unknown, path: string, _opts: ParseOptions): EvidenceTerm {
+  const obj = expectObject(value, path);
+  enforceClosedKeys(obj, path, ["kind", "proofType", "certificate"], []);
+  const kind = expectKindString(obj, path);
+  if (kind !== "evidence") {
+    throw new GrammarParseError({
+      path: `${path}/kind`,
+      expected: '"evidence"',
+      actual: kind,
+    });
+  }
+  const proofType = expectString(obj["proofType"], `${path}/proofType`, "proofType string");
+  if (!ACCEPTED_PROOF_TYPES.has(proofType as EvidenceTerm["proofType"])) {
+    throw new GrammarParseError({
+      path: `${path}/proofType`,
+      expected: 'ProofType: "smt-lib" | "coq" | "custom"',
+      actual: proofType,
+    });
+  }
+  const certObj = expectObject(obj["certificate"], `${path}/certificate`);
+  enforceClosedKeys(certObj, `${path}/certificate`, ["tool", "version", "formulaHash", "proofData"], []);
+  const certificate = {
+    tool: expectString(certObj["tool"], `${path}/certificate/tool`, "tool string"),
+    version: expectString(certObj["version"], `${path}/certificate/version`, "version string"),
+    formulaHash: expectString(certObj["formulaHash"], `${path}/certificate/formulaHash`, "formulaHash string"),
+    proofData: expectString(certObj["proofData"], `${path}/certificate/proofData`, "proofData string"),
+  };
+  return { kind: "evidence", proofType: proofType as EvidenceTerm["proofType"], certificate };
+}
+
+// ---------------------------------------------------------------------------
 // Formulas
 // ---------------------------------------------------------------------------
 
@@ -334,11 +380,13 @@ function parseFormulaValue(value: unknown, path: string, opts: ParseOptions): Ir
       return parseConnectiveFormula(obj, path, opts, kind);
     case "atomic":
       return parseAtomicFormula(obj, path, opts);
+    case "choice":
+      return parseChoiceFormula(obj, path, opts);
     default:
       throw new GrammarParseError({
         path: `${path}/kind`,
         expected:
-          '"forall" | "exists" | "and" | "or" | "not" | "implies" | "atomic"',
+          '"forall" | "exists" | "and" | "or" | "not" | "implies" | "atomic" | "choice"',
         actual: kind,
       });
   }
@@ -412,6 +460,19 @@ function parseAtomicFormula(
   return { kind: "atomic", name: name as AtomicPredicate, args };
 }
 
+function parseChoiceFormula(
+  obj: Record<string, unknown>,
+  path: string,
+  opts: ParseOptions,
+): IrFormula {
+  enforceClosedKeys(obj, path, CHOICE_KEYS, []);
+  if (opts.strict) enforceKeyOrder(obj, path, CHOICE_KEYS);
+  const varName = expectString(obj["varName"], `${path}/varName`, "string choice var name");
+  const sort = parseSortValue(obj["sort"], `${path}/sort`, opts);
+  const body = parseFormulaValue(obj["body"], `${path}/body`, opts);
+  return { kind: "choice", varName, sort, body };
+}
+
 // ---------------------------------------------------------------------------
 // Terms
 // ---------------------------------------------------------------------------
@@ -426,10 +487,14 @@ function parseTermValue(value: unknown, path: string, opts: ParseOptions): IrTer
       return parseConstTerm(obj, path, opts);
     case "ctor":
       return parseCtorTerm(obj, path, opts);
+    case "lambda":
+      return parseLambdaTerm(obj, path, opts);
+    case "let":
+      return parseLetTerm(obj, path, opts);
     default:
       throw new GrammarParseError({
         path: `${path}/kind`,
-        expected: '"var" | "const" | "ctor"',
+        expected: '"var" | "const" | "ctor" | "lambda" | "let"',
         actual: kind,
       });
   }
@@ -484,6 +549,37 @@ function parseCtorTerm(
     parseTermValue(a, `${path}/args/${i}`, opts),
   );
   return { kind: "ctor", name, args };
+}
+
+function parseLambdaTerm(
+  obj: Record<string, unknown>,
+  path: string,
+  opts: ParseOptions,
+): IrTerm {
+  enforceClosedKeys(obj, path, LAMBDA_TERM_KEYS, []);
+  if (opts.strict) enforceKeyOrder(obj, path, LAMBDA_TERM_KEYS);
+  const paramName = expectString(obj["paramName"], `${path}/paramName`, "string lambda param name");
+  const paramSort = parseSortValue(obj["paramSort"], `${path}/paramSort`, opts);
+  const body = parseTermValue(obj["body"], `${path}/body`, opts);
+  return { kind: "lambda", paramName, paramSort, body };
+}
+
+function parseLetTerm(
+  obj: Record<string, unknown>,
+  path: string,
+  opts: ParseOptions,
+): IrTerm {
+  enforceClosedKeys(obj, path, LET_TERM_KEYS, []);
+  if (opts.strict) enforceKeyOrder(obj, path, LET_TERM_KEYS);
+  const bindings = expectArray(obj["bindings"], `${path}/bindings`).map((b, i) => {
+    const bObj = expectObject(b, `${path}/bindings/${i}`);
+    enforceClosedKeys(bObj, `${path}/bindings/${i}`, LET_BINDING_KEYS, []);
+    const name = expectString(bObj["name"], `${path}/bindings/${i}/name`, "string binding name");
+    const boundTerm = parseTermValue(bObj["boundTerm"], `${path}/bindings/${i}/boundTerm`, opts);
+    return { name, boundTerm };
+  });
+  const body = parseTermValue(obj["body"], `${path}/body`, opts);
+  return { kind: "let", bindings, body };
 }
 
 // ---------------------------------------------------------------------------
@@ -717,6 +813,9 @@ function emitDeclaration(decl: Declaration): string {
     if (decl.inv !== undefined) {
       out += `,"inv":${emitFormula(decl.inv)}`;
     }
+    if (decl.evidence !== undefined) {
+      out += `,"evidence":${emitEvidence(decl.evidence)}`;
+    }
     out += "}";
     return out;
   }
@@ -765,7 +864,30 @@ export function emitFormula(f: IrFormula): string {
         `"args":[${f.args.map(emitTerm).join(",")}]` +
         "}"
       );
+    case "choice":
+      return (
+        "{" +
+        `"kind":"choice",` +
+        `"varName":${JSON.stringify(f.varName)},` +
+        `"sort":${emitSort(f.sort)},` +
+        `"body":${emitFormula(f.body)}` +
+        "}"
+      );
   }
+}
+
+function emitEvidence(e: EvidenceTerm): string {
+  return (
+    "{" +
+    `"kind":"evidence",` +
+    `"proofType":${JSON.stringify(e.proofType)},` +
+    `"certificate":{` +
+    `"tool":${JSON.stringify(e.certificate.tool)},` +
+    `"version":${JSON.stringify(e.certificate.version)},` +
+    `"formulaHash":${JSON.stringify(e.certificate.formulaHash)},` +
+    `"proofData":${JSON.stringify(e.certificate.proofData)}` +
+    "}}"
+  );
 }
 
 export function emitTerm(t: IrTerm): string {
@@ -791,6 +913,23 @@ export function emitTerm(t: IrTerm): string {
         `"kind":"ctor",` +
         `"name":${JSON.stringify(t.name)},` +
         `"args":[${t.args.map(emitTerm).join(",")}]` +
+        "}"
+      );
+    case "lambda":
+      return (
+        "{" +
+        `"kind":"lambda",` +
+        `"paramName":${JSON.stringify(t.paramName)},` +
+        `"sort":${emitSort(t.paramSort)},` +
+        `"body":${emitTerm(t.body)}` +
+        "}"
+      );
+    case "let":
+      return (
+        "{" +
+        `"kind":"let",` +
+        `"bindings":[${t.bindings.map(b => `{"name":${JSON.stringify(b.name)},"boundTerm":${emitTerm(b.boundTerm)}}`).join(",")}],` +
+        `"body":${emitTerm(t.body)}` +
         "}"
       );
   }

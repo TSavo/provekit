@@ -19,3 +19,5 @@ public sealed record AtomicFormula(string Name, IReadOnlyList<Term> Args) : Form
 public sealed record ConnectiveFormula(string Kind, IReadOnlyList<Formula> Operands) : Formula;
 
 public sealed record QuantifierFormula(string Kind, string Name, Sort Sort, Formula Body) : Formula;
+
+public sealed record ChoiceFormula(string VarName, Sort Sort, Formula Body) : Formula;

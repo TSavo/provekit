@@ -230,6 +230,88 @@ func marshalTerms(terms []IrTerm) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// lambdaTerm: first-class function (λx: τ. body)
+type lambdaTerm struct {
+	ParamName string
+	ParamSort Sort
+	Body      IrTerm
+	Sort      Sort
+}
+
+func (lambdaTerm) termMarker()      {}
+func (t lambdaTerm) TermSort() Sort { return t.Sort }
+
+func (t lambdaTerm) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"kind":"lambda","paramName":`)
+	encoded, err := encodeJSON(t.ParamName)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(",\"paramSort\":")
+	encoded, err = encodeJSON(t.ParamSort)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(",\"body\":")
+	encoded, err = encodeJSON(t.Body)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// letBinding: name-term pair for let expression
+type letBinding struct {
+	Name      string
+	BoundTerm IrTerm
+}
+
+// letTerm: local bindings (let x = e1 in e2)
+type letTerm struct {
+	Bindings []letBinding
+	Body     IrTerm
+	Sort     Sort
+}
+
+func (letTerm) termMarker()      {}
+func (t letTerm) TermSort() Sort { return t.Sort }
+
+func (t letTerm) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"kind":"let","bindings":[`)
+	for i, b := range t.Bindings {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`{"name":`)
+		encoded, err := encodeJSON(b.Name)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encoded)
+		buf.WriteString(",\"boundTerm\":")
+		encoded, err = encodeJSON(b.BoundTerm)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encoded)
+		buf.WriteByte('}')
+	}
+	buf.WriteString("],\"body\":")
+	encoded, err := encodeJSON(t.Body)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
 // ----------------------------------------------------------------------
 // Formula: three uniform shapes per the v1.1.0 IR grammar:
 //
@@ -328,6 +410,39 @@ func (f atomicFormula) MarshalJSON() ([]byte, error) {
 	buf.Write(encoded)
 	buf.WriteString(`,"args":`)
 	encoded, err = marshalTerms(f.Args)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// choiceFormula: definite description (εx. P(x))
+type choiceFormula struct {
+	VarName string
+	Sort    Sort
+	Body    IrFormula
+}
+
+func (choiceFormula) formulaMarker() {}
+
+func (f choiceFormula) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"kind":"choice","varName":`)
+	encoded, err := encodeJSON(f.VarName)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(",\"sort\":")
+	encoded, err = encodeJSON(f.Sort)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(",\"body\":")
+	encoded, err = encodeJSON(f.Body)
 	if err != nil {
 		return nil, err
 	}

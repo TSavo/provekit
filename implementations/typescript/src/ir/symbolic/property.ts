@@ -15,7 +15,7 @@
  * language.
  */
 
-import type { IrFormula, IrTerm, Sort, VarTerm } from "../formulas.js";
+import type { EvidenceTerm, IrFormula, IrTerm, Sort, VarTerm } from "../formulas.js";
 
 // ---------------------------------------------------------------------------
 // Declarations captured by the collector
@@ -28,6 +28,8 @@ export interface ContractDeclaration {
   pre?: IrFormula;
   post?: IrFormula;
   inv?: IrFormula;
+  /** Optional proof certificate attached to this contract declaration. */
+  evidence?: EvidenceTerm;
 }
 
 export interface BridgeDeclaration {
@@ -125,6 +127,8 @@ export interface ContractSpec {
   post?: IrFormula;
   inv?: IrFormula;
   outBinding?: string;
+  /** Optional proof certificate (EvidenceTerm) attached to this contract. */
+  evidence?: EvidenceTerm;
 }
 
 /**
@@ -158,6 +162,7 @@ export function contract(name: string, spec: ContractSpec): void {
     if (spec.pre !== undefined) decl.pre = spec.pre;
     if (spec.post !== undefined) decl.post = spec.post;
     if (spec.inv !== undefined) decl.inv = spec.inv;
+    if (spec.evidence !== undefined) decl.evidence = spec.evidence;
     activeCollector.push(decl);
   } finally {
     contractStack.pop();

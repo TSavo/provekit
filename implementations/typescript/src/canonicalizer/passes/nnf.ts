@@ -64,6 +64,9 @@ export function toNnf(ast: CanonicalFolAst): CanonicalFolAst {
 
     case "atomic":
       return ast;
+
+    case "choice":
+      return { kind: "choice", sort: ast.sort, body: toNnf(ast.body) };
   }
 }
 
@@ -108,5 +111,9 @@ function pushNot(inner: CanonicalFolAst): CanonicalFolAst {
       // For kit-defined / unknown predicates: leave as not(atomic).
       return { kind: "not", operands: [inner] };
     }
+
+    case "choice":
+      // not(choice(x, s, body)) — complex negation, leave as not(choice)
+      return { kind: "not", operands: [inner] };
   }
 }

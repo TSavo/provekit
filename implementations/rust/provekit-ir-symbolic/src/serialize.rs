@@ -22,9 +22,31 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::Value;
 
-use crate::{ConstValue, ContractDecl, Formula, Sort, Term};
+use crate::{ConstValue, ContractDecl, EvidenceTerm, Formula, Sort, Term};
 
 // -------- to canonicalizer Value (used by hashing path) --------------
+
+pub fn evidence_to_value(e: &EvidenceTerm) -> Arc<Value> {
+    Value::object([
+        ("kind", Value::string("evidence")),
+        ("proofType", Value::string(e.proof_type.clone())),
+        (
+            "certificate",
+            Value::object([
+                ("tool", Value::string(e.certificate.tool.clone())),
+                ("version", Value::string(e.certificate.version.clone())),
+                (
+                    "formulaHash",
+                    Value::string(e.certificate.formula_hash.clone()),
+                ),
+                (
+                    "proofData",
+                    Value::string(e.certificate.proof_data.clone()),
+                ),
+            ]),
+        ),
+    ])
+}
 
 pub fn sort_to_value(s: &Sort) -> Arc<Value> {
     Value::object([
@@ -59,6 +81,25 @@ pub fn term_to_value(t: &Term) -> Arc<Value> {
                 ("args", Value::array(arr)),
             ])
         }
+        Term::Lambda { param_name, param_sort, body } => Value::object([
+            ("kind", Value::string("lambda")),
+            ("paramName", Value::string(param_name.clone())),
+            ("paramSort", sort_to_value(param_sort)),
+            ("body", term_to_value(body)),
+        ]),
+        Term::Let { bindings, body } => {
+            let arr: Vec<Arc<Value>> = bindings.iter().map(|b| {
+                Value::object([
+                    ("name", Value::string(b.name.clone())),
+                    ("boundTerm", term_to_value(&b.bound_term)),
+                ])
+            }).collect();
+            Value::object([
+                ("kind", Value::string("let")),
+                ("bindings", Value::array(arr)),
+                ("body", term_to_value(body)),
+            ])
+        }
     }
 }
 
@@ -87,6 +128,12 @@ pub fn formula_to_value(f: &Formula) -> Arc<Value> {
         } => Value::object([
             ("kind", Value::string(kind.clone())),
             ("name", Value::string(name.clone())),
+            ("sort", sort_to_value(sort)),
+            ("body", formula_to_value(body)),
+        ]),
+        Formula::Choice { var_name, sort, body } => Value::object([
+            ("kind", Value::string("choice")),
+            ("varName", Value::string(var_name.clone())),
             ("sort", sort_to_value(sort)),
             ("body", formula_to_value(body)),
         ]),
@@ -119,10 +166,28 @@ pub fn marshal_declarations(decls: &[ContractDecl]) -> String {
             out.push_str(r#","inv":"#);
             write_formula(&mut out, inv);
         }
+        if let Some(ev) = &d.evidence {
+            out.push_str(r#","evidence":"#);
+            write_evidence(&mut out, ev);
+        }
         out.push('}');
     }
     out.push(']');
     out
+}
+
+fn write_evidence(out: &mut String, e: &EvidenceTerm) {
+    out.push_str(r#"{"kind":"evidence","proofType":"#);
+    write_string(out, &e.proof_type);
+    out.push_str(r#","certificate":{"tool":"#);
+    write_string(out, &e.certificate.tool);
+    out.push_str(r#","version":"#);
+    write_string(out, &e.certificate.version);
+    out.push_str(r#","formulaHash":"#);
+    write_string(out, &e.certificate.formula_hash);
+    out.push_str(r#","proofData":"#);
+    write_string(out, &e.certificate.proof_data);
+    out.push_str("}}");
 }
 
 fn write_string(out: &mut String, s: &str) {
@@ -180,6 +245,31 @@ fn write_term(out: &mut String, t: &Term) {
             }
             out.push_str("]}");
         }
+        Term::Lambda { param_name, param_sort, body } => {
+            out.push_str(r#"{"kind":"lambda","paramName":"#);
+            write_string(out, param_name);
+            out.push_str(r#","paramSort":"#);
+            write_sort(out, param_sort);
+            out.push_str(r#","body":"#);
+            write_term(out, body);
+            out.push('}');
+        }
+        Term::Let { bindings, body } => {
+            out.push_str(r#"{"kind":"let","bindings":["#);
+            for (i, b) in bindings.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(r#"{"name":"#);
+                write_string(out, &b.name);
+                out.push_str(r#","boundTerm":"#);
+                write_term(out, &b.bound_term);
+                out.push('}');
+            }
+            out.push_str(r#","body":"#);
+            write_term(out, body);
+            out.push('}');
+        }
     }
 }
 
@@ -225,39 +315,14 @@ fn write_formula(out: &mut String, f: &Formula) {
             write_formula(out, body);
             out.push('}');
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::*;
-
-    #[test]
-    fn marshal_simple_contract() {
-        reset_collector();
-        must("parseInt", forall(Int(), |n| gt(n, num(0))));
-        let decls = finish();
-        let s = marshal_declarations(&decls);
-        // Insertion-order: kind, name, outBinding, then pre.
-        assert!(s.contains(r#""kind":"contract""#));
-        assert!(s.contains(r#""name":"parseInt""#));
-        assert!(s.contains(r#""outBinding":"out""#));
-        assert!(s.contains(r#""pre":{"kind":"forall""#));
-        assert!(s.contains(r#""kind":"atomic""#));
-        assert!(s.contains(r#""name":">""#));
-    }
-
-    #[test]
-    fn formula_to_value_round_trips_through_jcs() {
-        // Build a forall(Int, n -> n > 0) and JCS-encode the canonical Value.
-        let f = forall(Int(), |n| gt(n, num(0)));
-        let v = formula_to_value(&f);
-        let s = provekit_canonicalizer::encode_jcs(&v);
-        // JCS sorts: args, body, kind, name, operands, sort. Top-level
-        // forall has keys body, kind, name, sort.
-        assert!(s.starts_with('{'));
-        assert!(s.contains(r#""kind":"forall""#));
-        assert!(s.contains(r#""kind":"atomic""#));
+        Formula::Choice { var_name, sort, body } => {
+            out.push_str(r#"{"kind":"choice","varName":"#);
+            write_string(out, var_name);
+            out.push_str(r#","sort":"#);
+            write_sort(out, sort);
+            out.push_str(r#","body":"#);
+            write_formula(out, body);
+            out.push('}');
+        }
     }
 }

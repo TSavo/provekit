@@ -132,3 +132,7 @@ export {
   bvsgt,
   bvsge,
 } from "./primitives.js";
+
+// Lambda terms
+export { lambda, letTerm, choice } from "./primitives.js";
+export type { LetBinding } from "./primitives.js";

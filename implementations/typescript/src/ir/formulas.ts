@@ -39,8 +39,11 @@ export type Sort =
 export type VarTerm = { kind: "var"; name: string };
 export type ConstTerm = { kind: "const"; value: unknown; sort: Sort };
 export type CtorTerm = { kind: "ctor"; name: string; args: IrTerm[] };
+export type LambdaTerm = { kind: "lambda"; paramName: string; paramSort: Sort; body: IrTerm };
+export type LetTerm = { kind: "let"; bindings: LetBinding[]; body: IrTerm };
+export type LetBinding = { name: string; boundTerm: IrTerm };
 
-export type IrTerm = VarTerm | ConstTerm | CtorTerm;
+export type IrTerm = VarTerm | ConstTerm | CtorTerm | LambdaTerm | LetTerm;
 
 // ---------------------------------------------------------------------------
 // Atomic predicates
@@ -84,7 +87,14 @@ export type AtomicFormula = {
   args: IrTerm[];
 };
 
-export type IrFormula = QuantifierFormula | ConnectiveFormula | AtomicFormula;
+export type ChoiceFormula = {
+  kind: "choice";
+  varName: string;
+  sort: Sort;
+  body: IrFormula;
+};
+
+export type IrFormula = QuantifierFormula | ConnectiveFormula | AtomicFormula | ChoiceFormula;
 
 // ---------------------------------------------------------------------------
 // Binding scope (for property declarations)
@@ -129,7 +139,7 @@ export type Bindings = Record<string, Sort>;
 export function liftToTerm(value: IrTerm | number | bigint | string | boolean | null): IrTerm {
   if (value !== null && typeof value === "object" && "kind" in value) {
     const k = (value as IrTerm).kind;
-    if (k === "var" || k === "const" || k === "ctor") {
+    if (k === "var" || k === "const" || k === "ctor" || k === "lambda" || k === "let") {
       return value as IrTerm;
     }
   }
@@ -148,3 +158,22 @@ export function liftToTerm(value: IrTerm | number | bigint | string | boolean | 
   // null -> Ref const
   return { kind: "const", value: null, sort: { kind: "primitive", name: "Ref" } };
 }
+
+// ---------------------------------------------------------------------------
+// Evidence (proof certificates)
+// ---------------------------------------------------------------------------
+
+export type ProofType = "smt-lib" | "coq" | "custom";
+
+export type EvidenceCertificate = {
+  tool: string;
+  version: string;
+  formulaHash: string;
+  proofData: string;
+};
+
+export type EvidenceTerm = {
+  kind: "evidence";
+  proofType: ProofType;
+  certificate: EvidenceCertificate;
+};

@@ -423,3 +423,53 @@ export function bvslt(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvslt", a
 export function bvsle(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvsle", a, b); }
 export function bvsgt(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvsgt", a, b); }
 export function bvsge(a: IrTerm, b: IrTerm): IrFormula { return bvCmp("bvsge", a, b); }
+
+// ---------------------------------------------------------------------------
+// Lambda terms (first-class functions)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a lambda term: λx: τ. body
+ * Creates a first-class function that can be applied to arguments.
+ */
+export function lambda(paramName: string, paramSort: Sort, body: IrTerm): IrTerm {
+  const lam: IrTerm = { kind: "lambda", paramName, paramSort, body };
+  // Sort hint: function sort (paramSort → bodySort)
+  const bodySort = inferSortHint(body);
+  if (bodySort) {
+    attachSortHint(lam, { kind: "function", domain: [paramSort], range: bodySort });
+  }
+  return lam;
+}
+
+// ---------------------------------------------------------------------------
+// Let terms (local bindings)
+// ---------------------------------------------------------------------------
+
+export type LetBinding = { name: string; boundTerm: IrTerm };
+
+/**
+ * Build a let term: let x1 = e1, x2 = e2 in body
+ * Provides local bindings for computation.
+ */
+export function letTerm(bindings: LetBinding[], body: IrTerm): IrTerm {
+  const letExpr: IrTerm = { kind: "let", bindings, body };
+  // Sort hint: let expression has the sort of its body
+  const bodySort = inferSortHint(body);
+  if (bodySort) {
+    attachSortHint(letExpr, bodySort);
+  }
+  return letExpr;
+}
+
+// ---------------------------------------------------------------------------
+// Choice formula (definite description)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a choice formula: εx. P(x) - the unique x such that P(x)
+ * Asserts exactly one element satisfies the body formula.
+ */
+export function choice(varName: string, sort: Sort, body: IrFormula): IrFormula {
+  return { kind: "choice", varName, sort, body };
+}

@@ -23,12 +23,63 @@ type Declaration interface {
 // known free-variable name in the post slot.
 const DefaultOutBinding = "out"
 
+// EvidenceCertificate holds solver-specific proof data.
+type EvidenceCertificate struct {
+	Tool        string
+	Version     string
+	FormulaHash string
+	ProofData   string
+}
+
+// EvidenceTerm attaches a proof certificate to a formula-bearing declaration.
+type EvidenceTerm struct {
+	ProofType   string // "smt-lib" | "coq" | "custom"
+	Certificate EvidenceCertificate
+}
+
+func (e EvidenceTerm) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"kind":"evidence","proofType":`)
+	encoded, err := encodeJSON(e.ProofType)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"certificate":{`)
+	buf.WriteString(`"tool":`)
+	encoded, err = encodeJSON(e.Certificate.Tool)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"version":`)
+	encoded, err = encodeJSON(e.Certificate.Version)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"formulaHash":`)
+	encoded, err = encodeJSON(e.Certificate.FormulaHash)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"proofData":`)
+	encoded, err = encodeJSON(e.Certificate.ProofData)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString("}}")
+	return buf.Bytes(), nil
+}
+
 // ContractDeclaration is the v1.1.0 replacement for PropertyDeclaration.
 // Each of pre/post/inv is optional, but at least one MUST be non-nil
 // (Contract panics otherwise). outBinding is the post-formula's
 // return-value variable name; defaults to "out".
 //
-// JSON shape (locked key order: kind, name, outBinding, pre?, post?, inv?):
+// JSON shape (locked key order: kind, name, outBinding, pre?, post?, inv?, evidence?):
 //
 //	{
 //	  "kind": "contract",
@@ -36,7 +87,8 @@ const DefaultOutBinding = "out"
 //	  "outBinding": "out",
 //	  "pre":  ...,
 //	  "post": ...,
-//	  "inv":  ...
+//	  "inv":  ...,
+//	  "evidence": ...
 //	}
 //
 // Empty/nil pre/post/inv are omitted entirely (JCS-friendly).
@@ -46,6 +98,7 @@ type ContractDeclaration struct {
 	Pre        IrFormula
 	Post       IrFormula
 	Inv        IrFormula
+	Evidence   *EvidenceTerm
 }
 
 func (ContractDeclaration) declMarker()        {}
@@ -90,6 +143,14 @@ func (c ContractDeclaration) MarshalJSON() ([]byte, error) {
 		}
 		buf.Write(encoded)
 	}
+	if c.Evidence != nil {
+		buf.WriteString(`,"evidence":`)
+		encoded, err = encodeJSON(c.Evidence)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encoded)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -102,6 +163,7 @@ type ContractArgs struct {
 	Post       IrFormula
 	Inv        IrFormula
 	OutBinding string
+	Evidence   *EvidenceTerm
 }
 
 // BridgeSpec is the input to Bridge(). The kit collector stores it as
@@ -125,9 +187,9 @@ type BridgeDeclaration struct {
 	Notes             string
 }
 
-func (BridgeDeclaration) declMarker()         {}
-func (BridgeDeclaration) Kind() string        { return "bridge" }
-func (b BridgeDeclaration) DeclName() string  { return b.Name }
+func (BridgeDeclaration) declMarker()        {}
+func (BridgeDeclaration) Kind() string       { return "bridge" }
+func (b BridgeDeclaration) DeclName() string { return b.Name }
 
 func (b BridgeDeclaration) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
@@ -286,6 +348,7 @@ func Contract(name string, args ContractArgs) {
 		Pre:        args.Pre,
 		Post:       args.Post,
 		Inv:        args.Inv,
+		Evidence:   args.Evidence,
 	})
 }
 

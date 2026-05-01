@@ -7,6 +7,8 @@
  * EvidenceVariant discriminated union without changing wrapper fields.
  */
 
+import type { EvidenceTerm } from "../ir/formulas.js";
+
 // ---------------------------------------------------------------------------
 // Verdict
 // ---------------------------------------------------------------------------
@@ -221,6 +223,8 @@ export interface ContractEvidence {
     postHash?: string;
     /** DERIVED: computeCid(canonical(inv)) — present iff inv is present. */
     invHash?: string;
+    /** Optional IR-level proof certificate (EvidenceTerm) attached at authoring time. */
+    irEvidence?: EvidenceTerm;
     /** Authoring provenance — typed union per spec. */
     authoring: ContractAuthoring;
   };

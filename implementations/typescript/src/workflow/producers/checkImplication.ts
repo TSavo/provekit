@@ -203,8 +203,8 @@ export function makeCheckImplicationStage(
             coqSolvers.map(async (entry) => {
               // For implication, we need to check both directions with Coq
               // Coq verification: if coqc succeeds (exit 0), it means "proved" (like unsat)
-              const newImpliesOld = await invokeCoqSolver(entry, input.newIr);
-              const oldImpliesNew = await invokeCoqSolver(entry, input.oldIr);
+              const newImpliesOld = await invokeCoqSolver(entry, input.newIr as object);
+              const oldImpliesNew = await invokeCoqSolver(entry, input.oldIr as object);
               
               // For Coq: unsat (proved) means implication holds
               // sat (failed to prove) means implication doesn't hold

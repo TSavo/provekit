@@ -35,7 +35,28 @@ export type CanonicalSort =
 export type CanonicalTerm =
   | CanonicalVar
   | CanonicalConst
-  | CanonicalCtor;
+  | CanonicalCtor
+  | CanonicalLambda
+  | CanonicalLet;
+
+export type CanonicalLambda = {
+  kind: "lambda";
+  paramSort: CanonicalSort;
+  body: CanonicalTerm;
+  sort: CanonicalSort;
+};
+
+export type CanonicalBinding = {
+  name: string;
+  boundTerm: CanonicalTerm;
+};
+
+export type CanonicalLet = {
+  kind: "let";
+  bindings: CanonicalBinding[];
+  body: CanonicalTerm;
+  sort: CanonicalSort;
+};
 
 export type CanonicalVar = {
   kind: "var";
@@ -93,7 +114,14 @@ export type CanonicalAtomic = {
   args: CanonicalTerm[];
 };
 
+export type CanonicalChoice = {
+  kind: "choice";
+  sort: CanonicalSort;
+  body: CanonicalFolAst;
+};
+
 export type CanonicalFolAst =
   | CanonicalQuantifier
   | CanonicalConnective
-  | CanonicalAtomic;
+  | CanonicalAtomic
+  | CanonicalChoice;

@@ -80,6 +80,10 @@ implementations/csharp/**/obj/
 
 # Go orchestrator binary output (built per-module).
 implementations/go/provekit-self-contracts/mint-go-self-contracts
+implementations/go/provekit-lift-go-tests/provekit-lift-go
+
+# Claude IDE worktrees.
+.claude/
 
 # Self-contract .proof files. The CID is the filename, but these are
 # build artifacts of `provekit mint` runs; the canonical .proof lives in

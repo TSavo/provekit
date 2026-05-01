@@ -81,7 +81,7 @@ describe("checkImplication", () => {
         newSmt: "(assert true)",
         solver: Z3_SOLVER,
       };
-      const serialized = stage.serializeInput(input);
+      const serialized = stage.serializeInput(input) as { oldSmt: string; solverEntries: unknown[] };
       expect(serialized).toBeDefined();
       expect(serialized.oldSmt).toBe("(assert true)");
       expect(serialized.solverEntries).toHaveLength(1);

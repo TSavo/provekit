@@ -20,6 +20,10 @@
 // catalog (v1.1.0) and verifies under the same foundation key as the
 // Rust / Go / C++ / TS peers.
 
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
 using Provekit.Canonicalizer;
 using Provekit.ClaimEnvelope;
 using Provekit.IR;
@@ -39,6 +43,12 @@ public static class Program
 
     public static int Main(string[] args)
     {
+        if (args.Contains("--rpc"))
+        {
+            RunRpcMode();
+            return 0;
+        }
+
         var outDir = args.Length >= 1 ? args[0] : ".";
 
         Console.WriteLine("== ProvekIt C# self-contracts orchestrator ==");
@@ -68,6 +78,118 @@ public static class Program
         Console.WriteLine();
         Console.WriteLine($"== done. C# self-application: live ({contractCount} contracts across {fileCount} .invariant.cs files). ==");
         return 0;
+    }
+
+    private static void RunRpcMode()
+    {
+        while (true)
+        {
+            var line = Console.ReadLine();
+            if (line == null) break;
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            JsonNode? req;
+            try
+            {
+                req = JsonNode.Parse(line);
+            }
+            catch
+            {
+                WriteError(null, -32700, "Parse error");
+                continue;
+            }
+
+            if (req == null)
+            {
+                WriteError(null, -32700, "Parse error");
+                continue;
+            }
+
+            var id = req["id"];
+            var method = req["method"]?.GetValue<string>();
+
+            switch (method)
+            {
+                case "initialize":
+                    WriteResponse(id, new JsonObject
+                    {
+                        ["name"] = "csharp-self-contracts",
+                        ["version"] = "1.0.0",
+                        ["protocol_version"] = "provekit-lift/1",
+                        ["capabilities"] = new JsonObject
+                        {
+                            ["authoring_surfaces"] = new JsonArray { "csharp" },
+                            ["ir_version"] = "v1.1.0",
+                            ["emits_signed_mementos"] = true,
+                        }
+                    });
+                    break;
+
+                case "lift":
+                    try
+                    {
+                        var tmpDir = Path.Combine(Path.GetTempPath(), $"provekit-csharp-rpc-{Guid.NewGuid()}");
+                        Directory.CreateDirectory(tmpDir);
+                        try
+                        {
+                            var (cid, _, _) = MintOneRun(tmpDir, verbose: false);
+                            var proofPath = Path.Combine(tmpDir, $"{cid}.proof");
+                            var bytes = File.ReadAllBytes(proofPath);
+                            var b64 = Convert.ToBase64String(bytes);
+                            WriteResponse(id, new JsonObject
+                            {
+                                ["kind"] = "proof-envelope",
+                                ["filename_cid"] = cid,
+                                ["bytes_base64"] = b64,
+                                ["diagnostics"] = new JsonArray(),
+                            });
+                        }
+                        finally
+                        {
+                            try { Directory.Delete(tmpDir, recursive: true); } catch { }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteError(id, -32603, $"Lift failed: {ex.Message}");
+                    }
+                    break;
+
+                case "shutdown":
+                    WriteResponse(id, null);
+                    return;
+
+                default:
+                    WriteError(id, -32601, $"METHOD_NOT_FOUND: {method}");
+                    break;
+            }
+        }
+    }
+
+    private static void WriteResponse(JsonNode? id, JsonNode? result)
+    {
+        var resp = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = id?.DeepClone() ?? JsonValue.Create((object?)null),
+            ["result"] = result?.DeepClone() ?? JsonValue.Create((object?)null),
+        };
+        Console.WriteLine(resp.ToJsonString(JsonSerializerOptions.Web));
+    }
+
+    private static void WriteError(JsonNode? id, int code, string message)
+    {
+        var resp = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = id?.DeepClone() ?? JsonValue.Create((object?)null),
+            ["error"] = new JsonObject
+            {
+                ["code"] = code,
+                ["message"] = message,
+            }
+        };
+        Console.WriteLine(resp.ToJsonString(JsonSerializerOptions.Web));
     }
 
     /// <summary>

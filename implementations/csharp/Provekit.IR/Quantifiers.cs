@@ -45,4 +45,14 @@ public static class Quantifiers
         var inner = body(v);
         return new QuantifierFormula("exists", vname, sort, inner);
     }
+
+    /// <summary>
+    /// Build <c>εx:sort. body(x)</c> — definite description (unique existence).
+    /// </summary>
+    public static Formula Choice(string varName, Sort sort, Func<Term, Formula> body)
+    {
+        var v = Terms.Var(varName);
+        var inner = body(v);
+        return new ChoiceFormula(varName, sort, inner);
+    }
 }

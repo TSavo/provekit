@@ -27,7 +27,8 @@ export type PreNnfAst =
   | { kind: "or"; operands: PreNnfAst[] }
   | { kind: "not"; operands: [PreNnfAst] }
   | { kind: "implies"; operands: [PreNnfAst, PreNnfAst] }
-  | { kind: "atomic"; name: string; args: CanonicalTerm[] };
+  | { kind: "atomic"; name: string; args: CanonicalTerm[] }
+  | { kind: "choice"; sort: CanonicalSort; body: PreNnfAst };
 
 /**
  * Rewrite `implies(a, c)` → `or(not(a), c)` throughout the tree.
@@ -59,5 +60,8 @@ export function removeImplies(ast: PreNnfAst): CanonicalFolAst {
 
     case "atomic":
       return { kind: "atomic", name: ast.name, args: ast.args };
+
+    case "choice":
+      return { kind: "choice", sort: ast.sort, body: removeImplies(ast.body) };
   }
 }

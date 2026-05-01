@@ -223,39 +223,48 @@ The protocol doesn't care which path produced the IR. Both paths hash to identic
 
 ## Reference plugins
 
-Three reference CLI plugins ship with ProvekIt:
+Reference CLI plugins ship with ProvekIt for all language implementations:
 
-| Surface | Plugin command | Reference |
-|---------|---------------|-----------|
-| `rust-self-contracts` | `mint-self-contracts --rpc` | `implementations/rust/provekit-self-contracts/` |
-| `go-self-contracts` | `go run ./cmd/mint-go-self-contracts --rpc` | `implementations/go/provekit-self-contracts/cmd/` |
-| `cpp-self-contracts` | `./target/mint_cpp_self_contracts --rpc` | `implementations/cpp/provekit-self-contracts/` |
+| Surface | Plugin command | Reference | Status |
+|---------|---------------|-----------|--------|
+| `typescript` | `npx tsx src/lift/bin/main.ts --rpc` | `implementations/typescript/src/lift/` | ✅ Real lifter (zod, fast-check, vitest) |
+| `rust-self-contracts` | `cargo run -p provekit-self-contracts --rpc` | `implementations/rust/provekit-self-contracts/` | ✅ Real lifter (invariant.rs, proptest, kani) |
+| `go-self-contracts` | `go run ./cmd/mint-go-self-contracts --rpc` | `implementations/go/provekit-self-contracts/cmd/` | ✅ Real lifter (Go test extraction) |
+| `cpp-self-contracts` | `./target/mint_cpp_self_contracts --rpc` | `implementations/cpp/provekit-self-contracts/` | ✅ Real lifter (C++ invariant extraction) |
+| `csharp-self-contracts` | `dotnet run --project Provekit.SelfContracts --rpc` | `implementations/csharp/Provekit.SelfContracts/` | ✅ Real lifter (C# invariant extraction) |
 
 Each implements the protocol over NDJSON-on-stdio, returning the `proof-envelope` shape (c). The dispatcher resolves these via `.provekit/lift/<surface>/manifest.toml` per peer's directory.
 
-The apex demonstration:
+The apex demonstration — **one Rust CLI binary, all projects**:
 
 ```sh
-$ cd implementations/rust  && provekit mint
-$ cd implementations/cpp   && provekit mint
-$ cd implementations/go    && provekit mint
+$ cd implementations/typescript && provekit mint
+$ cd implementations/rust        && provekit mint
+$ cd implementations/go          && provekit mint
+$ cd implementations/cpp         && provekit mint
+$ cd implementations/csharp      && provekit mint
 ```
 
-One Rust CLI binary. Three `.proof` files. Configuration via `.provekit/config.toml` per directory. Same protocol catalog. Same foundation key. Different surfaces, different IR contents, byte-deterministic content-addressed output.
+One `provekit` binary. Five `.proof` files. Configuration via `.provekit/config.toml` per directory. Same protocol catalog. Same foundation key. Different surfaces, different IR contents, byte-deterministic content-addressed output.
 
-### TypeScript: kit + toolchain, not CLI
+## Any language, any tooling
 
-TypeScript is not a CLI peer in this protocol. It ships as a library, a kit (the authoring API mirrored from Rust), and a supported toolchain (vitest plugin, Zod adapter, class-validator adapter, fast-check adapter, JSDoc lifter). JS/TS projects consume the kit programmatically and produce `.proof` bundles via their own test runner / build step.
+**Anyone can implement a lifter in any language.** The protocol is just JSON-RPC over stdio. Your lifter can be written in:
 
-The TS self-contracts CID is produced by vitest:
+- Python (parse `*.py` with `ast` module)
+- Java (parse `*.java` with JavaParser)
+- Haskell (parse `*.hs` with `ghc-lib-parser`)
+- Zig, Lua, Ruby, PHP, Kotlin, Swift, Dart, Elixir, Clojure, Scala, Julia, R, MATLAB, Fortran, COBOL... literally anything
 
-```sh
-$ pnpm vitest run \
-    implementations/typescript/src/bin/mint-ts-self-contracts.test.ts
-```
+The only requirement: read JSON from stdin, write JSON to stdout, handle three methods (`initialize`, `lift`, `shutdown`). The Rust CLI doesn't care what language your lifter is written in. It doesn't parse your language's AST. It just dispatches.
 
-The test calls `runMintSelfContracts(outDir)` and asserts the CID matches the pinned value. This is the toolchain-native invocation. There is no `provekit-ts` CLI; the `provekit` binary is exclusively Rust.
+Your lifter's job:
+1. Scan source files in the workspace
+2. Extract properties (tests, types, contracts, assertions, schemas)
+3. Convert to canonical IR-JSON
+4. Bundle into a `.proof` envelope
+5. Return via JSON-RPC
 
-A third-party TS plugin for `provekit mint` could be written by anyone (wrap `runMintSelfContracts` behind an NDJSON loop in Node, ship a manifest pointing at it). ProvekIt itself doesn't ship one. The lift-plugin protocol is open for any language; the reference set ships three CLI plugins because that's what's needed for the apex demo, not because TS is excluded.
+The Rust CLI handles: signing, hashing, CID computation, file I/O.
 
-This is the architectural division ProvekIt enforces: the CLI is one thing in one language; everything else is library, kit, toolchain, and (optionally) a plugin.
+This is the core architectural principle: **the CLI is one thing in one language; everything else is a plugin.**

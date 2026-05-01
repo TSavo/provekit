@@ -14,7 +14,7 @@ use std::rc::Rc;
 use provekit_ir_symbolic::{
     and_, atomic_, begin_collecting, contract, eq, exists, finish, forall, gt, gte, implies,
     lt, lte, must, ne, not_, num, or_, out, parse_int, reset_collector, str_const, ContractArgs,
-    ConstValue, Formula, Int, Sort, Term,
+    ConstValue, Formula, Int, Sort, Term, lambda, let_term, choice,
 };
 
 // ---------------------------------------------------------------------------
@@ -359,4 +359,127 @@ fn primitive_sorts_have_correct_names() {
     assert_eq!(Sort::real().name, "Real");
     assert_eq!(Sort::string().name, "String");
     assert_eq!(Sort::bool().name, "Bool");
+}
+
+// ---------------------------------------------------------------------------
+// Lambda terms
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lambda_has_param_name_sort_and_body() {
+    let lam = lambda("x".into(), Int(), num(42));
+    match lam.as_ref() {
+        Term::Lambda { param_name, param_sort, body } => {
+            assert_eq!(param_name, "x");
+            assert_eq!(param_sort.name, "Int");
+            match body.as_ref() {
+                Term::Const { value, .. } => match value {
+                    ConstValue::Int(n) => assert_eq!(*n, 42),
+                    _ => panic!("expected Int"),
+                },
+                _ => panic!("expected const body"),
+            }
+        }
+        _ => panic!("expected Lambda"),
+    }
+}
+
+#[test]
+fn lambda_param_is_bound_in_body_scope() {
+    reset_collector();
+    let lam = lambda("x".into(), Int(), {
+        let x_var = provekit_ir_symbolic::make_var("x");
+        x_var
+    });
+    match lam.as_ref() {
+        Term::Lambda { param_name, .. } => assert_eq!(param_name, "x"),
+        _ => panic!("expected Lambda"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Let terms
+// ---------------------------------------------------------------------------
+
+#[test]
+fn let_has_bindings_and_body() {
+    let let_expr = let_term(
+        vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+        num(2),
+    );
+    match let_expr.as_ref() {
+        Term::Let { bindings, body } => {
+            assert_eq!(bindings.len(), 1);
+            assert_eq!(bindings[0].name, "x");
+            match bindings[0].bound_term.as_ref() {
+                Term::Const { value, .. } => match value {
+                    ConstValue::Int(n) => assert_eq!(*n, 1),
+                    _ => panic!("expected Int"),
+                },
+                _ => panic!("expected const binding"),
+            }
+            match body.as_ref() {
+                Term::Const { value, .. } => match value {
+                    ConstValue::Int(n) => assert_eq!(*n, 2),
+                    _ => panic!("expected Int"),
+                },
+                _ => panic!("expected const body"),
+            }
+        }
+        _ => panic!("expected Let"),
+    }
+}
+
+#[test]
+fn let_with_multiple_bindings_is_sequential() {
+    let let_expr = let_term(
+        vec![
+            provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) },
+            provekit_ir_symbolic::LetBinding { name: "y".into(), bound_term: num(2) },
+        ],
+        num(3),
+    );
+    match let_expr.as_ref() {
+        Term::Let { bindings, .. } => {
+            assert_eq!(bindings.len(), 2);
+            assert_eq!(bindings[0].name, "x");
+            assert_eq!(bindings[1].name, "y");
+        }
+        _ => panic!("expected Let"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Choice formulas
+// ---------------------------------------------------------------------------
+
+#[test]
+fn choice_has_var_name_sort_and_body() {
+    let c = choice("x".into(), Int(), |v| {
+        eq(v, num(0))
+    });
+    match c.as_ref() {
+        Formula::Choice { var_name, sort, body } => {
+            assert_eq!(var_name, "x");
+            assert_eq!(sort.name, "Int");
+            match body.as_ref() {
+                Formula::Atomic { name, .. } => assert_eq!(name, "="),
+                _ => panic!("expected atomic body"),
+            }
+        }
+        _ => panic!("expected Choice"),
+    }
+}
+
+#[test]
+fn choice_body_can_reference_bound_var() {
+    reset_collector();
+    let c = choice("result".into(), Int(), |v| {
+        match v.as_ref() {
+            Term::Var { name } => assert_eq!(name, "result"),
+            _ => panic!("expected var"),
+        }
+        gt(v, num(0))
+    });
+    drop(c);
 }

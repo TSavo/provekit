@@ -124,6 +124,25 @@ export function canonicalizeTerm(term: DeBruijnTerm): CanonicalTerm {
         args: term.args.map(canonicalizeTerm),
         sort: canonicalizeSort(term.sort),
       };
+
+    case "lambda":
+      return {
+        kind: "lambda",
+        paramSort: canonicalizeSort(term.paramSort),
+        body: canonicalizeTerm(term.body),
+        sort: canonicalizeSort(term.sort),
+      };
+
+    case "let":
+      return {
+        kind: "let",
+        bindings: term.bindings.map((b) => ({
+          name: b.name,
+          boundTerm: canonicalizeTerm(b.boundTerm),
+        })),
+        body: canonicalizeTerm(term.body),
+        sort: canonicalizeSort(term.sort),
+      };
   }
 }
 
@@ -157,6 +176,12 @@ export function termSortKey(term: CanonicalTerm): string {
       return `const:${sortKey(term.sort)}:${stringifyConst(term.value)}`;
     case "ctor":
       return `ctor:${term.name}:${term.args.map(termSortKey).join(",")}`;
+
+    case "lambda":
+      return `lambda:${sortKey(term.paramSort)}:${termSortKey(term.body)}`;
+
+    case "let":
+      return `let:${term.bindings.map((b) => `${b.name}=${termSortKey(b.boundTerm)}`).join(",")}:${termSortKey(term.body)}`;
   }
 }
 

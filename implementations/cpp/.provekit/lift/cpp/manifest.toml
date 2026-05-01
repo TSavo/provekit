@@ -1,0 +1,2 @@
+name = "cpp-lift"
+command = ["/Users/tsavo/provekit/implementations/cpp/target/mint_cpp_self_contracts", "--rpc"]

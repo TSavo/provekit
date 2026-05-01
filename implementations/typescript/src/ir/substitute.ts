@@ -96,6 +96,15 @@ function substituteInFormula(
         body: substituteInFormula(formula.body, name, term),
       };
     }
+    case "choice": {
+      if (formula.varName === name) return formula;
+      return {
+        kind: "choice",
+        varName: formula.varName,
+        sort: formula.sort,
+        body: substituteInFormula(formula.body, name, term),
+      };
+    }
   }
 }
 
@@ -112,6 +121,25 @@ function substituteInTerm(input: IrTerm, name: string, term: IrTerm): IrTerm {
       args: input.args.map((a) => substituteInTerm(a, name, term)),
     };
   }
+  if (input.kind === "lambda") {
+    if (input.paramName === name) return input;
+    return {
+      kind: "lambda",
+      paramName: input.paramName,
+      paramSort: input.paramSort,
+      body: substituteInTerm(input.body, name, term),
+    };
+  }
+  if (input.kind === "let") {
+    return {
+      kind: "let",
+      bindings: input.bindings.map((b) => ({
+        name: b.name,
+        boundTerm: substituteInTerm(b.boundTerm, name, term),
+      })),
+      body: substituteInTerm(input.body, name, term),
+    };
+  }
   return input; // const
 }
 
@@ -125,6 +153,11 @@ function walkTermVars(term: IrTerm, visit: (name: string) => void): void {
   if (term.kind === "var") visit(term.name);
   else if (term.kind === "ctor") {
     for (const a of term.args) walkTermVars(a, visit);
+  } else if (term.kind === "lambda") {
+    walkTermVars(term.body, visit);
+  } else if (term.kind === "let") {
+    for (const b of term.bindings) walkTermVars(b.boundTerm, visit);
+    walkTermVars(term.body, visit);
   }
 }
 
@@ -149,5 +182,9 @@ function walkFormulaBindings(formula: IrFormula, visit: (name: string) => void):
       return;
     case "atomic":
       return; // atomics introduce no bindings
+    case "choice":
+      visit(formula.varName);
+      walkFormulaBindings(formula.body, visit);
+      return;
   }
 }

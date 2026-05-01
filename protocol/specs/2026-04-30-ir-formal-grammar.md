@@ -128,6 +128,36 @@ with accompanying English explanation.
 |-----------|---------|
 | NoSortField | `∀t → ¬HasKey(t, "sort")` |
 
+**LambdaTerm** (Section: Terms)
+| Invariant | Formula |
+|-----------|---------|
+| HasParamSort | `∀t → HasKey("paramSort") ∧ IsSort(t.paramSort)` |
+| HasBody | `∀t → HasKey("body") ∧ IsIrTerm(t.body)` |
+| NoSortField | `∀t → ¬HasKey(t, "sort")` |
+| ParamSortFromEnclosing | `∀λ,env → Sort(λ.paramName, env) = λ.paramSort` |
+
+**LetTerm** (Section: Terms)
+| Invariant | Formula |
+|-----------|---------|
+| NonEmptyBindings | `∀t → HasKey("bindings") ∧ Len(bindings) ≥ 1` |
+| HasBody | `∀t → HasKey("body") ∧ IsIrTerm(t.body)` |
+| BindingSortPropagation | `∀l,env,i → Sort(l.bindings[i].name, env) = Sort(l.bindings[i].boundTerm, env)` |
+
+**ChoiceFormula** (Section: Formulas)
+| Invariant | Formula |
+|-----------|---------|
+| HasVarName | `∀c → HasKey("varName") ∧ IsString(c.varName)` |
+| HasSort | `∀c → HasKey("sort") ∧ IsSort(c.sort)` |
+| HasBody | `∀c → HasKey("body") ∧ IsIrFormula(c.body)` |
+| Uniqueness | `∀c → ∃! x: c.sort. c.body[x/c.varName]` |
+
+**EvidenceTerm** (Section: Evidence)
+| Invariant | Formula |
+|-----------|---------|
+| HasProofType | `∀e → HasKey("proofType") ∧ IsProofType(e.proofType)` |
+| HasCertificate | `∀e → HasKey("certificate") ∧ IsObject(e.certificate)` |
+| FormulaHashMatches | `∀e,f (e.attachedTo=f) → e.certificate.formulaHash = Hash(f)` |
+
 **PrimitiveSort** (Section: Sorts)
 | Invariant | Formula |
 |-----------|---------|
@@ -288,6 +318,7 @@ The `targetContractCid` must be a valid CID format (blake3-512 prefix + 128 hex 
 IrFormula ::= QuantifierFormula
             | ConnectiveFormula
             | AtomicFormula
+            | ChoiceFormula
 ```
 
 The `kind` field is the discriminator for every formula and term node. It is
@@ -433,12 +464,53 @@ The atomic's `name` must be either a built-in predicate (standard SMT-LIB
 operators like =, <, >, etc.) or a kit-defined predicate. Unknown predicates
 are only rejected in strict mode.
 
+### ChoiceFormula
+
+Locked key order: `kind`, `varName`, `sort`, `body`.
+
+```ebnf
+ChoiceFormula ::= "{"
+                   "\"kind\"" ":" "\"choice\"" ","
+                   "\"varName\"" ":" String ","
+                   "\"sort\"" ":" Sort ","
+                   "\"body\"" ":" IrFormula
+                 "}"
+```
+
+A `ChoiceFormula` represents the **definite description** operator (εx. P(x)),
+also known as "the unique x such that P(x)". This asserts that there exists
+exactly one element satisfying the body formula, and binds that element to
+`varName` for use within the formula.
+
+This is more powerful than `exists` because it asserts **uniqueness**, making
+it suitable for specifications that reference the exact value produced by a
+computation (e.g., "the result of parsing string s is x").
+
+**INVARIANT ChoiceFormula.HasVarName:**
+```
+∀c: ChoiceFormula → HasKey(c, "varName") ∧ IsString(c.varName)
+```
+Every choice formula MUST have a `varName` field identifying the chosen variable.
+
+**INVARIANT ChoiceFormula.HasSort:**
+```
+∀c: ChoiceFormula → HasKey(c, "sort") ∧ IsSort(c.sort)
+```
+Every choice formula MUST have a `sort` field specifying the type of the
+chosen element.
+
+**INVARIANT ChoiceFormula.HasBody:**
+```
+∀c: ChoiceFormula → HasKey(c, "body") ∧ IsIrFormula(c.body)
+```
+Every choice formula MUST have a `body` field containing a valid IrFormula.
+
 ## Terms
 
 ### IrTerm
 
 ```ebnf
-IrTerm ::= VarTerm | ConstTerm | CtorTerm
+IrTerm ::= VarTerm | ConstTerm | CtorTerm | LambdaTerm | LetTerm
 ```
 
 ### VarTerm
@@ -505,6 +577,76 @@ different scopes, which defeats the canonicalization promise.
 `args` MAY be empty (a nullary constructor like `parseInt()` taking no
 arguments — uncommon but permitted by the IR types).
 
+### LambdaTerm
+
+Locked key order: `kind`, `paramName`, `paramSort`, `body`.
+
+```ebnf
+LambdaTerm ::= "{"
+                "\"kind\"" ":" "\"lambda\"" ","
+                "\"paramName\"" ":" String ","
+                "\"paramSort\"" ":" Sort ","
+                "\"body\"" ":" IrTerm
+              "}"
+```
+
+A `LambdaTerm` represents a first-class function (λx: τ. body). The
+`paramName` is the bound variable, `paramSort` is its type, and `body` is the
+function's computation. Lambda terms enable higher-order reasoning and can be
+applied to arguments via `AppTerm`.
+
+Producers MUST NOT add a `sort` field; the return sort is derived from the
+body's type via the enclosing context.
+
+**INVARIANT LambdaTerm.HasParamSort:**
+```
+∀λ: LambdaTerm → HasKey(λ, "paramSort") ∧ IsSort(λ.paramSort)
+```
+Every lambda MUST have a `paramSort` field specifying the type of its
+parameter.
+
+**INVARIANT LambdaTerm.HasBody:**
+```
+∀λ: LambdaTerm → HasKey(λ, "body") ∧ IsIrTerm(λ.body)
+```
+Every lambda MUST have a `body` field containing a valid IrTerm.
+
+### LetTerm
+
+Locked key order: `kind`, `bindings`, `body`.
+
+```ebnf
+LetTerm ::= "{"
+             "\"kind\"" ":" "\"let\"" ","
+             "\"bindings\"" ":" "[" LetBinding ( "," LetBinding )* "]" ","
+             "\"body\"" ":" IrTerm
+           "}"
+
+LetBinding ::= "{"
+                "\"name\"" ":" String ","
+                "\"boundTerm\"" ":" IrTerm
+              "}"
+```
+
+A `LetTerm` provides local bindings (let x = e1 in e2). The `bindings` array
+contains one or more name-term pairs that are in scope for evaluating `body`.
+Bindings are evaluated sequentially (later bindings can reference earlier ones).
+
+Producers MUST NOT add a `sort` field; the body's sort is propagated to the
+enclosing context.
+
+**INVARIANT LetTerm.NonEmptyBindings:**
+```
+∀l: LetTerm → HasKey(l, "bindings") ∧ Len(l.bindings) ≥ 1
+```
+A let expression MUST have at least one binding.
+
+**INVARIANT LetTerm.HasBody:**
+```
+∀l: LetTerm → HasKey(l, "body") ∧ IsIrTerm(l.body)
+```
+A let expression MUST have a body term.
+
 ### Formal Invariants
 
 **INVARIANT VarTerm.NoSortField:**
@@ -546,6 +688,48 @@ because literal values (like `42`) are ambiguous without type information.
 A CtorTerm MUST NOT contain a `sort` field. The return sort is determined by
 the constructor's declaration in the kit's bridge, not by the term itself.
 Including a sort field would break canonicalization guarantees.
+
+**INVARIANT LambdaTerm.NoSortField:**
+```
+∀t: LambdaTerm → ¬HasKey(t, "sort")
+```
+A LambdaTerm MUST NOT contain a `sort` field at the top level. The return sort
+is derived from the body's type via the enclosing context. The `paramSort` field
+specifies the parameter's type, not the lambda's result type.
+
+**INVARIANT LambdaTerm.ParamSortFromEnclosing:**
+```
+∀λ: LambdaTerm, env: Environment → Sort(λ.paramName, env) = λ.paramSort
+```
+The parameter name of a lambda is bound with the lambda's `paramSort` in the
+environment when type-checking the body. The body's sort propagates to the
+enclosing context.
+
+**INVARIANT LetTerm.BindingSortPropagation:**
+```
+∀l: LetTerm, env: Environment, i: Index
+  Sort(l.bindings[i].name, env) = Sort(l.bindings[i].boundTerm, env)
+```
+Each let binding introduces its name into the environment with the sort of its
+bound term. Subsequent bindings and the body can reference this name.
+
+**INVARIANT ChoiceFormula.Uniqueness:**
+```
+∀c: ChoiceFormula → 
+  ∃! x: c.sort. c.body[x/c.varName]
+```
+A ChoiceFormula asserts that there exists exactly one element satisfying the
+body formula. This is stronger than `exists` (which only asserts existence)
+and enables definite description: "the unique x such that P(x)".
+
+**INVARIANT EvidenceTerm.FormulaHashMatches:**
+```
+∀e: EvidenceTerm, f: IrFormula
+  (e.attachedTo = f) → e.certificate.formulaHash = Hash(f)
+```
+When evidence is attached to a formula, the certificate's formulaHash MUST
+match the hash of the attached formula. This prevents evidence forgery by
+ensuring the proof is for the correct claim.
 
 ## Sorts
 
@@ -853,6 +1037,73 @@ The current harness's golden hashes (`scripts/cross-lang-equivalence/goldens.txt
 are computed over the kit-emit form described by this grammar. Promotion to
 a grammar-conformance regime does **not** invalidate those goldens; the
 grammar describes exactly what produced them.
+
+## Evidence
+
+The IR can carry evidence (proof certificates) alongside formulas. This enables
+efficient verification without re-proving: a previously-verified proof can be
+attached to a claim and checked for validity rather than re-computed.
+
+### EvidenceTerm
+
+Locked key order: `kind`, `proofType`, `certificate`.
+
+```ebnf
+EvidenceTerm ::= "{"
+                   "\"kind\"" ":" "\"evidence\"" ","
+                   "\"proofType\"" ":" ProofType ","
+                   "\"certificate\"" ":" EvidenceCertificate
+                 "}"
+
+ProofType ::= "\"smt-lib\"" | "\"coq\"" | "\"custom\""
+
+EvidenceCertificate ::= "{"
+                         "\"tool\"" ":" String ","
+                         "\"version\"" ":" String ","
+                         "\"formulaHash\"" ":" String ","
+                         "\"proofData\"" ":" String
+                       "}"
+```
+
+An `EvidenceTerm` attaches a proof certificate to a formula. The `proofType`
+identifies the solver that produced the proof (smt-lib for Z3/CVC5, coq for
+Coq, custom for other backends). The `certificate` contains:
+- `tool`: solver name
+- `version`: solver version
+- `formulaHash`: SHA-256 of the proven formula (for cross-checking)
+- `proofData`: solver-specific proof artifact
+
+**INVARIANT EvidenceTerm.HasProofType:**
+```
+∀e: EvidenceTerm → HasKey(e, "proofType") ∧ IsProofType(e.proofType)
+```
+Every evidence term MUST have a valid `proofType`.
+
+**INVARIANT EvidenceTerm.HasCertificate:**
+```
+∀e: EvidenceTerm → HasKey(e, "certificate") ∧ IsObject(e.certificate)
+```
+Every evidence term MUST have a `certificate` object.
+
+### Integration with Declarations
+
+Evidence can be attached to any formula-bearing declaration:
+
+```ebnf
+ContractDeclaration ::= "{"
+                         "\"kind\"" ":" "\"property\"" ","
+                         "\"name\"" ":" String ","
+                         "\"formula\"" ":" IrFormula ","
+                         "\"evidence\"" ":" EvidenceTerm "?"  // optional
+                       "}"
+```
+
+When `evidence` is present, the verifier SHOULD:
+1. Compute `formulaHash` of the attached formula
+2. Compare against `certificate.formulaHash`
+3. Validate `proofData` according to `proofType`
+
+If evidence is absent or validation fails, the verifier recomputes the proof.
 
 ## Appendix A — Worked example: `forall_int_gt_zero`
 
