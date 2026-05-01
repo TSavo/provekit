@@ -114,6 +114,28 @@ in any of `pre`/`post`/`inv` are quantified by an enclosing
 ContractDeclaration whose `pre`/`post`/`inv` contains a free
 variable that is neither `outBinding` nor a parameter is malformed.
 
+**INVARIANT ContractDeclaration.HasOutBinding:**
+```
+∀c: ContractDeclaration → HasKey(c, "outBinding") ∧ IsString(c.outBinding) ∧ c.outBinding ≠ ""
+```
+Every contract declaration MUST have a non-empty `outBinding` field naming
+the variable that represents the function's return value in the postcondition.
+
+**INVARIANT ContractDeclaration.HasAtLeastOneFormula:**
+```
+∀c: ContractDeclaration → (IsIrFormula(c.pre) ∨ IsIrFormula(c.post) ∨ IsIrFormula(c.inv))
+```
+At least one of `pre`, `post`, or `inv` must be present. A contract with none
+of these formulas is malformed.
+
+**INVARIANT ContractDeclaration.ValidFreeVariables:**
+```
+∀c: ContractDeclaration, f: FreeVariables(c.pre ∪ c.post ∪ c.inv)
+  f = c.outBinding ∨ IsFunctionParameter(f)
+```
+All free variables in a contract's formulas must either be the `outBinding`
+or a function parameter. Any other free variable indicates a malformed contract.
+
 ### BridgeDeclaration
 
 Locked key order: `kind`, `name`, `sourceSymbol`, `sourceLayer`,
@@ -135,6 +157,25 @@ The `notes` field is **omitted entirely** when undefined; it is never emitted
 as `null`. (Rationale: the TS kit destructures `...(spec.notes !== undefined ? { notes } : {})`;
 the Rust kit declares `notes: Option<String>` with `serde(skip_serializing_if = "Option::is_none")`.
 This rule is what keeps the four kits byte-equal when bridges have no notes.)
+
+**INVARIANT BridgeDeclaration.RequiredFields:**
+```
+∀b: BridgeDeclaration →
+  HasKey(b, "name") ∧ IsString(b.name) ∧
+  HasKey(b, "sourceSymbol") ∧ IsString(b.sourceSymbol) ∧
+  HasKey(b, "sourceLayer") ∧ IsString(b.sourceLayer) ∧
+  HasKey(b, "targetContractCid") ∧ IsString(b.targetContractCid) ∧
+  HasKey(b, "targetLayer") ∧ IsString(b.targetLayer)
+```
+All required fields (`name`, `sourceSymbol`, `sourceLayer`, `targetContractCid`,
+`targetLayer`) must be present and non-empty strings.
+
+**INVARIANT BridgeDeclaration.ValidCidFormat:**
+```
+∀b: BridgeDeclaration →
+  IsValidCidFormat(b.targetContractCid)
+```
+The `targetContractCid` must be a valid CID format (blake3-512 prefix + 128 hex chars).
 
 ## Formulas
 
@@ -473,6 +514,46 @@ FunctionSort ::= "{"
                    "\"range\"" ":" Sort
                  "}"
 ```
+
+### Formal Invariants
+
+**INVARIANT PrimitiveSort.ValidName:**
+```
+∀s: PrimitiveSort → HasKey(s, "kind") ∧ s.kind = "primitive" ∧
+                     HasKey(s, "name") ∧ IsString(s.name)
+```
+A PrimitiveSort must have `kind: "primitive"` and a string `name` field.
+
+**INVARIANT BitvecSort.ValidWidth:**
+```
+∀s: BitvecSort → HasKey(s, "kind") ∧ s.kind = "bitvec" ∧
+                 HasKey(s, "width") ∧ IsPositiveInteger(s.width) ∧ s.width > 0
+```
+A BitvecSort must have a positive integer width greater than 0.
+
+**INVARIANT SetSort.ValidElement:**
+```
+∀s: SetSort → HasKey(s, "kind") ∧ s.kind = "set" ∧
+              HasKey(s, "element") ∧ IsSort(s.element)
+```
+A SetSort must have an `element` field containing a valid Sort.
+
+**INVARIANT TupleSort.ValidElements:**
+```
+∀s: TupleSort → HasKey(s, "kind") ∧ s.kind = "tuple" ∧
+                HasKey(s, "elements") ∧ IsArray(s.elements) ∧
+                ∀e ∈ s.elements → IsSort(e)
+```
+A TupleSort must have an `elements` array containing at least one valid Sort.
+
+**INVARIANT FunctionSort.ValidDomainAndRange:**
+```
+∀s: FunctionSort → HasKey(s, "kind") ∧ s.kind = "function" ∧
+                    HasKey(s, "domain") ∧ IsArray(s.domain) ∧
+                    ∀d ∈ s.domain → IsSort(d) ∧
+                    HasKey(s, "range") ∧ IsSort(s.range)
+```
+A FunctionSort must have a non-empty `domain` array of Sorts and a valid `range` Sort.
 
 ## Determinism rules
 
