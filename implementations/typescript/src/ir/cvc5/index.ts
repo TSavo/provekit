@@ -5,7 +5,7 @@
  * is identical between Z3 and CVC5; this module exists to (a) carry a
  * separate producer identity into the memento store so cross-solver
  * mementos differ at the producer-id level even when the bytes match,
- * and (b) own any solver-specific dialect quirks that emerge — logic
+ * and (b) own any solver-specific dialect quirks that emerge: logic
  * naming, options preamble, get-model invocation.
  *
  * Public surface mirrors src/ir/smt/index.ts:
@@ -20,8 +20,8 @@
  *   - Options: CVC5 needs `(set-option :produce-models true)` BEFORE
  *     `(set-logic ...)` for `(get-model)` to work after sat. We always
  *     emit it so the produced script is uniformly model-capable.
- *   - Body emission: pure pass-through to the shared `emitFormula` —
- *     atomic predicates, quantifiers, connectives all share SMT-LIB
+ *   - Body emission: pure pass-through to the shared `emitFormula`.
+ *     Atomic predicates, quantifiers, connectives all share SMT-LIB
  *     v2.6 syntax across solvers.
  */
 
@@ -56,7 +56,7 @@ export interface Cvc5ProblemArgs {
  *   - Emits `(set-option :produce-models true)` before `(set-logic ...)`
  *     so a downstream `(get-model)` after sat does not fail on CVC5.
  *   - Inserts a comment header tagging the script as CVC5-flavored so
- *     the byte-stream is distinct from the Z3 path — making it visually
+ *     the byte-stream is distinct from the Z3 path, making it visually
  *     clear in mementos which dialect produced the verdict, even though
  *     the cache key is the IR not the bytes.
  */

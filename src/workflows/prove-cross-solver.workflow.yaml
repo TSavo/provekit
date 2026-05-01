@@ -1,0 +1,149 @@
+# prove-cross-solver workflow. propertyHash to two-solver verdict.
+#
+# The operational test of cross-solver composition.
+#
+# Both Z3 and CVC5 are run on SMT-LIB derived from the SAME IR. The
+# emit-z3-smt-lib and emit-cvc5-smt-lib Stages are sibling leaves on the
+# IR root: same input, distinct producer identity, distinct cache slot.
+# The invoke-* Stages each take their own emitter's output and produce
+# a verdict memento referencing the SAME IR sourceCid.
+#
+# A pure compare-verdicts Stage maps both verdicts to the shared
+# property-verdict alphabet (holds / violated / undecidable) and reports
+# whether the solvers agree. A mint-cross-solver-memento Action then
+# materializes the cross-solver claim at the original (bindingHash,
+# propertyHash), with inputCids threaded back to the source IR.
+#
+# Pipeline:
+#   1. locate-memento       : recover the IrFormula by propertyHash.
+#   2. emit-z3-smt-lib      : translate to Z3-flavored SMT-LIB.
+#   3. invoke-z3            : run z3, parse verdict.
+#   4. emit-cvc5-smt-lib    : translate to CVC5-flavored SMT-LIB.
+#   5. invoke-cvc5          : run cvc5, parse verdict.
+#   6. compare-verdicts     : map both to property-verdict alphabet,
+#                             check agreement.
+#   7. mint-cross-solver-memento (Action) : write the cross-solver
+#                             memento at the original (bindingHash,
+#                             propertyHash) with inputCids = [sourceCid].
+#
+# Workflow input (ProveCrossSolverWorkflowInput):
+#   propertyHash: string         the property to verify
+#   axioms?:      IrFormula[]    kit-supplied axioms (optional)
+#   logic?:       string         SMT-LIB logic, default "ALL"
+#   timeoutMs?:   number         solver timeout, default 30000
+#   producedBy?:  string         verdict producer identity
+#
+# Spec: docs/specs/2026-04-29-the-semantic-envelope.md
+
+name: prove-cross-solver
+cid: bafy-prove-cross-solver-v1
+description: >-
+  Recover an IrFormula by propertyHash, translate to Z3 and CVC5 SMT-LIB
+  in parallel, invoke both solvers, compare verdicts, and mint a
+  cross-solver memento at the original (bindingHash, propertyHash).
+  Disagreement is captured as data, not raised as an error.
+
+cli:
+  description: Verify a propertyHash using two solvers and report agreement
+  args:
+    - name: propertyHash
+      positional: true
+      required: true
+      type: string
+    - name: timeoutMs
+      type: int
+      default: 30000
+    - name: logic
+      type: string
+      default: "ALL"
+    - name: producedBy
+      type: string
+
+nodes:
+  # ---------------------------------------------------------------------------
+  # locate-memento. Recover the IrFormula from the memento store.
+  # ---------------------------------------------------------------------------
+  - id: locate-memento
+    capability: locate-memento
+    input:
+      propertyHash: $input.propertyHash
+
+  # ---------------------------------------------------------------------------
+  # emit-z3-smt-lib. Z3-flavored SMT-LIB. Pure Stage. First leaf on the
+  # IR root.
+  # ---------------------------------------------------------------------------
+  - id: emit-z3-smt-lib
+    capability: emit-smt-lib
+    input:
+      formula: $node.locate-memento.output.formula
+      axioms: $input.axioms
+      logic: $input.logic
+
+  # ---------------------------------------------------------------------------
+  # invoke-z3. Z3 verdict on the SAME IR.
+  # ---------------------------------------------------------------------------
+  - id: invoke-z3
+    capability: invoke-z3
+    input:
+      smtLib: $node.emit-z3-smt-lib.output.smtLib
+      timeoutMs: $input.timeoutMs
+
+  # ---------------------------------------------------------------------------
+  # emit-cvc5-smt-lib. CVC5-flavored SMT-LIB. Pure Stage. Second leaf
+  # on the IR root. Same input as emit-z3-smt-lib; distinct producer
+  # identity so its memento CID differs.
+  # ---------------------------------------------------------------------------
+  - id: emit-cvc5-smt-lib
+    capability: emit-cvc5-smt-lib
+    input:
+      formula: $node.locate-memento.output.formula
+      axioms: $input.axioms
+      logic: $input.logic
+
+  # ---------------------------------------------------------------------------
+  # invoke-cvc5. CVC5 verdict on the SAME IR.
+  # ---------------------------------------------------------------------------
+  - id: invoke-cvc5
+    capability: invoke-cvc5
+    input:
+      smtLib: $node.emit-cvc5-smt-lib.output.smtLib
+      timeoutMs: $input.timeoutMs
+
+  # ---------------------------------------------------------------------------
+  # compare-verdicts. Pure Stage. Maps both verdicts to the shared
+  # property-verdict alphabet and reports agreement.
+  # ---------------------------------------------------------------------------
+  - id: compare-verdicts
+    capability: compare-verdicts
+    input:
+      z3Verdict: $node.invoke-z3.output.z3Verdict
+      cvc5Verdict: $node.invoke-cvc5.output.cvc5Verdict
+
+# ---------------------------------------------------------------------------
+# Actions. Side-effecting. The mint-cross-solver-memento Action writes
+# a memento at the ORIGINAL (bindingHash, propertyHash) recovered by
+# locate-memento, with inputCids threaded to the source IR memento. That
+# attachment is the architectural claim under test.
+# ---------------------------------------------------------------------------
+actions:
+  - id: mint-cross-solver-memento
+    action: mint-cross-solver-memento
+    input:
+      bindingHash: $node.locate-memento.output.bindingHash
+      propertyHash: $node.locate-memento.output.propertyHash
+      agree: $node.compare-verdicts.output.agree
+      agreedVerdict: $node.compare-verdicts.output.agreedVerdict
+      z3Verdict: $node.invoke-z3.output.z3Verdict
+      cvc5Verdict: $node.invoke-cvc5.output.cvc5Verdict
+      z3PropertyVerdict: $node.compare-verdicts.output.z3PropertyVerdict
+      cvc5PropertyVerdict: $node.compare-verdicts.output.cvc5PropertyVerdict
+      z3SmtLib: $node.emit-z3-smt-lib.output.smtLib
+      cvc5SmtLib: $node.emit-cvc5-smt-lib.output.smtLib
+      z3RunMs: $node.invoke-z3.output.z3RunMs
+      cvc5RunMs: $node.invoke-cvc5.output.cvc5RunMs
+      producedBy: $input.producedBy
+      inputCids:
+        - $node.locate-memento.output.sourceCid
+    runAfter: $node.compare-verdicts
+
+output: $node.compare-verdicts.output
