@@ -47,6 +47,11 @@ pub const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 /// Determinism is a v0 design property; v1 may use signing-time clocks.
 pub const V1_1_0_DECLARED_AT: &str = "2026-04-30T15:00:00Z";
 
+/// Pinned `declaredAt` for v1.2.0. Same value as v1.1.0 because
+/// v1.2.0 is additive over v1.1.0 (no breaking changes); the
+/// catalog's declaredAt field carries forward.
+pub const V1_2_0_DECLARED_AT: &str = "2026-04-30T15:00:00Z";
+
 /// Catalog file path, resolved relative to this crate's manifest dir.
 pub fn catalog_path() -> PathBuf {
     repo_root().join("protocol/specs/2026-04-30-protocol-catalog.json")
@@ -65,6 +70,14 @@ pub fn privkey_path() -> PathBuf {
 /// `.provekit/catalog-signatures/v1.1.0.json` (committed).
 pub fn signature_path() -> PathBuf {
     repo_root().join(".provekit/catalog-signatures/v1.1.0.json")
+}
+
+/// `.provekit/catalog-signatures/<protocol_version>.json` (committed).
+/// Generalization over `signature_path()`; e.g. `v1.2.0` -> `.provekit/catalog-signatures/v1.2.0.json`.
+pub fn signature_path_for(protocol_version: &str) -> PathBuf {
+    repo_root()
+        .join(".provekit/catalog-signatures")
+        .join(format!("{protocol_version}.json"))
 }
 
 fn repo_root() -> PathBuf {
@@ -119,7 +132,19 @@ fn json_to_value(j: &JsonValue) -> Result<Arc<Value>, String> {
 
 /// Build the six-field attestation message body (no `signature` field).
 /// Returned as a JSON object preserving the spec's field order.
+/// Hardcodes `protocolVersion: "v1.1.0"`; for other versions use
+/// `build_attestation_message_for`.
 pub fn build_attestation_message(
+    catalog_cid: &str,
+    declared_at: &str,
+    signer_pubkey: &str,
+) -> JsonValue {
+    build_attestation_message_for("v1.1.0", catalog_cid, declared_at, signer_pubkey)
+}
+
+/// Build the attestation message body parameterized by protocol version.
+pub fn build_attestation_message_for(
+    protocol_version: &str,
     catalog_cid: &str,
     declared_at: &str,
     signer_pubkey: &str,
@@ -127,7 +152,7 @@ pub fn build_attestation_message(
     json!({
         "schemaVersion": "1",
         "protocolName": "provekit-protocol",
-        "protocolVersion": "v1.1.0",
+        "protocolVersion": protocol_version,
         "catalogCid": catalog_cid,
         "declaredAt": declared_at,
         "signer": signer_pubkey,
@@ -143,19 +168,32 @@ pub fn attestation_signing_bytes(message: &JsonValue) -> Result<Vec<u8>, String>
 }
 
 /// Build the full signed attestation JSON, ready to be written to disk.
+/// Hardcodes `protocolVersion: "v1.1.0"`; for other versions use
+/// `build_signed_attestation_for`.
 pub fn build_signed_attestation(
     seed: &Ed25519Seed,
     catalog_cid: &str,
     declared_at: &str,
 ) -> Result<JsonValue, String> {
+    build_signed_attestation_for("v1.1.0", seed, catalog_cid, declared_at)
+}
+
+/// Build the signed attestation parameterized by protocol version.
+pub fn build_signed_attestation_for(
+    protocol_version: &str,
+    seed: &Ed25519Seed,
+    catalog_cid: &str,
+    declared_at: &str,
+) -> Result<JsonValue, String> {
     let signer_pubkey = ed25519_pubkey_string(seed);
-    let message = build_attestation_message(catalog_cid, declared_at, &signer_pubkey);
+    let message =
+        build_attestation_message_for(protocol_version, catalog_cid, declared_at, &signer_pubkey);
     let bytes = attestation_signing_bytes(&message)?;
     let signature = ed25519_sign_string(seed, &bytes);
     Ok(json!({
         "schemaVersion": "1",
         "protocolName": "provekit-protocol",
-        "protocolVersion": "v1.1.0",
+        "protocolVersion": protocol_version,
         "catalogCid": catalog_cid,
         "declaredAt": declared_at,
         "signer": signer_pubkey,

@@ -1,7 +1,8 @@
 # Multi-Solver Protocol
 
-**Status:** v0
+**Status:** v1.2.0 normative
 **Date:** 2026-04-30
+**Catalog property:** `multi-solver-protocol` (CID in `protocol/specs/2026-04-30-protocol-catalog.json`)
 **Owner:** verifier crate
 **Related:**
 - `protocol/specs/2026-04-30-ir-compiler-protocol.md` (IR compiler dispatch)

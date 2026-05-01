@@ -61,6 +61,22 @@ const SPEC_MAP: &[(&str, &str)] = &[
         "protocol-catalog-format",
         "2026-04-30-protocol-catalog-format.md",
     ),
+    (
+        "agent-plugin-protocol",
+        "2026-04-30-agent-plugin-protocol.md",
+    ),
+    (
+        "ir-compiler-protocol",
+        "2026-04-30-ir-compiler-protocol.md",
+    ),
+    (
+        "multi-solver-protocol",
+        "2026-04-30-multi-solver-protocol.md",
+    ),
+    (
+        "lift-plugin-protocol",
+        "2026-04-30-lift-plugin-protocol.md",
+    ),
 ];
 
 use std::collections::BTreeMap;

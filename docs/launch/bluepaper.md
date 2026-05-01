@@ -2,7 +2,7 @@
 
 > ProvekIt constrains the set of all possible validations to 64 bytes regardless of length. The proof follows.
 
-Version 1.1.0. April 30, 2026. Protocol freeze.
+Version 1.2.0. April 30, 2026. Protocol freeze.
 
 The reader verifies this document's authority by computing the BLAKE3-512 hash of the protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json` locally and comparing against the value pinned in §0 below. Every other claim in this bluepaper is verifiable by the same procedure: compute, compare.
 
@@ -11,8 +11,8 @@ The reader verifies this document's authority by computing the BLAKE3-512 hash o
 ## §0. Pinned authority
 
 ```
-protocol catalog (v1.1.0)
-  blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
+protocol catalog (v1.2.0)
+  blake3-512:1e5cfee6043d485d276c26a8da17830fe828c5b7b395a5fb1f042e7442407a37c39c59c0e002ca18857b12d3efb0d86687b9a3a0e3f6e3e933856f0717d0579f
 ```
 
 This is `BLAKE3-512(JCS(catalog-json))`, not `BLAKE3-512(catalog-file-bytes)`. The catalog is canonicalized first per RFC 8785 (sorted keys, no whitespace, deterministic number form), then hashed. Anything else gets a different number.
@@ -317,7 +317,7 @@ lattice tractability theorem   blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f
 memento envelope grammar       blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5
 proof substrate                blake3-512:ad53d6c59ee08270a48715376cc211f964ff44a55b3318d68a402e9c915ff593d5a5bbbd424f7777e2bcfe89d6c5bd2b49efcb5aae7de24752f3bcabb90484ae
 proof file format              blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3
-protocol catalog (v1.1.0)      blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4
+protocol catalog (v1.2.0)      blake3-512:1e5cfee6043d485d276c26a8da17830fe828c5b7b395a5fb1f042e7442407a37c39c59c0e002ca18857b12d3efb0d86687b9a3a0e3f6e3e933856f0717d0579f
 self-contracts (v1.1.0)        blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
 signatures and non-repudiation blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c
 ```
@@ -371,7 +371,9 @@ The constant-size and constant-time claims are theorems. Their empirical confirm
 
 ## Appendix C: changelog
 
-v1.1.0 (2026-04-30): protocol freeze. BLAKE3-512 widening from earlier truncated forms. Every CID now carries the full 128-hex string. Per-language kit-standard finalized; conformance suite passing on Rust, C++, TypeScript reference peers.
+v1.1.0 (2026-04-30): protocol freeze. BLAKE3-512 widening from earlier truncated forms. Every CID now carries the full 128-hex string. Per-language kit-standard finalized; conformance suite passing on Rust, C++, TypeScript reference peers. Catalog CID `5b770182...19f05cd4`.
+
+v1.2.0 (2026-04-30): additive bump over v1.1.0. Adds four pluggability protocols: agent-plugin-protocol (LSP-shape JSON-RPC seam for coding agents), ir-compiler-protocol (per-solver IR translators), multi-solver-protocol (single/chain/portfolio dispatch), lift-plugin-protocol (one Rust CLI dispatching to per-language plugins via stdio JSON-RPC). Reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via toolchain (vitest), not as a peer CLI. Any v1.1.0 memento or `.proof` remains valid under v1.2.0 — the bump is purely additive. Catalog CID `1e5cfee6...17d0579f`. Signed under the same foundation key as v1.1.0.
 
 ---
 

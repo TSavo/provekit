@@ -1,7 +1,6 @@
 # Agent Plugin Protocol (`provekit-agent/1`)
 
-Status: draft for inclusion in protocol catalog v1.2.0 (the v1.1.0 catalog
-is signed and frozen; this spec is RECOMPUTE-pending until v1.2.0 lands).
+Status: v1.2.0 normative. Listed in the v1.2.0 catalog under property key `agent-plugin-protocol`. CID is computed from the bytes of this file (raw-bytes BLAKE3-512); see the catalog at `protocol/specs/2026-04-30-protocol-catalog.json` for the value.
 
 ## Why
 
