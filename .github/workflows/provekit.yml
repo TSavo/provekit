@@ -1,0 +1,21 @@
+name: ProvekIt
+on:
+  push:
+  pull_request:
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Z3
+        run: sudo apt-get update && sudo apt-get install -y z3
+      - name: Install
+        run: npm ci || npm install
+      - name: Run tests
+        run: pnpm test
+      - name: ProvekIt verify
+        run: npx provekit invariants verify --ci
