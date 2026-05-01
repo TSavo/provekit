@@ -354,7 +354,16 @@ $ tools/build-cpp-self-contracts.sh /tmp/provekit-cpp-self-out
   catalog CID:        blake3-512:52bc62f7e70c7caa3220b2c789a75a744bc94660c36a920d53da1a6128eff660cd81dfae6a39d802d108e037f1234f202160d54aea81fb407f1a46f5cd323ae0
 ```
 
-Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a value above does not match, your bytes are not the bytes this bluepaper was written against. Each peer's CID is independent: contracts cover that peer's surface, but the bytes (canonical IR-JSON, BLAKE3-512, foundation-key signature, deterministic CBOR catalog) are produced by the protocol's own primitives. Three peers, three CIDs, one protocol.
+**TypeScript** — 59 contracts across 13 `.invariant.ts` slab files (one per public-API TS source file). The repo's tsx-driven launchers currently fail on Node 25 because `@ipld/dag-cbor` is ESM-only and tsx's CJS bridge cannot resolve it; vitest's Vite ESM loader handles it cleanly, so the working invocation is the test driver:
+
+```sh
+$ pnpm vitest run \
+    implementations/typescript/src/bin/mint-ts-self-contracts.test.ts \
+    --reporter=verbose | grep "catalog CID:"
+  catalog CID:        blake3-512:449339930add6457bf25542f2117a025daada4a4bd1de704737750ad6d1c1be814c284d31bb97159ca0b2d2c52f8c043a64533d3432195f5a0f338c5d4904d44
+```
+
+Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a value above does not match, your bytes are not the bytes this bluepaper was written against. Each peer's CID is independent: contracts cover that peer's surface, but the bytes (canonical IR-JSON, BLAKE3-512, foundation-key signature, deterministic CBOR catalog) are produced by the protocol's own primitives. Four peers, four CIDs, one protocol.
 
 ## Appendix B: empirical witness
 
