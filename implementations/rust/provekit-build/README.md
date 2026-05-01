@@ -9,18 +9,25 @@ diagnostics instead of runtime failures.
 A consumer crate that opts in (see "Four-line opt-in" below) gets:
 
 1. Every `#[provekit::contract(...)]` on a function definition is
-   discovered at build time.
-2. Every `#[provekit::verify]` body has its call sites enumerated and
+   discovered at build time. (Inventory lane.)
+2. Every supported third-party annotation is lifted in the same pass
+   via the `provekit-lift-*` adapters: `proptest!` blocks,
+   `#[contracts::requires]`, `#[contracts::ensures]`, kani / prusti /
+   creusot / flux / quickcheck / verus annotations. There is no
+   separate `cargo provekit-lift` step. (Lift lane.)
+3. Every `#[provekit::verify]` body has its call sites enumerated and
    each site is dispatched to Z3 via a small Tier-3 obligation.
-3. The verifier's findings are emitted on stable cargo channels:
+4. The verifier's findings are emitted on stable cargo channels:
+   - `cargo:warning=provekit: lift promoted N contract(s) ...` once per
+     build when the lift lane found anything.
    - `cargo:warning=provekit: ...` for each undischarged call site.
    - A non-zero build-script exit (cargo-equivalent of
      `compile_error!`) when `strict = true` and at least one call
      site is `Unsatisfied`.
-4. A signed manifest of contracts and verify targets is hashed under
-   BLAKE3-512 and written as `<cid>.proof` under the per-build
-   `OUT_DIR`.
-5. `cargo:rerun-if-changed=...` lines for `Cargo.toml` and every
+5. A signed manifest of inventory contracts, verify targets, and
+   lift-derived contracts is hashed under BLAKE3-512 and written as
+   `<cid>.proof` under the per-build `OUT_DIR`.
+6. `cargo:rerun-if-changed=...` lines for `Cargo.toml` and every
    walked `*.rs` source file under `src/`.
 
 ## Four-line opt-in
@@ -49,12 +56,13 @@ Then annotate functions with `#[provekit::contract(...)]` and
 
 The `[package.metadata.provekit]` table accepts:
 
-| Key              | Type    | Default   | Meaning                                                          |
-| ---------------- | ------- | --------- | ---------------------------------------------------------------- |
-| `strict`         | bool    | `false`   | If true, undischarged call sites cause `cargo build` to fail.    |
-| `mint_proof`     | bool    | `true`    | If true, write `<cid>.proof` to `OUT_DIR/provekit/`.             |
-| `verify_targets` | string  | `**/*`    | Glob over `#[provekit::verify]` function names.                  |
-| `z3_timeout_ms`  | integer | `3000`    | Per-call wall-clock cap for the Z3 subprocess (also `:timeout`). |
+| Key              | Type     | Default   | Meaning                                                                                       |
+| ---------------- | -------- | --------- | --------------------------------------------------------------------------------------------- |
+| `strict`         | bool     | `false`   | If true, undischarged call sites cause `cargo build` to fail.                                 |
+| `mint_proof`     | bool     | `true`    | If true, write `<cid>.proof` to `OUT_DIR/provekit/`.                                          |
+| `verify_targets` | string   | `**/*`    | Glob over `#[provekit::verify]` function names.                                               |
+| `z3_timeout_ms`  | integer  | `3000`    | Per-call wall-clock cap for the Z3 subprocess (also `:timeout`).                              |
+| `lift_adapters`  | [string] | (all)     | Whitelist of lift adapters to run. Recognized: `proptest`, `contracts`, `kani`, `prusti`, `creusot`, `flux`, `quickcheck`, `verus`. Unset = all. Empty = none. |
 
 Unknown keys are rejected; defaults are intentionally permissive so a
 crate without the table still gets useful diagnostics.

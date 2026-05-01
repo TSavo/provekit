@@ -21,8 +21,8 @@ use std::path::PathBuf;
 use provekit_build::__for_tests::{walk, walk_str};
 use provekit_build::source_walk::FormulaShape;
 use provekit_build::{
-    build_obligation_script, mint_proof_file, parse_config_from_str, run_verification_inner,
-    solve, ProvekitConfig, SolverVerdict,
+    build_obligation_script, mint_proof_file, parse_config_from_str, run_lift_pass,
+    run_verification_inner, solve, ProvekitConfig, SolverVerdict, ALL_ADAPTERS,
 };
 
 // ---------------------------------------------------------------------------
@@ -138,6 +138,7 @@ mint_proof = false
         mint_proof: Some(false),
         verify_targets: None,
         z3_timeout_ms: None,
+        lift_adapters: None,
     };
     let out_dir = manifest_dir.join("out");
     std::fs::create_dir_all(&out_dir).expect("mkdir out");
@@ -189,7 +190,7 @@ fn mint_proof_writes_file_when_enabled() {
             pub fn abs_value(x: i64) -> i64 { x.abs() }
         "#,
     );
-    let (path, cid) = mint_proof_file(tmp.path(), &walk_outcome).expect("mint");
+    let (path, cid) = mint_proof_file(tmp.path(), &walk_outcome, &[]).expect("mint");
     assert!(path.exists(), "proof file should exist");
     assert!(cid.starts_with("blake3-512:"));
     assert_eq!(cid.len(), "blake3-512:".len() + 128);
@@ -206,8 +207,8 @@ fn mint_proof_is_deterministic() {
             pub fn abs_value(x: i64) -> i64 { x.abs() }
         "#,
     );
-    let (_, cid1) = mint_proof_file(tmp1.path(), &walk_outcome).expect("mint 1");
-    let (_, cid2) = mint_proof_file(tmp2.path(), &walk_outcome).expect("mint 2");
+    let (_, cid1) = mint_proof_file(tmp1.path(), &walk_outcome, &[]).expect("mint 1");
+    let (_, cid2) = mint_proof_file(tmp2.path(), &walk_outcome, &[]).expect("mint 2");
     assert_eq!(cid1, cid2, "minting same manifest must yield same CID");
 }
 
@@ -363,4 +364,256 @@ fn walker_handles_filesystem_walk() {
     let names: Vec<_> = outcome.contracts.iter().map(|c| c.fn_name.as_str()).collect();
     assert!(names.contains(&"f1"));
     assert!(names.contains(&"f2"));
+}
+
+// ---------------------------------------------------------------------------
+// Lift integration tests. These exercise the wiring that fires lift
+// adapters from inside `cargo build` rather than from a separate
+// `cargo provekit-lift` invocation. Sir's UX point: lift is not a
+// command, it's a phase of the build.
+// ---------------------------------------------------------------------------
+
+/// Helper: write `src/<file>.rs` under a fresh temp manifest dir and
+/// return the manifest path. The Cargo.toml is minimal — just enough
+/// for `parse_config_from_str` if a test wants a config.
+fn write_lift_fixture(name: &str, body: &str) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).expect("mkdir src");
+    std::fs::write(src.join(name), body).expect("write fixture");
+    tmp
+}
+
+/// Test 7: Lift adapter enabled by default.
+///
+/// With no `lift_adapters` whitelist in config, every registered
+/// adapter runs. A proptest block in the source produces at least one
+/// lifted contract.
+#[test]
+fn lift_adapters_enabled_by_default() {
+    let tmp = write_lift_fixture(
+        "lib.rs",
+        r#"
+            proptest! {
+                #[test]
+                fn answer_is_42(x: i64) {
+                    prop_assert_eq!(x, 42);
+                }
+            }
+        "#,
+    );
+    let cfg = ProvekitConfig::default();
+    // The default whitelist resolves to every known adapter.
+    assert_eq!(cfg.enabled_lift_adapters().len(), ALL_ADAPTERS.len());
+    let report = run_lift_pass(tmp.path(), &cfg.enabled_lift_adapters());
+    let proptest_row = report
+        .breakdown
+        .iter()
+        .find(|b| b.adapter == "proptest")
+        .expect("proptest row");
+    assert!(proptest_row.enabled);
+    assert!(
+        proptest_row.lifted >= 1,
+        "expected at least one lifted proptest contract, got {:?}",
+        report.breakdown
+    );
+    assert!(
+        report.lifted.iter().any(|l| l.adapter == "proptest"),
+        "expected a lifted contract from the proptest adapter"
+    );
+}
+
+/// Test 8: Lift adapter whitelist via Cargo.toml metadata.
+///
+/// `[package.metadata.provekit] lift_adapters = ["contracts"]` runs
+/// only the `contracts` adapter. A proptest block in the source is
+/// silently skipped (proptest adapter is gated off), and a
+/// `#[contracts::ensures]`-annotated function is lifted.
+#[test]
+fn lift_adapter_whitelist_runs_only_listed() {
+    let toml = r#"
+[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.provekit]
+strict = false
+lift_adapters = ["contracts"]
+"#;
+    let cfg = parse_config_from_str(toml).expect("parse");
+    let enabled = cfg.enabled_lift_adapters();
+    assert_eq!(enabled, vec!["contracts"]);
+    let tmp = write_lift_fixture(
+        "lib.rs",
+        r#"
+            // This proptest! block should NOT be lifted (proptest not on whitelist).
+            proptest! {
+                #[test]
+                fn answer_is_42(x: i64) {
+                    prop_assert_eq!(x, 42);
+                }
+            }
+
+            // This contracts-annotated function SHOULD be lifted.
+            #[contracts::requires(x > 0)]
+            #[contracts::ensures(ret >= 0)]
+            fn sqrt(x: i64) -> i64 { x }
+        "#,
+    );
+    let report = run_lift_pass(tmp.path(), &enabled);
+    // contracts adapter is enabled and produces something.
+    let contracts_row = report
+        .breakdown
+        .iter()
+        .find(|b| b.adapter == "contracts")
+        .expect("contracts row");
+    assert!(contracts_row.enabled);
+    assert!(
+        contracts_row.lifted >= 1,
+        "expected contracts to lift sqrt, got: {:?}",
+        report.breakdown
+    );
+    // proptest adapter is disabled and produces nothing.
+    let proptest_row = report
+        .breakdown
+        .iter()
+        .find(|b| b.adapter == "proptest")
+        .expect("proptest row");
+    assert!(!proptest_row.enabled);
+    assert_eq!(proptest_row.lifted, 0);
+    // The lifted set contains only contracts-derived items.
+    assert!(report.lifted.iter().all(|l| l.adapter == "contracts"));
+}
+
+/// Test 9: Mixed inventory + lift contracts.
+///
+/// A crate with one `#[provekit::contract]` decorator (inventory lane)
+/// AND one `#[contracts::ensures]`-annotated function (lift lane)
+/// reports both, with the breakdown distinguishing them.
+#[test]
+fn mixed_inventory_and_lift_contracts() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let manifest_dir = tmp.path();
+    let src_dir = manifest_dir.join("src");
+    std::fs::create_dir_all(&src_dir).expect("mkdir src");
+    std::fs::write(
+        src_dir.join("lib.rs"),
+        r#"
+            // Inventory lane: provekit-decorated function.
+            #[provekit::contract(post = forall(Int(), |_| gte(out(), num(0))))]
+            pub fn abs_value(x: i64) -> i64 { x.abs() }
+
+            // Lift lane: contracts crate annotation.
+            #[contracts::requires(x > 0)]
+            #[contracts::ensures(ret >= 0)]
+            fn sqrt(x: i64) -> i64 { x }
+        "#,
+    )
+    .expect("write");
+    let cargo_toml = manifest_dir.join("Cargo.toml");
+    std::fs::write(
+        &cargo_toml,
+        r#"
+[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.provekit]
+strict = false
+mint_proof = false
+"#,
+    )
+    .expect("write cargo");
+    let cfg = ProvekitConfig {
+        strict: Some(false),
+        mint_proof: Some(false),
+        verify_targets: None,
+        z3_timeout_ms: None,
+        lift_adapters: None,
+    };
+    let out_dir = manifest_dir.join("out");
+    std::fs::create_dir_all(&out_dir).expect("mkdir out");
+    let report = run_verification_inner(manifest_dir, &cargo_toml, &out_dir, &cfg);
+    assert_eq!(
+        report.contract_count, 1,
+        "exactly one inventory contract: abs_value"
+    );
+    assert!(
+        report.lift_count >= 1,
+        "at least one lifted contract from contracts adapter, got {} ({:?})",
+        report.lift_count,
+        report.lifted_contracts
+    );
+    // The contracts adapter row reports the lift.
+    let contracts_row = report
+        .lift_breakdown
+        .iter()
+        .find(|b| b.adapter == "contracts")
+        .expect("contracts row");
+    assert!(contracts_row.lifted >= 1);
+}
+
+/// Test 10: Lift-derived contract surfaces in cargo:warning= summary.
+///
+/// We can't easily intercept stdout from inside an integration test,
+/// but we can assert the report carries enough state for
+/// `emit_cargo_directives` to print the summary line. Specifically:
+/// `lift_count > 0` and the breakdown identifies the source adapter,
+/// which is the precondition for the
+/// `cargo:warning=provekit: lift promoted ...` emission.
+#[test]
+fn lift_violation_drives_cargo_warning() {
+    let tmp = write_lift_fixture(
+        "lib.rs",
+        r#"
+            // A proptest block whose body is intentionally narrow.
+            // Whether or not the underlying `prop_assert` is liftable in
+            // v0 is irrelevant for this test — we only need the proptest
+            // adapter to register a `seen` count on the breakdown so the
+            // build script's summary line fires.
+            proptest! {
+                #[test]
+                fn xrange(x: i64) {
+                    prop_assert_eq!(x, 7);
+                }
+            }
+        "#,
+    );
+    let cfg = ProvekitConfig::default();
+    let report = run_lift_pass(tmp.path(), &cfg.enabled_lift_adapters());
+    let proptest_row = report
+        .breakdown
+        .iter()
+        .find(|b| b.adapter == "proptest")
+        .expect("proptest row");
+    assert!(proptest_row.seen >= 1);
+    assert!(
+        report.lifted.iter().any(|l| l.adapter == "proptest"),
+        "expected proptest-derived contract; got: {:?}",
+        report.lifted
+    );
+    // Precondition for the cargo:warning= summary line in
+    // `emit_cargo_directives`: at least one lifted contract overall.
+    assert!(!report.lifted.is_empty());
+}
+
+#[test]
+fn unknown_adapter_in_whitelist_is_surfaced() {
+    let toml = r#"
+[package]
+name = "demo"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.provekit]
+lift_adapters = ["contracts", "nonsense_adapter"]
+"#;
+    let cfg = parse_config_from_str(toml).expect("parse");
+    let unknown = cfg.unknown_lift_adapters();
+    assert_eq!(unknown, vec!["nonsense_adapter".to_string()]);
+    // `enabled_lift_adapters` filters unknowns out so the build keeps
+    // working, but the diagnostic surface is via `unknown_lift_adapters`.
+    assert_eq!(cfg.enabled_lift_adapters(), vec!["contracts"]);
 }

@@ -50,8 +50,10 @@ use serde::{Deserialize, Serialize};
 use syn::visit::Visit;
 
 pub mod source_walk;
+pub mod lift_pass;
 
 pub use source_walk::{ContractSite, FormulaShape, VerifySite, WalkOutcome};
+pub use lift_pass::{LiftedContract, LiftPassReport, LiftAdapterCount, run_lift_pass, ALL_ADAPTERS};
 
 /// Default Z3 query timeout in milliseconds.
 pub const DEFAULT_Z3_TIMEOUT_MS: u64 = 3_000;
@@ -87,6 +89,11 @@ pub struct ProvekitConfig {
     pub verify_targets: Option<String>,
     /// Per-call Z3 timeout, milliseconds. Default 3000.
     pub z3_timeout_ms: Option<u64>,
+    /// Optional whitelist of lift-adapter names to run during build.
+    /// Default (None) runs every registered adapter; an empty list
+    /// disables the lift pass entirely. Recognized names are listed in
+    /// `lift_pass::ALL_ADAPTERS`.
+    pub lift_adapters: Option<Vec<String>>,
 }
 
 impl ProvekitConfig {
@@ -103,6 +110,32 @@ impl ProvekitConfig {
     }
     pub fn z3_timeout_ms(&self) -> u64 {
         self.z3_timeout_ms.unwrap_or(DEFAULT_Z3_TIMEOUT_MS)
+    }
+    /// Adapter whitelist resolved against `ALL_ADAPTERS`. `None` means
+    /// "all adapters"; an explicit empty list means "no adapters".
+    /// Unknown names are filtered out (the surrounding code emits a
+    /// `cargo:warning=` for each so the consumer notices typos).
+    pub fn enabled_lift_adapters(&self) -> Vec<&'static str> {
+        match &self.lift_adapters {
+            None => ALL_ADAPTERS.iter().copied().collect(),
+            Some(list) => ALL_ADAPTERS
+                .iter()
+                .copied()
+                .filter(|name| list.iter().any(|w| w == name))
+                .collect(),
+        }
+    }
+    /// Names in `lift_adapters` that don't match any known adapter.
+    /// Used for diagnostic warnings; never errors.
+    pub fn unknown_lift_adapters(&self) -> Vec<String> {
+        match &self.lift_adapters {
+            None => Vec::new(),
+            Some(list) => list
+                .iter()
+                .filter(|w| !ALL_ADAPTERS.iter().any(|name| w == name))
+                .cloned()
+                .collect(),
+        }
     }
 }
 
@@ -355,11 +388,34 @@ pub struct CallsiteOutcome {
 
 #[derive(Debug, Default, Clone)]
 pub struct VerificationReport {
+    /// Number of `#[provekit::contract]` decorators found by the
+    /// source-walker. Treated as the "inventory" lane: contracts the
+    /// kit's own macros / `.invariant.rs` files declared directly.
     pub contract_count: usize,
+    /// Number of `#[provekit::verify]` annotations.
     pub verify_count: usize,
     pub callsites: Vec<CallsiteOutcome>,
     pub mint_path: Option<PathBuf>,
     pub mint_cid: Option<String>,
+    /// Number of contracts produced by lift adapters (proptest, contracts,
+    /// kani, prusti, creusot, flux, quickcheck, verus). Not the same
+    /// thing as `contract_count` — these came from third-party
+    /// annotations the consumer already had, not from `#[provekit::*]`
+    /// decorators. Populated by the lift pass that runs alongside the
+    /// source walk.
+    pub lift_count: usize,
+    /// Per-adapter breakdown. Always carries an entry per registered
+    /// adapter (zeroed when the adapter found nothing or wasn't on the
+    /// whitelist), so the report shape stays predictable.
+    pub lift_breakdown: Vec<LiftAdapterCount>,
+    /// Lifted contract decls, in the order the adapters produced them.
+    /// Round-tripped into the proof manifest so consumers can audit
+    /// what got promoted from third-party annotations.
+    pub lifted_contracts: Vec<LiftedContract>,
+    /// Names listed under `lift_adapters` that don't match any
+    /// registered adapter. Surfaced via `cargo:warning=` so typos
+    /// don't silently disable a lane.
+    pub unknown_lift_adapters: Vec<String>,
 }
 
 impl VerificationReport {
@@ -402,6 +458,10 @@ struct ProofManifest {
     schema: &'static str,
     contracts: Vec<ProofContract>,
     verify_targets: Vec<ProofVerifyTarget>,
+    /// Contracts promoted from third-party annotations (proptest,
+    /// contracts, kani, ...). Sourced from `lift_pass::run_lift_pass`,
+    /// not the source-walker's `#[provekit::contract]` lane.
+    lift_contracts: Vec<ProofLiftContract>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -419,15 +479,39 @@ struct ProofVerifyTarget {
     line: usize,
 }
 
+/// Compact, deterministic, JSON-friendly snapshot of one lifted
+/// ContractDecl. We do not ship the full canonical IR through the
+/// build-script's tiny manifest (the heavy minting lives in
+/// provekit-claim-envelope, which `cargo provekit-lift` invokes
+/// directly). Here we record the adapter that produced it, the source
+/// path, and which slots are populated.
+#[derive(Debug, Clone, Serialize)]
+struct ProofLiftContract {
+    adapter: String,
+    name: String,
+    source_path: String,
+    has_pre: bool,
+    has_post: bool,
+    has_inv: bool,
+    out_binding: String,
+}
+
 /// Mint the proof manifest, hash it with BLAKE3-512, write the result
 /// to `<target_dir>/provekit/<cid>.proof`. Returns the path and the
 /// full self-identifying CID (`blake3-512:<128 hex>`).
+///
+/// The manifest carries both lanes: the source-walker's "inventory"
+/// contracts (from `#[provekit::contract]` decorators) AND the lift
+/// pass's contracts (from proptest / contracts / kani / ... third-party
+/// annotations). Both contribute to the CID; a build that grows lift
+/// adapters changes the proof, which is the desired property.
 pub fn mint_proof_file(
     target_dir: &Path,
     walk: &WalkOutcome,
+    lifted: &[LiftedContract],
 ) -> Result<(PathBuf, String), String> {
     let manifest = ProofManifest {
-        schema: "provekit-build/0.1",
+        schema: "provekit-build/0.2",
         contracts: walk
             .contracts
             .iter()
@@ -445,6 +529,18 @@ pub fn mint_proof_file(
                 fn_name: v.fn_name.clone(),
                 source_path: v.source_path.display().to_string(),
                 line: v.line,
+            })
+            .collect(),
+        lift_contracts: lifted
+            .iter()
+            .map(|l| ProofLiftContract {
+                adapter: l.adapter.to_string(),
+                name: l.decl.name.clone(),
+                source_path: l.source_path.clone(),
+                has_pre: l.decl.pre.is_some(),
+                has_post: l.decl.post.is_some(),
+                has_inv: l.decl.inv.is_some(),
+                out_binding: l.decl.out_binding.clone(),
             })
             .collect(),
     };
@@ -540,15 +636,24 @@ pub fn run_verification_inner(
     cfg: &ProvekitConfig,
 ) -> VerificationReport {
     let walk = source_walk::walk(manifest_dir);
+    // Lift pass: walk the same source tree, dispatch to every enabled
+    // lift adapter, collect ContractDecls. This runs by default — the
+    // user does NOT type "lift" anywhere; just `cargo build`.
+    let enabled = cfg.enabled_lift_adapters();
+    let lift_report = run_lift_pass(manifest_dir, &enabled);
     let mut report = VerificationReport {
         contract_count: walk.contracts.len(),
         verify_count: walk.verify_targets.len(),
         callsites: Vec::new(),
         mint_path: None,
         mint_cid: None,
+        lift_count: lift_report.lifted.len(),
+        lift_breakdown: lift_report.breakdown,
+        lifted_contracts: lift_report.lifted,
+        unknown_lift_adapters: cfg.unknown_lift_adapters(),
     };
     if cfg.mint_proof() {
-        match mint_proof_file(out_dir, &walk) {
+        match mint_proof_file(out_dir, &walk, &report.lifted_contracts) {
             Ok((p, cid)) => {
                 report.mint_path = Some(p);
                 report.mint_cid = Some(cid);
@@ -686,6 +791,50 @@ fn emit_cargo_directives(report: &VerificationReport, cfg: &ProvekitConfig) {
             println!("cargo:rerun-if-changed={}", entry.path().display());
         }
     }
+    // Surface the lift-derived contracts on stdout so users see what
+    // got promoted from third-party annotations during their build.
+    // Emitted as `cargo:warning=` so cargo prints it without failing.
+    for unknown in &report.unknown_lift_adapters {
+        println!(
+            "cargo:warning=provekit: unknown lift adapter `{unknown}` (allowed: {})",
+            ALL_ADAPTERS.join(", ")
+        );
+    }
+    for lifted in &report.lifted_contracts {
+        let slots = match (
+            lifted.decl.pre.is_some(),
+            lifted.decl.post.is_some(),
+            lifted.decl.inv.is_some(),
+        ) {
+            (true, true, _) => "pre+post",
+            (true, false, false) => "pre",
+            (false, true, false) => "post",
+            (_, _, true) => "inv",
+            _ => "empty",
+        };
+        if std::env::var("PROVEKIT_VERBOSE").ok().as_deref() == Some("1") {
+            println!(
+                "cargo:warning=provekit: LIFT [{}] {} ({}): {}",
+                lifted.adapter, lifted.decl.name, slots, lifted.source_path
+            );
+        }
+    }
+    // Always emit a one-line summary marker when at least one lift
+    // contract was found, so the consumer sees the lift lane is live
+    // without needing PROVEKIT_VERBOSE=1.
+    if report.lift_count > 0 {
+        let by_adapter: Vec<String> = report
+            .lift_breakdown
+            .iter()
+            .filter(|b| b.lifted > 0)
+            .map(|b| format!("{}={}", b.adapter, b.lifted))
+            .collect();
+        println!(
+            "cargo:warning=provekit: lift promoted {} contract(s) from third-party annotations [{}]",
+            report.lift_count,
+            by_adapter.join(", ")
+        );
+    }
     for cs in &report.callsites {
         match cs.verdict {
             SolverVerdict::Discharged => {
@@ -724,22 +873,52 @@ fn emit_cargo_directives(report: &VerificationReport, cfg: &ProvekitConfig) {
 }
 
 fn print_summary_to_stderr(report: &VerificationReport, cfg: &ProvekitConfig) {
+    let total_contracts = report.contract_count + report.lift_count;
     eprintln!("--- ProvekIt verification report ---");
-    eprintln!("  contracts:        {}", report.contract_count);
-    eprintln!("  verify targets:   {}", report.verify_count);
-    eprintln!("  callsites:        {}", report.callsites.len());
-    eprintln!("    discharged:     {}", report.discharged_count());
-    eprintln!("    unsatisfied:    {}", report.unsatisfied_count());
-    eprintln!("    undecidable:    {}", report.undecidable_count());
+    eprintln!("  inventory contracts: {}", report.contract_count);
+    eprintln!("  lift contracts:      {}", report.lift_count);
+    eprintln!("  total contracts:     {}", total_contracts);
+    if !report.lift_breakdown.is_empty() {
+        let active: Vec<String> = report
+            .lift_breakdown
+            .iter()
+            .filter(|b| b.enabled)
+            .map(|b| format!("{}({}/{})", b.adapter, b.lifted, b.seen))
+            .collect();
+        if !active.is_empty() {
+            eprintln!("    lift breakdown:    {}", active.join(", "));
+        }
+        let skipped: Vec<&str> = report
+            .lift_breakdown
+            .iter()
+            .filter(|b| !b.enabled)
+            .map(|b| b.adapter)
+            .collect();
+        if !skipped.is_empty() {
+            eprintln!("    lift disabled:     {}", skipped.join(", "));
+        }
+    }
+    eprintln!("  verify targets:      {}", report.verify_count);
+    eprintln!("  callsites:           {}", report.callsites.len());
+    eprintln!("    discharged:        {}", report.discharged_count());
+    eprintln!("    unsatisfied:       {}", report.unsatisfied_count());
+    eprintln!("    undecidable:       {}", report.undecidable_count());
     if let Some(p) = &report.mint_path {
-        eprintln!("  proof file:       {}", p.display());
+        eprintln!("  proof file:          {}", p.display());
     }
     if let Some(c) = &report.mint_cid {
-        eprintln!("  proof cid:        {c}");
+        eprintln!("  proof cid:           {c}");
     }
-    eprintln!("  strict mode:      {}", cfg.strict());
-    eprintln!("  z3 path:          {}", z3_binary_path());
-    eprintln!("  z3 timeout (ms):  {}", cfg.z3_timeout_ms());
+    eprintln!("  strict mode:         {}", cfg.strict());
+    eprintln!("  z3 path:             {}", z3_binary_path());
+    eprintln!("  z3 timeout (ms):     {}", cfg.z3_timeout_ms());
+    eprintln!(
+        "  summary:             {} inventory, {} lift, {} verified, {} violation(s)",
+        report.contract_count,
+        report.lift_count,
+        report.discharged_count(),
+        report.unsatisfied_count()
+    );
     eprintln!("------------------------------------");
 }
 

@@ -26,5 +26,21 @@ toml = "0.8"
 glob = "0.3"
 blake3 = { workspace = true }
 
+# IR types — `lift_file()` returns Vec<ContractDecl> from this crate.
+provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
+
+# Lift adapters. We pull each adapter in directly (NOT the heavier
+# `provekit-lift` core, which would drag the claim-envelope + proof-envelope
+# crypto stack into every consumer's build-dependency graph). The adapters
+# are leaf libraries that only need `syn` + the IR types.
+provekit-lift-proptest    = { path = "../provekit-lift-proptest" }
+provekit-lift-contracts   = { path = "../provekit-lift-contracts" }
+provekit-lift-kani        = { path = "../provekit-lift-kani" }
+provekit-lift-prusti      = { path = "../provekit-lift-prusti" }
+provekit-lift-creusot     = { path = "../provekit-lift-creusot" }
+provekit-lift-flux        = { path = "../provekit-lift-flux" }
+provekit-lift-quickcheck  = { path = "../provekit-lift-quickcheck" }
+provekit-lift-verus       = { path = "../provekit-lift-verus" }
+
 [dev-dependencies]
 tempfile = "3"
