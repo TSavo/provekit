@@ -224,26 +224,39 @@ The protocol doesn't care which path produced the IR. Both paths hash to identic
 
 ## Reference plugins
 
-The four peer self-contracts orchestrators ship as the reference plugins:
+Three reference CLI plugins ship with ProvekIt:
 
 | Surface | Plugin command | Reference |
 |---------|---------------|-----------|
 | `rust-self-contracts` | `mint-self-contracts --rpc` | `implementations/rust/provekit-self-contracts/` |
-| `go-self-contracts` | `mint-go-self-contracts --rpc` | `implementations/go/provekit-self-contracts/cmd/` |
-| `cpp-self-contracts` | `mint_cpp_self_contracts --rpc` | `implementations/cpp/provekit-self-contracts/` |
-| `ts-self-contracts` | `mint-ts-self-contracts --rpc` | `implementations/typescript/src/bin/` |
+| `go-self-contracts` | `go run ./cmd/mint-go-self-contracts --rpc` | `implementations/go/provekit-self-contracts/cmd/` |
+| `cpp-self-contracts` | `./target/mint_cpp_self_contracts --rpc` | `implementations/cpp/provekit-self-contracts/` |
 
-Each currently exposes only the human-readable output mode. Adding `--rpc` mode is an additive change: parse stdin as NDJSON, route `lift` to the existing mint pipeline, return the resulting `proof-envelope` shape (option c).
+Each implements the protocol over NDJSON-on-stdio, returning the `proof-envelope` shape (c). The dispatcher resolves these via `.provekit/lift/<surface>/manifest.toml` per peer's directory.
 
-After all four plugins implement `--rpc`, the apex demonstration becomes:
+The apex demonstration:
 
 ```sh
-$ cd implementations/rust       && provekit prove
-$ cd implementations/cpp        && provekit prove
-$ cd implementations/go         && provekit prove
-$ cd implementations/typescript && provekit prove
+$ cd implementations/rust  && provekit mint
+$ cd implementations/cpp   && provekit mint
+$ cd implementations/go    && provekit mint
 ```
 
-One Rust CLI binary. Four `.proof` files. Configuration via `.provekit/config.toml` per directory. Same protocol catalog. Same foundation key. Different surfaces, different IR contents, but same byte-level rules and same content-addressed output.
+One Rust CLI binary. Three `.proof` files. Configuration via `.provekit/config.toml` per directory. Same protocol catalog. Same foundation key. Different surfaces, different IR contents, byte-deterministic content-addressed output.
 
-This is the real dogfood: the protocol verifying itself across four languages with one tool.
+### TypeScript: kit + toolchain, not CLI
+
+TypeScript is not a CLI peer in this protocol. It ships as a library, a kit (the authoring API mirrored from Rust), and a supported toolchain (vitest plugin, Zod adapter, class-validator adapter, fast-check adapter, JSDoc lifter). JS/TS projects consume the kit programmatically and produce `.proof` bundles via their own test runner / build step.
+
+The TS self-contracts CID is produced by vitest:
+
+```sh
+$ pnpm vitest run \
+    implementations/typescript/src/bin/mint-ts-self-contracts.test.ts
+```
+
+The test calls `runMintSelfContracts(outDir)` and asserts the CID matches the pinned value. This is the toolchain-native invocation. There is no `provekit-ts` CLI; the `provekit` binary is exclusively Rust.
+
+A third-party TS plugin for `provekit mint` could be written by anyone (wrap `runMintSelfContracts` behind an NDJSON loop in Node, ship a manifest pointing at it). ProvekIt itself doesn't ship one. The lift-plugin protocol is open for any language; the reference set ships three CLI plugins because that's what's needed for the apex demo, not because TS is excluded.
+
+This is the architectural division ProvekIt enforces: the CLI is one thing in one language; everything else is library, kit, toolchain, and (optionally) a plugin.
