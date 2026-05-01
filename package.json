@@ -27,6 +27,7 @@
   "files": [
     "bin/",
     "lib/",
+    "scripts/npm-postinstall.js",
     "implementations/typescript/src/",
     "drizzle/",
     ".provekit/principles/",
@@ -39,7 +40,8 @@
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js",
     "test": "vitest run",
-    "fuzz": "ts-node --esm scripts/fuzz.ts"
+    "fuzz": "ts-node --esm scripts/fuzz.ts",
+    "postinstall": "node scripts/npm-postinstall.js"
   },
   "keywords": [
     "verification",
