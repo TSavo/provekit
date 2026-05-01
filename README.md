@@ -44,6 +44,64 @@ The handshake is the cost model. Three tiers, in order:
 
 The lattice of cached implications grows monotonically. Cache invalidation is structurally absent: when bytes change, hashes change, and old mementos remain valid for old bytes (Corollary 3 of the lattice tractability theorem at CID `blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07`).
 
+## Building
+
+ProvekIt is a five-language polyglot: Rust, Go, C++, TypeScript, C#. The cross-language conformance gate runs the same way locally and in CI: every peer mints its own self-contracts under the foundation key, and every minted catalog must match the pinned content-addressed CID before the build is green.
+
+The contract is the top-level [`Makefile`](Makefile). If `make ci` is green, the protocol is byte-deterministic across all five peers on the host and every native test suite passes. The CI workflow at [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same `make ci` on `ubuntu-latest`.
+
+```sh
+make help          # available targets
+make ci            # full gate (conformance + every language's tests)
+make conformance   # catalog + protocol + 5 mints match pinned CIDs
+make all-mint      # run all 5 mint commands; print CIDs
+make test-all      # run all language-native test suites
+make clean         # remove all build artifacts
+```
+
+### System dependencies
+
+| Package          | macOS (Homebrew)                    | Ubuntu / Debian                                |
+|------------------|-------------------------------------|------------------------------------------------|
+| Rust stable      | `rustup install stable`             | `rustup install stable`                        |
+| Go 1.22+         | `brew install go`                   | `sudo apt install golang-1.22`                 |
+| .NET 10 SDK      | `brew install --cask dotnet-sdk`    | Microsoft `packages-microsoft-prod` apt repo   |
+| Node 22 + pnpm   | `brew install node@22 pnpm`         | `nodesource` apt repo + `npm i -g pnpm`        |
+| Python 3.12      | `brew install python@3.12`          | `sudo apt install python3.12 python3-pip`      |
+| OpenSSL 3        | `brew install openssl@3`            | `sudo apt install libssl-dev`                  |
+| nlohmann-json    | `brew install nlohmann-json`        | `sudo apt install nlohmann-json3-dev`          |
+| BLAKE3           | vendored at `tools/blake3-vendored` | vendored at `tools/blake3-vendored`            |
+
+BLAKE3 is vendored as portable C source under `tools/blake3-vendored/` (BLAKE3 1.8.5, Apache-2.0). The C++ build script compiles it with all SIMD paths disabled, so no system BLAKE3 install is required and the build is hermetic on any host with `clang`.
+
+### Per-language quickstart
+
+```sh
+# Rust workspace + Rust tools
+cargo build --release --manifest-path implementations/rust/Cargo.toml
+cargo test  --release --manifest-path implementations/rust/Cargo.toml
+
+# Go (three modules under implementations/go/)
+cd implementations/go/provekit-ir-symbolic && go test ./...
+
+# C++ peer (clang++ + vendored BLAKE3, openssl@3, nlohmann-json)
+tools/build-cpp-self-contracts.sh --build-only
+
+# TypeScript (pnpm workspace at the repo root)
+pnpm install --frozen-lockfile
+pnpm test
+
+# C# peer (.NET 10)
+dotnet test implementations/csharp/Provekit.sln
+
+# Python lift adapter test suite
+cd implementations/python/provekit-lift-py-tests && pip install -e . && pytest
+```
+
+### Known broken: TS launcher binaries
+
+The shell launchers `bin/provekit.cjs` / `bin/provekit-lift.cjs` fail on Node 25 because of an `@ipld/dag-cbor` ESM-only + `tsx` CJS-bridge interaction. The vitest invocation `pnpm vitest run implementations/typescript/src/bin/mint-ts-self-contracts.test.ts` is the working invocation for the TS peer (Vitest's Vite ESM loader handles `dag-cbor` cleanly), and is the path CI uses. The launcher fix is tracked separately and is out of scope for the conformance gate.
+
 ## Documentation
 
 - [PITCH.md](PITCH.md): the launch post.
