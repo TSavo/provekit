@@ -34,6 +34,7 @@
 
 pub mod cbor_decode;
 pub mod enumerate_callsites;
+pub mod formula_rewrite;
 pub mod handshake;
 pub mod instantiate;
 pub mod load_all_proofs;

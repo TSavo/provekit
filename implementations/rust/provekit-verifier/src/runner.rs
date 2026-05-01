@@ -19,6 +19,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use crate::formula_rewrite;
+
 use rayon::prelude::*;
 use serde_json::Value as Json;
 
@@ -379,18 +381,49 @@ fn work_one(
                 );
             }
         };
-        smt = match smt_emitter::emit(&implication) {
-            Ok(s) => s,
-            Err(e) => {
-                n_residue.fetch_add(1, Ordering::Relaxed);
+
+        // Tier 3a: Apply proof tactics before invoking solver.
+        // Contrapositive, sub-formula weakening, etc.
+        match formula_rewrite::apply_tactics(&implication, pool) {
+            formula_rewrite::TacticResult::Discharged { reason } => {
+                n_solved.fetch_add(1, Ordering::Relaxed);
                 return (
                     cs.clone(),
-                    ObligationVerdict::Undecidable,
-                    format!("smt-emit: {e}"),
+                    ObligationVerdict::Discharged,
+                    format!("tier3a: tactic discharged ({reason})"),
                 );
             }
-        };
-        formula_for_dispatch = Some(implication);
+            formula_rewrite::TacticResult::Reduced { new_formula, reason } => {
+                // Use the reduced formula for SMT emission
+                smt = match smt_emitter::emit(&new_formula) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        n_residue.fetch_add(1, Ordering::Relaxed);
+                        return (
+                            cs.clone(),
+                            ObligationVerdict::Undecidable,
+                            format!("smt-emit: {e}"),
+                        );
+                    }
+                };
+                formula_for_dispatch = Some(new_formula);
+                // Continue to solver with reduced formula
+            }
+            formula_rewrite::TacticResult::NoChange => {
+                smt = match smt_emitter::emit(&implication) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        n_residue.fetch_add(1, Ordering::Relaxed);
+                        return (
+                            cs.clone(),
+                            ObligationVerdict::Undecidable,
+                            format!("smt-emit: {e}"),
+                        );
+                    }
+                };
+                formula_for_dispatch = Some(implication);
+            }
+        }
     } else {
         used_implication_form = false;
         let ob = match instantiate::run(&resolved, &cs.arg_term) {

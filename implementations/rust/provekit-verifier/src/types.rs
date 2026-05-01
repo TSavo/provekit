@@ -139,21 +139,21 @@ impl MementoPool {
     /// Full implication check: direct, transitive, or via sub-formula composition.
     /// Returns the proof path if P → Q holds.
     pub fn can_implies(&self, antecedent_cid: &str, consequent_cid: &str) -> ImplicationResult {
-        // 1. Direct implication
+        // 1. Reflexivity: P → P always holds (check first)
+        if antecedent_cid == consequent_cid {
+            return ImplicationResult::ProvenReflexive;
+        }
+
+        // 2. Direct implication
         if let Some(memento) = self.verify_implication(antecedent_cid, consequent_cid) {
             return ImplicationResult::ProvenDirect {
                 memento_cid: memento.get("cid").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
             };
         }
 
-        // 2. Transitive implication
+        // 3. Transitive implication
         if let Some(path) = self.implies_transitive(antecedent_cid, consequent_cid) {
             return ImplicationResult::ProvenTransitive { path };
-        }
-
-        // 3. Reflexivity: P → P always holds
-        if antecedent_cid == consequent_cid {
-            return ImplicationResult::ProvenReflexive;
         }
 
         ImplicationResult::Unknown
@@ -342,4 +342,88 @@ pub struct Report {
     pub violations: usize,
     pub rows: Vec<ReportRow>,
     pub load_errors: Vec<LoadError>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn make_implication_memento(ant: &str, con: &str) -> Json {
+        json!({
+            "cid": format!("blake3-512:{}{}", ant, con),
+            "evidence": {
+                "kind": "implication",
+                "body": {
+                    "antecedentHash": ant,
+                    "consequentHash": con,
+                    "prover": "z3@4.12",
+                    "proverRunMs": 42
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn transitive_implication_chain_of_three() {
+        let mut pool = MementoPool::default();
+
+        // Insert P → Q and Q → R
+        let p = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let q = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let r = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+        pool.insert("m1".to_string(), make_implication_memento(p, q));
+        pool.insert("m2".to_string(), make_implication_memento(q, r));
+
+        // Check P → R via transitivity
+        let result = pool.can_implies(p, r);
+        assert!(
+            matches!(result, ImplicationResult::ProvenTransitive { .. }),
+            "Expected transitive proof for P → R, got {:?}", result
+        );
+    }
+
+    #[test]
+    fn direct_implication_lookup() {
+        let mut pool = MementoPool::default();
+
+        let p = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let q = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+        pool.insert("m1".to_string(), make_implication_memento(p, q));
+
+        let result = pool.can_implies(p, q);
+        assert!(
+            matches!(result, ImplicationResult::ProvenDirect { .. }),
+            "Expected direct proof, got {:?}", result
+        );
+    }
+
+    #[test]
+    fn reflexive_implication_always_holds() {
+        let pool = MementoPool::default();
+
+        let p = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+        let result = pool.can_implies(p, p);
+        assert!(
+            matches!(result, ImplicationResult::ProvenReflexive),
+            "Expected reflexive proof, got {:?}", result
+        );
+    }
+
+    #[test]
+    fn unknown_imputation_returns_unknown() {
+        let pool = MementoPool::default();
+
+        let p = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let q = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+        let result = pool.can_implies(p, q);
+        assert!(
+            matches!(result, ImplicationResult::Unknown),
+            "Expected unknown, got {:?}", result
+        );
+    }
 }
