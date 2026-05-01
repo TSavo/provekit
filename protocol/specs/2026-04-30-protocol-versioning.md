@@ -8,11 +8,34 @@ memento-envelope-grammar spec). The catalog's `properties` map names
 each spec document to its content-addressed CID. The catalog's own
 CID is the protocol version.
 
-## v1.0.0
+## v1.1.0
 
 Protocol catalog: `protocol/specs/2026-04-30-protocol-catalog.json`
 
-**Protocol version CID: `sha256:a2d062341e3ca0f0`** (v1.0.1; was `sha256:e04b7cc466911b1d` for v1.0.0)
+**Protocol version CID:**
+
+```
+blake3-512:67961c8772930809589adb795c4bfe4104e6510cbafe7ed57d9dd8ce598eee5888d1e4b037b637e22f91a2ca5636188529e9d2451139c264691c5624c31d9cda
+```
+
+(v1.1.0; previous was `sha256:a2d062341e3ca0f0` for v1.0.1, and
+`sha256:e04b7cc466911b1d` for v1.0.0. v1.1.0 retires SHA-256 and
+truncated CIDs entirely; the protocol now uses BLAKE3-512 only,
+with full 128-hex CIDs.)
+
+**How the catalog CID is computed.** The catalog file as committed
+(`2026-04-30-protocol-catalog.json`) is human-readable JSON: insertion
+order, two-space indent, trailing newline. The CID is NOT computed
+over those file bytes. The CID is computed over the JCS-canonical
+form (RFC 8785) of the same JSON data: object keys sorted by
+Unicode code-point, no whitespace, U+0000..U+001F escaped as
+`\u00XX`. This is the same canonicalization the protocol uses for
+every memento envelope (canonicalization-grammar pass 7), so a
+verifier reads the catalog file, parses it, JCS-encodes it, and
+BLAKE3-512s the result. The repository ships a reference
+implementation in `tools/recompute-spec-cids/` that anyone can
+re-run; `--verify` mode re-derives every CID and fails on any
+drift.
 
 **This CID is `provekit.proofHash` for ProvekIt itself.** The same
 field a library carries in its `package.json` to declare its
@@ -23,18 +46,24 @@ its protocol-spec catalog. Same primitive, same field name, same
 math. ProvekIt is one more library, and the protocol is one more
 property catalog.
 
-This CID names a catalog whose entries are:
+This CID names a catalog whose entries are (each spec doc's CID is
+`blake3-512:` + 128 lowercase hex chars; spec doc CIDs are computed
+over the raw .md file bytes, no canonicalization):
 
-| Spec | CID (sha256-prefix-16) |
+| Spec | CID |
 |---|---|
-| ir-formal-grammar | `sha256:0c394dbb0bc6da2b` |
-| canonicalization-grammar | `sha256:cb2367c97b57ba05` |
-| memento-envelope-grammar | `sha256:ff6d03c523b68202` |
-| signatures-and-non-repudiation | `sha256:9b9f86ec1795ff90` |
-| chain-validity-and-fail-closed | `sha256:7d7777ef5b0017fe` |
-| ir-extension-protocol | `sha256:c48b69c15e1eb7e9` |
-| semantic-envelope | `sha256:b667f5c10c37173c` |
-| supply-chain-via-semantic-envelope | `sha256:eefec0fb212ef5f3` |
+| ir-formal-grammar | `blake3-512:6c0127e0d24946d7be75861db20507ccdcfdf968d3333f8aa34083e849d8238d73b3acfaa31880648995a024112182ed6b6002cd489548b4b18f5d4c3768dd96` |
+| canonicalization-grammar | `blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830` |
+| memento-envelope-grammar | `blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5` |
+| signatures-and-non-repudiation | `blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c` |
+| chain-validity-and-fail-closed | `blake3-512:dd905e8660d855c0c8140ceaafb0e189391234ff981422e714644b23642b24d7ca0253c76d09b46e58c5f8d8362cc8efca436baf2be927ab63a7bacf356e7673` |
+| ir-extension-protocol | `blake3-512:cff64b923879548fd54efb63c5ea116ba184adadec126e956387f1ee9d0f7907edbdb1a05866d62442a6fb2142948654464e63830a061efdaed8af9403bb0c13` |
+| proof-file-format | `blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3` |
+| semantic-envelope | `blake3-512:6b14a0c4a36877ea77a609f5262257fb4c65940e8e5eefc03647746525d052216761b1707384bffec5fb3c021ac0e07e45d390efefa2c7f5c67c045d93352b56` |
+| supply-chain-via-semantic-envelope | `blake3-512:b924576310bf2defcc2e346e01bdaff6dbdb2a33b2554178e3786e484cb4a4da136443f17675a6cd939fcbcff8afb27396222b5b6649a6eaa31672f5446b15d0` |
+| handshake-algorithm | `blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925` |
+| per-language-kit-standard | `blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88` |
+| lattice-tractability-theorem | `blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07` |
 
 ## Conformance declarations
 
@@ -44,8 +73,8 @@ conforms to via the same shape any consumer references a library:
 ```yaml
 # in an implementation's metadata
 provekit-protocol-conformance:
-  - cid: sha256:e04b7cc466911b1d
-    version: v1.0.0
+  - cid: blake3-512:67961c8772930809589adb795c4bfe4104e6510cbafe7ed57d9dd8ce598eee5888d1e4b037b637e22f91a2ca5636188529e9d2451139c264691c5624c31d9cda
+    version: v1.1.0
 ```
 
 A verifier that holds the catalog memento at that CID can check, for
@@ -88,8 +117,9 @@ ProvekIt's protocol uses content addressing as its core primitive. The
 spec describing that protocol is itself content-addressed via the same
 machinery. The version of the protocol is a CID. Implementations
 verify their conformance via CID comparison. There is no
-out-of-protocol authority deciding what "v1" means; v1 is the bytes
-that hash to `e04b7cc466911b1d`.
+out-of-protocol authority deciding what "v1.1.0" means; v1.1.0 is
+the bytes whose JCS-canonical form hashes (BLAKE3-512) to
+`67961c8772930809589adb795c4bfe4104e6510cbafe7ed57d9dd8ce598eee5888d1e4b037b637e22f91a2ca5636188529e9d2451139c264691c5624c31d9cda`.
 
 This is the same self-reference shape as Git (commit hashes refer to
 trees that may include other commits), IPFS (DAG addresses include
