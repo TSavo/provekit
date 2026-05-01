@@ -5,6 +5,9 @@ members = [
     "provekit-proof-envelope",
     "provekit-claim-envelope",
     "provekit-ir-symbolic",
+    "provekit-ir-compiler",
+    "provekit-ir-compiler-smt-lib",
+    "provekit-ir-compiler-stub",
     "provekit-verifier",
     "provekit-self-contracts",
     "provekit-cli",
@@ -24,6 +27,7 @@ members = [
     "provekit-agent",
     "provekit-agent-claude-code",
     "provekit-agent-openai",
+    "provekit-showcase",
     "examples/build_script_demo",
 ]
 

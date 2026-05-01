@@ -1,0 +1,19 @@
+[package]
+name = "provekit-ir-compiler-smt-lib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt bundled SMT-LIB v2.6 IR compiler. Lib + standalone subprocess binary."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "provekit-ir-smt-lib"
+path = "src/bin/provekit_ir_smt_lib.rs"
+
+[dependencies]
+provekit-ir-compiler = { path = "../provekit-ir-compiler" }
+serde = { workspace = true }
+serde_json = { workspace = true }
