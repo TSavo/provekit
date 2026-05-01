@@ -10,6 +10,11 @@ members = [
     "provekit-cli",
     "provekit-macros",
     "provekit-macros-rt",
+    "provekit-lift",
+    "provekit-lift-proptest",
+    "provekit-lift-contracts",
+    "provekit-build",
+    "examples/build_script_demo",
 ]
 
 [workspace.package]
