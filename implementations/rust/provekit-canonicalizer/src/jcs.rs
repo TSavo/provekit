@@ -68,21 +68,26 @@ fn encode_value(v: &Value, out: &mut String) {
 
 fn encode_string(s: &str, out: &mut String) {
     out.push('"');
-    for b in s.as_bytes() {
-        let c = *b;
-        if c == b'"' {
+    // Iterate over Unicode scalar values. Non-ASCII characters (anything
+    // >= U+0080) emit verbatim; pushing a char into a Rust String encodes
+    // it back as the same UTF-8 bytes the input carried, so cross-language
+    // hash agreement is preserved. The previous byte-iteration form
+    // corrupted U+0080..U+10FFFF chars by treating each UTF-8 continuation
+    // byte as a Latin-1 code point and re-encoding it.
+    for c in s.chars() {
+        if c == '"' {
             out.push_str("\\\"");
-        } else if c == b'\\' {
+        } else if c == '\\' {
             out.push_str("\\\\");
-        } else if c < 0x20 {
+        } else if (c as u32) < 0x20 {
             // U+0000..U+001F as \u00XX with lowercase hex
             const HEX: &[u8; 16] = b"0123456789abcdef";
+            let n = c as u32;
             out.push_str("\\u00");
-            out.push(HEX[((c >> 4) & 0xF) as usize] as char);
-            out.push(HEX[(c & 0xF) as usize] as char);
+            out.push(HEX[((n >> 4) & 0xF) as usize] as char);
+            out.push(HEX[(n & 0xF) as usize] as char);
         } else {
-            // Verbatim UTF-8 byte
-            out.push(c as char);
+            out.push(c);
         }
     }
     out.push('"');
@@ -121,4 +126,43 @@ mod tests {
         assert_eq!(encode_jcs(&Value::object([] as [(String, _); 0])), "{}");
         assert_eq!(encode_jcs(&Value::array(vec![])), "[]");
     }
+
+    #[test]
+    fn unicode_atomic_predicates_round_trip_verbatim() {
+        // Regression: the previous byte-iteration form treated each UTF-8
+        // continuation byte as a Latin-1 code point and re-encoded it,
+        // corrupting U+0080..U+10FFFF chars. The kit's atomic predicate
+        // names use exactly these (>=, <=, !=). Cross-language hash
+        // agreement depends on this preservation.
+        for sym in ["\u{2265}", "\u{2264}", "\u{2260}"] {
+            let v = Value::string(sym);
+            let encoded = encode_jcs(&v);
+            // The encoded form is the input with surrounding quotes; nothing
+            // else changes for these chars (they aren't ", \\, or U+0000..U+001F).
+            assert_eq!(encoded, format!("\"{}\"", sym));
+            // The bytes inside the quotes are the same UTF-8 bytes the input had.
+            let inner = &encoded[1..encoded.len() - 1];
+            assert_eq!(inner.as_bytes(), sym.as_bytes());
+        }
+    }
+
+    #[test]
+    fn mixed_ascii_and_unicode_preserved() {
+        let s = "x \u{2265} 0";
+        let v = Value::string(s);
+        let encoded = encode_jcs(&v);
+        assert_eq!(encoded, "\"x \u{2265} 0\"");
+        assert_eq!(&encoded[1..encoded.len() - 1].as_bytes(), &s.as_bytes());
+    }
+
+    #[test]
+    fn unicode_in_object_key_and_value() {
+        // Used as an atomic name in IR-JSON: {"kind":"atomic","name":"\u{2265}",...}
+        let v = Value::object([("name", Value::string("\u{2265}"))]);
+        let encoded = encode_jcs(&v);
+        assert_eq!(encoded, "{\"name\":\"\u{2265}\"}");
+        // Bytes match what a sibling impl (C++ writing raw UTF-8 bytes) produces.
+        assert_eq!(encoded.as_bytes(), b"{\"name\":\"\xe2\x89\xa5\"}");
+    }
+
 }
