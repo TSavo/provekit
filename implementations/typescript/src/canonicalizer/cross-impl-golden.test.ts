@@ -1,0 +1,239 @@
+/**
+ * Cross-implementation golden tests against fixtures.toml.
+ *
+ * Loads the canonical conformance fixtures (Rust-emitted JCS bytes +
+ * BLAKE3-512 hashes) and asserts the TS canonicalizer produces
+ * byte-identical output for every formula-level fixture.
+ *
+ * Fixtures that are not formula-level (contract / bridge declarations)
+ * are documented and skipped. The formula-level fixtures prove whether
+ * the TS pipeline matches the Rust canonical reference or reveals a gap.
+ *
+ * Spec: conformance/fixtures.toml -- canonical JCS bytes + BLAKE3-512
+ *       hashes for cross-implementation byte-equality.
+ *
+ * To regenerate Rust golden (do NOT touch in this PR):
+ *   cd tools/v1-3-fields-probe && cargo run
+ */
+
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { formulaToCanonicalAst } from "./canonicalize.js";
+import { serializeCanonicalAst } from "./serialize.js";
+import { computeCid } from "./hash.js";
+import type { IrFormula, IrTerm, Sort } from "./irFormula.js";
+
+// -----------------------------------------------------------------------
+// Minimal TOML parser for fixtures.toml
+// -----------------------------------------------------------------------
+
+interface Fixture {
+  name: string;
+  description: string;
+  jcs: string;
+  hash: string;
+}
+
+function parseFixturesToml(content: string): Fixture[] {
+  const fixtures: Fixture[] = [];
+  let current: Partial<Fixture> = {};
+  let inJcs = false;
+  let jcsBuffer = "";
+
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+
+    // [[fixture]] starts a new fixture block
+    if (line.startsWith("[[fixture]]")) {
+      if (current.name && current.jcs && current.hash) {
+        fixtures.push(current as Fixture);
+      }
+      current = {};
+      continue;
+    }
+
+    // Skip comments and blank lines
+    if (line === "" || line.startsWith("#")) {
+      continue;
+    }
+
+    // Handle multi-line jcs value (single-quoted TOML literal string)
+    if (inJcs) {
+      if (line.endsWith("'")) {
+        jcsBuffer += line.slice(0, -1);
+        current.jcs = jcsBuffer;
+        inJcs = false;
+        jcsBuffer = "";
+      } else {
+        jcsBuffer += line;
+      }
+      continue;
+    }
+
+    const eqIdx = line.indexOf("=");
+    if (eqIdx === -1) continue;
+
+    const key = line.slice(0, eqIdx).trim();
+    let value = line.slice(eqIdx + 1).trim();
+
+    // Remove optional trailing comment after value
+    const commentIdx = value.indexOf("#");
+    if (commentIdx !== -1) {
+      value = value.slice(0, commentIdx).trim();
+    }
+
+    // Handle quoted values
+    if (value.startsWith("'")) {
+      // Single-quoted literal string -- may span multiple lines
+      value = value.slice(1);
+      if (value.endsWith("'")) {
+        value = value.slice(0, -1);
+      } else {
+        // Multi-line literal string
+        inJcs = true;
+        jcsBuffer = value;
+        continue;
+      }
+    } else if (value.startsWith('"')) {
+      value = value.slice(1, -1);
+    }
+
+    if (key === "name") current.name = value;
+    else if (key === "description") current.description = value;
+    else if (key === "jcs") current.jcs = value;
+    else if (key === "hash") current.hash = value;
+  }
+
+  // Push last fixture
+  if (current.name && current.jcs && current.hash) {
+    fixtures.push(current as Fixture);
+  }
+
+  return fixtures;
+}
+
+// -----------------------------------------------------------------------
+// Load fixtures from disk
+// -----------------------------------------------------------------------
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const fixturesPath = resolve(__dirname, "../../../../conformance/fixtures.toml");
+const allFixtures = parseFixturesToml(readFileSync(fixturesPath, "utf8"));
+
+// -----------------------------------------------------------------------
+// Shared sort / term builders (minimal, same style as equivalence.test.ts)
+// -----------------------------------------------------------------------
+
+const Int: Sort = { kind: "primitive", name: "Int" };
+const String: Sort = { kind: "primitive", name: "String" };
+
+function constTerm(value: unknown, sort: Sort): IrTerm {
+  return { kind: "const", value, sort };
+}
+
+function varTerm(name: string): IrTerm {
+  return { kind: "var", name };
+}
+
+function ctorTerm(name: string, args: IrTerm[]): IrTerm {
+  return { kind: "ctor", name, args };
+}
+
+// -----------------------------------------------------------------------
+// Fixture IR constructors -- one per formula-level fixture
+// -----------------------------------------------------------------------
+
+function buildFormulaFor(name: string): IrFormula | null {
+  switch (name) {
+    case "eq_atomic":
+      return {
+        kind: "atomic",
+        name: "=",
+        args: [
+          ctorTerm("parse_int", [constTerm("42", String)]),
+          constTerm(42, Int),
+        ],
+      };
+
+    case "pattern1_bounded_loop": {
+      const x = varTerm("x");
+      const zero = constTerm(0, Int);
+      const hundred = constTerm(100, Int);
+
+      const lower: IrFormula = {
+        kind: "atomic",
+        name: "≥",
+        args: [x, zero],
+      };
+      const upper: IrFormula = {
+        kind: "atomic",
+        name: "<",
+        args: [x, hundred],
+      };
+      const ant: IrFormula = {
+        kind: "and",
+        operands: [lower, upper],
+      };
+      const inner: IrFormula = {
+        kind: "atomic",
+        name: "≥",
+        args: [x, zero],
+      };
+
+      return {
+        kind: "forall",
+        name: "x",
+        sort: Int,
+        body: {
+          kind: "implies",
+          operands: [ant, inner],
+        },
+      };
+    }
+
+    default:
+      return null;
+  }
+}
+
+// -----------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------
+
+const formulaFixtures = allFixtures.filter((f) => buildFormulaFor(f.name) !== null);
+const nonFormulaFixtures = allFixtures.filter((f) => buildFormulaFor(f.name) === null);
+
+describe("cross-impl golden: TS canonicalizer vs Rust-emitted fixtures", () => {
+  it.runIf(nonFormulaFixtures.length > 0)(
+    `skipped ${nonFormulaFixtures.length} non-formula fixture(s): ${nonFormulaFixtures.map((f) => f.name).join(", ")} (contract/bridge declarations are not formula-level)`,
+    () => {
+      // informational only
+    },
+  );
+
+  for (const fixture of formulaFixtures) {
+    it(`"${fixture.name}" — JCS bytes match Rust golden`, () => {
+      const formula = buildFormulaFor(fixture.name)!;
+      const ast = formulaToCanonicalAst(formula);
+      const bytes = serializeCanonicalAst(ast);
+      const actualJcs = bytes.toString("utf8");
+
+      expect(actualJcs, `JCS byte mismatch for "${fixture.name}"`).toBe(
+        fixture.jcs,
+      );
+    });
+
+    it(`"${fixture.name}" — BLAKE3-512 hash matches Rust golden`, () => {
+      const formula = buildFormulaFor(fixture.name)!;
+      const ast = formulaToCanonicalAst(formula);
+      const bytes = serializeCanonicalAst(ast);
+      const actualHash = computeCid(bytes);
+
+      expect(actualHash, `hash mismatch for "${fixture.name}"`).toBe(
+        fixture.hash,
+      );
+    });
+  }
+});
