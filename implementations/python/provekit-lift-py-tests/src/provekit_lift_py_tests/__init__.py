@@ -61,16 +61,25 @@ from .ir import (
     subst_var_in_term,
     term_to_value,
 )
+from .decorators import contract, ContractViolation, collect_module
 from .layer2 import LiftWarning, Layer2Output, lift_file_layer2
 from .proof_envelope import ProofEnvelopeInput, envelope_body_to_value
+from .verifier import (
+    verify_project,
+    prove_contract,
+    HandshakeReport,
+    VerifierNotFoundError,
+)
 
 __all__ = [
     "BLAKE3_512_PREFIX",
     "Bool",
     "BridgeDecl",
     "ContractDecl",
+    "ContractViolation",
     "EvidenceCertificate",
     "EvidenceTerm",
+    "HandshakeReport",
     "Int",
     "Layer2Output",
     "LiftWarning",
@@ -78,12 +87,15 @@ __all__ = [
     "Real",
     "Sort",
     "String",
+    "VerifierNotFoundError",
     "and_",
     "atomic",
     "blake3_512_of",
     "bool_const",
     "bridge_decl_to_value",
+    "collect_module",
     "connective",
+    "contract",
     "contract_decl_to_value",
     "ctor",
     "declarations_to_value",
@@ -106,8 +118,10 @@ __all__ = [
     "not_",
     "num",
     "or_",
+    "prove_contract",
     "str_const",
     "subst_var_in_formula",
     "subst_var_in_term",
     "term_to_value",
+    "verify_project",
 ]

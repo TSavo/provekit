@@ -80,6 +80,44 @@ fn is_term_kind(kind: &str) -> bool {
     matches!(kind, "var" | "const" | "ctor" | "lambda" | "let")
 }
 
+/// Walk an IrTerm tree; reject any `Var` with an empty `name`. Spec
+/// requires variable names to be non-empty identifiers; an empty name
+/// would lower to an empty SMT-LIB symbol which the solver rejects
+/// (or worse, silently aliases to another symbol). Validate at the
+/// boundary so callers see an honest error instead of a malformed
+/// emit.
+fn validate_term(term: &provekit_ir_types::IrTerm) -> Result<(), String> {
+    match term {
+        provekit_ir_types::IrTerm::Var { name } => {
+            if name.is_empty() {
+                return Err("var name must not be empty".to_string());
+            }
+            Ok(())
+        }
+        provekit_ir_types::IrTerm::Const { .. } => Ok(()),
+        provekit_ir_types::IrTerm::Ctor { args, .. } => args.iter().try_for_each(validate_term),
+        provekit_ir_types::IrTerm::Lambda { body, .. } => validate_term(body),
+        provekit_ir_types::IrTerm::Let { body, .. } => validate_term(body),
+    }
+}
+
+fn validate_formula(formula: &provekit_ir_types::IrFormula) -> Result<(), String> {
+    match formula {
+        provekit_ir_types::IrFormula::Atomic { args, .. } => {
+            args.iter().try_for_each(validate_term)
+        }
+        provekit_ir_types::IrFormula::And { operands }
+        | provekit_ir_types::IrFormula::Or { operands }
+        | provekit_ir_types::IrFormula::Not { operands }
+        | provekit_ir_types::IrFormula::Implies { operands } => {
+            operands.iter().try_for_each(validate_formula)
+        }
+        provekit_ir_types::IrFormula::Forall { body, .. }
+        | provekit_ir_types::IrFormula::Exists { body, .. }
+        | provekit_ir_types::IrFormula::Choice { body, .. } => validate_formula(body),
+    }
+}
+
 /// Legacy single-string entry point. Equal to `preamble + body` from
 /// `compile_to_parts`. Also accepts bare terms (lambda, let, etc.) for
 /// backward compatibility with the historical verifier emitter.
@@ -88,6 +126,7 @@ pub fn emit(ir_formula: &Json) -> Result<String, String> {
     if is_term_kind(kind) {
         let term: provekit_ir_types::Term = serde_json::from_value(ir_formula.clone())
             .map_err(|e| format!("{e}"))?;
+        validate_term(&term)?;
         Ok(generated::emit_term(&term))
     } else {
         compile_to_parts(ir_formula)
@@ -104,6 +143,7 @@ pub fn emit(ir_formula: &Json) -> Result<String, String> {
 pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileError> {
     let formula: provekit_ir_types::Formula = serde_json::from_value(ir_formula.clone())
         .map_err(|e| CompileError::MalformedIr(e.to_string().into()))?;
+    validate_formula(&formula).map_err(|e| CompileError::MalformedIr(e.into()))?;
     Ok(generated::compile_formula(&formula))
 }
 
