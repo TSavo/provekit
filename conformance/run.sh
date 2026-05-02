@@ -189,6 +189,16 @@ else
     report "ruby" "SKIP" "ruby >= 3.0 not found (kit uses endless-method syntax)"
 fi
 
+# --- Swift ---
+echo "[Swift] swift run conformance"
+if need_tool swift swift; then
+    if (cd implementations/swift && run_quiet swift run conformance); then
+        report "swift" "PASS" "5 assertions: eq_atomic JCS+hash, pattern1 JCS, contract JCS, bridge JCS"
+    else
+        report "swift" "FAIL" "swift run conformance failed"
+    fi
+fi
+
 # --- Summary ---
 echo ""
 echo "=========================================="
