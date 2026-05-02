@@ -8,6 +8,7 @@ import com.github.javaparser.ast.*;
 import com.provekit.lift.bean.BeanValidationExtractor;
 import com.provekit.lift.jml.JmlExtractor;
 import com.provekit.lift.springweb.SpringWebExtractor;
+import com.provekit.lift.cofoja.CofojaExtractor;
 
 import java.util.*;
 
@@ -53,15 +54,28 @@ public class CrossDomainContractEquivalenceTest {
             }
             """;
 
+        // Cofoja surface (@Requires)
+        String cofojaSource = """
+            import com.google.java.contract.Requires;
+            public class CofojaService {
+                @Requires("name != null")
+                public String greet(String name) {
+                    return "Hello " + name;
+                }
+            }
+            """;
+
         // Lift all three
         String beanIr = lift(new BeanValidationExtractor(), beanSource);
         String jmlIr = lift(new JmlExtractor(), jmlSource);
         String springIr = lift(new SpringWebExtractor(), springSource);
+        String cofojaIr = lift(new CofojaExtractor(), cofojaSource);
 
         // All three domains express the same non-null constraint.
         // They MUST produce byte-for-byte identical IR.
         assertEquals(beanIr, jmlIr, "JML and Bean Validation IR must be identical");
         assertEquals(beanIr, springIr, "Spring Web and Bean Validation IR must be identical");
+        assertEquals(beanIr, cofojaIr, "Cofoja and Bean Validation IR must be identical");
     }
 
     @Test
@@ -87,12 +101,25 @@ public class CrossDomainContractEquivalenceTest {
             }
             """;
 
+        // Cofoja surface
+        String cofojaSource = """
+            import com.google.java.contract.Requires;
+            public class ScoreService {
+                @Requires("score >= 0 && score <= 100")
+                public int setScore(int score) {
+                    return score;
+                }
+            }
+            """;
+
         String beanIr = lift(new BeanValidationExtractor(), beanSource);
         String jmlIr = lift(new JmlExtractor(), jmlSource);
+        String cofojaIr = lift(new CofojaExtractor(), cofojaSource);
 
         // Both constrain 'score' to the same numeric range.
         // They MUST produce byte-for-byte identical IR.
         assertEquals(beanIr, jmlIr, "JML and Bean Validation IR must be identical");
+        assertEquals(beanIr, cofojaIr, "Cofoja and Bean Validation IR must be identical");
     }
 
     @Test
