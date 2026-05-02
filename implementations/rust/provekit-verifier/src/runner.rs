@@ -123,7 +123,7 @@ impl Runner {
 
     pub fn run_with_tiers(&self) -> (Report, TierStats) {
         let mut report = Report::default();
-        let pool = load_all_proofs::run(&self.cfg.project_root);
+        let mut pool = load_all_proofs::run(&self.cfg.project_root);
         let callsites = enumerate_callsites::run(&pool);
 
         let n_hash = AtomicUsize::new(0);
@@ -142,6 +142,7 @@ impl Runner {
         let plan = &self.plan;
         let registry = &self.registry;
 
+        let minted_sink = Mutex::new(Vec::new());
         let per_results: Vec<(CallSite, ObligationVerdict, String)> = callsites
             .par_iter()
             .map(|cs| {
@@ -159,9 +160,18 @@ impl Runner {
                     &n_disagree,
                     &n_invoc,
                     &invs_sink,
+                    &minted_sink,
                 )
             })
             .collect();
+
+        // Insert freshly minted implication mementos into the pool
+        // so subsequent stages can use them immediately.
+        if let Ok(minted) = minted_sink.lock() {
+            for (cid, envelope) in minted.iter() {
+                pool.insert(cid.clone(), envelope.clone());
+            }
+        }
 
         // Aggregate report rows.
         let mut violations = 0usize;
@@ -253,6 +263,7 @@ fn work_one(
     n_disagree: &AtomicUsize,
     n_invoc: &AtomicUsize,
     invs_sink: &Mutex<Vec<SolverInvocation>>,
+    minted_sink: &Mutex<Vec<(String, Json)>>,
 ) -> (CallSite, ObligationVerdict, String) {
     let resolved = match resolve_target::run(cs, pool) {
         Ok(r) => r,
@@ -477,7 +488,7 @@ fn work_one(
                         "{}@{}",
                         inv.result.solver_name, inv.result.solver_version
                     );
-                    if let Err(e) = mint_and_cache(
+                    match mint_and_cache(
                         cache_dir,
                         seed,
                         producer,
@@ -489,7 +500,16 @@ fn work_one(
                         &prover_tag,
                         inv.result.wall_clock.as_millis() as i64,
                     ) {
-                        eprintln!("warning: mint_and_cache: {e}");
+                        Ok((cid, envelope)) => {
+                            // Queue for insertion into pool after parallel
+                            // work completes (pool is not Sync).
+                            if let Ok(mut g) = minted_sink.lock() {
+                                g.push((cid, envelope));
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("warning: mint_and_cache: {e}");
+                        }
                     }
                 }
             }
@@ -570,6 +590,9 @@ fn build_implication_obligation(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Mint an implication memento and cache it to disk.
+/// Returns (cid, envelope_json) so the caller can insert into the pool.
+#[allow(clippy::too_many_arguments)]
 fn mint_and_cache(
     cache_dir: &std::path::Path,
     seed: &[u8; 32],
@@ -581,7 +604,7 @@ fn mint_and_cache(
     smt_lib_input: &str,
     prover_tag: &str,
     prover_run_ms: i64,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(String, Json), Box<dyn std::error::Error>> {
     use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
     use provekit_proof_envelope::{
         build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, ProofEnvelopeInput,
@@ -666,7 +689,7 @@ fn mint_and_cache(
     let final_canonical = encode_jcs(&signed_v).into_bytes();
 
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    members.insert(cid.clone(), final_canonical);
+    members.insert(cid.clone(), final_canonical.clone());
     let signer_cid = blake3_512_of(pubkey.as_bytes());
     // Encode prover_tag into the filename to disambiguate per-solver
     // mementos for the same (antecedent, consequent) pair.
@@ -691,5 +714,9 @@ fn mint_and_cache(
     let fname = format!("{}-{}.proof", property_hash, safe_prover);
     let path = cache_dir.join(fname);
     std::fs::write(path, built.bytes)?;
-    Ok(())
+    
+    // Convert the canonicalizer Value back to serde_json for pool insertion
+    let envelope_json: Json = serde_json::from_slice(&final_canonical)?;
+    
+    Ok((cid, envelope_json))
 }
