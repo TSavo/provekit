@@ -22,7 +22,7 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 | Go          | `+` | `+`  | `~ go-playground/validator` ; `~ ozzo-validation`       | `~`                      | `+`               | `~ (use Rust CLI)`   | `~`                  |
 | C++         | `+` | `+`  | `~ [[expects:]]/[[ensures:]] (C++26)` ; `o assert.h`    | `~ (C++26 contracts)`    | `+`               | `~ (use Rust CLI)`   | `~`                  |
 | Zig         | `~` | `~`  | `~`                                                     | `~`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
-| Python      | `o` | `o`  | `~ pydantic, deal, hypothesis` ; `~ icontract, attrs`   | `~`                      | `o`               | `~ (use Rust CLI)`   | `o`                  |
+| Python      | `+` | `+`  | `+ pydantic` ; `~ deal, hypothesis` ; `~ icontract, attrs`   | `+`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | Java / JVM  | `~` | `~`  | `~ Bean Validation, JML, Cofoja`                        | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
 
 ## Rust (canonical reference implementation)
@@ -110,23 +110,26 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 
 ## Python
 
-**Kit:** Under evaluation. A Python kit shipping in v1.2 would lift `pydantic` and `deal` annotations and embed the verifier as a Python package.
+**Kit:** Shipping in v1.1. `implementations/python/provekit-lift-py-tests` provides the IR library, canonicalizer (JCS + BLAKE3-512), Layer 2 lift adapter, decorator macros, Pydantic lift adapter, and embedded verifier.
 
-**Libs:** Under evaluation. The canonicalizer is implementable in pure Python; the cost is performance (10x to 100x slower than the Rust implementation on large catalogs). A WASM build of the Rust canonicalizer is the more likely v1.2 path.
+**Libs:** Shipping. The canonicalizer is implemented in pure Python and is byte-identical to the Rust canonicalizer for all conformance tests. Performance is acceptable for typical project sizes; the WASM-backed path remains an option for v1.2 if profiling demands it.
+
+**Lift adapters (shipping in v1.1):**
+- `provekit.lift.pydantic`: walks `BaseModel` field annotations and `Field` constraints. Emits the same IR as Bean Validation `@Min`/`@Max`/`@Pattern`/`@Size` for equivalent constraints.
+- Layer 2 structural lift: walks pytest/unittest test files and recognizes bounded loops, helper inlining, multi-assertion characterization, and `@pytest.mark.parametrize`.
 
 **Lift adapters (planned for v1.2):**
-- `provekit-lift-pydantic`: walks `BaseModel` field annotations and `Field` constraints.
 - `provekit-lift-deal`: walks `@deal.pre`, `@deal.post`, `@deal.raises`.
 - `provekit-lift-hypothesis`: walks `@given(...)` test functions; shape similar to proptest.
-
-**Lift adapters (also planned):**
 - `icontract`, `attrs`, `dataclasses-json` schemas.
 
-**Decorator macros:** A `@provekit.contract(...)` decorator for direct authoring.
+**Decorator macros:** `@provekit.contract(pre=..., post=..., inv=...)` ships for direct authoring. Supports both string expressions and callable predicates (with runtime checking).
 
-**Embedded verifier:** Under evaluation; v1.2 likely ships a WASM-backed Python package.
+**Embedded verifier:** Yes. Delegates to the Rust `provekit` CLI via subprocess, ensuring full protocol conformance without reimplementing the verifier.
 
 **CLI:** Deferred. Use the Rust CLI.
+
+**LSP Plugin:** Yes. `provekit.lsp` implements the ProvekIt LSP plugin protocol (NDJSON over stdio) with `initialize`, `parse`, and `shutdown` methods.
 
 ## Java / JVM
 
