@@ -513,6 +513,7 @@ pub fn mint_proof(
     let proof_input = ProofEnvelopeInput {
         name: opts.catalog_name.clone(),
         version: opts.catalog_version.clone(),
+        binary_cid: None,
         members: members.clone(),
         signer_cid,
         signer_seed: opts.signer_seed,

@@ -28,6 +28,10 @@ use crate::sign::{ed25519_sign_with_seed, Ed25519Seed};
 pub struct ProofEnvelopeInput {
     pub name: String,
     pub version: String,
+    /// Optional CID of the compiled binary this proof verifies.
+    /// When present, the framework checks that the running binary's
+    /// hash matches before trusting any claims in this bundle.
+    pub binary_cid: Option<String>,
     /// Map from member CID (full self-identifying string form,
     /// e.g. `"blake3-512:abc..."`) to that member's canonical bytes
     /// (JCS-JSON bytes for memento envelopes).
@@ -104,14 +108,18 @@ fn emit_sorted_map(out: &mut Vec<u8>, pairs: &mut [CborPair]) {
 }
 
 fn body_pairs_unsigned(input: &ProofEnvelopeInput) -> Vec<CborPair> {
-    vec![
+    let mut pairs = vec![
         make_string_pair("kind", "catalog"),
         make_string_pair("name", &input.name),
         make_string_pair("version", &input.version),
         make_members_pair("members", &input.members),
         make_string_pair("signer", &input.signer_cid),
         make_string_pair("declaredAt", &input.declared_at),
-    ]
+    ];
+    if let Some(ref bcid) = input.binary_cid {
+        pairs.push(make_string_pair("binaryCid", bcid));
+    }
+    pairs
 }
 
 pub fn build_proof_envelope(input: &ProofEnvelopeInput) -> ProofEnvelopeOutput {
@@ -154,6 +162,7 @@ mod tests {
         let input = ProofEnvelopeInput {
             name: "@x/y".to_string(),
             version: "0.0.1".to_string(),
+        binary_cid: None,
             members,
             signer_cid: "blake3-512:bb".to_string(),
             signer_seed: [0x11; 32],

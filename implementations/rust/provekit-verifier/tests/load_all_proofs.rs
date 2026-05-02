@@ -87,6 +87,7 @@ fn publish_parseint_proof(dir: &PathBuf) -> String {
     let input = ProofEnvelopeInput {
         name: "@test/load-all-proofs".into(),
         version: "1.0.0".into(),
+        binary_cid: None,
         members,
         signer_cid,
         signer_seed,
@@ -290,6 +291,7 @@ fn multiple_proofs_in_one_dir_all_loaded() {
     let built = build_proof_envelope(&ProofEnvelopeInput {
         name: "@test/second".into(),
         version: "1.0.0".into(),
+        binary_cid: None,
         members,
         signer_cid,
         signer_seed,

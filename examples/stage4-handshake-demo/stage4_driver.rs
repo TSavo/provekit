@@ -209,6 +209,7 @@ fn run() -> Result<(), String> {
     let parse_proof = build_proof_envelope(&ProofEnvelopeInput {
         name: "@example/rust-parse-kit".into(),
         version: "1.0.0".into(),
+        binary_cid: None,
         members: parse_kit_members,
         signer_cid: parse_signer_cid,
         signer_seed: parse_kit_seed,
@@ -288,6 +289,7 @@ fn run() -> Result<(), String> {
     let consumer_proof = build_proof_envelope(&ProofEnvelopeInput {
         name: "@example/rust-consumer".into(),
         version: "1.0.0".into(),
+        binary_cid: None,
         members: consumer_members,
         signer_cid: consumer_signer_cid,
         signer_seed: consumer_seed,

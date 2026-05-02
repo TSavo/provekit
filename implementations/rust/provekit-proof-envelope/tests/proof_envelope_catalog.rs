@@ -27,6 +27,7 @@ fn fixture_input() -> ProofEnvelopeInput {
     ProofEnvelopeInput {
         name: "@test/cat".to_string(),
         version: "1.0.0".to_string(),
+        binary_cid: None,
         members,
         signer_cid: "blake3-512:cc".to_string(),
         signer_seed: [0x42u8; 32],
@@ -88,6 +89,7 @@ fn member_insertion_order_does_not_matter() {
     let mk = |members: BTreeMap<String, Vec<u8>>| ProofEnvelopeInput {
         name: "x".into(),
         version: "1".into(),
+        binary_cid: None,
         members,
         signer_cid: "blake3-512:cc".into(),
         signer_seed: [0u8; 32],
@@ -116,6 +118,7 @@ fn empty_members_still_produces_valid_envelope() {
     let input = ProofEnvelopeInput {
         name: "x".into(),
         version: "1".into(),
+        binary_cid: None,
         members: BTreeMap::new(),
         signer_cid: "blake3-512:cc".into(),
         signer_seed: [0u8; 32],
@@ -212,6 +215,7 @@ fn catalog_member_filename_rule_matches_blake3_of_value_bytes() {
     let mk = |members: BTreeMap<String, Vec<u8>>| ProofEnvelopeInput {
         name: "x".into(),
         version: "1".into(),
+        binary_cid: None,
         members,
         signer_cid: "blake3-512:cc".into(),
         signer_seed: [0u8; 32],

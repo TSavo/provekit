@@ -373,6 +373,7 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
     let proof_input = ProofEnvelopeInput {
         name: "@provekit/self-contracts".into(),
         version: "1.0.0".into(),
+        binary_cid: None,
         members,
         signer_cid,
         signer_seed,

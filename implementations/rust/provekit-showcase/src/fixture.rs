@@ -366,6 +366,7 @@ fn wrap_as_proof(
     let input = ProofEnvelopeInput {
         name: name.to_string(),
         version: "1.0.0".to_string(),
+        binary_cid: None,
         members,
         signer_cid: signer_cid.to_string(),
         signer_seed: *signer_seed,

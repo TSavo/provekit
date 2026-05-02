@@ -126,6 +126,7 @@ fn main() -> ExitCode {
     let proof_input = ProofEnvelopeInput {
         name: "@example/rust-kit".into(),
         version: "1.0.0".into(),
+        binary_cid: None,
         members,
         signer_cid,
         signer_seed,
