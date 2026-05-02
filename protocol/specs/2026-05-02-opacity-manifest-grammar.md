@@ -84,6 +84,10 @@ The `opacities` array MUST be sorted by `positionCid` ascending (lexicographic o
 
 **INVARIANT:** Two conformant compilers, given the same set of `(positionCid, reasonCode)` pairs to emit, MUST produce byte-identical `opacities` arrays.
 
+### §2.4 SolverTag authority
+
+**INVARIANT (SolverTag authority):** When a `SolverTag` (`name@version`) appears in both a SolveResult envelope and a memento minted from that result, the envelope's tag is authoritative; mementos copy the tag verbatim, never derive their own.
+
 ## §3. Position content-addressing
 
 `Opacity.positionCid` is the BLAKE3-512 of the JCS-canonical bytes of the opaque IR subterm:

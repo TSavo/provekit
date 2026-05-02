@@ -75,6 +75,8 @@ The defining mode of v1.4.0. Sibling to v1's `Portfolio { consensus }`; activate
 
 **INVARIANT (mode admission):** When `coverage_required = true`, every solver in the pool MUST be backed by an IR compiler reporting `protocol_version = "ir-compiler-protocol/2"` at handshake time. The verifier MUST reject the pool configuration before any solve attempt if any compiler in the pool is v1-only. Rejection surfaces as a configuration error (`config_error.coverage_requires_v2_compilers`), not as a runtime verdict.
 
+The verifier MUST complete the `initialize` handshake with each compiler before pool admission. Any compiler that fails handshake or returns a `protocol_version` other than `ir-compiler-protocol/2` is refused at startup, NOT runtime.
+
 This is **scorched earth, no back-compat**, by design: composing partial competence requires every compiler in the pool to declare what it cannot soundly handle. A v1.3.0-or-earlier solver cannot make that declaration; admitting it to a `coverage_required` pool would defeat the soundness rule the mode exists to enforce.
 
 The execution rule:
@@ -163,6 +165,8 @@ SolverTag   ::= "\"" SolverName "@" SolverVersion "\""    // e.g., "z3@4.13.0"
 **INVARIANT:** Every SolveResult MUST carry `opacityManifest`, `solver`, `verdict`, and `wallClockMs`. Additional fields MAY appear; v2 verifiers ignore unknown fields. The keys appear in JCS-sorted order (`opacityManifest`, `solver`, `verdict`, `wallClockMs`) when canonicalized.
 
 **INVARIANT (manifest nesting):** The `opacityManifest` field's bytes inside the SolveResult envelope are byte-identical to the same manifest's bytes when canonicalized in isolation. JCS canonicalization is structural; already-canonical sub-objects survive an outer canonicalization pass unchanged. See `2026-05-02-opacity-manifest-grammar.md` §7.
+
+**INVARIANT (SolverTag authority):** When a `SolverTag` (`name@version`) appears in both a SolveResult envelope and a memento minted from that result, the envelope's tag is authoritative; mementos copy the tag verbatim, never derive their own.
 
 The verdict provenance for a `Portfolio { consensus, coverage_required: true }` discharge is the array of SolveResult envelopes for every solver in the pool, plus the `coverage_union` and `coverage_assignments` fields produced by step 7 of §5. This array becomes part of the implication memento minted for the call site (the v1 per-solver memento rule generalizes; one consensus memento now references every contributing SolveResult).
 
