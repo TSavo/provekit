@@ -1,6 +1,6 @@
 # Substrate, Not Blockchain
 
-ProvekIt is a substrate. Blockchains are one application of it. The reverse framing, that ProvekIt is "blockchain-adjacent" or "a kind of zk-rollup tooling," gets the architecture upside down. The substrate is more general than the application, and the application is one configuration of the substrate. This essay derives that claim from first principles in five steps.
+ProvekIt is a substrate. Blockchains are one application of it. The reverse framing, that ProvekIt is "blockchain-adjacent" or "a kind of zk-rollup tooling," gets the architecture upside down. The substrate is more general than the application, and the application is one configuration of the substrate. This essay derives that claim from first principles in six steps.
 
 ## 1. Subjective state, objective correctness
 
@@ -45,7 +45,23 @@ member-body: <JSON: {"action": "transfer", "from": "...", "to": "...", "amount":
 
 The substrate cannot tell the difference, and does not try. A blockchain is one application of ProvekIt: a particular discipline that interprets member bodies as state-transition deltas, and a participant set that agrees on which producer's chain to follow. The substrate enforces the SHAPE of state transitions; it is normatively opaque to their SEMANTICS. EVM-on-ProvekIt is one body shape among many.
 
-## 4. Per-producer sovereignty
+## 4. The DAG is a tape
+
+"One body shape among many" is not a marketing claim. It is a structural ceiling. The reason the substrate hosts EVM, WASM, Move, JSON deltas, attestations, and sensor envelopes interchangeably is that the four invariants plus the witness DAG already constitute a verified universal computer. There is no shape above this one to reach for.
+
+Walk the equivalence directly. A Turing machine is a transition rule, a head, a tape, and a sequence. ProvekIt has all four:
+
+```
+(transition rule, head, tape, sequence) = (four invariants, witnesses, member bodies, DAG)
+```
+
+Witnesses commit each successor to its predecessors via CID. That is the head and the sequence: any node in the DAG knows its full causal past, and the order of work is fixed by content addressing rather than by clock. The four invariants are the transition rule: every step is admitted or rejected by the same finite, fail-closed check. Member bodies are the tape: freeform bytes under the proof-file-format grammar, hence a universal alphabet. State transitions plus DAG ordering plus a transition rule is the structure of a Turing machine, and ProvekIt is, structurally, a verified universal computer.
+
+Once you accept that, "what should the substrate add next?" becomes a malformed question. There is nothing above Turing complete. Anyone proposing a more general substrate is either building a less general one (a special-purpose chain, a fixed VM, a typed but narrower envelope) or reinventing the same four invariants under a different brand. The design space above the substrate is full of applications. The space at the substrate level is small because it has to be. This is why §3's "EVM is the floor" is structural rather than aspirational. The ceiling is theorem, not promise.
+
+Conventional blockchains pick one tape format (state-machine deltas) and one consensus discipline (totally ordered chain over a globally shared ledger). That is a restriction on the substrate, not an extension. They left generality on the floor to buy something they did not actually need (consensus on subjective state) for the thing they actually wanted (verifiable transitions). Strip the consensus, keep the verification. You get more, not less. A Turing complete substrate already contains every program a smart contract could embed; the substrate is the bigger set.
+
+## 5. Per-producer sovereignty
 
 Once the substrate is opaque to body semantics, there is nothing left to globally agree on. Each producer signs their own transitions. Their CID-DAG is their truth. Consumers choose which producer's chain to follow, and verifying a chain reduces to walking it under a policy and the four invariants.
 
@@ -53,7 +69,7 @@ This is the Cypherpunk vision realized without the consensus tax. Local trust. P
 
 Sovereignty is per-producer because consensus was never doing useful work. It was doing the work of making correctness checkable when state was subjective. With proofs that travel with their transitions, the consensus layer becomes a vestigial organ.
 
-## 5. The substrate stays small
+## 6. The substrate stays small
 
 Per-producer sovereignty plus body-opacity yields the final property: the substrate does not grow when applications do.
 
