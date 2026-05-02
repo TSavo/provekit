@@ -367,6 +367,7 @@ fn wrap_as_proof(
         name: name.to_string(),
         version: "1.0.0".to_string(),
         binary_cid: None,
+        metadata: None,
         members,
         signer_cid: signer_cid.to_string(),
         signer_seed: *signer_seed,

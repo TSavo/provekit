@@ -705,6 +705,7 @@ fn mint_and_cache(
         ),
         version: "1.0.0".into(),
         binary_cid: None,
+        metadata: None,
         members,
         signer_cid,
         signer_seed: *seed,

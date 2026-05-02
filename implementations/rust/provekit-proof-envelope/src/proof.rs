@@ -32,6 +32,10 @@ pub struct ProofEnvelopeInput {
     /// When present, the framework checks that the running binary's
     /// hash matches before trusting any claims in this bundle.
     pub binary_cid: Option<String>,
+    /// Optional metadata: key-value map for tooling and diagnostics.
+    /// Included in the signed payload (tamper-evident) but explicitly
+    /// NON-NORMATIVE: verifiers MUST NOT use metadata for logic.
+    pub metadata: Option<BTreeMap<String, String>>,
     /// Map from member CID (full self-identifying string form,
     /// e.g. `"blake3-512:abc..."`) to that member's canonical bytes
     /// (JCS-JSON bytes for memento envelopes).
@@ -119,6 +123,18 @@ fn body_pairs_unsigned(input: &ProofEnvelopeInput) -> Vec<CborPair> {
     if let Some(ref bcid) = input.binary_cid {
         pairs.push(make_string_pair("binaryCid", bcid));
     }
+    if let Some(ref meta) = input.metadata {
+        let mut meta_pairs: Vec<CborPair> = meta
+            .iter()
+            .map(|(k, v)| make_string_pair(k, v))
+            .collect();
+        let mut meta_cbor = Vec::new();
+        emit_sorted_map(&mut meta_cbor, &mut meta_pairs);
+        pairs.push(CborPair {
+            key_cbor: encode_key("metadata"),
+            value_cbor: meta_cbor,
+        });
+    }
     pairs
 }
 
@@ -163,6 +179,7 @@ mod tests {
             name: "@x/y".to_string(),
             version: "0.0.1".to_string(),
         binary_cid: None,
+        metadata: None,
             members,
             signer_cid: "blake3-512:bb".to_string(),
             signer_seed: [0x11; 32],
