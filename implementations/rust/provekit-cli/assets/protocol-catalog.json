@@ -1,7 +1,7 @@
 {
   "kind": "catalog",
   "name": "provekit-protocol",
-  "version": "v1.3.0-2026-05-02",
+  "version": "v1.3.1-2026-05-02",
   "algorithms": {
     "hash": [
       "blake3-512"
@@ -14,7 +14,7 @@
     ]
   },
   "properties": {
-    "ir-formal-grammar": "blake3-512:99f091633181eda7ad1798c15316c49c829899f8622146fae5de698dfbe36bd6038d45da334514c87b8e978739b538ab61f96c44093624c60d7a242ae37cc4bb",
+    "ir-formal-grammar": "blake3-512:fc26a82bc5e40b2bc96c0cacc5831a063239452137dad9cbb52f3ca21b13d20c0538093bd4810eb620cc2a1003522ab4f4796d339bcfdfe16128b2129b72f42c",
     "canonicalization-grammar": "blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830",
     "memento-envelope-grammar": "blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5",
     "signatures-and-non-repudiation": "blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c",
@@ -35,8 +35,9 @@
     "correctness-is-a-hash": "blake3-512:5a41e9ad8b0e63df400b93b77a0106468160fb2b92db4099fa5b757c3c5596176c5891365dbc6a8263a57ea8a42866eaa9e1a41fa3a43a5aadef4b21f851a845",
     "lsp-protocol": "blake3-512:75cac55f568b7363c3ae839ffdd11dc26d1a54d84d26ba43fca770b3fe2f7eca6305f77dad22b6b9f5f0bdb1cf10dc6fadd815ee3bf1507bb1eba6f106ee22bc"
   },
-  "declaredAt": "2026-05-02T15:00:00Z",
-  "_unsigned": "v1.3.0 minor bump (additive over v1.2.0): four protocol-additive enrichments + two new specs. (1) BridgeDeclaration gains `sourceContractCid` + `targetProofCid` fields for hash-bounded cross-bundle witness pinning. (2) Catalog memento gains optional `binaryCid` for supply-chain anchoring (rule 5 is MAY in v1.3.0; promotion to MUST awaits a reference verifier in v1.4.0). (3) Catalog memento gains optional `metadata` map for non-normative tooling/diagnostics. (4) `EvidenceTerm` proof-certificate carrier for `smt-lib`/`coq`/`custom` proof types. New specs: `correctness-is-a-hash` (the memcmp theorem) and `lsp-protocol` (real-time IDE integration with pluggable JSON-RPC backend). All v1.2.0 mementos and .proof bundles remain valid; the bump is purely additive. Catalog signed under the same foundation v0 key. v1.2.0 attestation (1e5cfee6...17d0579f) remains valid for anyone pinned.",
+  "declaredAt": "2026-05-02T17:00:00Z",
+  "_unsigned": "v1.3.1 patch bump (re-sync only over v1.3.0): no protocol changes; absorbs ir-formal-grammar spec-CID drift introduced by PR #10 (the `Bridge target pinning: the shim-poisoning vector` normative example landed without a follow-up catalog cut). Property re-baked: `ir-formal-grammar` 99f09163...e37cc4bb -> fc26a82b...29b72f42c. All other 19 spec CIDs unchanged. v1.3.0 mementos and .proof bundles remain valid; v1.3.0's CID 5a3129f4...205d24c7 stays attestable via .provekit/catalog-signatures/v1.3.0.json for anyone pinned. Catalog signed under the same foundation v0 key.",
+  "_v1_3_0_unsigned": "v1.3.0 minor bump (additive over v1.2.0): four protocol-additive enrichments + two new specs. (1) BridgeDeclaration gains `sourceContractCid` + `targetProofCid` fields for hash-bounded cross-bundle witness pinning. (2) Catalog memento gains optional `binaryCid` for supply-chain anchoring (rule 5 is MAY in v1.3.0; promotion to MUST awaits a reference verifier in v1.4.0). (3) Catalog memento gains optional `metadata` map for non-normative tooling/diagnostics. (4) `EvidenceTerm` proof-certificate carrier for `smt-lib`/`coq`/`custom` proof types. New specs: `correctness-is-a-hash` (the memcmp theorem) and `lsp-protocol` (real-time IDE integration with pluggable JSON-RPC backend). All v1.2.0 mementos and .proof bundles remain valid; the bump is purely additive. Catalog signed under the same foundation v0 key. v1.2.0 attestation (1e5cfee6...17d0579f) remains valid for anyone pinned.",
   "_v1_2_0_unsigned": "v1.2.0 minor bump (additive over v1.1.0): adds four pluggability protocols — agent-plugin-protocol (LSP-shape JSON-RPC seam for coding agents), ir-compiler-protocol (per-solver IR translators), multi-solver-protocol (single/chain/portfolio dispatch), lift-plugin-protocol (one Rust CLI + per-language plugins via stdio JSON-RPC). All four are additive: any v1.1.0 memento or .proof remains valid under v1.2.0. The reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via toolchain (vitest), not as a CLI peer. v1.1.0's own catalog CID (5b770182...19f05cd4) remains the version anyone pinned to it. v1.2.0's catalog is signed under the same foundation key.",
   "_breakingChanges": [],
   "_v1_1_0_breakingChanges": [
