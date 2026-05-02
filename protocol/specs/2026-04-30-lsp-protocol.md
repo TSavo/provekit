@@ -6,40 +6,96 @@ The ProvekIt Language Server Protocol (LSP) implementation provides real-time co
 
 ## Architecture
 
-The language server is a **thin wrapper** around the canonical `provekit` CLI. It does not reimplement verification logic; it invokes the CLI and translates JSON output to LSP messages.
+The language server is a **pluggable wrapper** around a JSON-RPC-capable `provekit` backend. It does not reimplement verification logic; it delegates to a configurable backend via JSON-RPC and translates responses to LSP messages.
 
 ```
 IDE (VS Code, Neovim, Emacs)
   ↓ LSP messages
-ProvekIt Language Server (per language)
+ProvekIt Language Server (per language, swappable)
   ├── Text Document Synchronization (open/change/close)
   ├── Annotation Extraction (#[provekit::implement], etc.)
   ├── Position Mapping (line/col ↔ symbol)
-  └── CLI Invocation (provekit verify --format json)
+  └── JSON-RPC Invocation (configurable backend)
         ↓
-ProvekIt CLI (canonical verifier, ONE implementation)
-  ├── Loads .proof bundles
-  ├── Walks bridge DAG
-  ├── Invokes Z3
-  └── Returns JSON result
+ProvekIt Backend (pluggable verifier)
+  ├── Canonical Rust CLI (default)
+  ├── Custom fork with custom solvers
+  ├── Remote verifier over TCP/Unix socket
+  └── Mock backend for testing
         ↓
 Language Server
-  ├── Parses JSON result
+  ├── Parses JSON-RPC result
   ├── Maps to IDE positions
   └── Publishes diagnostics/hovers/lenses
 ```
 
-The CLI is the single source of truth for verification. The language server is IDE glue: it knows how to parse source code, extract annotations, and render CLI output as IDE features. This separation means:
+### Why JSON-RPC makes the server pluggable
 
-- **One verifier, every IDE.** The CLI is written once (in Rust, the canonical implementation). Language servers are thin adapters in each host language.
-- **No drift.** The CLI and the LSP always agree because they are the same code.
-- **Testability.** Verification logic is tested via CLI; LSP logic is tested via mock CLI responses.
+The language server communicates with the backend via **JSON-RPC over stdio** (line-delimited NDJSON). This is the same protocol already used by:
 
-The language server maintains minimal state:
-- Open document text buffers
-- Annotation index (file → [(range, annotation_type, target_cid)])
-- Verification cache (file_hash + target_cid → CLI result)
-- `.proof` discovery cache (workspace root → list of .proof paths)
+- `provekit-lift --rpc` (lift plugins)
+- `provekit-ir-compiler-smt-lib` (compiler subprocesses)
+- `provekit-self-contracts --rpc` (self-contract minting)
+
+Because the boundary is JSON-RPC, **both sides are independently swappable**:
+
+| Swap | What changes | What stays |
+|---|---|---|
+| **Backend** | Point `provekit.path` to a different binary | Same LSP server, same IDE features |
+| **LSP server** | Use a custom parser or different IDE features | Same backend, same verification |
+| **Both** | Custom LSP + custom backend for a specialized domain | Same JSON-RPC contract |
+
+### Runtime configuration
+
+The language server reads `.provekit/config.toml` at workspace root:
+
+```toml
+[server]
+# Which backend to spawn for verification
+backend = "provekit"  # default: looks up in PATH
+# backend = "/path/to/custom/provekit"
+# backend = "tcp://remote-verifier.example.com:8080"
+# backend = "unix:///var/run/provekit.sock"
+
+# Backend arguments passed on every invocation
+backend_args = ["verify", "--format", "json"]
+
+# Timeout for verification queries (milliseconds)
+timeout_ms = 5000
+
+# Cache directory for verification results
+cache_dir = ".provekit/cache"
+```
+
+### Backend contract
+
+Any backend binary must speak JSON-RPC over stdio:
+
+**Handshake (required):**
+```json
+{"jsonrpc":"2.0","id":1,"method":"provekit.lsp.handshake","params":{"provekit_version":"1.1.0","protocol_version":"lsp-1.0"}}
+```
+
+**Verify (core method):**
+```json
+{"jsonrpc":"2.0","id":2,"method":"provekit.lsp.verify","params":{"file":"src/lib.rs","function":"my_parse_int","target_cid":"bafy...","workspace":"/project"}}
+```
+
+**Response:**
+```json
+{"jsonrpc":"2.0","id":2,"result":{"status":"verified","transfers":[],"evidence":{}}}
+```
+
+A backend that implements these three methods (handshake, verify, and optionally `provekit.lsp.resolve_cid` for bundle loading) is a valid ProvekIt LSP backend. No recompilation of the language server needed.
+
+### Why this matters
+
+- **Custom solvers:** A research team writes a backend that uses a custom SMT solver. They point `backend = "/usr/local/bin/provekit-custom"` in their config. Their team gets the same IDE experience with different verification.
+- **Remote verification:** A CI system runs the heavy verifier on a GPU cluster. Developers point `backend = "tcp://ci-cluster.internal:9000"`. Their local IDE stays lightweight.
+- **Mock backends:** Language server tests use `backend = "./mock-provekit"` that returns canned responses. No real Z3 needed for unit tests.
+- **Specialized domains:** A blockchain team writes a backend that understands EVM semantics. They swap the backend; the IDE (diagnostics, hover, lenses) works unchanged.
+
+The language server is **just the IDE glue**. The backend is **just the verifier**. The JSON-RPC boundary is the plugin surface. Both are independently deployable, independently versioned, and independently authored.
 
 ## Capabilities
 
