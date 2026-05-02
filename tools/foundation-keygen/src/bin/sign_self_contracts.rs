@@ -4,7 +4,8 @@
 //
 // Letter-envelope attestation signer for per-language self-contracts
 // bundles. Mirrors `sign_catalog_v1_3_1.rs` but parameterized by `lang`
-// (one of `rust`, `go`, `cpp`) and a freshly-observed bundle CID.
+// (one of `rust`, `go`, `cpp`, `ts`, `csharp`) and a freshly-observed
+// bundle CID.
 //
 // Usage:
 //
@@ -37,7 +38,7 @@ fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
     let lang = args
         .next()
-        .ok_or_else(|| "missing <lang> argument (rust|go|cpp)".to_string())?;
+        .ok_or_else(|| "missing <lang> argument (rust|go|cpp|ts|csharp)".to_string())?;
     let cid = args
         .next()
         .ok_or_else(|| "missing <cid> argument (blake3-512:<128 hex>)".to_string())?;
