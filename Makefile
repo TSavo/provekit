@@ -23,18 +23,41 @@
 
 .DEFAULT_GOAL := help
 
-# --- Pinned CIDs (Catalog v1.2.0) -------------------------------------------
-# These are the source of truth. CI greps for these in mint output.
-# To change a CID: change the source bytes, update both this Makefile and
-# .github/workflows/ci.yml, and document the why in the commit message.
-CATALOG_CID := blake3-512:1e5cfee6043d485d276c26a8da17830fe828c5b7b395a5fb1f042e7442407a37c39c59c0e002ca18857b12d3efb0d86687b9a3a0e3f6e3e933856f0717d0579f
-RUST_CID    := blake3-512:3c905e3b27d279fb5d11e49af10d8f1d8c83aec207d0bb695d08cacba5c3192e56457d4683d93e71ffd18bd0acb65b72a2b49404490bce809e8dc1df7fd0bac8
-GO_CID      := blake3-512:906fa4f3ca32d97710e327c9e6e914e5c476a3cfdc326459b31dade24d9625c96f7f0595e3d91f316f73e2709a7f05ac79dd0ca768b6ff23cc2b384923487ac3
-CPP_CID     := blake3-512:9335e6376d776819cfd3b2458da29bc258e7c2ebaad542a8613dd84f50c51c31d6e1a4346cea3903b8ad12294d96aef445d0ed838aa630835b9be0bc17e62842
+# --- Pinned CIDs ------------------------------------------------------------
+#
+# Bumping a self-contracts CID is now an explicit attestation event, NOT a
+# Makefile string edit:
+#
+#   1. Make your code change in `implementations/<lang>/provekit-self-contracts`
+#      (or the Go / C++ analog).
+#   2. `make build-rust && make mint-rust`   (or mint-go / mint-cpp)
+#      -> the mint target FAILS and prints the new CID.
+#   3. `cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \
+#         --bin sign-self-contracts -- <lang> <new-cid>`
+#      -> rewrites `.provekit/self-contracts-attestations/<lang>.json` with
+#         a fresh foundation-v0 ed25519 signature over the new CID.
+#   4. `git add .provekit/self-contracts-attestations/<lang>.json && git commit`
+#
+# The bundle (letter) does not know its own CID. The on-disk attestation
+# (envelope) names the CID and is signed externally. See
+# `protocol/specs/2026-05-02-binary-attestation-protocol.md` for the
+# letter-envelope framing and `protocol/specs/2026-05-02-provekit-migrate-protocol.md`
+# for the documented bump dance.
+#
+# `CATALOG_CID` is bumped to v1.3.1 here; the constant remains because
+# `make help` echoes it. Follow-up: retire it the same way the
+# self-contracts CIDs are retired (read from the embedded catalog
+# signature attestation).
+CATALOG_CID := blake3-512:dab2eca97eaea7cc107b1ff3f2326094d804a5e91749bf8e9caa36cd049dc0ae1cb65afb353af8fcd271f87e9e0fc7e7710ec6a68666da6a11f802bc304ff799
+
+# `TS_CID` and `CSHARP_CID` retain the old self-reference pattern for now;
+# follow-up: extend the letter-envelope refactor to those two peers.
 TS_CID      := blake3-512:449339930add6457bf25542f2117a025daada4a4bd1de704737750ad6d1c1be814c284d31bb97159ca0b2d2c52f8c043a64533d3432195f5a0f338c5d4904d44
 CSHARP_CID  := blake3-512:45d7cdbd0d5bfba5a1ee9e8386eb4d7dc1eab0882105753504a1f5c06de6f9fc4bd7038f56c7fcea693b152e2ab83de40ca4964a920816142ea43d5b9076415c
 
 PROVEKIT := implementations/rust/target/release/provekit
+VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
+SELF_CONTRACTS_ATTEST_DIR := .provekit/self-contracts-attestations
 
 .PHONY: help
 help:
@@ -59,11 +82,11 @@ help:
 	@echo "Maintenance:"
 	@echo "  make clean          remove build artifacts"
 	@echo ""
-	@echo "Pinned CIDs (catalog v1.2.0):"
+	@echo "Pinned CIDs (catalog v1.3.1):"
 	@echo "  catalog: $(CATALOG_CID)"
-	@echo "  rust:    $(RUST_CID)"
-	@echo "  go:      $(GO_CID)"
-	@echo "  cpp:     $(CPP_CID)"
+	@echo "  rust:    (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json"
+	@echo "  go:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/go.json"
+	@echo "  cpp:     (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json"
 	@echo "  ts:      $(TS_CID)"
 	@echo "  csharp:  $(CSHARP_CID)"
 
@@ -103,24 +126,30 @@ mint-rust: build-rust
 	@echo ">> minting rust self-contracts"
 	@out=$$($(PROVEKIT) mint --project implementations/rust --quiet); \
 	echo "  cid: $$out"; \
-	test "$$out" = "$(RUST_CID)" || \
-		(echo "FAIL: rust CID mismatch (expected $(RUST_CID))" && exit 1)
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json "$$out" || \
+		(echo "FAIL: rust self-contracts attestation rejected; bump dance:" && \
+		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
+		 echo "        --bin sign-self-contracts -- rust $$out" && exit 1)
 
 .PHONY: mint-go
 mint-go: build-rust
 	@echo ">> minting go self-contracts"
 	@out=$$($(PROVEKIT) mint --project implementations/go --quiet); \
 	echo "  cid: $$out"; \
-	test "$$out" = "$(GO_CID)" || \
-		(echo "FAIL: go CID mismatch (expected $(GO_CID))" && exit 1)
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/go.json "$$out" || \
+		(echo "FAIL: go self-contracts attestation rejected; bump dance:" && \
+		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
+		 echo "        --bin sign-self-contracts -- go $$out" && exit 1)
 
 .PHONY: mint-cpp
 mint-cpp: build-rust build-cpp
 	@echo ">> minting cpp self-contracts"
 	@out=$$($(PROVEKIT) mint --project implementations/cpp --quiet); \
 	echo "  cid: $$out"; \
-	test "$$out" = "$(CPP_CID)" || \
-		(echo "FAIL: cpp CID mismatch (expected $(CPP_CID))" && exit 1)
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json "$$out" || \
+		(echo "FAIL: cpp self-contracts attestation rejected; bump dance:" && \
+		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
+		 echo "        --bin sign-self-contracts -- cpp $$out" && exit 1)
 
 .PHONY: mint-ts
 mint-ts: build-ts
@@ -141,9 +170,9 @@ mint-csharp:
 all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
 	@echo ""
 	@echo "==== all 5 self-contract CIDs match pinned values ===="
-	@printf "  %-8s  %s\n" "rust"   "$(RUST_CID)"
-	@printf "  %-8s  %s\n" "go"     "$(GO_CID)"
-	@printf "  %-8s  %s\n" "cpp"    "$(CPP_CID)"
+	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
+	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
+	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
 	@printf "  %-8s  %s\n" "ts"     "$(TS_CID)"
 	@printf "  %-8s  %s\n" "csharp" "$(CSHARP_CID)"
 

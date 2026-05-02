@@ -25,6 +25,14 @@ path = "src/bin/sign_catalog_v1_3_0.rs"
 name = "sign-catalog-v1-3-1"
 path = "src/bin/sign_catalog_v1_3_1.rs"
 
+[[bin]]
+name = "sign-self-contracts"
+path = "src/bin/sign_self_contracts.rs"
+
+[[bin]]
+name = "verify-self-contracts"
+path = "src/bin/verify_self_contracts.rs"
+
 [lib]
 path = "src/lib.rs"
 
