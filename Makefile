@@ -53,7 +53,7 @@ CATALOG_CID := blake3-512:dab2eca97eaea7cc107b1ff3f2326094d804a5e91749bf8e9caa36
 # `TS_CID` and `CSHARP_CID` retain the old self-reference pattern for now;
 # follow-up: extend the letter-envelope refactor to those two peers.
 TS_CID      := blake3-512:449339930add6457bf25542f2117a025daada4a4bd1de704737750ad6d1c1be814c284d31bb97159ca0b2d2c52f8c043a64533d3432195f5a0f338c5d4904d44
-CSHARP_CID  := blake3-512:45d7cdbd0d5bfba5a1ee9e8386eb4d7dc1eab0882105753504a1f5c06de6f9fc4bd7038f56c7fcea693b152e2ab83de40ca4964a920816142ea43d5b9076415c
+CSHARP_CID  := blake3-512:cec85197e5bc394cb97fa3b96c076eca5ace3eeda819f8a2b8b7001f85336dbfadc7e28be3a38676f81387f908b327f0fffeae7d6d04fe76a8c754e5db38c61e
 
 PROVEKIT := implementations/rust/target/release/provekit
 VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
