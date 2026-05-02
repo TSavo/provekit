@@ -1,111 +1,73 @@
 const std = @import("std");
 
+// provekit-ir — Zig kit for ProvekIt protocol v1.1.0
+//
+// JCS canonical JSON: all object keys emitted in strict alphabetical order.
+// String escaping matches RFC 8785 (zig std.json default with escape_unicode=false).
+// Hashing: BLAKE3-512 via std.crypto.blake3 (64-byte XOF output).
+
+// ---------------------------------------------------------------------------
+// Sort
+// ---------------------------------------------------------------------------
+
 pub const Sort = union(enum) {
     primitive: []const u8,
-    set: *const Sort,
-    tuple: []const Sort,
-    function: FunctionSort,
-
-    pub const FunctionSort = struct {
-        domain: []const Sort,
-        range: Sort,
-    };
-
-    pub fn jsonStringify(self: Sort, jws: anytype) !void {
-        try jws.beginObject();
-        switch (self) {
-            .primitive => |name| {
-                try jws.objectField("kind");
-                try jws.write("primitive");
-                try jws.objectField("name");
-                try jws.write(name);
-            },
-            .set => |element| {
-                try jws.objectField("kind");
-                try jws.write("set");
-                try jws.objectField("element");
-                try jws.write(element.*);
-            },
-            .tuple => |elements| {
-                try jws.objectField("kind");
-                try jws.write("tuple");
-                try jws.objectField("elements");
-                try jws.write(elements);
-            },
-            .function => |f| {
-                try jws.objectField("kind");
-                try jws.write("function");
-                try jws.objectField("domain");
-                try jws.write(f.domain);
-                try jws.objectField("range");
-                try jws.write(f.range);
-            },
-        }
-        try jws.endObject();
-    }
 
     pub const Bool = Sort{ .primitive = "Bool" };
     pub const Int = Sort{ .primitive = "Int" };
     pub const Real = Sort{ .primitive = "Real" };
     pub const String = Sort{ .primitive = "String" };
     pub const Ref = Sort{ .primitive = "Ref" };
-    pub const Node = Sort{ .primitive = "Node" };
-    pub const Edge = Sort{ .primitive = "Edge" };
+
+    pub fn jsonStringify(self: Sort, jws: anytype) !void {
+        switch (self) {
+            .primitive => |name| {
+                try jws.beginObject();
+                try jws.objectField("kind");
+                try jws.write("primitive");
+                try jws.objectField("name");
+                try jws.write(name);
+                try jws.endObject();
+            },
+        }
+    }
 };
+
+// ---------------------------------------------------------------------------
+// Term
+// ---------------------------------------------------------------------------
 
 pub const Term = union(enum) {
     var_term: VarTerm,
     const_term: ConstTerm,
     ctor_term: CtorTerm,
-    lambda_term: LambdaTerm,
-    let_term: LetTerm,
 
     pub const VarTerm = struct {
         name: []const u8,
-        sort: Sort,
     };
 
     pub const ConstTerm = struct {
-        value: Value,
+        value: ConstValue,
         sort: Sort,
     };
 
     pub const CtorTerm = struct {
         name: []const u8,
         args: []const Term,
-        sort: Sort,
     };
 
-    pub const LambdaTerm = struct {
-        param_name: []const u8,
-        param_sort: Sort,
-        body: *const Term,
-        sort: Sort,
-    };
-
-    pub const LetTerm = struct {
-        bindings: []const LetBinding,
-        body: *const Term,
-        sort: Sort,
-    };
-
-    pub const LetBinding = struct {
-        name: []const u8,
-        bound_term: Term,
-    };
-
-    pub const Value = union(enum) {
+    pub const ConstValue = union(enum) {
         int: i64,
         string: []const u8,
         bool: bool,
-        real: f64,
+        null_void: void,
 
-        pub fn jsonStringify(self: Value, jws: anytype) !void {
+        pub fn jsonStringify(self: ConstValue, jws: anytype) !void {
             switch (self) {
                 .int => |v| try jws.write(v),
                 .string => |v| try jws.write(v),
                 .bool => |v| try jws.write(v),
-                .real => |v| try jws.write(v),
+                .null_void => try jws.write(null),
             }
         }
     };
@@ -122,57 +84,32 @@ pub const Term = union(enum) {
             .const_term => |t| {
                 try jws.objectField("kind");
                 try jws.write("const");
-                try jws.objectField("value");
-                try jws.write(t.value);
                 try jws.objectField("sort");
                 try jws.write(t.sort);
+                try jws.objectField("value");
+                try jws.write(t.value);
             },
             .ctor_term => |t| {
+                try jws.objectField("args");
+                try jws.write(t.args);
                 try jws.objectField("kind");
                 try jws.write("ctor");
                 try jws.objectField("name");
                 try jws.write(t.name);
-                try jws.objectField("args");
-                try jws.write(t.args);
-            },
-            .lambda_term => |t| {
-                try jws.objectField("kind");
-                try jws.write("lambda");
-                try jws.objectField("paramName");
-                try jws.write(t.param_name);
-                try jws.objectField("paramSort");
-                try jws.write(t.param_sort);
-                try jws.objectField("body");
-                try jws.write(t.body.*);
-            },
-            .let_term => |t| {
-                try jws.objectField("kind");
-                try jws.write("let");
-                try jws.objectField("bindings");
-                try jws.beginArray();
-                for (t.bindings) |b| {
-                    try jws.arrayElem();
-                    try jws.beginObject();
-                    try jws.objectField("name");
-                    try jws.write(b.name);
-                    try jws.objectField("boundTerm");
-                    try jws.write(b.bound_term);
-                    try jws.endObject();
-                }
-                try jws.endArray();
-                try jws.objectField("body");
-                try jws.write(t.body.*);
             },
         }
         try jws.endObject();
     }
 };
 
+// ---------------------------------------------------------------------------
+// Formula
+// ---------------------------------------------------------------------------
+
 pub const Formula = union(enum) {
     atomic: AtomicFormula,
     connective: ConnectiveFormula,
     quantifier: QuantifierFormula,
-    choice: ChoiceFormula,
 
     pub const AtomicFormula = struct {
         name: []const u8,
@@ -185,17 +122,17 @@ pub const Formula = union(enum) {
     };
 
     pub const ConnectiveKind = enum {
-        and,
-        or,
-        not,
-        implies,
+        @"and",
+        @"or",
+        @"not",
+        @"implies",
 
         pub fn jsonStringify(self: ConnectiveKind, jws: anytype) !void {
             const str = switch (self) {
-                .and => "and",
-                .or => "or",
-                .not => "not",
-                .implies => "implies",
+                .@"and" => "and",
+                .@"or" => "or",
+                .@"not" => "not",
+                .@"implies" => "implies",
             };
             try jws.write(str);
         }
@@ -221,22 +158,16 @@ pub const Formula = union(enum) {
         }
     };
 
-    pub const ChoiceFormula = struct {
-        var_name: []const u8,
-        sort: Sort,
-        body: *const Formula,
-    };
-
     pub fn jsonStringify(self: Formula, jws: anytype) !void {
         try jws.beginObject();
         switch (self) {
             .atomic => |f| {
+                try jws.objectField("args");
+                try jws.write(f.args);
                 try jws.objectField("kind");
                 try jws.write("atomic");
                 try jws.objectField("name");
                 try jws.write(f.name);
-                try jws.objectField("args");
-                try jws.write(f.args);
             },
             .connective => |f| {
                 try jws.objectField("kind");
@@ -245,50 +176,125 @@ pub const Formula = union(enum) {
                 try jws.write(f.operands);
             },
             .quantifier => |f| {
+                try jws.objectField("body");
+                try jws.write(f.body.*);
                 try jws.objectField("kind");
                 try jws.write(f.kind);
                 try jws.objectField("name");
                 try jws.write(f.name);
                 try jws.objectField("sort");
                 try jws.write(f.sort);
-                try jws.objectField("body");
-                try jws.write(f.body.*);
-            },
-            .choice => |f| {
-                try jws.objectField("kind");
-                try jws.write("choice");
-                try jws.objectField("varName");
-                try jws.write(f.var_name);
-                try jws.objectField("sort");
-                try jws.write(f.sort);
-                try jws.objectField("body");
-                try jws.write(f.body.*);
             },
         }
         try jws.endObject();
     }
 };
 
+// ---------------------------------------------------------------------------
+// Declaration
+// ---------------------------------------------------------------------------
+
+pub const Decl = union(enum) {
+    contract: ContractDecl,
+    bridge: BridgeDecl,
+
+    pub const ContractDecl = struct {
+        name: []const u8,
+        out_binding: []const u8 = "out",
+        pre: ?Formula = null,
+        post: ?Formula = null,
+        inv: ?Formula = null,
+    };
+
+    pub const BridgeDecl = struct {
+        name: []const u8,
+        source_symbol: []const u8,
+        source_layer: []const u8,
+        source_contract_cid: []const u8,
+        target_contract_cid: []const u8,
+        target_proof_cid: []const u8,
+        target_layer: []const u8,
+        notes: ?[]const u8 = null,
+    };
+
+    pub fn jsonStringify(self: Decl, jws: anytype) !void {
+        switch (self) {
+            .contract => |d| {
+                try jws.beginObject();
+                try jws.objectField("kind");
+                try jws.write("contract");
+                try jws.objectField("name");
+                try jws.write(d.name);
+                try jws.objectField("outBinding");
+                try jws.write(d.out_binding);
+                if (d.pre) |pre| {
+                    try jws.objectField("pre");
+                    try jws.write(pre);
+                }
+                if (d.post) |post| {
+                    try jws.objectField("post");
+                    try jws.write(post);
+                }
+                if (d.inv) |inv| {
+                    try jws.objectField("inv");
+                    try jws.write(inv);
+                }
+                try jws.endObject();
+            },
+            .bridge => |d| {
+                try jws.beginObject();
+                try jws.objectField("kind");
+                try jws.write("bridge");
+                try jws.objectField("name");
+                try jws.write(d.name);
+                if (d.notes) |notes| {
+                    try jws.objectField("notes");
+                    try jws.write(notes);
+                }
+                try jws.objectField("sourceContractCid");
+                try jws.write(d.source_contract_cid);
+                try jws.objectField("sourceLayer");
+                try jws.write(d.source_layer);
+                try jws.objectField("sourceSymbol");
+                try jws.write(d.source_symbol);
+                try jws.objectField("targetContractCid");
+                try jws.write(d.target_contract_cid);
+                try jws.objectField("targetLayer");
+                try jws.write(d.target_layer);
+                try jws.objectField("targetProofCid");
+                try jws.write(d.target_proof_cid);
+                try jws.endObject();
+            },
+        }
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Convenience constructors
+// ---------------------------------------------------------------------------
 
-pub fn Var(name: []const u8, sort: Sort) Term {
-    return .{ .var_term = .{ .name = name, .sort = sort } };
+pub fn Var(name: []const u8) Term {
+    return .{ .var_term = .{ .name = name } };
 }
 
-pub fn Const(value: Term.Value, sort: Sort) Term {
-    return .{ .const_term = .{ .value = value, .sort = sort } };
+pub fn Num(n: i64) Term {
+    return .{ .const_term = .{ .value = .{ .int = n }, .sort = Sort.Int } };
 }
 
-pub fn Ctor(name: []const u8, args: []const Term, sort: Sort) Term {
-    return .{ .ctor_term = .{ .name = name, .args = args, .sort = sort } };
+pub fn Str(s: []const u8) Term {
+    return .{ .const_term = .{ .value = .{ .string = s }, .sort = Sort.String } };
 }
 
-pub fn Lambda(param_name: []const u8, param_sort: Sort, body: *const Term, sort: Sort) Term {
-    return .{ .lambda_term = .{ .param_name = param_name, .param_sort = param_sort, .body = body, .sort = sort } };
+pub fn BoolConst(b: bool) Term {
+    return .{ .const_term = .{ .value = .{ .bool = b }, .sort = Sort.Bool } };
 }
 
-pub fn Let(bindings: []const Term.LetBinding, body: *const Term, sort: Sort) Term {
-    return .{ .let_term = .{ .bindings = bindings, .body = body, .sort = sort } };
+pub fn Null() Term {
+    return .{ .const_term = .{ .value = .{ .null_void = {} }, .sort = Sort.Ref } };
+}
+
+pub fn Ctor(name: []const u8, args: []const Term) Term {
+    return .{ .ctor_term = .{ .name = name, .args = args } };
 }
 
 pub fn Atomic(name: []const u8, args: []const Term) Formula {
@@ -296,19 +302,19 @@ pub fn Atomic(name: []const u8, args: []const Term) Formula {
 }
 
 pub fn And(operands: []const Formula) Formula {
-    return .{ .connective = .{ .kind = .and, .operands = operands } };
+    return .{ .connective = .{ .kind = .@"and", .operands = operands } };
 }
 
 pub fn Or(operands: []const Formula) Formula {
-    return .{ .connective = .{ .kind = .or, .operands = operands } };
+    return .{ .connective = .{ .kind = .@"or", .operands = operands } };
 }
 
-pub fn Not(operand: *const Formula) Formula {
-    return .{ .connective = .{ .kind = .not, .operands = &.{operand.*} } };
+pub fn Not(operands: []const Formula) Formula {
+    return .{ .connective = .{ .kind = .@"not", .operands = operands } };
 }
 
-pub fn Implies(left: *const Formula, right: *const Formula) Formula {
-    return .{ .connective = .{ .kind = .implies, .operands = &.{ left.*, right.* } } };
+pub fn Implies(operands: []const Formula) Formula {
+    return .{ .connective = .{ .kind = .@"implies", .operands = operands } };
 }
 
 pub fn Forall(name: []const u8, sort_: Sort, body: *const Formula) Formula {
@@ -319,108 +325,163 @@ pub fn Exists(name: []const u8, sort_: Sort, body: *const Formula) Formula {
     return .{ .quantifier = .{ .kind = .exists, .name = name, .sort = sort_, .body = body } };
 }
 
-pub fn Choice(var_name: []const u8, sort_: Sort, body: *const Formula) Formula {
-    return .{ .choice = .{ .var_name = var_name, .sort = sort_, .body = body } };
-}
+// ---------------------------------------------------------------------------
+// JCS + Hash helpers
+// ---------------------------------------------------------------------------
 
-// IR Document top-level
-
-pub const IrDocument = struct {
-    version: []const u8 = "provekit-ir/1.1.0",
-    declarations: []const Declaration,
-
-    pub const Declaration = union(enum) {
-        property: PropertyDecl,
-        bridge: BridgeDecl,
-        contract: ContractDecl,
-
-        pub const PropertyDecl = struct {
-            name: []const u8,
-            params: []const Param,
-            body: Formula,
-
-            pub const Param = struct {
-                name: []const u8,
-                sort: Sort,
-            };
-        };
-
-        pub const BridgeDecl = struct {
-            source_symbol: []const u8,
-            source_contract_cid: []const u8,
-            target_contract_cid: []const u8,
-            evidence: ?[]const u8 = null,
-        };
-
-        pub const ContractDecl = struct {
-            symbol: []const u8,
-            precondition: ?Formula = null,
-            postcondition: Formula,
-            invariant: ?Formula = null,
-            evidence: ?[]const u8 = null,
-        };
-
-        pub fn jsonStringify(self: Declaration, jws: anytype) !void {
-            switch (self) {
-                .property => |d| {
-                    try jws.beginObject();
-                    try jws.objectField("kind");
-                    try jws.write("property");
-                    try jws.objectField("name");
-                    try jws.write(d.name);
-                    try jws.objectField("params");
-                    try jws.write(d.params);
-                    try jws.objectField("body");
-                    try jws.write(d.body);
-                    try jws.endObject();
-                },
-                .bridge => |d| {
-                    try jws.beginObject();
-                    try jws.objectField("kind");
-                    try jws.write("bridge");
-                    try jws.objectField("sourceSymbol");
-                    try jws.write(d.source_symbol);
-                    try jws.objectField("sourceContractCid");
-                    try jws.write(d.source_contract_cid);
-                    try jws.objectField("targetContractCid");
-                    try jws.write(d.target_contract_cid);
-                    if (d.evidence) |e| {
-                        try jws.objectField("evidence");
-                        try jws.write(e);
-                    }
-                    try jws.endObject();
-                },
-                .contract => |d| {
-                    try jws.beginObject();
-                    try jws.objectField("kind");
-                    try jws.write("contract");
-                    try jws.objectField("symbol");
-                    try jws.write(d.symbol);
-                    if (d.precondition) |pre| {
-                        try jws.objectField("precondition");
-                        try jws.write(pre);
-                    }
-                    try jws.objectField("postcondition");
-                    try jws.write(d.postcondition);
-                    if (d.invariant) |inv| {
-                        try jws.objectField("invariant");
-                        try jws.write(inv);
-                    }
-                    if (d.evidence) |e| {
-                        try jws.objectField("evidence");
-                        try jws.write(e);
-                    }
-                    try jws.endObject();
-                },
-            }
-        }
-    };
-};
-
-// Escape HTML in JSON to match other kits
-pub fn writeJson(alloc: std.mem.Allocator, value: anytype) ![]u8 {
+pub fn jcsStringify(alloc: std.mem.Allocator, value: anytype) ![]u8 {
     var list = std.ArrayList(u8).init(alloc);
     errdefer list.deinit();
-    try std.json.stringify(value, .{ .emit_strings_as_arrays = false, .escape_solidus = false }, list.writer());
+    try std.json.stringify(value, .{ .whitespace = .minified }, list.writer());
     return list.toOwnedSlice();
+}
+
+pub fn jcsHash(alloc: std.mem.Allocator, jcs_bytes: []const u8) ![]u8 {
+    var hash_out: [64]u8 = undefined;
+    var hasher = std.crypto.hash.Blake3.init(.{});
+    hasher.update(jcs_bytes);
+    hasher.final(&hash_out);
+
+    // Format as "blake3-512:" + 128 lowercase hex chars
+    const prefix = "blake3-512:";
+    var result = try alloc.alloc(u8, prefix.len + 128);
+    @memcpy(result[0..prefix.len], prefix);
+    _ = try std.fmt.bufPrint(result[prefix.len..], "{s}", .{std.fmt.fmtSliceHexLower(&hash_out)});
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+test "eq atomic JCS matches Rust" {
+    const alloc = std.testing.allocator;
+
+    const ctor_args = [_]Term{Str("42")};
+    const lhs = Ctor("parse_int", &ctor_args);
+    const rhs = Num(42);
+    const atomic_args = [_]Term{ lhs, rhs };
+    const f = Atomic("=", &atomic_args);
+
+    const jcs = try jcsStringify(alloc, f);
+    defer alloc.free(jcs);
+
+    const expected =
+        "{\"args\":[{\"args\":[{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"},\"value\":\"42\"}],\"kind\":\"ctor\",\"name\":\"parse_int\"},"
+        ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":42}],"
+        ++ "\"kind\":\"atomic\",\"name\":\"=\"}";
+
+    try std.testing.expectEqualStrings(expected, jcs);
+}
+
+test "eq atomic hash matches Rust" {
+    const alloc = std.testing.allocator;
+
+    const ctor_args = [_]Term{Str("42")};
+    const lhs = Ctor("parse_int", &ctor_args);
+    const rhs = Num(42);
+    const atomic_args = [_]Term{ lhs, rhs };
+    const f = Atomic("=", &atomic_args);
+
+    const jcs = try jcsStringify(alloc, f);
+    defer alloc.free(jcs);
+
+    const hash = try jcsHash(alloc, jcs);
+    defer alloc.free(hash);
+
+    const expected =
+        "blake3-512:5eade72c08811b2d38adcb158eced38f3d319de090d59b2fa7a77ad830169e18"
+        ++ "539d2b75d2a2838c545e644a688cf137603674523ff37f1586a650f6dd05aeaa";
+
+    try std.testing.expectEqualStrings(expected, hash);
+}
+
+test "pattern1 bounded loop JCS matches Rust" {
+    const alloc = std.testing.allocator;
+
+    const x1 = Var("x");
+    const x2 = Var("x");
+    const x3 = Var("x");
+    const zero1 = Num(0);
+    const zero2 = Num(0);
+    const hundred = Num(100);
+
+    const lower_args = [_]Term{ x1, zero1 };
+    const lower = Atomic("≥", &lower_args);
+
+    const upper_args = [_]Term{ x2, hundred };
+    const upper = Atomic("<", &upper_args);
+
+    const conj_args = [_]Formula{ lower, upper };
+    const antecedent = And(&conj_args);
+
+    const inner_args = [_]Term{ x3, zero2 };
+    const inner = Atomic("≥", &inner_args);
+
+    const impl_args = [_]Formula{ antecedent, inner };
+    const body = Implies(&impl_args);
+
+    const q = Forall("x", Sort.Int, &body);
+
+    const jcs = try jcsStringify(alloc, q);
+    defer alloc.free(jcs);
+
+    const expected =
+        "{\"body\":{\"kind\":\"implies\",\"operands\":[{\"kind\":\"and\",\"operands\":[{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},"
+        ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],\"kind\":\"atomic\",\"name\":\"≥\"},"
+        ++ "{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":100}],"
+        ++ "\"kind\":\"atomic\",\"name\":\"<\"}]},{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},"
+        ++ "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],\"kind\":\"atomic\",\"name\":\"≥\"}]},"
+        ++ "\"kind\":\"forall\",\"name\":\"x\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";
+
+    try std.testing.expectEqualStrings(expected, jcs);
+}
+
+test "contract decl JCS" {
+    const alloc = std.testing.allocator;
+
+    const x = Var("x");
+    const zero = Num(0);
+    const pre_args = [_]Term{ x, zero };
+    const pre = Atomic("≥", &pre_args);
+    const d = Decl{ .contract = .{
+        .name = "parseInt",
+        .out_binding = "out",
+        .pre = pre,
+    } };
+
+    const jcs = try jcsStringify(alloc, d);
+    defer alloc.free(jcs);
+
+    const expected =
+        "{\"kind\":\"contract\",\"name\":\"parseInt\",\"outBinding\":\"out\","
+        ++ "\"pre\":{\"args\":[{\"kind\":\"var\",\"name\":\"x\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],"
+        ++ "\"kind\":\"atomic\",\"name\":\"≥\"}}";
+
+    try std.testing.expectEqualStrings(expected, jcs);
+}
+
+test "bridge decl JCS" {
+    const alloc = std.testing.allocator;
+
+    const d = Decl{ .bridge = .{
+        .name = "myBridge",
+        .source_symbol = "source",
+        .source_layer = "c-kit",
+        .source_contract_cid = "bafySource",
+        .target_contract_cid = "bafyTarget",
+        .target_proof_cid = "bafyProof",
+        .target_layer = "coq",
+        .notes = "some notes",
+    } };
+
+    const jcs = try jcsStringify(alloc, d);
+    defer alloc.free(jcs);
+
+    const expected =
+        "{\"kind\":\"bridge\",\"name\":\"myBridge\",\"notes\":\"some notes\","
+        ++ "\"sourceContractCid\":\"bafySource\",\"sourceLayer\":\"c-kit\",\"sourceSymbol\":\"source\","
+        ++ "\"targetContractCid\":\"bafyTarget\",\"targetLayer\":\"coq\",\"targetProofCid\":\"bafyProof\"}";
+
+    try std.testing.expectEqualStrings(expected, jcs);
 }

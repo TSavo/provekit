@@ -1,21 +1,13 @@
 const std = @import("std");
+const provekit = @import("provekit-ir");
 
 // ProvekIt Lift Tool for Zig
 //
-// Scans Zig source files for provekit annotations and emits an IR JSON document.
+// Scans Zig source files for provekit annotations and emits JCS canonical IR.
 //
 // Usage:
 //   provekit-lift-zig --workspace ./src --output ./target/provekit/
-//   provekit-lift-zig --rpc              (JSON-RPC plugin mode)
-//
-// Recognized annotations in Zig source:
-//   //provekit:contract
-//   //provekit:implement <cid>
-//   //provekit:verify
-//
-// Build: zig build-exe src/main.zig -o provekit-lift-zig
-
-const provekit = @import("provekit-ir");
+//   provekit-lift-zig --rpc              (NDJSON JSON-RPC plugin mode)
 
 const Annotation = struct {
     function_name: []const u8,
@@ -95,7 +87,7 @@ fn runRpcMode(alloc: std.mem.Allocator) !void {
         const line = maybe_line orelse break;
 
         const has_init = std.mem.indexOf(u8, line, "\"initialize\"") != null;
-        const has_lift = std.mem.indexOf(u8, line, "\"lift\"") != null;
+        const has_parse = std.mem.indexOf(u8, line, "\"parse\"") != null;
         const has_shutdown = std.mem.indexOf(u8, line, "\"shutdown\"") != null;
 
         var id: []const u8 = "null";
@@ -107,14 +99,15 @@ fn runRpcMode(alloc: std.mem.Allocator) !void {
         }
 
         if (has_init) {
-            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig\",\"version\":\"0.1.0\",\"capabilities\":[]}}}}\n", .{id});
-        } else if (has_lift) {
-            const workspace = std.fs.cwd();
-            var decls = std.ArrayList(provekit.IrDocument.Declaration).init(alloc);
+            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\"]}}}}\n", .{id});
+        } else if (has_parse) {
+            var decls = std.ArrayList(provekit.Decl).init(alloc);
             defer decls.deinit();
 
-            // Walk current directory for .zig files
-            var walker = try workspace.walk(alloc);
+            // Minimal: emit a placeholder contract for each annotation found
+            // in the current directory. Real implementation would parse params.
+            var dir = std.fs.cwd();
+            var walker = try dir.walk(alloc);
             defer walker.deinit();
             while (try walker.next()) |entry| {
                 if (entry.kind != .file) continue;
@@ -129,20 +122,23 @@ fn runRpcMode(alloc: std.mem.Allocator) !void {
                 for (anns) |ann| {
                     switch (ann.kind) {
                         .contract => {
-                            // Build a default postcondition: true
-                            const post = try alloc.create(provekit.Formula);
-                            post.* = provekit.Atomic("true", &.{});
+                            const post_args = [_]provekit.Term{};
+                            const post = provekit.Atomic("true", &post_args);
                             try decls.append(.{ .contract = .{
-                                .symbol = ann.function_name,
-                                .postcondition = post.*,
+                                .name = ann.function_name,
+                                .post = post,
                             } });
                         },
                         .implement => {
                             if (ann.target_cid) |cid| {
                                 try decls.append(.{ .bridge = .{
+                                    .name = ann.function_name,
                                     .source_symbol = ann.function_name,
+                                    .source_layer = "zig",
                                     .source_contract_cid = "",
                                     .target_contract_cid = cid,
+                                    .target_proof_cid = "",
+                                    .target_layer = "rust",
                                 } });
                             }
                         },
@@ -151,21 +147,14 @@ fn runRpcMode(alloc: std.mem.Allocator) !void {
                 }
             }
 
-            const doc = provekit.IrDocument{
-                .declarations = try decls.toOwnedSlice(),
-            };
+            const decls_slice = try decls.toOwnedSlice();
+            defer alloc.free(decls_slice);
 
             var json_buf = std.ArrayList(u8).init(alloc);
             defer json_buf.deinit();
-            try std.json.stringify(doc, .{}, json_buf.writer());
+            try std.json.stringify(decls_slice, .{ .whitespace = .minified }, json_buf.writer());
 
-            // Base64 encode
-            const b64 = std.base64.standard.Encoder;
-            const encoded = try alloc.alloc(u8, b64.calcSize(json_buf.items.len));
-            defer alloc.free(encoded);
-            _ = b64.encode(encoded, json_buf.items);
-
-            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"kind\":\"ir-document\",\"body_base64\":\"{s}\"}}}}\n", .{ id, encoded });
+            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"declarations\":{s},\"warnings\":[]}}}}\n", .{ id, json_buf.items });
         } else if (has_shutdown) {
             try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":null}}\n", .{id});
             return;
@@ -176,7 +165,7 @@ fn runRpcMode(alloc: std.mem.Allocator) !void {
 }
 
 fn runStandaloneMode(alloc: std.mem.Allocator, workspace_path: []const u8, output_path: []const u8) !void {
-    var decls = std.ArrayList(provekit.IrDocument.Declaration).init(alloc);
+    var decls = std.ArrayList(provekit.Decl).init(alloc);
     defer decls.deinit();
 
     var dir = try std.fs.cwd().openDir(workspace_path, .{ .iterate = true });
@@ -198,19 +187,23 @@ fn runStandaloneMode(alloc: std.mem.Allocator, workspace_path: []const u8, outpu
         for (anns) |ann| {
             switch (ann.kind) {
                 .contract => {
-                    const post = try alloc.create(provekit.Formula);
-                    post.* = provekit.Atomic("true", &.{});
+                    const post_args = [_]provekit.Term{};
+                    const post = provekit.Atomic("true", &post_args);
                     try decls.append(.{ .contract = .{
-                        .symbol = ann.function_name,
-                        .postcondition = post.*,
+                        .name = ann.function_name,
+                        .post = post,
                     } });
                 },
                 .implement => {
                     if (ann.target_cid) |cid| {
                         try decls.append(.{ .bridge = .{
+                            .name = ann.function_name,
                             .source_symbol = ann.function_name,
+                            .source_layer = "zig",
                             .source_contract_cid = "",
                             .target_contract_cid = cid,
+                            .target_proof_cid = "",
+                            .target_layer = "rust",
                         } });
                     }
                 },
@@ -219,20 +212,20 @@ fn runStandaloneMode(alloc: std.mem.Allocator, workspace_path: []const u8, outpu
         }
     }
 
-    const doc = provekit.IrDocument{
-        .declarations = try decls.toOwnedSlice(),
-    };
+    const decls_slice = try decls.toOwnedSlice();
+    defer alloc.free(decls_slice);
 
-    var json_buf = std.ArrayList(u8).init(alloc);
-    defer json_buf.deinit();
-    try std.json.stringify(doc, .{}, json_buf.writer());
+    const jcs = try provekit.jcsStringify(alloc, decls_slice);
+    defer alloc.free(jcs);
 
     try std.fs.cwd().makePath(output_path);
-    const out_file = try std.fs.cwd().createFile(try std.fs.path.join(alloc, &.{ output_path, "lifted.json" }), .{});
+    const out_path = try std.fs.path.join(alloc, &.{ output_path, "lifted.json" });
+    defer alloc.free(out_path);
+    const out_file = try std.fs.cwd().createFile(out_path, .{});
     defer out_file.close();
-    try out_file.writeAll(json_buf.items);
+    try out_file.writeAll(jcs);
 
-    std.debug.print("Wrote {d} declarations to {s}/lifted.json\n", .{ doc.declarations.len, output_path });
+    std.debug.print("Wrote {d} declarations to {s}\n", .{ decls_slice.len, out_path });
 }
 
 pub fn main() !void {
