@@ -107,7 +107,7 @@ mint-rust: build-rust
 		(echo "FAIL: rust CID mismatch (expected $(RUST_CID))" && exit 1)
 
 .PHONY: mint-go
-mint-go: build-rust
+mint-go: build-rust build-go
 	@echo ">> minting go self-contracts"
 	@out=$$($(PROVEKIT) mint --project implementations/go --quiet); \
 	echo "  cid: $$out"; \
