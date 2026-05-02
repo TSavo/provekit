@@ -79,7 +79,7 @@ func TestConstTermMarshalKeepsSort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"const","value":42,"sort":{"kind":"primitive","name":"Int"}}`
+	want := `{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":42}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
@@ -90,7 +90,7 @@ func TestCtorTermMarshalDropsSort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"ctor","name":"parseInt","args":[{"kind":"const","value":"0","sort":{"kind":"primitive","name":"String"}}]}`
+	want := `{"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"0"}],"kind":"ctor","name":"parseInt"}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
@@ -101,7 +101,7 @@ func TestAtomicFormulaMarshalUsesName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"atomic","name":"=","args":[{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}`
+	want := `{"args":[{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"="}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
@@ -115,7 +115,7 @@ func TestConnectivesMarshalUseOperands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	wantNot := `{"kind":"not","operands":[{"kind":"atomic","name":"=","args":[{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}]}`
+	wantNot := `{"kind":"not","operands":[{"args":[{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"="}]}`
 	if string(notF) != wantNot {
 		t.Errorf("not:\n  got:  %s\n  want: %s", notF, wantNot)
 	}
@@ -168,7 +168,7 @@ func TestQuantifierFormulaMarshalIsFlat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"forall","name":"_x0","sort":{"kind":"primitive","name":"Int"},"body":{"kind":"atomic","name":">","args":[{"kind":"var","name":"_x0"},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]}}`
+	want := `{"body":{"args":[{"kind":"var","name":"_x0"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":">"},"kind":"forall","name":"_x0","sort":{"kind":"primitive","name":"Int"}}`
 	if string(got) != want {
 		t.Errorf("flat quantifier:\n  got:  %s\n  want: %s", got, want)
 	}
