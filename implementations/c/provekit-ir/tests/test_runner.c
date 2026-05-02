@@ -57,27 +57,32 @@ static void test_eq_atomic_jcs(void) {
 /* ----------------------------------------------------------------------- */
 
 static void test_pattern1_bounded_loop_jcs(void) {
-    pk_sort *int_sort = pk_sort_primitive("Int");
-    pk_term *x = pk_term_var_new("x");
-    pk_term *zero = pk_term_const_int(0, int_sort);
-    pk_term *hundred = pk_term_const_int(100, int_sort);
-
-    pk_term *gte_args[] = { x, zero };
+    /* The C kit takes ownership of every term/sort handed to a constructor;
+     * there is no ref-counting. Construct fresh terms per atomic so the
+     * single ownership chain rooted at `q` does not double-free shared
+     * leaves when `pk_formula_free(q)` walks the tree. */
+    pk_term *x1 = pk_term_var_new("x");
+    pk_term *zero1 = pk_term_const_int(0, pk_sort_primitive("Int"));
+    pk_term *gte_args[] = { x1, zero1 };
     pk_formula *lower = pk_formula_atomic_new("≥", gte_args, 2);
 
-    pk_term *lt_args[] = { x, hundred };
+    pk_term *x2 = pk_term_var_new("x");
+    pk_term *hundred = pk_term_const_int(100, pk_sort_primitive("Int"));
+    pk_term *lt_args[] = { x2, hundred };
     pk_formula *upper = pk_formula_atomic_new("<", lt_args, 2);
 
     pk_formula *conj_ops[] = { lower, upper };
     pk_formula *antecedent = pk_formula_connective_new("and", conj_ops, 2);
 
-    pk_term *gte2_args[] = { x, zero };
+    pk_term *x3 = pk_term_var_new("x");
+    pk_term *zero2 = pk_term_const_int(0, pk_sort_primitive("Int"));
+    pk_term *gte2_args[] = { x3, zero2 };
     pk_formula *inner = pk_formula_atomic_new("≥", gte2_args, 2);
 
     pk_formula *impl_ops[] = { antecedent, inner };
     pk_formula *body = pk_formula_connective_new("implies", impl_ops, 2);
 
-    pk_formula *q = pk_formula_quantifier_new("forall", "x", int_sort, body);
+    pk_formula *q = pk_formula_quantifier_new("forall", "x", pk_sort_primitive("Int"), body);
 
     char *got = emit_formula(q);
 
@@ -137,10 +142,14 @@ static void test_bridge_decl_jcs(void) {
     char *got = pk_buffer_steal(buf);
     pk_buffer_free(buf);
 
+    /* JCS sorts keys by code point, so `notes` (n-o) lands between `name`
+     * (n-a) and `sourceContractCid` (s). This expected string mirrors the
+     * canonical-on-disk emit order, not any spec-listing order. */
     const char *expected =
-        "{\"kind\":\"bridge\",\"name\":\"myBridge\",\"sourceContractCid\":\"bafySource\","
-        "\"sourceLayer\":\"c-kit\",\"sourceSymbol\":\"source\",\"targetContractCid\":\"bafyTarget\","
-        "\"targetLayer\":\"coq\",\"targetProofCid\":\"bafyProof\",\"notes\":\"some notes\"}";
+        "{\"kind\":\"bridge\",\"name\":\"myBridge\",\"notes\":\"some notes\","
+        "\"sourceContractCid\":\"bafySource\",\"sourceLayer\":\"c-kit\","
+        "\"sourceSymbol\":\"source\",\"targetContractCid\":\"bafyTarget\","
+        "\"targetLayer\":\"coq\",\"targetProofCid\":\"bafyProof\"}";
 
     assert_eq_str(got, expected, "bridge decl JCS");
 
