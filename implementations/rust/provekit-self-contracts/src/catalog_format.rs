@@ -8,7 +8,7 @@
 // Two layers, mirroring the kit's existing convention (see e.g.
 // `provekit-canonicalizer/src/jcs.invariant.rs`):
 //
-//   1. `pub fn invariants()` — authors one IR contract per rule via
+//   1. `pub fn invariants()` authors one IR contract per rule via
 //      the `must` / `contract` collector. Each contract's formula is
 //      a declarative published claim that names the rule. Most are
 //      trivially-true-under-Z3 because the rule lives at the JSON-value
@@ -16,34 +16,53 @@
 //      can only gesture at; the operational enforcement is the sibling
 //      verifier below.
 //
-//   2. `pub fn verify_catalog(json) -> CatalogReport` — the runtime
-//      checker. Walks the catalog JSON and answers, per rule, whether
-//      it `holds` against the input. The tests wire authored contracts
-//      to verifier outcomes: a positive test runs `verify_catalog` on
-//      the real v1.3.0 catalog and asserts every authored rule holds;
-//      a negative test runs it on each broken fixture and asserts the
-//      rule that fixture targets reports a violation.
+//   2. `pub fn verify_catalog(json) -> CatalogReport` is the runtime
+//      checker for rules that are derivable purely from the catalog
+//      JSON value. `pub fn verify_catalog_against_spec_dir(json, &Path)
+//      -> CatalogReport` extends discharge to the rules that need
+//      filesystem access to spec-file bytes (R10, R11, R12). Both
+//      produce the same shape of report; rules that need a spec dir
+//      report `RuleVerdict::Vacuous` when called via the JSON-only
+//      path.
 //
-// The split is what the spec calls for. The IR formula IS the spec
-// rule, content-addressable; the verifier IS the discharge that says
-// "this catalog satisfies that formula". A reader walking the
-// `.proof` for this crate sees the contracts; a CI checker walking the
-// catalog runs the verifier.
+// SCOPE  rules encoded (numbered against the spec text):
 //
-// SCOPE — rules encoded (numbered against the spec text):
+//   R1  : top-level `kind` MUST be the literal string "catalog"           (1)
+//   R2  : `name` MUST be present (string)                                 (1)
+//   R3  : `version` MUST be present (string)                              (1)
+//   R4  : `algorithms` MUST be object, each role array of strings         (1)
+//   R5  : every value in `properties` is a self-identifying CID string    (1, 6)
+//   R6  : `declaredAt` matches ISO-8601 UTC                               (1)
+//   R7  : underscore-prefixed fields participate in JCS canonicalization  (1)
+//   R8  : spec-file CID = blake3-512:hex(BLAKE3-512(spec_file_bytes))     (2.1)
+//   R9  : catalog CID = blake3-512:hex(BLAKE3-512(JCS(catalog_json)))     (2.2)
+//   R11 : every spec file's raw-byte BLAKE3-512 matches `properties[key]` (5)
+//   R12 : catalog's own JCS-canonical CID matches the recomputed value    (5)
+//   R14 : no truncated digests; full 128-hex-char BLAKE3-512 output       (6)
+//   R15 : every catalog CID carries the `blake3-512:` prefix              (6)
 //
-//   R1  : top-level `kind` MUST be the literal string "catalog"           (§1)
-//   R5  : every value in `properties` is a self-identifying CID string    (§1, §6)
-//   R6  : `declaredAt` matches ISO-8601 UTC                               (§1)
-//   R7  : underscore-prefixed fields participate in JCS canonicalization  (§1)
-//   R14 : no truncated digests; full 128-hex-char BLAKE3-512 output       (§6)
-//   R15 : every catalog CID carries `blake3-512:` prefix (self-identify)  (§6)
+// Thirteen rules total. The remaining two:
 //
-// Six rules total. The spec has more (R2..R4, R8, R9, R10, R11, R12,
-// R13); see PR body for the deferred set and the rationale per rule.
+//   R10 : every spec file referenced from `properties` exists at the
+//         expected path. Deferred  the catalog itself does NOT carry
+//         the path mapping (spec-key  basename); that lives in
+//         `tools/recompute-spec-cids/src/main.rs::SPEC_MAP`. Encoding
+//         R10 inside this kit would require importing that map (or
+//         duplicating it), creating a maintenance footgun. Left as a
+//         conformance-tool concern.
+//
+//   R13 : catalog CIDs MUST NOT be raw-byte hashes. The rule is the
+//         negation of R9's positive form. Encoding it positively is
+//         unavoidably circular ("the CID is NOT what you would compute
+//         the wrong way"). Discharge is via R12: any catalog publishing
+//         a CID that does not match `BLAKE3-512(JCS(catalog))` is in
+//         violation, regardless of how the wrong value was produced.
+//         R13 is therefore subsumed by R12.
 
+use std::path::Path;
 use std::rc::Rc;
 
+use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_symbolic::{
     contract, eq, forall, gte, must, num, str_const, ContractArgs,
     String_, Term,
@@ -51,7 +70,7 @@ use provekit_ir_symbolic::{
 use serde_json::{Map, Value as JsonValue};
 
 // ---------------------------------------------------------------------------
-// Layer 1: IR-contract authoring — `invariants()`
+// Layer 1: IR-contract authoring  `invariants()`
 // ---------------------------------------------------------------------------
 
 /// Wrap a single-arg ctor so the formula reads like a function call. The
@@ -70,11 +89,6 @@ fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
 /// discharge is `verify_catalog` below.
 pub fn invariants() {
     // -- R1: top-level `kind` MUST be the literal string "catalog". --------
-    //
-    // forall c: String. kind_of(c) = "catalog"
-    //
-    // The IR cannot reach into a JSON value; the predicate `kind_of`
-    // is a kit-defined name passed verbatim to the SMT layer.
     must(
         "catalog_format_r1_kind_is_literal_catalog",
         forall(String_(), |c| {
@@ -82,12 +96,51 @@ pub fn invariants() {
         }),
     );
 
+    // -- R2: `name` MUST be present (string). ------------------------------
+    //
+    // forall c: String. has_string_field(c, "name") = true
+    must(
+        "catalog_format_r2_name_present_string",
+        forall(String_(), |c| {
+            eq(
+                ctor1(
+                    "has_string_field_name",
+                    c,
+                ),
+                ctor1("true_const", str_const("")),
+            )
+        }),
+    );
+
+    // -- R3: `version` MUST be present (string). ---------------------------
+    must(
+        "catalog_format_r3_version_present_string",
+        forall(String_(), |c| {
+            eq(
+                ctor1(
+                    "has_string_field_version",
+                    c,
+                ),
+                ctor1("true_const", str_const("")),
+            )
+        }),
+    );
+
+    // -- R4: `algorithms` MUST be object, role -> array of strings. -------
+    //
+    // forall c: String. is_algorithms_object(c) = true
+    contract(
+        "catalog_format_r4_algorithms_role_array_of_strings",
+        ContractArgs {
+            post: Some(eq(
+                ctor1("is_algorithms_object", str_const("c")),
+                ctor1("true_const", str_const("")),
+            )),
+            ..Default::default()
+        },
+    );
+
     // -- R5: every value in `properties` is a self-identifying CID. --------
-    //
-    // forall c: String. is_self_identifying_cid(properties_value(c)) = true
-    //
-    // The OPERATIONAL form is the "blake3-512:[0-9a-f]{128}" regex
-    // applied per value in `verify_catalog`.
     contract(
         "catalog_format_r5_property_values_are_self_identifying_cids",
         ContractArgs {
@@ -100,11 +153,6 @@ pub fn invariants() {
     );
 
     // -- R6: `declaredAt` is ISO-8601 UTC. --------------------------------
-    //
-    // forall c: String. iso8601_utc(declaredAt_of(c)) = true
-    //
-    // The published rule is structural; operational regex check is in
-    // `verify_catalog`.
     contract(
         "catalog_format_r6_declaredAt_is_iso8601_utc",
         ContractArgs {
@@ -117,19 +165,9 @@ pub fn invariants() {
     );
 
     // -- R7: underscore-prefixed fields participate in JCS canonical. -----
-    //
-    // forall c: String. len(jcs_with_underscores(c)) > len(jcs_strip_underscores(c))
-    //   when c has any `_`-prefixed field.
-    //
-    // The published claim is "a catalog with `_unsigned` does NOT
-    // canonicalize identically to one without it". The IR can express
-    // length comparison via `len`; the actual byte comparison is in
-    // `verify_catalog`.
     must(
         "catalog_format_r7_underscore_fields_participate_in_canonicalization",
         forall(String_(), |c| {
-            // len(jcs(c_with_underscore)) >= 1 — a structural witness; the
-            // operational check is the byte-level test in verify_catalog.
             gte(
                 ctor1("len", ctor1("jcs_with_underscore_fields", c)),
                 num(1),
@@ -137,12 +175,61 @@ pub fn invariants() {
         }),
     );
 
+    // -- R8: spec-file CID equals blake3-512:hex(BLAKE3-512(spec_bytes)). -
+    //
+    // forall f: String. spec_cid_of(f) = blake3_512_self_identifying(f)
+    //
+    // The IR formula names the rule; operational discharge runs in
+    // `verify_catalog_against_spec_dir`.
+    must(
+        "catalog_format_r8_spec_cid_is_blake3_512_of_raw_bytes",
+        forall(String_(), |f| {
+            eq(
+                ctor1("spec_cid_of_file", f.clone()),
+                ctor1("blake3_512_self_identifying_of_bytes", f),
+            )
+        }),
+    );
+
+    // -- R9: catalog CID equals blake3-512:hex(BLAKE3-512(JCS(catalog))). -
+    must(
+        "catalog_format_r9_catalog_cid_is_blake3_512_of_jcs",
+        forall(String_(), |c| {
+            eq(
+                ctor1("catalog_cid_of", c.clone()),
+                ctor1(
+                    "blake3_512_self_identifying_of_bytes",
+                    ctor1("jcs_canonical_bytes_of", c),
+                ),
+            )
+        }),
+    );
+
+    // -- R11: every spec file's raw-byte BLAKE3-512 matches its CID. ------
+    //
+    // forall key, file. properties_value(key) = spec_cid_of_file(file).
+    must(
+        "catalog_format_r11_property_values_match_disk_blake3",
+        forall(String_(), |c| {
+            eq(
+                ctor1("properties_value", c.clone()),
+                ctor1("spec_cid_of_file_for_key", c),
+            )
+        }),
+    );
+
+    // -- R12: catalog CID stable: recompute(JCS(catalog)) = published. ----
+    must(
+        "catalog_format_r12_catalog_cid_recomputes_to_published",
+        forall(String_(), |c| {
+            eq(
+                ctor1("published_catalog_cid_of", c.clone()),
+                ctor1("recomputed_catalog_cid_of", c),
+            )
+        }),
+    );
+
     // -- R14: no truncated digests; full 128 hex chars. -------------------
-    //
-    // forall c: String. len(hex_part_of(catalog_cid(c))) = 128
-    //
-    // The IR can express equality on `len`; the byte interpretation is
-    // operational.
     must(
         "catalog_format_r14_full_blake3_512_no_truncation",
         forall(String_(), |c| {
@@ -151,10 +238,6 @@ pub fn invariants() {
     );
 
     // -- R15: every CID carries the `blake3-512:` prefix. ----------------
-    //
-    // forall c: String. starts_with(c, "blake3-512:") = true
-    //
-    // Operational form is `String::starts_with` per CID in the catalog.
     contract(
         "catalog_format_r15_cid_carries_blake3_512_prefix",
         ContractArgs {
@@ -171,7 +254,7 @@ pub fn invariants() {
 }
 
 // ---------------------------------------------------------------------------
-// Layer 2: operational verifier — `verify_catalog(json) -> CatalogReport`
+// Layer 2: operational verifier  `verify_catalog(json) -> CatalogReport`
 // ---------------------------------------------------------------------------
 
 /// Per-rule verdict.
@@ -181,58 +264,91 @@ pub enum RuleVerdict {
     Holds,
     /// The rule was violated; the string is a human-readable reason.
     Violated(String),
+    /// The rule was not exercised (e.g. a disk-dependent check called
+    /// without a spec dir). Treated as passing by `all_hold()` but
+    /// reported separately so the caller can tell discharge from
+    /// vacuity.
+    Vacuous(String),
 }
 
 /// Aggregated outcome of running every encoded rule against a catalog
-/// JSON value. The order of fields mirrors the rule numbers above.
+/// JSON value. Field order mirrors the rule numbers above.
 #[derive(Debug, Clone)]
 pub struct CatalogReport {
     pub r1_kind: RuleVerdict,
+    pub r2_name_present: RuleVerdict,
+    pub r3_version_present: RuleVerdict,
+    pub r4_algorithms_shape: RuleVerdict,
     pub r5_property_values_are_cids: RuleVerdict,
     pub r6_declared_at_iso8601: RuleVerdict,
     pub r7_underscore_fields_in_canonical: RuleVerdict,
+    /// R8 has no JSON-only discharge: the rule binds spec_cid to raw
+    /// spec bytes. We mark it Vacuous from `verify_catalog` and let
+    /// `verify_catalog_against_spec_dir` discharge it via R11's
+    /// per-file recomputation (R8 is the formula; R11 is its closure
+    /// over the property map).
+    pub r8_spec_cid_formula: RuleVerdict,
+    pub r9_catalog_cid_formula: RuleVerdict,
+    /// Disk-dependent: only discharged from
+    /// `verify_catalog_against_spec_dir`.
+    pub r11_disk_blake3_matches: RuleVerdict,
+    pub r12_catalog_cid_recomputes: RuleVerdict,
     pub r14_no_truncated_digests: RuleVerdict,
     pub r15_cid_blake3_512_prefix: RuleVerdict,
 }
 
 impl CatalogReport {
-    /// True iff every rule holds.
+    /// True iff every rule either Holds or is Vacuous.
     pub fn all_hold(&self) -> bool {
-        matches!(self.r1_kind, RuleVerdict::Holds)
-            && matches!(self.r5_property_values_are_cids, RuleVerdict::Holds)
-            && matches!(self.r6_declared_at_iso8601, RuleVerdict::Holds)
-            && matches!(self.r7_underscore_fields_in_canonical, RuleVerdict::Holds)
-            && matches!(self.r14_no_truncated_digests, RuleVerdict::Holds)
-            && matches!(self.r15_cid_blake3_512_prefix, RuleVerdict::Holds)
+        let verdicts = [
+            &self.r1_kind,
+            &self.r2_name_present,
+            &self.r3_version_present,
+            &self.r4_algorithms_shape,
+            &self.r5_property_values_are_cids,
+            &self.r6_declared_at_iso8601,
+            &self.r7_underscore_fields_in_canonical,
+            &self.r8_spec_cid_formula,
+            &self.r9_catalog_cid_formula,
+            &self.r11_disk_blake3_matches,
+            &self.r12_catalog_cid_recomputes,
+            &self.r14_no_truncated_digests,
+            &self.r15_cid_blake3_512_prefix,
+        ];
+        verdicts
+            .iter()
+            .all(|v| !matches!(v, RuleVerdict::Violated(_)))
     }
 
-    /// All violations, formatted (rule_label, reason).
+    /// All violations, formatted (rule_label, reason). Vacuous results
+    /// are NOT reported.
     pub fn violations(&self) -> Vec<(&'static str, String)> {
         let mut out: Vec<(&'static str, String)> = Vec::new();
-        if let RuleVerdict::Violated(reason) = &self.r1_kind {
-            out.push(("R1", reason.clone()));
-        }
-        if let RuleVerdict::Violated(reason) = &self.r5_property_values_are_cids {
-            out.push(("R5", reason.clone()));
-        }
-        if let RuleVerdict::Violated(reason) = &self.r6_declared_at_iso8601 {
-            out.push(("R6", reason.clone()));
-        }
-        if let RuleVerdict::Violated(reason) = &self.r7_underscore_fields_in_canonical {
-            out.push(("R7", reason.clone()));
-        }
-        if let RuleVerdict::Violated(reason) = &self.r14_no_truncated_digests {
-            out.push(("R14", reason.clone()));
-        }
-        if let RuleVerdict::Violated(reason) = &self.r15_cid_blake3_512_prefix {
-            out.push(("R15", reason.clone()));
+        let pairs: &[(&'static str, &RuleVerdict)] = &[
+            ("R1", &self.r1_kind),
+            ("R2", &self.r2_name_present),
+            ("R3", &self.r3_version_present),
+            ("R4", &self.r4_algorithms_shape),
+            ("R5", &self.r5_property_values_are_cids),
+            ("R6", &self.r6_declared_at_iso8601),
+            ("R7", &self.r7_underscore_fields_in_canonical),
+            ("R8", &self.r8_spec_cid_formula),
+            ("R9", &self.r9_catalog_cid_formula),
+            ("R11", &self.r11_disk_blake3_matches),
+            ("R12", &self.r12_catalog_cid_recomputes),
+            ("R14", &self.r14_no_truncated_digests),
+            ("R15", &self.r15_cid_blake3_512_prefix),
+        ];
+        for (label, v) in pairs {
+            if let RuleVerdict::Violated(reason) = v {
+                out.push((label, reason.clone()));
+            }
         }
         out
     }
 }
 
-/// CID format: `^blake3-512:[0-9a-f]{128}$`. We don't pull in the regex
-/// crate; a hand-rolled check keeps the dep graph small.
+/// CID format: `^blake3-512:[0-9a-f]{128}$`.
 fn cid_format_problem(s: &str) -> Option<String> {
     let prefix = "blake3-512:";
     if !s.starts_with(prefix) {
@@ -257,18 +373,15 @@ fn cid_format_problem(s: &str) -> Option<String> {
     None
 }
 
-/// ISO-8601 UTC: shape `YYYY-MM-DDTHH:MM:SS(.fff)?Z`. Same regex as the
-/// memento-envelope-grammar `iso8601` rule.
+/// ISO-8601 UTC: shape `YYYY-MM-DDTHH:MM:SS(.fff)?Z`.
 fn iso8601_utc_problem(s: &str) -> Option<String> {
     let bytes = s.as_bytes();
-    // YYYY-MM-DDTHH:MM:SS at minimum is 19 bytes; with `Z` is 20.
     if bytes.len() < 20 {
         return Some(format!("string too short ({} bytes) for ISO-8601 UTC", bytes.len()));
     }
     if !s.ends_with('Z') {
         return Some(format!("must end with literal `Z` (UTC marker); got `{}`", s));
     }
-    let mut idx = 0;
     let positions: &[(usize, fn(u8) -> bool, &str)] = &[
         (4, |b| b == b'-', "expected `-` after year"),
         (7, |b| b == b'-', "expected `-` after month"),
@@ -281,17 +394,10 @@ fn iso8601_utc_problem(s: &str) -> Option<String> {
             return Some(format!("at byte {}: {}", pos, msg));
         }
     }
-    // Digit checks for the YYYY-MM-DDTHH:MM:SS skeleton.
     let digit_positions: &[usize] = &[
-        0, 1, 2, 3, // year
-        5, 6, // month
-        8, 9, // day
-        11, 12, // hour
-        14, 15, // minute
-        17, 18, // second
+        0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18,
     ];
     for &p in digit_positions {
-        idx = p;
         if !bytes[p].is_ascii_digit() {
             return Some(format!(
                 "at byte {}: expected ASCII digit, got `{}`",
@@ -299,8 +405,6 @@ fn iso8601_utc_problem(s: &str) -> Option<String> {
             ));
         }
     }
-    let _ = idx;
-    // Anything after byte 19 must be either `Z` or `.fff...Z`.
     let tail = &s[19..];
     if tail == "Z" {
         return None;
@@ -355,10 +459,41 @@ fn jcs_encode(j: &JsonValue) -> Result<String, String> {
     Ok(encode_jcs(&v))
 }
 
-/// Verify every encoded rule against `catalog` (a parsed catalog JSON
-/// value). Each field of the report is independent; one rule's
-/// violation does not mask another.
+/// Verify every JSON-derivable rule against `catalog`. Disk-dependent
+/// rules (R11, R12) are reported as `Vacuous`; use
+/// `verify_catalog_against_spec_dir` for full discharge. R8 is also
+/// vacuous from this entry point: its operational form is per-file
+/// recomputation (R11).
 pub fn verify_catalog(catalog: &JsonValue) -> CatalogReport {
+    verify_catalog_inner(catalog, None, None)
+}
+
+/// Verify every encoded rule against `catalog`, including disk-dependent
+/// ones. `spec_files` is an iterator of `(property_key, file_path)`
+/// pairs; only keys present in this map are checked against disk. Keys
+/// in `properties` not covered by `spec_files` are still subject to
+/// R5/R14/R15 (format checks) but not R11.
+///
+/// `claimed_catalog_cid` is the externally-published CID we expect
+/// `BLAKE3-512(JCS(catalog))` to equal (R12). Pass `None` to leave R12
+/// vacuous.
+pub fn verify_catalog_against_spec_dir<'a, I>(
+    catalog: &JsonValue,
+    spec_files: I,
+    claimed_catalog_cid: Option<&str>,
+) -> CatalogReport
+where
+    I: IntoIterator<Item = (&'a str, &'a Path)>,
+{
+    let map: std::collections::BTreeMap<&str, &Path> = spec_files.into_iter().collect();
+    verify_catalog_inner(catalog, Some(&map), claimed_catalog_cid)
+}
+
+fn verify_catalog_inner(
+    catalog: &JsonValue,
+    spec_files: Option<&std::collections::BTreeMap<&str, &Path>>,
+    claimed_catalog_cid: Option<&str>,
+) -> CatalogReport {
     let obj: Option<&Map<String, JsonValue>> = catalog.as_object();
 
     // --- R1: kind == "catalog" ------------------------------------------
@@ -375,11 +510,71 @@ pub fn verify_catalog(catalog: &JsonValue) -> CatalogReport {
         None => RuleVerdict::Violated("top-level `kind` field is missing".into()),
     };
 
+    // --- R2: `name` present and a string. -------------------------------
+    let r2_name_present = match obj.and_then(|o| o.get("name")) {
+        Some(JsonValue::String(_)) => RuleVerdict::Holds,
+        Some(other) => RuleVerdict::Violated(format!(
+            "`name` must be a string, got {}",
+            value_type(other)
+        )),
+        None => RuleVerdict::Violated("top-level `name` field is missing".into()),
+    };
+
+    // --- R3: `version` present and a string. ----------------------------
+    let r3_version_present = match obj.and_then(|o| o.get("version")) {
+        Some(JsonValue::String(_)) => RuleVerdict::Holds,
+        Some(other) => RuleVerdict::Violated(format!(
+            "`version` must be a string, got {}",
+            value_type(other)
+        )),
+        None => RuleVerdict::Violated("top-level `version` field is missing".into()),
+    };
+
+    // --- R4: `algorithms` is object; each value an array of strings. ----
+    let r4_algorithms_shape = match obj.and_then(|o| o.get("algorithms")) {
+        Some(JsonValue::Object(algs)) => {
+            let mut problems: Vec<String> = Vec::new();
+            for (role, val) in algs {
+                match val {
+                    JsonValue::Array(items) => {
+                        for (i, item) in items.iter().enumerate() {
+                            if !item.is_string() {
+                                problems.push(format!(
+                                    "algorithms[`{}`][{}] is {}, expected string tag",
+                                    role,
+                                    i,
+                                    value_type(item)
+                                ));
+                            }
+                        }
+                        if items.is_empty() {
+                            problems.push(format!(
+                                "algorithms[`{}`] is empty array; at least one tag required",
+                                role
+                            ));
+                        }
+                    }
+                    other => problems.push(format!(
+                        "algorithms[`{}`] must be array of strings, got {}",
+                        role,
+                        value_type(other)
+                    )),
+                }
+            }
+            if problems.is_empty() {
+                RuleVerdict::Holds
+            } else {
+                RuleVerdict::Violated(problems.join("; "))
+            }
+        }
+        Some(other) => RuleVerdict::Violated(format!(
+            "`algorithms` must be an object, got {}",
+            value_type(other)
+        )),
+        None => RuleVerdict::Violated("top-level `algorithms` field is missing".into()),
+    };
+
     // --- R5 / R14 / R15 are checked together against `properties`. -----
-    //
-    // R5: every value is a self-identifying CID string.
-    // R14: hex-digest portion is exactly 128 chars.
-    // R15: prefix is `blake3-512:`.
     let mut r5_problems: Vec<String> = Vec::new();
     let mut r14_problems: Vec<String> = Vec::new();
     let mut r15_problems: Vec<String> = Vec::new();
@@ -397,15 +592,12 @@ pub fn verify_catalog(catalog: &JsonValue) -> CatalogReport {
                         continue;
                     }
                 };
-                // R15: prefix.
                 let prefix = "blake3-512:";
                 if !s.starts_with(prefix) {
                     r15_problems.push(format!(
                         "properties[`{}`] missing `blake3-512:` prefix",
                         key
                     ));
-                    // Continue: if no prefix we can't classify hex length
-                    // as truncation either; record under R5 as well.
                     r5_problems.push(format!(
                         "properties[`{}`] is not a self-identifying CID",
                         key
@@ -413,7 +605,6 @@ pub fn verify_catalog(catalog: &JsonValue) -> CatalogReport {
                     continue;
                 }
                 let hex = &s[prefix.len()..];
-                // R14: full 128-hex-char digest.
                 if hex.len() != 128 {
                     r14_problems.push(format!(
                         "properties[`{}`] has hex length {} (expected 128 for blake3-512)",
@@ -421,7 +612,6 @@ pub fn verify_catalog(catalog: &JsonValue) -> CatalogReport {
                         hex.len()
                     ));
                 }
-                // R5 catch-all: unified format check.
                 if let Some(reason) = cid_format_problem(s) {
                     r5_problems.push(format!("properties[`{}`]: {}", key, reason));
                 }
@@ -477,25 +667,12 @@ pub fn verify_catalog(catalog: &JsonValue) -> CatalogReport {
     };
 
     // --- R7: underscore-prefixed fields participate in JCS canon. ------
-    //
-    // Construct two JCS-canonical encodings: one with all `_`-prefixed
-    // top-level keys retained, one with them stripped. If no underscore
-    // keys are present, the rule is vacuously held — we explicitly mark
-    // that case to keep the report honest.
     let r7_underscore_fields_in_canonical = match obj {
         None => RuleVerdict::Violated("top-level value is not an object".into()),
         Some(o) => {
             let underscore_keys: Vec<&String> =
                 o.keys().filter(|k| k.starts_with('_')).collect();
             if underscore_keys.is_empty() {
-                // Vacuous, but a real catalog ships with `_unsigned`. We
-                // surface this as Holds so the test on the broken fixture
-                // ("strip-underscore-fields.json") is the discriminator:
-                // that fixture removes the `_unsigned` field outright;
-                // the normal catalog has it. A different rule (R7-coverage)
-                // would assert the catalog HAS underscore fields, but
-                // the spec doesn't require their presence, only their
-                // canonicalization-participation.
                 RuleVerdict::Holds
             } else {
                 let mut stripped = o.clone();
@@ -508,7 +685,7 @@ pub fn verify_catalog(catalog: &JsonValue) -> CatalogReport {
                             RuleVerdict::Violated(
                                 "JCS-canonical bytes did NOT change when underscore-prefixed \
                                  fields were stripped: the canonicalizer is dropping them, \
-                                 violating §1's `participate in canonicalization` rule"
+                                 violating 1's `participate in canonicalization` rule"
                                     .into(),
                             )
                         } else {
@@ -524,11 +701,164 @@ pub fn verify_catalog(catalog: &JsonValue) -> CatalogReport {
         }
     };
 
+    // --- R8 / R11: spec-file CID equals BLAKE3-512(file_bytes). --------
+    //
+    // R8 is the formula; R11 is its discharge over each (key, file)
+    // pair. We discharge them together: if a spec_files map is
+    // provided, walk every entry, recompute the file's BLAKE3-512, and
+    // compare to `properties[key]`. R8 is reported `Holds` iff every
+    // computed CID has the canonical self-identifying form (which the
+    // helper produces unconditionally), `Vacuous` if no spec_files
+    // were provided.
+    let (r8_spec_cid_formula, r11_disk_blake3_matches) = match spec_files {
+        None => (
+            RuleVerdict::Vacuous(
+                "R8 is the formula version of R11; supply `spec_files` to discharge".into(),
+            ),
+            RuleVerdict::Vacuous(
+                "no spec_files provided; cannot recompute disk BLAKE3-512".into(),
+            ),
+        ),
+        Some(map) => {
+            let props = obj
+                .and_then(|o| o.get("properties"))
+                .and_then(|p| p.as_object());
+            match props {
+                None => (
+                    RuleVerdict::Violated(
+                        "cannot discharge R8: `properties` is not an object".into(),
+                    ),
+                    RuleVerdict::Violated(
+                        "cannot discharge R11: `properties` is not an object".into(),
+                    ),
+                ),
+                Some(props_obj) => {
+                    let mut r11_problems: Vec<String> = Vec::new();
+                    let mut r8_problems: Vec<String> = Vec::new();
+                    for (key, path) in map {
+                        let claimed = match props_obj.get(*key) {
+                            Some(JsonValue::String(s)) => s.clone(),
+                            Some(other) => {
+                                r11_problems.push(format!(
+                                    "properties[`{}`] is {}, expected string CID",
+                                    key,
+                                    value_type(other)
+                                ));
+                                continue;
+                            }
+                            None => {
+                                r11_problems.push(format!(
+                                    "spec_files names `{}` but no such key in `properties`",
+                                    key
+                                ));
+                                continue;
+                            }
+                        };
+                        let bytes = match std::fs::read(path) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                r11_problems.push(format!(
+                                    "read `{}` for key `{}`: {}",
+                                    path.display(),
+                                    key,
+                                    e
+                                ));
+                                continue;
+                            }
+                        };
+                        let recomputed = blake3_512_of(&bytes);
+                        // R8: the recomputed CID is by construction
+                        // self-identifying; the only way it fails is
+                        // an internal helper bug. We assert it for
+                        // completeness.
+                        if !recomputed.starts_with("blake3-512:") {
+                            r8_problems.push(format!(
+                                "internal: blake3_512_of produced non-self-identifying CID for key `{}`",
+                                key
+                            ));
+                        }
+                        if recomputed != claimed {
+                            r11_problems.push(format!(
+                                "properties[`{}`] = `{}` does not match BLAKE3-512({}) = `{}`",
+                                key, claimed, path.display(), recomputed
+                            ));
+                        }
+                    }
+                    let r8 = if r8_problems.is_empty() {
+                        RuleVerdict::Holds
+                    } else {
+                        RuleVerdict::Violated(r8_problems.join("; "))
+                    };
+                    let r11 = if r11_problems.is_empty() {
+                        RuleVerdict::Holds
+                    } else {
+                        RuleVerdict::Violated(r11_problems.join("; "))
+                    };
+                    (r8, r11)
+                }
+            }
+        }
+    };
+
+    // --- R9 / R12: catalog CID equals BLAKE3-512(JCS(catalog)). --------
+    //
+    // R9 is the formula; R12 is the discharge against a claimed CID.
+    // R9 always holds in the JSON-only flow (we can verify the JCS
+    // pipeline runs), and R12 is Vacuous unless `claimed_catalog_cid`
+    // was supplied. When it IS supplied we compute the recomputed CID
+    // and compare.
+    let r9_catalog_cid_formula = match jcs_encode(catalog) {
+        Ok(jcs) => {
+            let recomputed = blake3_512_of(jcs.as_bytes());
+            if recomputed.starts_with("blake3-512:")
+                && recomputed.len() == "blake3-512:".len() + 128
+            {
+                RuleVerdict::Holds
+            } else {
+                RuleVerdict::Violated(format!(
+                    "internal: recomputed catalog CID malformed: `{}`",
+                    recomputed
+                ))
+            }
+        }
+        Err(e) => RuleVerdict::Violated(format!("JCS encoding failed: {}", e)),
+    };
+
+    let r12_catalog_cid_recomputes = match claimed_catalog_cid {
+        None => RuleVerdict::Vacuous(
+            "no claimed catalog CID provided; cannot compare against recomputed value".into(),
+        ),
+        Some(claimed) => match jcs_encode(catalog) {
+            Ok(jcs) => {
+                let recomputed = blake3_512_of(jcs.as_bytes());
+                if recomputed == claimed {
+                    RuleVerdict::Holds
+                } else {
+                    RuleVerdict::Violated(format!(
+                        "claimed catalog CID `{}` does not match recomputed BLAKE3-512(JCS(catalog)) = `{}`",
+                        claimed, recomputed
+                    ))
+                }
+            }
+            Err(e) => RuleVerdict::Violated(format!(
+                "JCS encoding failed during R12 check: {}",
+                e
+            )),
+        },
+    };
+
     CatalogReport {
         r1_kind,
+        r2_name_present,
+        r3_version_present,
+        r4_algorithms_shape,
         r5_property_values_are_cids,
         r6_declared_at_iso8601,
         r7_underscore_fields_in_canonical,
+        r8_spec_cid_formula,
+        r9_catalog_cid_formula,
+        r11_disk_blake3_matches,
+        r12_catalog_cid_recomputes,
         r14_no_truncated_digests,
         r15_cid_blake3_512_prefix,
     }
@@ -546,7 +876,7 @@ fn value_type(v: &JsonValue) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
-// Tests — positive (real v1.3.0 catalog) and negative (broken fixtures)
+// Tests  positive (real v1.3.x catalog) and negative (broken fixtures)
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -555,9 +885,14 @@ mod tests {
     use provekit_ir_symbolic::{begin_collecting, finish, reset_collector};
     use std::path::PathBuf;
 
+    /// Number of distinct rules encoded as IR contracts in `invariants()`.
+    /// Mirror this constant if you add or remove a contract minted from
+    /// `invariants()`. The value is asserted in
+    /// `invariants_mints_one_contract_per_rule` below; updating one
+    /// without the other is a test failure.
+    const ENCODED_RULE_COUNT: usize = 13;
+
     fn repo_root() -> PathBuf {
-        // Three parents up: provekit-self-contracts/src/catalog_format.rs
-        //   -> provekit-self-contracts -> implementations/rust -> implementations -> <repo>
         let manifest = env!("CARGO_MANIFEST_DIR");
         PathBuf::from(manifest)
             .parent()
@@ -588,7 +923,21 @@ mod tests {
         serde_json::from_slice(&bytes).expect("fixture parses as JSON")
     }
 
-    // -- POSITIVE: every encoded rule holds against real v1.3.0 catalog. -
+    fn tmpdir() -> PathBuf {
+        let mut p = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        p.push(format!(
+            "provekit-catalog-format-test-{nanos}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    // -- POSITIVE: every JSON-derivable rule holds against real catalog. -
 
     #[test]
     fn real_catalog_satisfies_all_encoded_rules() {
@@ -601,7 +950,7 @@ mod tests {
         );
     }
 
-    // -- INVARIANT: invariants() mints exactly six contracts (one per rule).
+    // -- INVARIANT: invariants() mints one contract per rule. ------------
 
     #[test]
     fn invariants_mints_one_contract_per_rule() {
@@ -611,13 +960,13 @@ mod tests {
         let decls = finish();
         assert_eq!(
             decls.len(),
-            6,
-            "expected 6 catalog-format contracts, got {}",
+            ENCODED_RULE_COUNT,
+            "expected {} catalog-format contracts, got {}",
+            ENCODED_RULE_COUNT,
             decls.len()
         );
         let names: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
         assert!(names.iter().all(|n| n.starts_with("catalog_format_r")));
-        // All distinct.
         let mut sorted = names.clone();
         sorted.sort();
         let original = sorted.len();
@@ -635,6 +984,50 @@ mod tests {
             matches!(report.r1_kind, RuleVerdict::Violated(_)),
             "R1 should fire on bad kind; verdict = {:?}",
             report.r1_kind
+        );
+    }
+
+    #[test]
+    fn r2_violation_name_missing_is_caught() {
+        let cat = fixture("r2-name-missing.json");
+        let report = verify_catalog(&cat);
+        assert!(
+            matches!(report.r2_name_present, RuleVerdict::Violated(_)),
+            "R2 should fire on missing name; verdict = {:?}",
+            report.r2_name_present
+        );
+    }
+
+    #[test]
+    fn r3_violation_version_missing_is_caught() {
+        let cat = fixture("r3-version-missing.json");
+        let report = verify_catalog(&cat);
+        assert!(
+            matches!(report.r3_version_present, RuleVerdict::Violated(_)),
+            "R3 should fire on missing version; verdict = {:?}",
+            report.r3_version_present
+        );
+    }
+
+    #[test]
+    fn r4_violation_algorithms_not_object_is_caught() {
+        let cat = fixture("r4-algorithms-not-object.json");
+        let report = verify_catalog(&cat);
+        assert!(
+            matches!(report.r4_algorithms_shape, RuleVerdict::Violated(_)),
+            "R4 should fire on non-object algorithms; verdict = {:?}",
+            report.r4_algorithms_shape
+        );
+    }
+
+    #[test]
+    fn r4_violation_role_not_array_is_caught() {
+        let cat = fixture("r4-role-not-array.json");
+        let report = verify_catalog(&cat);
+        assert!(
+            matches!(report.r4_algorithms_shape, RuleVerdict::Violated(_)),
+            "R4 should fire when a role is not an array; verdict = {:?}",
+            report.r4_algorithms_shape
         );
     }
 
@@ -682,11 +1075,6 @@ mod tests {
         );
     }
 
-    // R7 negative: build a catalog WITH `_unsigned` and confirm JCS bytes
-    // differ when the underscore field is stripped. There's no broken
-    // fixture per se: the rule is about the canonicalizer's behavior.
-    // We assert that a catalog containing `_unsigned` JCS-encodes
-    // differently from the same catalog with `_unsigned` removed.
     #[test]
     fn r7_underscore_fields_change_jcs_bytes() {
         let cat = real_catalog();
@@ -696,8 +1084,6 @@ mod tests {
             "R7 should hold on real catalog; verdict = {:?}",
             report.r7_underscore_fields_in_canonical
         );
-        // And the converse: stripping all `_*` keys produces a different
-        // JCS encoding from the original.
         let obj = cat.as_object().expect("catalog is object");
         let mut stripped = obj.clone();
         stripped.retain(|k, _| !k.starts_with('_'));
@@ -711,16 +1097,173 @@ mod tests {
         );
     }
 
+    // -- DISK-DEPENDENT: R8 / R11 / R12 with an in-memory spec dir. -----
+
+    /// Build a tiny synthetic spec dir + matching catalog. We write a
+    /// known-bytes spec file to disk, compute its real BLAKE3-512, then
+    /// embed that CID into the catalog so R11 holds. R12 is given the
+    /// recomputed catalog CID. Both should hold.
+    fn synth_spec_dir_and_catalog() -> (PathBuf, JsonValue, String) {
+        let dir = tmpdir();
+        let spec_path = dir.join("hello-spec.md");
+        let spec_bytes: &[u8] = b"# hello spec\n\nhello world\n";
+        std::fs::write(&spec_path, spec_bytes).unwrap();
+        let real_cid = blake3_512_of(spec_bytes);
+        let cat = serde_json::json!({
+            "kind": "catalog",
+            "name": "provekit-protocol",
+            "version": "v0.0.0-test",
+            "algorithms": {
+                "hash": ["blake3-512"],
+                "signature": ["ed25519"],
+                "pubkey": ["ed25519"],
+            },
+            "properties": {
+                "hello-spec": real_cid,
+            },
+            "declaredAt": "2026-05-02T00:00:00Z",
+        });
+        let jcs = jcs_encode(&cat).unwrap();
+        let recomputed_catalog_cid = blake3_512_of(jcs.as_bytes());
+        (spec_path, cat, recomputed_catalog_cid)
+    }
+
+    #[test]
+    fn r8_r11_disk_check_holds_on_synth_catalog() {
+        let (spec_path, cat, _) = synth_spec_dir_and_catalog();
+        let pairs: Vec<(&str, &Path)> = vec![("hello-spec", spec_path.as_path())];
+        let report = verify_catalog_against_spec_dir(&cat, pairs, None);
+        assert!(
+            matches!(report.r11_disk_blake3_matches, RuleVerdict::Holds),
+            "R11 should hold on synth catalog; verdict = {:?}",
+            report.r11_disk_blake3_matches
+        );
+        assert!(
+            matches!(report.r8_spec_cid_formula, RuleVerdict::Holds),
+            "R8 should hold on synth catalog; verdict = {:?}",
+            report.r8_spec_cid_formula
+        );
+        let _ = std::fs::remove_dir_all(spec_path.parent().unwrap());
+    }
+
+    #[test]
+    fn r11_violation_disk_bytes_drift_is_caught() {
+        // Construct a catalog with the right shape but wrong CID for
+        // `hello-spec`. The on-disk file has the real bytes; the
+        // catalog's claimed CID is for different bytes.
+        let dir = tmpdir();
+        let spec_path = dir.join("hello-spec.md");
+        std::fs::write(&spec_path, b"# real spec\n").unwrap();
+        let wrong_cid = blake3_512_of(b"# different content\n");
+        let cat = serde_json::json!({
+            "kind": "catalog",
+            "name": "provekit-protocol",
+            "version": "v0.0.0-test",
+            "algorithms": {
+                "hash": ["blake3-512"],
+                "signature": ["ed25519"],
+                "pubkey": ["ed25519"],
+            },
+            "properties": {
+                "hello-spec": wrong_cid,
+            },
+            "declaredAt": "2026-05-02T00:00:00Z",
+        });
+        let pairs: Vec<(&str, &Path)> = vec![("hello-spec", spec_path.as_path())];
+        let report = verify_catalog_against_spec_dir(&cat, pairs, None);
+        assert!(
+            matches!(report.r11_disk_blake3_matches, RuleVerdict::Violated(_)),
+            "R11 should fire on drifted disk bytes; verdict = {:?}",
+            report.r11_disk_blake3_matches
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn r12_catalog_cid_holds_on_correct_recompute() {
+        let (spec_path, cat, recomputed) = synth_spec_dir_and_catalog();
+        let report = verify_catalog_against_spec_dir(
+            &cat,
+            std::iter::empty(),
+            Some(recomputed.as_str()),
+        );
+        assert!(
+            matches!(report.r12_catalog_cid_recomputes, RuleVerdict::Holds),
+            "R12 should hold when claimed CID matches recomputation; verdict = {:?}",
+            report.r12_catalog_cid_recomputes
+        );
+        let _ = std::fs::remove_dir_all(spec_path.parent().unwrap());
+    }
+
+    #[test]
+    fn r12_violation_wrong_claimed_cid_is_caught() {
+        let (spec_path, cat, _real) = synth_spec_dir_and_catalog();
+        // A made-up CID with the right shape but wrong digest.
+        let bogus = format!(
+            "blake3-512:{}",
+            "0".repeat(128)
+        );
+        let report = verify_catalog_against_spec_dir(
+            &cat,
+            std::iter::empty(),
+            Some(bogus.as_str()),
+        );
+        assert!(
+            matches!(report.r12_catalog_cid_recomputes, RuleVerdict::Violated(_)),
+            "R12 should fire on wrong claimed CID; verdict = {:?}",
+            report.r12_catalog_cid_recomputes
+        );
+        let _ = std::fs::remove_dir_all(spec_path.parent().unwrap());
+    }
+
+    #[test]
+    fn r9_holds_on_any_well_formed_catalog() {
+        // R9 is the formula form of R12; even without a claimed CID,
+        // the formula itself holds iff the JCS pipeline produces a
+        // self-identifying CID of the right shape.
+        let cat = real_catalog();
+        let report = verify_catalog(&cat);
+        assert!(
+            matches!(report.r9_catalog_cid_formula, RuleVerdict::Holds),
+            "R9 should hold on real catalog; verdict = {:?}",
+            report.r9_catalog_cid_formula
+        );
+    }
+
+    #[test]
+    fn json_only_path_marks_disk_rules_vacuous() {
+        let cat = real_catalog();
+        let report = verify_catalog(&cat);
+        assert!(
+            matches!(report.r8_spec_cid_formula, RuleVerdict::Vacuous(_)),
+            "R8 should be vacuous in JSON-only flow; got {:?}",
+            report.r8_spec_cid_formula
+        );
+        assert!(
+            matches!(report.r11_disk_blake3_matches, RuleVerdict::Vacuous(_)),
+            "R11 should be vacuous in JSON-only flow; got {:?}",
+            report.r11_disk_blake3_matches
+        );
+        assert!(
+            matches!(report.r12_catalog_cid_recomputes, RuleVerdict::Vacuous(_)),
+            "R12 should be vacuous in JSON-only flow; got {:?}",
+            report.r12_catalog_cid_recomputes
+        );
+        // Vacuous still passes all_hold.
+        assert!(report.all_hold());
+    }
+
     // -- Aggregate sanity: every rule has both a positive and a negative
-    //                       coverage path. -----------------------------
+    //                       coverage path. ------------------------------
+
     #[test]
     fn coverage_summary_every_rule_has_positive_and_negative() {
-        // Positive: all_hold() on real catalog (covered by
-        // real_catalog_satisfies_all_encoded_rules).
-        // Negative: each fixture-based test above. This test simply
-        // sanity-checks that all six fixtures parse and run end-to-end.
         let names = [
             "r1-bad-kind.json",
+            "r2-name-missing.json",
+            "r3-version-missing.json",
+            "r4-algorithms-not-object.json",
+            "r4-role-not-array.json",
             "r5-property-value-not-string.json",
             "r6-declared-at-local-time.json",
             "r14-truncated-digest.json",
@@ -728,7 +1271,7 @@ mod tests {
         ];
         for n in names {
             let v = fixture(n);
-            let _ = verify_catalog(&v); // does not panic
+            let _ = verify_catalog(&v);
         }
     }
 }
