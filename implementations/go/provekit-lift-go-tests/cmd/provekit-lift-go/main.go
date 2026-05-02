@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/provekit/ir-symbolic/canonicalizer"
-	"github.com/provekit/ir-symbolic/ir"
-	lifgotests "github.com/provekit/lift-go-tests"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
+	lifgotests "github.com/tsavo/provekit/go/provekit-lift-go-tests"
 )
 
 func main() {

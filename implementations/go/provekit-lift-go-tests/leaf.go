@@ -38,7 +38,7 @@ import (
 	"go/token"
 	"strconv"
 
-	"github.com/provekit/ir-symbolic/ir"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
 
 // isAssertionCall returns true if call is a recognized assertion-call

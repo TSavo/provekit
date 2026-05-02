@@ -13,7 +13,7 @@ package slabs
 // The IR cannot model BLAKE3 collision resistance; what it CAN say is
 // shape-level (length 139, prefix length, deterministic, non-empty).
 
-import "github.com/provekit/ir-symbolic/ir"
+import "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 
 // InvariantsEncoder authors contracts about EncodeJCS / Encoder.Encode.
 func InvariantsEncoder() {

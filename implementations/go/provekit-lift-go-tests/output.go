@@ -23,7 +23,7 @@
 package lifgotests
 
 import (
-	"github.com/provekit/ir-symbolic/ir"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
 
 // ADAPTER is the adapter-name tag carried by every warning this layer

@@ -5,7 +5,7 @@ import (
 	"crypto/ed25519"
 	"sort"
 
-	"github.com/provekit/ir-symbolic/canonicalizer"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
 )
 
 // Builder assembles a complete .proof file from inputs.

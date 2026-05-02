@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/provekit/ir-symbolic/ir"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
 
 // LiftFile parses src as a Go file at sourcePath and runs the three-

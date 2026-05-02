@@ -1,4 +1,4 @@
-module github.com/provekit/ir-symbolic
+module github.com/tsavo/provekit/go/provekit-ir-symbolic
 
 go 1.22
 

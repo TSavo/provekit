@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/provekit/ir-symbolic/ir"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
 
 // FormulaToValue converts a kit IrFormula to a JSON-shape value tree

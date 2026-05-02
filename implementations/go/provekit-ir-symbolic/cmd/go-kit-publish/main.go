@@ -17,9 +17,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/provekit/ir-symbolic/claim_envelope"
-	"github.com/provekit/ir-symbolic/ir"
-	"github.com/provekit/ir-symbolic/proof_envelope"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/claim_envelope"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/proof_envelope"
 )
 
 func main() {
