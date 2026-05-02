@@ -63,24 +63,32 @@ type parseResult struct {
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		line := scanner.Bytes()
-		var req rpcRequest
-		if err := json.Unmarshal(line, &req); err != nil {
-			continue
-		}
-
-		switch req.Method {
-		case "initialize":
-			handleInit(req.ID)
-		case "parse":
-			handleParse(req.ID, req.Params)
-		case "shutdown":
-			handleShutdown(req.ID)
+		if !handleRequest(string(scanner.Bytes())) {
 			return
-		default:
-			sendError(req.ID, -32601, fmt.Sprintf("unknown method: %s", req.Method))
 		}
 	}
+}
+
+// handleRequest processes a single NDJSON line. Extracted for testability.
+// Returns true if the server should continue; false if shutdown was requested.
+func handleRequest(line string) bool {
+	var req rpcRequest
+	if err := json.Unmarshal([]byte(line), &req); err != nil {
+		return true
+	}
+
+	switch req.Method {
+	case "initialize":
+		handleInit(req.ID)
+	case "parse":
+		handleParse(req.ID, req.Params)
+	case "shutdown":
+		handleShutdown(req.ID)
+		return false
+	default:
+		sendError(req.ID, -32601, fmt.Sprintf("unknown method: %s", req.Method))
+	}
+	return true
 }
 
 func handleInit(id interface{}) {
@@ -115,7 +123,7 @@ func handleParse(id interface{}, paramsRaw json.RawMessage) {
 		sendError(id, -32603, fmt.Sprintf("marshal: %v", err))
 		return
 	}
-	if jcs == nil {
+	if len(jcs) == 0 || string(jcs) == "null" {
 		jcs = []byte("[]")
 	}
 
@@ -127,30 +135,32 @@ func handleParse(id interface{}, paramsRaw json.RawMessage) {
 
 func handleShutdown(id interface{}) {
 	send(id, nil)
-	os.Exit(0)
 }
 
-func send(id interface{}, result interface{}) {
-	resp := rpcResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  result,
-	}
+// sendResponse is the response writer. Defaults to writing JSON to stdout.
+// Overridden in tests to capture output.
+var sendResponse = func(resp rpcResponse) {
 	b, _ := json.Marshal(resp)
 	fmt.Println(string(b))
 }
 
+func send(id interface{}, result interface{}) {
+	sendResponse(rpcResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result:  result,
+	})
+}
+
 func sendError(id interface{}, code int, message string) {
-	resp := rpcResponse{
+	sendResponse(rpcResponse{
 		JSONRPC: "2.0",
 		ID:      id,
 		Error: &rpcError{
 			Code:    code,
 			Message: message,
 		},
-	}
-	b, _ := json.Marshal(resp)
-	fmt.Println(string(b))
+	})
 }
 
 // walkSource parses Go source and lifts validator struct declarations.
