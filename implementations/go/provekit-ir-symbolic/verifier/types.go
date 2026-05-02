@@ -251,14 +251,22 @@ type LoadError struct {
 
 // CallSite is a (bridge, property memento, arg term) triple — the
 // per-call-site obligation downstream stages discharge.
+//
+// BridgeSourceContractCID and BridgeTargetProofCID mirror the
+// BridgeDeclaration fields in the IR formal grammar (PR #10). They are
+// stored for downstream verifier stages (e.g. cross-bundle proof
+// resolution); the load-all-proofs stage does not enforce them today,
+// matching the Rust CallSite shape.
 type CallSite struct {
-	BridgeIRName      string
-	BridgeTargetCID   string
-	BridgeSourceLayer string
-	BridgeTargetLayer string
-	PropertyName      string
-	PropertyCID       string
-	ArgTerm           interface{} // JSON-shape value of the IrTerm
+	BridgeIRName            string
+	BridgeTargetCID         string
+	BridgeSourceLayer       string
+	BridgeSourceContractCID string
+	BridgeTargetProofCID    string
+	BridgeTargetLayer       string
+	PropertyName            string
+	PropertyCID             string
+	ArgTerm                 interface{} // JSON-shape value of the IrTerm
 }
 
 // ResolvedProperty is what resolve-bridge-target returns: the IR

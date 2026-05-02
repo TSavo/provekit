@@ -95,13 +95,15 @@ func (s *EnumerateCallsitesStage) walkTerm(
 			firstArg = args[0]
 		}
 		*out = append(*out, CallSite{
-			BridgeIRName:      name,
-			BridgeTargetCID:   asString(body["targetContractCid"]),
-			BridgeSourceLayer: asString(body["sourceLayer"]),
-			BridgeTargetLayer: asString(body["targetLayer"]),
-			PropertyName:      propertyName,
-			PropertyCID:       propertyCID,
-			ArgTerm:           firstArg,
+			BridgeIRName:            name,
+			BridgeTargetCID:         asString(body["targetContractCid"]),
+			BridgeSourceLayer:       asString(body["sourceLayer"]),
+			BridgeSourceContractCID: asString(body["sourceContractCid"]),
+			BridgeTargetProofCID:    asString(body["targetProofCid"]),
+			BridgeTargetLayer:       asString(body["targetLayer"]),
+			PropertyName:            propertyName,
+			PropertyCID:             propertyCID,
+			ArgTerm:                 firstArg,
 		})
 	}
 	// Recurse into ctor args.
