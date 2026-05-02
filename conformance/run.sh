@@ -119,15 +119,23 @@ fi
 
 # --- Zig ---
 echo "[Zig] zig build test"
-zig="${PWD}/zig-toolchain/zig"
-if [ -x "$zig" ]; then
+# Prefer pinned toolchain for hermetic CI; fall back to system zig.
+zig_pinned="${PWD}/zig-toolchain/zig"
+if [ -x "$zig_pinned" ]; then
+    zig="$zig_pinned"
+elif command -v zig >/dev/null 2>&1; then
+    zig="$(command -v zig)"
+else
+    zig=""
+fi
+if [ -n "$zig" ]; then
     if (cd implementations/zig/provekit-ir && run_quiet "$zig" build test); then
         report "zig" "PASS" "5 tests match Rust JCS + BLAKE3-512"
     else
         report "zig" "FAIL" "zig build test failed"
     fi
 else
-    report "zig" "SKIP" "zig toolchain not found at $zig"
+    report "zig" "SKIP" "zig toolchain not at $zig_pinned and not on PATH"
 fi
 
 # --- TypeScript ---

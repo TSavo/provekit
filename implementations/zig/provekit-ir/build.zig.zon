@@ -1,5 +1,6 @@
 .{
-    .name = "provekit-ir",
+    .name = .provekit_ir,
+    .fingerprint = 0x28ea7787609d6565,
     .version = "0.1.0",
     .paths = .{
         "build.zig",

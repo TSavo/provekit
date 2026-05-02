@@ -100,3 +100,7 @@ implementations/*/blake3-512:*.proof
 # and serves as the durable record of what the auto-lifter reaches on
 # real source. Rebuild with `make self-lift-<crate>`.
 !.provekit/self-lifts/**/*.proof
+
+# Zig build artifacts
+implementations/zig/**/.zig-cache/
+implementations/zig/**/zig-out/
