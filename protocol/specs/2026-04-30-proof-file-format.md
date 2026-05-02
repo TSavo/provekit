@@ -55,6 +55,13 @@ catalog-memento-with-embedded-members = {
   ; verify each member's signature against its declared signer.
   members: { + cid => bstr },
 
+  ; Optional metadata: key-value map for tooling, diagnostics, and
+  ; human review. Included in the signed payload (tamper-evident) but
+  ; explicitly NON-NORMATIVE: verifiers MUST NOT use metadata for
+  ; verification logic, only for display. Keys are strings; values are
+  ; strings. Unknown keys are preserved but ignored.
+  ? metadata: { + tstr => tstr },
+
   ; Optional dependency manifest: catalogs this catalog references
   ; transitively (other .proof files in dependency packages).
   ? depends-on: [* cid],
