@@ -1,0 +1,93 @@
+#!/usr/bin/env ruby
+# SPDX-License-Identifier: Apache-2.0
+#
+# provekit-lsp-ruby — NDJSON LSP plugin for Ruby.
+#
+# Protocol:
+#   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+#   {"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
+#   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
+#
+# Usage: ruby bin/provekit-lsp-ruby
+
+$LOAD_PATH.unshift File.expand_path("../lib", __dir__)
+require "json"
+require "provekit/ir"
+require "provekit/lift/active_model"
+
+include Provekit::IR
+
+def respond(id, result)
+  puts JSON.generate({ jsonrpc: "2.0", id: id, result: result })
+end
+
+def err(id, code, message)
+  puts JSON.generate({ jsonrpc: "2.0", id: id, error: { code: code, message: message } })
+end
+
+ARGV.include?("--rpc") || (warn "Usage: provekit-lsp-ruby --rpc"; exit 1)
+
+STDIN.each_line do |line|
+  req = JSON.parse(line) rescue next
+  id = req["id"]
+  method = req["method"]
+
+  case method
+  when "initialize"
+    respond id, { name: "provekit-lsp-ruby", version: "0.1.0", capabilities: ["parse"] }
+
+  when "parse"
+    params = req["params"] || {}
+    path   = params["path"] || "source.rb"
+    source = params["source"] || ""
+
+    decls = []
+
+    # Scan for //provekit:contract, //provekit:implement annotations
+    source.each_line.with_index do |line, i|
+      if line =~ %r{//\s*provekit:\s*contract}
+        fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
+        fn_name = fn ? $1 : "unknown"
+        decls << ContractDecl.new(name: fn_name, post: and())
+      end
+      if line =~ %r{//\s*provekit:\s*implement\s+([\w-]+)}
+        cid = $1
+        fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
+        fn_name = fn ? $1 : "unknown"
+        decls << ContractDecl.new(name: "#{fn_name}→#{cid}", post: and())
+      end
+    end
+
+    # Try to eval source and lift ActiveModel classes
+    begin
+      ns = Object.new.taint rescue Object.new
+      ns.instance_eval(source, path)
+      ns.singleton_class.constants.each do |cname|
+        klass = begin
+          ns.singleton_class.const_get(cname)
+        rescue NameError
+          next
+        end
+        next unless klass.is_a?(Class)
+        begin
+          lifted = Provekit::Lift::ActiveModel.lift(klass)
+          decls.concat(lifted) if lifted
+        rescue => e
+          # skip classes that can't be lifted
+        end
+      end
+    rescue => e
+      # source eval failed — just use annotation scan
+    end
+
+    jcs = decls.empty? ? "[]" : marshal_declarations(decls)
+    respond id, { declarations: JSON.parse(jcs), warnings: [] } rescue respond(id, { declarations: [], warnings: [] })
+
+  when "shutdown"
+    respond id, nil
+    exit 0
+
+  else
+    err id, -32601, "unknown method: #{method}"
+  end
+end
