@@ -15,14 +15,15 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 
 ## Matrix
 
-| Language    | Kit | Libs | Lift adapters                                           | Decorator macros        | Embedded verifier | CLI                  |
-|-------------|-----|------|---------------------------------------------------------|--------------------------|-------------------|----------------------|
-| Rust        | `+` | `+`  | `+ proptest, contracts` ; `~ kani, prusti` ; `o creusot, flux`     | `+ provekit-macros`      | `+`               | `+ provekit (canonical)` |
-| TypeScript  | `+` | `+`  | `~ zod, class-validator, fast-check` ; `~ io-ts, valibot, ajv`     | `~`                      | `+`               | `~ (use Rust CLI)`   |
-| Go          | `+` | `+`  | `~ go-playground/validator` ; `~ ozzo-validation`       | `~`                      | `+`               | `~ (use Rust CLI)`   |
-| C++         | `+` | `+`  | `~ [[expects:]]/[[ensures:]] (C++26)` ; `o assert.h`    | `~ (C++26 contracts)`    | `+`               | `~ (use Rust CLI)`   |
-| Python      | `o` | `o`  | `~ pydantic, deal, hypothesis` ; `~ icontract, attrs`   | `~`                      | `o`               | `~ (use Rust CLI)`   |
-| Java / JVM  | `o` | `o`  | `~ Bean Validation, JML, Cofoja`                        | `o`                      | `o`               | `~ (use Rust CLI)`   |
+| Language    | Kit | Libs | Lift adapters                                           | Decorator macros        | Embedded verifier | CLI                  | LSP Plugin           |
+|-------------|-----|------|---------------------------------------------------------|--------------------------|-------------------|----------------------|----------------------|
+| Rust        | `+` | `+`  | `+ proptest, contracts` ; `~ kani, prusti` ; `o creusot, flux`     | `+ provekit-macros`      | `+`               | `+ provekit (canonical)` | `+`                  |
+| TypeScript  | `+` | `+`  | `~ zod, class-validator, fast-check` ; `~ io-ts, valibot, ajv`     | `~`                      | `+`               | `~ (use Rust CLI)`   | `~`                  |
+| Go          | `+` | `+`  | `~ go-playground/validator` ; `~ ozzo-validation`       | `~`                      | `+`               | `~ (use Rust CLI)`   | `~`                  |
+| C++         | `+` | `+`  | `~ [[expects:]]/[[ensures:]] (C++26)` ; `o assert.h`    | `~ (C++26 contracts)`    | `+`               | `~ (use Rust CLI)`   | `~`                  |
+| Zig         | `~` | `~`  | `~`                                                     | `~`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
+| Python      | `o` | `o`  | `~ pydantic, deal, hypothesis` ; `~ icontract, attrs`   | `~`                      | `o`               | `~ (use Rust CLI)`   | `o`                  |
+| Java / JVM  | `~` | `~`  | `~ Bean Validation, JML, Cofoja`                        | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
 
 ## Rust (canonical reference implementation)
 
@@ -129,20 +130,24 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 
 ## Java / JVM
 
-**Kit:** Under evaluation. A JVM kit lifting Bean Validation, JML, and Cofoja annotations and embedding the verifier as a Maven artifact is on the v1.3 roadmap; v1.2 may ship a partial kit.
+**Kit:** In progress. Multi-module Maven project with SLF4J-style architecture: `provekit-lift-java-core` (facade) + per-annotation binding JARs.
 
-**Libs:** Under evaluation. Pure-JVM canonicalizer is feasible; performance characteristics under evaluation.
+**Libs:** Planned for v1.2.
 
-**Lift adapters (planned):**
-- `provekit-lift-bean-validation`: walks `@NotNull`, `@Email`, `@Min`, `@Max`, `@Pattern`, `@Size`.
-- `provekit-lift-jml`: walks `//@ requires`, `//@ ensures`, `//@ invariant` comment-block annotations.
-- `provekit-lift-cofoja`: walks `@Requires` and `@Ensures` annotations.
+**Lift adapters (in progress):**
+- `provekit-lift-java-bean-validation`: walks `@NotNull`, `@Email`, `@Min`, `@Max`, `@Pattern`, `@Size`, `@Positive`, `@Negative`, `@AssertTrue`, `@AssertFalse`, `@DecimalMin`, `@DecimalMax`, `@Digits`, `@Future`, `@Past`.
+- `provekit-lift-java-jml`: walks `//@ requires`, `//@ ensures`, `//@ invariant` comment-block annotations.
+- `provekit-lift-java-cofoja`: walks `@Requires`, `@Ensures`, `@Invariant` annotations.
 
-**Decorator macros:** Under evaluation. JVM annotations are the natural authoring surface.
+Architecture: core discovers bindings via `java.util.ServiceLoader`. Users add only the binding JARs for the annotation libraries they use. New bindings can be added without modifying the core.
 
-**Embedded verifier:** Under evaluation.
+**Decorator macros:** JVM annotations are the natural authoring surface.
+
+**Embedded verifier:** Planned for v1.2.
 
 **CLI:** Deferred. Use the Rust CLI.
+
+**LSP Plugin:** Planned.
 
 ## Cross-language conformance
 

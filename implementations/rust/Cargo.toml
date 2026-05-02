@@ -26,6 +26,7 @@ members = [
     "provekit-lift-quickcheck",
     "provekit-lift-verus",
     "provekit-lift-rust-tests",
+    "provekit-lsp",
     "provekit-build",
     "provekit-agent",
     "provekit-agent-claude-code",

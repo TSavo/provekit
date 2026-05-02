@@ -1,3 +1,7 @@
 name = "cpp-lift"
+<<<<<<< HEAD
 command = ["./target/mint_cpp_self_contracts"]
+=======
+command = ["./target/mint_cpp_self_contracts", "--rpc"]
+>>>>>>> origin/main
 working_dir = "."
