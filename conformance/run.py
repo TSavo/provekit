@@ -491,6 +491,99 @@ def extract_zig(fixture_name: str) -> Optional[str]:
         pass  # Keep temp dir for debugging
 
 
+def extract_csharp(fixture_name: str) -> Optional[str]:
+    """Generate a C# console app that constructs the fixture, emits JCS via Jcs.Encode, and runs it."""
+    import tempfile, os, shutil
+
+    csharp_src = ROOT / "implementations" / "csharp"
+
+    if fixture_name == "eq_atomic":
+        code = textwrap.dedent("""\
+            using Provekit.IR;
+            using Provekit.Canonicalizer;
+            var lhsArgs = new List<Term> { Terms.StrConst("42") };
+            var lhs = Terms.Ctor("parse_int", [.. lhsArgs]);
+            var rhs = Terms.Num(42);
+            var f = Predicates.Eq(lhs, rhs);
+            var val = Serialize.FormulaToValue(f);
+            Console.Write(Jcs.Encode(val));
+        """)
+    elif fixture_name == "pattern1_bounded_loop":
+        code = textwrap.dedent("""\
+            using Provekit.IR;
+            using Provekit.Canonicalizer;
+            var x = Terms.Var("x");
+            var zero = Terms.Num(0);
+            var hundred = Terms.Num(100);
+            var lower = Predicates.Gte(x, zero);
+            var upper = Predicates.Lt(x, hundred);
+            var ant = Predicates.And(lower, upper);
+            var inner = Predicates.Gte(x, zero);
+            var body = Predicates.Implies(ant, inner);
+            var q = new QuantifierFormula("forall", "x", Sort.Int, body);
+            var val = Serialize.FormulaToValue(q);
+            Console.Write(Jcs.Encode(val));
+        """)
+    else:
+        return None
+
+    tmpdir = tempfile.mkdtemp(prefix="pk_cs_conformance_")
+    try:
+        # Create a console project in tempdir
+        rc, _, stderr = run(
+            ["dotnet", "new", "console", "--framework", "net10.0", "--force"],
+            cwd=Path(tmpdir),
+            timeout=30,
+        )
+        if rc != 0:
+            print(f"  {Colors.WARN}C# new project failed: {stderr[:200]}{Colors.RST}")
+            return None
+
+        # Write Program.cs
+        (Path(tmpdir) / "Program.cs").write_text(code)
+
+        # Add both project references
+        run(
+            [
+                "dotnet",
+                "add",
+                "reference",
+                str((csharp_src / "Provekit.IR" / "Provekit.IR.csproj").resolve()),
+            ],
+            cwd=Path(tmpdir),
+            timeout=30,
+        )
+        run(
+            [
+                "dotnet",
+                "add",
+                "reference",
+                str(
+                    (
+                        csharp_src
+                        / "Provekit.Canonicalizer"
+                        / "Provekit.Canonicalizer.csproj"
+                    ).resolve()
+                ),
+            ],
+            cwd=Path(tmpdir),
+            timeout=30,
+        )
+
+        # Run
+        rc, stdout, stderr = run(
+            ["dotnet", "run"],
+            cwd=Path(tmpdir),
+            timeout=60,
+        )
+        if rc != 0:
+            print(f"  {Colors.WARN}C# run failed: {stderr[:200]}{Colors.RST}")
+            return None
+        return stdout.strip()
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════
@@ -550,6 +643,18 @@ def main():
         except Exception as e:
             FAILS += 1
             print(f"  {Colors.FAIL}✗ zig-{name}: {e}{Colors.RST}")
+
+        # C#
+        try:
+            got = extract_csharp(name)
+            if got and check_jcs(f"csharp-{name}", got, golden):
+                PASSES += 1
+                print(f"  {Colors.PASS}✓ csharp-{name}{Colors.RST}")
+            elif not got:
+                print(f"  {Colors.WARN}~ csharp-{name}: could not extract{Colors.RST}")
+        except Exception as e:
+            FAILS += 1
+            print(f"  {Colors.FAIL}✗ csharp-{name}: {e}{Colors.RST}")
 
     # Summary
     total = PASSES + FAILS
