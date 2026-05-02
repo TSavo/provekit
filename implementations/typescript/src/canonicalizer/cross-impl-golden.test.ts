@@ -20,8 +20,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formulaToCanonicalAst } from "./canonicalize.js";
-import { serializeCanonicalAst } from "./serialize.js";
+import { canonicalEncode } from "../claimEnvelope/canonicalize.js";
 import { computeCid } from "./hash.js";
 import type { IrFormula, IrTerm, Sort } from "./irFormula.js";
 
@@ -205,8 +204,8 @@ function buildFormulaFor(name: string): IrFormula | null {
 const formulaFixtures = allFixtures.filter((f) => buildFormulaFor(f.name) !== null);
 const nonFormulaFixtures = allFixtures.filter((f) => buildFormulaFor(f.name) === null);
 
-describe("cross-impl golden: TS canonicalizer vs Rust-emitted fixtures", () => {
-  it.runIf(nonFormulaFixtures.length > 0)(
+describe("cross-impl golden: TS IR JCS vs Rust-emitted fixtures", () => {
+  (nonFormulaFixtures.length > 0 ? it : it.skip)(
     `skipped ${nonFormulaFixtures.length} non-formula fixture(s): ${nonFormulaFixtures.map((f) => f.name).join(", ")} (contract/bridge declarations are not formula-level)`,
     () => {
       // informational only
@@ -216,8 +215,7 @@ describe("cross-impl golden: TS canonicalizer vs Rust-emitted fixtures", () => {
   for (const fixture of formulaFixtures) {
     it(`"${fixture.name}" — JCS bytes match Rust golden`, () => {
       const formula = buildFormulaFor(fixture.name)!;
-      const ast = formulaToCanonicalAst(formula);
-      const bytes = serializeCanonicalAst(ast);
+      const bytes = canonicalEncode(formula);
       const actualJcs = bytes.toString("utf8");
 
       expect(actualJcs, `JCS byte mismatch for "${fixture.name}"`).toBe(
@@ -227,8 +225,7 @@ describe("cross-impl golden: TS canonicalizer vs Rust-emitted fixtures", () => {
 
     it(`"${fixture.name}" — BLAKE3-512 hash matches Rust golden`, () => {
       const formula = buildFormulaFor(fixture.name)!;
-      const ast = formulaToCanonicalAst(formula);
-      const bytes = serializeCanonicalAst(ast);
+      const bytes = canonicalEncode(formula);
       const actualHash = computeCid(bytes);
 
       expect(actualHash, `hash mismatch for "${fixture.name}"`).toBe(

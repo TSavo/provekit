@@ -19,7 +19,7 @@ hash = "blake3-512:5eade72c08811b2d38adcb158eced38f3d319de090d59b2fa7a77ad830169
 name = "pattern1_bounded_loop"
 description = "forall x: (x >= 0 && x < 100) => x >= 0 — tests forall, and, implies, nested compare"
 jcs = '{"body":{"kind":"implies","operands":[{"kind":"and","operands":[{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":100}],"kind":"atomic","name":"<"}]},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}]},"kind":"forall","name":"x","sort":{"kind":"primitive","name":"Int"}}'
-hash = "blake3-512:d1ad02579fbcedcd6366cca444023cb83a7a4c4f28be976198b167a521ab0db9e4931f568c9ab9c22c73e026d138d2a520d785576ec3ed570d7f49b344f84c3c"
+hash = "blake3-512:edace2a0634b696ec24a369d37580cf9ab77f2d7c3e83869240b77305aaefc4868054bc3cee789f74408e1adf0b1d88e6fdfcd9cc2e351ff586077dbb3a3bcea"
 
 [[fixture]]
 name = "contract_decl"
