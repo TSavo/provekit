@@ -68,6 +68,15 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 		return fmt.Errorf("read: %w", err)
 	}
 
+	// Compute the bundle CID once, up front. This is BOTH the rule-1
+	// trust root anchor AND the BundleMembers key the forward pin
+	// (BridgeDeclaration.ConsequentBundlePinned, NORMATIVE) is keyed
+	// on; mirrors Rust's `derived_full = blake3_512_of(&bytes)` at the
+	// top of load_one. Computing it inside the V11-filename branch
+	// would silently drop bundle tracking for legacy-named .proof
+	// files and let the shim-poisoning vector slip through that path.
+	bundleCID := canonicalizer.ComputeCID(bytes)
+
 	// Rule 1: filename CID matches content (trust root).
 	// v1.1.0 prefers `blake3-512:<128 hex>.proof`. We also tolerate
 	// bare `<hex>.proof` (legacy path; the hash-tag check below catches
@@ -77,10 +86,9 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 	filename := filepath.Base(proofPath)
 	if m := proofFilenameV11RE.FindStringSubmatch(filename); m != nil {
 		filenameCID := m[1]
-		derived := canonicalizer.ComputeCID(bytes)
-		if derived != filenameCID {
+		if bundleCID != filenameCID {
 			return fmt.Errorf("rule 1 (trust root): filename CID %s != content hash %s",
-				filenameCID, derived)
+				filenameCID, bundleCID)
 		}
 	} else if m := proofFilenameAnyTagRE.FindStringSubmatch(filename); m != nil {
 		// Self-identifying tag we do not recognize. Reject loud.
@@ -147,6 +155,19 @@ func (s *LoadAllProofsStage) loadOne(proofPath string, pool *MementoPool) error 
 			continue
 		}
 		pool.Insert(cid, env)
+		// Track bundle membership so resolve_target can enforce
+		// BridgeDeclaration.ConsequentBundlePinned. The bundle CID is
+		// the .proof file's content hash (bundleCID computed above). A
+		// given member CID may legitimately appear in more than one
+		// bundle (one honest, one poisoned); the per-bundle set is
+		// what matters at resolve time. Mirrors Rust load_all_proofs.rs
+		// pool.bundle_members entry insertion.
+		members, ok := pool.BundleMembers[bundleCID]
+		if !ok {
+			members = map[string]struct{}{}
+			pool.BundleMembers[bundleCID] = members
+		}
+		members[cid] = struct{}{}
 		// If it's a bridge envelope, index by sourceSymbol.
 		if ev, ok := env["evidence"].(map[string]interface{}); ok {
 			if ev["kind"] == "bridge" {
