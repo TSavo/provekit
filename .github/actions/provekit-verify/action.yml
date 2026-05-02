@@ -8,7 +8,7 @@ branding:
 
 inputs:
   working-directory:
-    description: 'Directory in which to run `provekit invariants verify`. Defaults to the repository root.'
+    description: 'Directory in which to run `provekit verify`. Defaults to the repository root.'
     required: false
     default: '.'
   fail-on-decay:
@@ -35,7 +35,7 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Run provekit invariants verify
+    - name: Run provekit verify
       id: verify
       shell: bash
       working-directory: ${{ inputs.working-directory }}
@@ -52,12 +52,12 @@ runs:
         # Capture the JSON report. We run twice: once with --json to capture
         # the machine-readable verdict, once without for human-friendly logs.
         # The duplicate run is cheap because the cache is warm on the second
-        # call. Both go through `provekit invariants verify` — the standing-
+        # call. Both go through `provekit verify` — the standing-
         # runtime gate, no LLM, no network.
-        npx -y "provekit@${PROVEKIT_VERSION}" invariants verify --json $verbose_flag > provekit-report.json 2> provekit-report.err
+        npx -y "provekit@${PROVEKIT_VERSION}" verify --json $verbose_flag > provekit-report.json 2> provekit-report.err
         json_exit=$?
 
-        npx -y "provekit@${PROVEKIT_VERSION}" invariants verify $verbose_flag
+        npx -y "provekit@${PROVEKIT_VERSION}" verify $verbose_flag
         verify_exit=$?
 
         # Build a markdown summary from the JSON report. Falls back to

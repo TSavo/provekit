@@ -24,7 +24,7 @@ jobs:
       - uses: provekit/provekit/.github/actions/provekit-verify@main
 ```
 
-The action wraps `npx provekit invariants verify --ci`. Exit code 1 (a
+The action wraps `npx provekit verify --ci`. Exit code 1 (a
 violation) fails the workflow. Exit code 2 (decay) fails by default and can be
 demoted to a warning by setting `fail-on-decay: false`. Exit code 3 (internal
 error) always fails.
@@ -33,7 +33,7 @@ error) always fails.
 
 | Name                | Default | Description |
 | ------------------- | ------- | ----------- |
-| `working-directory` | `.`     | Directory to `cd` into before running `provekit invariants verify`. |
+| `working-directory` | `.`     | Directory to `cd` into before running `provekit verify`. |
 | `fail-on-decay`     | `true`  | When `false`, exit code 2 (decay) is treated as success — useful while the constraint corpus is still settling. |
 | `verbose`           | `false` | Pass `--verbose` to `provekit`. |
 | `provekit-version`  | `latest` | npm version spec passed to `npx -y "provekit@<version>"`. Pin a known-good version in production. |
