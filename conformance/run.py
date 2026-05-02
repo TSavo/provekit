@@ -367,7 +367,7 @@ def extract_c(fixture_name: str) -> Optional[str]:
 
     c_dir = ROOT / "implementations" / "c" / "provekit-ir"
     include = c_dir / "include"
-    src_files = [c_dir / "src" / f for f in ["ir.c", "jcs.c", "hash.c"]]
+    src_files = [c_dir / "src" / f for f in ["ir.c", "jcs.c"]]
     with tempfile.NamedTemporaryFile(suffix=".c", mode="w", delete=False) as f:
         f.write(code)
         src = f.name
@@ -395,30 +395,34 @@ def extract_zig(fixture_name: str) -> Optional[str]:
     zig_src = ROOT / "implementations" / "zig" / "provekit-ir" / "src"
     if fixture_name == "eq_atomic":
         code = textwrap.dedent("""\
+            const std = @import("std");
             const provekit = @import("provekit-ir");
             pub fn main() !void {
-                const stdout = @import("std").io.getStdOut().writer();
-                const ctor_args = [_]provekit.Term{provekit.Str("42")};
-                const lhs = provekit.Ctor("parse_int", &ctor_args);
-                const rhs = provekit.Num(42);
+                const alloc = std.heap.page_allocator;
+                const str42 = provekit.Term{ .const_term = .{ .value = .{ .string = "42" }, .sort = provekit.Sort.String }};
+                const ctor_args = [_]provekit.Term{str42};
+                const lhs = provekit.Ctor("parse_int", &ctor_args, provekit.Sort.Node);
+                const rhs = provekit.Term{ .const_term = .{ .value = .{ .int = 42 }, .sort = provekit.Sort.Int }};
                 const atomic_args = [_]provekit.Term{ lhs, rhs };
                 const f = provekit.Atomic("=", &atomic_args);
-                const jcs = try provekit.jcsStringify(std.heap.page_allocator, f);
-                defer std.heap.page_allocator.free(jcs);
+                const jcs = try provekit.writeJson(alloc, f);
+                defer alloc.free(jcs);
+                const stdout = std.io.getStdOut().writer();
                 try stdout.print("{s}", .{jcs});
             }
         """)
     elif fixture_name == "pattern1_bounded_loop":
         code = textwrap.dedent("""\
+            const std = @import("std");
             const provekit = @import("provekit-ir");
             pub fn main() !void {
-                const stdout = @import("std").io.getStdOut().writer();
-                const x1 = provekit.Var("x");
-                const x2 = provekit.Var("x");
-                const x3 = provekit.Var("x");
-                const zero1 = provekit.Num(0);
-                const zero2 = provekit.Num(0);
-                const hundred = provekit.Num(100);
+                const alloc = std.heap.page_allocator;
+                const x1 = provekit.Var("x", provekit.Sort.Int);
+                const x2 = provekit.Var("x", provekit.Sort.Int);
+                const x3 = provekit.Var("x", provekit.Sort.Int);
+                const zero1 = provekit.Term{ .const_term = .{ .value = .{ .int = 0 }, .sort = provekit.Sort.Int }};
+                const zero2 = provekit.Term{ .const_term = .{ .value = .{ .int = 0 }, .sort = provekit.Sort.Int }};
+                const hundred = provekit.Term{ .const_term = .{ .value = .{ .int = 100 }, .sort = provekit.Sort.Int }};
                 const lower_args = [_]provekit.Term{ x1, zero1 };
                 const lower = provekit.Atomic("≥", &lower_args);
                 const upper_args = [_]provekit.Term{ x2, hundred };
@@ -427,11 +431,11 @@ def extract_zig(fixture_name: str) -> Optional[str]:
                 const ant = provekit.And(&conj_args);
                 const inner_args = [_]provekit.Term{ x3, zero2 };
                 const inner = provekit.Atomic("≥", &inner_args);
-                const impl_args = [_]provekit.Formula{ ant, inner };
-                const body = provekit.Implies(&impl_args);
+                const body = provekit.Implies(&ant, &inner);
                 const q = provekit.Forall("x", provekit.Sort.Int, &body);
-                const jcs = try provekit.jcsStringify(std.heap.page_allocator, q);
-                defer std.heap.page_allocator.free(jcs);
+                const jcs = try provekit.writeJson(alloc, q);
+                defer alloc.free(jcs);
+                const stdout = std.io.getStdOut().writer();
                 try stdout.print("{s}", .{jcs});
             }
         """)
