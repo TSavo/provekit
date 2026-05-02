@@ -194,6 +194,7 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
                     post: None,
                     inv: Some(formula),
                     out_binding: "out".into(),
+                evidence: None,
                 });
                 out.lifted += 1;
             }

@@ -498,6 +498,7 @@ fn lift_test_fn_with_helpers(
         post: None,
         inv: Some(wrapped),
         out_binding: "out".into(),
+        evidence: None,
     })
 }
 

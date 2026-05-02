@@ -163,7 +163,7 @@ export function liftToTerm(value: IrTerm | number | bigint | string | boolean | 
 // Evidence (proof certificates)
 // ---------------------------------------------------------------------------
 
-export type ProofType = "smt-lib" | "coq" | "custom";
+export type ProofType = string;  // Open extension: any lowercase kebab-case string
 
 export type EvidenceCertificate = {
   tool: string;

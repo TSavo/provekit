@@ -15,5 +15,6 @@ path = "src/bin/provekit_ir_smt_lib.rs"
 
 [dependencies]
 provekit-ir-compiler = { path = "../provekit-ir-compiler" }
+provekit-ir-types = { path = "../provekit-ir-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }

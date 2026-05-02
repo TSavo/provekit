@@ -1,0 +1,16 @@
+[package]
+name = "provekit-ir-codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt IR code generator from CDDL grammar."
+
+[[bin]]
+name = "provekit-ir-codegen"
+path = "src/main.rs"
+
+[dependencies]
+cddl = "0.10"
+serde.workspace = true
+serde_json.workspace = true

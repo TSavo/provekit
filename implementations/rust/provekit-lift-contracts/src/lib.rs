@@ -193,6 +193,7 @@ fn process(
         post,
         inv,
         out_binding: "out".into(),
+    evidence: None,
     });
     out.lifted += 1;
 }

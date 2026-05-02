@@ -124,6 +124,7 @@ fn visit_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
         post: None,
         inv: Some(wrapped),
         out_binding: "out".into(),
+    evidence: None,
     });
     out.lifted += 1;
 }

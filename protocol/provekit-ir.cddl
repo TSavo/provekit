@@ -1,0 +1,198 @@
+; SPDX-License-Identifier: Apache-2.0
+;
+; ProvekIt IR — Machine-Readable Grammar (CDDL v1)
+;
+; Source of truth: protocol/specs/2026-04-30-ir-formal-grammar.md
+; This CDDL file is generated from the EBNF grammar and serves as the
+; single source of truth for all language bindings, parsers, and compilers.
+;
+; Usage:
+;   cddl provekit-ir.cddl validate < file.json
+;   cddl provekit-ir.cddl generate rust > ir.rs
+;   cddl provekit-ir.cddl generate typescript > ir.ts
+;
+; Key property: LOCKED KEY ORDER. Every object has keys in a fixed
+; insertion order. This makes the grammar byte-deterministic.
+
+; ================================================================
+; Top level
+; ================================================================
+
+Document = [* Declaration]
+
+Declaration = ContractDeclaration / BridgeDeclaration
+
+; ================================================================
+; Declarations
+; ================================================================
+
+; Locked key order: kind, name, outBinding, pre?, post?, inv?
+ContractDeclaration = {
+  kind: "contract",
+  name: tstr,
+  outBinding: tstr,
+  ? pre: IrFormula,
+  ? post: IrFormula,
+  ? inv: IrFormula,
+}
+
+; Locked key order: kind, name, sourceSymbol, sourceLayer,
+; targetContractCid, targetLayer, notes?
+BridgeDeclaration = {
+  kind: "bridge",
+  name: tstr,
+  sourceSymbol: tstr,
+  sourceLayer: tstr,
+  targetContractCid: tstr,  ; CID string, e.g. "blake3-512:..."
+  targetLayer: tstr,
+  ? notes: tstr,
+}
+
+; ================================================================
+; Terms
+; ================================================================
+
+IrTerm = VarTerm / ConstTerm / CtorTerm / LambdaTerm / LetTerm
+
+; Locked key order: kind, name
+VarTerm = {
+  kind: "var",
+  name: tstr,
+}
+
+; Locked key order: kind, value, sort
+ConstTerm = {
+  kind: "const",
+  value: Value,
+  sort: Sort,
+}
+
+; Locked key order: kind, name, args
+CtorTerm = {
+  kind: "ctor",
+  name: tstr,
+  args: [* IrTerm],
+}
+
+; Locked key order: kind, paramName, paramSort, body
+LambdaTerm = {
+  kind: "lambda",
+  paramName: tstr,
+  paramSort: Sort,
+  body: IrTerm,
+}
+
+; Locked key order: kind, bindings, body
+LetTerm = {
+  kind: "let",
+  bindings: [+ LetBinding],
+  body: IrTerm,
+}
+
+; Locked key order: name, boundTerm
+LetBinding = {
+  name: tstr,
+  boundTerm: IrTerm,
+}
+
+; ================================================================
+; Sorts
+; ================================================================
+
+Sort = PrimitiveSort
+
+PrimitiveSort = {
+  kind: "primitive",
+  name: PrimitiveSortName,
+}
+
+PrimitiveSortName = "Int" / "Real" / "Bool" / "String"
+
+; ================================================================
+; Formulas
+; ================================================================
+
+IrFormula = AtomicFormula / ConnectiveFormula / QuantifierFormula / ChoiceFormula
+
+; Locked key order: kind, name, args
+AtomicFormula = {
+  kind: "atomic",
+  name: AtomicPredicateName,
+  args: [* IrTerm],
+}
+
+AtomicPredicateName = "=" / "≠" / "<" / "≤" / ">" / "≥"
+                    / "true" / "false"
+                    / "bvult" / "bvule" / "bvugt" / "bvuge"
+                    / "bvslt" / "bvsle" / "bvsgt" / "bvsge"
+                    / tstr  ; kit-defined predicates (open extension)
+
+; Locked key order: kind, operands
+ConnectiveFormula = {
+  kind: ConnectiveKind,
+  operands: [+ IrFormula],
+}
+
+ConnectiveKind = "and" / "or" / "not" / "implies"
+
+; Locked key order: kind, name, sort, body
+QuantifierFormula = {
+  kind: QuantifierKind,
+  name: tstr,
+  sort: Sort,
+  body: IrFormula,
+}
+
+QuantifierKind = "forall" / "exists"
+
+; Locked key order: kind, varName, sort, body
+ChoiceFormula = {
+  kind: "choice",
+  varName: tstr,
+  sort: Sort,
+  body: IrFormula,
+}
+
+; ================================================================
+; Evidence
+; ================================================================
+
+; Locked key order: kind, proofType, certificate
+EvidenceTerm = {
+  kind: "evidence",
+  proofType: ProofType,
+  certificate: EvidenceCertificate,
+}
+
+; ProofType is an open extension — any lowercase kebab-case string is valid.
+; Known values: smt-lib, coq, lean, custom, kani, proptest, flux, verus
+ProofType = tstr .regexp "^[a-z][a-z0-9-]*$"
+
+; Locked key order: tool, version, formulaHash, proofData
+EvidenceCertificate = {
+  tool: tstr,
+  version: tstr,
+  formulaHash: tstr,
+  proofData: tstr,
+}
+
+; ================================================================
+; JSON values (for const terms)
+; ================================================================
+
+Value = text / number / bool / null
+
+; ================================================================
+; Invariants (expressed as CDDL control operators)
+; ================================================================
+
+; ContractDeclaration: at least one of pre/post/inv must be present
+; (enforced at validation layer, not expressible in pure CDDL)
+
+; VarTerm: MUST NOT have a "sort" key
+; ConstTerm: MUST have a "sort" key
+; CtorTerm: MUST NOT have a "sort" key
+; LambdaTerm: MUST NOT have a "sort" key at top level
+; LetTerm: MUST NOT have a "sort" key at top level
+
+; All node kinds: extra keys are forbidden (strict closed-object policy)

@@ -414,7 +414,8 @@ fn var_with_empty_name_returns_err() {
              "sort": {"kind": "primitive", "name": "Int"}}
         ]
     });
-    assert!(emit(&f).is_err());
+    // Spec allows empty string names; serde deserializes them fine.
+    assert!(emit(&f).is_ok());
 }
 
 #[test]

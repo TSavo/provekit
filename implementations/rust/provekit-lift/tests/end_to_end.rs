@@ -244,6 +244,7 @@ fn cli_runs_against_fixtures() {
         workspace: Some(fixtures_dir()),
         target_dir: Some(out.clone()),
         quiet: true,
+        rpc: false,
     };
     let code = provekit_lift::run_cli(flags);
     assert_eq!(code, 0);

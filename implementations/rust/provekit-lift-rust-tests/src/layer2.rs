@@ -422,6 +422,7 @@ fn classify_for_loop(
         post: None,
         inv: Some(quantified),
         out_binding: "out".into(),
+    evidence: None,
     });
     out.lifted += 1;
     out.bounded_loop_lifted += 1;
@@ -599,6 +600,7 @@ fn classify_helper_inlining(
             post: None,
             inv: Some(inlined),
             out_binding: "out".into(),
+        evidence: None,
         });
         out.lifted += 1;
         out.helper_inlined_lifted += 1;
@@ -753,6 +755,7 @@ fn classify_characterization(
         post: None,
         inv: Some(body),
         out_binding: "out".into(),
+    evidence: None,
     });
     out.lifted += 1;
     out.characterization_lifted += 1;

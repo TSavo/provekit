@@ -494,12 +494,7 @@ pub fn mint_proof(
                 deduplicated += 1;
                 continue;
             } else {
-                // Skip duplicate with different body — log warning but don't fail
-                eprintln!(
-                    "provekit-lift: warn: skipping duplicate contract `{}` with different body",
-                    d.name
-                );
-                continue;
+                return Err(LiftMintError::NameCollisionDifferentIr(d.name.clone()));
             }
         }
 

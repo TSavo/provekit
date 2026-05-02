@@ -297,7 +297,7 @@ fn fixtures() -> Vec<Json> {
         // boolean const + string const
         json!({"kind": "atomic", "name": "=", "args": [
             {"kind": "var", "name": "flag"},
-            {"kind": "const", "value": true}
+            {"kind": "const", "value": true, "sort": {"kind": "primitive", "name": "Int"}}
         ]}),
         // multiple free vars exercising sort order in declare-const block
         json!({"kind": "and", "operands": [

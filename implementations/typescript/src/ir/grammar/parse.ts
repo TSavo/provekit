@@ -330,8 +330,6 @@ function parseBridgeDeclaration(
 // Evidence
 // ---------------------------------------------------------------------------
 
-const ACCEPTED_PROOF_TYPES = new Set<EvidenceTerm["proofType"]>(["smt-lib", "coq", "custom"]);
-
 function parseEvidenceValue(value: unknown, path: string, _opts: ParseOptions): EvidenceTerm {
   const obj = expectObject(value, path);
   enforceClosedKeys(obj, path, ["kind", "proofType", "certificate"], []);
@@ -344,13 +342,6 @@ function parseEvidenceValue(value: unknown, path: string, _opts: ParseOptions): 
     });
   }
   const proofType = expectString(obj["proofType"], `${path}/proofType`, "proofType string");
-  if (!ACCEPTED_PROOF_TYPES.has(proofType as EvidenceTerm["proofType"])) {
-    throw new GrammarParseError({
-      path: `${path}/proofType`,
-      expected: 'ProofType: "smt-lib" | "coq" | "custom"',
-      actual: proofType,
-    });
-  }
   const certObj = expectObject(obj["certificate"], `${path}/certificate`);
   enforceClosedKeys(certObj, `${path}/certificate`, ["tool", "version", "formulaHash", "proofData"], []);
   const certificate = {

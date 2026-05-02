@@ -26,8 +26,13 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+pub mod convert;
 pub mod parse;
 pub mod serialize;
+
+// Re-export serde types so consumers can use both authoring API and
+// generated compiler types from a single import.
+pub use provekit_ir_types as ir_types;
 
 // ---------------------------------------------------------------------------
 // Sort

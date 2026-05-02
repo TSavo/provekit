@@ -218,6 +218,7 @@ fn process(name: String, attrs: &[syn::Attribute], source_path: &str, out: &mut 
         post,
         inv: None,
         out_binding: "out".into(),
+    evidence: None,
     });
     out.lifted += 1;
 }

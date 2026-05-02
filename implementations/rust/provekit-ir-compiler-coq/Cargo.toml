@@ -8,6 +8,7 @@ description = "ProvekIt: Coq IR compiler. Emits Coq code from IR contracts."
 
 [dependencies]
 provekit-ir-compiler = { path = "../provekit-ir-compiler" }
+provekit-ir-types = { path = "../provekit-ir-types" }
 serde_json.workspace = true
 
 [dev-dependencies]

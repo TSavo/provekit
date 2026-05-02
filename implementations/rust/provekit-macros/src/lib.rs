@@ -232,6 +232,7 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
                 post: __post,
                 inv: __inv,
                 out_binding: __out_binding,
+                evidence: None,
             }
         }
 

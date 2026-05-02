@@ -10,6 +10,7 @@ description = "ProvekIt: Rust kit. Authoring API + IR-JSON serializer for v1.1.0
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+provekit-ir-types = { path = "../provekit-ir-types" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
