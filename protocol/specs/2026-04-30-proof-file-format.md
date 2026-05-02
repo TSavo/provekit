@@ -38,6 +38,13 @@ catalog-memento-with-embedded-members = {
   name: tstr,
   version: tstr,
 
+  ; Optional: hash of the compiled binary this proof bundle covers.
+  ; When present, the framework checks that the running binary's hash
+  ; matches before trusting any claims in this bundle. This is the
+  ; supply chain anchor: change any bit in the binary and the proof
+  ; becomes invalid.
+  ? binaryCid: cid,
+
   ; Map from member CID to the member's full SIGNED envelope, encoded
   ; as canonical bytes (JCS for memento envelopes per the memento
   ; envelope grammar) and embedded as a CBOR byte string. The map key
@@ -127,6 +134,14 @@ A `.proof` file passes integrity verification iff:
 4. **Member signatures are valid** for each member that requires
    signing per the memento envelope grammar.
 
+5. **Binary CID matches running artifact (when present).** If the
+   catalog includes `binaryCid`, the verifier MUST check that the
+   hash of the currently executing binary equals `binaryCid`. This is
+   the supply chain anchor: a `.proof` bundle is only valid for the
+   exact binary it was minted against. Recompilation, runtime patches,
+   or supply-chain injections change the binary CID and cause the
+   proof to be rejected.
+
 Fail-closed by default. Any rule violation produces a structured
 rejection with the failing rule's ID; verifiers MUST NOT accept
 partially-valid bundles.
@@ -186,8 +201,10 @@ A consumer's verifier walks a `.proof` file as follows:
      (extension declarations, bridge declarations, property mementos
      all integrate into their respective registries)
 6. Verify the catalog's own signature
-7. Walk depends-on for transitive .proof files in other packages
-8. (Optional) If a manifest hint was present and disagreed with the
+7. If `binaryCid` is present: compute hash(running_binary); verify
+   equals `binaryCid`; else REJECT (supply chain anchor)
+8. Walk depends-on for transitive .proof files in other packages
+9. (Optional) If a manifest hint was present and disagreed with the
    discovered file's CID, emit a warning. Do NOT reject.
 ```
 
@@ -229,8 +246,9 @@ A consumer conforms iff it:
 3. Decodes the CBOR envelope (rejecting non-deterministic encodings).
 4. Recomputes and verifies each member body's hash matches its CID.
 5. Verifies all required signatures.
-6. Fail-closes on any verification failure (rules 2–5).
-7. Warns but does NOT fail on a manifest hint mismatch.
+6. If `binaryCid` is present, verifies it matches the running binary.
+7. Fail-closes on any verification failure (rules 2–6).
+8. Warns but does NOT fail on a manifest hint mismatch.
 
 ## 8. The architectural commitment, restated
 

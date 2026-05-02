@@ -390,6 +390,107 @@ source contract's postcondition implies the target contract's postcondition.
 This is what enables cross-domain claim transfer: a proof about the source
 contract transfers to any other contract that bridges to the same target.
 
+---
+
+### Why bridges pin proofs (and why proofs pin binaries)
+
+The bridge carries `targetProofCid` so that the framework can fetch the
+**exact** `.proof` bundle that contains the target contract, not just any
+bundle with a contract of the same name. This is what makes cross-platform
+verification **sound** rather than merely convenient.
+
+Consider the transitive chain:
+
+```
+my_parse_int (your Rust function)
+  → myParseInt-v1 (your contract, CID A)
+    → bridge: A → js-parseInt-v24 @ node-v24-proof (CID P1)
+      → bridge: js-parseInt-v24 → ref-parseInt-v1 @ ecma262-v14-proof (CID P2)
+        → witnessed proof: ref-parseInt-v1 verified by Coq (CID W)
+```
+
+Every hop is a **hash lookup**. There are no string names in the trusted
+computation. The framework resolves `A` to `P1` to `P2` to `W` by content
+address alone. If `@types/node` publishes a new version, `P1` changes, the
+`targetProofCid` in your bridge no longer resolves, and your build **fails**
+at compile time until you re-verify against the new proof.
+
+### The supply chain security model
+
+A `.proof` bundle is a **signed bill of materials**. The developer signs it
+with Ed25519. The bundle contains:
+
+| Field | Purpose |
+|---|---|
+| `name` | Human-readable package identifier |
+| `version` | Semantic version |
+| `binary_cid` | **Hash of the compiled binary this proof covers** |
+| `members` | Map from CID → canonical bytes of every memento in the bundle |
+| `signer` | CID of the signer's public-key memento |
+| `signature` | Ed25519 signature of the unsigned body |
+
+The `binary_cid` is the **supply chain anchor**. When the framework loads a
+`.proof` bundle, it checks:
+
+1. Signature is valid (developer signed this bundle)
+2. `binary_cid` matches the hash of the currently running binary
+3. Every member CID matches the BLAKE3-512 of its canonical bytes
+
+If any check fails, the bundle is **rejected**. This means:
+
+- **Compiler backdoors** are detected (different binary → different CID)
+- **Runtime patches** are detected (JIT override → binary hash changes)
+- **Supply chain injection** is detected (wrong package → wrong CID)
+- **Dependency confusion** is detected (wrong version → wrong CID)
+
+### The witnessed proof memento
+
+Separately from the `.proof` bundle, the **build script** mints a **witnessed
+proof memento** when it verifies your function body against the target
+contract:
+
+```
+Memento {
+  bindingHash: hash({ sourceLayer, sourceSymbol }),
+  propertyHash: hash("bridge:" + sourceSymbol),
+  verdict: "holds",
+  producer: "z3@4.13",
+  inputCids: [A, B],
+  evidence: {
+    kind: "evidence",
+    proofType: "smt-lib",
+    certificate: {
+      tool: "z3",
+      version: "4.13.0",
+      formulaHash: hash(formula),
+      proofData: "(unsat)"
+    }
+  }
+}
+```
+
+This memento is **not** inside the `.proof` bundle (which is signed by the
+package author). It is minted by **your** build script, signed by **your**
+build key, and stored in **your** `target/provekit/` directory. It is the
+witness that says: "I, the build system, checked that the body of
+`my_parse_int` satisfies contract `A`, and here is the Z3 model to prove it."
+
+Together, the `.proof` bundle (developer-signed, pins the binary) and the
+witnessed proof memento (build-system-signed, pins the verification event)
+form a **closed loop**:
+
+```
+Developer: "Here is my binary and its contracts, signed by me."
+Build system: "I verified your function body against those contracts,
+signed by me."
+Framework: "Both signatures check out, hashes match, transitive bridge
+resolves. The claim transfers to the reference spec."
+```
+
+Any change — source edit, compiler upgrade, dependency bump — changes a CID,
+breaks the chain, and trips an alarm at compile time. This is by design.
+Verification is not a runtime check; it is a **compile-time hash-chain gate**.
+
 ## Formulas
 
 ### IrFormula
