@@ -1,0 +1,3 @@
+*.o
+tests/test_runner
+tests/test_runner.dSYM/
