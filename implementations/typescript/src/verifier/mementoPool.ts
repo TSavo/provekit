@@ -25,6 +25,26 @@ export interface MementoPool {
   formulaToMemento: Record<string, string>;
   /** sourceSymbol → bridge envelope. */
   bridgesBySymbol: Record<string, ClaimEnvelope>;
+  /**
+   * Bundle (.proof file) CID → set of member CIDs the bundle contained.
+   *
+   * Stored as a sorted/deduped array per bundle (rather than a Set) so the
+   * pool round-trips cleanly through the Stage cache witness, which uses
+   * JSON.stringify (Sets do not survive JSON).
+   *
+   * Required to enforce BridgeDeclaration.ConsequentBundlePinned per
+   * protocol/specs/2026-04-30-ir-formal-grammar.md
+   * § "Bridge target pinning: the shim-poisoning vector". A bridge's
+   * targetProofCid names the bundle that is allowed to discharge it; we
+   * must answer "is this contract member from THAT bundle?".
+   *
+   * Multi-valued in the forward direction: the same member CID can
+   * legitimately appear in two bundles (an honest one and a poisoned
+   * one). An inverse map (member -> bundle) would be last-writer-wins
+   * and would silently swap the poisoned bundle in for the honest one.
+   * Mirrors Rust's `MementoPool.bundle_members` (PR #13).
+   */
+  bundleMembers: Record<string, string[]>;
   errors: Array<{ proofFile: string; reason: string }>;
 }
 
@@ -33,8 +53,30 @@ export function createMementoPool(): MementoPool {
     mementos: {},
     formulaToMemento: {},
     bridgesBySymbol: {},
+    bundleMembers: {},
     errors: [],
   };
+}
+
+/**
+ * Record that `memberCid` was loaded from `.proof` bundle `bundleCid`.
+ * Idempotent: re-recording the same pair is a no-op. The forward direction
+ * is preserved (one bundle to many members); see MementoPool.bundleMembers.
+ */
+export function recordBundleMember(
+  pool: MementoPool,
+  bundleCid: string,
+  memberCid: string,
+): void {
+  const existing = pool.bundleMembers[bundleCid];
+  if (!existing) {
+    pool.bundleMembers[bundleCid] = [memberCid];
+    return;
+  }
+  if (!existing.includes(memberCid)) {
+    existing.push(memberCid);
+    existing.sort();
+  }
 }
 
 /** Compute the CID for a formula (any JSON value). The hash IS the boundary. */

@@ -21,7 +21,12 @@ import type { Stage } from "../types.js";
 import { decodeProofEnvelope } from "../../proofEnvelope/index.js";
 import { computeEnvelopeCid } from "../../claimEnvelope/cid.js";
 import type { ClaimEnvelope, BridgeEvidence } from "../../claimEnvelope/types.js";
-import { createMementoPool, insertMemento, type MementoPool } from "../../verifier/mementoPool.js";
+import {
+  createMementoPool,
+  insertMemento,
+  recordBundleMember,
+  type MementoPool,
+} from "../../verifier/mementoPool.js";
 
 export const LOAD_ALL_PROOFS_CAPABILITY = "load-all-proofs";
 
@@ -81,13 +86,15 @@ export function makeLoadAllProofsStage(
         // Self-identifying CID filenames per protocol v1.1.0:
         //   "<algorithm>-<bits>:<hex>.proof"
         const m = filename.match(/^([a-z0-9]+-[0-9]+:[0-9a-f]+)\.proof$/);
+        // The bundle CID is always the bytes hash; the filename match is only
+        // a trust-root check, not the source of the bundle CID.
+        const bundleCid = computeCid(bytes);
         if (m) {
           const filenameCid = m[1]!;
-          const derivedCid = computeCid(bytes);
-          if (derivedCid !== filenameCid) {
+          if (bundleCid !== filenameCid) {
             errors.push({
               proofFile: proofPath,
-              reason: `rule 1 (trust root): filename CID ${filenameCid} != content hash ${derivedCid}`,
+              reason: `rule 1 (trust root): filename CID ${filenameCid} != content hash ${bundleCid}`,
             });
             continue;
           }
@@ -123,6 +130,12 @@ export function makeLoadAllProofsStage(
           }
           // The memento IS the verification; inserting it IS caching.
           insertMemento(pool, memberCid, env);
+          // Track bundle membership so resolveBridgeTarget can enforce
+          // BridgeDeclaration.ConsequentBundlePinned. The bundle's CID is
+          // the .proof file's content hash. A given member CID may
+          // legitimately appear in more than one bundle; the per-bundle
+          // set is what matters at resolve time. Mirrors Rust PR #13.
+          recordBundleMember(pool, bundleCid, memberCid);
           if (env.evidence?.kind === "bridge") {
             const ev = env.evidence as BridgeEvidence;
             pool.bridgesBySymbol[ev.body.sourceSymbol] = env;

@@ -30,6 +30,14 @@ export interface BridgeCallSite {
   bridgeTargetContractCid: string;
   bridgeSourceLayer: string;
   bridgeTargetLayer: string;
+  /**
+   * Forward pin: the `.proof` bundle CID this bridge commits to as the
+   * source of its consequent contract member. `undefined` for bridges
+   * that pre-date the `targetProofCid` field. resolveBridgeTarget gates
+   * resolution on this when present (see BridgeDeclaration.
+   * ConsequentBundlePinned in protocol/specs/2026-04-30-ir-formal-grammar.md).
+   */
+  bridgeTargetProofCid?: string;
   /** Name of the property memento (from its scope) the call site appears in. */
   propertyName: string;
   /** CID of the property memento containing this call site. */
@@ -49,7 +57,7 @@ export interface MakeEnumerateBridgeCallsitesStageDeps {
 export function makeEnumerateBridgeCallsitesStage(
   deps: MakeEnumerateBridgeCallsitesStageDeps = {},
 ): Stage<EnumerateBridgeCallsitesInput, EnumerateBridgeCallsitesOutput> {
-  const producedBy = deps.producerVersion ?? "enumerateBridgeCallsites@v3";
+  const producedBy = deps.producerVersion ?? "enumerateBridgeCallsites@v4";
 
   return {
     name: "enumerateBridgeCallsites",
@@ -128,11 +136,21 @@ function walkTermForBridgeCalls(
     const bridgeEnvelope = bridgesBySymbol[term.name];
     if (bridgeEnvelope) {
       const ev = bridgeEnvelope.evidence as BridgeEvidence;
+      // Forward pin extracted into the call site so resolveBridgeTarget can
+      // enforce BridgeDeclaration.ConsequentBundlePinned without a second
+      // lookup. Empty string is treated as absent. Mirrors Rust PR #13's
+      // enumerate_callsites.rs:114-118.
+      const rawTargetProofCid = ev.body.targetProofCid;
+      const bridgeTargetProofCid =
+        typeof rawTargetProofCid === "string" && rawTargetProofCid.length > 0
+          ? rawTargetProofCid
+          : undefined;
       out.push({
         bridgeIrName: ev.body.sourceSymbol,
         bridgeTargetContractCid: ev.body.targetContractCid,
         bridgeSourceLayer: ev.body.sourceLayer,
         bridgeTargetLayer: ev.body.targetLayer,
+        ...(bridgeTargetProofCid !== undefined ? { bridgeTargetProofCid } : {}),
         propertyName,
         propertyCid,
         argTerms: term.args,
