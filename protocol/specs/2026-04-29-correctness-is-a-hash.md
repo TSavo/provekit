@@ -644,6 +644,26 @@ civilization-scale usage tractable. Same scalability properties as
 Bitcoin's lightweight clients and IPFS's path resolution. Same
 primitives.
 
+### The `memcmp` theorem
+
+> **A petabyte of proof is verified correct by `memcmp(x, y, 64)`.**
+
+The evidence memento carries:
+- `formulaHash`: the hash of what was proved (64 bytes)
+- `proofData`: the hash of the proof bytes themselves (64 bytes)
+
+To verify the petabyte proof corpus:
+1. Hash the formula → `memcmp(result, formulaHash, 64)`
+2. Hash the proof data → `memcmp(result, proofData, 64)`
+3. Verify the memento signature → `memcmp(re-derived, claimedCID, 64)`
+
+Three `memcmp` calls, 192 bytes total. The entire proof is validated.
+
+The heavy data (SMT traces, Coq scripts, solver logs) is archived by
+content hash. The working set is just hashes. This is not compression;
+it is **cryptographic commitment**. The hash IS the proof that the data
+is correct.
+
 ## Verification economics
 
 **Verification cost = `min(any sufficient analysis cost) / consumers`.**
