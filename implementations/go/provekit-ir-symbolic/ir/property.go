@@ -168,21 +168,34 @@ type ContractArgs struct {
 
 // BridgeSpec is the input to Bridge(). The kit collector stores it as
 // a BridgeDeclaration.
+//
+// SourceContractCid identifies the source-layer contract being bridged
+// from. TargetProofCid is the CID of the .proof bundle containing the
+// target contract; it makes cross-bundle lookup explicit and content-
+// addressed (per protocol/specs/2026-04-30-ir-formal-grammar.md, the
+// targetProofCid invariant promoted normative in PR #10).
 type BridgeSpec struct {
 	SourceSymbol      string
 	SourceLayer       string
+	SourceContractCid string
 	TargetContractCid string
+	TargetProofCid    string
 	TargetLayer       string
 	Notes             string
 }
 
-// BridgeDeclaration is unchanged across the v1.1.0 cut; bridges still
-// declare host-language symbol → contract-memento CID linkage.
+// BridgeDeclaration is the v1.1.0+ shape with sourceContractCid +
+// targetProofCid pinning per the IR formal grammar. Locked key order
+// (post PR #10): kind, name, sourceSymbol, sourceLayer,
+// sourceContractCid, targetContractCid, targetProofCid, targetLayer,
+// notes? — must be byte-equal across all four kits.
 type BridgeDeclaration struct {
 	Name              string
 	SourceSymbol      string
 	SourceLayer       string
+	SourceContractCid string
 	TargetContractCid string
+	TargetProofCid    string
 	TargetLayer       string
 	Notes             string
 }
@@ -211,8 +224,20 @@ func (b BridgeDeclaration) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	buf.Write(encoded)
+	buf.WriteString(`,"sourceContractCid":`)
+	encoded, err = encodeJSON(b.SourceContractCid)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
 	buf.WriteString(`,"targetContractCid":`)
 	encoded, err = encodeJSON(b.TargetContractCid)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteString(`,"targetProofCid":`)
+	encoded, err = encodeJSON(b.TargetProofCid)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +428,9 @@ func Bridge(name string, spec BridgeSpec) {
 		Name:              name,
 		SourceSymbol:      spec.SourceSymbol,
 		SourceLayer:       spec.SourceLayer,
+		SourceContractCid: spec.SourceContractCid,
 		TargetContractCid: spec.TargetContractCid,
+		TargetProofCid:    spec.TargetProofCid,
 		TargetLayer:       spec.TargetLayer,
 		Notes:             spec.Notes,
 	})

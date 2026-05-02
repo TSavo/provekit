@@ -10,6 +10,16 @@ import "fmt"
 //
 // IRReturnSort: same shape as a SortRef.
 //
+// SourceContractCID identifies the source-layer contract being bridged
+// from. TargetProofCID is the CID of the .proof bundle that contains
+// the target contract; together they make the cross-bundle lookup
+// content-addressed. Both required by the IR formal grammar's
+// BridgeDeclaration locked key order (PR #10 promoted normative). When
+// non-empty they appear in the bridge body alongside the target
+// contract pin; when empty they are omitted (mirrors the TS / Rust
+// `omit-when-undefined` rule for `notes`, extended to all newly-added
+// optional surfaces during the v1.1 → v1.3 transition).
+//
 // Notes: optional. Empty string → field omitted from the body.
 //
 // bindingHash and propertyHash are DERIVED per the v1.1.0 spec; callers
@@ -19,7 +29,9 @@ type BridgeMintArgs struct {
 	ProducedAt        string
 	SourceSymbol      string
 	SourceLayer       string
+	SourceContractCID string
 	TargetContractCID string
+	TargetProofCID    string
 	TargetLayer       string
 	IRArgSorts        []interface{}
 	IRReturnSort      interface{}
@@ -55,6 +67,12 @@ func (m *Minter) MintBridge(args BridgeMintArgs) (*Minted, error) {
 		"targetLayer":       args.TargetLayer,
 		"irArgSorts":        args.IRArgSorts,
 		"irReturnSort":      args.IRReturnSort,
+	}
+	if args.SourceContractCID != "" {
+		body["sourceContractCid"] = args.SourceContractCID
+	}
+	if args.TargetProofCID != "" {
+		body["targetProofCid"] = args.TargetProofCID
 	}
 	if args.Notes != "" {
 		body["notes"] = args.Notes

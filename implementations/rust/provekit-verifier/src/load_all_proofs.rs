@@ -161,6 +161,15 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
         // Index for handshake. The memento IS the verification;
         // inserting it into the pool IS caching the verification result.
         pool.insert(cid.clone(), env.clone());
+        // Track bundle membership so resolve_target can enforce
+        // BridgeDeclaration.ConsequentBundlePinned. The bundle's CID is
+        // the .proof file's content hash (derived_full above). A given
+        // member CID may legitimately appear in more than one bundle;
+        // the per-bundle set is what matters at resolve time.
+        pool.bundle_members
+            .entry(derived_full.clone())
+            .or_default()
+            .insert(cid.clone());
         if let Some(ev) = env.get("evidence") {
             if ev.get("kind").and_then(|k| k.as_str()) == Some("bridge") {
                 if let Some(body) = ev.get("body") {

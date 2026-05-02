@@ -29,13 +29,20 @@ func NewBuilder() *Builder {
 }
 
 // Input holds everything Builder.Build needs.
+//
+// BinaryCID, when non-empty, back-pins this catalog to the compiled
+// binary it attests. Per protocol/specs/2026-04-30-proof-file-format.md
+// (v1.3.0): if present, the verifier MUST reject the bundle when the
+// running binary's hash does not match. Empty string ⇒ field omitted
+// from the CBOR map (matches Rust's `Option<String>` skip-when-None).
 type Input struct {
-	Name        string
-	Version     string
-	Members     map[string][]byte // CID → canonical envelope bytes
-	SignerCID   string
-	SignerSeed  [32]byte // raw ed25519 seed
-	DeclaredAt  string   // RFC 3339, e.g. "2026-04-30T12:00:00.000Z"
+	Name       string
+	Version    string
+	BinaryCID  string
+	Members    map[string][]byte // CID → canonical envelope bytes
+	SignerCID  string
+	SignerSeed [32]byte // raw ed25519 seed
+	DeclaredAt string   // RFC 3339, e.g. "2026-04-30T12:00:00.000Z"
 }
 
 // Output of Build: bytes of the deterministic-CBOR .proof + filename CID.
@@ -98,8 +105,12 @@ func encodeMembersMap(members map[string][]byte) []byte {
 }
 
 // bodyPairsUnsigned returns the unsigned-body's pairs (everything but the signature).
+//
+// `binaryCid` is appended only when set (mirrors Rust's `Option<String>`
+// skip-when-None); the outer emitSortedMap re-sorts by bytewise CBOR-
+// encoded-key form, so insertion order does not affect the final bytes.
 func bodyPairsUnsigned(in *Input, membersCBOR []byte) []kvPair {
-	return []kvPair{
+	pairs := []kvPair{
 		{keyCBOR: encodeKey("kind"), valCBOR: encodeStringValue("catalog")},
 		{keyCBOR: encodeKey("name"), valCBOR: encodeStringValue(in.Name)},
 		{keyCBOR: encodeKey("version"), valCBOR: encodeStringValue(in.Version)},
@@ -107,6 +118,13 @@ func bodyPairsUnsigned(in *Input, membersCBOR []byte) []kvPair {
 		{keyCBOR: encodeKey("signer"), valCBOR: encodeStringValue(in.SignerCID)},
 		{keyCBOR: encodeKey("declaredAt"), valCBOR: encodeStringValue(in.DeclaredAt)},
 	}
+	if in.BinaryCID != "" {
+		pairs = append(pairs, kvPair{
+			keyCBOR: encodeKey("binaryCid"),
+			valCBOR: encodeStringValue(in.BinaryCID),
+		})
+	}
+	return pairs
 }
 
 // Build assembles the full .proof file. Steps map 1:1 to the spec.

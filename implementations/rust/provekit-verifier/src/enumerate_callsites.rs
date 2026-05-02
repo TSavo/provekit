@@ -105,6 +105,17 @@ fn walk_term(
             .and_then(|e| e.get("body"))
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
+        // Forward pin: REQUIRED by the current BridgeDeclaration grammar
+        // (see protocol/specs/2026-04-30-ir-formal-grammar.md §
+        // "Bridge target pinning: the shim-poisoning vector"). Older
+        // bridges without this field are tolerated at load time but
+        // can't have ConsequentBundlePinned enforced; resolve_target
+        // emits a soft warning in that case.
+        let bridge_target_proof_cid = bbody
+            .get("targetProofCid")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
         let cs = CallSite {
             bridge_ir_name: name.clone(),
             bridge_target_cid: bbody
@@ -122,6 +133,7 @@ fn walk_term(
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string(),
+            bridge_target_proof_cid,
             property_name: property_name.to_string(),
             property_cid: property_cid.to_string(),
             arg_term: t

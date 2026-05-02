@@ -28,6 +28,16 @@ export interface ProofEnvelopeInput {
   declaredAt?: string;
   /** Other .proof file CIDs this catalog references transitively. */
   dependsOn?: string[];
+  /**
+   * Optional binary attestation back-pin. Self-identifying CID
+   * (`"blake3-512:<hex>"`) of the compiled binary this proof bundle
+   * covers. When present, a verifier MUST reject the bundle if the
+   * running binary's hash differs. Spec:
+   * protocol/specs/2026-04-30-proof-file-format.md (the supply-chain
+   * anchor rule). Included in the signed payload, so tampering with
+   * the pin breaks the catalog signature.
+   */
+  binaryCid?: string;
 }
 
 export interface ProofEnvelope {
@@ -51,6 +61,13 @@ export interface DecodedProofCatalog {
   signature: Uint8Array;
   declaredAt: string;
   dependsOn?: string[];
+  /**
+   * Optional binary attestation back-pin recovered from the catalog.
+   * Set iff the original `buildProofEnvelope` input provided one.
+   * Verifiers that care about supply-chain integrity MUST compare
+   * against the running binary's hash. See proof-file-format spec.
+   */
+  binaryCid?: string;
 }
 
 export interface VerifyResult {
@@ -93,6 +110,12 @@ export function buildProofEnvelope(input: ProofEnvelopeInput): ProofEnvelope {
   if (input.dependsOn && input.dependsOn.length > 0) {
     unsignedBody.dependsOn = [...input.dependsOn].sort();
   }
+  // Per proof-file-format spec: binaryCid is OPTIONAL and, when set,
+  // is part of the signed payload (tampering with it must invalidate
+  // the catalog signature). Key sorting is handled by dag-cbor.
+  if (input.binaryCid !== undefined) {
+    unsignedBody.binaryCid = input.binaryCid;
+  }
 
   const unsignedBytes = cborEncode(unsignedBody);
   const sigBuf = cryptoSign(null, Buffer.from(unsignedBytes), input.signerPrivateKey);
@@ -126,6 +149,9 @@ export function decodeProofEnvelope(bytes: Uint8Array): DecodedProofCatalog {
     declaredAt: String(decoded.declaredAt),
   };
   if (decoded.dependsOn) out.dependsOn = decoded.dependsOn as string[];
+  if (typeof decoded.binaryCid === "string") {
+    out.binaryCid = decoded.binaryCid;
+  }
   return out;
 }
 
@@ -187,6 +213,11 @@ export function verifyProofEnvelope(
     version: catalog.version,
   };
   if (catalog.dependsOn) unsignedBody.dependsOn = catalog.dependsOn;
+  // Mirror the build path: include binaryCid in the signing payload
+  // when present, so tampered pins fail signature verification.
+  if (catalog.binaryCid !== undefined) {
+    unsignedBody.binaryCid = catalog.binaryCid;
+  }
   const signingPayload = cborEncode(unsignedBody);
   const sigOk = cryptoVerify(null, Buffer.from(signingPayload), signerPublicKey, Buffer.from(catalog.signature));
   if (!sigOk) {

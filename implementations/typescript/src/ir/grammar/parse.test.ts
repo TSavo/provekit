@@ -101,6 +101,72 @@ describe("grammar parser — declaration shape", () => {
     expect(decls).toHaveLength(1);
     expect(decls[0]!.kind).toBe("bridge");
   });
+
+  it("parses a bridge declaration with sourceContractCid + targetProofCid", () => {
+    // Spec-locked key order per
+    // protocol/specs/2026-04-30-ir-formal-grammar.md:
+    //   [kind, name, sourceSymbol, sourceLayer, sourceContractCid,
+    //    targetContractCid, targetProofCid, targetLayer, notes]
+    // This is the v1.4 bridge shape with the back- and forward-pin
+    // fields populated.
+    const json =
+      `[{` +
+      `"kind":"bridge",` +
+      `"name":"b",` +
+      `"sourceSymbol":"parseInt",` +
+      `"sourceLayer":"ts-kit",` +
+      `"sourceContractCid":"blake3-512:${"a".repeat(128)}",` +
+      `"targetContractCid":"blake3-512:${"b".repeat(128)}",` +
+      `"targetProofCid":"blake3-512:${"c".repeat(128)}",` +
+      `"targetLayer":"v8"` +
+      `}]`;
+    const decls = parseDocument(json, { strict: true });
+    expect(decls).toHaveLength(1);
+    const decl = decls[0]!;
+    if (decl.kind !== "bridge") throw new Error("expected bridge");
+    expect(decl.sourceContractCid).toBe("blake3-512:" + "a".repeat(128));
+    expect(decl.targetContractCid).toBe("blake3-512:" + "b".repeat(128));
+    expect(decl.targetProofCid).toBe("blake3-512:" + "c".repeat(128));
+    // Round-trip: emit then re-parse must yield byte-identical output.
+    expect(emitDocument(decls)).toBe(json);
+  });
+
+  it("rejects bridge with sourceContractCid/targetProofCid in wrong slot under strict", () => {
+    // Wrong order: sourceContractCid AFTER targetContractCid.
+    const json =
+      `[{` +
+      `"kind":"bridge",` +
+      `"name":"b",` +
+      `"sourceSymbol":"parseInt",` +
+      `"sourceLayer":"ts",` +
+      `"targetContractCid":"blake3-512:${"b".repeat(128)}",` +
+      `"sourceContractCid":"blake3-512:${"a".repeat(128)}",` +
+      `"targetLayer":"v8"` +
+      `}]`;
+    expect(() => parseDocument(json, { strict: true })).toThrowError(
+      GrammarParseError,
+    );
+  });
+
+  it("accepts a v1.1.0-shape bridge that omits the optional pins (backwards-compat)", () => {
+    // No sourceContractCid, no targetProofCid: the legacy peer-kit
+    // shape. Must continue to parse.
+    const json = JSON.stringify([
+      {
+        kind: "bridge",
+        name: "b",
+        sourceSymbol: "parseInt",
+        sourceLayer: "ts",
+        targetContractCid: "blake3-512:" + "b".repeat(128),
+        targetLayer: "v8",
+      },
+    ]);
+    const decls = parseDocument(json, { strict: true });
+    const decl = decls[0]!;
+    if (decl.kind !== "bridge") throw new Error("expected bridge");
+    expect(decl.sourceContractCid).toBeUndefined();
+    expect(decl.targetProofCid).toBeUndefined();
+  });
 });
 
 describe("grammar parser — formula round-trip", () => {

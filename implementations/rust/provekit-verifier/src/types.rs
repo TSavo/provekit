@@ -25,6 +25,17 @@ pub struct MementoPool {
     pub formula_to_memento: BTreeMap<String, String>,
     /// sourceSymbol (IR ctor name) -> bridge envelope JSON.
     pub bridges_by_symbol: BTreeMap<String, Json>,
+    /// Bundle (.proof file) CID -> set of member CIDs the bundle contained.
+    ///
+    /// Required to enforce `BridgeDeclaration.ConsequentBundlePinned`
+    /// (see `protocol/specs/2026-04-30-ir-formal-grammar.md`
+    /// § "Bridge target pinning: the shim-poisoning vector"). A bridge's
+    /// `targetProofCid` names the bundle that is allowed to discharge
+    /// it; we must answer "is this contract member from THAT bundle?".
+    /// Multi-valued because the same member CID can legitimately appear
+    /// in two bundles (an honest one and a poisoned one); we never want
+    /// last-writer-wins to silently swap them.
+    pub bundle_members: BTreeMap<String, std::collections::BTreeSet<String>>,
     pub load_errors: Vec<LoadError>,
 }
 
@@ -290,6 +301,15 @@ pub struct CallSite {
     pub bridge_target_cid: String,
     pub bridge_source_layer: String,
     pub bridge_target_layer: String,
+    /// Forward pin: the specific `.proof` bundle CID this bridge commits
+    /// to as its consequent. `None` for legacy bridges that pre-date the
+    /// `targetProofCid` field (kept loadable for back-compat; resolve_target
+    /// emits a soft warning since `ConsequentBundlePinned` cannot be
+    /// enforced when the field is absent). For bridges authored against
+    /// the current grammar this MUST be `Some`; see
+    /// `protocol/specs/2026-04-30-ir-formal-grammar.md`
+    /// § "Bridge target pinning: the shim-poisoning vector".
+    pub bridge_target_proof_cid: Option<String>,
     pub property_name: String,
     pub property_cid: String,
     pub arg_term: Option<Json>,

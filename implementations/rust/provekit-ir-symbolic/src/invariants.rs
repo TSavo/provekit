@@ -14,12 +14,9 @@
 // INVARIANTS (27 total) - see protocol/specs/2026-04-30-ir-formal-grammar.md
 // ============================================================================
 
-use std::rc::Rc;
-
 use provekit_ir_symbolic::{
-    and_, atomic_, contract, forall, make_var, num, not_, implies,
-    lambda, let_term, choice,
-    ContractArgs, Int, String_, Term,
+    and_, atomic_, choice, contract, forall, implies, lambda, let_term, make_var, not_, num,
+    ContractArgs, Int, String_,
 };
 
 /// Collect all invariant contracts for verification and minting.

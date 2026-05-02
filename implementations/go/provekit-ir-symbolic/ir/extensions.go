@@ -75,12 +75,21 @@ type ExtensionDeclaration struct {
 
 // PrimitiveBridgeDeclaration is the bridge-memento body for a kit
 // primitive that references a deeper-layer authority.
+//
+// SourceContractCID + TargetProofCID mirror the IR formal grammar's
+// BridgeDeclaration fields (PR #10 normative). Empty strings are
+// omitted from the JSON form (json:"...,omitempty") to preserve byte-
+// equivalence with the TS / Rust / C++ kits during the v1.1 → v1.3
+// transition; producers SHOULD set them once the surrounding tooling
+// emits the pinning fields end-to-end.
 type PrimitiveBridgeDeclaration struct {
 	IRName            string    `json:"irName"`
 	IRArgSorts        []SortRef `json:"irArgSorts"`
 	IRReturnSort      SortRef   `json:"irReturnSort"`
 	SourceLayer       string    `json:"sourceLayer"`
+	SourceContractCID string    `json:"sourceContractCid,omitempty"`
 	TargetContractCID string    `json:"targetContractCid"`
+	TargetProofCID    string    `json:"targetProofCid,omitempty"`
 	TargetLayer       string    `json:"targetLayer"`
 	Notes             string    `json:"notes,omitempty"`
 }

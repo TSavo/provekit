@@ -92,7 +92,7 @@ The two pillars are non-pluggable. The decoration is. This is the architectural 
 The Rust workspace at `implementations/rust/provekit-self-contracts/` carries the kit's own contracts: invariants over the JCS encoder's key-sort order, the CBOR encoder's integer-shortest-form rule, the canonicalizer's idempotence under double-application, the signer's deterministic output for a fixed seed. The published `.proof` of the self-contracts is pinned at:
 
 ```
-self-contracts (stable; v1.1.0+)    blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
+self-contracts (stable; v1.1.0+)    blake3-512:3c905e3b27d279fb5d11e49af10d8f1d8c83aec207d0bb695d08cacba5c3192e56457d4683d93e71ffd18bd0acb65b72a2b49404490bce809e8dc1df7fd0bac8
 ```
 
 A peer that runs `provekit verify --target self` performs the recursive verification: the protocol verifying the protocol. Success demonstrates that the implementation satisfies the formal claims the protocol makes about itself. The pinned CID is what such a successful run produces over the current v1.2.0 source tree (the contracts haven't changed since v1.1.0; v1.2.0 is additive, so the self-contracts CID is stable across the version bump).
@@ -318,7 +318,7 @@ memento envelope grammar       blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e
 proof substrate                blake3-512:ad53d6c59ee08270a48715376cc211f964ff44a55b3318d68a402e9c915ff593d5a5bbbd424f7777e2bcfe89d6c5bd2b49efcb5aae7de24752f3bcabb90484ae
 proof file format              blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3
 protocol catalog (v1.3.1)      blake3-512:dab2eca97eaea7cc107b1ff3f2326094d804a5e91749bf8e9caa36cd049dc0ae1cb65afb353af8fcd271f87e9e0fc7e7710ec6a68666da6a11f802bc304ff799
-self-contracts (stable; v1.1.0+)        blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
+self-contracts (stable; v1.1.0+)        blake3-512:3c905e3b27d279fb5d11e49af10d8f1d8c83aec207d0bb695d08cacba5c3192e56457d4683d93e71ffd18bd0acb65b72a2b49404490bce809e8dc1df7fd0bac8
 signatures and non-repudiation blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c
 ```
 
@@ -336,7 +336,7 @@ $ cargo build --release \
     --bin mint-self-contracts
 $ implementations/rust/target/release/mint-self-contracts | \
     grep "catalog CID:"
-  catalog CID:        blake3-512:b692f43a151f88aa31b998adaa091b2ac7ebad231c3c2b63426d93a8090de688bc8f12e02fe6ef901a513c4bf89dbffc884cd1164fa566fd1a757cf478434dfe
+  catalog CID:        blake3-512:3c905e3b27d279fb5d11e49af10d8f1d8c83aec207d0bb695d08cacba5c3192e56457d4683d93e71ffd18bd0acb65b72a2b49404490bce809e8dc1df7fd0bac8
 ```
 
 **Go** — 47 contracts across 13 slab files (one per public-API Go source file):

@@ -33,6 +33,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+// catalog-format spec rules as machine-enforceable contracts. Independent
+// of the per-Rust-file orchestrator below; lives in its own module so
+// the file/test layout matches its origin (`protocol/specs/2026-04-30-protocol-catalog-format.md`).
+pub mod catalog_format;
+
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
     mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
