@@ -6,7 +6,9 @@ ProvekIt is a content-addressed verification protocol. Every contract, implicati
 
 ## The 30-second pitch
 
-Modern dependency stacks are deep. A Rust project resolves to thousands of crates; an npm tree, tens of thousands. Verifying behavioral correctness across that stack with a tool that walks the AST or invokes a solver per call site is hopeless. ProvekIt collapses the problem: a library publishes signed contract mementos along with its bytes, a consumer's verifier loads them, and the handshake at every call site reduces to `memcmp(local, expected, 64) == 0`. Above the hash is math. Below the hash is physics. The hash itself is one CPU instruction.
+Modern dependency stacks are deep. A Rust project resolves to thousands of crates; an npm tree, tens of thousands. Verifying behavioral correctness across that stack with a tool that walks the AST or invokes a solver per call site is hopeless. ProvekIt collapses the problem: a library publishes a signed `.proof` catalog alongside its bytes, a consumer's verifier loads it, and the handshake at every call site reduces to `memcmp(local, expected, 64) == 0`. Above the hash is math. Below the hash is physics. The hash itself is one CPU instruction.
+
+The `.proof` file IS the package. It contains contracts, bridges, verification evidence, and optionally a content-addressed reference to the compiled binary. The filename IS the trust root: `<cid>.proof`, where `cid` is the BLAKE3-512 of the file's bytes. Change any bit, the CID changes, the old proof is still valid, the new one must be re-verified.
 
 ProvekIt does not compete with `proptest`, `contracts`, `kani`, `prusti`, `hypothesis`, `pydantic`, `zod`, `class-validator`, or `bean-validation`. It sits beneath them. Whatever annotation library a codebase already uses, the lift adapter promotes those annotations to content-addressed signed contracts, with no rewrites and no parallel spec to maintain. Authoring stays where the developer already is. Verification moves underneath.
 
@@ -33,6 +35,7 @@ For a fuller walkthrough, see [docs/getting-started.md](docs/getting-started.md)
 - **A petabyte-to-64-bytes ratio.** Verification of an arbitrarily-deep dependency stack reduces to a 64-byte hash comparison per call site. Tier 1 of the handshake is one CPU instruction. Tier 2 is one signature verification on a cached implication memento. Tier 3 invokes Z3 once per novel `(post, pre)` pair, mints the result, and every future verifier hits Tier 2.
 - **No database.** The "registry" is the BLAKE3-512 hashspace plus whatever bytes you and your peers have published. Same lineage as Bitcoin, Git, IPFS, BitTorrent: addresses are mathematical, populated points are sparse, no central party holds a master copy.
 - **Compile-time checks where the host language allows it.** The `provekit-build` integration (in flight, planned for v1.2) lifts contract violations into compile-time errors in Rust. The proof gate becomes a smarter type system extension, not a runtime probe.
+- **Hash-bounded cross-domain verification.** The `#[provekit::implement(target = "...")]` macro lets a developer explicitly bind a function to a contract by CID. The DAG of bridges provides transitive verification across platforms: EVM bytecode, Solana BPF, WASM, native binaries — all proven against the same reference contract.
 
 ## How verification scales
 
@@ -40,9 +43,39 @@ The handshake is the cost model. Three tiers, in order:
 
 1. **Hash equality.** Publisher's post-hash equals consumer's pre-hash after canonicalization. `memcmp` returns zero. The call site is discharged for free.
 2. **Cached implication.** A signed implication memento exists asserting `post → pre`. The verifier checks the Ed25519 signature once per `(post, pre)` pair and discharges every call site sharing that pair.
-3. **Solver fallback.** Z3 is invoked once per genuinely-novel `(post, pre)` pair. On `unsat`, the verifier mints a fresh implication memento and either keeps it locally, ships it in the project's `.proof`, or pushes to a public implication server. The next verifier in the ecosystem hits Tier 2.
+3. **Solver fallback.** Z3 is invoked once per genuinely-novel `(post, pre)` pair. On `unsat`, the verifier mints a fresh implication memento and either keeps it locally, ships it in the project's `.proof`, or pushes to a public implication server. The next verifier hits Tier 2.
 
 The lattice of cached implications grows monotonically. Cache invalidation is structurally absent: when bytes change, hashes change, and old mementos remain valid for old bytes (Corollary 3 of the lattice tractability theorem at CID `blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07`).
+
+## The `.proof` file: the package IS the proof
+
+A `.proof` file is a CBOR-encoded catalog of mementos, addressed by its own CID. It ships alongside (or replaces) traditional package manifests:
+
+```
+my-package/
+├── my-package.proof      ← THIS IS THE PACKAGE
+│   ├── contracts: [...]
+│   ├── bridges: [...]
+│   ├── binaryCid: "bafy..."     ← optional: pins compiled artifact
+│   └── metadata: {...}          ← decorative, signed, non-normative
+├── src/
+└── ...
+```
+
+The `binaryCid` field is the supply chain anchor: when present, the framework checks that the running binary's hash matches before trusting any claims. A compiler backdoor, runtime patch, or dependency injection changes the binary hash, the proof fails, and the build breaks.
+
+Bridges inside the `.proof` bundle carry `sourceContractCid` and `targetProofCid`, making cross-bundle lookup explicit:
+
+```json
+{
+  "kind": "bridge",
+  "sourceContractCid": "bafy...myParseInt-v1",
+  "targetContractCid": "bafy...ref-parseInt-v1",
+  "targetProofCid": "bafy...ecma262-v14-proof"
+}
+```
+
+The framework fetches the target `.proof` by CID, finds the contract inside it, and verifies the implication. Every hop is content-addressed. Every hop is a hash boundary.
 
 ## Building
 
@@ -78,41 +111,39 @@ BLAKE3 is vendored as portable C source under `tools/blake3-vendored/` (BLAKE3 1
 
 ```sh
 # Rust workspace + Rust tools
-cargo build --release --manifest-path implementations/rust/Cargo.toml
-cargo test  --release --manifest-path implementations/rust/Cargo.toml
+cargo install --path implementations/rust/provekit-cli
 
-# Go (three modules under implementations/go/)
-cd implementations/go/provekit-ir-symbolic && go test ./...
+# TypeScript packages
+cd implementations/typescript && pnpm install && pnpm build
 
-# C++ peer (clang++ + vendored BLAKE3, openssl@3, nlohmann-json)
-tools/build-cpp-self-contracts.sh --build-only
+# Go tools
+cd implementations/go && go build ./...
 
-# TypeScript (pnpm workspace at the repo root)
-pnpm install --frozen-lockfile
-pnpm test
+# C++ tools (requires clang, OpenSSL, nlohmann-json)
+cd implementations/cpp && make
 
-# C# peer (.NET 10)
-dotnet test implementations/csharp/Provekit.sln
-
-# Python lift adapter test suite
-cd implementations/python/provekit-lift-py-tests && pip install -e . && pytest
+# C# tools (requires .NET 10 SDK)
+cd implementations/csharp && dotnet build
 ```
 
-### Known broken: TS launcher binaries
+## Specs and CIDs
 
-The shell launchers `bin/provekit.cjs` / `bin/provekit-lift.cjs` fail on Node 25 because of an `@ipld/dag-cbor` ESM-only + `tsx` CJS-bridge interaction. The vitest invocation `pnpm vitest run implementations/typescript/src/bin/mint-ts-self-contracts.test.ts` is the working invocation for the TS peer (Vitest's Vite ESM loader handles `dag-cbor` cleanly), and is the path CI uses. The launcher fix is tracked separately and is out of scope for the conformance gate.
+| Document | CID |
+|---|---|
+| Protocol catalog (v1.1.0) | `blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106` |
+| IR formal grammar | `blake3-512:6c0127e0d24946d7be75861db20507ccdcfdf968d3333f8aa34083e849d8238d73b3acfaa31880648995a024112182ed6b6002cd489548b4b18f5d4c3768dd96` |
+| Proof file format | `blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3` |
+| Handshake algorithm | `blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925` |
+| Lattice tractability theorem | `blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07` |
+| Signatures and non-repudiation | `blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c` |
 
-## Documentation
+Every spec is in `protocol/specs/`. Every spec has a CID. The `tools/recompute-spec-cids/` crate re-derives every CID and fails on any drift. Run `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify` to check conformance locally.
 
-- [PITCH.md](PITCH.md): the launch post.
-- [PRODUCT.md](PRODUCT.md): what ProvekIt is, who it's for, what it complements.
-- [ARCHITECTURE.md](ARCHITECTURE.md): the four-layer model, the handshake, the lattice.
-- [THESIS.md](THESIS.md): the deeper architectural claim.
-- [docs/getting-started.md](docs/getting-started.md): five-minute walkthrough.
-- [docs/lift-adoption-paths.md](docs/lift-adoption-paths.md): per-source-library adoption guide.
-- [docs/per-language-status.md](docs/per-language-status.md): kit, libs, and adapter matrix.
-- [protocol/specs/](protocol/specs/): the canonical specs, addressed by CID.
+## Read further
 
-## Lineage
-
-Bitcoin proved you can mint trust without a mint. Git proved a content-addressed graph holds a software project's full history. BitTorrent proved a swarm can distribute petabytes without a server. IPFS proved that "the address is the content" generalizes. ProvekIt is one more application of the same primitive, applied to behavioral verification: contracts are mementos, mementos have CIDs, CIDs are addresses, addresses are eternal, and the protocol asks no one's permission to publish.
+- [ARCHITECTURE.md](ARCHITECTURE.md) for the protocol mechanics.
+- [THESIS.md](THESIS.md) for the deeper architectural claim.
+- [PRODUCT.md](PRODUCT.md) for what ProvekIt replaces and complements.
+- [docs/getting-started.md](docs/getting-started.md) for the full install path.
+- [docs/per-language-status.md](docs/per-language-status.md) for kit and adapter coverage.
+- [protocol/specs/](protocol/specs/) for the canonical spec set, addressed by CID.
