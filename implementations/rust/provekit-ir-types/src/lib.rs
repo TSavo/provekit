@@ -6,24 +6,38 @@
 
 use serde::{Deserialize, Serialize};
 
-pub type AtomicPredicateName = String;
-// Known values for AtomicPredicateName:
-//   "="
-//   "≠"
-//   "<"
-//   "≤"
-//   ">"
-//   "≥"
-//   "true"
-//   "false"
-//   "bvult"
-//   "bvule"
-//   "bvugt"
-//   "bvuge"
-//   "bvslt"
-//   "bvsle"
-//   "bvsgt"
-//   "bvsge"
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum Declaration {
+    #[serde(rename = "contract")]
+    Contract {
+        name: String,
+        #[serde(rename = "outBinding")]
+        out_binding: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pre: Option<IrFormula>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        post: Option<IrFormula>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        inv: Option<IrFormula>,
+    },
+    #[serde(rename = "bridge")]
+    Bridge {
+        name: String,
+        #[serde(rename = "sourceSymbol")]
+        source_symbol: String,
+        #[serde(rename = "sourceLayer")]
+        source_layer: String,
+        #[serde(rename = "sourceContractCid")]
+        source_contract_cid: String,
+        #[serde(rename = "targetContractCid")]
+        target_contract_cid: String,
+        #[serde(rename = "targetLayer")]
+        target_layer: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        notes: Option<String>,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
@@ -57,47 +71,48 @@ pub enum IrTerm {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceCertificate {
+    pub tool: String,
+    pub version: String,
+    #[serde(rename = "formulaHash")]
+    pub formula_hash: String,
+    #[serde(rename = "proofData")]
+    pub proof_data: String,
+}
+
+pub type PrimitiveSortName = String;
+// Known values for PrimitiveSortName:
+//   "Int"
+//   "Real"
+//   "Bool"
+//   "String"
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LetBinding {
+    pub name: String,
+    #[serde(rename = "boundTerm")]
+    pub bound_term: IrTerm,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Value {
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "number")]
+    Number,
+    #[serde(rename = "bool")]
+    Bool,
+    #[serde(rename = "null")]
+    Null,
+}
+
+pub type QuantifierKind = String;
+// Known values for QuantifierKind:
+//   "forall"
+//   "exists"
+
 pub type Document = Vec<Declaration>;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum Declaration {
-    #[serde(rename = "contract")]
-    Contract {
-        name: String,
-        #[serde(rename = "outBinding")]
-        out_binding: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pre: Option<IrFormula>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        post: Option<IrFormula>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        inv: Option<IrFormula>,
-    },
-    #[serde(rename = "bridge")]
-    Bridge {
-        name: String,
-        #[serde(rename = "sourceSymbol")]
-        source_symbol: String,
-        #[serde(rename = "sourceLayer")]
-        source_layer: String,
-        #[serde(rename = "targetContractCid")]
-        target_contract_cid: String,
-        #[serde(rename = "targetLayer")]
-        target_layer: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        notes: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum Sort {
-    #[serde(rename = "primitive")]
-    Primitive {
-        name: PrimitiveSortName,
-    },
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PrimitiveSort {
@@ -151,49 +166,6 @@ pub enum IrFormula {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Value {
-    #[serde(rename = "text")]
-    Text,
-    #[serde(rename = "number")]
-    Number,
-    #[serde(rename = "bool")]
-    Bool,
-    #[serde(rename = "null")]
-    Null,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EvidenceCertificate {
-    pub tool: String,
-    pub version: String,
-    #[serde(rename = "formulaHash")]
-    pub formula_hash: String,
-    #[serde(rename = "proofData")]
-    pub proof_data: String,
-}
-
-pub type ConnectiveKind = String;
-// Known values for ConnectiveKind:
-//   "and"
-//   "or"
-//   "not"
-//   "implies"
-
-pub type ProofType = String;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LetBinding {
-    pub name: String,
-    #[serde(rename = "boundTerm")]
-    pub bound_term: IrTerm,
-}
-
-pub type QuantifierKind = String;
-// Known values for QuantifierKind:
-//   "forall"
-//   "exists"
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvidenceTerm {
     pub kind: String,
     #[serde(rename = "proofType")]
@@ -201,12 +173,42 @@ pub struct EvidenceTerm {
     pub certificate: EvidenceCertificate,
 }
 
-pub type PrimitiveSortName = String;
-// Known values for PrimitiveSortName:
-//   "Int"
-//   "Real"
-//   "Bool"
-//   "String"
+pub type ProofType = String;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum Sort {
+    #[serde(rename = "primitive")]
+    Primitive {
+        name: PrimitiveSortName,
+    },
+}
+
+pub type AtomicPredicateName = String;
+// Known values for AtomicPredicateName:
+//   "="
+//   "≠"
+//   "<"
+//   "≤"
+//   ">"
+//   "≥"
+//   "true"
+//   "false"
+//   "bvult"
+//   "bvule"
+//   "bvugt"
+//   "bvuge"
+//   "bvslt"
+//   "bvsle"
+//   "bvsgt"
+//   "bvsge"
+
+pub type ConnectiveKind = String;
+// Known values for ConnectiveKind:
+//   "and"
+//   "or"
+//   "not"
+//   "implies"
 
 pub type Term = IrTerm;
 pub type Formula = IrFormula;

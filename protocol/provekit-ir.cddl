@@ -37,13 +37,14 @@ ContractDeclaration = {
 }
 
 ; Locked key order: kind, name, sourceSymbol, sourceLayer,
-; targetContractCid, targetLayer, notes?
+; sourceContractCid, targetContractCid, targetLayer, notes?
 BridgeDeclaration = {
   kind: "bridge",
   name: tstr,
-  sourceSymbol: tstr,
-  sourceLayer: tstr,
-  targetContractCid: tstr,  ; CID string, e.g. "blake3-512:..."
+  sourceSymbol: tstr,       ; symbol name in source code (lookup key for lifter)
+  sourceLayer: tstr,        ; e.g. "javascript", "rust", "coq"
+  sourceContractCid: tstr,  ; CID of the contract this implementation explicitly carries
+  targetContractCid: tstr,  ; CID of the abstract contract it satisfies
   targetLayer: tstr,
   ? notes: tstr,
 }

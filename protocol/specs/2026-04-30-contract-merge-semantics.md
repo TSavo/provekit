@@ -99,16 +99,37 @@ non-default value and the two values are unequal.
 A ContractDecl authored in the Rust kit and a ContractDecl authored
 in (e.g.) the TypeScript kit are *never* merged, even if they share a
 `name`. Each is minted as its own contract memento under its own CID.
-Cross-language identification happens through a `BridgeDecl` linking
-the two CIDs at the bridge layer. The protocol's `bridge` memento
-role exists precisely to express "the X-language's `parseInt` is
-implemented by the Y-language's `parse_positive_int_correct`" without
-requiring byte-equal IR.
+Cross-language identification happens through a `BridgeDecl` that
+explicitly links a source contract CID (carried by the implementation)
+to a target contract CID (the abstract reference spec).
 
-The orchestrator's merge is therefore scoped to a single `(language,
+The bridge says: "contract `bafy...js-parseInt-v24` satisfies contract
+`bafy...ref-parseInt-v1`." This is a **verifiable claim** — not a symbol
+lookup. The framework checks whether the source contract's postcondition
+implies the target's. If the implication holds, any proof about the source
+transfers to the target, and from there to any other source that also
+bridges to the same target.
+
+This gives us **hash-bounded cross-domain verification**:
+
+```
+JS parseInt claim ──→ js-parseInt-v24 (CID A)
+                          │
+                          ▼ via bridge
+                   ref-parseInt-v1 (CID C)
+                          ▲
+                          │ via bridge
+Rust parse claim ───→ rust-parse-v1 (CID B)
+```
+
+A proof at CID A transfers to CID C, and from CID C to CID B. Each hop
+is a separate, content-addressed, verifiable memento. The bridge is not
+trusted; it is proven.
+
+The orchestrator's merge is scoped to a single `(language,
 implementation)` pair. The Rust `provekit-self-contracts` crate
 merges only Rust-authored contracts; cross-language reconciliation
-happens at the verifier when bridges discharge.
+happens at the verifier when bridge mementos discharge.
 
 ## Operational consequence
 
@@ -155,6 +176,7 @@ in. Nothing here depends on the CID being final.
   extending it to consume `inventory::iter::<ContractRegistration>()`
   is a follow-up task referenced by both the macro crate and this
   spec.
-- Inter-language reconciliation. Bridges already carry the canonical
-  rule there; this spec deliberately does not duplicate it.
+- Bridge verification mechanics. Bridges carry explicit source and target
+  contract CIDs; their verification (proving source implies target) is a
+  separate producer concern documented in the protocol grammar spec.
 - A "soft warning" mode for Case 3. Fail-loud is the only mode.

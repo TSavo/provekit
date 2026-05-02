@@ -272,7 +272,7 @@ or a function parameter. Any other free variable indicates a malformed contract.
 ### BridgeDeclaration
 
 Locked key order: `kind`, `name`, `sourceSymbol`, `sourceLayer`,
-`targetContractCid`, `targetLayer`, `notes` (optional, omitted when absent).
+`sourceContractCid`, `targetContractCid`, `targetLayer`, `notes` (optional, omitted when absent).
 
 ```ebnf
 BridgeDeclaration ::= "{"
@@ -280,11 +280,40 @@ BridgeDeclaration ::= "{"
                         "\"name\"" ":" String ","
                         "\"sourceSymbol\"" ":" String ","
                         "\"sourceLayer\"" ":" String ","
+                        "\"sourceContractCid\"" ":" String ","
                         "\"targetContractCid\"" ":" String ","
                         "\"targetLayer\"" ":" String
                         ( "," "\"notes\"" ":" String )?
                       "}"
 ```
+
+A bridge is a **verifiable claim** that a source contract (explicitly carried
+by an implementation) satisfies a target contract (typically a reference or
+abstract specification). The `sourceSymbol` is the lookup key the lifter uses
+to resolve symbols in source code to their explicitly tagged contracts.
+
+For example, a JavaScript `.proof` manifest ships with `@types/node` containing:
+
+```json
+{
+  "kind": "contract",
+  "name": "js-parseInt-v24",
+  ...
+},
+{
+  "kind": "bridge",
+  "name": "js-parseInt-to-ref",
+  "sourceSymbol": "parseInt",
+  "sourceLayer": "javascript",
+  "sourceContractCid": "bafy...js-parseInt-v24",
+  "targetContractCid": "bafy...ref-parseInt-v1",
+  "targetLayer": "reference"
+}
+```
+
+The lifter sees `parseInt` in JS source, looks up the bridge, and emits the
+`sourceContractCid` into the IR. The framework later verifies the bridge by
+checking whether the source contract's postcondition implies the target's.
 
 The `notes` field is **omitted entirely** when undefined; it is never emitted
 as `null`. (Rationale: the TS kit destructures `...(spec.notes !== undefined ? { notes } : {})`;
@@ -297,18 +326,35 @@ This rule is what keeps the four kits byte-equal when bridges have no notes.)
   HasKey(b, "name") ∧ IsString(b.name) ∧
   HasKey(b, "sourceSymbol") ∧ IsString(b.sourceSymbol) ∧
   HasKey(b, "sourceLayer") ∧ IsString(b.sourceLayer) ∧
+  HasKey(b, "sourceContractCid") ∧ IsString(b.sourceContractCid) ∧
   HasKey(b, "targetContractCid") ∧ IsString(b.targetContractCid) ∧
   HasKey(b, "targetLayer") ∧ IsString(b.targetLayer)
 ```
-All required fields (`name`, `sourceSymbol`, `sourceLayer`, `targetContractCid`,
-`targetLayer`) must be present and non-empty strings.
+All required fields must be present and non-empty strings.
 
-**INVARIANT BridgeDeclaration.ValidCidFormat:**
+**INVARIANT BridgeDeclaration.ValidSourceCid:**
+```
+∀b: BridgeDeclaration →
+  IsValidCidFormat(b.sourceContractCid)
+```
+The `sourceContractCid` must be a valid CID format.
+
+**INVARIANT BridgeDeclaration.ValidTargetCid:**
 ```
 ∀b: BridgeDeclaration →
   IsValidCidFormat(b.targetContractCid)
 ```
-The `targetContractCid` must be a valid CID format (blake3-512 prefix + 128 hex chars).
+The `targetContractCid` must be a valid CID format.
+
+**INVARIANT BridgeDeclaration.CrossDomainVerification:**
+```
+∀b: BridgeDeclaration →
+  VerifyContractImplication(b.sourceContractCid, b.targetContractCid)
+```
+A bridge is valid only if there exists a verified memento proving that the
+source contract's postcondition implies the target contract's postcondition.
+This is what enables cross-domain claim transfer: a proof about the source
+contract transfers to any other contract that bridges to the same target.
 
 ## Formulas
 
