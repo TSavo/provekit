@@ -20,4 +20,4 @@ jobs:
       - name: Run tests
         run: pnpm test
       - name: ProvekIt verify
-        run: npx provekit invariants verify --ci
+        run: npx provekit verify --ci
