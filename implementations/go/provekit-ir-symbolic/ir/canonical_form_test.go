@@ -108,3 +108,69 @@ func TestMarshalDeclarationsHelper(t *testing.T) {
 		t.Errorf("MarshalDeclarations shape:\n  got:  %s\n  want: %s", got, goldenSimpleEq)
 	}
 }
+
+// goldenBridgeWithPinning is the v1.3.0 BridgeDeclaration locked-key-
+// order JSON for a bridge that carries sourceContractCid + targetProofCid
+// (per protocol/specs/2026-04-30-ir-formal-grammar.md, post PR #10).
+//
+// Cross-impl invariant: the Rust kit's serde-derived
+// `Declaration::Bridge` (provekit-ir-types/src/lib.rs) emits the field
+// sequence
+//
+//	{kind, name, sourceSymbol, sourceLayer, sourceContractCid,
+//	 targetContractCid, targetProofCid, targetLayer [, notes]}
+//
+// in declaration order; serde with `skip_serializing_if =
+// "Option::is_none"` omits notes when None. The Go MarshalJSON
+// hand-emits the same sequence. This golden test pins the exact byte
+// sequence so any drift between the Go kit and Rust kit (or a future
+// change to either MarshalJSON) shows up here, not at the JCS hash
+// boundary.
+const goldenBridgeWithPinning = `[{"kind":"bridge","name":"js-parseInt-to-ref","sourceSymbol":"parseInt","sourceLayer":"javascript","sourceContractCid":"blake3-512:js-parseInt-v24","targetContractCid":"blake3-512:ref-parseInt-v1","targetProofCid":"blake3-512:ecma262-v14-proof","targetLayer":"reference"}]`
+
+const goldenBridgeWithPinningAndNotes = `[{"kind":"bridge","name":"js-parseInt-to-ref","sourceSymbol":"parseInt","sourceLayer":"javascript","sourceContractCid":"blake3-512:js-parseInt-v24","targetContractCid":"blake3-512:ref-parseInt-v1","targetProofCid":"blake3-512:ecma262-v14-proof","targetLayer":"reference","notes":"the canonical bridge"}]`
+
+func TestCanonicalFormBridgeWithPinning(t *testing.T) {
+	ResetCollector()
+	finish := BeginCollecting()
+	Bridge("js-parseInt-to-ref", BridgeSpec{
+		SourceSymbol:      "parseInt",
+		SourceLayer:       "javascript",
+		SourceContractCid: "blake3-512:js-parseInt-v24",
+		TargetContractCid: "blake3-512:ref-parseInt-v1",
+		TargetProofCid:    "blake3-512:ecma262-v14-proof",
+		TargetLayer:       "reference",
+	})
+	decls := finish()
+
+	got, err := json.Marshal(decls)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if string(got) != goldenBridgeWithPinning {
+		t.Errorf("v1.3.0 bridge JSON shape mismatch:\n  got:  %s\n  want: %s", got, goldenBridgeWithPinning)
+	}
+}
+
+func TestCanonicalFormBridgeWithPinningAndNotes(t *testing.T) {
+	ResetCollector()
+	finish := BeginCollecting()
+	Bridge("js-parseInt-to-ref", BridgeSpec{
+		SourceSymbol:      "parseInt",
+		SourceLayer:       "javascript",
+		SourceContractCid: "blake3-512:js-parseInt-v24",
+		TargetContractCid: "blake3-512:ref-parseInt-v1",
+		TargetProofCid:    "blake3-512:ecma262-v14-proof",
+		TargetLayer:       "reference",
+		Notes:             "the canonical bridge",
+	})
+	decls := finish()
+
+	got, err := json.Marshal(decls)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if string(got) != goldenBridgeWithPinningAndNotes {
+		t.Errorf("v1.3.0 bridge+notes JSON shape mismatch:\n  got:  %s\n  want: %s", got, goldenBridgeWithPinningAndNotes)
+	}
+}
