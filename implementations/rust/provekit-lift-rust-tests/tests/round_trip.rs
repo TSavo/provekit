@@ -4,7 +4,9 @@
 // verifier load. Asserts:
 //   - 4 simple `assert_eq!` lifted
 //   - 1 `assert!` with binop lifted
-//   - 1 deliberately-skipped method-call assertion produces a warning
+//   - 1 deliberately-skipped `format!()` macro operand produces a warning
+//     (v0.5 widened the operand whitelist to include method calls; the
+//      negative shape moved to format!-style operand-position macros)
 //   - The resulting `<cid>.proof` file round-trips through the
 //     provekit-verifier's load_all_proofs stage with no load errors and
 //     the expected member count.
@@ -47,10 +49,11 @@ fn count_positive() {{
     assert!(count > 0);
 }}
 
-// 1 deliberately-skipped: method call, not in v0 whitelist.
+// 1 deliberately-skipped: format! macro in operand position is not in
+// the v0.5 whitelist (only `vec![...]` is).
 #[test]
-fn skipped_method_call() {{
-    assert_eq!("hello".len(), 5);
+fn skipped_format_macro() {{
+    assert_eq!(s, format!("{{}}", x));
 }}
 "#
     )
@@ -101,9 +104,9 @@ fn fixture_lifts_5_skips_1_and_round_trips_through_verifier() {
     assert_eq!(
         rt.warnings.len(),
         1,
-        "expected exactly 1 honest skip (the method-call assertion)"
+        "expected exactly 1 honest skip (the format! macro assertion)"
     );
-    assert!(rt.warnings[0].item_name.starts_with("skipped_method_call"));
+    assert!(rt.warnings[0].item_name.starts_with("skipped_format_macro"));
 
     // .proof filename = `<cid>.proof`.
     assert!(proof_path.exists(), "proof file should exist on disk");
