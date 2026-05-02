@@ -26,10 +26,20 @@ import (
 // bridge envelopes by their evidence.body.sourceSymbol for the
 // callsite-enumeration stage.
 // formulaToMemento indexes formula CIDs → memento CIDs for O(1) verification.
+//
+// BundleMembers tracks bundle CID → set of member CIDs for the forward
+// pin (BridgeDeclaration.ConsequentBundlePinned, NORMATIVE — see
+// protocol/specs/2026-04-30-ir-formal-grammar.md § "Bridge target
+// pinning: the shim-poisoning vector"). Multi-valued because the same
+// member CID can legitimately appear in more than one bundle (one
+// honest, one poisoned); last-writer-wins would silently swap them.
+// Populated by load_all_proofs from the .proof file's content hash;
+// consumed by resolve_target.
 type MementoPool struct {
 	Mementos         map[string]map[string]interface{} // CID → parsed envelope
 	FormulaToMemento map[string]string                 // formula CID → memento CID
 	BridgesBySymbol  map[string]map[string]interface{} // sourceSymbol → bridge envelope
+	BundleMembers    map[string]map[string]struct{}    // bundle CID → set of member CIDs
 	LoadErrors       []LoadError
 }
 
@@ -39,6 +49,7 @@ func NewMementoPool() *MementoPool {
 		Mementos:         map[string]map[string]interface{}{},
 		FormulaToMemento: map[string]string{},
 		BridgesBySymbol:  map[string]map[string]interface{}{},
+		BundleMembers:    map[string]map[string]struct{}{},
 	}
 }
 
@@ -253,10 +264,16 @@ type LoadError struct {
 // per-call-site obligation downstream stages discharge.
 //
 // BridgeSourceContractCID and BridgeTargetProofCID mirror the
-// BridgeDeclaration fields in the IR formal grammar (PR #10). They are
-// stored for downstream verifier stages (e.g. cross-bundle proof
-// resolution); the load-all-proofs stage does not enforce them today,
-// matching the Rust CallSite shape.
+// BridgeDeclaration fields in the IR formal grammar (PR #10).
+// BridgeTargetProofCID is the bridge's pinned consequent .proof bundle
+// CID; resolve_target enforces ConsequentBundlePinned against it
+// (mirrors Rust PR #13, protocol/specs/2026-04-30-ir-formal-grammar.md
+// § "Bridge target pinning: the shim-poisoning vector"). Empty string
+// is the back-compat shape: legacy bridges that pre-date the field
+// load and resolve, but ConsequentBundlePinned cannot be enforced and
+// resolve_target emits a soft warning. BridgeSourceContractCID is
+// stored only; reverse-pin enforcement (LiftedFromContract) is owned
+// by future verifier work.
 type CallSite struct {
 	BridgeIRName            string
 	BridgeTargetCID         string
