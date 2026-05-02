@@ -91,6 +91,173 @@ pub fn signature_path_for(protocol_version: &str) -> PathBuf {
         .join(format!("{protocol_version}.json"))
 }
 
+/// `.provekit/self-contracts-attestations/<lang>.json` (committed).
+/// Letter-envelope attestation file for a peer's self-contracts bundle.
+/// `lang` ranges over the per-language peer identifiers (`rust`, `go`,
+/// `cpp` initially; `ts` and `csharp` are deferred to a follow-up).
+pub fn self_contracts_attestation_path_for(lang: &str) -> PathBuf {
+    repo_root()
+        .join(".provekit/self-contracts-attestations")
+        .join(format!("{lang}.json"))
+}
+
+/// Pinned `declaredAt` for self-contracts attestations under the v0
+/// foundation key. One constant per protocol-catalog version because
+/// the attestation is bound to a catalog CID; bumping protocol versions
+/// regenerates the attestation. CID drift between catalog versions does
+/// not move this timestamp, so re-signing the same bundle CID under the
+/// same protocol version produces byte-identical output. v1 of the
+/// foundation key may use signing-time clocks; this is a v0 invariant.
+pub const SELF_CONTRACTS_DECLARED_AT_V1_3_1: &str = "2026-05-02T17:00:00Z";
+
+/// Recognized peer identifiers for self-contracts attestations.
+/// Kept in sync with the Makefile's `mint-{rust,go,cpp}` targets.
+/// `ts` and `csharp` use distinct minting paths today and are not yet
+/// covered by the letter-envelope attestation refactor (see PR body).
+pub const SELF_CONTRACTS_LANGS: &[&str] = &["rust", "go", "cpp"];
+
+/// Build the six-field self-contracts attestation message body
+/// (no `signature` field). JCS-canonical bytes of this object are what
+/// the foundation key signs.
+pub fn build_self_contracts_message(
+    lang: &str,
+    cid: &str,
+    declared_at: &str,
+    signer_pubkey: &str,
+) -> JsonValue {
+    json!({
+        "schemaVersion": "1",
+        "kind": "self-contracts-attestation",
+        "lang": lang,
+        "cid": cid,
+        "declaredAt": declared_at,
+        "signer": signer_pubkey,
+    })
+}
+
+/// Build the full signed self-contracts attestation JSON, ready to be
+/// written to disk. Mirrors `build_signed_attestation_for` for the
+/// catalog case.
+pub fn build_signed_self_contracts_attestation(
+    seed: &Ed25519Seed,
+    lang: &str,
+    cid: &str,
+    declared_at: &str,
+) -> Result<JsonValue, String> {
+    if !SELF_CONTRACTS_LANGS.contains(&lang) {
+        return Err(format!(
+            "unknown lang `{}`; expected one of {:?}",
+            lang, SELF_CONTRACTS_LANGS
+        ));
+    }
+    let signer_pubkey = ed25519_pubkey_string(seed);
+    let message = build_self_contracts_message(lang, cid, declared_at, &signer_pubkey);
+    let bytes = attestation_signing_bytes(&message)?;
+    let signature = ed25519_sign_string(seed, &bytes);
+    Ok(json!({
+        "schemaVersion": "1",
+        "kind": "self-contracts-attestation",
+        "lang": lang,
+        "cid": cid,
+        "declaredAt": declared_at,
+        "signer": signer_pubkey,
+        "signature": signature,
+    }))
+}
+
+/// Verification result for a signed self-contracts attestation. Each
+/// field describes one of the four checks the verifier performs.
+#[derive(Debug, Clone)]
+pub struct SignedSelfContractsVerdict {
+    /// The bundle CID claimed by the on-disk attestation file.
+    pub claimed_cid: String,
+    /// The bundle CID the verifier observed (passed in by the caller,
+    /// typically the freshly-minted output of `provekit mint`).
+    pub observed_cid: String,
+    /// The signer pubkey string read from the attestation file.
+    pub signer_pubkey: String,
+    /// True iff the attestation's `signer` matches the trusted pubkey
+    /// the verifier was asked to check against.
+    pub signer_matches: bool,
+    /// True iff the Ed25519 signature verifies against the rebuilt
+    /// JCS-encoded six-field message.
+    pub signature_ok: bool,
+    /// True iff `claimed_cid == observed_cid`.
+    pub cid_matches: bool,
+}
+
+impl SignedSelfContractsVerdict {
+    pub fn ok(&self) -> bool {
+        self.signer_matches && self.signature_ok && self.cid_matches
+    }
+}
+
+/// Verify a signed self-contracts attestation against a trusted pubkey
+/// and an observed bundle CID. Mirrors `verify_signed_attestation` for
+/// the catalog case but discriminates on `kind: self-contracts-attestation`.
+pub fn verify_signed_self_contracts_attestation(
+    attestation_bytes: &[u8],
+    trusted_pubkey: &str,
+    observed_cid: &str,
+) -> Result<SignedSelfContractsVerdict, String> {
+    let attestation: JsonValue = serde_json::from_slice(attestation_bytes)
+        .map_err(|e| format!("parse self-contracts attestation JSON: {}", e))?;
+    let obj = attestation
+        .as_object()
+        .ok_or_else(|| "self-contracts attestation must be a JSON object".to_string())?;
+
+    let get_str = |k: &str| -> Result<String, String> {
+        obj.get(k)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("self-contracts attestation missing string field `{k}`"))
+    };
+
+    let schema_version = get_str("schemaVersion")?;
+    let kind = get_str("kind")?;
+    if kind != "self-contracts-attestation" {
+        return Err(format!(
+            "expected kind `self-contracts-attestation`, got `{}`",
+            kind
+        ));
+    }
+    let lang = get_str("lang")?;
+    let claimed_cid = get_str("cid")?;
+    let declared_at = get_str("declaredAt")?;
+    let signer = get_str("signer")?;
+    let signature = get_str("signature")?;
+
+    // Rebuild the six-field message in canonical order. JCS sorts keys
+    // by code point; we preserve the spec's authored order for legibility.
+    let entries: Vec<(String, Arc<Value>)> = vec![
+        ("schemaVersion".to_string(), Value::string(schema_version)),
+        (
+            "kind".to_string(),
+            Value::string("self-contracts-attestation".to_string()),
+        ),
+        ("lang".to_string(), Value::string(lang)),
+        ("cid".to_string(), Value::string(claimed_cid.clone())),
+        ("declaredAt".to_string(), Value::string(declared_at)),
+        ("signer".to_string(), Value::string(signer.clone())),
+    ];
+    let msg_obj = Value::object(entries);
+    let jcs = encode_jcs(&msg_obj);
+
+    let signature_ok =
+        provekit_proof_envelope::ed25519_verify_string(trusted_pubkey, &signature, jcs.as_bytes());
+    let signer_matches = signer == trusted_pubkey;
+    let cid_matches = claimed_cid == observed_cid;
+
+    Ok(SignedSelfContractsVerdict {
+        claimed_cid,
+        observed_cid: observed_cid.to_string(),
+        signer_pubkey: trusted_pubkey.to_string(),
+        signer_matches,
+        signature_ok,
+        cid_matches,
+    })
+}
+
 fn repo_root() -> PathBuf {
     // <repo>/tools/foundation-keygen/Cargo.toml -> <repo>
     let manifest = env!("CARGO_MANIFEST_DIR");
@@ -233,5 +400,95 @@ mod tests {
         let s = String::from_utf8(bytes).unwrap();
         assert!(!s.contains("signature"));
         assert!(s.contains("catalogCid"));
+    }
+
+    #[test]
+    fn self_contracts_signing_is_deterministic() {
+        let cid = "blake3-512:beef";
+        let a = build_signed_self_contracts_attestation(
+            &FOUNDATION_V0_SEED,
+            "rust",
+            cid,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        )
+        .unwrap();
+        let b = build_signed_self_contracts_attestation(
+            &FOUNDATION_V0_SEED,
+            "rust",
+            cid,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        )
+        .unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn self_contracts_unknown_lang_rejected() {
+        let cid = "blake3-512:beef";
+        let err = build_signed_self_contracts_attestation(
+            &FOUNDATION_V0_SEED,
+            "perl",
+            cid,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        )
+        .unwrap_err();
+        assert!(err.contains("unknown lang"));
+    }
+
+    #[test]
+    fn self_contracts_round_trip_verifies() {
+        let cid = "blake3-512:beef";
+        let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
+        let attestation = build_signed_self_contracts_attestation(
+            &FOUNDATION_V0_SEED,
+            "go",
+            cid,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&attestation).unwrap();
+        let verdict = verify_signed_self_contracts_attestation(&bytes, &pk, cid).unwrap();
+        assert!(verdict.signer_matches);
+        assert!(verdict.signature_ok);
+        assert!(verdict.cid_matches);
+        assert!(verdict.ok());
+    }
+
+    #[test]
+    fn self_contracts_cid_drift_fails_verification() {
+        let cid = "blake3-512:beef";
+        let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
+        let attestation = build_signed_self_contracts_attestation(
+            &FOUNDATION_V0_SEED,
+            "cpp",
+            cid,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&attestation).unwrap();
+        let drifted = "blake3-512:cafe";
+        let verdict = verify_signed_self_contracts_attestation(&bytes, &pk, drifted).unwrap();
+        assert!(verdict.signer_matches, "signer untouched");
+        assert!(verdict.signature_ok, "signature still verifies");
+        assert!(!verdict.cid_matches, "observed CID drifted from claim");
+        assert!(!verdict.ok());
+    }
+
+    #[test]
+    fn self_contracts_kind_field_required() {
+        // An attestation that lacks the discriminator must be rejected
+        // outright; verifier MUST NOT accept ambiguous shapes.
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": "1",
+            "lang": "rust",
+            "cid": "blake3-512:beef",
+            "declaredAt": SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            "signer": "ed25519:fake",
+            "signature": "ed25519:fake",
+        }))
+        .unwrap();
+        let err = verify_signed_self_contracts_attestation(&bytes, "ed25519:fake", "blake3-512:beef")
+            .unwrap_err();
+        assert!(err.contains("kind"));
     }
 }
