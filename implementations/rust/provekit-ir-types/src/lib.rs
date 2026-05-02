@@ -7,6 +7,14 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceTerm {
+    pub kind: String,
+    #[serde(rename = "proofType")]
+    pub proof_type: ProofType,
+    pub certificate: EvidenceCertificate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Declaration {
     #[serde(rename = "contract")]
@@ -32,11 +40,27 @@ pub enum Declaration {
         source_contract_cid: String,
         #[serde(rename = "targetContractCid")]
         target_contract_cid: String,
+        #[serde(rename = "targetProofCid")]
+        target_proof_cid: String,
         #[serde(rename = "targetLayer")]
         target_layer: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         notes: Option<String>,
     },
+}
+
+pub type ProofType = String;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Value {
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "number")]
+    Number,
+    #[serde(rename = "bool")]
+    Bool,
+    #[serde(rename = "null")]
+    Null,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,14 +95,20 @@ pub enum IrTerm {
     },
 }
 
+pub type Document = Vec<Declaration>;
+
+pub type QuantifierKind = String;
+// Known values for QuantifierKind:
+//   "forall"
+//   "exists"
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EvidenceCertificate {
-    pub tool: String,
-    pub version: String,
-    #[serde(rename = "formulaHash")]
-    pub formula_hash: String,
-    #[serde(rename = "proofData")]
-    pub proof_data: String,
+#[serde(tag = "kind")]
+pub enum Sort {
+    #[serde(rename = "primitive")]
+    Primitive {
+        name: PrimitiveSortName,
+    },
 }
 
 pub type PrimitiveSortName = String;
@@ -87,38 +117,6 @@ pub type PrimitiveSortName = String;
 //   "Real"
 //   "Bool"
 //   "String"
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LetBinding {
-    pub name: String,
-    #[serde(rename = "boundTerm")]
-    pub bound_term: IrTerm,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Value {
-    #[serde(rename = "text")]
-    Text,
-    #[serde(rename = "number")]
-    Number,
-    #[serde(rename = "bool")]
-    Bool,
-    #[serde(rename = "null")]
-    Null,
-}
-
-pub type QuantifierKind = String;
-// Known values for QuantifierKind:
-//   "forall"
-//   "exists"
-
-pub type Document = Vec<Declaration>;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PrimitiveSort {
-    pub kind: String,
-    pub name: PrimitiveSortName,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
@@ -166,22 +164,33 @@ pub enum IrFormula {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EvidenceTerm {
-    pub kind: String,
-    #[serde(rename = "proofType")]
-    pub proof_type: ProofType,
-    pub certificate: EvidenceCertificate,
+pub struct LetBinding {
+    pub name: String,
+    #[serde(rename = "boundTerm")]
+    pub bound_term: IrTerm,
 }
 
-pub type ProofType = String;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitiveSort {
+    pub kind: String,
+    pub name: PrimitiveSortName,
+}
+
+pub type ConnectiveKind = String;
+// Known values for ConnectiveKind:
+//   "and"
+//   "or"
+//   "not"
+//   "implies"
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum Sort {
-    #[serde(rename = "primitive")]
-    Primitive {
-        name: PrimitiveSortName,
-    },
+pub struct EvidenceCertificate {
+    pub tool: String,
+    pub version: String,
+    #[serde(rename = "formulaHash")]
+    pub formula_hash: String,
+    #[serde(rename = "proofData")]
+    pub proof_data: String,
 }
 
 pub type AtomicPredicateName = String;
@@ -202,13 +211,6 @@ pub type AtomicPredicateName = String;
 //   "bvsle"
 //   "bvsgt"
 //   "bvsge"
-
-pub type ConnectiveKind = String;
-// Known values for ConnectiveKind:
-//   "and"
-//   "or"
-//   "not"
-//   "implies"
 
 pub type Term = IrTerm;
 pub type Formula = IrFormula;

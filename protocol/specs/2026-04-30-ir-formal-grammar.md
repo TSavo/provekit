@@ -272,7 +272,7 @@ or a function parameter. Any other free variable indicates a malformed contract.
 ### BridgeDeclaration
 
 Locked key order: `kind`, `name`, `sourceSymbol`, `sourceLayer`,
-`sourceContractCid`, `targetContractCid`, `targetLayer`, `notes` (optional, omitted when absent).
+`sourceContractCid`, `targetContractCid`, `targetProofCid`, `targetLayer`, `notes` (optional, omitted when absent).
 
 ```ebnf
 BridgeDeclaration ::= "{"
@@ -282,17 +282,30 @@ BridgeDeclaration ::= "{"
                         "\"sourceLayer\"" ":" String ","
                         "\"sourceContractCid\"" ":" String ","
                         "\"targetContractCid\"" ":" String ","
+                        "\"targetProofCid\"" ":" String ","
                         "\"targetLayer\"" ":" String
                         ( "," "\"notes\"" ":" String )?
                       "}"
 ```
 
-A bridge is a **verifiable claim** that a source contract (explicitly carried
-by an implementation) satisfies a target contract (typically a reference or
-abstract specification). The `sourceSymbol` is the lookup key the lifter uses
-to resolve symbols in source code to their explicitly tagged contracts.
+A bridge is a **verifiable claim** that a source contract satisfies a target
+contract. The `targetProofCid` tells the framework which `.proof` bundle
+contains the target contract, enabling cross-bundle lookup without scanning
+all available `.proof` files.
 
-For example, a JavaScript `.proof` manifest ships with `@types/node` containing:
+There are **two classes of bridges**:
+
+**Intra-bundle bridges** (lightweight, most common):
+- Live inside the same `.proof` bundle as their source contract
+- Inherit the bundle's signature (no separate minting)
+- Example: `@types/node` bundles 1000 contracts + 1000 bridges; one signature
+
+**Inter-bundle bridges** (heavyweight, rare):
+- Cross organizational boundaries (e.g., ECMAScript spec → V8 implementation)
+- Are themselves signed mementos with independent verification
+- Example: TC39's formal proof that ECMAScript `parseInt` refines to V8's
+
+For the common case, a JavaScript `.proof` manifest ships with `@types/node`:
 
 ```json
 {
@@ -307,13 +320,29 @@ For example, a JavaScript `.proof` manifest ships with `@types/node` containing:
   "sourceLayer": "javascript",
   "sourceContractCid": "bafy...js-parseInt-v24",
   "targetContractCid": "bafy...ref-parseInt-v1",
+  "targetProofCid": "bafy...ecma262-v14-proof",
   "targetLayer": "reference"
 }
 ```
 
-The lifter sees `parseInt` in JS source, looks up the bridge, and emits the
-`sourceContractCid` into the IR. The framework later verifies the bridge by
-checking whether the source contract's postcondition implies the target's.
+A shim library then declares:
+
+```json
+{
+  "kind": "bridge",
+  "name": "myParseInt-implements-node24",
+  "sourceSymbol": "myParseInt",
+  "sourceLayer": "javascript",
+  "sourceContractCid": "bafy...myParseInt-v1",
+  "targetContractCid": "bafy...js-parseInt-v24",
+  "targetProofCid": "bafy...node-v24-proof",
+  "targetLayer": "javascript"
+}
+```
+
+The `targetProofCid` is what makes the lookup explicit. The framework fetches
+the target `.proof` by CID, finds the contract inside it, and verifies the
+implication.
 
 The `notes` field is **omitted entirely** when undefined; it is never emitted
 as `null`. (Rationale: the TS kit destructures `...(spec.notes !== undefined ? { notes } : {})`;
@@ -328,6 +357,7 @@ This rule is what keeps the four kits byte-equal when bridges have no notes.)
   HasKey(b, "sourceLayer") ∧ IsString(b.sourceLayer) ∧
   HasKey(b, "sourceContractCid") ∧ IsString(b.sourceContractCid) ∧
   HasKey(b, "targetContractCid") ∧ IsString(b.targetContractCid) ∧
+  HasKey(b, "targetProofCid") ∧ IsString(b.targetProofCid) ∧
   HasKey(b, "targetLayer") ∧ IsString(b.targetLayer)
 ```
 All required fields must be present and non-empty strings.
@@ -337,14 +367,18 @@ All required fields must be present and non-empty strings.
 ∀b: BridgeDeclaration →
   IsValidCidFormat(b.sourceContractCid)
 ```
-The `sourceContractCid` must be a valid CID format.
 
 **INVARIANT BridgeDeclaration.ValidTargetCid:**
 ```
 ∀b: BridgeDeclaration →
   IsValidCidFormat(b.targetContractCid)
 ```
-The `targetContractCid` must be a valid CID format.
+
+**INVARIANT BridgeDeclaration.ValidTargetProofCid:**
+```
+∀b: BridgeDeclaration →
+  IsValidCidFormat(b.targetProofCid)
+```
 
 **INVARIANT BridgeDeclaration.CrossDomainVerification:**
 ```

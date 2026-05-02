@@ -70,6 +70,14 @@ pub struct VerifySite {
     pub line: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct ImplementSite {
+    pub fn_name: String,
+    pub source_path: PathBuf,
+    pub line: usize,
+    pub target_contract: String,
+}
+
 /// One call site inside a verify-target body. `surrounding_eq_check`
 /// is `Some(N)` when the verify body contains an `if <bound> == N`
 /// referring to the call's let-binding; this is what flips a discharged
@@ -88,6 +96,7 @@ pub struct CallSite {
 pub struct WalkOutcome {
     pub contracts: Vec<ContractSite>,
     pub verify_targets: Vec<VerifySite>,
+    pub implements: Vec<ImplementSite>,
     pub callsites: Vec<CallSite>,
 }
 
