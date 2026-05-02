@@ -184,6 +184,48 @@ def exists(name: str, sort: Sort, body: Formula) -> Formula:
     return _Quantifier("exists", name, sort, body)
 
 
+# EvidenceTerm --------------------------------------------------------------
+#
+# Mirrors implementations/rust/provekit-ir-symbolic/src/lib.rs (EvidenceTerm
+# / EvidenceCertificate) and the spec at
+# protocol/specs/2026-04-30-ir-formal-grammar.md (EvidenceTerm grammar).
+#
+# Locked key orders (canonicalizer's JCS pass re-sorts to alphabetical
+# before hashing; insertion order recorded here mirrors Rust's
+# Value::object call order in serialize.rs):
+#   evidence:    {kind: "evidence", proofType, certificate}
+#   certificate: {tool, version, formulaHash, proofData}
+#
+# proofType is one of "smt-lib" | "coq" | "custom".
+
+
+@dataclass(frozen=True)
+class EvidenceCertificate:
+    tool: str
+    version: str
+    formula_hash: str
+    proof_data: str
+
+
+@dataclass(frozen=True)
+class EvidenceTerm:
+    proof_type: str  # "smt-lib" | "coq" | "custom"
+    certificate: EvidenceCertificate
+
+
+def evidence_to_value(e: EvidenceTerm) -> Value:
+    return vobj([
+        ("kind", vstr("evidence")),
+        ("proofType", vstr(e.proof_type)),
+        ("certificate", vobj([
+            ("tool", vstr(e.certificate.tool)),
+            ("version", vstr(e.certificate.version)),
+            ("formulaHash", vstr(e.certificate.formula_hash)),
+            ("proofData", vstr(e.certificate.proof_data)),
+        ])),
+    ])
+
+
 # ContractDecl --------------------------------------------------------------
 
 
@@ -194,6 +236,7 @@ class ContractDecl:
     post: Optional[Formula] = None
     inv: Optional[Formula] = None
     out_binding: str = "out"
+    evidence: Optional[EvidenceTerm] = None
 
 
 # To-Value (canonicalizer Value tree) --------------------------------------
@@ -278,3 +321,93 @@ def subst_var_in_formula(f: Formula, formal: str, actual: Term) -> Formula:
             return f
         return _Quantifier(f.kind, f.name, f.sort, subst_var_in_formula(f.body, formal, actual))
     raise TypeError(f"unknown Formula: {type(f)!r}")
+
+
+# BridgeDecl ----------------------------------------------------------------
+#
+# Cross-bundle bridge declaration per
+# protocol/specs/2026-04-30-ir-formal-grammar.md §BridgeDeclaration. The
+# shape mirrors `provekit-ir-types::Declaration::Bridge` (the codegen-derived
+# Rust struct) and the TS `BridgeSpec` shape. The `sourceContractCid` +
+# `targetProofCid` fields make cross-bundle witness pinning hash-bounded
+# (no implicit lookup): the verifier loads the named target proof bundle
+# by CID and checks the contract inside it.
+#
+# Locked key order (per spec line 274-275):
+#   kind, name, sourceSymbol, sourceLayer, sourceContractCid,
+#   targetContractCid, targetProofCid, targetLayer, [notes?]
+#
+# `notes` is OMITTED entirely when None (never emitted as null). This is
+# the byte-equality rule that keeps the four kits in sync (spec line
+# 347-350).
+
+
+@dataclass(frozen=True)
+class BridgeDecl:
+    name: str
+    source_symbol: str
+    source_layer: str
+    source_contract_cid: str
+    target_contract_cid: str
+    target_proof_cid: str
+    target_layer: str
+    notes: Optional[str] = None
+
+
+def bridge_decl_to_value(b: BridgeDecl) -> Value:
+    pairs: List[Tuple[str, Value]] = [
+        ("kind", vstr("bridge")),
+        ("name", vstr(b.name)),
+        ("sourceSymbol", vstr(b.source_symbol)),
+        ("sourceLayer", vstr(b.source_layer)),
+        ("sourceContractCid", vstr(b.source_contract_cid)),
+        ("targetContractCid", vstr(b.target_contract_cid)),
+        ("targetProofCid", vstr(b.target_proof_cid)),
+        ("targetLayer", vstr(b.target_layer)),
+    ]
+    if b.notes is not None:
+        pairs.append(("notes", vstr(b.notes)))
+    return vobj(pairs)
+
+
+def contract_decl_to_value(d: ContractDecl) -> Value:
+    """Emit a contract declaration as a canonicalizer Value.
+
+    Mirrors the Rust `marshal_declarations` shape, but as a Value tree so
+    the JCS pass produces byte-equal output to Rust's value-tree path.
+    Locked key order: kind, name, outBinding, [pre?], [post?], [inv?],
+    [evidence?].
+    """
+    pairs: List[Tuple[str, Value]] = [
+        ("kind", vstr("contract")),
+        ("name", vstr(d.name)),
+        ("outBinding", vstr(d.out_binding)),
+    ]
+    if d.pre is not None:
+        pairs.append(("pre", formula_to_value(d.pre)))
+    if d.post is not None:
+        pairs.append(("post", formula_to_value(d.post)))
+    if d.inv is not None:
+        pairs.append(("inv", formula_to_value(d.inv)))
+    if d.evidence is not None:
+        pairs.append(("evidence", evidence_to_value(d.evidence)))
+    return vobj(pairs)
+
+
+def declarations_to_value(
+    decls: List[Union[ContractDecl, BridgeDecl]],
+) -> Value:
+    """Emit a mixed list of contract/bridge declarations as a Value array.
+
+    Matches Rust's `marshal_declarations` (insertion-order JSON in Rust;
+    canonicalizer's JCS pass re-sorts keys before hashing).
+    """
+    items: List[Value] = []
+    for d in decls:
+        if isinstance(d, ContractDecl):
+            items.append(contract_decl_to_value(d))
+        elif isinstance(d, BridgeDecl):
+            items.append(bridge_decl_to_value(d))
+        else:
+            raise TypeError(f"unknown declaration: {type(d)!r}")
+    return varr(items)
