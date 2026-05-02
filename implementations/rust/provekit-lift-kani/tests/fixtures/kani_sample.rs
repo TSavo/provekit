@@ -6,7 +6,7 @@
 
 #[kani::requires(x > 0)]
 #[kani::ensures(result >= 0)]
-fn sqrt(x: i64) -> i64 { x }
+fn kani_sqrt(x: i64) -> i64 { x }
 
 #[kani::requires(n >= 0)]
 #[kani::ensures(result > 0)]
