@@ -1,5 +1,6 @@
 .{
-    .name = "provekit-lift-zig",
+    .name = .provekit_lift_zig,
+    .fingerprint = 0x243eb567a3bcd8ec,
     .version = "0.1.0",
     .paths = .{
         "build.zig",
