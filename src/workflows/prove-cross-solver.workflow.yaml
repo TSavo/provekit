@@ -1,30 +1,61 @@
-# prove-cross-solver workflow. propertyHash to two-solver verdict.
+# prove-cross-solver workflow. propertyHash to multi-solver verdict.
 #
-# The operational test of cross-solver composition.
+# STATUS: documentation artifact, not currently runtime-attached.
 #
-# Both Z3 and CVC5 are run on SMT-LIB derived from the SAME IR. The
-# emit-z3-smt-lib and emit-cvc5-smt-lib Stages are sibling leaves on the
-# IR root: same input, distinct producer identity, distinct cache slot.
-# The invoke-* Stages each take their own emitter's output and produce
-# a verdict memento referencing the SAME IR sourceCid.
+#   The legacy TS workflow runner that this manifest used to drive
+#   moved to `implementations/typescript/src/` in commit 8bda09b
+#   (April 2026). The companion file `src/workflows/prove-cross-solver.ts`
+#   imports a handful of producer modules (`invokeZ3`, `locateMemento`,
+#   `emitSmtLib`) that were not migrated; vitest's include list
+#   (see `vitest.config.ts`) excludes `src/**`, so this YAML and its
+#   companion runner are not exercised by CI. The operational
+#   substrate for multi-solver consensus is in
+#   `implementations/rust/provekit-verifier/`. See the registry at
+#   `implementations/rust/provekit-verifier/src/solvers/registry.rs`
+#   and the integration tests at
+#   `implementations/rust/provekit-verifier/tests/three_way_consensus.rs`
+#   and `tests/multi_solver_modes.rs`.
 #
-# A pure compare-verdicts Stage maps both verdicts to the shared
-# property-verdict alphabet (holds / violated / undecidable) and reports
-# whether the solvers agree. A mint-cross-solver-memento Action then
-# materializes the cross-solver claim at the original (bindingHash,
-# propertyHash), with inputCids threaded back to the source IR.
+#   This file is kept and updated as the canonical declarative
+#   description of the v1.4.0 three-way pipeline so the YAML grammar
+#   stays the load-bearing description even while the TS-side runtime
+#   is dormant. Reanimating the TS runtime is its own piece of work.
 #
-# Pipeline:
+# Pipeline (Z3 + CVC5 + Coq, ConsensusCoverage):
 #   1. locate-memento       : recover the IrFormula by propertyHash.
-#   2. emit-z3-smt-lib      : translate to Z3-flavored SMT-LIB.
+#   2. emit-z3-smt-lib      : translate to Z3-flavored SMT-LIB. Emits
+#                             an OpacityManifest naming positions the
+#                             SMT compiler refused to translate (kit
+#                             predicates with no theory semantics,
+#                             nested lambdas, predicate quantifiers,
+#                             dependent types). Spec:
+#                             protocol/specs/2026-05-02-opacity-manifest-grammar.md.
 #   3. invoke-z3            : run z3, parse verdict.
 #   4. emit-cvc5-smt-lib    : translate to CVC5-flavored SMT-LIB.
+#                             Emits its own OpacityManifest at the
+#                             same positionCids when the same subterms
+#                             are opaque to cvc5.
 #   5. invoke-cvc5          : run cvc5, parse verdict.
-#   6. compare-verdicts     : map both to property-verdict alphabet,
-#                             check agreement.
-#   7. mint-cross-solver-memento (Action) : write the cross-solver
+#   6. emit-coq             : translate to Coq Gallina. The Coq
+#                             compiler covers lambdas, predicate
+#                             quantification, and dependent types
+#                             that SMT compilers must mark opaque.
+#   7. invoke-coq           : run coqc on the generated .v file,
+#                             parse exit code as verdict.
+#   8. compare-verdicts     : map all three verdicts to the shared
+#                             property-verdict alphabet, then apply
+#                             the ConsensusCoverage 7-step rule from
+#                             multi-solver-protocol-v2 §5: every
+#                             positionCid in the union of all
+#                             OpacityManifests must be discharged by
+#                             at least one solver that did not mark
+#                             it opaque, and at least one solver
+#                             must have returned Discharged.
+#   9. mint-cross-solver-memento (Action) : write the cross-solver
 #                             memento at the original (bindingHash,
-#                             propertyHash) with inputCids = [sourceCid].
+#                             propertyHash) with inputCids = [sourceCid]
+#                             plus the SolverTag of every covering
+#                             solver in the coverage_assignments map.
 #
 # Workflow input (ProveCrossSolverWorkflowInput):
 #   propertyHash: string         the property to verify
@@ -33,15 +64,22 @@
 #   timeoutMs?:   number         solver timeout, default 30000
 #   producedBy?:  string         verdict producer identity
 #
-# Spec: docs/specs/2026-04-29-the-semantic-envelope.md
+# Specs:
+#   protocol/specs/2026-04-29-the-semantic-envelope.md (v1)
+#   protocol/specs/2026-05-02-multi-solver-protocol-v2.md (v2 ConsensusCoverage)
+#   protocol/specs/2026-05-02-ir-compiler-protocol-v2.md  (manifest emission)
+#   protocol/specs/2026-05-02-opacity-manifest-grammar.md (positionCid grammar)
 
 name: prove-cross-solver
 cid: bafy-prove-cross-solver-v1
 description: >-
-  Recover an IrFormula by propertyHash, translate to Z3 and CVC5 SMT-LIB
-  in parallel, invoke both solvers, compare verdicts, and mint a
-  cross-solver memento at the original (bindingHash, propertyHash).
-  Disagreement is captured as data, not raised as an error.
+  Recover an IrFormula by propertyHash, translate it to Z3 and CVC5
+  SMT-LIB plus Coq Gallina in parallel, invoke all three solvers,
+  apply the ConsensusCoverage rule (multi-solver-protocol-v2 §5),
+  and mint a cross-solver memento at the original
+  (bindingHash, propertyHash) tagged with the SolverTag of every
+  covering solver. Disagreement and opacity-coverage gaps are both
+  captured as data, not raised as errors.
 
 cli:
   description: Verify a propertyHash using two solvers and report agreement
@@ -110,14 +148,73 @@ nodes:
       timeoutMs: $input.timeoutMs
 
   # ---------------------------------------------------------------------------
-  # compare-verdicts. Pure Stage. Maps both verdicts to the shared
-  # property-verdict alphabet and reports agreement.
+  # emit-coq. Coq Gallina translation of the SAME IR. Pure Stage.
+  # Third leaf on the IR root. Distinct producer identity so its
+  # memento CID differs from the z3 / cvc5 leaves.
+  #
+  # The Coq compiler covers IR shapes the SMT compilers must mark
+  # opaque (lambdas, predicate quantification, dependent types, kit
+  # predicates with no SMT theory semantics). When the SMT solvers
+  # emit OpacityManifest entries naming positionCids they refused to
+  # translate, the v2 ConsensusCoverage rule requires Coq (or some
+  # other v2-conformant compiler) to discharge those positions
+  # without marking them opaque.
+  #
+  # Implementation: provekit-ir-compiler-coq (Rust).
+  # Spec: protocol/specs/2026-05-02-ir-compiler-protocol-v2.md.
+  # ---------------------------------------------------------------------------
+  - id: emit-coq
+    capability: emit-coq
+    input:
+      formula: $node.locate-memento.output.formula
+      axioms: $input.axioms
+
+  # ---------------------------------------------------------------------------
+  # invoke-coq. Coq verdict on the SAME IR. Coq is a real producer
+  # (not a compile-time-only translator); the runtime drives `coqc`
+  # against the .v file emitted by emit-coq and parses the exit code
+  # into the property-verdict alphabet:
+  #   exit 0   -> Discharged (proof holds)
+  #   exit !=0 -> Undecidable (proof incomplete or admitted)
+  # ---------------------------------------------------------------------------
+  - id: invoke-coq
+    capability: invoke-coq
+    input:
+      coqSource: $node.emit-coq.output.coqSource
+      timeoutMs: $input.timeoutMs
+
+  # ---------------------------------------------------------------------------
+  # compare-verdicts. Pure Stage. Maps all three verdicts to the
+  # shared property-verdict alphabet and applies the ConsensusCoverage
+  # 7-step rule (multi-solver-protocol-v2 §5):
+  #
+  #   step 1: reject any solver lacking an ir-compiler-protocol/2
+  #           OpacityManifest.
+  #   step 2: any Unsatisfied verdict short-circuits to Unsatisfied.
+  #   step 3: per-pair disagreement check on definitive verdicts.
+  #   step 4: compute opacityUnion across all manifests.
+  #   step 5: every position in opacityUnion must be discharged by
+  #           at least one solver that did not mark it opaque AND
+  #           that solver returned Discharged.
+  #   step 6: at least one solver must have returned Discharged.
+  #   step 7: emit Discharged with coverage_assignments mapping
+  #           positionCid -> covering SolverTag (lexicographically
+  #           first solver wins ties).
+  #
+  # Pinning a sentinel error code for step-5 failures:
+  # `coverage_required.position_<positionCid>_uncovered` (per
+  # multi-solver-protocol-v2 §5). The runtime maps this to the
+  # property-verdict alphabet as `undecidable`.
   # ---------------------------------------------------------------------------
   - id: compare-verdicts
     capability: compare-verdicts
     input:
       z3Verdict: $node.invoke-z3.output.z3Verdict
       cvc5Verdict: $node.invoke-cvc5.output.cvc5Verdict
+      coqVerdict: $node.invoke-coq.output.coqVerdict
+      z3OpacityManifest: $node.emit-z3-smt-lib.output.opacityManifest
+      cvc5OpacityManifest: $node.emit-cvc5-smt-lib.output.opacityManifest
+      coqOpacityManifest: $node.emit-coq.output.opacityManifest
 
 # ---------------------------------------------------------------------------
 # Actions. Side-effecting. The mint-cross-solver-memento Action writes
@@ -135,12 +232,18 @@ actions:
       agreedVerdict: $node.compare-verdicts.output.agreedVerdict
       z3Verdict: $node.invoke-z3.output.z3Verdict
       cvc5Verdict: $node.invoke-cvc5.output.cvc5Verdict
+      coqVerdict: $node.invoke-coq.output.coqVerdict
       z3PropertyVerdict: $node.compare-verdicts.output.z3PropertyVerdict
       cvc5PropertyVerdict: $node.compare-verdicts.output.cvc5PropertyVerdict
+      coqPropertyVerdict: $node.compare-verdicts.output.coqPropertyVerdict
       z3SmtLib: $node.emit-z3-smt-lib.output.smtLib
       cvc5SmtLib: $node.emit-cvc5-smt-lib.output.smtLib
+      coqSource: $node.emit-coq.output.coqSource
       z3RunMs: $node.invoke-z3.output.z3RunMs
       cvc5RunMs: $node.invoke-cvc5.output.cvc5RunMs
+      coqRunMs: $node.invoke-coq.output.coqRunMs
+      coverageUnion: $node.compare-verdicts.output.coverageUnion
+      coverageAssignments: $node.compare-verdicts.output.coverageAssignments
       producedBy: $input.producedBy
       inputCids:
         - $node.locate-memento.output.sourceCid
