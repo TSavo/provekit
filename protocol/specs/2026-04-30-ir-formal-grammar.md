@@ -415,6 +415,126 @@ address alone. If `@types/node` publishes a new version, `P1` changes, the
 `targetProofCid` in your bridge no longer resolves, and your build **fails**
 at compile time until you re-verify against the new proof.
 
+---
+
+### Bridge target pinning: the shim-poisoning vector
+
+The previous subsection explains why bridges pin proofs in the normal case.
+This subsection names the **attack** that the pin defeats, so that conformant
+implementations cannot omit the check on the grounds that "the bridge already
+points at a contract."
+
+#### Statement of the attack
+
+A bridge declaration carries two outbound CIDs into the target side:
+
+1. `targetContractCid`: the antecedent. The contract whose `pre`/`post` the
+   source claims to satisfy.
+2. `targetProofCid`: the consequent. The specific `.proof` bundle whose
+   discharge mementos witness that satisfaction.
+
+Without the second pin, a bridge commits **only to the antecedent shape**.
+Any `.proof` bundle that happens to contain a contract memento with the
+matching `targetContractCid` is treated as a valid witness, regardless of
+which binary that bundle was minted for. The verifier accepts the
+substitution because, syntactically, the obligation is discharged: the
+named contract is present, its discharge memento is present, the bundle
+signature is valid for some signer.
+
+The semantic guarantee is broken. The verifier has no way to refuse a
+discharge that came from a **different binary's** proof bundle, even though
+the source contract's claim was made against a specific consequent.
+
+This is **shim poisoning**: an attacker mints a `.proof` bundle whose
+contract memento matches the bridge's `targetContractCid` by content but
+whose witnessed proof memento was discharged against a poisoned shim
+binary. The bridge's antecedent matches by hash. The consequent does not,
+but the bridge had no way to say which consequent it meant.
+
+The forward pin closes this hole at the protocol layer, before any
+discharge logic runs.
+
+#### Worked example
+
+A Rust function `my_parse_int` claims to satisfy `ref-parseInt-v1` by way
+of a bridge through `js-parseInt-v24`. The honest chain pins both ends:
+
+```json
+{
+  "kind": "bridge",
+  "name": "myParseInt-implements-node24",
+  "sourceContractCid": "blake3-512:source...",
+  "targetContractCid": "blake3-512:js-parseInt-v24...",
+  "targetProofCid":   "blake3-512:node-v24-proof-honest...",
+  "sourceLayer": "rust",
+  "targetLayer": "javascript"
+}
+```
+
+**Scenario A (shim poisoning, no forward pin).** Suppose `targetProofCid`
+were absent or unenforced. The attacker publishes a separate `.proof`
+bundle, `node-v24-proof-poisoned`, whose contract member is byte-equal to
+`js-parseInt-v24` (same `targetContractCid`) but whose discharge memento
+was minted against a poisoned shim binary that returns attacker-controlled
+output for chosen inputs. The verifier loads either bundle by name. It
+finds a contract memento with the expected CID. It finds a discharge that
+references that contract. The bridge's antecedent obligation is met. The
+verifier ships **green**, with the poisoned discharge silently
+substituted.
+
+**Scenario B (forward pin enforced).** With `targetProofCid` enforced, the
+verifier first resolves the bridge's `targetProofCid` to a specific bundle
+CID and refuses to consume any other bundle as the consequent, regardless
+of name overlap. The poisoned bundle's CID does not match
+`node-v24-proof-honest`. Substitution is rejected at protocol layer,
+before any contract-membership or discharge-validity check runs.
+
+The two scenarios differ by **one CID equality check**. That check is the
+entire mitigation.
+
+#### Mitigation: status of the forward pin
+
+`targetProofCid` is REQUIRED in the BridgeDeclaration grammar (see EBNF
+above) and is enforced by `INVARIANT BridgeDeclaration.RequiredFields`
+and `INVARIANT BridgeDeclaration.ValidTargetProofCid`. The field MUST be
+present and MUST be a syntactically valid CID; producers MUST NOT emit
+bridges without it.
+
+The grammar-level requirement is necessary but not sufficient. Conformant
+verifiers MUST also use the field at resolve time:
+
+**INVARIANT BridgeDeclaration.ConsequentBundlePinned (NORMATIVE):**
+```
+∀b: BridgeDeclaration, P: ProofBundle →
+  AcceptedAsConsequentFor(P, b) ⇒ Cid(P) = b.targetProofCid
+```
+A verifier MUST NOT accept any `.proof` bundle as the consequent for a
+bridge unless that bundle's CID is bit-equal to the bridge's
+`targetProofCid`. Bundles whose contract members happen to share the
+bridge's `targetContractCid` MUST NOT be substituted for the pinned
+bundle.
+
+#### Two-pin closure with `binaryCid`
+
+The forward pin (bridge → bundle) closes only half the loop. The bundle
+itself can still be a wrapper around an unrelated binary unless the bundle
+back-pins the binary it attests to. That back pin is `binaryCid`, defined
+in `2026-05-02-binary-attestation-protocol.md` §2 and §5. Together:
+
+| Pin | Direction | Field | Specified in |
+|---|---|---|---|
+| Forward | bridge → bundle | `targetProofCid` | this spec, §BridgeDeclaration |
+| Back | bundle → binary | `binaryCid` | binary-attestation §2 |
+
+A verifier that enforces both pins refuses (a) substitution of a poisoned
+bundle for the bridge's intended consequent, and (b) substitution of a
+poisoned binary under an honestly-pinned bundle. Either pin alone leaves
+the other half of the substitution surface open. See
+`2026-05-02-binary-attestation-protocol.md` §5 for the back-pin half of
+this argument.
+
+---
+
 ### The supply chain security model
 
 A `.proof` bundle is a **signed bill of materials**. The developer signs it
