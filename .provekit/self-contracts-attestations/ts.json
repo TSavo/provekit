@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1",
+  "kind": "self-contracts-attestation",
+  "lang": "ts",
+  "cid": "blake3-512:449339930add6457bf25542f2117a025daada4a4bd1de704737750ad6d1c1be814c284d31bb97159ca0b2d2c52f8c043a64533d3432195f5a0f338c5d4904d44",
+  "declaredAt": "2026-05-02T17:00:00Z",
+  "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "signature": "ed25519:k0yBkqDNbRBEr3gQou4BAeFFKgz38BUSnXz3/ePfsHehg0Jae6bmleLbUvMNN+g0FU59hoBIUBfKz0iNzjwoCg=="
+}

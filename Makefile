@@ -26,11 +26,12 @@
 # --- Pinned CIDs ------------------------------------------------------------
 #
 # Bumping a self-contracts CID is now an explicit attestation event, NOT a
-# Makefile string edit:
+# Makefile string edit. The dance is identical for every peer kit
+# (rust, go, cpp, ts, csharp):
 #
 #   1. Make your code change in `implementations/<lang>/provekit-self-contracts`
-#      (or the Go / C++ analog).
-#   2. `make build-rust && make mint-rust`   (or mint-go / mint-cpp)
+#      (or the language's analog).
+#   2. `make mint-<lang>`
 #      -> the mint target FAILS and prints the new CID.
 #   3. `cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \
 #         --bin sign-self-contracts -- <lang> <new-cid>`
@@ -40,20 +41,17 @@
 #
 # The bundle (letter) does not know its own CID. The on-disk attestation
 # (envelope) names the CID and is signed externally. See
+# `protocol/specs/2026-05-02-bundle-attestation-protocol.md` for the
+# generic letter-envelope framing and
 # `protocol/specs/2026-05-02-binary-attestation-protocol.md` for the
-# letter-envelope framing and `protocol/specs/2026-05-02-provekit-migrate-protocol.md`
-# for the documented bump dance.
+# binary-specific elaboration. The source tree no longer carries
+# machine-local truth about its own bytes for any of the five peer kits.
 #
 # `CATALOG_CID` is bumped to v1.3.1 here; the constant remains because
 # `make help` echoes it. Follow-up: retire it the same way the
 # self-contracts CIDs are retired (read from the embedded catalog
 # signature attestation).
 CATALOG_CID := blake3-512:dab2eca97eaea7cc107b1ff3f2326094d804a5e91749bf8e9caa36cd049dc0ae1cb65afb353af8fcd271f87e9e0fc7e7710ec6a68666da6a11f802bc304ff799
-
-# `TS_CID` and `CSHARP_CID` retain the old self-reference pattern for now;
-# follow-up: extend the letter-envelope refactor to those two peers.
-TS_CID      := blake3-512:449339930add6457bf25542f2117a025daada4a4bd1de704737750ad6d1c1be814c284d31bb97159ca0b2d2c52f8c043a64533d3432195f5a0f338c5d4904d44
-CSHARP_CID  := blake3-512:cec85197e5bc394cb97fa3b96c076eca5ace3eeda819f8a2b8b7001f85336dbfadc7e28be3a38676f81387f908b327f0fffeae7d6d04fe76a8c754e5db38c61e
 
 PROVEKIT := implementations/rust/target/release/provekit
 VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
@@ -90,8 +88,8 @@ help:
 	@echo "  rust:    (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json"
 	@echo "  go:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/go.json"
 	@echo "  cpp:     (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json"
-	@echo "  ts:      $(TS_CID)"
-	@echo "  csharp:  $(CSHARP_CID)"
+	@echo "  ts:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json"
+	@echo "  csharp:  (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json"
 
 # --- Per-language builds -----------------------------------------------------
 
@@ -156,8 +154,15 @@ mint-cpp: build-rust build-cpp
 
 .PHONY: mint-ts
 mint-ts: build-ts
-	@echo ">> minting ts self-contracts (vitest path)"
-	pnpm vitest run implementations/typescript/src/bin/mint-ts-self-contracts.test.ts
+	@echo ">> minting ts self-contracts"
+	@out=$$(pnpm -s vitest run --reporter=verbose \
+		implementations/typescript/src/bin/mint-ts-self-contracts.test.ts 2>&1 \
+		| grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
+	echo "  cid: $$out"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json "$$out" || \
+		(echo "FAIL: ts self-contracts attestation rejected; bump dance:" && \
+		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
+		 echo "        --bin sign-self-contracts -- ts $$out" && exit 1)
 
 .PHONY: mint-csharp
 mint-csharp:
@@ -166,8 +171,10 @@ mint-csharp:
 		dotnet run -c Release 2>/dev/null \
 		| grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
 	echo "  cid: $$out"; \
-	test "$$out" = "$(CSHARP_CID)" || \
-		(echo "FAIL: csharp CID mismatch (expected $(CSHARP_CID))" && exit 1)
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json "$$out" || \
+		(echo "FAIL: csharp self-contracts attestation rejected; bump dance:" && \
+		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
+		 echo "        --bin sign-self-contracts -- csharp $$out" && exit 1)
 
 .PHONY: all-mint
 all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
@@ -176,8 +183,8 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
-	@printf "  %-8s  %s\n" "ts"     "$(TS_CID)"
-	@printf "  %-8s  %s\n" "csharp" "$(CSHARP_CID)"
+	@printf "  %-8s  %s\n" "ts"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ts.json)"
+	@printf "  %-8s  %s\n" "csharp" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json)"
 
 # --- Conformance gate --------------------------------------------------------
 

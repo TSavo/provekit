@@ -94,7 +94,7 @@ pub fn signature_path_for(protocol_version: &str) -> PathBuf {
 /// `.provekit/self-contracts-attestations/<lang>.json` (committed).
 /// Letter-envelope attestation file for a peer's self-contracts bundle.
 /// `lang` ranges over the per-language peer identifiers (`rust`, `go`,
-/// `cpp` initially; `ts` and `csharp` are deferred to a follow-up).
+/// `cpp`, `ts`, `csharp`); the full set is the five-peer kit suite.
 pub fn self_contracts_attestation_path_for(lang: &str) -> PathBuf {
     repo_root()
         .join(".provekit/self-contracts-attestations")
@@ -111,10 +111,11 @@ pub fn self_contracts_attestation_path_for(lang: &str) -> PathBuf {
 pub const SELF_CONTRACTS_DECLARED_AT_V1_3_1: &str = "2026-05-02T17:00:00Z";
 
 /// Recognized peer identifiers for self-contracts attestations.
-/// Kept in sync with the Makefile's `mint-{rust,go,cpp}` targets.
-/// `ts` and `csharp` use distinct minting paths today and are not yet
-/// covered by the letter-envelope attestation refactor (see PR body).
-pub const SELF_CONTRACTS_LANGS: &[&str] = &["rust", "go", "cpp"];
+/// Kept in sync with the Makefile's `mint-{rust,go,cpp,ts,csharp}` targets.
+/// All five peer kits use the same letter-envelope attestation shape;
+/// the source tree no longer carries machine-local truth about its own
+/// bytes for any kit.
+pub const SELF_CONTRACTS_LANGS: &[&str] = &["rust", "go", "cpp", "ts", "csharp"];
 
 /// Build the six-field self-contracts attestation message body
 /// (no `signature` field). JCS-canonical bytes of this object are what
@@ -490,5 +491,59 @@ mod tests {
         let err = verify_signed_self_contracts_attestation(&bytes, "ed25519:fake", "blake3-512:beef")
             .unwrap_err();
         assert!(err.contains("kind"));
+    }
+
+    #[test]
+    fn self_contracts_ts_round_trip_verifies() {
+        // ts joined the letter-envelope refactor in the second pass;
+        // exercise the round-trip explicitly so the lang-set extension
+        // does not regress silently.
+        let cid = "blake3-512:beef";
+        let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
+        let attestation = build_signed_self_contracts_attestation(
+            &FOUNDATION_V0_SEED,
+            "ts",
+            cid,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&attestation).unwrap();
+        let verdict = verify_signed_self_contracts_attestation(&bytes, &pk, cid).unwrap();
+        assert!(verdict.signer_matches);
+        assert!(verdict.signature_ok);
+        assert!(verdict.cid_matches);
+        assert!(verdict.ok());
+    }
+
+    #[test]
+    fn self_contracts_csharp_round_trip_verifies() {
+        // csharp joined the letter-envelope refactor in the second pass;
+        // exercise the round-trip explicitly so the lang-set extension
+        // does not regress silently.
+        let cid = "blake3-512:beef";
+        let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
+        let attestation = build_signed_self_contracts_attestation(
+            &FOUNDATION_V0_SEED,
+            "csharp",
+            cid,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&attestation).unwrap();
+        let verdict = verify_signed_self_contracts_attestation(&bytes, &pk, cid).unwrap();
+        assert!(verdict.signer_matches);
+        assert!(verdict.signature_ok);
+        assert!(verdict.cid_matches);
+        assert!(verdict.ok());
+    }
+
+    #[test]
+    fn self_contracts_lang_set_is_five_peers() {
+        // Guard the canonical kit suite. Adding or removing a peer is
+        // a deliberate act; this test forces an explicit edit.
+        assert_eq!(
+            SELF_CONTRACTS_LANGS,
+            &["rust", "go", "cpp", "ts", "csharp"]
+        );
     }
 }
