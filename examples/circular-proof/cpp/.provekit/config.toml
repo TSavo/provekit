@@ -1,0 +1,18 @@
+# Provekit configuration for C++ callee
+# This project is called by TS via WASM, calls Go via cgo
+
+[project]
+name = "circular-proof-cpp"
+version = "1.0.0"
+surface = "cpp"
+
+[verification]
+enabled = true
+fail_closed = true
+
+[[bridges]]
+name = "addThree"
+target = "circular-proof-go"
+target_symbol = "addThree"
+source_layer = "cpp"
+target_layer = "go"

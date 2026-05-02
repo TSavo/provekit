@@ -1,0 +1,20 @@
+# Provekit configuration for TypeScript final callee
+# This project is called by Go via Node-API (circular!)
+
+[project]
+name = "circular-proof-ts-callee"
+version = "1.0.0"
+surface = "typescript"
+
+[verification]
+enabled = true
+fail_closed = true
+
+# This is the circular bridge — TS calls back to the original TS
+# In practice this might be a different package/namespace
+[[bridges]]
+name = "processValue"
+target = "circular-proof-ts"
+target_symbol = "processValue"
+source_layer = "typescript"
+target_layer = "typescript"

@@ -1,0 +1,18 @@
+# Provekit configuration for TypeScript caller
+# This project calls C++ via WASM
+
+[project]
+name = "circular-proof-ts"
+version = "1.0.0"
+surface = "typescript"
+
+[verification]
+enabled = true
+fail_closed = true
+
+[[bridges]]
+name = "multiply2x"
+target = "circular-proof-cpp"
+target_symbol = "multiply2x"
+source_layer = "typescript"
+target_layer = "cpp"
