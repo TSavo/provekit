@@ -90,3 +90,4 @@ implementations/go/provekit-lift-go-tests/provekit-lift-go
 # the protocol/ tree, not at the implementations/<lang>/ root.
 implementations/*/blake3-512:*.proof
 /blake3-512:*.proof
+**/*.proof
