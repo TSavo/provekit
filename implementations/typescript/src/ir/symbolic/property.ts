@@ -37,7 +37,28 @@ export interface BridgeDeclaration {
   name: string;
   sourceSymbol: string;
   sourceLayer: string;
+  /**
+   * Optional CID of the SOURCE-layer contract being bridged FROM
+   * (e.g. the in-language wrapper's own contract). Per
+   * protocol/specs/2026-04-30-ir-formal-grammar.md a fully-formed
+   * v1.4 bridge carries this; older v1.1.0 bridges (peer fixtures)
+   * omit it. The verifier discharges
+   * `VerifyContractImplication(sourceContractCid, targetContractCid)`
+   * when both sides are present.
+   */
+  sourceContractCid?: string;
   targetContractCid: string;
+  /**
+   * Optional CID of the SPECIFIC target `.proof` bundle this bridge
+   * pins to. Forward-pin counterpart of the catalog's `binaryCid`
+   * back-pin. Per
+   * protocol/specs/2026-04-30-ir-formal-grammar.md (PR #10 promoted
+   * the attack-prevention example to normative): without
+   * `targetProofCid` an attacker can swap a different .proof bundle
+   * that happens to satisfy `targetContractCid` shape but carries a
+   * weaker proof. Optional in TS pending peer-kit fixture migration.
+   */
+  targetProofCid?: string;
   targetLayer: string;
   notes?: string;
 }
@@ -212,7 +233,11 @@ export function out(): VarTerm {
 export interface BridgeSpec {
   sourceSymbol: string;
   sourceLayer: string;
+  /** Optional source-layer contract CID; see BridgeDeclaration. */
+  sourceContractCid?: string;
   targetContractCid: string;
+  /** Optional pinned target .proof bundle CID; see BridgeDeclaration. */
+  targetProofCid?: string;
   targetLayer: string;
   notes?: string;
 }
@@ -234,7 +259,13 @@ export function bridge(name: string, spec: BridgeSpec): void {
     name,
     sourceSymbol: spec.sourceSymbol,
     sourceLayer: spec.sourceLayer,
+    ...(spec.sourceContractCid !== undefined
+      ? { sourceContractCid: spec.sourceContractCid }
+      : {}),
     targetContractCid: spec.targetContractCid,
+    ...(spec.targetProofCid !== undefined
+      ? { targetProofCid: spec.targetProofCid }
+      : {}),
     targetLayer: spec.targetLayer,
     ...(spec.notes !== undefined ? { notes: spec.notes } : {}),
   });

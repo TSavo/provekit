@@ -70,7 +70,18 @@ const BRIDGE_DECL_REQUIRED_KEYS = [
   "targetContractCid",
   "targetLayer",
 ] as const;
-const BRIDGE_DECL_OPTIONAL_KEYS = ["notes"] as const;
+// Spec lock order per protocol/specs/2026-04-30-ir-formal-grammar.md:
+//   [kind, name, sourceSymbol, sourceLayer, sourceContractCid,
+//    targetContractCid, targetProofCid, targetLayer, notes]
+// `sourceContractCid` + `targetProofCid` are normatively required by
+// the v1.4 grammar but kept OPTIONAL in this TS parser to remain
+// backwards-compatible with v1.1.0 peer-kit `.proof` fixtures during
+// the cross-impl conformance migration.
+const BRIDGE_DECL_OPTIONAL_KEYS = [
+  "sourceContractCid",
+  "targetProofCid",
+  "notes",
+] as const;
 
 const QUANTIFIER_KEYS = ["kind", "name", "sort", "body"] as const;
 const CONNECTIVE_KEYS = ["kind", "operands"] as const;
@@ -278,11 +289,18 @@ function parseBridgeDeclaration(
 ): Declaration {
   enforceClosedKeys(obj, path, BRIDGE_DECL_REQUIRED_KEYS, BRIDGE_DECL_OPTIONAL_KEYS);
   if (opts.strict) {
+    // Spec-locked key order per
+    // protocol/specs/2026-04-30-ir-formal-grammar.md §"bridge":
+    //   [kind, name, sourceSymbol, sourceLayer, sourceContractCid,
+    //    targetContractCid, targetProofCid, targetLayer, notes]
+    // Optional keys are only expected at their slot when present.
     const observed = Object.keys(obj);
-    const expected = [
-      ...BRIDGE_DECL_REQUIRED_KEYS,
-      ...(observed.includes("notes") ? (["notes"] as const) : ([] as const)),
-    ];
+    const expected: string[] = ["kind", "name", "sourceSymbol", "sourceLayer"];
+    if (observed.includes("sourceContractCid")) expected.push("sourceContractCid");
+    expected.push("targetContractCid");
+    if (observed.includes("targetProofCid")) expected.push("targetProofCid");
+    expected.push("targetLayer");
+    if (observed.includes("notes")) expected.push("notes");
     if (observed.join(",") !== expected.join(",")) {
       throw new GrammarParseError({
         path,
@@ -320,6 +338,20 @@ function parseBridgeDeclaration(
     targetContractCid,
     targetLayer,
   };
+  if ("sourceContractCid" in obj) {
+    decl.sourceContractCid = expectString(
+      obj["sourceContractCid"],
+      `${path}/sourceContractCid`,
+      "string sourceContractCid",
+    );
+  }
+  if ("targetProofCid" in obj) {
+    decl.targetProofCid = expectString(
+      obj["targetProofCid"],
+      `${path}/targetProofCid`,
+      "string targetProofCid",
+    );
+  }
   if ("notes" in obj) {
     decl.notes = expectString(obj["notes"], `${path}/notes`, "string notes");
   }
@@ -810,14 +842,23 @@ function emitDeclaration(decl: Declaration): string {
     out += "}";
     return out;
   }
+  // Spec-locked emit order:
+  //   [kind, name, sourceSymbol, sourceLayer, sourceContractCid?,
+  //    targetContractCid, targetProofCid?, targetLayer, notes?]
   let out =
     "{" +
     `"kind":"bridge",` +
     `"name":${JSON.stringify(decl.name)},` +
     `"sourceSymbol":${JSON.stringify(decl.sourceSymbol)},` +
-    `"sourceLayer":${JSON.stringify(decl.sourceLayer)},` +
-    `"targetContractCid":${JSON.stringify(decl.targetContractCid)},` +
-    `"targetLayer":${JSON.stringify(decl.targetLayer)}`;
+    `"sourceLayer":${JSON.stringify(decl.sourceLayer)}`;
+  if (decl.sourceContractCid !== undefined) {
+    out += `,"sourceContractCid":${JSON.stringify(decl.sourceContractCid)}`;
+  }
+  out += `,"targetContractCid":${JSON.stringify(decl.targetContractCid)}`;
+  if (decl.targetProofCid !== undefined) {
+    out += `,"targetProofCid":${JSON.stringify(decl.targetProofCid)}`;
+  }
+  out += `,"targetLayer":${JSON.stringify(decl.targetLayer)}`;
   if (decl.notes !== undefined) {
     out += `,"notes":${JSON.stringify(decl.notes)}`;
   }
