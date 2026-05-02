@@ -1,3 +1,3 @@
 name = "cpp-lift"
-command = ["./target/mint_cpp_self_contracts", "--rpc"]
+command = ["./target/mint_cpp_self_contracts"]
 working_dir = "."
