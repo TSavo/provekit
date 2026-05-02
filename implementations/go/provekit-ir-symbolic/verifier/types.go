@@ -15,7 +15,7 @@ package verifier
 import (
 	"fmt"
 
-	"github.com/provekit/ir-symbolic/canonicalizer"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
 )
 
 // MementoPool is the unified store every downstream stage hash-looks-up

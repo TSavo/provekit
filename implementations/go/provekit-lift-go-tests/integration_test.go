@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/provekit/ir-symbolic/canonicalizer"
-	"github.com/provekit/ir-symbolic/ir"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
 
 // TestIntegration_Layer2SampleLiftsAllThreePatterns drives the lift

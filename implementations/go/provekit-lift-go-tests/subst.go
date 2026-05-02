@@ -12,7 +12,7 @@
 package lifgotests
 
 import (
-	"github.com/provekit/ir-symbolic/ir"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
 
 // substVarInFormula returns f with every free occurrence of `formal`

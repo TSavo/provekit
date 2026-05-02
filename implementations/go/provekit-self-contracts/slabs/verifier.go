@@ -12,7 +12,7 @@ package slabs
 // operationally enforced by cross_lang_demo_test.go. The IR can express
 // length floors and rejection-on-malformed-tag as deterministic gestures.
 
-import "github.com/provekit/ir-symbolic/ir"
+import "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 
 func InvariantsLoadAllProofs() {
 	// hashTagPrefix on the verifier path matches the canonicalizer's

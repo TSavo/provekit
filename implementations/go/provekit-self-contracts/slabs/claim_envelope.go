@@ -15,7 +15,7 @@ package slabs
 // at the verifier (the kit predicates `requiresPreOrPostOrInv`, `hasPrefix`
 // have no Z3 semantics). Length predicates on schema CIDs are decidable.
 
-import "github.com/provekit/ir-symbolic/ir"
+import "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 
 func InvariantsEnvelope() {
 	// Schema CIDs are full-shape v1.1.0 (139 chars: "blake3-512:" + 128 hex).

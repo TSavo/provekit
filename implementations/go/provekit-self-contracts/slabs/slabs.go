@@ -16,7 +16,7 @@
 // produce identical CIDs; the binary fails loud if not.
 package slabs
 
-import "github.com/provekit/ir-symbolic/ir"
+import "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 
 // Slab is one source file's authored contracts plus the source label.
 // The orchestrator iterates Slabs() and mints each in deterministic

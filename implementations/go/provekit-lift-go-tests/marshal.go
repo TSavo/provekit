@@ -7,7 +7,7 @@ package lifgotests
 import (
 	"encoding/json"
 
-	"github.com/provekit/ir-symbolic/ir"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
 
 func marshalGeneric(f ir.IrFormula) map[string]any {

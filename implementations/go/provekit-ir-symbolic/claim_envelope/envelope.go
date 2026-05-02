@@ -22,7 +22,7 @@ import (
 	"encoding/base64"
 	"sort"
 
-	"github.com/provekit/ir-symbolic/canonicalizer"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
 )
 
 // Schema CIDs. Stable values producers must use; mirrors the C++

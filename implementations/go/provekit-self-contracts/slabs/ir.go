@@ -10,7 +10,7 @@ package slabs
 //   * Contract / Must / Bridge / Property collector primitives.
 //   * MarshalDeclarations(decls) ([]byte, error).
 
-import "github.com/provekit/ir-symbolic/ir"
+import "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 
 func InvariantsIRTypes() {
 	// Var-term JSON omits sort under v1.1.0:

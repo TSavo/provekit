@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/provekit/ir-symbolic/canonicalizer"
-	"github.com/provekit/ir-symbolic/proof_envelope"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/proof_envelope"
 )
 
 // LoadAllProofsStage walks every .proof file under projectRoot

@@ -11,7 +11,7 @@ package slabs
 // keys) are operationally enforced by tests. The IR can express output
 // shape (FilenameCID is "blake3-512:" + 128 hex; sig is 64 bytes).
 
-import "github.com/provekit/ir-symbolic/ir"
+import "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 
 func InvariantsProofBuilder() {
 	// Build's FilenameCID is exactly 139 chars (full v1.1.0 form, no
