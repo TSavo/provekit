@@ -11,6 +11,15 @@
 
 set -uo pipefail
 
+# Some installs symlink ~/.cargo/bin/cargo -> rustup. PATH must contain
+# ~/.cargo/bin for both to resolve.
+if [ -d "$HOME/.cargo/bin" ]; then
+    case ":$PATH:" in
+        *":$HOME/.cargo/bin:"*) ;;
+        *) PATH="$HOME/.cargo/bin:$PATH" ;;
+    esac
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -151,17 +160,33 @@ fi
 # --- C# ---
 echo "[C#] dotnet test"
 if need_tool dotnet csharp; then
-    if (cd implementations/csharp && run_quiet dotnet test); then
-        report "csharp" "PASS" "DataAnnotations lift + LSP plugin tests"
+    if (cd implementations/csharp && run_quiet dotnet test --nologo); then
+        report "csharp" "PASS" "DataAnnotations + Linq lift adapters byte-equivalent"
     else
         report "csharp" "FAIL" "dotnet test failed"
     fi
 fi
 
 # --- Ruby ---
-echo "[Ruby] (no test suite yet)"
-if need_tool ruby ruby; then
-    report "ruby" "SKIP" "no test infrastructure (PR #66 + #67 shipped impl + lift adapters; tests pending)"
+# Kit uses endless-method syntax (Ruby 3+); macOS system ruby is 2.6 and
+# can't even parse it. Prefer Homebrew's ruby when present.
+echo "[Ruby] minitest conformance"
+ruby_bin=""
+if [ -x /usr/local/opt/ruby/bin/ruby ]; then
+    ruby_bin=/usr/local/opt/ruby/bin/ruby
+elif [ -x /opt/homebrew/opt/ruby/bin/ruby ]; then
+    ruby_bin=/opt/homebrew/opt/ruby/bin/ruby
+elif command -v ruby >/dev/null 2>&1 && ruby -e 'exit RUBY_VERSION.to_f >= 3.0 ? 0 : 1' >/dev/null 2>&1; then
+    ruby_bin="$(command -v ruby)"
+fi
+if [ -n "$ruby_bin" ]; then
+    if (cd implementations/ruby && run_quiet "$ruby_bin" -Ilib -Itest test/test_jcs_conformance.rb); then
+        report "ruby" "PASS" "JCS bytes match canonical fixtures"
+    else
+        report "ruby" "FAIL" "test_jcs_conformance.rb failed"
+    fi
+else
+    report "ruby" "SKIP" "ruby >= 3.0 not found (kit uses endless-method syntax)"
 fi
 
 # --- Summary ---

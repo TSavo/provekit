@@ -330,10 +330,7 @@ pub fn Exists(name: []const u8, sort_: Sort, body: *const Formula) Formula {
 // ---------------------------------------------------------------------------
 
 pub fn jcsStringify(alloc: std.mem.Allocator, value: anytype) ![]u8 {
-    var list = std.ArrayList(u8).init(alloc);
-    errdefer list.deinit();
-    try std.json.stringify(value, .{ .whitespace = .minified }, list.writer());
-    return list.toOwnedSlice();
+    return std.json.Stringify.valueAlloc(alloc, value, .{ .whitespace = .minified });
 }
 
 pub fn jcsHash(alloc: std.mem.Allocator, jcs_bytes: []const u8) ![]u8 {
@@ -342,11 +339,11 @@ pub fn jcsHash(alloc: std.mem.Allocator, jcs_bytes: []const u8) ![]u8 {
     hasher.update(jcs_bytes);
     hasher.final(&hash_out);
 
-    // Format as "blake3-512:" + 128 lowercase hex chars
     const prefix = "blake3-512:";
-    var result = try alloc.alloc(u8, prefix.len + 128);
+    const hex = std.fmt.bytesToHex(hash_out, .lower);
+    var result = try alloc.alloc(u8, prefix.len + hex.len);
     @memcpy(result[0..prefix.len], prefix);
-    _ = try std.fmt.bufPrint(result[prefix.len..], "{s}", .{std.fmt.fmtSliceHexLower(&hash_out)});
+    @memcpy(result[prefix.len..], &hex);
     return result;
 }
 

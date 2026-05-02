@@ -9,12 +9,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    _ = lib;
 
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = lib,
     });
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
