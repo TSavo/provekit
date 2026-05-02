@@ -1,4 +1,4 @@
-// provekit-ir-symbolic — C++ kit (header-only).
+// provekit-ir-symbolic , C++ kit (header-only).
 //
 // Maximal-uniformity IR per protocol/specs/2026-04-30-ir-formal-grammar.md
 // (v1.1.0 catalog). Every node has `kind`, then `name` (when applicable),
@@ -43,7 +43,7 @@ inline Sort String() { return Sort{"String"}; }
 inline Sort Bool() { return Sort{"Bool"}; }
 
 // ---------------------------------------------------------------------------
-// Term — VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort).
+// Term , VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort).
 // ---------------------------------------------------------------------------
 
 struct Term;
@@ -101,7 +101,19 @@ struct PrimitiveBridgeDeclaration {
   std::vector<std::string> ir_arg_sorts;
   std::string ir_return_sort;
   std::string source_layer;
+  // Optional CID of the source-layer contract this bridge originates from.
+  // Empty string == absent. Mirrors v1.3.0 BridgeDeclaration.sourceContractCid
+  // per protocol/specs/2026-04-30-ir-formal-grammar.md §BridgeDeclaration;
+  // bridges that pin both the source-side and target-side contracts make the
+  // implication chain hash-bounded across bundles.
+  std::string source_contract_cid;
   std::string target_contract_cid;
+  // Optional CID of the .proof bundle that contains the target contract.
+  // Empty string == absent. Mirrors v1.3.0 BridgeDeclaration.targetProofCid
+  // (the forward pin from a bridge to a specific consequent proof bundle).
+  // Without this, verifiers must scan all available .proof files; with it,
+  // lookup is O(1) by CID and the bundle reference is tamper-evident.
+  std::string target_proof_cid;
   std::string target_layer;
   std::string notes;
 };
@@ -130,8 +142,16 @@ inline void ensure_kit_bridges_registered() {
   static bool done = false;
   if (done) return;
   done = true;
+  // Field order matches PrimitiveBridgeDeclaration: ir_name, ir_arg_sorts,
+  // ir_return_sort, source_layer, source_contract_cid (v1.3.0 add),
+  // target_contract_cid, target_proof_cid (v1.3.0 add), target_layer, notes.
+  // The two v1.3.0 CID slots are empty placeholders here; concrete kits set
+  // them when minting a real bridge envelope. The Rust peer's BridgeDecl in
+  // implementations/rust/provekit-ir-symbolic/src/lib.rs follows the same
+  // optional-empty pattern.
   register_primitive_bridge({"parseInt", {"String"}, "Int", "cpp-kit",
-                             "bafy_CPP_PARSEINT_PLACEHOLDER", "libcxx", ""});
+                             "", "bafy_CPP_PARSEINT_PLACEHOLDER", "",
+                             "libcxx", ""});
 }
 
 inline std::shared_ptr<Term> parse_int(std::shared_ptr<Term> s) {
@@ -139,7 +159,7 @@ inline std::shared_ptr<Term> parse_int(std::shared_ptr<Term> s) {
   return std::make_shared<Term>(Term{CtorTerm{"parseInt", {std::move(s)}}});
 }
 
-// out() — references the return value within a post formula. Compiles to
+// out() , references the return value within a post formula. Compiles to
 // a VarTerm whose `name` matches the enclosing contract's outBinding
 // (default "out"). The kit's contract() primitive enforces outBinding=out;
 // custom outBindings can use make_var(name) directly.
@@ -148,7 +168,7 @@ inline std::shared_ptr<Term> out() {
 }
 
 // ---------------------------------------------------------------------------
-// Formula — three kinds: AtomicFormula, ConnectiveFormula, QuantifierFormula.
+// Formula , three kinds: AtomicFormula, ConnectiveFormula, QuantifierFormula.
 // ---------------------------------------------------------------------------
 
 struct Formula;
@@ -181,7 +201,7 @@ struct Formula {
 };
 
 // ---------------------------------------------------------------------------
-// Quantifier counter — fresh names for bound variables.
+// Quantifier counter , fresh names for bound variables.
 // ---------------------------------------------------------------------------
 
 inline std::atomic<int>& quantifier_counter() {
@@ -227,7 +247,7 @@ inline std::shared_ptr<Formula> ne(std::shared_ptr<Term> a, std::shared_ptr<Term
 }
 
 // ---------------------------------------------------------------------------
-// Connectives — unified shape with `operands` array.
+// Connectives , unified shape with `operands` array.
 // ---------------------------------------------------------------------------
 
 inline std::shared_ptr<Formula> connective_(std::string kind,
@@ -249,7 +269,7 @@ inline std::shared_ptr<Formula> or_(std::vector<std::shared_ptr<Formula>> operan
 }
 
 // ---------------------------------------------------------------------------
-// Quantifiers — flat shape, no Lambda wrapper.
+// Quantifiers , flat shape, no Lambda wrapper.
 // ---------------------------------------------------------------------------
 
 template <typename Body>
@@ -299,6 +319,46 @@ std::shared_ptr<Formula> choice(std::string varName, Sort sort, Body body) {
 }
 
 // ---------------------------------------------------------------------------
+// EvidenceTerm , proof-certificate carrier per v1.3.0 catalog.
+// ---------------------------------------------------------------------------
+//
+// Mirrors implementations/rust/provekit-ir-symbolic/src/lib.rs `EvidenceTerm`
+// + `EvidenceCertificate`. Locked IR-JSON shape per the spec is:
+//
+//   {"kind":"evidence",
+//    "proofType":"smt-lib"|"coq"|"custom",
+//    "certificate":{"tool":"...","version":"...",
+//                   "formulaHash":"...","proofData":"..."}}
+//
+// All fields are required strings. The kit emits insertion order; the
+// canonicalizer's JCS pass re-sorts before hashing.
+//
+// `proofType` values are open-set strings; the protocol catalog lists
+// "smt-lib", "coq", and "custom" as the three known values for v1.3.0.
+//
+// Cross-impl JCS conformance: the byte-identical fixture lives at
+// implementations/cpp/provekit-ir-symbolic/example/evidence_term_test.cpp;
+// any change to write_evidence below MUST keep that fixture passing.
+
+struct EvidenceCertificate {
+  std::string tool;
+  std::string version;
+  std::string formula_hash;
+  std::string proof_data;
+};
+
+struct EvidenceTerm {
+  std::string proof_type;
+  EvidenceCertificate certificate;
+};
+
+inline std::shared_ptr<EvidenceTerm> evidence(std::string proof_type,
+                                               EvidenceCertificate cert) {
+  return std::make_shared<EvidenceTerm>(
+      EvidenceTerm{std::move(proof_type), std::move(cert)});
+}
+
+// ---------------------------------------------------------------------------
 // Contract collector
 // ---------------------------------------------------------------------------
 
@@ -308,6 +368,9 @@ struct ContractDecl {
   std::shared_ptr<Formula> post;  // nullable
   std::shared_ptr<Formula> inv;   // nullable
   std::string outBinding;         // conventionally "out"
+  // Optional v1.3.0 evidence certificate carrier. nullptr == absent
+  // (matches the "omit absent" JCS rule and Rust's `Option<EvidenceTerm>`).
+  std::shared_ptr<EvidenceTerm> evidence;
 };
 
 inline std::vector<ContractDecl>& collector() {
@@ -321,11 +384,15 @@ inline void begin_collecting() {
 
 // contract() is the full authoring primitive; pre/post/inv each optional but
 // at least one must be non-null (kit-side check below fails fast).
+//
+// The `evidence` parameter is the v1.3.0 EvidenceTerm slot; nullptr (default)
+// means absent and is omitted from marshal_declarations output.
 inline void contract(std::string name,
                      std::shared_ptr<Formula> pre = nullptr,
                      std::shared_ptr<Formula> post = nullptr,
                      std::shared_ptr<Formula> inv = nullptr,
-                     std::string outBinding = "out") {
+                     std::string outBinding = "out",
+                     std::shared_ptr<EvidenceTerm> evidence = nullptr) {
   if (!pre && !post && !inv) {
     std::fprintf(stderr,
                  "ERROR: contract(\"%s\"): at least one of pre/post/inv must be non-null\n",
@@ -334,7 +401,7 @@ inline void contract(std::string name,
   }
   collector().push_back(ContractDecl{
       std::move(name), std::move(pre), std::move(post), std::move(inv),
-      std::move(outBinding)});
+      std::move(outBinding), std::move(evidence)});
 }
 
 // must() is the precondition-only convenience alias.
@@ -382,7 +449,7 @@ inline void reset_bridge_collector() {
 }
 
 // ---------------------------------------------------------------------------
-// JSON serialization — emits the protocol-locked uniform IR shape.
+// JSON serialization , emits the protocol-locked uniform IR shape.
 // ---------------------------------------------------------------------------
 
 inline void write_string(std::ostringstream& out, const std::string& s) {
@@ -547,10 +614,31 @@ inline void write_formula(std::ostringstream& out, const Formula& f) {
   }, f.v);
 }
 
+// Emit an EvidenceTerm in locked IR-JSON shape per the v1.3.0 catalog.
+// Byte-pinned with the Rust peer's write_evidence in
+// implementations/rust/provekit-ir-symbolic/src/serialize.rs:
+//   {"kind":"evidence","proofType":"<x>","certificate":{"tool":"<x>",
+//    "version":"<x>","formulaHash":"<x>","proofData":"<x>"}}
+inline void write_evidence(std::ostringstream& out, const EvidenceTerm& e) {
+  out << "{\"kind\":\"evidence\",\"proofType\":";
+  write_string(out, e.proof_type);
+  out << ",\"certificate\":{\"tool\":";
+  write_string(out, e.certificate.tool);
+  out << ",\"version\":";
+  write_string(out, e.certificate.version);
+  out << ",\"formulaHash\":";
+  write_string(out, e.certificate.formula_hash);
+  out << ",\"proofData\":";
+  write_string(out, e.certificate.proof_data);
+  out << "}}";
+}
+
 // Marshal an array of ContractDecl into the IR-JSON Document shape:
-//   [{"kind":"contract","name":"...","outBinding":"out","pre":..,"post":..,"inv":..}, ...]
-// pre/post/inv are omitted when null (matches JCS canonicalization "omit absent" rule).
-// Locked key order per ContractDeclaration: kind, name, outBinding, pre?, post?, inv?.
+//   [{"kind":"contract","name":"...","outBinding":"out","pre":..,"post":..,"inv":..,"evidence":..}, ...]
+// pre/post/inv/evidence are omitted when null (matches JCS canonicalization "omit absent" rule).
+// Locked key order per ContractDeclaration: kind, name, outBinding, pre?, post?, inv?, evidence?.
+// The evidence slot is appended after inv, matching the Rust peer's
+// marshal_declarations in provekit-ir-symbolic/src/serialize.rs.
 inline std::string marshal_declarations(const std::vector<ContractDecl>& decls) {
   std::ostringstream out;
   out << "[";
@@ -571,6 +659,10 @@ inline std::string marshal_declarations(const std::vector<ContractDecl>& decls) 
     if (decls[i].inv) {
       out << ",\"inv\":";
       write_formula(out, *decls[i].inv);
+    }
+    if (decls[i].evidence) {
+      out << ",\"evidence\":";
+      write_evidence(out, *decls[i].evidence);
     }
     out << "}";
   }

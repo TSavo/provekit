@@ -90,6 +90,20 @@ std::vector<CborPair> body_pairs_unsigned(const ProofEnvelopeInput& in) {
     pairs.push_back(make_members_pair("members", in.members));
     pairs.push_back(make_string_pair("signer", in.signer_cid));
     pairs.push_back(make_string_pair("declaredAt", in.declared_at));
+    // Optional `binaryCid` , only emitted when present (sentinel: empty
+    // string means absent). Mirrors the Rust peer's `Option<String>` branch
+    // at implementations/rust/provekit-proof-envelope/src/proof.rs:
+    //
+    //     if let Some(ref bcid) = input.binary_cid {
+    //         pairs.push(make_string_pair("binaryCid", bcid));
+    //     }
+    //
+    // emit_sorted_map then re-sorts by bytewise CBOR-encoded-key form per
+    // RFC 8949 §4.2.1, so absent vs present yields byte-identical output
+    // for legacy callers that leave binary_cid empty.
+    if (!in.binary_cid.empty()) {
+        pairs.push_back(make_string_pair("binaryCid", in.binary_cid));
+    }
     return pairs;
 }
 

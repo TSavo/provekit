@@ -34,6 +34,17 @@ struct ProofEnvelopeInput {
     std::string signer_cid;
     Ed25519Seed signer_seed;
     std::string declared_at;  // RFC 3339, e.g. "2026-04-30T12:00:00.000Z"
+
+    // Optional CID of the compiled binary this proof bundle covers. When
+    // non-empty, the framework checks that the running binary's hash matches
+    // before trusting any claims in this bundle (proof-file-format rule 5;
+    // MAY in v1.3.0, promoted to MUST under the v1.4.0 binary-attestation-
+    // protocol spec).
+    //
+    // Sentinel: empty string means "absent" , the CBOR pair is not emitted,
+    // matching the Rust peer's `Option<String>` `None` branch in
+    // implementations/rust/provekit-proof-envelope/src/proof.rs.
+    std::string binary_cid;
 };
 
 struct ProofEnvelopeOutput {
