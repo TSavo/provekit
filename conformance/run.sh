@@ -148,6 +148,22 @@ if need_tool bun typescript; then
     fi
 fi
 
+# --- C# ---
+echo "[C#] dotnet test"
+if need_tool dotnet csharp; then
+    if (cd implementations/csharp && run_quiet dotnet test); then
+        report "csharp" "PASS" "DataAnnotations lift + LSP plugin tests"
+    else
+        report "csharp" "FAIL" "dotnet test failed"
+    fi
+fi
+
+# --- Ruby ---
+echo "[Ruby] (no test suite yet)"
+if need_tool ruby ruby; then
+    report "ruby" "SKIP" "no test infrastructure (PR #66 + #67 shipped impl + lift adapters; tests pending)"
+fi
+
 # --- Summary ---
 echo ""
 echo "=========================================="
