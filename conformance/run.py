@@ -367,7 +367,7 @@ def extract_c(fixture_name: str) -> Optional[str]:
 
     c_dir = ROOT / "implementations" / "c" / "provekit-ir"
     include = c_dir / "include"
-    src_files = [c_dir / "src" / f for f in ["ir.c", "jcs.c", "hash.c"]]
+    src_files = [c_dir / "src" / f for f in ["ir.c", "jcs.c"]]
     with tempfile.NamedTemporaryFile(suffix=".c", mode="w", delete=False) as f:
         f.write(code)
         src = f.name
@@ -395,9 +395,10 @@ def extract_zig(fixture_name: str) -> Optional[str]:
     zig_src = ROOT / "implementations" / "zig" / "provekit-ir" / "src"
     if fixture_name == "eq_atomic":
         code = textwrap.dedent("""\
+            const std = @import("std");
             const provekit = @import("provekit-ir");
             pub fn main() !void {
-                const stdout = @import("std").io.getStdOut().writer();
+                const stdout = std.io.getStdOut().writer();
                 const ctor_args = [_]provekit.Term{provekit.Str("42")};
                 const lhs = provekit.Ctor("parse_int", &ctor_args);
                 const rhs = provekit.Num(42);
@@ -410,9 +411,10 @@ def extract_zig(fixture_name: str) -> Optional[str]:
         """)
     elif fixture_name == "pattern1_bounded_loop":
         code = textwrap.dedent("""\
+            const std = @import("std");
             const provekit = @import("provekit-ir");
             pub fn main() !void {
-                const stdout = @import("std").io.getStdOut().writer();
+                const stdout = std.io.getStdOut().writer();
                 const x1 = provekit.Var("x");
                 const x2 = provekit.Var("x");
                 const x3 = provekit.Var("x");
