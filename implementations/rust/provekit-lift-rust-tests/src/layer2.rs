@@ -909,13 +909,19 @@ mod tests {
 
     #[test]
     fn pattern3_releases_claim_when_only_one_atom_lifts() {
-        // f(1) lifts; "hello".len() does not; 1 atom < 2 -> not a
-        // characterization; claim released.
+        // f(1) lifts; format!(...) operand does not (Expr::Macro skip);
+        // 1 atom < 2 -> not a characterization; claim released.
+        //
+        // Note: the original version of this test used `"hello".len()` as
+        // the "doesn't lift" shape. v0.5 widened the operand whitelist to
+        // include method calls, so that shape now lifts and the test
+        // needs a genuinely-unsupported shape. `format!(...)` is the
+        // documented v0.5 negative shape.
         let src = r#"
             #[test]
             fn mixed() {
                 assert_eq!(f(1), 1);
-                assert_eq!("hello".len(), 5);
+                assert_eq!(s, format!("{}", x));
             }
         "#;
         let f = parse(src);
