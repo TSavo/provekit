@@ -49,11 +49,24 @@ export interface PrimitiveBridgeDeclaration {
   /** The kit's identifying layer name (e.g. "ts-kit", "rust-kit"). */
   sourceLayer: string;
   /**
+   * Optional CID of the source-layer contract being bridged FROM.
+   * Aligns this in-process kit-authoring record with the wire-level
+   * BridgeDeclaration (see src/ir/symbolic/property.ts) so producers
+   * using primitiveBridge() can carry the v1.4 fields end to end.
+   */
+  sourceContractCid?: string;
+  /**
    * CID of the deeper-layer's declaration this bridges to (e.g. V8's
    * signed memento for parseInt). At authoring time this may be a
    * placeholder until the deeper-layer's catalog is published.
    */
   targetContractCid: string;
+  /**
+   * Optional CID of the SPECIFIC `.proof` bundle this bridge pins to.
+   * Mirrors the wire-level BridgeDeclaration.targetProofCid (see
+   * protocol/specs/2026-04-30-ir-formal-grammar.md PR #10).
+   */
+  targetProofCid?: string;
   /** Deeper layer's name (e.g. "v8", "ecma-262", "node-runtime"). */
   targetLayer: string;
   /** Optional human-readable note explaining the bridge. */
@@ -105,7 +118,11 @@ export interface PrimitiveBridgeInput {
   irArgSorts: SortRef[];
   irReturnSort: SortRef;
   sourceLayer: string;
+  /** Optional source-layer contract CID; see PrimitiveBridgeDeclaration. */
+  sourceContractCid?: string;
   targetContractCid: string;
+  /** Optional pinned target .proof CID; see PrimitiveBridgeDeclaration. */
+  targetProofCid?: string;
   targetLayer: string;
   notes?: string;
 }
@@ -127,7 +144,13 @@ export function primitiveBridge(
     irArgSorts: input.irArgSorts,
     irReturnSort: input.irReturnSort,
     sourceLayer: input.sourceLayer,
+    ...(input.sourceContractCid !== undefined
+      ? { sourceContractCid: input.sourceContractCid }
+      : {}),
     targetContractCid: input.targetContractCid,
+    ...(input.targetProofCid !== undefined
+      ? { targetProofCid: input.targetProofCid }
+      : {}),
     targetLayer: input.targetLayer,
     ...(input.notes ? { notes: input.notes } : {}),
   };
