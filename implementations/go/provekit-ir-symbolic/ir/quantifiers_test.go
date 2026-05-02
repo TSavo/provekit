@@ -50,7 +50,7 @@ func TestMakeVarPreservesNameInJSON(t *testing.T) {
 func TestMakeCtorEmitsCanonicalCtor(t *testing.T) {
 	c := MakeCtor("parseInt", []IrTerm{StrConst("42")}, Int)
 	b, _ := json.Marshal(c)
-	want := `{"kind":"ctor","name":"parseInt","args":[{"kind":"const","value":"42","sort":{"kind":"primitive","name":"String"}}]}`
+	want := `{"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"42"}],"kind":"ctor","name":"parseInt"}`
 	if string(b) != want {
 		t.Fatalf("MakeCtor JSON wrong:\n got: %s\nwant: %s", string(b), want)
 	}

@@ -107,7 +107,27 @@ func (c ContractDeclaration) DeclName() string { return c.Name }
 
 func (c ContractDeclaration) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(`{"kind":"contract","name":`)
+	if c.Evidence != nil {
+		buf.WriteString(`{"evidence":`)
+		encoded, err := encodeJSON(c.Evidence)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encoded)
+		buf.WriteByte(',')
+	} else {
+		buf.WriteByte('{')
+	}
+	if c.Inv != nil {
+		buf.WriteString(`"inv":`)
+		encoded, err := encodeJSON(c.Inv)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(encoded)
+		buf.WriteByte(',')
+	}
+	buf.WriteString(`"kind":"contract","name":`)
 	encoded, err := encodeJSON(c.Name)
 	if err != nil {
 		return nil, err
@@ -119,14 +139,6 @@ func (c ContractDeclaration) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	buf.Write(encoded)
-	if c.Pre != nil {
-		buf.WriteString(`,"pre":`)
-		encoded, err = encodeJSON(c.Pre)
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(encoded)
-	}
 	if c.Post != nil {
 		buf.WriteString(`,"post":`)
 		encoded, err = encodeJSON(c.Post)
@@ -135,17 +147,9 @@ func (c ContractDeclaration) MarshalJSON() ([]byte, error) {
 		}
 		buf.Write(encoded)
 	}
-	if c.Inv != nil {
-		buf.WriteString(`,"inv":`)
-		encoded, err = encodeJSON(c.Inv)
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(encoded)
-	}
-	if c.Evidence != nil {
-		buf.WriteString(`,"evidence":`)
-		encoded, err = encodeJSON(c.Evidence)
+	if c.Pre != nil {
+		buf.WriteString(`,"pre":`)
+		encoded, err = encodeJSON(c.Pre)
 		if err != nil {
 			return nil, err
 		}

@@ -176,7 +176,7 @@ func TestAddJSONShape(t *testing.T) {
 		t.Fatalf("marshal error: %v", err)
 	}
 	// v1.1.0: ctor drops `sort` from JSON.
-	want := `{"kind":"ctor","name":"+","args":[{"kind":"const","value":2,"sort":{"kind":"primitive","name":"Int"}},{"kind":"const","value":3,"sort":{"kind":"primitive","name":"Int"}}]}`
+	want := `{"args":[{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":2},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":3}],"kind":"ctor","name":"+"}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
