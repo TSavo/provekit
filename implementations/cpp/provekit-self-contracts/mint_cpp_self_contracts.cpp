@@ -130,6 +130,8 @@ static std::string mint_one_run(const std::string& out_dir, bool verbose) {
         .signer_cid = signer_cid,
         .signer_seed = signer_seed,
         .declared_at = declared_at,
+        // Self-contracts bundle does not back-pin a binary; emit absent.
+        .binary_cid = "",
     };
     auto built = build_proof_envelope(proof_input);
 
