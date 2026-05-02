@@ -91,3 +91,9 @@ implementations/go/provekit-lift-go-tests/provekit-lift-go
 implementations/*/blake3-512:*.proof
 /blake3-512:*.proof
 **/*.proof
+
+# Self-lift experiment artifacts ARE checked in: the .proof is the
+# minted output of running `provekit-lift` against a first-party crate
+# and serves as the durable record of what the auto-lifter reaches on
+# real source. Rebuild with `make self-lift-<crate>`.
+!.provekit/self-lifts/**/*.proof

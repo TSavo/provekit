@@ -56,6 +56,9 @@ help:
 	@echo "Per-language test:"
 	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python"
 	@echo ""
+	@echo "Self-lift experiments:"
+	@echo "  make self-lift-canonicalizer  run provekit-lift against the canonicalizer crate"
+	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean          remove build artifacts"
 	@echo ""
@@ -209,6 +212,34 @@ test-all: test-rust test-go test-ts test-csharp test-python
 ci: conformance test-all
 	@echo ""
 	@echo "==== ci: PASS ===="
+
+# --- Self-lift experiments ---------------------------------------------------
+#
+# `make self-lift-canonicalizer` runs `provekit-lift` against the
+# canonicalizer crate as-is and writes the resulting `.proof` plus a
+# human-readable lift-report under `.provekit/self-lifts/canonicalizer/`.
+# This is NOT part of the conformance gate; it's a separate experiment
+# that surfaces what the auto-lifter can/can't reach on real first-party
+# source. Idempotent: re-running with the same source produces the same
+# CID (default seed [0x42; 32]). Drift means either the source moved or
+# the lifter changed; in either case, inspect lift-report.txt.
+
+PROVEKIT_LIFT := implementations/rust/target/release/provekit-lift
+SELF_LIFT_DIR := .provekit/self-lifts/canonicalizer
+
+.PHONY: self-lift-canonicalizer
+self-lift-canonicalizer: build-rust
+	@echo ">> self-lifting provekit-canonicalizer"
+	@mkdir -p $(SELF_LIFT_DIR)
+	@rm -f $(SELF_LIFT_DIR)/blake3-512:*.proof
+	@out=$$($(PROVEKIT_LIFT) \
+		--workspace implementations/rust/provekit-canonicalizer \
+		--target-dir $(SELF_LIFT_DIR) --quiet); \
+	  echo "  cid: $$out"; \
+	  test -f $(SELF_LIFT_DIR)/$$out.proof || \
+	    (echo "FAIL: lifter did not write $(SELF_LIFT_DIR)/$$out.proof" && exit 1); \
+	  echo "  proof: $(SELF_LIFT_DIR)/$$out.proof"
+	@echo "  report: $(SELF_LIFT_DIR)/lift-report.txt"
 
 # --- Cleanup -----------------------------------------------------------------
 
