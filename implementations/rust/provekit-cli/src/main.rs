@@ -32,6 +32,7 @@ mod cmd_prove;
 mod cmd_search;
 mod cmd_verify_protocol;
 mod cmd_version;
+mod cmd_witness;
 mod project_config;
 mod prompts;
 mod protocol;
@@ -99,6 +100,9 @@ enum Cmd {
     Must(cmd_must::MustArgs),
     /// Hand the configured agent a bug; verify a fix in a sandbox; report.
     Fix(cmd_fix::FixArgs),
+    /// Mint a witness: prove a new property from an existing contract,
+    /// extending the proof lattice. Anyone can mint witnesses.
+    Witness(WitnessArgs),
     /// List or describe installed agent plugins.
     Agent(cmd_agent::AgentArgs),
     /// Confirm the local install conforms to the expected protocol-catalog CID.
@@ -216,6 +220,23 @@ pub struct VerifyProtocolArgs {
 }
 
 #[derive(Parser, Debug, Clone)]
+pub struct WitnessArgs {
+    /// CID of the contract to witness from (the base theorem).
+    pub contract_cid: String,
+    /// Path to an IR-JSON formula file representing the property to prove.
+    /// Use `-` for stdin.
+    pub property: PathBuf,
+    /// Project root to load the contract from. Defaults to current directory.
+    #[arg(long)]
+    pub project: Option<PathBuf>,
+    /// Path to z3 binary (default: "z3" on PATH).
+    #[arg(long, default_value = "z3")]
+    pub z3: String,
+    #[command(flatten)]
+    pub out: OutputFlags,
+}
+
+#[derive(Parser, Debug, Clone)]
 pub struct VersionArgs {
     #[command(flatten)]
     pub out: OutputFlags,
@@ -236,6 +257,7 @@ fn main() -> ExitCode {
         Cmd::Mint(a) => cmd_mint::run(a),
         Cmd::Must(a) => cmd_must::run(a),
         Cmd::Fix(a) => cmd_fix::run(a),
+        Cmd::Witness(a) => cmd_witness::run(a),
         Cmd::Agent(a) => cmd_agent::run(a),
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
