@@ -205,6 +205,12 @@ pub fn invariants() {
         }),
     );
 
+    // R10 + R11: collapsed. R10 ("every spec file referenced from
+    // `properties` exists at expected path") is subsumed by R11's
+    // hash-match check, since blake3_512_of_spec_file_for_key(k) reads
+    // the file -- non-existence fails the read, R10 falls out as a
+    // structural precondition to the hash equality. PR #53 listed R10
+    // as separately-deferred; this comment retires that separation.
     // -- R11: every spec file's raw-byte BLAKE3-512 matches its CID. ------
     //
     // forall key, file. properties_value(key) = spec_cid_of_file(file).
