@@ -103,6 +103,12 @@ mod instantiate_invariants;
 #[path = "../../provekit-verifier/src/smt_emitter.invariant.rs"]
 mod smt_emitter_invariants;
 
+// catalog-format spec rules. Module is `pub mod catalog_format` above;
+// the alias here matches the slab-naming convention used in
+// `author_all_invariants()` so the catalog-format contracts ship as a
+// 15th slab in the rust self-contracts bundle.
+use catalog_format as catalog_format_invariants;
+
 // --- Orchestrator types ----------------------------------------------------
 
 /// Source-file label tagging which module of contracts we're walking.
@@ -236,6 +242,13 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
                 path: "provekit-verifier/src/smt_emitter.invariant.rs",
             },
             smt_emitter_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "catalog_format",
+                path: "provekit-self-contracts/src/catalog_format.rs",
+            },
+            catalog_format_invariants::invariants,
         ),
     ];
 
