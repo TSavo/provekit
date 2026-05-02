@@ -149,6 +149,9 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
 
 # --- Conformance gate --------------------------------------------------------
 
+# Default invocation (no args) is read-only since audit #180 fix; --verify
+# is now a no-op alias retained because protocol-catalog-format.md §5
+# names it literally. Either form is safe; only --write mutates the catalog.
 .PHONY: catalog-verify
 catalog-verify:
 	cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify

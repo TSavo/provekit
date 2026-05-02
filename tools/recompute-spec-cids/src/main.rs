@@ -8,12 +8,30 @@
 // placeholders), then computes the catalog's own CID as
 // BLAKE3-512(JCS(catalog-json)).
 //
-// Two modes:
+// Modes:
 //
-//   recompute-spec-cids                 -- write substituted catalog back
-//                                          to disk; print table + catalog CID
-//   recompute-spec-cids --verify        -- read catalog, recompute, fail if
-//                                          any CID drifts; do not write
+//   recompute-spec-cids                 read catalog, recompute, fail if
+//                                       any CID drifts; do NOT write
+//                                       (safe default; equivalent to the
+//                                       legacy `--verify`)
+//   recompute-spec-cids --verify        no-op alias for the default;
+//                                       retained because the on-disk
+//                                       protocol-catalog-format spec
+//                                       (§5) names `--verify` literally
+//                                       and removing the flag would edit
+//                                       a normative spec
+//   recompute-spec-cids --write         compute CIDs and write the
+//                                       substituted catalog back to disk;
+//                                       the only mode that mutates the
+//                                       working tree
+//
+// History note: prior to the audit-#180 fix, the default mode was the
+// mutating one and `--verify` was the read-only mode. Running the tool
+// without args silently changed the catalog. The current default is
+// read-only; `--write` is required to mutate. No back-compat shim for
+// the old mutating-default behavior; if a script relied on it, it now
+// fails fast with a refusal-to-write message and the script must add
+// `--write` explicitly.
 //
 // Spec bytes: hashed verbatim (raw file bytes; no canonicalization).
 // Catalog bytes: hashed in JCS-canonical form (RFC 8785) using the same
@@ -137,7 +155,7 @@ fn hash_spec_bytes(path: &Path) -> std::io::Result<String> {
     Ok(blake3_512_of(&bytes))
 }
 
-fn run(verify: bool) -> Result<(), String> {
+fn run(write: bool) -> Result<(), String> {
     let specs = specs_dir();
     let catalog_path = specs.join("2026-04-30-protocol-catalog.json");
 
@@ -217,10 +235,18 @@ fn run(verify: bool) -> Result<(), String> {
     let jcs_bytes = encode_jcs(&canonical_value);
     let catalog_cid = blake3_512_of(jcs_bytes.as_bytes());
 
-    // 6. Verify mode: confirm the on-disk catalog already has these CIDs
-    //    in place (i.e., re-running this tool produces no diff). Otherwise
-    //    write the substituted catalog back to disk in human-readable JSON.
-    if verify {
+    // 6. Default mode (read-only): confirm the on-disk catalog already
+    //    has these CIDs in place (i.e., re-running this tool produces no
+    //    diff). Only mutate when --write was passed explicitly.
+    if write {
+        // Write back as human-readable JSON, two-space indent + trailing
+        // newline to match the existing on-disk style.
+        let mut out = serde_json::to_string_pretty(&catalog)
+            .map_err(|e| format!("serialize catalog: {}", e))?;
+        out.push('\n');
+        fs::write(&catalog_path, out)
+            .map_err(|e| format!("write {}: {}", catalog_path.display(), e))?;
+    } else {
         let on_disk_props = catalog_text
             .parse::<JsonValue>()
             .map_err(|e| format!("re-parse catalog: {}", e))?;
@@ -238,19 +264,12 @@ fn run(verify: bool) -> Result<(), String> {
                 .ok_or_else(|| format!("on-disk catalog missing property {}", key))?;
             if got != want {
                 return Err(format!(
-                    "catalog CID drift for {}:\n  on-disk: {}\n  recomputed: {}",
+                    "catalog CID drift for {}:\n  on-disk: {}\n  recomputed: {}\n\n\
+                     refusing to write without explicit --write flag.",
                     key, got, want
                 ));
             }
         }
-    } else {
-        // Write back as human-readable JSON, two-space indent + trailing
-        // newline to match the existing on-disk style.
-        let mut out = serde_json::to_string_pretty(&catalog)
-            .map_err(|e| format!("serialize catalog: {}", e))?;
-        out.push('\n');
-        fs::write(&catalog_path, out)
-            .map_err(|e| format!("write {}: {}", catalog_path.display(), e))?;
     }
 
     // 7. Report.
@@ -271,8 +290,34 @@ fn run(verify: bool) -> Result<(), String> {
 }
 
 fn main() -> ExitCode {
-    let verify = std::env::args().any(|a| a == "--verify");
-    match run(verify) {
+    // Default is read-only (the safe behavior). --verify is a no-op
+    // alias kept for the legacy invocation that the on-disk
+    // protocol-catalog-format spec §5 names literally; --write is the
+    // only flag that mutates the working tree.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut write = false;
+    for arg in &args {
+        match arg.as_str() {
+            "--write" => write = true,
+            "--verify" => { /* no-op: default is already read-only */ }
+            "-h" | "--help" => {
+                println!(
+                    "recompute-spec-cids\n\
+                     \n\
+                     Default (no args)  read-only verify; fails on CID drift.\n\
+                     --verify           alias for the default (kept for spec-text compatibility).\n\
+                     --write            recompute and write the catalog back to disk."
+                );
+                return ExitCode::SUCCESS;
+            }
+            other => {
+                eprintln!("recompute-spec-cids: unknown argument `{}`", other);
+                eprintln!("usage: recompute-spec-cids [--write | --verify]");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    match run(write) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("recompute-spec-cids: {}", e);
