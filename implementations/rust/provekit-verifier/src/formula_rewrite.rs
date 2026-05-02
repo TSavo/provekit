@@ -14,7 +14,6 @@
 // complete (don't change the verdict). They only reduce solver load.
 
 use serde_json::Value as Json;
-use std::collections::HashSet;
 
 /// Proof tactic result.
 pub enum TacticResult {

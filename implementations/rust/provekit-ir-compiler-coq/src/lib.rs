@@ -277,7 +277,7 @@ Definition parseInt (s : string) : nat := parse_nat s.
                 }
             }
             "connective" => {
-                let op_kind = ir.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                let _op_kind = ir.get("kind").and_then(|v| v.as_str()).unwrap_or("");
                 let ck = ir.get("kind").and_then(|v| v.as_str()).unwrap_or("");
                 let operands: Vec<Json> = ir.get("operands").and_then(|v| v.as_array()).cloned().unwrap_or_default();
                 

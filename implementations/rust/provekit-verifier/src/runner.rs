@@ -404,7 +404,7 @@ fn work_one(
                     format!("tier3a: tactic discharged ({reason})"),
                 );
             }
-            formula_rewrite::TacticResult::Reduced { new_formula, reason } => {
+            formula_rewrite::TacticResult::Reduced { new_formula, reason: _ } => {
                 // Use the reduced formula for SMT emission
                 smt = match smt_emitter::emit(&new_formula) {
                     Ok(s) => s,

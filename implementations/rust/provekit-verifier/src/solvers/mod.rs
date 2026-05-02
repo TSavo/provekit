@@ -29,6 +29,7 @@
 //   * Dispatch                    - inspect the formula and pick the
 //                                   matching solver for that fragment.
 
+pub mod coq;
 pub mod config;
 pub mod dispatch;
 pub mod plan;
@@ -76,6 +77,7 @@ pub trait Solver: Send + Sync {
 /// shared, cheaply-clonable handles.
 pub type SolverHandle = Arc<dyn Solver>;
 
+pub use coq::CoqSubprocessSolver;
 pub use config::{DispatchConfig, PortfolioMode, SolverConfig, SolverPlan, SolversConfig};
 pub use dispatch::dispatch_for_formula;
 pub use plan::{run_plan, SolverInvocation};

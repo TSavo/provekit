@@ -954,6 +954,8 @@ version = "0.1.0"
 dependencies = [
  "provekit-canonicalizer",
  "provekit-claim-envelope",
+ "provekit-ir-compiler",
+ "provekit-ir-compiler-coq",
  "provekit-ir-compiler-smt-lib",
  "provekit-ir-symbolic",
  "provekit-proof-envelope",
