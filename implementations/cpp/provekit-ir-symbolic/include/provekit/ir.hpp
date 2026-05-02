@@ -492,7 +492,10 @@ inline void write_var(std::ostringstream& out, const VarTerm& v) {
 }
 
 inline void write_const(std::ostringstream& out, const ConstTerm& c) {
-  out << "{\"kind\":\"const\",\"value\":";
+  // JCS alphabetical: kind, sort, value.
+  out << "{\"kind\":\"const\",\"sort\":";
+  write_sort(out, c.sort);
+  out << ",\"value\":";
   std::visit([&out](const auto& val) {
     using T = std::decay_t<decltype(val)>;
     if constexpr (std::is_same_v<T, int64_t>) out << val;
@@ -502,46 +505,46 @@ inline void write_const(std::ostringstream& out, const ConstTerm& c) {
       write_string(out, val);
     }
   }, c.value);
-  out << ",\"sort\":";
-  write_sort(out, c.sort);
   out << "}";
 }
 
 inline void write_ctor(std::ostringstream& out, const CtorTerm& c) {
-  // Locked key order: kind, name, args. (No sort.)
-  out << "{\"kind\":\"ctor\",\"name\":";
-  write_string(out, c.name);
-  out << ",\"args\":[";
+  // JCS alphabetical: args, kind, name. (No sort in protocol v1.1.)
+  out << "{\"args\":[";
   for (size_t i = 0; i < c.args.size(); i++) {
     if (i > 0) out << ",";
     write_term(out, *c.args[i]);
   }
-  out << "]}";
+  out << "],\"kind\":\"ctor\",\"name\":";
+  write_string(out, c.name);
+  out << "}";
 }
 
 inline void write_lambda(std::ostringstream& out, const LambdaTerm& l) {
-  out << "{\"kind\":\"lambda\",\"paramName\":";
+  // JCS alphabetical: body, kind, paramName, paramSort.
+  out << "{\"body\":";
+  write_term(out, *l.body);
+  out << ",\"kind\":\"lambda\",\"paramName\":";
   write_string(out, l.paramName);
   out << ",\"paramSort\":";
   write_sort(out, l.paramSort);
-  out << ",\"body\":";
-  write_term(out, *l.body);
   out << "}";
 }
 
 inline void write_let(std::ostringstream& out, const LetTerm& l) {
-  out << "{\"kind\":\"let\",\"bindings\":[";
+  // JCS alphabetical: bindings, body, kind.
+  out << "{\"bindings\":[";
   for (size_t i = 0; i < l.bindings.size(); i++) {
     if (i > 0) out << ",";
-    out << "{\"name\":";
-    write_string(out, l.bindings[i].name);
-    out << ",\"boundTerm\":";
+    out << "{\"boundTerm\":";
     write_term(out, *l.bindings[i].boundTerm);
+    out << ",\"name\":";
+    write_string(out, l.bindings[i].name);
     out << "}";
   }
   out << "],\"body\":";
   write_term(out, *l.body);
-  out << "}";
+  out << ",\"kind\":\"let\"}";
 }
 
 inline void write_term(std::ostringstream& out, const Term& t) {
@@ -558,15 +561,15 @@ inline void write_term(std::ostringstream& out, const Term& t) {
 inline void write_formula(std::ostringstream& out, const Formula& f);
 
 inline void write_atomic(std::ostringstream& out, const AtomicFormula& a) {
-  // Locked key order: kind, name, args. (Field renamed predicate→name.)
-  out << "{\"kind\":\"atomic\",\"name\":";
-  write_string(out, a.name);
-  out << ",\"args\":[";
+  // JCS alphabetical: args, kind, name.
+  out << "{\"args\":[";
   for (size_t i = 0; i < a.args.size(); i++) {
     if (i > 0) out << ",";
     write_term(out, *a.args[i]);
   }
-  out << "]}";
+  out << "],\"kind\":\"atomic\",\"name\":";
+  write_string(out, a.name);
+  out << "}";
 }
 
 inline void write_connective(std::ostringstream& out, const ConnectiveFormula& c) {
@@ -582,25 +585,26 @@ inline void write_connective(std::ostringstream& out, const ConnectiveFormula& c
 }
 
 inline void write_quantifier(std::ostringstream& out, const QuantifierFormula& q) {
-  // Locked key order: kind, name, sort, body.
-  out << "{\"kind\":";
+  // JCS alphabetical: body, kind, name, sort.
+  out << "{\"body\":";
+  write_formula(out, *q.body);
+  out << ",\"kind\":";
   write_string(out, q.kind);
   out << ",\"name\":";
   write_string(out, q.name);
   out << ",\"sort\":";
   write_sort(out, q.sort);
-  out << ",\"body\":";
-  write_formula(out, *q.body);
   out << "}";
 }
 
 inline void write_choice(std::ostringstream& out, const ChoiceFormula& c) {
-  out << "{\"kind\":\"choice\",\"varName\":";
-  write_string(out, c.varName);
-  out << ",\"sort\":";
-  write_sort(out, c.sort);
-  out << ",\"body\":";
+  // JCS alphabetical: body, kind, sort, varName.
+  out << "{\"body\":";
   write_formula(out, *c.body);
+  out << ",\"kind\":\"choice\",\"sort\":";
+  write_sort(out, c.sort);
+  out << ",\"varName\":";
+  write_string(out, c.varName);
   out << "}";
 }
 
@@ -633,36 +637,36 @@ inline void write_evidence(std::ostringstream& out, const EvidenceTerm& e) {
   out << "}}";
 }
 
-// Marshal an array of ContractDecl into the IR-JSON Document shape:
-//   [{"kind":"contract","name":"...","outBinding":"out","pre":..,"post":..,"inv":..,"evidence":..}, ...]
-// pre/post/inv/evidence are omitted when null (matches JCS canonicalization "omit absent" rule).
-// Locked key order per ContractDeclaration: kind, name, outBinding, pre?, post?, inv?, evidence?.
-// The evidence slot is appended after inv, matching the Rust peer's
-// marshal_declarations in provekit-ir-symbolic/src/serialize.rs.
+// Marshal an array of ContractDecl into the IR-JSON Document shape.
+// JCS alphabetical key order: evidence?, inv?, kind, name, outBinding, post?, pre?
+// pre/post/inv/evidence omitted when null (JCS "omit absent" rule).
 inline std::string marshal_declarations(const std::vector<ContractDecl>& decls) {
   std::ostringstream out;
   out << "[";
   for (size_t i = 0; i < decls.size(); i++) {
     if (i > 0) out << ",";
-    out << "{\"kind\":\"contract\",\"name\":";
+    out << "{";
+    if (decls[i].evidence) {
+      out << "\"evidence\":";
+      write_evidence(out, *decls[i].evidence);
+      out << ",";
+    }
+    if (decls[i].inv) {
+      out << "\"inv\":";
+      write_formula(out, *decls[i].inv);
+      out << ",";
+    }
+    out << "\"kind\":\"contract\",\"name\":";
     write_string(out, decls[i].name);
     out << ",\"outBinding\":";
     write_string(out, decls[i].outBinding);
-    if (decls[i].pre) {
-      out << ",\"pre\":";
-      write_formula(out, *decls[i].pre);
-    }
     if (decls[i].post) {
       out << ",\"post\":";
       write_formula(out, *decls[i].post);
     }
-    if (decls[i].inv) {
-      out << ",\"inv\":";
-      write_formula(out, *decls[i].inv);
-    }
-    if (decls[i].evidence) {
-      out << ",\"evidence\":";
-      write_evidence(out, *decls[i].evidence);
+    if (decls[i].pre) {
+      out << ",\"pre\":";
+      write_formula(out, *decls[i].pre);
     }
     out << "}";
   }
