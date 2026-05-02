@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "ProvekIt: #[provekit::contract(...)] and #[provekit::verify] attribute macros. Decorator-style authoring surface for the Rust kit."
+description = "ProvekIt: #[provekit::contract(...)], #[provekit::implement(...)], and #[provekit::verify] attribute macros. Decorator-style authoring surface for the Rust kit."
 
 [lib]
 proc-macro = true

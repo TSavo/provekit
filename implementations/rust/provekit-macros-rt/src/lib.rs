@@ -109,6 +109,29 @@ pub fn registered_verify_targets() -> impl Iterator<Item = &'static VerifyTarget
 }
 
 // ---------------------------------------------------------------------------
+// Implement registrations (the #[provekit::implement] surface)
+// ---------------------------------------------------------------------------
+
+/// One static registration emitted by `#[provekit::implement(target = "...")]`
+/// on a function definition. Tells the lifter: "when you see a call to this
+/// function, resolve it to the contract at `target_contract_cid`."
+///
+/// The binding is transient: it is resolved at lift time and does not produce
+/// a separate contract or bridge memento. The function's contract IS the target.
+pub struct ImplementRegistration {
+    pub fn_name: &'static str,
+    pub target_contract_cid: &'static str,
+    pub source_path: &'static str,
+    pub source_line: u32,
+}
+
+inventory::collect!(ImplementRegistration);
+
+pub fn registered_implements() -> impl Iterator<Item = &'static ImplementRegistration> {
+    inventory::iter::<ImplementRegistration>()
+}
+
+// ---------------------------------------------------------------------------
 // Re-exports for the macros' generated code.
 //
 // The macros expand to `::provekit_macros_rt::__priv::...`; keeping
@@ -120,5 +143,5 @@ pub fn registered_verify_targets() -> impl Iterator<Item = &'static VerifyTarget
 pub mod __priv {
     pub use inventory;
     pub use provekit_ir_symbolic;
-    pub use super::{ContractRegistration, VerifyTarget};
+    pub use super::{ContractRegistration, ImplementRegistration, VerifyTarget};
 }

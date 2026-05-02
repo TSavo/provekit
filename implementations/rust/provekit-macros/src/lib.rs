@@ -260,6 +260,64 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 // ---------------------------------------------------------------------------
+// #[provekit::implement(target = "...")] expansion
+// ---------------------------------------------------------------------------
+
+struct ImplementArgs {
+    target_cid: LitStr,
+}
+
+impl Parse for ImplementArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let key: Ident = input.parse()?;
+        if key != "target" {
+            return Err(syn::Error::new_spanned(
+                key,
+                "#[provekit::implement] requires `target = \"...\"`",
+            ));
+        }
+        let _: Token![=] = input.parse()?;
+        let target_cid: LitStr = input.parse()?;
+        Ok(Self { target_cid })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn implement(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(attr as ImplementArgs);
+    let item_fn = parse_macro_input!(item as ItemFn);
+    let fn_ident = item_fn.sig.ident.clone();
+    let fn_name_str = fn_ident.to_string();
+    let target_cid = args.target_cid;
+    let static_ident = quote::format_ident!("__PROVEKIT_IMPLEMENT_{}", fn_ident);
+
+    let expanded = quote! {
+        #item_fn
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals, non_snake_case)]
+        static #static_ident: ::provekit_macros_rt::__priv::ImplementRegistration =
+            ::provekit_macros_rt::__priv::ImplementRegistration {
+                fn_name: #fn_name_str,
+                target_contract_cid: #target_cid,
+                source_path: file!(),
+                source_line: line!(),
+            };
+
+        ::provekit_macros_rt::__priv::inventory::submit! {
+            ::provekit_macros_rt::__priv::ImplementRegistration {
+                fn_name: #fn_name_str,
+                target_contract_cid: #target_cid,
+                source_path: file!(),
+                source_line: line!(),
+            }
+        }
+    };
+
+    expanded.into()
+}
+
+// ---------------------------------------------------------------------------
 // #[provekit::verify] expansion
 // ---------------------------------------------------------------------------
 
