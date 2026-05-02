@@ -158,6 +158,18 @@ export interface BridgeEvidence {
     sourceLayer: string;
     /** The CID of the deeper-layer contract memento this bridges to. */
     targetContractCid: string;
+    /**
+     * Forward pin: the specific `.proof` bundle CID this bridge commits
+     * to as the source of its consequent contract member. Optional for
+     * back-compat with bridges minted before the field was normative;
+     * required by the v1.4 grammar for new bridges. When present, the
+     * verifier enforces BridgeDeclaration.ConsequentBundlePinned (see
+     * protocol/specs/2026-04-30-ir-formal-grammar.md
+     * § "Bridge target pinning: the shim-poisoning vector"). When
+     * absent, ConsequentBundlePinned cannot be enforced and the verifier
+     * emits a soft warning at resolve time.
+     */
+    targetProofCid?: string;
     /** Description of the deeper layer (e.g., "V8@12.4 parseInt"). */
     targetLayer: string;
     /** IR argument sorts of the bridged primitive (each a SortRef). */

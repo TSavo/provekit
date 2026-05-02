@@ -79,6 +79,13 @@ export interface MintBridgeArgs {
   sourceSymbol: string;
   sourceLayer: string;
   targetContractCid: string;
+  /**
+   * Forward pin: the `.proof` bundle CID this bridge commits to. When
+   * set, the verifier enforces BridgeDeclaration.ConsequentBundlePinned
+   * (see BridgeEvidence.body.targetProofCid). Optional for back-compat;
+   * the v1.4 grammar requires it for new bridges.
+   */
+  targetProofCid?: string;
   targetLayer: string;
   irArgSorts: unknown[];
   irReturnSort: unknown;
@@ -101,6 +108,9 @@ export function mintBridge(args: MintBridgeArgs): ClaimEnvelope {
       sourceSymbol: args.sourceSymbol,
       sourceLayer: args.sourceLayer,
       targetContractCid: args.targetContractCid,
+      ...(args.targetProofCid !== undefined
+        ? { targetProofCid: args.targetProofCid }
+        : {}),
       targetLayer: args.targetLayer,
       irArgSorts: args.irArgSorts,
       irReturnSort: args.irReturnSort,

@@ -69,13 +69,24 @@ export async function runBridgeEnforcement(projectRoot: string): Promise<BridgeE
   for (const cs of enumResult.callsites) {
     const resolved = await resolveStage.run({
       bridgeTargetContractCid: cs.bridgeTargetContractCid,
+      ...(cs.bridgeTargetProofCid !== undefined
+        ? { bridgeTargetProofCid: cs.bridgeTargetProofCid }
+        : {}),
+      bridgeIrName: cs.bridgeIrName,
       mementoPool: pool.mementoPool,
     });
     if (!resolved.resolved) {
+      // Forward pin failure carries the BridgeTargetProofCidMismatch
+      // detail string so operators see WHICH bundle was substituted.
+      // Other failure reasons (not-in-pool, etc.) keep their short codes.
+      const reason =
+        resolved.failureMessage !== undefined
+          ? resolved.failureMessage
+          : resolved.failureReason ?? undefined;
       rows.push({
         callsite: cs as unknown as BridgeReportRow["callsite"],
         status: "unresolved-target",
-        ...(resolved.failureReason ? { reason: resolved.failureReason } : {}),
+        ...(reason !== undefined ? { reason } : {}),
       });
       continue;
     }
