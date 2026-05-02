@@ -85,22 +85,20 @@ int main() {
 
     const std::string got = marshal_declarations(decls);
     const std::string want =
-        "[{\"kind\":\"contract\","
+        "[{\"evidence\":{\"certificate\":{\"formulaHash\":\"blake3-512:deadbeef\","
+        "\"proofData\":\"(unsat)\","
+        "\"tool\":\"z3\","
+        "\"version\":\"4.13.0\"},"
+        "\"kind\":\"evidence\","
+        "\"proofType\":\"smt-lib\"},"
+        "\"inv\":{\"body\":{\"args\":[{\"kind\":\"var\",\"name\":\"_x0\"},"
+        "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],"
+        "\"kind\":\"atomic\",\"name\":\">\"},"
+        "\"kind\":\"forall\",\"name\":\"_x0\","
+        "\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},"
+        "\"kind\":\"contract\","
         "\"name\":\"evidence-bearing-contract\","
-        "\"outBinding\":\"out\","
-        "\"inv\":{\"kind\":\"forall\","
-        "\"name\":\"_x0\","
-        "\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},"
-        "\"body\":{\"kind\":\"atomic\","
-        "\"name\":\">\","
-        "\"args\":[{\"kind\":\"var\",\"name\":\"_x0\"},"
-        "{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}},"
-        "\"evidence\":{\"kind\":\"evidence\","
-        "\"proofType\":\"smt-lib\","
-        "\"certificate\":{\"tool\":\"z3\","
-        "\"version\":\"4.13.0\","
-        "\"formulaHash\":\"blake3-512:deadbeef\","
-        "\"proofData\":\"(unsat)\"}}}]";
+        "\"outBinding\":\"out\"}]";
 
     if (!check_eq_str("EvidenceTerm IR-JSON shape", got, want)) {
         failures++;
@@ -126,16 +124,14 @@ int main() {
 
     const std::string bare_got = marshal_declarations(bare_decls);
     const std::string bare_want =
-        "[{\"kind\":\"contract\","
+        "[{\"inv\":{\"body\":{\"args\":[{\"kind\":\"var\",\"name\":\"_x0\"},"
+        "{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"value\":0}],"
+        "\"kind\":\"atomic\",\"name\":\">\"},"
+        "\"kind\":\"forall\",\"name\":\"_x0\","
+        "\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},"
+        "\"kind\":\"contract\","
         "\"name\":\"no-evidence-contract\","
-        "\"outBinding\":\"out\","
-        "\"inv\":{\"kind\":\"forall\","
-        "\"name\":\"_x0\","
-        "\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},"
-        "\"body\":{\"kind\":\"atomic\","
-        "\"name\":\">\","
-        "\"args\":[{\"kind\":\"var\",\"name\":\"_x0\"},"
-        "{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}]";
+        "\"outBinding\":\"out\"}]";
 
     if (!check_eq_str("EvidenceTerm absent (omit-when-null)",
                       bare_got, bare_want)) {

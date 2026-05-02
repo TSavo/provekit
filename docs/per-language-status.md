@@ -18,12 +18,13 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 | Language    | Kit | Libs | Lift adapters                                           | Decorator macros        | Embedded verifier | CLI                  | LSP Plugin           |
 |-------------|-----|------|---------------------------------------------------------|--------------------------|-------------------|----------------------|----------------------|
 | Rust        | `+` | `+`  | `+ proptest, contracts` ; `~ kani, prusti` ; `o creusot, flux`     | `+ provekit-macros`      | `+`               | `+ provekit (canonical)` | `+`                  |
-| TypeScript  | `+` | `+`  | `~ zod, class-validator, fast-check` ; `~ io-ts, valibot, ajv`     | `~`                      | `+`               | `~ (use Rust CLI)`   | `~`                  |
+| TypeScript  | `+` | `+`  | `+ zod, class-validator, fast-check` ; `~ io-ts, valibot, ajv`     | `~`                      | `+`               | `~ (use Rust CLI)`   | `~`                  |
 | Go          | `+` | `+`  | `~ go-playground/validator` ; `~ ozzo-validation`       | `~`                      | `+`               | `~ (use Rust CLI)`   | `~`                  |
 | C++         | `+` | `+`  | `~ [[expects:]]/[[ensures:]] (C++26)` ; `o assert.h`    | `~ (C++26 contracts)`    | `+`               | `~ (use Rust CLI)`   | `~`                  |
-| Zig         | `~` | `~`  | `~`                                                     | `~`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
+| C           | `+` | `~`  | `~`                                                     | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
+| Zig         | `+` | `~`  | `~`                                                     | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | Python      | `+` | `+`  | `+ pydantic` ; `~ deal, hypothesis` ; `~ icontract, attrs`   | `+`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
-| Java / JVM  | `~` | `~`  | `~ Bean Validation, JML, Cofoja`                        | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
+| Java / JVM  | `+` | `~`  | `+ Bean Validation, JML, Spring Web` ; `~ Cofoja`        | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
 
 ## Rust (canonical reference implementation)
 
@@ -57,10 +58,10 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 
 **Libs:** `ts-types-proof` lifts TypeScript type annotations into contract mementos. Embedded verifier shipping; usable from Node and from browsers (with the WASM build of the canonicalizer).
 
-**Lift adapters (planned for v1.2):**
-- `provekit-lift-zod`: walks `z.object`, `z.string`, `z.number`, validator combinators.
-- `provekit-lift-class-validator`: walks decorator-annotated class fields.
-- `provekit-lift-fast-check`: walks `fc.assert(fc.property(...))` blocks.
+**Lift adapters (shipping in v1.1):**
+- `provekit-lift-zod`: walks `z.object`, `z.string`, `z.number`, validator combinators. Full chain decoder for all major zod methods.
+- `provekit-lift-class-validator`: walks decorator-annotated class fields (`@IsNotEmpty`, `@MinLength`, `@Min`, `@Max`, `@IsEmail`, etc.).
+- `provekit-lift-fast-check`: walks `fc.assert(fc.property(...))` blocks. Lifts property tests to `forall` contracts.
 
 **Lift adapters (also planned):**
 - `io-ts`, `runtypes`, `valibot`: validator-style schema libraries; lift logic is uniform across the family.
@@ -133,16 +134,18 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 
 ## Java / JVM
 
-**Kit:** In progress. Multi-module Maven project with SLF4J-style architecture: `provekit-lift-java-core` (facade) + per-annotation binding JARs.
+**Kit:** Shipping in v1.1. Multi-module Maven project with SLF4J-style architecture: `provekit-lift-java-core` (facade) + per-annotation binding JARs, discovered via `java.util.ServiceLoader`.
 
 **Libs:** Planned for v1.2.
 
-**Lift adapters (in progress):**
+**Lift adapters (shipping in v1.1):**
 - `provekit-lift-java-bean-validation`: walks `@NotNull`, `@Email`, `@Min`, `@Max`, `@Pattern`, `@Size`, `@Positive`, `@Negative`, `@AssertTrue`, `@AssertFalse`, `@DecimalMin`, `@DecimalMax`, `@Digits`, `@Future`, `@Past`.
-- `provekit-lift-java-jml`: walks `//@ requires`, `//@ ensures`, `//@ invariant` comment-block annotations.
+- `provekit-lift-java-jml`: walks `//@ requires`, `//@ ensures`, `//@ invariant` comment-block annotations. Uses a hand-written tokenizer + recursive-descent parser (no regex gymnastics) to produce structured IR that is byte-for-byte identical to Bean Validation for equivalent constraints.
+- `provekit-lift-java-spring-web`: walks `@RequestParam`, `@PathVariable`, `@RequestMapping`, etc.
 - `provekit-lift-java-cofoja`: walks `@Requires`, `@Ensures`, `@Invariant` annotations.
+- Plus bindings for Spring Security, Swagger, Jackson, JPA, and Hibernate annotations.
 
-Architecture: core discovers bindings via `java.util.ServiceLoader`. Users add only the binding JARs for the annotation libraries they use. New bindings can be added without modifying the core.
+**Cross-domain equivalence:** Integration tests prove that `@NotNull`, `//@ requires x != null`, and `@RequestParam(required=true)` produce identical IR. Same for `@Min(0) @Max(100)` vs `//@ requires score >= 0 && score <= 100`.
 
 **Decorator macros:** JVM annotations are the natural authoring surface.
 
@@ -151,6 +154,38 @@ Architecture: core discovers bindings via `java.util.ServiceLoader`. Users add o
 **CLI:** Deferred. Use the Rust CLI.
 
 **LSP Plugin:** Planned.
+
+## C
+
+**Kit:** Shipping in v1.1. `implementations/c/provekit-ir` provides the IR library, JCS canonical JSON emitter, and BLAKE3-512 hash wrapper.
+
+**Libs:** Under evaluation. Native C BLAKE3 binding planned for v1.2; v1.1 delegates hashing to the Python `blake3` module via subprocess.
+
+**Lift adapters:** Planned for v1.2. `assert.h` macro walking under evaluation.
+
+**Decorator macros:** Under evaluation.
+
+**Embedded verifier:** Planned for v1.2.
+
+**CLI:** Deferred. Use the Rust CLI.
+
+**LSP Plugin:** Planned.
+
+## Zig
+
+**Kit:** Shipping in v1.1. `implementations/zig/provekit-ir` provides the IR library with JCS canonical JSON serialization and BLAKE3-512 hashing via `std.crypto.blake3`.
+
+**Libs:** Under evaluation.
+
+**Lift adapters:** `provekit-lift-zig` scans `//provekit:contract`, `//provekit:implement`, and `//provekit:verify` annotations in Zig source files. Emits JCS canonical IR.
+
+**Decorator macros:** Zig doesn't have attributes; comment conventions are used instead.
+
+**Embedded verifier:** Yes. The Zig kit uses `std.crypto.blake3` natively for 64-byte XOF hashing, producing identical hashes to the Rust kit.
+
+**CLI:** Deferred. Use the Rust CLI.
+
+**LSP Plugin:** Yes. `provekit-lift-zig --rpc` implements the ProvekIt NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`.
 
 ## Cross-language conformance
 
