@@ -414,8 +414,11 @@ fn var_with_empty_name_returns_err() {
              "sort": {"kind": "primitive", "name": "Int"}}
         ]
     });
-    // Spec allows empty string names; serde deserializes them fine.
-    assert!(emit(&f).is_ok());
+    // PR #39 added structural validation: empty var names are malformed
+    // IR (SMT-LIB rejects empty symbols, every host-language lifter
+    // refuses empty identifiers). The function name was correct; the
+    // prior assertion documented the bug instead of catching it.
+    assert!(emit(&f).is_err());
 }
 
 #[test]
