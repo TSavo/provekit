@@ -17,6 +17,10 @@ path = "src/bin/sign_catalog.rs"
 name = "sign-catalog-v1-2-0"
 path = "src/bin/sign_catalog_v1_2_0.rs"
 
+[[bin]]
+name = "sign-catalog-v1-3-0"
+path = "src/bin/sign_catalog_v1_3_0.rs"
+
 [lib]
 path = "src/lib.rs"
 

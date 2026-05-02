@@ -1,7 +1,7 @@
 {
   "kind": "catalog",
   "name": "provekit-protocol",
-  "version": "v1.2.0-2026-04-30",
+  "version": "v1.3.0-2026-05-02",
   "algorithms": {
     "hash": [
       "blake3-512"
@@ -14,27 +14,30 @@
     ]
   },
   "properties": {
-    "ir-formal-grammar": "blake3-512:6c0127e0d24946d7be75861db20507ccdcfdf968d3333f8aa34083e849d8238d73b3acfaa31880648995a024112182ed6b6002cd489548b4b18f5d4c3768dd96",
+    "ir-formal-grammar": "blake3-512:99f091633181eda7ad1798c15316c49c829899f8622146fae5de698dfbe36bd6038d45da334514c87b8e978739b538ab61f96c44093624c60d7a242ae37cc4bb",
     "canonicalization-grammar": "blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830",
     "memento-envelope-grammar": "blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5",
     "signatures-and-non-repudiation": "blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c",
     "chain-validity-and-fail-closed": "blake3-512:dd905e8660d855c0c8140ceaafb0e189391234ff981422e714644b23642b24d7ca0253c76d09b46e58c5f8d8362cc8efca436baf2be927ab63a7bacf356e7673",
     "ir-extension-protocol": "blake3-512:cff64b923879548fd54efb63c5ea116ba184adadec126e956387f1ee9d0f7907edbdb1a05866d62442a6fb2142948654464e63830a061efdaed8af9403bb0c13",
-    "proof-file-format": "blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3",
+    "proof-file-format": "blake3-512:18bde34e6a93b470f17f030040d9d5448aff660f12bd3fa22267cc50564dc7d499dd28ab0f2ad58d17531e897214a35ac2eddd45f2d3238c0fe7e31a1fd66de1",
     "semantic-envelope": "blake3-512:6b14a0c4a36877ea77a609f5262257fb4c65940e8e5eefc03647746525d052216761b1707384bffec5fb3c021ac0e07e45d390efefa2c7f5c67c045d93352b56",
     "supply-chain-via-semantic-envelope": "blake3-512:b924576310bf2defcc2e346e01bdaff6dbdb2a33b2554178e3786e484cb4a4da136443f17675a6cd939fcbcff8afb27396222b5b6649a6eaa31672f5446b15d0",
     "handshake-algorithm": "blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925",
     "per-language-kit-standard": "blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88",
     "lattice-tractability-theorem": "blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07",
-    "contract-merge-semantics": "blake3-512:aeb9e2c56603f56372c29cdcbbb11ec3ae6fada0b2004d9fb99955e21230b03a72d02fc7051eea09ed24b7271b758909011948b531b668bb5c20e8ab8a268bee",
+    "contract-merge-semantics": "blake3-512:040118310ca0df13518c8da4b1b2698d712f8e9d7a3ff1ee4f601c8870b221ec696549710715b173b0dc2cf2f20140be646c40d8f62cb06b6a1171d645daafa6",
     "protocol-catalog-format": "blake3-512:6d610d405cdd41a50425ec45cc5c3599ec372dfed17e41e89cb2f5cca03937989881ac34b1e8f039c9766934307ac42618100818fa8ae2ccf86bd8623eb2243c",
     "agent-plugin-protocol": "blake3-512:ff1dface88c0ba11cc8b4d7d05e002b240108fb4dc0b7447551f20994cd74086c66839071f14d15835b6d3992047a7e80db2038f57b0c96fb85e866eb60c2e30",
     "ir-compiler-protocol": "blake3-512:27d3b0affccd0f814d79f2adfce08ca8898a40ceeeb9703cf611edc58d0b0dd13869be1aeaff13d74fb4bc2401f72757a96e16807ce490c70f80b4348abbbb18",
     "multi-solver-protocol": "blake3-512:71fc7ac22997938629d835f87e4e8a322026d77c1e1f834c9fbe0f79cca4e903792c628e96d3004c88d29706f4d87bc042ff837fef571c0cb3012495a03003d3",
-    "lift-plugin-protocol": "blake3-512:8f6597f8d85fc1940ce093626d046bec85af0cdb2e44544a32ae91012a1abd2d5107eaaac787f7bb2727191cb2938a9d6d121d1335e410cd382e4579c52d03d1"
+    "lift-plugin-protocol": "blake3-512:fa5e47b0650b07a3d7d37e3efc0ec006d079224b23c601464a69fd91f6cbdb3e9adf4f2f1d54eb73c0f553c73750d4ca9349eeeba2ec9d47d081c52f6de263b6",
+    "correctness-is-a-hash": "blake3-512:5a41e9ad8b0e63df400b93b77a0106468160fb2b92db4099fa5b757c3c5596176c5891365dbc6a8263a57ea8a42866eaa9e1a41fa3a43a5aadef4b21f851a845",
+    "lsp-protocol": "blake3-512:75cac55f568b7363c3ae839ffdd11dc26d1a54d84d26ba43fca770b3fe2f7eca6305f77dad22b6b9f5f0bdb1cf10dc6fadd815ee3bf1507bb1eba6f106ee22bc"
   },
-  "declaredAt": "2026-04-30T15:00:00Z",
-  "_unsigned": "v1.2.0 minor bump (additive over v1.1.0): adds four pluggability protocols — agent-plugin-protocol (LSP-shape JSON-RPC seam for coding agents), ir-compiler-protocol (per-solver IR translators), multi-solver-protocol (single/chain/portfolio dispatch), lift-plugin-protocol (one Rust CLI + per-language plugins via stdio JSON-RPC). All four are additive: any v1.1.0 memento or .proof remains valid under v1.2.0. The reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via toolchain (vitest), not as a CLI peer. v1.1.0's own catalog CID (5b770182...19f05cd4) remains the version anyone pinned to it. v1.2.0's catalog is signed under the same foundation key.",
+  "declaredAt": "2026-05-02T15:00:00Z",
+  "_unsigned": "v1.3.0 minor bump (additive over v1.2.0): four protocol-additive enrichments + two new specs. (1) BridgeDeclaration gains `sourceContractCid` + `targetProofCid` fields for hash-bounded cross-bundle witness pinning. (2) Catalog memento gains optional `binaryCid` for supply-chain anchoring (rule 5 is MAY in v1.3.0; promotion to MUST awaits a reference verifier in v1.4.0). (3) Catalog memento gains optional `metadata` map for non-normative tooling/diagnostics. (4) `EvidenceTerm` proof-certificate carrier for `smt-lib`/`coq`/`custom` proof types. New specs: `correctness-is-a-hash` (the memcmp theorem) and `lsp-protocol` (real-time IDE integration with pluggable JSON-RPC backend). All v1.2.0 mementos and .proof bundles remain valid; the bump is purely additive. Catalog signed under the same foundation v0 key. v1.2.0 attestation (1e5cfee6...17d0579f) remains valid for anyone pinned.",
+  "_v1_2_0_unsigned": "v1.2.0 minor bump (additive over v1.1.0): adds four pluggability protocols — agent-plugin-protocol (LSP-shape JSON-RPC seam for coding agents), ir-compiler-protocol (per-solver IR translators), multi-solver-protocol (single/chain/portfolio dispatch), lift-plugin-protocol (one Rust CLI + per-language plugins via stdio JSON-RPC). All four are additive: any v1.1.0 memento or .proof remains valid under v1.2.0. The reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via toolchain (vitest), not as a CLI peer. v1.1.0's own catalog CID (5b770182...19f05cd4) remains the version anyone pinned to it. v1.2.0's catalog is signed under the same foundation key.",
   "_breakingChanges": [],
   "_v1_1_0_breakingChanges": [
     "Property memento role removed; contract memento role added with body fields {pre?, post?, inv?, outBinding, preHash?, postHash?, invHash?, authoring}",
@@ -49,5 +52,16 @@
     "ir-compiler-protocol: per-solver IR translators (SMT-LIB v2.6 reference; TPTP / Lean / Coq pluggable)",
     "multi-solver-protocol: single / chain / portfolio-first-wins / portfolio-consensus / per-fragment-dispatch modes",
     "lift-plugin-protocol: one Rust CLI dispatches to per-language lift plugins via stdio JSON-RPC. Reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via its own toolchain (vitest), not as a peer CLI"
+  ],
+  "_v1_3_0_additiveChanges": [
+    "BridgeDeclaration: sourceContractCid + targetProofCid for hash-bounded cross-bundle witness pinning (no implicit lookup)",
+    "ProofEnvelope catalog memento: optional binaryCid for supply-chain anchoring (rule 5 is MAY pending reference verifier in v1.4.0)",
+    "ProofEnvelope catalog memento: optional metadata map for non-normative tooling/diagnostics (verifiers MUST NOT use metadata for verification logic)",
+    "EvidenceTerm: proof-certificate carrier with proofType in {smt-lib, coq, custom} and certificate carrying tool/version/formulaHash/proofData",
+    "correctness-is-a-hash: new spec promoting the memcmp theorem (petabytes verified by 64 bytes is content-addressing's load-bearing claim)",
+    "lsp-protocol: new spec for real-time IDE contract verification with pluggable JSON-RPC backend (same shape as lift-plugin-protocol)",
+    "ir-formal-grammar enrichment: 27 named formal invariants documented in FOL across Terms / Formulas / Declarations / Sorts / Reference Parser / Test sections",
+    "contract-merge-semantics enrichment: cross-bundle merge clarifications",
+    "lift-plugin-protocol enrichment: minor clarifications"
   ]
 }

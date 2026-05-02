@@ -142,12 +142,20 @@ A `.proof` file passes integrity verification iff:
    signing per the memento envelope grammar.
 
 5. **Binary CID matches running artifact (when present).** If the
-   catalog includes `binaryCid`, the verifier MUST check that the
-   hash of the currently executing binary equals `binaryCid`. This is
-   the supply chain anchor: a `.proof` bundle is only valid for the
-   exact binary it was minted against. Recompilation, runtime patches,
-   or supply-chain injections change the binary CID and cause the
-   proof to be rejected.
+   catalog includes `binaryCid`, the verifier MAY check that the
+   hash of the currently executing binary equals `binaryCid`. This
+   is the supply chain anchor: a `.proof` bundle whose `binaryCid`
+   matches the running binary attests to "this proof was produced
+   by THIS binary, not a tampered fork." Recompilation, runtime
+   patches, or supply-chain injections change the binary CID; a
+   verifier that performs this check rejects mismatches.
+
+   v1.3.0 status: this rule is MAY (not MUST). The protocol defines
+   the field and the check; no v1.3.0 verifier implements
+   `hash(running_binary)` yet. Producers may emit `binaryCid` (Rust
+   does, defaulting to `None`); consumers may verify. A future v1.4.0
+   minor bump considers promoting to MUST once a reference verifier
+   ships the running-binary hash routine end-to-end.
 
 Fail-closed by default. Any rule violation produces a structured
 rejection with the failing rule's ID; verifiers MUST NOT accept
