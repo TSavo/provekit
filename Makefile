@@ -76,9 +76,10 @@ help:
 	@echo "  make build-csharp   dotnet build"
 	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
 	@echo "  make build-c        cc build of provekit-ir + provekit-lsp-c"
+	@echo "  make build-swift    swift build -c release"
 	@echo ""
 	@echo "Per-language test:"
-	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-java  test-c"
+	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-java  test-c  test-swift"
 	@echo ""
 	@echo "Self-lift experiments:"
 	@echo "  make self-lift-canonicalizer  run provekit-lift against the canonicalizer crate"
@@ -93,6 +94,7 @@ help:
 	@echo "  cpp:     (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json"
 	@echo "  ts:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json"
 	@echo "  csharp:  (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json"
+	@echo "  swift:   (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/swift.json"
 
 # --- Per-language builds -----------------------------------------------------
 
@@ -100,7 +102,7 @@ help:
 # spawning `provekit-linkerd` (which subprocesses kit lifters at lift
 # time). Each kit's build target is independent; failures stay isolated.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-ts build-csharp build-java
+build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-swift
 
 .PHONY: build-rust
 build-rust:
@@ -138,6 +140,10 @@ build-java:
 	mkdir -p ~/.local/bin
 	cp implementations/java/provekit-lift-java-core/target/appassembler/bin/provekit-lsp-java ~/.local/bin/provekit-lsp-java
 	chmod +x ~/.local/bin/provekit-lsp-java
+
+.PHONY: build-swift
+build-swift:
+	cd implementations/swift && swift build -c release
 
 # --- Mint targets ------------------------------------------------------------
 
@@ -211,15 +217,29 @@ mint-csharp:
 		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
 		 echo "        --bin sign-self-contracts -- csharp $$cid $$cset" && exit 1)
 
+.PHONY: mint-swift
+mint-swift: build-swift
+	@echo ">> minting swift self-contracts"
+	@swift_out=$$(cd implementations/swift && swift run mint-swift-self-contracts 2>/dev/null); \
+	cid=$$(echo "$$swift_out" | grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
+	cset=$$(echo "$$swift_out" | grep -F 'contractSetCid:' | awk '{print $$NF}' | head -1); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/swift.json "$$cset" || \
+		(echo "FAIL: swift self-contracts attestation rejected; bump dance:" && \
+		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
+		 echo "        --bin sign-self-contracts -- swift $$cid $$cset" && exit 1)
+
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-swift
 	@echo ""
-	@echo "==== all 5 self-contract CIDs match pinned values ===="
+	@echo "==== all 6 self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
 	@printf "  %-8s  %s\n" "ts"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ts.json)"
 	@printf "  %-8s  %s\n" "csharp" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json)"
+	@printf "  %-8s  %s\n" "swift"  "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/swift.json)"
 
 # --- Conformance gate --------------------------------------------------------
 
@@ -308,8 +328,24 @@ test-python:
 test-java: build-java
 	mvn test -q -f implementations/java/provekit-lift-java-core/pom.xml
 
+.PHONY: test-swift
+test-swift: build-swift
+	cd implementations/swift && swift run conformance
+	cd implementations/swift && swift run test-swift-lsp
+
+.PHONY: test-zig
+test-zig:
+	cd implementations/zig/provekit-ir && zig build test
+	cd implementations/zig/provekit-lift-zig && zig build test
+	cd implementations/zig/provekit-lsp-zig && zig build test
+
+.PHONY: build-zig
+build-zig:
+	cd implementations/zig/provekit-ir && zig build
+	cd implementations/zig/provekit-lsp-zig && zig build
+
 .PHONY: test-all
-test-all: test-rust test-go test-ts test-csharp test-python test-java
+test-all: test-rust test-go test-ts test-csharp test-python test-java test-swift
 	@echo ""
 	@echo "==== test-all: PASS ===="
 

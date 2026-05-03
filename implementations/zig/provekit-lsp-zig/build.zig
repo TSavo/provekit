@@ -10,10 +10,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // lift module — pure parse logic, no IO.
-    // Registered as a public module so provekit-lsp-zig can depend on it.
-    const lift_mod = b.addModule("provekit-lift-zig", .{
-        .root_source_file = b.path("src/lift.zig"),
+    // Reuse the pure parse module from provekit-lift-zig.
+    const lift_mod = b.createModule(.{
+        .root_source_file = b.path("../provekit-lift-zig/src/lift.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -32,7 +31,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
-        .name = "provekit-lift-zig",
+        .name = "provekit-lsp-zig",
         .root_module = exe_mod,
     });
     b.installArtifact(exe);
@@ -45,12 +44,22 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    // Unit tests for the lift module.
-    const lift_tests = b.addTest(.{
-        .root_module = lift_mod,
+    // Integration tests.
+    const test_mod = b.createModule(.{
+        .root_source_file = b.path("src/test_lsp.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "provekit-ir", .module = provekit_ir },
+            .{ .name = "provekit-lift-zig", .module = lift_mod },
+        },
     });
-    const run_lift_tests = b.addRunArtifact(lift_tests);
 
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lift_tests.step);
+    const tests = b.addTest(.{
+        .root_module = test_mod,
+    });
+    const run_tests = b.addRunArtifact(tests);
+
+    const test_step = b.step("test", "Run LSP integration tests");
+    test_step.dependOn(&run_tests.step);
 }
