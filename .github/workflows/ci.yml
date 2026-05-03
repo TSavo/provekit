@@ -6,7 +6,7 @@
 #
 # Languages exercised:
 #   Rust 1.x stable, Go 1.22, .NET 10 (preview), Node 22 + pnpm 10,
-#   Python 3.12, clang++ via apt + vendored portable BLAKE3.
+#   Python 3.12, Java 21 (Temurin) + Maven, clang++ via apt + vendored portable BLAKE3.
 #
 # The Makefile is the contract. CI installs toolchains then calls `make`
 # targets so local dev and CI run the same code path. If you can run
@@ -93,6 +93,18 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
+
+      - name: Set up Java 21 + Maven
+        # build-java (added by java-agent E2E work) calls `mvn package`.
+        # pom.xml sets maven.compiler.source/target=17; Temurin 21 is
+        # LTS and forward-compatible with source level 17.
+        # cache: maven caches ~/.m2/repository so subsequent runs skip
+        # the multi-hundred-MB dependency download.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
 
       # ---------------------------------------------------------------
       # System-level deps: openssl, nlohmann-json. BLAKE3 is vendored
