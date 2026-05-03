@@ -48,13 +48,13 @@ STDIN.each_line do |line|
       if line =~ %r{//\s*provekit:\s*contract}
         fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
         fn_name = fn ? $1 : "unknown"
-        decls << ContractDecl.new(name: fn_name, post: and())
+        decls << ContractDecl.new(name: fn_name, post: Provekit::IR.and())
       end
       if line =~ %r{//\s*provekit:\s*implement\s+([\w-]+)}
         cid = $1
         fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
         fn_name = fn ? $1 : "unknown"
-        decls << ContractDecl.new(name: "#{fn_name}→#{cid}", post: and())
+        decls << ContractDecl.new(name: "#{fn_name}→#{cid}", post: Provekit::IR.and())
       end
     end
 
