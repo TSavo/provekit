@@ -14,6 +14,7 @@ $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "json"
 require "provekit/ir"
 require "provekit/lift/active_model"
+require "provekit/lift/ffi_resolver"
 
 include Provekit::IR
 
@@ -81,7 +82,17 @@ STDIN.each_line do |line|
     end
 
     jcs = decls.empty? ? "[]" : marshal_declarations(decls)
-    respond id, { declarations: JSON.parse(jcs), warnings: [] } rescue respond(id, { declarations: [], warnings: [] })
+
+    # Emit call-edge stream per spec #114 R1.
+    # Walk source for FFI call sites (Fiddle + ffi gem patterns).
+    ffi_result = Provekit::Lift::FfiResolver.resolve(source, path: path)
+    edges_json = ffi_result.call_edges.empty? ? "[]" : Provekit::IR.marshal_call_edges(ffi_result.call_edges)
+
+    respond id, {
+      declarations: JSON.parse(jcs),
+      callEdges:    JSON.parse(edges_json),
+      warnings:     ffi_result.linker_errors,
+    } rescue respond(id, { declarations: [], callEdges: [], warnings: [] })
 
   when "shutdown"
     respond id, nil
