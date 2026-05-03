@@ -114,6 +114,7 @@ jobs:
             build-essential \
             clang \
             libssl-dev \
+            maven \
             nlohmann-json3-dev \
             z3
 
