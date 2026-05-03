@@ -49,6 +49,9 @@ use provekit_claim_envelope::{
 use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl};
 use provekit_proof_envelope::{build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput};
 
+pub mod call_edges;
+pub use call_edges::{CallEdgeMemento, CallSiteLocus, extract_call_edges_from_file, mint_call_edge};
+
 pub use provekit_lift_contracts as adapter_contracts;
 pub use provekit_lift_creusot as adapter_creusot;
 pub use provekit_lift_flux as adapter_flux;
@@ -81,6 +84,9 @@ pub struct AdapterWarning {
 #[derive(Debug, Default)]
 pub struct LiftReport {
     pub decls: Vec<ContractDecl>,
+    /// Call-edge mementos extracted per spec #114 §1 R1.
+    /// One memento per call site within a contracted function.
+    pub call_edges: Vec<CallEdgeMemento>,
     pub adapter_reports: Vec<AdapterReport>,
     pub files_scanned: usize,
     pub parse_errors: Vec<(String, String)>,
@@ -162,6 +168,10 @@ pub fn lift_path(root: &Path) -> LiftReport {
     let mut l2_char_lifted = 0usize;
     let mut l2_char_skipped = 0usize;
 
+    // Retain (path_str, parsed_file) so the second pass (call-edge extraction)
+    // can re-use them without re-parsing. Only successfully parsed files are kept.
+    let mut parsed_files: Vec<(String, syn::File)> = Vec::new();
+
     for path in enumerate_rs_files(root) {
         report.files_scanned += 1;
         let bytes = match std::fs::read(&path) {
@@ -187,6 +197,7 @@ pub fn lift_path(root: &Path) -> LiftReport {
             }
         };
         let path_str = path.display().to_string();
+        parsed_files.push((path_str.clone(), file.clone()));
 
         // Adapter: proptest.
         let p_out = adapter_proptest::lift_file(&file, &path_str);
@@ -410,6 +421,47 @@ pub fn lift_path(root: &Path) -> LiftReport {
         l2_char_lifted,
         l2_char_skipped,
     );
+
+    // --- Second pass: call-edge extraction (spec #114 §1 R1) ----------------
+    //
+    // Build a signer-independent name → contractCid map from all lifted decls.
+    // This covers the full compilation unit; cross-crate callees won't appear
+    // here and will produce targetContractCid: null edges.
+    let contract_cid_map: BTreeMap<String, String> = {
+        let mut map = BTreeMap::new();
+        for d in &report.decls {
+            // Compute the signer-independent content CID using a minimal
+            // MintContractArgs (only the content-bearing fields matter;
+            // signer_seed, produced_at, etc. do not affect the CID per spec #94).
+            let args = MintContractArgs {
+                contract_name: d.name.clone(),
+                pre: d.pre.as_deref().map(formula_to_value),
+                post: d.post.as_deref().map(formula_to_value),
+                inv: d.inv.as_deref().map(formula_to_value),
+                out_binding: d.out_binding.clone(),
+                produced_by: "provekit-lift".into(),
+                produced_at: "2026-01-01T00:00:00.000Z".into(),
+                input_cids: vec![],
+                authoring: Authoring::Lift {
+                    lifter: "provekit-lift".into(),
+                    evidence: String::new(),
+                    source_cid: None,
+                },
+                signer_seed: [0u8; 32],
+            };
+            let ccid = compute_contract_cid(&args);
+            // If the same name was lifted multiple times (e.g. semantic dedup),
+            // use the first; they'll produce the same CID anyway.
+            map.entry(d.name.clone()).or_insert(ccid);
+        }
+        map
+    };
+
+    for (path_str, parsed_file) in &parsed_files {
+        let edges = extract_call_edges_from_file(parsed_file, path_str, &contract_cid_map);
+        report.call_edges.extend(edges);
+    }
+
     report
 }
 

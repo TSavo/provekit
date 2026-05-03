@@ -42,6 +42,8 @@ const LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES: &[&str] = &[
     "lift_plugin_lift_response_kind_in_set",
     "lift_plugin_lift_response_ir_document_array",
     "lift_plugin_diagnostic_field_is_array",
+    // C8: lifter must emit call-edge stream alongside contracts (spec #114 R1).
+    "lift_emits_call_edge_stream",
 ];
 
 fn main() -> ExitCode {
