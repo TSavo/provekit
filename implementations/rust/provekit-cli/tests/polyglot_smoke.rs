@@ -24,14 +24,10 @@
 // (contracts ∪ call-edges).  The smoke test passing is the empirical
 // confirmation of that claim.
 
-// Reach into the binary crate's module through the integration test
-// re-export.  provekit-cli exposes cmd_link via its library surface for
-// this test.
+// Use provekit-linker directly — the extracted library the CLI now delegates
+// to.  No more provekit_cli_test_support shim needed.
 
-use provekit_cli_test_support::{derive_link_bundle, KitCallEdge, KitContract};
-use serde_json::Value as Json;
-
-// The integration test crate name comes from the lib.rs [lib] name in Cargo.toml.
+use provekit_linker::{link, KitCallEdge, KitContract, LinkerInputs};
 
 // -------------------------------------------------------------------
 // Fixture: rust-callee contract for `process`
@@ -136,10 +132,11 @@ fn test_failure_case_emits_linker_error() {
     let go_contract = make_go_caller_fail_contract();
     let call_edge = make_cgo_call_edge(&go_contract);
 
-    let bundle = derive_link_bundle(
-        vec![rust_contract, go_contract],
-        vec![call_edge],
-    );
+    let output = link(LinkerInputs {
+        contracts: vec![rust_contract, go_contract],
+        call_edges: vec![call_edge],
+    });
+    let bundle = &output.bundle_json;
 
     // Must have at least 1 linker-error
     let errors = bundle
@@ -195,10 +192,11 @@ fn test_success_case_clean_bundle() {
     let go_contract = make_go_caller_ok_contract();
     // No cgo call-edge — GoCallerOk doesn't call C.process
 
-    let bundle = derive_link_bundle(
-        vec![rust_contract, go_contract],
-        vec![], // no call edges
-    );
+    let output = link(LinkerInputs {
+        contracts: vec![rust_contract, go_contract],
+        call_edges: vec![], // no call edges
+    });
+    let bundle = &output.bundle_json;
 
     let errors = bundle
         .get("linkerErrors")
@@ -233,20 +231,22 @@ fn test_link_bundle_cid_is_byte_deterministic() {
     let go_contract = make_go_caller_fail_contract();
     let call_edge = make_cgo_call_edge(&go_contract);
 
-    let bundle1 = derive_link_bundle(
-        vec![rust_contract.clone(), go_contract.clone()],
-        vec![call_edge.clone()],
-    );
-    let bundle2 = derive_link_bundle(
-        vec![rust_contract, go_contract],
-        vec![call_edge],
-    );
+    let out1 = link(LinkerInputs {
+        contracts: vec![rust_contract.clone(), go_contract.clone()],
+        call_edges: vec![call_edge.clone()],
+    });
+    let out2 = link(LinkerInputs {
+        contracts: vec![rust_contract, go_contract],
+        call_edges: vec![call_edge],
+    });
 
-    let cid1 = bundle1
+    let cid1 = out1
+        .bundle_json
         .get("linkBundleCid")
         .and_then(|v| v.as_str())
         .expect("linkBundleCid must be present in run 1");
-    let cid2 = bundle2
+    let cid2 = out2
+        .bundle_json
         .get("linkBundleCid")
         .and_then(|v| v.as_str())
         .expect("linkBundleCid must be present in run 2");
@@ -264,25 +264,27 @@ fn test_link_bundle_cid_is_byte_deterministic() {
 #[test]
 fn test_failure_and_success_cids_differ() {
     // Failure bundle
-    let failure_bundle = {
+    let failure_out = {
         let rust = make_process_contract();
         let go = make_go_caller_fail_contract();
         let edge = make_cgo_call_edge(&go);
-        derive_link_bundle(vec![rust, go], vec![edge])
+        link(LinkerInputs { contracts: vec![rust, go], call_edges: vec![edge] })
     };
 
     // Success bundle
-    let success_bundle = {
+    let success_out = {
         let rust = make_process_contract();
         let go = make_go_caller_ok_contract();
-        derive_link_bundle(vec![rust, go], vec![])
+        link(LinkerInputs { contracts: vec![rust, go], call_edges: vec![] })
     };
 
-    let fail_cid = failure_bundle
+    let fail_cid = failure_out
+        .bundle_json
         .get("linkBundleCid")
         .and_then(|v| v.as_str())
         .expect("failure linkBundleCid");
-    let ok_cid = success_bundle
+    let ok_cid = success_out
+        .bundle_json
         .get("linkBundleCid")
         .and_then(|v| v.as_str())
         .expect("success linkBundleCid");

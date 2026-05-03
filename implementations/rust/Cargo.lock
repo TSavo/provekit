@@ -1544,6 +1544,7 @@ dependencies = [
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
  "provekit-lift",
+ "provekit-linker",
  "provekit-proof-envelope",
  "provekit-verifier",
  "serde",
@@ -1736,6 +1737,15 @@ dependencies = [
  "provekit-ir-symbolic",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "provekit-linker"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

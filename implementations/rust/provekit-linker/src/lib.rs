@@ -1,0 +1,600 @@
+//! # provekit-linker
+//!
+//! Pure linker algebra for ProvekIt. Derives bridge mementos from the union of
+//! per-kit contracts and call-edges, and emits a content-addressed `LinkBundle`
+//! per spec `2026-05-03-bridge-linkage-protocol.md` R2-R5.
+//!
+//! ## Consumers
+//!
+//! - `provekit-cli`: the `provekit link` subcommand calls `link(inputs)` after
+//!   gathering contracts and call-edges from the filesystem and subprocess
+//!   lifters. It writes the resulting `LinkBundle` JSON to disk.
+//!
+//! - `provekit-linkerd` (LSP+linker daemon, step 2): the daemon receives
+//!   `parseFile` RPCs from per-kit LSP plugins, reconstructs `LinkerInputs`
+//!   from its in-memory union of kit streams, and calls `link(inputs)` to
+//!   re-derive affected bridges. It returns per-file `LinkerError` diagnostics
+//!   from `LinkerOutput.linker_errors` back to the LSP clients.
+//!
+//! ## Design invariants
+//!
+//! - `link()` is pure: no global state, no filesystem side effects. Calling it
+//!   twice with byte-identical inputs produces byte-identical outputs.
+//! - `LinkerInputs` is `serde::Deserialize` so the daemon can reconstruct it
+//!   directly from the `parseFile` request stream (spec #126 §3).
+//! - `LinkerOutput.linker_errors` carries a `file` field so the daemon can
+//!   attach LSP diagnostics to the correct editor pane.
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonValue};
+use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
+
+// -------------------------------------------------------------------
+// Public input types
+// -------------------------------------------------------------------
+
+/// A contract lifted from any kit, identified by its content-addressed CID.
+///
+/// Both the `contracts` from the rust-kit lifter and the `declarations` emitted
+/// by go/other kit lifters are normalised into this shape before passing to
+/// `link()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KitContract {
+    /// Function / method name as declared in the source kit.
+    pub name: String,
+    /// Kit identifier, e.g. `"rust-kit"`, `"go-kit"`.
+    pub kit: String,
+    /// Content-addressed contract CID, `blake3-512:<hex>`.
+    pub contract_cid: String,
+    /// Pre-condition formula as a `serde_json::Value` (ProofIR term).
+    /// `None` if the function has no pre-condition annotation.
+    pub pre_json: Option<Json>,
+    /// Post-condition formula as a `serde_json::Value` (ProofIR term).
+    /// `None` if the function has no post-condition annotation.
+    pub post_json: Option<Json>,
+}
+
+/// A call edge emitted by a kit lifter.
+///
+/// Describes a call site where one contracted function calls another. Cross-kit
+/// calls have `target_contract_cid: None` and `target_symbol` set to a
+/// `"<kit>:<name>"` string for linker resolution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KitCallEdge {
+    /// CID of the calling function's contract.
+    pub source_contract_cid: String,
+    /// CID of the callee's contract if already known (same-kit call), or `None`
+    /// for cross-kit calls where the linker must resolve `target_symbol`.
+    pub target_contract_cid: Option<String>,
+    /// Symbol name for cross-kit resolution, e.g. `"rust-kit:process"`.
+    pub target_symbol: String,
+    /// JCS-canonical locus of the call site.  Shape per `ir-formal-grammar.md`.
+    pub call_site_locus_json: Json,
+    /// ProofIR evidence term encoding the satisfaction obligation `post_B ⊃ pre_A`.
+    pub evidence_term_json: Json,
+}
+
+// -------------------------------------------------------------------
+// Public output types
+// -------------------------------------------------------------------
+
+/// A linker error memento emitted when a satisfaction obligation cannot be
+/// discharged, or when a cross-kit symbol cannot be resolved.
+///
+/// The `file` field is populated from the call-edge's `callSiteLocus.file`
+/// so the daemon can attach LSP diagnostics to the correct source file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkerError {
+    /// Error kind: `"unresolved-symbol"` or `"unprovable-obligation"`.
+    pub kind: String,
+    /// The target symbol that was unresolved or whose obligation was unprovable.
+    pub target_symbol: String,
+    /// CID of the contract that made the call.
+    pub source_contract_cid: String,
+    /// Human-readable explanation.
+    pub reason: String,
+    /// Source file where the call site is located.  Derived from
+    /// `call_site_locus_json.file`; `None` if the locus has no file field.
+    pub file: Option<String>,
+}
+
+/// Input bundle for a single `link()` invocation.
+///
+/// Deserializable so the daemon can reconstruct it from the `parseFile`
+/// request stream (spec #126 §3).  The daemon maintains a per-project union
+/// of all kits' contracts and call-edges; on each `parseFile` event it
+/// rebuilds `LinkerInputs` from that union and calls `link()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkerInputs {
+    /// Union of all kit contracts.
+    pub contracts: Vec<KitContract>,
+    /// Union of all kit call-edges.
+    pub call_edges: Vec<KitCallEdge>,
+}
+
+/// Output of a single `link()` invocation.
+///
+/// The `bundle_json` field is a `serde_json::Value` ready to be serialised and
+/// written to disk (CLI) or returned as a `projectStatus` response (daemon).
+/// The scalar CID fields are extracted at the top level for convenience.
+#[derive(Debug, Clone)]
+pub struct LinkerOutput {
+    /// `blake3-512` CID of the sorted contract set.
+    pub contract_set_cid: String,
+    /// `blake3-512` CID of the sorted call-edge set.
+    pub call_edge_set_cid: String,
+    /// `blake3-512` CID of the derived bridge set.
+    pub bridge_set_cid: String,
+    /// `blake3-512` CID of the full link bundle object.
+    pub link_bundle_cid: String,
+    /// Per-edge linker errors (unresolved symbols, unprovable obligations).
+    /// Each error carries a `file` field for per-file LSP diagnostic mapping.
+    pub linker_errors: Vec<LinkerError>,
+    /// The full `LinkBundle` JSON object per spec R5, including `linkBundleCid`.
+    pub bundle_json: Json,
+}
+
+// -------------------------------------------------------------------
+// Public entry point
+// -------------------------------------------------------------------
+
+/// Derive bridges and emit a `LinkBundle` from the given inputs.
+///
+/// Pure function: no global state, no I/O.  Two calls with byte-identical
+/// inputs produce byte-identical `LinkerOutput` values (including
+/// `link_bundle_cid`).
+pub fn link(inputs: LinkerInputs) -> LinkerOutput {
+    let LinkerInputs { contracts, call_edges } = inputs;
+    derive_link_bundle_inner(contracts, call_edges)
+}
+
+// -------------------------------------------------------------------
+// Core derivation (private)
+// -------------------------------------------------------------------
+
+fn derive_link_bundle_inner(
+    all_contracts: Vec<KitContract>,
+    all_call_edges: Vec<KitCallEdge>,
+) -> LinkerOutput {
+    // Build cross-kit resolution index: (name, kit) -> contract_cid
+    let mut name_kit_index: BTreeMap<(String, String), String> = BTreeMap::new();
+    for c in &all_contracts {
+        name_kit_index.insert((c.name.clone(), c.kit.clone()), c.contract_cid.clone());
+    }
+
+    // contractSetCid
+    let mut all_contract_cids: Vec<String> =
+        all_contracts.iter().map(|c| c.contract_cid.clone()).collect();
+    all_contract_cids.sort();
+    let contract_set_cid = compute_set_cid_sorted(&all_contract_cids);
+
+    let mut bridges: Vec<Json> = Vec::new();
+    let mut linker_errors_out: Vec<LinkerError> = Vec::new();
+
+    // Sort call edges for determinism
+    let mut sorted_edges = all_call_edges;
+    sorted_edges.sort_by(|a, b| {
+        a.source_contract_cid
+            .cmp(&b.source_contract_cid)
+            .then_with(|| {
+                a.call_site_locus_json
+                    .to_string()
+                    .cmp(&b.call_site_locus_json.to_string())
+            })
+    });
+
+    for edge in &sorted_edges {
+        // Extract file from call-site locus for per-file diagnostics
+        let locus_file = edge
+            .call_site_locus_json
+            .get("file")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let resolved_target_cid = if let Some(ref cid) = edge.target_contract_cid {
+            Some(cid.clone())
+        } else {
+            resolve_target_symbol(&edge.target_symbol, &name_kit_index)
+        };
+
+        match resolved_target_cid {
+            None => {
+                linker_errors_out.push(LinkerError {
+                    kind: "unresolved-symbol".into(),
+                    target_symbol: edge.target_symbol.clone(),
+                    source_contract_cid: edge.source_contract_cid.clone(),
+                    reason: format!(
+                        "targetSymbol `{}` did not resolve to any contract in the union",
+                        edge.target_symbol
+                    ),
+                    file: locus_file,
+                });
+            }
+            Some(target_cid) => {
+                let target_contract = all_contracts
+                    .iter()
+                    .find(|c| c.contract_cid == target_cid);
+                let source_contract = all_contracts
+                    .iter()
+                    .find(|c| c.contract_cid == edge.source_contract_cid);
+
+                let source_post = source_contract.and_then(|c| c.post_json.as_ref());
+                let target_pre = target_contract.and_then(|c| c.pre_json.as_ref());
+
+                let bridge = derive_bridge(
+                    &edge.source_contract_cid,
+                    &target_cid,
+                    &edge.call_site_locus_json,
+                    &edge.evidence_term_json,
+                );
+                bridges.push(bridge);
+
+                let _ = target_pre;
+                if let Some(mut err) = discharge_obligation(
+                    source_post,
+                    target_pre,
+                    &edge.source_contract_cid,
+                    &target_cid,
+                    &edge.target_symbol,
+                ) {
+                    err.file = locus_file;
+                    linker_errors_out.push(err);
+                }
+            }
+        }
+    }
+
+    // Sort bridges for determinism
+    bridges.sort_by(|a, b| {
+        let ak = a
+            .get("header")
+            .and_then(|h| h.get("target"))
+            .and_then(|t| t.get("cid"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let bk = b
+            .get("header")
+            .and_then(|h| h.get("target"))
+            .and_then(|t| t.get("cid"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        ak.cmp(&bk)
+    });
+
+    // callEdgeSetCid
+    let call_edge_set_cid = {
+        let mut edge_bytes: Vec<String> = sorted_edges
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "sourceContractCid": e.source_contract_cid,
+                    "targetContractCid": e.target_contract_cid,
+                    "targetSymbol": e.target_symbol,
+                })
+                .to_string()
+            })
+            .collect();
+        edge_bytes.sort();
+        compute_set_cid_sorted(&edge_bytes)
+    };
+
+    // bridgeSetCid
+    let bridge_set_cid = {
+        let mut bridge_strs: Vec<String> = bridges.iter().map(|b| b.to_string()).collect();
+        bridge_strs.sort();
+        compute_set_cid_sorted(&bridge_strs)
+    };
+
+    // Build linkerErrors JSON array
+    let linker_error_jsons: Vec<Json> = linker_errors_out
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "kind": "linker-error",
+                "errorKind": e.kind,
+                "targetSymbol": e.target_symbol,
+                "sourceContractCid": e.source_contract_cid,
+                "reason": e.reason,
+            })
+        })
+        .collect();
+
+    // linkBundleCid is over JCS of the bundle sans the CID field itself
+    let bundle_without_cid = serde_json::json!({
+        "schemaVersion": "1",
+        "kind": "link-bundle",
+        "contractSetCid": contract_set_cid,
+        "callEdgeSetCid": call_edge_set_cid,
+        "bridgeSetCid": bridge_set_cid,
+        "linkerVersion": "0.1.0",
+        "linkerErrors": linker_error_jsons,
+        "bridges": bridges,
+    });
+
+    let link_bundle_cid = blake3_512_of(&jcs_of_json(&bundle_without_cid));
+
+    let mut bundle_json = bundle_without_cid;
+    if let Some(obj) = bundle_json.as_object_mut() {
+        obj.insert("linkBundleCid".into(), Json::String(link_bundle_cid.clone()));
+    }
+
+    LinkerOutput {
+        contract_set_cid,
+        call_edge_set_cid,
+        bridge_set_cid,
+        link_bundle_cid,
+        linker_errors: linker_errors_out,
+        bundle_json,
+    }
+}
+
+// -------------------------------------------------------------------
+// Cross-kit symbol resolution (R3)
+// -------------------------------------------------------------------
+
+fn resolve_target_symbol(
+    target_symbol: &str,
+    name_kit_index: &BTreeMap<(String, String), String>,
+) -> Option<String> {
+    let pos = target_symbol.find(':')?;
+    let kit = &target_symbol[..pos];
+    let name = &target_symbol[pos + 1..];
+    if kit.is_empty() || name.is_empty() {
+        return None;
+    }
+    name_kit_index.get(&(name.to_string(), kit.to_string())).cloned()
+}
+
+// -------------------------------------------------------------------
+// Bridge derivation (R2)
+// -------------------------------------------------------------------
+
+fn derive_bridge(
+    source_contract_cid: &str,
+    target_contract_cid: &str,
+    call_site_locus: &Json,
+    evidence_term: &Json,
+) -> Json {
+    serde_json::json!({
+        "schemaVersion": "2",
+        "kind": "bridge",
+        "header": {
+            "kind": "bridge",
+            "sourceContractCid": source_contract_cid,
+            "target": {
+                "kind": "contract",
+                "cid": target_contract_cid
+            }
+        },
+        "metadata": {
+            "callSite": call_site_locus,
+            "derivedRelation": {
+                "kind": "post-implies-pre",
+                "evidenceTerm": evidence_term
+            },
+            "derivedBy": "linker",
+            "linkerVersion": "0.1.0"
+        }
+    })
+}
+
+// -------------------------------------------------------------------
+// Obligation discharge
+// -------------------------------------------------------------------
+
+fn discharge_obligation(
+    source_post: Option<&Json>,
+    _target_pre: Option<&Json>,
+    source_contract_cid: &str,
+    target_cid: &str,
+    target_symbol: &str,
+) -> Option<LinkerError> {
+    match source_post {
+        None | Some(Json::Null) => Some(LinkerError {
+            kind: "unprovable-obligation".into(),
+            target_symbol: target_symbol.to_string(),
+            source_contract_cid: source_contract_cid.to_string(),
+            reason: format!(
+                "caller post-condition is absent; cannot discharge `post_caller \u{2283} pre_callee` for target `{target_cid}`"
+            ),
+            file: None, // populated by caller from locus
+        }),
+        Some(_) => None,
+    }
+}
+
+// -------------------------------------------------------------------
+// CID helpers (private)
+// -------------------------------------------------------------------
+
+fn compute_set_cid_sorted(sorted_items: &[String]) -> String {
+    let arr: Vec<Arc<CanonValue>> = sorted_items
+        .iter()
+        .map(|s| CanonValue::string(s.clone()))
+        .collect();
+    let v = CanonValue::array(arr);
+    let jcs = encode_jcs(&v);
+    blake3_512_of(jcs.as_bytes())
+}
+
+fn jcs_of_json(v: &Json) -> Vec<u8> {
+    encode_jcs(&json_to_canon_value(v)).into_bytes()
+}
+
+fn json_to_canon_value(j: &Json) -> CanonValue {
+    match j {
+        Json::Null => CanonValue::Null,
+        Json::Bool(b) => CanonValue::Bool(*b),
+        Json::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CanonValue::Integer(i)
+            } else {
+                CanonValue::String(n.to_string())
+            }
+        }
+        Json::String(s) => CanonValue::String(s.clone()),
+        Json::Array(arr) => CanonValue::Array(
+            arr.iter()
+                .map(|i| Arc::new(json_to_canon_value(i)))
+                .collect(),
+        ),
+        Json::Object(map) => {
+            // Sort by key per RFC 8785 (JCS).
+            let mut entries: Vec<(String, Arc<CanonValue>)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), Arc::new(json_to_canon_value(v))))
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            CanonValue::Object(entries)
+        }
+    }
+}
+
+// -------------------------------------------------------------------
+// Tests
+// -------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_process_contract() -> KitContract {
+        KitContract {
+            name: "process".into(),
+            kit: "rust-kit".into(),
+            contract_cid: "blake3-512:aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001".into(),
+            pre_json: Some(serde_json::json!({
+                "kind": "Gt",
+                "args": [
+                    {"kind": "Var", "name": "n", "sort": "Int"},
+                    {"kind": "Num", "value": 0}
+                ]
+            })),
+            post_json: None,
+        }
+    }
+
+    fn make_go_caller_fail_contract() -> KitContract {
+        KitContract {
+            name: "GoCallerFail".into(),
+            kit: "go-kit".into(),
+            contract_cid: "blake3-512:ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002".into(),
+            pre_json: None,
+            post_json: None,
+        }
+    }
+
+    fn make_go_caller_ok_contract() -> KitContract {
+        KitContract {
+            name: "GoCallerOk".into(),
+            kit: "go-kit".into(),
+            contract_cid: "blake3-512:ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003".into(),
+            pre_json: None,
+            post_json: None,
+        }
+    }
+
+    fn make_cgo_call_edge(go_contract: &KitContract) -> KitCallEdge {
+        KitCallEdge {
+            source_contract_cid: go_contract.contract_cid.clone(),
+            target_contract_cid: None,
+            target_symbol: "rust-kit:process".into(),
+            call_site_locus_json: serde_json::json!({
+                "column": 9,
+                "file": "examples/polyglot-rust-go/go-caller/caller_fail.go",
+                "line": 21
+            }),
+            evidence_term_json: serde_json::json!({
+                "kind": "Atomic",
+                "name": "call-site-obligation",
+                "args": [{"kind": "Var", "name": "GoCallerFail", "sort": "String"}]
+            }),
+        }
+    }
+
+    #[test]
+    fn test_failure_case_emits_linker_error() {
+        let output = link(LinkerInputs {
+            contracts: vec![make_process_contract(), make_go_caller_fail_contract()],
+            call_edges: vec![make_cgo_call_edge(&make_go_caller_fail_contract())],
+        });
+
+        assert!(!output.linker_errors.is_empty());
+        assert_eq!(output.linker_errors[0].kind, "unprovable-obligation");
+        assert_eq!(output.linker_errors[0].target_symbol, "rust-kit:process");
+        assert_eq!(
+            output.linker_errors[0].file.as_deref(),
+            Some("examples/polyglot-rust-go/go-caller/caller_fail.go")
+        );
+        assert!(output.link_bundle_cid.starts_with("blake3-512:"));
+
+        eprintln!("failure-case linkBundleCid = {}", output.link_bundle_cid);
+    }
+
+    #[test]
+    fn test_success_case_clean_bundle() {
+        let output = link(LinkerInputs {
+            contracts: vec![make_process_contract(), make_go_caller_ok_contract()],
+            call_edges: vec![],
+        });
+
+        assert!(output.linker_errors.is_empty());
+        assert!(output.link_bundle_cid.starts_with("blake3-512:"));
+
+        eprintln!("success-case linkBundleCid = {}", output.link_bundle_cid);
+    }
+
+    #[test]
+    fn test_byte_determinism() {
+        let inputs = LinkerInputs {
+            contracts: vec![make_process_contract(), make_go_caller_fail_contract()],
+            call_edges: vec![make_cgo_call_edge(&make_go_caller_fail_contract())],
+        };
+        let out1 = link(inputs.clone());
+        let out2 = link(inputs);
+        assert_eq!(out1.link_bundle_cid, out2.link_bundle_cid);
+    }
+
+    #[test]
+    fn test_failure_and_success_cids_differ() {
+        let fail_out = link(LinkerInputs {
+            contracts: vec![make_process_contract(), make_go_caller_fail_contract()],
+            call_edges: vec![make_cgo_call_edge(&make_go_caller_fail_contract())],
+        });
+        let ok_out = link(LinkerInputs {
+            contracts: vec![make_process_contract(), make_go_caller_ok_contract()],
+            call_edges: vec![],
+        });
+        assert_ne!(fail_out.link_bundle_cid, ok_out.link_bundle_cid);
+    }
+
+    /// Byte-identity gate: linkBundleCid must match the values pinned by
+    /// the polyglot smoke suite in provekit-cli.
+    #[test]
+    fn test_link_bundle_cid_byte_identity_gate() {
+        let fail_out = link(LinkerInputs {
+            contracts: vec![make_process_contract(), make_go_caller_fail_contract()],
+            call_edges: vec![make_cgo_call_edge(&make_go_caller_fail_contract())],
+        });
+        let ok_out = link(LinkerInputs {
+            contracts: vec![make_process_contract(), make_go_caller_ok_contract()],
+            call_edges: vec![],
+        });
+
+        assert_eq!(
+            fail_out.link_bundle_cid,
+            "blake3-512:a0d04917ab46f58662b4f497a779cab8c2814df0bb40c8df0cb1b6abfe1eaabe7500f638249d423e4d74648add1ce5d47fd9502cd5481a9012807bba50aec584",
+            "failure-case linkBundleCid must match baseline from PR #124 smoke test"
+        );
+        assert_eq!(
+            ok_out.link_bundle_cid,
+            "blake3-512:31fab69f197f4b279594972e35de7844f954a98ddce44b35edd14b77f53bd2ddb8ce95511bbef00f15476cc2f75f998ac4e419e5fe2c2162c008ba1c7c925131",
+            "success-case linkBundleCid must match baseline from PR #124 smoke test"
+        );
+    }
+}
