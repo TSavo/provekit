@@ -10,24 +10,20 @@
 // `targetProofCid`. See protocol/specs/2026-04-30-ir-formal-grammar.md
 // § "Bridge target pinning: the shim-poisoning vector".
 
-use crate::types::{CallSite, MementoPool, ResolvedProperty};
+use crate::types::{memento_body, memento_kind, CallSite, MementoPool, ResolvedProperty};
 
 pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String> {
     let env = pool
         .mementos
         .get(&cs.bridge_target_cid)
         .ok_or_else(|| format!("bridge target CID {} not in pool", cs.bridge_target_cid))?;
-    let ev = env
-        .get("evidence")
-        .filter(|v| v.is_object())
-        .ok_or("target memento has no evidence object")?;
-    if ev.get("kind").and_then(|k| k.as_str()) != Some("contract") {
+    if memento_kind(env) != Some("contract") {
         return Err("target memento is not a contract memento".into());
     }
-    let body = ev
-        .get("body")
+    // Shape-agnostic body: v1.2 layered -> `header`, v1.1 flat -> `evidence.body`.
+    let body = memento_body(env)
         .filter(|v| v.is_object())
-        .ok_or("contract evidence has no body object")?;
+        .ok_or("contract memento has no body/header object")?;
 
     // Forward pin: BridgeDeclaration.ConsequentBundlePinned.
     //

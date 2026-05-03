@@ -1,10 +1,70 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Pipeline types. Mirrors implementations/cpp/.../verifier/types.hpp.
+//
+// Shape compatibility: a memento envelope is either the v1.1 flat
+// shape (top-level `evidence`/`bindingHash`/`producerSignature`/...) or
+// the v1.2 layered shape (top-level `envelope`/`header`/`metadata`).
+// The accessors `memento_kind` and `memento_body` paper over the cut so
+// the rest of the verifier doesn't have to branch.
 
 use std::collections::BTreeMap;
 
 use serde_json::Value as Json;
+
+/// Return the kind discriminator of a memento, regardless of shape:
+///
+/// * v1.2 layered: `header.kind`
+/// * v1.1 flat:    `evidence.kind`
+pub fn memento_kind(envelope: &Json) -> Option<&str> {
+    if envelope.get("envelope").is_some() {
+        envelope.pointer("/header/kind").and_then(|v| v.as_str())
+    } else {
+        envelope.pointer("/evidence/kind").and_then(|v| v.as_str())
+    }
+}
+
+/// Return the substrate-relevant inner object of a memento (the
+/// container of kind-specific fields), regardless of shape:
+///
+/// * v1.2 layered: `header`
+/// * v1.1 flat:    `evidence.body`
+///
+/// Note: for v1.1, formula references like `preHash`/`antecedentHash`
+/// live under `evidence.body`; under v1.2 they live in `metadata`. Use
+/// `memento_body_field` for those lookups.
+pub fn memento_body(envelope: &Json) -> Option<&Json> {
+    if envelope.get("envelope").is_some() {
+        envelope.get("header")
+    } else {
+        envelope.pointer("/evidence/body")
+    }
+}
+
+/// Look up a body-tier field that the verifier needs (formula-hash
+/// references and similar) regardless of shape:
+///
+/// * v1.2 layered: prefer `header.<field>` (substrate-load-bearing
+///   bridge/contract/implication kind-specific fields), then fall back
+///   to `metadata.<field>` (per-formula derived hashes like preHash).
+/// * v1.1 flat:    `evidence.body.<field>` (legacy flat).
+///
+/// This single helper covers both the substrate references the
+/// verifier indexes by (antecedentHash / consequentHash on
+/// implications, sourceSymbol on bridges) and the convenience hashes
+/// (preHash / postHash / invHash) that ride in metadata under v1.2.
+pub fn memento_body_field<'a>(envelope: &'a Json, field: &str) -> Option<&'a Json> {
+    if envelope.get("envelope").is_some() {
+        envelope
+            .pointer("/header")
+            .and_then(|h| h.get(field))
+            .or_else(|| envelope.pointer("/metadata").and_then(|m| m.get(field)))
+    } else {
+        envelope
+            .pointer("/evidence/body")
+            .and_then(|b| b.get(field))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct LoadError {
@@ -75,17 +135,17 @@ impl MementoPool {
         let _ant_memento = self.verify_by_hash(antecedent_cid)?;
         let _con_memento = self.verify_by_hash(consequent_cid)?;
 
-        // Scan for implication mementos that link these two
+        // Scan for implication mementos that link these two.
+        // Shape-agnostic: under v1.2 these references live in the
+        // metadata; under v1.1 they live in evidence.body.
         for (_, envelope) in &self.mementos {
-            if let Some(evidence) = envelope.get("evidence") {
-                if evidence.get("kind").and_then(|v| v.as_str()) == Some("implication") {
-                    if let Some(body) = evidence.get("body") {
-                        let ant = body.get("antecedentHash").and_then(|v| v.as_str());
-                        let con = body.get("consequentHash").and_then(|v| v.as_str());
-                        if ant == Some(antecedent_cid) && con == Some(consequent_cid) {
-                            return Some(envelope);
-                        }
-                    }
+            if memento_kind(envelope) == Some("implication") {
+                let ant = memento_body_field(envelope, "antecedentHash")
+                    .and_then(|v| v.as_str());
+                let con = memento_body_field(envelope, "consequentHash")
+                    .and_then(|v| v.as_str());
+                if ant == Some(antecedent_cid) && con == Some(consequent_cid) {
+                    return Some(envelope);
                 }
             }
         }
@@ -100,19 +160,16 @@ impl MementoPool {
             return Some(vec![antecedent_cid.to_string()]);
         }
 
-        // Build implication graph adjacency list on-the-fly
+        // Build implication graph adjacency list on-the-fly.
+        // Shape-agnostic per the body/header accessors.
         let mut graph: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for (_, envelope) in &self.mementos {
-            if let Some(evidence) = envelope.get("evidence") {
-                if evidence.get("kind").and_then(|v| v.as_str()) == Some("implication") {
-                    if let Some(body) = evidence.get("body") {
-                        if let (Some(ant), Some(con)) = (
-                            body.get("antecedentHash").and_then(|v| v.as_str()),
-                            body.get("consequentHash").and_then(|v| v.as_str()),
-                        ) {
-                            graph.entry(ant.to_string()).or_default().push(con.to_string());
-                        }
-                    }
+            if memento_kind(envelope) == Some("implication") {
+                if let (Some(ant), Some(con)) = (
+                    memento_body_field(envelope, "antecedentHash").and_then(|v| v.as_str()),
+                    memento_body_field(envelope, "consequentHash").and_then(|v| v.as_str()),
+                ) {
+                    graph.entry(ant.to_string()).or_default().push(con.to_string());
                 }
             }
         }
@@ -174,21 +231,22 @@ impl MementoPool {
     /// The .proof protocol IS the cache: storing a memento IS caching
     /// the verification result.
     pub fn insert(&mut self, memento_cid: String, envelope: Json) {
-        // Index by the formula hashes referenced in the evidence
-        if let Some(evidence) = envelope.get("evidence") {
-            if let Some(body) = evidence.get("body") {
-                // Contract evidence: preHash/postHash/invHash
-                for field in &["preHash", "postHash", "invHash"] {
-                    if let Some(hash) = body.get(field).and_then(|v| v.as_str()) {
-                        self.formula_to_memento.insert(hash.to_string(), memento_cid.clone());
-                    }
-                }
-                // Implication evidence: antecedentHash/consequentHash
-                for field in &["antecedentHash", "consequentHash"] {
-                    if let Some(hash) = body.get(field).and_then(|v| v.as_str()) {
-                        self.formula_to_memento.insert(hash.to_string(), memento_cid.clone());
-                    }
-                }
+        // Index by the formula hashes referenced in the body. Layout
+        // depends on shape; `memento_body_field` papers over the cut.
+        // Contract: preHash/postHash/invHash (in metadata under v1.2,
+        //           in evidence.body under v1.1).
+        // Implication: antecedentHash/consequentHash (in header under
+        //           v1.2, in evidence.body under v1.1).
+        for field in &[
+            "preHash",
+            "postHash",
+            "invHash",
+            "antecedentHash",
+            "consequentHash",
+        ] {
+            if let Some(hash) = memento_body_field(&envelope, field).and_then(|v| v.as_str()) {
+                self.formula_to_memento
+                    .insert(hash.to_string(), memento_cid.clone());
             }
         }
         self.mementos.insert(memento_cid, envelope);
