@@ -30,12 +30,14 @@ func CallerFn(x int) int { return CalleeFn(x) }
 `
 
 // cgoSource is a Go file with a //provekit:contract annotated Go
-// function that calls C.rustFunc via cgo. The lifter should emit a
-// cross-kit call-edge with targetContractCid null and
-// targetSymbol "rust-kit:rustFunc".
+// function that calls C.rustFunc via cgo. The preamble includes
+// rust_callee.h so the cgo resolver maps the call to "rust-kit".
+// The lifter should emit a cross-kit call-edge with targetContractCid
+// null and targetSymbol "rust-kit:rustFunc".
 const cgoSource = `package demo
 
 /*
+#include "rust_callee.h"
 #include <stdint.h>
 extern int64_t rustFunc(int64_t n);
 */

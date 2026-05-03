@@ -207,21 +207,170 @@ func buildContractIndex(decls []ir.Declaration) map[string]string {
 	return idx
 }
 
-// cgoKitPrefix returns the kit prefix for a cgo call target symbol.
-// For the Michael Jordan demo the convention is:
-//   - rust-kit: functions marked #[no_mangle] extern "C" in Rust
-//   - cpp-kit:  C++ functions
-//   - c-kit:    plain C functions
+// CgoPreamble holds the parsed content of a cgo preamble block comment
+// (the C code between /* ... */ immediately before `import "C"`).
+type CgoPreamble struct {
+	// LDFlags contains the combined value of all "#cgo LDFLAGS:" lines,
+	// e.g. "-lrustcallee -lz".
+	LDFlags string
+	// Includes contains each #include path, stripped of angle brackets
+	// and quotes, e.g. "rust_callee.h" or "zlib.h".
+	Includes []string
+}
+
+// parseCgoPreamble scans Go source for the preamble block comment that
+// immediately precedes `import "C"`. It is a best-effort line scanner;
+// it does not use the Go parser so that it works on source that may not
+// parse (e.g. files with build tags). Returns nil if no cgo preamble is found.
+func parseCgoPreamble(src string) *CgoPreamble {
+	lines := strings.Split(src, "\n")
+	// Find the `import "C"` line (also matches `import "C" // comment`).
+	importCLine := -1
+	for i, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == `import "C"` || strings.HasPrefix(trimmed, `import "C" `) ||
+			strings.HasPrefix(trimmed, "import \"C\"\t") {
+			importCLine = i
+			break
+		}
+	}
+	if importCLine < 0 {
+		return nil
+	}
+
+	// Scan upward from importCLine to find the closing */ of the
+	// immediately-preceding block comment.
+	blockEnd := -1
+	for i := importCLine - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" {
+			continue // allow blank lines between */ and import "C"
+		}
+		if strings.HasSuffix(trimmed, "*/") {
+			blockEnd = i
+		}
+		break
+	}
+	if blockEnd < 0 {
+		return nil
+	}
+
+	// Scan upward from blockEnd to find the opening /*, collecting the
+	// preamble lines in between.
+	blockStart := -1
+	for i := blockEnd; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "/*") {
+			blockStart = i
+			break
+		}
+	}
+	if blockStart < 0 {
+		return nil
+	}
+
+	p := &CgoPreamble{}
+	for _, l := range lines[blockStart : blockEnd+1] {
+		stripped := strings.TrimSpace(l)
+		// Strip comment delimiters from the first/last lines.
+		stripped = strings.TrimPrefix(stripped, "/*")
+		stripped = strings.TrimSuffix(stripped, "*/")
+		stripped = strings.TrimPrefix(stripped, "*")
+		stripped = strings.TrimSpace(stripped)
+
+		// Parse "#cgo LDFLAGS: ..."
+		if after, ok := cutPrefix(stripped, "#cgo LDFLAGS:"); ok {
+			p.LDFlags += " " + strings.TrimSpace(after)
+			continue
+		}
+		// Parse "#include <header>" or `#include "header"`
+		if after, ok := cutPrefix(stripped, "#include"); ok {
+			h := strings.TrimSpace(after)
+			h = strings.TrimPrefix(h, "<")
+			h = strings.TrimSuffix(h, ">")
+			h = strings.TrimPrefix(h, `"`)
+			h = strings.TrimSuffix(h, `"`)
+			p.Includes = append(p.Includes, h)
+		}
+	}
+	p.LDFlags = strings.TrimSpace(p.LDFlags)
+	return p
+}
+
+// cutPrefix is a Go 1.18-compatible strings.CutPrefix polyfill.
+// Returns (after, true) if s has the prefix p; otherwise ("", false).
+func cutPrefix(s, prefix string) (string, bool) {
+	if strings.HasPrefix(s, prefix) {
+		return s[len(prefix):], true
+	}
+	return "", false
+}
+
+// resolveCgoKit determines which ProvekIt kit a cgo call targets.
 //
-// Without build metadata the lifter defaults to "rust-kit" when the
-// symbol is not in the local Go contract index, per the spec's primary
-// demo case. Future work: a //provekit:cgo-kit hint annotation.
-func cgoKitPrefix(funcName string, contractIndex map[string]string) string {
-	// If we have a local contract for this name it's same-kit.
-	// cgo calls by definition cross kits; always use rust-kit as default
-	// per the Michael Jordan demo framing.
-	_ = contractIndex
-	return "rust-kit"
+// Resolution order (first match wins):
+//  1. If any included header matches the pattern rust*.h (case-insensitive
+//     prefix "rust"), return "rust-kit".
+//  2. If LDFlags reference a library where the name starts with "rust"
+//     (e.g. -lrustcallee, -lrust_auth), return "rust-kit".
+//  3. If LDFlags reference well-known system libraries (-lz, -lm, -lc,
+//     -lpthread, -ldl, -lssl, -lcrypto, -lcurl), return "libc-system".
+//     These are opaque; the linker won't find a contract for them.
+//  4. If LDFlags reference any other explicit -l<lib>, return "c-kit".
+//  5. If preamble is nil or has no header/flag signal, return "".
+//     The caller must emit a resolver-error edge (spec #97 R2).
+//
+// Note: the spec's §R3 lists "cgo's C.foo maps to cpp-kit:foo" as one
+// example of an FFI convention; the actual kit is preamble-driven here,
+// not defaulted, because defaulting silently was what the previous stub
+// did and spec §R3 forbids it.
+func resolveCgoKit(preamble *CgoPreamble) string {
+	if preamble == nil {
+		return ""
+	}
+
+	// Check headers first (fast signal for the rust+go demo).
+	for _, h := range preamble.Includes {
+		lower := strings.ToLower(h)
+		if strings.HasPrefix(lower, "rust") {
+			return "rust-kit"
+		}
+	}
+
+	// Check LDFLAGS.
+	if preamble.LDFlags != "" {
+		flags := strings.Fields(preamble.LDFlags)
+		// Rust check.
+		for _, f := range flags {
+			if strings.HasPrefix(f, "-l") {
+				lib := strings.TrimPrefix(f, "-l")
+				if strings.HasPrefix(strings.ToLower(lib), "rust") {
+					return "rust-kit"
+				}
+			}
+		}
+		// System libs.
+		systemLibs := map[string]bool{
+			"z": true, "m": true, "c": true, "pthread": true,
+			"dl": true, "ssl": true, "crypto": true, "curl": true,
+		}
+		for _, f := range flags {
+			if strings.HasPrefix(f, "-l") {
+				lib := strings.TrimPrefix(f, "-l")
+				if systemLibs[lib] {
+					return "libc-system"
+				}
+			}
+		}
+		// Any other explicit -l → c-kit.
+		for _, f := range flags {
+			if strings.HasPrefix(f, "-l") {
+				return "c-kit"
+			}
+		}
+	}
+
+	return ""
 }
 
 // walkCallEdges parses the Go source and, for every function body whose
@@ -230,7 +379,10 @@ func cgoKitPrefix(funcName string, contractIndex map[string]string) string {
 //
 // Same-kit calls: both sourceContractCid and targetContractCid populated.
 // cgo calls (C.<name>(...)): targetContractCid = null, targetSymbol =
-// "<kit>:<name>".
+// "<kit>:<name>" where kit is resolved from the preamble by resolveCgoKit.
+// If resolveCgoKit returns "" (unresolvable), the edge gets
+// targetSymbol = "resolver-error:<name>" per spec #97 R2 (fail-loud on
+// unresolvable cgo). The linker will promote these to linker-error mementos.
 func walkCallEdges(src, path string, decls []ir.Declaration) []ir.CallEdgeDeclaration {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, path, src, 0)
@@ -242,6 +394,11 @@ func walkCallEdges(src, path string, decls []ir.Declaration) []ir.CallEdgeDeclar
 	if len(contractIndex) == 0 {
 		return nil
 	}
+
+	// Parse cgo preamble once for the whole file. All cgo calls in a file
+	// share the same preamble; the resolved kit is file-scoped.
+	cgoPreamble := parseCgoPreamble(src)
+	resolvedCgoKit := resolveCgoKit(cgoPreamble)
 
 	var edges []ir.CallEdgeDeclaration
 
@@ -285,8 +442,15 @@ func walkCallEdges(src, path string, decls []ir.Declaration) []ir.CallEdgeDeclar
 				if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "C" {
 					// cgo call: cross-kit edge.
 					targetName := sel.Sel.Name
-					kit := cgoKitPrefix(targetName, contractIndex)
-					sym := kit + ":" + targetName
+					var sym string
+					if resolvedCgoKit != "" {
+						sym = resolvedCgoKit + ":" + targetName
+					} else {
+						// Unresolvable: emit resolver-error prefix so the
+						// linker can surface a linker-error memento.
+						// Spec #97 R2 forbids silently emitting placeholder strings.
+						sym = "resolver-error:" + targetName
+					}
 					edges = append(edges, ir.CallEdgeDeclaration{
 						SourceContractCid: sourceCid,
 						TargetContractCid: nil,
