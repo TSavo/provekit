@@ -470,9 +470,21 @@ function liftOperand(expr: ts.Expression): OperandLift {
   if (ts.isToken(expr) && expr.kind === ts.SyntaxKind.NullKeyword) {
     return { kind: "ok", term: { kind: "ctor", name: "Null", args: [] } };
   }
+  // v0.6: ternary `cond ? a : b` is deliberately deferred. Lifting it
+  // would require either a Ctor("ternary", [cond, a, b]) shape or
+  // promotion to a formula-position if-then-else; both are out of
+  // scope for this slice. Skip with a named reason so the report
+  // taxonomy is searchable.
+  if (ts.isConditionalExpression(expr)) {
+    return {
+      kind: "skip",
+      reason: "ternary `cond ? a : b` operand is not lifted in v0.6",
+    };
+  }
   return {
     kind: "skip",
-    reason: "operand shape not in v0 lift whitelist (no method chains, member chains, multi-arg calls, complex nesting)",
+    reason:
+      "operand shape not in v0.6 lift whitelist (no member chains, indexing, field access, closures, blocks, ranges, comparisons in operand position, or template literals)",
   };
 }
 

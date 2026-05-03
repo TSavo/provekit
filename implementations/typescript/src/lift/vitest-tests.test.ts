@@ -190,6 +190,26 @@ it("array_lift", () => {
     expect(rhs.args.length).toBe(3);
   });
 
+  it("v0.6: ternary expression skips with a v0.6-named reason", () => {
+    const td = tempDir();
+    writeFileSync(
+      join(td, "tern.test.ts"),
+      `
+import { it, expect } from "vitest";
+it("ternary skips", () => {
+  expect(flag ? a : b).toBe(1);
+});
+      `,
+    );
+    const r = liftPath(td);
+    const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
+    expect(vt.lifted).toBe(0);
+    expect(vt.warnings).toHaveLength(1);
+    // Better error reporting: deferred shapes name v0.6 explicitly so
+    // the report's skip taxonomy is searchable.
+    expect(vt.warnings[0]!.reason).toMatch(/ternary.*v0\.6/);
+  });
+
   it("each lifted assertion mints its own content-addressed memento", () => {
     const td = tempDir();
     writeFileSync(
