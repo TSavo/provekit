@@ -109,6 +109,7 @@ build-rust:
 .PHONY: build-cpp
 build-cpp:
 	tools/build-cpp-self-contracts.sh --build-only
+	tools/build-cpp-lsp.sh
 
 .PHONY: build-go
 build-go:
@@ -265,7 +266,9 @@ test-go:
 
 .PHONY: test-cpp
 test-cpp: build-cpp
-	@echo "test-cpp: cpp suite is the mint round-trip; covered by mint-cpp"
+	@echo "test-cpp: LSP lifecycle integration test"
+	sh implementations/cpp/provekit-lsp-cpp/test_lsp.sh implementations/cpp/target/provekit-lsp-cpp
+	@echo "test-cpp: mint round-trip also covered by mint-cpp"
 
 .PHONY: test-ts
 test-ts:
