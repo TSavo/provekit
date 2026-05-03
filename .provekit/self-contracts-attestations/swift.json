@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1",
+  "kind": "self-contracts-attestation",
+  "lang": "swift",
+  "cid": "blake3-512:e9f14711130ea8eeff1eaf93a3ff34549e6c2bb9cf0aff7ddd09199b1975b98b19cc72420e450faccde3d959f6eb835720e289d1880871a1c84917352b404c35",
+  "contractSetCid": "blake3-512:5bed26ad8dccc035b30794d5ee880cd434e6dff827efd0e1280ee1b6b8a4d618084107b0e86373f0c56d1f4932432c039f8f1d767eba0935dea7bf56dc227311",
+  "declaredAt": "2026-05-02T17:00:00Z",
+  "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "signature": "ed25519:OrvvEOm6UzGmJDJUprJAMT7DTNZGlDyfjfMRimnF/5ZwtOzMkId2dFmNtdJVJv/cSelAlWaGmZqTHm1vQBJlBg=="
+}

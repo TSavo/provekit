@@ -128,7 +128,7 @@ pub const SELF_CONTRACTS_DECLARED_AT_V1_3_1: &str = "2026-05-02T17:00:00Z";
 /// All five peer kits use the same letter-envelope attestation shape;
 /// the source tree no longer carries machine-local truth about its own
 /// bytes for any kit.
-pub const SELF_CONTRACTS_LANGS: &[&str] = &["rust", "go", "cpp", "ts", "csharp"];
+pub const SELF_CONTRACTS_LANGS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift"];
 
 /// Build the signed message body for a self-contracts attestation
 /// (no `signature` field). JCS-canonical bytes of this object are what
@@ -661,12 +661,13 @@ mod tests {
     }
 
     #[test]
-    fn self_contracts_lang_set_is_five_peers() {
+    fn self_contracts_lang_set_is_six_peers() {
         // Guard the canonical kit suite. Adding or removing a peer is
         // a deliberate act; this test forces an explicit edit.
+        // swift was added in feat(swift): bootstrap kit.
         assert_eq!(
             SELF_CONTRACTS_LANGS,
-            &["rust", "go", "cpp", "ts", "csharp"]
+            &["rust", "go", "cpp", "ts", "csharp", "swift"]
         );
     }
 }
