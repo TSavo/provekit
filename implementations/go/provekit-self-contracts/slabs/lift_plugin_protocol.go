@@ -12,14 +12,14 @@ package slabs
 //
 // This file does the go-side counterpart:
 //
-//   1. Mints 10 GO COUNTERPART contracts named go_lift_plugin_<rule>.
+//   1. Mints 11 GO COUNTERPART contracts named go_lift_plugin_<rule>.
 //      Each counterpart asserts "go-kit's lift plugin satisfies rust's
 //      <contract name>" as the go implementation should observe it.
 //      Same shape as the rust contracts (kit-defined named ctors with
 //      a paired-equality post against `true_const`); the verifier
 //      discharges the operational check at the per-callsite layer.
 //
-//   2. Mints 10 BRIDGE declarations linking each rust source contract
+//   2. Mints 11 BRIDGE declarations linking each rust source contract
 //      (by its memento CID extracted from rust's .proof bundle) to its
 //      go counterpart contract. Per protocol/specs/2026-04-30-ir-formal-
 //      grammar.md the BridgeDeclaration locked-key-order shape is
@@ -62,8 +62,8 @@ import "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 // the memento envelope CID found in the rust self-contracts .proof
 // bundle. Extracted via `cargo run -p provekit-self-contracts --bin
 // mint-self-contracts /tmp/<dir>` and walking the bundle's `members`
-// map for the 10 envelopes whose evidence.body.contractName has the
-// `lift_plugin_` prefix.
+// map for the 11 envelopes whose evidence.body.contractName has the
+// `lift_plugin_` prefix (or `lift_emits_` for C8).
 //
 // Rust source: implementations/rust/provekit-self-contracts/src/
 //
@@ -90,11 +90,20 @@ var rustContractCID = map[string]string{
 	"lift_plugin_lift_response_kind_in_set":                           "blake3-512:7642bd5eb5262354921513ee6e01bf70dad917f3467464ad904750685e84d0241ef9b0f40b6e0d66dd73e0d5cc1908e4a0a45d45530dda511e1919786034e2a0",
 	"lift_plugin_lift_response_ir_document_array":                     "blake3-512:692df8b67bc3ad69943f5909779f489bdc8173bbb08fd61585bb1b8bc0a2c20c6891ba7b9a2a4e4e3a6e5a4441b1191f4618924783446cb07277879c885cbc20",
 	"lift_plugin_diagnostic_field_is_array":                           "blake3-512:ea5dd139fddc9e5ab6cfcb9854de1ce6bbedcccbe7b070c1aef9fbbef3b8579ebf33ff14cdc97013e1f3e1c391964f275a0275b615b8259037b0cb92d0e0dd35",
+	// C8: lift_emits_call_edge_stream (spec #114 §1 R1). Added in rust
+	// commit e64488d. CID extracted from rust bundle
+	// blake3-512:60df6322388ff7d9ccd1b9ee9d6457fdfe89a51b3d2d73a34daa0131
+	//            f65c80543331832eb88920fe514ebb799bc655808f152d36274542ac
+	//            9879c862a33f3a92 (the 11-contract bundle).
+	// Note: the rust contract name lacks the lift_plugin_ prefix by
+	// design; the bridge name uses lift_plugin_ to satisfy the Go
+	// conformance test prefix invariant (bridge_to_lift_plugin_*).
+	"lift_emits_call_edge_stream": "blake3-512:2d5c9e7071972ecd6004f9dad28a112739538b6e71d187e4f7ad4db6ed770d0b76c501eb7eaed0b3b57e50815be1c27f63ce7106d2b825d243040f387b188c91",
 }
 
 // LiftPluginRustContractCID returns the rust memento envelope CID for
 // the named lift-plugin-protocol contract. Empty string if the name is
-// not one of the 10 rust contracts. Exported for the orchestrator's
+// not one of the 11 rust contracts. Exported for the orchestrator's
 // post-mint resolution pass and for the pinned-hash test.
 func LiftPluginRustContractCID(rustName string) string {
 	return rustContractCID[rustName]
@@ -114,15 +123,17 @@ func LiftPluginRustContractCID(rustName string) string {
 // bridge has not yet been bound to a real binary.
 const LiftPluginGoTargetProofCIDPlaceholder = "deferred:phase-3-proof-bundle"
 
-// liftPluginBridgePairs lists the 10 (rust contract name, go counterpart
+// liftPluginBridgePairs lists the 11 (rust contract name, go counterpart
 // contract name, bridge name) triples in stable order. The order is
 // declaration order of the rust contracts in
 // implementations/rust/provekit-self-contracts/src/lift_plugin_protocol.rs.
 //
 // Bridge naming: `bridge_to_<rust_contract_name>` per the phase-2 PR
-// description.
+// description, with the exception that C8 (lift_emits_call_edge_stream)
+// uses bridge_to_lift_plugin_emits_call_edge_stream to satisfy the
+// bridge_to_lift_plugin_* prefix invariant enforced by the test suite.
 //
-// Counterpart naming: `go_<rust_contract_name>` per the phase-2 PR
+// Counterpart naming: `go_lift_plugin_<rule>` per the phase-2 PR
 // description.
 type liftPluginBridgePair struct {
 	rustName      string // source of the conformance claim
@@ -182,10 +193,17 @@ func liftPluginBridgePairs() []liftPluginBridgePair {
 			goCounterpart: "go_lift_plugin_diagnostic_field_is_array",
 			bridgeName:    "bridge_to_lift_plugin_diagnostic_field_is_array",
 		},
+		// C8: the rust contract name lacks the lift_plugin_ prefix; the
+		// bridge name uses lift_plugin_ to satisfy the prefix invariant.
+		{
+			rustName:      "lift_emits_call_edge_stream",
+			goCounterpart: "go_lift_plugin_emits_call_edge_stream",
+			bridgeName:    "bridge_to_lift_plugin_emits_call_edge_stream",
+		},
 	}
 }
 
-// LiftPluginBridgePairNames returns the 10 bridge names in stable
+// LiftPluginBridgePairNames returns the 11 bridge names in stable
 // declaration order. Exported for tests.
 func LiftPluginBridgePairNames() []string {
 	pairs := liftPluginBridgePairs()
@@ -196,7 +214,7 @@ func LiftPluginBridgePairNames() []string {
 	return out
 }
 
-// LiftPluginGoCounterpartNames returns the 10 go-counterpart contract
+// LiftPluginGoCounterpartNames returns the 11 go-counterpart contract
 // names in stable declaration order. Exported for tests + the
 // orchestrator's post-mint bridge resolution.
 func LiftPluginGoCounterpartNames() []string {
@@ -208,7 +226,7 @@ func LiftPluginGoCounterpartNames() []string {
 	return out
 }
 
-// InvariantsLiftPluginProtocolContracts authors the 10 go counterpart
+// InvariantsLiftPluginProtocolContracts authors the 11 go counterpart
 // contracts that assert "go-kit's lift plugin satisfies rust's
 // <contract name>". Each counterpart mirrors the rust contract's shape:
 // a kit-defined named ctor whose paired-equality with `true_const`
@@ -320,9 +338,22 @@ func InvariantsLiftPluginProtocolContracts() {
 				ctor1("true_const", ir.StrConst("")),
 			),
 		})
+
+	// -- C8: lifter emits call-edge stream alongside contracts. ----------
+	//        Mirrors rust C8 `lift_emits_call_edge_stream` (spec #114 §1
+	//        R1). The ctor discharges vacuously when the compilation unit
+	//        is empty and fires when a non-empty contract set is emitted
+	//        with no accompanying call-edge stream.
+	ir.Contract("go_lift_plugin_emits_call_edge_stream",
+		ir.ContractArgs{
+			Post: ir.Eq(
+				ctor1("go_call_edge_stream_present_or_unit_empty", ir.StrConst("resp")),
+				ctor1("true_const", ir.StrConst("")),
+			),
+		})
 }
 
-// InvariantsLiftPluginProtocolBridges authors the 10 cross-kit bridges
+// InvariantsLiftPluginProtocolBridges authors the 11 cross-kit bridges
 // linking each rust source contract (by memento CID) to its go
 // counterpart contract.
 //
@@ -366,7 +397,7 @@ func pendingTargetContractCidPlaceholder(counterpartName string) string {
 // InvariantsLiftPluginProtocolBridges.
 const PendingTargetContractCidPrefix = "pending-go-counterpart:"
 
-// BuildLiftPluginProtocolBridges constructs the 10 BridgeDeclarations
+// BuildLiftPluginProtocolBridges constructs the 11 BridgeDeclarations
 // directly (without going through the kit collector). Used by the
 // pinned-hash test and any cross-kit consumer that wants the bridges
 // as values rather than collected declarations.
