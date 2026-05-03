@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1",
+  "kind": "link-bundle",
+  "contractSetCid": "blake3-512:527c19f14085922a5fcbafda4976d5fa1de618897f1c8dd7a3d28e0e5a7bf68141b2042732fd452bbebca9cbbebf56251a3a2effb8f0673ad071d881c57c41f3",
+  "callEdgeSetCid": "blake3-512:017e35aff2526ec52fd7eb00acf8993054a6c1162461dbafa2ac076253624efe1f1ff6d8864e146b3c82c0244b91e82097383bf60de4a314a63b15b9f34c1fd1",
+  "bridgeSetCid": "blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229",
+  "linkerVersion": "0.1.0",
+  "linkerErrors": [
+    {
+      "kind": "linker-error",
+      "errorKind": "unresolved-symbol",
+      "targetSymbol": "resolver-error:process",
+      "sourceContractCid": "blake3-512:bfca60e0421a6a8a09f122407b1aa12027a33251c4c0d9fb50296f76368fda397211d8af9f72924d0c7d8d6b23960a1a69cb1b61cbbdc6a2e6150f488d795ead",
+      "reason": "targetSymbol `resolver-error:process` did not resolve to any contract in the union"
+    },
+    {
+      "kind": "linker-error",
+      "errorKind": "unresolved-symbol",
+      "targetSymbol": "resolver-error:int",
+      "sourceContractCid": "blake3-512:bfca60e0421a6a8a09f122407b1aa12027a33251c4c0d9fb50296f76368fda397211d8af9f72924d0c7d8d6b23960a1a69cb1b61cbbdc6a2e6150f488d795ead",
+      "reason": "targetSymbol `resolver-error:int` did not resolve to any contract in the union"
+    }
+  ],
+  "bridges": [],
+  "linkBundleCid": "blake3-512:6516a277d684ee804ae89befab2df912b0b8c99cc73d2b11e8e048d01d0dc67932571d33ad15b3ed2ab64b1e27d221e40af3a621bb4acbeddec4793dd8efdb49"
+}

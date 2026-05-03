@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1",
+  "kind": "link-bundle",
+  "contractSetCid": "blake3-512:527c19f14085922a5fcbafda4976d5fa1de618897f1c8dd7a3d28e0e5a7bf68141b2042732fd452bbebca9cbbebf56251a3a2effb8f0673ad071d881c57c41f3",
+  "callEdgeSetCid": "blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229",
+  "bridgeSetCid": "blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229",
+  "linkerVersion": "0.1.0",
+  "linkerErrors": [],
+  "bridges": [],
+  "linkBundleCid": "blake3-512:f07cc20883de5bcbb5c0a5b8d63f9da0906a43bb949ee7fe2fd8a1fd32be97522bf6635d72a3e5705ddd6292a00bf26586d4080fc4c1c2b7cdbba84ce89cd5b9"
+}
