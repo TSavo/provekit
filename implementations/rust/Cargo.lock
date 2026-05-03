@@ -1754,6 +1754,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lsp-rust"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-symbolic",
+ "provekit-lift",
+ "serde_json",
+ "syn",
+]
+
+[[package]]
 name = "provekit-macros"
 version = "0.1.0"
 dependencies = [
