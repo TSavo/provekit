@@ -427,6 +427,16 @@ struct BridgeDecl {
   std::vector<std::string> ir_arg_sorts;
   std::string ir_return_sort;
   std::string notes;
+  // v1.4.0 BridgeDeclaration fields per
+  // protocol/specs/2026-04-30-ir-formal-grammar.md §BridgeDeclaration.
+  // Defaulted-empty so existing call sites that aggregate-init the older
+  // 7-field shape continue to compile. Empty strings are JCS-absent for the
+  // optional `notes` field (see write_bridge_decl); the three CIDs and
+  // `name` are normatively required when emitting a real bridge memento.
+  std::string name;
+  std::string source_contract_cid;
+  std::string target_contract_cid;
+  std::string target_proof_cid;
 };
 
 inline std::vector<BridgeDecl>& bridge_collector() {
@@ -635,6 +645,44 @@ inline void write_evidence(std::ostringstream& out, const EvidenceTerm& e) {
   out << ",\"proofData\":";
   write_string(out, e.certificate.proof_data);
   out << "}}";
+}
+
+// Emit a BridgeDecl in locked IR-JSON shape per the v1.4.0 grammar
+// (protocol/specs/2026-04-30-ir-formal-grammar.md §BridgeDeclaration).
+//
+// JCS alphabetical key order:
+//   kind, name, [notes?], sourceContractCid, sourceLayer, sourceSymbol,
+//   targetContractCid, targetLayer, targetProofCid.
+//
+// `notes` is omitted entirely when empty (JCS "omit absent" rule). It is
+// never emitted as `null` or as `""`. This mirrors the TS kit's
+// `...(spec.notes !== undefined ? { notes } : {})` pattern and the Rust
+// kit's `serde(skip_serializing_if = "Option::is_none")`, which is what
+// keeps the four kits byte-equal when bridges have no notes.
+//
+// Cross-impl JCS conformance: byte-pinned to the `bridge_decl` fixture in
+// conformance/fixtures.toml; any change to this emitter MUST keep the
+// conformance smoke test in example/evidence_term_test.cpp passing.
+inline void write_bridge_decl(std::ostringstream& out, const BridgeDecl& b) {
+  out << "{\"kind\":\"bridge\",\"name\":";
+  write_string(out, b.name);
+  if (!b.notes.empty()) {
+    out << ",\"notes\":";
+    write_string(out, b.notes);
+  }
+  out << ",\"sourceContractCid\":";
+  write_string(out, b.source_contract_cid);
+  out << ",\"sourceLayer\":";
+  write_string(out, b.source_layer);
+  out << ",\"sourceSymbol\":";
+  write_string(out, b.source_symbol);
+  out << ",\"targetContractCid\":";
+  write_string(out, b.target_contract_cid);
+  out << ",\"targetLayer\":";
+  write_string(out, b.target_layer);
+  out << ",\"targetProofCid\":";
+  write_string(out, b.target_proof_cid);
+  out << "}";
 }
 
 // Marshal an array of ContractDecl into the IR-JSON Document shape.
