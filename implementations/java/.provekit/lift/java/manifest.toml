@@ -1,0 +1,3 @@
+name = "java-lift"
+command = ["provekit-lift-java", "--rpc"]
+working_dir = "."

@@ -124,11 +124,14 @@ pub fn self_contracts_attestation_path_for(lang: &str) -> PathBuf {
 pub const SELF_CONTRACTS_DECLARED_AT_V1_3_1: &str = "2026-05-02T17:00:00Z";
 
 /// Recognized peer identifiers for self-contracts attestations.
-/// Kept in sync with the Makefile's `mint-{rust,go,cpp,ts,csharp}` targets.
-/// All five peer kits use the same letter-envelope attestation shape;
+/// Kept in sync with the Makefile's `mint-<lang>` targets.
+/// All 11 peer kits use the same letter-envelope attestation shape;
 /// the source tree no longer carries machine-local truth about its own
 /// bytes for any kit.
-pub const SELF_CONTRACTS_LANGS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift"];
+pub const SELF_CONTRACTS_LANGS: &[&str] = &[
+    "rust", "go", "cpp", "ts", "csharp",
+    "swift", "java", "python", "ruby", "zig", "c",
+];
 
 /// Build the signed message body for a self-contracts attestation
 /// (no `signature` field). JCS-canonical bytes of this object are what
@@ -661,13 +664,13 @@ mod tests {
     }
 
     #[test]
-    fn self_contracts_lang_set_is_six_peers() {
+    fn self_contracts_lang_set_is_eleven_peers() {
         // Guard the canonical kit suite. Adding or removing a peer is
         // a deliberate act; this test forces an explicit edit.
-        // swift was added in feat(swift): bootstrap kit.
+        // java/python/ruby/zig/c added in feat(cli): unify mint pipeline.
         assert_eq!(
             SELF_CONTRACTS_LANGS,
-            &["rust", "go", "cpp", "ts", "csharp", "swift"]
+            &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c"]
         );
     }
 }

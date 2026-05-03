@@ -1,0 +1,3 @@
+name = "c-lift"
+command = ["provekit-lift-c", "--rpc"]
+working_dir = "."

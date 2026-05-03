@@ -1,0 +1,3 @@
+name = "zig-lift"
+command = ["provekit-lift-zig", "--rpc"]
+working_dir = "."

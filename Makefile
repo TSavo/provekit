@@ -152,95 +152,159 @@ build-swift:
 
 # --- Mint targets ------------------------------------------------------------
 
-# Each mint target builds its peer + dispatches via `provekit mint`,
-# then asserts the printed CID equals the pinned value. CI uses these.
+# Each mint target builds its peer + dispatches via `provekit mint --kit=<kit>`.
+# The CLI drives the kit's lift-protocol RPC, collects contracts, signs the
+# attestation, and writes it to $(SELF_CONTRACTS_ATTEST_DIR)/<lang>.json.
+# All 11 kits use the same uniform pipeline; no language-native mint binaries.
+#
+# For kits whose lifter binary is not yet installed, mint produces an
+# empty-set attestation (contractSetCid = BLAKE3-512 of JCS("[]")).
+# The attestation is still verified; a missing lifter surfaces as a known gap.
 
 .PHONY: mint-rust
 mint-rust: build-rust
 	@echo ">> minting rust self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --project implementations/rust --quiet); \
+	@mint_out=$$($(PROVEKIT) mint --kit=rust --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
 	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json "$$cset" || \
-		(echo "FAIL: rust self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- rust $$cid $$cset" && exit 1)
+		(echo "FAIL: rust self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=rust" && exit 1)
 
 .PHONY: mint-go
 mint-go: build-rust build-go
 	@echo ">> minting go self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --project implementations/go --quiet); \
+	@mint_out=$$($(PROVEKIT) mint --kit=go --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
 	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/go.json "$$cset" || \
-		(echo "FAIL: go self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- go $$cid $$cset" && exit 1)
+		(echo "FAIL: go self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=go" && exit 1)
 
 .PHONY: mint-cpp
 mint-cpp: build-rust build-cpp
 	@echo ">> minting cpp self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --project implementations/cpp --quiet); \
+	@mint_out=$$($(PROVEKIT) mint --kit=cpp --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
 	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json "$$cset" || \
-		(echo "FAIL: cpp self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- cpp $$cid $$cset" && exit 1)
+		(echo "FAIL: cpp self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=cpp" && exit 1)
 
 .PHONY: mint-ts
-mint-ts: build-ts
+mint-ts: build-rust build-ts
 	@echo ">> minting ts self-contracts"
-	@ts_out=$$(pnpm -s vitest run --reporter=verbose \
-		implementations/typescript/src/bin/mint-ts-self-contracts.test.ts 2>&1); \
-	cid=$$(echo "$$ts_out" | grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
-	cset=$$(echo "$$ts_out" | grep -F 'contractSetCid:' | awk '{print $$NF}' | head -1); \
+	@mint_out=$$($(PROVEKIT) mint --kit=ts --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json "$$cset" || \
-		(echo "FAIL: ts self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- ts $$cid $$cset" && exit 1)
+		(echo "FAIL: ts self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=ts" && exit 1)
 
 .PHONY: mint-csharp
-mint-csharp:
+mint-csharp: build-rust
 	@echo ">> minting csharp self-contracts"
-	@cs_out=$$(cd implementations/csharp/Provekit.SelfContracts && \
-		dotnet run -c Release 2>/dev/null); \
-	cid=$$(echo "$$cs_out" | grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
-	cset=$$(echo "$$cs_out" | grep -F 'contractSetCid:' | awk '{print $$NF}' | head -1); \
+	@mint_out=$$($(PROVEKIT) mint --kit=csharp --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json "$$cset" || \
-		(echo "FAIL: csharp self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- csharp $$cid $$cset" && exit 1)
+		(echo "FAIL: csharp self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=csharp" && exit 1)
 
+# NOTE: mint-swift requires a macOS host with the Swift toolchain.
+# Excluded from all-mint (Linux/CI). Use `make mint-swift` on macOS.
 .PHONY: mint-swift
-mint-swift: build-swift
+mint-swift: build-rust build-swift
 	@echo ">> minting swift self-contracts"
-	@swift_out=$$(cd implementations/swift && swift run mint-swift-self-contracts 2>/dev/null); \
-	cid=$$(echo "$$swift_out" | grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
-	cset=$$(echo "$$swift_out" | grep -F 'contractSetCid:' | awk '{print $$NF}' | head -1); \
+	@mint_out=$$($(PROVEKIT) mint --kit=swift --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/swift.json "$$cset" || \
-		(echo "FAIL: swift self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- swift $$cid $$cset" && exit 1)
+		(echo "FAIL: swift self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=swift" && exit 1)
 
-# NOTE: mint-swift is intentionally excluded from all-mint — it requires a
-# macOS host with the Swift toolchain. Use `make mint-swift` on macOS.
+# New kits: lifter binaries not yet available; mint produces empty-set attestation.
+# These targets will produce the correct attestation structure; the gap is the
+# per-kit lifter, not the substrate pipeline.
+
+.PHONY: mint-java
+mint-java: build-rust
+	@echo ">> minting java self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=java --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/java.json "$$cset" || \
+		(echo "FAIL: java self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=java" && exit 1)
+
+.PHONY: mint-python
+mint-python: build-rust
+	@echo ">> minting python self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=python --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/python.json "$$cset" || \
+		(echo "FAIL: python self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=python" && exit 1)
+
+.PHONY: mint-ruby
+mint-ruby: build-rust
+	@echo ">> minting ruby self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=ruby --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ruby.json "$$cset" || \
+		(echo "FAIL: ruby self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=ruby" && exit 1)
+
+.PHONY: mint-zig
+mint-zig: build-rust
+	@echo ">> minting zig self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=zig --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/zig.json "$$cset" || \
+		(echo "FAIL: zig self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=zig" && exit 1)
+
+.PHONY: mint-c
+mint-c: build-rust
+	@echo ">> minting c self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=c --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/c.json "$$cset" || \
+		(echo "FAIL: c self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=c" && exit 1)
+
+# NOTE: mint-swift excluded from all-mint (macOS-only). New kits (java/python/
+# ruby/zig/c) produce empty-set attestations until their lifters are wired up.
 .PHONY: all-mint
 all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
 	@echo ""
-	@echo "==== all 5 self-contract CIDs match pinned values ===="
+	@echo "==== all 5 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
