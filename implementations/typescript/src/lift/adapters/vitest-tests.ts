@@ -363,23 +363,32 @@ function liftOperand(expr: ts.Expression): OperandLift {
       term: { kind: "const", value: -Number(expr.operand.text), sort: Int },
     };
   }
-  if (ts.isCallExpression(expr) && expr.arguments.length === 1) {
+  // Free-function call (zero-or-more args) and `Module.fn(...)` static
+  // call. v0.6 relaxes v0's single-arg gate; every argument must itself
+  // lift. Method calls (`recv.fn(...)`) are handled by the next clause.
+  if (
+    ts.isCallExpression(expr) &&
+    (ts.isIdentifier(expr.expression) ||
+      (ts.isPropertyAccessExpression(expr.expression) &&
+        ts.isIdentifier(expr.expression.expression) &&
+        ts.isIdentifier(expr.expression.name)))
+  ) {
     const callee = expr.expression;
-    let name: string | null = null;
-    if (ts.isIdentifier(callee)) name = callee.text;
-    else if (
-      ts.isPropertyAccessExpression(callee) &&
-      ts.isIdentifier(callee.expression) &&
-      ts.isIdentifier(callee.name)
-    ) {
-      // Allow `Module.fn(arg)` style ctor-call only when the receiver
-      // is itself a bare identifier (no chains).
-      name = `${callee.expression.text}.${callee.name.text}`;
+    let name: string;
+    if (ts.isIdentifier(callee)) {
+      name = callee.text;
+    } else {
+      // PropertyAccess; bare-identifier receiver only (no chains).
+      const pa = callee as ts.PropertyAccessExpression;
+      name = `${(pa.expression as ts.Identifier).text}.${pa.name.text}`;
     }
-    if (!name) return { kind: "skip", reason: "call target shape unsupported" };
-    const inner = liftOperand(expr.arguments[0]!);
-    if (inner.kind === "skip") return inner;
-    return { kind: "ok", term: { kind: "ctor", name, args: [inner.term] } };
+    const argTerms: IrTerm[] = [];
+    for (const a of expr.arguments) {
+      const lifted = liftOperand(a);
+      if (lifted.kind === "skip") return lifted;
+      argTerms.push(lifted.term);
+    }
+    return { kind: "ok", term: { kind: "ctor", name, args: argTerms } };
   }
   // v0.6: method call on operand. `recv.method(...args)` lifts as a
   // UFCS-style ctor where the receiver becomes the first argument.
