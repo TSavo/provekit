@@ -26,6 +26,7 @@ members = [
     "provekit-lift-quickcheck",
     "provekit-lift-verus",
     "provekit-lift-rust-tests",
+    "provekit-linker",
     "provekit-lsp",
     "provekit-lsp-rust",
     "provekit-build",

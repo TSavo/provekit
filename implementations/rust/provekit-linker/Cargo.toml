@@ -1,0 +1,16 @@
+[package]
+name = "provekit-linker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Pure linker algebra for ProvekIt: derives bridges from (contracts ∪ call-edges) per spec 2026-05-03-bridge-linkage-protocol.md. Used by both `provekit link` (CLI) and `provekit-linkerd` (daemon, LSP+linker step 2)."
+
+[lib]
+name = "provekit_linker"
+path = "src/lib.rs"
+
+[dependencies]
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+serde = { workspace = true }
+serde_json = { workspace = true }
