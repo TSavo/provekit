@@ -2,9 +2,9 @@
   "schemaVersion": "1",
   "kind": "self-contracts-attestation",
   "lang": "rust",
-  "cid": "blake3-512:540c57ca0235cd5b95bdc3dbf52f5b461f960fc6582fde5b2c42741d8ce8a55e7a14fb54c14424944b4f3dbcf8f1422b07aaa3cda3c7172f18a44784a65d6bf9",
-  "contractSetCid": "blake3-512:7fd91d9e527b63001aa1361c82ef6b6f4c3642922ab8892ab5e8ee8f4cf49c384a9e9ae60f7c0cc9a01b8708d04ed5f28e771fadd0247ea0664a8b3ef40d036e",
+  "cid": "blake3-512:3ebdc9eadc1021de5622d2a1ce77f80f8d243311848a411172d95e6fad9c2411fb6f78966e5f766dc6e171ce78f3a5f67b72f93a90bfb5c6b0ffe7ad50ebfe0c",
+  "contractSetCid": "blake3-512:66c6bc6a6a1793442ad9b743d7ccd2264a7a0b3bbecaefe4c3a0762da7dce322e7734d8229b76325c2f11c8d3acc5e751fd89063e220b138bac29fc1554e2a7f",
   "declaredAt": "2026-05-02T17:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:mCQqQ6I1FUAJa5wilpXOb8+EEeivx8fIApzanziZIkxGp2l91j7TdpgyqZiSc5o8xttDbwuI/Zsnll5Q4iNiBQ=="
+  "signature": "ed25519:+8SMDNwEr6Uv4Sfa58ezfAgmx6NDqrDAJtqioTddhCwJ1ckAabV+B/3kHnMcPZxNZ2eClXfRoCs5uRQGHFDkBw=="
 }
