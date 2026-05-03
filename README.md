@@ -2,9 +2,39 @@
 
 **Cross-language compile-time correctness verification.**
 
-Annotations in every language already express contracts: Rust's `assert!`, Go's `//provekit:contract` comments, Java's `@NotNull`, Python type hints. Those annotations stop being enforced the moment your code crosses a language boundary via cgo, JNI, ctypes, or WASM imports. ProvekIt lifts them into a common predicate substrate, derives bridges at every cross-language call site, and surfaces violations as red squiggles in the developer's IDE. The annotation was always there. ProvekIt makes it load-bearing across language boundaries.
+ProvekIt is **not** a formal verification framework. It is **a protocol for content-addressing formal verifications**. The same primitive Bitcoin used for currency, Git uses for source history, BitTorrent uses for content distribution, and IPFS uses for the addressable web — applied to behavioral verification. Every contract, implication, and proof is a signed memento; every memento has a self-identifying CID; every verification is a hash comparison. The protocol version is itself a CID. There is no central registry, no trusted authority, no service to call. There is only math.
 
-## Pick your path
+## I want to...
+
+| Goal | Start here |
+|---|---|
+| Try it in **Rust** | [docs/tutorials/rust.md](docs/tutorials/rust.md) |
+| Try it in **TypeScript** | [docs/tutorials/typescript.md](docs/tutorials/typescript.md) |
+| Try it in **Python** | [docs/tutorials/python.md](docs/tutorials/python.md) |
+| Try it in **Java / JVM** | [docs/tutorials/java.md](docs/tutorials/java.md) |
+| Try it in **C#** | [docs/tutorials/csharp.md](docs/tutorials/csharp.md) |
+| Try it in **Ruby** | [docs/tutorials/ruby.md](docs/tutorials/ruby.md) |
+| Try it in **Zig** | [docs/tutorials/zig.md](docs/tutorials/zig.md) |
+| Try it in **Go / C++ / Swift / C** | [docs/tutorials/](docs/tutorials/) (kits ship; lift adapters land in v1.2) |
+| See the polyglot demo | [docs/tutorials/polyglot-stack.md](docs/tutorials/polyglot-stack.md) |
+| Get red squigglies in my IDE | [docs/how-to/ide-integration/](docs/how-to/ide-integration/) |
+| Ship a `.proof` alongside my package | [docs/how-to/publishing-a-proof.md](docs/how-to/publishing-a-proof.md) |
+| Verify a dependency's `.proof` | [docs/how-to/consuming-a-proof.md](docs/how-to/consuming-a-proof.md) |
+| Add my language | [docs/contributing/porting-to-a-new-language.md](docs/contributing/porting-to-a-new-language.md) |
+| Write a lift adapter | [docs/contributing/writing-a-lift-adapter/](docs/contributing/writing-a-lift-adapter/) |
+| Understand the thesis | [docs/explanation/thesis.md](docs/explanation/thesis.md) |
+| Read the whitepaper (executive summary) | [docs/papers/01-whitepaper.md](docs/papers/01-whitepaper.md) |
+| Read the bluepaper (formal protocol spec) | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |
+| Read the manifesto (substrate, not blockchain) | [docs/papers/03-substrate-not-blockchain.md](docs/papers/03-substrate-not-blockchain.md) |
+| Read the vertical-stack + standardization paper | [docs/papers/04-vertical-stack-and-standardization.md](docs/papers/04-vertical-stack-and-standardization.md) |
+| Compare to SLSA / Sigstore / SBOM | [docs/explanation/compared-to/](docs/explanation/compared-to/) |
+| Reason about trust | [docs/security/threat-model.md](docs/security/threat-model.md) |
+| Look up a CLI flag | [docs/reference/cli/](docs/reference/cli/) |
+| Look up an IR node | [docs/reference/ir/](docs/reference/ir/) |
+| Look up spec CIDs | [docs/reference/cids.md](docs/reference/cids.md) |
+| Read everything | [docs/index.md](docs/index.md) |
+
+## What is it?
 
 | I want red squiggles | I want to extend ProvekIt |
 | --- | --- |
@@ -13,11 +43,22 @@ Annotations in every language already express contracts: Rust's `assert!`, Go's 
 
 ## What the substrate does
 
-Every ProvekIt kit (rust, go, python, cpp, c#, java, ruby, zig, swift, ts, c) lifts source annotations into ProvekIt IR: a content-addressed predicate language where the same logical predicate produces the same 64-byte BLAKE3-512 hash regardless of which language wrote it.
+ProvekIt does not compete with `proptest`, `contracts`, `kani`, `prusti`, `hypothesis`, `pydantic`, `zod`, `class-validator`, `bean-validation`, JML, DataAnnotations, or `active_model`. It sits beneath them. The thing that produces a verification — Z3, Coq, Lean, F\*, CBMC, Kani, Prusti, hand-written annotation — is the formal verification framework. ProvekIt is the substrate over which those frameworks publish their findings: portable, signed, content-addressed, federated. Whatever annotation library a codebase already uses, the lift adapter promotes those annotations to canonical IR, hashes the IR, signs the memento. Authoring stays where the developer already is. Publication, distribution, and verification move underneath.
 
-A lifter walks your source, extracts contracts (pre/post predicates) and call edges (which function calls which). The linker takes the union of all kits' output and derives a bridge for each cross-language call edge: does the caller's postcondition establish the callee's precondition? If not, the bridge derivation fails. That failure is a `linker-error` memento. The LSP server converts it to a diagnostic and the editor shows a red squiggle.
+For the deeper claim, read [docs/explanation/thesis.md](docs/explanation/thesis.md). For end-to-end mechanics, [docs/explanation/architecture.md](docs/explanation/architecture.md). For what it replaces and complements, [docs/explanation/product.md](docs/explanation/product.md).
 
-The `.proof` bundle that ships alongside your binary is the frozen IDE state at ship time: every squiggle was green, every contract verified, every cross-language call's bridge derivation succeeded. A consumer recomputes the `linkBundleCid` from their copy of the code and checks byte-equality. No re-running. The proof is the snapshot.
+## Status
+
+- **Protocol catalog**: v1.4.0 (additive over v1.3.1; v1.1.0+ mementos all remain valid)
+- **Catalog CID**: `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f`
+- **What's new in v1.4.0**: substrate layering (envelope/header/body cut), contract-CID vs. attestation-CID separation, contract-set extension (verifiable semver-minor), version-chain pinning (package-manager replacement), bridge target dimensionality (tagged-union targets, no placeholder strings), three-axis pinning at the consumer surface (`contractCid`, `witnessCid`, `binaryCid`). See [docs/papers/03-substrate-not-blockchain.md](docs/papers/03-substrate-not-blockchain.md) §11–§12 for the multi-dimensional address-space framing this operationalizes.
+- **Canonical implementation**: Rust (`cargo install provekit`)
+- **Conforming implementations** today: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md) and [docs/reference/per-adapter-coverage.md](docs/reference/per-adapter-coverage.md).
+- **Conformance gate**: every kit's mint must match a pinned content-addressed CID before `make ci` is green.
+
+The protocol is content-addressed end to end. v1.1.0's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what v1.1.0 means; the bytes do.
+
+## Quick install (Rust, canonical)
 
 ## Status
 
@@ -46,60 +87,14 @@ The core binary is:
 cargo install --path implementations/rust/provekit-cli
 ```
 
-The LSP server is:
+`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. Any of these can fail closed; none requires the network.
 
-```sh
-cargo install --path implementations/rust/provekit-lsp
-```
+For other host languages, see the tutorials above. The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 
-The daemon is:
+## Building from source
 
-```sh
-cargo install --path implementations/rust/provekit-linkerd
-```
+If you are working on ProvekIt itself (kit, lift adapter, prover backend, spec change), see [docs/contributing/build.md](docs/contributing/build.md) for the polyglot Make targets, system dependencies, and per-implementation build commands. The conformance gate (`make ci`) enforces byte-determinism across every implementation.
 
-## Reading order if you want to understand the architecture
+## License
 
-1. `docs/launch/substrate-not-blockchain.md` — manifesto §1-§12, the substrate posture
-2. `docs/launch/the-pieces-on-the-table.md` — twelve-step architectural derivation
-3. `docs/launch/path-to-default.md` — adoption strategy
-4. `protocol/specs/` — normative specs, each addressed by content-hash CID
-
-## Building
-
-The top-level `Makefile` is the gate. If `make ci` is green, every peer's self-contracts round-trip to its pinned CID, the catalog hash matches, and every native test suite passes.
-
-```sh
-make help          # available targets
-make ci            # full gate (conformance + every language's tests)
-make conformance   # catalog + protocol + 5 mint CIDs + self-contract tests
-make all-mint      # run all 5 mint commands; print CIDs
-make test-all      # run all language-native test suites
-make build-rust    # cargo build --release (workspace + tools)
-make clean         # remove build artifacts
-```
-
-## System dependencies
-
-| Package | macOS | Ubuntu / Debian |
-|---|---|---|
-| Rust stable | `rustup install stable` | `rustup install stable` |
-| Go 1.22+ | `brew install go` | `sudo apt install golang-1.22` |
-| .NET 10 SDK | `brew install --cask dotnet-sdk` | Microsoft apt repo |
-| Node 22 + pnpm | `brew install node@22 pnpm` | nodesource + `npm i -g pnpm` |
-| Python 3.12 | `brew install python@3.12` | `sudo apt install python3.12` |
-| OpenSSL 3 | `brew install openssl@3` | `sudo apt install libssl-dev` |
-| nlohmann-json | `brew install nlohmann-json` | `sudo apt install nlohmann-json3-dev` |
-| BLAKE3 | vendored at `tools/blake3-vendored` | vendored at `tools/blake3-vendored` |
-
-BLAKE3 is vendored as portable C source under `tools/blake3-vendored/` (BLAKE3 1.8.5, Apache-2.0). The C++ build compiles it with all SIMD paths disabled, so no system BLAKE3 install is required.
-
-## Read further
-
-- [docs/quickstart-end-user.md](docs/quickstart-end-user.md) — get a red squiggle in 10 minutes
-- [docs/quickstart-extender.md](docs/quickstart-extender.md) — write a new kit lifter or protocol spec
-- [docs/per-language-status.md](docs/per-language-status.md) — kit and adapter coverage by language
-- [docs/lift-adoption-paths.md](docs/lift-adoption-paths.md) — per-source-library lift adapter guide
-- [ARCHITECTURE.md](ARCHITECTURE.md) — four-layer model, handshake, lattice tractability theorem
-- [THESIS.md](THESIS.md) — the deeper architectural claim
-- [protocol/specs/](protocol/specs/) — canonical specs, each content-addressed by CID
+See [LICENSE](LICENSE).

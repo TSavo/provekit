@@ -9,7 +9,7 @@ import (
 )
 
 // pinnedLiftPluginBridgesBundleCID freezes the BLAKE3-512 of the
-// JCS-canonical bytes of the 10 phase-2 cross-kit bridges. Computed at
+// JCS-canonical bytes of the 11 phase-2 cross-kit bridges. Computed at
 // PR-authoring time over the BridgeDeclaration array returned by
 // BuildLiftPluginProtocolBridges() with TargetContractCid carrying the
 // `pending-go-counterpart:<name>` placeholder (the orchestrator
@@ -18,10 +18,10 @@ import (
 // the transient go bundle's internal CIDs).
 //
 // Drift in any of the following invalidates this hash:
-//   - rust contract memento CID for any of the 10 lift-plugin-protocol
+//   - rust contract memento CID for any of the 11 lift-plugin-protocol
 //     contracts (rustContractCID map in lift_plugin_protocol.go)
-//   - bridge name spelling (bridge_to_<rust_name>)
-//   - go counterpart name spelling (go_<rust_name>)
+//   - bridge name spelling (bridge_to_<rust_name> or bridge_to_lift_plugin_*)
+//   - go counterpart name spelling (go_lift_plugin_*)
 //   - sourceLayer / targetLayer / notes literals
 //   - LiftPluginGoTargetProofCIDPlaceholder ("deferred:phase-3-proof-bundle")
 //   - declaration order
@@ -31,17 +31,18 @@ import (
 //   - Rust contract CIDs extracted from `cargo run -p
 //     provekit-self-contracts --bin mint-self-contracts /tmp/<dir>` at
 //     bundle CID
-//     blake3-512:a6dcf733721f902c77c19a2e818e7638e37c0f9e6254ac607a39f6
-//     8584aba2c9442b204fe536f25713988e271e684a8585f10d991fefa
-//     08df7e99a8a3df7f60e
-const pinnedLiftPluginBridgesBundleCID = "blake3-512:8b6e76853d7b54d0de3b72b07b21b77d7fdfc39b9d26aebccaab0d466ada88c09067a0ddcb34c6918e90c83d220e4a6f2b373463927c956d50e74940dd7d6599"
+//     blake3-512:60df6322388ff7d9ccd1b9ee9d6457fdfe89a51b3d2d73a34daa013
+//     1f65c80543331832eb88920fe514ebb799bc655808f152d36274542a
+//     c9879c862a33f3a92 (11-contract bundle with C8)
+// Updated when C8 (lift_emits_call_edge_stream) was mirrored into Go.
+const pinnedLiftPluginBridgesBundleCID = "blake3-512:14714474052a03a17266ae05241ccca6189e7d02a1d961325704b2e1309ec56d80600b0e3e5110531719fc678f410d05e70275b4862d23a1c2f32513b8fa2d5a"
 
-// TestLiftPluginBridgePairsCount ensures all 10 expected bridge pairs
+// TestLiftPluginBridgePairsCount ensures all 11 expected bridge pairs
 // are declared exactly once.
 func TestLiftPluginBridgePairsCount(t *testing.T) {
 	pairs := liftPluginBridgePairs()
-	if len(pairs) != 10 {
-		t.Fatalf("liftPluginBridgePairs(): want 10 pairs, got %d", len(pairs))
+	if len(pairs) != 11 {
+		t.Fatalf("liftPluginBridgePairs(): want 11 pairs, got %d", len(pairs))
 	}
 
 	// Every rust source name must appear in the rustContractCID map.
@@ -57,9 +58,9 @@ func TestLiftPluginBridgePairsCount(t *testing.T) {
 		}
 	}
 
-	// rustContractCID has exactly 10 entries (one per bridge).
-	if len(rustContractCID) != 10 {
-		t.Errorf("rustContractCID: want 10 entries, got %d", len(rustContractCID))
+	// rustContractCID has exactly 11 entries (one per bridge).
+	if len(rustContractCID) != 11 {
+		t.Errorf("rustContractCID: want 11 entries, got %d", len(rustContractCID))
 	}
 }
 
@@ -92,8 +93,8 @@ func TestLiftPluginRustContractCIDsAreBlake3_512(t *testing.T) {
 // drift surfaces here with a clear message before the hash test sees it.
 func TestBuildLiftPluginProtocolBridgesShape(t *testing.T) {
 	bridges := BuildLiftPluginProtocolBridges()
-	if len(bridges) != 10 {
-		t.Fatalf("BuildLiftPluginProtocolBridges(): want 10 bridges, got %d", len(bridges))
+	if len(bridges) != 11 {
+		t.Fatalf("BuildLiftPluginProtocolBridges(): want 11 bridges, got %d", len(bridges))
 	}
 
 	for _, b := range bridges {

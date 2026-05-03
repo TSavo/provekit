@@ -1,0 +1,3 @@
+name = "python-lift"
+command = ["provekit-lift-python", "--rpc"]
+working_dir = "."
