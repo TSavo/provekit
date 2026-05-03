@@ -136,6 +136,29 @@ it("clamp_lift", () => {
     expect(lhs.args.length).toBe(3);
   });
 
+  it("v0.6: lifts binary arithmetic op in operand position as Ctor", () => {
+    const td = tempDir();
+    writeFileSync(
+      join(td, "binop.test.ts"),
+      `
+import { it, expect } from "vitest";
+it("plus_lifts", () => {
+  expect(a + b).toBe(7);
+});
+      `,
+    );
+    const r = liftPath(td);
+    const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
+    expect(vt.lifted).toBe(1);
+
+    const decl = r.decls.find((d) => d.name === "plus_lifts::0")!;
+    const f = decl.inv as { kind: string; args: unknown[] };
+    const lhs = f.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(lhs.kind).toBe("ctor");
+    expect(lhs.name).toBe("+");
+    expect(lhs.args.length).toBe(2);
+  });
+
   it("each lifted assertion mints its own content-addressed memento", () => {
     const td = tempDir();
     writeFileSync(

@@ -426,6 +426,23 @@ function liftOperand(expr: ts.Expression): OperandLift {
       term: { kind: "ctor", name: `${expr.expression.text}.${expr.name.text}`, args: [] },
     };
   }
+  // v0.6: binary operators in operand position (`a + b`, `a - b`,
+  // `a * b`, `a / b`, `a % b`). Lifts to `Ctor("<op>", [a, b])`. Both
+  // operands must themselves lift. Comparison and logical operators
+  // stay out of the term grammar; they live in formula position.
+  if (ts.isBinaryExpression(expr)) {
+    const opName = binaryOperatorCtorName(expr.operatorToken.kind);
+    if (opName) {
+      const left = liftOperand(expr.left);
+      if (left.kind === "skip") return left;
+      const right = liftOperand(expr.right);
+      if (right.kind === "skip") return right;
+      return {
+        kind: "ok",
+        term: { kind: "ctor", name: opName, args: [left.term, right.term] },
+      };
+    }
+  }
   if (ts.isToken(expr) && expr.kind === ts.SyntaxKind.TrueKeyword) {
     return { kind: "ok", term: { kind: "ctor", name: "True", args: [] } };
   }
@@ -843,6 +860,23 @@ function classifyCharacterization(
       itemName: testName,
       reason: `layer2 characterization: ${skipped.length} atoms skipped from conjunction: ${skipped.join("; ")}`,
     });
+  }
+}
+
+/**
+ * v0.6: map a binary operator token to a Ctor name when the operator
+ * is liftable in term (operand) position. Returns null for operators
+ * that don't belong here, like comparisons and short-circuit logicals,
+ * which live in formula position rather than term position.
+ */
+function binaryOperatorCtorName(kind: ts.SyntaxKind): string | null {
+  switch (kind) {
+    case ts.SyntaxKind.PlusToken: return "+";
+    case ts.SyntaxKind.MinusToken: return "-";
+    case ts.SyntaxKind.AsteriskToken: return "*";
+    case ts.SyntaxKind.SlashToken: return "/";
+    case ts.SyntaxKind.PercentToken: return "%";
+    default: return null;
   }
 }
 
