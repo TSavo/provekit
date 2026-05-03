@@ -615,38 +615,11 @@ fn mint_and_cache(
     let pubkey = ed25519_pubkey_string(seed);
     let _ = (post_formula, pre_formula);
 
-    let mut body_kvs: Vec<(String, std::sync::Arc<Value>)> = vec![
-        ("antecedentHash".into(), Value::string(post_hash.to_string())),
-        ("consequentHash".into(), Value::string(pre_hash.to_string())),
-        ("antecedentCid".into(), Value::string("blake3-512:0000".to_string())),
-        ("consequentCid".into(), Value::string("blake3-512:0000".to_string())),
-        ("antecedentSlot".into(), Value::string("post".to_string())),
-        ("consequentSlot".into(), Value::string("pre".to_string())),
-        ("prover".into(), Value::string(prover_tag.to_string())),
-        ("proverRunMs".into(), Value::integer(prover_run_ms)),
-        ("producerPubkey".into(), Value::string(pubkey.clone())),
-    ];
-    if !smt_lib_input.is_empty() {
-        body_kvs.push((
-            "smtLibInput".into(),
-            Value::string(smt_lib_input.to_string()),
-        ));
-    }
-    body_kvs.push(("proofWitness".into(), Value::string("(unsat)".to_string())));
-
-    let body = std::sync::Arc::new(Value::Object(body_kvs));
-
-    let evidence = Value::object([
-        ("kind", Value::string("implication")),
-        (
-            "schema",
-            Value::string(
-                "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c08",
-            ),
-        ),
-        ("body", body),
-    ]);
-
+    // Layered shape (v1.2). The verifier's own implication-extension
+    // mint emits the same `{envelope, header, metadata}` shape that
+    // `provekit-claim-envelope::mint_implication` produces; mirroring
+    // it inline keeps the runner free of an extra runtime dep on the
+    // claim-envelope crate.
     let bh = Value::object([
         ("antecedentHash", Value::string(post_hash.to_string())),
         ("consequentHash", Value::string(pre_hash.to_string())),
@@ -662,31 +635,74 @@ fn mint_and_cache(
     let cids_arr: Vec<std::sync::Arc<Value>> =
         input_cids.into_iter().map(Value::string).collect();
 
-    let unsigned_v = Value::object([
-        ("schemaVersion", Value::string("1")),
+    // Header: schemaVersion / kind / cid + kind-specific REQUIRED.
+    // The header CID hashes the substrate-load-bearing claim content
+    // (antecedent/consequent hashes + slots).
+    let header_content = Value::object([
+        ("antecedentHash", Value::string(post_hash.to_string())),
+        ("consequentHash", Value::string(pre_hash.to_string())),
+        ("antecedentCid", Value::string("blake3-512:0000".to_string())),
+        ("consequentCid", Value::string("blake3-512:0000".to_string())),
+        ("antecedentSlot", Value::string("post".to_string())),
+        ("consequentSlot", Value::string("pre".to_string())),
+    ]);
+    let header_cid = blake3_512_of(encode_jcs(&header_content).as_bytes());
+
+    let header = Value::object([
+        ("schemaVersion", Value::string("2")),
+        ("kind", Value::string("implication")),
+        ("cid", Value::string(header_cid)),
+        ("antecedentHash", Value::string(post_hash.to_string())),
+        ("consequentHash", Value::string(pre_hash.to_string())),
+        ("antecedentCid", Value::string("blake3-512:0000".to_string())),
+        ("consequentCid", Value::string("blake3-512:0000".to_string())),
+        ("antecedentSlot", Value::string("post".to_string())),
+        ("consequentSlot", Value::string("pre".to_string())),
+        ("verdict", Value::string("holds")),
         ("bindingHash", Value::string(binding_hash)),
         ("propertyHash", Value::string(property_hash.clone())),
-        ("verdict", Value::string("holds")),
-        ("producedBy", Value::string(producer_id.to_string())),
-        ("producedAt", Value::string(now.to_string())),
         ("inputCids", Value::array(cids_arr)),
-        ("evidence", evidence),
     ]);
-    let unsigned_canonical = encode_jcs(&unsigned_v);
-    let cid = blake3_512_of(unsigned_canonical.as_bytes());
-    let producer_sig = ed25519_sign_string(seed, unsigned_canonical.as_bytes());
 
-    let mut entries = match unsigned_v.as_ref() {
-        Value::Object(kvs) => kvs.clone(),
-        _ => unreachable!("envelope is an object"),
-    };
-    entries.push(("cid".into(), Value::string(cid.clone())));
-    entries.push((
-        "producerSignature".into(),
-        Value::string(producer_sig),
-    ));
-    let signed_v = std::sync::Arc::new(Value::Object(entries));
-    let final_canonical = encode_jcs(&signed_v).into_bytes();
+    let mut metadata_kvs: Vec<(String, std::sync::Arc<Value>)> = vec![
+        ("producedBy".into(), Value::string(producer_id.to_string())),
+        ("producedAt".into(), Value::string(now.to_string())),
+        ("prover".into(), Value::string(prover_tag.to_string())),
+        ("proverRunMs".into(), Value::integer(prover_run_ms)),
+        ("producerPubkey".into(), Value::string(pubkey.clone())),
+    ];
+    if !smt_lib_input.is_empty() {
+        metadata_kvs.push((
+            "smtLibInput".into(),
+            Value::string(smt_lib_input.to_string()),
+        ));
+    }
+    metadata_kvs.push(("proofWitness".into(), Value::string("(unsat)".to_string())));
+    let metadata = std::sync::Arc::new(Value::Object(metadata_kvs));
+
+    // Sign over JCS({header, metadata}) per spec §2 R2.
+    let signing_msg = Value::object([
+        ("header", header.clone()),
+        ("metadata", metadata.clone()),
+    ]);
+    let signing_bytes = encode_jcs(&signing_msg);
+    let producer_sig = ed25519_sign_string(seed, signing_bytes.as_bytes());
+
+    // Envelope CID is blake3_512(JCS(envelope-with-signature)).
+    let envelope = Value::object([
+        ("signer", Value::string(pubkey.clone())),
+        ("declaredAt", Value::string(now.to_string())),
+        ("signature", Value::string(producer_sig)),
+    ]);
+    let envelope_jcs = encode_jcs(&envelope);
+    let cid = blake3_512_of(envelope_jcs.as_bytes());
+
+    let memento = Value::object([
+        ("envelope", envelope),
+        ("header", header),
+        ("metadata", metadata),
+    ]);
+    let final_canonical = encode_jcs(&memento).into_bytes();
 
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     members.insert(cid.clone(), final_canonical.clone());
