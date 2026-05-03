@@ -297,6 +297,9 @@ public static class Program
         SignInvariants.Register();
         ProofInvariants.Register();
 
-        return 15;
+        // Cross-kit bridges (Phase 2: lift-plugin protocol counterparts).
+        CrossKitBridges.Register();
+
+        return 16;
     }
 }
