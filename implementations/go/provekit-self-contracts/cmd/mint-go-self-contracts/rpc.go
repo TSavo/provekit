@@ -106,10 +106,11 @@ func runRPCMode() {
 			writeRPC(writer, rpcResponse{
 				ID: req.ID,
 				Result: map[string]interface{}{
-					"kind":         "proof-envelope",
-					"filename_cid": result.cid,
-					"bytes_base64": base64.StdEncoding.EncodeToString(bytes),
-					"diagnostics":  []interface{}{},
+					"kind":             "proof-envelope",
+					"filename_cid":     result.cid,
+					"contract_set_cid": result.contractSetCID,
+					"bytes_base64":     base64.StdEncoding.EncodeToString(bytes),
+					"diagnostics":      []interface{}{},
 				},
 			})
 

@@ -27,6 +27,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { mintContract } from "../claimEnvelope/mint.js";
+import { contractCidFromArgs, computeContractSetCid } from "../claimEnvelope/cid.js";
 import { buildProofEnvelope } from "../proofEnvelope/index.js";
 import { generateKeypair } from "../producerKeys/index.js";
 import { computeCid } from "../canonicalizer/hash.js";
@@ -156,6 +157,7 @@ function authorAllInvariants(): AuthoredSlab[] {
 
 export interface MintResult {
   cid: string;
+  contractSetCid: string;
   bytesLen: number;
   path: string;
   memberCount: number;
@@ -189,6 +191,7 @@ export function runMintSelfContracts(outDir: string): MintResult {
   const seenNames = new Set<string>();
   const perSourceCounts: { label: string; count: number }[] = [];
   let total = 0;
+  const contentCids: string[] = [];
 
   for (const slab of slabs) {
     perSourceCounts.push({
@@ -204,7 +207,7 @@ export function runMintSelfContracts(outDir: string): MintResult {
       }
       seenNames.add(d.name);
 
-      const env = mintContract({
+      const mintArgs = {
         producedBy: PRODUCED_BY,
         producedAt: DECLARED_AT,
         privateKey,
@@ -214,11 +217,16 @@ export function runMintSelfContracts(outDir: string): MintResult {
         ...(d.post !== undefined ? { post: d.post } : {}),
         ...(d.inv !== undefined ? { inv: d.inv } : {}),
         authoring: {
-          producerKind: "kit-author",
+          producerKind: "kit-author" as const,
           author: PRODUCED_BY,
           note: `self-contract from ${slab.source.path}`,
         },
-      });
+      };
+      // Compute signer-independent content CID BEFORE minting (spec #94).
+      const contentCid = contractCidFromArgs(mintArgs);
+      contentCids.push(contentCid);
+
+      const env = mintContract(mintArgs);
       members.set(env.cid, env);
     }
   }
@@ -240,11 +248,13 @@ export function runMintSelfContracts(outDir: string): MintResult {
   if (!built.cid.startsWith("blake3-512:")) {
     throw new Error("internal: cid missing blake3-512 prefix");
   }
+  const contractSetCid = computeContractSetCid(contentCids);
   const path = join(outDir, `${built.cid}.proof`);
   writeFileSync(path, Buffer.from(built.bytes));
 
   return {
     cid: built.cid,
+    contractSetCid,
     bytesLen: built.bytes.length,
     path,
     memberCount: members.size,
@@ -290,12 +300,15 @@ export function main(argv: string[]): number {
   console.log(`  members:            ${mintB.memberCount}`);
   console.log(`  total contracts:    ${mintB.totalContracts}`);
   console.log(`  catalog CID:        ${mintB.cid}`);
+  console.log(`  contractSetCid:     ${mintB.contractSetCid}`);
 
-  if (mintA.cid !== mintB.cid) {
+  if (mintA.cid !== mintB.cid || mintA.contractSetCid !== mintB.contractSetCid) {
     console.error("");
     console.error("ERROR: byte-determinism check FAILED:");
-    console.error(`  run A CID: ${mintA.cid}`);
-    console.error(`  run B CID: ${mintB.cid}`);
+    console.error(`  run A CID:              ${mintA.cid}`);
+    console.error(`  run B CID:              ${mintB.cid}`);
+    console.error(`  run A contractSetCid:   ${mintA.contractSetCid}`);
+    console.error(`  run B contractSetCid:   ${mintB.contractSetCid}`);
     rmSync(detDir, { recursive: true, force: true });
     return 2;
   }

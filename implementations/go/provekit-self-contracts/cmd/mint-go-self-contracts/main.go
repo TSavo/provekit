@@ -32,7 +32,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
@@ -117,6 +116,9 @@ func authorAllInvariants() ([]authoredSlab, error) {
 // mintResult is the outcome of one mint-self-proof run.
 type mintResult struct {
 	cid             string
+	// contractSetCID is the signer-independent contract set CID per spec #94 §1.
+	// Computed from the content CIDs of all minted contracts (not attestation CIDs).
+	contractSetCID  string
 	bytesLen        int
 	path            string
 	memberCount     int
@@ -150,7 +152,8 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 	minter := claim_envelope.NewMinter(signer)
 
 	members := map[string][]byte{}
-	contractCIDs := map[string]string{}
+	contractCIDs := map[string]string{} // name -> attestation CID (for bridge resolution)
+	contentCIDs := []string{}           // signer-independent contractCids for contractSetCid
 	bridgeCIDs := map[string]string{}
 	perSource := make([]labeledCount, 0, len(authored))
 	totalContracts := 0
@@ -196,7 +199,7 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 				}
 			}
 
-			minted, err := minter.MintContract(claim_envelope.ContractMintArgs{
+			mintArgs := claim_envelope.ContractMintArgs{
 				ContractName:  c.Name,
 				Pre:           preV,
 				Post:          postV,
@@ -209,7 +212,13 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 					Author: producedBy,
 					Note:   fmt.Sprintf("self-contract from %s", slab.path),
 				},
-			})
+			}
+			// Compute signer-independent contractCid before minting.
+			contentCID, err := claim_envelope.ContractCIDFromArgs(mintArgs)
+			if err != nil {
+				return nil, fmt.Errorf("ContractCIDFromArgs %s: %w", c.Name, err)
+			}
+			minted, err := minter.MintContract(mintArgs)
 			if err != nil {
 				return nil, fmt.Errorf("MintContract %s: %w", c.Name, err)
 			}
@@ -220,6 +229,7 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 					"duplicate contract name %q across slabs", c.Name)
 			}
 			contractCIDs[c.Name] = minted.CID
+			contentCIDs = append(contentCIDs, contentCID)
 			members[minted.CID] = minted.CanonicalBytes
 		}
 	}
@@ -295,8 +305,15 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 		return nil, fmt.Errorf("write %s: %w", path, err)
 	}
 
+	// Compute contractSetCID per spec #94 §1.
+	contractSetCID, err := claim_envelope.ComputeContractSetCID(contentCIDs)
+	if err != nil {
+		return nil, fmt.Errorf("ComputeContractSetCID: %w", err)
+	}
+
 	return &mintResult{
 		cid:             out.FilenameCID,
+		contractSetCID:  contractSetCID,
 		bytesLen:        len(out.Bytes),
 		path:            path,
 		memberCount:     len(members),
@@ -398,6 +415,7 @@ func main() {
 	fmt.Printf("  total contracts:    %d\n", mintB.totalContracts)
 	fmt.Printf("  total bridges:      %d\n", mintB.totalBridges)
 	fmt.Printf("  catalog CID:        %s\n", mintB.cid)
+	fmt.Printf("  contractSetCid:     %s\n", mintB.contractSetCID)
 
 	if mintA.cid != mintB.cid {
 		fmt.Fprintln(os.Stderr)
@@ -407,15 +425,16 @@ func main() {
 		_ = os.RemoveAll(detDir)
 		os.Exit(2)
 	}
-	_ = os.RemoveAll(detDir)
-	fmt.Printf("  determinism check:  OK (two runs produced identical CIDs)\n")
-
-	// Stable enumeration of contracts by CID for the report.
-	cids := make([]string, 0, len(mintB.contractCIDs))
-	for c := range mintB.contractCIDs {
-		cids = append(cids, c)
+	if mintA.contractSetCID != mintB.contractSetCID {
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintf(os.Stderr, "ERROR: contractSetCid determinism check FAILED:\n")
+		fmt.Fprintf(os.Stderr, "  run A contractSetCid: %s\n", mintA.contractSetCID)
+		fmt.Fprintf(os.Stderr, "  run B contractSetCid: %s\n", mintB.contractSetCID)
+		_ = os.RemoveAll(detDir)
+		os.Exit(2)
 	}
-	sort.Strings(cids)
+	_ = os.RemoveAll(detDir)
+	fmt.Printf("  determinism check:  OK (two runs produced identical CIDs and contractSetCid)\n")
 
 	fmt.Println()
 	fmt.Println("== done. Go self-application: live. ==")

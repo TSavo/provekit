@@ -52,10 +52,14 @@ pub struct MintedEnvelope {
     pub canonical_bytes: Vec<u8>,
     /// The attestation CID: BLAKE3-512(JCS(envelope)) after the
     /// signature has been embedded. This identifies the SIGNED
-    /// attestation; the content-only `contractCid` (the spec's
-    /// "what is this contract" identifier) is exposed as a separate
-    /// function (see PR 2 / `contract_cid()`).
+    /// attestation and is what goes into the bundle members map.
     pub cid: String,
+    /// The content CID: BLAKE3-512(JCS({name, outBinding, pre?, post?, inv?})).
+    /// Signer-independent. Two distinct signers attesting to the same
+    /// logical contract produce the same `contract_cid`. Only populated
+    /// for contract mementos; empty string for bridges and implications.
+    /// Per `protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md` §1.
+    pub contract_cid: String,
 }
 
 /// The layered-shape schema version stamped into every memento header
@@ -89,11 +93,13 @@ fn signing_bytes(header: &Arc<Value>, metadata: &Arc<Value>) -> Vec<u8> {
 /// Assemble a layered memento, sign it, and compute the attestation CID
 /// (= BLAKE3-512(JCS(envelope-with-signature))). Returns the JCS-canonical
 /// bytes of the full `{envelope, header, metadata}` object alongside the CID.
+/// `content_cid` is the signer-independent contract CID (empty for bridges/implications).
 fn assemble_layered(
     header: Arc<Value>,
     metadata: Arc<Value>,
     declared_at: &str,
     signer_seed: &Ed25519Seed,
+    content_cid: String,
 ) -> MintedEnvelope {
     let signer = ed25519_pubkey_string(signer_seed);
     let signing_msg = signing_bytes(&header, &metadata);
@@ -119,6 +125,7 @@ fn assemble_layered(
     MintedEnvelope {
         canonical_bytes: memento_jcs.into_bytes(),
         cid: attestation_cid,
+        contract_cid: content_cid,
     }
 }
 
@@ -216,12 +223,13 @@ pub struct MintContractArgs {
 /// this is the BLAKE3-512 of the JCS encoding of the contract's
 /// substrate-load-bearing fields: `name`, `outBinding`, and any of
 /// `pre`/`post`/`inv` that are present. Two distinct signers attesting
-/// to the same logical contract produce the same `content_cid`.
+/// to the same logical contract produce the same `contractCid`.
 ///
-/// PR 1 (substrate layering) places this CID in `header.cid`. PR 2 will
-/// expose it under the public name `contract_cid` per the spec's naming
-/// convention.
-fn contract_content_cid(args: &MintContractArgs) -> String {
+/// This value goes in `header.cid` of the minted layered memento and is
+/// also available directly without minting via this public function.
+///
+/// Per spec naming convention (`contract_cid(decl)` for Rust).
+pub fn contract_cid(args: &MintContractArgs) -> String {
     let mut kvs: Vec<(String, Arc<Value>)> = vec![
         ("name".into(), Value::string(args.contract_name.clone())),
         ("outBinding".into(), Value::string(args.out_binding.clone())),
@@ -237,6 +245,29 @@ fn contract_content_cid(args: &MintContractArgs) -> String {
     }
     let v = Arc::new(Value::Object(kvs));
     blake3_512_of(encode_jcs(&v).as_bytes())
+}
+
+// Keep the private alias for internal use within this module.
+fn contract_content_cid(args: &MintContractArgs) -> String {
+    contract_cid(args)
+}
+
+/// Compute the **contract set CID** from a slice of already-computed
+/// `contractCid` strings (each `blake3-512:<128 hex>` produced by
+/// `contract_cid()`).
+///
+/// Per `protocol/specs/2026-05-03-contract-set-extension.md` §1:
+///   contractSetCid := "blake3-512:" || hex(BLAKE3-512(JCS(<sorted contractCids>)))
+///
+/// The sort is lexicographic on the raw `blake3-512:hex` strings, making
+/// the result order-independent. Two kits enumerating the same contracts
+/// in different order produce byte-identical `contractSetCid` values.
+pub fn compute_contract_set_cid(mut contract_cids: Vec<String>) -> String {
+    contract_cids.sort();
+    let arr: Vec<Arc<Value>> = contract_cids.into_iter().map(Value::string).collect();
+    let v = Value::array(arr);
+    let jcs = encode_jcs(&v);
+    blake3_512_of(jcs.as_bytes())
 }
 
 pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnvelopeError> {
@@ -326,6 +357,7 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
         metadata,
         &args.produced_at,
         &args.signer_seed,
+        header_cid,
     ))
 }
 
@@ -409,7 +441,7 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
     }
     let metadata = Arc::new(Value::Object(metadata_kvs));
 
-    assemble_layered(header, metadata, &args.produced_at, &args.signer_seed)
+    assemble_layered(header, metadata, &args.produced_at, &args.signer_seed, String::new())
 }
 
 // =============================================================================
@@ -492,7 +524,7 @@ pub fn mint_implication(args: &MintImplicationArgs) -> MintedEnvelope {
     }
     let metadata = Arc::new(Value::Object(metadata_kvs));
 
-    assemble_layered(header, metadata, &args.produced_at, &args.signer_seed)
+    assemble_layered(header, metadata, &args.produced_at, &args.signer_seed, String::new())
 }
 
 #[cfg(test)]

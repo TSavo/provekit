@@ -117,7 +117,7 @@ fn dispatch(
     surface: &str,
     out_dir: &Path,
     quiet: bool,
-) -> Result<(String, usize), String> {
+) -> Result<(String, String, usize), String> {
     let manifest = find_manifest(project_root, surface)?;
     if !quiet {
         println!(
@@ -212,6 +212,12 @@ fn dispatch(
         .and_then(|v| v.as_str())
         .ok_or("missing filename_cid")?
         .to_string();
+    // contract_set_cid is optional in the response (legacy plugins omit it).
+    let contract_set_cid = lift_resp
+        .get("contract_set_cid")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let bytes_b64 = lift_resp
         .get("bytes_base64")
         .and_then(|v| v.as_str())
@@ -226,7 +232,7 @@ fn dispatch(
     std::fs::write(&out_path, &bytes)
         .map_err(|e| format!("write {}: {e}", out_path.display()))?;
 
-    Ok((filename_cid, bytes.len()))
+    Ok((filename_cid, contract_set_cid, bytes.len()))
 }
 
 fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
@@ -281,14 +287,22 @@ pub fn run(args: MintArgs) -> u8 {
     let out_dir = args.out.unwrap_or_else(|| project_root.clone());
 
     match dispatch(&project_root, &surface, &out_dir, args.flags.quiet) {
-        Ok((cid, n)) => {
+        Ok((cid, contract_set_cid, n)) => {
             if !args.flags.quiet {
                 println!();
                 println!("  catalog CID:        {cid}");
+                if !contract_set_cid.is_empty() {
+                    println!("  contractSetCid:     {contract_set_cid}");
+                }
                 println!("  proof bytes:        {n}");
                 println!("  .proof file:        {}", out_dir.join(format!("{cid}.proof")).display());
             } else {
+                // Quiet mode: first line = bundle CID, second line = contractSetCid
+                // (if available). The Makefile captures contractSetCid via grep.
                 println!("{cid}");
+                if !contract_set_cid.is_empty() {
+                    println!("contractSetCid: {contract_set_cid}");
+                }
             }
             EXIT_OK
         }

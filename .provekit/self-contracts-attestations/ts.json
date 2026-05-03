@@ -3,7 +3,8 @@
   "kind": "self-contracts-attestation",
   "lang": "ts",
   "cid": "blake3-512:c3ec9665f68dc49f5ce76cb0be8a71a743c25ae2a328b5fce9eef9d541fc74d2d4605f7f71ca4b9100216340767a000859d472d3b952f7cca5aecba3debbfca7",
+  "contractSetCid": "blake3-512:5a45314fdfb0fa1357a78a3f5c22e794fcbc10d3e649c39989710887eb742a6610861b9ab5c9e941ab01bc4357f5671a61c9d8a1d431dff8da3b6280a66d0d6a",
   "declaredAt": "2026-05-02T17:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:cHMguwoRWdAjAmFwnTYre4WplrasYr6D3/7bFZbTNIv7ABdxR7EUxANejLqoJ4CHFJBoHt0T/Sh/jUmaoVBIAw=="
+  "signature": "ed25519:HcOIXR/14uUktJSrrEf2nRn/KpXEdh4DDlI9zy2fwTCLVqCzpLajs4zMa5V43YTFCxX6Te/M59qsaE0RrB2+CQ=="
 }
