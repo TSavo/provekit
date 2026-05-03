@@ -303,6 +303,31 @@ pub fn invariants() {
             ..Default::default()
         },
     );
+
+    // -- C8: lifter emits call-edge stream alongside contracts (spec #114 §1
+    //        R1: "A lifter that emits contracts but no call edges is
+    //        non-conformant under this spec").
+    //
+    // forall resp. when kind == "proof-envelope" OR kind == "signed-mementos",
+    //              call_edge_stream_present(resp) = true.
+    //
+    // Encoded as a post-condition: the call_edge_stream_present ctor
+    // discharges vacuously when the response carries no lifted contracts
+    // (empty compilation unit) and fires when a non-empty contract set is
+    // emitted with no accompanying call-edge stream.
+    contract(
+        "lift_emits_call_edge_stream",
+        ContractArgs {
+            post: Some(eq(
+                ctor1(
+                    "call_edge_stream_present_or_unit_empty",
+                    str_const("resp"),
+                ),
+                ctor1("true_const", str_const("")),
+            )),
+            ..Default::default()
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -617,6 +642,58 @@ pub fn verify_c7_diagnostics_field_is_array(
         return Err(format!(
             "C7: response.result.diagnostics is {}, expected array",
             type_label(diags)
+        ));
+    }
+    Ok(())
+}
+
+// --- C8 ---------------------------------------------------------------------
+
+/// Verify C8: the lift response includes a call-edge stream when the contract
+/// set is non-empty. Conforms to spec #114 §1 R1.
+///
+/// This verifier checks the `signed-mementos` and `proof-envelope` shapes,
+/// where the call-edge stream appears as `call_edges` (an array). For the
+/// `ir-document` shape, the verifier is vacuous (IR documents are an
+/// intermediate representation; call edges travel in a separate pass).
+///
+/// The verifier is vacuously OK when the contract set is empty (no contracts
+/// lifted → no call edges required).
+pub fn verify_c8_call_edge_stream_present(
+    response: &JsonValue,
+) -> Result<(), String> {
+    let result = match response.get("result") {
+        Some(r) => r,
+        None => return Ok(()), // error responses don't carry call edges
+    };
+    let kind = result.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+    // Only check the signed-mementos and proof-envelope shapes; ir-document
+    // is vacuous (call edges are not part of the IR document shape).
+    if kind != "signed-mementos" && kind != "proof-envelope" {
+        return Ok(());
+    }
+    // If there are no contract members, call edges are vacuously satisfied.
+    let members_empty = result
+        .get("members")
+        .and_then(|m| m.as_object())
+        .map(|m| m.is_empty())
+        .unwrap_or(true);
+    if members_empty {
+        return Ok(());
+    }
+    // Non-empty contract set: call_edges must be present and an array.
+    let call_edges = match result.get("call_edges") {
+        Some(v) => v,
+        None => {
+            return Err(
+                "C8: response has non-empty contract set but no `call_edges` field".to_string(),
+            )
+        }
+    };
+    if !call_edges.is_array() {
+        return Err(format!(
+            "C8: response.result.call_edges must be an array, got {}",
+            type_label(call_edges)
         ));
     }
     Ok(())
@@ -983,12 +1060,12 @@ mod tests {
         begin_collecting();
         invariants();
         let decls = finish();
-        // C1, C2 (two facets), C3 (three facets), C4, C5, C6, C7
-        // = 1 + 2 + 3 + 1 + 1 + 1 + 1 = 10 ContractDecls.
+        // C1, C2 (two facets), C3 (three facets), C4, C5, C6, C7, C8
+        // = 1 + 2 + 3 + 1 + 1 + 1 + 1 + 1 = 11 ContractDecls.
         assert_eq!(
             decls.len(),
-            10,
-            "lift_plugin_protocol::invariants should author 10 contracts; got {}",
+            11,
+            "lift_plugin_protocol::invariants should author 11 contracts; got {}",
             decls.len()
         );
         // Spot-check a few names.
@@ -997,5 +1074,89 @@ mod tests {
         assert!(names.contains(&"lift_plugin_lift_response_kind_in_set"));
         assert!(names.contains(&"lift_plugin_lift_response_ir_document_array"));
         assert!(names.contains(&"lift_plugin_diagnostic_field_is_array"));
+        assert!(
+            names.contains(&"lift_emits_call_edge_stream"),
+            "expected lift_emits_call_edge_stream in invariants; got {names:?}"
+        );
+    }
+
+    // --- C8 ---------------------------------------------------------------
+
+    #[test]
+    fn c8_holds_when_call_edges_present_with_contracts() {
+        let resp = json!({
+            "result": {
+                "kind": "signed-mementos",
+                "members": {"blake3-512:aaa": "..."},
+                "call_edges": [
+                    {
+                        "schemaVersion": "1",
+                        "kind": "call-edge",
+                        "sourceContractCid": "blake3-512:bbb",
+                        "targetContractCid": "blake3-512:aaa",
+                        "callSiteLocus": {"file": "foo.rs", "line": null, "col": null},
+                        "targetSymbol": "a",
+                        "evidenceTerm": {"kind": "obligation", "source": "blake3-512:bbb", "target": "blake3-512:aaa"},
+                    }
+                ],
+            },
+        });
+        verify_c8_call_edge_stream_present(&resp).unwrap();
+    }
+
+    #[test]
+    fn c8_holds_vacuously_when_no_contract_members() {
+        let resp = json!({
+            "result": {
+                "kind": "signed-mementos",
+                "members": {},
+            },
+        });
+        verify_c8_call_edge_stream_present(&resp).unwrap();
+    }
+
+    #[test]
+    fn c8_holds_vacuously_for_ir_document_kind() {
+        let resp = json!({
+            "result": {
+                "kind": "ir-document",
+                "ir": [{"kind": "contract", "name": "foo", "outBinding": "out"}],
+            },
+        });
+        verify_c8_call_edge_stream_present(&resp).unwrap();
+    }
+
+    #[test]
+    fn c8_violation_missing_call_edges_field_is_caught() {
+        let resp = json!({
+            "result": {
+                "kind": "signed-mementos",
+                "members": {"blake3-512:aaa": "..."},
+                // call_edges field is absent
+            },
+        });
+        let err = verify_c8_call_edge_stream_present(&resp)
+            .expect_err("C8 should fire when call_edges absent and contracts non-empty");
+        assert!(
+            err.contains("call_edges"),
+            "expected call_edges mention; got: {err}"
+        );
+    }
+
+    #[test]
+    fn c8_violation_call_edges_not_array_is_caught() {
+        let resp = json!({
+            "result": {
+                "kind": "signed-mementos",
+                "members": {"blake3-512:aaa": "..."},
+                "call_edges": "not-an-array",
+            },
+        });
+        let err = verify_c8_call_edge_stream_present(&resp)
+            .expect_err("C8 should fire when call_edges is not an array");
+        assert!(
+            err.contains("array"),
+            "expected array mention; got: {err}"
+        );
     }
 }
