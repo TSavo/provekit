@@ -25,10 +25,10 @@ hash = "blake3-512:edace2a0634b696ec24a369d37580cf9ab77f2d7c3e83869240b77305aaef
 name = "contract_decl"
 description = "Contract with precondition: parseInt(x) requires x >= 0"
 jcs = '[{"kind":"contract","name":"parseInt","outBinding":"out","pre":{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}}]'
-hash = "blake3-512:8a3c6e8b5b3c3274c7c2e6a1f9d8e7b6a5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0"
+hash = "blake3-512:5d1a287186e41d3fd9be0f4e9464e7905f35306e7bdeeeeb180279672eed4c8685e073d88ba8a222b34e1586adc3a05efb5ab4c71837299b48f2b4386353713f"
 
 [[fixture]]
 name = "bridge_decl"
 description = "Bridge declaration with all fields including optional notes"
 jcs = '{"kind":"bridge","name":"myBridge","notes":"some notes","sourceContractCid":"bafySource","sourceLayer":"c-kit","sourceSymbol":"source","targetContractCid":"bafyTarget","targetLayer":"coq","targetProofCid":"bafyProof"}'
-hash = "blake3-512:7f1a6b3c5d9e2f4a8c0b1d3e5f7a9c2b4d6e8f0a1c3b5d7e9f0a2c4d6e8f0a"
+hash = "blake3-512:e3ace4fc4fd49561bc29d1739d8256c6d573642e4bfd5f4eb2994bb2ba5442b1e925a34b1e2a36ecb0a5e587ccf67ccce4d3184fe5e1fac67e893dce5126305b"
