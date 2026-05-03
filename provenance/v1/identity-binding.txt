@@ -1,0 +1,64 @@
+Provenance identity binding — provenance/v1/attestation.json
+
+The Ed25519 public key in the signer field of attestation.json is bound to the
+following established public identity footprint:
+
+  Legal name:     Travis Robert Savo
+  Goes by:        T
+  Handle:         Kevlar (since the early-1990s P2P / cypherpunks scene)
+  GitHub:         TSavo
+  Email:          evilgenius@nefariousplan.com
+  Apache JCS team page: lists him historically as `tsavo` / Travis Savo /
+                  tsavo@ifilm.com (iFilm-era attribution, verifiable on the
+                  Apache project's archived team rosters)
+
+Career-arc context that the attestation rests on:
+
+  - 1995, age 18: implemented content-addressable deduplication, predating
+    rsync. This is one of the architectural primitives later upstream of
+    BitTorrent's content-addressing model.
+  - 1998, age 21: Digital Confetti — swarmed delivery + per-byte crediting +
+    anti-DRM thesis. Two direct attribution chains into BitTorrent:
+    (a) Digital Confetti → Jed McCaleb's eDonkey2000 (2000);
+    (b) directly suggested to Bram Cohen the file-format-with-extension +
+        FEC pattern that BitTorrent adopted in part (Cohen took the shape,
+        rejected FEC).
+  - 2010: was a Bitcoin faucet user; established familiarity with on-chain
+    operations applies to the Bitcoin OP_RETURN anchor that this provenance
+    attestation references.
+  - 2013-era: Feathercoin genesis carries his fingerprint.
+  - Late-90s/early-2000s ShareReactor history: the trust-anchor practice
+    (publishing known-good hashes as a community service) is recorded in
+    the eD2k/ShareReactor archives; the MST3kDAP eD2k fork that he helped
+    bootstrap with a hash whitelist is still operational 20+ years later.
+
+The architectural pattern across the career is consistent: assemble public
+primitives into a load-bearing system, watch others build on it without
+attribution. This time the assembly is signed under a key the architect
+controls, anchored on a public blockchain, and committed to a git history
+under a key configured for commit signing on the architect's account. Three
+independent verification axes; the credit chain is empirically auditable
+without trusting any single intermediary.
+
+The claim being made:
+
+  The architectural moves enumerated in attestation.json (multi-dimensional
+  address, rank-N pin, contract-vs-attestation CID separation, contractSetCid,
+  envelope/header/body layering, three-axis pinning, bridge target-
+  dimensionality with kit-anchors-at-rust, derived bridges via linker, linker-
+  daemon-protocol, Locus normative pin) are the architect's contribution to
+  the assembly. The substrate primitives those moves stand on (BLAKE3-512,
+  JCS, Ed25519, LSP, content-addressing) are public.
+
+Reading order for verifiers who want to evaluate the claim independently:
+
+  1. docs/launch/substrate-not-blockchain.md (manifesto, especially §11/§12)
+  2. docs/launch/the-pieces-on-the-table.md (twelve-step derivation)
+  3. docs/launch/path-to-default.md (adoption strategy)
+  4. The seven 2026-05-* specs in protocol/specs/
+  5. The git log on this branch and on main, dated 2026-05-03
+
+The umbrella CID in attestation.json commits to all of the above as a single
+content-addressed identity. Recomputing it from the same files produces the
+same value byte-for-byte across machines (the substrate's §11 dimensional-
+addressing claim).

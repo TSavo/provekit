@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1",
+  "kind": "authorship-umbrella-manifest",
+  "version": "v1",
+  "umbrellaCid": "blake3-512:9f2ba5c07f57a732515d465bca838f004255cb4e8cf83edbda443c28a9692b8e3010de7574f31dc1e8899f642718c75511e991d6dd2132d59487df4e0556d0fa",
+  "algorithm": "blake3-512(JCS(<sorted contentCids>))",
+  "entries": [
+    {
+      "path": "protocol/specs/2026-05-03-version-chains-pinning.md",
+      "cid": "blake3-512:281bf014f6f0ebc9a5d455329ee033ff8b7ee85e001bcbdcb45a62c14e43855892c46462789ccb74961859e708eae70829fdf736798c17f59f0239ef78dd7e45"
+    },
+    {
+      "path": "protocol/specs/2026-05-03-bridge-target-dimensionality.md",
+      "cid": "blake3-512:29585944af6295811029fd9f19ad36ed585b233ca258eb51d9abb41cd7c3b12f4cebbfb58af98be46801efdeebd4f8c4d7817cfa9e5aa9e11f664a4b96a92729"
+    },
+    {
+      "path": "protocol/specs/2026-05-04-linker-daemon-protocol.md",
+      "cid": "blake3-512:4e00e34557a5342543a39b970239fe09b26487e6e8d3d8fb900f9dcfceb34c81e604869e1788de192445f04567754e3b45ddd0110a2d08d9ddca537c5c2d9dbf"
+    },
+    {
+      "path": "protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md",
+      "cid": "blake3-512:53e136d9af29ce80b690f90c484e90c60f66f28c483b2038e03e7c6f6055f637527deb205e5558b47487b7d89ead461348d5e8981f2e9e8ccb30edd8867d47db"
+    },
+    {
+      "path": "protocol/specs/2026-05-03-bridge-linkage-protocol.md",
+      "cid": "blake3-512:73aabe98adc0a37fc5cf60dd5c2b9b604d7bbc87e0c679c663cddc68a82ae02f56eda079534ed40dc5562683f43880f17f1ddafde4f78b23e2cb516c9daed8cd"
+    },
+    {
+      "path": "protocol/specs/2026-04-30-protocol-catalog.json",
+      "cid": "blake3-512:75e17f9f77b2305d0ae346e3900adcd3c1cdda7145f302e05c094978c8992edbb46584cfc484ebfb29814cc767d5f70ba63eb12c2c3259670591d01eed9b6e58"
+    },
+    {
+      "path": "protocol/specs/2026-04-30-ir-formal-grammar.md",
+      "cid": "blake3-512:82a9470492347c7f273457bc101bbde92243b6c7ea49b06a151f6bc5fcfffa50c130f40cc7d7edb5b40fd0bc50c2e8c9a43cd5a7dfa0ed46b51b1aa9845bd676"
+    },
+    {
+      "path": "protocol/specs/2026-05-03-contract-set-extension.md",
+      "cid": "blake3-512:839e82096d04b1241ffa1f6158fcea6bfeb78f3836664a66a13ff11b3cde58d72e6c85bfc619ba1341f13b8375f655bdf5582b0eac91d27648f0048bee8f9867"
+    },
+    {
+      "path": "docs/launch/the-pieces-on-the-table.md",
+      "cid": "blake3-512:890406357508f2c276c88922c47eaf4bc56aa95bda4bc84f83eac49175a9096961980e0abc63eb7b5fd633d38e89b9d1f006d9b2bd2bb4c3b71300f0a3cd5c71"
+    },
+    {
+      "path": "protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md",
+      "cid": "blake3-512:a76c7d0d6a5fecde40f579a8566f0199f61d5e3f7a0d48561f0ef765b5983a31fc96bb21fe56ea667337341dc798e7370229722ee7535fe7e2c22d4f7dad97dd"
+    },
+    {
+      "path": "docs/launch/substrate-not-blockchain.md",
+      "cid": "blake3-512:b7b01faec99868d2f5541c256e6fec870dda1f0309a569740ab842a7b227d71a6fab35af94cd9e99dc3c46eee65349f73a0d5d753b5a3ab5eca08277c21edde0"
+    },
+    {
+      "path": "docs/launch/path-to-default.md",
+      "cid": "blake3-512:e202bfb426997bc4a55676f501ef3917e95b2210f5616d06d800816dcb12515c6e59a7ece261abd26a79f3a995e674f9f308cd057529eccf585644a219c7a3f0"
+    }
+  ]
+}

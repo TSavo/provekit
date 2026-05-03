@@ -1,0 +1,5 @@
+# <ed25519:base64-pubkey of the architect's real key>
+# Replace this entire file with the architect's Ed25519 public key, in the
+# `ed25519:<base64>` format used elsewhere in the protocol (matching the
+# `signer` field of attestation.json). The file's first non-comment, non-empty
+# line is consumed by verify.sh; comment lines start with `#`.
