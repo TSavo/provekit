@@ -258,6 +258,46 @@ public static class Serialize
         throw new InvalidOperationException($"unknown term: {t.GetType()}");
     }
 
+    // ----- call-edge JSON serialization ------------------------------------
+    //
+    // Wire form per bridge-linkage-protocol.md §1. Keys in insertion order;
+    // the downstream JCS canonicalizer re-sorts. Null targetContractCid is
+    // emitted as JSON null (not omitted) so the linker can distinguish
+    // "not yet resolved" from "absent field".
+
+    public static string MarshalCallEdges(IReadOnlyList<CallEdgeDeclaration> edges)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append('[');
+        for (var i = 0; i < edges.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var e = edges[i];
+            sb.Append("{\"schemaVersion\":\"1\",\"kind\":\"call-edge\"");
+            sb.Append(",\"sourceContractCid\":");
+            WriteString(sb, e.SourceContractCid);
+            sb.Append(",\"targetContractCid\":");
+            if (e.TargetContractCid is null)
+                sb.Append("null");
+            else
+                WriteString(sb, e.TargetContractCid);
+            sb.Append(",\"callSiteLocus\":{\"file\":");
+            WriteString(sb, e.CallSiteLocus.File);
+            sb.Append(",\"line\":");
+            sb.Append(e.CallSiteLocus.Line);
+            sb.Append(",\"column\":");
+            sb.Append(e.CallSiteLocus.Column);
+            sb.Append('}');
+            sb.Append(",\"targetSymbol\":");
+            WriteString(sb, e.TargetSymbol);
+            sb.Append(",\"evidenceTerm\":");
+            WriteString(sb, e.EvidenceTerm);
+            sb.Append('}');
+        }
+        sb.Append(']');
+        return sb.ToString();
+    }
+
     private static void WriteFormula(System.Text.StringBuilder sb, Formula f)
     {
         switch (f)
