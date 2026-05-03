@@ -77,6 +77,35 @@ A new blockchain does not need a substrate change. A new consensus mechanism doe
 
 Forward compatibility is a property of the seam between substrate and application, not a feature added to the substrate. The seam is the boundary at which the verifier stops interpreting and starts trusting the application's discipline. ProvekIt locates that seam at the body byte string. Everything below the seam is finite, signed, and frozen. Everything above the seam is unbounded.
 
+## 7. DAGs form witness chains
+
+The value of a content-addressed DAG of signed attestations is that endorsements compose.
+
+A signed attestation binds `(binaryCid, contractCid, signerPubkey)` under a signature. That is a single cryptographic claim. The next attestation can reference the previous one as evidence: signer Bob can attest that he has reviewed Alice's attestation and concurs. Charlie can attest that he has reviewed Bob's. Each new link is its own independent claim under its own key, but the chain transitively endorses the original contract.
+
+This is the witness chain. It is not a feature added to the substrate. It emerges from the DAG: any node can be the target of a future signed attestation, so any claim can be witnessed, and any witness can be witnessed. Chains grow by composition, not by central coordination. Multiple chains can converge on the same contract from different signers, different times, different organizations. The auditor does not have to trust any single signer; they walk the DAG until they find a path through signers they do trust to the claim they care about.
+
+Trust is local and pluggable. If you trust Bob, his attestation that Alice's contract is well-formed is evidence for you. If you trust Charlie, his attestation that he reviewed Bob's review extends the chain. The substrate does not pick a path for you; it gives you the graph and lets you walk it under your own policy.
+
+Walking is cheap. The same property that makes content addressing work for individual claims makes it work for chains of them: validating a witness chain of length N is N hash comparisons, each comparing two 64-byte BLAKE3-512 digests. Constant work per link, linear in chain length, no replay of prior history required. A chain ten thousand witnesses deep validates in milliseconds on commodity hardware. The cost of chains does not grow with their depth; it grows with their length, at the speed of hashing.
+
+This is the structural advantage over consensus systems. A blockchain validator must replay state transitions to check a block; depth is expensive. A substrate verifier hash-compares each link; depth is free. Witness composition therefore scales: you can build chains as deep as your evidence requires, and the auditor pays only for the walk, not for the history under each node.
+
+A corollary: derived views are free. "Who has witnessed contract C?" is a DAG walk.
+
+```
+witnesses(contract_cid, snapshot) :=
+    walk(snapshot)
+        .filter(attestation.target_contract_cid == contract_cid)
+        .collect()
+```
+
+The result is content-addressable but not a stored artifact. Anyone can run the walk, anyone can republish the result, no curator's set is more authoritative than another's. You do not need a gatherer. The DAG plus the predicate is the set.
+
+The substrate measures bytes, not people. It verifies that signatures are valid, that hashes match, that chains are well-formed. It does not verify that pubkeys belong to distinct entities, that signers are independent, or that any social fact about who they are is true. Pubkeys are pseudonymous; personhood and organizational independence live outside the protocol by design.
+
+This is the same property that makes witness chains work. The protocol stays at finite, verifiable claims. The auditor's trust calculus over signers stays where it belongs: in the auditor. Bitcoin does not measure miner decentralization; it measures hashpower. Decentralization is an empirical property, not a protocol guarantee. Same shape here. The chain is what the substrate gives you. The trust through it is yours.
+
 ## What this means for you
 
 If you accept this framing, the developer move is direct: stop asking "which chain do I publish to?" and start asking "what discipline am I asserting on the bodies I sign?"
