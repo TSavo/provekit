@@ -8,7 +8,8 @@
 //
 // For parse, scans the source for //provekit: annotations and
 // go-playground/validator struct tags, lifts to canonical IR,
-// and returns JCS declarations JSON.
+// and returns JCS declarations JSON alongside call-edge mementos
+// per protocol/specs/2026-05-03-bridge-linkage-protocol.md §1 R1.
 package main
 
 import (
@@ -22,6 +23,7 @@ import (
 	"reflect"
 	"strings"
 
+	canonicalizer "github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
 	ir "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 	validator "github.com/tsavo/provekit/go/provekit-lift-go-validator"
 )
@@ -58,6 +60,7 @@ type initializeResult struct {
 
 type parseResult struct {
 	Declarations json.RawMessage `json:"declarations"`
+	CallEdges    json.RawMessage `json:"callEdges"`
 	Warnings     []interface{}   `json:"warnings"`
 }
 
@@ -128,8 +131,22 @@ func handleParse(id interface{}, paramsRaw json.RawMessage) {
 		jcs = []byte("[]")
 	}
 
+	// Emit call-edge stream per spec #114 R1.
+	// Walk function bodies to find call sites; emit one CallEdgeDeclaration
+	// per call site where the calling function has a known contract.
+	callEdges := walkCallEdges(params.Source, params.Path, decls)
+	edgesJSON, err := json.Marshal(callEdges)
+	if err != nil {
+		sendError(id, -32603, fmt.Sprintf("marshal call edges: %v", err))
+		return
+	}
+	if len(edgesJSON) == 0 || string(edgesJSON) == "null" {
+		edgesJSON = []byte("[]")
+	}
+
 	send(id, parseResult{
 		Declarations: jcs,
+		CallEdges:    edgesJSON,
 		Warnings:     warnings,
 	})
 }
@@ -162,6 +179,165 @@ func sendError(id interface{}, code int, message string) {
 			Message: message,
 		},
 	})
+}
+
+// contractCidForDeclaration returns the BLAKE3-512 CID of a single
+// Declaration's canonical JSON bytes. Used to populate sourceContractCid
+// and targetContractCid in call-edge mementos.
+func contractCidForDeclaration(d ir.Declaration) string {
+	body, err := ir.MarshalDeclarations([]ir.Declaration{d})
+	if err != nil {
+		return ""
+	}
+	return canonicalizer.ComputeCID(body)
+}
+
+// buildContractIndex returns a map from function/contract name to
+// (CID, declaration) for each ContractDeclaration in decls.
+func buildContractIndex(decls []ir.Declaration) map[string]string {
+	idx := make(map[string]string)
+	for _, d := range decls {
+		if d.Kind() == "contract" {
+			cid := contractCidForDeclaration(d)
+			if cid != "" {
+				idx[d.DeclName()] = cid
+			}
+		}
+	}
+	return idx
+}
+
+// cgoKitPrefix returns the kit prefix for a cgo call target symbol.
+// For the Michael Jordan demo the convention is:
+//   - rust-kit: functions marked #[no_mangle] extern "C" in Rust
+//   - cpp-kit:  C++ functions
+//   - c-kit:    plain C functions
+//
+// Without build metadata the lifter defaults to "rust-kit" when the
+// symbol is not in the local Go contract index, per the spec's primary
+// demo case. Future work: a //provekit:cgo-kit hint annotation.
+func cgoKitPrefix(funcName string, contractIndex map[string]string) string {
+	// If we have a local contract for this name it's same-kit.
+	// cgo calls by definition cross kits; always use rust-kit as default
+	// per the Michael Jordan demo framing.
+	_ = contractIndex
+	return "rust-kit"
+}
+
+// walkCallEdges parses the Go source and, for every function body whose
+// function name has a contract in decls, emits one CallEdgeDeclaration
+// per call site within that body per spec #114 §1.
+//
+// Same-kit calls: both sourceContractCid and targetContractCid populated.
+// cgo calls (C.<name>(...)): targetContractCid = null, targetSymbol =
+// "<kit>:<name>".
+func walkCallEdges(src, path string, decls []ir.Declaration) []ir.CallEdgeDeclaration {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, path, src, 0)
+	if err != nil {
+		return nil
+	}
+
+	contractIndex := buildContractIndex(decls)
+	if len(contractIndex) == 0 {
+		return nil
+	}
+
+	var edges []ir.CallEdgeDeclaration
+
+	for _, d := range f.Decls {
+		funcDecl, ok := d.(*ast.FuncDecl)
+		if !ok || funcDecl.Name == nil || funcDecl.Body == nil {
+			continue
+		}
+
+		callerName := funcDecl.Name.Name
+		sourceCid, hasCid := contractIndex[callerName]
+		if !hasCid {
+			// Caller has no contract; skip per R1 (we only emit edges
+			// where the source is a lifted contract).
+			continue
+		}
+
+		// Walk the function body for call expressions.
+		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+			callExpr, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+
+			pos := fset.Position(callExpr.Pos())
+			locus := ir.Locus{
+				File:   path,
+				Line:   pos.Line,
+				Column: pos.Column,
+			}
+
+			// evidenceTerm: placeholder obligation term. The linker
+			// resolves the actual post_B ⊃ pre_A obligation; the lifter
+			// emits the structural placeholder per R1.
+			evidenceTerm := ir.Atomic("call-site-obligation",
+				ir.MakeVar(callerName, ir.String))
+
+			// Detect cgo calls: selector expression "C.<name>" where
+			// the package is the synthetic "C" package.
+			if sel, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
+				if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "C" {
+					// cgo call: cross-kit edge.
+					targetName := sel.Sel.Name
+					kit := cgoKitPrefix(targetName, contractIndex)
+					sym := kit + ":" + targetName
+					edges = append(edges, ir.CallEdgeDeclaration{
+						SourceContractCid: sourceCid,
+						TargetContractCid: nil,
+						TargetSymbol:      sym,
+						CallSiteLocus:     locus,
+						EvidenceTerm:      evidenceTerm,
+					})
+					return true
+				}
+			}
+
+			// Same-kit or unresolved Go call.
+			calleeName := extractCalleeName(callExpr)
+			if calleeName == "" {
+				return true
+			}
+			targetCid, hasTarget := contractIndex[calleeName]
+			if hasTarget {
+				// Same-kit call: both CIDs known.
+				edges = append(edges, ir.CallEdgeDeclaration{
+					SourceContractCid: sourceCid,
+					TargetContractCid: &targetCid,
+					TargetSymbol:      calleeName,
+					CallSiteLocus:     locus,
+					EvidenceTerm:      evidenceTerm,
+				})
+			}
+			// If the target has no contract we don't emit an edge
+			// (the call can't be bridged without a contract on both ends
+			// for same-kit calls; cross-kit is covered by the cgo path).
+			return true
+		})
+	}
+
+	return edges
+}
+
+// extractCalleeName returns the simple function name from a call
+// expression. Returns "" for method calls (x.Foo()) that aren't cgo,
+// for function literals, and for other complex expressions.
+func extractCalleeName(call *ast.CallExpr) string {
+	switch fn := call.Fun.(type) {
+	case *ast.Ident:
+		return fn.Name
+	case *ast.SelectorExpr:
+		// Only return the selector for package-qualified calls (not method
+		// calls on values). We can't distinguish here without type info, so
+		// we return the selector name and let the contract index lookup miss.
+		return fn.Sel.Name
+	}
+	return ""
 }
 
 // walkSource parses Go source and lifts validator struct declarations.
