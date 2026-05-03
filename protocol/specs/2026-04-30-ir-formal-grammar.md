@@ -1143,6 +1143,49 @@ A TupleSort must have an `elements` array containing at least one valid Sort.
 ```
 A FunctionSort must have a non-empty `domain` array of Sorts and a valid `range` Sort.
 
+## Source positions
+
+### Locus
+
+A `Locus` identifies a position in a source file. It is the canonical source-position type used by every memento that needs to point at a location in a developer's code, including (but not limited to) call-edge mementos (per `2026-05-03-bridge-linkage-protocol.md` §1), invariant fix-loop mementos (per `2026-04-27-standing-invariant-runtime.md`), and lift-time diagnostics.
+
+Locked key order (alphabetical, per JCS): `column`, `file`, `line`. The grammar:
+
+```ebnf
+Locus       ::= "{" '"column"' ":" Column "," '"file"' ":" File "," '"line"' ":" Line "}"
+
+Column      ::= NaturalInteger          (* 1-based column index *)
+File        ::= JsonString              (* canonical, slash-separated POSIX-style relative path *)
+Line        ::= NaturalInteger          (* 1-based line index *)
+
+NaturalInteger ::= "0" | DigitSansZero ( Digit )*
+```
+
+```hoare
+{ true } IsLocus(o) { ⇔ IsObject(o) ∧ HasKey(o, "column") ∧ HasKey(o, "file") ∧ HasKey(o, "line") ∧
+                       IsNaturalInteger(o.column) ∧ IsString(o.file) ∧ IsNaturalInteger(o.line) }
+```
+
+**Required fields, no defaults.** All three keys MUST be present. A `Locus` with a missing field is a hard parse error in strict mode and a fatal lifter bug in lenient mode. There is no implicit zero, no synthetic placeholder. If the lifter cannot determine a real source position (e.g., for a derived contract with no source backing), it MUST omit the `Locus`-bearing field entirely rather than emit a Locus with garbage values.
+
+**File field semantics.** The `file` value is a relative POSIX-style path (forward slashes only), rooted at the project's lift-time root directory. Lifters MUST emit forward slashes regardless of host filesystem (Windows lifters convert `\` to `/`). Lifters MUST NOT include drive letters, file:// URLs, or absolute paths; cross-machine byte-equivalence depends on every kit emitting identical relative paths for identical projects.
+
+**Line and column conventions.** `line` and `column` are both 1-based natural integers. Column counts UTF-16 code units to match LSP semantics (per `2026-05-03-lsp-protocol.md`); kits whose host language uses byte offsets or grapheme clusters MUST convert to UTF-16 code units before emission. Tab handling: tabs count as one column position; lifters MUST NOT expand tabs for column counting (otherwise the same source produces different Locus values on different render configurations).
+
+**JCS encoding.** Per `2026-04-30-canonicalization-grammar.md`, every Locus is JCS-encoded with keys sorted alphabetically: `column` first, `file` second, `line` third. The integers MUST be emitted as bare decimal digits (no leading zeros except for `0` itself, no exponent, no decimal point); the string MUST be emitted with the JCS-mandated escape sequences. Two Locus values referring to the same position MUST produce byte-identical JCS encoding across all conforming kits.
+
+**Why this matters.** Locus is a leaf type embedded in many higher-level mementos. A drift in Locus encoding (a kit emitting `{file, line, column}` order, or expanding tabs, or using byte offsets) cascades into every memento that contains a Locus, which cascades into every contractCid and bridgeCid that hashes those mementos, which breaks cross-kit byte-equivalence at the substrate level. The stake is the §11/§12 pin convergence: if Locus drifts, identical content produces different addresses across kits, and the pin breaks. Locus is normative because every kit must converge on its bytes for the substrate's content-addressing to hold.
+
+### Formal Invariants
+
+**Test Plan** (Section: Locus Conformance)
+| Invariant | Formula |
+|-----------|---------|
+| LocusKeyOrder | `∀l Locus → JsonKeys(JCS(l)) = ["column","file","line"]` |
+| LocusFileForwardSlash | `∀l Locus → ¬Contains(l.file, "\\")` |
+| LocusFileRelative | `∀l Locus → ¬StartsWith(l.file, "/") ∧ ¬Matches(l.file, /^[A-Za-z]:/)` |
+| LocusLineColumnOneBased | `∀l Locus → l.line ≥ 1 ∧ l.column ≥ 1` |
+
 ## Determinism rules
 
 These are global constraints that apply to all productions above. They are
