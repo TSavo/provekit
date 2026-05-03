@@ -110,6 +110,15 @@ func atom(name string, args []IrTerm) IrFormula {
 	return atomicFormula{Name: name, Args: args}
 }
 
+// Atomic is the exported constructor for an atomic predicate
+// application. Lift adapters use it to emit kit-predicate placeholders
+// (e.g. `kit:email`) for runtime validators that have no IR theory.
+// Compilers that lack semantics for these names list them in the
+// OpacityManifest with reasonCode = "kit_predicate_no_semantics".
+func Atomic(name string, args ...IrTerm) IrFormula {
+	return atom(name, args)
+}
+
 func Eq(a, b IrTerm) IrFormula  { return atom("=", []IrTerm{a, b}) }
 func Neq(a, b IrTerm) IrFormula { return atom("≠", []IrTerm{a, b}) }
 func Lt(a, b IrTerm) IrFormula  { return atom("<", []IrTerm{a, b}) }

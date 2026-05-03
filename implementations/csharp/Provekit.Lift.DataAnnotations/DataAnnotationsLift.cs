@@ -89,13 +89,28 @@ public static class DataAnnotationsLift
             StringLengthAttribute sl => StringLengthToIr(varTerm, sl),
             MinLengthAttribute min => MinLengthToIr(varTerm, min),
             MaxLengthAttribute max => MaxLengthToIr(varTerm, max),
-            EmailAddressAttribute => Predicates.And(), // placeholder true atom
-            UrlAttribute => Predicates.And(),
-            PhoneAttribute => Predicates.And(),
-            CreditCardAttribute => Predicates.And(),
+            EmailAddressAttribute => Predicates.Atomic("kit:email", varTerm),
+            UrlAttribute => Predicates.Atomic("kit:url", varTerm),
+            PhoneAttribute => Predicates.Atomic("kit:phone", varTerm),
+            CreditCardAttribute => Predicates.Atomic("kit:credit_card", varTerm),
             _ => null, // unrecognized — skip
         };
     }
+
+    /// <summary>
+    /// Vacuous-true validator attribute → kit-predicate name. Mirror of
+    /// the Go validator lift's vacuousKitPredicate map; both adapters
+    /// emit `Atomic("kit:&lt;tag&gt;", v)` for these so the IR position
+    /// content-addresses via the OpacityManifest in
+    /// protocol/specs/2026-05-02-opacity-manifest-grammar.md.
+    /// </summary>
+    public static readonly IReadOnlyList<string> VacuousKitPredicates = new[]
+    {
+        "kit:credit_card",
+        "kit:email",
+        "kit:phone",
+        "kit:url",
+    };
 
     // -----------------------------------------------------------------
     // Per-attribute IR mappings
