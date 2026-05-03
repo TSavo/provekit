@@ -76,6 +76,8 @@ This is the cake, not the icing. It is the thing that puts the diagnostic in fro
 
 The architecture supports it: the linker derives bridges incrementally; only changed CIDs need re-derivation; the LSP plugin in each kit pushes `linker-error` mementos as `publishDiagnostics`. The work to ship it: per-kit LSP plugin polish (today gaps in rust LSP plugin are closed via PR #117; python and ruby had keyword/import bugs closed via PR #116; zig and swift have residual gaps).
 
+Per-host FFI resolvers are the kit-local frontends to the universal cross-language linker. Each kit lifter ships its own FFI resolver alongside its LSP plugin: Go's cgo resolver parses the cgo preamble and maps `C.foo()` calls to the correct kit prefix, Python's ctypes resolver will parse `CDLL` load paths, Java's JNI resolver will parse `System.loadLibrary` calls. The resolver's output is a kit-prefixed `targetSymbol` (e.g. `rust-kit:foo`) that the linker resolves against the union of all loaded contracts. The linker itself is language-agnostic and unchanged; only the kit-local resolver changes per host language. This is the architectural reason cross-language predicate verification does not require a special case for each language pair: the resolver is the kit-specific translation layer, and the linker is the universal compositor.
+
 ### 2. False-positive rate under control
 
 Predicate-level verification is conservative by default. "I cannot prove `post_caller ⊃ pre_callee`" is a different signal from "the call is wrong." Tooling needs to express the difference clearly in the diagnostic, with concrete next-action guidance: add a guard, tighten the contract, annotate the postcondition.

@@ -222,3 +222,84 @@ fn b(n: i64) -> i64 { a(n) }
     // At least one edge must have been emitted.
     assert!(!edges1.is_empty(), "expected at least one call edge");
 }
+
+// ---------------------------------------------------------------------------
+// Test 4: #[no_mangle] pub extern "C" fn foo lifts with name = "foo"
+//         and pre = (n > 0) — the Rust-side reciprocal for the Go cgo
+//         resolver round-trip (spec #114 R3 / dispatch Part 3).
+//
+// The Go resolver emits targetSymbol = "rust-kit:foo". The linker resolves
+// this against the Rust contract set by matching (kit="rust-kit", name="foo").
+// This test asserts that the Rust contracts adapter produces a contract with
+// name "foo" (not "foo::0" or any mangled variant) when given the canonical
+// #[no_mangle] pub extern "C" fn shape.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test4_extern_c_fn_lifts_with_canonical_name_and_pre() {
+    let src = r#"
+#[requires(n > 0)]
+#[no_mangle]
+pub extern "C" fn foo(n: i32) -> i32 {
+    n
+}
+"#;
+
+    let parsed = syn::parse_file(src).expect("parse_file");
+    let adapter_out = adapter_contracts::lift_file(&parsed, "test4.rs");
+
+    assert!(
+        adapter_out.lifted >= 1,
+        "expected at least 1 contract for extern C fn; got {} (warnings: {:?})",
+        adapter_out.lifted,
+        adapter_out.warnings
+    );
+
+    // Find the contract named "foo" — name must be the bare function name,
+    // not a mangled or namespace-prefixed variant. The Go resolver emits
+    // targetSymbol = "rust-kit:foo"; the linker resolves by matching name "foo".
+    let foo_contract = adapter_out
+        .decls
+        .iter()
+        .find(|d| d.name == "foo")
+        .expect("expected a contract with name == \"foo\" for extern C fn");
+
+    // The contract must have a non-trivial precondition lifted from
+    // #[requires(n > 0)].
+    assert!(
+        foo_contract.pre.is_some(),
+        "contract for `foo` must have a precondition from #[requires(n > 0)]"
+    );
+
+    // Verify it round-trips through the CID computation without panic.
+    let args = MintContractArgs {
+        contract_name: foo_contract.name.clone(),
+        pre: foo_contract.pre.as_deref().map(formula_to_value),
+        post: foo_contract.post.as_deref().map(formula_to_value),
+        inv: foo_contract.inv.as_deref().map(formula_to_value),
+        out_binding: foo_contract.out_binding.clone(),
+        produced_by: "provekit-lift".into(),
+        produced_at: "2026-01-01T00:00:00.000Z".into(),
+        input_cids: vec![],
+        authoring: Authoring::Lift {
+            lifter: "provekit-lift".into(),
+            evidence: String::new(),
+            source_cid: None,
+        },
+        signer_seed: [0u8; 32],
+    };
+    let cid = compute_contract_cid(&args);
+    assert!(
+        cid.starts_with("blake3-512:"),
+        "contractCid must start with blake3-512: prefix; got {cid}"
+    );
+
+    // The contract name "foo" must match what the Go resolver expects.
+    // Go emits: targetSymbol = "rust-kit:foo"
+    // Linker resolves: split on ":", kit="rust-kit", name="foo"
+    // This contract's name == "foo" → round-trip succeeds.
+    assert_eq!(
+        foo_contract.name, "foo",
+        "contract name must be \"foo\" for the Go resolver round-trip"
+    );
+}
