@@ -10,9 +10,57 @@ import (
 	"strings"
 
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/claim_envelope"
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 	lifgotests "github.com/tsavo/provekit/go/provekit-lift-go-tests"
 )
+
+// computeContractSetCidFromDecls computes the signer-independent contractSetCid
+// from a slice of ir.Declaration objects per spec #94.
+func computeContractSetCidFromDecls(decls []ir.Declaration) (string, error) {
+	var contentCIDs []string
+	for _, d := range decls {
+		cd, ok := d.(ir.ContractDeclaration)
+		if !ok {
+			continue
+		}
+		outBinding := cd.OutBinding
+		if outBinding == "" {
+			outBinding = "out"
+		}
+		args := claim_envelope.ContractMintArgs{
+			ContractName: cd.Name,
+			OutBinding:   outBinding,
+		}
+		if cd.Pre != nil {
+			v, err := claim_envelope.FormulaToValue(cd.Pre)
+			if err != nil {
+				return "", fmt.Errorf("FormulaToValue pre for %s: %w", cd.Name, err)
+			}
+			args.Pre = v
+		}
+		if cd.Post != nil {
+			v, err := claim_envelope.FormulaToValue(cd.Post)
+			if err != nil {
+				return "", fmt.Errorf("FormulaToValue post for %s: %w", cd.Name, err)
+			}
+			args.Post = v
+		}
+		if cd.Inv != nil {
+			v, err := claim_envelope.FormulaToValue(cd.Inv)
+			if err != nil {
+				return "", fmt.Errorf("FormulaToValue inv for %s: %w", cd.Name, err)
+			}
+			args.Inv = v
+		}
+		cid, err := claim_envelope.ContractCIDFromArgs(args)
+		if err != nil {
+			return "", fmt.Errorf("ContractCIDFromArgs for %s: %w", cd.Name, err)
+		}
+		contentCIDs = append(contentCIDs, cid)
+	}
+	return claim_envelope.ComputeContractSetCID(contentCIDs)
+}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--rpc" {
@@ -128,10 +176,16 @@ func runRPCMode() {
 			outPath := filepath.Join(workspace, cid+".proof")
 			os.WriteFile(outPath, body, 0644)
 			b64 := base64.StdEncoding.EncodeToString(body)
+			contractSetCid, err := computeContractSetCidFromDecls(decls)
+			if err != nil {
+				writeError(req.ID, -32603, fmt.Sprintf("contractSetCid: %v", err))
+				continue
+			}
 			writeResponse(req.ID, map[string]interface{}{
-				"kind":         "proof-envelope",
-				"filename_cid": cid,
-				"bytes_base64": b64,
+				"kind":             "proof-envelope",
+				"filename_cid":     cid,
+				"contract_set_cid": contractSetCid,
+				"bytes_base64":     b64,
 			})
 		case "shutdown":
 			writeResponse(req.ID, nil)

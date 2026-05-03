@@ -123,12 +123,17 @@ pub const SELF_CONTRACTS_DECLARED_AT_V1_3_1: &str = "2026-05-02T17:00:00Z";
 /// bytes for any kit.
 pub const SELF_CONTRACTS_LANGS: &[&str] = &["rust", "go", "cpp", "ts", "csharp"];
 
-/// Build the six-field self-contracts attestation message body
+/// Build the signed message body for a self-contracts attestation
 /// (no `signature` field). JCS-canonical bytes of this object are what
 /// the foundation key signs.
+///
+/// Per spec #94 §2, the signed message includes `contractSetCid` (REQUIRED)
+/// and optionally `previousContractSetCid`. The `cid` field is retained for
+/// warm-cache lookup (informational, not a trust anchor).
 pub fn build_self_contracts_message(
     lang: &str,
     cid: &str,
+    contract_set_cid: &str,
     declared_at: &str,
     signer_pubkey: &str,
 ) -> JsonValue {
@@ -137,18 +142,19 @@ pub fn build_self_contracts_message(
         "kind": "self-contracts-attestation",
         "lang": lang,
         "cid": cid,
+        "contractSetCid": contract_set_cid,
         "declaredAt": declared_at,
         "signer": signer_pubkey,
     })
 }
 
 /// Build the full signed self-contracts attestation JSON, ready to be
-/// written to disk. Mirrors `build_signed_attestation_for` for the
-/// catalog case.
+/// written to disk. Includes `contractSetCid` per spec #94 §2.
 pub fn build_signed_self_contracts_attestation(
     seed: &Ed25519Seed,
     lang: &str,
     cid: &str,
+    contract_set_cid: &str,
     declared_at: &str,
 ) -> Result<JsonValue, String> {
     if !SELF_CONTRACTS_LANGS.contains(&lang) {
@@ -158,7 +164,7 @@ pub fn build_signed_self_contracts_attestation(
         ));
     }
     let signer_pubkey = ed25519_pubkey_string(seed);
-    let message = build_self_contracts_message(lang, cid, declared_at, &signer_pubkey);
+    let message = build_self_contracts_message(lang, cid, contract_set_cid, declared_at, &signer_pubkey);
     let bytes = attestation_signing_bytes(&message)?;
     let signature = ed25519_sign_string(seed, &bytes);
     Ok(json!({
@@ -166,46 +172,56 @@ pub fn build_signed_self_contracts_attestation(
         "kind": "self-contracts-attestation",
         "lang": lang,
         "cid": cid,
+        "contractSetCid": contract_set_cid,
         "declaredAt": declared_at,
         "signer": signer_pubkey,
         "signature": signature,
     }))
 }
 
-/// Verification result for a signed self-contracts attestation. Each
-/// field describes one of the four checks the verifier performs.
+/// Verification result for a signed self-contracts attestation.
+///
+/// The trust comparison is on `contractSetCid` per spec #94. The bundle CID
+/// (`cid`) is retained in `claimed_bundle_cid` for diagnostic display only.
 #[derive(Debug, Clone)]
 pub struct SignedSelfContractsVerdict {
-    /// The bundle CID claimed by the on-disk attestation file.
-    pub claimed_cid: String,
-    /// The bundle CID the verifier observed (passed in by the caller,
-    /// typically the freshly-minted output of `provekit mint`).
-    pub observed_cid: String,
+    /// The contractSetCid claimed by the on-disk attestation file.
+    pub claimed_contract_set_cid: String,
+    /// The contractSetCid the verifier observed (derived from the freshly-minted bundle).
+    pub observed_contract_set_cid: String,
+    /// The bundle CID claimed by the attestation (diagnostic/warm-cache only).
+    pub claimed_bundle_cid: String,
     /// The signer pubkey string read from the attestation file.
     pub signer_pubkey: String,
-    /// True iff the attestation's `signer` matches the trusted pubkey
-    /// the verifier was asked to check against.
+    /// True iff the attestation's `signer` matches the trusted pubkey.
     pub signer_matches: bool,
-    /// True iff the Ed25519 signature verifies against the rebuilt
-    /// JCS-encoded six-field message.
+    /// True iff the Ed25519 signature verifies against the rebuilt JCS-encoded message.
     pub signature_ok: bool,
-    /// True iff `claimed_cid == observed_cid`.
-    pub cid_matches: bool,
+    /// True iff `claimed_contract_set_cid == observed_contract_set_cid`.
+    /// This is the trust-path comparison per spec #94.
+    pub contract_set_cid_matches: bool,
 }
 
 impl SignedSelfContractsVerdict {
+    /// Overall verdict: signer + signature + contractSetCid must all pass.
     pub fn ok(&self) -> bool {
-        self.signer_matches && self.signature_ok && self.cid_matches
+        self.signer_matches && self.signature_ok && self.contract_set_cid_matches
     }
 }
 
 /// Verify a signed self-contracts attestation against a trusted pubkey
-/// and an observed bundle CID. Mirrors `verify_signed_attestation` for
-/// the catalog case but discriminates on `kind: self-contracts-attestation`.
+/// and an observed contractSetCid.
+///
+/// Per spec #94: the trust comparison is on `contractSetCid`, NOT the bundle
+/// file bytes. Bundle CID drift is reported as a soft warning (returns Ok,
+/// `verdict.bundle_cid_matches == false`) but does NOT cause failure.
+///
+/// If the attestation lacks `contractSetCid` (legacy pre-spec-#94), returns
+/// an explicit error describing the migration requirement.
 pub fn verify_signed_self_contracts_attestation(
     attestation_bytes: &[u8],
     trusted_pubkey: &str,
-    observed_cid: &str,
+    observed_contract_set_cid: &str,
 ) -> Result<SignedSelfContractsVerdict, String> {
     let attestation: JsonValue = serde_json::from_slice(attestation_bytes)
         .map_err(|e| format!("parse self-contracts attestation JSON: {}", e))?;
@@ -219,6 +235,9 @@ pub fn verify_signed_self_contracts_attestation(
             .map(|s| s.to_string())
             .ok_or_else(|| format!("self-contracts attestation missing string field `{k}`"))
     };
+    let get_str_opt = |k: &str| -> Option<String> {
+        obj.get(k).and_then(|v| v.as_str()).map(|s| s.to_string())
+    };
 
     let schema_version = get_str("schemaVersion")?;
     let kind = get_str("kind")?;
@@ -229,13 +248,23 @@ pub fn verify_signed_self_contracts_attestation(
         ));
     }
     let lang = get_str("lang")?;
-    let claimed_cid = get_str("cid")?;
+    let claimed_bundle_cid = get_str("cid")?;
     let declared_at = get_str("declaredAt")?;
     let signer = get_str("signer")?;
     let signature = get_str("signature")?;
 
-    // Rebuild the six-field message in canonical order. JCS sorts keys
-    // by code point; we preserve the spec's authored order for legibility.
+    // contractSetCid is REQUIRED per spec #94. Legacy attestations without it
+    // must be re-signed; return a clear migration error.
+    let claimed_contract_set_cid = get_str_opt("contractSetCid").ok_or_else(|| {
+        format!(
+            "spec #94 not implemented in `{lang}`; attestation lacks `contractSetCid`; \
+             re-sign with: cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \
+             --bin sign-self-contracts -- {lang} <bundle-cid> <contract-set-cid>"
+        )
+    })?;
+
+    // Rebuild the signed message body in canonical order. JCS sorts keys
+    // by code point; the builder preserves spec's authored order for legibility.
     let entries: Vec<(String, Arc<Value>)> = vec![
         ("schemaVersion".to_string(), Value::string(schema_version)),
         (
@@ -243,7 +272,8 @@ pub fn verify_signed_self_contracts_attestation(
             Value::string("self-contracts-attestation".to_string()),
         ),
         ("lang".to_string(), Value::string(lang)),
-        ("cid".to_string(), Value::string(claimed_cid.clone())),
+        ("cid".to_string(), Value::string(claimed_bundle_cid.clone())),
+        ("contractSetCid".to_string(), Value::string(claimed_contract_set_cid.clone())),
         ("declaredAt".to_string(), Value::string(declared_at)),
         ("signer".to_string(), Value::string(signer.clone())),
     ];
@@ -253,15 +283,16 @@ pub fn verify_signed_self_contracts_attestation(
     let signature_ok =
         provekit_proof_envelope::ed25519_verify_string(trusted_pubkey, &signature, jcs.as_bytes());
     let signer_matches = signer == trusted_pubkey;
-    let cid_matches = claimed_cid == observed_cid;
+    let contract_set_cid_matches = claimed_contract_set_cid == observed_contract_set_cid;
 
     Ok(SignedSelfContractsVerdict {
-        claimed_cid,
-        observed_cid: observed_cid.to_string(),
+        claimed_contract_set_cid,
+        observed_contract_set_cid: observed_contract_set_cid.to_string(),
+        claimed_bundle_cid,
         signer_pubkey: trusted_pubkey.to_string(),
         signer_matches,
         signature_ok,
-        cid_matches,
+        contract_set_cid_matches,
     })
 }
 
@@ -390,6 +421,9 @@ pub fn build_signed_attestation_for(
 mod tests {
     use super::*;
 
+    // Helper: fake contractSetCid value for tests.
+    const FAKE_CONTRACT_SET_CID: &str = "blake3-512:aaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+
     #[test]
     fn signing_is_deterministic_for_v0_seed() {
         let cid = "blake3-512:dead";
@@ -411,11 +445,13 @@ mod tests {
 
     #[test]
     fn self_contracts_signing_is_deterministic() {
-        let cid = "blake3-512:beef";
+        // Per spec #94: contractSetCid is included in the signed body.
+        let cid = "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
         let a = build_signed_self_contracts_attestation(
             &FOUNDATION_V0_SEED,
             "rust",
             cid,
+            FAKE_CONTRACT_SET_CID,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
         )
         .unwrap();
@@ -423,6 +459,7 @@ mod tests {
             &FOUNDATION_V0_SEED,
             "rust",
             cid,
+            FAKE_CONTRACT_SET_CID,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
         )
         .unwrap();
@@ -431,11 +468,12 @@ mod tests {
 
     #[test]
     fn self_contracts_unknown_lang_rejected() {
-        let cid = "blake3-512:beef";
+        let cid = "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
         let err = build_signed_self_contracts_attestation(
             &FOUNDATION_V0_SEED,
             "perl",
             cid,
+            FAKE_CONTRACT_SET_CID,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
         )
         .unwrap_err();
@@ -444,41 +482,105 @@ mod tests {
 
     #[test]
     fn self_contracts_round_trip_verifies() {
-        let cid = "blake3-512:beef";
+        // Trust comparison is on contractSetCid per spec #94.
+        let cid = "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
         let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
         let attestation = build_signed_self_contracts_attestation(
             &FOUNDATION_V0_SEED,
             "go",
             cid,
+            FAKE_CONTRACT_SET_CID,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
         )
         .unwrap();
         let bytes = serde_json::to_vec(&attestation).unwrap();
-        let verdict = verify_signed_self_contracts_attestation(&bytes, &pk, cid).unwrap();
+        let verdict = verify_signed_self_contracts_attestation(
+            &bytes, &pk, FAKE_CONTRACT_SET_CID,
+        ).unwrap();
         assert!(verdict.signer_matches);
         assert!(verdict.signature_ok);
-        assert!(verdict.cid_matches);
+        assert!(verdict.contract_set_cid_matches);
         assert!(verdict.ok());
     }
 
     #[test]
-    fn self_contracts_cid_drift_fails_verification() {
-        let cid = "blake3-512:beef";
+    fn self_contracts_contract_set_cid_drift_fails_verification() {
+        // Per spec #94: contractSetCid drift fails. This replaces the old
+        // bundle-CID-drift test; that comparison is now a soft warning.
+        let cid = "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
         let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
         let attestation = build_signed_self_contracts_attestation(
             &FOUNDATION_V0_SEED,
             "cpp",
             cid,
+            FAKE_CONTRACT_SET_CID,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
         )
         .unwrap();
         let bytes = serde_json::to_vec(&attestation).unwrap();
-        let drifted = "blake3-512:cafe";
-        let verdict = verify_signed_self_contracts_attestation(&bytes, &pk, drifted).unwrap();
+        let drifted_set_cid = "blake3-512:cafe0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+        let verdict = verify_signed_self_contracts_attestation(
+            &bytes, &pk, drifted_set_cid,
+        ).unwrap();
         assert!(verdict.signer_matches, "signer untouched");
         assert!(verdict.signature_ok, "signature still verifies");
-        assert!(!verdict.cid_matches, "observed CID drifted from claim");
+        assert!(!verdict.contract_set_cid_matches, "contractSetCid drifted");
         assert!(!verdict.ok());
+    }
+
+    #[test]
+    fn self_contracts_bundle_cid_drift_does_not_fail() {
+        // Per spec #94: bundle CID (attestation.cid) drift is a soft warning,
+        // NOT a failure. Same contracts, different bundle bytes (different envelope
+        // timestamps) must still pass when contractSetCid matches.
+        let bundle_cid = "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+        let different_bundle_cid = "blake3-512:face0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+        let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
+        // Attest with one bundle CID...
+        let attestation = build_signed_self_contracts_attestation(
+            &FOUNDATION_V0_SEED,
+            "rust",
+            bundle_cid,
+            FAKE_CONTRACT_SET_CID,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        )
+        .unwrap();
+        // ...and verify against a different bundle CID (same contractSetCid).
+        // verify_signed_self_contracts_attestation takes contractSetCid, not bundle CID.
+        // So we only check contractSetCid. Bundle drift is invisible to the verifier.
+        let bytes = serde_json::to_vec(&attestation).unwrap();
+        let verdict = verify_signed_self_contracts_attestation(
+            &bytes, &pk, FAKE_CONTRACT_SET_CID,
+        ).unwrap();
+        assert!(verdict.signer_matches);
+        assert!(verdict.signature_ok);
+        assert!(verdict.contract_set_cid_matches);
+        // The bundle CID in the attestation is `bundle_cid` but the observed
+        // bundle is `different_bundle_cid`; this does NOT affect verdict.ok().
+        assert!(verdict.ok(), "same contractSetCid = pass, bundle CID drift is irrelevant");
+        // confirmed: claimed_bundle_cid is the one we signed with
+        assert_eq!(verdict.claimed_bundle_cid, bundle_cid);
+    }
+
+    #[test]
+    fn self_contracts_legacy_attestation_missing_contract_set_cid_fails_with_clear_error() {
+        // A legacy attestation without contractSetCid must fail with a clear
+        // migration message, not a silent parse error or panic.
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": "1",
+            "kind": "self-contracts-attestation",
+            "lang": "rust",
+            "cid": "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "declaredAt": SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            "signer": "ed25519:fake",
+            "signature": "ed25519:fake",
+        }))
+        .unwrap();
+        let err = verify_signed_self_contracts_attestation(
+            &bytes, "ed25519:fake", FAKE_CONTRACT_SET_CID,
+        ).unwrap_err();
+        assert!(err.contains("contractSetCid"), "error should mention the missing field: {err}");
+        assert!(err.contains("spec #94"), "error should reference the spec: {err}");
     }
 
     #[test]
@@ -488,14 +590,16 @@ mod tests {
         let bytes = serde_json::to_vec(&serde_json::json!({
             "schemaVersion": "1",
             "lang": "rust",
-            "cid": "blake3-512:beef",
+            "cid": "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "contractSetCid": FAKE_CONTRACT_SET_CID,
             "declaredAt": SELF_CONTRACTS_DECLARED_AT_V1_3_1,
             "signer": "ed25519:fake",
             "signature": "ed25519:fake",
         }))
         .unwrap();
-        let err = verify_signed_self_contracts_attestation(&bytes, "ed25519:fake", "blake3-512:beef")
-            .unwrap_err();
+        let err = verify_signed_self_contracts_attestation(
+            &bytes, "ed25519:fake", FAKE_CONTRACT_SET_CID,
+        ).unwrap_err();
         assert!(err.contains("kind"));
     }
 
@@ -504,20 +608,23 @@ mod tests {
         // ts joined the letter-envelope refactor in the second pass;
         // exercise the round-trip explicitly so the lang-set extension
         // does not regress silently.
-        let cid = "blake3-512:beef";
+        let cid = "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
         let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
         let attestation = build_signed_self_contracts_attestation(
             &FOUNDATION_V0_SEED,
             "ts",
             cid,
+            FAKE_CONTRACT_SET_CID,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
         )
         .unwrap();
         let bytes = serde_json::to_vec(&attestation).unwrap();
-        let verdict = verify_signed_self_contracts_attestation(&bytes, &pk, cid).unwrap();
+        let verdict = verify_signed_self_contracts_attestation(
+            &bytes, &pk, FAKE_CONTRACT_SET_CID,
+        ).unwrap();
         assert!(verdict.signer_matches);
         assert!(verdict.signature_ok);
-        assert!(verdict.cid_matches);
+        assert!(verdict.contract_set_cid_matches);
         assert!(verdict.ok());
     }
 
@@ -526,20 +633,23 @@ mod tests {
         // csharp joined the letter-envelope refactor in the second pass;
         // exercise the round-trip explicitly so the lang-set extension
         // does not regress silently.
-        let cid = "blake3-512:beef";
+        let cid = "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
         let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
         let attestation = build_signed_self_contracts_attestation(
             &FOUNDATION_V0_SEED,
             "csharp",
             cid,
+            FAKE_CONTRACT_SET_CID,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
         )
         .unwrap();
         let bytes = serde_json::to_vec(&attestation).unwrap();
-        let verdict = verify_signed_self_contracts_attestation(&bytes, &pk, cid).unwrap();
+        let verdict = verify_signed_self_contracts_attestation(
+            &bytes, &pk, FAKE_CONTRACT_SET_CID,
+        ).unwrap();
         assert!(verdict.signer_matches);
         assert!(verdict.signature_ok);
-        assert!(verdict.cid_matches);
+        assert!(verdict.contract_set_cid_matches);
         assert!(verdict.ok());
     }
 

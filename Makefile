@@ -32,11 +32,11 @@
 #   1. Make your code change in `implementations/<lang>/provekit-self-contracts`
 #      (or the language's analog).
 #   2. `make mint-<lang>`
-#      -> the mint target FAILS and prints the new CID.
+#      -> the mint target FAILS and prints the new bundle CID + contractSetCid.
 #   3. `cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \
-#         --bin sign-self-contracts -- <lang> <new-cid>`
+#         --bin sign-self-contracts -- <lang> <bundle-cid> <contract-set-cid>`
 #      -> rewrites `.provekit/self-contracts-attestations/<lang>.json` with
-#         a fresh foundation-v0 ed25519 signature over the new CID.
+#         a fresh foundation-v0 ed25519 signature over the new CID + contractSetCid.
 #   4. `git add .provekit/self-contracts-attestations/<lang>.json && git commit`
 #
 # The bundle (letter) does not know its own CID. The on-disk attestation
@@ -125,56 +125,69 @@ build-csharp:
 .PHONY: mint-rust
 mint-rust: build-rust
 	@echo ">> minting rust self-contracts"
-	@out=$$($(PROVEKIT) mint --project implementations/rust --quiet); \
-	echo "  cid: $$out"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json "$$out" || \
+	@mint_out=$$($(PROVEKIT) mint --project implementations/rust --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json "$$cset" || \
 		(echo "FAIL: rust self-contracts attestation rejected; bump dance:" && \
 		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- rust $$out" && exit 1)
+		 echo "        --bin sign-self-contracts -- rust $$cid $$cset" && exit 1)
 
 .PHONY: mint-go
 mint-go: build-rust build-go
 	@echo ">> minting go self-contracts"
-	@out=$$($(PROVEKIT) mint --project implementations/go --quiet); \
-	echo "  cid: $$out"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/go.json "$$out" || \
+	@mint_out=$$($(PROVEKIT) mint --project implementations/go --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/go.json "$$cset" || \
 		(echo "FAIL: go self-contracts attestation rejected; bump dance:" && \
 		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- go $$out" && exit 1)
+		 echo "        --bin sign-self-contracts -- go $$cid $$cset" && exit 1)
 
 .PHONY: mint-cpp
 mint-cpp: build-rust build-cpp
 	@echo ">> minting cpp self-contracts"
-	@out=$$($(PROVEKIT) mint --project implementations/cpp --quiet); \
-	echo "  cid: $$out"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json "$$out" || \
+	@mint_out=$$($(PROVEKIT) mint --project implementations/cpp --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json "$$cset" || \
 		(echo "FAIL: cpp self-contracts attestation rejected; bump dance:" && \
 		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- cpp $$out" && exit 1)
+		 echo "        --bin sign-self-contracts -- cpp $$cid $$cset" && exit 1)
 
 .PHONY: mint-ts
 mint-ts: build-ts
 	@echo ">> minting ts self-contracts"
-	@out=$$(pnpm -s vitest run --reporter=verbose \
-		implementations/typescript/src/bin/mint-ts-self-contracts.test.ts 2>&1 \
-		| grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
-	echo "  cid: $$out"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json "$$out" || \
+	@ts_out=$$(pnpm -s vitest run --reporter=verbose \
+		implementations/typescript/src/bin/mint-ts-self-contracts.test.ts 2>&1); \
+	cid=$$(echo "$$ts_out" | grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
+	cset=$$(echo "$$ts_out" | grep -F 'contractSetCid:' | awk '{print $$NF}' | head -1); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json "$$cset" || \
 		(echo "FAIL: ts self-contracts attestation rejected; bump dance:" && \
 		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- ts $$out" && exit 1)
+		 echo "        --bin sign-self-contracts -- ts $$cid $$cset" && exit 1)
 
 .PHONY: mint-csharp
 mint-csharp:
 	@echo ">> minting csharp self-contracts"
-	@out=$$(cd implementations/csharp/Provekit.SelfContracts && \
-		dotnet run -c Release 2>/dev/null \
-		| grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
-	echo "  cid: $$out"; \
-	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json "$$out" || \
+	@cs_out=$$(cd implementations/csharp/Provekit.SelfContracts && \
+		dotnet run -c Release 2>/dev/null); \
+	cid=$$(echo "$$cs_out" | grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
+	cset=$$(echo "$$cs_out" | grep -F 'contractSetCid:' | awk '{print $$NF}' | head -1); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json "$$cset" || \
 		(echo "FAIL: csharp self-contracts attestation rejected; bump dance:" && \
 		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- csharp $$out" && exit 1)
+		 echo "        --bin sign-self-contracts -- csharp $$cid $$cset" && exit 1)
 
 .PHONY: all-mint
 all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp

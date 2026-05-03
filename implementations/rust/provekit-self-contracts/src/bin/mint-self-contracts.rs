@@ -113,6 +113,7 @@ fn run_rpc_mode() -> ExitCode {
                             "result": {
                                 "kind": "proof-envelope",
                                 "filename_cid": m.cid,
+                                "contract_set_cid": m.contract_set_cid,
                                 "bytes_base64": b64,
                                 "diagnostics": []
                             }
@@ -242,6 +243,7 @@ fn main() -> ExitCode {
     println!("  members:            {}", mint.member_count);
     println!("  total contracts:    {}", mint.total_contracts);
     println!("  catalog CID:        {}", mint.cid);
+    println!("  contractSetCid:     {}", mint.contract_set_cid);
 
     if mint_a.cid != mint.cid {
         eprintln!();
@@ -251,8 +253,16 @@ fn main() -> ExitCode {
         let _ = std::fs::remove_dir_all(&det_dir);
         return ExitCode::from(2);
     }
+    if mint_a.contract_set_cid != mint.contract_set_cid {
+        eprintln!();
+        eprintln!("ERROR: contractSetCid determinism check FAILED:");
+        eprintln!("  run A contractSetCid: {}", mint_a.contract_set_cid);
+        eprintln!("  run B contractSetCid: {}", mint.contract_set_cid);
+        let _ = std::fs::remove_dir_all(&det_dir);
+        return ExitCode::from(2);
+    }
     let _ = std::fs::remove_dir_all(&det_dir);
-    println!("  determinism check:  OK (two runs produced identical CIDs)");
+    println!("  determinism check:  OK (two runs produced identical CIDs and contractSetCid)");
 
     // ---- 3. Verify -----------------------------------------------------------
     let cfg = RunnerConfig {

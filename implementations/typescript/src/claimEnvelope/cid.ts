@@ -15,6 +15,7 @@
 import { canonicalEncode } from "./canonicalize.js";
 import { computeCid } from "../canonicalizer/hash.js";
 import type { ClaimEnvelope } from "./types.js";
+import type { MintContractArgs } from "./mint.js";
 
 /**
  * Build the canonical input object for CID/signature computation.
@@ -61,4 +62,39 @@ export function computeEnvelopeCid(
   const input = envelopeForHashing(envelope);
   const bytes = canonicalEncode(input);
   return computeCid(bytes);
+}
+
+/**
+ * Compute the signer-independent contractCid for a contract.
+ *
+ * Per spec 2026-05-03-contract-cid-vs-attestation-cid.md §1:
+ *   contractCid = blake3-512(JCS({name, outBinding, pre?, post?, inv?}))
+ *
+ * Two distinct signers attesting the same logical contract produce the
+ * same contractCid. This is NOT the attestation CID (envelope hash).
+ */
+export function contractCidFromArgs(args: MintContractArgs): string {
+  const obj: Record<string, unknown> = {
+    name: args.contractName,
+    outBinding: args.outBinding ?? "out",
+  };
+  if (args.pre !== undefined) obj["pre"] = args.pre;
+  if (args.post !== undefined) obj["post"] = args.post;
+  if (args.inv !== undefined) obj["inv"] = args.inv;
+  return computeCid(canonicalEncode(obj));
+}
+
+/**
+ * Compute the contractSetCid from a list of signer-independent
+ * contractCid strings (each "blake3-512:<128 hex>").
+ *
+ * Per spec 2026-05-03-contract-set-extension.md §1:
+ *   contractSetCid = blake3-512(JCS(<sorted contractCIDs>))
+ *
+ * Sort is lexicographic; two kits enumerating the same contracts in
+ * different order produce byte-identical contractSetCid values.
+ */
+export function computeContractSetCid(contractCids: string[]): string {
+  const sorted = [...contractCids].sort();
+  return computeCid(canonicalEncode(sorted));
 }

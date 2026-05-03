@@ -38,13 +38,18 @@ describe("ts-self-contracts: mint orchestrator", () => {
       console.log(`  members:            ${b.memberCount}`);
       console.log(`  total contracts:    ${b.totalContracts}`);
       console.log(`  catalog CID:        ${b.cid}`);
+      console.log(`  contractSetCid:     ${b.contractSetCid}`);
       console.log(
-        `  determinism check:  ${a.cid === b.cid ? "OK" : "FAILED"} (two runs produced ${a.cid === b.cid ? "identical" : "different"} CIDs)`,
+        `  determinism check:  ${a.cid === b.cid && a.contractSetCid === b.contractSetCid ? "OK" : "FAILED"} (two runs produced ${a.cid === b.cid ? "identical" : "different"} CIDs)`,
       );
       console.log("");
 
       // Determinism check (assertion form).
       expect(a.cid).toEqual(b.cid);
+      expect(a.contractSetCid).toEqual(b.contractSetCid);
+
+      // contractSetCid has the standard v1.1.0 self-identifying shape.
+      expect(b.contractSetCid).toMatch(/^blake3-512:[0-9a-f]{128}$/);
 
       // Sanity: catalog CID has the standard v1.1.0 self-identifying shape.
       expect(b.cid).toMatch(/^blake3-512:[0-9a-f]{128}$/);

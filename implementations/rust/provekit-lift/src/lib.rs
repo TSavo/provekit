@@ -42,7 +42,10 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 
 use provekit_canonicalizer::blake3_512_of;
-use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
+use provekit_claim_envelope::{
+    compute_contract_set_cid, contract_cid as compute_contract_cid,
+    mint_contract, Authoring, MintContractArgs,
+};
 use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl};
 use provekit_proof_envelope::{build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput};
 
@@ -440,6 +443,11 @@ fn enumerate_rs_files(root: &Path) -> Vec<PathBuf> {
 pub struct MintOutput {
     pub bytes: Vec<u8>,
     pub cid: String,
+    /// Signer-independent trust anchor per spec #94.
+    /// contractSetCid = blake3-512(JCS(<sorted contractCids>))
+    /// where contractCids are content-only hashes:
+    ///   contractCid = blake3-512(JCS({name, outBinding, pre?, post?, inv?}))
+    pub contract_set_cid: String,
     pub member_count: usize,
     /// Map from contract name to its minted memento CID. Names that
     /// collide on identical canonical IR (semantic dedup) collapse to
@@ -467,6 +475,8 @@ pub fn mint_proof(
 ) -> Result<MintOutput, LiftMintError> {
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut contract_cids: BTreeMap<String, String> = BTreeMap::new();
+    // Signer-independent content CIDs for contractSetCid computation (spec #94).
+    let mut content_cids: Vec<String> = Vec::new();
     let mut deduplicated = 0usize;
 
     for d in decls {
@@ -486,6 +496,8 @@ pub fn mint_proof(
             },
             signer_seed: opts.signer_seed,
         };
+        // Compute signer-independent content CID BEFORE minting (spec #94).
+        let ccid = compute_contract_cid(&args);
         let m = mint_contract(&args).map_err(|e| LiftMintError::Mint(e.to_string()))?;
 
         if let Some(prev_cid) = contract_cids.get(&d.name) {
@@ -498,6 +510,7 @@ pub fn mint_proof(
             }
         }
 
+        content_cids.push(ccid);
         contract_cids.insert(d.name.clone(), m.cid.clone());
         // If the CID itself already exists (different name, same IR),
         // members map collapses on insert; count as dedup.
@@ -507,6 +520,9 @@ pub fn mint_proof(
             members.insert(m.cid, m.canonical_bytes);
         }
     }
+
+    // Compute contractSetCid per spec #94 §1.
+    let contract_set_cid = compute_contract_set_cid(content_cids);
 
     let signer_pubkey = ed25519_pubkey_string(&opts.signer_seed);
     let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
@@ -525,6 +541,7 @@ pub fn mint_proof(
     Ok(MintOutput {
         bytes: built.bytes,
         cid: built.cid,
+        contract_set_cid,
         member_count: members.len(),
         contract_cids,
         deduplicated,
@@ -646,7 +663,7 @@ fn run_rpc_mode() -> i32 {
                     Ok((_report, minted, path)) => {
                         let bytes = std::fs::read(&path).unwrap_or_default();
                         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                        let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"kind":"proof-envelope","filename_cid":minted.cid,"bytes_base64":b64}});
+                        let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"kind":"proof-envelope","filename_cid":minted.cid,"contract_set_cid":minted.contract_set_cid,"bytes_base64":b64}});
                         let _ = writeln!(stdout, "{resp}");
                     }
                     Err(e) => {

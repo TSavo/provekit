@@ -91,6 +91,41 @@ public static class Mint
     private static string HashValue(V v) =>
         Hash.Blake3_512(Jcs.EncodeUtf8(v));
 
+    /// <summary>
+    /// Compute the signer-independent contractCid for a contract.
+    ///
+    /// Per spec 2026-05-03-contract-cid-vs-attestation-cid.md §1:
+    ///   contractCid = blake3-512(JCS({name, outBinding, pre?, post?, inv?}))
+    ///
+    /// Two distinct signers attesting the same logical contract produce the
+    /// same contractCid. This is NOT the attestation CID (envelope hash).
+    /// </summary>
+    public static string ContractCid(MintContractArgs args)
+    {
+        var entries = new List<KeyValuePair<string, V>>
+        {
+            new("name", V.String(args.ContractName)),
+            new("outBinding", V.String(args.OutBinding)),
+        };
+        if (args.Pre is not null) entries.Add(new("pre", args.Pre));
+        if (args.Post is not null) entries.Add(new("post", args.Post));
+        if (args.Inv is not null) entries.Add(new("inv", args.Inv));
+        return HashValue(V.Object(entries));
+    }
+
+    /// <summary>
+    /// Compute the contractSetCid from a list of signer-independent
+    /// contractCid strings (each "blake3-512:&lt;128 hex&gt;").
+    ///
+    /// Per spec 2026-05-03-contract-set-extension.md §1:
+    ///   contractSetCid = blake3-512(JCS(&lt;sorted contractCIDs&gt;))
+    /// </summary>
+    public static string ContractSetCid(IEnumerable<string> contractCids)
+    {
+        var sorted = contractCids.OrderBy(s => s, StringComparer.Ordinal).Select(V.String).ToArray();
+        return HashValue(V.Array(sorted));
+    }
+
     private static string HashString(string s) =>
         Hash.Blake3_512Utf8(s);
 

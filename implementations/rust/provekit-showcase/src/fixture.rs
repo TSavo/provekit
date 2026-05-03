@@ -352,6 +352,7 @@ fn mint_one_implication(
     MintedEnvelope {
         canonical_bytes: proof.bytes,
         cid: proof.cid,
+        contract_cid: String::new(),
     }
 }
 

@@ -45,6 +45,7 @@ pub mod lift_plugin_protocol;
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
+    compute_contract_set_cid, contract_cid as compute_contract_cid,
     mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
 };
 use provekit_ir_symbolic::serialize::formula_to_value;
@@ -300,14 +301,21 @@ fn run_one_slab(
 #[derive(Debug, Clone)]
 pub struct MintResult {
     /// Full self-identifying CID (`blake3-512:<128 hex>`) of the .proof file.
+    /// This is the bundle CID (attestation-envelope bytes), not the trust anchor.
     pub cid: String,
+    /// Contract set CID per spec #94 §1.
+    ///   contractSetCid := blake3-512(JCS(<sorted contractCids>))
+    /// Signer-independent. Two kits attesting to the same contracts produce the
+    /// same `contract_set_cid` regardless of signer state, timestamps, or build order.
+    /// This is the trust anchor for `verify-self-contracts`.
+    pub contract_set_cid: String,
     /// Bytes written.
     pub bytes_len: usize,
     /// Filesystem path written to.
     pub path: std::path::PathBuf,
     /// Number of mementos bundled (contracts + bridges).
     pub member_count: usize,
-    /// Map from contract name to its memento CID.
+    /// Map from contract name to its content CID (signer-independent contractCid).
     pub contract_cids: BTreeMap<String, String>,
     /// Per-source-file count of contracts authored, for the report.
     pub per_source_counts: Vec<(String, usize)>,
@@ -329,7 +337,13 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
     let signer_seed: Ed25519Seed = [0x42; 32];
 
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // Map from contract name to its signer-independent contractCid (content hash).
+    // Per spec #94 §1: contractCid := blake3-512(JCS({name,outBinding,pre?,post?,inv?})).
+    // Used only for computing contractSetCid; NOT used for bridge resolution.
     let mut contract_cids: BTreeMap<String, String> = BTreeMap::new();
+    // Map from contract name to its attestation CID (envelope hash, m.cid).
+    // Used for bridge resolution: the verifier looks up mementos by attestation CID.
+    let mut attestation_cids: BTreeMap<String, String> = BTreeMap::new();
     let mut per_source_counts: Vec<(String, usize)> = Vec::new();
     let mut total_contracts: usize = 0;
 
@@ -355,6 +369,8 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
                 },
                 signer_seed,
             };
+            // Compute the content CID (signer-independent) BEFORE minting (spec #94).
+            let ccid = compute_contract_cid(&args);
             let m = mint_contract(&args)
                 .map_err(|e| format!("mint_contract({}): {e}", d.name))?;
             // Detect duplicate names ACROSS slabs and fail loud.
@@ -364,14 +380,19 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
                     d.name
                 ));
             }
-            contract_cids.insert(d.name.clone(), m.cid.clone());
+            // Store content CID (signer-independent) for contractSetCid computation.
+            contract_cids.insert(d.name.clone(), ccid);
+            // Store attestation CID for bridge resolution (verifier looks up by attestation CID).
+            attestation_cids.insert(d.name.clone(), m.cid.clone());
             members.insert(m.cid, m.canonical_bytes);
         }
     }
 
-    // Mint each bridge, resolving contract-name targets to CIDs.
+    // Mint each bridge, resolving contract-name targets to attestation CIDs.
+    // The bridge's target_contract_cid must be the attestation CID (envelope hash)
+    // because the verifier resolves bridges by looking up mementos in the bundle.
     for b in &bridge_decls {
-        let target_cid = contract_cids
+        let target_cid = attestation_cids
             .get(&b.target_contract_name)
             .ok_or_else(|| {
                 format!(
@@ -429,8 +450,18 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
     std::fs::write(&path, &built.bytes)
         .map_err(|e| format!("write {}: {e}", path.display()))?;
 
+    // Compute contractSetCid per spec #94 §1.
+    // contract_cids values are signer-independent content CIDs; compute set CID
+    // from them. The sort inside compute_contract_set_cid makes the result
+    // order-independent: two kits enumerating the same contracts in different
+    // order produce the same contractSetCid.
+    let contract_set_cid = compute_contract_set_cid(
+        contract_cids.values().cloned().collect()
+    );
+
     Ok(MintResult {
         cid: built.cid,
+        contract_set_cid,
         bytes_len: built.bytes.len(),
         path,
         member_count,
