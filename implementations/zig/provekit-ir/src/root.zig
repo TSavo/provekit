@@ -351,6 +351,12 @@ pub fn jcsHash(alloc: std.mem.Allocator, jcs_bytes: []const u8) ![]u8 {
 // Tests
 // ---------------------------------------------------------------------------
 
+test {
+    // Pull tests from sibling files into the root test binary so
+    // `zig build test` discovers them.
+    _ = @import("cross_kit_bridges.zig");
+}
+
 test "eq atomic JCS matches Rust" {
     const alloc = std.testing.allocator;
 
