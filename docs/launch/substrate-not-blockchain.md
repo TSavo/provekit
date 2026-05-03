@@ -106,6 +106,67 @@ The substrate measures bytes, not people. It verifies that signatures are valid,
 
 This is the same property that makes witness chains work. The protocol stays at finite, verifiable claims. The auditor's trust calculus over signers stays where it belongs: in the auditor. Bitcoin does not measure miner decentralization; it measures hashpower. Decentralization is an empirical property, not a protocol guarantee. Same shape here. The chain is what the substrate gives you. The trust through it is yours.
 
+## 8. Three axes of pinning
+
+A proof bundle binds three independent CIDs: the contract it conforms to, the witness chain that endorses it, and the binary it asserts about. Each axis is its own content-addressed object. Each can be pinned (frozen to a specific value) or floated (track the latest acceptable value at verification time). Eight combinations of pin and float across three axes give eight distinct trust postures.
+
+| Contract | Witness | Binary | Use case |
+|----------|---------|--------|----------|
+| pin | pin | pin | Frozen audit snapshot, total reproducibility |
+| pin | pin | float | "These auditors against this spec for the current build" — CI gate |
+| pin | float | pin | "Any chain proving this binary against this spec" — regulatory |
+| pin | float | float | "Some binary, somehow audited, against this spec" |
+| float | pin | pin | "These auditors verified this build, against whatever spec is current" |
+| float | pin | float | "I trust these auditors, applied to anything" |
+| float | float | pin | "Exactly this artifact, anyone can pick contract and chain" |
+| float | float | float | Reference latest of everything; default |
+
+The substrate does not pick for you. It gives you three axes and lets you decide which to freeze and which to float, per use case. The pins themselves are mementos; you can have many simultaneously, for many purposes. Different teams pin differently for the same artifact: a security team holds tight witness pins, a dev team holds tight binary pins, a compliance team holds all three.
+
+`package.json` today is one-dimensional pinning that conflates the axes. `"react": "18.2.0"` says one binary; the contract is implicit ("trust the maintainer's semver intent"); the witness is none ("trust npm"). On the substrate the same line splits cleanly:
+
+```json
+{ "react": {
+    "binaryCid":   "blake3-512:...",
+    "contractCid": "blake3-512:...",
+    "witnessCid":  "blake3-512:..." } }
+```
+
+Three CIDs, three independent decisions, three axes evaluable per upgrade.
+
+## 9. Semver, made cryptographically meaningful
+
+Semver is making a contract claim, but as an honor-system promise from the maintainer with no enforcement. The substrate makes semver verifiable.
+
+A patch upgrade claims "no contract change". Provable: the new binary's `contractCid` equals the old binary's `contractCid`, or it is not a patch regardless of the version string. A minor upgrade claims "contract extended, old API still works". Provable: the new binary mints a fresh attestation that the old `contractCid` is still satisfied. A major upgrade claims "incompatibility, explicit break". Provable: the new binary's `contractCid` has no bridge back to the old one; the break is named, signed, dated, witnessed.
+
+`"react": "^18.2.0"` stops being a string-match against version labels and becomes a typed query: "any binary whose contract has a conformance bridge to `contractCid_18.2`". Resolution becomes proof, not maintainer intent. A binary claimed as a patch but with a different `contractCid` is a structurally visible lie, not a typo.
+
+Semver is elevated from social convention to substrate primitive. The maintainer's intent and the cryptographic reality become the same statement, or they do not, and when they do not, the substrate shows you exactly where.
+
+## 10. Closure: subsetting is hashing
+
+Anything that is part of an existing hashed object is already addressable by hashing the subset. Composition is free. The substrate does not need primitives for sets, subsets, walks, vectors, or rollups, because all of them are queries over the existing leaves.
+
+- "These three contracts from the rust bundle" is `hash(JCS([c1, c2, c3]))`.
+- "The first 100 attestations witnessing contract C" is `hash(JCS(walk(C).take(100)))`.
+- "Every contract minted by signer S in 2026" is `hash(JCS(walk().filter(by_signer_and_date)))`.
+- "All catalog entries excluding deprecated specs" is `hash(JCS(catalog.minus(deprecated)))`.
+
+The most useful instance: **`hash(JCS(<sorted contract CIDs>))` is a stable pin for a contract set.** If the set of contracts does not change, the hash does not change, regardless of which kit they live in, what order they were minted, or what witnesses have accumulated around them. Pin one CID and you have pinned the entire contract universe at a moment. Any kit can compute it, any auditor can verify it, no protocol-level meta-bundle is required. The composition is the pin.
+
+None of these require substrate changes. None need new memento types. None need permission. Anyone holding the underlying data can compute the same CID independently and the result agrees byte-for-byte if they agree on the filter predicate. Disagreements are visible: two auditors with different filters compute different CIDs over the same DAG, and the difference is auditable.
+
+The architectural rule: if something is part of an existing hashed object, asking for its CID is a query, not a request to the substrate. The protocol provides the leaves. Tooling computes views. Auditors who want a stable pin sign their own attestation over their view. The substrate stays at three primitives:
+
+1. **Sign.** Bind a content-addressed object to a signer.
+2. **Hash.** Produce a content-addressed CID for any byte string.
+3. **Reference.** Embed a CID in another object so signing the outer transitively names the inner.
+
+Everything else is composition. Witness chains, witness sets, witness vectors, contract bundles, kit rollups, semver checks, audit trails, package-manager pinning, three-axis trust postures: all of them are functions over those three primitives. The protocol resists feature creep because every feature anyone proposes can be expressed as "compute X from existing leaves, sign your view of X."
+
+The substrate stays small. The composition layer is unbounded.
+
 ## What this means for you
 
 If you accept this framing, the developer move is direct: stop asking "which chain do I publish to?" and start asking "what discipline am I asserting on the bodies I sign?"
