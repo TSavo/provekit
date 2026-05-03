@@ -10,6 +10,10 @@ description = "ProvekIt user-facing CLI: prove / verify / hash / dump / search /
 name = "provekit"
 path = "src/main.rs"
 
+[lib]
+name = "provekit_cli_test_support"
+path = "src/lib.rs"
+
 [dependencies]
 # Workspace-internal libs.
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
@@ -18,6 +22,7 @@ provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 provekit-verifier = { path = "../provekit-verifier" }
 provekit-agent = { path = "../provekit-agent" }
+provekit-lift = { path = "../provekit-lift" }
 
 # External.
 clap = { version = "4", features = ["derive"] }
