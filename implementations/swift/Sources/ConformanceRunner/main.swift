@@ -75,4 +75,65 @@ let expected5 = #"[{"kind":"bridge","name":"myBridge","notes":"some notes","sour
 if jcs5 != expected5 { print("GOT:  \(jcs5)"); print("EXP:  \(expected5)") }
 test("bridge JCS") { jcs5 == expected5 }
 
+// MARK: - Phase 2 cross-kit bridges (lift-plugin-protocol)
+//
+// 10 counterpart contracts + 10 bridges to the rust kit's lift-plugin-
+// protocol contracts. See Provekit/CrossKitBridges.swift for the slab.
+//
+// Pinned BLAKE3-512 of the JCS-canonical bytes of the 10 BridgeDeclarations
+// returned by CrossKitBridges.buildAllBridges(). Drift in any rust contract
+// CID, counterpart formula shape, bridge field, JCS emitter, or declaration
+// order will fail this assertion with a clear next step.
+//
+// Verified against rust contract CIDs extracted from
+//   cargo run --release -p provekit-self-contracts \
+//     --bin print-lift-plugin-protocol-cids
+// and cross-kit-pinned in implementations/{python,go,typescript}.
+
+let allBridges = CrossKitBridges.buildAllBridges()
+test("phase2 bridges count") { allBridges.count == 10 }
+
+let allDecls = CrossKitBridges.buildAllDeclarations()
+test("phase2 declarations count") { allDecls.count == 20 }
+
+// Each bridge must carry the rust source CID for its named rust contract.
+test("phase2 bridges source CIDs") {
+    for (i, name) in CrossKitBridges.liftPluginProtocolNames.enumerated() {
+        guard case .bridge(let bn, let ss, let sl, let scid, _, let tpc, let tl, let notes) = allBridges[i] else {
+            return false
+        }
+        if bn != "bridge_to_\(name)" { return false }
+        if ss != name { return false }
+        if sl != "rust-kit" { return false }
+        if tl != "swift-kit" { return false }
+        if tpc != "deferred:phase-3-proof-bundle" { return false }
+        if notes != "lift-plugin-protocol conformance bridge; phase 2" { return false }
+        if scid != CrossKitBridges.rustContractCids[name] { return false }
+    }
+    return true
+}
+
+// Each bridge's targetContractCid must equal the JCS-hash of its paired
+// counterpart (decls layout is [c0, b0, c1, b1, ...]).
+test("phase2 bridge targets paired counterparts") {
+    for i in stride(from: 0, to: allDecls.count, by: 2) {
+        let cp = allDecls[i]
+        let br = allDecls[i + 1]
+        let expected = CrossKitBridges.declarationCid(cp)
+        guard case .bridge(_, _, _, _, let tcid, _, _, _) = br else { return false }
+        if tcid != expected { return false }
+    }
+    return true
+}
+
+let bridgesJcs = Jcs.encodeDeclarations(allBridges)
+let bridgesHash = Blake3.hex(Data(bridgesJcs.utf8))
+let expectedBridgesHash =
+    "blake3-512:d1be24c33a873052e9e1487e152ccf0c2c2d6580f43325be5b86557ac920475c473ea031c9a5731317f72e3168755aa89f1cbb295b3e24814d8e2d019473e1ac"
+if bridgesHash != expectedBridgesHash {
+    print("GOT:  \(bridgesHash)")
+    print("EXP:  \(expectedBridgesHash)")
+}
+test("phase2 bridges pinned hash") { bridgesHash == expectedBridgesHash }
+
 print("ALL PASS")
