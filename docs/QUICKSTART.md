@@ -1,9 +1,11 @@
 # QUICKSTART (superseded)
 
-This document covered the pre-protocol-cut TypeScript/Node walkthrough and is no longer accurate as of protocol v1.1.0.
+This document is retired. The content predates the daemon+LSP architecture.
 
-The current five-minute install + first `.proof` walkthrough lives at:
+For the current end-user quickstart (get a red squiggle in 10 minutes):
 
-> [docs/getting-started.md](getting-started.md)
+> [docs/quickstart-end-user.md](quickstart-end-user.md)
 
-The current canonical implementation is the Rust CLI installed via `cargo install provekit`, not the Node CLI. See [README.md](../README.md) for the protocol overview.
+For the current extender quickstart (write a new kit lifter or protocol spec):
+
+> [docs/quickstart-extender.md](quickstart-extender.md)
