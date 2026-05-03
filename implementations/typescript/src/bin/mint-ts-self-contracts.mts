@@ -50,6 +50,7 @@ import { invariants as proofResolverInvariants } from "../proofResolver/index.in
 import { invariants as liftInvariants } from "../lift/index.invariant.js";
 import { invariants as zodAdapterInvariants } from "../lift/adapters/zod.invariant.js";
 import { invariants as vitestTestsAdapterInvariants } from "../lift/adapters/vitest-tests.invariant.js";
+import { invariants as crossKitBridgesInvariants } from "../lift/cross-kit-bridges.invariant.js";
 
 export const PRODUCED_BY = "@provekit/ts-self-contracts@1.0";
 export const DECLARED_AT = "2026-04-30T18:00:00.000Z";
@@ -126,6 +127,11 @@ const SLABS: InvariantSource[] = [
     path: "implementations/typescript/src/lift/adapters/vitest-tests.ts",
     fn: vitestTestsAdapterInvariants,
   },
+  {
+    label: "cross-kit-bridges",
+    path: "implementations/typescript/src/lift/cross-kit-bridges.ts",
+    fn: crossKitBridgesInvariants,
+  },
 ];
 
 interface AuthoredSlab {
@@ -158,7 +164,7 @@ export interface MintResult {
 }
 
 /**
- * Mint all 13 .invariant.ts slabs as signed mementos, register no
+ * Mint all 14 .invariant.ts slabs as signed mementos, register no
  * bridges (TS dogfood's symbolic surface has no closed-loop bridge to
  * register the way Rust's parse_formula does), bundle into a `.proof`,
  * write to `<outDir>/<full-cid>.proof`, return the result.
