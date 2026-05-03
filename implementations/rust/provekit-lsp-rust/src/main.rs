@@ -21,7 +21,9 @@ use std::io::{BufRead, Write};
 
 use provekit_ir_symbolic::serialize::marshal_declarations;
 use provekit_lift::{
-    adapter_contracts, adapter_proptest, adapter_rust_tests,
+    adapter_contracts, adapter_creusot, adapter_flux, adapter_kani,
+    adapter_proptest, adapter_prusti, adapter_quickcheck, adapter_rust_tests,
+    adapter_verus,
 };
 
 fn main() {
@@ -151,6 +153,72 @@ fn handle_parse(id: serde_json::Value, source: &str, path: &str) -> serde_json::
     for w in &c_out.warnings {
         warnings.push(serde_json::json!({
             "adapter": "contracts",
+            "path": w.source_path,
+            "item": w.item_name,
+            "reason": w.reason
+        }));
+    }
+
+    let k_out = adapter_kani::lift_file(&file, path);
+    decls.extend(k_out.decls);
+    for w in &k_out.warnings {
+        warnings.push(serde_json::json!({
+            "adapter": "kani",
+            "path": w.source_path,
+            "item": w.item_name,
+            "reason": w.reason
+        }));
+    }
+
+    let pr_out = adapter_prusti::lift_file(&file, path);
+    decls.extend(pr_out.decls);
+    for w in &pr_out.warnings {
+        warnings.push(serde_json::json!({
+            "adapter": "prusti",
+            "path": w.source_path,
+            "item": w.item_name,
+            "reason": w.reason
+        }));
+    }
+
+    let cr_out = adapter_creusot::lift_file(&file, path);
+    decls.extend(cr_out.decls);
+    for w in &cr_out.warnings {
+        warnings.push(serde_json::json!({
+            "adapter": "creusot",
+            "path": w.source_path,
+            "item": w.item_name,
+            "reason": w.reason
+        }));
+    }
+
+    let fl_out = adapter_flux::lift_file(&file, path);
+    decls.extend(fl_out.decls);
+    for w in &fl_out.warnings {
+        warnings.push(serde_json::json!({
+            "adapter": "flux",
+            "path": w.source_path,
+            "item": w.item_name,
+            "reason": w.reason
+        }));
+    }
+
+    let qc_out = adapter_quickcheck::lift_file(&file, path);
+    decls.extend(qc_out.decls);
+    for w in &qc_out.warnings {
+        warnings.push(serde_json::json!({
+            "adapter": "quickcheck",
+            "path": w.source_path,
+            "item": w.item_name,
+            "reason": w.reason
+        }));
+    }
+
+    let ve_out = adapter_verus::lift_file(&file, path);
+    decls.extend(ve_out.decls);
+    for w in &ve_out.warnings {
+        warnings.push(serde_json::json!({
+            "adapter": "verus",
             "path": w.source_path,
             "item": w.item_name,
             "reason": w.reason
