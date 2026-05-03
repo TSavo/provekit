@@ -363,23 +363,56 @@ function liftOperand(expr: ts.Expression): OperandLift {
       term: { kind: "const", value: -Number(expr.operand.text), sort: Int },
     };
   }
-  if (ts.isCallExpression(expr) && expr.arguments.length === 1) {
+  // Free-function call (zero-or-more args) and `Module.fn(...)` static
+  // call. v0.6 relaxes v0's single-arg gate; every argument must itself
+  // lift. Method calls (`recv.fn(...)`) are handled by the next clause.
+  if (
+    ts.isCallExpression(expr) &&
+    (ts.isIdentifier(expr.expression) ||
+      (ts.isPropertyAccessExpression(expr.expression) &&
+        ts.isIdentifier(expr.expression.expression) &&
+        ts.isIdentifier(expr.expression.name)))
+  ) {
     const callee = expr.expression;
-    let name: string | null = null;
-    if (ts.isIdentifier(callee)) name = callee.text;
-    else if (
-      ts.isPropertyAccessExpression(callee) &&
-      ts.isIdentifier(callee.expression) &&
-      ts.isIdentifier(callee.name)
-    ) {
-      // Allow `Module.fn(arg)` style ctor-call only when the receiver
-      // is itself a bare identifier (no chains).
-      name = `${callee.expression.text}.${callee.name.text}`;
+    let name: string;
+    if (ts.isIdentifier(callee)) {
+      name = callee.text;
+    } else {
+      // PropertyAccess; bare-identifier receiver only (no chains).
+      const pa = callee as ts.PropertyAccessExpression;
+      name = `${(pa.expression as ts.Identifier).text}.${pa.name.text}`;
     }
-    if (!name) return { kind: "skip", reason: "call target shape unsupported" };
-    const inner = liftOperand(expr.arguments[0]!);
-    if (inner.kind === "skip") return inner;
-    return { kind: "ok", term: { kind: "ctor", name, args: [inner.term] } };
+    const argTerms: IrTerm[] = [];
+    for (const a of expr.arguments) {
+      const lifted = liftOperand(a);
+      if (lifted.kind === "skip") return lifted;
+      argTerms.push(lifted.term);
+    }
+    return { kind: "ok", term: { kind: "ctor", name, args: argTerms } };
+  }
+  // v0.6: method call on operand. `recv.method(...args)` lifts as a
+  // UFCS-style ctor where the receiver becomes the first argument.
+  // Mirrors Rust v0.5 PR #55. We require both receiver and every
+  // argument to themselves be liftable; this composes recursively
+  // through nested chains.
+  if (
+    ts.isCallExpression(expr) &&
+    ts.isPropertyAccessExpression(expr.expression) &&
+    ts.isIdentifier(expr.expression.name) &&
+    !expr.expression.questionDotToken
+  ) {
+    const recv = liftOperand(expr.expression.expression);
+    if (recv.kind === "skip") return recv;
+    const argTerms: IrTerm[] = [];
+    for (const a of expr.arguments) {
+      const lifted = liftOperand(a);
+      if (lifted.kind === "skip") return lifted;
+      argTerms.push(lifted.term);
+    }
+    return {
+      kind: "ok",
+      term: { kind: "ctor", name: expr.expression.name.text, args: [recv.term, ...argTerms] },
+    };
   }
   if (
     ts.isPropertyAccessExpression(expr) &&
@@ -393,6 +426,41 @@ function liftOperand(expr: ts.Expression): OperandLift {
       term: { kind: "ctor", name: `${expr.expression.text}.${expr.name.text}`, args: [] },
     };
   }
+  // v0.6: array literal `[a, b, c]` lifts to `Ctor("array", [a, b, c])`.
+  // Mirrors Rust v0.5 (PR #55) `array` ctor naming. Every element
+  // must itself lift; sparse / spread elements skip.
+  if (ts.isArrayLiteralExpression(expr)) {
+    const argTerms: IrTerm[] = [];
+    for (const el of expr.elements) {
+      if (ts.isOmittedExpression(el) || ts.isSpreadElement(el)) {
+        return {
+          kind: "skip",
+          reason: "array literal with omitted or spread element is not in v0.6",
+        };
+      }
+      const lifted = liftOperand(el);
+      if (lifted.kind === "skip") return lifted;
+      argTerms.push(lifted.term);
+    }
+    return { kind: "ok", term: { kind: "ctor", name: "array", args: argTerms } };
+  }
+  // v0.6: binary operators in operand position (`a + b`, `a - b`,
+  // `a * b`, `a / b`, `a % b`). Lifts to `Ctor("<op>", [a, b])`. Both
+  // operands must themselves lift. Comparison and logical operators
+  // stay out of the term grammar; they live in formula position.
+  if (ts.isBinaryExpression(expr)) {
+    const opName = binaryOperatorCtorName(expr.operatorToken.kind);
+    if (opName) {
+      const left = liftOperand(expr.left);
+      if (left.kind === "skip") return left;
+      const right = liftOperand(expr.right);
+      if (right.kind === "skip") return right;
+      return {
+        kind: "ok",
+        term: { kind: "ctor", name: opName, args: [left.term, right.term] },
+      };
+    }
+  }
   if (ts.isToken(expr) && expr.kind === ts.SyntaxKind.TrueKeyword) {
     return { kind: "ok", term: { kind: "ctor", name: "True", args: [] } };
   }
@@ -402,9 +470,21 @@ function liftOperand(expr: ts.Expression): OperandLift {
   if (ts.isToken(expr) && expr.kind === ts.SyntaxKind.NullKeyword) {
     return { kind: "ok", term: { kind: "ctor", name: "Null", args: [] } };
   }
+  // v0.6: ternary `cond ? a : b` is deliberately deferred. Lifting it
+  // would require either a Ctor("ternary", [cond, a, b]) shape or
+  // promotion to a formula-position if-then-else; both are out of
+  // scope for this slice. Skip with a named reason so the report
+  // taxonomy is searchable.
+  if (ts.isConditionalExpression(expr)) {
+    return {
+      kind: "skip",
+      reason: "ternary `cond ? a : b` operand is not lifted in v0.6",
+    };
+  }
   return {
     kind: "skip",
-    reason: "operand shape not in v0 lift whitelist (no method chains, member chains, multi-arg calls, complex nesting)",
+    reason:
+      "operand shape not in v0.6 lift whitelist (no member chains, indexing, field access, closures, blocks, ranges, comparisons in operand position, or template literals)",
   };
 }
 
@@ -810,6 +890,23 @@ function classifyCharacterization(
       itemName: testName,
       reason: `layer2 characterization: ${skipped.length} atoms skipped from conjunction: ${skipped.join("; ")}`,
     });
+  }
+}
+
+/**
+ * v0.6: map a binary operator token to a Ctor name when the operator
+ * is liftable in term (operand) position. Returns null for operators
+ * that don't belong here, like comparisons and short-circuit logicals,
+ * which live in formula position rather than term position.
+ */
+function binaryOperatorCtorName(kind: ts.SyntaxKind): string | null {
+  switch (kind) {
+    case ts.SyntaxKind.PlusToken: return "+";
+    case ts.SyntaxKind.MinusToken: return "-";
+    case ts.SyntaxKind.AsteriskToken: return "*";
+    case ts.SyntaxKind.SlashToken: return "/";
+    case ts.SyntaxKind.PercentToken: return "%";
+    default: return null;
   }
 }
 

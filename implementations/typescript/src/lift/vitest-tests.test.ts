@@ -80,7 +80,10 @@ it("throws", () => {
     expect(vt.warnings[0]!.reason).toMatch(/toThrow/);
   });
 
-  it("skips operands with method-call chains (honest under-coverage)", () => {
+  // v0.6: method calls on the operand now lift as UFCS Ctor terms
+  // (the previous v0.5 negative test was inverted; the original lived
+  // here and asserted a skip).
+  it("v0.6: lifts operand method-call as UFCS Ctor", () => {
     const td = tempDir();
     writeFileSync(
       join(td, "method.test.ts"),
@@ -94,8 +97,117 @@ it("method chain", () => {
     const r = liftPath(td);
     const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
     expect(vt.seen).toBe(1);
+    expect(vt.lifted).toBe(1);
+    expect(vt.warnings).toHaveLength(0);
+
+    const decl = r.decls.find((d) => d.name === "method chain::0")!;
+    expect(decl).toBeDefined();
+    // Shape: atomic("=", [Ctor("toUpperCase", [Const("hello")]),
+    //                    Const("HELLO")])
+    const f = decl.inv as { kind: string; name: string; args: unknown[] };
+    expect(f.kind).toBe("atomic");
+    expect(f.name).toBe("=");
+    const recv = f.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(recv.kind).toBe("ctor");
+    expect(recv.name).toBe("toUpperCase");
+    expect(recv.args.length).toBe(1);
+  });
+
+  it("v0.6: lifts multi-arg free-function call as Ctor with all args", () => {
+    const td = tempDir();
+    writeFileSync(
+      join(td, "multi.test.ts"),
+      `
+import { it, expect } from "vitest";
+it("clamp_lift", () => {
+  expect(clamp(5, 0, 10)).toBe(5);
+});
+      `,
+    );
+    const r = liftPath(td);
+    const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
+    expect(vt.lifted).toBe(1);
+
+    const decl = r.decls.find((d) => d.name === "clamp_lift::0")!;
+    const f = decl.inv as { kind: string; args: unknown[] };
+    const lhs = f.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(lhs.kind).toBe("ctor");
+    expect(lhs.name).toBe("clamp");
+    expect(lhs.args.length).toBe(3);
+  });
+
+  it("v0.6: lifts binary arithmetic op in operand position as Ctor", () => {
+    const td = tempDir();
+    writeFileSync(
+      join(td, "binop.test.ts"),
+      `
+import { it, expect } from "vitest";
+it("plus_lifts", () => {
+  expect(a + b).toBe(7);
+});
+      `,
+    );
+    const r = liftPath(td);
+    const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
+    expect(vt.lifted).toBe(1);
+
+    const decl = r.decls.find((d) => d.name === "plus_lifts::0")!;
+    const f = decl.inv as { kind: string; args: unknown[] };
+    const lhs = f.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(lhs.kind).toBe("ctor");
+    expect(lhs.name).toBe("+");
+    expect(lhs.args.length).toBe(2);
+  });
+
+  it("v0.6: lifts array literal as Ctor named 'array'", () => {
+    const td = tempDir();
+    writeFileSync(
+      join(td, "arr.test.ts"),
+      `
+import { it, expect } from "vitest";
+it("array_lift", () => {
+  expect(sort([3, 1, 2])).toEqual([1, 2, 3]);
+});
+      `,
+    );
+    const r = liftPath(td);
+    const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
+    expect(vt.lifted).toBe(1);
+
+    const decl = r.decls.find((d) => d.name === "array_lift::0")!;
+    const f = decl.inv as { kind: string; args: unknown[] };
+    const lhs = f.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(lhs.kind).toBe("ctor");
+    expect(lhs.name).toBe("sort");
+    const inner = lhs.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(inner.kind).toBe("ctor");
+    expect(inner.name).toBe("array");
+    expect(inner.args.length).toBe(3);
+
+    const rhs = f.args[1] as { kind: string; name: string; args: unknown[] };
+    expect(rhs.kind).toBe("ctor");
+    expect(rhs.name).toBe("array");
+    expect(rhs.args.length).toBe(3);
+  });
+
+  it("v0.6: ternary expression skips with a v0.6-named reason", () => {
+    const td = tempDir();
+    writeFileSync(
+      join(td, "tern.test.ts"),
+      `
+import { it, expect } from "vitest";
+it("ternary skips", () => {
+  expect(flag ? a : b).toBe(1);
+});
+      `,
+    );
+    const r = liftPath(td);
+    const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
     expect(vt.lifted).toBe(0);
     expect(vt.warnings).toHaveLength(1);
+    // Better error reporting: deferred shapes name v0.6 explicitly so
+    // the report's skip taxonomy is searchable.
+    expect(vt.warnings[0]!.reason).toMatch(/ternary.*v0\.6/);
   });
 
   it("each lifted assertion mints its own content-addressed memento", () => {
