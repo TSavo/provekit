@@ -4,7 +4,7 @@ ProvekIt abstracts correctness into a canonical IR, allowing proof across langua
 
 It does this by treating verifiable propositions as content-addressed data. Every claim about behavior, every test that already passes, every contract a developer cares about, is hashed into the same sixty-four byte digest space and signed with the same Ed25519 producer key. The hash is the verification barrier. If the bytes you have hash to the CID you asked for, the bytes are the bytes the producer signed; nothing else is required.
 
-The formal protocol specification is the bluepaper at `docs/launch/bluepaper.md`. This document is the executive summary: what ProvekIt is, why it matters, who it is for, and what to read next.
+The formal protocol specification is the bluepaper at `docs/papers/02-bluepaper.md`. This document is the executive summary: what ProvekIt is, why it matters, who it is for, and what to read next.
 
 ---
 
@@ -107,7 +107,7 @@ The numbers in `docs/launch/showcase-results.md` are pasted directly from such a
 
 ## What to read next
 
-`docs/launch/bluepaper.md` is the formal protocol specification. Theorem statements with proofs, the canonical IR grammar in EBNF, every spec referenced by content hash, the verifier's `memcmp(buf_a, buf_b, 64) == 0` line shown verbatim. The bluepaper closes with a runnable verification: compute the catalog CID locally; if it matches the value pinned at the top, the bluepaper has just verified its own authority.
+`docs/papers/02-bluepaper.md` is the formal protocol specification. Theorem statements with proofs, the canonical IR grammar in EBNF, every spec referenced by content hash, the verifier's `memcmp(buf_a, buf_b, 64) == 0` line shown verbatim. The bluepaper closes with a runnable verification: compute the catalog CID locally; if it matches the value pinned at the top, the bluepaper has just verified its own authority.
 
 `docs/launch/showcase-results.md` is the empirical companion to the bluepaper. Real numbers from a real run on commodity hardware, every spec CID pinned, the reproduction command at the top.
 
