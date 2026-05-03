@@ -167,6 +167,27 @@ Everything else is composition. Witness chains, witness sets, witness vectors, c
 
 The substrate stays small. The composition layer is unbounded.
 
+## 11. The address is multi-dimensional
+
+In a content-addressing system, the same content lives at many addresses at once. Each address is a projection of the content into one chosen dimension: hash over the declaration alone, hash over the declaration with a signer, hash over a sorted set of declarations, hash over a serialized bundle that includes minting state. The content does not move between these addresses; it occupies all of them simultaneously, in different projections.
+
+The substrate's first guarantee is that **same content produces the same address** in the dimension you asked for. The closure property of §10 depends on this. Two parties holding the same content get the same CID without coordination, byte for byte, because the projection is deterministic.
+
+The failure mode is not getting the wrong content. It is getting the same content at a different address than expected, because the address dimension you chose includes things that aren't content. Pin the bundle file's bytes as if they were a contract identity, and the address moves every time anyone re-mints, even though every byte of every contract is unchanged. Same content, different address, because the dimension included signer state and mint timestamps. The pin breaks not because the content moved, but because the dimension asked what "same" means and answered with bytes that drift.
+
+The four vectors the substrate actually pins on are projections at four different dimensionalities.
+
+- `contractCid` projects over content alone (one ContractDecl).
+- `contractSetCid` projects over content alone (a sorted set of contract CIDs).
+- `attestationCid` projects over content plus signer plus declaredAt plus signature.
+- A bundle file's CID projects over content plus all embedded envelopes plus producer metadata plus disk-layout artifacts.
+
+The first two are content-addressed: same content, same address, across machines, signers, time. The third is signer-and-time-addressed by design: an attestation is supposed to be a unique witnessing event, distinguishable from another witnessing event of the same content. The fourth is build-artifact-addressed: useful as a warm-cache key, brittle as a trust anchor, because the address moves under every honest re-mint.
+
+Choosing dimensionality is therefore the substrate's primary act. The four specs that formalize this choice (`contract-cid-vs-attestation-cid`, `contract-set-extension`, `substrate-layers-envelope-header-body`, `version-chains-pinning`) are not feature additions; they are the substrate naming the dimensions it is willing to converge on. Anything outside these dimensions is composition under §10, legitimate and free, but not a trust anchor.
+
+The operational test: ask what shifts the bytes for unchanged content. If signer state, mint timestamp, or producer metadata can shift the bytes while every contract is byte-identical, the dimension includes more than content and the address will drift even when the pin should hold. If only the content can shift the bytes, the dimension is content-only and the substrate will converge. The substrate is correct precisely to the extent that nothing in it confuses the two.
+
 ## What this means for you
 
 If you accept this framing, the developer move is direct: stop asking "which chain do I publish to?" and start asking "what discipline am I asserting on the bodies I sign?"
