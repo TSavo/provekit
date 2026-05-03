@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Architectural manifesto
+    url: https://github.com/TSavo/provekit/blob/main/docs/launch/substrate-not-blockchain.md
+    about: Read this first if you're new — explains the substrate model, content addressing, multi-dimensional pinning.
+  - name: Two-persona quickstart
+    url: https://github.com/TSavo/provekit/blob/main/README.md
+    about: For end-users who want red squiggles, and for extenders who want architectural depth.

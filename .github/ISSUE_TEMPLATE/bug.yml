@@ -1,0 +1,43 @@
+name: Bug
+description: Something that worked, broke, or never worked correctly.
+title: "[bug] <short title>"
+labels: ["regression"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What's happening? Include exact error messages, file paths, line numbers.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Exact commands, fixture paths, or commit SHA to check out.
+    validations:
+      required: true
+  - type: input
+    id: regressed-at
+    attributes:
+      label: Regressed at (if known)
+      description: Commit SHA or PR number where the regression was introduced.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Rust CLI
+        - Linkerd / daemon
+        - LSP (editor diagnostics)
+        - Mint / sign / verify
+        - Conformance gate
+        - CI / build
+        - Documentation
+        - Other

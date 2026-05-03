@@ -1,0 +1,46 @@
+name: CI / build break
+description: Fast-track for a CI failure or broken build (cross-impl conformance gate, peer-impl test, toolchain provisioning).
+title: "[ci] <short title>"
+labels: ["area:ci", "regression", "blocker"]
+body:
+  - type: input
+    id: workflow
+    attributes:
+      label: Failing workflow / job
+      description: Name + run URL.
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: Failure excerpt
+      description: Paste the failing job's relevant log lines (exit code, error, stack).
+    validations:
+      required: true
+  - type: input
+    id: first-failed-at
+    attributes:
+      label: First failed at
+      description: Commit SHA on main where this first failed.
+  - type: dropdown
+    id: kit
+    attributes:
+      label: Affected kit (if specific)
+      options:
+        - "n/a — substrate-level"
+        - rust
+        - go
+        - java
+        - python
+        - typescript
+        - csharp
+        - cpp
+        - swift
+        - ruby
+        - zig
+        - c
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: Best guess at root cause + diagnosis steps already tried.
