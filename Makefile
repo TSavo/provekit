@@ -411,6 +411,8 @@ test-swift: build-swift
 test-zig:
 	cd implementations/zig/provekit-ir && zig build test
 	cd implementations/zig/provekit-lift-zig && zig build test
+	cd implementations/zig/provekit-lift-zig && zig build
+	@echo "test-zig: lift-zig binary build verified"
 	cd implementations/zig/provekit-lsp-zig && zig build test
 	cd implementations/zig/provekit-lsp-zig && zig build
 	@echo "test-zig: LSP lifecycle integration test"
@@ -419,6 +421,7 @@ test-zig:
 .PHONY: build-zig
 build-zig:
 	cd implementations/zig/provekit-ir && zig build
+	cd implementations/zig/provekit-lift-zig && zig build
 	cd implementations/zig/provekit-lsp-zig && zig build
 
 # NOTE: test-swift is intentionally excluded from test-all — it requires a

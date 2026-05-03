@@ -1,4 +1,5 @@
 const std = @import("std");
+const lift = @import("provekit-lift-zig");
 const provekit = @import("provekit-ir");
 
 // ProvekIt Lift Tool for Zig
@@ -9,232 +10,207 @@ const provekit = @import("provekit-ir");
 //   provekit-lift-zig --workspace ./src --output ./target/provekit/
 //   provekit-lift-zig --rpc              (NDJSON JSON-RPC plugin mode)
 
-const Annotation = struct {
-    function_name: []const u8,
-    kind: Kind,
-    target_cid: ?[]const u8 = null,
-    line: usize,
+const Io = std.Io;
+const Dir = std.Io.Dir;
 
-    const Kind = enum {
-        contract,
-        implement,
-        verify,
-    };
-};
+// Buffer sizes for stdin/stdout.  Must fit the largest expected JSON line.
+const READ_BUF = 256 * 1024;
+const WRITE_BUF = 256 * 1024;
 
-fn parseAnnotations(alloc: std.mem.Allocator, text: []const u8) ![]Annotation {
-    var annotations = std.ArrayList(Annotation).init(alloc);
-    errdefer annotations.deinit();
+fn runRpcMode(alloc: std.mem.Allocator, io: Io) !void {
+    var read_buf: [READ_BUF]u8 = undefined;
+    var write_buf: [WRITE_BUF]u8 = undefined;
 
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    var line_num: usize = 0;
-    while (lines.next()) |line| : (line_num += 1) {
-        const trimmed = std.mem.trim(u8, line, " \t");
+    var stdin_file = Io.File.stdin().readerStreaming(io, &read_buf);
+    var stdin_reader = &stdin_file.interface;
 
-        if (std.mem.startsWith(u8, trimmed, "//provekit:implement ")) {
-            const cid = std.mem.trim(u8, trimmed[20..], " \t");
-            const fn_name = findAheadFnName(text, line_num);
-            try annotations.append(.{
-                .function_name = fn_name,
-                .kind = .implement,
-                .target_cid = cid,
-                .line = line_num,
-            });
-        } else if (std.mem.startsWith(u8, trimmed, "//provekit:contract")) {
-            const fn_name = findAheadFnName(text, line_num);
-            try annotations.append(.{
-                .function_name = fn_name,
-                .kind = .contract,
-                .line = line_num,
-            });
-        } else if (std.mem.startsWith(u8, trimmed, "//provekit:verify")) {
-            const fn_name = findAheadFnName(text, line_num);
-            try annotations.append(.{
-                .function_name = fn_name,
-                .kind = .verify,
-                .line = line_num,
-            });
-        }
-    }
-
-    return annotations.toOwnedSlice();
-}
-
-fn findAheadFnName(text: []const u8, start_line: usize) []const u8 {
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    var current: usize = 0;
-    while (lines.next()) |line| : (current += 1) {
-        if (current <= start_line) continue;
-        if (current > start_line + 10) break;
-
-        const trimmed = std.mem.trim(u8, line, " \t");
-        if (std.mem.startsWith(u8, trimmed, "fn ")) {
-            const after = trimmed[3..];
-            const end = std.mem.indexOfAny(u8, after, " (\n") orelse after.len;
-            return after[0..end];
-        }
-    }
-    return "unknown";
-}
-
-fn runRpcMode(alloc: std.mem.Allocator) !void {
-    const stdin = std.io.getStdIn().reader();
-    const stdout = std.io.getStdOut().writer();
-    var buf: [4096]u8 = undefined;
+    var stdout_file = Io.File.stdout().writerStreaming(io, &write_buf);
+    var stdout_writer = &stdout_file.interface;
 
     while (true) {
-        const maybe_line = try stdin.readUntilDelimiterOrEof(&buf, '\n');
+        const maybe_line = stdin_reader.takeDelimiter('\n') catch |err| switch (err) {
+            error.StreamTooLong => {
+                _ = stdin_reader.discardDelimiterInclusive('\n') catch break;
+                continue;
+            },
+            error.ReadFailed => break,
+        };
         const line = maybe_line orelse break;
+        // Discard the trailing newline byte that takeDelimiter left in buffer.
+        stdin_reader.toss(@min(1, stdin_reader.bufferedLen()));
 
-        const has_init = std.mem.indexOf(u8, line, "\"initialize\"") != null;
-        const has_parse = std.mem.indexOf(u8, line, "\"parse\"") != null;
-        const has_shutdown = std.mem.indexOf(u8, line, "\"shutdown\"") != null;
-
-        var id: []const u8 = "null";
-        if (std.mem.indexOf(u8, line, "\"id\":")) |id_pos| {
-            const after = line[id_pos + 5 ..];
-            const start = std.mem.indexOfNone(u8, after, " \t") orelse 0;
-            const end = std.mem.indexOfAny(u8, after[start..], ",}") orelse after.len;
-            id = after[start .. start + end];
-        }
-
-        if (has_init) {
-            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\"]}}}}\n", .{id});
-        } else if (has_parse) {
-            var decls = std.ArrayList(provekit.Decl).init(alloc);
-            defer decls.deinit();
-
-            // Minimal: emit a placeholder contract for each annotation found
-            // in the current directory. Real implementation would parse params.
-            var dir = std.fs.cwd();
-            var walker = try dir.walk(alloc);
-            defer walker.deinit();
-            while (try walker.next()) |entry| {
-                if (entry.kind != .file) continue;
-                if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
-
-                const file_text = try entry.dir.readFileAlloc(alloc, entry.basename, 1 << 20);
-                defer alloc.free(file_text);
-
-                const anns = try parseAnnotations(alloc, file_text);
-                defer alloc.free(anns);
-
-                for (anns) |ann| {
-                    switch (ann.kind) {
-                        .contract => {
-                            const post_args = [_]provekit.Term{};
-                            const post = provekit.Atomic("true", &post_args);
-                            try decls.append(.{ .contract = .{
-                                .name = ann.function_name,
-                                .post = post,
-                            } });
-                        },
-                        .implement => {
-                            if (ann.target_cid) |cid| {
-                                try decls.append(.{ .bridge = .{
-                                    .name = ann.function_name,
-                                    .source_symbol = ann.function_name,
-                                    .source_layer = "zig",
-                                    .source_contract_cid = "",
-                                    .target_contract_cid = cid,
-                                    .target_proof_cid = "",
-                                    .target_layer = "rust",
-                                } });
-                            }
-                        },
-                        .verify => {},
-                    }
-                }
-            }
-
-            const decls_slice = try decls.toOwnedSlice();
-            defer alloc.free(decls_slice);
-
-            var json_buf = std.ArrayList(u8).init(alloc);
-            defer json_buf.deinit();
-            try std.json.stringify(decls_slice, .{ .whitespace = .minified }, json_buf.writer());
-
-            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"declarations\":{s},\"warnings\":[]}}}}\n", .{ id, json_buf.items });
-        } else if (has_shutdown) {
-            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":null}}\n", .{id});
-            return;
-        } else {
-            try stdout.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"error\":{{\"code\":-32601,\"message\":\"unknown method\"}}}}\n", .{id});
-        }
+        const keep_going = try handleLine(alloc, line, stdout_writer);
+        try stdout_writer.flush();
+        if (!keep_going) break;
     }
 }
 
-fn runStandaloneMode(alloc: std.mem.Allocator, workspace_path: []const u8, output_path: []const u8) !void {
-    var decls = std.ArrayList(provekit.Decl).init(alloc);
-    defer decls.deinit();
+fn handleLine(
+    alloc: std.mem.Allocator,
+    line: []const u8,
+    writer: *Io.Writer,
+) !bool {
+    const id = extractId(line);
 
-    var dir = try std.fs.cwd().openDir(workspace_path, .{ .iterate = true });
-    defer dir.close();
+    if (std.mem.indexOf(u8, line, "\"initialize\"") != null) {
+        try writer.print(
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\"]}}}}\n",
+            .{id},
+        );
+        return true;
+    }
+
+    if (std.mem.indexOf(u8, line, "\"parse\"") != null) {
+        try handleParse(alloc, line, id, writer);
+        return true;
+    }
+
+    if (std.mem.indexOf(u8, line, "\"shutdown\"") != null) {
+        try writer.print(
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":null}}\n",
+            .{id},
+        );
+        return false;
+    }
+
+    // Unknown method.
+    try writer.print(
+        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"error\":{{\"code\":-32601,\"message\":\"unknown method\"}}}}\n",
+        .{id},
+    );
+    return true;
+}
+
+fn handleParse(
+    alloc: std.mem.Allocator,
+    line: []const u8,
+    id: []const u8,
+    writer: *Io.Writer,
+) !void {
+    // Extract "source" field value — naive string extraction.
+    const source_raw = extractJsonStringField(line, "source") orelse "";
+    const source = try unescapeJsonString(alloc, source_raw);
+    defer alloc.free(source);
+
+    // Lift to IR declarations via the lift module.
+    const decls = try lift.liftToDecls(alloc, source);
+    defer alloc.free(decls);
+
+    // Serialize declarations as a JSON array.
+    const decls_json = try std.json.Stringify.valueAlloc(alloc, decls, .{ .whitespace = .minified });
+    defer alloc.free(decls_json);
+
+    // callEdges: zig kit emits empty array (no cross-kit call tracking yet).
+    // warnings: empty.
+    try writer.print(
+        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"declarations\":{s},\"callEdges\":[],\"warnings\":[]}}}}\n",
+        .{ id, decls_json },
+    );
+}
+
+fn runStandaloneMode(alloc: std.mem.Allocator, io: Io, workspace_path: []const u8, output_path: []const u8) !void {
+    var decls: std.ArrayList(provekit.Decl) = .empty;
+    defer decls.deinit(alloc);
+
+    var dir = try Dir.openDir(Dir.cwd(), io, workspace_path, .{ .iterate = true });
+    defer dir.close(io);
 
     var walker = try dir.walk(alloc);
     defer walker.deinit();
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(io)) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
 
-        const file_text = try entry.dir.readFileAlloc(alloc, entry.basename, 1 << 20);
+        const file_text = try Dir.readFileAlloc(entry.dir, io, entry.basename, alloc, .unlimited);
         defer alloc.free(file_text);
 
-        const anns = try parseAnnotations(alloc, file_text);
-        defer alloc.free(anns);
+        const file_decls = try lift.liftToDecls(alloc, file_text);
+        defer alloc.free(file_decls);
 
-        for (anns) |ann| {
-            switch (ann.kind) {
-                .contract => {
-                    const post_args = [_]provekit.Term{};
-                    const post = provekit.Atomic("true", &post_args);
-                    try decls.append(.{ .contract = .{
-                        .name = ann.function_name,
-                        .post = post,
-                    } });
-                },
-                .implement => {
-                    if (ann.target_cid) |cid| {
-                        try decls.append(.{ .bridge = .{
-                            .name = ann.function_name,
-                            .source_symbol = ann.function_name,
-                            .source_layer = "zig",
-                            .source_contract_cid = "",
-                            .target_contract_cid = cid,
-                            .target_proof_cid = "",
-                            .target_layer = "rust",
-                        } });
-                    }
-                },
-                .verify => {},
-            }
+        for (file_decls) |decl| {
+            try decls.append(alloc, decl);
         }
     }
 
-    const decls_slice = try decls.toOwnedSlice();
+    const decls_slice = try decls.toOwnedSlice(alloc);
     defer alloc.free(decls_slice);
 
     const jcs = try provekit.jcsStringify(alloc, decls_slice);
     defer alloc.free(jcs);
 
-    try std.fs.cwd().makePath(output_path);
+    try Dir.createDirPath(Dir.cwd(), io, output_path);
     const out_path = try std.fs.path.join(alloc, &.{ output_path, "lifted.json" });
     defer alloc.free(out_path);
-    const out_file = try std.fs.cwd().createFile(out_path, .{});
-    defer out_file.close();
-    try out_file.writeAll(jcs);
+    const out_file = try Dir.createFile(Dir.cwd(), io, out_path, .{});
+    defer out_file.close(io);
+    try Io.File.writeStreamingAll(out_file, io, jcs);
 
     std.debug.print("Wrote {d} declarations to {s}\n", .{ decls_slice.len, out_path });
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const alloc = gpa.allocator();
+/// Extract the raw JSON "id" value token from a NDJSON line.
+/// Returns "null" if not found.
+fn extractId(line: []const u8) []const u8 {
+    const key = "\"id\":";
+    const pos = std.mem.indexOf(u8, line, key) orelse return "null";
+    const after = std.mem.trimStart(u8, line[pos + key.len ..], " \t");
+    const end = std.mem.indexOfAny(u8, after, ",}") orelse after.len;
+    return after[0..end];
+}
 
-    const args = try std.process.argsAlloc(alloc);
-    defer std.process.argsFree(alloc, args);
+/// Extract a JSON string field value (the raw escaped string contents between
+/// the outer quotes) from a JSON line.  Returns null if not found.
+fn extractJsonStringField(line: []const u8, field: []const u8) ?[]const u8 {
+    var buf: [64]u8 = undefined;
+    if (field.len + 3 > buf.len) return null;
+    const key = std.fmt.bufPrint(&buf, "\"{s}\":", .{field}) catch return null;
+    const pos = std.mem.indexOf(u8, line, key) orelse return null;
+    const after = std.mem.trimStart(u8, line[pos + key.len ..], " \t");
+    if (after.len == 0 or after[0] != '"') return null;
+    const content = after[1..]; // skip opening quote
+    var i: usize = 0;
+    while (i < content.len) {
+        if (content[i] == '\\') {
+            i += 2;
+        } else if (content[i] == '"') {
+            return content[0..i];
+        } else {
+            i += 1;
+        }
+    }
+    return null;
+}
+
+/// Unescape a JSON string's raw content (the part between the outer quotes).
+fn unescapeJsonString(alloc: std.mem.Allocator, raw: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var i: usize = 0;
+    while (i < raw.len) {
+        if (raw[i] == '\\' and i + 1 < raw.len) {
+            switch (raw[i + 1]) {
+                'n' => { try out.append(alloc, '\n'); i += 2; },
+                't' => { try out.append(alloc, '\t'); i += 2; },
+                'r' => { try out.append(alloc, '\r'); i += 2; },
+                '"' => { try out.append(alloc, '"'); i += 2; },
+                '\\' => { try out.append(alloc, '\\'); i += 2; },
+                '/' => { try out.append(alloc, '/'); i += 2; },
+                else => { try out.append(alloc, raw[i]); i += 1; },
+            }
+        } else {
+            try out.append(alloc, raw[i]);
+            i += 1;
+        }
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+pub fn main(init: std.process.Init) !void {
+    const alloc = init.gpa;
+    const io = init.io;
+
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     var rpc_mode = false;
     var workspace: ?[]const u8 = null;
@@ -255,8 +231,8 @@ pub fn main() !void {
     }
 
     if (rpc_mode) {
-        try runRpcMode(alloc);
+        try runRpcMode(alloc, io);
     } else {
-        try runStandaloneMode(alloc, workspace orelse ".", output orelse "./target/provekit");
+        try runStandaloneMode(alloc, io, workspace orelse ".", output orelse "./target/provekit");
     }
 }
