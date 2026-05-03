@@ -25,3 +25,7 @@ path = "../examples/scan_self.rs"
 [[bin]]
 name = "mint-self-contracts"
 path = "src/bin/mint-self-contracts.rs"
+
+[[bin]]
+name = "print-lift-plugin-protocol-cids"
+path = "src/bin/print-lift-plugin-protocol-cids.rs"
