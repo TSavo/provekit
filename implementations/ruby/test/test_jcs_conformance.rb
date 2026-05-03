@@ -18,6 +18,13 @@ class TestJcsConformance < Minitest::Test
   EXPECTED_PATTERN1 =
     '{"body":{"kind":"implies","operands":[{"kind":"and","operands":[{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":100}],"kind":"atomic","name":"<"}]},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}]},"kind":"forall","name":"x","sort":{"kind":"primitive","name":"Int"}}'
 
+  # Fixture: bridge_decl — single Bridge declaration object with all fields
+  # including optional `notes`. `marshal_declarations` wraps a single decl in
+  # a JSON array per the Document grammar (`"[" Declaration* "]"`), so the
+  # full expected output is `[FIXTURE]`.
+  BRIDGE_DECL_FIXTURE =
+    '{"kind":"bridge","name":"myBridge","notes":"some notes","sourceContractCid":"bafySource","sourceLayer":"c-kit","sourceSymbol":"source","targetContractCid":"bafyTarget","targetLayer":"coq","targetProofCid":"bafyProof"}'
+
   def test_eq_atomic
     formula = IR.atomic("=",
       IR.ctor("parse_int", IR.str("42")),
@@ -32,5 +39,20 @@ class TestJcsConformance < Minitest::Test
       IR.gte(x, IR.num(0)))
     formula = IR.forall(name: "x", sort: IR::Sort.Int, body: body)
     assert_equal EXPECTED_PATTERN1, IR::Jcs.encode(formula)
+  end
+
+  def test_bridge_decl_marshal
+    bridge = IR::Bridge.new(
+      name: "myBridge",
+      source_symbol: "source",
+      source_layer: "c-kit",
+      source_contract_cid: "bafySource",
+      target_contract_cid: "bafyTarget",
+      target_proof_cid: "bafyProof",
+      target_layer: "coq",
+      notes: "some notes",
+    )
+    expected = "[#{BRIDGE_DECL_FIXTURE}]"
+    assert_equal expected, IR.marshal_declarations([bridge])
   end
 end
