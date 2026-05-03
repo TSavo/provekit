@@ -68,15 +68,17 @@ help:
 	@echo "  make test-all       run all language-native test suites"
 	@echo ""
 	@echo "Per-language build:"
-	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp)"
+	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java)"
 	@echo "  make build-rust     cargo build --release (workspace + tools)"
 	@echo "  make build-cpp      clang++ + vendored-blake3"
 	@echo "  make build-go       go build per Go module"
 	@echo "  make build-ts       pnpm install"
 	@echo "  make build-csharp   dotnet build"
+	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
+	@echo "  make build-c        cc build of provekit-ir + provekit-lsp-c"
 	@echo ""
 	@echo "Per-language test:"
-	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python"
+	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-java  test-c"
 	@echo ""
 	@echo "Self-lift experiments:"
 	@echo "  make self-lift-canonicalizer  run provekit-lift against the canonicalizer crate"
@@ -98,7 +100,7 @@ help:
 # spawning `provekit-linkerd` (which subprocesses kit lifters at lift
 # time). Each kit's build target is independent; failures stay isolated.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-ts build-csharp
+build-all: build-rust build-cpp build-go build-ts build-csharp build-java
 
 .PHONY: build-rust
 build-rust:
@@ -124,6 +126,18 @@ build-ts:
 .PHONY: build-csharp
 build-csharp:
 	dotnet build implementations/csharp/Provekit.sln --configuration Release --nologo
+
+.PHONY: build-c
+build-c:
+	$(MAKE) -C implementations/c/provekit-ir all
+	$(MAKE) -C implementations/c/provekit-lsp-c all
+
+.PHONY: build-java
+build-java:
+	mvn package -q -f implementations/java/provekit-lift-java-core/pom.xml
+	mkdir -p ~/.local/bin
+	cp implementations/java/provekit-lift-java-core/target/appassembler/bin/provekit-lsp-java ~/.local/bin/provekit-lsp-java
+	chmod +x ~/.local/bin/provekit-lsp-java
 
 # --- Mint targets ------------------------------------------------------------
 
@@ -278,6 +292,11 @@ test-ts:
 test-csharp:
 	dotnet test implementations/csharp/Provekit.sln --nologo --verbosity quiet
 
+.PHONY: test-c
+test-c: build-c
+	$(MAKE) -C implementations/c/provekit-ir test
+	$(MAKE) -C implementations/c/provekit-lsp-c test
+
 .PHONY: test-python
 test-python:
 	cd implementations/python/provekit-lift-py-tests && \
@@ -285,8 +304,12 @@ test-python:
 		pip install --quiet pytest && \
 		pytest
 
+.PHONY: test-java
+test-java: build-java
+	mvn test -q -f implementations/java/provekit-lift-java-core/pom.xml
+
 .PHONY: test-all
-test-all: test-rust test-go test-ts test-csharp test-python
+test-all: test-rust test-go test-ts test-csharp test-python test-java
 	@echo ""
 	@echo "==== test-all: PASS ===="
 
