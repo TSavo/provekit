@@ -80,7 +80,10 @@ it("throws", () => {
     expect(vt.warnings[0]!.reason).toMatch(/toThrow/);
   });
 
-  it("skips operands with method-call chains (honest under-coverage)", () => {
+  // v0.6: method calls on the operand now lift as UFCS Ctor terms
+  // (the previous v0.5 negative test was inverted; the original lived
+  // here and asserted a skip).
+  it("v0.6: lifts operand method-call as UFCS Ctor", () => {
     const td = tempDir();
     writeFileSync(
       join(td, "method.test.ts"),
@@ -94,8 +97,20 @@ it("method chain", () => {
     const r = liftPath(td);
     const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
     expect(vt.seen).toBe(1);
-    expect(vt.lifted).toBe(0);
-    expect(vt.warnings).toHaveLength(1);
+    expect(vt.lifted).toBe(1);
+    expect(vt.warnings).toHaveLength(0);
+
+    const decl = r.decls.find((d) => d.name === "method chain::0")!;
+    expect(decl).toBeDefined();
+    // Shape: atomic("=", [Ctor("toUpperCase", [Const("hello")]),
+    //                    Const("HELLO")])
+    const f = decl.inv as { kind: string; name: string; args: unknown[] };
+    expect(f.kind).toBe("atomic");
+    expect(f.name).toBe("=");
+    const recv = f.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(recv.kind).toBe("ctor");
+    expect(recv.name).toBe("toUpperCase");
+    expect(recv.args.length).toBe(1);
   });
 
   it("each lifted assertion mints its own content-addressed memento", () => {

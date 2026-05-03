@@ -381,6 +381,30 @@ function liftOperand(expr: ts.Expression): OperandLift {
     if (inner.kind === "skip") return inner;
     return { kind: "ok", term: { kind: "ctor", name, args: [inner.term] } };
   }
+  // v0.6: method call on operand. `recv.method(...args)` lifts as a
+  // UFCS-style ctor where the receiver becomes the first argument.
+  // Mirrors Rust v0.5 PR #55. We require both receiver and every
+  // argument to themselves be liftable; this composes recursively
+  // through nested chains.
+  if (
+    ts.isCallExpression(expr) &&
+    ts.isPropertyAccessExpression(expr.expression) &&
+    ts.isIdentifier(expr.expression.name) &&
+    !expr.expression.questionDotToken
+  ) {
+    const recv = liftOperand(expr.expression.expression);
+    if (recv.kind === "skip") return recv;
+    const argTerms: IrTerm[] = [];
+    for (const a of expr.arguments) {
+      const lifted = liftOperand(a);
+      if (lifted.kind === "skip") return lifted;
+      argTerms.push(lifted.term);
+    }
+    return {
+      kind: "ok",
+      term: { kind: "ctor", name: expr.expression.name.text, args: [recv.term, ...argTerms] },
+    };
+  }
   if (
     ts.isPropertyAccessExpression(expr) &&
     ts.isIdentifier(expr.expression) &&
