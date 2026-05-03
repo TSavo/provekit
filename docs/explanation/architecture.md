@@ -1,6 +1,8 @@
 # ProvekIt Architecture
 
-A walk-through of the protocol's mechanics in roughly fifteen minutes. This document describes the v1.1.0 protocol catalog at CID `blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106`. Every spec referenced here is itself content-addressed; CIDs are quoted where authoritativeness matters.
+A walk-through of the protocol's mechanics in roughly fifteen minutes. This document describes the v1.4.0 protocol catalog at CID `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f`. Every spec referenced here is itself content-addressed; CIDs are quoted where authoritativeness matters.
+
+> **v1.4 architectural cut:** every memento now has three layers — envelope (signed wrapper), header (substrate-verified data), body (tooling-interpreted metadata). The substrate verifies envelope + header. Body is opaque to the substrate but signed under the envelope, so tooling reads body fields with cryptographic provenance for free. New protocols add body conventions, never substrate primitives. See [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) §11–§12 for the multi-dimensional address-space framing this operationalizes, and [`docs/reference/cids.md`](../reference/cids.md) for the v1.4 spec list.
 
 ## The architecture is a pipeline
 
@@ -181,8 +183,8 @@ This is the lift-not-author posture. ProvekIt sits beneath every annotation libr
 
 ## Read further
 
-- [README.md](README.md) for the install path.
-- [THESIS.md](THESIS.md) for the deeper architectural claim: hash-bounded verification.
-- [PRODUCT.md](PRODUCT.md) for what ProvekIt replaces and complements.
-- [docs/per-language-status.md](docs/per-language-status.md) for kit and adapter coverage.
-- [protocol/specs/](protocol/specs/) for the canonical spec set, addressed by CID.
+- [README.md](../../README.md) for the install path.
+- [thesis.md](thesis.md) for the deeper architectural claim: hash-bounded verification.
+- [product.md](product.md) for what ProvekIt replaces and complements.
+- [docs/reference/per-language-status.md](../reference/per-language-status.md) for kit and adapter coverage.
+- [protocol/specs/](../../protocol/specs/) for the canonical spec set, addressed by CID.

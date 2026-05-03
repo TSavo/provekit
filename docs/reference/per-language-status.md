@@ -1,6 +1,6 @@
 # Per-language status
 
-The matrix of what's shipping, what's planned, and what's under evaluation across host languages. Updated for protocol v1.1.0 (CID `blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106`).
+The matrix of what's shipping, what's planned, and what's under evaluation across host languages. Updated for protocol v1.4.0 (CID `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f`). The matrix below tracks the per-kit state under v1.4: substrate layering (envelope, header, body), contract-cid vs attestation-cid separation, contract-set extension fields, and bridge target dimensionality. Authoring-surface coverage for kit, libs, lift adapters, decorator macros, embedded verifier, CLI, and LSP plugin is unchanged from v1.1; the v1.4 readiness state is captured in the cross-kit bridge readiness matrix below. For the spec-by-spec list see [`cids.md`](cids.md).
 
 ## Component glossary
 
@@ -33,21 +33,33 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 
 This sub-matrix tracks the per-kit substrate state that supports cross-kit byte-equivalence proofs and lift-plugin-protocol bridges. The substrate guarantee depends on each kit independently asserting conformance against shared Rust contract CIDs; this table is what lets you see which kits can today.
 
-| Language    | Self-contracts pkg                          | Bridge IR v1.1.0 (9-field) | Lift-plugin-protocol bridges    | Signed attestation       |
-|-------------|---------------------------------------------|----------------------------|----------------------------------|--------------------------|
-| Rust        | `+ provekit-self-contracts`                 | `+`                        | `+ source-of-truth (PR #84)`    | `+`                      |
-| Go          | `+ provekit-self-contracts`                 | `+`                        | `~ Phase 2 in flight`           | `+`                      |
-| TypeScript  | `+ inline (mint-ts-self-contracts)`         | `+`                        | `~ Phase 2 in flight`           | `+`                      |
-| Python      | `~ via provekit-lift-py-tests`              | `+`                        | `~ Phase 2 in flight`           | `-`                      |
-| C++         | `+ provekit-self-contracts`                 | `o partial; #225`          | `-`                              | `+`                      |
-| C           | `-`                                         | `+`                        | `-`                              | `-`                      |
-| Zig         | `-`                                         | `+`                        | `-`                              | `-`                      |
-| Java / JVM  | `-`                                         | `o partial; #222`          | `-`                              | `-`                      |
-| Ruby        | `-`                                         | `o partial; #223`          | `-`                              | `-`                      |
-| C#          | `+ Provekit.SelfContracts`                  | `o partial; #224`          | `-`                              | `+`                      |
-| Swift       | `-`                                         | `+ (PR #76)`               | `-`                              | `-`                      |
+The v1.4 substrate guarantees that depend on per-kit compliance are spread across four specs:
 
-Bridge IR `o partial` means the kit currently passes the `bridge_decl` conformance fixture (the JCS bytes match) but the kit's own IR types cannot construct or round-trip the full v1.1.0 9-field Bridge. The fixture is a happy-path test; round-trip compliance is what this column tracks. Issue numbers reference tracker entries to close each gap.
+- The substrate-layers cut (envelope, header, body) per [`2026-05-03-substrate-layers-envelope-header-body.md`](../../protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md): every signed memento decomposes into a signed envelope, a substrate-verified header, and a verifier-opaque metadata body. Required for any tooling that wants to add body fields without growing the substrate.
+- The contract-cid vs attestation-cid separation per [`2026-05-03-contract-cid-vs-attestation-cid.md`](../../protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md): each kit exposes a signer-independent `contract_cid(decl)` (or camelCase equivalent) returning the content-only CID, separate from the envelope hash returned as `attestation_cid`. Required for witness convergence across signers.
+- The contract-set extension per [`2026-05-03-contract-set-extension.md`](../../protocol/specs/2026-05-03-contract-set-extension.md): self-contracts attestations carry `contractSetCid` (REQUIRED) and `previousContractSetCid` (OPTIONAL). Required for verifying semver-minor extension claims.
+- The bridge target dimensionality per [`2026-05-03-bridge-target-dimensionality.md`](../../protocol/specs/2026-05-03-bridge-target-dimensionality.md): bridges emit a tagged-union `target` field (`{kind: "contract", cid}` or `{kind: "contractSet", cid}`) instead of a flat `targetContractCid`. Required for principled cross-kit bridges to contract sets vs single contracts, and to retire placeholder strings.
+
+| Language    | Self-contracts pkg                          | Layered envelope (v1.4 §1) | contract_cid separation | contractSetCid emit | Bridge IR v1.4 (tagged-union target) | Lift-plugin-protocol bridges    | Signed attestation       |
+|-------------|---------------------------------------------|----------------------------|--------------------------|---------------------|--------------------------------------|----------------------------------|--------------------------|
+| Rust        | `+ provekit-self-contracts`                 | `+`                        | `+ contract_cid`         | `+`                 | `~ flat targetContractCid; v1.4 migration pending` | `+ source-of-truth (PR #84)`    | `+`                      |
+| Go          | `+ provekit-self-contracts`                 | `~ flat universal-claim-envelope` | `+ ContractCIDFromArgs` | `+ ComputeContractSetCID` | `~ flat targetContractCid; v1.4 migration pending` | `~ Phase 2 in flight`           | `+`                      |
+| TypeScript  | `+ inline (mint-ts-self-contracts)`         | `~ flat universal-claim-envelope` | `+ contractCidFromArgs` | `+ computeContractSetCid` | `~ flat targetContractCid; v1.4 migration pending` | `~ Phase 2 in flight`           | `+`                      |
+| Python      | `~ via provekit-lift-py-tests`              | `not assessed`             | `not assessed`           | `not assessed`       | `~ flat targetContractCid; v1.4 migration pending` | `~ Phase 2 in flight`           | `-`                      |
+| C++         | `+ provekit-self-contracts`                 | `~ flat universal-claim-envelope` | `+ contract_cid_from_args` | `+ compute_contract_set_cid` | `~ flat targetContractCid; v1.4 migration pending` | `-`                              | `+`                      |
+| C           | `-`                                         | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
+| Zig         | `-`                                         | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
+| Java / JVM  | `-`                                         | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
+| Ruby        | `-`                                         | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
+| C#          | `+ Provekit.SelfContracts`                  | `~ flat universal-claim-envelope` | `+ Mint.ContractCid`     | `+ contractSetCid in attestation` | `~ flat targetContractCid; v1.4 migration pending` | `-`                              | `+`                      |
+| Swift       | `-`                                         | `~ flat (no full mint pipeline)` | `not assessed (consumes rustContractCids lookup)` | `+ contractSetCid in mint-swift-self-contracts` | `~ v1.4 migration pending` | `-`                              | `-`                      |
+
+Column meanings:
+
+- **Layered envelope**: `+` if the kit's mint code emits the v1.4 `{envelope, header, metadata}` shape per the substrate-layers spec. `~ flat universal-claim-envelope` if the kit still emits the v1.1 universal-claim-envelope shape (`cid` plus `producerSignature` at the top level). `not assessed` where the kit has no claim-envelope mint pipeline (Python, C, Zig, Java, Ruby) and the column was not investigated against an alternative codepath.
+- **contract_cid separation**: `+` plus the function name if the kit exposes a signer-independent `contract_cid(decl)` (or camelCase equivalent) per the contract-cid vs attestation-cid spec. `not assessed` where no such function was located in the implementation source.
+- **contractSetCid emit**: `+` if the kit's self-contracts mint emits `contractSetCid` in the attestation. `not assessed` where no self-contracts mint was located. `previousContractSetCid` is OPTIONAL per spec; no kit currently emits it (only the protocol catalog references the field name).
+- **Bridge IR v1.4 (tagged-union target)**: tracks emission of the tagged-union `target` field per [`2026-05-03-bridge-target-dimensionality.md`](../../protocol/specs/2026-05-03-bridge-target-dimensionality.md). The spec is dated 2026-05-03 (the day this matrix refresh was authored). No kit, including Rust, has yet migrated `mint_bridge` from the flat `targetContractCid` field to the tagged-union shape. `~ flat targetContractCid; v1.4 migration pending` is recorded for kits that today emit a bridge under the prior 9-field shape; `~ v1.4 migration pending` is recorded for kits that emit a bridge under a kit-specific shape (Swift's `CrossKitBridges`, the C and Zig stubs). The v1.1.0 `o partial` tracker entries (Java #222, Ruby #223, C# #224, C++ #225) referenced gaps in the now-deprecated flat shape; under v1.4 those gaps are subsumed by a fresh per-kit migration to the layered shape with the tagged-union target.
 
 ## Rust (canonical reference implementation)
 
@@ -229,7 +241,7 @@ Bridge IR `o partial` means the kit currently passes the `bridge_decl` conforman
 
 **LSP Plugin:** Yes. `bin/provekit-lsp-ruby` implements the ProvekIt NDJSON LSP plugin protocol.
 
-**Bridge IR gap:** `Provekit::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. Tracked as task #223. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
+**Bridge IR gap:** `Provekit::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. Originally tracked as task #223 against the v1.1.0 9-field shape; under v1.4's bridge target dimensionality spec the migration target is the layered shape with a tagged-union `target` field, so the gap is subsumed by the v1.4 migration rather than the v1.1.0 fix. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
 
 ## C#
 
@@ -249,7 +261,7 @@ Bridge IR `o partial` means the kit currently passes the `bridge_decl` conforman
 
 **LSP Plugin:** Yes. `Provekit.Lsp.Plugin` implements the ProvekIt NDJSON LSP plugin protocol.
 
-**Bridge IR gap:** `Provekit.IR.Collector.BridgeDecl` is `(TargetContractName, IrArgSorts, IrReturnSort)` — a lift-adapter helper, NOT the spec v1.1.0 Bridge. Tracked as task #224. Self-contracts attestation IS signed (the bundle CID is pinned), but Phase 2 cross-kit bridges require a separate spec-shaped `BridgeDeclaration` record to be added.
+**Bridge IR gap:** `Provekit.IR.Collector.BridgeDecl` is `(TargetContractName, IrArgSorts, IrReturnSort)`, a lift-adapter helper, not the spec Bridge shape. Originally tracked as task #224 against the v1.1.0 9-field shape; under v1.4's bridge target dimensionality spec the migration target is the layered shape with a tagged-union `target` field, so the gap is subsumed by the v1.4 migration. Self-contracts attestation IS signed (the bundle CID is pinned, and `contractSetCid` is emitted), but Phase 2 cross-kit bridges require a separate spec-shaped `BridgeDeclaration` record to be added.
 
 ## Swift
 
@@ -267,7 +279,7 @@ Bridge IR `o partial` means the kit currently passes the `bridge_decl` conforman
 
 **LSP Plugin:** Planned.
 
-**Bridge IR:** v1.1.0 9-field shape supported (`Declaration.bridge` enum case round-trips byte-identical to the bridge_decl fixture). Self-contracts package and Phase 2 lift-plugin-protocol bridges deferred until the kit accumulates a runtime surface beyond conformance.
+**Bridge IR:** v1.1.0 9-field shape supported (`Declaration.bridge` enum case round-trips byte-identical to the bridge_decl fixture, per PR #76). Under v1.4's bridge target dimensionality spec the kit's bridge emission needs to migrate to the layered shape with a tagged-union `target` field; that migration is pending alongside the rest of the kits. Self-contracts package and Phase 2 lift-plugin-protocol bridges deferred until the kit accumulates a runtime surface beyond conformance.
 
 ## Cross-language conformance
 

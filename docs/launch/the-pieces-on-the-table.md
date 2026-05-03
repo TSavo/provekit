@@ -34,7 +34,7 @@ The substrate is small on purpose. Three primitives:
 
 Everything else is composition over those three. Witness chains, witness sets, contract bundles, kit rollups, semver checks, audit trails, package-manager pinning, three-axis trust postures: all of them are functions over `(sign, hash, reference)`. The protocol resists feature creep because every feature anyone proposes can be expressed as "compute X from existing leaves, sign your view of X."
 
-This is documented in `docs/launch/substrate-not-blockchain.md` §10 (Closure: subsetting is hashing).
+This is documented in `docs/papers/03-substrate-not-blockchain.md` §10 (Closure: subsetting is hashing).
 
 ## Step 4: the address is multi-dimensional
 
@@ -206,7 +206,7 @@ The specs that constitute this architecture, all dated 2026-05-03 and merged int
 - `2026-05-03-bridge-linkage-protocol.md` (#114)
 - `2026-04-30-ir-formal-grammar.md` Locus addendum (#120)
 
-The manifesto sections that articulate the substrate posture, in `docs/launch/substrate-not-blockchain.md`:
+The manifesto sections that articulate the substrate posture, in `docs/papers/03-substrate-not-blockchain.md`:
 
 - §1-§7: substrate posture and witness chains
 - §8: three axes of pinning
