@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Provekit.Lift.Linq", "Prove
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Provekit.Lift.Linq.Tests", "Provekit.Lift.Linq.Tests\Provekit.Lift.Linq.Tests.csproj", "{9EF36D93-3B69-4B8C-AEA9-696511D444C1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Provekit.Lift.Core", "Provekit.Lift.Core\Provekit.Lift.Core.csproj", "{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -151,6 +153,18 @@ Global
 		{9EF36D93-3B69-4B8C-AEA9-696511D444C1}.Release|x64.Build.0 = Release|Any CPU
 		{9EF36D93-3B69-4B8C-AEA9-696511D444C1}.Release|x86.ActiveCfg = Release|Any CPU
 		{9EF36D93-3B69-4B8C-AEA9-696511D444C1}.Release|x86.Build.0 = Release|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Debug|x64.Build.0 = Debug|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Debug|x86.Build.0 = Debug|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Release|x64.ActiveCfg = Release|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Release|x64.Build.0 = Release|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Release|x86.ActiveCfg = Release|Any CPU
+		{F09DBF03-034E-4DEA-8CE4-B30A3DE3DE8C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
