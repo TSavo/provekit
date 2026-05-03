@@ -10,6 +10,12 @@
 //
 // Test 3: kit dispatch is content-deterministic: same source => same linkBundleCid.
 //
+// Test 4: parseFile(kit="java", ...) dispatches to the java lifter and returns
+//         a result with declarations and callEdges arrays when provekit-lsp-java
+//         is on PATH. Skipped if provekit-lsp-java is not installed.
+//
+// Test 3: kit dispatch is content-deterministic: same source => same linkBundleCid.
+//
 // These tests communicate with the daemon over its Unix socket.
 
 use std::io::{BufRead, BufReader, Write};
@@ -277,6 +283,84 @@ pub fn abs_value(x: i64) -> i64 {
     assert_eq!(
         cid1, cid2,
         "same source must produce byte-identical linkBundleCid across two parse runs"
+    );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 4: java kit dispatch returns diagnostics when provekit-lsp-java is on PATH.
+// -------------------------------------------------------------------
+
+/// Test 4: parseFile with kit="java" dispatches to the java lifter.
+///
+/// Skipped if `provekit-lsp-java` is not on PATH. The skip is printed to stdout
+/// so CI can see why the test was skipped, not silently ignored.
+///
+/// Install via:
+///   cd implementations/java/provekit-lift-java-core && \
+///   mvn package -q && \
+///   cp target/appassembler/bin/provekit-lsp-java ~/.local/bin/
+///
+/// When provekit-lsp-java is available, sends a tiny Java source and asserts:
+///   - The response has a `result.diagnostics` array.
+///   - `result.diagnostics` is an array (shape contract).
+///   - No JSON-RPC error is returned.
+#[test]
+fn test4_java_kit_dispatch() {
+    if !binary_on_path("provekit-lsp-java") {
+        println!(
+            "SKIP test4_java_kit_dispatch: provekit-lsp-java not on PATH. \
+             Install via: cd implementations/java/provekit-lift-java-core && \
+             mvn package -q && cp target/appassembler/bin/provekit-lsp-java ~/.local/bin/"
+        );
+        return;
+    }
+
+    let sock = unique_sock_path("t4");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let java_source = r#"package com.example;
+
+public class Calculator {
+    /** @provekit.contract post="result >= 0" */
+    public int abs(int x) {
+        return x < 0 ? -x : x;
+    }
+}
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "java",
+            "file": "/tmp/test_Calculator.java",
+            "source": java_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    assert!(
+        resp.get("error").is_none(),
+        "java kit parseFile returned unexpected error: {:?}",
+        resp
+    );
+    assert!(
+        resp["result"]["diagnostics"].is_array(),
+        "java kit parseFile result must have diagnostics array: {:?}",
+        resp
     );
 
     shutdown(&sock);

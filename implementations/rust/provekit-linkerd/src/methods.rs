@@ -20,9 +20,9 @@
 //     `declarations` field is a JSON-encoded string rather than a JSON array
 //     (shape divergence from go/csharp/ruby). Documented gap; returns
 //     LifterUnavailable until a proper installed binary ships.
-//   For `java`: the Java RPC server uses method `lift` (not `parse`) and params
-//     `workspace_root`/`surface` (not `path`/`source`). Incompatible protocol.
-//     Documented gap; returns LifterUnavailable.
+//   For `java`: spawn `provekit-lsp-java --rpc`, same protocol as go/csharp/ruby.
+//     Requires `mvn package` in implementations/java/provekit-lift-java-core first;
+//     returns LifterUnavailable if the binary is not on PATH.
 //   For `swift`: no LSP plugin binary exists (the Swift package only builds a
 //     `conformance` runner, not an LSP plugin). Documented gap; returns
 //     LifterUnavailable.
@@ -246,7 +246,8 @@ enum LiftError {
 /// - `zig`: subprocess `provekit-lift-zig --rpc`, method `parse`; `callEdges`
 ///   field may be absent from response and is treated as empty.
 /// - `python`: no installed binary + shape divergence in response. LifterUnavailable.
-/// - `java`: incompatible RPC protocol (uses `lift` not `parse`). LifterUnavailable.
+/// - `java`: subprocess `provekit-lsp-java --rpc`, method `parse`; binary must be
+///   installed via `mvn package` in implementations/java/provekit-lift-java-core.
 /// - `swift`: no LSP plugin binary. LifterUnavailable.
 /// - `ts`, `cpp`, `c`: no implementation. LifterUnavailable.
 async fn lift_source(
@@ -311,12 +312,18 @@ async fn lift_source(
                 .to_string(),
         )),
 
-        "java" => Err(LiftError::LifterUnavailable(
-            "kit 'java' lifter uses an incompatible RPC protocol: method 'lift' \
-             (not 'parse') and params 'workspace_root'/'surface' (not 'path'/'source'). \
-             Gap documented in spec §3 R5 commentary. Follow-up required."
-                .to_string(),
-        )),
+        "java" => {
+            let binary = find_binary("provekit-lsp-java").ok_or_else(|| {
+                LiftError::LifterUnavailable(
+                    "kit 'java' binary not found on PATH; install via: \
+                     cd implementations/java/provekit-lift-java-core && \
+                     mvn package -q && \
+                     cp target/appassembler/bin/provekit-lsp-java ~/.local/bin/"
+                        .to_string(),
+                )
+            })?;
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "java-kit")
+        }
 
         "swift" => Err(LiftError::LifterUnavailable(
             "kit 'swift' has no LSP plugin binary; the Swift package only builds a \
