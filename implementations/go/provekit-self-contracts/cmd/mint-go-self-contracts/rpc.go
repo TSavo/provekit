@@ -70,9 +70,9 @@ func runRPCMode() {
 					"version":          "1.0.0",
 					"protocol_version": "provekit-lift/1",
 					"capabilities": map[string]interface{}{
-						"authoring_surfaces":     []string{"go-self-contracts"},
-						"ir_version":             "v1.1.0",
-						"emits_signed_mementos":  true,
+						"authoring_surfaces":    []string{"go-self-contracts"},
+						"ir_version":            "v1.1.0",
+						"emits_signed_mementos": true,
 					},
 				},
 			})
@@ -106,10 +106,10 @@ func runRPCMode() {
 			writeRPC(writer, rpcResponse{
 				ID: req.ID,
 				Result: map[string]interface{}{
-					"kind":          "proof-envelope",
-					"filename_cid":  result.cid,
-					"bytes_base64":  base64.StdEncoding.EncodeToString(bytes),
-					"diagnostics":   []interface{}{},
+					"kind":         "proof-envelope",
+					"filename_cid": result.cid,
+					"bytes_base64": base64.StdEncoding.EncodeToString(bytes),
+					"diagnostics":  []interface{}{},
 				},
 			})
 

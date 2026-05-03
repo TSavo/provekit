@@ -3,14 +3,18 @@
 // Mirrors implementations/rust/provekit-self-contracts/src/bin/
 // mint-self-contracts.rs.
 //
-// 1. Walks every Invariants_<label>() function in the slabs package.
-// 2. Authors all contracts; mints them as signed mementos under the
-//    foundation key (test seed [0x42; 32]).
-// 3. Bundles every contract memento into a single `.proof` whose
-//    filename IS the catalog CID. No bridges (Go has no public-API
-//    counterpart of Rust's `parse_formula` closed-loop).
-// 4. Asserts byte-determinism by minting twice into separate temp dirs
-//    and comparing the resulting catalog CIDs. Fails loud on mismatch.
+//  1. Walks every Invariants_<label>() function in the slabs package.
+//  2. Authors all contracts AND bridges; mints them as signed mementos
+//     under the foundation key (test seed [0x42; 32]). Bridges may have
+//     a `pending-go-counterpart:<name>` placeholder in TargetContractCid
+//     that gets resolved to a real memento CID after every counterpart
+//     contract has been minted (mirrors rust lib.rs:368-385 closed-loop
+//     bridge resolution).
+//  3. Bundles every memento into a single `.proof` whose filename IS
+//     the catalog CID. Bridges include the phase-2 cross-kit bridges
+//     declared by slabs/lift_plugin_protocol.go.
+//  4. Asserts byte-determinism by minting twice into separate temp dirs
+//     and comparing the resulting catalog CIDs. Fails loud on mismatch.
 //
 // Cross-language conformance: the .proof bytes are produced by the
 // existing Go canonicalizer / claim_envelope / proof_envelope. Any
@@ -18,8 +22,9 @@
 // the protocol-mandated content-address.
 //
 // Run:
-//   go run ./cmd/mint-go-self-contracts
-//   go run ./cmd/mint-go-self-contracts /tmp/provekit-go-self
+//
+//	go run ./cmd/mint-go-self-contracts
+//	go run ./cmd/mint-go-self-contracts /tmp/provekit-go-self
 package main
 
 import (
@@ -30,16 +35,16 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tsavo/provekit/go/provekit-self-contracts/slabs"
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/claim_envelope"
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/proof_envelope"
+	"github.com/tsavo/provekit/go/provekit-self-contracts/slabs"
 )
 
 const (
-	producedBy = "provekit-go-self-contracts@1.0"
-	declaredAt = "2026-04-30T18:00:00.000Z"
+	producedBy     = "provekit-go-self-contracts@1.0"
+	declaredAt     = "2026-04-30T18:00:00.000Z"
 	catalogName    = "@provekit/go-self-contracts"
 	catalogVersion = "1.0.0"
 )
@@ -55,16 +60,27 @@ func foundationSeed() [32]byte {
 }
 
 // authoredSlab is one source-file's drained collector + label.
+//
+// A slab may carry contract declarations, bridge declarations, or both.
+// Phase-2 cross-kit bridges (slabs/lift_plugin_protocol.go) declare
+// only bridges; existing per-source-file slabs declare only contracts.
+// The orchestrator handles each kind separately at mint time.
 type authoredSlab struct {
-	label    string
-	path     string
+	label     string
+	path      string
 	contracts []ir.ContractDeclaration
+	bridges   []ir.BridgeDeclaration
 }
 
 // authorAllInvariants drives every Invariants_<label>() function in the
 // slabs package. Each slab is collected in isolation: ResetCollector +
 // BeginCollecting + Run + drain. The quantifier counter resets inside
 // BeginCollecting, so successive runs produce byte-identical IR.
+//
+// Each declaration is sorted into its kind's bucket. Contract and bridge
+// are the v1.1.0 declaration kinds the kit currently emits; any other
+// kind (or a future addition) errors loud here so the orchestrator
+// stays the source of truth for what shapes get minted.
 func authorAllInvariants() ([]authoredSlab, error) {
 	out := make([]authoredSlab, 0, len(slabs.Slabs()))
 	for _, s := range slabs.Slabs() {
@@ -72,19 +88,27 @@ func authorAllInvariants() ([]authoredSlab, error) {
 		finish := ir.BeginCollecting()
 		s.Run()
 		decls := finish()
-		// Coerce — every slab authors only contracts (no bridges).
-		contracts := make([]ir.ContractDeclaration, 0, len(decls))
+		var (
+			contracts []ir.ContractDeclaration
+			bridges   []ir.BridgeDeclaration
+		)
 		for _, d := range decls {
-			c, ok := d.(ir.ContractDeclaration)
-			if !ok {
+			switch typed := d.(type) {
+			case ir.ContractDeclaration:
+				contracts = append(contracts, typed)
+			case ir.BridgeDeclaration:
+				bridges = append(bridges, typed)
+			default:
 				return nil, fmt.Errorf(
-					"slab %q: unexpected declaration kind %s (want contract)",
+					"slab %q: unsupported declaration kind %s (want contract or bridge)",
 					s.Label, d.Kind())
 			}
-			contracts = append(contracts, c)
 		}
 		out = append(out, authoredSlab{
-			label: s.Label, path: s.Path, contracts: contracts,
+			label:     s.Label,
+			path:      s.Path,
+			contracts: contracts,
+			bridges:   bridges,
 		})
 	}
 	return out, nil
@@ -92,13 +116,15 @@ func authorAllInvariants() ([]authoredSlab, error) {
 
 // mintResult is the outcome of one mint-self-proof run.
 type mintResult struct {
-	cid          string
-	bytesLen     int
-	path         string
-	memberCount  int
-	contractCIDs map[string]string
+	cid             string
+	bytesLen        int
+	path            string
+	memberCount     int
+	contractCIDs    map[string]string
+	bridgeCIDs      map[string]string // bridgeName -> memento CID
 	perSourceCounts []labeledCount
 	totalContracts  int
+	totalBridges    int
 }
 
 type labeledCount struct {
@@ -125,12 +151,25 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 
 	members := map[string][]byte{}
 	contractCIDs := map[string]string{}
+	bridgeCIDs := map[string]string{}
 	perSource := make([]labeledCount, 0, len(authored))
 	totalContracts := 0
+	totalBridges := 0
 
+	// PASS 1: mint every contract.
+	//
+	// Bridges are deferred to PASS 2 because phase-2 cross-kit bridges
+	// reference go counterpart contracts via a `pending-go-counterpart:`
+	// placeholder in TargetContractCid; the placeholder can only be
+	// rewritten once the target counterpart contract has a real memento
+	// CID. Slab order ensures all contract slabs run before any bridge
+	// slab in PASS 1 here, but we explicitly skip bridge declarations
+	// in this pass for clarity (and so a future slab that mixes both
+	// declaration kinds in the same Invariants_*() function still works).
 	for _, slab := range authored {
-		perSource = append(perSource, labeledCount{label: slab.label, count: len(slab.contracts)})
+		perSource = append(perSource, labeledCount{label: slab.label, count: len(slab.contracts) + len(slab.bridges)})
 		totalContracts += len(slab.contracts)
+		totalBridges += len(slab.bridges)
 
 		for _, c := range slab.contracts {
 			// Convert kit IR formulas to JSON-shape values via the
@@ -158,13 +197,13 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 			}
 
 			minted, err := minter.MintContract(claim_envelope.ContractMintArgs{
-				ContractName: c.Name,
-				Pre:          preV,
-				Post:         postV,
-				Inv:          invV,
-				OutBinding:   c.OutBinding,
-				ProducedBy:   producedBy,
-				ProducedAt:   declaredAt,
+				ContractName:  c.Name,
+				Pre:           preV,
+				Post:          postV,
+				Inv:           invV,
+				OutBinding:    c.OutBinding,
+				ProducedBy:    producedBy,
+				ProducedAt:    declaredAt,
 				AuthoringKind: claim_envelope.AuthoringKitAuthor,
 				AuthoringKitAuthor: claim_envelope.AuthoringKitAuthorArgs{
 					Author: producedBy,
@@ -181,6 +220,51 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 					"duplicate contract name %q across slabs", c.Name)
 			}
 			contractCIDs[c.Name] = minted.CID
+			members[minted.CID] = minted.CanonicalBytes
+		}
+	}
+
+	// PASS 2: mint every bridge.
+	//
+	// Phase-2 cross-kit bridges may carry a `pending-go-counterpart:<name>`
+	// placeholder in TargetContractCid; resolve it here to the real
+	// memento CID of the named go counterpart contract minted in PASS 1.
+	// Bridges authored without the placeholder (e.g. plain rust-style
+	// closed-loop bridges) pass through untouched.
+	for _, slab := range authored {
+		for _, b := range slab.bridges {
+			targetCid := b.TargetContractCid
+			if strings.HasPrefix(targetCid, slabs.PendingTargetContractCidPrefix) {
+				counterpartName := strings.TrimPrefix(targetCid, slabs.PendingTargetContractCidPrefix)
+				resolved, ok := contractCIDs[counterpartName]
+				if !ok {
+					return nil, fmt.Errorf(
+						"bridge %q: cannot resolve target counterpart %q (no contract minted with that name)",
+						b.Name, counterpartName)
+				}
+				targetCid = resolved
+			}
+			minted, err := minter.MintBridge(claim_envelope.BridgeMintArgs{
+				ProducedBy:        producedBy,
+				ProducedAt:        declaredAt,
+				SourceSymbol:      b.SourceSymbol,
+				SourceLayer:       b.SourceLayer,
+				SourceContractCID: b.SourceContractCid,
+				TargetContractCID: targetCid,
+				TargetProofCID:    b.TargetProofCid,
+				TargetLayer:       b.TargetLayer,
+				IRArgSorts:        []interface{}{},
+				IRReturnSort:      "Bool",
+				Notes:             b.Notes,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("MintBridge %s: %w", b.Name, err)
+			}
+			if _, dup := bridgeCIDs[b.Name]; dup {
+				return nil, fmt.Errorf(
+					"duplicate bridge name %q across slabs", b.Name)
+			}
+			bridgeCIDs[b.Name] = minted.CID
 			members[minted.CID] = minted.CanonicalBytes
 		}
 	}
@@ -217,8 +301,10 @@ func mintSelfProof(outDir string) (*mintResult, error) {
 		path:            path,
 		memberCount:     len(members),
 		contractCIDs:    contractCIDs,
+		bridgeCIDs:      bridgeCIDs,
 		perSourceCounts: perSource,
 		totalContracts:  totalContracts,
+		totalBridges:    totalBridges,
 	}, nil
 }
 
@@ -276,12 +362,16 @@ func main() {
 	}
 	fmt.Println()
 	fmt.Println("authored:")
-	total := 0
+	totalContracts := 0
+	totalBridges := 0
 	for _, s := range authored {
-		total += len(s.contracts)
-		fmt.Printf("  %22s  %2d contracts  (%s)\n", s.label, len(s.contracts), s.path)
+		totalContracts += len(s.contracts)
+		totalBridges += len(s.bridges)
+		fmt.Printf("  %32s  %2d contracts  %2d bridges  (%s)\n",
+			s.label, len(s.contracts), len(s.bridges), s.path)
 	}
-	fmt.Printf("  %22s  %2d contracts (TOTAL)\n", "[ALL]", total)
+	fmt.Printf("  %32s  %2d contracts  %2d bridges  (TOTAL)\n",
+		"[ALL]", totalContracts, totalBridges)
 
 	// Determinism check: mint twice into distinct dirs.
 	detDir := filepath.Join(os.TempDir(), fmt.Sprintf("provekit-go-self-determinism-%d", os.Getpid()))
@@ -306,6 +396,7 @@ func main() {
 	fmt.Printf("  bytes:              %d\n", mintB.bytesLen)
 	fmt.Printf("  members:            %d\n", mintB.memberCount)
 	fmt.Printf("  total contracts:    %d\n", mintB.totalContracts)
+	fmt.Printf("  total bridges:      %d\n", mintB.totalBridges)
 	fmt.Printf("  catalog CID:        %s\n", mintB.cid)
 
 	if mintA.cid != mintB.cid {
