@@ -101,6 +101,19 @@ This rule replaces the forward-pin invariant `BridgeDeclaration.ConsequentBundle
 
 **R5. Optional `targetContractSetCid` in body.** Bridges MAY carry `targetContractSetCid` in the body even when `target.kind == "contract"`. This is the contractSetCid of the target contract's containing set at mint time, useful for downstream DAG walks per spec `2026-05-03-contract-set-extension.md`. It is metadata; the substrate does not verify it.
 
+**R6. Single source of truth for cross-kit RPC bridges.** A bridge's `sourceContractCid` and `target.cid` (when `target.kind == "contract"`) MAY be byte-identical when the bridge attests that an implementation in another kit satisfies a contract owned by the source kit. This is the canonical shape for cross-kit RPC bridges where one kit defines the protocol and others implement it: ProvekIt's `lift-plugin-protocol` is owned by the rust kit (in `implementations/rust/provekit-self-contracts/src/lift_plugin_protocol.rs`) and implemented by per-kit RPC servers in cpp, csharp, go, swift, ts, zig, etc. Each per-kit bridge anchors its target at the rust contractCid; the kit does not re-declare a parallel "counterpart" contract.
+
+Bridges with `sourceContractCid != target.cid` are bridging between distinct contracts (e.g. semver migrations, cross-protocol adapters, contract-version drift) and MUST justify why a separate target contract exists. The default for the cross-kit RPC case is `sourceContractCid == target.cid`.
+
+The witness and binary axes carry the kit-specific information per R3:
+- `body.targetLayer` names the implementing kit (e.g. `"go-kit"`, `"cpp-kit"`).
+- `body.targetWitnessCid` (OPTIONAL) is the kit's signed attestation that its implementation satisfies the contract.
+- `body.targetBinaryCid` (OPTIONAL) is the BLAKE3 of the kit's compiled RPC server.
+
+Per manifesto §12, this composes a rank-3 pin `(rust contractCid, kit witnessCid, kit binaryCid)` at the consumer surface: the contract axis is anchored once at the rust-canonical CID; the witness and binary axes are kit-specific; the consumer's attestation per R4 binds the three together.
+
+The Phase 2 cross-kit bridges merged before this spec (PRs #92, #93, #104, #106, #107, #109) re-declared per-kit "counterpart" contracts and bridged to those. Those bridges are NON-NORMATIVE under this spec. The implementation follow-up will drop the counterpart contracts, set `target.cid` equal to `sourceContractCid` (the rust-canonical CID), and populate the body's witness and binary axes when those CIDs are available.
+
 ## §2. Migration of existing bridges
 
 **Bridges with placeholder values.** Existing bridges with `targetContractCid: "pending-X:..."` or `targetProofCid: "deferred:..."` are NON-NORMATIVE under this spec. They MAY remain on disk as historical artifacts. They MUST be re-emitted under the new shape before any conformance gate that enforces this spec. On re-emission, the placeholder values are dropped; the corresponding body fields are omitted.
@@ -122,3 +135,5 @@ A kit conforms to this spec if all of the following hold:
 3. **Omit, don't stringify.** A bridge emitted with no known `targetWitnessCid` or `targetBinaryCid` round-trips with those fields absent from the body. The body MUST NOT contain `"targetWitnessCid":"deferred:..."` or any string value for an absent axis. Absent means absent, not null-string-quoted.
 
 4. **Consumer attestation surface.** A consumer test that reads `target.cid`, `metadata.targetWitnessCid`, and `metadata.targetBinaryCid` from a bridge and mints its own three-axis attestation over those values SHOULD exist in the kit's conformance suite. Where `targetWitnessCid` or `targetBinaryCid` is absent, the three-axis attestation omits those axes per the pin/float semantics of manifesto §8. This test is RECOMMENDED, not REQUIRED, for this spec; it is REQUIRED for any conformance gate that enforces the three-axis substitution protection.
+
+5. **Single source of truth for cross-kit RPC bridges.** A kit emitting a bridge to a contract owned by another kit MUST set `target.cid` byte-identical to `sourceContractCid` (the owning kit's contractCid). The kit MUST NOT re-declare a parallel "counterpart" contract with a different contractCid for the same protocol obligation. The implementation kit's identity lives entirely in the body axes (`targetLayer`, `targetWitnessCid`, `targetBinaryCid`). This rule applies to cross-kit RPC bridges per R6; bridges between distinct contracts (semver migrations, cross-protocol adapters) are exempt and MUST justify the divergence in `body.notes` or equivalent.
