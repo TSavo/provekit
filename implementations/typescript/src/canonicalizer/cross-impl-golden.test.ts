@@ -3,11 +3,8 @@
  *
  * Loads the canonical conformance fixtures (Rust-emitted JCS bytes +
  * BLAKE3-512 hashes) and asserts the TS canonicalizer produces
- * byte-identical output for every formula-level fixture.
- *
- * Fixtures that are not formula-level (contract / bridge declarations)
- * are documented and skipped. The formula-level fixtures prove whether
- * the TS pipeline matches the Rust canonical reference or reveals a gap.
+ * byte-identical output for every fixture: formula-level AND
+ * declaration-level (contract / bridge declarations).
  *
  * Spec: conformance/fixtures.toml -- canonical JCS bytes + BLAKE3-512
  *       hashes for cross-implementation byte-equality.
@@ -198,19 +195,83 @@ function buildFormulaFor(name: string): IrFormula | null {
 }
 
 // -----------------------------------------------------------------------
+// Declaration-level fixture builders -- contract_decl, bridge_decl.
+//
+// The JCS shapes differ from formula fixtures:
+//   - contract_decl emits an ARRAY of declaration objects (matching
+//     Rust's `marshal_declarations` and Ruby's `Provekit::IR.marshal_declarations`).
+//   - bridge_decl emits a single declaration OBJECT.
+//
+// Both shapes flow through the same generic `canonicalEncode` (sorted-keys
+// JCS) because there is no separate IR type for declarations on the TS
+// canonicalizer surface; the byte-equality contract is the JSON object
+// shape itself.
+// -----------------------------------------------------------------------
+
+function buildDeclarationsFor(name: string): unknown | null {
+  switch (name) {
+    case "contract_decl": {
+      const x = varTerm("x");
+      const zero = constTerm(0, Int);
+      const pre: IrFormula = {
+        kind: "atomic",
+        name: "≥",
+        args: [x, zero],
+      };
+      // Single-element array of contract decls (matches Rust / Ruby
+      // `marshal_declarations` shape).
+      return [
+        {
+          kind: "contract",
+          name: "parseInt",
+          outBinding: "out",
+          pre,
+        },
+      ];
+    }
+
+    case "bridge_decl": {
+      // Bare bridge-decl object (not array-wrapped), with optional `notes`
+      // present. Field order is irrelevant because canonicalEncode sorts
+      // keys lexicographically before emitting.
+      return {
+        kind: "bridge",
+        name: "myBridge",
+        sourceSymbol: "source",
+        sourceLayer: "c-kit",
+        sourceContractCid: "bafySource",
+        targetContractCid: "bafyTarget",
+        targetProofCid: "bafyProof",
+        targetLayer: "coq",
+        notes: "some notes",
+      };
+    }
+
+    default:
+      return null;
+  }
+}
+
+// -----------------------------------------------------------------------
 // Tests
 // -----------------------------------------------------------------------
 
 const formulaFixtures = allFixtures.filter((f) => buildFormulaFor(f.name) !== null);
-const nonFormulaFixtures = allFixtures.filter((f) => buildFormulaFor(f.name) === null);
+const declarationFixtures = allFixtures.filter(
+  (f) => buildDeclarationsFor(f.name) !== null,
+);
+const uncoveredFixtures = allFixtures.filter(
+  (f) => buildFormulaFor(f.name) === null && buildDeclarationsFor(f.name) === null,
+);
 
 describe("cross-impl golden: TS IR JCS vs Rust-emitted fixtures", () => {
-  (nonFormulaFixtures.length > 0 ? it : it.skip)(
-    `skipped ${nonFormulaFixtures.length} non-formula fixture(s): ${nonFormulaFixtures.map((f) => f.name).join(", ")} (contract/bridge declarations are not formula-level)`,
-    () => {
-      // informational only
-    },
-  );
+  if (uncoveredFixtures.length > 0) {
+    it(`uncovered fixtures: ${uncoveredFixtures.map((f) => f.name).join(", ")}`, () => {
+      throw new Error(
+        `These fixtures have no TS builder: ${uncoveredFixtures.map((f) => f.name).join(", ")}`,
+      );
+    });
+  }
 
   for (const fixture of formulaFixtures) {
     it(`"${fixture.name}" — JCS bytes match Rust golden`, () => {
@@ -226,6 +287,28 @@ describe("cross-impl golden: TS IR JCS vs Rust-emitted fixtures", () => {
     it(`"${fixture.name}" — BLAKE3-512 hash matches Rust golden`, () => {
       const formula = buildFormulaFor(fixture.name)!;
       const bytes = canonicalEncode(formula);
+      const actualHash = computeCid(bytes);
+
+      expect(actualHash, `hash mismatch for "${fixture.name}"`).toBe(
+        fixture.hash,
+      );
+    });
+  }
+
+  for (const fixture of declarationFixtures) {
+    it(`"${fixture.name}" — declaration JCS bytes match Rust golden`, () => {
+      const value = buildDeclarationsFor(fixture.name)!;
+      const bytes = canonicalEncode(value);
+      const actualJcs = bytes.toString("utf8");
+
+      expect(actualJcs, `JCS byte mismatch for "${fixture.name}"`).toBe(
+        fixture.jcs,
+      );
+    });
+
+    it(`"${fixture.name}" — declaration BLAKE3-512 hash matches Rust golden`, () => {
+      const value = buildDeclarationsFor(fixture.name)!;
+      const bytes = canonicalEncode(value);
       const actualHash = computeCid(bytes);
 
       expect(actualHash, `hash mismatch for "${fixture.name}"`).toBe(
