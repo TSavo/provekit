@@ -20,6 +20,8 @@ quote = "1"
 proc-macro2 = { version = "1.0", features = ["span-locations"] }
 toml = "0.8"
 walkdir = "2.5"
+provekit-lsp-rust = { path = "../provekit-lsp-rust" }
 
 [dev-dependencies]
 tempfile = "3.14"
+libc = "0.2"

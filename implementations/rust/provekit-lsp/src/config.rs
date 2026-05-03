@@ -44,6 +44,17 @@ pub struct ServerConfig {
     pub timeout_ms: u64,
     #[serde(default = "default_cache_dir")]
     pub cache_dir: String,
+    /// Optional path to the provekit-linkerd Unix domain socket.
+    ///
+    /// When set, `did_open` / `did_change` route through the daemon instead
+    /// of the per-plugin subprocess mode.  The value may be overridden by
+    /// the `--daemon-socket <path>` CLI flag.
+    ///
+    /// Example config.toml:
+    ///   [server]
+    ///   daemon_socket = "/run/user/1000/provekit/linkerd-<projectCid>.sock"
+    #[serde(default)]
+    pub daemon_socket: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -104,6 +115,7 @@ fn default_server() -> ServerConfig {
         backend_args: Vec::new(),
         timeout_ms: default_timeout(),
         cache_dir: default_cache_dir(),
+        daemon_socket: None,
     }
 }
 

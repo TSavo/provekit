@@ -1779,7 +1779,9 @@ dependencies = [
 name = "provekit-lsp"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "proc-macro2",
+ "provekit-lsp-rust",
  "quote",
  "serde",
  "serde_json",
