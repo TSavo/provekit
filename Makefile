@@ -7,7 +7,7 @@
 # Mainline targets:
 #   make help        — print this help
 #   make ci          — full conformance gate (catalog + protocol + 5 mints + tests)
-#   make conformance — catalog + protocol + 5 mint CIDs match pinned values
+#   make conformance — catalog + protocol + 5 mint CIDs + self-contract tests
 #   make all-mint    — run all 5 mint commands; print CIDs
 #   make test-all    — run every language-native test suite
 #
@@ -63,7 +63,7 @@ help:
 	@echo ""
 	@echo "Mainline:"
 	@echo "  make ci             full gate (conformance + test-all)"
-	@echo "  make conformance    catalog + protocol + 5 mint CIDs match pinned"
+	@echo "  make conformance    catalog + protocol + 5 mint CIDs + self-contract tests"
 	@echo "  make all-mint       run all 5 mint commands; print CIDs"
 	@echo "  make test-all       run all language-native test suites"
 	@echo ""
@@ -200,9 +200,34 @@ protocol-verify: build-rust
 	$(PROVEKIT) verify-protocol --signed
 
 .PHONY: conformance
-conformance: catalog-verify protocol-verify all-mint
+conformance: catalog-verify protocol-verify all-mint test-self-contracts
 	@echo ""
 	@echo "==== conformance: PASS ===="
+
+# --- Self-contracts contract-assertion tests --------------------------------
+#
+# `all-mint` proves each peer kit's bundle round-trips to its pinned CID.
+# That catches CID drift, but it does NOT catch a contract-assertion test
+# being weakened or deleted (e.g. an R1..R15 rule from
+# `protocol/specs/2026-04-30-protocol-catalog-format.md` losing its check).
+# `test-self-contracts` runs the kit-native unit tests that encode those
+# rule assertions, so the conformance gate fails when a regression flips
+# any one of them.
+#
+# Today only the Rust kit ships catalog-format contract-assertion tests
+# (`implementations/rust/provekit-self-contracts/src/catalog_format.rs`,
+# 19 `#[test]` fns covering R1..R15). The go/cpp/ts/csharp self-contracts
+# packages currently only carry the mint binary; once they grow their own
+# catalog-format test suites, add `test-self-contracts-<lang>` targets
+# alongside the rust one and append them to the aggregate dep list below.
+
+.PHONY: test-self-contracts
+test-self-contracts: test-self-contracts-rust
+
+.PHONY: test-self-contracts-rust
+test-self-contracts-rust:
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-self-contracts --lib
 
 # --- Per-language test suites ------------------------------------------------
 
