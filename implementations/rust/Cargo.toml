@@ -35,6 +35,7 @@ members = [
     "provekit-agent-openai",
     "provekit-showcase",
     "examples/build_script_demo",
+    "provekit-linkerd",
 ]
 
 [workspace.package]
