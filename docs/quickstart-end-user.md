@@ -46,16 +46,12 @@ The socket path follows the daemon spec: `${XDG_RUNTIME_DIR}/provekit/linkerd-<p
 
 ### VSCode
 
-Add to your workspace's `.vscode/settings.json`:
+There is no dedicated ProvekIt VSCode extension yet. Use a generic LSP client extension such as `lsp-client` (extension ID `matklad.lsp-client`) or `multi-lsp-client`. Configure it with:
 
-```json
-{
-  "provekit.lsp.serverPath": "provekit-lsp",
-  "provekit.lsp.serverArgs": ["--daemon-socket", "/tmp/provekit-demo.sock"]
-}
-```
+- Executable: `provekit-lsp`
+- Arguments: `--daemon-socket /tmp/provekit-demo.sock`
 
-If you use a generic LSP client extension (such as `lsp-client` or `multi-lsp-client`), configure the executable as `provekit-lsp` with argument `--daemon-socket /tmp/provekit-demo.sock`. The server speaks standard LSP over stdio.
+The server speaks standard LSP over stdio. If your generic LSP extension uses a JSON config block, the fields are whatever that extension defines -- look at its own docs for the exact key names.
 
 ### neovim
 
@@ -110,16 +106,7 @@ Run the linker pass on the failure fixture:
 provekit link examples/polyglot-rust-go/fixture-fail/
 ```
 
-Expected output:
-
-```
-linker: 1 linker error(s) — see examples/polyglot-rust-go/fixture-fail/link-bundle.json
-  unprovable-obligation  GoCallerFail → rust-kit:process
-    cannot verify rust-kit:process's precondition (n > 0); postcondition at call site does not establish it
-exit code: 1
-```
-
-The `link-bundle.json` written to the fixture directory is the content-addressed bundle recording the full derivation.
+You should see at least one linker error reported on stderr (an unprovable obligation from the Go caller to the Rust function's precondition). The command exits with a non-zero exit code. A `link-bundle.json` is written to the fixture directory recording the full derivation.
 
 Run the linker pass on the success fixture:
 
@@ -127,23 +114,13 @@ Run the linker pass on the success fixture:
 provekit link examples/polyglot-rust-go/fixture-ok/
 ```
 
-Expected output:
-
-```
-linker: 0 linker errors
-link-bundle.json: blake3-512:<cid>
-exit code: 0
-```
+You should see zero linker errors and the command exits with code 0. The `link-bundle.json` written here carries the clean bundle CID.
 
 ## Step 4: see the red squiggle
 
-Open `examples/polyglot-rust-go/fixture-fail/go-caller/caller_fail.go` in your editor with the LSP server running. The LSP server forwards the file to the daemon, which runs the linker pass and returns the diagnostic. Your editor should show a red squiggle on `C.process(C.int(n))` with the message:
+Open `examples/polyglot-rust-go/fixture-fail/go-caller/caller_fail.go` in your editor with the LSP server running. The LSP server forwards the file to the daemon, which runs the linker pass and returns the diagnostic. Your editor should show a diagnostic (red squiggle or warning annotation) indicating an unprovable cross-language obligation from the Go caller to the Rust function's precondition.
 
-```
-cannot verify rust-kit:process's precondition (n > 0); postcondition at call site does not establish it
-```
-
-Open `examples/polyglot-rust-go/fixture-ok/go-caller/caller_ok.go`. No squiggle. The guard `if n <= 0 { return 0 }` establishes the postcondition, and the linker discharges the obligation.
+Open `examples/polyglot-rust-go/fixture-ok/go-caller/caller_ok.go`. No diagnostic. The guard the Go caller adds establishes the postcondition, and the linker discharges the obligation cleanly.
 
 Note: per the current daemon MVP, diagnostics are attached at line 0 (file-level marker) because call-site locus propagation from the linker to the LSP is a follow-up item. The squiggle appears at the top of the file. Precise line-level squiggles are on the roadmap.
 

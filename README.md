@@ -28,13 +28,13 @@ See [docs/per-language-status.md](docs/per-language-status.md) for the complete 
 | Rust | full conformance | full (source of truth) | shipping |
 | Go | full conformance | in progress | shipping |
 | C# | full conformance | in progress | shipping |
-| Ruby | in progress | in progress | shipping |
-| Zig | in progress | in progress | shipping |
-| Python | in progress | gap (follow-up) | shipping |
+| Ruby | not started | not started | shipping |
+| Zig | not started | not started | shipping |
+| Python | in progress | in progress | shipping |
 | TypeScript | full conformance | in progress | planned |
-| C++ | partial | not started | planned |
-| Java | partial | not started | planned |
-| Swift | partial | not started | planned |
+| C++ | full conformance | not started | planned |
+| Java | not started | not started | planned |
+| Swift | not started | not started | planned |
 
 ## Install path
 
