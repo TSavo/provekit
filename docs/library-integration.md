@@ -1,5 +1,15 @@
 # Library integration (Channel 2)
 
+**Note:** This document describes the pre-protocol-cut TypeScript invariant-runtime library surface (`runFixLoop`, `verifyAll`, etc.). That surface predates the daemon+LSP architecture and the ProvekIt IR substrate. It is retained for historical reference. The current integration surface for IDE authors and CI integrators is:
+
+- For red squiggles in an editor: [docs/quickstart-end-user.md](quickstart-end-user.md)
+- For building a new kit lifter or protocol extension: [docs/quickstart-extender.md](quickstart-extender.md)
+- For the current TypeScript kit's library surface: `implementations/typescript/src/`
+
+The content below applies only if you are working with a pre-protocol-cut version of ProvekIt that ships the `runFixLoop` / `verifyAll` TypeScript surface.
+
+---
+
 Audience: IDE authors, agent-runtime authors, and CI integrators who want to
 embed ProvekIt as a programmable correctness gate. If you only want the
 out-of-the-box CI check, use the `provekit` CLI plus the GitHub Action

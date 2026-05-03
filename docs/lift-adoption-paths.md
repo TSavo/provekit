@@ -23,7 +23,7 @@ proptest! {
 
 `provekit-lift-proptest` walks `proptest!` blocks, recognizes the universal-quantification idiom, and emits a contract memento whose `pre` is the conjunction of `prop_assume!` clauses and whose `post` is the conjunction of `prop_assert!` clauses. The memento is bridged to the function under test (`divide` in this example) via a bridge memento in the same `.proof`.
 
-After `cargo provekit-lift`, the resulting catalog carries the universal property as a content-addressed signed contract. Consumers downstream verify against the contract without re-running the property test.
+After `provekit mint --project <workspace-root>`, the resulting catalog carries the universal property as a content-addressed signed contract. Consumers downstream verify against the contract without re-running the property test.
 
 **Coverage today:** `prop_assume!`, `prop_assert!`, `prop_assert_eq!`, `prop_assert_ne!`, basic arithmetic and comparison predicates. Strategy expressions are recognized but not all are lifted.
 
@@ -219,6 +219,6 @@ The interface is small. A lift adapter implements:
 2. A translator from idiom to IR (using the host-language IR library: `provekit-ir-symbolic`).
 3. A bridge emitter that maps each lifted contract to its source-language symbol.
 
-The output is a sequence of `(contractMemento, bridgeMemento)` pairs. The driver (`cargo provekit-lift` for Rust, equivalents for other languages) takes care of canonicalization, hashing, signing, and writing the `.proof`.
+The output is a sequence of `(contractMemento, bridgeMemento)` pairs. The driver (`provekit mint --project <workspace-root>` for Rust, equivalents for other languages) takes care of canonicalization, hashing, signing, and writing the `.proof`.
 
 If you want to write an adapter for a library not on this list, the per-language kit standard at CID `blake3-512:7d3e72d58c87864eea2b7b330096d2cc4591292c1905baa447d4f74b8d80327521e284fc37f874fae80ba8f170a2456aed27c37215ee8752f8fd57e2d60b0f88` defines the contract every adapter implements. Reach out via the project repository; adapter contributions are explicitly in scope.
