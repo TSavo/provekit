@@ -28,10 +28,13 @@ ok()   { echo "${GREEN}✓${NC} $1"; PASS=$((PASS+1)); }
 bad()  { echo "${RED}✗${NC} $1"; FAIL=$((FAIL+1)); }
 skip() { echo "${YELLOW}~${NC} $1"; SKIP=$((SKIP+1)); }
 
+GPG_PUBKEY="$DIR/pubkey.gpg"
+GPG_SIG="$DIR/attestation.json.asc"
+
 # -----------------------------------------------------------------------------
 # Check 1: umbrella CID matches the recomputed value over the manifest entries
 # -----------------------------------------------------------------------------
-echo "[1/3] Recomputing umbrella CID from manifest entries"
+echo "[1/4] Recomputing umbrella CID from manifest entries"
 
 if ! command -v python3 >/dev/null 2>&1; then
     skip "python3 not on PATH; cannot recompute umbrella CID"
@@ -72,7 +75,7 @@ fi
 # -----------------------------------------------------------------------------
 # Check 2: attestation Ed25519 signature
 # -----------------------------------------------------------------------------
-echo "[2/3] Verifying Ed25519 signature on attestation.json"
+echo "[2/4] Verifying Ed25519 signature on attestation.json"
 
 if [ ! -s "$PUBKEY" ]; then
     skip "pubkey.txt missing or empty; signature ceremony not yet completed"
@@ -130,9 +133,33 @@ PY
 fi
 
 # -----------------------------------------------------------------------------
-# Check 3: Bitcoin OP_RETURN anchor (or OpenTimestamps)
+# Check 3: GPG detached signature over attestation.json (independent of Ed25519)
 # -----------------------------------------------------------------------------
-echo "[3/3] Verifying public time anchor"
+echo "[3/4] Verifying GPG detached signature on attestation.json"
+
+if [ ! -f "$GPG_PUBKEY" ] || [ ! -f "$GPG_SIG" ]; then
+    skip "pubkey.gpg or attestation.json.asc missing; GPG ceremony not yet completed"
+elif ! command -v gpg >/dev/null 2>&1; then
+    skip "gpg not on PATH; cannot verify detached signature"
+else
+    # Import the architect's pubkey into a throwaway keyring so verification
+    # is independent of the verifier's existing keyring state.
+    tmp_gpg_home=$(mktemp -d)
+    trap "rm -rf '$tmp_gpg_home'" EXIT
+    if gpg --homedir "$tmp_gpg_home" --quiet --batch --import "$GPG_PUBKEY" 2>/dev/null \
+       && gpg --homedir "$tmp_gpg_home" --quiet --batch --verify "$GPG_SIG" "$ATTEST" 2>/dev/null; then
+        fpr=$(gpg --homedir "$tmp_gpg_home" --list-keys --with-fingerprint --with-colons 2>/dev/null \
+               | awk -F: '/^fpr:/ {print $10; exit}')
+        ok "GPG signature verifies (fingerprint $fpr)"
+    else
+        bad "GPG signature does NOT verify (bad signature, wrong key, or malformed pubkey)"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# Check 4: Bitcoin OP_RETURN anchor (or OpenTimestamps)
+# -----------------------------------------------------------------------------
+echo "[4/4] Verifying public time anchor"
 
 if [ -s "$TXID_FILE" ]; then
     txid=$(tr -d '[:space:]' < "$TXID_FILE")

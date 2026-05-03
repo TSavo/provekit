@@ -2,13 +2,21 @@
 
 Cryptographic attestations of authorship over the architectural assembly described in `docs/launch/substrate-not-blockchain.md`, `docs/launch/the-pieces-on-the-table.md`, `docs/launch/path-to-default.md`, and the seven 2026-05-* specs in `protocol/specs/`.
 
-The substrate is dogfooded for the meta-claim: the same content-addressing + signing primitives the protocol provides for end-user contracts are used here for the architect's claim of authorship. Three independent verification axes:
+The substrate is dogfooded for the meta-claim: the same content-addressing + signing primitives the protocol provides for end-user contracts are used here for the architect's claim of authorship. Four independent verification axes:
 
 1. **Umbrella CID:** `blake3-512(JCS(<sorted contentCids>))` over the canonical content. Recomputable from the repo by anyone, byte-deterministic across machines per manifesto §11. See `v1/umbrella.json`.
 
 2. **Ed25519 attestation:** signed memento under the architect's real Ed25519 key (NOT the publicly-known v0 foundation seed in `tools/foundation-keygen/`). The signed claim is in `v1/attestation.json`; the public key is in `v1/pubkey.txt`; the binding to the architect's established public identity is in `v1/identity-binding.txt`.
 
-3. **Public time anchor:** the attestation's CID is anchored on Bitcoin via OP_RETURN (txid in `v1/anchor-bitcoin-txid.txt`) and additionally via OpenTimestamps (proof in `v1/attestation.json.ots`). Either anchor independently establishes time-of-existence; both together guard against single-chain failure.
+3. **GPG detached signature:** the architect's existing GPG key signs `v1/attestation.json` directly, producing `v1/attestation.json.asc`. The public GPG key is in `v1/pubkey.gpg`; verifiers can also pull it from the GPG keyservers (`keys.openpgp.org`) or the architect's GitHub-published GPG ID. This layer is independent of the Ed25519 layer: a different cryptographic algorithm, a different long-lived key with its own web-of-trust history, distinct from the substrate-native Ed25519 attestation.
+
+4. **Public time anchor:** the attestation's CID is anchored on Bitcoin via OP_RETURN (txid in `v1/anchor-bitcoin-txid.txt`) and additionally via OpenTimestamps (proof in `v1/attestation.json.ots`). Either anchor independently establishes time-of-existence; both together guard against single-chain failure.
+
+Plus two more layers atop, automatic if the architect's git config has signing enabled:
+
+5. **Signed git tags** on the load-bearing architectural commits (see `v1/TAGS.md` for the list of 14). Each tag is annotated with the architect's claim and signed; GitHub renders verified badges.
+
+6. **Signed git commits** for the ceremony commit that fills in the attestation. Automatic if commit signing is configured under the same key.
 
 Each axis is verifiable without trusting the others. The umbrella CID does not need the signature to be valid (it commits to bytes, not to a signer). The signature does not need the on-chain anchor to be valid (it commits to a key, not to time). The on-chain anchor does not need the umbrella to be valid (it commits to whatever CID was encoded, by whoever broadcast the transaction). Composition under §10 of the manifesto: each axis is its own attestation, the conjunction is the strongest claim.
 
@@ -18,7 +26,7 @@ Each axis is verifiable without trusting the others. The umbrella CID does not n
 ./provenance/v1/verify.sh
 ```
 
-Three checks: umbrella CID recomputation, Ed25519 signature against pubkey.txt, OP_RETURN payload at the anchored txid (or OpenTimestamps proof). Skips checks gracefully when the underlying tool isn't installed; passes only when all available checks pass.
+Four checks: umbrella CID recomputation, Ed25519 signature against pubkey.txt, GPG detached signature against pubkey.gpg, OP_RETURN payload at the anchored txid (or OpenTimestamps proof). Skips checks gracefully when the underlying tool isn't installed; passes only when all available checks pass.
 
 ## Versioning
 

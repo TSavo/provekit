@@ -1,6 +1,7 @@
 Provenance identity binding — provenance/v1/attestation.json
 
-The Ed25519 public key in the signer field of attestation.json is bound to the
+The Ed25519 public key in the signer field of attestation.json (and the GPG
+key whose detached signature attestation.json.asc carries) are bound to the
 following established public identity footprint:
 
   Legal name:     Travis Robert Savo
@@ -8,6 +9,12 @@ following established public identity footprint:
   Handle:         Kevlar (since the early-1990s P2P / cypherpunks scene)
   GitHub:         TSavo
   Email:          evilgenius@nefariousplan.com
+  GPG key:        Kevlar <evilgenius@nefariousplan.com>
+                  Fingerprint 5FD2 1B4F E7E4 A3CA 7971  CB09 DE66 3978 8E09 1026
+                  Published at https://nefariousplan.com/pgp (the same key
+                  that signs every published research post in
+                  nefariousplan/public/sigs/*.asc; verifiable web-of-trust
+                  history independent of this attestation).
   Apache JCS team page: lists him historically as `tsavo` / Travis Savo /
                   tsavo@ifilm.com (iFilm-era attribution, verifiable on the
                   Apache project's archived team rosters)
