@@ -1,15 +1,17 @@
 # ProvekIt — top-level orchestrator
 #
-# Five-language polyglot. Each language owns its native build tool;
+# Six-language polyglot. Each language owns its native build tool;
 # this Makefile is glue, not a build system. `make ci` runs the same
-# gate the GitHub Actions workflow runs.
+# gate the GitHub Actions workflow runs (Linux x86_64: Rust/Go/C++/TS/C#/Python).
+# Swift is macOS-only; use `make build-swift`, `make test-swift`, `make mint-swift`
+# directly on a macOS host — those targets are excluded from the CI aggregates.
 #
 # Mainline targets:
 #   make help        — print this help
 #   make ci          — full conformance gate (catalog + protocol + 5 mints + tests)
 #   make conformance — catalog + protocol + 5 mint CIDs + self-contract tests
-#   make all-mint    — run all 5 mint commands; print CIDs
-#   make test-all    — run every language-native test suite
+#   make all-mint    — run all 5 mint commands; print CIDs (Linux/CI subset)
+#   make test-all    — run every language-native test suite (Linux/CI subset)
 #
 # Per-language targets:
 #   make build-rust  — cargo build --release for workspace + tools
@@ -62,10 +64,10 @@ help:
 	@echo "ProvekIt — top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
-	@echo "  make ci             full gate (conformance + test-all)"
+	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 5 peer langs]"
 	@echo "  make conformance    catalog + protocol + 5 mint CIDs + self-contract tests"
-	@echo "  make all-mint       run all 5 mint commands; print CIDs"
-	@echo "  make test-all       run all language-native test suites"
+	@echo "  make all-mint       5 mint commands (Swift excluded: macOS-only, use mint-swift)"
+	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
 	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java)"
@@ -101,8 +103,11 @@ help:
 # Build every kit's binaries. Useful before `make conformance` or before
 # spawning `provekit-linkerd` (which subprocesses kit lifters at lift
 # time). Each kit's build target is independent; failures stay isolated.
+# NOTE: build-swift is intentionally excluded — it requires a macOS host
+# with the Swift toolchain and is not run by Linux CI. Use `make build-swift`
+# directly on macOS.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-swift
+build-all: build-rust build-cpp build-go build-ts build-csharp build-java
 
 .PHONY: build-rust
 build-rust:
@@ -230,16 +235,17 @@ mint-swift: build-swift
 		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
 		 echo "        --bin sign-self-contracts -- swift $$cid $$cset" && exit 1)
 
+# NOTE: mint-swift is intentionally excluded from all-mint — it requires a
+# macOS host with the Swift toolchain. Use `make mint-swift` on macOS.
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-swift
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
 	@echo ""
-	@echo "==== all 6 self-contract CIDs match pinned values ===="
+	@echo "==== all 5 self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
 	@printf "  %-8s  %s\n" "ts"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ts.json)"
 	@printf "  %-8s  %s\n" "csharp" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json)"
-	@printf "  %-8s  %s\n" "swift"  "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/swift.json)"
 
 # --- Conformance gate --------------------------------------------------------
 
@@ -347,8 +353,10 @@ build-zig:
 	cd implementations/zig/provekit-ir && zig build
 	cd implementations/zig/provekit-lsp-zig && zig build
 
+# NOTE: test-swift is intentionally excluded from test-all — it requires a
+# macOS host with the Swift toolchain. Use `make test-swift` on macOS.
 .PHONY: test-all
-test-all: test-rust test-go test-ts test-csharp test-python test-java test-swift
+test-all: test-rust test-go test-ts test-csharp test-python test-java
 	@echo ""
 	@echo "==== test-all: PASS ===="
 
