@@ -167,6 +167,44 @@ Everything else is composition. Witness chains, witness sets, witness vectors, c
 
 The substrate stays small. The composition layer is unbounded.
 
+## 11. The address is multi-dimensional
+
+In a content-addressing system, the same content lives at many addresses at once. Each address is a projection of the content into one chosen dimension: hash over the declaration alone, hash over the declaration with a signer, hash over a sorted set of declarations, hash over a serialized bundle that includes minting state. The content does not move between these addresses; it occupies all of them simultaneously, in different projections.
+
+The substrate's first guarantee is that **same content produces the same address** in the dimension you asked for. The closure property of §10 depends on this. Two parties holding the same content get the same CID without coordination, byte for byte, because the projection is deterministic.
+
+The failure mode is not getting the wrong content. It is getting the same content at a different address than expected, because the address dimension you chose includes things that aren't content. Pin the bundle file's bytes as if they were a contract identity, and the address moves every time anyone re-mints, even though every byte of every contract is unchanged. Same content, different address, because the dimension included signer state and mint timestamps. The pin breaks not because the content moved, but because the dimension asked what "same" means and answered with bytes that drift.
+
+The four vectors the substrate actually pins on are projections at four different dimensionalities.
+
+- `contractCid` projects over content alone (one ContractDecl).
+- `contractSetCid` projects over content alone (a sorted set of contract CIDs).
+- `attestationCid` projects over content plus signer plus declaredAt plus signature.
+- A bundle file's CID projects over content plus all embedded envelopes plus producer metadata plus disk-layout artifacts.
+
+The first two are content-addressed: same content, same address, across machines, signers, time. The third is signer-and-time-addressed by design: an attestation is supposed to be a unique witnessing event, distinguishable from another witnessing event of the same content. The fourth is build-artifact-addressed: useful as a warm-cache key, brittle as a trust anchor, because the address moves under every honest re-mint.
+
+Choosing dimensionality is therefore the substrate's primary act. The four specs that formalize this choice (`contract-cid-vs-attestation-cid`, `contract-set-extension`, `substrate-layers-envelope-header-body`, `version-chains-pinning`) are not feature additions; they are the substrate naming the dimensions it is willing to converge on. Anything outside these dimensions is composition under §10, legitimate and free, but not a trust anchor.
+
+The operational test: ask what shifts the bytes for unchanged content. If signer state, mint timestamp, or producer metadata can shift the bytes while every contract is byte-identical, the dimension includes more than content and the address will drift even when the pin should hold. If only the content can shift the bytes, the dimension is content-only and the substrate will converge. The substrate is correct precisely to the extent that nothing in it confuses the two.
+
+## 12. The pin is a tuple
+
+The §11 question, which dimension does this CID project into, is half of the choice. The other half is rank: how many CIDs the assertion requires. A single CID is a 1-tuple; it can carry an assertion of existence ("this content exists") but not a relation ("this content satisfies that"). Relations live at rank 2 or higher.
+
+"Pin a binary" with one CID is rank 1. It says the binary exists. It does not say what the binary fulfills, what contract it conforms to, or what witness chain endorses it. The relation a consumer actually wants, "this binary fulfills this contract," is rank 2: the tuple `(binaryCid, contractCid)`. The relation "this chain attests that this binary fulfills this contract" is rank 3: the tuple `(witnessCid, contractCid, binaryCid)`.
+
+You cannot compress a rank-N relation into a rank-(N-1) pin without losing a predicate. The lost dimension does not vanish; it leaks back as drift. A 2-relation pinned as a single CID will appear stable when both axes happen to align and unstable whenever one moves while the other doesn't, and the unstable case will look like a hash bug rather than a rank bug. This is exactly the shape of the failure that produced spec #94: the relation `(set of contracts, attestation thereof)` projected onto a single bundle-bytes hash, and the discarded second axis (envelope state: signer plus declaredAt plus signature) drifted while the first axis was unchanged.
+
+§11 and this section compose into the operational rule:
+
+- §11: each CID in your pin must project content into the right dimension. Wrong dimension means the address moves on irrelevant vectors.
+- §12: your pin must be a tuple of the right rank. Wrong rank means the missing dimension leaks back as drift.
+
+Together: if your assertion is rank N over content axes (A1, ..., AN), your pin is a tuple `(cid1, ..., cidN)` where each `cid_i` is a content-only projection of `A_i`. Anything fewer loses a predicate. Anything more pins something you didn't mean to assert. The §8 three-axis package pin, `(contractCid, witnessCid, binaryCid)`, is the canonical rank-3 tuple at the consumer surface; spec #94's `contractSetCid` is the rank-1 projection used inside a rank-2 attestation; spec #91's separation of contract from attestation is the act of refusing to collapse a rank-2 relation into a rank-1 hash.
+
+The substrate's three primitives, sign and hash and reference, are agnostic to rank. Composition under §10 supports tuples of any size. The discipline is at the assertion site: name the relation you're claiming, count its axes, build a tuple of that rank, project each axis through a content-only dimension. The rest is the substrate doing what it already does.
+
 ## What this means for you
 
 If you accept this framing, the developer move is direct: stop asking "which chain do I publish to?" and start asking "what discipline am I asserting on the bodies I sign?"
