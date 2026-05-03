@@ -6,15 +6,23 @@ pub fn build(b: *std.Build) void {
 
     const provekit_ir = b.createModule(.{
         .root_source_file = b.path("../provekit-ir/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "provekit-ir", .module = provekit_ir },
+        },
     });
 
     const exe = b.addExecutable(.{
         .name = "provekit-lift-zig",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = exe_mod,
     });
-    exe.root_module.addImport("provekit-ir", provekit_ir);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
