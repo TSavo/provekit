@@ -1,7 +1,7 @@
 {
   "kind": "catalog",
   "name": "provekit-protocol",
-  "version": "v1.3.1-2026-05-02",
+  "version": "v1.4.0-2026-05-03",
   "algorithms": {
     "hash": [
       "blake3-512"
@@ -33,10 +33,15 @@
     "multi-solver-protocol": "blake3-512:71fc7ac22997938629d835f87e4e8a322026d77c1e1f834c9fbe0f79cca4e903792c628e96d3004c88d29706f4d87bc042ff837fef571c0cb3012495a03003d3",
     "lift-plugin-protocol": "blake3-512:fa5e47b0650b07a3d7d37e3efc0ec006d079224b23c601464a69fd91f6cbdb3e9adf4f2f1d54eb73c0f553c73750d4ca9349eeeba2ec9d47d081c52f6de263b6",
     "correctness-is-a-hash": "blake3-512:5a41e9ad8b0e63df400b93b77a0106468160fb2b92db4099fa5b757c3c5596176c5891365dbc6a8263a57ea8a42866eaa9e1a41fa3a43a5aadef4b21f851a845",
-    "lsp-protocol": "blake3-512:75cac55f568b7363c3ae839ffdd11dc26d1a54d84d26ba43fca770b3fe2f7eca6305f77dad22b6b9f5f0bdb1cf10dc6fadd815ee3bf1507bb1eba6f106ee22bc"
+    "lsp-protocol": "blake3-512:75cac55f568b7363c3ae839ffdd11dc26d1a54d84d26ba43fca770b3fe2f7eca6305f77dad22b6b9f5f0bdb1cf10dc6fadd815ee3bf1507bb1eba6f106ee22bc",
+    "contract-cid-vs-attestation-cid": "blake3-512:53e136d9af29ce80b690f90c484e90c60f66f28c483b2038e03e7c6f6055f637527deb205e5558b47487b7d89ead461348d5e8981f2e9e8ccb30edd8867d47db",
+    "contract-set-extension": "blake3-512:839e82096d04b1241ffa1f6158fcea6bfeb78f3836664a66a13ff11b3cde58d72e6c85bfc619ba1341f13b8375f655bdf5582b0eac91d27648f0048bee8f9867",
+    "substrate-layers-envelope-header-body": "blake3-512:a76c7d0d6a5fecde40f579a8566f0199f61d5e3f7a0d48561f0ef765b5983a31fc96bb21fe56ea667337341dc798e7370229722ee7535fe7e2c22d4f7dad97dd",
+    "version-chains-pinning": "blake3-512:281bf014f6f0ebc9a5d455329ee033ff8b7ee85e001bcbdcb45a62c14e43855892c46462789ccb74961859e708eae70829fdf736798c17f59f0239ef78dd7e45"
   },
-  "declaredAt": "2026-05-02T17:00:00Z",
-  "_unsigned": "v1.3.1 patch bump (re-sync only over v1.3.0): no protocol changes; absorbs ir-formal-grammar spec-CID drift introduced by PR #10 (the `Bridge target pinning: the shim-poisoning vector` normative example landed without a follow-up catalog cut). Property re-baked: `ir-formal-grammar` 99f09163...e37cc4bb -> fc26a82b...29b72f42c. All other 19 spec CIDs unchanged. v1.3.0 mementos and .proof bundles remain valid; v1.3.0's CID 5a3129f4...205d24c7 stays attestable via .provekit/catalog-signatures/v1.3.0.json for anyone pinned. Catalog signed under the same foundation v0 key.",
+  "declaredAt": "2026-05-03T15:00:00Z",
+  "_unsigned": "v1.4.0 minor bump (additive over v1.3.1): substrate layering plus three metadata-extension specs. (1) `substrate-layers-envelope-header-body` formalizes the envelope/header/body separation as v1.2 of the memento schema: substrate verifiers inspect envelope + header; body fields are carried but verifier-opaque. (2) `contract-cid-vs-attestation-cid` separates the contract's content CID from the attestation's CID over `(contractCid, signer, declaredAt, ...)`, so contract identity is stable across re-attestation. (3) `contract-set-extension` adds `contractSetCid` and `previousContractSetCid` body fields for ordered, append-only contract-set evolution under semver-minor rules. (4) `version-chains-pinning` adds the three-axis pinning convention (`contractCid`, `witnessCid`, `binaryCid`) carried in the body, plus the version-chain walk used by package-manager-replacement tooling. Per `substrate-layers-envelope-header-body` §4, all v1.3.x mementos and .proof bundles remain valid: v1.1 flat structure is read as `header = entire flat object` with synthetic empty `body`; new attestations MUST emit the layered shape. v1.3.1's CID `dab2eca9...304ff799` stays attestable via .provekit/catalog-signatures/v1.3.1.json for anyone pinned. Catalog signed under the same foundation v0 key.",
+  "_v1_3_1_unsigned": "v1.3.1 patch bump (re-sync only over v1.3.0): no protocol changes; absorbs ir-formal-grammar spec-CID drift introduced by PR #10 (the `Bridge target pinning: the shim-poisoning vector` normative example landed without a follow-up catalog cut). Property re-baked: `ir-formal-grammar` 99f09163...e37cc4bb -> fc26a82b...29b72f42c. All other 19 spec CIDs unchanged. v1.3.0 mementos and .proof bundles remain valid; v1.3.0's CID 5a3129f4...205d24c7 stays attestable via .provekit/catalog-signatures/v1.3.0.json for anyone pinned. Catalog signed under the same foundation v0 key.",
   "_v1_3_0_unsigned": "v1.3.0 minor bump (additive over v1.2.0): four protocol-additive enrichments + two new specs. (1) BridgeDeclaration gains `sourceContractCid` + `targetProofCid` fields for hash-bounded cross-bundle witness pinning. (2) Catalog memento gains optional `binaryCid` for supply-chain anchoring (rule 5 is MAY in v1.3.0; promotion to MUST awaits a reference verifier in v1.4.0). (3) Catalog memento gains optional `metadata` map for non-normative tooling/diagnostics. (4) `EvidenceTerm` proof-certificate carrier for `smt-lib`/`coq`/`custom` proof types. New specs: `correctness-is-a-hash` (the memcmp theorem) and `lsp-protocol` (real-time IDE integration with pluggable JSON-RPC backend). All v1.2.0 mementos and .proof bundles remain valid; the bump is purely additive. Catalog signed under the same foundation v0 key. v1.2.0 attestation (1e5cfee6...17d0579f) remains valid for anyone pinned.",
   "_v1_2_0_unsigned": "v1.2.0 minor bump (additive over v1.1.0): adds four pluggability protocols — agent-plugin-protocol (LSP-shape JSON-RPC seam for coding agents), ir-compiler-protocol (per-solver IR translators), multi-solver-protocol (single/chain/portfolio dispatch), lift-plugin-protocol (one Rust CLI + per-language plugins via stdio JSON-RPC). All four are additive: any v1.1.0 memento or .proof remains valid under v1.2.0. The reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via toolchain (vitest), not as a CLI peer. v1.1.0's own catalog CID (5b770182...19f05cd4) remains the version anyone pinned to it. v1.2.0's catalog is signed under the same foundation key.",
   "_breakingChanges": [],
@@ -64,5 +69,12 @@
     "ir-formal-grammar enrichment: 27 named formal invariants documented in FOL across Terms / Formulas / Declarations / Sorts / Reference Parser / Test sections",
     "contract-merge-semantics enrichment: cross-bundle merge clarifications",
     "lift-plugin-protocol enrichment: minor clarifications"
+  ],
+  "_v1_4_0_additiveChanges": [
+    "substrate-layers-envelope-header-body: formalizes the envelope/header/body separation as v1.2 of the memento schema; substrate verifiers inspect envelope + header, body fields are verifier-opaque",
+    "contract-cid-vs-attestation-cid: separates contract content CID from attestation CID so contract identity is stable across re-attestation",
+    "contract-set-extension: adds contractSetCid + previousContractSetCid body fields for ordered, append-only contract-set evolution under semver-minor rules",
+    "version-chains-pinning: three-axis pinning (contractCid, witnessCid, binaryCid) carried in the body, plus the version-chain walk used by package-manager-replacement tooling",
+    "all v1.3.x mementos and .proof bundles remain valid; v1.1 flat structure is read as header = entire flat object with synthetic empty body, per substrate-layers spec section 4"
   ]
 }

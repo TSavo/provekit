@@ -47,11 +47,11 @@
 # binary-specific elaboration. The source tree no longer carries
 # machine-local truth about its own bytes for any of the five peer kits.
 #
-# `CATALOG_CID` is bumped to v1.3.1 here; the constant remains because
+# `CATALOG_CID` is bumped to v1.4.0 here; the constant remains because
 # `make help` echoes it. Follow-up: retire it the same way the
 # self-contracts CIDs are retired (read from the embedded catalog
 # signature attestation).
-CATALOG_CID := blake3-512:dab2eca97eaea7cc107b1ff3f2326094d804a5e91749bf8e9caa36cd049dc0ae1cb65afb353af8fcd271f87e9e0fc7e7710ec6a68666da6a11f802bc304ff799
+CATALOG_CID := blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f
 
 PROVEKIT := implementations/rust/target/release/provekit
 VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
@@ -83,7 +83,7 @@ help:
 	@echo "Maintenance:"
 	@echo "  make clean          remove build artifacts"
 	@echo ""
-	@echo "Pinned CIDs (catalog v1.3.1):"
+	@echo "Pinned CIDs (catalog v1.4.0):"
 	@echo "  catalog: $(CATALOG_CID)"
 	@echo "  rust:    (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json"
 	@echo "  go:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/go.json"
