@@ -2,7 +2,7 @@
 //
 // recompute-spec-cids
 //
-// Catalog freeze tool (current target: v1.3.1). Computes BLAKE3-512 CIDs for every protocol
+// Catalog freeze tool (current target: v1.4.0). Computes BLAKE3-512 CIDs for every protocol
 // spec file listed in `protocol/specs/2026-04-30-protocol-catalog.json`,
 // substitutes them into the catalog (replacing `RECOMPUTE-AFTER-*`
 // placeholders), then computes the catalog's own CID as
@@ -102,6 +102,22 @@ const SPEC_MAP: &[(&str, &str)] = &[
     (
         "lsp-protocol",
         "2026-04-30-lsp-protocol.md",
+    ),
+    (
+        "contract-cid-vs-attestation-cid",
+        "2026-05-03-contract-cid-vs-attestation-cid.md",
+    ),
+    (
+        "contract-set-extension",
+        "2026-05-03-contract-set-extension.md",
+    ),
+    (
+        "substrate-layers-envelope-header-body",
+        "2026-05-03-substrate-layers-envelope-header-body.md",
+    ),
+    (
+        "version-chains-pinning",
+        "2026-05-03-version-chains-pinning.md",
     ),
 ];
 
@@ -273,7 +289,7 @@ fn run(write: bool) -> Result<(), String> {
     }
 
     // 7. Report.
-    println!("# Protocol catalog freeze (v1.3.1)");
+    println!("# Protocol catalog freeze (v1.4.0)");
     println!();
     println!("Catalog file:    {}", catalog_path.display());
     println!("Catalog CID:     {}", catalog_cid);
