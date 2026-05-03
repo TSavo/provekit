@@ -20,7 +20,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use provekit_linker::{link, KitCallEdge, KitContract, LinkerInputs, LinkerOutput};
+use provekit_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs, LinkerOutput};
 use serde_json::Value as Json;
 
 /// Key type for the LRU cache.
@@ -81,7 +81,7 @@ impl Lru {
 pub struct ProjectState {
     /// Maps (kitId, absolute file path) -> (contracts, call_edges) produced
     /// by the last `parseFile` for that slot.
-    streams: BTreeMap<(String, String), (Vec<KitContract>, Vec<KitCallEdge>)>,
+    streams: BTreeMap<(String, String), (Vec<LinkerContract>, Vec<LinkerCallEdge>)>,
     /// Most recent linker output.
     last_output: Option<LinkerOutput>,
     /// LRU cache: (contractSetCid, callEdgeSetCid) -> LinkerOutput.
@@ -104,8 +104,8 @@ impl ProjectState {
         &mut self,
         kit_id: &str,
         file: &str,
-        contracts: Vec<KitContract>,
-        call_edges: Vec<KitCallEdge>,
+        contracts: Vec<LinkerContract>,
+        call_edges: Vec<LinkerCallEdge>,
     ) -> &LinkerOutput {
         // Replace the slot.
         self.streams.insert(
@@ -114,8 +114,8 @@ impl ProjectState {
         );
 
         // Build union inputs.
-        let mut all_contracts: Vec<KitContract> = Vec::new();
-        let mut all_call_edges: Vec<KitCallEdge> = Vec::new();
+        let mut all_contracts: Vec<LinkerContract> = Vec::new();
+        let mut all_call_edges: Vec<LinkerCallEdge> = Vec::new();
         for (_, (cs, ces)) in &self.streams {
             all_contracts.extend(cs.iter().cloned());
             all_call_edges.extend(ces.iter().cloned());
@@ -140,8 +140,8 @@ impl ProjectState {
     /// Try to re-run link using the current union stream without mutating
     /// the stream. Used internally when cache is flushed.
     fn relink(&mut self) {
-        let mut all_contracts: Vec<KitContract> = Vec::new();
-        let mut all_call_edges: Vec<KitCallEdge> = Vec::new();
+        let mut all_contracts: Vec<LinkerContract> = Vec::new();
+        let mut all_call_edges: Vec<LinkerCallEdge> = Vec::new();
         for (_, (cs, ces)) in &self.streams {
             all_contracts.extend(cs.iter().cloned());
             all_call_edges.extend(ces.iter().cloned());
@@ -236,13 +236,13 @@ impl ProjectState {
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "slot missing 'file'".to_string())?
                 .to_string();
-            let contracts: Vec<KitContract> = serde_json::from_value(
+            let contracts: Vec<LinkerContract> = serde_json::from_value(
                 slot.get("contracts")
                     .cloned()
                     .unwrap_or(Json::Array(vec![])),
             )
             .map_err(|e| format!("slot contracts parse error: {e}"))?;
-            let call_edges: Vec<KitCallEdge> = serde_json::from_value(
+            let call_edges: Vec<LinkerCallEdge> = serde_json::from_value(
                 slot.get("callEdges")
                     .cloned()
                     .unwrap_or(Json::Array(vec![])),
@@ -260,8 +260,8 @@ impl ProjectState {
 mod tests {
     use super::*;
 
-    fn make_contract(name: &str, kit: &str, cid: &str) -> KitContract {
-        KitContract {
+    fn make_contract(name: &str, kit: &str, cid: &str) -> LinkerContract {
+        LinkerContract {
             name: name.to_string(),
             kit: kit.to_string(),
             contract_cid: cid.to_string(),

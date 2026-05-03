@@ -29,10 +29,10 @@ mod state_conformance {
     //
     // For purely unit-level checks we test the provekit_linker library directly.
 
-    use provekit_linker::{link, KitContract, LinkerInputs};
+    use provekit_linker::{link, LinkerContract, LinkerInputs};
 
-    fn fixture_contract(name: &str, kit: &str, cid: &str) -> KitContract {
-        KitContract {
+    fn fixture_contract(name: &str, kit: &str, cid: &str) -> LinkerContract {
+        LinkerContract {
             name: name.to_string(),
             kit: kit.to_string(),
             contract_cid: cid.to_string(),

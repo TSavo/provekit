@@ -20,7 +20,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use provekit_linker::{KitCallEdge, KitContract};
+use provekit_linker::{LinkerCallEdge, LinkerContract};
 use serde_json::Value as Json;
 use tokio::sync::Mutex;
 use tracing::instrument;
@@ -226,7 +226,7 @@ async fn lift_source(
     kit_id: &str,
     file: &str,
     source: &str,
-) -> Result<(Vec<KitContract>, Vec<KitCallEdge>), LiftError> {
+) -> Result<(Vec<LinkerContract>, Vec<LinkerCallEdge>), LiftError> {
     match kit_id {
         "rust" => lift_rust_source(file, source).await,
         "go" | "cpp" | "csharp" | "python" | "ruby" | "swift" | "ts" | "zig" | "java" | "c" => {
@@ -244,12 +244,12 @@ async fn lift_source(
 /// Lift a single Rust source file.
 ///
 /// Writes the source to a fresh temp directory so `provekit_lift::lift_path`
-/// can walk it. Returns `(KitContract[], KitCallEdge[])`.
+/// can walk it. Returns `(LinkerContract[], LinkerCallEdge[])`.
 async fn lift_rust_source(
     file: &str,
     source: &str,
-) -> Result<(Vec<KitContract>, Vec<KitCallEdge>), LiftError> {
-    use provekit_linker::{KitCallEdge as LinkerEdge, KitContract as LinkerContract};
+) -> Result<(Vec<LinkerContract>, Vec<LinkerCallEdge>), LiftError> {
+    use provekit_linker::{LinkerCallEdge as LinkerEdge, LinkerContract};
 
     // Write source to a temp dir (blocking I/O, run in spawn_blocking).
     let source_owned = source.to_string();
