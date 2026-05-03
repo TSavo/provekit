@@ -606,6 +606,95 @@ fn format_hover(ann: &Annotation) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tower_lsp::lsp_types::{DiagnosticSeverity, NumberOrString};
+
+    fn make_diag(error_kind: &str, target_symbol: &str, reason: &str) -> DaemonDiagnostic {
+        DaemonDiagnostic {
+            error_kind: error_kind.to_string(),
+            target_symbol: target_symbol.to_string(),
+            reason: reason.to_string(),
+        }
+    }
+
+    #[test]
+    fn unprovable_obligation_maps_to_error() {
+        let d = make_diag("unprovable-obligation", "MyTrait::verify", "postcondition not met");
+        let lsp = daemon_diag_to_lsp(&d);
+
+        assert_eq!(lsp.severity, Some(DiagnosticSeverity::ERROR));
+        assert_eq!(
+            lsp.code,
+            Some(NumberOrString::String("provekit:unprovable-obligation".to_string()))
+        );
+        assert_eq!(lsp.source, Some("provekit".to_string()));
+        assert!(
+            lsp.message.contains("cannot verify"),
+            "message should contain 'cannot verify', got: {}",
+            lsp.message
+        );
+        assert!(
+            lsp.message.contains("MyTrait::verify"),
+            "message should contain symbol name, got: {}",
+            lsp.message
+        );
+        assert!(
+            lsp.message.contains("postcondition not met"),
+            "message should contain reason, got: {}",
+            lsp.message
+        );
+    }
+
+    #[test]
+    fn unresolved_symbol_maps_to_warning() {
+        let d = make_diag("unresolved-symbol", "other::foo", "not found in any kit");
+        let lsp = daemon_diag_to_lsp(&d);
+
+        assert_eq!(lsp.severity, Some(DiagnosticSeverity::WARNING));
+        assert_eq!(
+            lsp.code,
+            Some(NumberOrString::String("provekit:unresolved-symbol".to_string()))
+        );
+        assert_eq!(lsp.source, Some("provekit".to_string()));
+        assert!(
+            lsp.message.contains("cannot resolve"),
+            "message should contain 'cannot resolve', got: {}",
+            lsp.message
+        );
+        assert!(
+            lsp.message.contains("other::foo"),
+            "message should contain symbol name, got: {}",
+            lsp.message
+        );
+    }
+
+    #[test]
+    fn unknown_error_kind_maps_to_information() {
+        let d = make_diag("some-future-kind", "anything", "some reason");
+        let lsp = daemon_diag_to_lsp(&d);
+
+        assert_eq!(lsp.severity, Some(DiagnosticSeverity::INFORMATION));
+        assert_eq!(
+            lsp.code,
+            Some(NumberOrString::String("provekit:some-future-kind".to_string()))
+        );
+        assert_eq!(lsp.source, Some("provekit".to_string()));
+        assert_eq!(lsp.message, "some reason");
+    }
+
+    #[test]
+    fn range_is_file_start_marker() {
+        let d = make_diag("unprovable-obligation", "x", "y");
+        let lsp = daemon_diag_to_lsp(&d);
+        assert_eq!(lsp.range.start.line, 0);
+        assert_eq!(lsp.range.start.character, 0);
+        assert_eq!(lsp.range.end.line, 0);
+        assert_eq!(lsp.range.end.character, 1);
+    }
+}
+
 fn build_diagnostics(result: &backend::VerifyResult, range: Range) -> Vec<Diagnostic> {
     match result.status.as_str() {
         "verified" => vec![Diagnostic {

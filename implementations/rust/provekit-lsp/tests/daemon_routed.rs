@@ -21,6 +21,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use libc;
 use serde_json::{json, Value};
 
 // ---------------------------------------------------------------------------
@@ -256,9 +257,6 @@ impl LspServer {
         let _ = self.child.wait();
     }
 }
-
-// libc for select() in wait_for_publish_diagnostics
-extern crate libc;
 
 // ---------------------------------------------------------------------------
 // Test 1: smoke test — didOpen with daemon active gets publishDiagnostics
