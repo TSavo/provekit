@@ -24,7 +24,30 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 | C           | `+` | `~`  | `~`                                                     | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
 | Zig         | `+` | `~`  | `~`                                                     | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | Python      | `+` | `+`  | `+ pydantic` ; `~ deal, hypothesis` ; `~ icontract, attrs`   | `+`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
-| Java / JVM  | `+` | `~`  | `+ Bean Validation, JML, Spring Web` ; `~ Cofoja`        | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
+| Java / JVM  | `+` | `~`  | `+ Bean Validation, JML, Spring Web, Cofoja`            | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
+| Ruby        | `+` | `~`  | `+ active_model, dry-validation, rspec`                 | `-`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
+| C#          | `+` | `+`  | `+ DataAnnotations, Linq`                               | `+ .NET attrs`           | `~`               | `~ (use Rust CLI)`   | `+`                  |
+| Swift       | `+` | `~`  | `~`                                                     | `-`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
+
+## Cross-kit bridge readiness
+
+This sub-matrix tracks the per-kit substrate state that supports cross-kit byte-equivalence proofs and lift-plugin-protocol bridges. The substrate guarantee depends on each kit independently asserting conformance against shared Rust contract CIDs; this table is what lets you see which kits can today.
+
+| Language    | Self-contracts pkg                          | Bridge IR v1.1.0 (9-field) | Lift-plugin-protocol bridges    | Signed attestation       |
+|-------------|---------------------------------------------|----------------------------|----------------------------------|--------------------------|
+| Rust        | `+ provekit-self-contracts`                 | `+`                        | `+ source-of-truth (PR #84)`    | `+`                      |
+| Go          | `+ provekit-self-contracts`                 | `+`                        | `~ Phase 2 in flight`           | `+`                      |
+| TypeScript  | `+ inline (mint-ts-self-contracts)`         | `+`                        | `~ Phase 2 in flight`           | `+`                      |
+| Python      | `~ via provekit-lift-py-tests`              | `+`                        | `~ Phase 2 in flight`           | `-`                      |
+| C++         | `+ provekit-self-contracts`                 | `o partial; #225`          | `-`                              | `+`                      |
+| C           | `-`                                         | `+`                        | `-`                              | `-`                      |
+| Zig         | `-`                                         | `+`                        | `-`                              | `-`                      |
+| Java / JVM  | `-`                                         | `o partial; #222`          | `-`                              | `-`                      |
+| Ruby        | `-`                                         | `o partial; #223`          | `-`                              | `-`                      |
+| C#          | `+ Provekit.SelfContracts`                  | `o partial; #224`          | `-`                              | `+`                      |
+| Swift       | `-`                                         | `+ (PR #76)`               | `-`                              | `-`                      |
+
+Bridge IR `o partial` means the kit currently passes the `bridge_decl` conformance fixture (the JCS bytes match) but the kit's own IR types cannot construct or round-trip the full v1.1.0 9-field Bridge. The fixture is a happy-path test; round-trip compliance is what this column tracks. Issue numbers reference tracker entries to close each gap.
 
 ## Rust (canonical reference implementation)
 
@@ -186,6 +209,65 @@ Legend: `+` shipping in v1.1, `~` planned for v1.2, `o` under evaluation, `-` no
 **CLI:** Deferred. Use the Rust CLI.
 
 **LSP Plugin:** Yes. `provekit-lift-zig --rpc` implements the ProvekIt NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`.
+
+## Ruby
+
+**Kit:** Shipping in v1.1. `implementations/ruby/lib/provekit/ir.rb` provides IR types, JCS canonical JSON emitter, and BLAKE3-512 hashing. Requires Ruby 3+ (uses endless-method syntax); macOS system Ruby 2.6 cannot parse the kit. Conformance harness prefers Homebrew Ruby automatically.
+
+**Libs:** Under evaluation.
+
+**Lift adapters (shipping in v1.1):**
+- `provekit/lift/active_model`: walks `validates :field, presence: true, length: { minimum: N }` declarations.
+- `provekit/lift/dry_validation`: walks `Dry::Validation::Contract` rule definitions.
+- `provekit/lift/rspec`: walks `RSpec.describe` blocks; lifts `it { is_expected.to ... }` matchers.
+
+**Decorator macros:** Ruby has no native attribute syntax. Comment annotations under evaluation.
+
+**Embedded verifier:** Planned.
+
+**CLI:** Deferred. Use the Rust CLI.
+
+**LSP Plugin:** Yes. `bin/provekit-lsp-ruby` implements the ProvekIt NDJSON LSP plugin protocol.
+
+**Bridge IR gap:** `Provekit::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. Tracked as task #223. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
+
+## C#
+
+**Kit:** Shipping in v1.1. `implementations/csharp/Provekit.IR`, `Provekit.Canonicalizer`, `Provekit.SelfContracts`, `Provekit.ClaimEnvelope`, `Provekit.ProofEnvelope`, `Provekit.Verifier`. Multi-project .NET 10 solution with full IR + canonicalizer parity to Rust.
+
+**Libs:** Shipping. `Provekit.Verifier` is the in-process verifier.
+
+**Lift adapters (shipping in v1.1):**
+- `Provekit.Lift.DataAnnotations`: walks `[Required]`, `[StringLength]`, `[Range]`, `[RegularExpression]`, `[EmailAddress]`, etc.
+- `Provekit.Lift.Linq`: walks LINQ expression trees and lifts predicate quantifiers (`All`, `Any`) to `forall`/`exists` IR.
+
+**Decorator macros:** .NET attributes are the natural authoring surface. Lift adapters consume them directly.
+
+**Embedded verifier:** Planned.
+
+**CLI:** Deferred. Use the Rust CLI.
+
+**LSP Plugin:** Yes. `Provekit.Lsp.Plugin` implements the ProvekIt NDJSON LSP plugin protocol.
+
+**Bridge IR gap:** `Provekit.IR.Collector.BridgeDecl` is `(TargetContractName, IrArgSorts, IrReturnSort)` — a lift-adapter helper, NOT the spec v1.1.0 Bridge. Tracked as task #224. Self-contracts attestation IS signed (the bundle CID is pinned), but Phase 2 cross-kit bridges require a separate spec-shaped `BridgeDeclaration` record to be added.
+
+## Swift
+
+**Kit:** Shipping in v1.1 (via PR #76). `implementations/swift/Sources/Provekit/IR.swift` provides IR types, JCS canonical JSON via `Jcs.encode`, and BLAKE3-512 hashing. The conformance runner at `Sources/ConformanceRunner/main.swift` validates byte-identical emission against the canonical Rust output for `eq_atomic`, `pattern1_bounded_loop`, `contract_decl`, `bridge_decl`.
+
+**Libs:** Under evaluation.
+
+**Lift adapters:** Planned.
+
+**Decorator macros:** Swift property wrappers + macros (Swift 5.9+) under evaluation as the authoring surface.
+
+**Embedded verifier:** Planned.
+
+**CLI:** Deferred. Use the Rust CLI.
+
+**LSP Plugin:** Planned.
+
+**Bridge IR:** v1.1.0 9-field shape supported (`Declaration.bridge` enum case round-trips byte-identical to the bridge_decl fixture). Self-contracts package and Phase 2 lift-plugin-protocol bridges deferred until the kit accumulates a runtime surface beyond conformance.
 
 ## Cross-language conformance
 
