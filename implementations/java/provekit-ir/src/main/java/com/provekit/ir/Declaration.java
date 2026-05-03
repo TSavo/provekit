@@ -24,10 +24,41 @@ public sealed interface Declaration {
         }
     }
 
-    record Bridge(String sourceSymbol, String sourceContractCid, String targetContractCid, String evidence) implements Declaration {
+    /**
+     * BridgeDeclaration per IR formal grammar v1.1.0
+     * (protocol/specs/2026-04-30-ir-formal-grammar.md).
+     *
+     * Required fields: name, sourceSymbol, sourceLayer, sourceContractCid,
+     * targetContractCid, targetProofCid, targetLayer.
+     * Optional: notes (omitted from output when null).
+     *
+     * JCS canonical key order (RFC 8785, alphabetical by code unit):
+     * kind, name, [notes,] sourceContractCid, sourceLayer, sourceSymbol,
+     * targetContractCid, targetLayer, targetProofCid.
+     */
+    record Bridge(
+        String name,
+        String sourceSymbol,
+        String sourceLayer,
+        String sourceContractCid,
+        String targetContractCid,
+        String targetProofCid,
+        String targetLayer,
+        String notes
+    ) implements Declaration {
         public String toJson() {
-            StringBuilder sb = new StringBuilder("{\"kind\":\"bridge\",\"sourceSymbol\":\"" + Sort.escape(sourceSymbol) + "\",\"sourceContractCid\":\"" + Sort.escape(sourceContractCid) + "\",\"targetContractCid\":\"" + Sort.escape(targetContractCid) + "\"");
-            if (evidence != null) sb.append(",\"evidence\":\"").append(Sort.escape(evidence)).append("\"");
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"kind\":\"bridge\"");
+            sb.append(",\"name\":\"").append(Sort.escape(name)).append("\"");
+            if (notes != null) {
+                sb.append(",\"notes\":\"").append(Sort.escape(notes)).append("\"");
+            }
+            sb.append(",\"sourceContractCid\":\"").append(Sort.escape(sourceContractCid)).append("\"");
+            sb.append(",\"sourceLayer\":\"").append(Sort.escape(sourceLayer)).append("\"");
+            sb.append(",\"sourceSymbol\":\"").append(Sort.escape(sourceSymbol)).append("\"");
+            sb.append(",\"targetContractCid\":\"").append(Sort.escape(targetContractCid)).append("\"");
+            sb.append(",\"targetLayer\":\"").append(Sort.escape(targetLayer)).append("\"");
+            sb.append(",\"targetProofCid\":\"").append(Sort.escape(targetProofCid)).append("\"");
             sb.append("}");
             return sb.toString();
         }
