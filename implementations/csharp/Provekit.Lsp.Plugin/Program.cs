@@ -67,13 +67,17 @@ partial class Program
         var path = tParams.TryGetProperty("path", out var p) ? p.GetString() ?? "Source.cs" : "Source.cs";
         var source = tParams.TryGetProperty("source", out var s) ? s.GetString() ?? "" : "";
 
-        var decls = SourceLifter.LiftSource(source, path);
+        var (decls, callEdges) = SourceLifter.LiftSourceWithCallEdges(source, path);
 
         var jcs = decls.Count > 0
             ? Serialize.MarshalDeclarations(decls)
             : "[]";
 
-        Console.WriteLine($"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{{\"declarations\":{jcs},\"warnings\":[]}}}}");
+        var edgesJson = callEdges.Count > 0
+            ? Serialize.MarshalCallEdges(callEdges)
+            : "[]";
+
+        Console.WriteLine($"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{{\"declarations\":{jcs},\"callEdges\":{edgesJson},\"warnings\":[]}}}}");
     }
 
     // ── JSON-RPC ─────────────────────────────────────────────────

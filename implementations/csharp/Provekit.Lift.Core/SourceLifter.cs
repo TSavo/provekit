@@ -22,6 +22,21 @@ public static class SourceLifter
     /// <summary>
     /// Compile <paramref name="source"/> to an in-memory assembly, lift
     /// every public class via DataAnnotations, append annotation-scan
+    /// declarations, and return both the combined ContractDecl list and
+    /// the P/Invoke call-edge stream per spec #114 R1.
+    /// </summary>
+    public static (List<ContractDecl> Declarations, IReadOnlyList<CallEdgeDeclaration> CallEdges)
+        LiftSourceWithCallEdges(string source, string path = "Source.cs")
+    {
+        var decls = LiftSource(source, path);
+        var cidIndex = PInvokeResolver.BuildContractIndex(decls);
+        var edges = PInvokeResolver.WalkCallEdges(source, path, cidIndex);
+        return (decls, edges);
+    }
+
+    /// <summary>
+    /// Compile <paramref name="source"/> to an in-memory assembly, lift
+    /// every public class via DataAnnotations, append annotation-scan
     /// declarations, and return the combined ContractDecl list.
     /// Returns just the annotation-scan results if compilation fails.
     /// </summary>
