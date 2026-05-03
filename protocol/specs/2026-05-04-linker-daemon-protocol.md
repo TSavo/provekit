@@ -62,6 +62,28 @@ The daemon SHALL update the kit's contract and call-edge streams from the lifted
 
 `parseFile` is idempotent: two calls with byte-identical `(kitId, file, source)` MUST produce byte-identical `diagnostics`.
 
+**R5 Implementation commentary (daemon MVP kit support):**
+
+The daemon's `lift_source` dispatch supports the following kits as of the multi-kit dispatch PR:
+
+| Kit      | Mechanism                          | Status               |
+|----------|------------------------------------|----------------------|
+| `rust`   | In-process `provekit-lift::lift_path` | Supported            |
+| `go`     | Subprocess `provekit-lsp-go` (PATH), method `parse` | Supported (binary must be on PATH) |
+| `csharp` | Subprocess `provekit-lsp-csharp --rpc` (PATH), method `parse` | Supported (binary must be on PATH) |
+| `ruby`   | Subprocess `provekit-lsp-ruby --rpc` (PATH), method `parse` | Supported (binary must be on PATH) |
+| `zig`    | Subprocess `provekit-lift-zig --rpc` (PATH), method `parse`; `callEdges` may be absent (treated as empty) | Supported (binary must be on PATH) |
+| `python` | No installed binary; ships as Python module only. Response shape diverges: `declarations` is a JSON-encoded string, not a JSON array. | Gap — follow-up required |
+| `java`   | Incompatible RPC protocol: method `lift` (not `parse`), params `workspace_root`/`surface` (not `path`/`source`). | Gap — follow-up required |
+| `swift`  | No LSP plugin binary; Swift package only builds a `conformance` runner. | Gap — follow-up required |
+| `ts`     | No implementation.                 | Follow-up required   |
+| `cpp`    | No implementation.                 | Follow-up required   |
+| `c`      | No implementation.                 | Follow-up required   |
+
+Binary discovery: the daemon searches PATH for the kit binary. If not found, it returns error -33002 with an install hint.
+
+CID note: the daemon computes `contract_cid` for subprocess-kit declarations using `BLAKE3-512(JCS({name, outBinding, pre?, post?, inv?}))`, matching the rust lifter's formula. A kit's call-edge `sourceContractCid` values are computed by that kit's own CID algorithm and may differ; cross-kit bridge resolution uses `targetSymbol` lookup rather than CID matching, so this does not break bridge derivation.
+
 **R6. `getDiagnostics`.** The daemon SHALL accept:
 
 ```json
