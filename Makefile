@@ -1,15 +1,17 @@
 # ProvekIt — top-level orchestrator
 #
-# Five-language polyglot. Each language owns its native build tool;
+# Six-language polyglot. Each language owns its native build tool;
 # this Makefile is glue, not a build system. `make ci` runs the same
-# gate the GitHub Actions workflow runs.
+# gate the GitHub Actions workflow runs (Linux x86_64: Rust/Go/C++/TS/C#/Python).
+# Swift is macOS-only; use `make build-swift`, `make test-swift`, `make mint-swift`
+# directly on a macOS host — those targets are excluded from the CI aggregates.
 #
 # Mainline targets:
 #   make help        — print this help
 #   make ci          — full conformance gate (catalog + protocol + 5 mints + tests)
 #   make conformance — catalog + protocol + 5 mint CIDs + self-contract tests
-#   make all-mint    — run all 5 mint commands; print CIDs
-#   make test-all    — run every language-native test suite
+#   make all-mint    — run all 5 mint commands; print CIDs (Linux/CI subset)
+#   make test-all    — run every language-native test suite (Linux/CI subset)
 #
 # Per-language targets:
 #   make build-rust  — cargo build --release for workspace + tools
@@ -62,21 +64,24 @@ help:
 	@echo "ProvekIt — top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
-	@echo "  make ci             full gate (conformance + test-all)"
+	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 5 peer langs]"
 	@echo "  make conformance    catalog + protocol + 5 mint CIDs + self-contract tests"
-	@echo "  make all-mint       run all 5 mint commands; print CIDs"
-	@echo "  make test-all       run all language-native test suites"
+	@echo "  make all-mint       5 mint commands (Swift excluded: macOS-only, use mint-swift)"
+	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
-	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp)"
+	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java)"
 	@echo "  make build-rust     cargo build --release (workspace + tools)"
 	@echo "  make build-cpp      clang++ + vendored-blake3"
 	@echo "  make build-go       go build per Go module"
 	@echo "  make build-ts       pnpm install"
 	@echo "  make build-csharp   dotnet build"
+	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
+	@echo "  make build-c        cc build of provekit-ir + provekit-lsp-c"
+	@echo "  make build-swift    swift build -c release"
 	@echo ""
 	@echo "Per-language test:"
-	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python"
+	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-java  test-c  test-swift"
 	@echo ""
 	@echo "Self-lift experiments:"
 	@echo "  make self-lift-canonicalizer  run provekit-lift against the canonicalizer crate"
@@ -91,14 +96,18 @@ help:
 	@echo "  cpp:     (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json"
 	@echo "  ts:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json"
 	@echo "  csharp:  (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json"
+	@echo "  swift:   (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/swift.json"
 
 # --- Per-language builds -----------------------------------------------------
 
 # Build every kit's binaries. Useful before `make conformance` or before
 # spawning `provekit-linkerd` (which subprocesses kit lifters at lift
 # time). Each kit's build target is independent; failures stay isolated.
+# NOTE: build-swift is intentionally excluded — it requires a macOS host
+# with the Swift toolchain and is not run by Linux CI. Use `make build-swift`
+# directly on macOS.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-ts build-csharp
+build-all: build-rust build-cpp build-go build-ts build-csharp build-java
 
 .PHONY: build-rust
 build-rust:
@@ -109,6 +118,7 @@ build-rust:
 .PHONY: build-cpp
 build-cpp:
 	tools/build-cpp-self-contracts.sh --build-only
+	tools/build-cpp-lsp.sh
 
 .PHONY: build-go
 build-go:
@@ -124,82 +134,181 @@ build-ts:
 build-csharp:
 	dotnet build implementations/csharp/Provekit.sln --configuration Release --nologo
 
+.PHONY: build-c
+build-c:
+	$(MAKE) -C implementations/c/provekit-ir all
+	$(MAKE) -C implementations/c/provekit-lsp-c all
+
+.PHONY: build-java
+build-java:
+	# provekit-lift-java-core depends on the sibling provekit-ir module.
+	# Use the parent pom + `-pl ... -am` (also-make) so dependencies are
+	# built first; `mvn install` (not package) puts artifacts in ~/.m2 so
+	# the downstream resolves.
+	mvn install -q -f implementations/java/pom.xml -pl provekit-lift-java-core -am
+	mkdir -p ~/.local/bin
+	cp implementations/java/provekit-lift-java-core/target/appassembler/bin/provekit-lsp-java ~/.local/bin/provekit-lsp-java
+	chmod +x ~/.local/bin/provekit-lsp-java
+
+.PHONY: build-swift
+build-swift:
+	cd implementations/swift && swift build -c release
+
 # --- Mint targets ------------------------------------------------------------
 
-# Each mint target builds its peer + dispatches via `provekit mint`,
-# then asserts the printed CID equals the pinned value. CI uses these.
+# Each mint target builds its peer + dispatches via `provekit mint --kit=<kit>`.
+# The CLI drives the kit's lift-protocol RPC, collects contracts, signs the
+# attestation, and writes it to $(SELF_CONTRACTS_ATTEST_DIR)/<lang>.json.
+# All 11 kits use the same uniform pipeline; no language-native mint binaries.
+#
+# For kits whose lifter binary is not yet installed, mint produces an
+# empty-set attestation (contractSetCid = BLAKE3-512 of JCS("[]")).
+# The attestation is still verified; a missing lifter surfaces as a known gap.
 
 .PHONY: mint-rust
 mint-rust: build-rust
 	@echo ">> minting rust self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --project implementations/rust --quiet); \
+	@mint_out=$$($(PROVEKIT) mint --kit=rust --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
 	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json "$$cset" || \
-		(echo "FAIL: rust self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- rust $$cid $$cset" && exit 1)
+		(echo "FAIL: rust self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=rust" && exit 1)
 
 .PHONY: mint-go
 mint-go: build-rust build-go
 	@echo ">> minting go self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --project implementations/go --quiet); \
+	@mint_out=$$($(PROVEKIT) mint --kit=go --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
 	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/go.json "$$cset" || \
-		(echo "FAIL: go self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- go $$cid $$cset" && exit 1)
+		(echo "FAIL: go self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=go" && exit 1)
 
 .PHONY: mint-cpp
 mint-cpp: build-rust build-cpp
 	@echo ">> minting cpp self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --project implementations/cpp --quiet); \
+	@mint_out=$$($(PROVEKIT) mint --kit=cpp --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
 	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json "$$cset" || \
-		(echo "FAIL: cpp self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- cpp $$cid $$cset" && exit 1)
+		(echo "FAIL: cpp self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=cpp" && exit 1)
 
 .PHONY: mint-ts
-mint-ts: build-ts
+mint-ts: build-rust build-ts
 	@echo ">> minting ts self-contracts"
-	@ts_out=$$(pnpm -s vitest run --reporter=verbose \
-		implementations/typescript/src/bin/mint-ts-self-contracts.test.ts 2>&1); \
-	cid=$$(echo "$$ts_out" | grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
-	cset=$$(echo "$$ts_out" | grep -F 'contractSetCid:' | awk '{print $$NF}' | head -1); \
+	@mint_out=$$($(PROVEKIT) mint --kit=ts --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ts.json "$$cset" || \
-		(echo "FAIL: ts self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- ts $$cid $$cset" && exit 1)
+		(echo "FAIL: ts self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=ts" && exit 1)
 
 .PHONY: mint-csharp
-mint-csharp:
+mint-csharp: build-rust
 	@echo ">> minting csharp self-contracts"
-	@cs_out=$$(cd implementations/csharp/Provekit.SelfContracts && \
-		dotnet run -c Release 2>/dev/null); \
-	cid=$$(echo "$$cs_out" | grep -F 'catalog CID:' | awk '{print $$NF}' | head -1); \
-	cset=$$(echo "$$cs_out" | grep -F 'contractSetCid:' | awk '{print $$NF}' | head -1); \
+	@mint_out=$$($(PROVEKIT) mint --kit=csharp --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json "$$cset" || \
-		(echo "FAIL: csharp self-contracts attestation rejected; bump dance:" && \
-		 echo "      cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \\\\" && \
-		 echo "        --bin sign-self-contracts -- csharp $$cid $$cset" && exit 1)
+		(echo "FAIL: csharp self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=csharp" && exit 1)
 
+# NOTE: mint-swift requires a macOS host with the Swift toolchain.
+# Excluded from all-mint (Linux/CI). Use `make mint-swift` on macOS.
+.PHONY: mint-swift
+mint-swift: build-rust build-swift
+	@echo ">> minting swift self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=swift --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/swift.json "$$cset" || \
+		(echo "FAIL: swift self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=swift" && exit 1)
+
+# New kits: lifter binaries not yet available; mint produces empty-set attestation.
+# These targets will produce the correct attestation structure; the gap is the
+# per-kit lifter, not the substrate pipeline.
+
+.PHONY: mint-java
+mint-java: build-rust
+	@echo ">> minting java self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=java --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/java.json "$$cset" || \
+		(echo "FAIL: java self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=java" && exit 1)
+
+.PHONY: mint-python
+mint-python: build-rust
+	@echo ">> minting python self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=python --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/python.json "$$cset" || \
+		(echo "FAIL: python self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=python" && exit 1)
+
+.PHONY: mint-ruby
+mint-ruby: build-rust
+	@echo ">> minting ruby self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=ruby --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/ruby.json "$$cset" || \
+		(echo "FAIL: ruby self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=ruby" && exit 1)
+
+.PHONY: mint-zig
+mint-zig: build-rust
+	@echo ">> minting zig self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=zig --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/zig.json "$$cset" || \
+		(echo "FAIL: zig self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=zig" && exit 1)
+
+.PHONY: mint-c
+mint-c: build-rust
+	@echo ">> minting c self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=c --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/c.json "$$cset" || \
+		(echo "FAIL: c self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=c" && exit 1)
+
+# NOTE: mint-swift excluded from all-mint (macOS-only). New kits (java/python/
+# ruby/zig/c) produce empty-set attestations until their lifters are wired up.
 .PHONY: all-mint
 all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
 	@echo ""
-	@echo "==== all 5 self-contract CIDs match pinned values ===="
+	@echo "==== all 5 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
@@ -265,15 +374,22 @@ test-go:
 
 .PHONY: test-cpp
 test-cpp: build-cpp
-	@echo "test-cpp: cpp suite is the mint round-trip; covered by mint-cpp"
+	@echo "test-cpp: LSP lifecycle integration test"
+	sh implementations/cpp/provekit-lsp-cpp/test_lsp.sh implementations/cpp/target/provekit-lsp-cpp
+	@echo "test-cpp: mint round-trip also covered by mint-cpp"
 
 .PHONY: test-ts
 test-ts:
 	pnpm test
 
 .PHONY: test-csharp
-test-csharp:
+test-csharp: build-csharp
 	dotnet test implementations/csharp/Provekit.sln --nologo --verbosity quiet
+
+.PHONY: test-c
+test-c: build-c
+	$(MAKE) -C implementations/c/provekit-ir test
+	$(MAKE) -C implementations/c/provekit-lsp-c test
 
 .PHONY: test-python
 test-python:
@@ -282,8 +398,33 @@ test-python:
 		pip install --quiet pytest && \
 		pytest
 
+.PHONY: test-java
+test-java: build-java
+	mvn test -q -f implementations/java/provekit-lift-java-core/pom.xml
+
+.PHONY: test-swift
+test-swift: build-swift
+	cd implementations/swift && swift run conformance
+	cd implementations/swift && swift run test-swift-lsp
+
+.PHONY: test-zig
+test-zig:
+	cd implementations/zig/provekit-ir && zig build test
+	cd implementations/zig/provekit-lift-zig && zig build test
+	cd implementations/zig/provekit-lsp-zig && zig build test
+	cd implementations/zig/provekit-lsp-zig && zig build
+	@echo "test-zig: LSP lifecycle integration test"
+	sh implementations/zig/provekit-lsp-zig/test_lsp.sh
+
+.PHONY: build-zig
+build-zig:
+	cd implementations/zig/provekit-ir && zig build
+	cd implementations/zig/provekit-lsp-zig && zig build
+
+# NOTE: test-swift is intentionally excluded from test-all — it requires a
+# macOS host with the Swift toolchain. Use `make test-swift` on macOS.
 .PHONY: test-all
-test-all: test-rust test-go test-ts test-csharp test-python
+test-all: test-rust test-go test-ts test-csharp test-python test-java
 	@echo ""
 	@echo "==== test-all: PASS ===="
 

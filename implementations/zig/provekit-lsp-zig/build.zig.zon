@@ -1,0 +1,10 @@
+.{
+    .name = .provekit_lsp_zig,
+    .fingerprint = 0x77332cc65d2094d,
+    .version = "0.1.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
