@@ -65,5 +65,21 @@ func Slabs() []Slab {
 		{Label: "proof_builder", Path: "proof_envelope/builder.go", Run: InvariantsProofBuilder},
 		{Label: "proof_cbor", Path: "proof_envelope/cbor.go", Run: InvariantsProofCBOR},
 		{Label: "load_all_proofs", Path: "verifier/load_all_proofs.go", Run: InvariantsLoadAllProofs},
+		// Phase-2 cross-kit bridges to rust's lift-plugin-protocol contracts.
+		// Two slabs: counterpart contracts first, then bridges. The order
+		// is load-bearing for the orchestrator's post-mint resolution
+		// pass: every counterpart contract MUST be minted before the
+		// bridges are processed so the placeholder targetContractCid
+		// values can be rewritten to real memento CIDs.
+		{
+			Label: "lift_plugin_protocol_contracts",
+			Path:  "provekit-self-contracts/slabs/lift_plugin_protocol.go",
+			Run:   InvariantsLiftPluginProtocolContracts,
+		},
+		{
+			Label: "lift_plugin_protocol_bridges",
+			Path:  "provekit-self-contracts/slabs/lift_plugin_protocol.go",
+			Run:   InvariantsLiftPluginProtocolBridges,
+		},
 	}
 }
