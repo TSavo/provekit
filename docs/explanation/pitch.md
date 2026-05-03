@@ -60,7 +60,7 @@ cargo provekit-lift
 provekit prove
 ```
 
-The Rust CLI is the canonical shipping implementation for v1.1.0. Per-language libs (TypeScript, Go, C++) embed the verifier; per-language kits (authoring) emit canonical IR; per-language lift adapters bridge from existing annotation libraries. See `docs/per-language-status.md` for the matrix.
+The Rust CLI is the canonical shipping implementation for v1.1.0. Per-language libs (TypeScript, Go, C++) embed the verifier; per-language kits (authoring) emit canonical IR; per-language lift adapters bridge from existing annotation libraries. See [docs/reference/per-language-status.md](../reference/per-language-status.md) for the matrix.
 
 ## What's not in the box
 
@@ -70,7 +70,7 @@ What ProvekIt is, is the load-bearing primitive missing from the verification ec
 
 ## Read further
 
-- [README.md](README.md) for the install path.
-- [ARCHITECTURE.md](ARCHITECTURE.md) for the four-layer model and handshake.
-- [THESIS.md](THESIS.md) for the deeper architectural claim.
-- [protocol/specs/](protocol/specs/) for the canonical specs, addressed by CID.
+- [README.md](../../README.md) for the install path.
+- [architecture.md](architecture.md) for the four-layer model and handshake.
+- [thesis.md](thesis.md) for the deeper architectural claim.
+- [protocol/specs/](../../protocol/specs/) for the canonical specs, addressed by CID.
