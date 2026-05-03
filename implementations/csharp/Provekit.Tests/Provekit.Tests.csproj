@@ -22,6 +22,11 @@
     <ProjectReference Include="..\Provekit.ClaimEnvelope\Provekit.ClaimEnvelope.csproj" />
     <ProjectReference Include="..\Provekit.ProofEnvelope\Provekit.ProofEnvelope.csproj" />
     <ProjectReference Include="..\Provekit.SelfContracts\Provekit.SelfContracts.csproj" />
+    <!-- Needed so `dotnet test` builds the LSP plugin binary that
+         LspPluginRoundTripTests spawns at runtime. -->
+    <ProjectReference Include="..\Provekit.Lsp.Plugin\Provekit.Lsp.Plugin.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
   </ItemGroup>
 
 </Project>
