@@ -41,12 +41,36 @@
                         <phase>package</phase>
                         <goals><goal>shade</goal></goals>
                         <configuration>
+                            <outputFile>${project.build.directory}/provekit-lsp-java.jar</outputFile>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>com.provekit.lift.Main</mainClass>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>appassembler-maven-plugin</artifactId>
+                <version>2.1.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>assemble</goal></goals>
+                        <configuration>
+                            <assembleDirectory>${project.build.directory}/appassembler</assembleDirectory>
+                            <programs>
+                                <program>
+                                    <mainClass>com.provekit.lift.Main</mainClass>
+                                    <id>provekit-lsp-java</id>
+                                </program>
+                            </programs>
+                            <!-- Include all dependencies in the assembled repo -->
+                            <repositoryLayout>flat</repositoryLayout>
+                            <repositoryName>lib</repositoryName>
                         </configuration>
                     </execution>
                 </executions>
