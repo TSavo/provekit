@@ -14,7 +14,20 @@
 //         a result with declarations and callEdges arrays when provekit-lsp-java
 //         is on PATH. Skipped if provekit-lsp-java is not installed.
 //
-// Test 3: kit dispatch is content-deterministic: same source => same linkBundleCid.
+// Test 5: parseFile(kit="ts", ...) dispatches to the ts lifter.
+//         Skipped if provekit-lsp-ts is not installed.
+//
+// Test 6: parseFile(kit="cpp", ...) dispatches to the cpp lifter.
+//         Skipped if provekit-lsp-cpp is not installed.
+//
+// Test 7: parseFile(kit="swift", ...) dispatches to the swift lifter.
+//         Skipped if provekit-lsp-swift is not installed.
+//
+// Test 8: parseFile(kit="c", ...) dispatches to the c lifter.
+//         Skipped if provekit-lsp-c is not installed.
+//
+// Test 9: parseFile(kit="zig", ...) dispatches to the zig lifter.
+//         Skipped if provekit-lsp-zig is not installed.
 //
 // These tests communicate with the daemon over its Unix socket.
 
@@ -360,6 +373,379 @@ public class Calculator {
     assert!(
         resp["result"]["diagnostics"].is_array(),
         "java kit parseFile result must have diagnostics array: {:?}",
+        resp
+    );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 5: typescript kit dispatch returns diagnostics when provekit-lsp-ts is on PATH.
+// -------------------------------------------------------------------
+
+/// Test 5: parseFile with kit="ts" dispatches to the typescript lifter.
+///
+/// Skipped if `provekit-lsp-ts` is not on PATH. The skip is printed to stdout
+/// so CI can see why the test was skipped, not silently ignored.
+///
+/// Install via:
+///   cd implementations/typescript && pnpm install && pnpm build && \
+///   cp bin/provekit-lsp-ts.cjs ~/.local/bin/provekit-lsp-ts && \
+///   chmod +x ~/.local/bin/provekit-lsp-ts
+///
+/// When provekit-lsp-ts is available, sends a tiny TypeScript source and asserts:
+///   - The response has a `result.diagnostics` array.
+///   - No JSON-RPC error is returned.
+#[test]
+fn test5_typescript_kit_dispatch() {
+    if !binary_on_path("provekit-lsp-ts") {
+        println!(
+            "SKIP test5_typescript_kit_dispatch: provekit-lsp-ts not on PATH. \
+             Install via: cd implementations/typescript && pnpm install && pnpm build && \
+             cp bin/provekit-lsp-ts.cjs ~/.local/bin/provekit-lsp-ts && \
+             chmod +x ~/.local/bin/provekit-lsp-ts"
+        );
+        return;
+    }
+
+    let sock = unique_sock_path("t5");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let ts_source = r#"
+// @provekit:contract post="result >= 0"
+function absValue(x: number): number {
+    return x < 0 ? -x : x;
+}
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "ts",
+            "file": "/tmp/test_abs.ts",
+            "source": ts_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    assert!(
+        resp.get("error").is_none(),
+        "ts kit parseFile returned unexpected error: {:?}",
+        resp
+    );
+    assert!(
+        resp["result"]["diagnostics"].is_array(),
+        "ts kit parseFile result must have diagnostics array: {:?}",
+        resp
+    );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 6: cpp kit dispatch returns diagnostics when provekit-lsp-cpp is on PATH.
+// -------------------------------------------------------------------
+
+/// Test 6: parseFile with kit="cpp" dispatches to the cpp lifter.
+///
+/// Skipped if `provekit-lsp-cpp` is not on PATH. The skip is printed to stdout
+/// so CI can see why the test was skipped, not silently ignored.
+///
+/// Install via:
+///   cd implementations/cpp/provekit-lsp-cpp && \
+///   g++ -std=c++17 -O2 -o provekit-lsp-cpp main.cpp && \
+///   cp provekit-lsp-cpp ~/.local/bin/
+///
+/// When provekit-lsp-cpp is available, sends a tiny C++ source and asserts:
+///   - The response has a `result.diagnostics` array.
+///   - No JSON-RPC error is returned.
+#[test]
+fn test6_cpp_kit_dispatch() {
+    if !binary_on_path("provekit-lsp-cpp") {
+        println!(
+            "SKIP test6_cpp_kit_dispatch: provekit-lsp-cpp not on PATH. \
+             Install via: cd implementations/cpp/provekit-lsp-cpp && \
+             g++ -std=c++17 -O2 -o provekit-lsp-cpp main.cpp && \
+             cp provekit-lsp-cpp ~/.local/bin/"
+        );
+        return;
+    }
+
+    let sock = unique_sock_path("t6");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let cpp_source = r#"
+// provekit:contract post="result >= 0"
+int abs_value(int x) {
+    return x < 0 ? -x : x;
+}
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "cpp",
+            "file": "/tmp/test_abs.cpp",
+            "source": cpp_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    assert!(
+        resp.get("error").is_none(),
+        "cpp kit parseFile returned unexpected error: {:?}",
+        resp
+    );
+    assert!(
+        resp["result"]["diagnostics"].is_array(),
+        "cpp kit parseFile result must have diagnostics array: {:?}",
+        resp
+    );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 7: swift kit dispatch returns diagnostics when provekit-lsp-swift is on PATH.
+// -------------------------------------------------------------------
+
+/// Test 7: parseFile with kit="swift" dispatches to the swift lifter.
+///
+/// Skipped if `provekit-lsp-swift` is not on PATH. The skip is printed to stdout
+/// so CI can see why the test was skipped, not silently ignored.
+///
+/// Install via:
+///   cd implementations/swift && swift build -c release && \
+///   cp .build/release/provekit-lsp-swift ~/.local/bin/
+///
+/// When provekit-lsp-swift is available, sends a tiny Swift source and asserts:
+///   - The response has a `result.diagnostics` array.
+///   - No JSON-RPC error is returned.
+#[test]
+fn test7_swift_kit_dispatch() {
+    if !binary_on_path("provekit-lsp-swift") {
+        println!(
+            "SKIP test7_swift_kit_dispatch: provekit-lsp-swift not on PATH. \
+             Install via: cd implementations/swift && swift build -c release && \
+             cp .build/release/provekit-lsp-swift ~/.local/bin/"
+        );
+        return;
+    }
+
+    let sock = unique_sock_path("t7");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let swift_source = r#"
+/// @provekit:contract post="result >= 0"
+func absValue(_ x: Int) -> Int {
+    return x < 0 ? -x : x
+}
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "swift",
+            "file": "/tmp/test_abs.swift",
+            "source": swift_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    assert!(
+        resp.get("error").is_none(),
+        "swift kit parseFile returned unexpected error: {:?}",
+        resp
+    );
+    assert!(
+        resp["result"]["diagnostics"].is_array(),
+        "swift kit parseFile result must have diagnostics array: {:?}",
+        resp
+    );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 8: c kit dispatch returns diagnostics when provekit-lsp-c is on PATH.
+// -------------------------------------------------------------------
+
+/// Test 8: parseFile with kit="c" dispatches to the c lifter.
+///
+/// Skipped if `provekit-lsp-c` is not on PATH. The skip is printed to stdout
+/// so CI can see why the test was skipped, not silently ignored.
+///
+/// Install via:
+///   cd implementations/c/provekit-lsp-c && \
+///   cc -std=c11 -Wall -o provekit-lsp-c main.c && \
+///   cp provekit-lsp-c ~/.local/bin/
+///
+/// When provekit-lsp-c is available, sends a tiny C source and asserts:
+///   - The response has a `result.diagnostics` array.
+///   - No JSON-RPC error is returned.
+#[test]
+fn test8_c_kit_dispatch() {
+    if !binary_on_path("provekit-lsp-c") {
+        println!(
+            "SKIP test8_c_kit_dispatch: provekit-lsp-c not on PATH. \
+             Install via: cd implementations/c/provekit-lsp-c && \
+             cc -std=c11 -Wall -o provekit-lsp-c main.c && \
+             cp provekit-lsp-c ~/.local/bin/"
+        );
+        return;
+    }
+
+    let sock = unique_sock_path("t8");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let c_source = r#"
+/* provekit:contract post="result >= 0" */
+int abs_value(int x) {
+    return x < 0 ? -x : x;
+}
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "c",
+            "file": "/tmp/test_abs.c",
+            "source": c_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    assert!(
+        resp.get("error").is_none(),
+        "c kit parseFile returned unexpected error: {:?}",
+        resp
+    );
+    assert!(
+        resp["result"]["diagnostics"].is_array(),
+        "c kit parseFile result must have diagnostics array: {:?}",
+        resp
+    );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 9: zig kit dispatch returns diagnostics when provekit-lsp-zig is on PATH.
+// -------------------------------------------------------------------
+
+/// Test 9: parseFile with kit="zig" dispatches to the zig lifter.
+///
+/// Skipped if `provekit-lsp-zig` is not on PATH. The skip is printed to stdout
+/// so CI can see why the test was skipped, not silently ignored.
+///
+/// Install via:
+///   cd implementations/zig/provekit-lsp-zig && \
+///   zig build -Doptimize=ReleaseSafe && \
+///   cp zig-out/bin/provekit-lsp-zig ~/.local/bin/
+///
+/// When provekit-lsp-zig is available, sends a tiny Zig source and asserts:
+///   - The response has a `result.diagnostics` array.
+///   - No JSON-RPC error is returned.
+#[test]
+fn test9_zig_kit_dispatch() {
+    if !binary_on_path("provekit-lsp-zig") {
+        println!(
+            "SKIP test9_zig_kit_dispatch: provekit-lsp-zig not on PATH. \
+             Install via: cd implementations/zig/provekit-lsp-zig && \
+             zig build -Doptimize=ReleaseSafe && \
+             cp zig-out/bin/provekit-lsp-zig ~/.local/bin/"
+        );
+        return;
+    }
+
+    let sock = unique_sock_path("t9");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let zig_source = r#"
+//provekit:contract post="result >= 0"
+fn absValue(x: i64) i64 {
+    return if (x < 0) -x else x;
+}
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "zig",
+            "file": "/tmp/test_abs.zig",
+            "source": zig_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    assert!(
+        resp.get("error").is_none(),
+        "zig kit parseFile returned unexpected error: {:?}",
+        resp
+    );
+    assert!(
+        resp["result"]["diagnostics"].is_array(),
+        "zig kit parseFile result must have diagnostics array: {:?}",
         resp
     );
 

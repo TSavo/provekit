@@ -10,11 +10,12 @@
 //
 // Lifting strategy for parseFile:
 //   For `rust` sources: call `provekit_lift::lift_path` in-process (fast).
-//   For `go`, `csharp`, `ruby`: spawn the kit's LSP plugin binary, send a
-//     JSON-RPC `parse` request, read the `{declarations, callEdges}` response,
-//     and map into `LinkerContract`/`LinkerCallEdge` (see `spawn_kit_lifter`).
-//   For `zig`: spawn `provekit-lift-zig --rpc`, same protocol but `callEdges`
-//     is omitted from the response — treated as empty.
+//   For `go`, `csharp`, `ruby`, `java`, `swift`, `ts`, `cpp`, `c`, `zig`:
+//     spawn the kit's LSP plugin binary, send a JSON-RPC `parse` request,
+//     read the `{declarations, callEdges}` response, and map into
+//     `LinkerContract`/`LinkerCallEdge` (see `spawn_kit_lifter`).
+//   For `zig`: spawn `provekit-lsp-zig` (no args — reads stdin directly).
+//     `callEdges` may be omitted from the response and is treated as empty.
 //   For `python`: the LSP module has no installed binary (it's a Python module,
 //     invoked as `python -m provekit_lift_py_tests.lsp`); additionally, its
 //     `declarations` field is a JSON-encoded string rather than a JSON array
@@ -23,10 +24,14 @@
 //   For `java`: spawn `provekit-lsp-java --rpc`, same protocol as go/csharp/ruby.
 //     Requires `mvn package` in implementations/java/provekit-lift-java-core first;
 //     returns LifterUnavailable if the binary is not on PATH.
-//   For `swift`: no LSP plugin binary exists (the Swift package only builds a
-//     `conformance` runner, not an LSP plugin). Documented gap; returns
-//     LifterUnavailable.
-//   For `ts`, `cpp`, `c`: no LSP plugin implementation exists.
+//   For `swift`: spawn `provekit-lsp-swift` (no args — reads stdin directly).
+//     Binary is built via `swift build -c release` in implementations/swift.
+//   For `ts`: spawn `provekit-lsp-ts` (no args — node-based CJS binary).
+//     Binary must be on PATH; returns LifterUnavailable if not installed.
+//   For `cpp`: spawn `provekit-lsp-cpp` (no args — native binary, int main()).
+//     Binary built via `g++ -std=c++17 -o provekit-lsp-cpp main.cpp`.
+//   For `c`: spawn `provekit-lsp-c --rpc` (requires --rpc flag).
+//     Binary built via `cc -std=c11 -o provekit-lsp-c main.c`.
 //
 // Binary discovery order (for subprocess kits):
 //   1. Check PATH for the named binary.
@@ -243,13 +248,15 @@ enum LiftError {
 /// - `go`: subprocess `provekit-lsp-go` (no args), method `parse`.
 /// - `csharp`: subprocess `provekit-lsp-csharp --rpc`, method `parse`.
 /// - `ruby`: subprocess `provekit-lsp-ruby --rpc`, method `parse`.
-/// - `zig`: subprocess `provekit-lift-zig --rpc`, method `parse`; `callEdges`
+/// - `zig`: subprocess `provekit-lsp-zig` (no args), method `parse`; `callEdges`
 ///   field may be absent from response and is treated as empty.
 /// - `python`: no installed binary + shape divergence in response. LifterUnavailable.
 /// - `java`: subprocess `provekit-lsp-java --rpc`, method `parse`; binary must be
 ///   installed via `mvn package` in implementations/java/provekit-lift-java-core.
-/// - `swift`: no LSP plugin binary. LifterUnavailable.
-/// - `ts`, `cpp`, `c`: no implementation. LifterUnavailable.
+/// - `swift`: subprocess `provekit-lsp-swift` (no args), method `parse`.
+/// - `ts`: subprocess `provekit-lsp-ts` (no args), method `parse`.
+/// - `cpp`: subprocess `provekit-lsp-cpp` (no args), method `parse`.
+/// - `c`: subprocess `provekit-lsp-c --rpc`, method `parse`.
 async fn lift_source(
     kit_id: &str,
     file: &str,
@@ -292,16 +299,16 @@ async fn lift_source(
         }
 
         "zig" => {
-            let binary = find_binary("provekit-lift-zig").ok_or_else(|| {
+            let binary = find_binary("provekit-lsp-zig").ok_or_else(|| {
                 LiftError::LifterUnavailable(
                     "kit 'zig' binary not found on PATH; install via: \
-                     cd implementations/zig/provekit-lift-zig && zig build -Doptimize=ReleaseSafe"
+                     cd implementations/zig/provekit-lsp-zig && zig build -Doptimize=ReleaseSafe"
                         .to_string(),
                 )
             })?;
-            // Note: zig lifter may omit `callEdges` from its response.
-            // spawn_kit_lifter handles this by treating a missing field as empty.
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "zig-kit")
+            // Note: zig lsp binary reads stdin directly (no --rpc flag needed).
+            // callEdges may be omitted from its response; treated as empty.
+            spawn_kit_lifter(&binary, &[], file, source, "zig-kit")
         }
 
         "python" => Err(LiftError::LifterUnavailable(
@@ -325,22 +332,60 @@ async fn lift_source(
             spawn_kit_lifter(&binary, &["--rpc"], file, source, "java-kit")
         }
 
-        "swift" => Err(LiftError::LifterUnavailable(
-            "kit 'swift' has no LSP plugin binary; the Swift package only builds a \
-             'conformance' executable (no 'parse' RPC support). \
-             Gap documented in spec §3 R5 commentary. Follow-up required."
-                .to_string(),
-        )),
+        "swift" => {
+            let binary = find_binary("provekit-lsp-swift").ok_or_else(|| {
+                LiftError::LifterUnavailable(
+                    "kit 'swift' binary not found on PATH; install via: \
+                     cd implementations/swift && swift build -c release && \
+                     cp .build/release/provekit-lsp-swift ~/.local/bin/"
+                        .to_string(),
+                )
+            })?;
+            // swift lsp binary reads stdin directly (no --rpc flag needed).
+            spawn_kit_lifter(&binary, &[], file, source, "swift-kit")
+        }
 
-        "ts" => Err(LiftError::LifterUnavailable(
-            "kit 'ts' lifter not yet implemented".to_string(),
-        )),
-        "cpp" => Err(LiftError::LifterUnavailable(
-            "kit 'cpp' lifter not yet implemented".to_string(),
-        )),
-        "c" => Err(LiftError::LifterUnavailable(
-            "kit 'c' lifter not yet implemented".to_string(),
-        )),
+        "ts" => {
+            let binary = find_binary("provekit-lsp-ts").ok_or_else(|| {
+                LiftError::LifterUnavailable(
+                    "kit 'ts' binary not found on PATH; install via: \
+                     cd implementations/typescript && pnpm install && pnpm build && \
+                     cp bin/provekit-lsp-ts.cjs ~/.local/bin/provekit-lsp-ts && \
+                     chmod +x ~/.local/bin/provekit-lsp-ts"
+                        .to_string(),
+                )
+            })?;
+            // ts lsp binary is a node CJS shim; reads stdin directly (no --rpc flag needed).
+            spawn_kit_lifter(&binary, &[], file, source, "ts-kit")
+        }
+
+        "cpp" => {
+            let binary = find_binary("provekit-lsp-cpp").ok_or_else(|| {
+                LiftError::LifterUnavailable(
+                    "kit 'cpp' binary not found on PATH; install via: \
+                     cd implementations/cpp/provekit-lsp-cpp && \
+                     g++ -std=c++17 -O2 -o provekit-lsp-cpp main.cpp && \
+                     cp provekit-lsp-cpp ~/.local/bin/"
+                        .to_string(),
+                )
+            })?;
+            // cpp lsp binary reads stdin directly (no --rpc flag needed).
+            spawn_kit_lifter(&binary, &[], file, source, "cpp-kit")
+        }
+
+        "c" => {
+            let binary = find_binary("provekit-lsp-c").ok_or_else(|| {
+                LiftError::LifterUnavailable(
+                    "kit 'c' binary not found on PATH; install via: \
+                     cd implementations/c/provekit-lsp-c && \
+                     cc -std=c11 -Wall -o provekit-lsp-c main.c && \
+                     cp provekit-lsp-c ~/.local/bin/"
+                        .to_string(),
+                )
+            })?;
+            // c lsp binary requires --rpc flag (errors without it).
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "c-kit")
+        }
 
         other => Err(LiftError::KitNotInManifest(format!(
             "unknown kitId '{other}'; valid kits: rust, go, cpp, csharp, python, ruby, swift, ts, zig, java, c"
