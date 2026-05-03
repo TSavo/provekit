@@ -78,6 +78,22 @@ module Provekit
       end
     end
 
+    # Call-edge memento per spec #114 R1.
+    # Emitted for each FFI call site where the calling function has a known
+    # contract. When targeting a cross-kit symbol, target_contract_cid is nil
+    # and target_symbol is populated with "<kit>:<native-name>" for linker
+    # resolution per R3.
+    CallEdgeDecl = Struct.new(
+      :source_contract_cid,
+      :target_contract_cid,
+      :target_symbol,
+      :call_site_file,
+      :call_site_line,
+      :call_site_column,
+      :evidence_term,
+      keyword_init: true,
+    )
+
     # Bridge declaration. Locked spec key order:
     #   kind, name, sourceSymbol, sourceLayer, sourceContractCid,
     #   targetContractCid, targetProofCid, targetLayer, notes (optional).
@@ -175,6 +191,32 @@ module Provekit
         else value.to_s
         end
       end
+    end
+
+    # ── Call-edge marshaling ──────────────────────────────────
+
+    # Serialize a list of CallEdgeDecl to JCS JSON (sorted by file/line/col
+    # for byte-deterministic output per spec #114 R5).
+    def self.marshal_call_edges(edges)
+      sorted = edges.sort_by do |e|
+        [e.call_site_file.to_s, e.call_site_line.to_i, e.call_site_column.to_i]
+      end
+      arr = sorted.map do |e|
+        obj = {
+          callSiteColumn: e.call_site_column,
+          callSiteFile:   e.call_site_file,
+          callSiteLine:   e.call_site_line,
+          evidenceTerm:   e.evidence_term,
+          kind:           "call-edge",
+          schemaVersion:  "1",
+          sourceContractCid: e.source_contract_cid,
+          targetSymbol:   e.target_symbol,
+        }
+        # targetContractCid is omitted when nil (cross-kit call)
+        obj[:targetContractCid] = e.target_contract_cid unless e.target_contract_cid.nil?
+        obj
+      end
+      Jcs.encode(arr)
     end
 
     # ── Declaration marshaling ──────────────────────────────────
