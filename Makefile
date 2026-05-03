@@ -379,7 +379,7 @@ test-ts:
 	pnpm test
 
 .PHONY: test-csharp
-test-csharp:
+test-csharp: build-csharp
 	dotnet test implementations/csharp/Provekit.sln --nologo --verbosity quiet
 
 .PHONY: test-c
