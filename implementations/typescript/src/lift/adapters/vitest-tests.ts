@@ -426,6 +426,24 @@ function liftOperand(expr: ts.Expression): OperandLift {
       term: { kind: "ctor", name: `${expr.expression.text}.${expr.name.text}`, args: [] },
     };
   }
+  // v0.6: array literal `[a, b, c]` lifts to `Ctor("array", [a, b, c])`.
+  // Mirrors Rust v0.5 (PR #55) `array` ctor naming. Every element
+  // must itself lift; sparse / spread elements skip.
+  if (ts.isArrayLiteralExpression(expr)) {
+    const argTerms: IrTerm[] = [];
+    for (const el of expr.elements) {
+      if (ts.isOmittedExpression(el) || ts.isSpreadElement(el)) {
+        return {
+          kind: "skip",
+          reason: "array literal with omitted or spread element is not in v0.6",
+        };
+      }
+      const lifted = liftOperand(el);
+      if (lifted.kind === "skip") return lifted;
+      argTerms.push(lifted.term);
+    }
+    return { kind: "ok", term: { kind: "ctor", name: "array", args: argTerms } };
+  }
   // v0.6: binary operators in operand position (`a + b`, `a - b`,
   // `a * b`, `a / b`, `a % b`). Lifts to `Ctor("<op>", [a, b])`. Both
   // operands must themselves lift. Comparison and logical operators

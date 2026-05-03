@@ -159,6 +159,37 @@ it("plus_lifts", () => {
     expect(lhs.args.length).toBe(2);
   });
 
+  it("v0.6: lifts array literal as Ctor named 'array'", () => {
+    const td = tempDir();
+    writeFileSync(
+      join(td, "arr.test.ts"),
+      `
+import { it, expect } from "vitest";
+it("array_lift", () => {
+  expect(sort([3, 1, 2])).toEqual([1, 2, 3]);
+});
+      `,
+    );
+    const r = liftPath(td);
+    const vt = r.adapterReports.find((a) => a.adapter === "vitest-tests")!;
+    expect(vt.lifted).toBe(1);
+
+    const decl = r.decls.find((d) => d.name === "array_lift::0")!;
+    const f = decl.inv as { kind: string; args: unknown[] };
+    const lhs = f.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(lhs.kind).toBe("ctor");
+    expect(lhs.name).toBe("sort");
+    const inner = lhs.args[0] as { kind: string; name: string; args: unknown[] };
+    expect(inner.kind).toBe("ctor");
+    expect(inner.name).toBe("array");
+    expect(inner.args.length).toBe(3);
+
+    const rhs = f.args[1] as { kind: string; name: string; args: unknown[] };
+    expect(rhs.kind).toBe("ctor");
+    expect(rhs.name).toBe("array");
+    expect(rhs.args.length).toBe(3);
+  });
+
   it("each lifted assertion mints its own content-addressed memento", () => {
     const td = tempDir();
     writeFileSync(
