@@ -83,6 +83,12 @@ help:
 	@echo "Per-language test:"
 	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-java  test-c  test-swift"
 	@echo ""
+	@echo "Per-kit conformance gate (C1-C8 lift-plugin-protocol verifiers):"
+	@echo "  make prove-all      all 10 kits (swift excluded: macOS-only)"
+	@echo "  make prove-rust  prove-go  prove-cpp  prove-ts  prove-csharp"
+	@echo "  make prove-java  prove-python  prove-ruby  prove-zig  prove-c"
+	@echo "  make prove-swift    macOS-only"
+	@echo ""
 	@echo "Self-lift experiments:"
 	@echo "  make self-lift-canonicalizer  run provekit-lift against the canonicalizer crate"
 	@echo ""
@@ -310,6 +316,87 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
 	@printf "  %-8s  %s\n" "ts"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ts.json)"
 	@printf "  %-8s  %s\n" "csharp" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json)"
+
+# --- Per-kit prove (C1-C8 conformance gate) ----------------------------------
+#
+# Each `prove-<kit>` target:
+#   1. Builds the kit's lifter binary.
+#   2. Runs `provekit prove --kit=<kit>`, which:
+#      - Spawns the kit's lifter via JSON-RPC.
+#      - Drives the initialize -> lift -> shutdown sequence.
+#      - Runs C1-C8 verifiers against the captured RPC messages.
+#   3. Exits 0 iff all 8 contracts hold.
+#
+# NOTE: prove-swift requires a macOS host (Swift toolchain). It is excluded
+# from prove-all but can be run directly on macOS.
+#
+# Kits with no lifter yet (java/python/ruby/zig/c) exit 2 (user error) until
+# their lifters are wired up. They are listed in prove-all so CI knows which
+# need follow-up.
+
+.PHONY: prove-rust
+prove-rust: build-rust
+	@echo ">> proving rust lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=rust
+
+.PHONY: prove-go
+prove-go: build-rust build-go
+	@echo ">> proving go lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=go
+
+.PHONY: prove-cpp
+prove-cpp: build-rust build-cpp
+	@echo ">> proving cpp lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=cpp
+
+.PHONY: prove-ts
+prove-ts: build-rust build-ts
+	@echo ">> proving ts lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=ts
+
+.PHONY: prove-csharp
+prove-csharp: build-rust build-csharp
+	@echo ">> proving csharp lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=csharp
+
+# macOS-only: requires Swift toolchain.
+.PHONY: prove-swift
+prove-swift: build-rust build-swift
+	@echo ">> proving swift lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=swift
+
+.PHONY: prove-java
+prove-java: build-rust build-java
+	@echo ">> proving java lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=java
+
+.PHONY: prove-python
+prove-python: build-rust
+	@echo ">> proving python lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=python
+
+.PHONY: prove-ruby
+prove-ruby: build-rust
+	@echo ">> proving ruby lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=ruby
+
+.PHONY: prove-zig
+prove-zig: build-rust build-zig
+	@echo ">> proving zig lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=zig
+
+.PHONY: prove-c
+prove-c: build-rust build-c
+	@echo ">> proving c lift-plugin-protocol conformance (C1-C8)"
+	$(PROVEKIT) prove --kit=c
+
+# prove-all: run C1-C8 gate for the Linux/CI subset (swift excluded: macOS-only).
+# Kits without a wired lifter exit 2 (user error); all 10 targets are listed
+# so CI reports which need follow-up. prove-swift runs separately on macos-latest.
+.PHONY: prove-all
+prove-all: prove-rust prove-go prove-cpp prove-ts prove-csharp prove-java prove-python prove-ruby prove-zig prove-c
+	@echo ""
+	@echo "==== prove-all: complete ===="
 
 # --- Conformance gate --------------------------------------------------------
 

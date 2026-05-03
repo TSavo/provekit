@@ -1555,6 +1555,7 @@ dependencies = [
  "provekit-lift",
  "provekit-linker",
  "provekit-proof-envelope",
+ "provekit-self-contracts",
  "provekit-verifier",
  "serde",
  "serde_json",
