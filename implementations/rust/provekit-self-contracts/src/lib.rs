@@ -38,6 +38,11 @@ use std::path::Path;
 // the file/test layout matches its origin (`protocol/specs/2026-04-30-protocol-catalog-format.md`).
 pub mod catalog_format;
 
+// lift-plugin-protocol spec rules as machine-enforceable contracts.
+// Source contracts that each kit's lift-plugin implementation will
+// bridge to. Origin: `protocol/specs/2026-04-30-lift-plugin-protocol.md`.
+pub mod lift_plugin_protocol;
+
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
     mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
@@ -108,6 +113,11 @@ mod smt_emitter_invariants;
 // `author_all_invariants()` so the catalog-format contracts ship as a
 // 15th slab in the rust self-contracts bundle.
 use catalog_format as catalog_format_invariants;
+
+// lift-plugin-protocol spec rules. Same convention as catalog-format:
+// the `pub mod lift_plugin_protocol` above gets aliased so the slab
+// name in `author_all_invariants()` reads `lift_plugin_protocol`.
+use lift_plugin_protocol as lift_plugin_protocol_invariants;
 
 // --- Orchestrator types ----------------------------------------------------
 
@@ -249,6 +259,13 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
                 path: "provekit-self-contracts/src/catalog_format.rs",
             },
             catalog_format_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "lift_plugin_protocol",
+                path: "provekit-self-contracts/src/lift_plugin_protocol.rs",
+            },
+            lift_plugin_protocol_invariants::invariants,
         ),
     ];
 
