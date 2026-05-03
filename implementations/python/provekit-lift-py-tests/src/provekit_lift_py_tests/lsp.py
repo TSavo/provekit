@@ -29,7 +29,7 @@ from .ir import (
 from .canonicalizer import encode_jcs, jcs_hash
 from .layer2 import lift_file_layer2
 from .decorators import collect_module
-from ..lift.pydantic import lift_pydantic_model
+from .lift.pydantic import lift_pydantic_model
 from .cpython_ctypes_resolver import resolve_ctypes_calls
 
 
@@ -124,7 +124,9 @@ def handle_parse(msg_id: Any, params: dict) -> None:
         ctypes_result = resolve_ctypes_calls(source, path, contract_index)
         call_edges = ctypes_result.call_edges
         call_edges_value = call_edges_to_value(call_edges)
-        call_edges_json = encode_jcs(call_edges_value)
+        # encode_jcs returns a str; parse it back to a native list so the
+        # outer json.dumps embeds it as a JSON array, not a JSON-encoded string.
+        call_edges_array = json.loads(encode_jcs(call_edges_value))
 
         if not decls:
             _send(
@@ -133,16 +135,17 @@ def handle_parse(msg_id: Any, params: dict) -> None:
                     "id": msg_id,
                     "result": {
                         "declarations": [],
-                        "callEdges": call_edges_json,
+                        "callEdges": call_edges_array,
                         "warnings": [],
                     },
                 }
             )
             return
 
-        # Emit canonical IR JSON.
+        # Emit canonical IR JSON; parse JCS string to native list so
+        # json.dumps emits an array, not a JSON-encoded string.
         value = declarations_to_value(decls)
-        ir_json = encode_jcs(value)
+        declarations_array = json.loads(encode_jcs(value))
 
         warnings = [w.__dict__ for w in layer2.warnings]
 
@@ -151,8 +154,8 @@ def handle_parse(msg_id: Any, params: dict) -> None:
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
-                    "declarations": ir_json,
-                    "callEdges": call_edges_json,
+                    "declarations": declarations_array,
+                    "callEdges": call_edges_array,
                     "warnings": warnings,
                 },
             }

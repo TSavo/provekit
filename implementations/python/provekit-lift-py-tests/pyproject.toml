@@ -17,5 +17,8 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=7"]
 
+[project.scripts]
+provekit-lsp-python = "provekit_lift_py_tests.lsp:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
