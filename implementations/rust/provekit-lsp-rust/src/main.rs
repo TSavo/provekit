@@ -2,8 +2,11 @@
 //
 // provekit-lsp-rust — NDJSON LSP plugin for Rust.
 //
-// Thin shim around provekit-lift's adapter stack. Speaks the per-language
-// plugin protocol used by every kit's LSP plugin:
+// ## Operating modes
+//
+// ### Default mode (no `--daemon-socket` flag)
+//
+// Speaks the per-language plugin protocol used by every kit's LSP plugin:
 //
 //   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 //   {"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
@@ -15,9 +18,37 @@
 //
 //   {"declarations": [...], "warnings": [...]}
 //
-// Usage: provekit-lsp-rust (reads from stdin, writes to stdout)
+// Used by tooling that consumes lifter output directly (e.g. snapshot
+// pipelines, CI checks).
+//
+// ### Daemon-client mode (`--daemon-socket <path>`)
+//
+// Forwards every `parse` request to the `provekit-linkerd` daemon as a
+// `parseFile` JSON-RPC (spec `2026-05-04-linker-daemon-protocol.md` R5).
+// The daemon runs the lifter in a dedicated long-running process, maintains
+// the cross-language contract and call-edge union in memory, and returns
+// per-file linker diagnostics.
+//
+// The `parse` response shape changes to:
+//
+//   {"diagnostics": [...]}
+//
+// where each element is a `LinterError` memento returned by the daemon.
+//
+// This mode is used by editor-facing components — in particular the real LSP
+// server (`provekit-lsp-server`, step 3b of the LSP+linker path) that handles
+// `textDocument/didOpen` and emits `publishDiagnostics` to the editor.
+//
+// Usage:
+//   provekit-lsp-rust                          # default mode
+//   provekit-lsp-rust --daemon-socket <path>   # daemon-client mode
+
+mod daemon_client;
 
 use std::io::{BufRead, Write};
+use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use provekit_ir_symbolic::serialize::marshal_declarations;
 use provekit_lift::{
@@ -27,8 +58,27 @@ use provekit_lift::{
 };
 
 fn main() {
+    // Parse CLI.
+    let args: Vec<String> = std::env::args().collect();
+    let mut daemon_socket: Option<PathBuf> = None;
+
+    let mut i = 1usize;
+    while i < args.len() {
+        if args[i] == "--daemon-socket" {
+            i += 1;
+            if let Some(v) = args.get(i) {
+                daemon_socket = Some(PathBuf::from(v));
+            }
+        }
+        i += 1;
+    }
+
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
+
+    // Cached daemon connection and request-id counter.
+    let mut daemon_stream: Option<UnixStream> = None;
+    let req_counter = AtomicU64::new(1);
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -85,7 +135,19 @@ fn main() {
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
 
-                let resp = handle_parse(id.clone(), source, path);
+                let resp = if let Some(ref socket_path) = daemon_socket {
+                    handle_parse_daemon(
+                        id.clone(),
+                        source,
+                        path,
+                        socket_path,
+                        &mut daemon_stream,
+                        &req_counter,
+                    )
+                } else {
+                    handle_parse(id.clone(), source, path)
+                };
+
                 let _ = writeln!(stdout, "{resp}");
                 let _ = stdout.flush();
             }
@@ -115,8 +177,91 @@ fn main() {
     }
 }
 
-/// Parse Rust `source` with syn, run the lift adapters, and return a
-/// JSON-RPC result object containing `declarations` and `warnings`.
+/// Daemon-client mode: forward `parse` to the `provekit-linkerd` daemon as a
+/// `parseFile` RPC and return `{diagnostics: [...]}`.
+///
+/// The daemon connection is established lazily on the first `parse` call and
+/// cached for the lifetime of the plugin process. If the daemon is not yet
+/// running, it is spawned automatically; see `daemon_client::connect_or_spawn`.
+fn handle_parse_daemon(
+    id: serde_json::Value,
+    source: &str,
+    path: &str,
+    socket_path: &PathBuf,
+    stream_cache: &mut Option<UnixStream>,
+    req_counter: &AtomicU64,
+) -> serde_json::Value {
+    // Derive a stable project CID from the socket path (deterministic per
+    // project per spec §1; manifest-reading is out of scope for MVP).
+    let project_cid = project_cid_from_socket(socket_path);
+
+    // Lazy connect-or-spawn.
+    let stream = match stream_cache {
+        Some(ref mut s) => s,
+        None => {
+            match daemon_client::connect_or_spawn(socket_path, &project_cid) {
+                Ok(s) => {
+                    *stream_cache = Some(s);
+                    stream_cache.as_mut().unwrap()
+                }
+                Err(e) => {
+                    return serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {
+                            "code": -32603,
+                            "message": format!("daemon connect/spawn failed: {e}")
+                        }
+                    });
+                }
+            }
+        }
+    };
+
+    let rpc_id = req_counter.fetch_add(1, Ordering::Relaxed);
+
+    match daemon_client::send_parse_file(stream, "rust", path, source, rpc_id) {
+        Ok(diagnostics) => {
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "diagnostics": diagnostics
+                }
+            })
+        }
+        Err(e) => {
+            // On error, drop the cached stream so the next call reconnects.
+            *stream_cache = None;
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32603,
+                    "message": format!("daemon parseFile failed: {e}")
+                }
+            })
+        }
+    }
+}
+
+/// Derive a deterministic project CID from the daemon socket path.
+///
+/// This is a simple sha256-hex of the socket path string. The daemon uses a
+/// proper blake3-512(JCS(manifest)) per spec §1; for the MVP, the socket path
+/// already encodes the project identity because callers construct it as
+/// `linkerd-<cid>.sock`. We extract the stem rather than re-hashing so that
+/// two clients pointing at the same socket path share the same daemon.
+fn project_cid_from_socket(socket_path: &PathBuf) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    socket_path.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
+/// Default mode: parse Rust `source` with syn, run the lift adapters, and
+/// return a JSON-RPC result object containing `declarations` and `warnings`.
 fn handle_parse(id: serde_json::Value, source: &str, path: &str) -> serde_json::Value {
     let file = match syn::parse_str::<syn::File>(source) {
         Ok(f) => f,
