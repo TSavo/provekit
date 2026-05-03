@@ -42,7 +42,7 @@ use serde_json::Value as Json;
 /// by go/other kit lifters are normalised into this shape before passing to
 /// `link()`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KitContract {
+pub struct LinkerContract {
     /// Function / method name as declared in the source kit.
     pub name: String,
     /// Kit identifier, e.g. `"rust-kit"`, `"go-kit"`.
@@ -63,7 +63,7 @@ pub struct KitContract {
 /// calls have `target_contract_cid: None` and `target_symbol` set to a
 /// `"<kit>:<name>"` string for linker resolution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KitCallEdge {
+pub struct LinkerCallEdge {
     /// CID of the calling function's contract.
     pub source_contract_cid: String,
     /// CID of the callee's contract if already known (same-kit call), or `None`
@@ -110,9 +110,9 @@ pub struct LinkerError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinkerInputs {
     /// Union of all kit contracts.
-    pub contracts: Vec<KitContract>,
+    pub contracts: Vec<LinkerContract>,
     /// Union of all kit call-edges.
-    pub call_edges: Vec<KitCallEdge>,
+    pub call_edges: Vec<LinkerCallEdge>,
 }
 
 /// Output of a single `link()` invocation.
@@ -156,8 +156,8 @@ pub fn link(inputs: LinkerInputs) -> LinkerOutput {
 // -------------------------------------------------------------------
 
 fn derive_link_bundle_inner(
-    all_contracts: Vec<KitContract>,
-    all_call_edges: Vec<KitCallEdge>,
+    all_contracts: Vec<LinkerContract>,
+    all_call_edges: Vec<LinkerCallEdge>,
 ) -> LinkerOutput {
     // Build cross-kit resolution index: (name, kit) -> contract_cid
     let mut name_kit_index: BTreeMap<(String, String), String> = BTreeMap::new();
@@ -232,7 +232,6 @@ fn derive_link_bundle_inner(
                 );
                 bridges.push(bridge);
 
-                let _ = target_pre;
                 if let Some(mut err) = discharge_obligation(
                     source_post,
                     target_pre,
@@ -463,8 +462,8 @@ fn json_to_canon_value(j: &Json) -> CanonValue {
 mod tests {
     use super::*;
 
-    fn make_process_contract() -> KitContract {
-        KitContract {
+    fn make_process_contract() -> LinkerContract {
+        LinkerContract {
             name: "process".into(),
             kit: "rust-kit".into(),
             contract_cid: "blake3-512:aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001aabbccdd00000001".into(),
@@ -479,8 +478,8 @@ mod tests {
         }
     }
 
-    fn make_go_caller_fail_contract() -> KitContract {
-        KitContract {
+    fn make_go_caller_fail_contract() -> LinkerContract {
+        LinkerContract {
             name: "GoCallerFail".into(),
             kit: "go-kit".into(),
             contract_cid: "blake3-512:ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002".into(),
@@ -489,8 +488,8 @@ mod tests {
         }
     }
 
-    fn make_go_caller_ok_contract() -> KitContract {
-        KitContract {
+    fn make_go_caller_ok_contract() -> LinkerContract {
+        LinkerContract {
             name: "GoCallerOk".into(),
             kit: "go-kit".into(),
             contract_cid: "blake3-512:ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003".into(),
@@ -499,8 +498,8 @@ mod tests {
         }
     }
 
-    fn make_cgo_call_edge(go_contract: &KitContract) -> KitCallEdge {
-        KitCallEdge {
+    fn make_cgo_call_edge(go_contract: &LinkerContract) -> LinkerCallEdge {
+        LinkerCallEdge {
             source_contract_cid: go_contract.contract_cid.clone(),
             target_contract_cid: None,
             target_symbol: "rust-kit:process".into(),

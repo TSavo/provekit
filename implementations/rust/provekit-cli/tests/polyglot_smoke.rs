@@ -27,7 +27,7 @@
 // Use provekit-linker directly — the extracted library the CLI now delegates
 // to.  No more provekit_cli_test_support shim needed.
 
-use provekit_linker::{link, KitCallEdge, KitContract, LinkerInputs};
+use provekit_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs};
 
 // -------------------------------------------------------------------
 // Fixture: rust-callee contract for `process`
@@ -38,12 +38,12 @@ use provekit_linker::{link, KitCallEdge, KitContract, LinkerInputs};
 // The contract CID is deterministic for a fixed input. We compute it
 // once and use it throughout.
 
-fn make_process_contract() -> KitContract {
+fn make_process_contract() -> LinkerContract {
     // Use a stable CID for test reproducibility — the actual byte value
     // is derived from the JCS-canonical form of
     // {name:"process", outBinding:"out", pre:{...}} hashed with BLAKE3-512.
     // For the smoke test we use a pre-computed stable fixture CID.
-    KitContract {
+    LinkerContract {
         name: "process".into(),
         kit: "rust-kit".into(),
         // Stable fixture CID computed from {name, outBinding, pre=(n>0)}.
@@ -72,8 +72,8 @@ fn make_process_contract() -> KitContract {
 // For the smoke test we model this as post_json: None, which is what the
 // linker sees when the go lifter emits no post annotation.
 
-fn make_go_caller_fail_contract() -> KitContract {
-    KitContract {
+fn make_go_caller_fail_contract() -> LinkerContract {
+    LinkerContract {
         name: "GoCallerFail".into(),
         kit: "go-kit".into(),
         contract_cid: "blake3-512:ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002ccddee1100000002".into(),
@@ -90,8 +90,8 @@ fn make_go_caller_fail_contract() -> KitContract {
 // call-edge to link.  The success case has a different contract CID
 // (different name) and zero call-edges.
 
-fn make_go_caller_ok_contract() -> KitContract {
-    KitContract {
+fn make_go_caller_ok_contract() -> LinkerContract {
+    LinkerContract {
         name: "GoCallerOk".into(),
         kit: "go-kit".into(),
         contract_cid: "blake3-512:ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003ffeedd2200000003".into(),
@@ -104,8 +104,8 @@ fn make_go_caller_ok_contract() -> KitContract {
 // Fixture: cgo call-edge from GoCallerFail → rust-kit:process
 // -------------------------------------------------------------------
 
-fn make_cgo_call_edge(go_contract: &KitContract) -> KitCallEdge {
-    KitCallEdge {
+fn make_cgo_call_edge(go_contract: &LinkerContract) -> LinkerCallEdge {
+    LinkerCallEdge {
         source_contract_cid: go_contract.contract_cid.clone(),
         target_contract_cid: None, // cross-kit → null
         target_symbol: "rust-kit:process".into(),
