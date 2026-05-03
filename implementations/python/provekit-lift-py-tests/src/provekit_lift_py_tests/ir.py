@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
-from .canonicalizer import Value, varr, vint, vobj, vstr
+from .canonicalizer import Value, varr, vint, vobj, vstr, vnull
 
 
 # Sort ----------------------------------------------------------------------
@@ -411,3 +411,69 @@ def declarations_to_value(
         else:
             raise TypeError(f"unknown declaration: {type(d)!r}")
     return varr(items)
+
+
+# Locus -----------------------------------------------------------------------
+#
+# Source position for a call site.
+# JSON shape (JCS-canonical key order: column, file, line).
+# Mirrors Go's Locus struct (property.go lines 267-293).
+
+
+@dataclass(frozen=True)
+class Locus:
+    file: str
+    line: int
+    column: int
+
+
+def locus_to_value(loc: Locus) -> Value:
+    """Emit Locus as a Value with JCS-canonical key order: column, file, line."""
+    return vobj([
+        ("column", vint(loc.column)),
+        ("file", vstr(loc.file)),
+        ("line", vint(loc.line)),
+    ])
+
+
+# CallEdgeDecl ----------------------------------------------------------------
+#
+# Call-edge memento per protocol/specs/2026-05-03-bridge-linkage-protocol.md §1.
+# JSON shape (JCS-canonical key order: callSiteLocus, evidenceTerm, kind,
+# schemaVersion, sourceContractCid, targetContractCid, targetSymbol).
+# Mirrors Go's CallEdgeDeclaration.MarshalJSON (property.go lines 331-368).
+#
+# targetContractCid is None for cross-kit calls (encodes as JSON null).
+# targetSymbol carries the kit-prefixed name, e.g. "rust-kit:foo".
+
+
+@dataclass(frozen=True)
+class CallEdgeDecl:
+    source_contract_cid: str
+    target_contract_cid: Optional[str]  # None -> JSON null
+    target_symbol: str
+    call_site_locus: Locus
+    evidence_term: Formula
+
+
+def call_edge_decl_to_value(c: CallEdgeDecl) -> Value:
+    """Emit a call-edge declaration as a canonicalizer Value.
+
+    JCS-canonical key order: callSiteLocus, evidenceTerm, kind, schemaVersion,
+    sourceContractCid, targetContractCid, targetSymbol.
+    """
+    target_cid_value: Value = vnull() if c.target_contract_cid is None else vstr(c.target_contract_cid)
+    return vobj([
+        ("callSiteLocus", locus_to_value(c.call_site_locus)),
+        ("evidenceTerm", formula_to_value(c.evidence_term)),
+        ("kind", vstr("call-edge")),
+        ("schemaVersion", vstr("1")),
+        ("sourceContractCid", vstr(c.source_contract_cid)),
+        ("targetContractCid", target_cid_value),
+        ("targetSymbol", vstr(c.target_symbol)),
+    ])
+
+
+def call_edges_to_value(edges: List["CallEdgeDecl"]) -> Value:
+    """Emit a list of call-edge declarations as a Value array."""
+    return varr([call_edge_decl_to_value(e) for e in edges])
