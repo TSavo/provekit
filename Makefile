@@ -338,6 +338,9 @@ test-zig:
 	cd implementations/zig/provekit-ir && zig build test
 	cd implementations/zig/provekit-lift-zig && zig build test
 	cd implementations/zig/provekit-lsp-zig && zig build test
+	cd implementations/zig/provekit-lsp-zig && zig build
+	@echo "test-zig: LSP lifecycle integration test"
+	sh implementations/zig/provekit-lsp-zig/test_lsp.sh
 
 .PHONY: build-zig
 build-zig:
