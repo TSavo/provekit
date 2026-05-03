@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use owo_colors::OwoColorize;
 use provekit_claim_envelope::{contract_cid as compute_contract_cid, MintContractArgs, Authoring};
 use provekit_lift::lift_path;
-use provekit_linker::{link, KitCallEdge, KitContract, LinkerInputs};
+use provekit_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs};
 use serde_json::Value as Json;
 
 use crate::LinkArgs;
@@ -44,7 +44,8 @@ pub fn run(args: LinkArgs) -> u8 {
         Ok(output) => {
             let bundle = &output.bundle_json;
             let out_path = project_root.join("link-bundle.json");
-            let json = serde_json::to_string_pretty(bundle).unwrap_or_default();
+            let json = serde_json::to_string_pretty(bundle)
+                .expect("bundle JSON serialization is infallible for content-hashed data");
             if let Err(e) = std::fs::write(&out_path, &json) {
                 eprintln!("{}: write link-bundle.json: {e}", "error".red().bold());
                 return crate::EXIT_USER_ERROR;
@@ -104,7 +105,7 @@ fn gather_and_link(
 // Step 1: Lift rust contracts
 // -------------------------------------------------------------------
 
-fn lift_rust_contracts(rust_dir: &Path) -> Result<Vec<KitContract>, String> {
+fn lift_rust_contracts(rust_dir: &Path) -> Result<Vec<LinkerContract>, String> {
     if !rust_dir.exists() {
         return Ok(Vec::new());
     }
@@ -139,7 +140,7 @@ fn lift_rust_contracts(rust_dir: &Path) -> Result<Vec<KitContract>, String> {
         let pre_json = pre_v.map(value_arc_to_json);
         let post_json = post_v.map(value_arc_to_json);
 
-        contracts.push(KitContract {
+        contracts.push(LinkerContract {
             name: decl.name.clone(),
             kit: "rust-kit".into(),
             contract_cid: cid,
@@ -181,7 +182,7 @@ fn value_to_json(v: &provekit_canonicalizer::Value) -> Json {
 fn lift_go_call_edges(
     go_dir: &Path,
     go_lsp_bin: Option<&str>,
-) -> Result<(Vec<KitContract>, Vec<KitCallEdge>), String> {
+) -> Result<(Vec<LinkerContract>, Vec<LinkerCallEdge>), String> {
     if !go_dir.exists() {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -214,8 +215,8 @@ fn lift_go_call_edges(
         .map_err(|e| format!("read initialize response: {e}"))?;
     line.clear();
 
-    let mut all_go_contracts: Vec<KitContract> = Vec::new();
-    let mut all_call_edges: Vec<KitCallEdge> = Vec::new();
+    let mut all_go_contracts: Vec<LinkerContract> = Vec::new();
+    let mut all_call_edges: Vec<LinkerCallEdge> = Vec::new();
 
     for (file_path, source) in &go_files {
         let parse_req = serde_json::json!({
@@ -259,7 +260,7 @@ fn lift_go_call_edges(
                     let cid = contract_cid_from_go_decl(decl);
                     let pre_json = decl.get("pre").cloned();
                     let post_json = decl.get("post").cloned();
-                    all_go_contracts.push(KitContract {
+                    all_go_contracts.push(LinkerContract {
                         name,
                         kit: "go-kit".into(),
                         contract_cid: cid,
@@ -300,7 +301,7 @@ fn lift_go_call_edges(
                         .cloned()
                         .unwrap_or(Json::Null);
 
-                    all_call_edges.push(KitCallEdge {
+                    all_call_edges.push(LinkerCallEdge {
                         source_contract_cid: source_cid,
                         target_contract_cid: target_cid,
                         target_symbol,
