@@ -298,3 +298,167 @@ jobs:
         # the integration tests assert by file.
         run: cargo test -p provekit-cli --test mint_kit_integration -- swift_kit_pins
         working-directory: implementations/rust
+
+  # ---------------------------------------------------------------------------
+  # Per-kit conformance gate: provekit prove --kit=<kit>
+  #
+  # Each job spawns the kit's lifter via JSON-RPC and runs C1-C8 verifiers
+  # against the captured RPC messages.
+  #
+  # swift runs on macos-latest (Swift toolchain is macOS-only).
+  # All other kits run on self-hosted Linux.
+  # ---------------------------------------------------------------------------
+
+  prove-linux:
+    name: "prove-${{ matrix.kit }} (C1-C8 conformance)"
+    runs-on: self-hosted
+    timeout-minutes: 15
+    needs: conformance
+    strategy:
+      fail-fast: false
+      matrix:
+        kit:
+          - rust
+          - go
+          - cpp
+          - ts
+          - csharp
+          - java
+          - python
+          - ruby
+          - zig
+          - c
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target dirs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Set up Go 1.22
+        if: matrix.kit == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+          cache-dependency-path: |
+            implementations/go/provekit-ir-symbolic/go.sum
+            implementations/go/provekit-self-contracts/go.sum
+            implementations/go/provekit-lift-go-tests/go.sum
+
+      - name: Set up .NET 10 (preview)
+        if: matrix.kit == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Set up pnpm
+        if: matrix.kit == 'ts'
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+
+      - name: Set up Node 22
+        if: matrix.kit == 'ts'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Set up Python 3.12
+        if: matrix.kit == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install system deps (cpp)
+        if: matrix.kit == 'cpp'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            libssl-dev \
+            nlohmann-json3-dev
+
+      - name: Install system deps (c)
+        if: matrix.kit == 'c'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libssl-dev
+
+      - name: Set up Java (java)
+        if: matrix.kit == 'java'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Install Ruby (ruby)
+        if: matrix.kit == 'ruby'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install Zig (zig)
+        if: matrix.kit == 'zig'
+        uses: mlugg/setup-zig@v1
+        with:
+          version: '0.13.0'
+
+      - name: "prove-${{ matrix.kit }}"
+        # Kits whose lift binaries don't yet implement the lift-plugin-protocol
+        # (java/python/ruby/zig/c) currently fail the C1-C8 gate. Allow those
+        # matrix entries to surface as red without blocking merge — the single
+        # `conformance` gate (which runs the wired kits) is the mandatory check.
+        # (Review feedback: PR #165 / Codex P1.)
+        continue-on-error: ${{ contains(fromJson('["java","python","ruby","zig","c"]'), matrix.kit) }}
+        run: make prove-${{ matrix.kit }}
+
+  prove-swift:
+    name: "prove-swift (C1-C8 conformance, macOS)"
+    runs-on: macos-latest
+    timeout-minutes: 20
+    needs: conformance
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target dirs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: prove-swift
+        run: make prove-swift
