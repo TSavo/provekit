@@ -99,14 +99,23 @@ jobs:
       # at tools/blake3-vendored/, no system package required.
       # ---------------------------------------------------------------
 
-      - name: Install C++ system deps
+      - name: Install C++ system deps + z3
+        # z3 is the SMT solver invoked by the TS workflow producer's
+        # checkImplication / bridgeEnforcement / circularProof tests
+        # (`provekit prove` substrate). Without it on PATH, every
+        # solver invocation returns ENOENT, the producer maps that to
+        # `undecidable`, and ~10 tests fail with errors of the shape
+        # `expected 'undecidable' to be 'equivalent'`. The `prove`
+        # workflow in provekit.yml installed z3; this gate did not.
+        # Closes task #215 ("CI: TS workflow producer tests failing").
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             clang \
             libssl-dev \
-            nlohmann-json3-dev
+            nlohmann-json3-dev \
+            z3
 
       # ---------------------------------------------------------------
       # The gate.
