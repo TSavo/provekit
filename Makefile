@@ -68,6 +68,7 @@ help:
 	@echo "  make test-all       run all language-native test suites"
 	@echo ""
 	@echo "Per-language build:"
+	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp)"
 	@echo "  make build-rust     cargo build --release (workspace + tools)"
 	@echo "  make build-cpp      clang++ + vendored-blake3"
 	@echo "  make build-go       go build per Go module"
@@ -92,6 +93,12 @@ help:
 	@echo "  csharp:  (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json"
 
 # --- Per-language builds -----------------------------------------------------
+
+# Build every kit's binaries. Useful before `make conformance` or before
+# spawning `provekit-linkerd` (which subprocesses kit lifters at lift
+# time). Each kit's build target is independent; failures stay isolated.
+.PHONY: build-all
+build-all: build-rust build-cpp build-go build-ts build-csharp
 
 .PHONY: build-rust
 build-rust:
