@@ -29,7 +29,16 @@ public class RpcServer {
             String method = extractMethod(line);
             switch (method) {
                 case "initialize" -> sendResponse(id, initResult());
+                case "parse" -> {
+                    // Daemon-conformant wire protocol: {path, source} -> {declarations, callEdges, warnings}.
+                    // Uses decodeJsonString to correctly handle source code with embedded quotes/escapes.
+                    String path = decodeJsonStringField(line, "path");
+                    String source = decodeJsonStringField(line, "source");
+                    sendResponse(id, liftHandler.parseSource(path, source));
+                }
                 case "lift" -> {
+                    // Legacy CLI protocol: {workspace_root, surface}.
+                    // workspace_root and surface are short paths/identifiers without embedded quotes.
                     String workspace = extractStringField(line, "workspace_root");
                     String surface = extractStringField(line, "surface");
                     sendResponse(id, liftHandler.lift(workspace, surface));
@@ -46,7 +55,7 @@ public class RpcServer {
     }
 
     private String initResult() {
-        return "{\"name\":\"provekit-lift-java\",\"version\":\"0.1.0\",\"protocol_version\":\"provekit-lift/1\",\"capabilities\":{\"authoring_surfaces\":[\"java-bean-validation\",\"java-jml\",\"java-cofoja\"],\"ir_version\":\"v1.1.0\",\"emits_signed_mementos\":false}}";
+        return "{\"name\":\"provekit-lsp-java\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\"]}";
     }
 
     private void sendResponse(String id, String result) {
@@ -75,6 +84,73 @@ public class RpcServer {
         return json.substring(q1 + 1, q2);
     }
 
+    /**
+     * Extract and decode a JSON string field value from a flat JSON object.
+     *
+     * This is the escape-aware counterpart to extractStringField. It correctly
+     * handles escaped quotes, escaped backslashes, newlines, carriage returns,
+     * tabs, and Unicode escape sequences within the value. Required for the
+     * 'source' field which may contain arbitrary Java source code.
+     *
+     * Returns "" if the field is not found.
+     */
+    static String decodeJsonStringField(String json, String field) {
+        String key = "\"" + field + "\"";
+        int ki = json.indexOf(key);
+        if (ki < 0) return "";
+
+        // Skip past the key, colon, optional whitespace, then opening quote.
+        int pos = ki + key.length();
+        while (pos < json.length() && (json.charAt(pos) == ':' || json.charAt(pos) == ' ' || json.charAt(pos) == '\t')) {
+            pos++;
+        }
+        if (pos >= json.length() || json.charAt(pos) != '"') return "";
+        pos++; // skip opening quote
+
+        StringBuilder sb = new StringBuilder();
+        while (pos < json.length()) {
+            char c = json.charAt(pos);
+            if (c == '"') {
+                // Closing quote — done.
+                break;
+            } else if (c == '\\') {
+                pos++;
+                if (pos >= json.length()) break;
+                char esc = json.charAt(pos);
+                switch (esc) {
+                    case '"'  -> sb.append('"');
+                    case '\\' -> sb.append('\\');
+                    case '/'  -> sb.append('/');
+                    case 'n'  -> sb.append('\n');
+                    case 'r'  -> sb.append('\r');
+                    case 't'  -> sb.append('\t');
+                    case 'b'  -> sb.append('\b');
+                    case 'f'  -> sb.append('\f');
+                    case 'u'  -> {
+                        if (pos + 4 < json.length()) {
+                            String hex = json.substring(pos + 1, pos + 5);
+                            try {
+                                sb.append((char) Integer.parseInt(hex, 16));
+                                pos += 4;
+                            } catch (NumberFormatException e) {
+                                sb.append('u'); // best-effort: emit raw
+                            }
+                        }
+                    }
+                    default -> sb.append(esc);
+                }
+            } else {
+                sb.append(c);
+            }
+            pos++;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Legacy field extractor — terminates at the first closing quote.
+     * Safe for short fields like workspace_root and surface that never contain escapes.
+     */
     static String extractStringField(String json, String field) {
         String key = "\"" + field + "\"";
         int i = json.indexOf(key);

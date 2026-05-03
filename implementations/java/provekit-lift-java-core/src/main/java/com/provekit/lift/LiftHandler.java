@@ -12,7 +12,51 @@ public class LiftHandler {
     private final List<Extractor> extractors = new ArrayList<>();
 
     public LiftHandler() {
-        ServiceLoader.load(Extractor.class).forEach(extractors::add);
+        List<Extractor> loaded = new ArrayList<>();
+        ServiceLoader.load(Extractor.class).forEach(loaded::add);
+        // Sort by name() for deterministic ordering across builds.
+        loaded.sort(java.util.Comparator.comparing(Extractor::name));
+        extractors.addAll(loaded);
+    }
+
+    /**
+     * Parse a single Java source file and return the canonical NDJSON parse result.
+     *
+     * This is the daemon-conformant counterpart to lift(): it accepts {path, source}
+     * and returns {declarations, callEdges, warnings} per the bridge-linkage protocol.
+     *
+     * @param path   absolute path of the file (used for locus in call edges)
+     * @param source full Java source text
+     * @return JSON string: {"declarations":[...],"callEdges":[...],"warnings":[]}
+     */
+    public String parseSource(String path, String source) {
+        List<ContractDecl> decls = new ArrayList<>();
+        List<CallEdgeDecl> callEdges = new ArrayList<>();
+
+        ParseResult<CompilationUnit> result = new JavaParser().parse(source);
+        if (result.isSuccessful() && result.getResult().isPresent()) {
+            CompilationUnit cu = result.getResult().get();
+            for (Extractor ex : extractors) {
+                decls.addAll(ex.extract(cu, source));
+            }
+            Map<String, String> contractIndex = buildContractIndex(decls);
+            callEdges.addAll(JniResolver.resolve(cu, path, contractIndex));
+        }
+
+        // Emit declarations array.
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"declarations\":[");
+        for (int i = 0; i < decls.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(decls.get(i).toJson());
+        }
+        sb.append("],\"callEdges\":[");
+        for (int i = 0; i < callEdges.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(callEdges.get(i).toJson());
+        }
+        sb.append("],\"warnings\":[]}");
+        return sb.toString();
     }
 
     public String lift(String workspace, String surface) {
