@@ -23,10 +23,15 @@ fn daemon_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
 
-    // Run cargo build to ensure the binary is fresh.
-    // (In CI, the binary is pre-built; here we rely on it already being built.)
-    let target_dir = workspace.join("target").join("debug").join("provekit-linkerd");
-    target_dir
+    // CI builds with --release; local cargo test uses debug. Try release first
+    // (CI), fall back to debug (local).
+    let release = workspace.join("target").join("release").join("provekit-linkerd");
+    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
+    if release.exists() {
+        release
+    } else {
+        debug
+    }
 }
 
 fn unique_sock_path(prefix: &str) -> PathBuf {
