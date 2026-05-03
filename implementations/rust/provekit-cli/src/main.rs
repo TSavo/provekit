@@ -26,6 +26,7 @@ mod cmd_hash;
 mod cmd_implicate;
 mod cmd_init;
 mod cmd_lift;
+mod cmd_link;
 mod cmd_mint;
 mod cmd_must;
 mod cmd_prove;
@@ -109,6 +110,9 @@ enum Cmd {
     VerifyProtocol(VerifyProtocolArgs),
     /// Print CLI version and the protocol catalog CID it declares conformance to.
     Version(VersionArgs),
+    /// Linker pass: derive bridges from (contracts ∪ call-edges), emit LinkBundle.
+    /// Per spec protocol/specs/2026-05-03-bridge-linkage-protocol.md R2-R5.
+    Link(LinkArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -242,6 +246,19 @@ pub struct VersionArgs {
     pub out: OutputFlags,
 }
 
+#[derive(Parser, Debug, Clone)]
+pub struct LinkArgs {
+    /// Project root. Must contain rust-callee/ and go-caller/ subdirs.
+    /// Defaults to current directory.
+    pub project: Option<PathBuf>,
+    /// Path to the go lsp binary (default: searches PATH for provekit-lsp-go,
+    /// then falls back to `go run <project-root>/go-caller/`).
+    #[arg(long)]
+    pub go_lsp_bin: Option<String>,
+    #[command(flatten)]
+    pub out: OutputFlags,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let code = match cli.cmd {
@@ -261,6 +278,7 @@ fn main() -> ExitCode {
         Cmd::Agent(a) => cmd_agent::run(a),
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
+        Cmd::Link(a) => cmd_link::run(a),
     };
     ExitCode::from(code)
 }

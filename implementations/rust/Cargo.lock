@@ -1543,6 +1543,7 @@ dependencies = [
  "provekit-canonicalizer",
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
+ "provekit-lift",
  "provekit-proof-envelope",
  "provekit-verifier",
  "serde",
