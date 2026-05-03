@@ -207,10 +207,15 @@ for v in tx.get('vout', []):
     fi
 elif [ -s "$OTS_FILE" ]; then
     if command -v ots >/dev/null 2>&1; then
-        if ots verify "$OTS_FILE" 2>&1 | grep -q "Success"; then
+        ots_out=$(ots verify "$OTS_FILE" 2>&1)
+        if echo "$ots_out" | grep -q "Success"; then
             ok "OpenTimestamps proof verifies (anchor in Bitcoin via OTS calendar)"
+        elif echo "$ots_out" | grep -qE "Pending|incomplete|not complete"; then
+            # Pending: stamp submitted but not yet aggregated into a Bitcoin block.
+            # Run `ots upgrade attestation.json.ots` after a few hours and retry.
+            skip "OpenTimestamps proof pending Bitcoin confirmation (run: ots upgrade $OTS_FILE)"
         else
-            bad "ots verify failed; .ots may be incomplete or the calendar is unreachable"
+            bad "ots verify failed; calendar unreachable or proof corrupt"
         fi
     else
         skip "ots CLI not installed; cannot verify .ots file"
