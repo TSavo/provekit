@@ -3,6 +3,12 @@
 // Maps struct field validate tags to ProvekIt ContractDeclarations with
 // byte-for-byte identical IR to sister kits for equivalent constraints.
 //
+// This package is the shared lifter core for the Go kit (task #219). Both
+// the batch-CLI binary (cmd/provekit-lift-go) and the LSP plugin
+// (cmd/provekit-lsp-go) call into it: the binary uses the reflection-driven
+// LiftStruct entry point; the LSP uses LiftValidateTags / LiftValidateTag
+// after deriving the sort from the AST.
+//
 // Example:
 //
 //	type User struct {
@@ -60,10 +66,20 @@ func LiftStruct(v interface{}) []ir.Declaration {
 // liftField parses a validate tag and returns the conjunctive IR formula
 // for all constraints on the field, or nil if nothing was recognized.
 func liftField(field reflect.StructField, tag string) ir.IrFormula {
-	var constraints []ir.IrFormula
-	fieldName := field.Name
 	sort := goSort(field.Type)
-	v := ir.MakeVar(fieldName, sort)
+	v := ir.MakeVar(field.Name, sort)
+	return LiftValidateTags(v, sort, tag)
+}
+
+// LiftValidateTags parses a comma-separated validate tag string against an
+// already-bound term v of the given sort, and returns the conjunctive IR
+// formula for all recognized constraints (or nil if nothing was recognized).
+//
+// This is the source-agnostic entry point shared between the reflection-based
+// LiftStruct driver and source-driven callers (the LSP plugin walks the Go
+// AST and converts type identifiers to ir.Sort before calling this).
+func LiftValidateTags(v ir.IrTerm, sort ir.Sort, tag string) ir.IrFormula {
+	var constraints []ir.IrFormula
 
 	parts := strings.Split(tag, ",")
 	for _, part := range parts {
@@ -72,7 +88,7 @@ func liftField(field reflect.StructField, tag string) ir.IrFormula {
 			continue
 		}
 
-		f := liftTag(v, sort, part)
+		f := LiftValidateTag(v, sort, part)
 		if f != nil {
 			constraints = append(constraints, f)
 		}
@@ -88,8 +104,9 @@ func liftField(field reflect.StructField, tag string) ir.IrFormula {
 	}
 }
 
-// liftTag maps a single validate tag fragment to an IR formula.
-func liftTag(v ir.IrTerm, sort ir.Sort, tag string) ir.IrFormula {
+// LiftValidateTag maps a single validate tag fragment to an IR formula.
+// Returns nil if the tag is unrecognized.
+func LiftValidateTag(v ir.IrTerm, sort ir.Sort, tag string) ir.IrFormula {
 	// required
 	if tag == "required" {
 		return requiredConstraint(v, sort)
@@ -202,6 +219,26 @@ func goSort(t reflect.Type) ir.Sort {
 		return ir.Bool
 	case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice:
 		return ir.Ref
+	default:
+		return ir.Ref
+	}
+}
+
+// GoSortFromTypeName maps a Go type name (as it appears in source, e.g.
+// "string", "int", "int64", "bool") to a ProvekIt Sort. Used by the LSP
+// plugin when walking the AST: the type expression is reduced to a name
+// and converted here. Anything unrecognized (pointers, interfaces, named
+// types, generics) falls through to ir.Ref.
+func GoSortFromTypeName(name string) ir.Sort {
+	switch name {
+	case "string":
+		return ir.String
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64",
+		"float32", "float64":
+		return ir.Int
+	case "bool":
+		return ir.Bool
 	default:
 		return ir.Ref
 	}
