@@ -1,8 +1,12 @@
 # Thesis: hash-bounded verification
 
-ProvekIt's central claim is operational, not philosophical: a content-addressed protocol can carry behavioral verification across an arbitrarily-deep dependency graph at a cost that does not depend on the depth of the graph or the cardinality of the address space. The verifier compares 64 bytes per call site. The 64 bytes summarize a chain of arguments whose total length is irrelevant to the comparison.
+**ProvekIt is not a formal verification framework. It is a protocol for content-addressing formal verifications.**
 
-This is the same primitive that Bitcoin used for currency, that Git uses for source history, that BitTorrent uses for content distribution, that IPFS uses for the addressable web. ProvekIt is one more application: behavioral contracts as content-addressed signed mementos, composing through a lattice of cached implications.
+Z3, Coq, Lean, F\*, Isabelle, Kani, Prusti, Creusot, Dafny, TLA+, CBMC — those are formal verification frameworks. They consume formulas and produce verdicts. ProvekIt does not consume formulas, does not produce verdicts. ProvekIt provides the substrate over which the verdicts of those frameworks are published, signed, distributed, federated, and composed.
+
+This is the same shape as Bitcoin (content-addressed currency, no central mint), Git (content-addressed source history, no master copy), BitTorrent (content-addressed content distribution, no central server), IPFS (content-addressed web, no registry). Each of those took a domain that was thought to require a central authority and showed it admits a content-addressed protocol with no central party. ProvekIt applies the same primitive to behavioral verification.
+
+ProvekIt's central claim is operational, not philosophical: a content-addressed protocol can carry behavioral verification across an arbitrarily-deep dependency graph at a cost that does not depend on the depth of the graph or the cardinality of the address space. The verifier compares 64 bytes per call site. The 64 bytes summarize a chain of arguments whose total length is irrelevant to the comparison.
 
 But the deeper claim is **cross-domain verification for free**. A proof about JavaScript's `parseInt` transfers to Rust's `str::parse` because both bridge to the same reference contract. The bridge is a hash-bounded claim: "contract A (CID X) implies contract B (CID Y)." The implication is verified once, cached forever, and every verifier in every language hits the cache.
 

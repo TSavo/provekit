@@ -1,6 +1,8 @@
-# Getting started with ProvekIt
+# Tutorial: Rust
 
-A five-minute walkthrough. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to protocol v1.1.0, and you have run `provekit prove` against the catalog.
+A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to protocol v1.1.0, and you have run `provekit prove` against the catalog.
+
+> **Other languages:** see [tutorials/](./) for TypeScript, Python, Java, C#, Ruby, Zig, and the [polyglot stack walkthrough](polyglot-stack.md). The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 
 ## Prerequisites
 
@@ -25,7 +27,7 @@ provekit verify-protocol
 This reads the local CLI's declared catalog CID, recomputes every spec CID listed in the catalog from the spec bytes shipped with the install, and confirms the catalog hashes to the expected value:
 
 ```
-blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106
+blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f
 ```
 
 A mismatch means either the install is corrupted or the binary was built against a different protocol version. The exit code is 0 on conformance, 1 on drift.
@@ -114,16 +116,17 @@ provekit search --consequent some-formula.json
 
 ## What's next
 
-- Read [docs/lift-adoption-paths.md](lift-adoption-paths.md) for the adoption guide per source library (`proptest`, `contracts`, and what's planned for v1.2).
-- Read [docs/per-language-status.md](per-language-status.md) for the matrix of kits, libs, and adapters across Rust, TypeScript, Go, and C++.
-- Read [ARCHITECTURE.md](../ARCHITECTURE.md) for the four-layer model, the handshake, and the lattice tractability theorem.
-- Read [protocol/specs/](../protocol/specs/) for the canonical specs, addressed by CID.
+- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) for the adoption guide per source library (`proptest`, `contracts`, and what's planned for v1.2).
+- [docs/reference/per-language-status.md](../reference/per-language-status.md) for the matrix of kits, libs, and adapters across all host languages.
+- [docs/explanation/architecture.md](../explanation/architecture.md) for the four-layer model, the handshake, and the lattice tractability theorem.
+- [docs/explanation/thesis.md](../explanation/thesis.md) for the deeper architectural claim.
+- [protocol/specs/](../../protocol/specs/) for the canonical specs, addressed by CID.
 
 ## Troubleshooting
 
 **`provekit verify-protocol` exits with code 1.** The local install's spec bytes do not hash to the expected catalog CID. Either the install is corrupted (re-run `cargo install provekit`) or the binary was built against a different protocol version (check `provekit version`).
 
-**`cargo provekit-lift` reports zero mementos.** No lift adapter recognized any annotations in the workspace. Today's shipping adapters cover `proptest!` blocks and `#[contracts::requires]` / `#[contracts::ensures]` macros; if your crate uses a different annotation library, the adapter is on the v1.2 roadmap (see lift-adoption-paths.md).
+**`cargo provekit-lift` reports zero mementos.** No lift adapter recognized any annotations in the workspace. Today's shipping adapters cover `proptest!` blocks and `#[contracts::requires]` / `#[contracts::ensures]` macros; if your crate uses a different annotation library, the adapter is on the v1.2 roadmap (see [per-adapter-coverage.md](../reference/per-adapter-coverage.md)).
 
 **`provekit prove` reports a large `flagged per call site` count.** Tier 3 fell back to per-call-site Z3 because no `(post, pre)`-level discharge was possible. This is expected for the first run on a new codebase; subsequent runs benefit from the cached implication mementos minted on the first run, and the residue shrinks.
 

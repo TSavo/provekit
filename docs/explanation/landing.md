@@ -34,10 +34,10 @@ The shipping adapters in v1.1 cover `proptest` and `contracts` for Rust. The v1.
 
 ## The protocol is its hash
 
-v1.1.0 is shorthand. The canonical name of v1.1.0 is
+v1.4.0 is shorthand. The canonical name of v1.4.0 is
 
 ```
-blake3-512:9d57c5e47083b92e8cc5dab365a718fc0afee6556d34ffe40b303dd7ad4d9caa88dbbc6248e318cc76e57b30a0b2ad49f6f9dbf1916ac164a89df44324d6c106
+blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f
 ```
 
 the BLAKE3-512 hash of the JCS-canonical form of the protocol catalog. Anyone with the spec bytes can re-derive the CID locally. The repository ships a reference implementation at `tools/recompute-spec-cids/`; `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify` re-derives every CID and fails on any drift.
@@ -60,12 +60,12 @@ There is no central authority that decides what v1.1.0 means. The bytes do.
 
 ## Read further
 
-- [README.md](README.md) for the install path.
-- [PITCH.md](PITCH.md) for the launch post.
-- [PRODUCT.md](PRODUCT.md) for what ProvekIt replaces and complements.
-- [ARCHITECTURE.md](ARCHITECTURE.md) for the four-layer model and handshake.
-- [THESIS.md](THESIS.md) for the deeper architectural claim.
-- [docs/getting-started.md](docs/getting-started.md) for the five-minute walkthrough.
-- [docs/lift-adoption-paths.md](docs/lift-adoption-paths.md) for the per-source-library adoption guide.
-- [docs/per-language-status.md](docs/per-language-status.md) for the kit and adapter matrix.
-- [protocol/specs/](protocol/specs/) for the canonical specs, addressed by CID.
+- [README.md](../../README.md) for the install path.
+- [pitch.md](pitch.md) for the launch post.
+- [product.md](product.md) for what ProvekIt replaces and complements.
+- [architecture.md](architecture.md) for the four-layer model and handshake.
+- [thesis.md](thesis.md) for the deeper architectural claim.
+- [docs/tutorials/rust.md](../tutorials/rust.md) for the five-minute walkthrough.
+- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) for the per-source-library adoption guide.
+- [docs/reference/per-language-status.md](../reference/per-language-status.md) for the kit and adapter matrix.
+- [protocol/specs/](../../protocol/specs/) for the canonical specs, addressed by CID.
