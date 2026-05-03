@@ -41,9 +41,18 @@ use std::time::{Duration, Instant};
 
 fn daemon_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    // CARGO_MANIFEST_DIR = .../provekit-cli; binary is two levels up in target/debug/
+    // CARGO_MANIFEST_DIR = .../provekit-cli; binary is two levels up in target/{release,debug}/
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
-    workspace.join("target").join("debug").join("provekit-linkerd")
+    // CI builds with --release; local cargo test uses debug. Try release first
+    // (CI), fall back to debug (local). The binary is built by `cargo build`
+    // before `cargo test` runs in CI's `make test-all` flow.
+    let release = workspace.join("target").join("release").join("provekit-linkerd");
+    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
+    if release.exists() {
+        release
+    } else {
+        debug
+    }
 }
 
 fn polyglot_sock() -> PathBuf {
