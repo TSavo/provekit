@@ -586,6 +586,19 @@ def extract_csharp(fixture_name: str) -> Optional[str]:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def extract_swift(fixture_name: str) -> Optional[str]:
+    swift_dir = ROOT / "implementations" / "swift"
+    rc, stdout, stderr = run(
+        ["swift", "run", "conformance", "--fixture", fixture_name],
+        cwd=swift_dir,
+        timeout=120,
+    )
+    if rc != 0:
+        print(f"  {Colors.WARN}Swift run failed: {stderr[:200]}{Colors.RST}")
+        return None
+    return stdout.strip()
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════
@@ -657,6 +670,18 @@ def main():
         except Exception as e:
             FAILS += 1
             print(f"  {Colors.FAIL}✗ csharp-{name}: {e}{Colors.RST}")
+
+        # Swift
+        try:
+            got = extract_swift(name)
+            if got and check_jcs(f"swift-{name}", got, golden):
+                PASSES += 1
+                print(f"  {Colors.PASS}✓ swift-{name}{Colors.RST}")
+            elif not got:
+                print(f"  {Colors.WARN}~ swift-{name}: could not extract{Colors.RST}")
+        except Exception as e:
+            FAILS += 1
+            print(f"  {Colors.FAIL}✗ swift-{name}: {e}{Colors.RST}")
 
     # Summary
     total = PASSES + FAILS
