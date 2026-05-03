@@ -68,11 +68,11 @@ check "T3 initialize: capabilities contains parse" "$LINE1" '"parse"'
 # T4: parse response contains declarations array
 check "T4 parse: declarations key present" "$LINE2" '"declarations":'
 
-# T5: parse response declares function 'add'
-check "T5 parse: function add declared" "$LINE2" '"add"'
+# T5: parse response declares contract 'add' with kind:contract shape
+check "T5 parse: contract add declared" "$LINE2" '"kind":"contract"'
 
-# T6: parse response declares function 'compute'
-check "T6 parse: function compute declared" "$LINE2" '"compute"'
+# T6: parse response declares contract 'compute' by name
+check "T6 parse: contract compute declared" "$LINE2" '"name":"compute"'
 
 # T7: parse response contains callEdges array
 check "T7 parse: callEdges key present" "$LINE2" '"callEdges":'

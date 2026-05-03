@@ -220,7 +220,6 @@ static char *json_extract_method(const char *json) {
 
 typedef struct {
     char name[MAX_NAME];
-    char kind[32];          /* "function" */
     int  line;
 } Decl;
 
@@ -304,6 +303,17 @@ static int is_keyword(const char *name) {
     return 0;
 }
 
+/*
+ * Check whether a line (already NUL-terminated, leading whitespace stripped)
+ * starts with //provekit:contract  (no space between // and provekit).
+ * Matches the C++ scanner convention in implementations/cpp/provekit-lsp-cpp.
+ */
+static int is_contract_annotation(const char *line) {
+    /* Skip leading whitespace. */
+    while (*line == ' ' || *line == '\t') line++;
+    return strncmp(line, "//provekit:contract", 19) == 0;
+}
+
 static ParseResult parse_c_source(const char *source) {
     ParseResult result;
     memset(&result, 0, sizeof(result));
@@ -337,6 +347,12 @@ static ParseResult parse_c_source(const char *source) {
     char current_fn[MAX_NAME] = "";
     int  brace_depth = 0;
 
+    /*
+     * annotate_next: set to 1 when we see a //provekit:contract line.
+     * The next function definition is emitted as a kind:"contract" declaration.
+     */
+    int annotate_next = 0;
+
     for (int i = 0; i < n_lines; i++) {
         /* Copy line to a NUL-terminated buffer. */
         int llen = lines_len[i];
@@ -345,6 +361,12 @@ static ParseResult parse_c_source(const char *source) {
         if (llen >= (int)sizeof(line)) llen = (int)sizeof(line) - 1;
         memcpy(line, lines_start[i], (size_t)llen);
         line[llen] = '\0';
+
+        /* Check for annotation comment. */
+        if (is_contract_annotation(line)) {
+            annotate_next = 1;
+            continue;
+        }
 
         /* Track brace depth for current function scope. */
         for (int ci = 0; line[ci]; ci++) {
@@ -365,16 +387,38 @@ static ParseResult parse_c_source(const char *source) {
             memcpy(fname, line + m[1].rm_so, (size_t)nlen);
             fname[nlen] = '\0';
 
-            if (!is_keyword(fname) && result.n_decls < MAX_DECLS) {
-                snprintf(result.decls[result.n_decls].name, MAX_NAME, "%s", fname);
-                snprintf(result.decls[result.n_decls].kind, 32, "function");
-                result.decls[result.n_decls].line = i + 1;
-                result.n_decls++;
+            if (!is_keyword(fname)) {
+                /* Emit as contract declaration only if annotated. */
+                if (annotate_next && result.n_decls < MAX_DECLS) {
+                    snprintf(result.decls[result.n_decls].name, MAX_NAME, "%s", fname);
+                    result.decls[result.n_decls].line = i + 1;
+                    result.n_decls++;
+                }
+                annotate_next = 0;
 
-                /* If this line opens a body, set current_fn. */
+                /* If this line opens a body, set current_fn for call-edge tracking. */
                 if (strchr(line, '{') != NULL) {
                     snprintf(current_fn, MAX_NAME, "%s", fname);
-                    /* brace depth already tracked above */
+                }
+            }
+        } else {
+            /* Non-function line resets annotation flag only if it's not blank. */
+            if (annotate_next) {
+                /* Keep annotate_next alive across blank lines between annotation
+                 * and function definition. Reset only on non-blank non-fn lines
+                 * that are not themselves annotations. */
+                int blank = 1;
+                for (int ci = 0; line[ci]; ci++) {
+                    if (line[ci] != ' ' && line[ci] != '\t' &&
+                        line[ci] != '\r' && line[ci] != '\n') {
+                        blank = 0;
+                        break;
+                    }
+                }
+                /* Blank lines: keep flag. Non-blank non-fn lines (e.g. comments,
+                 * preprocessor): reset. */
+                if (!blank) {
+                    annotate_next = 0;
                 }
             }
         }
@@ -458,19 +502,18 @@ static void handle_parse(const char *id, const char *json_line) {
     ParseResult pr = parse_c_source(source);
     free(source);
 
-    /* Build declarations JSON array. */
+    /* Build declarations JSON array.
+     * Only //provekit:contract annotated functions are emitted.
+     * Shape: {"kind":"contract","name":"<fn>","outBinding":"out"}
+     * Keys in JCS order: kind < name < outBinding (by Unicode code point). */
     Buf decls_buf;
     buf_init(&decls_buf);
     buf_append_char(&decls_buf, '[');
     for (int i = 0; i < pr.n_decls; i++) {
         if (i > 0) buf_append_char(&decls_buf, ',');
-        buf_append(&decls_buf, "{\"kind\":\"function\",\"line\":");
-        char lstr[32];
-        snprintf(lstr, sizeof(lstr), "%d", pr.decls[i].line);
-        buf_append(&decls_buf, lstr);
-        buf_append(&decls_buf, ",\"name\":");
+        buf_append(&decls_buf, "{\"kind\":\"contract\",\"name\":");
         json_escape_str(&decls_buf, pr.decls[i].name);
-        buf_append_char(&decls_buf, '}');
+        buf_append(&decls_buf, ",\"outBinding\":\"out\"}");
     }
     buf_append_char(&decls_buf, ']');
 
