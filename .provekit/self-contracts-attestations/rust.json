@@ -2,8 +2,8 @@
   "schemaVersion": "1",
   "kind": "self-contracts-attestation",
   "lang": "rust",
-  "cid": "blake3-512:04caa512c8fbabd576ae0fc7e5371d3648b73a9d2dab2e4aa6614f52c8bca0d0bc7df814aa037d829ac9cbe64802d2e29265c4c959761a21e26f2f9b8d152541",
+  "cid": "blake3-512:63ca1c5440b085c30a6ecb70d34b83488feb9079819de5abbd8e0ee7c1415b6d09adf743381afda1d0f4872dcaf9f05b4dc5053773f9d8d221d7b11a10f711ac",
   "declaredAt": "2026-05-02T17:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:HYh0qSCqi3HyPP/tVIfDyOp1P/wHNXEOJxmcugHhxbHhKJQu9xwESlJWr3iyA/gRZ4k9IrH4JvBHjGlor8DCCg=="
+  "signature": "ed25519:dLrOUSsOF2MBm/2meJNqxK6j4+DhId43cCX4pqXmEnCQ0Zy8PItY9hFp1UzGM+CNuW/5jy8MQFkSmkPBN43vDQ=="
 }
