@@ -141,7 +141,11 @@ build-c:
 
 .PHONY: build-java
 build-java:
-	mvn package -q -f implementations/java/provekit-lift-java-core/pom.xml
+	# provekit-lift-java-core depends on the sibling provekit-ir module.
+	# Use the parent pom + `-pl ... -am` (also-make) so dependencies are
+	# built first; `mvn install` (not package) puts artifacts in ~/.m2 so
+	# the downstream resolves.
+	mvn install -q -f implementations/java/pom.xml -pl provekit-lift-java-core -am
 	mkdir -p ~/.local/bin
 	cp implementations/java/provekit-lift-java-core/target/appassembler/bin/provekit-lsp-java ~/.local/bin/provekit-lsp-java
 	chmod +x ~/.local/bin/provekit-lsp-java
