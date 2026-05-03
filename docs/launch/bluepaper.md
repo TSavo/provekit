@@ -11,8 +11,8 @@ The reader verifies this document's authority by computing the BLAKE3-512 hash o
 ## §0. Pinned authority
 
 ```
-protocol catalog (v1.3.1)
-  blake3-512:dab2eca97eaea7cc107b1ff3f2326094d804a5e91749bf8e9caa36cd049dc0ae1cb65afb353af8fcd271f87e9e0fc7e7710ec6a68666da6a11f802bc304ff799
+protocol catalog (v1.4.0)
+  blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f
 ```
 
 This is `BLAKE3-512(JCS(catalog-json))`, not `BLAKE3-512(catalog-file-bytes)`. The catalog is canonicalized first per RFC 8785 (sorted keys, no whitespace, deterministic number form), then hashed. Anything else gets a different number.
@@ -317,7 +317,7 @@ lattice tractability theorem   blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f
 memento envelope grammar       blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5
 proof substrate                blake3-512:ad53d6c59ee08270a48715376cc211f964ff44a55b3318d68a402e9c915ff593d5a5bbbd424f7777e2bcfe89d6c5bd2b49efcb5aae7de24752f3bcabb90484ae
 proof file format              blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3
-protocol catalog (v1.3.1)      blake3-512:dab2eca97eaea7cc107b1ff3f2326094d804a5e91749bf8e9caa36cd049dc0ae1cb65afb353af8fcd271f87e9e0fc7e7710ec6a68666da6a11f802bc304ff799
+protocol catalog (v1.4.0)      blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f
 self-contracts (stable; v1.1.0+)        blake3-512:a0f58941758d709739759cf166bf9cb73794958144e213eccfb28fbf5791ca824ce53da0c6ba801cca2b53400324a094f510d4bbc41bc6b73b17e486ad3838ab
 signatures and non-repudiation blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c
 ```
@@ -386,6 +386,8 @@ v1.2.0 (2026-04-30): additive bump over v1.1.0. Adds four pluggability protocols
 v1.3.0 (2026-05-02): additive bump over v1.2.0. Adds four protocol enrichments and two new specs. (1) BridgeDeclaration gains `sourceContractCid` + `targetProofCid` for hash-bounded cross-bundle witness pinning. (2) ProofEnvelope catalog memento gains optional `binaryCid` for supply-chain anchoring (rule 5 is MAY in v1.3.0; promotion to MUST awaits a reference verifier in v1.4.0). (3) ProofEnvelope catalog memento gains optional `metadata` map for non-normative tooling/diagnostics. (4) `EvidenceTerm` proof-certificate carrier for `smt-lib`/`coq`/`custom` proof types. New specs: `correctness-is-a-hash` (the memcmp theorem) and `lsp-protocol` (real-time IDE integration with pluggable JSON-RPC backend). All v1.2.0 mementos and `.proof` bundles remain valid; v1.2.0's CID `1e5cfee6...17d0579f` stays attestable for anyone pinned. Catalog CID `5a3129f4...205d24c7`. Signed under the same foundation key.
 
 v1.3.1 (2026-05-02): patch bump over v1.3.0. Re-sync only; no protocol-level changes. Absorbs `ir-formal-grammar` spec-CID drift introduced by PR #10 (the `Bridge target pinning: the shim-poisoning vector` normative example landed without a follow-up catalog cut). Property re-baked: `ir-formal-grammar` from `99f09163...e37cc4bb` to `fc26a82b...29b72f42c`. The other 19 spec CIDs are unchanged. All v1.3.0 mementos and `.proof` bundles remain valid; v1.3.0's CID `5a3129f4...205d24c7` stays attestable via `.provekit/catalog-signatures/v1.3.0.json` for anyone pinned. Catalog CID `dab2eca9...304ff799`. Signed under the same foundation key.
+
+v1.4.0 (2026-05-03): additive bump over v1.3.1. Substrate layering plus three metadata-extension specs. (1) `substrate-layers-envelope-header-body` formalizes envelope/header/body separation as v1.2 of the memento schema; substrate verifiers inspect envelope + header, body fields are carried but verifier-opaque. (2) `contract-cid-vs-attestation-cid` separates the contract's content CID from the attestation CID over `(contractCid, signer, declaredAt, ...)` so contract identity is stable across re-attestation. (3) `contract-set-extension` adds `contractSetCid` and `previousContractSetCid` body fields for ordered, append-only contract-set evolution under semver-minor rules. (4) `version-chains-pinning` adds the three-axis pinning convention (`contractCid`, `witnessCid`, `binaryCid`) carried in the body, plus the version-chain walk used by package-manager-replacement tooling. Per `substrate-layers-envelope-header-body` §4, all v1.3.x mementos and `.proof` bundles remain valid: v1.1 flat structure is read as `header = entire flat object` with synthetic empty `body`; new attestations MUST emit the layered shape. v1.3.1's CID `dab2eca9...304ff799` stays attestable via `.provekit/catalog-signatures/v1.3.1.json` for anyone pinned. Catalog CID `b0f2030d...399b60f52f`. Signed under the same foundation key.
 
 ---
 

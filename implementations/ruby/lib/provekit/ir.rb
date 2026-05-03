@@ -78,6 +78,30 @@ module Provekit
       end
     end
 
+    # Bridge declaration. Locked spec key order:
+    #   kind, name, sourceSymbol, sourceLayer, sourceContractCid,
+    #   targetContractCid, targetProofCid, targetLayer, notes (optional).
+    # `notes` is OMITTED entirely when nil — never emitted as null.
+    # Ruby Struct fields are snake_case; the JSON keys are camelCase
+    # and produced by the marshaler, not by `to_h`.
+    Bridge = Struct.new(
+      :name,
+      :source_symbol,
+      :source_layer,
+      :source_contract_cid,
+      :target_contract_cid,
+      :target_proof_cid,
+      :target_layer,
+      :notes,
+      keyword_init: true,
+    ) do
+      def initialize(name:, source_symbol:, source_layer:,
+                     source_contract_cid:, target_contract_cid:,
+                     target_proof_cid:, target_layer:, notes: nil)
+        super
+      end
+    end
+
     # ── JCS canonical JSON emitter ──────────────────────────────
 
     module Jcs
@@ -157,15 +181,36 @@ module Provekit
 
     def self.marshal_declarations(decls)
       arr = decls.map do |d|
-        obj = {
-          kind: "contract",
-          name: d.name,
-          outBinding: d.out_binding,
-        }
-        obj[:pre]  = d.pre  if d.pre
-        obj[:post] = d.post if d.post
-        obj[:inv]  = d.inv  if d.inv
-        obj
+        case d
+        when Bridge
+          obj = {
+            kind: "bridge",
+            name: d.name,
+            sourceSymbol: d.source_symbol,
+            sourceLayer: d.source_layer,
+            sourceContractCid: d.source_contract_cid,
+            targetContractCid: d.target_contract_cid,
+            targetProofCid: d.target_proof_cid,
+            targetLayer: d.target_layer,
+          }
+          # `notes` is omitted entirely when nil; never emitted as null.
+          # This is the byte-equality rule that keeps every kit in sync
+          # (spec 2026-04-30-ir-formal-grammar.md §BridgeDeclaration).
+          obj[:notes] = d.notes if d.notes
+          obj
+        when ContractDecl
+          obj = {
+            kind: "contract",
+            name: d.name,
+            outBinding: d.out_binding,
+          }
+          obj[:pre]  = d.pre  if d.pre
+          obj[:post] = d.post if d.post
+          obj[:inv]  = d.inv  if d.inv
+          obj
+        else
+          raise "unknown declaration type: #{d.class}"
+        end
       end
       Jcs.encode(arr)
     end

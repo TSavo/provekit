@@ -99,6 +99,41 @@ public static class Serialize
         _ => throw new InvalidOperationException($"unknown formula kind: {f.GetType()}"),
     };
 
+    // ----- v1.1.0 BridgeDeclaration → canonicalizer Value ---------------
+    //
+    // Spec wire form (protocol/specs/2026-04-30-ir-formal-grammar.md
+    // §BridgeDeclaration; pinned by `bridge_decl` in
+    // conformance/fixtures.toml):
+    //
+    //   { "kind": "bridge", "name", "sourceSymbol", "sourceLayer",
+    //     "sourceContractCid", "targetContractCid", "targetProofCid",
+    //     "targetLayer", "notes"? }
+    //
+    // Insertion order here is irrelevant — `Jcs.Encode` re-sorts keys to
+    // Unicode code-point order at emit time (same discipline as
+    // `FormulaToValue`). `Notes` is omitted when null so JCS doesn't
+    // emit `"notes":null`; this matches the Rust peer's
+    // `skip_serializing_if = "Option::is_none"`.
+    public static V BridgeDeclarationToValue(BridgeDeclaration b)
+    {
+        var entries = new List<KeyValuePair<string, V>>(9)
+        {
+            new("kind", V.String("bridge")),
+            new("name", V.String(b.Name)),
+            new("sourceSymbol", V.String(b.SourceSymbol)),
+            new("sourceLayer", V.String(b.SourceLayer)),
+            new("sourceContractCid", V.String(b.SourceContractCid)),
+            new("targetContractCid", V.String(b.TargetContractCid)),
+            new("targetProofCid", V.String(b.TargetProofCid)),
+            new("targetLayer", V.String(b.TargetLayer)),
+        };
+        if (b.Notes is not null)
+        {
+            entries.Add(new("notes", V.String(b.Notes)));
+        }
+        return V.Object(entries);
+    }
+
     // ----- to insertion-order JSON (mirrors C++ marshal_declarations) ---
 
     public static string MarshalDeclarations(IReadOnlyList<ContractDecl> decls)
