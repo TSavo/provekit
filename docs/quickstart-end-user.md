@@ -46,12 +46,12 @@ The socket path follows the daemon spec: `${XDG_RUNTIME_DIR}/provekit/linkerd-<p
 
 ### VSCode
 
-There is no dedicated ProvekIt VSCode extension yet. Use a generic LSP client extension such as `lsp-client` (extension ID `matklad.lsp-client`) or `multi-lsp-client`. Configure it with:
+There is no dedicated ProvekIt VSCode extension yet. Search the VSCode marketplace for "LSP client" and install any extension that lets you configure an arbitrary stdio LSP server. Configure it with:
 
 - Executable: `provekit-lsp`
 - Arguments: `--daemon-socket /tmp/provekit-demo.sock`
 
-The server speaks standard LSP over stdio. If your generic LSP extension uses a JSON config block, the fields are whatever that extension defines -- look at its own docs for the exact key names.
+The server speaks standard LSP over stdio. The exact JSON config keys depend on which extension you chose -- check that extension's own docs for its settings schema.
 
 ### neovim
 

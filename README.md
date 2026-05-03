@@ -26,8 +26,8 @@ See [docs/per-language-status.md](docs/per-language-status.md) for the complete 
 | Kit | Self-contracts | Lift-plugin-protocol bridges | LSP plugin |
 |---|---|---|---|
 | Rust | full conformance | full (source of truth) | shipping |
-| Go | full conformance | in progress | shipping |
-| C# | full conformance | in progress | shipping |
+| Go | full conformance | in progress | planned |
+| C# | full conformance | not started | shipping |
 | Ruby | not started | not started | shipping |
 | Zig | not started | not started | shipping |
 | Python | in progress | in progress | shipping |
