@@ -62,6 +62,7 @@ extern "C" {
     void enumerate_callsites_invariants();
     void resolve_target_invariants();
     void instantiate_invariants();
+    void cross_kit_bridges_invariants();
 }
 
 static std::string mint_one_run(const std::string& out_dir, bool verbose) {
@@ -79,10 +80,11 @@ static std::string mint_one_run(const std::string& out_dir, bool verbose) {
     enumerate_callsites_invariants();
     resolve_target_invariants();
     instantiate_invariants();
+    cross_kit_bridges_invariants();
     auto contract_decls = finish();
 
     if (verbose) {
-        std::printf("authored %zu contracts across 11 .invariant.cpp slabs\n",
+        std::printf("authored %zu contracts across 12 .invariant.cpp slabs\n",
                     contract_decls.size());
     }
 

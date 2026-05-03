@@ -160,6 +160,7 @@ done
     "$CPP/verifier/enumerate_callsites.invariant.cpp" \
     "$CPP/verifier/resolve_target.invariant.cpp" \
     "$CPP/verifier/instantiate.invariant.cpp" \
+    "$WORKSPACE/implementations/cpp/provekit-self-contracts/cross_kit_bridges.cpp" \
     "$WORKSPACE/implementations/cpp/provekit-self-contracts/mint_cpp_self_contracts.cpp" \
     -lcrypto \
     -o "$OUT_BIN"
