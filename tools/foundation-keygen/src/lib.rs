@@ -69,6 +69,13 @@ pub const V1_3_1_DECLARED_AT: &str = "2026-05-02T17:00:00Z";
 /// catalog CID under the same foundation key.
 pub const V1_4_0_DECLARED_AT: &str = "2026-05-03T15:00:00Z";
 
+/// Pinned `declaredAt` for v1.4.1. Same date as v1.4.0, hour bumped to
+/// 18:00 UTC because v1.4.1 is a re-sync (catalog absorbs ir-formal-grammar
+/// CID drift from the normative Locus type addendum); no protocol-level
+/// changes. Attestation signed against the new catalog CID under the
+/// same foundation key.
+pub const V1_4_1_DECLARED_AT: &str = "2026-05-03T18:00:00Z";
+
 /// Catalog file path, resolved relative to this crate's manifest dir.
 pub fn catalog_path() -> PathBuf {
     repo_root().join("protocol/specs/2026-04-30-protocol-catalog.json")
