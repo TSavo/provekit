@@ -156,9 +156,13 @@ func liftTag(v ir.IrTerm, sort ir.Sort, tag string) ir.IrFormula {
 		return ir.Eq(ir.StringLength(v), ir.Num(n))
 	}
 
-	// email
-	if tag == "email" {
-		return ir.And() // true atom — placeholder
+	// Vacuous-true runtime validators: tags whose semantics live in the
+	// runtime validator (go-playground/validator) but have no provable
+	// content in IR theory. Each emits a distinct kit-predicate Atomic
+	// (`kit:<tag>`) so consumers can content-address the position via
+	// the OpacityManifest. See VacuousTrueTags / opacity_manifest.go.
+	if pred, ok := vacuousKitPredicate(tag); ok {
+		return ir.Atomic(pred, v)
 	}
 
 	// oneof=A B C
@@ -169,13 +173,6 @@ func liftTag(v ir.IrTerm, sort ir.Sort, tag string) ir.IrFormula {
 			eqs = append(eqs, ir.Eq(v, ir.StrConst(val)))
 		}
 		return ir.Or(eqs...)
-	}
-
-	// url, uuid, ip, ... — recognized but opaque
-	for _, special := range []string{"url", "uuid", "ip", "ipv4", "ipv6", "hex", "base64", "json", "datetime"} {
-		if tag == special {
-			return ir.And() // true atom — placeholder
-		}
 	}
 
 	return nil

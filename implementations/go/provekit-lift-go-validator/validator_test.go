@@ -64,9 +64,10 @@ func TestLiftStruct_RangeConstraintByteEquivalent(t *testing.T) {
 
 	// Golden JCS: the same IR formula structure as Bean Validation @Min(0) @Max(100)
 	// and JML //@ requires score >= 0 && score <= 100.
-	// Note: Go kit uses logical key order (kind, name, args); JCS-alpha sort
-	// is tracked separately in the Go kit canonicalizer.
-	expected := `{"kind":"and","operands":[{"kind":"atomic","name":"≥","args":[{"kind":"var","name":"Value"},{"kind":"const","value":0,"sort":{"kind":"primitive","name":"Int"}}]},{"kind":"atomic","name":"≤","args":[{"kind":"var","name":"Value"},{"kind":"const","value":100,"sort":{"kind":"primitive","name":"Int"}}]}]}`
+	// Keys are emitted in JCS-canonical (alphabetic) order by the IR
+	// MarshalJSON path; matches the protocol's canonical IR-JSON shape
+	// in protocol/specs/2026-04-30-ir-formal-grammar.md §atomic.
+	expected := `{"kind":"and","operands":[{"args":[{"kind":"var","name":"Value"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"},{"args":[{"kind":"var","name":"Value"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":100}],"kind":"atomic","name":"≤"}]}`
 
 	if string(jcs) != expected {
 		t.Errorf("JCS mismatch:\n  got:      %s\n  expected: %s", jcs, expected)
@@ -92,7 +93,7 @@ func TestLiftStruct_StringRequiredNotNullEquivalent(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	expected := `{"kind":"atomic","name":"≠","args":[{"kind":"var","name":"Name"},{"kind":"const","value":"","sort":{"kind":"primitive","name":"String"}}]}`
+	expected := `{"args":[{"kind":"var","name":"Name"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":""}],"kind":"atomic","name":"≠"}`
 
 	if string(jcs) != expected {
 		t.Errorf("JCS mismatch:\n  got:      %s\n  expected: %s", jcs, expected)
@@ -116,7 +117,7 @@ func TestLiftStruct_MinMaxStringLength(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	expected := `{"kind":"and","operands":[{"kind":"atomic","name":"≥","args":[{"kind":"ctor","name":"String.prototype.length","args":[{"kind":"var","name":"Title"}]},{"kind":"const","value":1,"sort":{"kind":"primitive","name":"Int"}}]},{"kind":"atomic","name":"≤","args":[{"kind":"ctor","name":"String.prototype.length","args":[{"kind":"var","name":"Title"}]},{"kind":"const","value":200,"sort":{"kind":"primitive","name":"Int"}}]}]}`
+	expected := `{"kind":"and","operands":[{"args":[{"args":[{"kind":"var","name":"Title"}],"kind":"ctor","name":"String.prototype.length"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":1}],"kind":"atomic","name":"≥"},{"args":[{"args":[{"kind":"var","name":"Title"}],"kind":"ctor","name":"String.prototype.length"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":200}],"kind":"atomic","name":"≤"}]}`
 
 	if string(jcs) != expected {
 		t.Errorf("JCS mismatch:\n  got:      %s\n  expected: %s", jcs, expected)
@@ -157,7 +158,7 @@ func TestLiftStruct_OneofConstraint(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	expected := `{"kind":"or","operands":[{"kind":"atomic","name":"=","args":[{"kind":"var","name":"Option"},{"kind":"const","value":"a","sort":{"kind":"primitive","name":"String"}}]},{"kind":"atomic","name":"=","args":[{"kind":"var","name":"Option"},{"kind":"const","value":"b","sort":{"kind":"primitive","name":"String"}}]},{"kind":"atomic","name":"=","args":[{"kind":"var","name":"Option"},{"kind":"const","value":"c","sort":{"kind":"primitive","name":"String"}}]}]}`
+	expected := `{"kind":"or","operands":[{"args":[{"kind":"var","name":"Option"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"a"}],"kind":"atomic","name":"="},{"args":[{"kind":"var","name":"Option"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"b"}],"kind":"atomic","name":"="},{"args":[{"kind":"var","name":"Option"},{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"c"}],"kind":"atomic","name":"="}]}`
 
 	if string(jcs) != expected {
 		t.Errorf("JCS mismatch:\n  got:      %s\n  expected: %s", jcs, expected)
