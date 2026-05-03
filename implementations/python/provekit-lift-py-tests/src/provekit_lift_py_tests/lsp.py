@@ -18,15 +18,15 @@ import traceback
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ..ir import (
+from .ir import (
     ContractDecl,
     BridgeDecl,
     declarations_to_value,
     formula_to_value,
 )
-from ..canonicalizer import encode_jcs
-from ..layer2 import lift_file_layer2
-from ..decorators import collect_module
+from .canonicalizer import encode_jcs
+from .layer2 import lift_file_layer2
+from .decorators import collect_module
 from ..lift.pydantic import lift_pydantic_model
 
 
