@@ -10,6 +10,10 @@ description = "NDJSON LSP plugin for Rust. Thin shim around provekit-lift adapte
 name = "provekit-lsp-rust"
 path = "src/main.rs"
 
+[lib]
+name = "provekit_lsp_rust"
+path = "src/lib.rs"
+
 [dependencies]
 provekit-lift = { path = "../provekit-lift" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }

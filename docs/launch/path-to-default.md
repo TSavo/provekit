@@ -108,6 +108,8 @@ The order is not interchangeable. The five properties have a forced sequence bec
 
 **Phase 2 (next two weeks): LSP push polish.** Per-kit LSP plugin closes its remaining gaps. Diagnostic surface formatter implemented. The IDE shows red squiggles for cross-language contract violations on the keystroke. Sir tests on a polyglot project of his own choosing.
 
+Step 3b of the LSP+linker path is complete (PR: `feat(lsp): daemon-client mode in provekit-lsp`): `provekit-lsp` now has a daemon-client mode alongside its existing per-plugin subprocess mode. When `--daemon-socket <path>` is passed, `did_open` / `did_change` route through `provekit-linkerd` instead of the per-plugin path. `publishDiagnostics` delivers the daemon's `LinterError` set to the editor. The rust IDE path from source change to red squiggle is now end-to-end wired for the `rust` kit. Multi-kit dispatch (file extension -> kit routing) is the next follow-up step.
+
 **Phase 3 (next two months): false-positive control.** Run on real codebases (the platform monorepo per task #132 is the natural candidate). Catalog every false positive. Each false positive is either an opacity-manifest entry, a lifter improvement, or a contract-language enrichment. The empirical false-positive rate goes down with each iteration. Goal: under 1% on a typical Java/Scala/Kotlin/Go/Python codebase.
 
 **Phase 4 (next six months): rust scaffold integration.** Ship `cargo provekit init`. Ship `cargo provekit prove` as a CI gate. Ship the rust LSP plugin as a rustup component. Document the workflow in The Rust Programming Language and rustlang.org/learn. Get into Rust language-team discussions about toolchain inclusion.
