@@ -21,13 +21,16 @@ from typing import Any, Dict, List, Optional
 from .ir import (
     ContractDecl,
     BridgeDecl,
+    contract_decl_to_value,
     declarations_to_value,
+    call_edges_to_value,
     formula_to_value,
 )
-from .canonicalizer import encode_jcs
+from .canonicalizer import encode_jcs, jcs_hash
 from .layer2 import lift_file_layer2
 from .decorators import collect_module
 from ..lift.pydantic import lift_pydantic_model
+from .cpython_ctypes_resolver import resolve_ctypes_calls
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +112,20 @@ def handle_parse(msg_id: Any, params: dict) -> None:
         except Exception:
             pass
 
+        # Build contract index for call-edge resolution.
+        # Maps function/contract name -> contractCid (blake3-512 hash of JCS).
+        contract_index: Dict[str, str] = {}
+        for d in decls:
+            if isinstance(d, ContractDecl):
+                cid = jcs_hash(contract_decl_to_value(d))
+                contract_index[d.name] = cid
+
+        # Emit ctypes call-edge stream per spec #114 R1.
+        ctypes_result = resolve_ctypes_calls(source, path, contract_index)
+        call_edges = ctypes_result.call_edges
+        call_edges_value = call_edges_to_value(call_edges)
+        call_edges_json = encode_jcs(call_edges_value)
+
         if not decls:
             _send(
                 {
@@ -116,6 +133,7 @@ def handle_parse(msg_id: Any, params: dict) -> None:
                     "id": msg_id,
                     "result": {
                         "declarations": [],
+                        "callEdges": call_edges_json,
                         "warnings": [],
                     },
                 }
@@ -134,6 +152,7 @@ def handle_parse(msg_id: Any, params: dict) -> None:
                 "id": msg_id,
                 "result": {
                     "declarations": ir_json,
+                    "callEdges": call_edges_json,
                     "warnings": warnings,
                 },
             }
