@@ -177,6 +177,10 @@ jobs:
           curl -fsSL --retry 5 -o vampire.zip \
             https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
           echo "$EXPECTED_SHA  vampire.zip" | sha256sum -c -
+          # -o overwrites without prompting. Without it, self-hosted
+          # runners that have a leftover vampire binary in /tmp from a
+          # prior run hang on `replace vampire? [y]es...` and exit 1
+          # on EOF. Caught failing CI on every PR after #289 landed.
           unzip -qo vampire.zip
           sudo install -m 0755 vampire /usr/local/bin/vampire
           vampire --version | head -1
