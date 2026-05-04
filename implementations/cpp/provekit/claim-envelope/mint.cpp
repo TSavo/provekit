@@ -322,4 +322,79 @@ MintedEnvelope mint_implication(const MintImplicationArgs& args) {
         evidence, args.signer_seed);
 }
 
+// ── v1.4 BridgeDeclaration (layered envelope/header/body, tagged-union target) ──
+
+static ValuePtr build_target_value(const ::provekit::ir::BridgeTarget& target) {
+    const char* kind = ::provekit::ir::target_kind_of(target);
+    std::string cid = ::provekit::ir::target_cid_of(target);
+    return Value::object({
+        {"kind", Value::string(kind)},
+        {"cid", Value::string(cid)},
+    });
+}
+
+MintedEnvelope mint_bridge_v14(const MintBridgeV14Args& args) {
+    // Build target
+    auto target_v = build_target_value(args.target);
+
+    // Build header (7 canonical fields per spec §1.R3)
+    ValuePtr header = Value::object({
+        {"schemaVersion", Value::string("1")},
+        {"kind", Value::string("bridge")},
+        {"name", Value::string(args.name)},
+        {"sourceSymbol", Value::string(args.source_symbol)},
+        {"sourceLayer", Value::string(args.source_layer)},
+        {"sourceContractCid", Value::string(args.source_contract_cid)},
+        {"target", target_v},
+    });
+
+    // Build metadata (only non-empty fields emitted per §1.R2)
+    std::vector<std::pair<std::string, ValuePtr>> meta_kvs;
+    auto emit_if_not_empty = [&](const char* key, const std::string& val) {
+        if (!val.empty()) meta_kvs.emplace_back(key, Value::string(val));
+    };
+    emit_if_not_empty("targetWitnessCid", args.target_witness_cid);
+    emit_if_not_empty("targetBinaryCid", args.target_binary_cid);
+    emit_if_not_empty("targetLayer", args.target_layer);
+    emit_if_not_empty("targetContractSetCid", args.target_contract_set_cid);
+    emit_if_not_empty("producedBy", args.produced_by);
+    emit_if_not_empty("producedAt", args.produced_at);
+    ValuePtr metadata = Value::object(meta_kvs);
+
+    // Build envelope
+    auto pubkey = ::provekit::proof_envelope::ed25519_pubkey_string_from_seed(args.signer_seed);
+    std::vector<std::pair<std::string, ValuePtr>> env_kvs = {
+        {"signer", Value::string(pubkey)},
+        {"declaredAt", Value::string(args.declared_at)},
+    };
+    ValuePtr envelope = Value::object(env_kvs);
+
+    // Sign: JCS({header, metadata})
+    ValuePtr sig_payload = Value::object({
+        {"header", header},
+        {"metadata", metadata},
+    });
+    const std::string sig_payload_str = ::provekit::canonicalizer::encode_jcs(*sig_payload);
+    auto sig = ::provekit::proof_envelope::ed25519_sign_with_seed(
+        args.signer_seed,
+        reinterpret_cast<const uint8_t*>(sig_payload_str.data()),
+        sig_payload_str.size());
+    const std::string sig_str = std::string("ed25519:") +
+        base64_encode(sig.data(), sig.size());
+    env_kvs.emplace_back("signature", Value::string(sig_str));
+    envelope = Value::object(env_kvs);
+
+    // Full memento: {envelope, header, metadata}
+    ValuePtr memento = Value::object({
+        {"envelope", envelope},
+        {"header", header},
+        {"metadata", metadata},
+    });
+    const std::string canonical = ::provekit::canonicalizer::encode_jcs(*memento);
+    std::vector<uint8_t> bytes_vec(canonical.begin(), canonical.end());
+    const std::string cid = ::provekit::canonicalizer::compute_cid(canonical);
+
+    return {std::move(bytes_vec), cid};
+}
+
 }  // namespace provekit::claim_envelope
