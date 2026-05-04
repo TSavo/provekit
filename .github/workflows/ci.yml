@@ -94,6 +94,15 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Install python kit wheels (blake3, pynacl, cbor2)
+        # mint-python invokes the mint-python-self-contracts orchestrator
+        # which imports blake3 / pynacl / cbor2 at runtime. The kit ships
+        # these as deps in its pyproject.toml; an editable install picks
+        # them up via the wheels in PyPI. Without this step, mint-python
+        # fails with ModuleNotFoundError once it's wired into all-mint.
+        # Mirrors how `cache: maven` + setup-java provisions java's deps.
+        run: pip install -e implementations/python/provekit-lift-py-tests
+
       - name: Set up Java 21 + Maven
         # build-java (added by java-agent E2E work) calls `mvn package`.
         # pom.xml sets maven.compiler.source/target=17; Temurin 21 is
