@@ -120,4 +120,57 @@ class Minter
             'canonicalBytes' => Jcs::encode($decl),
         ];
     }
+
+    /**
+     * Mint a v1.4 BridgeDeclaration (layered envelope/header/body,
+     * tagged-union target). Per spec bridge-target-dimensionality.md §1.R1-R6.
+     *
+     * Canonical reference: rust/provekit-claim-envelope/src/lib.rs fn mint_bridge_v14.
+     *
+     * @param array $args with keys: name, sourceSymbol, sourceLayer,
+     *   sourceContractCid, target (['kind'=>'contract'|'contractSet','cid'=>'...']),
+     *   declaredAt, plus optional metadata fields.
+     */
+    public function mintBridgeV14(array $args): array
+    {
+        // Build header (7 canonical fields per §1.R3)
+        $header = [
+            'schemaVersion' => '1',
+            'kind' => 'bridge',
+            'name' => $args['name'],
+            'sourceSymbol' => $args['sourceSymbol'],
+            'sourceLayer' => $args['sourceLayer'],
+            'sourceContractCid' => $args['sourceContractCid'],
+            'target' => $args['target'],
+        ];
+
+        // Build metadata (omit missing fields per §1.R2)
+        $metaKeys = ['targetWitnessCid','targetBinaryCid','targetLayer',
+                      'targetContractSetCid','producedBy','producedAt'];
+        $meta = [];
+        foreach ($metaKeys as $k) {
+            if (!empty($args[$k])) $meta[$k] = $args[$k];
+        }
+
+        // Sign: JCS({header, metadata})
+        $sigPayload = ['header' => $header, 'metadata' => $meta];
+        $sigPayloadJcs = Jcs::encode($sigPayload);
+        $sig = $this->signer->signBase64($sigPayloadJcs);
+
+        // Build envelope
+        $env = [
+            'signer' => 'ed25519:' . $this->signer->pubKeyBase64(),
+            'declaredAt' => $args['declaredAt'],
+            'signature' => 'ed25519:' . $sig,
+        ];
+
+        // Full memento: {envelope, header, metadata}
+        $memento = ['envelope' => $env, 'header' => $header, 'metadata' => $meta];
+        $canonical = Jcs::encode($memento);
+
+        return [
+            'cid' => Blake3::cid($canonical),
+            'canonicalBytes' => $canonical,
+        ];
+    }
 }
