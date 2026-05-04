@@ -140,6 +140,13 @@ build-c:
 	$(MAKE) -C implementations/c/provekit-lsp-c all
 	$(MAKE) -C implementations/c/provekit-self-contracts lib
 
+.PHONY: build-c-self-contracts
+build-c-self-contracts:
+	# Build the c self-contracts orchestrator binary. Depends on the c
+	# Side B static library (libprovekit-self-contracts.a); the orchestrator
+	# Makefile invokes the Side B build as a sub-make if needed.
+	$(MAKE) -C implementations/c/mint-c-self-contracts
+
 .PHONY: build-java
 build-java: build-java-self-contracts
 	# provekit-lift-java-core depends on the sibling provekit-ir module.
@@ -301,7 +308,7 @@ mint-zig: build-rust
 		 echo "      $(PROVEKIT) mint --kit=zig" && exit 1)
 
 .PHONY: mint-c
-mint-c: build-rust
+mint-c: build-rust build-c-self-contracts
 	@echo ">> minting c self-contracts"
 	@mint_out=$$($(PROVEKIT) mint --kit=c --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \

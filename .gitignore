@@ -3,6 +3,9 @@ dist/
 *.smt2
 .worktrees/
 
+# Vendored BLAKE3 build artifacts (compiled into Side B + Side A static libs)
+tools/blake3-vendored/*.o
+
 # Bazel convenience symlinks at the workspace root.
 /bazel-*
 .bazelrc.local

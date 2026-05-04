@@ -104,7 +104,7 @@ const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     ("python",     "python",      "python-self-contracts", "python"),
     ("ruby",       "ruby",        "ruby",                 "ruby"),
     ("zig",        "zig",         "zig",                  "zig"),
-    ("c",          "c",           "c",                    "c"),
+    ("c",          "c",           "c-self-contracts",     "c"),
 ];
 
 /// Resolve `--kit=<name>` to the canonical project path, lift surface, and lang key.
