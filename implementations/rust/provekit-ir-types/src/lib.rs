@@ -7,14 +7,6 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EvidenceTerm {
-    pub kind: String,
-    #[serde(rename = "proofType")]
-    pub proof_type: ProofType,
-    pub certificate: EvidenceCertificate,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Declaration {
     #[serde(rename = "contract")]
@@ -49,7 +41,127 @@ pub enum Declaration {
     },
 }
 
-pub type ProofType = String;
+pub type Document = Vec<Declaration>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LetBinding {
+    pub name: String,
+    #[serde(rename = "boundTerm")]
+    pub bound_term: IrTerm,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrimitiveSort {
+    pub kind: String,
+    pub name: PrimitiveSortName,
+}
+
+pub type PrimitiveSortName = String;
+// Known values for PrimitiveSortName:
+//   "Int"
+//   "Real"
+//   "Bool"
+//   "String"
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BridgeHeaderV14 {
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    pub kind: String,
+    pub name: String,
+    #[serde(rename = "sourceSymbol")]
+    pub source_symbol: String,
+    #[serde(rename = "sourceLayer")]
+    pub source_layer: String,
+    #[serde(rename = "sourceContractCid")]
+    pub source_contract_cid: String,
+    pub target: BridgeTarget,
+}
+
+pub type AtomicPredicateName = String;
+// Known values for AtomicPredicateName:
+//   "="
+//   "≠"
+//   "<"
+//   "≤"
+//   ">"
+//   "≥"
+//   "true"
+//   "false"
+//   "bvult"
+//   "bvule"
+//   "bvugt"
+//   "bvuge"
+//   "bvslt"
+//   "bvsle"
+//   "bvsgt"
+//   "bvsge"
+
+pub type QuantifierKind = String;
+// Known values for QuantifierKind:
+//   "forall"
+//   "exists"
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceCertificate {
+    pub tool: String,
+    pub version: String,
+    #[serde(rename = "formulaHash")]
+    pub formula_hash: String,
+    #[serde(rename = "proofData")]
+    pub proof_data: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BridgeMetadataV14 {
+    #[serde(rename = "targetWitnessCid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_witness_cid: Option<String>,
+    #[serde(rename = "targetBinaryCid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_binary_cid: Option<String>,
+    #[serde(rename = "targetLayer")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_layer: Option<String>,
+    #[serde(rename = "targetContractSetCid")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_contract_set_cid: Option<String>,
+    #[serde(rename = "producedBy")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub produced_by: Option<String>,
+    #[serde(rename = "producedAt")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub produced_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum BridgeTarget {
+    #[serde(rename = "contract")]
+    Contract {
+        cid: String,
+    },
+    #[serde(rename = "contractSet")]
+    ContractSet {
+        cid: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceTerm {
+    pub kind: String,
+    #[serde(rename = "proofType")]
+    pub proof_type: ProofType,
+    pub certificate: EvidenceCertificate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BridgeEnvelope {
+    pub signer: String,
+    #[serde(rename = "declaredAt")]
+    pub declared_at: String,
+    pub signature: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
@@ -61,6 +173,24 @@ pub enum Value {
     Bool,
     #[serde(rename = "null")]
     Null,
+}
+
+pub type ProofType = String;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum Sort {
+    #[serde(rename = "primitive")]
+    Primitive {
+        name: PrimitiveSortName,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BridgeDeclarationV14 {
+    pub envelope: BridgeEnvelope,
+    pub header: BridgeHeaderV14,
+    pub metadata: BridgeMetadataV14,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,29 +224,6 @@ pub enum IrTerm {
         body: Box<IrTerm>,
     },
 }
-
-pub type Document = Vec<Declaration>;
-
-pub type QuantifierKind = String;
-// Known values for QuantifierKind:
-//   "forall"
-//   "exists"
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum Sort {
-    #[serde(rename = "primitive")]
-    Primitive {
-        name: PrimitiveSortName,
-    },
-}
-
-pub type PrimitiveSortName = String;
-// Known values for PrimitiveSortName:
-//   "Int"
-//   "Real"
-//   "Bool"
-//   "String"
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
@@ -163,54 +270,12 @@ pub enum IrFormula {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LetBinding {
-    pub name: String,
-    #[serde(rename = "boundTerm")]
-    pub bound_term: IrTerm,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PrimitiveSort {
-    pub kind: String,
-    pub name: PrimitiveSortName,
-}
-
 pub type ConnectiveKind = String;
 // Known values for ConnectiveKind:
 //   "and"
 //   "or"
 //   "not"
 //   "implies"
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EvidenceCertificate {
-    pub tool: String,
-    pub version: String,
-    #[serde(rename = "formulaHash")]
-    pub formula_hash: String,
-    #[serde(rename = "proofData")]
-    pub proof_data: String,
-}
-
-pub type AtomicPredicateName = String;
-// Known values for AtomicPredicateName:
-//   "="
-//   "≠"
-//   "<"
-//   "≤"
-//   ">"
-//   "≥"
-//   "true"
-//   "false"
-//   "bvult"
-//   "bvule"
-//   "bvugt"
-//   "bvuge"
-//   "bvslt"
-//   "bvsle"
-//   "bvsgt"
-//   "bvsge"
 
 pub type Term = IrTerm;
 pub type Formula = IrFormula;

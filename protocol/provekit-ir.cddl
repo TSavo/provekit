@@ -38,6 +38,11 @@ ContractDeclaration = {
 
 ; Locked key order: kind, name, sourceSymbol, sourceLayer,
 ; sourceContractCid, targetContractCid, targetProofCid, targetLayer, notes?
+;
+; v1.1 flat shape. Retained as historical bytes per
+; protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md §4:
+; v1.1 mementos remain valid forever and MUST NOT be re-signed or re-emitted.
+; New emissions MUST use BridgeDeclarationV14 below.
 BridgeDeclaration = {
   kind: "bridge",
   name: tstr,
@@ -48,6 +53,90 @@ BridgeDeclaration = {
   targetProofCid: tstr,     ; CID of the .proof bundle containing targetContract
   targetLayer: tstr,
   ? notes: tstr,
+}
+
+; ================================================================
+; Bridge Declaration v1.4 (layered envelope/header/body)
+; ================================================================
+;
+; Source of truth:
+;   protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6
+;   protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md §1, §2
+;
+; v1.4 BridgeDeclaration is a layered memento. It is NOT part of the
+; Declaration union above (which carries only IR-document elements).
+; v1.4 mementos are signed attestations, not IR document elements.
+;
+; Layering: { envelope, header, metadata }
+;   * envelope is the signed wrapper (signer, declaredAt, signature)
+;   * header is the substrate-load-bearing data the verifier reads
+;   * metadata is the optional axes opaque to the substrate verifier
+;
+; The signature covers JCS({"header": header, "metadata": metadata}).
+; The attestation CID is BLAKE3-512(JCS(envelope)).
+
+; Locked key order: envelope, header, metadata
+BridgeDeclarationV14 = {
+  envelope: BridgeEnvelope,
+  header: BridgeHeaderV14,
+  metadata: BridgeMetadataV14,
+}
+
+; Locked key order: signer, declaredAt, signature
+BridgeEnvelope = {
+  signer: tstr,             ; ed25519: prefixed public key
+  declaredAt: tstr,         ; RFC 3339 UTC timestamp
+  signature: tstr,          ; ed25519: prefixed signature over JCS({header,metadata})
+}
+
+; Locked key order: schemaVersion, kind, name, sourceSymbol, sourceLayer,
+; sourceContractCid, target.
+;
+; Per spec §1.R3: header carries the contract-axis claim only.
+; schemaVersion is "1" per the v1.4-layered schema version stamp
+; (substrate-layers spec §1).
+BridgeHeaderV14 = {
+  schemaVersion: tstr,      ; "1"
+  kind: "bridge",
+  name: tstr,               ; unique bridge name
+  sourceSymbol: tstr,       ; symbol name in the source layer
+  sourceLayer: tstr,        ; source kit or language identifier
+  sourceContractCid: tstr,  ; contractCid of the contract this implementation carries
+  target: BridgeTarget,     ; tagged-union contract-axis target claim
+}
+
+; Tagged-union target field per spec §1.R1.
+; Implementations MUST emit exactly one variant. Implementations MUST NOT
+; emit a string value for `target`. Placeholder strings are forbidden in
+; `cid`; if the witness or binary axis is unknown at mint time, the
+; corresponding metadata field is OMITTED (spec §1.R2).
+BridgeTarget = BridgeTargetContract / BridgeTargetContractSet
+
+; Locked key order: kind, cid
+BridgeTargetContract = {
+  kind: "contract",
+  cid: tstr,                ; contractCid of the single contract
+}
+
+; Locked key order: kind, cid
+BridgeTargetContractSet = {
+  kind: "contractSet",
+  cid: tstr,                ; contractSetCid per contract-set-extension spec
+}
+
+; Locked key order: targetWitnessCid?, targetBinaryCid?, targetLayer?,
+; targetContractSetCid?, producedBy?, producedAt?
+;
+; All fields optional. Absent → field is OMITTED from JCS bytes (not null).
+; Per spec §1.R2: stringified placeholders MUST NOT appear; absent ones
+; are absent.
+BridgeMetadataV14 = {
+  ? targetWitnessCid: tstr,     ; CID of the witness chain endorsing target contract
+  ? targetBinaryCid: tstr,      ; CID of the binary the target contract was proven against
+  ? targetLayer: tstr,          ; target kit or language identifier (human navigation)
+  ? targetContractSetCid: tstr, ; contractSetCid of target's containing set at mint time
+  ? producedBy: tstr,           ; identifier of tool or process that minted this bridge
+  ? producedAt: tstr,           ; RFC 3339 UTC timestamp of mint
 }
 
 ; ================================================================
@@ -190,6 +279,14 @@ Value = text / number / bool / null
 
 ; ContractDeclaration: at least one of pre/post/inv must be present
 ; (enforced at validation layer, not expressible in pure CDDL)
+
+; BridgeDeclarationV14.metadata: stringified placeholders forbidden.
+; If targetWitnessCid or targetBinaryCid is unknown at mint time, the
+; field is OMITTED entirely; it is not represented as null or as a
+; "pending-*:" / "deferred:*" string. (spec §1.R2)
+
+; BridgeDeclarationV14.target: implementations MUST emit exactly one
+; tagged-union variant; MUST NOT emit a bare string value. (spec §1.R1)
 
 ; VarTerm: MUST NOT have a "sort" key
 ; ConstTerm: MUST have a "sort" key

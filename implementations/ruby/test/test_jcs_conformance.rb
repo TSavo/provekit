@@ -18,10 +18,10 @@ class TestJcsConformance < Minitest::Test
   EXPECTED_PATTERN1 =
     '{"body":{"kind":"implies","operands":[{"kind":"and","operands":[{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":100}],"kind":"atomic","name":"<"}]},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}]},"kind":"forall","name":"x","sort":{"kind":"primitive","name":"Int"}}'
 
-  # Fixture: bridge_decl — single Bridge declaration object with all fields
-  # including optional `notes`. `marshal_declarations` wraps a single decl in
-  # a JSON array per the Document grammar (`"[" Declaration* "]"`), so the
-  # full expected output is `[FIXTURE]`.
+  # Fixture: bridge_decl_v1_1 — single v1.1 Bridge declaration object with
+  # all fields including optional `notes`. `marshal_declarations` wraps a
+  # single decl in a JSON array per the Document grammar (`"[" Declaration* "]"`),
+  # so the full expected output is `[FIXTURE]`.
   BRIDGE_DECL_FIXTURE =
     '{"kind":"bridge","name":"myBridge","notes":"some notes","sourceContractCid":"bafySource","sourceLayer":"c-kit","sourceSymbol":"source","targetContractCid":"bafyTarget","targetLayer":"coq","targetProofCid":"bafyProof"}'
 

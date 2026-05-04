@@ -3,7 +3,7 @@
 // Cross-language conformance test for Provekit.IR.BridgeDeclaration
 // (the v1.1.0 spec-shaped 9-field record).
 //
-// Fixture: `bridge_decl` from conformance/fixtures.toml.
+// Fixture: `bridge_decl_v1_1` from conformance/fixtures.toml.
 // See protocol/specs/2026-04-30-ir-formal-grammar.md (BridgeDeclaration).
 //
 // Build the BridgeDeclaration with all 9 fields, JCS-encode through the
@@ -23,7 +23,8 @@ namespace Provekit.Tests;
 
 public class BridgeDeclarationConformanceTests
 {
-    // From conformance/fixtures.toml [[fixture]] name = "bridge_decl".
+    // From conformance/fixtures.toml [[fixture]] name = "bridge_decl_v1_1".
+    // (Renamed from `bridge_decl` in PR-1 of issue #219 v1.4 migration.)
     // JCS-sorted keys: kind, name, notes, sourceContractCid, sourceLayer,
     // sourceSymbol, targetContractCid, targetLayer, targetProofCid.
     private const string ExpectedFixtureJcs =

@@ -60,7 +60,7 @@ public class IrDocumentTest {
     }
 
     /**
-     * Spec v1.1.0 — bridge_decl conformance fixture from conformance/fixtures.toml.
+     * Spec v1.1.0 — bridge_decl_v1_1 conformance fixture from conformance/fixtures.toml.
      * The 9-field Bridge with optional notes must serialize to JCS-canonical
      * (alphabetical key order) bytes that match the canonical fixture exactly.
      */
@@ -80,6 +80,6 @@ public class IrDocumentTest {
         String got = bridge.toJson();
         String expected = "{\"kind\":\"bridge\",\"name\":\"myBridge\",\"notes\":\"some notes\",\"sourceContractCid\":\"bafySource\",\"sourceLayer\":\"c-kit\",\"sourceSymbol\":\"source\",\"targetContractCid\":\"bafyTarget\",\"targetLayer\":\"coq\",\"targetProofCid\":\"bafyProof\"}";
 
-        assertEquals(expected, got, "Bridge JCS bytes must match conformance/fixtures.toml bridge_decl");
+        assertEquals(expected, got, "Bridge JCS bytes must match conformance/fixtures.toml bridge_decl_v1_1");
     }
 }
