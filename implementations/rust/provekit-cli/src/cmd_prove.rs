@@ -44,6 +44,7 @@ use provekit_self_contracts::lift_plugin_protocol::{
 };
 use provekit_verifier::{Runner, RunnerConfig};
 
+use crate::project_config::read_project_config;
 use crate::report_fmt;
 use crate::ProveArgs;
 
@@ -500,11 +501,20 @@ pub fn run(args: ProveArgs) -> u8 {
         return crate::EXIT_USER_ERROR;
     }
 
-    let extra_projects: Vec<PathBuf> = args
+    let cfg_doc = read_project_config(&project_root);
+
+    let mut extra_projects: Vec<PathBuf> = args
         .with
         .iter()
         .map(PathBuf::from)
         .collect();
+
+    for callee in &cfg_doc.callees {
+        let p = project_root.join(callee);
+        if p.exists() {
+            extra_projects.push(p);
+        }
+    }
 
     let cfg = RunnerConfig {
         project_root: project_root.clone(),
