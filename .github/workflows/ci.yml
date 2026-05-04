@@ -173,9 +173,11 @@ jobs:
         # (current latest as of 2026-05).
         run: |
           cd /tmp
-          curl -fsSL -o vampire.zip \
+          EXPECTED_SHA="6ff2f42ea7fb9753ee104efc3e623d5e39443190f7c82a63e1e1517bf9d2cde3"
+          curl -fsSL --retry 5 -o vampire.zip \
             https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
-          unzip -q vampire.zip
+          echo "$EXPECTED_SHA  vampire.zip" | sha256sum -c -
+          unzip -qo vampire.zip
           sudo install -m 0755 vampire /usr/local/bin/vampire
           vampire --version | head -1
 
