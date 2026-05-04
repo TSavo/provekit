@@ -36,6 +36,13 @@ export interface ContractDecl {
   pre?: IrFormula;
   post?: IrFormula;
   inv?: IrFormula;
+  /**
+   * When present, this contract should be bridged to the named
+   * contract in the given kit. Format: "<kit>:<contractName>"
+   * (e.g., "openapi:e2e-api-1-0-0-get-getusers-200-application-json").
+   * Populated by the provekit-annotations adapter.
+   */
+  targetContract?: string;
 }
 
 export interface AdapterWarning {
