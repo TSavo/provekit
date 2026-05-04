@@ -1728,6 +1728,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "thiserror",
+ "walkdir",
 ]
 
 [[package]]
@@ -1787,6 +1788,8 @@ name = "provekit-linker"
 version = "0.1.0"
 dependencies = [
  "provekit-canonicalizer",
+ "provekit-ir-compiler-smt-lib",
+ "provekit-verifier",
  "serde",
  "serde_json",
 ]

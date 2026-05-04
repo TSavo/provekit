@@ -18,19 +18,47 @@
 //!
 //! ## Design invariants
 //!
-//! - `link()` is pure: no global state, no filesystem side effects. Calling it
-//!   twice with byte-identical inputs produces byte-identical outputs.
-//! - `LinkerInputs` is `serde::Deserialize` so the daemon can reconstruct it
-//!   directly from the `parseFile` request stream (spec #126 §3).
+//! - `link()` is pure: no global state, no filesystem side effects. Calling
+//!   it twice with byte-identical inputs produces byte-identical outputs.
+//!   Without a solver registry it can only discharge `post_caller \u{2283}
+//!   pre_callee` by structural / JCS-canonical equality; non-equal pairs
+//!   surface as `implication-undecidable`.
+//! - `link_with_solvers(inputs, &Registry, &SolverPlan)` extends `link()`
+//!   with the workspace's existing solver registry (built by
+//!   `provekit-verifier::solvers::registry::build` from `SolversConfig`).
+//!   Output is byte-deterministic given inputs + a solver set whose
+//!   verdicts are themselves deterministic; subprocess wall-clock varies
+//!   but the chosen verdict is stable.
+//! - `LinkerInputs` is `serde::Deserialize` so the daemon can reconstruct
+//!   it directly from the `parseFile` request stream (spec #126 §3). The
+//!   `Registry` and `SolverPlan` are intentionally NOT on `LinkerInputs`:
+//!   they are execution config, not parseFile data, and the registry
+//!   contains non-serializable `Arc<dyn Solver>` handles.
 //! - `LinkerOutput.linker_errors` carries a `file` field so the daemon can
 //!   attach LSP diagnostics to the correct editor pane.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonValue};
+use provekit_verifier::solvers::{run_plan, SolverHandle, SolverPlan};
+use provekit_verifier::types::ObligationVerdict;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+
+/// Re-exports from `provekit-verifier` so callers do not need a direct
+/// dependency on the verifier crate to construct a registry / plan.
+pub mod solver_api {
+    pub use provekit_verifier::solvers::{
+        registry, run_plan, SolverConfig, SolverHandle, SolverPlan, SolversConfig, StubSolver,
+        SubprocessSolver,
+    };
+    pub use provekit_verifier::types::ObligationVerdict;
+}
+
+/// Solver registry used by `link_with_solvers`. Mirrors the verifier's
+/// `solvers::plan::Registry` shape (`name -> Arc<dyn Solver>`).
+pub type Registry = HashMap<String, SolverHandle>;
 
 // -------------------------------------------------------------------
 // Public input types
@@ -146,9 +174,46 @@ pub struct LinkerOutput {
 /// Pure function: no global state, no I/O.  Two calls with byte-identical
 /// inputs produce byte-identical `LinkerOutput` values (including
 /// `link_bundle_cid`).
+///
+/// # Solver discharge
+///
+/// Without a solver registry the linker can only verify
+/// `post_caller \u{2283} pre_callee` by structural / JCS-canonical
+/// equality. When both sides are non-null and structurally distinct,
+/// this entry point emits an `implication-undecidable` error rather
+/// than silently discharging. Use [`link_with_solvers`] to resolve
+/// such cases via the workspace solver registry.
 pub fn link(inputs: LinkerInputs) -> LinkerOutput {
+    let empty_registry: Registry = HashMap::new();
+    // Single-solver-named-"none" plan; lookup will miss for any
+    // structurally-distinct discharge, surfacing as Undecidable.
+    let no_op_plan = SolverPlan::Single("__no_solver__".into());
     let LinkerInputs { contracts, call_edges } = inputs;
-    derive_link_bundle_inner(contracts, call_edges)
+    derive_link_bundle_inner(contracts, call_edges, &empty_registry, &no_op_plan)
+}
+
+/// Derive bridges and emit a `LinkBundle`, using the supplied solver
+/// registry + plan to discharge `post_caller \u{2283} pre_callee`
+/// obligations whose two sides are structurally distinct.
+///
+/// `registry` and `plan` are typically built by the verifier crate's
+/// `solvers::registry::build` from the same `SolversConfig` the
+/// verifier uses (see `.provekit/config.toml`). The linker does not
+/// hardcode any solver name; whichever solvers the workspace declares
+/// are reached via the supplied plan.
+///
+/// Determinism contract: byte-identical `inputs` plus a registry
+/// whose solvers are themselves deterministic (e.g. `StubSolver`,
+/// or any sound SMT solver pinned by version in the config) yield a
+/// byte-identical `LinkerOutput`. Solver wall-clock varies, but the
+/// chosen verdict is stable.
+pub fn link_with_solvers(
+    inputs: LinkerInputs,
+    registry: &Registry,
+    plan: &SolverPlan,
+) -> LinkerOutput {
+    let LinkerInputs { contracts, call_edges } = inputs;
+    derive_link_bundle_inner(contracts, call_edges, registry, plan)
 }
 
 // -------------------------------------------------------------------
@@ -158,6 +223,8 @@ pub fn link(inputs: LinkerInputs) -> LinkerOutput {
 fn derive_link_bundle_inner(
     all_contracts: Vec<LinkerContract>,
     all_call_edges: Vec<LinkerCallEdge>,
+    registry: &Registry,
+    plan: &SolverPlan,
 ) -> LinkerOutput {
     // Build cross-kit resolution index: (name, kit) -> contract_cid
     let mut name_kit_index: BTreeMap<(String, String), String> = BTreeMap::new();
@@ -238,6 +305,8 @@ fn derive_link_bundle_inner(
                     &edge.source_contract_cid,
                     &target_cid,
                     &edge.target_symbol,
+                    registry,
+                    plan,
                 ) {
                     err.file = locus_file;
                     linker_errors_out.push(err);
@@ -386,24 +455,121 @@ fn derive_bridge(
 // Obligation discharge
 // -------------------------------------------------------------------
 
+/// Discharge the satisfaction obligation `post_caller \u{2283} pre_callee`
+/// for one call edge. Returns `Some(LinkerError)` when the implication
+/// cannot be proved (or is provably violated); returns `None` when the
+/// implication holds.
+///
+/// Discharge is layered, cheapest-first:
+///
+/// 1. **Caller post absent.** No post-condition means the caller
+///    promises nothing; the obligation is unprovable. Emits
+///    `kind: "unprovable-obligation"` to preserve the historical
+///    error string the polyglot smoke fixtures pin (PR #128 baseline).
+///
+/// 2. **Callee pre absent.** No pre-condition on the callee means the
+///    obligation is vacuously discharged.
+///
+/// 3. **JCS-canonical equality.** If `post_caller` and `pre_callee`
+///    canonicalize to byte-identical JCS, the predicates are the same
+///    formula and the implication is reflexive. No solver work.
+///
+/// 4. **Solver dispatch.** Build the IR-JSON formula
+///    `{"kind":"implies","operands":[post,pre]}`, compile to SMT-LIB,
+///    and run the supplied `SolverPlan` against `Registry`. Map the
+///    verdict:
+///      * `Discharged` (UNSAT of `not(post -> pre)`): proven, return `None`.
+///      * `Unsatisfied` (SAT counter-example): `implication-unprovable`.
+///      * `Undecidable` / `Disagreement` / no solver registered:
+///        `implication-undecidable` (do NOT silently discharge).
 fn discharge_obligation(
     source_post: Option<&Json>,
-    _target_pre: Option<&Json>,
+    target_pre: Option<&Json>,
     source_contract_cid: &str,
     target_cid: &str,
     target_symbol: &str,
+    registry: &Registry,
+    plan: &SolverPlan,
 ) -> Option<LinkerError> {
-    match source_post {
-        None | Some(Json::Null) => Some(LinkerError {
-            kind: "unprovable-obligation".into(),
+    // (1) Caller post absent: cannot discharge.
+    let post = match source_post {
+        None | Some(Json::Null) => {
+            return Some(LinkerError {
+                kind: "unprovable-obligation".into(),
+                target_symbol: target_symbol.to_string(),
+                source_contract_cid: source_contract_cid.to_string(),
+                reason: format!(
+                    "caller post-condition is absent; cannot discharge `post_caller \u{2283} pre_callee` for target `{target_cid}`"
+                ),
+                file: None, // populated by caller from locus
+            });
+        }
+        Some(p) => p,
+    };
+
+    // (2) Callee pre absent: vacuously discharged.
+    let pre = match target_pre {
+        None | Some(Json::Null) => return None,
+        Some(p) => p,
+    };
+
+    // (3) JCS-canonical equality: P -> P trivially.
+    let post_jcs = jcs_of_json(post);
+    let pre_jcs = jcs_of_json(pre);
+    if post_jcs == pre_jcs {
+        return None;
+    }
+
+    // (4) Solver dispatch. Build the implication formula in IR-JSON,
+    // emit SMT-LIB via the workspace IR compiler, and run the
+    // configured plan against the supplied registry. The registry +
+    // plan are external to the linker (the architect's "use whatever
+    // Cargo.toml says" rule); we never reach for a hardcoded solver
+    // name.
+    let implication = serde_json::json!({
+        "kind": "implies",
+        "operands": [post.clone(), pre.clone()],
+    });
+
+    let smt_script = match provekit_ir_compiler_smt_lib::emit(&implication) {
+        Ok(s) => s,
+        Err(e) => {
+            // Compilation failed: cannot ask the solver. Surface as
+            // undecidable rather than silent-discharge.
+            return Some(LinkerError {
+                kind: "implication-undecidable".into(),
+                target_symbol: target_symbol.to_string(),
+                source_contract_cid: source_contract_cid.to_string(),
+                reason: format!(
+                    "compile post-implies-pre to SMT-LIB failed for target `{target_cid}`: {e}"
+                ),
+                file: None,
+            });
+        }
+    };
+
+    let (verdict, reason, _invs) = run_plan(plan, registry, &smt_script, Some(&implication));
+
+    match verdict {
+        ObligationVerdict::Discharged => None,
+        ObligationVerdict::Unsatisfied => Some(LinkerError {
+            kind: "implication-unprovable".into(),
             target_symbol: target_symbol.to_string(),
             source_contract_cid: source_contract_cid.to_string(),
             reason: format!(
-                "caller post-condition is absent; cannot discharge `post_caller \u{2283} pre_callee` for target `{target_cid}`"
+                "solver reports `post_caller \u{2283} pre_callee` is violated for target `{target_cid}`: {reason}"
             ),
-            file: None, // populated by caller from locus
+            file: None,
         }),
-        Some(_) => None,
+        ObligationVerdict::Undecidable | ObligationVerdict::Disagreement => Some(LinkerError {
+            kind: "implication-undecidable".into(),
+            target_symbol: target_symbol.to_string(),
+            source_contract_cid: source_contract_cid.to_string(),
+            reason: format!(
+                "solver could not decide `post_caller \u{2283} pre_callee` for target `{target_cid}`: {reason}"
+            ),
+            file: None,
+        }),
     }
 }
 
