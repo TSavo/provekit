@@ -156,6 +156,7 @@ jobs:
             libyaml-dev \
             maven \
             nlohmann-json3-dev \
+            unzip \
             z3
 
       - name: Install Vampire (upstream GitHub release)

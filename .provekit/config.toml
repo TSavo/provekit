@@ -67,7 +67,10 @@ ir_compiler = "smt-lib-v2.6"
 # UNKNOWN rate on SMT-LIB inputs justifies the second pipeline.
 flags = ["--input_syntax", "smtlib2", "--output_mode", "smtcomp"]
 timeout_seconds = 30
-version = "4.x"
+# Match the pinned upstream release in CI (v5.0.1 from
+# github.com/vprover/vampire/releases). Reported in implication mementos
+# as solver provenance; bumping CI's pinned version requires bumping this.
+version = "5.x"
 
 [solvers.coq]
 binary = "coqc"
