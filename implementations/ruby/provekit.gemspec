@@ -2,7 +2,12 @@
 
 Gem::Specification.new do |s|
   s.name        = "provekit"
-  s.version     = "0.1.0"
+  # 0.1.1: BLAKE3 C extension renamed from `provekit/blake3` to
+  # `provekit_blake3` to avoid name collision with the lib wrapper
+  # (PR #294). Bumping the version busts setup-ruby@v1's
+  # bundler-cache, which keys on gemspec contents and was restoring
+  # a stale compiled .so under the old name.
+  s.version     = "0.1.1"
   s.licenses    = ["Apache-2.0"]
   s.summary     = "ProvekIt Ruby kit: native crypto substrate (BLAKE3 + JCS + Ed25519 + CBOR)."
   s.description = <<~DESC
