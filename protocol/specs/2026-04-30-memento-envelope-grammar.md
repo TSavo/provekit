@@ -1,8 +1,10 @@
 # ProvekIt: Memento Envelope Grammar (CDDL)
 
 **Date:** 2026-04-30
-**Status:** Specification. CDDL (RFC 8610) is normative; prose is exposition.
+**Status:** Specification (v1.1 flat shape). CDDL (RFC 8610) is normative; prose is exposition.
 **Encoding:** JSON, canonicalized per `2026-04-29-universal-claim-envelope.md` §"CID construction" (sorted-keys, no whitespace, UTF-8). The CDDL below is interpreted against that JSON form.
+
+> **Supersession for v1.4-and-later mementos.** This grammar describes the v1.1 flat-shape memento (top-level `bindingHash`, `propertyHash`, `producerSignature`, `inputCids`, `cid`). Under protocol v1.4, every memento adopts the three-layer envelope/header/body shape defined in [`2026-05-03-substrate-layers-envelope-header-body.md`](2026-05-03-substrate-layers-envelope-header-body.md). The substrate-layers spec is canonical for v1.4-and-later mementos; this grammar remains canonical for v1.1 mementos and serves as historical reference for the role taxonomy (catalog / contract / bridge / verdict / audit / deprecation / extension-declaration / implication), which carries forward into v1.4 unchanged. Per the protocol's monotonicity rule, v1.1 mementos remain valid forever against the bytes they were minted for. New kits MUST emit the v1.4 layered shape; old v1.1 mementos remain readable by any verifier that supports both shapes.
 
 ## What this document specifies
 

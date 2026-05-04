@@ -234,6 +234,63 @@ top-level `formatVersion` field to the catalog body. v1 implicitly is
 the framework's response to an unrecognized version is fail-closed,
 not best-effort interpretation.
 
+### 6.1 v1.4 substrate-layers compatibility
+
+Under protocol v1.4, every memento adopts the envelope/header/body
+layering of `2026-05-03-substrate-layers-envelope-header-body.md`. A
+v1.4-shaped catalog memento separates the flat fields above as
+follows:
+
+```
+envelope: { signer, declaredAt, signature }
+header:   { schemaVersion: "1", kind: "catalog", cid, members }
+metadata: { name, version, ?binaryCid, ?depends-on, ?<other tooling fields> }
+```
+
+The substrate verifier reads envelope and header. `members` remains
+in the header because per-member CID consistency is a substrate
+invariant (per §3 rule 3). Catalog body fields including
+`binaryCid` are tooling-interpreted; the binary-axis check is the
+binary-attestation verifier's responsibility per
+`2026-05-02-binary-attestation-protocol.md` §4, not the substrate's.
+
+**Catalog `header.cid` recipe (NORMATIVE for v1.4-and-later catalog
+mementos).** The `cid` field of a catalog memento header is computed
+as:
+
+```
+header.cid = "blake3-512:" || hex(BLAKE3-512(JCS(sorted_member_cids)))
+```
+
+Where `sorted_member_cids` is the array of member CIDs (the keys of
+`members`) sorted lexicographically by their hex representation. The
+sort makes the recipe order-independent: two implementations
+enumerating members in different orders compute the same `header.cid`.
+
+This is the same recipe as `contractSetCid` per
+`2026-05-03-contract-set-extension.md` §1, generalized to any
+member-set. For a catalog whose members are all contract envelopes,
+`header.cid` equals the contractSetCid of the underlying contracts.
+For mixed catalogs (contracts plus bridges plus evidence), `header.cid`
+is a "memberSetCid" over the full set. Either way the recipe is
+content-only and signer-independent: two signers attesting to the
+same set of members compute identical `header.cid`, and the
+attestationCids differ only in envelope state.
+
+The catalog's outer CID (the filename CID per §2) remains
+`BLAKE3-512(canonical envelope bytes)` and is distinct from
+`header.cid`. Filename CID changes with envelope state (signer,
+declaredAt, signature); `header.cid` is signer-independent. The two
+CIDs are not interchangeable: bridges and consumer pins reference
+member CIDs (per `2026-05-03-contract-cid-vs-attestation-cid.md` §2
+R3); the filename is a content-address for the on-disk artifact.
+
+v1 (pre-v1.4) catalog mementos predate the envelope/header/body
+layering and need not carry `header.cid`. They remain valid as
+historical artifacts under §6's monotonicity. v1.4-and-later
+mementos MUST carry `header.cid` per the recipe above; verifiers
+MUST recompute and reject on mismatch.
+
 ## 7. Conformance criteria
 
 A producer conforms to this format iff it:
