@@ -178,19 +178,9 @@ jobs:
           bundler-cache: true
           working-directory: implementations/ruby
 
-      - name: Set up Zig (master)
-        # mint-zig-self-contracts (PR #241, issue #213) builds a zig binary
-        # orchestrator that the rust CLI invokes via the lift-plugin-protocol
-        # RPC. Without zig on PATH the binary never builds, the lifter never
-        # runs, and the pinned-CID test sees the empty-set sentinel.
-        #
-        # Use master (current dev) because the kit code uses zig 0.16's
-        # std API (std.ArrayList unmanaged-by-default; PR #168 ported the
-        # kit to it). 0.16 is not yet released, so a pinned 0.16.0 string
-        # returns 404 on every mirror.
-        uses: mlugg/setup-zig@v1
-        with:
-          version: master
+      # Zig setup deferred to a separate PR. mlugg/setup-zig@v1 with
+      # version: master gets 404s/503s across every mirror because the
+      # kit needs unreleased 0.16/0.17-dev API. Tracked as a follow-up.
 
       # ---------------------------------------------------------------
       # The gate.
