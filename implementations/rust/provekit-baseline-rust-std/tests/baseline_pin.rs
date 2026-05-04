@@ -26,13 +26,17 @@ const PINNED_CONTRACT_SET_CID: &str = "blake3-512:76c278afe2f60f5b58ebaf53df1078
 const PINNED_DISCLAIMER_CID: &str = "blake3-512:dae426aaf69da3fb28d1b45bc61dd700e3b3e1f0637814d24ec9071071d2fe9f32befb5b4211cd4ae8d6596e67e7a12eecff849ffdbf8a832b376fc7db19bca1";
 
 fn tempdir() -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+
     let mut p = std::env::temp_dir();
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     p.push(format!(
-        "provekit-rust-std-baseline-pin-{nanos}-{}",
+        "provekit-rust-std-baseline-pin-{nanos}-{}-{seq}",
         std::process::id()
     ));
     p

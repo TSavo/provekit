@@ -486,13 +486,20 @@ mod tests {
     use super::*;
 
     fn tempdir() -> std::path::PathBuf {
+        // Per-invocation counter so two `tempdir()` calls inside the
+        // same test don't race on the same nanosecond resolution and
+        // resolve to the same path.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+
         let mut p = std::env::temp_dir();
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         p.push(format!(
-            "provekit-rust-std-baseline-test-{nanos}-{}",
+            "provekit-rust-std-baseline-test-{nanos}-{}-{seq}",
             std::process::id()
         ));
         p
