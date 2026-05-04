@@ -92,7 +92,7 @@ const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-03T18:00:00Z";
 /// for tooling that needs them.
 /// Fix: issue #176 Tier 1, option (c) — route every kit to its
 /// self-contracts lifter (PR #180 for go, PR #183 for rust).
-const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
+pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     // (kit_alias, project_subdir, lift_surface,           lang_key)
     ("rust",       "rust",        "rust-self-contracts",  "rust"),
     ("go",         "go",          "go-self-contracts",    "go"),
@@ -110,7 +110,7 @@ const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
 /// Resolve `--kit=<name>` to the canonical project path, lift surface, and lang key.
 /// Returns `(project_path, surface, lang_key)` relative to the CWD at
 /// which `provekit` is invoked (expected to be repo root).
-fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
+pub(crate) fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
     KIT_TABLE.iter().find(|(alias, _, _, _)| *alias == kit).map(|(_, subdir, surface, lang)| {
         (
             PathBuf::from("implementations").join(subdir),
