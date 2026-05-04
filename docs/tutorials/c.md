@@ -1,6 +1,6 @@
 # Tutorial: C
 
-> **Status:** kit shipping (v1.1.0). Lift adapters planned for v1.2. Libs under evaluation (native C BLAKE3 binding planned for v1.2; v1.1 delegates hashing to the Python `blake3` module via subprocess). Embedded verifier planned for v1.2. LSP plugin planned. Verification via the Rust CLI.
+> **Status:** kit shipping (v1.4.1). Lift adapters planned. Libs under evaluation (native C BLAKE3 binding planned; v1.1 delegated hashing to the Python `blake3` module via subprocess). Embedded verifier planned. LSP plugin planned. Verification via the Rust CLI.
 
 A walkthrough for C developers. **v1.1 is the IR library and JCS canonical JSON emitter; lift adapters land in v1.2.**
 

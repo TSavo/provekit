@@ -1,6 +1,6 @@
 # Tutorial: C#
 
-> **Status:** kit + canonicalizer + verifier shipping (v1.1.0). Lift adapters shipping: `DataAnnotations`, `LINQ`. LSP plugin shipping. Verification via the Rust CLI today; `Provekit.Verifier` in-process verifier planned.
+> **Status:** kit + canonicalizer + verifier shipping (v1.4.1). Lift adapters shipping: `DataAnnotations`, `LINQ`. LSP plugin shipping. Verification via the Rust CLI today; `Provekit.Verifier` in-process verifier planned.
 
 A walkthrough for C# developers. By the end you have a `.proof` catalog lifted from `[Required]`, `[Range]`, `[StringLength]` data annotations and LINQ predicate quantifiers (`All`, `Any`).
 

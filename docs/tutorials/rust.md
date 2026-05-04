@@ -1,6 +1,6 @@
 # Tutorial: Rust
 
-A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to protocol v1.1.0, and you have run `provekit prove` against the catalog.
+A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to the protocol catalog at CID `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641` (v1.4.1), and you have run `provekit prove` against the catalog.
 
 > **Other languages:** see [tutorials/](./) for TypeScript, Python, Java, C#, Ruby, Zig, and the [polyglot stack walkthrough](polyglot-stack.md). The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 
@@ -14,7 +14,7 @@ For the current extender quickstart (write a new kit lifter or protocol spec):
 cargo install provekit
 ```
 
-The installed binary is `provekit`. It is the canonical Rust implementation for protocol v1.1.0; alternative implementations in other languages conform to the same catalog CID.
+The installed binary is `provekit`. It is the canonical Rust implementation for protocol v1.4.1; alternative implementations in other languages conform to the same catalog CID.
 
 ## Step 2: confirm protocol conformance
 
