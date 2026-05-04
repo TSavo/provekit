@@ -104,6 +104,14 @@ implementations/*/blake3-512:*.proof
 # real source. Rebuild with `make self-lift-<crate>`.
 !.provekit/self-lifts/**/*.proof
 
+# Foundation-baseline catalogs ARE checked in: each per-language
+# `.provekit/baselines/<lang>-baseline-v<N>.proof` is the foundation-signed
+# advisory catalog of std-library predicates (per
+# `docs/contributing/baseline-catalog-rubric.md`). Rebuild via the
+# language-specific mint binary (e.g.
+# `cargo run -p provekit-baseline-rust-std --bin mint-rust-std-baseline`).
+!.provekit/baselines/*.proof
+
 # Zig build artifacts
 implementations/zig/**/.zig-cache/
 implementations/zig/**/zig-out/

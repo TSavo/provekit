@@ -1517,6 +1517,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-baseline-rust-std"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-symbolic",
+ "provekit-proof-envelope",
+ "provekit-verifier",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-build"
 version = "0.1.0"
 dependencies = [
