@@ -138,6 +138,7 @@ build-csharp:
 build-c:
 	$(MAKE) -C implementations/c/provekit-ir all
 	$(MAKE) -C implementations/c/provekit-lsp-c all
+	$(MAKE) -C implementations/c/provekit-self-contracts lib
 
 .PHONY: build-java
 build-java:
@@ -390,6 +391,7 @@ test-csharp: build-csharp
 test-c: build-c
 	$(MAKE) -C implementations/c/provekit-ir test
 	$(MAKE) -C implementations/c/provekit-lsp-c test
+	$(MAKE) -C implementations/c/provekit-self-contracts test
 
 .PHONY: test-python
 test-python:
