@@ -190,11 +190,26 @@ LetBinding = {
 ; Sorts
 ; ================================================================
 
-Sort = PrimitiveSort
+Sort = PrimitiveSort / FunctionSort / DependentSort
 
 PrimitiveSort = {
   kind: "primitive",
   name: PrimitiveSortName,
+}
+
+; Locked key order: kind, args, return
+FunctionSort = {
+  kind: "function",
+  args: [+ Sort],          ; argument sorts (one or more)
+  return: Sort,            ; return sort
+}
+
+; Locked key order: kind, name, indexVar, indexSort
+DependentSort = {
+  kind: "dependent",
+  name: tstr,              ; type name (e.g. "Vec")
+  indexVar: tstr,          ; value-level variable the type depends on
+  indexSort: Sort,         ; sort of the index variable
 }
 
 PrimitiveSortName = "Int" / "Real" / "Bool" / "String"

@@ -181,7 +181,12 @@ with accompanying English explanation.
 **FunctionSort** (Section: Sorts)
 | Invariant | Formula |
 |-----------|---------|
-| ValidDomainAndRange | `∀s → HasKey("domain")∧∀d∈domain→IsSort(d) ∧ HasKey("range")∧IsSort(range)` |
+| ValidArgsAndReturn | `∀s → HasKey("args")∧∀a∈args→IsSort(a) ∧ HasKey("return")∧IsSort(return)` |
+
+**DependentSort** (Section: Sorts)
+| Invariant | Formula |
+|-----------|---------|
+| ValidFields | `∀s → HasKey("name")∧tstr(name) ∧ HasKey("indexVar")∧tstr(indexVar) ∧ HasKey("indexSort")∧IsSort(indexSort)` |
 
 **Strict Mode** (Section: Reference Parser)
 | Invariant | Formula |
@@ -1037,7 +1042,7 @@ ensuring the proof is for the correct claim.
 ### Sort
 
 ```ebnf
-Sort ::= PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort
+Sort ::= PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort | DependentSort
 ```
 
 ### PrimitiveSort
@@ -1093,15 +1098,35 @@ TupleSort ::= "{"
 
 ### FunctionSort
 
-Locked key order: `kind`, `domain`, `range`.
+Locked key order: `kind`, `args`, `return`.
 
 ```ebnf
 FunctionSort ::= "{"
                    "\"kind\"" ":" "\"function\"" ","
-                   "\"domain\"" ":" "[" ( Sort ( "," Sort )* )? "]" ","
-                   "\"range\"" ":" Sort
+                   "\"args\"" ":" "[" Sort ( "," Sort )* "]" ","
+                   "\"return\"" ":" Sort
                  "}"
 ```
+
+The `args` array must contain one or more Sort elements. The `return` field
+is a single Sort.
+
+### DependentSort
+
+Locked key order: `kind`, `name`, `indexVar`, `indexSort`.
+
+```ebnf
+DependentSort ::= "{"
+                    "\"kind\"" ":" "\"dependent\"" ","
+                    "\"name\"" ":" String ","
+                    "\"indexVar\"" ":" String ","
+                    "\"indexSort\"" ":" Sort
+                  "}"
+```
+
+`name` is a type-level name (e.g. `"Vec"`). `indexVar` is a value-level
+variable the type depends on (e.g. `"n"` for `Vec<n>`). `indexSort`
+constrains the sort of the index variable.
 
 ### Formal Invariants
 
@@ -1134,14 +1159,74 @@ A SetSort must have an `element` field containing a valid Sort.
 ```
 A TupleSort must have an `elements` array containing at least one valid Sort.
 
-**INVARIANT FunctionSort.ValidDomainAndRange:**
+**INVARIANT FunctionSort.ValidArgsAndReturn:**
 ```
 ∀s: FunctionSort → HasKey(s, "kind") ∧ s.kind = "function" ∧
-                    HasKey(s, "domain") ∧ IsArray(s.domain) ∧
-                    ∀d ∈ s.domain → IsSort(d) ∧
-                    HasKey(s, "range") ∧ IsSort(s.range)
+                    HasKey(s, "args") ∧ IsArray(s.args) ∧
+                    ∀a ∈ s.args → IsSort(a) ∧ len(s.args) >= 1 ∧
+                    HasKey(s, "return") ∧ IsSort(s.return)
 ```
-A FunctionSort must have a non-empty `domain` array of Sorts and a valid `range` Sort.
+A FunctionSort must have a non-empty `args` array of Sorts and a valid `return` Sort.
+
+**INVARIANT DependentSort.ValidFields:**
+```
+∀s: DependentSort → HasKey(s, "kind") ∧ s.kind = "dependent" ∧
+                     HasKey(s, "name") ∧ IsString(s.name) ∧ len(s.name) > 0 ∧
+                     HasKey(s, "indexVar") ∧ IsString(s.indexVar) ∧ len(s.indexVar) > 0 ∧
+                     HasKey(s, "indexSort") ∧ IsSort(s.indexSort)
+```
+A DependentSort must have a non-empty `name`, a non-empty `indexVar`, and a valid `indexSort`.
+
+### Sort Examples
+
+**FunctionSort — minimal (identity function on Int):**
+```json
+{
+  "kind": "function",
+  "args": [{"kind": "primitive", "name": "Int"}],
+  "return": {"kind": "primitive", "name": "Int"}
+}
+```
+
+**FunctionSort — nested (two-arg function returning a function):**
+```json
+{
+  "kind": "function",
+  "args": [
+    {"kind": "primitive", "name": "Int"},
+    {"kind": "primitive", "name": "Bool"}
+  ],
+  "return": {
+    "kind": "function",
+    "args": [{"kind": "primitive", "name": "String"}],
+    "return": {"kind": "primitive", "name": "Real"}
+  }
+}
+```
+
+**DependentSort — minimal (Vec indexed by Int):**
+```json
+{
+  "kind": "dependent",
+  "name": "Vec",
+  "indexVar": "n",
+  "indexSort": {"kind": "primitive", "name": "Int"}
+}
+```
+
+**DependentSort — nested (FinSet whose index is itself a function sort):**
+```json
+{
+  "kind": "dependent",
+  "name": "FinSet",
+  "indexVar": "card",
+  "indexSort": {
+    "kind": "function",
+    "args": [{"kind": "primitive", "name": "Int"}],
+    "return": {"kind": "primitive", "name": "Bool"}
+  }
+}
+```
 
 ## Source positions
 
