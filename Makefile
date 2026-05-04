@@ -53,7 +53,7 @@
 # `make help` echoes it. Follow-up: retire it the same way the
 # self-contracts CIDs are retired (read from the embedded catalog
 # signature attestation).
-CATALOG_CID := blake3-512:9cb8600c84f682502f3b7e9a9f23b8138988bd1ffbcdcf3cd4e4b1d9ab386d3bb5076cd4dda8330edc24b43e62041a2da5153801001ed700d0be727073ceda67
+CATALOG_CID := blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641
 
 PROVEKIT := implementations/rust/target/release/provekit
 VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
