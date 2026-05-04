@@ -1,0 +1,10 @@
+name = "typescript-self-contracts"
+version = "1.0.0"
+protocol_version = "provekit-lift/1"
+command = ["node", "--experimental-require-module", "src/bin/mint-ts-self-contracts-rpc.cjs"]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["typescript-self-contracts"]
+ir_version = "v1.1.0"
+emits_signed_mementos = true

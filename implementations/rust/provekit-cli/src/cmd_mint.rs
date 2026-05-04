@@ -97,7 +97,7 @@ const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     ("rust",       "rust",        "rust-self-contracts",  "rust"),
     ("go",         "go",          "go-self-contracts",    "go"),
     ("cpp",        "cpp",         "cpp-self-contracts",    "cpp"),
-    ("ts",         "typescript",  "typescript",           "ts"),
+    ("ts",         "typescript",  "typescript-self-contracts", "ts"),
     ("csharp",     "csharp",      "csharp",               "csharp"),
     ("swift",      "swift",       "swift",                "swift"),
     ("java",       "java",        "java",                 "java"),
@@ -634,9 +634,11 @@ mod tests {
 
     #[test]
     fn resolve_kit_ts_maps_to_typescript_dir() {
+        // Issue #204: ts kit routes to typescript-self-contracts surface (not the
+        // generic workspace lifter) so --kit=ts mints real self-contracts.
         let (path, surface, lang) = resolve_kit("ts").expect("ts must resolve");
         assert_eq!(path, PathBuf::from("implementations/typescript"));
-        assert_eq!(surface, "typescript");
+        assert_eq!(surface, "typescript-self-contracts");
         assert_eq!(lang, "ts");
     }
 
