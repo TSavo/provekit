@@ -260,9 +260,11 @@ jobs:
     # already protected by the Linux gate's pinned CIDs for the other
     # 10 kits, and JCS+BLAKE3 is architecture-independent.
     name: Cross-language conformance gate (macOS swift)
-    # macos-latest currently aliases to macos-14 (Apple Silicon, M1).
-    # GitHub-hosted, not self-hosted; that is the intended split.
-    runs-on: macos-latest
+    # Self-hosted Mac runner registered on the architect's machine
+    # (label `macOS`, X64). Closes #305 — moves the swift jobs off
+    # GitHub-hosted macos-latest onto our own infra. Toolchains
+    # (swift, rust) are pre-installed on the runner host.
+    runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 45
 
     steps:
@@ -461,7 +463,8 @@ jobs:
 
   prove-swift:
     name: "prove-swift (C1-C8 conformance, macOS)"
-    runs-on: macos-latest
+    # Self-hosted Mac runner (issue #305).
+    runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 20
     needs: conformance
 
