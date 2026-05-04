@@ -64,8 +64,12 @@ blake3_hasher_finalize(VALUE self, VALUE hasher_str, VALUE out_len_val)
 
 /* ── Init ──────────────────────────────────────────── */
 
+/* Init function name MUST match the create_makefile basename in
+ * extconf.rb (`provekit_blake3`). Ruby's extension loader looks for
+ * Init_<basename> when loading the .so; mismatched names mean the
+ * methods never register and `Provekit::Blake3.hasher_init` is undef. */
 void
-Init_blake3(void)
+Init_provekit_blake3(void)
 {
     rb_cBlake3 = rb_define_module("Provekit");
     VALUE rb_cBlake3Inner = rb_define_class_under(rb_cBlake3, "Blake3", rb_cObject);

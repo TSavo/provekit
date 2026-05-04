@@ -15,10 +15,12 @@
 #   - Rust: implementations/rust/provekit-canonicalizer (blake3_512_of)
 #   - Python: blake3 PyPI package, .digest(length=64)
 
-require "provekit/blake3" rescue begin
-  # Native extension not yet compiled — try require directly
-  require_relative "../../ext/provekit_blake3/provekit_blake3"
-end
+# Load the native C extension. The extension's create_makefile name is
+# `provekit_blake3` (NOT `provekit/blake3`) to avoid colliding with this
+# pure-Ruby file at the same logical name. Without that distinction,
+# `require "provekit/blake3"` matches THIS .rb file (already loading),
+# the .so is never loaded, and `hasher_init` never gets registered.
+require "provekit_blake3"
 
 module Provekit
   class Blake3

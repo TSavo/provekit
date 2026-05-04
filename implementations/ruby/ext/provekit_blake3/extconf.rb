@@ -26,4 +26,8 @@ $objs = %w[provekit_blake3.o blake3.o blake3_portable.o blake3_dispatch.o]
 # Configure vendored BLAKE3 for portable build
 $CFLAGS << " -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41"
 
-create_makefile("provekit/blake3")
+# IMPORTANT: name MUST be `provekit_blake3` NOT `provekit/blake3`. The
+# pure-Ruby wrapper at lib/provekit/blake3.rb takes the `provekit/blake3`
+# logical name; the .so needs a distinct name so `require "provekit_blake3"`
+# from the wrapper loads the .so (not itself).
+create_makefile("provekit_blake3")
