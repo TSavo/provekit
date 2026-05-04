@@ -8,9 +8,9 @@
 #
 # Mainline targets:
 #   make help        — print this help
-#   make ci          — full conformance gate (catalog + protocol + 5 mints + tests)
-#   make conformance — catalog + protocol + 5 mint CIDs + self-contract tests
-#   make all-mint    — run all 5 mint commands; print CIDs (Linux/CI subset)
+#   make ci          — full conformance gate (catalog + protocol + 9 mints + tests)
+#   make conformance — catalog + protocol + 9 mint CIDs + self-contract tests
+#   make all-mint    — run all 9 mint commands; print CIDs (Linux/CI subset)
 #   make test-all    — run every language-native test suite (Linux/CI subset)
 #
 # Per-language targets:
@@ -64,9 +64,9 @@ help:
 	@echo "ProvekIt — top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
-	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 5 peer langs]"
-	@echo "  make conformance    catalog + protocol + 5 mint CIDs + self-contract tests"
-	@echo "  make all-mint       5 mint commands (Swift excluded: macOS-only, use mint-swift)"
+	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 9 peer langs]"
+	@echo "  make conformance    catalog + protocol + 9 mint CIDs + self-contract tests"
+	@echo "  make all-mint       9 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
@@ -325,9 +325,9 @@ mint-c: build-rust build-c-self-contracts
 # Side A merges (#234, #241, #272, feat/php-kit) and toolchain CI integration
 # (#245 in flight, #274 follow-up).
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-zig
 	@echo ""
-	@echo "==== all 8 core self-contract CIDs match pinned values ===="
+	@echo "==== all 9 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
@@ -336,6 +336,7 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python m
 	@printf "  %-8s  %s\n" "java"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/java.json)"
 	@printf "  %-8s  %s\n" "python" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/python.json)"
 	@printf "  %-8s  %s\n" "c"      "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/c.json)"
+	@printf "  %-8s  %s\n" "zig"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/zig.json)"
 
 # --- Conformance gate --------------------------------------------------------
 

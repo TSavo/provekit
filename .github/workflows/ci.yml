@@ -187,9 +187,31 @@ jobs:
           bundler-cache: true
           working-directory: implementations/ruby
 
-      # Zig setup deferred to a separate PR. mlugg/setup-zig@v1 with
-      # version: master gets 404s/503s across every mirror because the
-      # kit needs unreleased 0.16/0.17-dev API. Tracked as a follow-up.
+      - name: Install Zig 0.16.0 (pinned upstream stable)
+        # Issue #283. mint-zig-self-contracts (PR #241, issue #213) ships
+        # an orchestrator that the rust CLI invokes via lift-plugin-protocol
+        # RPC. Without zig on PATH the orchestrator binary errors at exec
+        # and the contractSetCid pinned-CID test sees the empty-set sentinel.
+        #
+        # The kit's std.ArrayList unmanaged-by-default usage (PR #168/#171)
+        # requires zig 0.16's std API. Issue #283 recommended pinning a
+        # 0.16-dev nightly URL because 0.16 was unreleased at the time it
+        # was filed; 0.16.0 shipped 2026-04-14, so we pin the stable
+        # release URL instead -- same pinned-URL property, no nightly-
+        # regression risk. ziglang.org keeps every release indefinitely.
+        # Refresh this URL only when the kit's std API requirements change.
+        #
+        # mlugg/setup-zig@v1 was tried in PR #245 and 404/503'd across
+        # every mirror; curl from ziglang.org is the simplest path that
+        # actually works.
+        run: |
+          set -euxo pipefail
+          ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+          curl -fsSL "$ZIG_URL" -o /tmp/zig.tar.xz
+          sudo mkdir -p /usr/local/zig
+          sudo tar -xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
+          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
+          zig version
 
       # ---------------------------------------------------------------
       # The gate.

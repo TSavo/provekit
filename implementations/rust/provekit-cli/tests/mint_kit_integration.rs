@@ -289,13 +289,12 @@ const KITS_WITHOUT_LIFTERS: &[&str] = &[];
 /// `swift` is on macOS only; the all-kits run handles Linux gracefully via the
 /// `failed_kits` skip path because the release binary is missing.
 ///
-/// zig: not in KITS_WITH_REAL_CONTRACTS until setup-zig is wired up in CI
-/// (mirror network reliability -- issue #277 follow-up). The binary exists
-/// in the repo; it just isn't built on the CI runner. The individual
-/// `zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical` test
-/// keeps its skip-on-empty-set guard so it passes locally when developers
-/// have zig 0.16-master on PATH.
-const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp", "python", "ruby"];
+/// zig: re-included after issue #283 wired zig 0.16.0 stable into CI via a
+/// pinned upstream URL (curl from ziglang.org/download/0.16.0). The
+/// `mint-zig-self-contracts` orchestrator builds cleanly on 0.16.0 and
+/// produces the pinned contractSetCid. Local dev still requires zig 0.16+
+/// on PATH; the per-kit pinned-CID test keeps its skip-on-empty-set guard.
+const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp", "python", "ruby", "zig"];
 
 /// Pinned contractSetCid for `--kit=go` after Tier 1 wiring fix (#176).
 /// Reflects the 11 canonical contracts in `implementations/go/provekit-self-contracts/slabs/`.
