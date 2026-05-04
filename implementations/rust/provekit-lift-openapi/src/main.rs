@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader, Write};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+mod annotate;
 mod ir_builder;
 mod openapi;
 mod protobuf;
@@ -12,11 +13,46 @@ use types::{Declaration, Diagnostics};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if !args.contains(&"--rpc".to_string()) {
-        eprintln!("usage: provekit-lift-openapi --rpc");
-        std::process::exit(1);
+
+    if args.contains(&"--annotate".to_string()) {
+        run_annotate_mode(&args);
+        return;
     }
-    run_rpc();
+
+    if args.contains(&"--rpc".to_string()) {
+        run_rpc();
+        return;
+    }
+
+    eprintln!("usage: provekit-lift-openapi --rpc | --annotate <spec> <code-dir>");
+    std::process::exit(1);
+}
+
+fn run_annotate_mode(args: &[String]) {
+    let spec_pos = args.iter().position(|a| a == "--annotate").unwrap();
+    let spec_path = args.get(spec_pos + 1).expect("missing spec path argument");
+    let code_dir = args.get(spec_pos + 2).expect("missing code dir argument");
+
+    let input = annotate::AnnotateInput {
+        spec_path: std::path::PathBuf::from(spec_path),
+        code_dir: std::path::PathBuf::from(code_dir),
+    };
+
+    match annotate::run_annotate(&input) {
+        Ok(out) => {
+            eprintln!(
+                "annotated {} files with {} constraints",
+                out.files_written, out.annotations_injected
+            );
+            for d in &out.diagnostics.messages {
+                eprintln!("  note: {d}");
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn run_rpc() {
