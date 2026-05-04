@@ -102,3 +102,73 @@ def ed25519_verify_string(pubkey_string: str, sig_string: str, message: bytes) -
 # Documented as a test seed; v1 is HSM-generated.
 # Source: tools/foundation-keygen/src/lib.rs FOUNDATION_V0_SEED.
 FOUNDATION_V0_SEED: bytes = bytes([0x42] * 32)
+
+
+# ---------------------------------------------------------------------------
+# Signer: minimal handle bundling the per-actor stable fields.
+#
+# Used by claim_envelope.ClaimEnvelope.from_contract_decl(decl, signer).
+# Only the fields that are stable per-actor live on the Signer; the
+# per-attestation fields (produced_at, authoring, input_cids) are passed
+# at call time.
+# ---------------------------------------------------------------------------
+
+
+class Signer:
+    """Minimal signing handle: 32-byte Ed25519 seed + producer-id string.
+
+    The producer-id ("rust-test@1.0", "py-kit@1.0", etc.) is bound into
+    the contract's bindingHash (per `mint_contract` derivation rule
+    ``bindingHash = hash(JCS({producerId, contractName, propertyHash}))``)
+    so it lives on the Signer rather than being recomputed at every call.
+
+    Per-attestation fields like ``produced_at`` (ISO-8601 timestamp),
+    ``authoring`` (kit-author / lift / llm union), and ``input_cids`` are
+    passed at call time, not stored on the signer.
+    """
+
+    __slots__ = ("seed", "producer_id")
+
+    def __init__(self, seed: bytes, producer_id: str) -> None:
+        if not isinstance(seed, (bytes, bytearray)) or len(seed) != 32:
+            raise ValueError("Signer seed must be exactly 32 bytes")
+        if not isinstance(producer_id, str) or not producer_id:
+            raise ValueError("Signer producer_id must be a non-empty str")
+        self.seed = bytes(seed)
+        self.producer_id = producer_id
+
+    @classmethod
+    def foundation_v0(cls, producer_id: str = "py-kit@1.0") -> "Signer":
+        """Convenience: a Signer using the public foundation v0 test seed.
+
+        Foundation v0 is the publicly-known cross-kit test seed; it is
+        appropriate for fixtures and conformance tests, not production.
+        """
+        return cls(FOUNDATION_V0_SEED, producer_id)
+
+    def pubkey_string(self) -> str:
+        """Self-identifying public-key string: ``ed25519:<base64>``."""
+        return ed25519_pubkey_string(self.seed)
+
+    def sign_claim(
+        self,
+        decl,
+        *,
+        produced_at: str,
+        authoring=None,
+        input_cids=None,
+    ):
+        """Build a v1.2-layered ClaimEnvelope from a `ContractDecl`.
+
+        Convenience delegate to ``ClaimEnvelope.from_contract_decl``.
+        Imported lazily to avoid the ``signing -> claim_envelope ->
+        signing`` import cycle (claim_envelope itself imports `Signer`).
+        """
+        from .claim_envelope import ClaimEnvelope
+        return ClaimEnvelope.from_contract_decl(
+            decl,
+            self,
+            produced_at=produced_at,
+            authoring=authoring,
+            input_cids=input_cids,
+        )
