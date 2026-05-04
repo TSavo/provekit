@@ -20,7 +20,30 @@
 # pure-Ruby file at the same logical name. Without that distinction,
 # `require "provekit/blake3"` matches THIS .rb file (already loading),
 # the .so is never loaded, and `hasher_init` never gets registered.
-require "provekit_blake3"
+#
+# Fallback chain handles bundler-cached layouts where the freshly
+# compiled .so isn't on $LOAD_PATH at first require time:
+#   1. require "provekit_blake3" -- gem-installed location
+#   2. require_relative the in-tree build artifact
+begin
+  require "provekit_blake3"
+rescue LoadError => primary_err
+  candidates = [
+    File.expand_path("../../ext/provekit_blake3/provekit_blake3", __dir__),
+    File.expand_path("../../ext/provekit_blake3/provekit/blake3", __dir__),
+  ]
+  loaded = false
+  candidates.each do |path|
+    begin
+      require path
+      loaded = true
+      break
+    rescue LoadError
+      next
+    end
+  end
+  raise primary_err unless loaded
+end
 
 module Provekit
   class Blake3
