@@ -148,17 +148,27 @@ jobs:
         # bundler-cache fails with `libyaml-0.so.2: cannot open shared
         # object file` without it on Ubuntu 24.04 hosted runners.
         # Self-hosted runners on battleaxe are ephemeral (no persistent
-        # apt cache between jobs). Every run hits archive.ubuntu.com
-        # fresh. That mirror intermittently rate-limits or drops
-        # connections (seen 4+ times this session), failing the install
-        # step. Retry with exponential backoff so a transient flake
-        # doesn't kill the whole gate.
+        # apt cache between jobs). The host runs apt-cacher-ng on
+        # localhost:3142 so each run hits the local cache instead of
+        # archive.ubuntu.com directly. Cold cache pulls upstream once;
+        # warm cache makes subsequent jobs ~10x faster and immune to
+        # archive.ubuntu.com flakes (which killed CI 4+ times this
+        # session before the cache existed).
         #
-        # Proper fix: stand up apt-cacher-ng on battleaxe so all
-        # ephemeral runners share a local cache. Tracked separately.
+        # Belt-and-suspenders: 5-attempt retry with exponential backoff
+        # in case the cache itself is unreachable (apt-cacher-ng down,
+        # network glitch, etc.).
         run: |
           set -euo pipefail
           DEPS="build-essential clang cmake cvc5 libsodium-dev libssl-dev libyaml-dev maven nlohmann-json3-dev unzip z3"
+          # Point apt at the local apt-cacher-ng on battleaxe (issue #304).
+          # Skip silently if not running on battleaxe (e.g. dev fork CI).
+          if curl -fsS --max-time 2 http://localhost:3142/acng-report.html >/dev/null 2>&1; then
+            echo 'Acquire::http::Proxy "http://localhost:3142";' | sudo tee /etc/apt/apt.conf.d/00-apt-cacher-ng >/dev/null
+            echo "apt-cacher-ng on localhost:3142 detected; routing apt through it"
+          else
+            echo "apt-cacher-ng not detected on localhost:3142; using direct upstream"
+          fi
           for attempt in 1 2 3 4 5; do
             echo "::group::apt-get install attempt $attempt"
             if sudo apt-get update -y && sudo apt-get install -y --no-install-recommends $DEPS; then
