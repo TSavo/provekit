@@ -81,6 +81,12 @@ fn build_one(name: &str, sc: &SolverConfig) -> SolverHandle {
 /// Convenience: build a registry with a single Z3 SubprocessSolver
 /// at the given binary path. Used by the legacy `RunnerConfig.z3_path`
 /// fallback when no `.provekit/config.toml` is present.
+///
+/// A 30-second per-invocation timeout is applied as defense-in-depth.
+/// Without a timeout, a Z3 invocation that reads from stdin without
+/// receiving EOF (e.g. when inherited in a subprocess chain) can block
+/// indefinitely.  30 s is a conservative upper bound for any SMT-LIB
+/// obligation that would arise from a ProvekIt proof graph.
 pub fn build_default_z3(z3_path: &str) -> HashMap<String, SolverHandle> {
     let mut out: HashMap<String, SolverHandle> = HashMap::new();
     out.insert(
@@ -91,7 +97,7 @@ pub fn build_default_z3(z3_path: &str) -> HashMap<String, SolverHandle> {
             "4.x",
             "smt-lib-v2.6",
             vec!["-smt2".into(), "-in".into()],
-            None,
+            Some(Duration::from_secs(30)),
         )) as SolverHandle,
     );
     out
