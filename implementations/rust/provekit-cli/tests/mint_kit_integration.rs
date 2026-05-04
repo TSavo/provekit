@@ -22,6 +22,7 @@
 // All 11 kits are tested. Kits without lifter binaries are expected to
 // produce the EMPTY_SET_CID; this is explicitly asserted, not an error.
 
+use serial_test::serial;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -164,6 +165,7 @@ const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp"];
 const GO_CONTRACT_SET_CID: &str = "blake3-512:e23649f383162398556a508c2e69e035d6d231bfaf6e8926ced547fb19ddd9c65779f39fe31d85519c957bc40afa432c9be468eadfa5aac77f74f5de8c56324c";
 
 #[test]
+#[serial(mint_kit_files)]
 fn all_kits_mint_produces_valid_attestation_structure() {
     let all_kits: Vec<&str> = KITS_WITH_LIFTERS
         .iter()
@@ -221,6 +223,7 @@ fn all_kits_mint_produces_valid_attestation_structure() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial(mint_kit_files)]
 fn kits_without_lifters_produce_empty_set_cid() {
     let root = repo_root();
     for kit in KITS_WITHOUT_LIFTERS {
@@ -248,6 +251,7 @@ fn kits_without_lifters_produce_empty_set_cid() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial(mint_kit_files)]
 fn kits_with_real_contracts_produce_nonempty_contract_set() {
     let root = repo_root();
     for kit in KITS_WITH_REAL_CONTRACTS {
@@ -281,6 +285,7 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial(mint_kit_files)]
 fn rust_kit_mint_is_byte_deterministic() {
     let root = repo_root();
 
@@ -313,6 +318,7 @@ fn rust_kit_mint_is_byte_deterministic() {
 // ---------------------------------------------------------------------------
 
 #[test]
+#[serial(mint_kit_files)]
 fn kit_shortcut_and_project_flag_are_equivalent() {
     let bin = provekit_bin();
     let root = repo_root();
@@ -375,6 +381,7 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
 /// routing regression has been reintroduced. If it fails with an unknown CID,
 /// the go slab contracts have changed -- update GO_CONTRACT_SET_CID accordingly.
 #[test]
+#[serial(mint_kit_files)]
 fn go_kit_pins_expected_contract_set_cid() {
     let root = repo_root();
 
@@ -423,6 +430,7 @@ const RUST_KIT_CANONICAL_CONTRACT_SET_CID: &str =
     "blake3-512:8f4bcc3c3e748ae303f8c8da80245f291e803eb2d241224c75c7ac470631e4dee7ff2e0ff59af571db3d506485c115acaddfd91e4e4315eb04ee37c035ddbc69";
 
 #[test]
+#[serial(mint_kit_files)]
 fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     let root = repo_root();
 
