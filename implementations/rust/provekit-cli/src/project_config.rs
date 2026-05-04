@@ -45,6 +45,11 @@ pub struct ProjectConfig {
     pub solver_chain: Vec<String>,
     pub solver_portfolio: Vec<String>,
     pub solver_mode: Option<String>, // "first-wins" | "consensus"
+
+    /// Extra contract directories loaded by `provekit prove`.
+    /// e.g., an OpenAPI spec project whose .proof files are
+    /// consumed alongside the main project.
+    pub callees: Vec<String>,
 }
 
 impl ProjectConfig {
@@ -133,6 +138,9 @@ fn parse_config(text: &str) -> ProjectConfig {
                 cfg.solver_portfolio = parse_string_array(&val);
             }
             (Some("solvers"), "mode") => cfg.solver_mode = Some(val),
+            (Some("verify"), "callees") => {
+                cfg.callees = parse_string_array(&val);
+            }
             _ => {}
         }
     }
