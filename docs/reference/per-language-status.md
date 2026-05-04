@@ -1,6 +1,6 @@
 # Per-language status
 
-The matrix of what's shipping, what's planned, and what's under evaluation across host languages. Updated for protocol v1.4.0 (CID `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f`). The matrix below tracks the per-kit state under v1.4: substrate layering (envelope, header, body), contract-cid vs attestation-cid separation, contract-set extension fields, and bridge target dimensionality. Authoring-surface coverage for kit, libs, lift adapters, decorator macros, embedded verifier, CLI, and LSP plugin is unchanged from v1.1; the v1.4 readiness state is captured in the cross-kit bridge readiness matrix below. For the spec-by-spec list see [`cids.md`](cids.md).
+The matrix of what's shipping, what's planned, and what's under evaluation across host languages. Updated for protocol v1.4.1 (CID `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641`). The matrix below tracks the per-kit state under v1.4: substrate layering (envelope, header, body), contract-cid vs attestation-cid separation, contract-set extension fields, and bridge target dimensionality. Authoring-surface coverage for kit, libs, lift adapters, decorator macros, embedded verifier, CLI, and LSP plugin is unchanged from v1.1; the v1.4 readiness state is captured in the cross-kit bridge readiness matrix below. For the spec-by-spec list see [`cids.md`](cids.md).
 
 ## Component glossary
 

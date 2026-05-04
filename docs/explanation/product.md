@@ -6,7 +6,7 @@ ProvekIt is a content-addressed verification protocol. It defines four things: a
 
 Verification reduces to hash comparison. When the publisher's post-condition and the consumer's pre-condition canonicalize to identical bytes, the call site is discharged for free. When they don't, a signed implication memento may exist that bridges them; the verifier checks the signature once and discharges every call site that shares the same `(post, pre)` pair. When neither path applies, Z3 runs once per novel pair, mints the result as a fresh implication memento, and every future verifier hits the cached path.
 
-ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libraries (verifier, IR, canonicalizer) for Rust, TypeScript, Go, and C++. The protocol version is itself a CID: v1.4.0 is shorthand for `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f`. Anyone with the spec bytes can verify that label locally.
+ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libraries (verifier, IR, canonicalizer) for Rust, TypeScript, Go, and C++. The protocol version is itself a CID: v1.4.1 is shorthand for `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641`. Anyone with the spec bytes can verify that label locally.
 
 ## Who it's for
 
@@ -114,8 +114,8 @@ A repository declares its conformance via a `provekit.config.yaml` at the projec
 
 ```yaml
 protocol:
-  cid: blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f
-  version: v1.4.0
+  cid: blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641
+  version: v1.4.1
 
 publish:
   implications:

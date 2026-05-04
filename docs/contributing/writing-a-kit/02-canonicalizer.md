@@ -96,7 +96,7 @@ Your language's BLAKE3 binding may default to SIMD-accelerated paths. Verify aga
 The CID is a string with a multibase prefix:
 
 ```
-blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f
+blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641
 ```
 
 Format: `blake3-512:<128 lowercase hex digits>`. Lowercase. No leading `0x`. No padding.

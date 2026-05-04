@@ -35,7 +35,7 @@ A **derived bridge** is a bridge memento minted by the linker from one call edge
 
 ```
 DerivedBridge := {
-    schemaVersion:      "2",
+    schemaVersion:      "1",
     kind:               "bridge",
     envelope: { signer, declaredAt, signature },
     header: {

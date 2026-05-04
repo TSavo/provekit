@@ -1,6 +1,6 @@
 # Spec CIDs at HEAD
 
-Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.4.0). Verify the local install conforms via `provekit verify-protocol`.
+Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.4.1). Verify the local install conforms via `provekit verify-protocol`.
 
 ## Two hashing rules
 
@@ -16,20 +16,34 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 
 `--verify` reads every spec in raw bytes, hashes each, then reads the catalog, JCS-canonicalizes it, hashes that, and compares all values. Exit 0 iff every value matches.
 
-## Pinned CIDs (v1.4.0)
+## Pinned CIDs (v1.4.1)
 
 | Document | CID |
 |---|---|
-| Protocol catalog (v1.4.0) | `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f` |
+| **Protocol catalog (v1.4.1)** | `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641` |
+| Protocol catalog (v1.4.0, historical) | `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f` |
 | Canonicalization grammar | `blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830` |
 | Handshake algorithm | `blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925` |
-| IR formal grammar | `blake3-512:6c0127e0d24946d7be75861db20507ccdcfdf968d3333f8aa34083e849d8238d73b3acfaa31880648995a024112182ed6b6002cd489548b4b18f5d4c3768dd96` |
+| IR formal grammar (v1.4.1: re-baked after Locus addition) | `blake3-512:82a9470492347c7f273457bc101bbde92243b6c7ea49b06a151f6bc5fcfffa50c130f40cc7d7edb5b40fd0bc50c2e8c9a43cd5a7dfa0ed46b51b1aa9845bd676` |
 | Lattice tractability theorem | `blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07` |
-| Memento envelope grammar | `blake3-512:58bba3e1a9f6439eac5cb0c681faf65d38de9e6b8ad539854acda451ca67562a9d238eb95a5d7df2c0776657015fa026c51059dff61e1ba9aa2438b57425d6a5` |
-| Proof file format | `blake3-512:7bb4589af25c6c3992520494869bbbe4cfbcf7a77b91ebd61d6327e78699ef16cd5bc34afbe4cdf88a717c055c16536b5106bc4dca2d9d6b5cfcc1eede68e1b3` |
-| Proof substrate | `blake3-512:ad53d6c59ee08270a48715376cc211f964ff44a55b3318d68a402e9c915ff593d5a5bbbd424f7777e2bcfe89d6c5bd2b49efcb5aae7de24752f3bcabb90484ae` |
+| Memento envelope grammar (v1.4.1: supersession note added) | `blake3-512:8b6b9d9ccb7091cfa9d0993ac1d9b02057a6f7c5d9e36a05849630b8b02887073fad44114c5025740bb458e58741e41e24c438a041e1dde6e903ace7bd48278e` |
+| Proof file format (v1.4.1: §6.1 added pinning catalog `header.cid` recipe) | `blake3-512:a78f21484f8a55dbc0e3647433da95475820bad6f0db10643625315b030f7f114aec8710ea8cb3a4c3bfb096bf635487a31c86bec8978b90d0b4238b5eb6d266` |
 | Self-contracts (stable; v1.1.0+) | `blake3-512:a0f58941758d709739759cf166bf9cb73794958144e213eccfb28fbf5791ca824ce53da0c6ba801cca2b53400324a094f510d4bbc41bc6b73b17e486ad3838ab` |
 | Signatures and non-repudiation | `blake3-512:8b71229fcb7413f18a93a9b260012298311c1ce754850ee717780c181f1fda39a6600b2e5069e775cd7dd15e8c81e40b47bf7585aa0b23ab76c112c85116365c` |
+| Substrate layers (envelope/header/body) | `blake3-512:a76c7d0d6a5fecde40f579a8566f0199f61d5e3f7a0d48561f0ef765b5983a31fc96bb21fe56ea667337341dc798e7370229722ee7535fe7e2c22d4f7dad97dd` |
+| Contract CID vs attestation CID | `blake3-512:53e136d9af29ce80b690f90c484e90c60f66f28c483b2038e03e7c6f6055f637527deb205e5558b47487b7d89ead461348d5e8981f2e9e8ccb30edd8867d47db` |
+| Contract set extension | `blake3-512:839e82096d04b1241ffa1f6158fcea6bfeb78f3836664a66a13ff11b3cde58d72e6c85bfc619ba1341f13b8375f655bdf5582b0eac91d27648f0048bee8f9867` |
+| Version chains pinning | `blake3-512:281bf014f6f0ebc9a5d455329ee033ff8b7ee85e001bcbdcb45a62c14e43855892c46462789ccb74961859e708eae70829fdf736798c17f59f0239ef78dd7e45` |
+
+## v1.4.1 changes (patch over v1.4.0)
+
+Three property re-bakes, no protocol-level breaking changes. v1.4.0 mementos and `.proof` bundles remain valid forever against the bytes they were minted for.
+
+- **`ir-formal-grammar`** re-baked to `82a9470492347c7f...45bd676` after the Locus type addition (closes a gap surfaced by PR #119, where the Go agent's call-edge emission inferred Locus shape from first principles rather than pulling from spec).
+- **`proof-file-format`** re-baked to `a78f21484f8a55db...5eb6d266` after adding §6.1 specifying the v1.4 substrate-layers compatibility cut for catalog mementos and pinning the catalog `header.cid` recipe as `BLAKE3-512(JCS(sorted_member_cids))` (the same recipe as `contractSetCid` generalized to any member-set).
+- **`memento-envelope-grammar`** re-baked to `8b6b9d9ccb7091cf...bd48278e` after adding a supersession note pointing forward to `2026-05-03-substrate-layers-envelope-header-body.md` for v1.4-and-later mementos. The v1.1 flat shape remains valid for historical mementos under monotonicity.
+
+One non-cataloged clarification: `2026-05-03-bridge-linkage-protocol.md` §1 DerivedBridge `schemaVersion` corrected from `"2"` to `"1"` consistent with substrate-layers-envelope-header-body's v1.4 layered-shape conventions and bridge-target-dimensionality §1 R3. This spec is not in the catalog `properties` map so no further property re-bake.
 
 ## v1.4.0 additions
 
@@ -63,7 +77,7 @@ Two runs producing the same CID is the framework verifying its own canonicalizat
 
 ## Bluepaper recursive-verification
 
-The protocol catalog's CID is the protocol version. Verifying the catalog is the act of running the protocol; running the protocol verifies the catalog. There is no external authority. The bluepaper at [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) closes with this recursive verification recipe. Run `--verify`. If the computed catalog CID matches `b0f2030d...`, the bluepaper has just verified its own authority over the bytes you have.
+The protocol catalog's CID is the protocol version. Verifying the catalog is the act of running the protocol; running the protocol verifies the catalog. There is no external authority. The bluepaper at [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) closes with this recursive verification recipe. Run `--verify`. If the computed catalog CID matches `dc2f42ff...` (v1.4.1) or `b0f2030d...` (v1.4.0, historical), the bluepaper has just verified its own authority over the bytes you have.
 
 ## Read next
 
