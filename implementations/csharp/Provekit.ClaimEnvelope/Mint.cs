@@ -291,6 +291,75 @@ public static class Mint
     }
 
     // -------------------------------------------------------------------
+    // mint_bridge_v14 (v1.4 layered envelope/header/body, tagged-union target)
+    //
+    // Per protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6
+    // and substrate-layers-envelope-header-body.md §1-2.
+    //
+    // Canonical reference: rust/provekit-claim-envelope/src/lib.rs fn mint_bridge_v14.
+    // -------------------------------------------------------------------
+
+    public static MintedEnvelope MintBridgeV14(MintBridgeV14Args args)
+    {
+        // Build target value
+        var targetEntries = new List<KeyValuePair<string, V>>
+        {
+            new("kind", V.String(args.Target.Kind)),
+            new("cid", V.String(args.Target.Cid)),
+        };
+        var targetV = V.Object(targetEntries);
+
+        // Build header (7 canonical fields per spec §1.R3)
+        var header = V.Object(
+            ("schemaVersion", V.String("1")),
+            ("kind", V.String("bridge")),
+            ("name", V.String(args.Name)),
+            ("sourceSymbol", V.String(args.SourceSymbol)),
+            ("sourceLayer", V.String(args.SourceLayer)),
+            ("sourceContractCid", V.String(args.SourceContractCid)),
+            ("target", targetV)
+        );
+
+        // Build metadata (only Some fields emitted)
+        var metaEntries = new List<KeyValuePair<string, V>>();
+        if (args.TargetWitnessCid is { } twc) metaEntries.Add(new("targetWitnessCid", V.String(twc)));
+        if (args.TargetBinaryCid is { } tbc) metaEntries.Add(new("targetBinaryCid", V.String(tbc)));
+        if (args.TargetLayer is { } tl) metaEntries.Add(new("targetLayer", V.String(tl)));
+        if (args.TargetContractSetCid is { } tcs) metaEntries.Add(new("targetContractSetCid", V.String(tcs)));
+        if (args.ProducedBy is { } pb) metaEntries.Add(new("producedBy", V.String(pb)));
+        if (args.ProducedAt is { } pa) metaEntries.Add(new("producedAt", V.String(pa)));
+        var metadata = V.Object(metaEntries);
+
+        // Build envelope
+        var signerPubkey = Sign.Ed25519PubkeyString(args.SignerSeed);
+        var envEntries = new List<KeyValuePair<string, V>>
+        {
+            new("signer", V.String(signerPubkey)),
+            new("declaredAt", V.String(args.DeclaredAt)),
+        };
+        var envelope = V.Object(envEntries);
+
+        // Sign: JCS({header, metadata})
+        var sigPayload = Jcs.EncodeUtf8(V.Object(
+            ("header", header),
+            ("metadata", metadata)
+        ));
+        var sig = Sign.Ed25519SignString(args.SignerSeed, sigPayload);
+        envelope.AsObject().Add(new("signature", V.String(sig)));
+
+        // Full memento: {envelope, header, metadata}
+        var memento = V.Object(
+            ("envelope", envelope),
+            ("header", header),
+            ("metadata", metadata)
+        );
+        var canonical = Jcs.EncodeUtf8(memento);
+        var cid = Hash.Blake3_512(canonical);
+
+        return new MintedEnvelope { CanonicalBytes = canonical, Cid = cid };
+    }
+
+    // -------------------------------------------------------------------
     // mint_implication
     // -------------------------------------------------------------------
 
