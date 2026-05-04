@@ -38,6 +38,7 @@ members = [
     "provekit-showcase",
     "examples/build_script_demo",
     "provekit-linkerd",
+    "provekit-baseline-std",
 ]
 
 [workspace.package]
@@ -69,6 +70,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 # Verifier glue
 walkdir = "2"
+toml = "0.8"
 rayon = "1.10"
 # Proc-macro authoring stack
 syn = { version = "2", features = ["full", "extra-traits", "visit"] }
