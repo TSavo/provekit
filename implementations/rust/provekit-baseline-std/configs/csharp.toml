@@ -1,0 +1,15 @@
+lang = "csharp"
+kit = "csharp-kit"
+language_version = "1.0"
+
+[[builtins]]
+name = "csharp_std_size"
+signature = "size"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "size", right = 0}}]
+
+[[builtins]]
+name = "csharp_std_empty"
+signature = "is_empty"
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]

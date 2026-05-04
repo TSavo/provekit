@@ -1,0 +1,15 @@
+lang = "zig"
+kit = "zig-kit"
+language_version = "1.0"
+
+[[builtins]]
+name = "zig_std_size"
+signature = "size"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "size", right = 0}}]
+
+[[builtins]]
+name = "zig_std_empty"
+signature = "is_empty"
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
