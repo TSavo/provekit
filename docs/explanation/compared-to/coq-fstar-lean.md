@@ -137,7 +137,7 @@ If you go pure-ITP without ProvekIt:
 - No content-addressed substrate. Sharing proofs across teams requires ad-hoc tooling.
 - No bridges between proofs in different languages. Cross-language proof transfer requires custom encoding per pair.
 - No cache effects. Every consumer re-runs the ITP (or trusts an ad-hoc artifact).
-- No supply-chain anchor (no `binaryCid` equivalent in standard ITP workflows).
+- No supply-chain anchor (no rank-3 pin equivalent in standard ITP workflows; see [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md) for the `(contractCid, witnessCid, binaryCid)` framing).
 
 ProvekIt fills these gaps for the cases where ITP-level rigor is overkill but content-addressed verification is valuable.
 
