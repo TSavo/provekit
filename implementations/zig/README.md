@@ -6,12 +6,36 @@ Zig-native implementation of the ProvekIt IR and lift tool.
 
 ```
 implementations/zig/
-├── provekit-ir/          # IR types library (Sort, Term, Formula, Document)
+├── provekit-ir/                    # IR types + JCS canonicalizer + BLAKE3
 │   ├── build.zig
 │   └── src/root.zig
-└── provekit-lift-zig/    # Lift tool: scans .zig → emits IR JSON
+├── provekit-proof-envelope-zig/    # Side B substrate: deterministic CBOR,
+│   │                               # Ed25519, .proof envelope build/verify
+│   ├── build.zig
+│   └── src/{root,cbor,sign,proof}.zig
+└── provekit-lift-zig/              # Lift tool: scans .zig -> emits IR JSON
     ├── build.zig
     └── src/main.zig
+```
+
+## provekit-proof-envelope-zig
+
+Side B (language-native) crypto substrate. Exposes BLAKE3-512, JCS
+(re-exported from provekit-ir), Ed25519 sign/verify, deterministic CBOR
+(RFC 8949 §4.2.1), and `.proof` envelope construction.
+
+Cross-kit byte-equivalence with the rust kit's `provekit-proof-envelope`
+is pinned by the canonical two-member fixture; same input produces
+byte-identical output and the same `blake3-512:...` CID.
+
+Primitive sources: BLAKE3 from `std.crypto.hash.Blake3`, Ed25519 from
+`std.crypto.sign.Ed25519` (deterministic mode via `noise=null`), CBOR
+hand-rolled (~90 LOC, 5 major types), JCS hand-rolled in provekit-ir
+via `std.json.Stringify` with strict alphabetical key order.
+
+```bash
+cd implementations/zig/provekit-proof-envelope-zig
+zig build test    # 26/26 tests pass, includes cross-kit byte-pin
 ```
 
 ## provekit-ir

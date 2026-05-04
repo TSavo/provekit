@@ -1,0 +1,9 @@
+.{
+    .name = .provekit_proof_envelope_zig,
+    .fingerprint = 0x9b059a361ca07667,
+    .version = "0.1.0",
+    .paths = .{
+        "build.zig",
+        "src",
+    },
+}
