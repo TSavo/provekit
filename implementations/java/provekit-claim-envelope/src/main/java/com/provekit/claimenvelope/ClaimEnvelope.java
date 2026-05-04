@@ -358,6 +358,181 @@ public final class ClaimEnvelope {
     }
 
     // =========================================================================
+    // mintBridgeV14 (v1.4 BridgeDeclaration, layered envelope/header/body)
+    // =========================================================================
+    //
+    // Source of truth for the wire shape:
+    //   protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6
+    //   protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md §1, §2
+    //   protocol/provekit-ir.cddl  BridgeDeclarationV14
+    //
+    // Mirrors implementations/rust/provekit-claim-envelope/src/lib.rs::mint_bridge_v14
+    // 1:1. Differences from `mintBridge` (above):
+    //   1. Header carries the contract-axis claim only. Witness/binary/
+    //      target-layer axes move to the metadata block. (spec §1.R3)
+    //   2. `target` is a tagged-union object {kind, cid}, not flat
+    //      `targetContractCid` plus `targetLayer`. (spec §1.R1)
+    //   3. `schemaVersion` is `"1"` (the v1.4-layered schema version),
+    //      distinct from the v1.2 layered shape's `"2"`.
+    //   4. Metadata fields that are unknown at mint time are OMITTED from
+    //      the JCS bytes. They are NOT emitted as `null` and NOT emitted
+    //      with placeholder strings. (spec §1.R2)
+    //   5. Header has exactly seven fields (no `cid`, no derived
+    //      `bindingHash`/`propertyHash`/`inputCids` -- those live in the
+    //      v1.2 richer `mintBridge` shape and do NOT appear here).
+    //
+    // Co-existence with `mintBridge`:
+    //   The v1.2-layered `mintBridge` (schemaVersion="2", richer header)
+    //   remains the active path for the existing kit infrastructure. The
+    //   v1.4 path is the canonical reference for cross-kit byte-equality
+    //   per the substrate-layers / target-dimensionality specs. Both
+    //   shapes coexist; v1.1 historical mementos remain valid forever
+    //   (spec §4) and are never re-signed.
+
+    /** Schema version stamp on v1.4 layered bridge headers. */
+    public static final String BRIDGE_V14_SCHEMA_VERSION = "1";
+
+    /**
+     * Tagged-union target axis per
+     * {@code 2026-05-03-bridge-target-dimensionality.md} §1.R1.
+     *
+     * <p>Implementations MUST emit exactly one variant. Implementations MUST NOT
+     * emit a bare string for {@code target}; the substrate verifier rejects
+     * stringified placeholders (spec §1.R2).
+     */
+    public static abstract sealed class BridgeTargetV14
+            permits BridgeTargetV14.Contract, BridgeTargetV14.ContractSet {
+
+        public abstract String cid();
+        public abstract String kind();
+
+        /** {@code { "kind": "contract", "cid": "<contractCid>" }} */
+        public static final class Contract extends BridgeTargetV14 {
+            public final String cid;
+            public Contract(String cid) {
+                this.cid = Objects.requireNonNull(cid, "cid");
+            }
+            @Override public String cid() { return cid; }
+            @Override public String kind() { return "contract"; }
+        }
+
+        /** {@code { "kind": "contractSet", "cid": "<contractSetCid>" }} */
+        public static final class ContractSet extends BridgeTargetV14 {
+            public final String cid;
+            public ContractSet(String cid) {
+                this.cid = Objects.requireNonNull(cid, "cid");
+            }
+            @Override public String cid() { return cid; }
+            @Override public String kind() { return "contractSet"; }
+        }
+
+        Value toValue() {
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string(kind()));
+            m.put("cid", Value.string(cid()));
+            return Value.object(m);
+        }
+    }
+
+    /**
+     * Inputs for {@link #mintBridgeV14(MintBridgeV14Args)}.
+     *
+     * <p>Optional metadata-axis fields are nullable {@code String}. {@code null}
+     * means the field is OMITTED from the JCS bytes. Empty strings ARE distinct
+     * from {@code null} and would be emitted as {@code ""}; callers SHOULD pass
+     * {@code null} when the axis is unknown, to satisfy spec §1.R2.
+     */
+    public static final class MintBridgeV14Args {
+        // ---- header (substrate-verified) ----
+        public String name;
+        public String sourceSymbol;
+        public String sourceLayer;
+        public String sourceContractCid;
+        public BridgeTargetV14 target;
+
+        // ---- metadata (optional, opaque to substrate) ----
+        public String targetWitnessCid;       // nullable -> OMIT
+        public String targetBinaryCid;        // nullable -> OMIT
+        public String targetLayer;            // nullable -> OMIT
+        public String targetContractSetCid;   // nullable -> OMIT
+        public String producedBy;             // nullable -> OMIT
+        public String producedAt;             // nullable -> OMIT
+
+        // ---- envelope inputs ----
+        /** RFC 3339 UTC timestamp for {@code envelope.declaredAt}. */
+        public String declaredAt;
+        public byte[] signerSeed;
+    }
+
+    /**
+     * Build the v1.4 header object exactly as specified in
+     * {@code 2026-05-03-bridge-target-dimensionality.md} §1.R3.
+     *
+     * <p>Inserts the seven canonical fields (schemaVersion, kind, name,
+     * sourceSymbol, sourceLayer, sourceContractCid, target). The JCS encoder
+     * sorts keys at emit time, so insertion order is just for readability.
+     * The v1.4 header has NO {@code cid} field -- using the generic
+     * {@link #buildHeader} helper here would inject one and break
+     * byte-equivalence with the rust canonical reference.
+     */
+    private static Value buildBridgeHeaderV14(MintBridgeV14Args args) {
+        LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+        m.put("schemaVersion", Value.string(BRIDGE_V14_SCHEMA_VERSION));
+        m.put("kind", Value.string("bridge"));
+        m.put("name", Value.string(args.name));
+        m.put("sourceSymbol", Value.string(args.sourceSymbol));
+        m.put("sourceLayer", Value.string(args.sourceLayer));
+        m.put("sourceContractCid", Value.string(args.sourceContractCid));
+        m.put("target", args.target.toValue());
+        return Value.object(m);
+    }
+
+    /**
+     * Build the v1.4 metadata object. Only non-null fields are emitted;
+     * null fields are OMITTED from the JCS bytes per spec §1.R2.
+     */
+    private static Value buildBridgeMetadataV14(MintBridgeV14Args args) {
+        LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+        if (args.targetWitnessCid != null) {
+            m.put("targetWitnessCid", Value.string(args.targetWitnessCid));
+        }
+        if (args.targetBinaryCid != null) {
+            m.put("targetBinaryCid", Value.string(args.targetBinaryCid));
+        }
+        if (args.targetLayer != null) {
+            m.put("targetLayer", Value.string(args.targetLayer));
+        }
+        if (args.targetContractSetCid != null) {
+            m.put("targetContractSetCid", Value.string(args.targetContractSetCid));
+        }
+        if (args.producedBy != null) {
+            m.put("producedBy", Value.string(args.producedBy));
+        }
+        if (args.producedAt != null) {
+            m.put("producedAt", Value.string(args.producedAt));
+        }
+        return Value.object(m);
+    }
+
+    /**
+     * Mint a v1.4 BridgeDeclaration in the layered envelope/header/body
+     * shape. The returned {@link MintedEnvelope} carries the JCS-canonical
+     * bytes of the full memento and the attestation CID
+     * (= BLAKE3-512(JCS(envelope))).
+     *
+     * <p>{@code contractCid} on the returned envelope is the empty string;
+     * bridges have no signer-independent contract CID (only contracts do).
+     */
+    public static MintedEnvelope mintBridgeV14(MintBridgeV14Args args) {
+        Objects.requireNonNull(args.target, "args.target");
+        Objects.requireNonNull(args.declaredAt, "args.declaredAt");
+        Objects.requireNonNull(args.signerSeed, "args.signerSeed");
+        Value header = buildBridgeHeaderV14(args);
+        Value metadata = buildBridgeMetadataV14(args);
+        return assembleLayered(header, metadata, args.declaredAt, args.signerSeed, "");
+    }
+
+    // =========================================================================
     // Implications
     // =========================================================================
 
