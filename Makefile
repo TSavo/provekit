@@ -410,6 +410,8 @@ test-swift: build-swift
 .PHONY: test-zig
 test-zig:
 	cd implementations/zig/provekit-ir && zig build test
+	cd implementations/zig/provekit-self-contracts && zig build test
+	@echo "test-zig: native substrate (jcs + cbor + ed25519 + envelopes) verified"
 	cd implementations/zig/provekit-lift-zig && zig build test
 	cd implementations/zig/provekit-lift-zig && zig build
 	@echo "test-zig: lift-zig binary build verified"
@@ -421,6 +423,7 @@ test-zig:
 .PHONY: build-zig
 build-zig:
 	cd implementations/zig/provekit-ir && zig build
+	cd implementations/zig/provekit-self-contracts && zig build
 	cd implementations/zig/provekit-lift-zig && zig build
 	cd implementations/zig/provekit-lsp-zig && zig build
 
