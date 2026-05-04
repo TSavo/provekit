@@ -107,11 +107,17 @@ jobs:
           cache: maven
 
       # ---------------------------------------------------------------
-      # System-level deps: openssl, nlohmann-json. BLAKE3 is vendored
-      # at tools/blake3-vendored/, no system package required.
+      # System-level deps: openssl, nlohmann-json, libblake3 (Ruby FFI),
+      # libyaml (Ruby psych/bundler runtime). Run BEFORE setup-ruby so
+      # the bundler-cache step has libblake3 and libyaml already on the
+      # host when it resolves and builds native gems.
+      #
+      # cpp BLAKE3 is vendored at tools/blake3-vendored/; the Ruby kit's
+      # FFI binding to libblake3 needs the system package because no
+      # rubygem on Ruby 3.x exposes 64-byte XOF mode (per PR #226 notes).
       # ---------------------------------------------------------------
 
-      - name: Install C++ system deps + z3
+      - name: Install C++ system deps + z3 + libyaml
         # z3 is the SMT solver invoked by the TS workflow producer's
         # checkImplication / bridgeEnforcement / circularProof tests
         # (`provekit prove` substrate). Without it on PATH, every
@@ -120,16 +126,61 @@ jobs:
         # `expected 'undecidable' to be 'equivalent'`. The `prove`
         # workflow in provekit.yml installed z3; this gate did not.
         # Closes task #215 ("CI: TS workflow producer tests failing").
+        #
+        # libyaml-dev is needed for Ruby's psych (YAML) extension;
+        # bundler-cache fails with `libyaml-0.so.2: cannot open shared
+        # object file` without it on Ubuntu 24.04 hosted runners.
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             clang \
+            cmake \
             libsodium-dev \
             libssl-dev \
+            libyaml-dev \
             maven \
             nlohmann-json3-dev \
             z3
+
+      - name: Build + install libblake3 from upstream
+        # Ubuntu 24.04 LTS apt does not ship libblake3-dev (added in
+        # Ubuntu 25.10). The Ruby kit's BLAKE3 binding goes through FFI
+        # to libblake3 because no rubygem on Ruby 3.x exposes 64-byte
+        # XOF mode (per PR #226 notes: digest-blake3, blake3-rb,
+        # blake3ruby all 32-byte only). Build libblake3 from the
+        # official upstream and install to /usr/local/lib so Ruby's
+        # FFI loader finds it.
+        #
+        # Future: vendor BLAKE3 in the ruby kit itself (tools/blake3-vendored/
+        # is already in the repo for cpp). Tracked separately.
+        run: |
+          set -euxo pipefail
+          BLAKE3_VERSION=1.5.4
+          curl -fsSL "https://github.com/BLAKE3-team/BLAKE3/archive/refs/tags/${BLAKE3_VERSION}.tar.gz" -o /tmp/blake3.tar.gz
+          mkdir -p /tmp/blake3-build
+          tar -xzf /tmp/blake3.tar.gz -C /tmp/blake3-build
+          cd /tmp/blake3-build/BLAKE3-${BLAKE3_VERSION}/c
+          cmake -B build -DBLAKE3_USE_TBB=OFF -DBUILD_SHARED_LIBS=ON
+          cmake --build build --config Release
+          sudo cmake --install build
+          sudo ldconfig
+          ldconfig -p | grep -i blake3 || (echo "libblake3 not registered" && exit 1)
+
+      - name: Set up Ruby 3.3
+        # mint-ruby-self-contracts (PR #234, issue #209) ships a Ruby
+        # orchestrator that the rust CLI invokes via the lift-plugin-protocol
+        # RPC. Without ruby on PATH the orchestrator binary errors at exec
+        # and the contractSetCid pinned-CID test sees the empty-set sentinel.
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: implementations/ruby
+
+      # Zig setup deferred to a separate PR. mlugg/setup-zig@v1 with
+      # version: master gets 404s/503s across every mirror because the
+      # kit needs unreleased 0.16/0.17-dev API. Tracked as a follow-up.
 
       # ---------------------------------------------------------------
       # The gate.
