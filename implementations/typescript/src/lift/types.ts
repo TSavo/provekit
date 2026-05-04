@@ -43,6 +43,20 @@ export interface ContractDecl {
    * Populated by the provekit-annotations adapter.
    */
   targetContract?: string;
+  /**
+   * Source line the contract was lifted from. Used for call-edge locus
+   * when targetContract is present.
+   */
+   sourceLine?: number;
+}
+
+/** A call edge connecting a source contract to a target contract. */
+export interface CallEdgeDecl {
+  sourceContractCid: string;
+  targetContractCid: string | null;
+  targetSymbol: string;
+  callSiteLocus: { file: string; line: number; col: number };
+  evidenceTerm: unknown;
 }
 
 export interface AdapterWarning {
@@ -70,6 +84,7 @@ export interface AdapterReport {
 
 export interface LiftReport {
   decls: ContractDecl[];
+  callEdges?: CallEdgeDecl[];
   adapterReports: AdapterReport[];
   filesScanned: number;
   parseErrors: Array<{ path: string; message: string }>;

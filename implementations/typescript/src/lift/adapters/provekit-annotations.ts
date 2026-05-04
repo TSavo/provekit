@@ -112,6 +112,7 @@ function getParentFunctionName(node: ts.Node): string | null {
 /** Recursively find annotation-carrying nodes. */
 function walkAnnotations(
   node: ts.Node,
+  sourceFile: ts.SourceFile,
   sourcePath: string,
   decls: ContractDecl[],
   warnings: AdapterWarning[],
@@ -127,6 +128,7 @@ function walkAnnotations(
       const name = getFunctionName(node) ?? getParentFunctionName(node);
       if (name) {
         seen.count += 1;
+        const pos = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
         decls.push({
           name,
           outBinding: "out",
@@ -134,6 +136,7 @@ function walkAnnotations(
           adapter: ADAPTER,
           post: ann.post,
           targetContract: ann.targetName,
+          sourceLine: pos.line + 1,
         });
       } else {
         warnings.push({
@@ -147,7 +150,7 @@ function walkAnnotations(
   }
 
   ts.forEachChild(node, (child) =>
-    walkAnnotations(child, sourcePath, decls, warnings, seen),
+    walkAnnotations(child, sourceFile, sourcePath, decls, warnings, seen),
   );
 }
 
@@ -156,7 +159,7 @@ export function liftFile(sourceFile: ts.SourceFile, sourcePath: string): Adapter
   const warnings: AdapterWarning[] = [];
   const seen = { count: 0 };
 
-  walkAnnotations(sourceFile, sourcePath, decls, warnings, seen);
+  walkAnnotations(sourceFile, sourceFile, sourcePath, decls, warnings, seen);
 
   return { decls, seen: seen.count, lifted: decls.length, warnings };
 }

@@ -46,6 +46,7 @@ export type {
   AdapterReport,
   AdapterOutput,
   AdapterWarning,
+  CallEdgeDecl,
 } from "./types.js";
 
 export { liftZodFile, liftFastCheckFile, liftClassValidatorFile, liftVitestTestsFile };
@@ -224,6 +225,8 @@ export interface MintOutput {
   contractCids: Record<string, string>;
   /** Number of decls collapsed by content-addressed dedup. */
   deduplicated: number;
+  /** Call edges for annotation-driven cross-kit bridges. */
+  callEdges: CallEdgeDecl[];
 }
 
 export class NameCollisionDifferentIrError extends Error {
@@ -298,12 +301,27 @@ export function mintProof(decls: ContractDecl[], opts: LiftOptions): MintOutput 
     declaredAt: opts.producedAt,
   });
 
+  // Generate call edges for annotation-driven cross-kit bridges
+  const callEdges: CallEdgeDecl[] = [];
+  for (const d of decls) {
+    if (!d.targetContract || !d.sourceLine) continue;
+    if (!contractCids[d.name]) continue;
+    callEdges.push({
+      sourceContractCid: contractCids[d.name]!,
+      targetContractCid: null,
+      targetSymbol: d.targetContract,
+      callSiteLocus: { file: d.sourcePath, line: d.sourceLine, col: 0 },
+      evidenceTerm: { kind: "atomic", name: "true", args: [] },
+    });
+  }
+
   return {
     bytes: built.bytes,
     cid: built.cid,
     memberCount: members.size,
     contractCids,
     deduplicated,
+    callEdges,
   };
 }
 
