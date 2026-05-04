@@ -16,6 +16,26 @@ That's the answer. The reasoning that follows explains why none of those existin
 
 The competitor isn't another IR. The competitor is the absence of an IR for proofs. ProvekIt fills that gap.
 
+## The real innovation: byte-ordering invariance and representation invariance
+
+Existence of an IR for proofs is mundane. Boogie IL, Why-IR, and others have intermediate representations of proof obligations. The hard part — and the actual innovation — is that for any given proof, Proof IR has:
+
+- **Byte-ordering invariance.** Same logical content produces bytes in the same order. Every machine. Every language. Every prover. JCS canonicalization (RFC 8785) for JSON content, locked CDDL key orders, deterministic CBOR encoding (RFC 8949 §4.2.1) for binary content. No floating ordering decisions, no implementation-defined behavior, no "we sorted alphabetically here but lexicographically there." One canonical order.
+
+- **Representation invariance.** Same logical content produces ONE canonical encoding, not "an encoding among many." There is exactly one valid byte sequence for a given proof. Differently-encoded "equivalent" forms are not equivalent to the substrate; only the canonical form has standing.
+
+These two invariants are what make content-addressing meaningful. `BLAKE3-512(proof_bytes)` identifies the proof ONLY if `proof_bytes` is canonical — otherwise the CID identifies *one of N possible encodings* of the proof, and the substrate's whole identity model collapses. With invariants, the CID *is* the proof's identity.
+
+**Content-addressing lives above the language.** Once the IR is byte-deterministic, the content-CID is independent of which kit emitted it. A Rust kit and a Python kit producing proofs of the same logical claim produce byte-identical output. Their CIDs match. Their signatures over those bytes compose. The substrate's primitives (federation, multi-prover consensus, hash-preserving translation across languages) all stand on this property.
+
+If the bytes weren't canonical, "content-addressable" would be marketing. The CID would identify "this particular encoding" rather than "this proof." Federation would fail at the first cross-kit composition: signer A's CID would not equal signer B's CID for the same logical proof. Multi-prover consensus would fail at the first divergent encoding. The substrate's cryptographic identity claim wouldn't hold.
+
+This is what other IRs that exist for proofs (Boogie IL, Why-IR) don't have. They are intermediate representations of proof obligations within their respective frameworks. They aren't byte-canonical wire formats whose CIDs are stable across machines, languages, and provers. The existence-of-the-IR is the mundane part; the byte-ordering + representation invariance is the move.
+
+**ProvekIt is therefore a universal protocol for correctness, not a tool for one ecosystem.** Any language, any prover, any artifact with logical structure can be brought into the substrate by giving it a lifter that emits canonical bytes. The protocol doesn't care about the source language; it cares about whether the bytes meet the canonicalization rules. Universality is a *consequence of the invariants*, not an add-on feature. A language that doesn't exist yet, a prover that hasn't been built yet, a verification framework someone will design next decade — all of them join the federation by emitting canonical Proof IR bytes. The substrate scales to languages and tools we haven't imagined, because the canonical-form rules don't depend on the source.
+
+For the formal treatment of this property — same algorithm in different languages producing the same CID — see [Hash-Preserving Translation](../../papers/03-substrate-not-blockchain.md) (the manifesto's framing) and the bridge linkage protocol spec.
+
 ## Why none of the existing IRs work
 
 The skeptic asking "why didn't you use X?" is implicitly assuming the IR's job is what X already does. The answer is that the IR's job is something X doesn't do. Different requirements, different design, different name.
