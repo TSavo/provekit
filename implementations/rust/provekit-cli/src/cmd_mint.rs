@@ -187,6 +187,18 @@ fn find_manifest(project_root: &Path, surface: &str) -> Result<PluginManifest, S
 // Lift-protocol dispatch
 // ---------------------------------------------------------------------------
 
+/// Build the `params` object for the lift JSON-RPC request.
+///
+/// Extracted as a pure function so unit tests can assert the C3 invariant
+/// (non-empty `source_paths`) without spawning a subprocess.
+fn build_lift_params(surface: &str) -> Value {
+    json!({
+        "surface": surface,
+        "source_paths": ["."],
+        "options": {"layer": "all"}
+    })
+}
+
 /// Result of a successful lift dispatch.
 struct DispatchResult {
     filename_cid: String,
@@ -282,16 +294,16 @@ fn dispatch(
         }
     }
 
-    // 2. lift
+    // 2. lift — send source_paths:["."] to satisfy C3 non-empty invariant.
+    //    Most lifters walk their own working directory regardless of source_paths,
+    //    but C3 (`verify_c3_lift_request_well_formed`) requires the array to be
+    //    non-empty. Mirror the pattern from cmd_prove::capture_rpc.
+    let lift_params = build_lift_params(surface);
     let lift_req = json!({
         "jsonrpc": "2.0",
         "id": 2,
         "method": "lift",
-        "params": {
-            "surface": surface,
-            "source_paths": [],
-            "options": {"layer": "all"}
-        }
+        "params": lift_params
     });
     writeln!(stdin, "{lift_req}").map_err(|e| format!("write lift: {e}"))?;
     let lift_resp = read_response(&mut reader, 2)?;
@@ -654,6 +666,28 @@ mod tests {
         let a = build_signed_attestation("go", "blake3-512:aa", "blake3-512:bb");
         let b = build_signed_attestation("go", "blake3-512:aa", "blake3-512:bb");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn dispatch_lift_params_source_paths_non_empty() {
+        // C3 (verify_c3_lift_request_well_formed) requires source_paths to be
+        // a non-empty array. Sending [] was the bug fixed in issue #166.
+        let params = build_lift_params("rust");
+        let paths = params["source_paths"]
+            .as_array()
+            .expect("source_paths must be an array");
+        assert!(
+            !paths.is_empty(),
+            "source_paths must not be empty — was C3 violation (issue #166)"
+        );
+        assert_eq!(paths[0].as_str(), Some("."), "first entry should be '.'");
+    }
+
+    #[test]
+    fn dispatch_lift_params_has_surface_and_options() {
+        let params = build_lift_params("go");
+        assert_eq!(params["surface"].as_str(), Some("go"));
+        assert_eq!(params["options"]["layer"].as_str(), Some("all"));
     }
 
     #[test]
