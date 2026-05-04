@@ -20,6 +20,14 @@
  *   cc -std=c11 -Wall -Wextra -o provekit-lsp-c main.c
  */
 
+/* `getline` and `ssize_t` are POSIX extensions; glibc gates them behind
+ * feature-test macros. Define _GNU_SOURCE before any system header is
+ * pulled in (review feedback: PR #165 / CodeRabbit).
+ *
+ * Also include <sys/types.h> explicitly for `ssize_t` so the build doesn't
+ * rely on transitive inclusion through <stdio.h>. */
+#define _GNU_SOURCE
+#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -396,8 +404,39 @@ static ParseResult parse_c_source(const char *source) {
                 }
                 annotate_next = 0;
 
-                /* If this line opens a body, set current_fn for call-edge tracking. */
-                if (strchr(line, '{') != NULL) {
+                /* If this line opens a body, set current_fn for call-edge tracking.
+                 * Also handle Allman-style functions where the opening brace is
+                 * on the next non-blank line (review feedback: PR #165 / CodeRabbit). */
+                int opens_body = (strchr(line, '{') != NULL);
+                if (!opens_body) {
+                    /* Peek forward for an Allman-style brace on the next non-blank line. */
+                    for (int j = i + 1; j < n_lines && j < i + 4; j++) {
+                        int jlen = lines_len[j];
+                        if (jlen < 0) jlen = 0;
+                        if (jlen >= (int)sizeof(line)) jlen = (int)sizeof(line) - 1;
+                        char nextline[4096];
+                        memcpy(nextline, lines_start[j], (size_t)jlen);
+                        nextline[jlen] = '\0';
+                        /* Skip blank lines. */
+                        int blank = 1;
+                        for (int ci = 0; nextline[ci]; ci++) {
+                            if (nextline[ci] != ' ' && nextline[ci] != '\t' &&
+                                nextline[ci] != '\r' && nextline[ci] != '\n') {
+                                blank = 0;
+                                break;
+                            }
+                        }
+                        if (blank) continue;
+                        /* First non-blank: a leading '{' (after whitespace) means Allman. */
+                        for (int ci = 0; nextline[ci]; ci++) {
+                            if (nextline[ci] == ' ' || nextline[ci] == '\t') continue;
+                            if (nextline[ci] == '{') opens_body = 1;
+                            break;
+                        }
+                        break;
+                    }
+                }
+                if (opens_body) {
                     snprintf(current_fn, MAX_NAME, "%s", fname);
                 }
             }
@@ -517,23 +556,21 @@ static void handle_parse(const char *id, const char *json_line) {
     }
     buf_append_char(&decls_buf, ']');
 
-    /* Build callEdges JSON array. */
+    /* Build callEdges JSON array.
+     *
+     * The canonical IR shape is {sourceContractCid, targetContractCid,
+     * targetSymbol, callSiteLocus, evidenceTerm} per spec #114. The C LSP
+     * cannot compute contract CIDs (no JCS encoder + BLAKE3 here), so the
+     * legacy {callee, caller, line} shape was silently dropped by the daemon.
+     * Emit an empty array until contract-CID computation is available; this
+     * is graceful downgrade rather than emitting a non-canonical shape.
+     * (Review feedback: PR #165 / Copilot.) */
     Buf edges_buf;
     buf_init(&edges_buf);
-    buf_append_char(&edges_buf, '[');
-    for (int i = 0; i < pr.n_edges; i++) {
-        if (i > 0) buf_append_char(&edges_buf, ',');
-        buf_append(&edges_buf, "{\"callee\":");
-        json_escape_str(&edges_buf, pr.edges[i].callee);
-        buf_append(&edges_buf, ",\"caller\":");
-        json_escape_str(&edges_buf, pr.edges[i].caller);
-        buf_append(&edges_buf, ",\"line\":");
-        char lstr[32];
-        snprintf(lstr, sizeof(lstr), "%d", pr.edges[i].line);
-        buf_append(&edges_buf, lstr);
-        buf_append_char(&edges_buf, '}');
-    }
-    buf_append_char(&edges_buf, ']');
+    buf_append(&edges_buf, "[]");
+    /* Suppress unused-variable warning: we still parse call sites for
+     * future shape upgrade; pr.n_edges is intentionally unread here. */
+    (void)pr.n_edges;
 
     /* Build warnings array. */
     Buf warn_buf;
