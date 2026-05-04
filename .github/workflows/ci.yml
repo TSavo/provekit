@@ -333,6 +333,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install build-essential (make + cc)
+        # The prove-X targets call `make`. The self-hosted runner image is
+        # lean and does not pre-install build-essential; the conformance
+        # job installs it as part of its bigger apt block, but each matrix
+        # entry here gets a fresh runner. Install up-front so `make` exists
+        # before any matrix step shells out to it. (Review feedback: PR #165.)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends build-essential
+
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
