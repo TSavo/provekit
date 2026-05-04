@@ -32,6 +32,8 @@ require_relative "ir"
 require_relative "cbor"
 require_relative "signing"
 require_relative "proof_envelope"
+require_relative "claim_envelope"
+require_relative "contract_set"
 
 module Provekit
   module SelfContracts
@@ -39,7 +41,6 @@ module Provekit
     DECLARED_AT  = "2026-04-30T18:00:00.000Z".freeze
     CATALOG_NAME = "@provekit/ruby-self-contracts".freeze
     CATALOG_VERSION = "1.0.0".freeze
-    LAYERED_SCHEMA_VERSION = "2".freeze
 
     # ---- Slab authoring ---------------------------------------------------
     #
@@ -214,110 +215,55 @@ module Provekit
 
     # ---- Contract / contract-set CID --------------------------------------
     #
-    # contractCid is the signer-independent BLAKE3-512(JCS({name, outBinding,
-    # pre?, post?, inv?})). The contractSetCid is BLAKE3-512(JCS(<sorted
-    # contractCids>)). Both shapes are byte-identical to the rust/cpp/go/ts
-    # peers per spec 2026-05-03-contract-cid-vs-attestation-cid.md and
+    # Both delegate to the canonical kit lib. contractCid is signer-
+    # independent BLAKE3-512(JCS({name, outBinding, pre?, post?, inv?}));
+    # contractSetCid is BLAKE3-512(JCS(<sorted contractCids>)). Both
+    # shapes are byte-identical to the rust/cpp/go/ts/python peers per
+    # spec 2026-05-03-contract-cid-vs-attestation-cid.md and
     # 2026-05-03-contract-set-extension.md.
 
     def self.contract_cid(decl)
-      obj = { "name" => decl.name, "outBinding" => decl.out_binding }
-      obj["pre"]  = decl.pre  if decl.pre
-      obj["post"] = decl.post if decl.post
-      obj["inv"]  = decl.inv  if decl.inv
-      jcs = IR_M::Jcs.encode(obj)
-      Blake3.hex(jcs)
+      Provekit::ClaimEnvelope.contract_cid(
+        contract_name: decl.name,
+        out_binding: decl.out_binding,
+        pre: decl.pre,
+        post: decl.post,
+        inv: decl.inv,
+      )
     end
 
     def self.compute_contract_set_cid(content_cids)
-      sorted = content_cids.dup.sort
-      jcs = IR_M::Jcs.encode(sorted)
-      Blake3.hex(jcs)
+      Provekit::ContractSet.compute_cid(content_cids)
     end
 
     # ---- Layered memento mint --------------------------------------------
     #
-    # Ports rust `provekit-claim-envelope` mint_contract. The result is the
-    # JCS-canonical bytes of `{envelope, header, metadata}`; the attestation
-    # CID is BLAKE3-512(JCS(envelope)). Per
-    # protocol/specs/2026-04-30-memento-envelope-grammar.md.
-
-    def self.hash_value_jcs(value)
-      Blake3.hex(IR_M::Jcs.encode(value))
-    end
-
-    def self.mint_contract(decl, signer_seed: Provekit::Signing::FOUNDATION_V0_SEED, produced_by: PRODUCED_BY, produced_at: DECLARED_AT, source_path: "")
-      raise ArgumentError, "contract must carry at least one of pre/post/inv" if decl.pre.nil? && decl.post.nil? && decl.inv.nil?
-      raise ArgumentError, "out_binding must be non-empty" if decl.out_binding.to_s.empty?
-
-      # propertyHash = BLAKE3-512(JCS({pre?, post?, inv?, outBinding}))
-      ph = {}
-      ph["pre"]  = decl.pre  if decl.pre
-      ph["post"] = decl.post if decl.post
-      ph["inv"]  = decl.inv  if decl.inv
-      ph["outBinding"] = decl.out_binding
-      property_hash = hash_value_jcs(ph)
-
-      # bindingHash = BLAKE3-512(JCS({producerId, contractName, propertyHash}))
-      bh = {
-        "producerId" => produced_by,
-        "contractName" => decl.name,
-        "propertyHash" => property_hash,
-      }
-      binding_hash = hash_value_jcs(bh)
-
-      header_cid = contract_cid(decl)
-
-      header = { "schemaVersion" => LAYERED_SCHEMA_VERSION, "kind" => "contract", "cid" => header_cid }
-      header["name"] = decl.name
-      header["outBinding"] = decl.out_binding
-      header["pre"]  = decl.pre  if decl.pre
-      header["post"] = decl.post if decl.post
-      header["inv"]  = decl.inv  if decl.inv
-      header["verdict"] = "holds"
-      header["bindingHash"] = binding_hash
-      header["propertyHash"] = property_hash
-      header["inputCids"] = []
-
-      authoring = {
-        "producerKind" => "kit-author",
-        "author" => produced_by,
-      }
-      authoring["note"] = "self-contract from #{source_path}" unless source_path.empty?
-
-      metadata = {
-        "authoring" => authoring,
-        "producedBy" => produced_by,
-        "producedAt" => produced_at,
-      }
-      metadata["preHash"]  = hash_value_jcs(decl.pre)  if decl.pre
-      metadata["postHash"] = hash_value_jcs(decl.post) if decl.post
-      metadata["invHash"]  = hash_value_jcs(decl.inv)  if decl.inv
-
-      # Signing message = JCS({header, metadata}); signature is the spec's
-      # self-identifying string form ("ed25519:" + base64(64-byte sig)).
-      signing_msg = IR_M::Jcs.encode({ "header" => header, "metadata" => metadata })
-      signature   = Provekit::Signing.ed25519_sign_string(signer_seed, signing_msg)
-      signer_str  = Provekit::Signing.ed25519_pubkey_string(signer_seed)
-
-      envelope = {
-        "signer" => signer_str,
-        "declaredAt" => produced_at,
-        "signature" => signature,
-      }
-      envelope_jcs = IR_M::Jcs.encode(envelope)
-      attestation_cid = Blake3.hex(envelope_jcs)
-
-      memento_jcs = IR_M::Jcs.encode({
-        "envelope" => envelope,
-        "header" => header,
-        "metadata" => metadata,
-      })
-
+    # Delegates to Provekit::ClaimEnvelope.mint_contract (the canonical
+    # v1.2 layered shape per substrate-layers spec). Wraps it with the
+    # orchestrator's `source_path` -> authoring `note` convention.
+    # Returns a Hash {cid:, contract_cid:, canonical_bytes:} for the
+    # bundle composer below.
+    def self.mint_contract(decl, signer_seed: Provekit::Signing::FOUNDATION_V0_SEED,
+                           produced_by: PRODUCED_BY, produced_at: DECLARED_AT,
+                           source_path: "")
+      authoring = Provekit::ClaimEnvelope::AuthoringKitAuthor.new(
+        author: produced_by,
+        note: source_path.to_s.empty? ? nil : "self-contract from #{source_path}",
+      )
+      minted = Provekit::ClaimEnvelope.mint_contract(
+        contract_name: decl.name,
+        out_binding: decl.out_binding,
+        pre: decl.pre, post: decl.post, inv: decl.inv,
+        produced_by: produced_by,
+        produced_at: produced_at,
+        authoring: authoring,
+        signer_seed: signer_seed,
+        input_cids: [],
+      )
       {
-        cid: attestation_cid,
-        contract_cid: header_cid,
-        canonical_bytes: memento_jcs.b,
+        cid: minted.cid,
+        contract_cid: minted.contract_cid,
+        canonical_bytes: minted.canonical_bytes,
       }
     end
 
