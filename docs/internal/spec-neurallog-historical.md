@@ -558,7 +558,7 @@ Import resolution maps import statements to source files. This is the most langu
 **Go (future adapter):**
 - `import "myapp/inventory"` → resolve from `$GOPATH` or module path
 
-Each adapter implements `resolveImports()` using its language's resolution algorithm. The engine doesn't know or care how resolution works — it just gets back a list of `ImportedFile` objects with paths and source content.
+Each adapter implements `resolveImports()` using its language's resolution algorithm. The engine doesn't know or care how resolution works: it just gets back a list of `ImportedFile` objects with paths and source content.
 
 #### Stack Frame Inspection
 
@@ -604,7 +604,7 @@ Writing an adapter for a new language requires:
 4. Stack frame inspection using the language's runtime APIs
 5. Visibility rules for the language's access model
 
-The engine, the axiom templates, the contract schema, the proof format, Z3, the principle library — none of these change. A new language is just a new adapter.
+The engine, the axiom templates, the contract schema, the proof format, Z3, the principle library: none of these change. A new language is just a new adapter.
 
 ## The Derivation Pipeline
 
@@ -627,13 +627,13 @@ Tree-sitter (or language-native AST) parses the source file. Extract:
 **Step 0c: Resolve depth-1 imports.**
 Follow import statements to their source files. Parse each imported file. Extract:
 - Function signatures and implementations called by the target function
-- Only include functions actually called — not the entire imported file
+- Only include functions actually called, not the entire imported file
 
 **Step 0d: Gather existing contracts.**
 Read `.neurallog/contracts/` for:
 - Any existing contracts in the target file (other call sites already derived)
 - Contracts for imported functions (their pre/postconditions and side effects)
-- Contracts for transitive dependencies (if available — contracts only, not source)
+- Contracts for transitive dependencies (if available; contracts only, not source)
 
 **Step 0e: Select relevant axioms.**
 AST analysis of the target function determines which axioms apply:
@@ -670,7 +670,7 @@ The template itself contains:
 - The output format specification (proven properties + reachable violations, each tagged with axiom or `[NEW]`)
 - The contract schema the LLM should produce (preconditions, postconditions, side effects, domain constraints, visibility, idempotency guard)
 
-The full prompt template is maintained at `prompts/invariant_derivation.md` and evolves as new axioms are added. Phase 0 assembles a concrete prompt from the template — deterministically, with no LLM calls.
+The full prompt template is maintained at `prompts/invariant_derivation.md` and evolves as new axioms are added. Phase 0 assembles a concrete prompt from the template, deterministically, with no LLM calls.
 
 ### Phase 1: Contract Derivation (LLM, One Call)
 
@@ -678,15 +678,15 @@ The assembled prompt is sent to the LLM. One call per log statement.
 
 The LLM produces:
 
-**Proven properties** — assertions guaranteed by the code and existing contracts, expressed as self-contained SMT-LIB blocks with `(check-sat)` expecting `unsat`.
+**Proven properties**, assertions guaranteed by the code and existing contracts, expressed as self-contained SMT-LIB blocks with `(check-sat)` expecting `unsat`.
 
-**Reachable violations** — preconditions of called functions that the target code doesn't establish, expressed as self-contained SMT-LIB blocks with `(check-sat)` expecting `sat`. Each violation is tagged with the axiom that led to its discovery, or `[NEW]` if discovered through free reasoning.
+**Reachable violations**, preconditions of called functions that the target code doesn't establish, expressed as self-contained SMT-LIB blocks with `(check-sat)` expecting `sat`. Each violation is tagged with the axiom that led to its discovery, or `[NEW]` if discovered through free reasoning.
 
-**The function contract** — the target function's preconditions, postconditions, and side effects, extracted from the analysis. This is what gets cached and used by Layer 2 (mechanical axiom application) for future derivations.
+**The function contract**, the target function's preconditions, postconditions, and side effects, extracted from the analysis. This is what gets cached and used by Layer 2 (mechanical axiom application) for future derivations.
 
 The LLM output is parsed. Each SMT-LIB block is fed to Z3 for validation:
-- Proven properties: Z3 must return `unsat`. If it returns `sat`, the "proof" is wrong — discard or flag.
-- Reachable violations: Z3 must return `sat`. If it returns `unsat`, the "bug" is a false positive — discard.
+- Proven properties: Z3 must return `unsat`. If it returns `sat`, the "proof" is wrong; discard or flag.
+- Reachable violations: Z3 must return `sat`. If it returns `unsat`, the "bug" is a false positive; discard.
 
 Only Z3-validated results are committed. The LLM proposes; Z3 verifies.
 
@@ -694,7 +694,7 @@ The validated contract is written to `.neurallog/contracts/`. Proof entries are 
 
 ### Phase 2: Principle Classification (Conditional, Rare)
 
-Phase 2 only runs when Phase 1 produces violations tagged `[NEW]` — findings that don't match any existing axiom.
+Phase 2 only runs when Phase 1 produces violations tagged `[NEW]`, findings that don't match any existing axiom.
 
 **Step 2a: Classify.**
 A separate LLM call receives the `[NEW]` violation and the full axiom library. It determines: is this genuinely new, or does it actually fit an existing axiom that the Phase 1 LLM failed to tag correctly?
@@ -713,9 +713,9 @@ Self-validation (same model validates its own principle) launders shared blind s
 
 1. **Different model as adversary.** A different model (e.g., haiku if opus derived, or vice versa) tries to produce code that the new principle *shouldn't* flag but does (false positive), or code that *should* be flagged but isn't (false negative). The principle commits only if the adversary can't find counterexamples within 10 attempts. This is cheap (a haiku adversary against an opus derivation) and directly addresses the shared-bias problem.
 
-2. **Historical corpus.** If the codebase has historical bug-fix commits (PRs tagged `fix:`, `bugfix:`, etc.), the new principle is tested against them. The threshold is relative, not absolute: the principle must correctly classify bugs at a rate above the base rate of the corpus. A codebase where 5% of commits are bug fixes requires the principle to flag more than 5% of bug-fix commits as violations — otherwise it's no better than random. Non-bug commits must not be flagged at a rate exceeding 1% (false positive ceiling). This is empirical grounding, not LLM self-report.
+2. **Historical corpus.** If the codebase has historical bug-fix commits (PRs tagged `fix:`, `bugfix:`, etc.), the new principle is tested against them. The threshold is relative, not absolute: the principle must correctly classify bugs at a rate above the base rate of the corpus. A codebase where 5% of commits are bug fixes requires the principle to flag more than 5% of bug-fix commits as violations; otherwise it's no better than random. Non-bug commits must not be flagged at a rate exceeding 1% (false positive ceiling). This is empirical grounding, not LLM self-report.
 
-3. **Cross-file generalization.** The principle is added to the prompt and used to re-derive contracts for a different file. Does it find violations the previous principle set missed? This is the weakest check — necessary but not sufficient.
+3. **Cross-file generalization.** The principle is added to the prompt and used to re-derive contracts for a different file. Does it find violations the previous principle set missed? This is the weakest check; necessary but not sufficient.
 
 **Attempt count scales with principle stakes.** 10 adversarial attempts is not a universal constant. Principles that fire on security-critical or financial code paths deserve 100+ attempts. Cheap boundary checks are fine at 10. The attempt count is a configurable knob, defaulting to 10 and overridable per-principle based on the code paths it affects.
 
@@ -725,10 +725,10 @@ Self-validation (same model validates its own principle) launders shared blind s
 - Principles are grouped into confidence tiers: **blocking** (high confidence, security/payments), **warning** (medium confidence, general logic), **advisory** (new or low confidence, shown but not counted as violations). Developers can configure which tiers block CI.
 - The system tracks per-principle FP rates from developer feedback (dismissals, overrides) and auto-quarantines principles that cross the threshold.
 
-Adversarial validation is **empirical hardening, not soundness.** Absence of counterexamples within N attempts does not prove the principle is correct — it proves the adversary couldn't break it quickly. This is consistent with the "Why Not Refinement Types?" section: neurallog does not claim soundness. It claims useful, empirically validated, continuously improving verification. The hedges are load-bearing; do not drop them.
+Adversarial validation is **empirical hardening, not soundness.** Absence of counterexamples within N attempts does not prove the principle is correct; it proves the adversary couldn't break it quickly. This is consistent with the "Why Not Refinement Types?" section: neurallog does not claim soundness. It claims useful, empirically validated, continuously improving verification. The hedges are load-bearing; do not drop them.
 
 **Step 2d: Formalize as axiom template.**
-If validated, the principle is also expressed as a formal axiom template — a parameterizable Z3 check generator that can be applied mechanically in Layer 2 without the LLM.
+If validated, the principle is also expressed as a formal axiom template, a parameterizable Z3 check generator that can be applied mechanically in Layer 2 without the LLM.
 
 **Step 2e: Commit.**
 The new principle is written to `.neurallog/principles/`. The principle hash changes. All contracts derived without this principle are now stale. Re-derivation happens lazily on next cache miss, or can be triggered explicitly.
@@ -818,15 +818,15 @@ Proof log: continuous, formally verified record of software behavior
 
 ## What the Proof Log Replaces
 
-- **Logging** — every entry is a log line. Verified ones have proofs. Failed ones have formal diagnostics.
-- **Assertions** — contracts are assertions derived from code context, not manually written.
-- **Monitoring/alerting** — contract violations are alerts grounded in formal proofs.
-- **Static analysis** — cross-contract consistency checking finds bugs before runtime, from the programmer's own implicit beliefs about their code.
-- **Compliance/auditing** — the proof log is a machine-verifiable record of runtime behavior. Not "trust our monitoring" but "here, verify it yourself."
+- **Logging**: every entry is a log line. Verified ones have proofs. Failed ones have formal diagnostics.
+- **Assertions**: contracts are assertions derived from code context, not manually written.
+- **Monitoring/alerting**: contract violations are alerts grounded in formal proofs.
+- **Static analysis**: cross-contract consistency checking finds bugs before runtime, from the programmer's own implicit beliefs about their code.
+- **Compliance/auditing**: the proof log is a machine-verifiable record of runtime behavior. Not "trust our monitoring" but "here, verify it yourself."
 
 ## Two Entry Points, Same Engine
 
-neurallog has two entry points. Both use the same engine — same contracts, same axioms, same Z3, same proof format. One runs without the application. One runs with it.
+neurallog has two entry points. Both use the same engine: same contracts, same axioms, same Z3, same proof format. One runs without the application. One runs with it.
 
 ### Dev/CI Mode: Static Analysis from Log Statements
 
@@ -859,7 +859,7 @@ neurallog analyze src/ --coverage    # the map
 
 The `--diff` mode is the fast path for CI: only re-derive contracts for files that changed, then re-run axiom application against the full contract set. Changed code gets cached contracts. Axiom application is always mechanical and fast.
 
-The `--coverage` mode produces the map promised in the adoption narrative — the concrete artifact that shows what's verified and what isn't:
+The `--coverage` mode produces the map promised in the adoption narrative, the concrete artifact that shows what's verified and what isn't:
 
 ```
 neurallog coverage report: src/
@@ -886,18 +886,18 @@ Files with most unverified call sites:
   src/utils/transform.ts         0 gaps   (fully verified)
 ```
 
-This is the "you've never had this map before" artifact. It shows exactly where to invest: annotate transactions in payment.ts, refactor callbacks in webhook.ts, and leave transform.ts alone — it's already proven.
+This is the "you've never had this map before" artifact. It shows exactly where to invest: annotate transactions in payment.ts, refactor callbacks in webhook.ts, and leave transform.ts alone; it's already proven.
 
 ### Production Mode: Runtime Verification via Logging Transport
 
 ```typescript
-// TypeScript — add a pino transport
+// TypeScript, add a pino transport
 import pino from 'pino';
 const logger = pino({ transport: { target: 'neurallog' } });
 ```
 
 ```python
-# Python — add a logging handler
+# Python, add a logging handler
 import logging
 from neurallog import NeuralLogHandler
 logging.root.addHandler(NeuralLogHandler())
@@ -915,21 +915,21 @@ The transport hooks into the existing logger. When a log call fires:
 The original log call still executes normally. neurallog is invisible to the programmer and to the application.
 
 Production mode does everything dev mode does, plus:
-- **Runtime value verification** — contracts checked against actual values, not just static analysis
-- **Proof log** — continuous, formally verified record of runtime behavior
-- **Live violation detection** — bugs caught in production with formal proofs
+- **Runtime value verification**: contracts checked against actual values, not just static analysis
+- **Proof log**: continuous, formally verified record of runtime behavior
+- **Live violation detection**: bugs caught in production with formal proofs
 
 ### The Relationship Between Modes
 
 Dev mode finds bugs before you ship. Production mode proves correctness while you run.
 
-Dev mode produces **static proofs** — "for all possible values satisfying the preconditions, this property holds." These are universal guarantees derived from the code structure.
+Dev mode produces **static proofs**: "for all possible values satisfying the preconditions, this property holds." These are universal guarantees derived from the code structure.
 
-Production mode produces **runtime proofs** — "at this moment, with these specific values, this property held." These are concrete evidence of correctness for each execution.
+Production mode produces **runtime proofs**: "at this moment, with these specific values, this property held." These are concrete evidence of correctness for each execution.
 
 Both kinds of proof live in the same proof store, use the same format, and are independently verifiable with Z3.
 
-A codebase that passes `neurallog analyze` with zero violations is formally verified at the static level. A codebase that additionally runs the production transport and sees zero runtime violations is formally verified at both levels — the code is correct in theory AND in practice.
+A codebase that passes `neurallog analyze` with zero violations is formally verified at the static level. A codebase that additionally runs the production transport and sees zero runtime violations is formally verified at both levels; the code is correct in theory AND in practice.
 
 ### Runtime Deployment Modes
 
@@ -945,7 +945,7 @@ The modes are not mutually exclusive. A log statement in a payment path might be
 
 ## Output and Transport
 
-The proof log is as pluggable as any logging framework. neurallog doesn't own the output — it produces structured proof entries and sends them wherever you want.
+The proof log is as pluggable as any logging framework. neurallog doesn't own the output; it produces structured proof entries and sends them wherever you want.
 
 ### Proof Entry Format
 
@@ -969,25 +969,25 @@ Every evaluation produces a structured proof entry:
 
 Proof entries flow through pluggable transports, just like any logging framework:
 
-- **stdout** — structured JSON lines, pipe them wherever you want
-- **File** — append-only local proof log
-- **HTTP** — POST to a remote proof store, SIEM, or observability platform
-- **Syslog** — drop into existing log infrastructure
-- **Message queue** — Kafka, NATS, Redis streams — for high-throughput production
-- **Custom** — implement a transport interface, send proof entries anywhere
+- **stdout**: structured JSON lines, pipe them wherever you want
+- **File**: append-only local proof log
+- **HTTP**: POST to a remote proof store, SIEM, or observability platform
+- **Syslog**: drop into existing log infrastructure
+- **Message queue** (Kafka, NATS, Redis streams) for high-throughput production
+- **Custom**: implement a transport interface, send proof entries anywhere
 
 Multiple transports can be active simultaneously. The same proof entry can go to stdout for local debugging AND to Kafka for production aggregation.
 
 ### Existing Log Framework Integration
 
-neurallog doesn't replace your logging pipeline — it augments it. Proof entries are structured data. They can be formatted as:
+neurallog doesn't replace your logging pipeline; it augments it. Proof entries are structured data. They can be formatted as:
 
 - Standard log lines (for human consumption)
 - Structured JSON (for machine consumption)
 - OpenTelemetry spans (for tracing integration)
 - Custom formats (for whatever your infrastructure expects)
 
-A proof entry that passes is a verified log line. A proof entry that fails is an alert. The downstream system decides how to handle it — neurallog just produces the evidence.
+A proof entry that passes is a verified log line. A proof entry that fails is an alert. The downstream system decides how to handle it: neurallog just produces the evidence.
 
 ## Cross-File Proof Chains
 
@@ -1001,7 +1001,7 @@ A postcondition in one file doesn't magically become a precondition in another. 
 
 When `pricing.py` calls `stock = inventory.check_availability(product_id)`, the call site creates a **binding**: the return value of `check_availability` is bound to the local variable `stock` in `pricing.py`. The postcondition of `check_availability` (`return_value >= 0`) is carried across the file boundary through this binding to become `stock >= 0` in `pricing.py`.
 
-This is not name matching. It is call-site binding — the same mechanism programming languages use for argument passing and return values. The AST gives us:
+This is not name matching. It is call-site binding: the same mechanism programming languages use for argument passing and return values. The AST gives us:
 - The call expression: `inventory.check_availability(product_id)`
 - The assignment target: `stock`
 - The callee's contract: postcondition on return value
@@ -1011,13 +1011,13 @@ The composition rule: for each call expression `result = callee(args)`:
 2. The callee's postconditions on its parameters bind to the corresponding `args`
 3. The callee's side effects are applied to the shared state model
 
-When variables are renamed across boundaries — `stock` in one file, `available_qty` in another — the binding is through the call site, not through the name. The AST resolves this mechanically.
+When variables are renamed across boundaries (`stock` in one file, `available_qty` in another) the binding is through the call site, not through the name. The AST resolves this mechanically.
 
-**Interfaces and dynamic dispatch.** When the callee is an interface rather than a concrete function, composition uses the interface's contract, not any specific implementation's. Implementations must satisfy the interface contract (a separate check). The caller composes against the interface — the weakest guaranteed behavior. This is standard in refinement type systems and is the only sound approach for dynamic dispatch.
+**Interfaces and dynamic dispatch.** When the callee is an interface rather than a concrete function, composition uses the interface's contract, not any specific implementation's. Implementations must satisfy the interface contract (a separate check). The caller composes against the interface: the weakest guaranteed behavior. This is standard in refinement type systems and is the only sound approach for dynamic dispatch.
 
-**Higher-order functions and callbacks.** Call-site binding handles `result = callee(args)` where the callee is statically resolvable. It does not handle: `map(fn, items)` where `fn` is a variable, stored callbacks (`self.handler = ...` assigned at init and called later), decorators, or any case where the callee identity depends on runtime state. In v1, neurallog does not verify across higher-order boundaries. If the callee cannot be statically resolved from the AST, the call site is treated as opaque — no cross-file composition, no precondition propagation. The contract for the calling function notes the unresolved call as a gap. This is an explicit scope limitation, not an oversight. Future versions may support higher-order contracts (function types with pre/postconditions, as in refinement type systems), but v1 is honest about what it can't resolve.
+**Higher-order functions and callbacks.** Call-site binding handles `result = callee(args)` where the callee is statically resolvable. It does not handle: `map(fn, items)` where `fn` is a variable, stored callbacks (`self.handler = ...` assigned at init and called later), decorators, or any case where the callee identity depends on runtime state. In v1, neurallog does not verify across higher-order boundaries. If the callee cannot be statically resolved from the AST, the call site is treated as opaque: no cross-file composition, no precondition propagation. The contract for the calling function notes the unresolved call as a gap. This is an explicit scope limitation, not an oversight. Future versions may support higher-order contracts (function types with pre/postconditions, as in refinement type systems), but v1 is honest about what it can't resolve.
 
-**Database reads.** A value read from a database has no contract from the code — it's whatever was committed by whatever transaction under whatever isolation level. The postcondition of a DB read is: "this value was the state of this row at the time of this read, under this isolation level." Cross-function proofs that depend on DB-read values are only valid if the reads occur within the same transaction at a sufficient isolation level. This is where the concurrency axioms (below) become essential.
+**Database reads.** A value read from a database has no contract from the code: it's whatever was committed by whatever transaction under whatever isolation level. The postcondition of a DB read is: "this value was the state of this row at the time of this read, under this isolation level." Cross-function proofs that depend on DB-read values are only valid if the reads occur within the same transaction at a sufficient isolation level. This is where the concurrency axioms (below) become essential.
 
 ### Example: E-Commerce Order Processing
 
@@ -1025,7 +1025,7 @@ Three files, each calls the others, each has ordinary log statements:
 
 ```python
 # ============================================
-# inventory.py — stock management
+# inventory.py: stock management
 # ============================================
 
 def check_availability(product_id):
@@ -1050,7 +1050,7 @@ def reserve_stock(product_id, quantity):
 
 ```python
 # ============================================
-# pricing.py — price calculation
+# pricing.py: price calculation
 # ============================================
 
 def calculate_price(product_id, base_price, quantity):
@@ -1068,7 +1068,7 @@ def calculate_price(product_id, base_price, quantity):
 
 ```python
 # ============================================
-# orders.py — order orchestration
+# orders.py: order orchestration
 # ============================================
 
 def place_order(customer, cart):
@@ -1111,7 +1111,7 @@ From `logger.info(f"Reservation complete: {new_available} available, {new_reserv
 (assert (> quantity 0))
 (assert (<= quantity available))
 
-; Transition — the code between the log statements
+; Transition: the code between the log statements
 (assert (= new_available (- available quantity)))
 (assert (= new_reserved (+ reserved quantity)))
 
@@ -1136,10 +1136,10 @@ From `logger.debug(f"Pricing {product_id} with stock level {stock}")`, the LLM f
 (declare-const stock Real)
 (declare-const scarcity_factor Real)
 
-; Precondition — carried from inventory.py's contract
+; Precondition: carried from inventory.py's contract
 (assert (>= stock 0))
 
-; Transition — the scarcity formula
+; Transition: the scarcity formula
 (assert (= scarcity_factor (+ 1.0 (/ 1.0 (+ stock 1.0)))))
 
 ; Negate postcondition
@@ -1190,7 +1190,7 @@ The programmer logged a stock level. The system proved the pricing formula is bo
 (declare-const line_2 Real)
 (declare-const order_total Real)
 
-; Preconditions — carried from pricing.py's contracts
+; Preconditions: carried from pricing.py's contracts
 (assert (> line_1 0))
 (assert (> line_2 0))
 
@@ -1225,7 +1225,7 @@ The programmer logged a stock level. The system proved the pricing formula is bo
 ; BUG FOUND: orders.py can call reserve_stock with insufficient stock
 ```
 
-Z3 returns **sat** with a counterexample. The proof chain breaks at the file boundary. The programmer logged "Order placed, items reserved" — the system traced the call into `inventory.py` and proved the code can't guarantee it.
+Z3 returns **sat** with a counterexample. The proof chain breaks at the file boundary. The programmer logged "Order placed, items reserved": the system traced the call into `inventory.py` and proved the code can't guarantee it.
 
 ### Proof Dependency Graph
 
@@ -1246,12 +1246,12 @@ inventory.py                pricing.py               orders.py
 
 ### Latent Bug Discovery: One New Log Statement Breaks Everything
 
-This is the most powerful property of cross-file proof chains. A system can be green — all invariants consistent, all proofs passing — and then a single new log statement reveals a bug that was always there.
+This is the most powerful property of cross-file proof chains. A system can be green (all invariants consistent, all proofs passing) and then a single new log statement reveals a bug that was always there.
 
 **Setup:** The e-commerce system above has been running for months. Proofs pass. A developer adds a refund path:
 
 ```python
-# inventory.py — release_stock added for refunds
+# inventory.py: release_stock added for refunds
 def release_stock(product_id, quantity):
     available = db.get_available(product_id)
     reserved = db.get_reserved(product_id)
@@ -1264,7 +1264,7 @@ def release_stock(product_id, quantity):
 ```
 
 ```python
-# orders.py — refund path added
+# orders.py: refund path added
 def process_refund(order):
     refund_amount = pricing.calculate_refund(order)
     for item in order.items:
@@ -1285,7 +1285,7 @@ def process_refund(order):
     logger.info(f"Refund processed for order {order.id}: ${refund_amount:.2f}")  # ← just logging
 ```
 
-The system wakes up. The discovery agent traces the refund path. It follows `process_refund` → `release_stock`. It examines all callers of `process_refund`. It discovers: **there is no guard against double refunds**. `process_refund` can be called twice for the same order. The second call tries to release stock that was already released — reserved is now 0.
+The system wakes up. The discovery agent traces the refund path. It follows `process_refund` → `release_stock`. It examines all callers of `process_refund`. It discovers: **there is no guard against double refunds**. `process_refund` can be called twice for the same order. The second call tries to release stock that was already released: reserved is now 0.
 
 ```smt2
 (declare-const reserved_initial Int)
@@ -1298,11 +1298,11 @@ The system wakes up. The discovery agent traces the refund path. It follows `pro
 (assert (> quantity 0))
 (assert (<= quantity reserved_initial))
 
-; First refund — release stock (all good)
+; First refund: release stock (all good)
 (assert (= reserved_after_first (- reserved_initial quantity)))
 (assert (>= reserved_after_first 0))  ; holds ✓
 
-; Second refund — same order, same quantity, no guard
+; Second refund: same order, same quantity, no guard
 (assert (= reserved_after_second (- reserved_after_first quantity)))
 
 ; Can reserved go negative?
@@ -1316,9 +1316,9 @@ The system wakes up. The discovery agent traces the refund path. It follows `pro
 
 Z3 returns sat. A double refund on 5 units drives reserved stock to -5. This violates `inventory.py`'s contract.
 
-**The bug was always there.** The code never prevented double refunds. But without an intent signal on the refund path, the system had no reason to look. One ordinary log statement — `logger.info(f"Refund processed for order {order.id}")` — was enough. The programmer just wanted to see refunds in the logs. The system proved their refund path is unsafe.
+**The bug was always there.** The code never prevented double refunds. But without an intent signal on the refund path, the system had no reason to look. One ordinary log statement (`logger.info(f"Refund processed for order {order.id}")`) was enough. The programmer just wanted to see refunds in the logs. The system proved their refund path is unsafe.
 
-The fix: check `order.status != "refunded"` before processing. The LLM derives this from the unsat core — the contradiction is between "refund can happen twice" and "reserved can't go negative." The resolution is to prevent the second refund.
+The fix: check `order.status != "refunded"` before processing. The LLM derives this from the unsat core: the contradiction is between "refund can happen twice" and "reserved can't go negative." The resolution is to prevent the second refund.
 
 ```python
 def process_refund(order):
@@ -1357,7 +1357,7 @@ require('neurallog')  // that's it
 import _ "neurallog"  // that's it
 ```
 
-The shim hooks your existing logging framework — Python's `logging`, Go's `slog`, Node's `console`, Java's `slf4j`, whatever you use. Every existing log call site in your codebase becomes an intent signal. Every `logger.info("processing order")` that a developer wrote three years ago and forgot about is now a candidate for formal verification.
+The shim hooks your existing logging framework: Python's `logging`, Go's `slog`, Node's `console`, Java's `slf4j`, whatever you use. Every existing log call site in your codebase becomes an intent signal. Every `logger.info("processing order")` that a developer wrote three years ago and forgot about is now a candidate for formal verification.
 
 An enterprise codebase with thousands of log statements becomes a candidate for formal verification. Overnight. Without changing a single line of application code.
 
@@ -1365,9 +1365,9 @@ An enterprise codebase with thousands of log statements becomes a candidate for 
 
 Not every log statement produces a strong contract on day one. The verification depth depends on the code:
 
-**Pure computation code** (no DB, no I/O, no callbacks) gets strong contracts immediately. Arithmetic, data transformation, business logic — the LLM reads the code, Z3 proves properties. These are the easy wins.
+**Pure computation code** (no DB, no I/O, no callbacks) gets strong contracts immediately. Arithmetic, data transformation, business logic: the LLM reads the code, Z3 proves properties. These are the easy wins.
 
-**DB-touching code** gets weak contracts under v1's conservative defaults. P9 treats reads without explicit transaction annotations as `unknown` isolation, which means postconditions from DB reads don't propagate across function boundaries. Most existing applications have zero transaction annotations. The honest retrofit story for DB-heavy code: "you get local invariants per function, but cross-function proofs involving DB reads don't compose until you annotate your transaction boundaries." This is the right behavior — the system refuses to prove things it can't prove — but it means the "formally verified" pitch is partial until the codebase adds isolation annotations.
+**DB-touching code** gets weak contracts under v1's conservative defaults. P9 treats reads without explicit transaction annotations as `unknown` isolation, which means postconditions from DB reads don't propagate across function boundaries. Most existing applications have zero transaction annotations. The honest retrofit story for DB-heavy code: "you get local invariants per function, but cross-function proofs involving DB reads don't compose until you annotate your transaction boundaries." This is the right behavior (the system refuses to prove things it can't prove), but it means the "formally verified" pitch is partial until the codebase adds isolation annotations.
 
 **Callback-heavy code** (JS/TS event handlers, stored functions, `map(fn, items)`) has opaque call sites that don't compose. In a typical JS/TS codebase, 30-50% of call sites may be higher-order. v1 treats these as gaps. The system reports them as unverified, not as verified-correct.
 
@@ -1377,15 +1377,15 @@ The pitch is not "formally verified overnight." The pitch is: "overnight, you kn
 
 The LLM doesn't rest.
 
-On first deployment, every log call site triggers a cache miss. Contracts are derived lazily as the code executes. As traffic flows through the application, the contract cache fills. Z3 checks contracts for cross-path consistency. Contradictions are found. The LLM resolves them — fixing contracts that over-constrained, flagging code that violates programmer intent.
+On first deployment, every log call site triggers a cache miss. Contracts are derived lazily as the code executes. As traffic flows through the application, the contract cache fills. Z3 checks contracts for cross-path consistency. Contradictions are found. The LLM resolves them: fixing contracts that over-constrained, flagging code that violates programmer intent.
 
 This isn't a one-shot analysis. It's a continuous convergence loop:
 
-1. **Discovery** — log calls fire, contracts are derived for new call sites
-2. **Consistency** — Z3 checks contract sets across code paths for mutual satisfiability
-3. **Resolution** — contradictions are fed back to the LLM. Bad contracts are re-derived. Bad code is flagged with patches.
-4. **Verification** — runtime values are checked against contracts. Violations are recorded with formal proofs.
-5. **Repeat** — code changes invalidate contracts (MD5 mismatch), triggering re-derivation. New log statements trigger new contracts. The system never stops converging.
+1. **Discovery**: log calls fire, contracts are derived for new call sites
+2. **Consistency**: Z3 checks contract sets across code paths for mutual satisfiability
+3. **Resolution**: contradictions are fed back to the LLM. Bad contracts are re-derived. Bad code is flagged with patches.
+4. **Verification**: runtime values are checked against contracts. Violations are recorded with formal proofs.
+5. **Repeat**: code changes invalidate contracts (MD5 mismatch), triggering re-derivation. New log statements trigger new contracts. The system never stops converging.
 
 The system converges toward a state where **all invariants are both solvable** (contracts are mutually consistent) **and solved** (runtime values satisfy every contract). That's the steady state: a continuously, formally proven codebase.
 
@@ -1393,12 +1393,12 @@ The system converges toward a state where **all invariants are both solvable** (
 
 When an invariant breaks in production, the system has everything it needs to act:
 
-- The **claim** — what the LLM derived should be true at this point
-- The **proof of violation** — Z3's formal certificate of exactly what went wrong
-- The **unsat core** — which specific constraints conflicted
-- The **values** — the actual runtime state from the stack frame
-- The **code context** — what the discovery agent found when deriving the contract
-- The **contract provenance** — the full derivation chain
+- The **claim**: what the LLM derived should be true at this point
+- The **proof of violation**: Z3's formal certificate of exactly what went wrong
+- The **unsat core**: which specific constraints conflicted
+- The **values**: the actual runtime state from the stack frame
+- The **code context**: what the discovery agent found when deriving the contract
+- The **contract provenance**: the full derivation chain
 
 This isn't a stack trace. This is a complete, formally grounded bug report.
 
@@ -1406,13 +1406,13 @@ This isn't a stack trace. This is a complete, formally grounded bug report.
 
 When a violation is detected in production:
 
-1. **File the bug** — automatically, with the claim as the title, the proof as the body, the values as reproduction context. Not "NullPointerException at line 47." Instead: *"balance should remain non-negative after withdrawal" — violated. balance was -32.50, expected >= 0. Contract derived from src/billing.py:47, withdrawal logic at src/billing.py:31-52.*
+1. **File the bug**: automatically, with the claim as the title, the proof as the body, the values as reproduction context. Not "NullPointerException at line 47." Instead: *"balance should remain non-negative after withdrawal": violated. balance was -32.50, expected >= 0. Contract derived from src/billing.py:47, withdrawal logic at src/billing.py:31-52.*
 
-2. **Kick off the fix** — the violation, the proof, the code context, and the contract are handed to a coding agent. "Here's the invariant. Here's the proof that it was violated. Here's the code. Fix it." The agent has everything: the formal specification (the contract), the evidence (the proof), and the code. It produces a patch.
+2. **Kick off the fix**: the violation, the proof, the code context, and the contract are handed to a coding agent. "Here's the invariant. Here's the proof that it was violated. Here's the code. Fix it." The agent has everything: the formal specification (the contract), the evidence (the proof), and the code. It produces a patch.
 
-3. **Verify the fix** — the patch is applied in a sandbox. The contract is re-evaluated. Z3 confirms the invariant holds. The fix is verified before it's ever proposed to a human.
+3. **Verify the fix**: the patch is applied in a sandbox. The contract is re-evaluated. Z3 confirms the invariant holds. The fix is verified before it's ever proposed to a human.
 
-4. **Propose the PR** — a pull request with: the bug (formal proof of violation), the fix (LLM-generated patch), and the verification (Z3 confirmation that the invariant now holds). A human reviews, but the hard work is done.
+4. **Propose the PR**: a pull request with: the bug (formal proof of violation), the fix (LLM-generated patch), and the verification (Z3 confirmation that the invariant now holds). A human reviews, but the hard work is done.
 
 The loop from "invariant violated in production" to "verified fix in a PR" is fully automated. A programmer's ordinary log statement started a chain that ended with a formally verified bugfix.
 
@@ -1475,9 +1475,9 @@ adapter: coding agent → verified PR
     (patch + Z3 confirmation that invariant now holds)
 ```
 
-Each adapter is a simple, independent service. The proof entry format is the contract between them. Anyone can write an adapter for their stack — log aggregators, issue trackers, alerting systems, chat, compliance tooling, data warehouses.
+Each adapter is a simple, independent service. The proof entry format is the contract between them. Anyone can write an adapter for their stack: log aggregators, issue trackers, alerting systems, chat, compliance tooling, data warehouses.
 
-The adapters don't need to understand Z3 or formal verification. They consume structured proof entries — JSON with a claim, a result, values, and a certificate. The formal verification is already done. The adapters just route and act.
+The adapters don't need to understand Z3 or formal verification. They consume structured proof entries: JSON with a claim, a result, values, and a certificate. The formal verification is already done. The adapters just route and act.
 
 neurallog is not a platform. It's a proof engine with a pluggable output. The ecosystem is the adapters. The value compounds as more adapters exist, but neurallog itself stays simple: derive contracts, evaluate them, emit proof entries.
 
@@ -1517,7 +1517,7 @@ The simplest kind. Plug in actual values from the stack frame, prove the invaria
 }
 ```
 
-Z3 returns **unsat** — the negation of the invariant is impossible given the actual values. The invariant holds. The proof tree shows the derivation: a machine-checkable chain of inference steps.
+Z3 returns **unsat**: the negation of the invariant is impossible given the actual values. The invariant holds. The proof tree shows the derivation: a machine-checkable chain of inference steps.
 
 This proves: at this moment, with these values, the invariant held.
 
@@ -1547,7 +1547,7 @@ When an invariant is **violated**, the runtime proof looks different:
 }
 ```
 
-Z3 returns **sat** — it found values where the invariant is violated. The model shows exactly what went wrong. This is the formal proof of failure: not a stack trace, but a mathematical certificate that the invariant was violated, with the exact values.
+Z3 returns **sat**: it found values where the invariant is violated. The model shows exactly what went wrong. This is the formal proof of failure: not a stack trace, but a mathematical certificate that the invariant was violated, with the exact values.
 
 ### Static Proofs (Hoare Triples)
 
@@ -1586,11 +1586,11 @@ The powerful kind. Proves the invariant holds for **all possible values**, not j
     "(assert (> quantity 0))",
     "(assert (<= quantity available))",
     "",
-    "; Transition — what the code does",
+    "; Transition: what the code does",
     "(assert (= new_available (- available quantity)))",
     "(assert (= new_reserved (+ reserved quantity)))",
     "",
-    "; Negate postconditions — prove violation is impossible",
+    "; Negate postconditions: prove violation is impossible",
     "(assert (or",
     "  (< new_available 0)",
     "  (not (= (+ new_available new_reserved) (+ available reserved)))))",
@@ -1602,9 +1602,9 @@ The powerful kind. Proves the invariant holds for **all possible values**, not j
 }
 ```
 
-Z3 returns **unsat** — there is no possible combination of values satisfying the preconditions where the postcondition fails. This isn't a test that passed. It's a mathematical proof that the property holds universally.
+Z3 returns **unsat**: there is no possible combination of values satisfying the preconditions where the postcondition fails. This isn't a test that passed. It's a mathematical proof that the property holds universally.
 
-This proves: for ANY valid reservation — any available count, any reserved count, any quantity — stock never goes negative and the total is always conserved. Forever.
+This proves: for ANY valid reservation (any available count, any reserved count, any quantity) stock never goes negative and the total is always conserved. Forever.
 
 ### Cross-File Static Proofs
 
@@ -1631,10 +1631,10 @@ When the discovery agent follows a call chain across files, the postcondition of
     "(declare-const stock Real)",
     "(declare-const scarcity_factor Real)",
     "",
-    "; Precondition — from inventory.py contract",
+    "; Precondition: from inventory.py contract",
     "(assert (>= stock 0))",
     "",
-    "; Transition — scarcity formula in pricing.py",
+    "; Transition: scarcity formula in pricing.py",
     "(assert (= scarcity_factor (+ 1.0 (/ 1.0 (+ stock 1.0)))))",
     "",
     "; Negate postcondition",
@@ -1651,7 +1651,7 @@ The `chain` field makes the dependency explicit: this proof is only valid becaus
 
 ### Consistency Proofs
 
-Verify that a set of contracts can all be true simultaneously. Here, **sat** is the good result — it means the contracts don't contradict each other.
+Verify that a set of contracts can all be true simultaneously. Here, **sat** is the good result: it means the contracts don't contradict each other.
 
 ```json
 {
@@ -1712,7 +1712,7 @@ When consistency fails:
 }
 ```
 
-Z3 returns **sat** — it found values where the precondition is violated. `quantity = 5, available = 3`. The caller doesn't establish the callee's precondition. Bug found, with a concrete counterexample.
+Z3 returns **sat**: it found values where the precondition is violated. `quantity = 5, available = 3`. The caller doesn't establish the callee's precondition. Bug found, with a concrete counterexample.
 
 ### Proof Verification
 
@@ -1725,10 +1725,10 @@ echo '<smt2 content>' | z3 -in
 Same result every time. No neurallog installation needed. No LLM needed. No network needed. Just Z3 and the proof file.
 
 This means:
-- **CI can verify proofs** without running neurallog — just Z3
-- **Auditors can verify proofs** independently — just Z3
-- **Other tools can consume proofs** — the format is standard SMT-LIB
-- **Proofs can't be faked** — Z3 is deterministic; the input produces the output or it doesn't
+- **CI can verify proofs** without running neurallog: just Z3
+- **Auditors can verify proofs** independently: just Z3
+- **Other tools can consume proofs**: the format is standard SMT-LIB
+- **Proofs can't be faked**: Z3 is deterministic; the input produces the output or it doesn't
 
 ## Proof Storage
 
@@ -1751,15 +1751,15 @@ Proofs live in the repo. They are version-controlled artifacts, committed alongs
   cache.json                 # file hashes for staleness detection
 ```
 
-One contract file per source file. All contracts for a file live together. When a source file changes, one contract file re-derives. Clean diff in PRs — you see the source change and the contract change side by side. `git blame` tells you when contracts were derived and what triggered re-derivation.
+One contract file per source file. All contracts for a file live together. When a source file changes, one contract file re-derives. Clean diff in PRs: you see the source change and the contract change side by side. `git blame` tells you when contracts were derived and what triggered re-derivation.
 
 ### Why the Repo
 
-- **Diffable** — a contract changes, the proof changes, it's visible in the diff. You can see what your code was proving last week versus this week.
-- **Reviewable** — contracts and proofs appear in PRs alongside the code changes that triggered them. Reviewers can see not just what changed, but what the system believes about the change.
-- **CI verifiable** — a CI check can confirm that all contracts are satisfiable, all cross-path consistency checks pass, and no proofs are stale against the current file hashes.
-- **Portable** — clone the repo, you have the proofs. No external service needed to know what your code guarantees.
-- **Auditable** — the full history of what was proven, when, and against what code is in git history. Compliance gets a complete audit trail for free.
+- **Diffable**: a contract changes, the proof changes, it's visible in the diff. You can see what your code was proving last week versus this week.
+- **Reviewable**: contracts and proofs appear in PRs alongside the code changes that triggered them. Reviewers can see not just what changed, but what the system believes about the change.
+- **CI verifiable**: a CI check can confirm that all contracts are satisfiable, all cross-path consistency checks pass, and no proofs are stale against the current file hashes.
+- **Portable**: clone the repo, you have the proofs. No external service needed to know what your code guarantees.
+- **Auditable**: the full history of what was proven, when, and against what code is in git history. Compliance gets a complete audit trail for free.
 
 ### Staleness in CI
 
@@ -1781,13 +1781,13 @@ The merge rule: for each clause present in both parents, take the max of `weaken
 
 Not every log statement guards something meaningful. `logger.debug("here")` has no variables in scope worth checking. `console.log("---")` is noise. The system handles this cleanly: the LLM derives an invariant of `true`.
 
-`true` is always sat. The proof is trivial. The log call proceeds with zero overhead. No false violations. No noise. The system shrugs and moves on. The log statement still fires normally — it's still a logger.
+`true` is always sat. The proof is trivial. The log call proceeds with zero overhead. No false violations. No noise. The system shrugs and moves on. The log statement still fires normally: it's still a logger.
 
 The LLM has three possible outputs for any call site:
 
-1. **Meaningful invariant** — something provable and useful. The system verifies it.
-2. **`true`** — nothing to prove here. The system moves on. Zero cost.
-3. **Wrong invariant** — the convergence loop catches this via unsat or runtime violations, and re-derives.
+1. **Meaningful invariant**: something provable and useful. The system verifies it.
+2. **`true`**: nothing to prove here. The system moves on. Zero cost.
+3. **Wrong invariant**: the convergence loop catches this via unsat or runtime violations, and re-derives.
 
 There is no failure mode that produces noise. Either you get signal or you get silence.
 
@@ -1795,19 +1795,19 @@ The contract map becomes a code quality signal for free: which log statements ar
 
 ## Self-Growing Verification Principles
 
-The derivation prompt is not a static template. It is assembled from a growing library of verification principles — teaching examples that tell the LLM how to reason about code. The principles are the system's accumulated wisdom, distilled from every bug it has ever found.
+The derivation prompt is not a static template. It is assembled from a growing library of verification principles: teaching examples that tell the LLM how to reason about code. The principles are the system's accumulated wisdom, distilled from every bug it has ever found.
 
 ### The Seed Set
 
 The system ships with a seed set of principles drawn from formal verification:
 
-1. **Precondition Propagation** — when A calls B, A must establish B's preconditions
-2. **State Mutation Analysis** — mutations change the precondition landscape for subsequent calls; loop iterations sharing a resource via data-dependent identity (product_id, account_id) are not independent
-3. **Calling Context Analysis** — public functions can receive any input; valid inputs are only what the function itself validates
-4. **Temporal Analysis** — a function invoked twice on the same input may violate its own preconditions on the second call due to the first call's side effects
-5. **Semantic Correctness** — a function may execute without error but produce a value that is meaningless in the domain
-6. **Boundary and Degenerate Inputs** — empty collections, zero values, and single-element inputs can produce degenerate results that mask upstream bugs
-7. **Arithmetic Safety** — division by zero, subtraction underflow, integer overflow
+1. **Precondition Propagation**: when A calls B, A must establish B's preconditions
+2. **State Mutation Analysis**: mutations change the precondition landscape for subsequent calls; loop iterations sharing a resource via data-dependent identity (product_id, account_id) are not independent
+3. **Calling Context Analysis**: public functions can receive any input; valid inputs are only what the function itself validates
+4. **Temporal Analysis**: a function invoked twice on the same input may violate its own preconditions on the second call due to the first call's side effects
+5. **Semantic Correctness**: a function may execute without error but produce a value that is meaningless in the domain
+6. **Boundary and Degenerate Inputs**: empty collections, zero values, and single-element inputs can produce degenerate results that mask upstream bugs
+7. **Arithmetic Safety**: division by zero, subtraction underflow, integer overflow
 
 Each principle includes a description and one or more teaching examples in a different domain from any specific target code. The examples teach the LLM the verification *pattern*, not the specific bug.
 
@@ -1815,13 +1815,13 @@ Each principle includes a description and one or more teaching examples in a dif
 
 When the system finds a violation that doesn't match any existing principle:
 
-1. **Detection.** Every violation is classified: "Does this fit an existing principle, or is it genuinely new?" This is an LLM call — compare the violation against the principle library.
+1. **Detection.** Every violation is classified: "Does this fit an existing principle, or is it genuinely new?" This is an LLM call: compare the violation against the principle library.
 
 2. **Generalization.** The LLM takes the specific violation and extracts the general pattern. "Refund exceeds payment because calculate_refund uses raw unit_price" becomes "a computed value diverges from the real-world state it represents because the computation uses stale or incomplete data."
 
-3. **Teaching example generation.** The LLM creates a teaching example in a *different domain* — to avoid test leakage into the system's own prompt. The specific violation was about refunds; the teaching example uses tax computation or shipping costs.
+3. **Teaching example generation.** The LLM creates a teaching example in a *different domain*: to avoid test leakage into the system's own prompt. The specific violation was about refunds; the teaching example uses tax computation or shipping costs.
 
-4. **Self-validation.** Before committing, the system tests the new principle: add it to the prompt, re-derive contracts for a *different* file. Does the principle improve detection? If yes, it generalizes. If no, it's too specific — discard it.
+4. **Self-validation.** Before committing, the system tests the new principle: add it to the prompt, re-derive contracts for a *different* file. Does the principle improve detection? If yes, it generalizes. If no, it's too specific: discard it.
 
 5. **Commit.** The principle is written to `.neurallog/principles/`. Every future derivation benefits.
 
@@ -1854,9 +1854,9 @@ Principles are version-controlled artifacts in the repo, like contracts. They sh
 
 Principles are never removed. A principle is a truth about software, not about a specific codebase. "State can change between reads" doesn't stop being true when you fix the TOCTOU bug in your code. It just stops applying *here*.
 
-Contracts are mutable — they're derived, invalidated, re-derived, deleted. They track the current state of the code.
+Contracts are mutable: they're derived, invalidated, re-derived, deleted. They track the current state of the code.
 
-Principles are immutable — they represent general verification knowledge. They only grow.
+Principles are immutable: they represent general verification knowledge. They only grow.
 
 Over time, related principles may be consolidated: five variants of "state changes between reads" merge into one richer principle. But the knowledge never shrinks.
 
@@ -1864,11 +1864,11 @@ Over time, related principles may be consolidated: five variants of "state chang
 
 At derivation time, the prompt is assembled dynamically:
 
-1. **Base methodology** — Z3 verification patterns, SMT-LIB grammar, output format
-2. **Relevant principles** — filtered by AST analysis of the target code (has loops? calls public functions? does arithmetic?) to keep prompt length manageable
-3. **Existing contracts** — for the target file, its imports, and transitive deps
-4. **Code context** — target file source, depth-1 import sources
-5. **Target line** — the specific log statement being analyzed
+1. **Base methodology**: Z3 verification patterns, SMT-LIB grammar, output format
+2. **Relevant principles**: filtered by AST analysis of the target code (has loops? calls public functions? does arithmetic?) to keep prompt length manageable
+3. **Existing contracts**: for the target file, its imports, and transitive deps
+4. **Code context**: target file source, depth-1 import sources
+5. **Target line**: the specific log statement being analyzed
 
 As the principles directory grows, the prompt gets richer. Relevance filtering ensures the prompt stays focused. Tiered prompts use different subsets for different deployment modes (core principles for hot path, full set for deep analysis).
 
@@ -1878,9 +1878,9 @@ Principles are language-agnostic. "Precondition propagation" applies to Python, 
 
 This means principles are shareable. A company running neurallog across all their repos accumulates a shared principles library. Every codebase benefits from every other codebase's discoveries.
 
-The principles directory could be published as an open-source library — a community-grown formal verification curriculum, built from real bugs in real code, that any neurallog installation can import.
+The principles directory could be published as an open-source library: a community-grown formal verification curriculum, built from real bugs in real code, that any neurallog installation can import.
 
-**Multi-repo principle sharing (future work).** In v1, each repo has local `.neurallog/principles/`. A 50-repo company re-learns the same principle 50 times. The natural shape is a remote principle store — pull/push, like a package registry. `neurallog principles pull @company/shared` imports the company-wide principle library. `neurallog principles push` proposes locally-discovered principles to the shared store. Versioned, reviewed, signed. This is not in v1 scope but will come up in the first enterprise conversation. The architecture supports it — principles are portable JSON files with provenance — but the transport and governance are unspecified.
+**Multi-repo principle sharing (future work).** In v1, each repo has local `.neurallog/principles/`. A 50-repo company re-learns the same principle 50 times. The natural shape is a remote principle store: pull/push, like a package registry. `neurallog principles pull @company/shared` imports the company-wide principle library. `neurallog principles push` proposes locally-discovered principles to the shared store. Versioned, reviewed, signed. This is not in v1 scope but will come up in the first enterprise conversation. The architecture supports it (principles are portable JSON files with provenance), but the transport and governance are unspecified.
 
 ## Convergence
 
@@ -1899,7 +1899,7 @@ The cache key for a contract is:
 file_path:line_number:md5(file_contents):md5(relevant_principles)
 ```
 
-When a source file changes, the file hash changes, the contract is stale. When a principle is added, the principle hash changes, the contract is stale. Re-derivation happens lazily on next execution, or can be triggered by CI. Same invalidation mechanism for both — no special handling.
+When a source file changes, the file hash changes, the contract is stale. When a principle is added, the principle hash changes, the contract is stale. Re-derivation happens lazily on next execution, or can be triggered by CI. Same invalidation mechanism for both: no special handling.
 
 ### Principle Convergence (Global, Append-Only)
 
@@ -1936,9 +1936,9 @@ The fix is a tiebreaker rule that makes re-derivation a lattice descent with gua
 **Monotone weakening only.** When resolving an unsat between contracts, the LLM is only allowed to *remove or weaken* clauses in the contract being re-derived. It may never add new preconditions or strengthen existing ones during resolution. Removing a clause makes the contract weaker (closer to `true`). The weakest possible contract is `true`. You can't go below `true`. Therefore the weakening sequence terminates.
 
 Strengthening is a separate phase, gated on evidence:
-- A contract can be strengthened only when new **runtime witnesses** provide evidence for a stronger invariant — concrete values that demonstrate a tighter bound holds in practice
+- A contract can be strengthened only when new **runtime witnesses** provide evidence for a stronger invariant: concrete values that demonstrate a tighter bound holds in practice
 - Strengthening requires Z3 confirmation that the stronger contract is consistent with all existing contracts
-- Strengthening is never triggered by the unsat loop — only by positive evidence
+- Strengthening is never triggered by the unsat loop: only by positive evidence
 
 This gives a two-phase convergence with provable termination:
 1. **Weaken phase** (unsat resolution): monotone descent toward `true`. Terminates.
@@ -1948,13 +1948,13 @@ The interaction between phases requires a well-founded ordering to prevent cycle
 
 The ordering that prevents this: each contract carries a pair `(distinct_witness_count, weaken_step_count)` ordered lexicographically.
 
-- **Runtime witnesses are append-only.** Once a value is witnessed, the witness count never decreases. Strengthening is gated on strictly increasing witness counts — a clause can only be re-strengthened if new witnesses have arrived since it was last weakened.
+- **Runtime witnesses are append-only.** Once a value is witnessed, the witness count never decreases. Strengthening is gated on strictly increasing witness counts: a clause can only be re-strengthened if new witnesses have arrived since it was last weakened.
 - **Weaken steps are monotone.** Each weakening increments the weaken count. The LLM cannot re-add a clause that was weakened at step N unless the witness count has increased past what it was at step N.
 - **The lex pair descends.** Either the witness count increases (and strengthening is justified by new evidence) or the weaken count increases (and the contract is strictly weaker). The pair `(witness_count, weaken_steps)` is well-founded under this lexicographic order. The sequence terminates.
 
 This is not hand-waving. It is a concrete well-founded ordering. The two phases cannot cycle because strengthening requires strictly more evidence than the last weakening consumed.
 
-**Source-locality rule.** When two contracts from different files contradict, the contract at the function's *definition site* outranks the contract at a *call site*. The definer knows its own invariants. Callers can't tighten callee contracts — they can only weaken their own assumptions. This prevents caller-induced churn.
+**Source-locality rule.** When two contracts from different files contradict, the contract at the function's *definition site* outranks the contract at a *call site*. The definer knows its own invariants. Callers can't tighten callee contracts: they can only weaken their own assumptions. This prevents caller-induced churn.
 
 **Provenance weight.** When weakening, prefer to preserve the contract with more runtime witnesses. A contract that has been confirmed by 10,000 runtime evaluations has more evidence behind it than one derived yesterday with no runtime data. The more-witnessed contract wins.
 
@@ -1966,19 +1966,19 @@ A codebase has converged when:
 - All runtime values satisfy their contracts (no violations)
 - No new violations are producing new principles (principle set is stable for this codebase)
 
-The proof log at steady state is: continuous, formally verified, comprehensive. Every log statement has a contract. Every contract is proven consistent. Every runtime value satisfies its contract. The codebase is formally verified — and the verification got there by itself, from ordinary log statements.
+The proof log at steady state is: continuous, formally verified, comprehensive. Every log statement has a contract. Every contract is proven consistent. Every runtime value satisfies its contract. The codebase is formally verified; and the verification got there by itself, from ordinary log statements.
 
 ## Two-Layer Architecture: LLM Derives, Z3 Reasons
 
-The principles are not just teaching examples for an LLM prompt. They are formal axioms — parameterizable Z3 check generators. This splits the system into two layers:
+The principles are not just teaching examples for an LLM prompt. They are formal axioms: parameterizable Z3 check generators. This splits the system into two layers:
 
 ### Layer 1: Contract Derivation (LLM, Cold Path)
 
 The LLM reads source code and derives atomic contracts per function:
-- **Preconditions** — what the function requires
-- **Postconditions** — what the function guarantees
-- **Side effects** — what shared state the function mutates
-- **Claims** — natural language descriptions (for humans only)
+- **Preconditions**: what the function requires
+- **Postconditions**: what the function guarantees
+- **Side effects**: what shared state the function mutates
+- **Claims**: natural language descriptions (for humans only)
 
 This happens once per function. Contracts are cached, keyed by file hash + principle hash. Re-derivation only occurs when code changes or new axioms are added. This is where the LLM's code comprehension is genuinely irreplaceable.
 
@@ -2010,7 +2010,7 @@ For every loop calling state-mutating function F:
 ```
 For every public function entry point:
   For every downstream precondition P reachable from this entry:
-    Assert: (nothing — public functions guarantee nothing about inputs)
+    Assert: (nothing: public functions guarantee nothing about inputs)
     Assert: NOT P
     check-sat → if sat, unvalidated input violation reachable
 ```
@@ -2039,7 +2039,7 @@ reserve_stock:
 P1 template applied to `place_order` calling `reserve_stock`:
 
 ```smt2
-; Mechanically generated — no LLM needed
+; Mechanically generated: no LLM needed
 ; Source: P1 template × call site orders.py:13
 ; Callee precondition: quantity <= available
 ; Caller guarantees: quantity > 0 (from cart), nothing about available
@@ -2054,7 +2054,7 @@ P1 template applied to `place_order` calling `reserve_stock`:
 P2 template applied to the reservation loop:
 
 ```smt2
-; Mechanically generated — no LLM needed
+; Mechanically generated: no LLM needed
 ; Source: P2 template × loop at orders.py:12-13
 ; Loop calls reserve_stock which mutates available[product_id]
 ; Two iterations may share a product_id
@@ -2091,10 +2091,10 @@ An enterprise codebase with 10,000 log statements:
 ### The LLM's Diminishing Role
 
 The LLM is needed for:
-1. **Initial contract derivation** — reading code and understanding what functions do
-2. **Semantic correctness (P5)** — domain-level reasoning about what values "should" mean
-3. **Novel pattern discovery** — violations that don't match any axiom template
-4. **Re-derivation** — when code changes invalidate cached contracts
+1. **Initial contract derivation**: reading code and understanding what functions do
+2. **Semantic correctness (P5)**: domain-level reasoning about what values "should" mean
+3. **Novel pattern discovery**: violations that don't match any axiom template
+4. **Re-derivation**: when code changes invalidate cached contracts
 
 The LLM is NOT needed for:
 - Applying axioms to known contracts (Z3)
@@ -2116,8 +2116,8 @@ A logger that derives Hoare logic. That applies it mechanically. That fixes your
 
 Each axiom has two representations:
 
-1. **Teaching form** — natural language description + teaching examples in the derivation prompt. Used by the LLM in Phase 1.
-2. **Formal form** — a parameterizable template that generates Z3 checks mechanically. Used by Layer 2 without the LLM.
+1. **Teaching form**: natural language description + teaching examples in the derivation prompt. Used by the LLM in Phase 1.
+2. **Formal form**: a parameterizable template that generates Z3 checks mechanically. Used by Layer 2 without the LLM.
 
 The formal form is what makes the two-layer architecture work. It defines: what code pattern to match, what contract fields to read, and how to generate the Z3 check.
 
@@ -2232,7 +2232,7 @@ Generate:
 
 ```
 Match:    function that computes a return value or mutates domain state
-Requires: domain_constraints (LLM-derived — what values are "meaningful")
+Requires: domain_constraints (LLM-derived: what values are "meaningful")
 Generate:
     ; This axiom is partially mechanical, partially LLM-dependent
     ; The domain constraints come from LLM analysis
@@ -2250,7 +2250,7 @@ P5 is the only axiom that cannot be fully mechanized. The domain constraints ("a
 ```
 Match:    function that iterates a collection or accumulates a value
 Requires: collection_source (parameter, DB query, etc.)
-          accumulation_identity (what's the "zero" case — sum starts at 0, list starts empty)
+          accumulation_identity (what's the "zero" case: sum starts at 0, list starts empty)
 Generate:
     ; Empty collection case
     assert(collection_length = 0)
@@ -2337,7 +2337,7 @@ Generate:
 
 1. **Explicit transaction blocks.** If the AST shows a transaction context (`BEGIN`/`COMMIT`, `@transactional`, `with db.transaction():`, etc.), the isolation level is read from the transaction's configuration or defaults.
 2. **ORM/framework annotations.** Common ORMs expose isolation level in decorators or configuration. The language adapter can extract these from known patterns.
-3. **Default: unknown.** If no transaction context is detectable, isolation level is `unknown`. Under `unknown`, P9 treats the read as READ_COMMITTED (the weakest common default) — meaning the value is assumed stale-capable. Postconditions from `unknown` reads do not propagate as preconditions to downstream functions.
+3. **Default: unknown.** If no transaction context is detectable, isolation level is `unknown`. Under `unknown`, P9 treats the read as READ_COMMITTED (the weakest common default): meaning the value is assumed stale-capable. Postconditions from `unknown` reads do not propagate as preconditions to downstream functions.
 
 This is conservative by design. If you want reads to propagate, wrap them in an explicit transaction. P9 rewards code that is explicit about its isolation guarantees and penalizes code that isn't.
 
@@ -2374,7 +2374,7 @@ The mechanical pipeline for Layer 2:
 
 4. **Z3 evaluation.** Feed each generated block to Z3. Record the result.
 
-5. **Result handling.** `sat` results are violations — route to bug filing, fix generation, or alerting. `unsat` results are proofs — record in the proof store.
+5. **Result handling.** `sat` results are violations: route to bug filing, fix generation, or alerting. `unsat` results are proofs: record in the proof store.
 
 No LLM in this pipeline. It runs on every commit, every CI check, every deployment. It's the hot path.
 
@@ -2388,11 +2388,11 @@ The self-validation step (Step 2c) tests both forms: the teaching form is tested
 
 Because axioms are formal, Z3 can verify the axiom set itself:
 
-**Consistency:** Feed all axiom templates (instantiated with symbolic variables) to Z3 as a set. If `unsat`, two axioms contradict — the axiom system is inconsistent.
+**Consistency:** Feed all axiom templates (instantiated with symbolic variables) to Z3 as a set. If `unsat`, two axioms contradict: the axiom system is inconsistent.
 
-**Independence:** For each axiom A, check whether A's conclusions are derivable from the remaining axioms. If yes, A is redundant — it's a theorem, not an axiom.
+**Independence:** For each axiom A, check whether A's conclusions are derivable from the remaining axioms. If yes, A is redundant: it's a theorem, not an axiom.
 
-**Coverage:** Given a set of contracts, count how many code patterns are matched by at least one axiom. Unmatched patterns represent gaps in the axiom system — areas where the LLM is the only line of defense.
+**Coverage:** Given a set of contracts, count how many code patterns are matched by at least one axiom. Unmatched patterns represent gaps in the axiom system: areas where the LLM is the only line of defense.
 
 ## Security Model: Proofs, Not Data
 
@@ -2400,16 +2400,16 @@ The proof always runs local. Values never leave the machine. The proof does.
 
 ### No Raw Values by Default
 
-Z3 evaluates contracts against live values *in the local process*. The output is a proof certificate — a mathematical object that proves "this property held" without revealing the underlying values. The verifier can check the proof without seeing the data.
+Z3 evaluates contracts against live values *in the local process*. The output is a proof certificate: a mathematical object that proves "this property held" without revealing the underlying values. The verifier can check the proof without seeing the data.
 
 | Artifact | Contains values? | Leaves the machine? |
 |---|---|---|
-| Stack frame capture | Yes — live values | No — evaluated locally, then discarded |
-| Proof entry (default) | No — pass/fail + certificate only | Yes — shipped to transports, stored in proof log |
-| Proof entry (debug mode) | Optionally yes — values attached | Configurable — can restrict to local only |
-| Contract | No — predicates and claims, not data | Yes — committed to repo in `.neurallog/` |
-| Axiom templates | No — abstract patterns | Yes — committed to repo |
-| Consistency proofs | No — relations between contracts | Yes — committed to repo |
+| Stack frame capture | Yes: live values | No: evaluated locally, then discarded |
+| Proof entry (default) | No: pass/fail + certificate only | Yes: shipped to transports, stored in proof log |
+| Proof entry (debug mode) | Optionally yes: values attached | Configurable: can restrict to local only |
+| Contract | No: predicates and claims, not data | Yes: committed to repo in `.neurallog/` |
+| Axiom templates | No: abstract patterns | Yes: committed to repo |
+| Consistency proofs | No: relations between contracts | Yes: committed to repo |
 
 The default mode: **proofs only, no values.** A proof entry says "at src/billing.py:47, the property 'balance >= 0' held at 2026-04-14T03:22:41Z" with a Z3 certificate. It does not say what the balance was.
 
@@ -2435,28 +2435,28 @@ They do not contain runtime values unless the operator explicitly enables value 
 
 ### Sensitive Code Paths
 
-Some contracts might reveal business logic through their predicates — "price must be less than 2x base price" reveals pricing strategy. The contract is a formal description of what the code does.
+Some contracts might reveal business logic through their predicates: "price must be less than 2x base price" reveals pricing strategy. The contract is a formal description of what the code does.
 
 For codebases where contract content itself is sensitive:
 - Contracts can be excluded from version control (`.gitignore` the `.neurallog/contracts/` directory)
 - Proof entries can omit the claim and predicate, shipping only the result (pass/fail) and a contract hash
-- The proof is still verifiable locally — the full contract exists on the machine that generated it
+- The proof is still verifiable locally: the full contract exists on the machine that generated it
 
 ### The Principle
 
-The design principle is: proofs leave the machine, values don't. This is not zero-knowledge in the cryptographic sense — predicates and variable names do leak semantics. `(>= credit_score 620)` reveals a business rule. For codebases where contract content itself is sensitive, contracts can be excluded from version control or proof entries can omit predicates, shipping only pass/fail and a contract hash. But the default posture is: no raw runtime values in any artifact that leaves the process.
+The design principle is: proofs leave the machine, values don't. This is not zero-knowledge in the cryptographic sense: predicates and variable names do leak semantics. `(>= credit_score 620)` reveals a business rule. For codebases where contract content itself is sensitive, contracts can be excluded from version control or proof entries can omit predicates, shipping only pass/fail and a contract hash. But the default posture is: no raw runtime values in any artifact that leaves the process.
 
 ## The Verification Dial
 
 neurallog is not an all-or-nothing proposition. It's a dial. Every setting is useful. Every setting degrades gracefully to the one below it.
 
-### Level 0 — Stairs
+### Level 0: Stairs
 
 It's a logger. Your log statements work exactly as before. neurallog is installed but passive. Nothing changes.
 
 A broken escalator becomes stairs.
 
-### Level 1 — Moving Sidewalk
+### Level 1: Moving Sidewalk
 
 The LLM derives contracts from your log statements and reports what it found. Advisory only. No enforcement. No Z3. Just insights.
 
@@ -2464,13 +2464,13 @@ The LLM derives contracts from your log statements and reports what it found. Ad
 
 You're still walking. The sidewalk just helps you move faster.
 
-### Level 2 — Escalator
+### Level 2: Escalator
 
 Z3 verifies the contracts statically. `neurallog analyze src/` runs in CI. Reachable violations fail the build. Axiom templates apply mechanically to every contract pair. Your log statements are assertions that block merges.
 
 You're formally verifying your code. You didn't write a single test.
 
-### Level 3 — Elevator
+### Level 3: Elevator
 
 Runtime verification. Live values checked against contracts. Proof log streaming. Production violations auto-file bugs, kick off the coding agent, propose verified PRs. The full convergence loop. Self-growing principles. The system teaches itself.
 
@@ -2493,9 +2493,9 @@ Level 0 doesn't fail. It's stairs.
 
 ```bash
 npm install neurallog            # stairs
-neurallog init --level 1         # moving sidewalk — see what it finds
-neurallog init --level 2         # escalator — enforce in CI
-neurallog init --level 3         # elevator — full runtime verification
+neurallog init --level 1         # moving sidewalk: see what it finds
+neurallog init --level 2         # escalator: enforce in CI
+neurallog init --level 3         # elevator: full runtime verification
 ```
 
 Start at 1. See the insights. Gain trust. Turn it up.
@@ -2508,7 +2508,7 @@ Start at 1. See the insights. Gain trust. Turn it up.
 
 - Tree-sitter TypeScript parser: find log statements, extract enclosing functions
 - LLM integration: send file + log statement to ollama, get contracts back
-- Output: human-readable report of what the LLM found — claims, potential violations
+- Output: human-readable report of what the LLM found: claims, potential violations
 - No Z3, no caching, no axiom templates. Just the LLM reading code and reporting.
 - This is Level 1 for a single file. `neurallog analyze file.ts`
 
@@ -2548,7 +2548,7 @@ Start at 1. See the insights. Gain trust. Turn it up.
 
 **Proves:** the system is fast enough and reliable enough for CI.
 
-### Milestone 5: Layer 2 — Axiom Template Engine
+### Milestone 5: Layer 2: Axiom Template Engine
 
 **Mechanical Z3 checks without the LLM.**
 
@@ -2612,17 +2612,17 @@ Formal verification of software exists. F*, Dafny, Liquid Haskell, and Lean can 
 
 neurallog is not competing with refinement types. It's solving a different problem.
 
-**Refinement types require you to write the types.** You annotate your code with formal specifications. You learn a new type system. You rewrite your functions to satisfy the checker. The payoff is enormous — but the cost is rewriting your codebase in a verification-aware language, or adding dense annotations to your existing one. Teams that do this (aerospace, cryptography, certain financial systems) get provably correct software. Teams that don't — which is nearly everyone — get nothing.
+**Refinement types require you to write the types.** You annotate your code with formal specifications. You learn a new type system. You rewrite your functions to satisfy the checker. The payoff is enormous, but the cost is rewriting your codebase in a verification-aware language, or adding dense annotations to your existing one. Teams that do this (aerospace, cryptography, certain financial systems) get provably correct software. Teams that don't (which is nearly everyone) get nothing.
 
-**neurallog requires you to have log statements.** You already do. Every codebase has thousands of them. neurallog reads them, derives contracts from the surrounding code, and formally verifies the contracts with Z3. The cost is `npm install neurallog`. The payoff is formal verification of whatever properties the LLM can derive — which is less than what a human expert with F* would produce, but infinitely more than what a team without formal verification has today.
+**neurallog requires you to have log statements.** You already do. Every codebase has thousands of them. neurallog reads them, derives contracts from the surrounding code, and formally verifies the contracts with Z3. The cost is `npm install neurallog`. The payoff is formal verification of whatever properties the LLM can derive, which is less than what a human expert with F* would produce, but infinitely more than what a team without formal verification has today.
 
-The bet is: **partial formal verification of 100% of codebases beats total formal verification of 0.1% of codebases.** The retrofit story — one line to formally verified — is the entire value proposition. It only matters because nobody is going to rewrite their Express app in Dafny.
+The bet is: **partial formal verification of 100% of codebases beats total formal verification of 0.1% of codebases.** The retrofit story (one line to formally verified) is the entire value proposition. It only matters because nobody is going to rewrite their Express app in Dafny.
 
 neurallog is reinventing refinement types, badly, with an LLM as the annotation engine. That's accurate and that's the point. The LLM writes worse annotations than a human expert. But it writes them for every codebase, automatically, from log statements that already exist. The perfect is the enemy of the deployed.
 
 ### What Refinement Types Do Better
 
-- **Soundness.** A Dafny proof is sound. A neurallog proof depends on the LLM's contract being correct — and the LLM can be wrong. Z3 validates internal consistency, not semantic correctness.
+- **Soundness.** A Dafny proof is sound. A neurallog proof depends on the LLM's contract being correct, and the LLM can be wrong. Z3 validates internal consistency, not semantic correctness.
 - **Completeness.** Refinement types can express any property the type system supports. neurallog can only express what the LLM derives, bounded by the axiom set.
 - **No convergence risk.** Refinement types don't have a convergence loop. The human writes the spec, the checker verifies it, done.
 - **No LLM dependency.** The verification is deterministic and reproducible. neurallog's contract derivation depends on a non-deterministic model.
@@ -2630,7 +2630,7 @@ neurallog is reinventing refinement types, badly, with an LLM as the annotation 
 ### What neurallog Does Better
 
 - **Zero adoption cost.** One line. Existing code. Existing log statements. No new language, no new type system, no annotations.
-- **Language agnostic.** Works on TypeScript, Python, Go, Java — whatever you already write. Refinement types are language-specific.
+- **Language agnostic.** Works on TypeScript, Python, Go, Java: whatever you already write. Refinement types are language-specific.
 - **Automatic.** The programmer doesn't write specifications. The system derives them. This means formal verification scales to teams that don't have formal methods expertise.
 - **Incremental.** The verification dial goes from 0 (stairs) to 3 (elevator). You start where you are and turn it up. Refinement types are all-or-nothing.
 - **Runtime verification.** Refinement types are static. neurallog also checks live values in production.
@@ -2639,17 +2639,17 @@ neurallog is reinventing refinement types, badly, with an LLM as the annotation 
 
 If you can afford to write your system in F* or Dafny or Lean, do it. You'll get stronger guarantees than neurallog can provide.
 
-If you can't — and almost nobody can — neurallog gives you formal verification from the log statements you already have. It's not as rigorous. It's not as complete. It's not as sound. But it exists for your codebase, today, with one line of code. And that's better than the nothing you had yesterday.
+If you can't (and almost nobody can), neurallog gives you formal verification from the log statements you already have. It's not as rigorous. It's not as complete. It's not as sound. But it exists for your codebase, today, with one line of code. And that's better than the nothing you had yesterday.
 
 ## Design Principles
 
 - Every existing log statement is an intent signal, whether the programmer meant it that way or not
-- The system hooks existing loggers — there is no neurallog API the programmer interacts with
+- The system hooks existing loggers; there is no neurallog API the programmer interacts with
 - `import neurallog` is the entire adoption surface
 - Contracts are derived from code context, not from log message strings
 - Contracts define what context to capture, not the log call
 - The system never modifies application source code
-- Stack frame inspection provides all values — no instrumentation needed
+- Stack frame inspection provides all values: no instrumentation needed
 - Runtime-first derivation: contracts are born the first time the code runs
 - Cache invalidation by file content hash + principle hash: contracts stay current automatically
 - Verification principles are append-only: the system's knowledge only grows
