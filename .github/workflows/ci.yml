@@ -106,12 +106,34 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Set up Ruby 3.3
+        # mint-ruby-self-contracts (PR #234, issue #209) ships a Ruby
+        # orchestrator that the rust CLI invokes via the lift-plugin-protocol
+        # RPC. Without ruby on PATH the orchestrator binary errors at exec
+        # and the contractSetCid pinned-CID test sees the empty-set sentinel.
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: implementations/ruby
+
+      - name: Set up Zig 0.16
+        # mint-zig-self-contracts (PR #241, issue #213) builds a zig binary
+        # orchestrator that the rust CLI invokes via the lift-plugin-protocol
+        # RPC. Without zig on PATH the binary never builds, the lifter never
+        # runs, and the pinned-CID test sees the empty-set sentinel.
+        uses: mlugg/setup-zig@v1
+        with:
+          version: '0.16.0'
+
       # ---------------------------------------------------------------
-      # System-level deps: openssl, nlohmann-json. BLAKE3 is vendored
-      # at tools/blake3-vendored/, no system package required.
+      # System-level deps: openssl, nlohmann-json, libblake3 (Ruby FFI).
+      # cpp BLAKE3 is vendored at tools/blake3-vendored/; the Ruby kit's
+      # FFI binding to libblake3 needs the system package because no
+      # rubygem on Ruby 3.x exposes 64-byte XOF mode (per PR #226 notes).
       # ---------------------------------------------------------------
 
-      - name: Install C++ system deps + z3
+      - name: Install C++ system deps + z3 + libblake3
         # z3 is the SMT solver invoked by the TS workflow producer's
         # checkImplication / bridgeEnforcement / circularProof tests
         # (`provekit prove` substrate). Without it on PATH, every
@@ -120,11 +142,17 @@ jobs:
         # `expected 'undecidable' to be 'equivalent'`. The `prove`
         # workflow in provekit.yml installed z3; this gate did not.
         # Closes task #215 ("CI: TS workflow producer tests failing").
+        #
+        # libblake3-dev is needed for the Ruby kit's FFI binding (per
+        # PR #226 / issue #210); without it the orchestrator's BLAKE3
+        # FFI fails at runtime and the pinned-CID test sees the
+        # empty-set sentinel.
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             clang \
+            libblake3-dev \
             libsodium-dev \
             libssl-dev \
             maven \
