@@ -50,9 +50,9 @@ use clap::Parser;
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
-use provekit_canonicalizer::{encode_jcs, Value as CValue};
-use provekit_claim_envelope::compute_contract_set_cid;
-use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
+use provekit_claim_envelope::{compute_contract_set_cid, mint_contract, Authoring, MintContractArgs, contract_cid};
+use provekit_proof_envelope::{build_proof_envelope, ProofEnvelopeInput, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
 
 use crate::project_config::{read_project_config, read_user_config};
 use crate::OutputFlags;
@@ -328,45 +328,96 @@ fn dispatch(
     drop(stdin);
     let _ = child.wait();
 
-    // Process response: shape `proof-envelope`
+    // Process response: shape `proof-envelope` or `ir-document`
     let kind = lift_resp.get("kind").and_then(|v| v.as_str()).ok_or(
-        "lift response missing `kind` field; only proof-envelope shape supported in v1",
+        "lift response missing `kind` field",
     )?;
-    if kind != "proof-envelope" {
-        return Err(format!(
-            "v1 dispatcher only supports `proof-envelope` shape; got `{kind}`. The lift-plugin spec defines shapes (a) `ir-document` and (b) `signed-mementos`; this dispatcher version doesn't implement them yet.",
-        ));
+    match kind {
+        "proof-envelope" => {
+            let filename_cid = lift_resp
+                .get("filename_cid")
+                .and_then(|v| v.as_str())
+                .ok_or("missing filename_cid")?
+                .to_string();
+            let contract_set_cid = lift_resp
+                .get("contract_set_cid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let bytes_b64 = lift_resp
+                .get("bytes_base64")
+                .and_then(|v| v.as_str())
+                .ok_or("missing bytes_base64")?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(bytes_b64)
+                .map_err(|e| format!("decode bytes_base64: {e}"))?;
+
+            std::fs::create_dir_all(out_dir)
+                .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+            let out_path = out_dir.join(format!("{filename_cid}.proof"));
+            std::fs::write(&out_path, &bytes)
+                .map_err(|e| format!("write {}: {e}", out_path.display()))?;
+
+            if !quiet {
+                for d in lift_resp
+                    .get("diagnostics")
+                    .and_then(|v| v.as_array())
+                    .into_iter()
+                    .flatten()
+                {
+                    let s = d.as_str().unwrap_or("");
+                    if !s.is_empty() {
+                        println!("{}: {s}", "note".dimmed());
+                    }
+                }
+            }
+
+            Ok(DispatchResult {
+                filename_cid,
+                contract_set_cid,
+                bytes_written: bytes.len(),
+            })
+        }
+        "ir-document" => {
+            let ir = lift_resp
+                .get("ir")
+                .and_then(|v| v.as_array())
+                .ok_or("ir-document response missing `ir` array")?;
+
+            let (bytes, filename_cid, contract_set_cid) =
+                mint_from_ir_document(ir, &project_root)?;
+
+            std::fs::create_dir_all(out_dir)
+                .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+            let out_path = out_dir.join(format!("{filename_cid}.proof"));
+            std::fs::write(&out_path, &bytes)
+                .map_err(|e| format!("write {}: {e}", out_path.display()))?;
+
+            if !quiet {
+                let diags = lift_resp
+                    .get("diagnostics")
+                    .and_then(|v| v.as_array());
+
+                if let Some(diags) = diags {
+                    for d in diags {
+                        let s = d.as_str().unwrap_or("");
+                        if !s.is_empty() {
+                            println!("{}: {s}", "note".dimmed());
+                        }
+                    }
+                }
+            }
+
+            Ok(DispatchResult {
+                filename_cid,
+                contract_set_cid,
+                bytes_written: bytes.len(),
+            })
+        }
+        other => Err(format!(
+            "unsupported response shape `{other}`; expected `proof-envelope` or `ir-document`",
+        )),
     }
-    let filename_cid = lift_resp
-        .get("filename_cid")
-        .and_then(|v| v.as_str())
-        .ok_or("missing filename_cid")?
-        .to_string();
-    // contract_set_cid is optional in the response (legacy plugins omit it).
-    let contract_set_cid = lift_resp
-        .get("contract_set_cid")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let bytes_b64 = lift_resp
-        .get("bytes_base64")
-        .and_then(|v| v.as_str())
-        .ok_or("missing bytes_base64")?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(bytes_b64)
-        .map_err(|e| format!("decode bytes_base64: {e}"))?;
-
-    std::fs::create_dir_all(out_dir)
-        .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
-    let out_path = out_dir.join(format!("{filename_cid}.proof"));
-    std::fs::write(&out_path, &bytes)
-        .map_err(|e| format!("write {}: {e}", out_path.display()))?;
-
-    Ok(DispatchResult {
-        filename_cid,
-        contract_set_cid,
-        bytes_written: bytes.len(),
-    })
 }
 
 fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
@@ -388,6 +439,130 @@ fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
     v.get("result")
         .cloned()
         .ok_or_else(|| "response missing `result`".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// ir-document → proof-envelope minting
+// ---------------------------------------------------------------------------
+
+fn mint_from_ir_document(
+    ir: &[Value],
+    _project_root: &Path,
+) -> Result<(Vec<u8>, String, String), String> {
+    use std::collections::BTreeMap;
+
+    let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut content_cids: Vec<String> = Vec::new();
+    let signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
+    let produced_at = "2026-05-03T18:00:00Z".to_string();
+
+    for decl in ir {
+        let kind = decl
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if kind != "contract" {
+            continue;
+        }
+
+        let name = decl
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unnamed")
+            .to_string();
+        let out_binding = decl
+            .get("outBinding")
+            .and_then(|v| v.as_str())
+            .unwrap_or("out")
+            .to_string();
+        let pre = decl.get("pre").map(json_to_cvalue);
+        let post = decl.get("post").map(json_to_cvalue);
+        let inv = decl.get("inv").map(json_to_cvalue);
+
+        if pre.is_none() && post.is_none() && inv.is_none() {
+            continue;
+        }
+
+        let args = MintContractArgs {
+            contract_name: name,
+            pre,
+            post,
+            inv,
+            out_binding,
+            produced_by: "provekit-cli".to_string(),
+            produced_at: produced_at.clone(),
+            input_cids: vec![],
+            authoring: Authoring::Lift {
+                lifter: "ir-document".to_string(),
+                evidence: "minted from ir-document RPC response".to_string(),
+                source_cid: None,
+            },
+            signer_seed,
+        };
+
+        let ccid = contract_cid(&args);
+        content_cids.push(ccid);
+
+        let m = mint_contract(&args)
+            .map_err(|e| format!("mint contract: {e}"))?;
+
+        members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
+    }
+
+    if members.is_empty() {
+        return Err("no contracts to mint".to_string());
+    }
+
+    let contract_set_cid = compute_contract_set_cid(content_cids);
+
+    let signer_pubkey = ed25519_pubkey_string(&signer_seed);
+    let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
+
+    let proof_input = ProofEnvelopeInput {
+        name: "ir-document".to_string(),
+        version: "1.0.0".to_string(),
+        binary_cid: None,
+        metadata: None,
+        members,
+        signer_cid,
+        signer_seed,
+        declared_at: produced_at,
+    };
+
+    let built = build_proof_envelope(&proof_input);
+
+    Ok((built.bytes, built.cid, contract_set_cid))
+}
+
+/// Convert `serde_json::Value` to `provekit_canonicalizer::Value`.
+fn json_to_cvalue(j: &Value) -> Arc<CValue> {
+    match j {
+        Value::Null => CValue::null(),
+        Value::Bool(b) => CValue::boolean(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CValue::integer(i)
+            } else if let Some(u) = n.as_u64() {
+                CValue::integer(u as i64)
+            } else if let Some(f) = n.as_f64() {
+                CValue::integer(f as i64)
+            } else {
+                CValue::integer(0)
+            }
+        }
+        Value::String(s) => CValue::string(s.clone()),
+        Value::Array(items) => {
+            let v: Vec<_> = items.iter().map(|x| json_to_cvalue(x)).collect();
+            CValue::array(v)
+        }
+        Value::Object(map) => {
+            let entries: Vec<(String, Arc<CValue>)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), json_to_cvalue(v)))
+                .collect();
+            CValue::object(entries)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

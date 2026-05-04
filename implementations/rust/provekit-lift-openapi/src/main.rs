@@ -97,6 +97,11 @@ fn handle_lift(id: Value, params: Value) -> Value {
         );
     }
 
+    let workspace_root = params
+        .get("workspace_root")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".");
+
     let source_paths: Vec<String> = params
         .get("source_paths")
         .and_then(|v| v.as_array())
@@ -111,19 +116,26 @@ fn handle_lift(id: Value, params: Value) -> Value {
         return error_response(id, -32602, "source_paths is empty".to_string());
     }
 
-    let workspace_root = params
-        .get("workspace_root")
-        .and_then(|v| v.as_str())
-        .unwrap_or(".");
+    let workspace = std::path::PathBuf::from(workspace_root);
 
     let mut diagnostics = Diagnostics::default();
     let mut declarations: Vec<Declaration> = Vec::new();
 
-    for rel_path in &source_paths {
+    let spec_files = if source_paths == ["."] {
+        discover_spec_files(&workspace, surface)
+    } else {
+        source_paths
+    };
+
+    if spec_files.is_empty() {
+        diagnostics.push(format!("no {} spec files found in workspace", surface));
+    }
+
+    for rel_path in &spec_files {
         let abs_path = if std::path::Path::new(rel_path).is_absolute() {
             std::path::PathBuf::from(rel_path)
         } else {
-            std::path::Path::new(workspace_root).join(rel_path)
+            workspace.join(rel_path)
         };
 
         let result = match surface {
@@ -172,4 +184,35 @@ fn error_response(id: Value, code: i64, message: String) -> Value {
             "message": message
         }
     })
+}
+
+fn discover_spec_files(workspace: &std::path::Path, surface: &str) -> Vec<String> {
+    let extensions: &[&str] = match surface {
+        "openapi" | "swagger" => &["yaml", "yml", "json"],
+        "protobuf" => &["proto"],
+        _ => return vec![],
+    };
+
+    let mut found = Vec::new();
+
+    for entry in walkdir::WalkDir::new(workspace)
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if let Some(ext) = entry.path().extension() {
+            let ext = ext.to_str().unwrap_or("");
+            if extensions.contains(&ext) {
+                if let Ok(rel) = entry.path().strip_prefix(workspace) {
+                    found.push(rel.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    found.sort();
+    found
 }
