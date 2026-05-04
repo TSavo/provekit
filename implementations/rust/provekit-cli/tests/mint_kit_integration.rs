@@ -154,12 +154,12 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
 /// fallback fires, producing an empty-set CID. The all-kits structure test
 /// tolerates this; the pinned-CID test (`swift_kit_pins_expected_contract_set_cid`)
 /// is `#[cfg_attr(not(target_os = "macos"), ignore)]` so it doesn't fail on Linux.
-const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python"];
+const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "c"];
 
 /// Kits without a lifter binary yet — produce the empty-set CID because the
 /// binary cannot be found (ENOENT on spawn). These declare the binary name but
 /// the binary is not installed; the gap surfaces as an empty-set attestation.
-const KITS_WITHOUT_LIFTERS: &[&str] = &["ruby", "zig", "c"];
+const KITS_WITHOUT_LIFTERS: &[&str] = &["ruby", "zig"];
 
 /// Kits that have a lifter AND are expected to find real contracts.
 /// Only include kits where the test environment reliably has the lifter built
@@ -763,4 +763,60 @@ fn python_kit_pins_expected_contract_set_cid() {
     );
 
     eprintln!("python kit pinned contractSetCid confirmed: {cset}");
+}
+
+// ---------------------------------------------------------------------------
+// Test 12: --kit=c pins the expected contractSetCid (issue #215 regression gate)
+// ---------------------------------------------------------------------------
+
+/// Pinned contractSetCid produced by `--kit=c` after routing to the
+/// `c-self-contracts` surface (`mint-c-self-contracts --rpc`, canonical
+/// 6-slab, 30-contract set). Mirrors the rust / cpp / ts / go / java / swift
+/// pinning pattern.
+///
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the
+/// KIT_TABLE routing regression has been reintroduced. If it fails with
+/// an unknown CID, the c slab contracts have changed -- update
+/// C_CONTRACT_SET_CID accordingly.
+///
+/// The surface is reached via:
+///   `implementations/c/.provekit/lift/c-self-contracts/manifest.toml`
+/// which spawns: `./mint-c-self-contracts/run-rpc.sh`.
+const C_CONTRACT_SET_CID: &str =
+    "blake3-512:50d08f4df4f8e16073d70a168292f3b3850aa557030a2a9ae65892aaac2b0e889204fa2cf602f4074ea85680aed37490fcbdc2ff73aa87c162fba16e57f40577";
+
+#[test]
+#[serial(mint_kit_files)]
+fn c_kit_pins_expected_contract_set_cid() {
+    let root = repo_root();
+
+    let (ok, stdout, stderr) = run_mint("c");
+    if !ok {
+        eprintln!(
+            "c kit: mint failed (libsodium / cc may not be available, or binary not built)\n  stderr: {stderr}"
+        );
+        // Skip rather than fail -- libsodium + the built binary may not be
+        // present in every test environment. CI builds via `make build-c-self-contracts`.
+        return;
+    }
+
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "c kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
+    );
+
+    let attest = read_attestation(&root, "c");
+    let cset = attest["contractSetCid"].as_str().unwrap();
+
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "c kit: contractSetCid must NOT be the empty-set sentinel -- routing regression detected (issue #215)"
+    );
+    assert_eq!(
+        cset, C_CONTRACT_SET_CID,
+        "c kit: contractSetCid does not match pinned value from 6-slab, 30-contract set (issue #215).\n\
+         If the self-contracts changed intentionally, update C_CONTRACT_SET_CID."
+    );
+
+    eprintln!("c kit contractSetCid pinned correctly: {cset}");
 }
