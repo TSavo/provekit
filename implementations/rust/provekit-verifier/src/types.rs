@@ -261,7 +261,11 @@ impl MementoPool {
             .get(&memento_cid)
             .and_then(|env| {
                 env.pointer("/header/contractName")
+                    .or_else(|| env.pointer("/header/name"))
                     .or_else(|| env.pointer("/evidence/body/contractName"))
+                    .or_else(|| env.pointer("/evidence/body/name"))
+                    .or_else(|| env.get("header").and_then(|h| h.get("name")))
+                    .or_else(|| env.get("header").and_then(|h| h.get("contractName")))
             })
             .and_then(|v| v.as_str());
 
