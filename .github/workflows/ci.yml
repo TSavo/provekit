@@ -210,3 +210,93 @@ jobs:
         # Go modules; test-ts runs vitest; test-csharp runs xUnit;
         # test-python runs pytest after a local pip install.
         run: make test-all
+
+  conformance-macos-swift:
+    # Step 5 of the 12/12 conformance epic (#277). The Linux conformance
+    # gate above intentionally excludes swift from `all-mint` because the
+    # swift kit is macOS-only (Package.swift `platforms: [.macOS(.v10_15)]`
+    # plus an OpenSSL libcrypto dep wired through Homebrew prefixes). This
+    # job exercises `make mint-swift` end-to-end on a macOS runner so the
+    # swift kit's pinned contractSetCid is verified on every PR alongside
+    # the Linux 10/12 set, advancing the gate to 11/12.
+    #
+    # Scope (kept lean to manage macOS runner minutes):
+    #   - install rust (swift toolchain ships pre-installed on the
+    #     hosted runner, OpenSSL is available under /opt/homebrew on
+    #     Apple Silicon and Package.swift auto-detects the prefix).
+    #   - run `make mint-swift` (loud failure gate: shells out to
+    #     verify-self-contracts against the pinned swift.json envelope).
+    #   - run only the swift-specific pinned-CID integration test
+    #     (`swift_kit_pins_expected_contract_set_cid`), which is gated
+    #     #[cfg_attr(not(target_os = "macos"), ignore)] in the rust
+    #     suite and never executes on the Linux job.
+    #
+    # Out of scope: `make conformance` and `make test-all`. Those are
+    # the Linux job's contract; replicating them here doubles cost
+    # without adding signal. The cross-kit byte-equivalence claim is
+    # already protected by the Linux gate's pinned CIDs for the other
+    # 10 kits, and JCS+BLAKE3 is architecture-independent.
+    name: Cross-language conformance gate (macOS swift)
+    # macos-latest currently aliases to macos-14 (Apple Silicon, M1).
+    # GitHub-hosted, not self-hosted; that is the intended split.
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        # mint-swift depends on build-rust (the orchestrator binary
+        # provekit-cli is the dispatcher invoked via the lift-plugin-protocol
+        # RPC against mint-swift-self-contracts).
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target dirs
+        # Same cache shape as the Linux job; ${{ runner.os }} resolves to
+        # macOS here so the namespace is distinct (no collision with the
+        # Linux cargo cache). Cold-start without this is ~5-7 minutes of
+        # crate compilation; with the cache, sub-minute restore.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Verify swift toolchain
+        # macOS GitHub-hosted runners ship the swift toolchain
+        # pre-installed (Xcode command-line tools). No setup-swift action
+        # required. This step is for log readability so a future failure
+        # mode (Apple changing the runner image baseline) is loud.
+        run: |
+          swift --version
+          xcrun --find swift
+
+      - name: make help (sanity)
+        run: make help
+
+      - name: make mint-swift
+        # End-to-end: build-rust + build-swift, then dispatch mint --kit=swift
+        # to the swift orchestrator (mint-swift-self-contracts --rpc), and
+        # verify the resulting contractSetCid matches the pinned envelope at
+        # provenance/self-contracts-attest/swift.json. Failure here means the
+        # swift kit's emission has drifted relative to the rest of the
+        # protocol (or the swift slab itself has changed) and is a hard stop.
+        run: make mint-swift
+
+      - name: cargo test swift_kit_pins
+        # Redundant pin verification: the integration test asserts the
+        # contractSetCid string equals the pinned constant
+        # SWIFT_CONTRACT_SET_CID (blake3-512:272543ef...) directly,
+        # whereas `make mint-swift` checks against the JSON envelope.
+        # The test silently skips when mint fails (run_mint returns ok=false);
+        # the previous step is the loud gate, this is the in-rust-suite gate
+        # the integration tests assert by file.
+        run: cargo test -p provekit-cli --test mint_kit_integration -- swift_kit_pins
+        working-directory: implementations/rust
