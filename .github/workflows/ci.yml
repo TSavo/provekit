@@ -155,8 +155,10 @@ jobs:
         # archive.ubuntu.com flakes (which killed CI 4+ times this
         # session before the cache existed).
         #
-        # Belt-and-suspenders: 5-attempt retry with exponential backoff
-        # in case the cache itself is unreachable (apt-cacher-ng down,
+        # Belt-and-suspenders: 5-attempt retry with linear backoff
+        # (30s, 60s, 90s, 120s = 300s max wait, surfacing the failure
+        # immediately on attempt 5 without an extra trailing sleep) in
+        # case the cache itself is unreachable (apt-cacher-ng down,
         # network glitch, etc.).
         run: |
           set -euo pipefail
@@ -169,7 +171,8 @@ jobs:
           else
             echo "apt-cacher-ng not detected on localhost:3142; using direct upstream"
           fi
-          for attempt in 1 2 3 4 5; do
+          MAX_ATTEMPTS=5
+          for attempt in $(seq 1 $MAX_ATTEMPTS); do
             echo "::group::apt-get install attempt $attempt"
             if sudo apt-get update -y && sudo apt-get install -y --no-install-recommends $DEPS; then
               echo "::endgroup::"
@@ -177,11 +180,13 @@ jobs:
               exit 0
             fi
             echo "::endgroup::"
-            wait_s=$((attempt * 30))
-            echo "apt-get install attempt $attempt failed; sleeping ${wait_s}s before retry"
-            sleep $wait_s
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              wait_s=$((attempt * 30))
+              echo "apt-get install attempt $attempt failed; sleeping ${wait_s}s before retry"
+              sleep $wait_s
+            fi
           done
-          echo "apt-get install failed after 5 attempts (450s total backoff)" >&2
+          echo "apt-get install failed after $MAX_ATTEMPTS attempts" >&2
           exit 1
 
       - name: Install Vampire (upstream GitHub release)
