@@ -13,6 +13,7 @@ members = [
     "provekit-ir-codegen",
     "provekit-verifier",
     "provekit-self-contracts",
+    "provekit-baseline-rust-std",
     "provekit-cli",
     "provekit-macros",
     "provekit-macros-rt",
