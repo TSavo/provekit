@@ -1,5 +1,6 @@
 <?php
 /** ProvekIt PHP Lifter — parses PHP source, lifts contracts, speaks RPC.
+ *  Five adapters: DocBlock, Symfony Validator, PHPStan/Psalm, PHPUnit, Pest.
  *  Single-binary entry: `php lifter.php --rpc`
  */
 
@@ -14,7 +15,13 @@ require_once __DIR__ . '/../provekit-ir-symbolic/src/Canonicalizer/Ed25519.php';
 require_once __DIR__ . '/../provekit-ir-symbolic/src/ClaimEnvelope/Minter.php';
 require_once __DIR__ . '/../provekit-ir-symbolic/src/ProofEnvelope/Builder.php';
 
-use ProvekIt\Ir\{Collector, ContractDecl};
+use ProvekIt\Ir\{Collector, ContractDecl, IrFormula, IrTerm, Sort};
+use ProvekIt\Ir\AtomicFormula;
+use ProvekIt\Ir\ConnectiveFormula;
+use ProvekIt\Ir\QuantifierFormula;
+use ProvekIt\Ir\VarTerm;
+use ProvekIt\Ir\ConstTerm;
+use ProvekIt\Ir\CtorTerm;
 use ProvekIt\Canonicalizer\{Blake3, Jcs, Ed25519};
 use ProvekIt\ClaimEnvelope\Minter;
 use ProvekIt\ProofEnvelope\Builder;
@@ -58,33 +65,30 @@ class PhpFileParser
         while ($this->pos < count($this->tokens)) {
             $t = $this->tokens[$this->pos];
 
-            // DocBlock annotations
+            // ── DocBlock annotations (@provekit.*, PHPStan/Psalm) ──
             if ($t['kind'] === 'T_DOC_COMMENT') {
                 $result = $this->liftDocBlock();
-                if ($result !== null) {
-                    $decls[] = $result;
-                    $seen++;
-                }
+                if ($result !== null) { $decls[] = $result; $seen++; }
+                $result2 = $this->liftPhpstanFromDocblock();
+                if ($result2 !== null) { $decls[] = $result2; $seen++; }
             }
 
-            // PHP 8 attributes
+            // ── Symfony Validator attributes ──
             if ($t['raw'] === '#[' || $t['kind'] === 'T_ATTRIBUTE') {
-                // Skip for now — complex parse
+                $result = $this->liftSymfonyValidator();
+                if ($result !== null) { $decls[] = $result; $seen++; }
             }
 
-            // Function definition followed by contract
-            if ($t['kind'] === 'T_FUNCTION') {
-                // Check for preceding line-comment annotations
-                $this->pos++;
-            }
-
-            // PHPUnit assertions
-            if ($t['kind'] === 'T_VARIABLE' && str_starts_with($t['raw'], '$this') || $t['kind'] === 'T_STRING') {
+            // ── PHPUnit assertions ──
+            if ($t['kind'] === 'T_STRING' && preg_match('/^assert/i', $t['raw'])) {
                 $result = $this->liftPhpUnitAssertion();
-                if ($result !== null) {
-                    $decls[] = $result;
-                    $seen++;
-                }
+                if ($result !== null) { $decls[] = $result; $seen++; }
+            }
+
+            // ── Pest assertions ──
+            if ($t['kind'] === 'T_STRING' && $t['raw'] === 'expect') {
+                $result = $this->liftPestAssertion();
+                if ($result !== null) { $decls[] = $result; $seen++; }
             }
 
             $this->pos++;
@@ -93,7 +97,9 @@ class PhpFileParser
         return ['decls' => $decls, 'seen' => $seen];
     }
 
-    // ── DocBlock annotations ──
+    // ════════════════════════════════════════════
+    // Adapter 1: DocBlock (@provekit.target, @provekit.post, @provekit.contract)
+    // ════════════════════════════════════════════
 
     private function liftDocBlock(): ?ContractDecl
     {
@@ -101,90 +107,457 @@ class PhpFileParser
         $line = $this->tokens[$this->pos]['line'];
         $this->pos++;
 
-        // Parse @provekit.target and @provekit.post from docblock
-        $target = null;
-        $post = null;
-
+        $target = null; $post = null;
         foreach (explode("\n", $doc) as $docLine) {
             $docLine = trim($docLine, " *\t\r");
-            if (preg_match('/^@provekit\.target\s+(.+)$/', $docLine, $m)) {
-                $target = trim($m[1]);
-            }
-            if (preg_match('/^@provekit\.post\s+(\{.+)/', $docLine, $m)) {
-                $post = trim($m[1]);
-            }
-            if (preg_match('/^@provekit\.contract$/', $docLine)) {
-                // Simple contract marker
-            }
+            if (preg_match('/^@provekit\.target\s+(.+)$/', $docLine, $m)) $target = trim($m[1]);
+            if (preg_match('/^@provekit\.post\s+(\{.+)/', $docLine, $m)) $post = trim($m[1]);
         }
 
-        // Find the function name that follows
         $funcName = $this->skipToNextFunction() ?? 'unknown';
 
         if ($target && $post) {
-            // Parse JSON formula from @provekit.post
             $formula = json_decode($post, true);
             if (!$formula || !isset($formula['kind'])) return null;
-
-            // Convert JSON array to IrFormula
-            $irFormula = $this->jsonToFormula($formula);
-
-            return new ContractDecl(
-                name: $funcName,
-                post: $irFormula,
-            );
+            return new ContractDecl(name: $funcName, post: $this->jsonToFormula($formula));
         }
-
         if ($target) {
-            // Target only — create placeholder contract
-            return new ContractDecl(
-                name: $funcName,
-                post: new \ProvekIt\Ir\AtomicFormula('true', []),
-            );
+            return new ContractDecl(name: $funcName, post: new AtomicFormula('true', []));
         }
-
         return null;
     }
 
-    // ── PHPUnit assertions ──
+    // ════════════════════════════════════════════
+    // Adapter 2: Symfony Validator (attributes + docblock constraints)
+    // ════════════════════════════════════════════
+
+    /** Recognized constraint -> IR atomic */
+    private const SYMFONY_CONSTRAINT_MAP = [
+        'NotBlank'   => 'not_null',
+        'NotNull'    => 'not_null',
+        'IsTrue'     => '=',
+        'IsFalse'    => '=',
+        'Email'      => 'email',
+        'Url'        => 'url',
+        'Uuid'       => 'uuid',
+        'Ip'         => 'ip',
+        'Length'     => null,              // handled specially (min/max args)
+        'Range'      => null,
+        'GreaterThan'       => '>',
+        'GreaterThanOrEqual'=> "\u{2265}",
+        'LessThan'          => '<',
+        'LessThanOrEqual'   => "\u{2264}",
+        'Positive'   => "\u{2265}",
+        'Negative'   => "\u{2264}",
+        'PositiveOrZero' => "\u{2265}",
+        'NegativeOrZero' => "\u{2264}",
+        'Count'      => null,
+        'Choice'     => null,
+        'Regex'      => 'matches',
+        'Time'       => null,
+        'Date'       => null,
+        'DateTime'   => null,
+    ];
+
+    private function liftSymfonyValidator(): ?ContractDecl
+    {
+        $t = $this->tokens[$this->pos];
+        $line = $t['line'];
+
+        // Collect all attributes on this property/method by reading until we pass the attribute block
+        $attrs = [];
+        $propName = null;
+        $className = null;
+        $startPos = $this->pos;
+
+        // First pass: collect the attribute block and find the class/property name
+        for ($i = $startPos; $i < min($startPos + 60, count($this->tokens)); $i++) {
+            $tok = $this->tokens[$i];
+
+            // Named attribute: #[Assert\Constraint(args...)]
+            if ($tok['kind'] === 'T_ATTRIBUTE' || $tok['raw'] === '#[') {
+                $attr = $this->parseAttribute($i);
+                if ($attr) {
+                    $attrs[] = $attr;
+                    // Skip past the attribute
+                    $depth = 1;
+                    for ($j = $i + 1; $j < count($this->tokens) && $depth > 0; $j++) {
+                        if ($this->tokens[$j]['raw'] === '[') $depth++;
+                        elseif ($this->tokens[$j]['raw'] === ']') $depth--;
+                        $i = $j;
+                    }
+                    $i++;
+                }
+            }
+
+            // Track current class
+            if ($tok['kind'] === 'T_CLASS' && isset($this->tokens[$i + 2])) {
+                $className = $this->tokens[$i + 2]['raw'];
+            }
+
+            // Property/variable name
+            if ($tok['kind'] === 'T_VARIABLE' && !$propName) {
+                $propName = ltrim($tok['raw'], '$');
+            }
+
+            // End of attribute block
+            if ($tok['kind'] === 'T_PUBLIC' || $tok['kind'] === 'T_PRIVATE'
+                || $tok['kind'] === 'T_PROTECTED' || $tok['kind'] === 'T_CONST') {
+                // property declaration follows — we already have attrs
+                if (isset($this->tokens[$i + 2]) && $this->tokens[$i + 2]['kind'] === 'T_VARIABLE') {
+                    $propName = ltrim($this->tokens[$i + 2]['raw'], '$');
+                }
+                break;
+            }
+
+            // Stop at function definition or EOF
+            if ($tok['kind'] === 'T_FUNCTION' || $tok['raw'] === ';') break;
+        }
+
+        if (empty($attrs) || !$propName) return null;
+
+        $constraints = $this->symfonyConstraintsToFormula($attrs, $propName);
+        if ($constraints === null) return null;
+
+        $name = ($className ? $className . '_' : '') . $propName . '_valid';
+        $formula = new QuantifierFormula('forall', 'x', Sort::Ref(), $constraints);
+
+        return new ContractDecl(
+            name: $name,
+            post: $formula,
+        );
+    }
+
+    private function parseAttribute(int &$pos): ?array
+    {
+        $idx = $pos;
+        while ($idx < count($this->tokens) && $this->tokens[$idx]['raw'] !== '#[') $idx++;
+        if ($idx >= count($this->tokens)) return null;
+
+        $idx++; // skip #[
+        // Skip whitespace
+        while ($idx < count($this->tokens) && $this->tokens[$idx]['kind'] === 'T_WHITESPACE') $idx++;
+
+        // Get namespace path (e.g., Assert\NotBlank or NotBlank)
+        $name = '';
+        while ($idx < count($this->tokens) && in_array($this->tokens[$idx]['kind'], ['T_STRING', 'T_NS_SEPARATOR'])) {
+            $name .= $this->tokens[$idx]['raw'];
+            $idx++;
+        }
+
+        // Skip the namespace prefix — we just want the leaf class name
+        $parts = explode('\\', $name);
+        $className = end($parts);
+
+        // Parse arguments: (min: 2, max: 100)
+        $args = [];
+        if ($idx < count($this->tokens) && $this->tokens[$idx]['raw'] === '(') {
+            $idx++;
+            $depth = 1;
+            $argStr = '';
+            while ($idx < count($this->tokens) && $depth > 0) {
+                $raw = $this->tokens[$idx]['raw'];
+                if ($raw === '(') $depth++;
+                elseif ($raw === ')') { $depth--; if ($depth === 0) break; }
+                $argStr .= $raw;
+                $idx++;
+            }
+
+            // Parse named args: "min: 2, max: 100"
+            foreach (explode(',', $argStr) as $pair) {
+                $pair = trim($pair);
+                if (preg_match('/^(\w+)\s*:\s*(.+)$/', $pair, $m)) {
+                    $val = trim($m[2], "'\" ");
+                    $args[$m[1]] = is_numeric($val) ? (int)$val : $val;
+                }
+            }
+        }
+
+        return ['constraint' => $className, 'args' => $args];
+    }
+
+    private function symfonyConstraintsToFormula(array $attrs, string $propName): ?IrFormula
+    {
+        $operands = [];
+
+        foreach ($attrs as $attr) {
+            $c = $attr['constraint'];
+            $args = $attr['args'];
+            $field = new CtorTerm($propName, [new VarTerm('x')]);
+
+            // Map known constraints
+            $predicate = self::SYMFONY_CONSTRAINT_MAP[$c] ?? null;
+            if ($predicate === 'not_null') {
+                $operands[] = new AtomicFormula('not_null', [$field]);
+            } elseif ($predicate !== null) {
+                $operands[] = new AtomicFormula($predicate, [$field]);
+            }
+
+            // Handle special constraints with arguments
+            switch ($c) {
+                case 'Length':
+                    if (isset($args['min'])) {
+                        $operands[] = new AtomicFormula("\u{2265}", [
+                            new CtorTerm('strlen', [$field]),
+                            new ConstTerm((int)$args['min'], Sort::Int()),
+                        ]);
+                    }
+                    if (isset($args['max'])) {
+                        $operands[] = new AtomicFormula("\u{2264}", [
+                            new CtorTerm('strlen', [$field]),
+                            new ConstTerm((int)$args['max'], Sort::Int()),
+                        ]);
+                    }
+                    if (isset($args['exact'])) {
+                        $operands[] = new AtomicFormula('=', [
+                            new CtorTerm('strlen', [$field]),
+                            new ConstTerm((int)$args['exact'], Sort::Int()),
+                        ]);
+                    }
+                    break;
+
+                case 'Range':
+                    if (isset($args['min'])) {
+                        $operands[] = new AtomicFormula("\u{2265}", [
+                            $field, new ConstTerm((int)$args['min'], Sort::Int()),
+                        ]);
+                    }
+                    if (isset($args['max'])) {
+                        $operands[] = new AtomicFormula("\u{2264}", [
+                            $field, new ConstTerm((int)$args['max'], Sort::Int()),
+                        ]);
+                    }
+                    break;
+
+                case 'Regex':
+                    if (isset($args['pattern'])) {
+                        $operands[] = new AtomicFormula('matches', [
+                            $field, new ConstTerm($args['pattern'], Sort::String()),
+                        ]);
+                    }
+                    break;
+
+                case 'Choice':
+                    if (isset($args['choices']) && is_array($args['choices'])) {
+                        $choices = array_map(fn($v) => new ConstTerm($v, Sort::String()), $args['choices']);
+                        $operands[] = new AtomicFormula('member', [
+                            $field,
+                            new CtorTerm('Set', $choices),
+                        ]);
+                    }
+                    break;
+            }
+        }
+
+        if (empty($operands)) return null;
+        if (count($operands) === 1) return $operands[0];
+        return new ConnectiveFormula('and', $operands);
+    }
+
+    // ════════════════════════════════════════════
+    // Adapter 3: PHPStan / Psalm docblock annotations
+    // ════════════════════════════════════════════
+
+    /** @param int<lo, hi> / array<int, string> / non-empty-string etc. */
+    private function liftPhpstanFromDocblock(): ?ContractDecl
+    {
+        $doc = $this->tokens[$this->pos]['raw'];
+
+        $decls = [];
+
+        // Find @param type $name annotations
+        if (preg_match_all('/@param\s+(\S+)\s+\$(\w+)/', $doc, $params, PREG_SET_ORDER)) {
+            foreach ($params as $m) {
+                $type = $m[1];
+                $name = $m[2];
+                $f = $this->phpstanTypeToFormula($type, $name);
+                if ($f) {
+                    $decls[] = new ContractDecl(
+                        name: "param_{$name}",
+                        post: new QuantifierFormula('forall', 'x', Sort::Ref(), $f),
+                    );
+                }
+            }
+        }
+
+        // Find @return type annotations
+        if (preg_match('/@return\s+(\S+)/', $doc, $m)) {
+            $type = $m[1];
+            $f = $this->phpstanTypeToFormula($type, 'out');
+            if ($f) {
+                $decls[] = new ContractDecl(
+                    name: 'return_value',
+                    post: new QuantifierFormula('forall', 'x', Sort::Ref(), $f),
+                );
+            }
+        }
+
+        return !empty($decls) ? $decls[0] : null; // Return first for now
+    }
+
+    private function phpstanTypeToFormula(string $type, string $varName): ?IrFormula
+    {
+        $field = new CtorTerm($varName, [new VarTerm('x')]);
+        $operands = [];
+
+        // int<lo, hi>
+        if (preg_match('/^int<(\d+),\s*(\d+)>$/', $type, $m)) {
+            $lo = (int)$m[1]; $hi = (int)$m[2];
+            $operands[] = new AtomicFormula("\u{2265}", [$field, new ConstTerm($lo, Sort::Int())]);
+            $operands[] = new AtomicFormula("\u{2264}", [$field, new ConstTerm($hi, Sort::Int())]);
+        }
+
+        // int >= lo
+        if (preg_match('/^int\b.*\b>=(\d+)/', $type, $m)) {
+            $operands[] = new AtomicFormula("\u{2265}", [$field, new ConstTerm((int)$m[1], Sort::Int())]);
+        }
+
+        // positive-int, negative-int
+        if ($type === 'positive-int' || $type === 'positive_int') {
+            $operands[] = new AtomicFormula("\u{2265}", [$field, new ConstTerm(1, Sort::Int())]);
+        }
+        if ($type === 'negative-int' || $type === 'negative_int') {
+            $operands[] = new AtomicFormula("\u{2264}", [$field, new ConstTerm(-1, Sort::Int())]);
+        }
+
+        // non-negative-int
+        if (str_contains($type, 'non-negative')) {
+            $operands[] = new AtomicFormula("\u{2265}", [$field, new ConstTerm(0, Sort::Int())]);
+        }
+
+        // non-empty-string, non-empty-array
+        if (str_starts_with($type, 'non-empty-')) {
+            $operands[] = new AtomicFormula('not_null', [$field]);
+            $operands[] = new AtomicFormula('>', [
+                new CtorTerm('strlen', [$field]), new ConstTerm(0, Sort::Int()),
+            ]);
+        }
+
+        // null, mixed, void, never
+        if ($type === 'null' || $type === 'mixed') return null;
+
+        if (empty($operands)) {
+            // Bare scalar type: just add not_null
+            $operands[] = new AtomicFormula('not_null', [$field]);
+        }
+
+        if (count($operands) === 1) return $operands[0];
+        return new ConnectiveFormula('and', $operands);
+    }
+
+    // ════════════════════════════════════════════
+    // Adapter 4: PHPUnit assertions
+    // ════════════════════════════════════════════
 
     private function liftPhpUnitAssertion(): ?ContractDecl
     {
-        $t = $this->tokens[$this->pos];
+        $raw = $this->tokens[$this->pos]['raw'];
+        $line = $this->tokens[$this->pos]['line'];
 
-        // Match $this->assert*(...) or self::assert*(...)
-        $raw = $t['raw'];
-        if ($t['kind'] !== 'T_STRING') return null;
-
-        // Find T_OBJECT_OPERATOR or T_DOUBLE_COLON before us
         $hasArrow = false;
         for ($i = max(0, $this->pos - 2); $i < $this->pos; $i++) {
             if (in_array($this->tokens[$i]['raw'] ?? '', ['->', '::'])) {
-                $hasArrow = true;
-                break;
+                $hasArrow = true; break;
             }
         }
         if (!$hasArrow) return null;
 
-        // Common PHPUnit assertion methods
         $method = strtolower($raw);
         if (!str_starts_with($method, 'assert')) return null;
 
-        $parts = explode('(', $this->fetchRestOfLine());
-        if (count($parts) < 2) return null;
-
-        $args = $this->extractAssertArgs($method, $parts);
-        if ($args === null) return null;
-
-        $name = "phpunit_" . $method . "_L" . ($t['line'] ?? 0);
+        $name = "phpunit_{$method}_L{$line}";
 
         return new ContractDecl(
             name: $name,
-            inv: $args,
+            inv: new AtomicFormula($method, [
+                new CtorTerm('testFunc', [new VarTerm('x')]),
+                new ConstTerm('expected', Sort::String()),
+            ]),
         );
     }
 
-    // ── Helpers ──
+    // ════════════════════════════════════════════
+    // Adapter 5: Pest assertions
+    // ════════════════════════════════════════════
+
+    /** Pest: expect($x)->toBe(4) / expect($x)->toBeGreaterThan(0) */
+    private function liftPestAssertion(): ?ContractDecl
+    {
+        $line = $this->tokens[$this->pos]['line'];
+        $this->pos++; // skip 'expect'
+
+        // Skip whitespace and opening paren
+        while ($this->pos < count($this->tokens)
+            && in_array($this->tokens[$this->pos]['kind'], ['T_WHITESPACE', 'CHAR'])
+            && $this->tokens[$this->pos]['raw'] !== ')'
+        ) {
+            if ($this->tokens[$this->pos]['raw'] === '(') { $this->pos++; break; }
+            $this->pos++;
+        }
+
+        // Read the subject expression
+        $subject = '';
+        $parenDepth = 1;
+        while ($this->pos < count($this->tokens) && $parenDepth > 0) {
+            $raw = $this->tokens[$this->pos]['raw'];
+            if ($raw === '(') $parenDepth++;
+            elseif ($raw === ')') { $parenDepth--; if ($parenDepth === 0) break; }
+            $subject .= $raw;
+            $this->pos++;
+        }
+
+        // Skip -> to chain
+        while ($this->pos < count($this->tokens)
+            && $this->tokens[$this->pos]['raw'] !== '->'
+            && $this->tokens[$this->pos]['raw'] !== ')'
+        ) {
+            $this->pos++;
+        }
+        if ($this->tokens[$this->pos]['raw'] !== '->') return null;
+        $this->pos++; // skip ->
+
+        // Read the chain method
+        while ($this->pos < count($this->tokens)
+            && in_array($this->tokens[$this->pos]['kind'], ['T_WHITESPACE'])
+        ) {
+            $this->pos++;
+        }
+
+        $method = $this->tokens[$this->pos]['raw'];
+        if (!in_array($method, ['toBe', 'toBeGreaterThan', 'toBeGreaterThanOrEqual',
+                                'toBeLessThan', 'toBeLessThanOrEqual',
+                                'toEqual', 'toBeTrue', 'toBeFalse',
+                                'toBeNull', 'toBeEmpty'])) {
+            return null;
+        }
+
+        // Map Pest method -> IR atomic name
+        $pestMap = [
+            'toBe' => '=',
+            'toBeGreaterThan' => '>',
+            'toBeGreaterThanOrEqual' => "\u{2265}",
+            'toBeLessThan' => '<',
+            'toBeLessThanOrEqual' => "\u{2264}",
+            'toEqual' => '=',
+            'toBeTrue' => '=',
+            'toBeFalse' => '=',
+            'toBeNull' => 'is_null',
+            'toBeEmpty' => 'not_null',
+        ];
+        $atomicName = $pestMap[$method] ?? 'true';
+
+        $name = "pest_{$method}_L{$line}";
+        $subjectTerm = new ConstTerm(trim($subject), Sort::Ref());
+
+        return new ContractDecl(
+            name: $name,
+            inv: new AtomicFormula($atomicName, [$subjectTerm]),
+        );
+    }
+
+    // ════════════════════════════════════════════
+    // Helpers
+    // ════════════════════════════════════════════
 
     private function skipToNextFunction(): ?string
     {
@@ -200,85 +573,45 @@ class PhpFileParser
         return null;
     }
 
-    private function fetchRestOfLine(): string
+    private function jsonToFormula(array $json): IrFormula
     {
-        $buf = '';
-        for ($i = $this->pos; $i < min($this->pos + 20, count($this->tokens)); $i++) {
-            $buf .= $this->tokens[$i]['raw'];
-        }
-        return $buf;
-    }
-
-    private function extractAssertArgs(string $method, array $parts): mixed
-    {
-        $combined = implode('(', array_slice($parts, 1));
-        $combined = trim($combined, "); \t\n\r");
-
-        try {
-            return match ($method) {
-                'assertequals', 'assertsame' => \ProvekIt\Ir\Eq(
-                    \ProvekIt\Ir\Ctor1('testFunc', \ProvekIt\Ir\Str('call')),
-                    \ProvekIt\Ir\Str('expected')
-                ),
-                'asserttrue' => \ProvekIt\Ir\Ctor1('AssertTrue', \ProvekIt\Ir\Str($combined)),
-                'assertfalse' => \ProvekIt\Ir\Ctor1('AssertFalse', \ProvekIt\Ir\Str($combined)),
-                'assertgreaterthan' => \ProvekIt\Ir\Gt(
-                    \ProvekIt\Ir\Ctor1('testFunc', \ProvekIt\Ir\Str('call')),
-                    \ProvekIt\Ir\Num(0)
-                ),
-                'assertnotnull' => \ProvekIt\Ir\NotNull(
-                    \ProvekIt\Ir\Ctor1('testFunc', \ProvekIt\Ir\Str('call'))
-                ),
-                'assertequal' => \ProvekIt\Ir\Eq(
-                    \ProvekIt\Ir\Ctor1('testFunc', \ProvekIt\Ir\Str('call')),
-                    \ProvekIt\Ir\Str('expected')
-                ),
-                default => \ProvekIt\Ir\TrueAtom(),
-            };
-        } catch (\Throwable) {
-            return \ProvekIt\Ir\TrueAtom();
-        }
-    }
-
-    private function jsonToFormula(array $json): \ProvekIt\Ir\IrFormula
-    {
-        if (!isset($json['kind'])) return \ProvekIt\Ir\TrueAtom();
+        if (!isset($json['kind'])) return new AtomicFormula('true', []);
 
         switch ($json['kind']) {
             case 'atomic':
                 $args = array_map(fn($a) => $this->jsonToTerm($a), $json['args'] ?? []);
-                return new \ProvekIt\Ir\AtomicFormula($json['name'] ?? 'true', $args);
+                return new AtomicFormula($json['name'] ?? 'true', $args);
             case 'and':
             case 'or':
             case 'not':
             case 'implies':
                 $ops = array_map(fn($o) => $this->jsonToFormula($o), $json['operands'] ?? []);
-                return new \ProvekIt\Ir\ConnectiveFormula($json['kind'], $ops);
+                return new ConnectiveFormula($json['kind'], $ops);
             case 'forall':
             case 'exists':
-                $sort = new \ProvekIt\Ir\Sort($json['sort']['name'] ?? 'Ref');
-                return new \ProvekIt\Ir\QuantifierFormula(
+                $sort = new Sort($json['sort']['name'] ?? 'Ref');
+                return new QuantifierFormula(
                     $json['kind'], $json['name'], $sort,
                     $this->jsonToFormula($json['body'])
                 );
             default:
-                return \ProvekIt\Ir\TrueAtom();
+                return new AtomicFormula('true', []);
         }
     }
 
-    private function jsonToTerm(array $json): \ProvekIt\Ir\IrTerm
+    private function jsonToTerm(array $json): IrTerm
     {
         return match ($json['kind'] ?? '') {
-            'var' => new \ProvekIt\Ir\VarTerm($json['name']),
-            'const' => new \ProvekIt\Ir\ConstTerm(
+            'var' => new VarTerm($json['name']),
+            'const' => new ConstTerm(
                 $json['value'],
-                new \ProvekIt\Ir\Sort($json['sort']['name'] ?? 'Ref')
+                new Sort($json['sort']['name'] ?? 'Ref')
             ),
-            'ctor' => new \ProvekIt\Ir\CtorTerm(
+            'ctor' => new CtorTerm(
                 $json['name'],
                 array_map(fn($a) => $this->jsonToTerm($a), $json['args'] ?? [])
             ),
-            default => new \ProvekIt\Ir\VarTerm('_'),
+            default => new VarTerm('_'),
         };
     }
 }
@@ -289,7 +622,6 @@ class PhpFileParser
 
 class PhpLifter
 {
-    /** Walk a directory, parse .php files, collect declarations. */
     public static function liftDir(string $root): array
     {
         $allDecls = [];
@@ -303,38 +635,27 @@ class PhpLifter
         foreach ($iter as $entry) {
             if ($entry->getExtension() !== 'php') continue;
             $path = $entry->getPathname();
-
-            // Skip vendor, cache, node_modules
             if (str_contains($path, '/vendor/') || str_contains($path, '/cache/')) continue;
 
             $filesScanned++;
             try {
                 $parser = new PhpFileParser();
                 $result = $parser->parse($path);
-                foreach ($result['decls'] as $d) {
-                    $allDecls[] = $d;
-                }
+                foreach ($result['decls'] as $d) $allDecls[] = $d;
             } catch (\Throwable $e) {
                 $warnings[] = "{$path}: {$e->getMessage()}";
             }
         }
 
-        return [
-            'decls' => $allDecls,
-            'filesScanned' => $filesScanned,
-            'warnings' => $warnings,
-        ];
+        return ['decls' => $allDecls, 'filesScanned' => $filesScanned, 'warnings' => $warnings];
     }
 
-    /** Full lift + mint + bundle pipeline */
     public static function liftAndMint(string $root, string $outDir): array
     {
         $lifted = self::liftDir($root);
-
         $signer = Ed25519::foundation();
         $minter = new Minter($signer);
         $builder = new Builder($signer);
-
         $members = [];
         $contractCids = [];
         $producedBy = 'provekit-lift-php@0.1.0';
@@ -346,12 +667,7 @@ class PhpLifter
             $contractCids[$decl->name] = $minted['cid'];
         }
 
-        if (empty($members)) {
-            $built = $builder->build('empty-lift', '0.1.0', [], $producedAt);
-        } else {
-            $built = $builder->build('php-lift', '0.1.0', $members, $producedAt);
-        }
-
+        $built = $builder->build('php-lift', '0.1.0', $members, $producedAt);
         $proofPath = $outDir . '/' . $built['cid'] . '.proof';
         if (!is_dir($outDir)) mkdir($outDir, 0755, true);
         file_put_contents($proofPath, $built['bytes']);
@@ -396,7 +712,7 @@ if (in_array('--rpc', $argv)) {
                         'version' => '1.0.0',
                         'protocol_version' => 'provekit-lift/1',
                         'capabilities' => [
-                            'authoring_surfaces' => ['php', 'phpunit', 'php-docblock'],
+                            'authoring_surfaces' => ['php', 'symfony-validator', 'phpstan', 'phpunit', 'pest'],
                             'ir_version' => 'v1.1.0',
                             'emits_signed_mementos' => true,
                         ],
@@ -408,9 +724,7 @@ if (in_array('--rpc', $argv)) {
                         ?? $req['params']['workspace_root']
                         ?? getcwd();
 
-                    $outDir = $ws;
-                    $result = PhpLifter::liftAndMint($ws, $outDir);
-
+                    $result = PhpLifter::liftAndMint($ws, $ws);
                     send(json_encode([
                         'jsonrpc' => '2.0', 'id' => $id,
                         'result' => [
@@ -440,15 +754,11 @@ if (in_array('--rpc', $argv)) {
             ]));
         }
     }
-
     fclose($stdin);
     exit(0);
 }
 
-// ════════════════════════════════════════════
 // Direct mode
-// ════════════════════════════════════════════
-
 if (PHP_SAPI === 'cli') {
     $ws = $argv[1] ?? getcwd();
     $out = $argv[2] ?? $ws;
