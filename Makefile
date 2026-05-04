@@ -312,17 +312,22 @@ mint-c: build-rust
 		(echo "FAIL: c self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=c" && exit 1)
 
-# NOTE: mint-swift excluded from all-mint (macOS-only). New kits (java/python/
-# ruby/zig/c) produce empty-set attestations until their lifters are wired up.
+# NOTE: mint-swift excluded from all-mint (macOS-only). java + python wired up
+# after their Side A landings (#207, #205) — both produce content-meaningful
+# contractSetCids and ship pinned attestations. ruby/zig/c/php pending their
+# Side A merges (#234, #241, #272, feat/php-kit) and toolchain CI integration
+# (#245 in flight, #274 follow-up).
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python
 	@echo ""
-	@echo "==== all 5 core self-contract CIDs match pinned values ===="
+	@echo "==== all 7 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
 	@printf "  %-8s  %s\n" "ts"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ts.json)"
 	@printf "  %-8s  %s\n" "csharp" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json)"
+	@printf "  %-8s  %s\n" "java"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/java.json)"
+	@printf "  %-8s  %s\n" "python" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/python.json)"
 
 # --- Conformance gate --------------------------------------------------------
 
