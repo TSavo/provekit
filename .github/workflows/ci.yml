@@ -106,6 +106,48 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # ---------------------------------------------------------------
+      # System-level deps: openssl, nlohmann-json, libblake3 (Ruby FFI),
+      # libyaml (Ruby psych/bundler runtime). Run BEFORE setup-ruby so
+      # the bundler-cache step has libblake3 and libyaml already on the
+      # host when it resolves and builds native gems.
+      #
+      # cpp BLAKE3 is vendored at tools/blake3-vendored/; the Ruby kit's
+      # FFI binding to libblake3 needs the system package because no
+      # rubygem on Ruby 3.x exposes 64-byte XOF mode (per PR #226 notes).
+      # ---------------------------------------------------------------
+
+      - name: Install C++ system deps + z3 + libblake3 + libyaml
+        # z3 is the SMT solver invoked by the TS workflow producer's
+        # checkImplication / bridgeEnforcement / circularProof tests
+        # (`provekit prove` substrate). Without it on PATH, every
+        # solver invocation returns ENOENT, the producer maps that to
+        # `undecidable`, and ~10 tests fail with errors of the shape
+        # `expected 'undecidable' to be 'equivalent'`. The `prove`
+        # workflow in provekit.yml installed z3; this gate did not.
+        # Closes task #215 ("CI: TS workflow producer tests failing").
+        #
+        # libblake3-dev is needed for the Ruby kit's FFI binding (per
+        # PR #226 / issue #210); without it the orchestrator's BLAKE3
+        # FFI fails at runtime and the pinned-CID test sees the
+        # empty-set sentinel.
+        #
+        # libyaml-dev is needed for Ruby's psych (YAML) extension;
+        # bundler-cache fails with `libyaml-0.so.2: cannot open shared
+        # object file` without it on Ubuntu 24.04 hosted runners.
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            clang \
+            libblake3-dev \
+            libsodium-dev \
+            libssl-dev \
+            libyaml-dev \
+            maven \
+            nlohmann-json3-dev \
+            z3
+
       - name: Set up Ruby 3.3
         # mint-ruby-self-contracts (PR #234, issue #209) ships a Ruby
         # orchestrator that the rust CLI invokes via the lift-plugin-protocol
@@ -125,39 +167,6 @@ jobs:
         uses: mlugg/setup-zig@v1
         with:
           version: '0.16.0'
-
-      # ---------------------------------------------------------------
-      # System-level deps: openssl, nlohmann-json, libblake3 (Ruby FFI).
-      # cpp BLAKE3 is vendored at tools/blake3-vendored/; the Ruby kit's
-      # FFI binding to libblake3 needs the system package because no
-      # rubygem on Ruby 3.x exposes 64-byte XOF mode (per PR #226 notes).
-      # ---------------------------------------------------------------
-
-      - name: Install C++ system deps + z3 + libblake3
-        # z3 is the SMT solver invoked by the TS workflow producer's
-        # checkImplication / bridgeEnforcement / circularProof tests
-        # (`provekit prove` substrate). Without it on PATH, every
-        # solver invocation returns ENOENT, the producer maps that to
-        # `undecidable`, and ~10 tests fail with errors of the shape
-        # `expected 'undecidable' to be 'equivalent'`. The `prove`
-        # workflow in provekit.yml installed z3; this gate did not.
-        # Closes task #215 ("CI: TS workflow producer tests failing").
-        #
-        # libblake3-dev is needed for the Ruby kit's FFI binding (per
-        # PR #226 / issue #210); without it the orchestrator's BLAKE3
-        # FFI fails at runtime and the pinned-CID test sees the
-        # empty-set sentinel.
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            clang \
-            libblake3-dev \
-            libsodium-dev \
-            libssl-dev \
-            maven \
-            nlohmann-json3-dev \
-            z3
 
       # ---------------------------------------------------------------
       # The gate.
