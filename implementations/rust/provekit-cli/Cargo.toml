@@ -33,3 +33,4 @@ base64 = { workspace = true }
 
 [dev-dependencies]
 provekit-linker = { path = "../provekit-linker" }
+serial_test = "3"
