@@ -407,7 +407,10 @@ public final class ClaimEnvelope {
      *  placeholder string (spec §1.R2).  Throws {@link IllegalArgumentException}
      *  with a message naming the offending field + value if validation fails. */
     private static String requireValidCid(String value, String fieldName) {
-        Objects.requireNonNull(value, fieldName);
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be null in mintBridgeV14 args");
+        }
         if (value.isEmpty()) {
             throw new IllegalArgumentException(
                     fieldName + " must not be empty; got empty string");
@@ -428,7 +431,10 @@ public final class ClaimEnvelope {
     }
 
     private static void requireNonEmpty(String value, String fieldName) {
-        Objects.requireNonNull(value, fieldName);
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be null in mintBridgeV14 args");
+        }
         if (value.isEmpty()) {
             throw new IllegalArgumentException(
                     fieldName + " must not be empty in mintBridgeV14 args");
