@@ -4,20 +4,33 @@
 //! bundles into per-kit .proof files under .provekit/baselines/.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{contract, eq, forall, gte, num, str_const, ContractArgs, String_, Term};
+use provekit_ir_symbolic::{
+    eq, forall, gte, num, reset_collector, str_const, String_, Term,
+};
 use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_proof_envelope::{build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 
 use serde::Deserialize;
 
 const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 
+fn ctor0(name: &str) -> Rc<Term> {
+    Rc::new(Term::Ctor { name: name.into(), args: vec![] })
+}
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor { name: name.into(), args: vec![arg] })
+}
+fn ctor2(name: &str, a: Rc<Term>, b: Rc<Term>) -> Rc<Term> {
+    Rc::new(Term::Ctor { name: name.into(), args: vec![a, b] })
+}
+fn ctorN(name: &str, args: Vec<Rc<Term>>) -> Rc<Term> {
+    Rc::new(Term::Ctor { name: name.into(), args })
 }
 
 // ── Config types ────────────────────────────────────
@@ -26,6 +39,7 @@ fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
 struct BaselineConfig {
     lang: String,
     kit: String,
+    #[allow(dead_code)]
     language_version: String,
     builtins: Vec<BuiltinConfig>,
 }
@@ -56,9 +70,30 @@ struct PredicateArgs {
     right: i64,
 }
 
+// ── IR helper — apply builtin sig to quantified vars ──
+
+fn apply_builtin(sig: &str, arity: usize, vars: &[Rc<Term>]) -> Rc<Term> {
+    // var0..varN correspond to quantified variables in order.
+    // For arity=0: just the ctor name with no args.
+    // For arity=1: ctor1(sig, var0).
+    // For arity=2: ctor2(sig, var0, var1).
+    // Default (unconfigured arity): treat as arity=1.
+    let a = if arity == 0 { 1 } else { arity };
+    if a == 0 {
+        ctor0(sig)
+    } else if a <= 1 || vars.len() < 2 {
+        ctor1(sig, vars.first().cloned().unwrap_or_else(|| Rc::new(Term::Var { name: "_".into() })))
+    } else {
+        ctorN(sig, vars[..a.min(vars.len())].to_vec())
+    }
+}
+
 // ── Mint infrastructure ─────────────────────────────
 
 fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
+    // Reset per-language quantifier counter so CIDs don't cross-contaminate.
+    reset_collector();
+
     let produced_by = "provekit-baseline-std@0.1.0".to_string();
     let produced_at = "2026-05-04T00:00:00Z".to_string();
 
@@ -69,34 +104,94 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
         let builtin_name = &builtin.name;
         let sig = builtin.signature.clone();
         let ret_type = builtin.return_type.clone();
+        let arity = builtin.arity;
 
         for pred in &builtin.predicates {
             let (cname, formula) = match pred.kind.as_str() {
                 "type_signature" => {
                     let sig_f = sig.clone();
                     let rt = ret_type.clone();
-                    let f = forall(String_(), move |s| {
-                        eq(ctor1("type_of", ctor1(&sig_f, s)), str_const(&rt))
-                    });
+                    let f = if arity <= 1 {
+                        forall(String_(), move |s| {
+                            eq(
+                                ctor1("type_of", apply_builtin(&sig_f, arity, &[s])),
+                                str_const(&rt),
+                            )
+                        })
+                    } else {
+                        // Multi-arity: forall multiple vars
+                        forall(String_(), move |s0| {
+                            forall(String_(), move |s1| {
+                                eq(
+                                    ctor1("type_of", apply_builtin(&sig_f, arity, &[s0, s1])),
+                                    str_const(&rt),
+                                )
+                            })
+                        })
+                    };
                     (format!("{builtin_name}__type_signature"), f)
                 }
                 "determinism" => {
                     let sig_f = sig.clone();
-                    let f = forall(String_(), move |s| {
-                        eq(ctor1(&sig_f, s.clone()), ctor1(&sig_f, s))
-                    });
+                    let f = if arity <= 1 {
+                        forall(String_(), move |s| {
+                            eq(
+                                apply_builtin(&sig_f, arity, &[s.clone()]),
+                                apply_builtin(&sig_f, arity, &[s]),
+                            )
+                        })
+                    } else {
+                        forall(String_(), move |s0| {
+                            forall(String_(), move |s1| {
+                                eq(
+                                    apply_builtin(&sig_f, arity, &[s0.clone(), s1.clone()]),
+                                    apply_builtin(&sig_f, arity, &[s0, s1]),
+                                )
+                            })
+                        })
+                    };
                     (format!("{builtin_name}__determinism"), f)
                 }
                 "gte" => {
-                    let left_name = pred.args.as_ref().map(|a| a.left.clone()).unwrap_or_default();
+                    let left_name = pred
+                        .args
+                        .as_ref()
+                        .and_then(|a| if a.left.is_empty() { None } else { Some(a.left.clone()) })
+                        .unwrap_or_else(|| {
+                            eprintln!(
+                                "warn: {}/{} gte predicate missing `left`, defaulting to signature",
+                                config.lang, builtin_name
+                            );
+                            sig.clone()
+                        });
                     let right_val = pred.args.as_ref().map(|a| a.right).unwrap_or(0);
                     let sig_f = sig.clone();
                     let f = forall(String_(), move |s| {
-                        gte(ctor1(&left_name, ctor1(&sig_f, s)), num(right_val))
+                        // For gte, the `left` is the property being bounded (e.g. "str_len"
+                        // or "map_size"), applied directly to the builtin result.
+                        let inner = if left_name == sig_f {
+                            // If left matches the builtin name, it's self-referential.
+                            // In gte mode, left is always the property name, not the builtin.
+                            // e.g. left="str_len" means len(result) >= 0, not len(len(result)).
+                            eprintln!(
+                                "warn: {}/{} gte left='{}' matches signature — treating as property on result",
+                                config.lang, builtin_name, left_name
+                            );
+                            ctor1(&left_name, ctor1(&sig_f, s))
+                        } else {
+                            ctor1(&left_name, ctor1(&sig_f, s))
+                        };
+                        gte(inner, num(right_val))
                     });
                     (format!("{builtin_name}__structural"), f)
                 }
-                _ => continue,
+                other => {
+                    eprintln!(
+                        "warn: {}/{} unknown predicate kind '{}' — skipping",
+                        config.lang, builtin_name, other
+                    );
+                    continue;
+                }
             };
 
             let args = MintContractArgs {
@@ -142,10 +237,10 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
 
     let built = build_proof_envelope(&proof_input);
 
-    fs::create_dir_all(out_dir).ok();
+    fs::create_dir_all(out_dir).expect("create baseline output dir");
     let out_path = out_dir.join(format!("{}.proof", built.cid));
     fs::write(&out_path, &built.bytes).expect("write .proof");
-    println!("  {}/{} -> {}", config.lang, built.cid, out_path.display());
+    println!("  {}/{}  {}", config.lang, built.cid, out_path.display());
 
     built.cid
 }
@@ -155,9 +250,10 @@ fn main() {
     let out_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../.provekit/baselines");
 
+    // All 12 language kits — rust already handled by provekit-baseline-rust-std (#292)
     let langs = [
         "c", "cpp", "csharp", "go", "java", "php", "python",
-        "ruby", "swift", "typescript", "zig",
+        "ruby", "rust", "swift", "typescript", "zig",
     ];
 
     let mut count = 0;
@@ -167,14 +263,16 @@ fn main() {
             eprintln!("skip: no config for {lang}");
             continue;
         }
-        let toml_text = fs::read_to_string(&config_path).unwrap_or_else(|e| {
-            panic!("read {lang} config: {e}");
-        });
-        let config: BaselineConfig = toml::from_str(&toml_text).unwrap_or_else(|e| {
-            panic!("parse {lang} config: {e}");
-        });
+        let toml_text = fs::read_to_string(&config_path)
+            .unwrap_or_else(|e| panic!("read {lang} config: {e}"));
+        let config: BaselineConfig = toml::from_str(&toml_text)
+            .unwrap_or_else(|e| panic!("parse {lang} config: {e}"));
         mint_baseline(&config, &out_dir);
         count += 1;
+    }
+
+    if count == 0 {
+        panic!("no configs found in {} — nothing to mint", config_dir.display());
     }
 
     println!("\nminted {count} baselines to {}", out_dir.display());
