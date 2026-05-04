@@ -103,7 +103,7 @@ const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     ("java",       "java",        "java-self-contracts",  "java"),
     ("python",     "python",      "python-self-contracts", "python"),
     ("ruby",       "ruby",        "ruby-self-contracts",  "ruby"),
-    ("zig",        "zig",         "zig",                  "zig"),
+    ("zig",        "zig",         "zig-self-contracts",   "zig"),
     ("c",          "c",           "c-self-contracts",     "c"),
 ];
 

@@ -296,7 +296,7 @@ mint-ruby: build-rust
 		 echo "      $(PROVEKIT) mint --kit=ruby" && exit 1)
 
 .PHONY: mint-zig
-mint-zig: build-rust
+mint-zig: build-rust build-zig
 	@echo ">> minting zig self-contracts"
 	@mint_out=$$($(PROVEKIT) mint --kit=zig --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
@@ -449,6 +449,8 @@ build-zig:
 	cd implementations/zig/provekit-self-contracts && zig build
 	cd implementations/zig/provekit-lift-zig && zig build
 	cd implementations/zig/provekit-lsp-zig && zig build
+	cd implementations/zig/provekit-proof-envelope-zig && zig build
+	cd implementations/zig/mint-zig-self-contracts && zig build
 
 # NOTE: test-swift is intentionally excluded from test-all — it requires a
 # macOS host with the Swift toolchain. Use `make test-swift` on macOS.
