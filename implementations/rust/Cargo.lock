@@ -1555,6 +1555,7 @@ dependencies = [
 name = "provekit-claim-envelope"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "provekit-canonicalizer",
  "provekit-proof-envelope",
  "serde_json",
