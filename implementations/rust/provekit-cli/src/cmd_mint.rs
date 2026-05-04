@@ -72,39 +72,42 @@ const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-03T18:00:00Z";
 
 /// Canonical mapping from `--kit=<name>` to (project_subdir, lift_surface, lang_key).
 ///
-/// * `project_subdir` — subdirectory under `implementations/` (as passed to `--project`)
-/// * `lift_surface`   — subdirectory name under `.provekit/lift/<surface>/manifest.toml`
-/// * `lang_key`       — the `lang` field in the signed attestation JSON (and the
+/// * `project_subdir` — path segment under `implementations/` (the project root passed to the lifter)
+/// * `lift_surface` — subdirectory name under `.provekit/lift/<surface>/` (the manifest to load)
+/// * `lang_key` — the `lang` field in the signed attestation JSON (and the
 ///   key for the `.provekit/self-contracts-attestations/<lang>.json` filename)
 ///
 /// Naming diverges for several kits:
-///   `ts`     →  project dir `typescript`,   surface `typescript`,       lang `ts`
-///   `csharp` →  project dir `csharp`,       surface `csharp`,           lang `csharp`
-///   `go`     →  project dir `go`,           surface `go-self-contracts`, lang `go`
+///   `ts`     → project dir `typescript`,  surface `typescript`,             lang `ts`
+///   `csharp` → project dir `csharp`,      surface `csharp`,                 lang `csharp`
+///   `rust`   → project dir `rust`,        surface `rust-self-contracts`,    lang `rust`
+///   `go`     → project dir `go`,          surface `go-self-contracts`,      lang `go`
 ///
-/// For `go`, the surface `go` maps to the test-fixture lifter (static empty
-/// proof envelope). The surface `go-self-contracts` maps to the real lifter
-/// that walks the slab at `implementations/go/provekit-self-contracts/slabs/`.
-/// `--kit=go` must hit the real lifter; `--project=implementations/go
-/// --surface=go` still reaches the test-fixture lifter.
-///
-/// All other kits have lang = surface = project_subdir.
+/// `--kit=rust` and `--kit=go` route to their self-contracts surfaces (which
+/// invoke the slab-walking mint binaries) rather than the generic
+/// workspace lifters (`provekit-lift` for rust, the test-fixture lifter for go).
+/// Without this, `make mint-rust` / `make mint-go` walk the wrong source and
+/// produce content-empty CIDs. The `--project=implementations/<lang>
+/// --surface=<lang>` form still reaches the workspace/test-fixture lifters
+/// for tooling that needs them.
+/// Fix: issue #176 Tier 1, option (c) — route every kit to its
+/// self-contracts lifter (PR #180 for go, PR #183 for rust).
 const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
-    // (kit_alias, project_subdir, lift_surface, lang_key)
-    ("rust",       "rust",       "rust",               "rust"),
-    ("go",         "go",         "go-self-contracts",  "go"),
-    ("cpp",        "cpp",        "cpp",                "cpp"),
-    ("ts",         "typescript", "typescript",         "ts"),
-    ("csharp",     "csharp",     "csharp",             "csharp"),
-    ("swift",      "swift",      "swift",              "swift"),
-    ("java",       "java",       "java",               "java"),
-    ("python",     "python",     "python",             "python"),
-    ("ruby",       "ruby",       "ruby",               "ruby"),
-    ("zig",        "zig",        "zig",                "zig"),
-    ("c",          "c",          "c",                  "c"),
+    // (kit_alias, project_subdir, lift_surface,           lang_key)
+    ("rust",       "rust",        "rust-self-contracts",  "rust"),
+    ("go",         "go",          "go-self-contracts",    "go"),
+    ("cpp",        "cpp",         "cpp",                  "cpp"),
+    ("ts",         "typescript",  "typescript",           "ts"),
+    ("csharp",     "csharp",      "csharp",               "csharp"),
+    ("swift",      "swift",       "swift",                "swift"),
+    ("java",       "java",        "java",                 "java"),
+    ("python",     "python",      "python",               "python"),
+    ("ruby",       "ruby",        "ruby",                 "ruby"),
+    ("zig",        "zig",         "zig",                  "zig"),
+    ("c",          "c",           "c",                    "c"),
 ];
 
-/// Resolve `--kit=<name>` to the canonical project path, surface, and lang key.
+/// Resolve `--kit=<name>` to the canonical project path, lift surface, and lang key.
 /// Returns `(project_path, surface, lang_key)` relative to the CWD at
 /// which `provekit` is invoked (expected to be repo root).
 fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
@@ -639,9 +642,12 @@ mod tests {
 
     #[test]
     fn resolve_kit_rust_maps_to_rust_dir() {
+        // Issue #176 Tier 1: rust kit maps to rust-self-contracts surface so the
+        // attestation reflects the canonical self-contracts slab, not the generic
+        // workspace lifter.
         let (path, surface, lang) = resolve_kit("rust").expect("rust must resolve");
         assert_eq!(path, PathBuf::from("implementations/rust"));
-        assert_eq!(surface, "rust");
+        assert_eq!(surface, "rust-self-contracts");
         assert_eq!(lang, "rust");
     }
 
