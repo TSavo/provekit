@@ -165,7 +165,7 @@ Sometimes the customer wants a specific fix that differs from the library's cano
 
 ## Self-Bootstrapping: Every Novel Fix Becomes Future Recognition
 
-The LLM-driven path doesn't just fix a bug — it produces all four pieces of a library template by construction:
+The LLM-driven path doesn't just fix a bug; it produces all four pieces of a library template by construction:
 
 | Bundle artifact | Becomes library field |
 |---|---|
@@ -185,7 +185,7 @@ BugsJS already provides the diff and the test from production-merged tags. There
 | Customer novel bug | LLM | LLM (produces diff) | LLM (produces test) | LLM |
 | **BugsJS bug** | (derived from diff, no LLM needed) | **diff already exists in `Bug-N-fix` tag** | **test already exists in `Bug-N-test` tag** | LLM (one call per bug class) |
 
-For BugsJS bootstrap, the LLM is only needed for C6 — and even C6 drops out for cluster members once the first-of-class is harvested and recognition fires.
+For BugsJS bootstrap, the LLM is only needed for C6, and even C6 drops out for cluster members once the first-of-class is harvested and recognition fires.
 
 ### Bootstrap cost model
 
@@ -207,7 +207,7 @@ Customer fixes work the same way. After a novel-bug fix completes:
 - C6's DSL IS the new principle's match query
 - All four get stored in the library
 
-Future recognition of the same class fires the recognized path. Customer use grows the library; the library accelerates customer use. The system is self-bootstrapping — every customer fix is a learning event, every BugsJS bug is a learning event, and the LLM-driven path becomes asymptotically rare as the library matures.
+Future recognition of the same class fires the recognized path. Customer use grows the library; the library accelerates customer use. The system is self-bootstrapping: every customer fix is a learning event, every BugsJS bug is a learning event, and the LLM-driven path becomes asymptotically rare as the library matures.
 
 ## Why This Is The Architecture We Were Already Pointing At
 

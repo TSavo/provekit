@@ -333,7 +333,7 @@ Note on the catalog pin. The CID above is the JCS-canonical BLAKE3-512 of the ca
 
 The framework dogfoods itself. Each conformant peer ships hand-written contracts about its own public surface, mints them as signed mementos under the foundation key, and bundles them into a single `.proof` whose filename IS its catalog CID. Every peer's mint-binary asserts byte-determinism by minting twice into separate output directories and comparing CIDs.
 
-**Rust** — 67 contracts across 13 `.invariant.rs` files:
+**Rust**: 67 contracts across 13 `.invariant.rs` files:
 
 ```sh
 $ cargo build --release \
@@ -344,7 +344,7 @@ $ implementations/rust/target/release/mint-self-contracts | \
   catalog CID:        blake3-512:3c905e3b27d279fb5d11e49af10d8f1d8c83aec207d0bb695d08cacba5c3192e56457d4683d93e71ffd18bd0acb65b72a2b49404490bce809e8dc1df7fd0bac8
 ```
 
-**Go** — 47 contracts across 13 slab files (one per public-API Go source file):
+**Go**: 47 contracts across 13 slab files (one per public-API Go source file):
 
 ```sh
 $ cd implementations/go/provekit-self-contracts
@@ -352,14 +352,14 @@ $ go run ./cmd/mint-go-self-contracts | grep "catalog CID:"
   catalog CID:        blake3-512:906fa4f3ca32d97710e327c9e6e914e5c476a3cfdc326459b31dade24d9625c96f7f0595e3d91f316f73e2709a7f05ac79dd0ca768b6ff23cc2b384923487ac3
 ```
 
-**C++** — 40 contracts across 11 `.invariant.cpp` slab files (one per public-API C++ source file):
+**C++**: 40 contracts across 11 `.invariant.cpp` slab files (one per public-API C++ source file):
 
 ```sh
 $ tools/build-cpp-self-contracts.sh /tmp/provekit-cpp-self-out
   catalog CID:        blake3-512:9335e6376d776819cfd3b2458da29bc258e7c2ebaad542a8613dd84f50c51c31d6e1a4346cea3903b8ad12294d96aef445d0ed838aa630835b9be0bc17e62842
 ```
 
-**TypeScript** — 59 contracts across 13 `.invariant.ts` slab files (one per public-API TS source file). The repo's tsx-driven launchers currently fail on Node 25 because `@ipld/dag-cbor` is ESM-only and tsx's CJS bridge cannot resolve it; vitest's Vite ESM loader handles it cleanly, so the working invocation is the test driver:
+**TypeScript**: 59 contracts across 13 `.invariant.ts` slab files (one per public-API TS source file). The repo's tsx-driven launchers currently fail on Node 25 because `@ipld/dag-cbor` is ESM-only and tsx's CJS bridge cannot resolve it; vitest's Vite ESM loader handles it cleanly, so the working invocation is the test driver:
 
 ```sh
 $ pnpm vitest run \
@@ -368,7 +368,7 @@ $ pnpm vitest run \
   catalog CID:        blake3-512:449339930add6457bf25542f2117a025daada4a4bd1de704737750ad6d1c1be814c284d31bb97159ca0b2d2c52f8c043a64533d3432195f5a0f338c5d4904d44
 ```
 
-**C#** — 70 contracts across 15 `.invariant.cs` sidecar files (one per public-API C# source file). The orchestrator is a `dotnet` console project that links the sidecars in via `<Compile Include>` so the four lib assemblies stay free of test-only IR dependencies:
+**C#**: 70 contracts across 15 `.invariant.cs` sidecar files (one per public-API C# source file). The orchestrator is a `dotnet` console project that links the sidecars in via `<Compile Include>` so the four lib assemblies stay free of test-only IR dependencies:
 
 ```sh
 $ dotnet run --project implementations/csharp/Provekit.SelfContracts -- /tmp/csharp-self-out | \
@@ -386,7 +386,7 @@ The constant-size and constant-time claims are theorems. Their empirical confirm
 
 v1.1.0 (2026-04-30): protocol freeze. BLAKE3-512 widening from earlier truncated forms. Every CID now carries the full 128-hex string. Per-language kit-standard finalized; conformance suite passing on Rust, C++, TypeScript reference peers. Catalog CID `5b770182...19f05cd4`.
 
-v1.2.0 (2026-04-30): additive bump over v1.1.0. Adds four pluggability protocols: agent-plugin-protocol (LSP-shape JSON-RPC seam for coding agents), ir-compiler-protocol (per-solver IR translators), multi-solver-protocol (single/chain/portfolio dispatch), lift-plugin-protocol (one Rust CLI dispatching to per-language plugins via stdio JSON-RPC). Reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via toolchain (vitest), not as a peer CLI. Any v1.1.0 memento or `.proof` remains valid under v1.2.0 — the bump is purely additive. Catalog CID `1e5cfee6...17d0579f`. Signed under the same foundation key as v1.1.0.
+v1.2.0 (2026-04-30): additive bump over v1.1.0. Adds four pluggability protocols: agent-plugin-protocol (LSP-shape JSON-RPC seam for coding agents), ir-compiler-protocol (per-solver IR translators), multi-solver-protocol (single/chain/portfolio dispatch), lift-plugin-protocol (one Rust CLI dispatching to per-language plugins via stdio JSON-RPC). Reference CLI plugins ship for Rust + Go + C++; TypeScript is consumed via toolchain (vitest), not as a peer CLI. Any v1.1.0 memento or `.proof` remains valid under v1.2.0; the bump is purely additive. Catalog CID `1e5cfee6...17d0579f`. Signed under the same foundation key as v1.1.0.
 
 v1.3.0 (2026-05-02): additive bump over v1.2.0. Adds four protocol enrichments and two new specs. (1) BridgeDeclaration gains `sourceContractCid` + `targetProofCid` for hash-bounded cross-bundle witness pinning. (2) ProofEnvelope catalog memento gains optional `binaryCid` for supply-chain anchoring (rule 5 is MAY in v1.3.0; promotion to MUST awaits a reference verifier in v1.4.0). (3) ProofEnvelope catalog memento gains optional `metadata` map for non-normative tooling/diagnostics. (4) `EvidenceTerm` proof-certificate carrier for `smt-lib`/`coq`/`custom` proof types. New specs: `correctness-is-a-hash` (the memcmp theorem) and `lsp-protocol` (real-time IDE integration with pluggable JSON-RPC backend). All v1.2.0 mementos and `.proof` bundles remain valid; v1.2.0's CID `1e5cfee6...17d0579f` stays attestable for anyone pinned. Catalog CID `5a3129f4...205d24c7`. Signed under the same foundation key.
 

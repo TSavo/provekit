@@ -188,7 +188,7 @@ Two rounds of independent adversarial review. Every criticism was either incorpo
 3. **Tree-sitter for AST.** Multi-language from the start. The parser doesn't know it's only doing TypeScript.
 4. **Handlebars for prompt templating.** Template variables filled mechanically by Phase 2. The prompt is a file, not embedded strings.
 5. **Filesystem as the bus.** Each phase reads from disk, writes immutable output to disk. Phases are independently runnable. State is inspectable. No in-memory coupling.
-6. **Sequential derivation.** Each call site sees all prior contracts. The context grows richer. This is not a performance problem — it's the accumulation loop.
+6. **Sequential derivation.** Each call site sees all prior contracts. The context grows richer. This is not a performance problem; it's the accumulation loop.
 7. **Vacuous filter at two levels.** Prompt prohibits, verifier rejects. Defense in depth for the 27% noise rate.
 8. **Adversarial validation with different model.** haiku adversary against sonnet derivation. Shared-bias laundering addressed.
 9. **Dependency chain tracking.** `depends_on` hashes record which contracts were in context. Staleness propagates backward through the graph.

@@ -201,7 +201,7 @@ Each field exists because at least one axiom template requires it:
 | `idempotency_guard` | P4 | Whether the function checks state before acting (e.g., `if status == "done": return`); null means no guard |
 | `clause_history` | Termination engine | Per-clause weaken/strengthen history with witness-count stamps. Required for the well-founded ordering that guarantees convergence termination. Persisted across runs in `.neurallog/contracts/`. Without this, the termination argument degrades to "we hope the LLM respects a rule it can't see." |
 
-Every `smt2` field is a valid SMT-LIB 2 expression. Every `variable` has a name, type, and source (parameter, local computation, database read, return value of another function). The `claim` fields are natural language for humans — never used in mechanical reasoning.
+Every `smt2` field is a valid SMT-LIB 2 expression. Every `variable` has a name, type, and source (parameter, local computation, database read, return value of another function). The `claim` fields are natural language for humans and are never used in mechanical reasoning.
 
 #### Why This Shape
 
@@ -211,7 +211,7 @@ The contract is not a single predicate. It is a structured object with distinct 
 - P2 reads `F.side_effects.key_field` to detect loop aliasing, then uses `F.preconditions` and `F.postconditions` to model two iterations
 - P3 reads `visibility` to determine if inputs are unconstrained, then checks all reachable `preconditions`
 - P4 reads `idempotency_guard` to determine if double-invocation is possible, then uses `postconditions` to model the state after the first call and checks `preconditions` against it
-- P5 reads `domain_constraints` — the semantic bounds that require LLM derivation
+- P5 reads `domain_constraints`, the semantic bounds that require LLM derivation
 - P6 checks `postconditions` when collection sources are empty
 - P7 inspects `preconditions` for arithmetic operand bounds
 
@@ -223,8 +223,8 @@ Contracts are versioned, auditable artifacts with full provenance: what code the
 
 A contract applied to a context, producing evidence:
 
-- **Pass** — Z3 proof certificate that the invariant holds
-- **Fail** — Z3 proof of violation with unsat core identifying exactly which constraints conflict
+- **Pass**: Z3 proof certificate that the invariant holds
+- **Fail**: Z3 proof of violation with unsat core identifying exactly which constraints conflict
 
 Every level of the system is Context + Contract = Evaluation. This is why the system self-hosts cleanly: contract derivation is itself an evaluation (static context + meta-contract = derivation record). It's proofs all the way down.
 
@@ -238,9 +238,9 @@ Contracts are not derived in a separate analysis pass. They are derived **the fi
 2. The hook intercepts the call
 3. It computes the call site identity: file path + line number
 4. It checks the contract cache: is there a contract for this call site with a matching file hash?
-5. **Cache miss** — no contract exists
+5. **Cache miss**: no contract exists
 6. The hook captures the file path and line number, sends them to the invariant service
-7. The invariant service triggers the discovery agent, which explores the code around that call site — types, function signature, call chains, data flow
+7. The invariant service triggers the discovery agent, which explores the code around that call site: types, function signature, call chains, data flow
 8. The LLM derives a contract: predicate + claim
 9. The contract is cached, keyed by `file_path:line_number:md5(file_contents)`
 10. On this first call, the hook also inspects the stack frame, evaluates the fresh contract, and records the first proof entry
@@ -249,7 +249,7 @@ Contracts are not derived in a separate analysis pass. They are derived **the fi
 
 1. The same log statement fires again
 2. The hook intercepts, computes call site identity
-3. Cache hit — contract exists and file hash matches
+3. Cache hit: contract exists and file hash matches
 4. The hook inspects the stack frame, grabs the values the contract needs
 5. Z3 evaluates the predicate
 6. Proof entry recorded
@@ -258,7 +258,7 @@ This is microseconds. No LLM in the loop. No network call. Just a cache lookup, 
 
 ### Invalidation
 
-When the source file changes, the MD5 hash changes. The next time the log statement fires, the cache misses — the stored hash doesn't match the current file. The contract is stale. Re-derive.
+When the source file changes, the MD5 hash changes. The next time the log statement fires, the cache misses; the stored hash doesn't match the current file. The contract is stale. Re-derive.
 
 This means contracts are always consistent with the current code. Staleness is detected automatically, at runtime, with zero configuration. No file watchers. No git hooks. No CI integration required. The cache just does the right thing.
 
@@ -288,7 +288,7 @@ def check_availability(product_id):
 
 2. **Check the contract cache.** Look for `src/inventory.py` in `.neurallog/contracts/`. Compute MD5 of the source file. Either the contract file doesn't exist, or the hash doesn't match. Cache miss.
 
-3. **Capture the frame immediately.** The frame is ephemeral — it won't exist once this function returns. Grab everything now: `dict(frame.f_locals)` → `{ "product_id": "SKU-123", "available": 47 }`.
+3. **Capture the frame immediately.** The frame is ephemeral; it won't exist once this function returns. Grab everything now: `dict(frame.f_locals)` → `{ "product_id": "SKU-123", "available": 47 }`.
 
 4. **Let the original log call through.** The programmer sees their log line in stdout. neurallog is invisible. No blocking.
 
@@ -345,7 +345,7 @@ def reserve_stock(product_id, quantity):
 
 2. Capture frame: `{ "product_id": "SKU-123", "quantity": 5, "available": 47, "reserved": 12 }`. Let the log through.
 
-3. Discovery agent runs. It reads the code around line 25. **But now something is different: there's already a contract for line 15 in this file.** The agent sees it in `.neurallog/contracts/src/inventory.py.json`. The existing contract says `available >= 0`. The agent incorporates this as known context. The LLM has a richer picture — it knows what's already been proven.
+3. Discovery agent runs. It reads the code around line 25. **But now something is different: there's already a contract for line 15 in this file.** The agent sees it in `.neurallog/contracts/src/inventory.py.json`. The existing contract says `available >= 0`. The agent incorporates this as known context. The LLM has a richer picture; it knows what's already been proven.
 
 4. LLM derives the contract for line 25, informed by the existing contract:
    - Predicate: `(and (> quantity 0) (<= quantity available) (>= available 0) (>= reserved 0))`
@@ -360,7 +360,7 @@ def reserve_stock(product_id, quantity):
 **First call site fires again:**
 
 ```python
-# inventory.py, line 15 — second execution
+# inventory.py, line 15, second execution
 logger.info(f"Stock check for {product_id}: {available} available")
 ```
 
@@ -396,7 +396,7 @@ A programmer writes `logger.info(f"Unit price: {unit_price}")`. They logged one 
 unitPrice > 0 AND unitPrice <= product.maxPrice AND currency != null
 ```
 
-The contract references `unit_price`, `product.max_price`, and `currency`. At runtime, the hook inspects the stack frame and captures exactly those values — even though the programmer only logged `unit_price`.
+The contract references `unit_price`, `product.max_price`, and `currency`. At runtime, the hook inspects the stack frame and captures exactly those values, even though the programmer only logged `unit_price`.
 
 **The log statement is the tripwire. The stack frame is the context. The contract says what to grab.**
 
@@ -404,25 +404,25 @@ The contract references `unit_price`, `product.max_price`, and `currency`. At ru
 
 The runtime already has every value in scope at the call site. The hook just reaches in and takes what the contract needs. No source modification. No instrumentation. No build step.
 
-- **Python** — `inspect.currentframe().f_back.f_locals` — trivial, full access to all locals
-- **Java** — JVMTI / Java agents — can inspect local variables at runtime
-- **C#** — Debugger APIs
-- **Node.js** — V8 inspector protocol
-- **Go** — runtime introspection via debug APIs
+- **Python**: `inspect.currentframe().f_back.f_locals`, trivial, full access to all locals
+- **Java**: JVMTI / Java agents, which can inspect local variables at runtime
+- **C#**: Debugger APIs
+- **Node.js**: V8 inspector protocol
+- **Go**: runtime introspection via debug APIs
 
 ## Two Modes
 
-### Derivation Time — Static Analysis from Log Statements
+### Derivation Time: Static Analysis from Log Statements
 
 A logger that is secretly a static analyzer.
 
-Contracts derived from all log statements along a code path are fed to Z3 as a set. If Z3 returns **unsat**, the contracts are mutually contradictory — the programmer's own implicit assumptions about their code can't all be true simultaneously.
+Contracts derived from all log statements along a code path are fed to Z3 as a set. If Z3 returns **unsat**, the contracts are mutually contradictory; the programmer's own implicit assumptions about their code can't all be true simultaneously.
 
-This is a bug, found before a single line executes. Not from type rules or lint patterns — from what the programmer **believed** about their code, checked against itself. The programmer's log statements prove their code is inconsistent.
+This is a bug, found before a single line executes. Not from type rules or lint patterns, but from what the programmer **believed** about their code, checked against itself. The programmer's log statements prove their code is inconsistent.
 
 The unsat core identifies exactly which assumptions conflict.
 
-### Runtime — Formal Proof of Running Code
+### Runtime: Formal Proof of Running Code
 
 At runtime, every log call produces a formally verified proof entry. The proof log is a continuous, machine-verified record that the software is doing what it claims to be doing.
 
@@ -436,12 +436,12 @@ The system degrades gracefully into being the best logger ever written. Pass = p
 
 ## The Unsat Loop
 
-When Z3 finds a contradiction — either at derivation time (contracts inconsistent with each other) or at runtime (values violate a contract) — the system acts on it.
+When Z3 finds a contradiction, either at derivation time (contracts inconsistent with each other) or at runtime (values violate a contract), the system acts on it.
 
 One of two things **must** be wrong:
 
-1. **Bad contracts** — the LLM over-constrained or misunderstood the code. Re-derive with the unsat core as feedback. The contracts improve.
-2. **Bad code** — the invariants correctly capture the programmer's intent, but the code can't satisfy them. The LLM produces a patch.
+1. **Bad contracts**: the LLM over-constrained or misunderstood the code. Re-derive with the unsat core as feedback. The contracts improve.
+2. **Bad code**: the invariants correctly capture the programmer's intent, but the code can't satisfy them. The LLM produces a patch.
 
 The loop: log statements → invariants → Z3 finds contradiction → LLM resolves (fix contracts or fix code) → re-derive → Z3 confirms. The codebase converges toward provably correct.
 
@@ -449,7 +449,7 @@ The loop: log statements → invariants → Z3 finds contradiction → LLM resol
 
 ## Architecture
 
-The engine is written in TypeScript. It is completely language-neutral — it parses, derives, proves, and stores without knowing or caring what language the target code is in. Language-specific behavior lives in adapters.
+The engine is written in TypeScript. It is completely language-neutral; it parses, derives, proves, and stores without knowing or caring what language the target code is in. Language-specific behavior lives in adapters.
 
 ### The Engine (Language-Neutral)
 
@@ -461,7 +461,7 @@ These components have no knowledge of the target language:
 
 **Prompt Assembler.** Takes the context bundle from Phase 0 and assembles the derivation prompt: base methodology + selected axiom teaching examples + existing contracts + code context + target line. The prompt template lives in `prompts/invariant_derivation.md`.
 
-**Axiom Template Engine.** Takes axiom templates + cached contracts, mechanically instantiates Z3 checks. This is Layer 2 — the hot path. No LLM, no language knowledge. Just template parameters and Z3.
+**Axiom Template Engine.** Takes axiom templates + cached contracts, mechanically instantiates Z3 checks. This is Layer 2, the hot path. No LLM, no language knowledge. Just template parameters and Z3.
 
 **Z3 Runner.** Feeds SMT-LIB blocks to Z3, collects results (sat/unsat + models/proofs). Validates LLM output. Runs axiom-generated checks.
 
@@ -502,15 +502,15 @@ All six methods use tree-sitter under the hood. The tree-sitter grammar is the f
 #### Tree-Sitter Foundation
 
 Tree-sitter provides:
-- **AST parsing** — source code → syntax tree, for any supported language
-- **Node types** — function definitions, call expressions, import statements, loop constructs, arithmetic operators — consistent structure across languages
-- **Queries** — pattern matching on the AST to find log statements, call sites, function boundaries
-- **Incremental parsing** — only re-parse what changed, fast enough for runtime use
+- **AST parsing**: source code → syntax tree, for any supported language
+- **Node types**: function definitions, call expressions, import statements, loop constructs, arithmetic operators, consistent structure across languages
+- **Queries**: pattern matching on the AST to find log statements, call sites, function boundaries
+- **Incremental parsing**: only re-parse what changed, fast enough for runtime use
 
 Each adapter defines tree-sitter queries for its language:
 
 ```typescript
-// TypeScript adapter — log statement detection
+// TypeScript adapter, log statement detection
 const LOG_PATTERNS = [
   'console.log', 'console.info', 'console.warn', 'console.error', 'console.debug',
   // Popular frameworks
@@ -529,7 +529,7 @@ const LOG_QUERY = `
 ```
 
 ```typescript
-// TypeScript adapter — import resolution
+// TypeScript adapter, import resolution
 const IMPORT_QUERY = `
   [
     (import_statement source: (string) @path)
@@ -547,7 +547,7 @@ Import resolution maps import statements to source files. This is the most langu
 **TypeScript/JavaScript:**
 - `import { foo } from './bar'` → resolve `./bar.ts`, `./bar.js`, `./bar/index.ts`
 - `require('./bar')` → same resolution
-- `import { foo } from 'some-package'` → resolve from `node_modules/` — depth-1 only includes direct dependencies, not the package's internals
+- `import { foo } from 'some-package'` → resolve from `node_modules/`; depth-1 only includes direct dependencies, not the package's internals
 - Uses Node's module resolution algorithm or TypeScript's `paths` configuration
 
 **Python (second adapter):**
@@ -565,12 +565,12 @@ Each adapter implements `resolveImports()` using its language's resolution algor
 The runtime component that captures live values when a log statement fires:
 
 **TypeScript/JavaScript:**
-- V8 Inspector Protocol — connect to the running process, set a breakpoint-like hook at the log call site, read local variables from the call frame
+- V8 Inspector Protocol: connect to the running process, set a breakpoint-like hook at the log call site, read local variables from the call frame
 - Alternatively: source transformation at build time that captures `arguments` and local scope into a structured object before the log call
 - Pragmatic first approach: proxy `console.log` etc., capture the arguments passed to the log call (not full scope), derive contracts initially from just the logged values, expand to full scope inspection later
 
 **Python (second adapter):**
-- `inspect.currentframe().f_back.f_locals` — one line, full access to everything in scope
+- `inspect.currentframe().f_back.f_locals`, one line, full access to everything in scope
 - Trivial compared to every other language
 
 The adapter interface abstracts this: `captureFrame(callSite)` returns a `Record<string, any>` regardless of how it was obtained.
@@ -589,7 +589,7 @@ The engine is also written in TypeScript, so the first adapter dogfoods the lang
 
 ### Second Adapter: Python
 
-The Python adapter is the second implementation — lowest effort because:
+The Python adapter is the second implementation, chosen for lowest effort because:
 - `inspect.currentframe().f_back.f_locals` for stack frame inspection (trivial)
 - Monkey-patching `logging.Handler` for the hook (trivial)
 - tree-sitter-python for AST (mature grammar)

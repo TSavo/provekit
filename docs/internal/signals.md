@@ -18,14 +18,14 @@ This is where provekit starts. It's the Trojan horse.
 
 **What:** `const`, `readonly`, `private`, `protected`, type annotations, `never`, `Readonly<T>`, `as const`, `NonNullable<T>`, interface definitions, generic constraints.
 **What they express:** Immutability, encapsulation, value constraints, unreachability, shape guarantees.
-**What we derive:** Type safety invariants — can the runtime violate what the type system promises?
+**What we derive:** Type safety invariants: can the runtime violate what the type system promises?
 
 The key insight: TypeScript types are compile-time only. They are erased at runtime. Every type annotation is a specification that exists in the source code but has zero enforcement in production.
 
-`const x = 5` — can `x` be mutated through prototype pollution or `Object.defineProperty`?
-`private secret: string` — can external code access `secret` through bracket notation or `as any`?
-`function validate(x: string): never` — can execution return from a function declared `never`?
-`readonly balance: number` — can `balance` change after construction?
+`const x = 5`: can `x` be mutated through prototype pollution or `Object.defineProperty`?
+`private secret: string`: can external code access `secret` through bracket notation or `as any`?
+`function validate(x: string): never`: can execution return from a function declared `never`?
+`readonly balance: number`: can `balance` change after construction?
 
 Each of these is a programmer-written specification. TypeScript partially enforces them. provekit fully proves them. The Z3 check:
 
@@ -43,7 +43,7 @@ Each of these is a programmer-written specification. TypeScript partially enforc
 
 **What:** Sources (user input entry points), sinks (dangerous operations), sanitizers (validation/encoding functions).
 **What they express:** Where untrusted data enters, how it flows, where it causes damage.
-**What we derive:** Security invariants — taint analysis across the OWASP top 10.
+**What we derive:** Security invariants: taint analysis across the OWASP top 10.
 
 Every vulnerability class is the same shape: tainted data flows from a source to a sink without sanitization. This maps directly to the axiom template pattern:
 
@@ -76,7 +76,7 @@ Each axiom template is mechanically instantiable: AST identifies sources and sin
 
 **Where log statements and data flow intersect:**
 
-A `logger.info("Processing request", { userId, query })` near a `db.execute(query)` — that's not just a correctness check. The log statement led us to the variables. The type tells us `query` is a string. The data flow analysis traces `query` back to `req.body`. The Z3 check proves the taint reaches the sink unsanitized. What started as a logging invariant became an SQL injection proof.
+A `logger.info("Processing request", { userId, query })` near a `db.execute(query)`: that is not just a correctness check. The log statement led us to the variables. The type tells us `query` is a string. The data flow analysis traces `query` back to `req.body`. The Z3 check proves the taint reaches the sink unsanitized. What started as a logging invariant became an SQL injection proof.
 
 ### Layer 4: Control Flow (Structural Signals)
 
@@ -84,7 +84,7 @@ A `logger.info("Processing request", { userId, query })` near a `db.execute(quer
 **What they express:** "All cases are handled." "Errors are caught." "This guard prevents X."
 **What we derive:** Completeness invariants.
 
-An exhaustive `switch` in TypeScript with a `default: never` is a specification: "I've handled every case." If the union type expands and the switch doesn't, the `never` is reachable — that's a proven violation.
+An exhaustive `switch` in TypeScript with a `default: never` is a specification: "I've handled every case." If the union type expands and the switch doesn't, the `never` is reachable: that is a proven violation.
 
 A `try { ... } catch (err) { logger.error(err) }` is a specification: "I handle errors on this path." If the catch block re-throws, swallows, or handles only a subset of possible errors, the invariant may be incomplete.
 
@@ -96,11 +96,11 @@ An early return `if (!isValid) return null;` is a path condition (already extrac
 **What they express:** The programmer's belief about what the function does or what the variable contains.
 **What we derive:** Semantic invariants.
 
-`sanitizeInput` — does it actually sanitize? The function name is a contract. If the implementation doesn't strip/encode dangerous characters, the name is a lie. Z3 can check: does any input pass through `sanitizeInput` and still contain dangerous characters?
+`sanitizeInput`: does it actually sanitize? The function name is a contract. If the implementation doesn't strip/encode dangerous characters, the name is a lie. Z3 can check: does any input pass through `sanitizeInput` and still contain dangerous characters?
 
-`safeBalance` — is it actually safe? If `safeBalance` can be negative, the name contradicts the value. The variable name is an invariant the programmer intended but didn't enforce.
+`safeBalance`: is it actually safe? If `safeBalance` can be negative, the name contradicts the value. The variable name is an invariant the programmer intended but didn't enforce.
 
-`ensureAuthenticated` — does it actually ensure authentication? If the function can return without verifying credentials, the name is a violated contract.
+`ensureAuthenticated`: does it actually ensure authentication? If the function can return without verifying credentials, the name is a violated contract.
 
 ### Layer 6: Comments and TODOs (Explicit Intent)
 
@@ -145,7 +145,7 @@ Comments give you known-issue proofs.
 
 Same pipeline. Same Z3. Same proofs. Different signals, same math.
 
-A single codebase analyzed across all six layers produces a comprehensive formal verification — correctness, type safety, security, completeness, semantics, known issues — from code that already exists, without writing a single specification.
+A single codebase analyzed across all six layers produces a comprehensive formal verification (correctness, type safety, security, completeness, semantics, known issues) from code that already exists, without writing a single specification.
 
 The specification was always there. In the logs, in the types, in the names, in the comments. In every informal expression of programmer intent. We just didn't have the theorem prover listening to all of them at once.
 
