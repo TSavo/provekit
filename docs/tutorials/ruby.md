@@ -85,4 +85,4 @@ provekit prove
 
 ---
 
-*This tutorial is a stub. Known gap: Bridge IR currently hardcodes `kind: "contract"` (task #223), blocking Phase 2 cross-kit bridges.*
+*This tutorial is a stub. Known gap: Bridge IR currently hardcodes `kind: "contract"` (task #190), blocking Phase 2 cross-kit bridges.*
