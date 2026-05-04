@@ -171,13 +171,6 @@ export function makeCheckImplicationStage(
       
       const probeAB = wrapImplicationProbe(input.newSmt, input.oldSmt);
       const probeBA = wrapImplicationProbe(input.oldSmt, input.newSmt);
-      // [DIAG] runner-side capture: log the SMT scripts being constructed for each probe.
-      console.error(`[DIAG run] smtSolvers=${smtSolvers.length} coqSolvers=${coqSolvers.length}`);
-      console.error(`[DIAG run] oldSmt(first500)=${JSON.stringify(input.oldSmt.slice(0, 500))}`);
-      console.error(`[DIAG run] newSmt(first500)=${JSON.stringify(input.newSmt.slice(0, 500))}`);
-      console.error(`[DIAG run] probeAB(newImpliesOld) full=${JSON.stringify(probeAB)}`);
-      console.error(`[DIAG run] probeBA(oldImpliesNew) full=${JSON.stringify(probeBA)}`);
-
       // Process SMT-LIB solvers
       const smtResults: Array<{ solverType: string; newImpliesOld: SolverProbeVerdict; oldImpliesNew: SolverProbeVerdict; verdict: ImplicationVerdict }> = smtSolvers.length > 0 
         ? await Promise.all(
@@ -341,16 +334,57 @@ function classifyVerdict(
   ab: SolverProbeVerdict,
   ba: SolverProbeVerdict,
 ): ImplicationVerdict {
-  // [DIAG] runner-side capture: pair → verdict.
-  const verdict: ImplicationVerdict = (() => {
-    if (ab === "unknown" || ab === "timeout" || ba === "unknown" || ba === "timeout") return "undecidable";
-    if (ab === "unsat" && ba === "unsat") return "equivalent";
-    if (ab === "unsat" && ba === "sat") return "strengthened";
-    if (ab === "sat" && ba === "unsat") return "weakened";
-    return "incomparable";
-  })();
-  console.error(`[DIAG classifyVerdict] ab=${ab} ba=${ba} -> ${verdict}`);
-  return verdict;
+  if (ab === "unknown" || ab === "timeout" || ba === "unknown" || ba === "timeout") return "undecidable";
+  if (ab === "unsat" && ba === "unsat") return "equivalent";
+  if (ab === "unsat" && ba === "sat") return "strengthened";
+  if (ab === "sat" && ba === "unsat") return "weakened";
+  return "incomparable";
+}
+
+/**
+ * Lazy singleton for the z3-solver WebAssembly module. We prefer WASM
+ * because it eliminates the system-binary dependency that breaks CI
+ * when `z3` is not on $PATH. The init Promise is cached so every
+ * solver invocation shares a single wasm compile+instantiation.
+ */
+let _z3WasmReady: Promise<any> | null = null;
+
+function getZ3Wasm(): Promise<any> {
+  if (!_z3WasmReady) {
+    _z3WasmReady = (async () => {
+      try {
+        const z3 = require("z3-solver");
+        const api = await z3.init();
+        return api;
+      } catch (e) {
+        _z3WasmReady = null; // reset on failure so next call can retry
+        throw e;
+      }
+    })();
+  }
+  return _z3WasmReady;
+}
+
+/**
+ * Feed an SMT-LIB2 script to the WASM z3-solver and return its
+ * check-sat verdict. No system binary required.
+ */
+async function invokeSolverWasm(
+  script: string,
+  timeoutMs: number,
+): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
+  try {
+    const api = await getZ3Wasm();
+    const ctx = new api.Context("main");
+    const solver = new ctx.Solver();
+    if (timeoutMs > 0) solver.set("timeout", timeoutMs);
+    solver.fromString(script);
+    const result = await solver.check();
+    if (result === "sat" || result === "unsat") return result;
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 /**
@@ -358,56 +392,53 @@ function classifyVerdict(
  * needed to run any SMT-LIB-2.6-conformant solver: binary + flags with
  * {{TIMEOUT_S}} and {{TIMEOUT_MS}} placeholders. Adding a new solver
  * (Bitwuzla, Boolector, MathSAT, …) is a YAML edit, not a TS edit.
+ *
+ * For smt-lib entries the WASM-based z3-solver is tried first (no
+ * system binary required). If WASM fails, we fall back to spawning
+ * the configured binary on $PATH.
  */
 export async function invokeSolver(
   solver: SolverEntry,
   script: string,
 ): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
+  // Primary path: WASM z3-solver (works without a system binary)
+  if (solver.compiler === "smt-lib") {
+    try {
+      return await invokeSolverWasm(script, solver.timeoutMs);
+    } catch {
+      // Fall through to spawn-based fallback
+    }
+  }
+
+  // Fallback: spawn system binary via $PATH
   const timeoutMs = solver.timeoutMs;
   const args = solver.flags.map((flag) =>
     flag
       .replaceAll("{{TIMEOUT_MS}}", String(timeoutMs))
       .replaceAll("{{TIMEOUT_S}}", String(Math.ceil(timeoutMs / 1000))),
   );
-  // [DIAG] runner-side capture: print spawn target, args, and a script preview.
-  console.error(`[DIAG invokeSolver] binary=${JSON.stringify(solver.binary)} args=${JSON.stringify(args)} timeoutMs=${timeoutMs} PATH=${process.env.PATH ?? ""}`);
-  console.error(`[DIAG invokeSolver] script(first500)=${JSON.stringify(script.slice(0, 500))}`);
   return new Promise((resolve) => {
     let child;
     try {
       child = spawn(solver.binary, args, { stdio: ["pipe", "pipe", "pipe"] });
-    } catch (err) {
-      console.error(`[DIAG invokeSolver] spawn threw: ${(err as Error)?.message ?? String(err)}`);
+    } catch {
       resolve("unknown");
       return;
     }
     let stdout = "";
-    let stderr = "";
     if (child.stdout) child.stdout.on("data", (c) => (stdout += c.toString()));
-    // [DIAG] previously discarded; capture for runner-side visibility.
-    if (child.stderr) child.stderr.on("data", (c) => (stderr += c.toString()));
+    if (child.stderr) child.stderr.on("data", () => { /* discard */ });
     const timer = setTimeout(() => {
-      console.error(`[DIAG invokeSolver] timeout fired after ${timeoutMs + 250}ms; killing pid=${child.pid}`);
       try { child.kill("SIGKILL"); } catch { /* ignore */ }
       resolve("timeout");
     }, timeoutMs + 250);
-    child.on("error", (err) => {
+    child.on("error", () => { clearTimeout(timer); resolve("unknown"); });
+    child.on("close", () => {
       clearTimeout(timer);
-      console.error(`[DIAG invokeSolver] child error event: ${(err as Error)?.message ?? String(err)}`);
-      resolve("unknown");
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      console.error(`[DIAG invokeSolver] close: exitCode=${code} signal=${signal ?? "null"} binary=${JSON.stringify(solver.binary)}`);
-      console.error(`[DIAG invokeSolver] stdout=${JSON.stringify(stdout)}`);
-      console.error(`[DIAG invokeSolver] stderr=${JSON.stringify(stderr)}`);
       const lines = stdout.trim().split("\n").map((l) => l.trim());
       const last = lines[lines.length - 1] ?? "";
-      let verdict: "sat" | "unsat" | "unknown" | "timeout";
-      if (last === "sat" || last === "unsat" || last === "unknown") verdict = last;
-      else verdict = "unknown";
-      console.error(`[DIAG invokeSolver] resolved verdict=${verdict} (lastLine=${JSON.stringify(last)})`);
-      resolve(verdict);
+      if (last === "sat" || last === "unsat" || last === "unknown") resolve(last);
+      else resolve("unknown");
     });
     if (child.stdin) {
       child.stdin.write(script);
