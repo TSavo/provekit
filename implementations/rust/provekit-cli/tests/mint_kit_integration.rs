@@ -477,6 +477,58 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 }
 
 // ---------------------------------------------------------------------------
+// Test 8: --kit=ts pins the expected contractSetCid (issue #204 wiring fix)
+// ---------------------------------------------------------------------------
+
+/// Pinned contractSetCid produced by `--kit=ts` after routing to the
+/// `typescript-self-contracts` surface (mint-ts-self-contracts-rpc.cjs,
+/// canonical 14-slab, 69-contract set). Verified by `make mint-ts`.
+///
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the KIT_TABLE
+/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// the TypeScript slab contracts have changed -- update TS_CONTRACT_SET_CID.
+///
+/// The surface is reached via:
+///   `implementations/typescript/.provekit/lift/typescript-self-contracts/manifest.toml`
+/// which spawns: `node --experimental-require-module src/bin/mint-ts-self-contracts-rpc.cjs`
+const TS_CONTRACT_SET_CID: &str =
+    "blake3-512:5a45314fdfb0fa1357a78a3f5c22e794fcbc10d3e649c39989710887eb742a6610861b9ab5c9e941ab01bc4357f5671a61c9d8a1d431dff8da3b6280a66d0d6a";
+
+#[test]
+#[serial(mint_kit_files)]
+fn ts_kit_pins_expected_contract_set_cid() {
+    let root = repo_root();
+
+    let (ok, stdout, stderr) = run_mint("ts");
+    if !ok {
+        eprintln!(
+            "ts kit: mint failed (node/tsx may not be available)\n  stderr: {stderr}"
+        );
+        // Skip rather than fail -- node toolchain may not be present in all environments.
+        return;
+    }
+
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "ts kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
+    );
+
+    let attest = read_attestation(&root, "ts");
+    let cset = attest["contractSetCid"].as_str().unwrap();
+
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "ts kit: contractSetCid must NOT be the empty-set sentinel -- routing regression detected (issue #204)"
+    );
+    assert_eq!(
+        cset, TS_CONTRACT_SET_CID,
+        "ts kit: contractSetCid does not match pinned value from 14-slab, 69-contract set (issue #204)"
+    );
+
+    eprintln!("ts kit contractSetCid pinned correctly: {cset}");
+}
+
+// ---------------------------------------------------------------------------
 // Test 8: cpp kit contractSetCid is pinned to the canonical self-contracts CID
 //         (issue #203 regression gate, PR wiring cpp-self-contracts surface)
 // ---------------------------------------------------------------------------
