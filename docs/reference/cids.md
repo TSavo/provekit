@@ -1,6 +1,6 @@
 # Spec CIDs at HEAD
 
-Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.4.0). Verify the local install conforms via `provekit verify-protocol`.
+Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.4.1). Verify the local install conforms via `provekit verify-protocol`.
 
 ## Two hashing rules
 
@@ -16,11 +16,11 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 
 `--verify` reads every spec in raw bytes, hashes each, then reads the catalog, JCS-canonicalizes it, hashes that, and compares all values. Exit 0 iff every value matches.
 
-## Pinned CIDs (v1.4.0)
+## Pinned CIDs (v1.4.1)
 
 | Document | CID |
 |---|---|
-| Protocol catalog (v1.4.0) | `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f` |
+| Protocol catalog (v1.4.1) | `blake3-512:9cb8600c84f682502f3b7e9a9f23b8138988bd1ffbcdcf3cd4e4b1d9ab386d3bb5076cd4dda8330edc24b43e62041a2da5153801001ed700d0be727073ceda67` |
 | Canonicalization grammar | `blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830` |
 | Handshake algorithm | `blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925` |
 | IR formal grammar | `blake3-512:6c0127e0d24946d7be75861db20507ccdcfdf968d3333f8aa34083e849d8238d73b3acfaa31880648995a024112182ed6b6002cd489548b4b18f5d4c3768dd96` |
@@ -45,9 +45,9 @@ The v1.4.0 bump is additive over v1.3.1. New specs published with v1.4.0:
 - `bundle-attestation-protocol` (`2026-05-02-bundle-attestation-protocol.md`)
 - `opacity-manifest-grammar` (`2026-05-02-opacity-manifest-grammar.md`)
 
-The full list of v1.4.0 spec CIDs is in `protocol/specs/2026-04-30-protocol-catalog.json`. Recompute locally to verify.
+The full list of v1.4.1 spec CIDs is in `protocol/specs/2026-04-30-protocol-catalog.json`. Recompute locally to verify.
 
-## Per-kit self-contracts CIDs (v1.4.0)
+## Per-kit self-contracts CIDs (v1.4.1)
 
 Each conformant peer ships hand-written contracts about its own public surface, mints them as signed mementos under the foundation key, and bundles into a `.proof` whose filename IS its catalog CID.
 
@@ -63,7 +63,7 @@ Two runs producing the same CID is the framework verifying its own canonicalizat
 
 ## Bluepaper recursive-verification
 
-The protocol catalog's CID is the protocol version. Verifying the catalog is the act of running the protocol; running the protocol verifies the catalog. There is no external authority. The bluepaper at [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) closes with this recursive verification recipe. Run `--verify`. If the computed catalog CID matches `b0f2030d...`, the bluepaper has just verified its own authority over the bytes you have.
+The protocol catalog's CID is the protocol version. Verifying the catalog is the act of running the protocol; running the protocol verifies the catalog. There is no external authority. The bluepaper at [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) closes with this recursive verification recipe. Run `--verify`. If the computed catalog CID matches `9cb8600c...`, the bluepaper has just verified its own authority over the bytes you have.
 
 ## Read next
 
