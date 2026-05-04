@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+#
+# mint-python-self-contracts — RPC entry point for the
+# python-self-contracts lift surface, plus direct CLI invocation.
+#
+# Speaks the lift-plugin protocol (provekit-lift/1) over NDJSON on
+# stdio when invoked with --rpc. Otherwise mints once into the given
+# output directory (or a tmpdir) for human inspection.
+#
+# Spec: protocol/specs/2026-04-30-lift-plugin-protocol.md
+
+import os
+import os.path
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_PYTHON_ROOT = os.path.dirname(_HERE)
+_ORCH = os.path.join(_PYTHON_ROOT, "provekit-self-contracts.py")
+
+# Load the orchestrator module without depending on its filename being a
+# valid Python identifier (the hyphen makes it un-importable as a normal
+# package). Use the `runpy` approach: exec the file as `__main__` after
+# setting argv.
+import runpy
+
+# Ensure the orchestrator can locate its sibling lib via sys.path; it
+# also self-injects, so this is belt-and-suspenders.
+_LIB_SRC = os.path.join(_PYTHON_ROOT, "provekit-lift-py-tests", "src")
+if _LIB_SRC not in sys.path:
+    sys.path.insert(0, _LIB_SRC)
+
+# Forward argv (excluding our own program name); runpy.run_path expects
+# argv[0] to be the script path, so reconstruct.
+sys.argv = [_ORCH] + sys.argv[1:]
+runpy.run_path(_ORCH, run_name="__main__")
