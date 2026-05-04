@@ -1,5 +1,8 @@
 <?php
-/** ProvekIt PHP self-contracts — JSON-RPC 2.0 NDJSON handler. */
+/** ProvekIt PHP self-contracts — JSON-RPC 2.0 NDJSON handler.
+ *  Daemon lifecycle: initialize -> (lift)* -> shutdown.
+ *  Persists across lift calls, exits on EOF or shutdown method.
+ */
 
 declare(strict_types=1);
 
@@ -11,14 +14,13 @@ if (!in_array('--rpc', $GLOBALS['argv'] ?? [])) return;
 function runRpc(): void
 {
     $stdin = fopen('php://stdin', 'r');
-    stream_set_blocking($stdin, false);
 
     while (($line = fgets($stdin)) !== false) {
         $line = trim($line);
         if ($line === '') continue;
 
         $req = json_decode($line, true);
-        if (!is_array($req) || !isset($req['id']) || !isset($req['method'])) continue;
+        if (!is_array($req) || !isset($req['id'], $req['method'])) continue;
 
         $id = $req['id'];
         $method = $req['method'];
@@ -26,71 +28,62 @@ function runRpc(): void
 
         try {
             match ($method) {
-                'initialize' => sendRpcResponse($id, [
-                    'name' => 'provekit-lift-php',
-                    'version' => '1.0.0',
-                    'protocol_version' => 'provekit-lift/1',
-                    'capabilities' => [
-                        'authoring_surfaces' => ['php-self-contracts'],
-                        'ir_version' => 'v1.1.0',
-                        'emits_signed_mementos' => true,
+                'initialize' => send(json_encode([
+                    'jsonrpc' => '2.0', 'id' => $id,
+                    'result' => [
+                        'name' => 'php-self-contracts',
+                        'version' => '1.0.0',
+                        'protocol_version' => 'provekit-lift/1',
+                        'capabilities' => [
+                            'authoring_surfaces' => ['php-self-contracts'],
+                            'ir_version' => 'v1.1.0',
+                            'emits_signed_mementos' => true,
+                        ],
                     ],
-                ]),
+                ])),
 
                 'lift' => (function () use ($id, $params) {
-                    $workspace = $params['workspace_root'] ?? ($params['source_paths'][0] ?? __DIR__ . '/../../');
-                    $outDir = $workspace;
-                    $result = mintAll($outDir);
+                    $ws = $params['workspace_root']
+                        ?? $params['source_paths'][0]
+                        ?? dirname(__DIR__, 2);
+                    $result = mintAll($ws);
 
                     $bytes = file_get_contents($result['proofPath']);
                     $b64 = base64_encode($bytes);
 
-                    $contractCids = array_values(array_filter($result['contractCids'] ?? [], fn($c) => str_starts_with($c, 'blake3-512:')));
-                    sort($contractCids);
-                    $contractSetCid = \ProvekIt\Canonicalizer\Blake3::cid(
-                        \ProvekIt\Canonicalizer\Jcs::encode($contractCids)
-                    );
-
-                    sendRpcResponse($id, [
-                        'kind' => 'proof-envelope',
-                        'filename_cid' => $result['cid'],
-                        'bytes_base64' => $b64,
-                        'contract_set_cid' => $contractSetCid,
-                        'contract_count' => $result['contractCount'],
-                    ]);
+                    send(json_encode([
+                        'jsonrpc' => '2.0', 'id' => $id,
+                        'result' => [
+                            'kind' => 'proof-envelope',
+                            'filename_cid' => $result['cid'],
+                            'contract_set_cid' => $result['contractSetCid'],
+                            'bytes_base64' => $b64,
+                        ],
+                    ]));
                 })(),
 
                 'shutdown' => (function () use ($id) {
-                    sendRpcResponse($id, null);
+                    send(json_encode(['jsonrpc' => '2.0', 'id' => $id, 'result' => null]));
                     exit(0);
                 })(),
 
-                default => sendRpcError($id, -32601, "METHOD_NOT_FOUND: {$method}"),
+                default => send(json_encode([
+                    'jsonrpc' => '2.0', 'id' => $id,
+                    'error' => ['code' => -32601, 'message' => "METHOD_NOT_FOUND: {$method}"],
+                ])),
             };
         } catch (\Throwable $e) {
-            sendRpcError($id, -32603, $e->getMessage());
+            send(json_encode([
+                'jsonrpc' => '2.0', 'id' => $id,
+                'error' => ['code' => -32603, 'message' => $e->getMessage()],
+            ]));
         }
     }
+
+    fclose($stdin);
+    exit(0);
 }
 
-function sendRpcResponse($id, $result): void
-{
-    echo json_encode([
-        'jsonrpc' => '2.0',
-        'id' => $id,
-        'result' => $result,
-    ], JSON_UNESCAPED_SLASHES) . "\n";
-    flush();
-}
-
-function sendRpcError($id, int $code, string $message): void
-{
-    echo json_encode([
-        'jsonrpc' => '2.0',
-        'id' => $id,
-        'error' => ['code' => $code, 'message' => $message],
-    ], JSON_UNESCAPED_SLASHES) . "\n";
-    flush();
-}
+function send(string $json): void { echo $json . "\n"; flush(); }
 
 runRpc();
