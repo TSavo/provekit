@@ -9,7 +9,7 @@
 | LLVM IR | the IR for LLVM (compilation) |
 | MLIR | multi-level IR (compilation) |
 | GIMPLE | the IR for GCC (compilation) |
-| HIR / MIR | rust's high / middle IR (compilation) |
+| HIR / MIR | Rust's high / middle IR (compilation) |
 | **Proof IR** | **the IR for proofs (verification + composition)** |
 
 That's the answer. The reasoning that follows explains why none of those existing IRs covers what Proof IR covers — but the name itself is the same naming pattern those IRs all use, applied to a domain that didn't have one yet.
@@ -44,7 +44,7 @@ Five properties Proof IR has, simultaneously:
 
 1. **Federated** — multiple independent signers can attest claims using it; trust is composable across signers without a central authority
 2. **Content-addressable** — every artifact is named by the BLAKE3-512 hash of its canonical bytes; identity is intrinsic, not registered
-3. **Multi-prover** — same formula goes to Z3, Coq, Lean, Vampire, CVC5; consensus binds the verdict
+3. **Multi-prover** — same formula can be dispatched to a portfolio (default today: Z3, CVC5, Vampire, Coq); the protocol supports `first-wins` (default) and `consensus` modes per `.provekit/config.toml`
 4. **Language-agnostic** — the IR is independent of the source language; lifters from rust / python / php / etc. all produce the same canonical bytes for the same logical content
 5. **Signed-claim** — every contract is wrapped in a signed envelope with the signer's identity content-addressed
 
