@@ -177,51 +177,26 @@ ir_compiler = "coq"
     fn build_recognizes_default_workspace_portfolio() {
         // Closes #251 (cvc5) + #252 Tier 1 (Vampire).
         //
-        // Asserts that the canonical `.provekit/config.toml` shipped at
-        // the workspace root parses cleanly and registers all four
-        // default-portfolio solvers with the right ir_compiler tags.
-        // This is a registry-build smoke test only: it does not spawn
-        // any solver binary, so it passes even on hosts that lack
+        // Reads the canonical `.provekit/config.toml` from the repo
+        // root (computed from CARGO_MANIFEST_DIR) and asserts that the
+        // file parses cleanly and registers all four default-portfolio
+        // solvers with the right ir_compiler tags. This is a
+        // registry-build smoke test only: it does not spawn any solver
+        // binary, so it passes even on hosts that lack
         // cvc5/vampire/coqc on PATH (which is the whole point of the
         // first-wins mode in the default config).
         //
-        // The TOML body below MUST stay byte-for-byte in sync with the
-        // `[solvers]` block of `.provekit/config.toml` at the repo
-        // root. If you tune flags or version pins there, mirror them
-        // here.
-        let toml = r#"
-[solvers]
-mode = "first-wins"
-portfolio = ["z3", "cvc5", "vampire", "coq"]
-
-[solvers.z3]
-binary = "z3"
-ir_compiler = "smt-lib-v2.6"
-flags = ["-smt2", "-in"]
-timeout_seconds = 30
-version = "4.x"
-
-[solvers.cvc5]
-binary = "cvc5"
-ir_compiler = "smt-lib-v2.6"
-flags = ["--lang=smt2", "--produce-models"]
-timeout_seconds = 30
-version = "1.x"
-
-[solvers.vampire]
-binary = "vampire"
-ir_compiler = "smt-lib-v2.6"
-flags = ["--input_syntax", "smtlib2", "--output_mode", "smtcomp"]
-timeout_seconds = 30
-version = "4.x"
-
-[solvers.coq]
-binary = "coqc"
-ir_compiler = "coq"
-timeout_seconds = 60
-version = "8.x"
-"#;
-        let c = SolversConfig::from_toml(toml).expect("config parses");
+        // Closes #296: the prior version parsed an inline TOML string
+        // instead of the actual file, letting the repo config drift
+        // without test signal.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("could not find repository root");
+        let config_path = root.join(".provekit").join("config.toml");
+        let body = std::fs::read_to_string(&config_path)
+            .unwrap_or_else(|e| panic!("could not read {}: {e}", config_path.display()));
+        let c = SolversConfig::from_toml(&body).expect("config parses");
         let r = build(&c);
 
         // All four seats register.
