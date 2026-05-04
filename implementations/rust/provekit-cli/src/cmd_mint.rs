@@ -70,41 +70,48 @@ const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-03T18:00:00Z";
 
 
-/// Canonical mapping from `--kit=<name>` to (project_dir, lift_surface, lang_key).
+/// Canonical mapping from `--kit=<name>` to (project_subdir, lift_surface, lang_key).
 ///
-/// * `project_dir` — path relative to repo root (as passed to `--project`)
-/// * `lift_surface` — subdirectory name under `.provekit/lift/<surface>/`
-/// * `lang_key` — the `lang` field in the signed attestation JSON (and the
+/// * `project_subdir` — subdirectory under `implementations/` (as passed to `--project`)
+/// * `lift_surface`   — subdirectory name under `.provekit/lift/<surface>/manifest.toml`
+/// * `lang_key`       — the `lang` field in the signed attestation JSON (and the
 ///   key for the `.provekit/self-contracts-attestations/<lang>.json` filename)
 ///
-/// Naming diverges for two kits:
-///   `ts`     →  project dir `typescript`,   surface `typescript`, lang `ts`
-///   `csharp` →  project dir `csharp`,       surface `csharp`,     lang `csharp`
+/// Naming diverges for several kits:
+///   `ts`     →  project dir `typescript`,   surface `typescript`,       lang `ts`
+///   `csharp` →  project dir `csharp`,       surface `csharp`,           lang `csharp`
+///   `go`     →  project dir `go`,           surface `go-self-contracts`, lang `go`
 ///
-/// All other kits have lang = surface = project_dir.
-const KIT_TABLE: &[(&str, &str, &str)] = &[
-    // (kit_alias, project_subdir, lang_key)
-    ("rust",       "rust",       "rust"),
-    ("go",         "go",         "go"),
-    ("cpp",        "cpp",        "cpp"),
-    ("ts",         "typescript", "ts"),
-    ("csharp",     "csharp",     "csharp"),
-    ("swift",      "swift",      "swift"),
-    ("java",       "java",       "java"),
-    ("python",     "python",     "python"),
-    ("ruby",       "ruby",       "ruby"),
-    ("zig",        "zig",        "zig"),
-    ("c",          "c",          "c"),
+/// For `go`, the surface `go` maps to the test-fixture lifter (static empty
+/// proof envelope). The surface `go-self-contracts` maps to the real lifter
+/// that walks the slab at `implementations/go/provekit-self-contracts/slabs/`.
+/// `--kit=go` must hit the real lifter; `--project=implementations/go
+/// --surface=go` still reaches the test-fixture lifter.
+///
+/// All other kits have lang = surface = project_subdir.
+const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
+    // (kit_alias, project_subdir, lift_surface, lang_key)
+    ("rust",       "rust",       "rust",               "rust"),
+    ("go",         "go",         "go-self-contracts",  "go"),
+    ("cpp",        "cpp",        "cpp",                "cpp"),
+    ("ts",         "typescript", "typescript",         "ts"),
+    ("csharp",     "csharp",     "csharp",             "csharp"),
+    ("swift",      "swift",      "swift",              "swift"),
+    ("java",       "java",       "java",               "java"),
+    ("python",     "python",     "python",             "python"),
+    ("ruby",       "ruby",       "ruby",               "ruby"),
+    ("zig",        "zig",        "zig",                "zig"),
+    ("c",          "c",          "c",                  "c"),
 ];
 
-/// Resolve `--kit=<name>` to the canonical project path and lang key.
+/// Resolve `--kit=<name>` to the canonical project path, surface, and lang key.
 /// Returns `(project_path, surface, lang_key)` relative to the CWD at
 /// which `provekit` is invoked (expected to be repo root).
 fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
-    KIT_TABLE.iter().find(|(alias, _, _)| *alias == kit).map(|(_, subdir, lang)| {
+    KIT_TABLE.iter().find(|(alias, _, _, _)| *alias == kit).map(|(_, subdir, surface, lang)| {
         (
             PathBuf::from("implementations").join(subdir),
-            subdir.to_string(),
+            surface.to_string(),
             lang.to_string(),
         )
     })
@@ -500,7 +507,7 @@ pub fn run(args: MintArgs) -> u8 {
         match resolve_kit(kit) {
             Some((path, surface, lang)) => (path, Some(surface), Some(lang)),
             None => {
-                let known: Vec<&str> = KIT_TABLE.iter().map(|(a, _, _)| *a).collect();
+                let known: Vec<&str> = KIT_TABLE.iter().map(|(a, _, _, _)| *a).collect();
                 eprintln!(
                     "{}: unknown kit `{}`; known kits: {}",
                     "error".red().bold(),

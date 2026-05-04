@@ -156,7 +156,12 @@ const KITS_WITHOUT_LIFTERS: &[&str] = &["swift", "java", "python", "ruby", "zig"
 /// Kits that have a lifter AND are expected to find real contracts.
 /// Only include kits where the test environment reliably has the lifter built
 /// and the kit's workspace has liftable annotations.
-const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "cpp"];
+const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp"];
+
+/// Pinned contractSetCid for `--kit=go` after Tier 1 wiring fix (#176).
+/// Reflects the 11 canonical contracts in `implementations/go/provekit-self-contracts/slabs/`.
+/// Update this constant when contracts change (re-run `make mint-go` and capture the new CID).
+const GO_CONTRACT_SET_CID: &str = "blake3-512:e23649f383162398556a508c2e69e035d6d231bfaf6e8926ced547fb19ddd9c65779f39fe31d85519c957bc40afa432c9be468eadfa5aac77f74f5de8c56324c";
 
 #[test]
 fn all_kits_mint_produces_valid_attestation_structure() {
@@ -355,4 +360,46 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
         extract_cset(&proj_stdout),
         "--kit and --project must produce identical contractSetCid output"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Test 6: --kit=go pins the expected contractSetCid (Tier 1 wiring fix #176)
+// ---------------------------------------------------------------------------
+
+/// Verify that `--kit=go` routes to the go-self-contracts surface (not the
+/// test-fixture lifter) and that the resulting contractSetCid matches the
+/// known-good CID computed from the 11 canonical contracts in the go slab.
+///
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the KIT_TABLE
+/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// the go slab contracts have changed -- update GO_CONTRACT_SET_CID accordingly.
+#[test]
+fn go_kit_pins_expected_contract_set_cid() {
+    let root = repo_root();
+
+    let (ok, stdout, stderr) = run_mint("go");
+    if !ok {
+        eprintln!("go kit: mint failed (go toolchain may not be available)\n  stderr: {stderr}");
+        // Skip rather than fail -- go toolchain may not be present in all environments.
+        return;
+    }
+
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "go kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
+    );
+
+    let attest = read_attestation(&root, "go");
+    let cset = attest["contractSetCid"].as_str().unwrap();
+
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "go kit: contractSetCid must NOT be the empty-set sentinel -- routing regression detected"
+    );
+    assert_eq!(
+        cset, GO_CONTRACT_SET_CID,
+        "go kit: contractSetCid does not match pinned value from 11-contract slab (issue #176 Tier 1)"
+    );
+
+    eprintln!("go kit contractSetCid pinned correctly: {cset}");
 }

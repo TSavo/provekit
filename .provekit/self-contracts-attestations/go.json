@@ -2,9 +2,9 @@
   "schemaVersion": "1",
   "kind": "self-contracts-attestation",
   "lang": "go",
-  "cid": "blake3-512:03f88b99c3d8073bba8948d6e762aac443b265f606cc05abd4d172f03a4def6a30ab73171a939c6d49994b3d3b7703ae26c628dc80fec7c4a7bd963d443eb57b",
-  "contractSetCid": "blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229",
+  "cid": "blake3-512:2cb536119bb99c4b7c24bc455672e0863b3b5392fabfc92c6db01828854ca6cb7f20a33d0c7b2f9415a7957fd844dcfe06dc668765d3ccbb08808cf08e9f92eb",
+  "contractSetCid": "blake3-512:e23649f383162398556a508c2e69e035d6d231bfaf6e8926ced547fb19ddd9c65779f39fe31d85519c957bc40afa432c9be468eadfa5aac77f74f5de8c56324c",
   "declaredAt": "2026-05-03T18:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:xsQDiaPzb12xLVnJsLeiB6hX9VgpAuRyiWHj0NnYPM9+DOCmi7mY5anwU8dE4wf5utkb1clIF4UA5+G0o7wuBQ=="
+  "signature": "ed25519:2QRap+bghkPM6R4MbkkZb+7nZmv7NEpqAPAuWYnk1ozJ5bDee5kGfe5Nd9N/71VrPEmcQfg4MIBPq9dC4zi2CA=="
 }
