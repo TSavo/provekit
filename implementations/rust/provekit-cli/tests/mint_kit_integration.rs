@@ -147,12 +147,12 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
 /// Kits with a real lifter binary installed. These kits run lift-protocol RPCs.
 /// Note: a kit having a lifter binary does not guarantee a non-empty contractSetCid;
 /// the CID depends on how many contracts the lifter finds in the workspace.
-const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp"];
+const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "java"];
 
 /// Kits without a lifter binary yet — produce the empty-set CID because the
 /// binary cannot be found (ENOENT on spawn). These declare the binary name but
 /// the binary is not installed; the gap surfaces as an empty-set attestation.
-const KITS_WITHOUT_LIFTERS: &[&str] = &["swift", "java", "python", "ruby", "zig", "c"];
+const KITS_WITHOUT_LIFTERS: &[&str] = &["swift", "python", "ruby", "zig", "c"];
 
 /// Kits that have a lifter AND are expected to find real contracts.
 /// Only include kits where the test environment reliably has the lifter built
@@ -573,4 +573,61 @@ fn cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     );
 
     eprintln!("cpp kit pinned contractSetCid confirmed: {cset}");
+}
+
+// ---------------------------------------------------------------------------
+// Test 9: java kit contractSetCid is pinned to the canonical self-contracts CID
+//         (issue #207 regression gate, PR wiring java-self-contracts surface)
+// ---------------------------------------------------------------------------
+
+/// Pinned contractSetCid produced by `--kit=java` after routing to the
+/// `java-self-contracts` surface (`provekit-java-self-contracts.jar`,
+/// canonical 6-slab, 30-contract set). Mirrors the rust / cpp / ts / go
+/// pinning pattern.
+///
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the
+/// KIT_TABLE routing regression has been reintroduced. If it fails with
+/// an unknown CID, the java slab contracts have changed -- update
+/// JAVA_CONTRACT_SET_CID accordingly.
+///
+/// The surface is reached via:
+///   `implementations/java/.provekit/lift/java-self-contracts/manifest.toml`
+/// which spawns: `./provekit-java-self-contracts/run-rpc.sh --rpc`.
+const JAVA_CONTRACT_SET_CID: &str =
+    "blake3-512:a22c97362e15faf1e848eeb7d668ba50eba8cfb851a72465f2cccb0ca9e12af198ec14cc0e65453a18b1e40bbd17497f8975b6e3625bbf2b6b31e6ca6aacb6e3";
+
+#[test]
+#[serial(mint_kit_files)]
+fn java_kit_pins_expected_contract_set_cid() {
+    let root = repo_root();
+
+    let (ok, stdout, stderr) = run_mint("java");
+    if !ok {
+        eprintln!(
+            "java kit: mint failed (java/jar may not be available)\n  stderr: {stderr}"
+        );
+        // Skip rather than fail -- jdk + built jar may not be present in
+        // every test environment. CI builds the jar via `make build-java-self-contracts`.
+        return;
+    }
+
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "java kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
+    );
+
+    let attest = read_attestation(&root, "java");
+    let cset = attest["contractSetCid"].as_str().unwrap();
+
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "java kit: contractSetCid must NOT be the empty-set sentinel -- routing regression detected (issue #207)"
+    );
+    assert_eq!(
+        cset, JAVA_CONTRACT_SET_CID,
+        "java kit: contractSetCid does not match pinned value from 6-slab, 30-contract set (issue #207).\n\
+         If the self-contracts changed intentionally, update JAVA_CONTRACT_SET_CID."
+    );
+
+    eprintln!("java kit pinned contractSetCid confirmed: {cset}");
 }

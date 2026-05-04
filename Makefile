@@ -141,7 +141,7 @@ build-c:
 	$(MAKE) -C implementations/c/provekit-self-contracts lib
 
 .PHONY: build-java
-build-java:
+build-java: build-java-self-contracts
 	# provekit-lift-java-core depends on the sibling provekit-ir module.
 	# Use the parent pom + `-pl ... -am` (also-make) so dependencies are
 	# built first; `mvn install` (not package) puts artifacts in ~/.m2 so
@@ -150,6 +150,14 @@ build-java:
 	mkdir -p ~/.local/bin
 	cp implementations/java/provekit-lift-java-core/target/appassembler/bin/provekit-lsp-java ~/.local/bin/provekit-lsp-java
 	chmod +x ~/.local/bin/provekit-lsp-java
+
+.PHONY: build-java-self-contracts
+build-java-self-contracts:
+	# Build the self-contracts orchestrator's shaded jar (BouncyCastle +
+	# provekit-claim-envelope bundled). The jar lands at
+	# implementations/java/provekit-java-self-contracts/target/provekit-java-self-contracts.jar
+	# and the lift manifest spawns it with `java -jar`.
+	mvn -q -f implementations/java/pom.xml -pl provekit-java-self-contracts -am package -DskipTests
 
 .PHONY: build-swift
 build-swift:
@@ -245,7 +253,7 @@ mint-swift: build-rust build-swift
 # per-kit lifter, not the substrate pipeline.
 
 .PHONY: mint-java
-mint-java: build-rust
+mint-java: build-rust build-java-self-contracts
 	@echo ">> minting java self-contracts"
 	@mint_out=$$($(PROVEKIT) mint --kit=java --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
