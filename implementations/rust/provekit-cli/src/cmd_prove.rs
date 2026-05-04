@@ -47,34 +47,22 @@ use provekit_verifier::{Runner, RunnerConfig};
 use crate::report_fmt;
 use crate::ProveArgs;
 
-// Re-use the same KIT_TABLE from cmd_mint for consistency.
-// The table is duplicated here to avoid a cross-module dependency; any
-// change to one must be reflected in the other.
-const KIT_TABLE: &[(&str, &str, &str)] = &[
-    // (kit_alias, project_subdir, surface)
-    ("rust",       "rust",       "rust"),
-    ("go",         "go",         "go"),
-    ("cpp",        "cpp",        "cpp"),
-    ("ts",         "typescript", "typescript"),
-    ("csharp",     "csharp",     "csharp"),
-    ("swift",      "swift",      "swift"),
-    ("java",       "java",       "java"),
-    ("python",     "python",     "python"),
-    ("ruby",       "ruby",       "ruby"),
-    ("zig",        "zig",        "zig"),
-    ("c",          "c",          "c"),
-];
+// Surface + binary resolution lives in `cmd_mint`. The conformance gate must
+// dispatch to the SAME (project, surface, lifter binary) tuple that `mint`
+// uses, otherwise C4 fails (surface mismatch) or spawn fails (ENOENT on a
+// hardcoded binary that doesn't exist). Issue #325.
+//
+// We delegate to `cmd_mint::resolve_kit` for surface resolution, then load
+// the lift surface manifest at
+// `implementations/<project_subdir>/.provekit/lift/<surface>/manifest.toml`
+// to get the actual binary command. No hardcoded `provekit-lift-<kit>`.
+use crate::cmd_mint;
 
+/// Adapter: drop the `lang_key` field from `cmd_mint::resolve_kit` since
+/// the conformance gate doesn't write attestation files (it just runs
+/// verifiers against captured RPC traffic).
 fn resolve_kit(kit: &str) -> Option<(PathBuf, String)> {
-    KIT_TABLE
-        .iter()
-        .find(|(alias, _, _)| *alias == kit)
-        .map(|(_, subdir, surface)| {
-            (
-                PathBuf::from("implementations").join(subdir),
-                surface.to_string(),
-            )
-        })
+    cmd_mint::resolve_kit(kit).map(|(path, surface, _lang)| (path, surface))
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +357,7 @@ fn run_kit(kit: &str, quiet: bool, json_out: bool) -> u8 {
     let (project_root, surface) = match resolve_kit(kit) {
         Some(v) => v,
         None => {
-            let known: Vec<&str> = KIT_TABLE.iter().map(|(a, _, _)| *a).collect();
+            let known: Vec<&str> = cmd_mint::KIT_TABLE.iter().map(|(a, _, _, _)| *a).collect();
             eprintln!(
                 "{}: unknown kit `{}`; known kits: {}",
                 "error".red().bold(),
@@ -761,17 +749,75 @@ mod tests {
     }
 
     #[test]
-    fn resolve_kit_rust_resolves() {
+    fn resolve_kit_rust_resolves_to_self_contracts_surface() {
+        // After #325: prove's resolve_kit must agree with mint's KIT_TABLE,
+        // which routes rust to the rust-self-contracts surface.
         let (path, surface) = resolve_kit("rust").expect("rust must resolve");
         assert_eq!(path, PathBuf::from("implementations/rust"));
-        assert_eq!(surface, "rust");
+        assert_eq!(surface, "rust-self-contracts");
     }
 
     #[test]
-    fn resolve_kit_ts_resolves() {
+    fn resolve_kit_ts_resolves_to_self_contracts_surface() {
         let (path, surface) = resolve_kit("ts").expect("ts must resolve");
         assert_eq!(path, PathBuf::from("implementations/typescript"));
-        assert_eq!(surface, "typescript");
+        assert_eq!(surface, "typescript-self-contracts");
+    }
+
+    /// Regression test for #325: `provekit prove --kit=cpp` was resolving
+    /// surface to `cpp` (matching the hardcoded local KIT_TABLE) instead of
+    /// `cpp-self-contracts` (declared in the manifest's authoring_surfaces).
+    /// C4 then rejected the lift request because surface `cpp` is not in
+    /// capabilities. After the fix, prove must consult cmd_mint::KIT_TABLE,
+    /// which maps cpp → cpp-self-contracts.
+    #[test]
+    fn resolve_kit_cpp_uses_self_contracts_surface_issue_325() {
+        let (path, surface) = resolve_kit("cpp").expect("cpp must resolve");
+        assert_eq!(path, PathBuf::from("implementations/cpp"));
+        assert_eq!(
+            surface, "cpp-self-contracts",
+            "issue #325: cpp must resolve to cpp-self-contracts surface (matches manifest authoring_surfaces), not the hardcoded `cpp`"
+        );
+    }
+
+    /// Regression test for #325: `provekit prove --kit=swift` was dispatching
+    /// to a hardcoded `provekit-lift-swift` binary (ENOENT — the swift kit
+    /// builds `mint-swift-self-contracts`, not `provekit-lift-swift`).
+    /// After the fix, surface must be `swift-self-contracts` and the binary
+    /// is read from the manifest, not synthesized.
+    #[test]
+    fn resolve_kit_swift_uses_self_contracts_surface_issue_325() {
+        let (path, surface) = resolve_kit("swift").expect("swift must resolve");
+        assert_eq!(path, PathBuf::from("implementations/swift"));
+        assert_eq!(
+            surface, "swift-self-contracts",
+            "issue #325: swift must resolve to swift-self-contracts surface so manifest lookup finds .build/release/mint-swift-self-contracts (not the hardcoded `provekit-lift-swift`)"
+        );
+    }
+
+    /// Issue #325: every kit alias must agree between prove and mint.
+    /// If any pair drifts, this test fails — preventing a recurrence of the
+    /// duplicated-table bug that motivated this fix.
+    #[test]
+    fn resolve_kit_agrees_with_cmd_mint_for_all_kits() {
+        for (alias, _subdir, surface, _lang) in cmd_mint::KIT_TABLE.iter() {
+            let (prove_path, prove_surface) = resolve_kit(alias)
+                .unwrap_or_else(|| panic!("kit `{alias}` must resolve in cmd_prove"));
+            let (mint_path, mint_surface, _lang) = cmd_mint::resolve_kit(alias)
+                .unwrap_or_else(|| panic!("kit `{alias}` must resolve in cmd_mint"));
+            assert_eq!(
+                prove_path, mint_path,
+                "project path drift for kit `{alias}`: prove={prove_path:?} mint={mint_path:?}"
+            );
+            assert_eq!(
+                prove_surface, mint_surface,
+                "surface drift for kit `{alias}`: prove={prove_surface} mint={mint_surface}"
+            );
+            assert_eq!(
+                &prove_surface, surface,
+                "surface drift from KIT_TABLE for kit `{alias}`"
+            );
+        }
     }
 
     #[test]
@@ -787,6 +833,39 @@ mod tests {
     #[test]
     fn resolve_kit_unknown_returns_none() {
         assert!(resolve_kit("haskell").is_none());
+    }
+
+    /// Issue #325 acceptance: the binary command for `--kit=swift` must come
+    /// from the lift surface manifest, NOT a hardcoded `provekit-lift-swift`.
+    /// We assert this by reading the actual manifest from the repo and
+    /// checking it does not match the old hardcoded shape.
+    #[test]
+    fn swift_manifest_command_is_not_hardcoded_provekit_lift_swift() {
+        // Walk up to repo root: tests run in implementations/rust/provekit-cli
+        // (CARGO_MANIFEST_DIR), so go up three levels.
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = crate_dir
+            .parent() // implementations/rust
+            .and_then(|p| p.parent()) // implementations
+            .and_then(|p| p.parent()) // repo root
+            .expect("locate repo root from CARGO_MANIFEST_DIR");
+        let manifest = repo_root
+            .join("implementations/swift/.provekit/lift/swift-self-contracts/manifest.toml");
+        if !manifest.exists() {
+            // Be lenient: skip if running outside a full checkout.
+            eprintln!("skipping: swift manifest not present at {}", manifest.display());
+            return;
+        }
+        let parsed = parse_manifest(&manifest)
+            .expect("swift-self-contracts manifest must parse");
+        assert!(
+            !parsed.command.is_empty(),
+            "swift manifest must declare a command"
+        );
+        assert_ne!(
+            parsed.command[0], "provekit-lift-swift",
+            "issue #325: swift binary must NOT be the hardcoded `provekit-lift-swift` (that binary is never built); the manifest declares the real binary"
+        );
     }
 
     #[test]
