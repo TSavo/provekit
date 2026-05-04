@@ -37,6 +37,14 @@ let package = Package(
         .executable(name: "test-swift-lsp", targets: ["LSPTests"]),
         .executable(name: "test-swift-crypto", targets: ["CryptoTests"]),
     ],
+    dependencies: [
+        // SwiftSyntax: Apple's official swift-syntax for AST-based parsing.
+        // Pinned to 600.0.x for compatibility with swift-tools-version 6.0.
+        .package(
+            url: "https://github.com/swiftlang/swift-syntax.git",
+            from: "600.0.0"
+        ),
+    ],
     targets: [
         // CBlake3: vendored portable BLAKE3 reference C implementation.
         // Source: tools/blake3-vendored/, BLAKE3 1.8.5, Apache-2.0.
@@ -103,7 +111,10 @@ let package = Package(
         ),
         .target(
             name: "SwiftLifter",
-            dependencies: []
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftParser", package: "swift-syntax"),
+            ]
         ),
         .executableTarget(
             name: "ConformanceRunner",

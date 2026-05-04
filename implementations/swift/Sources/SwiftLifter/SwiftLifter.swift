@@ -1,24 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// SwiftLifter — regex-based Swift source parser for the ProvekIt lift pipeline.
+// SwiftLifter — SwiftSyntax-based Swift source parser for the ProvekIt lift pipeline.
 //
-// v0: regex-based. Does not depend on SwiftSyntax. AST-based parsing via
-// SwiftSyntax is deferred to a follow-up PR once the Swift toolchain
-// dependency situation stabilizes across CI environments.
+// v1: AST-based via SwiftSyntax (Apple's official swift-syntax library).
+//     Replaces the regex-v0 lifter that lived here previously (issue #211).
 //
-// Extracts:
-//   - Top-level and member function declarations (func keyword)
-//   - Call sites (simple name-call patterns)
+// Walks the parsed Swift slab and extracts:
+//   - Function declarations (FunctionDeclSyntax: top-level + members of
+//     class/struct/enum/protocol/actor/extension nesting)
+//   - Initializer declarations (InitializerDeclSyntax) — emitted as `init`
+//   - Same-kit call sites: function calls whose callee identifier resolves
+//     to a function declared in the same parse unit
 //
-// Wire shape (canonical parse-protocol v1):
+// Wire shape (canonical parse-protocol v1, mirrors Go LSP plugin):
 //   declarations: [{kind, name, outBinding}]
 //   callEdges:    [{sourceContractCid, targetSymbol, callSiteLocus}]
 //   warnings:     []
 //
-// Corresponds to the Go LSP plugin's parse result shape
-// (implementations/go/cmd/provekit-lsp-go/main.go).
+// SwiftSyntax tradeoff: the AST walker is the canonical Apple-blessed way
+// to parse Swift. NSRegularExpression-based parsing breaks on multiline
+// declarations, generic constraints, attributes, and SE-* future syntax.
+// This rewrite removes all those failure modes while keeping the wire shape
+// byte-identical for callers (ProveKitLSPSwift, LSPTests, MintSwiftSelfContracts
+// indirectly via the lift surface manifest).
+//
+// The lifter is platform-restricted to macOS (Package.swift `platforms: [.macOS(.v13)]`)
+// because SwiftSyntax 600.x ships pre-built binaries for Apple platforms; CI on
+// Linux can compile from source but the package is pinned to macOS for simplicity
+// (per the issue #211 acceptance: "Mac-only initially").
 
 import Foundation
+import SwiftSyntax
+import SwiftParser
 
 // MARK: - Wire shapes
 
@@ -92,41 +105,10 @@ public struct LiftResult: Sendable {
 
 // MARK: - SwiftLifter
 
-/// Regex-based Swift source lifter.
-/// Parses Swift source for function declarations and call sites.
+/// SwiftSyntax-based Swift source lifter.
+/// Parses Swift source for function declarations and call sites using the
+/// official Apple swift-syntax AST walker.
 public enum SwiftLifter {
-
-    // Patterns (non-concurrent value types used inside nonisolated context).
-    // Swift 6: NSRegularExpression is not Sendable; keep in a nonisolated helper.
-
-    /// Extract top-level and member function declarations.
-    /// Matches:
-    ///   func name(params) -> ReturnType
-    ///   func name(params)  (no return type)
-    ///   override/public/private/internal/static/class/open prefixed variants
-    static let funcPattern =
-        #"(?:(?:override|public|private|internal|fileprivate|static|class|open|final|mutating|nonmutating|required|optional|dynamic|prefix|postfix|infix)\s+)*func\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:<[^>]*>)?\s*\("#
-
-    /// Extract simple call sites: identifier followed by `(`.
-    /// Excludes `func`, `if`, `while`, `for`, `switch`, `guard`, `return`, `class`,
-    /// `struct`, `enum`, `protocol`, `import`, `var`, `let`, `init`.
-    static let callPattern =
-        #"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\("#
-
-    static let reservedKeywords: Set<String> = [
-        "func", "if", "while", "for", "switch", "guard", "return", "class",
-        "struct", "enum", "protocol", "import", "var", "let", "init", "super",
-        "self", "true", "false", "nil", "catch", "throw", "throws", "do",
-        "try", "defer", "repeat", "in", "else", "where", "case", "default",
-        "break", "continue", "fallthrough", "as", "is", "typealias", "extension",
-        "static", "override", "public", "private", "internal", "fileprivate",
-        "open", "final", "lazy", "weak", "unowned", "required", "optional",
-        "dynamic", "mutating", "nonmutating", "indirect", "subscript",
-        "operator", "prefix", "postfix", "infix", "associativity",
-        "precedence", "import", "module", "package", "nonisolated", "actor",
-        "async", "await", "rethrows", "some", "any", "print", "debugPrint",
-        "assert", "precondition", "fatalError", "assertionFailure",
-    ]
 
     /// Lift Swift source into declarations and call edges.
     ///
@@ -135,102 +117,120 @@ public enum SwiftLifter {
     ///   - path: file path (for locus reporting)
     /// - Returns: LiftResult with extracted declarations and call edges
     public static func lift(source: String, path: String) -> LiftResult {
-        let lines = source.components(separatedBy: "\n")
-        var declarations: [LiftedDeclaration] = []
-        var callEdges: [LiftedCallEdge] = []
+        // Parse via SwiftParser. This never throws; malformed source produces
+        // a tree with diagnostics that we surface as warnings.
+        let sourceFile = Parser.parse(source: source)
+        let locationConverter = SourceLocationConverter(fileName: path, tree: sourceFile)
 
-        guard let funcRegex = try? NSRegularExpression(pattern: funcPattern),
-              let callRegex = try? NSRegularExpression(pattern: callPattern)
-        else {
-            return LiftResult(declarations: [], callEdges: [])
-        }
+        // Pass 1: collect declarations.
+        let declVisitor = DeclarationVisitor(viewMode: .sourceAccurate)
+        declVisitor.walk(sourceFile)
+        let declarations = declVisitor.declarations
+        let declaredNames = Set(declarations.map { $0.name })
 
-        var declaredNames: Set<String> = []
+        // Pass 2: collect call edges, filtered to same-kit declared names.
+        let callVisitor = CallEdgeVisitor(
+            viewMode: .sourceAccurate,
+            declaredNames: declaredNames,
+            path: path,
+            locationConverter: locationConverter
+        )
+        callVisitor.walk(sourceFile)
 
-        // First pass: collect declarations.
-        for (lineIdx, line) in lines.enumerated() {
-            let nsLine = line as NSString
-            let range = NSRange(location: 0, length: nsLine.length)
-            let matches = funcRegex.matches(in: line, range: range)
-            for match in matches {
-                if match.numberOfRanges >= 2 {
-                    let nameRange = match.range(at: 1)
-                    if nameRange.location != NSNotFound {
-                        let name = nsLine.substring(with: nameRange)
-                        if !reservedKeywords.contains(name) {
-                            declaredNames.insert(name)
-                            declarations.append(LiftedDeclaration(name: name))
-                        }
-                    }
-                }
-                _ = lineIdx  // suppress unused warning
-            }
-        }
-
-        // Second pass: collect call edges from all non-comment lines.
-        // On lines that declare functions, the func name itself is excluded
-        // (it's a declaration, not a call site). Other calls on the same
-        // line (e.g. `func compute() -> Int { return add(1, 2) }`) ARE
-        // emitted as call edges.
-        for (lineIdx, line) in lines.enumerated() {
-            // Skip blank lines and comment lines.
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("//") || trimmed.hasPrefix("/*") || trimmed.hasPrefix("*") {
-                continue
-            }
-
-            let nsLine = line as NSString
-            let lineRange = NSRange(location: 0, length: nsLine.length)
-
-            // Collect the ranges of func declaration names so we can exclude them.
-            var declNameRanges: [NSRange] = []
-            let funcMatches = funcRegex.matches(in: line, range: lineRange)
-            for fm in funcMatches {
-                if fm.numberOfRanges >= 2 {
-                    let nr = fm.range(at: 1)
-                    if nr.location != NSNotFound {
-                        declNameRanges.append(nr)
-                    }
-                }
-            }
-
-            // Find call patterns.
-            let callMatches = callRegex.matches(in: line, range: lineRange)
-            for match in callMatches {
-                if match.numberOfRanges >= 2 {
-                    let nameRange = match.range(at: 1)
-                    if nameRange.location != NSNotFound {
-                        // Skip if this match is the func declaration name itself.
-                        let isDeclName = declNameRanges.contains { $0 == nameRange }
-                        if isDeclName { continue }
-
-                        let callee = nsLine.substring(with: nameRange)
-                        // Only emit call edges for known declared functions
-                        // (same-kit calls per Go LSP pattern).
-                        if declaredNames.contains(callee) && !reservedKeywords.contains(callee) {
-                            let colOffset = nameRange.location
-                            callEdges.append(LiftedCallEdge(
-                                sourceContractCid: "",
-                                targetSymbol: callee,
-                                callSiteLocus: CallSiteLocus(
-                                    file: path,
-                                    line: lineIdx + 1,
-                                    column: colOffset
-                                )
-                            ))
-                        }
-                    }
-                }
-            }
-        }
-
-        // Deduplicate call edges by (targetSymbol, line, column).
+        // Deduplicate call edges by (targetSymbol, line, column) — mirrors v0
+        // behavior so the wire shape is byte-identical for the same input.
         var seen = Set<String>()
-        let uniqueEdges = callEdges.filter { edge in
+        let uniqueEdges = callVisitor.callEdges.filter { edge in
             let key = "\(edge.targetSymbol):\(edge.callSiteLocus.line):\(edge.callSiteLocus.column)"
             return seen.insert(key).inserted
         }
 
         return LiftResult(declarations: declarations, callEdges: uniqueEdges)
+    }
+}
+
+// MARK: - SwiftSyntax visitors
+
+/// Walks every FunctionDecl / InitializerDecl in the AST and records its name.
+/// Member functions inside nested types are flattened into the same set
+/// (mirrors regex-v0 behavior, where method-vs-function is not distinguished
+/// in the wire shape).
+private final class DeclarationVisitor: SyntaxVisitor {
+    var declarations: [LiftedDeclaration] = []
+
+    override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+        // node.name is a TokenSyntax; .text is the bare identifier.
+        let name = node.name.text
+        if !name.isEmpty {
+            declarations.append(LiftedDeclaration(name: name))
+        }
+        return .visitChildren
+    }
+
+    override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+        // Initializers don't have a `name` token; emit a synthetic "init" symbol
+        // so call edges to `init(...)` can resolve. Multiple inits collapse to
+        // one entry by Set semantics in SwiftLifter.lift; this is intentional
+        // (the wire shape never disambiguated init overloads).
+        declarations.append(LiftedDeclaration(name: "init"))
+        return .visitChildren
+    }
+}
+
+/// Walks every FunctionCallExpr in the AST and emits a call edge if the
+/// callee identifier matches a declared function name in the same parse unit.
+private final class CallEdgeVisitor: SyntaxVisitor {
+    var callEdges: [LiftedCallEdge] = []
+    private let declaredNames: Set<String>
+    private let path: String
+    private let locationConverter: SourceLocationConverter
+
+    init(
+        viewMode: SyntaxTreeViewMode,
+        declaredNames: Set<String>,
+        path: String,
+        locationConverter: SourceLocationConverter
+    ) {
+        self.declaredNames = declaredNames
+        self.path = path
+        self.locationConverter = locationConverter
+        super.init(viewMode: viewMode)
+    }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+        // Resolve the callee identifier. We handle:
+        //   foo(args)                           -> DeclReferenceExprSyntax
+        //   self.foo(args), x.foo(args)         -> MemberAccessExprSyntax
+        // Anything else (closures, subscripts, .init() with implicit base, etc.)
+        // is skipped: only same-kit name-based call edges are in scope.
+        let calleeName: String?
+        if let decl = node.calledExpression.as(DeclReferenceExprSyntax.self) {
+            calleeName = decl.baseName.text
+        } else if let member = node.calledExpression.as(MemberAccessExprSyntax.self) {
+            calleeName = member.declName.baseName.text
+        } else {
+            calleeName = nil
+        }
+
+        guard let name = calleeName, declaredNames.contains(name) else {
+            return .visitChildren
+        }
+
+        // SourceLocationConverter gives us 1-based line and 1-based column;
+        // the regex-v0 lifter emitted 1-based line and 0-based UTF-16 column
+        // offset (NSString locations). Normalize to (1-based line, 0-based
+        // UTF-8 byte column) — i.e. column - 1 — to match the v0 wire shape
+        // for callers like the LSP that report locii to editors.
+        let calleeToken = node.calledExpression
+        let location = calleeToken.startLocation(converter: locationConverter)
+        let line = location.line
+        let column = max(0, location.column - 1)
+
+        callEdges.append(LiftedCallEdge(
+            sourceContractCid: "",
+            targetSymbol: name,
+            callSiteLocus: CallSiteLocus(file: path, line: line, column: column)
+        ))
+        return .visitChildren
     }
 }

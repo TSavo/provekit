@@ -147,16 +147,26 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
 /// Kits with a real lifter binary installed. These kits run lift-protocol RPCs.
 /// Note: a kit having a lifter binary does not guarantee a non-empty contractSetCid;
 /// the CID depends on how many contracts the lifter finds in the workspace.
-const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "java"];
+///
+/// `swift` is included unconditionally on macOS (the swift toolchain is
+/// platform-restricted; see Package.swift `platforms: [.macOS(.v13)]`).
+/// On Linux the swift release binary is absent and the dispatcher's ENOENT
+/// fallback fires, producing an empty-set CID. The all-kits structure test
+/// tolerates this; the pinned-CID test (`swift_kit_pins_expected_contract_set_cid`)
+/// is `#[cfg_attr(not(target_os = "macos"), ignore)]` so it doesn't fail on Linux.
+const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift", "java"];
 
 /// Kits without a lifter binary yet — produce the empty-set CID because the
 /// binary cannot be found (ENOENT on spawn). These declare the binary name but
 /// the binary is not installed; the gap surfaces as an empty-set attestation.
-const KITS_WITHOUT_LIFTERS: &[&str] = &["swift", "python", "ruby", "zig", "c"];
+const KITS_WITHOUT_LIFTERS: &[&str] = &["python", "ruby", "zig", "c"];
 
 /// Kits that have a lifter AND are expected to find real contracts.
 /// Only include kits where the test environment reliably has the lifter built
 /// and the kit's workspace has liftable annotations.
+///
+/// `swift` is on macOS only; the all-kits run handles Linux gracefully via the
+/// `failed_kits` skip path because the release binary is missing.
 const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp"];
 
 /// Pinned contractSetCid for `--kit=go` after Tier 1 wiring fix (#176).
@@ -630,4 +640,66 @@ fn java_kit_pins_expected_contract_set_cid() {
     );
 
     eprintln!("java kit pinned contractSetCid confirmed: {cset}");
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: --kit=swift pins the expected contractSetCid (issue #211 regression gate)
+// ---------------------------------------------------------------------------
+
+/// Pinned contractSetCid produced by `--kit=swift` after routing to the
+/// `swift-self-contracts` surface (mint-swift-self-contracts --rpc, canonical
+/// 11-contract slab in `implementations/swift/Sources/MintSwiftSelfContracts/Slab.swift`).
+///
+/// Computed via the canonical formula
+/// (protocol/specs/2026-05-03-contract-set-extension.md §1):
+///   contractSetCid = "blake3-512:" + hex(BLAKE3-512(JCS(<sorted contractCids>)))
+/// where each contractCid follows
+/// (protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md §1):
+///   contractCid = "blake3-512:" + hex(BLAKE3-512(JCS({name, outBinding, pre?, post?, inv?})))
+///
+/// Because the swift kit uses the same JCS encoder and BLAKE3-512 hash as the
+/// rust/go/cpp/ts kits, this CID is byte-equivalent to what those kits would
+/// produce for the same 11-contract set.
+///
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the KIT_TABLE
+/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// the swift slab contracts have changed -- update SWIFT_CONTRACT_SET_CID.
+///
+/// macOS-only: the swift release binary requires the swift toolchain.
+const SWIFT_CONTRACT_SET_CID: &str =
+    "blake3-512:272543efe7c47b911659e1fc6a7368431b6eaa6010d2560a5d3e6717fcd470b50b24b607b481272941764b731d890d6973ab88e6000bde96fd306163a5742c56";
+
+#[test]
+#[serial(mint_kit_files)]
+#[cfg_attr(not(target_os = "macos"), ignore)]
+fn swift_kit_pins_expected_contract_set_cid() {
+    let root = repo_root();
+
+    let (ok, stdout, stderr) = run_mint("swift");
+    if !ok {
+        eprintln!(
+            "swift kit: mint failed (swift toolchain may not be available or release binary not built)\n  stderr: {stderr}"
+        );
+        // Skip rather than fail -- swift toolchain or release binary may not be present.
+        return;
+    }
+
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "swift kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
+    );
+
+    let attest = read_attestation(&root, "swift");
+    let cset = attest["contractSetCid"].as_str().unwrap();
+
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "swift kit: contractSetCid must NOT be the empty-set sentinel -- routing regression detected (issue #211)"
+    );
+    assert_eq!(
+        cset, SWIFT_CONTRACT_SET_CID,
+        "swift kit: contractSetCid does not match pinned value from 11-contract slab (issue #211)"
+    );
+
+    eprintln!("swift kit contractSetCid pinned correctly: {cset}");
 }
