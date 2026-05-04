@@ -101,7 +101,7 @@ const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     ("csharp",     "csharp",      "csharp",               "csharp"),
     ("swift",      "swift",       "swift-self-contracts", "swift"),
     ("java",       "java",        "java-self-contracts",  "java"),
-    ("python",     "python",      "python",               "python"),
+    ("python",     "python",      "python-self-contracts", "python"),
     ("ruby",       "ruby",        "ruby",                 "ruby"),
     ("zig",        "zig",         "zig",                  "zig"),
     ("c",          "c",           "c",                    "c"),

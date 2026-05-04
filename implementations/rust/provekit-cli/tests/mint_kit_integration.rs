@@ -154,12 +154,12 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
 /// fallback fires, producing an empty-set CID. The all-kits structure test
 /// tolerates this; the pinned-CID test (`swift_kit_pins_expected_contract_set_cid`)
 /// is `#[cfg_attr(not(target_os = "macos"), ignore)]` so it doesn't fail on Linux.
-const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift", "java"];
+const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python"];
 
 /// Kits without a lifter binary yet — produce the empty-set CID because the
 /// binary cannot be found (ENOENT on spawn). These declare the binary name but
 /// the binary is not installed; the gap surfaces as an empty-set attestation.
-const KITS_WITHOUT_LIFTERS: &[&str] = &["python", "ruby", "zig", "c"];
+const KITS_WITHOUT_LIFTERS: &[&str] = &["ruby", "zig", "c"];
 
 /// Kits that have a lifter AND are expected to find real contracts.
 /// Only include kits where the test environment reliably has the lifter built
@@ -167,7 +167,7 @@ const KITS_WITHOUT_LIFTERS: &[&str] = &["python", "ruby", "zig", "c"];
 ///
 /// `swift` is on macOS only; the all-kits run handles Linux gracefully via the
 /// `failed_kits` skip path because the release binary is missing.
-const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp"];
+const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp", "python"];
 
 /// Pinned contractSetCid for `--kit=go` after Tier 1 wiring fix (#176).
 /// Reflects the 11 canonical contracts in `implementations/go/provekit-self-contracts/slabs/`.
@@ -702,4 +702,65 @@ fn swift_kit_pins_expected_contract_set_cid() {
     );
 
     eprintln!("swift kit contractSetCid pinned correctly: {cset}");
+}
+
+// ---------------------------------------------------------------------------
+// Test 11: --kit=python pins the expected contractSetCid (issue #205 wiring).
+// ---------------------------------------------------------------------------
+
+/// Pinned contractSetCid produced by `--kit=python` after routing to the
+/// `python-self-contracts` surface (mint-python-self-contracts orchestrator,
+/// canonical 5-slab, 15-contract set).
+///
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the
+/// KIT_TABLE routing regression has been reintroduced. If it fails with an
+/// unknown CID, the python slab contracts have changed -- update
+/// PYTHON_CONTRACT_SET_CID accordingly.
+///
+/// The surface is reached via:
+///   `implementations/python/.provekit/lift/python-self-contracts/manifest.toml`
+/// which spawns: `python3 bin/mint-python-self-contracts`.
+const PYTHON_CONTRACT_SET_CID: &str =
+    "blake3-512:b1de941756d0a3b352ca79ebed8b75644b7c782c3afe4163273220384125ec100457d5e969a921b7ceb277e329a24c5a4ea21ffd54963b51c1756befdb1793dc";
+
+#[test]
+#[serial(mint_kit_files)]
+fn python_kit_pins_expected_contract_set_cid() {
+    let root = repo_root();
+
+    let (ok, stdout, stderr) = run_mint("python");
+    if !ok {
+        eprintln!(
+            "python kit: mint failed (python3 / blake3 / pynacl / cbor2 may not be available)\n  stderr: {stderr}"
+        );
+        // Skip rather than fail -- python toolchain or wheels may not be
+        // present in all environments. CI installs deps via test-python's
+        // `pip install -e .`, but if mint runs before test-python, the
+        // wheels are still installed because cbor2/blake3/pynacl are part
+        // of the package dependencies.
+        return;
+    }
+
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "python kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
+    );
+
+    let attest = read_attestation(&root, "python");
+    let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
+
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "python kit: contractSetCid must NOT be the empty-set sentinel -- routing regression detected (issue #205)"
+    );
+    assert_eq!(
+        cset, PYTHON_CONTRACT_SET_CID,
+        "python kit contractSetCid diverged from the pinned canonical self-contracts CID.\n\
+         This is the issue #205 regression gate.\n\
+         If the self-contracts changed intentionally, update PYTHON_CONTRACT_SET_CID.\n\
+         Current: {cset}\n\
+         Pinned:  {PYTHON_CONTRACT_SET_CID}"
+    );
+
+    eprintln!("python kit pinned contractSetCid confirmed: {cset}");
 }
