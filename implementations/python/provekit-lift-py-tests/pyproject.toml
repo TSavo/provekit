@@ -12,6 +12,8 @@ requires-python = ">=3.8"
 authors = [{ name = "ProvekIt" }]
 dependencies = [
     "blake3>=0.3.0",
+    "pynacl>=1.5",
+    "cbor2>=5.4",
 ]
 
 [project.optional-dependencies]
