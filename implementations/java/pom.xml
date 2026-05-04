@@ -17,6 +17,7 @@
 
     <modules>
         <module>provekit-ir</module>
+        <module>provekit-claim-envelope</module>
         <module>provekit-lift-java-core</module>
         <module>provekit-lift-java-bean-validation</module>
         <module>provekit-lift-java-jml</module>
