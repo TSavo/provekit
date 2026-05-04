@@ -1,0 +1,9 @@
+.{
+    .name = .mint_zig_self_contracts,
+    .fingerprint = 0x4e056d2dc25bfa25,
+    .version = "0.1.0",
+    .paths = .{
+        "build.zig",
+        "src",
+    },
+}
