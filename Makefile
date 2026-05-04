@@ -325,9 +325,9 @@ mint-c: build-rust build-c-self-contracts
 # Side A merges (#234, #241, #272, feat/php-kit) and toolchain CI integration
 # (#245 in flight, #274 follow-up).
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c
 	@echo ""
-	@echo "==== all 7 core self-contract CIDs match pinned values ===="
+	@echo "==== all 8 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
@@ -335,6 +335,7 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python
 	@printf "  %-8s  %s\n" "csharp" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json)"
 	@printf "  %-8s  %s\n" "java"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/java.json)"
 	@printf "  %-8s  %s\n" "python" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/python.json)"
+	@printf "  %-8s  %s\n" "c"      "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/c.json)"
 
 # --- Conformance gate --------------------------------------------------------
 
