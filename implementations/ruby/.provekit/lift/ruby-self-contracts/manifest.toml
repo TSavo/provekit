@@ -1,7 +1,7 @@
 name = "ruby-self-contracts"
 version = "1.0.0"
 protocol_version = "provekit-lift/1"
-command = ["ruby", "-Ilib", "bin/mint-ruby-self-contracts"]
+command = ["bundle", "exec", "ruby", "-Ilib", "bin/mint-ruby-self-contracts"]
 working_dir = "."
 
 [capabilities]
