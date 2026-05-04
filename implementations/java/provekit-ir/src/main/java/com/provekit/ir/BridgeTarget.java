@@ -15,8 +15,39 @@
 package com.provekit.ir;
 
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 public sealed interface BridgeTarget {
+
+    /** Canonical CID grammar for bridge fields (spec §1.R2).
+     *  Rejects placeholder strings (pending-*:, deferred:*) and any
+     *  value that is not a well-formed blake3-512 content identifier. */
+    static final Pattern VALID_CID = Pattern.compile(
+            "^blake3-512:[0-9a-f]{128}$");
+
+    /** Validate that the given value is a well-formed CID and is not a
+     *  placeholder string.  Throws {@link IllegalArgumentException} with
+     *  a message naming the offending field + value if validation fails. */
+    static String requireValidCid(String value, String fieldName) {
+        Objects.requireNonNull(value, fieldName);
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be empty; got empty string");
+        }
+        if (value.startsWith("pending-")) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be a placeholder string (pending-*:); got: " + value);
+        }
+        if (value.startsWith("deferred:")) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be a placeholder string (deferred:*); got: " + value);
+        }
+        if (!VALID_CID.matcher(value).matches()) {
+            throw new IllegalArgumentException(
+                    fieldName + " must match canonical CID grammar ^blake3-512:[0-9a-f]{128}$; got: " + value);
+        }
+        return value;
+    }
 
     String cid();
 
@@ -33,14 +64,14 @@ public sealed interface BridgeTarget {
 
     record Contract(String cid) implements BridgeTarget {
         public Contract {
-            Objects.requireNonNull(cid, "cid");
+            requireValidCid(cid, "cid");
         }
         @Override public String kind() { return "contract"; }
     }
 
     record ContractSet(String cid) implements BridgeTarget {
         public ContractSet {
-            Objects.requireNonNull(cid, "cid");
+            requireValidCid(cid, "cid");
         }
         @Override public String kind() { return "contractSet"; }
     }

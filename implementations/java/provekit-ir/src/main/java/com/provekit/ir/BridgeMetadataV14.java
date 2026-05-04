@@ -20,6 +20,18 @@ public record BridgeMetadataV14(
         String producedBy,
         String producedAt) {
 
+    public BridgeMetadataV14 {
+        if (targetWitnessCid != null) {
+            BridgeTarget.requireValidCid(targetWitnessCid, "targetWitnessCid");
+        }
+        if (targetBinaryCid != null) {
+            BridgeTarget.requireValidCid(targetBinaryCid, "targetBinaryCid");
+        }
+        if (targetContractSetCid != null) {
+            BridgeTarget.requireValidCid(targetContractSetCid, "targetContractSetCid");
+        }
+    }
+
     /** All-absent metadata. */
     public static BridgeMetadataV14 empty() {
         return new BridgeMetadataV14(null, null, null, null, null, null);

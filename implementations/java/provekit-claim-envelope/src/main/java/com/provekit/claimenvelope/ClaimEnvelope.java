@@ -400,6 +400,47 @@ public final class ClaimEnvelope {
      * emit a bare string for {@code target}; the substrate verifier rejects
      * stringified placeholders (spec §1.R2).
      */
+    private static final java.util.regex.Pattern VALID_CID_PATTERN =
+            java.util.regex.Pattern.compile("^blake3-512:[0-9a-f]{128}$");
+
+    /** Validate that the given value is a well-formed CID and is not a
+     *  placeholder string (spec §1.R2).  Throws {@link IllegalArgumentException}
+     *  with a message naming the offending field + value if validation fails. */
+    private static String requireValidCid(String value, String fieldName) {
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be null in mintBridgeV14 args");
+        }
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be empty; got empty string");
+        }
+        if (value.startsWith("pending-")) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be a placeholder string (pending-*:); got: " + value);
+        }
+        if (value.startsWith("deferred:")) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be a placeholder string (deferred:*); got: " + value);
+        }
+        if (!VALID_CID_PATTERN.matcher(value).matches()) {
+            throw new IllegalArgumentException(
+                    fieldName + " must match canonical CID grammar ^blake3-512:[0-9a-f]{128}$; got: " + value);
+        }
+        return value;
+    }
+
+    private static void requireNonEmpty(String value, String fieldName) {
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be null in mintBridgeV14 args");
+        }
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException(
+                    fieldName + " must not be empty in mintBridgeV14 args");
+        }
+    }
+
     public static abstract sealed class BridgeTargetV14
             permits BridgeTargetV14.Contract, BridgeTargetV14.ContractSet {
 
@@ -410,7 +451,7 @@ public final class ClaimEnvelope {
         public static final class Contract extends BridgeTargetV14 {
             public final String cid;
             public Contract(String cid) {
-                this.cid = Objects.requireNonNull(cid, "cid");
+                this.cid = requireValidCid(cid, "cid");
             }
             @Override public String cid() { return cid; }
             @Override public String kind() { return "contract"; }
@@ -420,7 +461,7 @@ public final class ClaimEnvelope {
         public static final class ContractSet extends BridgeTargetV14 {
             public final String cid;
             public ContractSet(String cid) {
-                this.cid = Objects.requireNonNull(cid, "cid");
+                this.cid = requireValidCid(cid, "cid");
             }
             @Override public String cid() { return cid; }
             @Override public String kind() { return "contractSet"; }
@@ -527,6 +568,10 @@ public final class ClaimEnvelope {
         Objects.requireNonNull(args.target, "args.target");
         Objects.requireNonNull(args.declaredAt, "args.declaredAt");
         Objects.requireNonNull(args.signerSeed, "args.signerSeed");
+        requireNonEmpty(args.name, "args.name");
+        requireNonEmpty(args.sourceSymbol, "args.sourceSymbol");
+        requireNonEmpty(args.sourceLayer, "args.sourceLayer");
+        requireValidCid(args.sourceContractCid, "args.sourceContractCid");
         Value header = buildBridgeHeaderV14(args);
         Value metadata = buildBridgeMetadataV14(args);
         return assembleLayered(header, metadata, args.declaredAt, args.signerSeed, "");
