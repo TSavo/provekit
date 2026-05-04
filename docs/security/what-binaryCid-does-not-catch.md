@@ -6,7 +6,7 @@ The `binaryCid` field is a strong supply-chain anchor (see [`what-binaryCid-catc
 
 Pre-v1.4, this was the most important not-catch from `binaryCid` alone. The attack: write a malicious function that does X, sign a contract claiming Y, ship the malicious binary so `binaryCid` matches, lie about the rest.
 
-Under v1.4's rank-3 pin, this attack class **is caught — by the witness axis, not by `binaryCid`**. The consumer pins `contractCid` separately (signer-independent, content-only) and requires a `witnessCid` from a prover key in their trust set attesting `post → pre` for that contract. A lying signer cannot produce a valid witness without controlling a trusted prover key.
+Under v1.4's rank-3 pin, this attack class **is caught, by the witness axis, not by `binaryCid`**. The consumer pins `contractCid` separately (signer-independent, content-only) and requires a `witnessCid` from a prover key in their trust set attesting `post → pre` for that contract. A lying signer cannot produce a valid witness without controlling a trusted prover key.
 
 `binaryCid`'s role here is partial: it ensures the binary you run is the binary the witness was minted against. The witness axis ensures the contract is what it claims to be. The contract axis ensures the contract identity is stable across re-attestation. Together, the three axes close this attack class.
 
@@ -141,20 +141,20 @@ The first item is the most consequential. `binaryCid` plus tampering detection p
 
 ProvekIt is one layer. The realistic security posture for a project that uses ProvekIt:
 
-1. **Source review** — does the source say what we think it says?
-2. **Reproducible builds** — does the source compile to the same bytes everywhere?
-3. **`binaryCid` pinning** — is the binary I'm running the binary the signer intended?
-4. **Behavioral contracts** — does the binary's behavior match what's claimed?
-5. **Runtime integrity** — is the running process unchanged from what was loaded?
-6. **Network and sandbox isolation** — what can the binary affect even if it's malicious?
-7. **Audit logging** — what did the program actually do at runtime?
+1. **Source review**: does the source say what we think it says?
+2. **Reproducible builds**: does the source compile to the same bytes everywhere?
+3. **`binaryCid` pinning**: is the binary I'm running the binary the signer intended?
+4. **Behavioral contracts**: does the binary's behavior match what's claimed?
+5. **Runtime integrity**: is the running process unchanged from what was loaded?
+6. **Network and sandbox isolation**: what can the binary affect even if it's malicious?
+7. **Audit logging**: what did the program actually do at runtime?
 
 ProvekIt covers (3) and (4). Other layers cover (1), (2), (5), (6), (7).
 
 ## Read next
 
-- [what-binaryCid-catches.md](what-binaryCid-catches.md) — the catches.
-- [threat-model.md](threat-model.md) — the full threat coverage matrix.
-- [supply-chain.md](supply-chain.md) — supply-chain scenarios.
-- [solver-trust.md](solver-trust.md) — Z3 as TCB.
-- [adapter-trust.md](adapter-trust.md) — lift adapters as TCB.
+- [what-binaryCid-catches.md](what-binaryCid-catches.md): the catches.
+- [threat-model.md](threat-model.md): the full threat coverage matrix.
+- [supply-chain.md](supply-chain.md): supply-chain scenarios.
+- [solver-trust.md](solver-trust.md): Z3 as TCB.
+- [adapter-trust.md](adapter-trust.md): lift adapters as TCB.

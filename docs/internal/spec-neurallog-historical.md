@@ -8,7 +8,7 @@ neurallog.app
 
 ## Thesis
 
-Every log statement is an implicit assertion — an informal claim about what the programmer expected to be true at that moment in execution. Traditionally, these claims are verified by human eyeballs after the fact. neurallog automates the eyeballs.
+Every log statement is an implicit assertion: an informal claim about what the programmer expected to be true at that moment in execution. Traditionally, these claims are verified by human eyeballs after the fact. neurallog automates the eyeballs.
 
 Logging is assertions made by eyeballs after the fact.
 
@@ -38,7 +38,7 @@ log.info("Transaction complete: {} items for ${}", count, total)
 
 These are ordinary log statements. Observational. "Here's a value." "We reached this point." "This happened." The programmer is not writing assertions. They're not describing invariants. They're just logging, the way they always have.
 
-neurallog hooks the existing logging framework and treats every log statement as an intent signal — the programmer pointing at a moment and saying "this matters." The system reads the surrounding code, derives what should be true at that moment, and formally proves it.
+neurallog hooks the existing logging framework and treats every log statement as an intent signal: the programmer pointing at a moment and saying "this matters." The system reads the surrounding code, derives what should be true at that moment, and formally proves it.
 
 The programmer doesn't know neurallog is there. Their code doesn't change. Their log statements work exactly as before. Behind the scenes, every one of them becomes a formally verified invariant.
 
@@ -46,14 +46,14 @@ This is the "do as I mean, not as I say" logging framework.
 
 ## Core Concept
 
-The log statement is not the assertion. It is not the data format. It is not even the context. It is the **intent signal** — a marker left by a programmer at a moment they cared about.
+The log statement is not the assertion. It is not the data format. It is not even the context. It is the **intent signal**: a marker left by a programmer at a moment they cared about.
 
 Everything else, the system figures out:
 
-- **What to check** — the LLM reads the surrounding code and derives what should be true at this point in execution
-- **What to capture** — the contract's invariant references variables in scope; those variables are grabbed from the stack frame
-- **How to verify** — Z3 formally proves the invariant holds or produces a certificate of violation
-- **What to do about failure** — contradictions loop back to the LLM for resolution
+- **What to check**: the LLM reads the surrounding code and derives what should be true at this point in execution
+- **What to capture**: the contract's invariant references variables in scope; those variables are grabbed from the stack frame
+- **How to verify**: Z3 formally proves the invariant holds or produces a certificate of violation
+- **What to do about failure**: contradictions loop back to the LLM for resolution
 
 The programmer writes a log line. The system produces a formal proof.
 
@@ -65,8 +65,8 @@ The entire system is one pattern repeated at every level:
 
 A snapshot of state at a moment in time. Two forms, same primitive:
 
-- **Static context** — source code, types, call chains, data flow. Captured by the discovery agent during contract derivation.
-- **Runtime context** — live values from the stack frame. Captured by the hook when a log call fires.
+- **Static context**: source code, types, call chains, data flow. Captured by the discovery agent during contract derivation.
+- **Runtime context**: live values from the stack frame. Captured by the hook when a log call fires.
 
 ### Contract
 
@@ -195,10 +195,10 @@ Each field exists because at least one axiom template requires it:
 | `preconditions` | P1, P2, P3, P4 | What must be true before calling this function |
 | `postconditions` | P1, P2, P4 | What the function guarantees after execution |
 | `side_effects` | P2, P4 | What shared state the function mutates, keyed by what identity |
-| `side_effects.key_field` | P2 | The data-dependent resource identity (e.g., product_id) — determines if loop iterations alias |
-| `domain_constraints` | P5 | What values are semantically meaningful — the only LLM-dependent field |
+| `side_effects.key_field` | P2 | The data-dependent resource identity (e.g., product_id), which determines if loop iterations alias |
+| `domain_constraints` | P5 | What values are semantically meaningful, the only LLM-dependent field |
 | `visibility` | P3 | Whether the function is public (determines if inputs are unconstrained) |
-| `idempotency_guard` | P4 | Whether the function checks state before acting (e.g., `if status == "done": return`) — null means no guard |
+| `idempotency_guard` | P4 | Whether the function checks state before acting (e.g., `if status == "done": return`); null means no guard |
 | `clause_history` | Termination engine | Per-clause weaken/strengthen history with witness-count stamps. Required for the well-founded ordering that guarantees convergence termination. Persisted across runs in `.neurallog/contracts/`. Without this, the termination argument degrades to "we hope the LLM respects a rule it can't see." |
 
 Every `smt2` field is a valid SMT-LIB 2 expression. Every `variable` has a name, type, and source (parameter, local computation, database read, return value of another function). The `claim` fields are natural language for humans — never used in mechanical reasoning.

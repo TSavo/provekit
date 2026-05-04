@@ -1,6 +1,6 @@
 # Signal-Driven Formal Verification
 
-provekit's architecture is signal-agnostic. The five-phase pipeline — dependency graph, context assembly, derivation, classification, axiom application — works against any signal of programmer intent. The log statement is the first signal source. It is not the only one.
+provekit's architecture is signal-agnostic. The five-phase pipeline (dependency graph, context assembly, derivation, classification, axiom application) works against any signal of programmer intent. The log statement is the first signal source. It is not the only one.
 
 ## Signal Layers
 
@@ -8,8 +8,8 @@ provekit's architecture is signal-agnostic. The five-phase pipeline — dependen
 
 **What:** `console.log`, `logger.info`, `logger.error`
 **What they express:** "I care about this moment." "This value matters here."
-**What we derive:** Correctness invariants — preconditions, postconditions, conservation laws, bounds, degenerate inputs.
-**Runtime opportunity:** Yes — stack frame inspection gives live values for Z3 evaluation.
+**What we derive:** Correctness invariants: preconditions, postconditions, conservation laws, bounds, degenerate inputs.
+**Runtime opportunity:** Yes, stack frame inspection gives live values for Z3 evaluation.
 **Friction:** Zero. Every codebase has thousands. No code changes required.
 
 This is where provekit starts. It's the Trojan horse.

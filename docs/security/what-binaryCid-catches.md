@@ -109,7 +109,7 @@ Kits that produce multiple deployable artifacts (e.g., a Rust crate with both a 
 
 ## Read next
 
-- [what-binaryCid-does-not-catch.md](what-binaryCid-does-not-catch.md) — the limits.
-- [supply-chain.md](supply-chain.md) — supply-chain attack scenarios in depth.
-- [threat-model.md](threat-model.md) — full threat coverage matrix.
-- [signature-and-non-repudiation.md](signature-and-non-repudiation.md) — what the signature buys.
+- [what-binaryCid-does-not-catch.md](what-binaryCid-does-not-catch.md): the limits.
+- [supply-chain.md](supply-chain.md): supply-chain attack scenarios in depth.
+- [threat-model.md](threat-model.md): full threat coverage matrix.
+- [signature-and-non-repudiation.md](signature-and-non-repudiation.md): what the signature buys.

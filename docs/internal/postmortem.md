@@ -238,11 +238,11 @@ Eight sections, ~50 commits, ~580 tests. From the bug-loop plan at `docs/plans/2
 - **Section A (substrate):** SAST tables (nodes, children, kind, 16 capability tables), data-flow edges with closed slot vocabulary, dominance + post-dominance, incremental re-index, DSL parser/compiler/evaluator with capability + relation registries, 14 of 23 seed principles migrated.
 - **Section B (intake + orchestration):** intake adapter registry (`BugSignal.source` is data, not enum), SAST-backed locator, remediation layer registry (`primaryLayer` is data, not enum), `provekit fix <ref>` CLI, orchestrator scaffold.
 - **Section C (generation + verification):** invariant formulator (oracle #1), scratch overlay, fix candidate generator (oracle #2), complementary changes (oracle #3), mutation-verified regression test (oracle #9), principle/capability candidate (oracles #6/#14/#16/#17/#18). Each is a stage; each is gated by Z3 or runtime verifiers, not LLM self-confidence.
-- **Section D (bundle + apply + learn):** artifact-kind registry (4th primitive — each kind names which oracles its verification requires), bundle coherence runner, transactional apply with substrate-rollback, learning layer that promotes principles into the library.
+- **Section D (bundle + apply + learn):** artifact-kind registry (4th primitive; each kind names which oracles its verification requires), bundle coherence runner, transactional apply with substrate-rollback, learning layer that promotes principles into the library.
 
 ### The architectural moves that mattered
 
-1. **Five primitive registries.** Capabilities, DSL relations, intake adapters, remediation layers, artifact kinds. Each is a runtime `Map<name, descriptor>`. Adding a new bug class, a new query relation, a new fix layer, a new artifact type — all are `register*({...})` calls, never code changes. Closed enums are death.
+1. **Five primitive registries.** Capabilities, DSL relations, intake adapters, remediation layers, artifact kinds. Each is a runtime `Map<name, descriptor>`. Adding a new bug class, a new query relation, a new fix layer, a new artifact type: all are `register*({...})` calls, never code changes. Closed enums are death.
 
 2. **18 oracles, layered.** 13 for fix bundles (Z3 confirmation, primary fix gate, complementary gate, no-regression, bundle coherence, adversarial validation, witness replay, no-new-gaps, mutation-verified test, full suite, SAST coherence, DSL no-regressions, gap closure). +5 for substrate bundles (migration safety, cross-codebase regression, extractor coverage, substrate consistency, principle-needs-capability). No LLM output enters the library without surviving its full applicable set.
 
@@ -320,13 +320,13 @@ The research question is answered. The first real-LLM bundle landed. The remaini
 
 4. **Oracle #7 (witness replay) and #12 (DSL no-regressions).** Same MVP-stub pattern. Real implementations are scoped, just not yet built.
 
-5. **The 8 remaining A8 capability gaps.** Each is a substrate bundle waiting for its first real bug. Some closed in #66-69 (same_value relation, parser opens, varDeref args, explicit relation calls). The other half — string_composition for shell-injection, encloses for loop-accumulator, control-flow capabilities for guard-narrowing — stay queued.
+5. **The 8 remaining A8 capability gaps.** Each is a substrate bundle waiting for its first real bug. Some closed in #66-69 (same_value relation, parser opens, varDeref args, explicit relation calls). The other half (string_composition for shell-injection, encloses for loop-accumulator, control-flow capabilities for guard-narrowing) stay queued.
 
 6. **Multi-language support.** Currently TypeScript-only via ts-morph. Tree-sitter wiring exists for the analyze layer; the fix-loop's SAST builder is TS-specific. Generalizing the capability extractors to other languages is a per-language task.
 
 7. **Concurrency.** Today: single-user, single-process, single-worktree. The capability registry is a process-local Map. Multi-user setups need either a shared registry or per-tenant isolation.
 
-8. **Performance.** Each dogfood run takes 2–8 minutes on Opus 4.7 (LLM-latency-bound). Cheaper tier choice per stage (haiku for intake/classify, sonnet for proposals, opus for invariant formulation) would cut this. Opus everywhere is conservative; production wants tiered selection.
+8. **Performance.** Each dogfood run takes 2 to 8 minutes on Opus 4.7 (LLM-latency-bound). Cheaper tier choice per stage (haiku for intake/classify, sonnet for proposals, opus for invariant formulation) would cut this. Opus everywhere is conservative; production wants tiered selection.
 
-The architecture holds. Every piece traces back to "logs are assertions made with eyeballs — what if they weren't." The closed loop now lets the system fix the bugs eyeballs would have found, prove the fixes are real, and learn the bug class so the next eyeballs never have to.
+The architecture holds. Every piece traces back to "logs are assertions made with eyeballs; what if they weren't." The closed loop now lets the system fix the bugs eyeballs would have found, prove the fixes are real, and learn the bug class so the next eyeballs never have to.
 

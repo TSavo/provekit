@@ -62,13 +62,13 @@ C6 must already produce `bug_class_id` and support multiple-shape principles per
 
 ### Prerequisite: Leak 6 win 2 (#95, in flight)
 
-Library short-circuit at C1 must already work — a populated library only matters if the loop can use it.
+Library short-circuit at C1 must already work (a populated library only matters if the loop can use it).
 
 ### Then: harvest pipeline (#97 below)
 
 ## Pipeline Design
 
-### Phase 1 — Source extraction
+### Phase 1: Source extraction
 
 `scripts/clone-bugsjs.sh`: shallow-clones the 10 BugsJS forks into `~/bugsjs/{express,mocha,eslint,karma,bower,hexo,hessian.js,node_redis,pencilblue,shields}`.
 
@@ -87,11 +87,11 @@ interface HarvestCandidate {
 
 Filters at this stage: skip if `>maxFiles` or `>maxLoc` or test-only changes.
 
-### Phase 2 — Two-mode harvest: recognition then discovery
+### Phase 2: Two-mode harvest: recognition then discovery
 
 For each `HarvestCandidate`, the pipeline decides whether to use the LLM or mechanical matching.
 
-**Recognition mode (preferred — no LLM).**
+**Recognition mode (preferred (no LLM).**)
 
 Run the existing principle library against the buggy snapshot. For each principle, check whether it matches at any node in the diff's locus. If a match: the bug is a member of that principle's class.
 
@@ -101,7 +101,7 @@ Run the existing principle library against the buggy snapshot. For each principl
 
 This is the same operation Leak 6 win 2 implements at C1 in production fix loops. The harvest pipeline calls it in batch.
 
-**Discovery mode (fallback — full LLM call).**
+**Discovery mode (fallback (full LLM call).**)
 
 Triggered when no existing principle matches the buggy snapshot. The LLM derives a new principle from the diff:
 
@@ -121,7 +121,7 @@ Assuming ~100 unique bug classes across 452 BugsJS entries with average cluster 
 
 Crucially: this isn't a harvest-specific optimization. It IS the library short-circuit (Leak 6 win 2), batched. The same code path that makes production fix loops fast on known bug classes makes bootstrap cheap. Library size is the leverage point both feed.
 
-### Phase 3 — Staging + dedup
+### Phase 3: Staging + dedup
 
 `src/fix/harvest/stagingArea.ts`: writes harvested principles to `.provekit/harvest/staging/<bug_class_id>/<source-id>.dsl` instead of directly into the library.
 
@@ -129,7 +129,7 @@ Dedup pass: group staged principles by `bug_class_id`. For each group:
 - If structurally identical (modulo identifiers): merge into one principle, annotate with all source provenances.
 - If structurally divergent: leave as separate candidates for manual review.
 
-### Phase 4 — Validation (oracle #15)
+### Phase 4: Validation (oracle #15)
 
 For each staged principle, run oracle #15 against the BugsJS source corpus (the buggy + fixed snapshots, used as a flat directory of real production code). A principle that passes:
 - Catches the bug it was harvested from (positive validation)
@@ -138,7 +138,7 @@ gets promoted from `staging/` to `.provekit/principles/`.
 
 A principle that flickers stays in `staging/` with a quarantine flag.
 
-### Phase 5 — Continuous
+### Phase 5: Continuous
 
 Beyond bootstrap: every customer fix loop that produces a new principle ALSO goes through the same staging + dedup + validation flow before joining the library. Bootstrap is a one-time bulk-fill; the pipeline is permanent.
 

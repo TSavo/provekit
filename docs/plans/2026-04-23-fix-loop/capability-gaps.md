@@ -1,9 +1,9 @@
 <!-- This plan was written under the product's old name (neurallog); the implemented system is ProveKit. -->
 
-# A8: Capability Gaps — Seed Principles DSL Migration
+# A8: Capability Gaps (Seed Principles DSL Migration)
 
 **Date:** 2026-04-23
-**Task:** A8 — Migrate 23 seed principles to DSL
+**Task:** A8 (Migrate 23 seed principles to DSL)
 **Result:** 14 migrated, 9 capability-gap
 
 ---
@@ -13,7 +13,7 @@
 | Bucket | Count | Principles |
 |--------|-------|-----------|
 | Migrated (match-only, no guard suppression) | 8 | addition-overflow, subtraction-underflow, multiplication-overflow, find-undefined-result, match-null-result, split-empty-string, falsy-default, empty-collection-loop |
-| Migrated (guard-aware / structurally complete) | 3 | reduce-no-initial, throw-uncaught, unguarded-await (partial — over-matches) |
+| Migrated (guard-aware / structurally complete) | 3 | reduce-no-initial, throw-uncaught, unguarded-await (partial (over-matches) |)
 | Migrated (guard predicate present, non-functional) | 3 | division-by-zero, modulo-by-zero, null-assertion |
 | Capability-gap (not migrated) | 9 | shell-injection, empty-catch, guard-narrowing, loop-accumulator-overflow, param-mutation, switch-no-default, ternary-branch-collapse, variable-staleness, while-loop-termination |
 
@@ -21,7 +21,7 @@
 
 ## Cross-cutting gap: guard suppression via narrows
 
-All principles that have `guardPatterns` in their JSON (division-by-zero, modulo-by-zero, null-assertion, find-undefined-result, match-null-result) need a `require no $guard: <predicate>(...) before $div` clause that fires when a semantic guard exists. The existing `narrows` extractor tracks the *syntactic occurrence* of the narrowed node, not the *semantic variable*. So when `b !== 0` narrows variable `b` at one occurrence and `a/b` uses `b` at a different occurrence, the `narrows.target_node` for the guard check doesn't match `arithmetic.rhs_node` for the division — they are different node IDs for the same logical variable.
+All principles that have `guardPatterns` in their JSON (division-by-zero, modulo-by-zero, null-assertion, find-undefined-result, match-null-result) need a `require no $guard: <predicate>(...) before $div` clause that fires when a semantic guard exists. The existing `narrows` extractor tracks the *syntactic occurrence* of the narrowed node, not the *semantic variable*. So when `b !== 0` narrows variable `b` at one occurrence and `a/b` uses `b` at a different occurrence, the `narrows.target_node` for the guard check doesn't match `arithmetic.rhs_node` for the division (they are different node IDs for the same logical variable).
 
 **Proposed fix (substrate extension, tracked for C6):**
 - Add a `data_flow_same_value(nodeA, nodeB)` relation: true when both nodes reference the same declaration with no intervening writes
@@ -32,7 +32,7 @@ All principles that have `guardPatterns` in their JSON (division-by-zero, modulo
 ## shell-injection (not migrated)
 
 **Why:** Principle matches `execSync`, `exec`, or `spawn` calls whose first argument is a tainted string (template literal or concatenation with a variable). Three issues:
-1. The JSON has three separate `method` values — the DSL has no OR in where clauses, requiring three separate DSL principles.
+1. The JSON has three separate `method` values (the DSL has no OR in where clauses, requiring three separate DSL principles).
 2. Detecting "first argument contains interpolation" requires a `string_composition` capability.
 3. Detecting "argument derives from parameter" requires `data_flow_reaches`.
 
@@ -54,14 +54,14 @@ principle shell-injection-exec {
 ```
 
 **Proposed substrate extension (C6 → D1 path):**
-- New capability: `string_composition` — `{node_id, kind: 'template' | 'concat' | 'literal', has_interpolation: bool}`
-- New relation: `data_flow_reaches(a, b)` — true when value of `a` can flow to `b` via data_flow_transitive
+- New capability: `string_composition`: `{node_id, kind: 'template' | 'concat' | 'literal', has_interpolation: bool}`
+- New relation: `data_flow_reaches(a, b)`: true when value of `a` can flow to `b` via data_flow_transitive
 
 ---
 
 ## empty-catch (not migrated)
 
-**Why:** The principle flags `try_statement` nodes whose `catch` handler has an empty body. Detecting "empty handler body" requires querying the number of child statements in the catch block — no current capability tracks this structural property.
+**Why:** The principle flags `try_statement` nodes whose `catch` handler has an empty body. Detecting "empty handler body" requires querying the number of child statements in the catch block (no current capability tracks this structural property).
 
 **Would need:** A `try_catch_block` capability with `handler_stmt_count: Int` column, or a relation `empty_catch_body(tryNode)`.
 
@@ -78,14 +78,14 @@ principle empty-catch {
 ```
 
 **Proposed substrate extension:**
-- New capability: `try_catch_block` — `{node_id, handler_stmt_count: Int, has_finally: Bool}`
+- New capability: `try_catch_block`: `{node_id, handler_stmt_count: Int, has_finally: Bool}`
 - Extractor: check `catch_clause.body.namedChildren.length`
 
 ---
 
 ## guard-narrowing (not migrated)
 
-**Why:** The principle flags `if_statement` nodes where the consequence contains a return/throw (early-exit guard) and no else branch. After the if, code implicitly assumes the guard's negation. Detecting "consequence always exits" requires a control-flow property — no current capability tracks this.
+**Why:** The principle flags `if_statement` nodes where the consequence contains a return/throw (early-exit guard) and no else branch. After the if, code implicitly assumes the guard's negation. Detecting "consequence always exits" requires a control-flow property (no current capability tracks this).
 
 **Would need:** `always_exits` relation or `block_always_exits` capability column on `decides`.
 
@@ -103,7 +103,7 @@ principle guard-narrowing {
 ```
 
 **Proposed substrate extension:**
-- New relation: `always_exits(blockNode)` — true when every control-flow path through the block ends in a return/throw/process.exit
+- New relation: `always_exits(blockNode)`: true when every control-flow path through the block ends in a return/throw/process.exit
 - Alternatively: extend `decides` with `consequent_always_exits: Bool` column
 
 ---
@@ -112,7 +112,7 @@ principle guard-narrowing {
 
 **Why:** The principle flags loops with augmented assignment (`+=`, `*=`) in the body. Detecting "augmented assignment inside loop body" requires containment: an `assigns` row inside the `iterates` row's body subtree. The current DSL has no `encloses` or `contains` relation.
 
-**Would need:** `encloses($outer, $inner)` relation — true when `$outer` is an ancestor of `$inner` in the AST.
+**Would need:** `encloses($outer, $inner)` relation (true when `$outer` is an ancestor of `$inner` in the AST).
 
 **DSL sketch (when relation lands):**
 ```dsl
@@ -130,7 +130,7 @@ principle loop-accumulator-overflow {
 ```
 
 **Proposed substrate extension:**
-- New relation: `encloses($outer, $inner)` — `EXISTS (SELECT 1 FROM dominance WHERE dominator = $outer.id AND dominated = $inner.id)` using the materialized closure
+- New relation: `encloses($outer, $inner)`: `EXISTS (SELECT 1 FROM dominance WHERE dominator = $outer.id AND dominated = $inner.id)` using the materialized closure
 
 ---
 
@@ -163,7 +163,7 @@ principle param-mutation {
 
 ## switch-no-default (not migrated)
 
-**Why:** The principle flags `switch_statement` nodes that have NO `switch_default` child. Detecting *absence* of a child type is a structural query — the current capabilities don't expose switch-case structure. The `decides` capability has `decision_kind == "switch_case"` but no `has_default` boolean.
+**Why:** The principle flags `switch_statement` nodes that have NO `switch_default` child. Detecting *absence* of a child type is a structural query (the current capabilities don't expose switch-case structure). The `decides` capability has `decision_kind == "switch_case"` but no `has_default` boolean.
 
 **Would need:** Extend `decides` with `has_default: Bool` for switch_case kind, or a new `switch_block` capability.
 
@@ -186,7 +186,7 @@ principle switch-no-default {
 
 ## ternary-branch-collapse (not migrated)
 
-**Why:** The principle flags ternary expressions where both branches produce an empty or identity value (e.g., `""`, `0`). Detecting "branch value is empty or identity" requires literal-value analysis — knowing the return value of each branch. No current capability tracks the literal value produced by a node.
+**Why:** The principle flags ternary expressions where both branches produce an empty or identity value (e.g., `""`, `0`). Detecting "branch value is empty or identity" requires literal-value analysis (knowing the return value of each branch). No current capability tracks the literal value produced by a node.
 
 **Would need:** A `literal_value` capability: `{node_id, kind: 'string' | 'number' | 'bool', value: Text}`.
 
@@ -209,7 +209,7 @@ principle ternary-branch-collapse {
 }
 ```
 
-**Note:** The JSON's confidence is "low" — this principle is the most over-specified of the 23 and may need refinement before the DSL version is enabled in production.
+**Note:** The JSON's confidence is "low" (this principle is the most over-specified of the 23 and may need refinement before the DSL version is enabled in production).
 
 ---
 
@@ -219,7 +219,7 @@ principle ternary-branch-collapse {
 
 **Would need:** `data_flow_reaches` relation + `assigns` + `binding` working together to track if a write inside a block can affect a read outside it.
 
-**Gap:** This is a full liveness/def-use analysis — non-trivial to express as a single DSL principle even with extended capabilities. May need a dedicated oracle.
+**Gap:** This is a full liveness/def-use analysis (non-trivial to express as a single DSL principle even with extended capabilities). May need a dedicated oracle.
 
 ---
 
@@ -243,7 +243,7 @@ All migrated principles (except `reduce-no-initial` and `throw-uncaught`) over-m
 
 2. **Guard suppression non-functional:** The `require no ... before` clauses exist in the DSL files for division-by-zero, modulo-by-zero, and null-assertion, but the narrows extractor tracks syntactic node IDs, not semantic variable identity. So `narrows.target_node` for a guard check and `arithmetic.rhs_node` for the operation being guarded will almost never match (different AST nodes for the same variable occurrence). Tracked in the evaluator test as a `.skip` test.
 
-3. **`||` operator enum gap:** The `arithmetic.op` kindEnum does not include `||`. Falsy-default is translated via `truthiness.coercion_kind == "falsy_default"` — this is correct IF the truthiness extractor populates this value for `||` expressions used as defaults. Needs empirical verification against real fixtures.
+3. **`||` operator enum gap:** The `arithmetic.op` kindEnum does not include `||`. Falsy-default is translated via `truthiness.coercion_kind == "falsy_default"`: this is correct IF the truthiness extractor populates this value for `||` expressions used as defaults. Needs empirical verification against real fixtures.
 
 4. **`empty-collection-loop` partial:** Only translates `for_of`; `for_in` requires OR in where clauses (capability-gap: DSL lacks OR).
 
@@ -263,4 +263,4 @@ The gap patterns cluster into five themes:
 
 5. **String composition / taint:** needed by shell-injection. A `string_composition` capability tracking template/concat structure + `data_flow_reaches` for taint propagation.
 
-Priority recommendation for C6: implement **containment** and **structural absence** first — lowest complexity, unblock 5 principles. Data-flow variable identity second — high value but higher complexity.
+Priority recommendation for C6: implement **containment** and **structural absence** first (lowest complexity, unblock 5 principles). Data-flow variable identity second (high value but higher complexity).
