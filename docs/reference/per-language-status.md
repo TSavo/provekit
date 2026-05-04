@@ -59,7 +59,7 @@ Column meanings:
 - **Layered envelope**: `+` if the kit's mint code emits the v1.4 `{envelope, header, metadata}` shape per the substrate-layers spec. `~ flat universal-claim-envelope` if the kit still emits the v1.1 universal-claim-envelope shape (`cid` plus `producerSignature` at the top level). `not assessed` where the kit has no claim-envelope mint pipeline (Python, C, Zig, Java, Ruby) and the column was not investigated against an alternative codepath.
 - **contract_cid separation**: `+` plus the function name if the kit exposes a signer-independent `contract_cid(decl)` (or camelCase equivalent) per the contract-cid vs attestation-cid spec. `not assessed` where no such function was located in the implementation source.
 - **contractSetCid emit**: `+` if the kit's self-contracts mint emits `contractSetCid` in the attestation. `not assessed` where no self-contracts mint was located. `previousContractSetCid` is OPTIONAL per spec; no kit currently emits it (only the protocol catalog references the field name).
-- **Bridge IR v1.4 (tagged-union target)**: tracks emission of the tagged-union `target` field per [`2026-05-03-bridge-target-dimensionality.md`](../../protocol/specs/2026-05-03-bridge-target-dimensionality.md). The spec is dated 2026-05-03 (the day this matrix refresh was authored). No kit, including Rust, has yet migrated `mint_bridge` from the flat `targetContractCid` field to the tagged-union shape. `~ flat targetContractCid; v1.4 migration pending` is recorded for kits that today emit a bridge under the prior 9-field shape; `~ v1.4 migration pending` is recorded for kits that emit a bridge under a kit-specific shape (Swift's `CrossKitBridges`, the C and Zig stubs). The v1.1.0 `o partial` tracker entries (Java #222, Ruby #223, C# #224, C++ #225) referenced gaps in the now-deprecated flat shape; under v1.4 those gaps are subsumed by a fresh per-kit migration to the layered shape with the tagged-union target.
+- **Bridge IR v1.4 (tagged-union target)**: tracks emission of the tagged-union `target` field per [`2026-05-03-bridge-target-dimensionality.md`](../../protocol/specs/2026-05-03-bridge-target-dimensionality.md). The spec is dated 2026-05-03 (the day this matrix refresh was authored). No kit, including Rust, has yet migrated `mint_bridge` from the flat `targetContractCid` field to the tagged-union shape. `~ flat targetContractCid; v1.4 migration pending` is recorded for kits that today emit a bridge under the prior 9-field shape; `~ v1.4 migration pending` is recorded for kits that emit a bridge under a kit-specific shape (Swift's `CrossKitBridges`, the C and Zig stubs). The v1.1.0 `o partial` tracker entries (Java #188, Ruby #190, C# #192, C++ #193) referenced gaps in the now-deprecated flat shape; under v1.4 those gaps are subsumed by a fresh per-kit migration to the layered shape with the tagged-union target.
 
 ## Rust (canonical reference implementation)
 
@@ -241,7 +241,7 @@ Column meanings:
 
 **LSP Plugin:** Yes. `bin/provekit-lsp-ruby` implements the ProvekIt NDJSON LSP plugin protocol.
 
-**Bridge IR gap:** `Provekit::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. Originally tracked as task #223 against the v1.1.0 9-field shape; under v1.4's bridge target dimensionality spec the migration target is the layered shape with a tagged-union `target` field, so the gap is subsumed by the v1.4 migration rather than the v1.1.0 fix. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
+**Bridge IR gap:** `Provekit::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. Originally tracked as task #190 against the v1.1.0 9-field shape; under v1.4's bridge target dimensionality spec the migration target is the layered shape with a tagged-union `target` field, so the gap is subsumed by the v1.4 migration rather than the v1.1.0 fix. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
 
 ## C#
 
@@ -261,7 +261,7 @@ Column meanings:
 
 **LSP Plugin:** Yes. `Provekit.Lsp.Plugin` implements the ProvekIt NDJSON LSP plugin protocol.
 
-**Bridge IR gap:** `Provekit.IR.Collector.BridgeDecl` is `(TargetContractName, IrArgSorts, IrReturnSort)`, a lift-adapter helper, not the spec Bridge shape. Originally tracked as task #224 against the v1.1.0 9-field shape; under v1.4's bridge target dimensionality spec the migration target is the layered shape with a tagged-union `target` field, so the gap is subsumed by the v1.4 migration. Self-contracts attestation IS signed (the bundle CID is pinned, and `contractSetCid` is emitted), but Phase 2 cross-kit bridges require a separate spec-shaped `BridgeDeclaration` record to be added.
+**Bridge IR gap:** `Provekit.IR.Collector.BridgeDecl` is `(TargetContractName, IrArgSorts, IrReturnSort)`, a lift-adapter helper, not the spec Bridge shape. Originally tracked as task #192 against the v1.1.0 9-field shape; under v1.4's bridge target dimensionality spec the migration target is the layered shape with a tagged-union `target` field, so the gap is subsumed by the v1.4 migration. Self-contracts attestation IS signed (the bundle CID is pinned, and `contractSetCid` is emitted), but Phase 2 cross-kit bridges require a separate spec-shaped `BridgeDeclaration` record to be added.
 
 ## Swift
 

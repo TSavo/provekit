@@ -76,4 +76,4 @@ provekit prove
 
 ---
 
-*This tutorial is a stub. Known gaps: actual NuGet package names, Bridge IR full v1.1.0 shape (task #224), LSP install per editor.*
+*This tutorial is a stub. Known gaps: actual NuGet package names, Bridge IR full v1.1.0 shape (task #192), LSP install per editor.*
