@@ -26,6 +26,13 @@
  * non-ASCII never appears.
  */
 
+/*
+ * _GNU_SOURCE: getline() is a POSIX 2008 / GNU extension, gated behind
+ * _GNU_SOURCE on glibc. Without this define, getline() declaration is
+ * suppressed and the build errors with "implicit declaration".
+ */
+#define _GNU_SOURCE
+
 #include "rpc.h"
 #include "orchestrator.h"
 
@@ -33,6 +40,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>  /* ssize_t */
 
 /* ----------------------------------------------------------------------- */
 /* Base64 (stdpad) — for bytes_base64 in lift response                      */
