@@ -26,12 +26,12 @@ class BridgeV14SerdeTest {
     @Test
     void bridge_v14_record_carries_seven_header_fields() {
         BridgeTarget target = new BridgeTarget.Contract(
-                "blake3-512:target0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+                "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111");
         BridgeHeaderV14 header = BridgeHeaderV14.of(
                 "rust-canonical-bridge-fixture",
                 "parseInt",
                 "rust-kit",
-                "blake3-512:source0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
                 target);
 
         // Spec §1.R3: header carries the seven contract-axis fields only.
@@ -40,27 +40,29 @@ class BridgeV14SerdeTest {
         assertEquals("rust-canonical-bridge-fixture", header.name());
         assertEquals("parseInt", header.sourceSymbol());
         assertEquals("rust-kit", header.sourceLayer());
-        assertTrue(header.sourceContractCid().startsWith("blake3-512:source"));
+        assertTrue(header.sourceContractCid().startsWith("blake3-512:000"));
         assertNotNull(header.target());
     }
 
     @Test
     void bridge_v14_target_discriminates_on_kind() {
-        BridgeTarget tContract = new BridgeTarget.Contract("blake3-512:c");
-        BridgeTarget tSet = new BridgeTarget.ContractSet("blake3-512:s");
+        BridgeTarget tContract = new BridgeTarget.Contract(
+                "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+        BridgeTarget tSet = new BridgeTarget.ContractSet(
+                "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
 
         // The sealed interface forces exactly one variant; pattern-match
         // semantics line up with serde's tagged-union deserialize.
         if (tContract instanceof BridgeTarget.Contract c) {
             assertEquals("contract", c.kind());
-            assertEquals("blake3-512:c", c.cid());
+            assertTrue(c.cid().startsWith("blake3-512:cccccccc"));
         } else {
             fail("expected Contract variant");
         }
 
         if (tSet instanceof BridgeTarget.ContractSet s) {
             assertEquals("contractSet", s.kind());
-            assertEquals("blake3-512:s", s.cid());
+            assertTrue(s.cid().startsWith("blake3-512:eeeeeeee"));
         } else {
             fail("expected ContractSet variant");
         }
@@ -90,8 +92,8 @@ class BridgeV14SerdeTest {
                 "rust-canonical-bridge-fixture",
                 "parseInt",
                 "rust-kit",
-                "blake3-512:source0000",
-                new BridgeTarget.Contract("blake3-512:target0000"));
+                "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                new BridgeTarget.Contract("blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"));
         BridgeMetadataV14 meta = new BridgeMetadataV14(
                 null, null, "rust-kit", null,
                 "provekit-canonical-reference@v1.4",
@@ -107,7 +109,7 @@ class BridgeV14SerdeTest {
 
         // Tagged-union target round-trip on the typed shape.
         if (decl.header().target() instanceof BridgeTarget.Contract c) {
-            assertEquals("blake3-512:target0000", c.cid());
+            assertTrue(c.cid().startsWith("blake3-512:11111111"));
         } else {
             fail("expected Contract variant");
         }

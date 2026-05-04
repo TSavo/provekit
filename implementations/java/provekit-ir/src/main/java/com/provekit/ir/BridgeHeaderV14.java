@@ -36,8 +36,8 @@ public record BridgeHeaderV14(
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(sourceSymbol, "sourceSymbol");
         Objects.requireNonNull(sourceLayer, "sourceLayer");
-        Objects.requireNonNull(sourceContractCid, "sourceContractCid");
         Objects.requireNonNull(target, "target");
+        BridgeTarget.requireValidCid(sourceContractCid, "sourceContractCid");
     }
 
     /** Convenience factory: schemaVersion="1", kind="bridge". */
