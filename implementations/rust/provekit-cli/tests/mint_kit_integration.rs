@@ -11,16 +11,16 @@
 //   5. Two consecutive mints for the same kit produce byte-identical
 //      attestations (determinism).
 //
-// The test runs `provekit mint --kit=<kit> --quiet` as a subprocess, then
-// reads the written attestation JSON from
-// `.provekit/self-contracts-attestations/<lang>.json`.
+// The test runs `provekit mint --kit=<kit> --quiet` as a subprocess against
+// a per-test scratch repo (issue #218). The scratch repo mirrors the
+// canonical repo layout via top-level symlinks, with a writable
+// `.provekit/self-contracts-attestations/` directory inside the scratch.
+// Mint writes attestations into the scratch, so the canonical working
+// tree stays byte-identical across the entire test run.
 //
 // This test requires:
 //   - The `provekit` binary to be built (release or debug).
-//   - CWD to be the repo root (set via CARGO_MANIFEST_DIR resolution).
-//
-// All 11 kits are tested. Kits without lifter binaries are expected to
-// produce the EMPTY_SET_CID; this is explicitly asserted, not an error.
+//   - The canonical repo to be at the location resolved by CARGO_MANIFEST_DIR.
 
 use serial_test::serial;
 use std::path::{Path, PathBuf};
@@ -43,10 +43,11 @@ fn provekit_bin() -> PathBuf {
     }
 }
 
-/// Return the repo root (two levels above the workspace root, since
-/// implementations/rust/ is the workspace and the repo root contains
-/// .provekit/self-contracts-attestations/).
-fn repo_root() -> PathBuf {
+/// Return the canonical repo root (two levels above the workspace root).
+///
+/// implementations/rust/ is the workspace; the repo root contains
+/// `.provekit/self-contracts-attestations/` and `implementations/`.
+fn canonical_repo_root() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     // CARGO_MANIFEST_DIR = .../implementations/rust/provekit-cli
     // parent = .../implementations/rust
@@ -62,16 +63,131 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Run `provekit mint --kit=<kit> --quiet` from the repo root.
+// ---------------------------------------------------------------------------
+// Per-test scratch repo (issue #218)
+// ---------------------------------------------------------------------------
+//
+// The mint pipeline writes its signed attestation to
+// `<repo-root>/.provekit/self-contracts-attestations/<lang>.json` by walking
+// up from the project_root and looking for that directory. Without
+// isolation, every test run rewrites attestation files for every kit,
+// leaving the working tree dirty.
+//
+// `ScratchRepo` builds a temp directory mirroring the canonical layout via
+// symlinks for read-only state and a real writable
+// `.provekit/self-contracts-attestations/` directory. The kit project
+// directories (`implementations/<lang>/`) are themselves real directories
+// with their **contents** symlinked from canonical, which is critical:
+// `find_attestation_dir` calls `canonicalize()` on the project_root, which
+// would follow a symlinked project root back into the canonical tree and
+// write the real attestation file. Real-dir-with-symlinked-contents stops
+// the canonicalize traversal at the scratch boundary.
+
+struct ScratchRepo {
+    dir: tempfile::TempDir,
+}
+
+impl ScratchRepo {
+    /// Build a scratch repo mirroring all 11 kit implementation dirs.
+    fn new() -> Self {
+        let dir = tempfile::Builder::new()
+            .prefix("provekit-mint-test-")
+            .tempdir()
+            .expect("create scratch tempdir");
+
+        let canonical = canonical_repo_root();
+        let scratch_root = dir.path();
+
+        // Pre-create the writable attestation directory at the scratch root
+        // so the mint pipeline's walk-up terminates inside the scratch.
+        let attest_dir = scratch_root
+            .join(".provekit")
+            .join("self-contracts-attestations");
+        std::fs::create_dir_all(&attest_dir)
+            .expect("create scratch .provekit/self-contracts-attestations");
+
+        // Mirror every kit project dir as a real directory whose entries are
+        // symlinks to the canonical kit's entries.
+        let kits: &[&str] = &[
+            "rust",
+            "go",
+            "cpp",
+            "typescript",
+            "csharp",
+            "swift",
+            "java",
+            "python",
+            "ruby",
+            "zig",
+            "c",
+        ];
+        let scratch_impls = scratch_root.join("implementations");
+        std::fs::create_dir_all(&scratch_impls)
+            .expect("create scratch implementations dir");
+        for kit_dir_name in kits {
+            let canonical_kit = canonical.join("implementations").join(kit_dir_name);
+            if !canonical_kit.exists() {
+                // Skip kits that don't exist in this checkout — the test will
+                // surface that gap via mint's ENOENT-empty-set behavior.
+                continue;
+            }
+            let scratch_kit = scratch_impls.join(kit_dir_name);
+            std::fs::create_dir_all(&scratch_kit)
+                .unwrap_or_else(|e| panic!("create {}: {e}", scratch_kit.display()));
+            symlink_contents(&canonical_kit, &scratch_kit);
+        }
+
+        ScratchRepo { dir }
+    }
+
+    fn root(&self) -> &Path {
+        self.dir.path()
+    }
+}
+
+/// Symlink every top-level entry from `src` into `dst`. `dst` must already exist
+/// as a real directory. This breaks the canonicalize-traversal at `dst`'s
+/// boundary while still giving the lifter access to read-only source files
+/// and pre-built binaries (e.g. `./target/release/<lifter>`).
+fn symlink_contents(src: &Path, dst: &Path) {
+    let entries = std::fs::read_dir(src)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", src.display()));
+    for entry in entries {
+        let entry = entry.expect("dir entry");
+        let name = entry.file_name();
+        let from = src.join(&name);
+        let to = dst.join(&name);
+        // Skip if it already exists (idempotent).
+        if to.exists() || to.is_symlink() {
+            continue;
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&from, &to)
+            .unwrap_or_else(|e| panic!("symlink {} -> {}: {e}", to.display(), from.display()));
+        #[cfg(windows)]
+        {
+            // Windows symlinks need the right kind. Tests don't run on
+            // Windows in CI today, but keep the code compilable.
+            if from.is_dir() {
+                std::os::windows::fs::symlink_dir(&from, &to)
+                    .unwrap_or_else(|e| panic!("symlink_dir {}: {e}", to.display()));
+            } else {
+                std::os::windows::fs::symlink_file(&from, &to)
+                    .unwrap_or_else(|e| panic!("symlink_file {}: {e}", to.display()));
+            }
+        }
+    }
+}
+
+/// Run `provekit mint --kit=<kit> --quiet` from `root`.
 /// Returns (exit_status, stdout, stderr).
-fn run_mint(kit: &str) -> (bool, String, String) {
+fn run_mint(root: &Path, kit: &str) -> (bool, String, String) {
     let bin = provekit_bin();
-    let root = repo_root();
     let out = Command::new(&bin)
         .arg("mint")
         .arg(format!("--kit={kit}"))
         .arg("--quiet")
-        .current_dir(&root)
+        .current_dir(root)
         .output()
         .expect("failed to spawn provekit");
     (
@@ -81,9 +197,9 @@ fn run_mint(kit: &str) -> (bool, String, String) {
     )
 }
 
-/// Read the attestation JSON from `.provekit/self-contracts-attestations/<lang>.json`.
-fn read_attestation(repo_root: &Path, lang: &str) -> serde_json::Value {
-    let path = repo_root
+/// Read the attestation JSON from `<root>/.provekit/self-contracts-attestations/<lang>.json`.
+fn read_attestation(root: &Path, lang: &str) -> serde_json::Value {
+    let path = root
         .join(".provekit")
         .join("self-contracts-attestations")
         .join(format!("{lang}.json"));
@@ -183,11 +299,12 @@ fn all_kits_mint_produces_valid_attestation_structure() {
         .copied()
         .collect();
 
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
     let mut failed_kits: Vec<String> = Vec::new();
 
     for kit in &all_kits {
-        let (ok, stdout, stderr) = run_mint(kit);
+        let (ok, stdout, stderr) = run_mint(root, kit);
         if !ok {
             // Kits with optional toolchain (dotnet, go, npx) may not be available.
             // Record the failure but don't fail the test outright for those kits.
@@ -210,7 +327,7 @@ fn all_kits_mint_produces_valid_attestation_structure() {
         );
 
         let lang = if *kit == "ts" { "ts" } else { kit };
-        let attest = read_attestation(&root, lang);
+        let attest = read_attestation(root, lang);
         assert_attestation_structure(&attest, lang);
 
         eprintln!(
@@ -235,13 +352,14 @@ fn all_kits_mint_produces_valid_attestation_structure() {
 #[test]
 #[serial(mint_kit_files)]
 fn kits_without_lifters_produce_empty_set_cid() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
     for kit in KITS_WITHOUT_LIFTERS {
-        let (ok, _, _) = run_mint(kit);
+        let (ok, _, _) = run_mint(root, kit);
         assert!(ok, "kit `{kit}`: mint must succeed even without a lifter binary");
 
         let lang = if *kit == "ts" { "ts" } else { kit };
-        let attest = read_attestation(&root, lang);
+        let attest = read_attestation(root, lang);
         let cset = attest["contractSetCid"].as_str().unwrap();
         assert_eq!(
             cset, EMPTY_SET_CID,
@@ -263,9 +381,10 @@ fn kits_without_lifters_produce_empty_set_cid() {
 #[test]
 #[serial(mint_kit_files)]
 fn kits_with_real_contracts_produce_nonempty_contract_set() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
     for kit in KITS_WITH_REAL_CONTRACTS {
-        let (ok, _, stderr) = run_mint(kit);
+        let (ok, _, stderr) = run_mint(root, kit);
         if !ok {
             eprintln!("kit `{kit}`: mint failed (lifter may not be built yet)\n  stderr: {stderr}");
             // Skip rather than fail — lifter may not be built in test environment.
@@ -273,7 +392,7 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
         }
 
         let lang = if *kit == "ts" { "ts" } else { kit };
-        let attest = read_attestation(&root, lang);
+        let attest = read_attestation(root, lang);
         let cset = attest["contractSetCid"].as_str().unwrap();
         assert_ne!(
             cset, EMPTY_SET_CID,
@@ -297,20 +416,21 @@ fn kits_with_real_contracts_produce_nonempty_contract_set() {
 #[test]
 #[serial(mint_kit_files)]
 fn rust_kit_mint_is_byte_deterministic() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
     // First mint
-    let (ok1, _, _) = run_mint("rust");
+    let (ok1, _, _) = run_mint(root, "rust");
     if !ok1 {
         eprintln!("rust kit: first mint failed — skipping determinism test (lifter not built)");
         return;
     }
-    let attest1 = read_attestation(&root, "rust");
+    let attest1 = read_attestation(root, "rust");
 
     // Second mint
-    let (ok2, _, _) = run_mint("rust");
+    let (ok2, _, _) = run_mint(root, "rust");
     assert!(ok2, "rust kit: second mint must succeed");
-    let attest2 = read_attestation(&root, "rust");
+    let attest2 = read_attestation(root, "rust");
 
     assert_eq!(
         attest1, attest2,
@@ -331,7 +451,8 @@ fn rust_kit_mint_is_byte_deterministic() {
 #[serial(mint_kit_files)]
 fn kit_shortcut_and_project_flag_are_equivalent() {
     let bin = provekit_bin();
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
     // Via --kit
     let kit_out = Command::new(&bin)
@@ -339,7 +460,7 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
         .arg("--kit=rust")
         .arg("--quiet")
         .arg("--no-attest")
-        .current_dir(&root)
+        .current_dir(root)
         .output()
         .expect("spawn provekit --kit=rust");
 
@@ -353,7 +474,7 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
         .arg("rust-self-contracts")
         .arg("--quiet")
         .arg("--no-attest")
-        .current_dir(&root)
+        .current_dir(root)
         .output()
         .expect("spawn provekit --project");
 
@@ -393,9 +514,10 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
 #[test]
 #[serial(mint_kit_files)]
 fn go_kit_pins_expected_contract_set_cid() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
-    let (ok, stdout, stderr) = run_mint("go");
+    let (ok, stdout, stderr) = run_mint(root, "go");
     if !ok {
         eprintln!("go kit: mint failed (go toolchain may not be available)\n  stderr: {stderr}");
         // Skip rather than fail -- go toolchain may not be present in all environments.
@@ -407,7 +529,7 @@ fn go_kit_pins_expected_contract_set_cid() {
         "go kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
     );
 
-    let attest = read_attestation(&root, "go");
+    let attest = read_attestation(root, "go");
     let cset = attest["contractSetCid"].as_str().unwrap();
 
     assert_ne!(
@@ -454,16 +576,17 @@ const CPP_KIT_CANONICAL_CONTRACT_SET_CID: &str =
 #[test]
 #[serial(mint_kit_files)]
 fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
-    let (ok, _, stderr) = run_mint("rust");
+    let (ok, _, stderr) = run_mint(root, "rust");
     if !ok {
         eprintln!("rust kit: mint failed (mint-self-contracts may not be built)\n  stderr: {stderr}");
         // Skip rather than fail — binary may not be built in this environment.
         return;
     }
 
-    let attest = read_attestation(&root, "rust");
+    let attest = read_attestation(root, "rust");
     let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
 
     // Pinned value: must match the canonical self-contracts CID.
@@ -507,9 +630,10 @@ const TS_CONTRACT_SET_CID: &str =
 #[test]
 #[serial(mint_kit_files)]
 fn ts_kit_pins_expected_contract_set_cid() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
-    let (ok, stdout, stderr) = run_mint("ts");
+    let (ok, stdout, stderr) = run_mint(root, "ts");
     if !ok {
         eprintln!(
             "ts kit: mint failed (node/tsx may not be available)\n  stderr: {stderr}"
@@ -523,7 +647,7 @@ fn ts_kit_pins_expected_contract_set_cid() {
         "ts kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
     );
 
-    let attest = read_attestation(&root, "ts");
+    let attest = read_attestation(root, "ts");
     let cset = attest["contractSetCid"].as_str().unwrap();
 
     assert_ne!(
@@ -553,16 +677,17 @@ fn ts_kit_pins_expected_contract_set_cid() {
 #[test]
 #[serial(mint_kit_files)]
 fn cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
-    let (ok, _, stderr) = run_mint("cpp");
+    let (ok, _, stderr) = run_mint(root, "cpp");
     if !ok {
         eprintln!("cpp kit: mint failed (mint_cpp_self_contracts may not be built)\n  stderr: {stderr}");
         // Skip rather than fail -- binary may not be built in this environment.
         return;
     }
 
-    let attest = read_attestation(&root, "cpp");
+    let attest = read_attestation(root, "cpp");
     let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
 
     // Pinned value: must match the canonical self-contracts CID.
@@ -609,9 +734,10 @@ const JAVA_CONTRACT_SET_CID: &str =
 #[test]
 #[serial(mint_kit_files)]
 fn java_kit_pins_expected_contract_set_cid() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
-    let (ok, stdout, stderr) = run_mint("java");
+    let (ok, stdout, stderr) = run_mint(root, "java");
     if !ok {
         eprintln!(
             "java kit: mint failed (java/jar may not be available)\n  stderr: {stderr}"
@@ -626,7 +752,7 @@ fn java_kit_pins_expected_contract_set_cid() {
         "java kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
     );
 
-    let attest = read_attestation(&root, "java");
+    let attest = read_attestation(root, "java");
     let cset = attest["contractSetCid"].as_str().unwrap();
 
     assert_ne!(
@@ -673,9 +799,10 @@ const SWIFT_CONTRACT_SET_CID: &str =
 #[serial(mint_kit_files)]
 #[cfg_attr(not(target_os = "macos"), ignore)]
 fn swift_kit_pins_expected_contract_set_cid() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
-    let (ok, stdout, stderr) = run_mint("swift");
+    let (ok, stdout, stderr) = run_mint(root, "swift");
     if !ok {
         eprintln!(
             "swift kit: mint failed (swift toolchain may not be available or release binary not built)\n  stderr: {stderr}"
@@ -689,7 +816,7 @@ fn swift_kit_pins_expected_contract_set_cid() {
         "swift kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
     );
 
-    let attest = read_attestation(&root, "swift");
+    let attest = read_attestation(root, "swift");
     let cset = attest["contractSetCid"].as_str().unwrap();
 
     assert_ne!(
@@ -726,9 +853,10 @@ const PYTHON_CONTRACT_SET_CID: &str =
 #[test]
 #[serial(mint_kit_files)]
 fn python_kit_pins_expected_contract_set_cid() {
-    let root = repo_root();
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
 
-    let (ok, stdout, stderr) = run_mint("python");
+    let (ok, stdout, stderr) = run_mint(root, "python");
     if !ok {
         eprintln!(
             "python kit: mint failed (python3 / blake3 / pynacl / cbor2 may not be available)\n  stderr: {stderr}"
@@ -746,7 +874,7 @@ fn python_kit_pins_expected_contract_set_cid() {
         "python kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
     );
 
-    let attest = read_attestation(&root, "python");
+    let attest = read_attestation(root, "python");
     let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
 
     assert_ne!(
