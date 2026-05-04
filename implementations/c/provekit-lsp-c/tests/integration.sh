@@ -77,8 +77,14 @@ check "T6 parse: contract compute declared" "$LINE2" '"name":"compute"'
 # T7: parse response contains callEdges array
 check "T7 parse: callEdges key present" "$LINE2" '"callEdges":'
 
-# T8: parse response has call edge from compute to add
-check "T8 parse: call edge compute->add present" "$LINE2" '"callee":"add"'
+# T8: callEdges is emitted as an empty array.
+#
+# The C LSP cannot compute contract CIDs (no JCS encoder + BLAKE3 here), so
+# the canonical IR shape (sourceContractCid, targetContractCid, targetSymbol,
+# callSiteLocus, evidenceTerm) cannot be produced. Until that's wired up,
+# emit []; the legacy {callee, caller, line} shape was silently dropped by
+# the daemon. (Review feedback: PR #165 / Copilot.)
+check "T8 parse: callEdges is empty array" "$LINE2" '"callEdges":[]'
 
 # T9: parse response contains warnings array
 check "T9 parse: warnings key present" "$LINE2" '"warnings":'

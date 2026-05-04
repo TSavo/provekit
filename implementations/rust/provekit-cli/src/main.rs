@@ -122,6 +122,14 @@ pub struct ProveArgs {
     /// Path to z3 binary (default: "z3" on PATH).
     #[arg(long, default_value = "z3")]
     pub z3: String,
+    /// Kit conformance gate: verify the named kit's lifter implements the
+    /// canonical lift-plugin-protocol contracts (C1-C8). When set, the six-stage
+    /// verifier is bypassed; instead the kit's lifter is spawned via JSON-RPC and
+    /// each verifier in `provekit-self-contracts::lift_plugin_protocol` is run
+    /// against the captured RPC messages.
+    /// Known kits: rust, go, cpp, ts, csharp, swift, java, python, ruby, zig, c.
+    #[arg(long, conflicts_with = "project")]
+    pub kit: Option<String>,
     #[command(flatten)]
     pub out: OutputFlags,
 }

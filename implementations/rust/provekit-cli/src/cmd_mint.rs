@@ -245,7 +245,13 @@ fn dispatch(
     if manifest.command.len() > 1 {
         cmd.args(&manifest.command[1..]);
     }
-    cmd.arg("--rpc");
+    // Append --rpc only if the manifest doesn't already include it.
+    // Several manifests (e.g. typescript) hard-code --rpc in their command
+    // array; appending unconditionally produces duplicate args, which some
+    // lifters reject. (Review feedback: PR #165 / Copilot.)
+    if !manifest.command.iter().any(|a| a == "--rpc") {
+        cmd.arg("--rpc");
+    }
     if let Some(wd) = &manifest.working_dir {
         let resolved = if wd.is_absolute() {
             wd.clone()

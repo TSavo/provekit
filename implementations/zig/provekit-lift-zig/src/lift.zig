@@ -62,11 +62,41 @@ pub fn parseAnnotations(alloc: std.mem.Allocator, text: []const u8) ![]Annotatio
 fn findAheadFnName(text: []const u8, start_line: usize) []const u8 {
     var lines = std.mem.splitScalar(u8, text, '\n');
     var current: usize = 0;
+    // Recognize Zig function prefixes (review feedback: PR #165 / CodeRabbit):
+    // bare `fn`, `pub fn`, `export fn`, `extern fn`, `inline fn`, plus
+    // combinations such as `pub export fn`, `pub extern fn`, `pub inline fn`.
+    // Strip leading visibility/linkage qualifiers until we find `fn `.
+    const qualifiers = [_][]const u8{ "pub", "export", "extern", "inline", "noinline", "comptime" };
     while (lines.next()) |line| : (current += 1) {
         if (current <= start_line) continue;
         if (current > start_line + 10) break;
 
-        const trimmed = std.mem.trim(u8, line, " \t");
+        var trimmed = std.mem.trim(u8, line, " \t");
+        // Strip qualifiers iteratively. Each pass strips one qualifier (or an
+        // `extern "C"`-style calling-convention quoted string) so combinations
+        // like `pub extern "C" fn` are handled.
+        var stripped = true;
+        while (stripped) {
+            stripped = false;
+            for (qualifiers) |q| {
+                if (trimmed.len > q.len and
+                    std.mem.startsWith(u8, trimmed, q) and
+                    (trimmed[q.len] == ' ' or trimmed[q.len] == '\t'))
+                {
+                    trimmed = std.mem.trimStart(u8, trimmed[q.len..], " \t");
+                    stripped = true;
+                    break;
+                }
+            }
+            // Tolerate `extern "C"` calling-convention spec.
+            if (trimmed.len > 0 and trimmed[0] == '"') {
+                if (std.mem.indexOfScalar(u8, trimmed[1..], '"')) |close_idx| {
+                    const after = trimmed[1 + close_idx + 1 ..];
+                    trimmed = std.mem.trimStart(u8, after, " \t");
+                    stripped = true;
+                }
+            }
+        }
         if (std.mem.startsWith(u8, trimmed, "fn ")) {
             const after = trimmed[3..];
             const end = std.mem.indexOfAny(u8, after, " (\n") orelse after.len;
@@ -178,4 +208,69 @@ test "liftToDecls contract produces IR" {
         .contract => |c| try std.testing.expectEqualStrings("myFn", c.name),
         else => return error.WrongKind,
     }
+}
+
+// Zig function-prefix coverage (review feedback: PR #165 / CodeRabbit).
+// findAheadFnName must handle visibility/linkage qualifiers preceding `fn`.
+
+test "parseAnnotations finds pub fn" {
+    const alloc = std.testing.allocator;
+    const src =
+        \\//provekit:contract
+        \\pub fn pubFn(x: i32) void {
+        \\    _ = x;
+        \\}
+    ;
+    const anns = try parseAnnotations(alloc, src);
+    defer alloc.free(anns);
+    try std.testing.expectEqual(@as(usize, 1), anns.len);
+    try std.testing.expectEqualStrings("pubFn", anns[0].function_name);
+}
+
+test "parseAnnotations finds export fn" {
+    const alloc = std.testing.allocator;
+    const src =
+        \\//provekit:contract
+        \\export fn exportedFn() void {}
+    ;
+    const anns = try parseAnnotations(alloc, src);
+    defer alloc.free(anns);
+    try std.testing.expectEqual(@as(usize, 1), anns.len);
+    try std.testing.expectEqualStrings("exportedFn", anns[0].function_name);
+}
+
+test "parseAnnotations finds extern fn" {
+    const alloc = std.testing.allocator;
+    const src =
+        \\//provekit:contract
+        \\extern fn externFn() void;
+    ;
+    const anns = try parseAnnotations(alloc, src);
+    defer alloc.free(anns);
+    try std.testing.expectEqual(@as(usize, 1), anns.len);
+    try std.testing.expectEqualStrings("externFn", anns[0].function_name);
+}
+
+test "parseAnnotations finds inline fn" {
+    const alloc = std.testing.allocator;
+    const src =
+        \\//provekit:contract
+        \\inline fn inlinedFn() void {}
+    ;
+    const anns = try parseAnnotations(alloc, src);
+    defer alloc.free(anns);
+    try std.testing.expectEqual(@as(usize, 1), anns.len);
+    try std.testing.expectEqualStrings("inlinedFn", anns[0].function_name);
+}
+
+test "parseAnnotations finds pub extern \"C\" fn" {
+    const alloc = std.testing.allocator;
+    const src =
+        \\//provekit:contract
+        \\pub extern "C" fn cAbiFn() void;
+    ;
+    const anns = try parseAnnotations(alloc, src);
+    defer alloc.free(anns);
+    try std.testing.expectEqual(@as(usize, 1), anns.len);
+    try std.testing.expectEqualStrings("cAbiFn", anns[0].function_name);
 }
