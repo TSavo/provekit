@@ -259,6 +259,35 @@ module Provekit
       assemble_layered(header, metadata, produced_at, signer_seed, "")
     end
 
+    # ── v1.4 BridgeDeclaration (layered envelope/header/body, tagged-union target) ──
+    #
+    # Per protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6.
+    # Canonical reference: rust/provekit-claim-envelope/src/lib.rs fn mint_bridge_v14.
+    def self.mint_bridge_v14(args)
+      require_relative "bridge_v14"
+
+      header = {
+        "schemaVersion" => Provekit::BridgeV14::SCHEMA_VERSION,
+        "kind" => "bridge",
+        "name" => args.name,
+        "sourceSymbol" => args.source_symbol,
+        "sourceLayer" => args.source_layer,
+        "sourceContractCid" => args.source_contract_cid,
+        "target" => args.target.to_h,
+      }
+
+      metadata = Provekit::BridgeV14::BridgeMetadataV14.new(
+        target_witness_cid: args.target_witness_cid,
+        target_binary_cid: args.target_binary_cid,
+        target_layer: args.target_layer,
+        target_contract_set_cid: args.target_contract_set_cid,
+        produced_by: args.produced_by,
+        produced_at: args.produced_at,
+      ).to_h
+
+      assemble_layered(header, metadata, args.declared_at, args.signer_seed, "")
+    end
+
     # Mint a v1.2-layered implication claim envelope.
     # Byte-identical to Rust's `mint_implication` for the same canonical
     # inputs.
