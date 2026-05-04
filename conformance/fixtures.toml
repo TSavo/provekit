@@ -27,8 +27,39 @@ description = "Contract with precondition: parseInt(x) requires x >= 0"
 jcs = '[{"kind":"contract","name":"parseInt","outBinding":"out","pre":{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}}]'
 hash = "blake3-512:5d1a287186e41d3fd9be0f4e9464e7905f35306e7bdeeeeb180279672eed4c8685e073d88ba8a222b34e1586adc3a05efb5ab4c71837299b48f2b4386353713f"
 
+# v1.1 BridgeDeclaration (flat 9-field shape).
+#
+# Retained as historical bytes per
+# protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md §4:
+# v1.1 mementos remain valid forever and MUST NOT be re-signed or re-emitted.
+# New emissions MUST use the v1.4 layered shape; see `bridge_decl_v1_4`.
 [[fixture]]
-name = "bridge_decl"
-description = "Bridge declaration with all fields including optional notes"
+name = "bridge_decl_v1_1"
+description = "v1.1 flat BridgeDeclaration (historical bytes); new emissions MUST use bridge_decl_v1_4"
 jcs = '{"kind":"bridge","name":"myBridge","notes":"some notes","sourceContractCid":"bafySource","sourceLayer":"c-kit","sourceSymbol":"source","targetContractCid":"bafyTarget","targetLayer":"coq","targetProofCid":"bafyProof"}'
 hash = "blake3-512:e3ace4fc4fd49561bc29d1739d8256c6d573642e4bfd5f4eb2994bb2ba5442b1e925a34b1e2a36ecb0a5e587ccf67ccce4d3184fe5e1fac67e893dce5126305b"
+
+# v1.4 BridgeDeclaration (layered envelope/header/body, tagged-union target).
+#
+# Source of truth:
+#   protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6
+#   protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md §1, §2
+#   protocol/provekit-ir.cddl  BridgeDeclarationV14
+#
+# Canonical reference: `provekit-claim-envelope::mint_bridge_v14` with the
+# pinned inputs in `provekit-claim-envelope/tests/bridge_v14_roundtrip.rs`
+# (signer seed 0x42*32; declared_at 2026-05-03T00:00:00.000Z; source/target
+# CIDs are stable test patterns; targetWitnessCid / targetBinaryCid /
+# targetContractSetCid OMITTED per spec §1.R2).
+#
+# Acceptance criteria pinned by this fixture:
+#   * §1.R1 tagged-union target (`{"kind":"contract","cid":...}`)
+#   * §1.R2 placeholder strings absent (OMITTED, not null, not "pending-*")
+#   * §1.R3 header carries the seven contract-axis fields only
+#   * substrate-layers §1 envelope/header/metadata layering
+#   * substrate-layers §2 R2 signature covers JCS({header,metadata})
+[[fixture]]
+name = "bridge_decl_v1_4"
+description = "v1.4 layered BridgeDeclaration with tagged-union target {kind:contract, cid:...}"
+jcs = '{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:GghyfAgvP5MtRcKjCBTvOf2qRqG13WboOLkZzkSbEbtNxqT+eDMcEup+RJWDOGBuhaBAR4jTPfM2w09iZsTuAw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:source0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:target0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"provekit-canonical-reference@v1.4","targetLayer":"rust-kit"}}'
+hash = "blake3-512:270e867a46317f3c92a9af57d6aefe292f9a30a61149c1b7e22eb5500b203993ae029bce5e69dc6818ae0b2657d7960dac99b98c301c89050491c9d9c1852059"
