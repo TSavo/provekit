@@ -327,13 +327,14 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
         .output()
         .expect("spawn provekit --kit=rust");
 
-    // Via --project
+    // Via --project (must use rust-self-contracts surface to match --kit=rust;
+    // issue #176 Tier 1: --kit=rust routes to rust-self-contracts, not rust)
     let proj_out = Command::new(&bin)
         .arg("mint")
         .arg("--project")
         .arg("implementations/rust")
         .arg("--surface")
-        .arg("rust")
+        .arg("rust-self-contracts")
         .arg("--quiet")
         .arg("--no-attest")
         .current_dir(&root)
@@ -402,4 +403,55 @@ fn go_kit_pins_expected_contract_set_cid() {
     );
 
     eprintln!("go kit contractSetCid pinned correctly: {cset}");
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: rust kit contractSetCid is pinned to the canonical self-contracts CID
+//         (issue #176 Tier 1 regression gate, PR #183)
+// ---------------------------------------------------------------------------
+
+/// Pinned contractSetCid produced by `--kit=rust` after routing to the
+/// `rust-self-contracts` surface (mint-self-contracts binary, canonical
+/// 11-contract slab). Any change to this value means either the surface
+/// wiring changed or the canonical contracts changed — both require explicit
+/// review and re-pinning.
+///
+/// This constant must be updated whenever the canonical self-contracts slab is
+/// intentionally changed. It MUST NOT be the empty-set CID (d53d18c2...) or
+/// the generic workspace-lifter CID (ca9638b4...).
+const RUST_KIT_CANONICAL_CONTRACT_SET_CID: &str =
+    "blake3-512:8f4bcc3c3e748ae303f8c8da80245f291e803eb2d241224c75c7ac470631e4dee7ff2e0ff59af571db3d506485c115acaddfd91e4e4315eb04ee37c035ddbc69";
+
+#[test]
+fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
+    let root = repo_root();
+
+    let (ok, _, stderr) = run_mint("rust");
+    if !ok {
+        eprintln!("rust kit: mint failed (mint-self-contracts may not be built)\n  stderr: {stderr}");
+        // Skip rather than fail — binary may not be built in this environment.
+        return;
+    }
+
+    let attest = read_attestation(&root, "rust");
+    let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
+
+    // Pinned value: must match the canonical self-contracts CID.
+    assert_eq!(
+        cset,
+        RUST_KIT_CANONICAL_CONTRACT_SET_CID,
+        "rust kit contractSetCid diverged from the pinned canonical self-contracts CID.\n\
+         This is the issue #176 Tier 1 regression gate.\n\
+         If the self-contracts changed intentionally, update RUST_KIT_CANONICAL_CONTRACT_SET_CID.\n\
+         Current: {cset}\n\
+         Pinned:  {RUST_KIT_CANONICAL_CONTRACT_SET_CID}"
+    );
+
+    // Belt-and-suspenders: must NOT be the empty-set sentinel.
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "rust kit must not produce the empty-set CID — the self-contracts binary is missing or broken"
+    );
+
+    eprintln!("rust kit pinned contractSetCid confirmed: {cset}");
 }
