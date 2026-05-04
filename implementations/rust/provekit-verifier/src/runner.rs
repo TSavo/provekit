@@ -32,8 +32,8 @@ use crate::solvers::{
 };
 use crate::types::{CallSite, MementoPool, ObligationVerdict, Report};
 use crate::{
-    enumerate_callsites, instantiate, load_all_proofs, report as report_stage, resolve_target,
-    smt_emitter,
+    call_edge_loader, enumerate_callsites, instantiate, load_all_proofs, report as report_stage,
+    resolve_target, smt_emitter,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -53,6 +53,10 @@ pub struct RunnerConfig {
     /// `.provekit/config.toml` discovery (used by tests and the
     /// multi-solver demo).
     pub solvers_config: Option<SolversConfig>,
+    /// Additional project directories whose .proof files should
+    /// also be loaded (e.g., OpenAPI spec project for cross-kit
+    /// verification).
+    pub extra_projects: Vec<PathBuf>,
 }
 
 /// Per-solver telemetry, surfaced in the report alongside the legacy
@@ -124,6 +128,35 @@ impl Runner {
     pub fn run_with_tiers(&self) -> (Report, TierStats) {
         let mut report = Report::default();
         let mut pool = load_all_proofs::run(&self.cfg.project_root);
+
+        // Load contracts from extra project dirs (e.g., OpenAPI spec)
+        for extra in &self.cfg.extra_projects {
+            let extra_pool = load_all_proofs::run(extra);
+            pool.merge(extra_pool);
+        }
+
+        // Load and process call edges
+        let call_edges =
+            call_edge_loader::load_call_edge_files(&self.cfg.project_root);
+        let obligations = call_edge_loader::process_call_edges(&call_edges, &pool);
+
+        // Report call edge obligations
+        for (source_cid, target_cid, locus) in &call_edge_loader::process_call_edges(
+            &call_edges,
+            &pool,
+        ) {
+            let file = locus
+                .as_ref()
+                .and_then(|l| l.get("file"))
+                .and_then(|f| f.as_str())
+                .unwrap_or("<unknown>");
+            report.call_edges.push(crate::types::ResolvedCallEdge {
+                source_contract_cid: source_cid.clone(),
+                target_contract_cid: target_cid.clone(),
+                file: file.to_string(),
+            });
+        }
+
         let callsites = enumerate_callsites::run(&pool);
 
         let n_hash = AtomicUsize::new(0);

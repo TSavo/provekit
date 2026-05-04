@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value as Json;
+use serde::Serialize;
 
 /// Return the kind discriminator of a memento, regardless of shape:
 ///
@@ -97,6 +98,10 @@ pub struct MementoPool {
     /// last-writer-wins to silently swap them.
     pub bundle_members: BTreeMap<String, std::collections::BTreeSet<String>>,
     pub load_errors: Vec<LoadError>,
+    /// Contract CID -> contract name (indexed during load)
+    pub cid_to_name: BTreeMap<String, String>,
+    /// Contract name -> CID (reverse index)
+    pub name_to_cid: BTreeMap<String, String>,
 }
 
 /// Key for implication lookups: (antecedent CID, consequent CID).
@@ -249,7 +254,22 @@ impl MementoPool {
                     .insert(hash.to_string(), memento_cid.clone());
             }
         }
-        self.mementos.insert(memento_cid, envelope);
+        self.mementos.insert(memento_cid.clone(), envelope);
+
+        // Index by contract name for cross-kit resolution
+        let name = self.mementos
+            .get(&memento_cid)
+            .and_then(|env| {
+                env.pointer("/header/contractName")
+                    .or_else(|| env.pointer("/evidence/body/contractName"))
+            })
+            .and_then(|v| v.as_str());
+
+        if let Some(n) = name {
+            let n = n.to_string();
+            self.cid_to_name.insert(memento_cid.clone(), n.clone());
+            self.name_to_cid.insert(n, memento_cid);
+        }
     }
 
     /// Sub-formula composition: walk the formula DAG and return all
@@ -292,6 +312,19 @@ impl MementoPool {
         }
 
         verified
+    }
+
+    /// Merge another pool into this one.
+    pub fn merge(&mut self, other: Self) {
+        self.mementos.extend(other.mementos);
+        self.formula_to_memento.extend(other.formula_to_memento);
+        self.bridges_by_symbol.extend(other.bridges_by_symbol);
+        for (k, vs) in other.bundle_members {
+            self.bundle_members.entry(k).or_default().extend(vs);
+        }
+        self.load_errors.extend(other.load_errors);
+        self.cid_to_name.extend(other.cid_to_name);
+        self.name_to_cid.extend(other.name_to_cid);
     }
 }
 
@@ -413,6 +446,13 @@ pub struct ReportRow {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedCallEdge {
+    pub source_contract_cid: String,
+    pub target_contract_cid: String,
+    pub file: String,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Report {
     pub total_callsites: usize,
@@ -420,6 +460,7 @@ pub struct Report {
     pub violations: usize,
     pub rows: Vec<ReportRow>,
     pub load_errors: Vec<LoadError>,
+    pub call_edges: Vec<ResolvedCallEdge>,
 }
 
 #[cfg(test)]

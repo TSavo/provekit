@@ -1727,6 +1727,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "thiserror",
+ "walkdir",
 ]
 
 [[package]]
