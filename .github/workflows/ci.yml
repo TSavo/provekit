@@ -152,30 +152,6 @@ jobs:
             nlohmann-json3-dev \
             z3
 
-      - name: Build + install libblake3 from upstream
-        # Ubuntu 24.04 LTS apt does not ship libblake3-dev (added in
-        # Ubuntu 25.10). The Ruby kit's BLAKE3 binding goes through FFI
-        # to libblake3 because no rubygem on Ruby 3.x exposes 64-byte
-        # XOF mode (per PR #226 notes: digest-blake3, blake3-rb,
-        # blake3ruby all 32-byte only). Build libblake3 from the
-        # official upstream and install to /usr/local/lib so Ruby's
-        # FFI loader finds it.
-        #
-        # Future: vendor BLAKE3 in the ruby kit itself (tools/blake3-vendored/
-        # is already in the repo for cpp). Tracked separately.
-        run: |
-          set -euxo pipefail
-          BLAKE3_VERSION=1.5.4
-          curl -fsSL "https://github.com/BLAKE3-team/BLAKE3/archive/refs/tags/${BLAKE3_VERSION}.tar.gz" -o /tmp/blake3.tar.gz
-          mkdir -p /tmp/blake3-build
-          tar -xzf /tmp/blake3.tar.gz -C /tmp/blake3-build
-          cd /tmp/blake3-build/BLAKE3-${BLAKE3_VERSION}/c
-          cmake -B build -DBLAKE3_USE_TBB=OFF -DBUILD_SHARED_LIBS=ON
-          cmake --build build --config Release
-          sudo cmake --install build
-          sudo ldconfig
-          ldconfig -p | grep -i blake3 || (echo "libblake3 not registered" && exit 1)
-
       - name: Set up Ruby 3.3
         # mint-ruby-self-contracts (PR #234, issue #209) ships a Ruby
         # orchestrator that the rust CLI invokes via the lift-plugin-protocol
