@@ -154,12 +154,12 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
 /// fallback fires, producing an empty-set CID. The all-kits structure test
 /// tolerates this; the pinned-CID test (`swift_kit_pins_expected_contract_set_cid`)
 /// is `#[cfg_attr(not(target_os = "macos"), ignore)]` so it doesn't fail on Linux.
-const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "c"];
+const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "c", "ruby"];
 
 /// Kits without a lifter binary yet — produce the empty-set CID because the
 /// binary cannot be found (ENOENT on spawn). These declare the binary name but
 /// the binary is not installed; the gap surfaces as an empty-set attestation.
-const KITS_WITHOUT_LIFTERS: &[&str] = &["ruby", "zig"];
+const KITS_WITHOUT_LIFTERS: &[&str] = &["zig"];
 
 /// Kits that have a lifter AND are expected to find real contracts.
 /// Only include kits where the test environment reliably has the lifter built
@@ -167,7 +167,7 @@ const KITS_WITHOUT_LIFTERS: &[&str] = &["ruby", "zig"];
 ///
 /// `swift` is on macOS only; the all-kits run handles Linux gracefully via the
 /// `failed_kits` skip path because the release binary is missing.
-const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp", "python"];
+const KITS_WITH_REAL_CONTRACTS: &[&str] = &["rust", "go", "cpp", "python", "ruby"];
 
 /// Pinned contractSetCid for `--kit=go` after Tier 1 wiring fix (#176).
 /// Reflects the 11 canonical contracts in `implementations/go/provekit-self-contracts/slabs/`.
@@ -819,4 +819,53 @@ fn c_kit_pins_expected_contract_set_cid() {
     );
 
     eprintln!("c kit contractSetCid pinned correctly: {cset}");
+}
+
+// ---------------------------------------------------------------------------
+// Test 13: ruby kit contractSetCid is pinned to the canonical self-contracts CID
+//          (issue #209 wiring -- ruby Side A bootstrap)
+// ---------------------------------------------------------------------------
+
+/// Pinned contractSetCid produced by `--kit=ruby` after routing to the
+/// `ruby-self-contracts` surface (mint-ruby-self-contracts RPC, canonical
+/// 5-slab, 15-contract set). Mirrors the rust/go/cpp/ts pinning pattern.
+///
+/// If this test fails with the empty-set CID (`d53d18c2...`), the KIT_TABLE
+/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// the ruby slab contracts have changed -- update RUBY_KIT_CONTRACT_SET_CID.
+const RUBY_KIT_CONTRACT_SET_CID: &str =
+    "blake3-512:961be80d8a5ae8f3d8255462fc1845d5b45f30c0b4412c9d8b354078d63096ba363b6ae0dea4f2e35141213dc5c6b855156f434b5620a345bfbc20725bee00ff";
+
+#[test]
+#[serial(mint_kit_files)]
+fn ruby_kit_pins_expected_contract_set_cid() {
+    let root = repo_root();
+
+    let (ok, stdout, stderr) = run_mint("ruby");
+    if !ok {
+        eprintln!(
+            "ruby kit: mint failed (ruby toolchain may not be available)\n  stderr: {stderr}"
+        );
+        // Skip rather than fail -- ruby toolchain may not be present in all environments.
+        return;
+    }
+
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "ruby kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
+    );
+
+    let attest = read_attestation(&root, "ruby");
+    let cset = attest["contractSetCid"].as_str().unwrap();
+
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "ruby kit: contractSetCid must NOT be the empty-set sentinel -- routing regression detected (issue #209)"
+    );
+    assert_eq!(
+        cset, RUBY_KIT_CONTRACT_SET_CID,
+        "ruby kit: contractSetCid does not match pinned value from 5-slab, 15-contract set (issue #209)"
+    );
+
+    eprintln!("ruby kit contractSetCid pinned correctly: {cset}");
 }
