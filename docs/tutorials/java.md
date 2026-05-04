@@ -1,6 +1,6 @@
 # Tutorial: Java / JVM
 
-> **Status:** kit shipping (v1.1.0). Lift adapters shipping: Bean Validation, JML, Spring Web, Cofoja, plus bindings for Spring Security, Swagger, Jackson, JPA, Hibernate. Embedded verifier and LSP plugin planned for v1.2. Verification via the Rust CLI.
+> **Status:** kit shipping (v1.4.1). Lift adapters shipping: Bean Validation, JML, Spring Web, Cofoja, plus bindings for Spring Security, Swagger, Jackson, JPA, Hibernate. Embedded verifier and LSP plugin planned. Verification via the Rust CLI.
 
 A walkthrough for Java / JVM developers. By the end you have a `.proof` catalog lifted from existing `@NotNull`, `@Email`, `@Min`, `//@ requires`, `@RequestParam` annotations — across Bean Validation, JML, Spring, and Cofoja sources, all canonicalized to the same IR.
 

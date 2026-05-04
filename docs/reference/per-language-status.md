@@ -85,7 +85,7 @@ Column meanings:
 
 **Embedded verifier:** Yes. `provekit_verifier::run(project_root)` returns a `HandshakeReport` synchronously.
 
-**CLI:** `provekit` is the canonical shipping CLI for protocol v1.1.0. Subcommands: `prove`, `verify`, `verify-protocol`, `version`, `init`, `lift`, `dump`, `hash`, `ask`, `search`, `implicate`. Distributed via `cargo install provekit`.
+**CLI:** `provekit` is the canonical shipping CLI for protocol v1.4.1. Subcommands: `prove`, `verify`, `verify-protocol`, `version`, `init`, `lift`, `dump`, `hash`, `ask`, `search`, `implicate`. Distributed via `cargo install provekit`.
 
 ## TypeScript
 

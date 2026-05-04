@@ -42,7 +42,7 @@ blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0
 
 the BLAKE3-512 hash of the JCS-canonical form of the protocol catalog. Anyone with the spec bytes can re-derive the CID locally. The repository ships a reference implementation at `tools/recompute-spec-cids/`; `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify` re-derives every CID and fails on any drift.
 
-There is no central authority that decides what v1.1.0 means. The bytes do.
+There is no central authority that decides what a protocol version means. The bytes do.
 
 ## What ships
 

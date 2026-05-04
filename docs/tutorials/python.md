@@ -1,6 +1,6 @@
 # Tutorial: Python
 
-> **Status:** kit shipping (v1.1.0). Lift adapter shipping: `pydantic`. Layer-2 structural lift shipping (walks pytest/unittest with bounded loops, helper inlining, `@pytest.mark.parametrize`). Decorator macro shipping: `@provekit.contract`. LSP plugin shipping. Verification via the Rust CLI.
+> **Status:** kit shipping (v1.4.1). Lift adapter shipping: `pydantic`. Layer-2 structural lift shipping (walks pytest/unittest with bounded loops, helper inlining, `@pytest.mark.parametrize`). Decorator macro shipping: `@provekit.contract`. LSP plugin shipping. Verification via the Rust CLI.
 
 A walkthrough for Python developers. By the end you have a `.proof` catalog lifted from existing `pydantic.BaseModel` schemas (or pytest tests), verified via the Rust CLI, with red squigglies in your editor via the LSP plugin.
 

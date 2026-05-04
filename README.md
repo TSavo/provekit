@@ -57,7 +57,7 @@ For the deeper claim, read [docs/explanation/thesis.md](docs/explanation/thesis.
 - **Conforming implementations** today: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md) and [docs/reference/per-adapter-coverage.md](docs/reference/per-adapter-coverage.md).
 - **Conformance gate**: every kit's mint must match a pinned content-addressed CID before `make ci` is green.
 
-The protocol is content-addressed end to end. v1.1.0's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what v1.1.0 means; the bytes do.
+The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
 
 ## Quick install (Rust, canonical)
 

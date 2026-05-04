@@ -4,11 +4,11 @@ ProvekIt LSP plugins shipping today:
 
 | Kit | Plugin | Status |
 |---|---|---|
-| Rust | `provekit-lsp-rust` | shipping (v1.1.0) |
-| Python | `provekit-lsp-py` | shipping (v1.1.0) |
-| Zig | `provekit-lift-zig --rpc` | shipping (v1.1.0) |
-| Ruby | `provekit-lsp-ruby` | shipping (v1.1.0) |
-| C# | `Provekit.Lsp.Plugin` | shipping (v1.1.0) |
+| Rust | `provekit-lsp-rust` | shipping (v1.4.1) |
+| Python | `provekit-lsp-py` | shipping (v1.4.1) |
+| Zig | `provekit-lift-zig --rpc` | shipping (v1.4.1) |
+| Ruby | `provekit-lsp-ruby` | shipping (v1.4.1) |
+| C# | `Provekit.Lsp.Plugin` | shipping (v1.4.1) |
 | TypeScript | — | planned for v1.2 |
 | Go | — | planned for v1.2 |
 | C++ | — | planned for v1.2 |
