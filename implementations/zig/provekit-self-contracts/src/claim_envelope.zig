@@ -447,6 +447,126 @@ pub fn mintContract(
 }
 
 // ---------------------------------------------------------------------------
+// mint_bridge_v14 (v1.4 layered envelope/header/body, tagged-union target)
+//
+// Per protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6.
+// Canonical reference: rust/provekit-claim-envelope/src/lib.rs fn mint_bridge_v14.
+// ---------------------------------------------------------------------------
+
+pub const BridgeTargetKind = enum { contract, contractSet };
+
+pub const BridgeTargetV14 = struct {
+    kind: BridgeTargetKind,
+    cid: []const u8,
+};
+
+pub const MintBridgeV14Args = struct {
+    // header (7 fields per §1.R3)
+    name: []const u8,
+    source_symbol: []const u8,
+    source_layer: []const u8,
+    source_contract_cid: []const u8,
+    target: BridgeTargetV14,
+
+    // metadata (null_string = omit per §1.R2)
+    target_witness_cid: ?[]const u8 = null,
+    target_binary_cid: ?[]const u8 = null,
+    target_layer: ?[]const u8 = null,
+    target_contract_set_cid: ?[]const u8 = null,
+    produced_by: ?[]const u8 = null,
+    produced_at: ?[]const u8 = null,
+
+    declared_at: []const u8,
+    signer_seed: signing.Seed,
+};
+
+pub fn mintBridgeV14(alloc: std.mem.Allocator, args: MintBridgeV14Args) !MintedEnvelope {
+    // Build target
+    const target_kind = if (args.target.kind == .contract) "contract" else "contractSet";
+    var t_b = ObjectBuilder.init(alloc);
+    try t_b.add("kind", try Value.newString(alloc, target_kind));
+    try t_b.add("cid", try Value.newString(alloc, args.target.cid));
+    const target_v = try t_b.finish();
+    defer {
+        target_v.deinit(alloc);
+        alloc.destroy(target_v);
+    }
+
+    // Build header (7 canonical fields)
+    var h_b = ObjectBuilder.init(alloc);
+    try h_b.add("schemaVersion", try Value.newString(alloc, "1"));
+    try h_b.add("kind", try Value.newString(alloc, "bridge"));
+    try h_b.add("name", try Value.newString(alloc, args.name));
+    try h_b.add("sourceSymbol", try Value.newString(alloc, args.source_symbol));
+    try h_b.add("sourceLayer", try Value.newString(alloc, args.source_layer));
+    try h_b.add("sourceContractCid", try Value.newString(alloc, args.source_contract_cid));
+    try h_b.add("target", try cloneValue(alloc, target_v));
+    const header = try h_b.finish();
+    defer {
+        header.deinit(alloc);
+        alloc.destroy(header);
+    }
+
+    // Build metadata (only non-null fields)
+    var m_b = ObjectBuilder.init(alloc);
+    if (args.target_witness_cid) |v| try m_b.add("targetWitnessCid", try Value.newString(alloc, v));
+    if (args.target_binary_cid) |v| try m_b.add("targetBinaryCid", try Value.newString(alloc, v));
+    if (args.target_layer) |v| try m_b.add("targetLayer", try Value.newString(alloc, v));
+    if (args.target_contract_set_cid) |v| try m_b.add("targetContractSetCid", try Value.newString(alloc, v));
+    if (args.produced_by) |v| try m_b.add("producedBy", try Value.newString(alloc, v));
+    if (args.produced_at) |v| try m_b.add("producedAt", try Value.newString(alloc, v));
+    const metadata = try m_b.finish();
+    defer {
+        metadata.deinit(alloc);
+        alloc.destroy(metadata);
+    }
+
+    // Sign: JCS({header, metadata})
+    const sig_bytes = try signingBytes(alloc, header, metadata);
+    defer alloc.free(sig_bytes);
+    const sig = try signing.signWithSeed(args.signer_seed, sig_bytes);
+    defer alloc.free(sig);
+    const sig_b64 = try alloc.alloc(u8, std.base64.standard.Encoder.calcSize(sig.len));
+    defer alloc.free(sig_b64);
+    _ = std.base64.standard.Encoder.encode(sig_b64, sig);
+    const sig_str = try std.fmt.allocPrint(alloc, "ed25519:{s}", .{sig_b64});
+    defer alloc.free(sig_str);
+
+    // Build envelope
+    const pubkey = try signing.pubkeyString(alloc, args.signer_seed);
+    defer alloc.free(pubkey);
+    var e_b = ObjectBuilder.init(alloc);
+    try e_b.add("signer", try Value.newString(alloc, pubkey));
+    try e_b.add("declaredAt", try Value.newString(alloc, args.declared_at));
+    try e_b.add("signature", try Value.newString(alloc, sig_str));
+    const envelope = try e_b.finish();
+    defer {
+        envelope.deinit(alloc);
+        alloc.destroy(envelope);
+    }
+
+    // Full memento: {envelope, header, metadata}
+    var mem_b = ObjectBuilder.init(alloc);
+    try mem_b.add("envelope", try cloneValue(alloc, envelope));
+    try mem_b.add("header", try cloneValue(alloc, header));
+    try mem_b.add("metadata", try cloneValue(alloc, metadata));
+    const memento = try mem_b.finish();
+    defer {
+        memento.deinit(alloc);
+        alloc.destroy(memento);
+    }
+
+    const canonical = try jcs.encode(alloc, memento);
+    const cid = try hash.blake3_512Of(alloc, canonical);
+
+    return MintedEnvelope{
+        .canonical_bytes = canonical,
+        .cid = cid,
+        .contract_cid = &[_]u8{},
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
