@@ -96,7 +96,7 @@ const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     // (kit_alias, project_subdir, lift_surface,           lang_key)
     ("rust",       "rust",        "rust-self-contracts",  "rust"),
     ("go",         "go",          "go-self-contracts",    "go"),
-    ("cpp",        "cpp",         "cpp",                  "cpp"),
+    ("cpp",        "cpp",         "cpp-self-contracts",    "cpp"),
     ("ts",         "typescript",  "typescript",           "ts"),
     ("csharp",     "csharp",      "csharp",               "csharp"),
     ("swift",      "swift",       "swift",                "swift"),
