@@ -6,7 +6,7 @@ This doc walks through the signing ceremony for a third party who wants to sign 
 
 ## Why this exists
 
-The foundation key signs ProvekIt's own protocol. It does not have standing to sign authoritative contracts about TypeScript, Rust, Python, or PHP — those are the language stewards' to sign. Foundation baselines (per the [baseline catalog rubric](baseline-catalog-rubric.md)) are explicitly advisory: a starting point until stewards step up.
+The foundation key signs ProvekIt's own protocol. It does not have standing to sign authoritative contracts about TypeScript, Rust, Python, or PHP, those are the language stewards' to sign. Foundation baselines (per the [baseline catalog rubric](baseline-catalog-rubric.md)) are explicitly advisory: a starting point until stewards step up.
 
 The protocol's value is creating room for actual stewards to sign. This doc is that room.
 
@@ -17,7 +17,7 @@ You have standing to sign a catalog about a thing when you wrote the thing, main
 - The rust-lang team has standing to sign claims about `std::*`.
 - A library maintainer has standing to sign claims about their library's public API.
 - A consultant who has audited a closed-source binary has standing to sign claims about its observed behavior, **as advisory** (their signer_role is `community`, not `language-steward`).
-- The foundation has standing to sign claims about ProvekIt's own protocol. It does NOT have standing to sign authoritative contracts about other languages — only foundation-baseline advisory.
+- The foundation has standing to sign claims about ProvekIt's own protocol. It does NOT have standing to sign authoritative contracts about other languages, only foundation-baseline advisory.
 
 The protocol does not enforce standing. It records who signed. Consumers decide whose signatures they trust by pinning specific signer keys.
 
@@ -57,7 +57,7 @@ The output is a list of canonical contract bytes (each ContractDecl JCS-encoded)
 Use any kit's `pksc_proof_build` (or its kit-equivalent) to assemble:
 
 - `members`: the contract CIDs + bytes
-- `metadata`: the [advisory metadata block](baseline-catalog-rubric.md#3-advisory-metadata-shape) — `signer_role`, `baseline.version`, `baseline.language`, etc. (Use whichever role applies to you: `language-steward`, `community`, etc.)
+- `metadata`: the [advisory metadata block](baseline-catalog-rubric.md#3-advisory-metadata-shape): `signer_role`, `baseline.version`, `baseline.language`, etc. (Use whichever role applies to you: `language-steward`, `community`, etc.)
 - `signer_cid`: your public key in `ed25519:...` form
 - `declared_at`: ISO-8601 timestamp
 - `signer_seed`: your 32-byte private seed (never persisted)
@@ -90,7 +90,7 @@ The catalog's filename CID is its identity. Consumers pin by CID, fetch from any
 
 ### 6. Register in the federated index (optional but recommended)
 
-The federated index (see "Federated index format" below) is a static catalog the foundation maintains listing known signers per language / library / project. To get listed, open a PR against `protocol/federation/known-signers.toml` adding your pubkey + scope. The foundation does not vouch for signers in the index — listing means "this signer claims standing for this scope," not "the foundation endorses the signer's claims."
+The federated index (see "Federated index format" below) is a static catalog the foundation maintains listing known signers per language / library / project. To get listed, open a PR against `protocol/federation/known-signers.toml` adding your pubkey + scope. The foundation does not vouch for signers in the index: listing means "this signer claims standing for this scope," not "the foundation endorses the signer's claims."
 
 Consumers can pin signers from the index, from elsewhere, or from no index at all. The index is a discoverability convenience, not a gate.
 
@@ -109,10 +109,10 @@ contact_url = "https://github.com/rust-lang"
 
 Scope vocabulary:
 
-- `language:<name>` — claims standing for a language's stdlib (rust, go, php, etc.)
-- `library:<package>` — claims standing for a specific library's public API
-- `project:<owner/repo>` — claims standing for a specific codebase's contracts
-- `kind:<arbitrary>` — extension point for future scope types
+- `language:<name>`: claims standing for a language's stdlib (rust, go, php, etc.)
+- `library:<package>`: claims standing for a specific library's public API
+- `project:<owner/repo>`: claims standing for a specific codebase's contracts
+- `kind:<arbitrary>`: extension point for future scope types
 
 The index is itself a contract memento, signed, content-addressable. Each commit to it produces a new index CID. Consumers pin which index CID they trust.
 
@@ -194,6 +194,6 @@ The fixture key is published in the example for reproducibility; do not use it f
 
 - #253 launch v1.0.0 epic
 - #248 verify_proof is consistency-only; trust pin is callsite
-- #254 / `baseline-catalog-rubric.md` — what counts as a basic catalog
+- #254 / `baseline-catalog-rubric.md`: what counts as a basic catalog
 - #256 DSL extension survey
-- `protocol/specs/2026-04-30-lift-plugin-protocol.md` — RPC shape catalog authoring uses
+- `protocol/specs/2026-04-30-lift-plugin-protocol.md`: RPC shape catalog authoring uses

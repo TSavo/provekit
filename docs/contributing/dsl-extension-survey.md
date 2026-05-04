@@ -4,7 +4,7 @@ Some hidden predicates in real languages can't be encoded with the current formu
 
 ## The principle
 
-**The DSL ships at v1.0.0 with a complete-enough surface that the baseline rubric's predicate density floor (2-5 per builtin) is reachable for every kit.** Predicates beyond that floor — research-grade extensions, language-specific exotica — defer to post-launch. The baseline disclaimer addendum names what's missing per language so consumers see the gap; the steward's signature can fill it later.
+**The DSL ships at v1.0.0 with a complete-enough surface that the baseline rubric's predicate density floor (2-5 per builtin) is reachable for every kit.** Predicates beyond that floor (research-grade extensions, language-specific exotica) defer to post-launch. The baseline disclaimer addendum names what's missing per language so consumers see the gap; the steward's signature can fill it later.
 
 This is the operational form of: ship the substrate, not perfection.
 
@@ -46,17 +46,17 @@ The DSL has `gte` but no `lt` / `lte` / `between(lo, hi)`. Bounds like "result i
 
 No predicate for "x is in {a, b, c}" beyond chained `eq` with `or` (and there's no `or`). Useful for finite enums and coercion classes.
 
-**Example builtins blocked**: PHP's falsy class — `is_falsy(x)` iff `x ∈ {false, 0, 0.0, "", "0", null, []}`. Without finite-set membership, the predicate is inexpressible.
+**Example builtins blocked**: PHP's falsy class: `is_falsy(x)` iff `x ∈ {false, 0, 0.0, "", "0", null, []}`. Without finite-set membership, the predicate is inexpressible.
 
 **Impact**: PHP baseline is partial without it (~15-20 builtins involve type juggling). Smaller impact on other languages.
 
-**Decision: EXTEND pre-launch.** Cheap addition. The implementation is `member_of(value, [a, b, c, ...])` — array of constants on the right. Closes the PHP type-juggling gap at floor density.
+**Decision: EXTEND pre-launch.** Cheap addition. The implementation is `member_of(value, [a, b, c, ...])`, array of constants on the right. Closes the PHP type-juggling gap at floor density.
 
 ### G3: Logical disjunction (or)
 
 The DSL has implicit conjunction (a Slab is a conjunction of contracts) but no explicit `or`. Predicates like "result is null OR positive" need `or`.
 
-**Example builtins blocked**: nullable returns — `Map.get(key)` returns `Option<V>` (Some-or-None). Currently expressible by handling the two cases in separate contracts, but the predicate-per-builtin density inflates.
+**Example builtins blocked**: nullable returns: `Map.get(key)` returns `Option<V>` (Some-or-None). Currently expressible by handling the two cases in separate contracts, but the predicate-per-builtin density inflates.
 
 **Impact**: cross-cutting; affects ~10-15 builtins per kit that have nullable returns.
 
@@ -74,11 +74,11 @@ After G1-G4, the DSL covers propositional logic over equality / range / membersh
 
 TypeScript types are structural: `type Foo = { x: number }` is anything-with-an-x-of-type-number. No nominal identity. The DSL has `eq` over constructed values but no notion of "shape compatibility."
 
-**Example builtins blocked**: most TS stdlib methods that take object parameters with structural types (`Array.from(arrayLike)`, `Object.keys(obj)`, etc.). Their preconditions are "argument has these fields with these types" — not expressible as `eq(type_of(arg), strConst("Foo"))` because TS has no nominal Foo.
+**Example builtins blocked**: most TS stdlib methods that take object parameters with structural types (`Array.from(arrayLike)`, `Object.keys(obj)`, etc.). Their preconditions are "argument has these fields with these types", not expressible as `eq(type_of(arg), strConst("Foo"))` because TS has no nominal Foo.
 
 **Impact**: severe for TypeScript. ~30+ ts builtins blocked at floor density.
 
-**Decision: DEFER post-launch.** Structural typing is research-grade — it interacts with subtyping, variance, intersection / union types. Foundation TS baseline ships with `any`-typed predicates (loose: "argument is an object") and notes the gap in the disclaimer addendum. Filed as follow-up: `[spec] formula DSL: structural typing predicates for TypeScript`.
+**Decision: DEFER post-launch.** Structural typing is research-grade: it interacts with subtyping, variance, intersection / union types. Foundation TS baseline ships with `any`-typed predicates (loose: "argument is an object") and notes the gap in the disclaimer addendum. Filed as follow-up: `[spec] formula DSL: structural typing predicates for TypeScript`.
 
 ### G6: Effect / monad tracking (async, throws, IO)
 
@@ -86,7 +86,7 @@ TypeScript types are structural: `type Foo = { x: number }` is anything-with-an-
 
 **Example builtins blocked**: async builtins (Promise, async/await), throwing builtins (anything in Result<T, E>), IO builtins (file/network/process).
 
-**Impact**: cross-cutting. Affects ~15-20% of stdlib across all languages. Without it, many predicates collapse to "this function returns" — true but vacuous.
+**Impact**: cross-cutting. Affects ~15-20% of stdlib across all languages. Without it, many predicates collapse to "this function returns", true but vacuous.
 
 **Decision: DEFER post-launch.** Effect tracking is research-grade and interacts with the IR's totality model. Foundation baselines ship without effect predicates; the disclaimer notes "side-effect properties not encoded." Filed as follow-up: `[spec] formula DSL: effect predicates (async / throws / IO)`.
 
@@ -98,13 +98,13 @@ TypeScript types are structural: `type Foo = { x: number }` is anything-with-an-
 
 **Impact**: severe for systems-language baselines (rust, c, c++, zig). Probably ~10-15 builtins per language that have non-aliasing as a precondition.
 
-**Decision: DEFER post-launch.** Aliasing predicates are research-grade — separation logic, region inference, etc. Foundation baselines for systems languages ship without aliasing predicates; the disclaimer addendum names the gap explicitly ("Rust unsafe operations and pointer-aliasing preconditions are not encoded; the rust-lang team's signature can add them"). Filed as follow-up: `[spec] formula DSL: aliasing / ownership predicates`.
+**Decision: DEFER post-launch.** Aliasing predicates are research-grade: separation logic, region inference, etc. Foundation baselines for systems languages ship without aliasing predicates; the disclaimer addendum names the gap explicitly ("Rust unsafe operations and pointer-aliasing preconditions are not encoded; the rust-lang team's signature can add them"). Filed as follow-up: `[spec] formula DSL: aliasing / ownership predicates`.
 
 ### G8: Dynamic dispatch / reflection (Python __getattr__, JS Proxy, Ruby method_missing)
 
 Attribute access depends on runtime state via `__getattr__`, `Proxy`, `method_missing`, etc. The IR has no notion of "dispatched-to method depends on runtime."
 
-**Example builtins blocked**: most Python builtins are statically typed at the Python level; the gap mostly affects user code, not stdlib. Same for Ruby — most core methods are statically dispatched.
+**Example builtins blocked**: most Python builtins are statically typed at the Python level; the gap mostly affects user code, not stdlib. Same for Ruby: most core methods are statically dispatched.
 
 **Impact**: minor for stdlib baselines. Major for codebases that lean on dynamic dispatch heavily.
 
@@ -137,7 +137,7 @@ Attribute access depends on runtime state via `__getattr__`, `Proxy`, `method_mi
 | G9: temporal | NO | defer; research-grade |
 | G10: fixed-width arith | NO | defer; minor stdlib impact |
 
-**Pre-launch DSL extensions: 4** (G1-G4). All cheap, all complete propositional logic over what's already there. No substrate-level (CDDL / Rust canonical / cross-kit envelope) changes — just adding constructors to each kit's slab DSL.
+**Pre-launch DSL extensions: 4** (G1-G4). All cheap, all complete propositional logic over what's already there. No substrate-level (CDDL / Rust canonical / cross-kit envelope) changes: just adding constructors to each kit's slab DSL.
 
 **Deferred to post-launch: 6** (G5-G10). Each gets a follow-up issue and an explicit note in the relevant per-language baseline disclaimer addendum.
 
@@ -145,13 +145,13 @@ Attribute access depends on runtime state via `__getattr__`, `Proxy`, `method_mi
 
 Each is a per-kit code addition to the formula DSL. The shape across kits should match (cross-kit byte-equivalence depends on it). Suggested order:
 
-1. **Spec the new constructors** in `protocol/specs/` — JCS Value tree shape for `lt`, `lte`, `between`, `member_of`, `or`, `or_n`, `not`. Land as a contract memento in the catalog format spec. (~1 PR)
+1. **Spec the new constructors** in `protocol/specs/`: JCS Value tree shape for `lt`, `lte`, `between`, `member_of`, `or`, `or_n`, `not`. Land as a contract memento in the catalog format spec. (~1 PR)
 
-2. **Reference impl in rust** — extend `provekit-self-contracts/src/lib.rs` slab DSL helpers. Mint a test catalog using each new constructor. Validate byte-equivalence stays clean. (~1 PR)
+2. **Reference impl in rust**: extend `provekit-self-contracts/src/lib.rs` slab DSL helpers. Mint a test catalog using each new constructor. Validate byte-equivalence stays clean. (~1 PR)
 
-3. **Mirror across the other 11 kits** — go, cpp, ts, csharp, swift, java, python, ruby, zig, c, php each get their slab DSL extended with the same 4 helpers. Each kit's `mint-X-self-contracts` orchestrator gets a regression test. (~12 PRs, parallelizable per the per-kit agent pattern.)
+3. **Mirror across the other 11 kits**: go, cpp, ts, csharp, swift, java, python, ruby, zig, c, php each get their slab DSL extended with the same 4 helpers. Each kit's `mint-X-self-contracts` orchestrator gets a regression test. (~12 PRs, parallelizable per the per-kit agent pattern.)
 
-4. **Per-kit baseline catalogs use the new constructors** — once all 12 kits speak the extended DSL, baseline catalog authoring uses G1-G4 freely. The rust pilot (#257) validates the loop.
+4. **Per-kit baseline catalogs use the new constructors**: once all 12 kits speak the extended DSL, baseline catalog authoring uses G1-G4 freely. The rust pilot (#257) validates the loop.
 
 ## Disclaimer addendum template
 
@@ -178,6 +178,6 @@ The list is per-language. TypeScript's addendum names G5 (structural typing). Ru
 ## See also
 
 - #253 launch v1.0.0 epic
-- #254 / `baseline-catalog-rubric.md` — what counts as a basic catalog
-- #255 / `signing-your-own-catalog.md` — federation mechanism
-- #257 rust pilot — first-mover validating the extended DSL
+- #254 / `baseline-catalog-rubric.md`: what counts as a basic catalog
+- #255 / `signing-your-own-catalog.md`: federation mechanism
+- #257 rust pilot: first-mover validating the extended DSL
