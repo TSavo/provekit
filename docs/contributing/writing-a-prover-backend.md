@@ -155,6 +155,6 @@ A new prover backend is a TCB choice for users; ProvekIt's protocol is the vehic
 
 ## Read next
 
-- [docs/reference/handshake/tier-3-solver-fallback.md](../reference/handshake/tier-3-solver-fallback.md) (when written) — Tier 3 reference.
-- [docs/security/solver-trust.md](../security/solver-trust.md) (when written) — what trusting a backend buys.
-- [docs/explanation/compared-to/coq-fstar-lean.md](../explanation/compared-to/coq-fstar-lean.md) (when written) — comparison to interactive theorem provers.
+- [docs/reference/handshake/tier-3-solver-fallback.md](../reference/handshake/tier-3-solver-fallback.md) (when written): Tier 3 reference.
+- [docs/security/solver-trust.md](../security/solver-trust.md) (when written): what trusting a backend buys.
+- [docs/explanation/compared-to/coq-fstar-lean.md](../explanation/compared-to/coq-fstar-lean.md) (when written): comparison to interactive theorem provers.

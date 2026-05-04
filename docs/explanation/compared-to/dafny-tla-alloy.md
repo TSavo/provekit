@@ -133,7 +133,7 @@ What ProvekIt provides is downstream: once you've used the tool to produce a ver
 
 ## Read next
 
-- [coq-fstar-lean.md](coq-fstar-lean.md) — interactive theorem provers.
-- [kani-prusti-creusot.md](kani-prusti-creusot.md) — Rust-specific provers.
-- [`../../contributing/proposing-a-spec-change.md`](../../contributing/proposing-a-spec-change.md) — adding new IR primitives (e.g., temporal primitives for TLA+).
-- [`../boundaries.md`](../boundaries.md) — what ProvekIt is NOT.
+- [coq-fstar-lean.md](coq-fstar-lean.md): interactive theorem provers.
+- [kani-prusti-creusot.md](kani-prusti-creusot.md): Rust-specific provers.
+- [`../../contributing/proposing-a-spec-change.md`](../../contributing/proposing-a-spec-change.md): adding new IR primitives (e.g., temporal primitives for TLA+).
+- [`../boundaries.md`](../boundaries.md): what ProvekIt is NOT.

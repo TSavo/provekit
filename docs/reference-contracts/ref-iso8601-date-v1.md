@@ -48,11 +48,11 @@ Canonical regex (date-only, no time, no timezone):
 
 ## Implementations that bridge to this reference
 
-- [TypeScript] zod's `z.string().date()` — *bridge planned*
-- [Python] pydantic's `date` field — *bridge planned*
-- [Java] Bean Validation's `@PastOrPresent` on `LocalDate` — *bridge planned*
+- [TypeScript] zod's `z.string().date()`: *bridge planned*
+- [Python] pydantic's `date` field: *bridge planned*
+- [Java] Bean Validation's `@PastOrPresent` on `LocalDate`: *bridge planned*
 
 ## Read next
 
 - [`README.md`](README.md).
-- [`ref-uuid-v1.md`](ref-uuid-v1.md) — sibling format reference.
+- [`ref-uuid-v1.md`](ref-uuid-v1.md): sibling format reference.

@@ -82,6 +82,6 @@ This is the foundation. Step 2 onward is layering on top of a substrate that is 
 
 ## Read next
 
-- [02-canonicalizer.md](02-canonicalizer.md) — JCS + BLAKE3-512 in depth.
-- [03-claim-envelope.md](03-claim-envelope.md) — Ed25519 signing.
-- [docs/reference/conformance-fixtures.md](../../reference/conformance-fixtures.md) (when written) — every fixture's spec.
+- [02-canonicalizer.md](02-canonicalizer.md): JCS + BLAKE3-512 in depth.
+- [03-claim-envelope.md](03-claim-envelope.md): Ed25519 signing.
+- [docs/reference/conformance-fixtures.md](../../reference/conformance-fixtures.md) (when written): every fixture's spec.

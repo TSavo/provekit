@@ -178,6 +178,6 @@ Pairs with `omnisharp-emacs` or `csharp-ls`.
 ## Read next
 
 - [overview.md](overview.md).
-- [vscode.md](vscode.md) — VSCode equivalent.
-- [neovim.md](neovim.md) — Neovim equivalent.
-- [jetbrains.md](jetbrains.md) — JetBrains equivalent.
+- [vscode.md](vscode.md): VSCode equivalent.
+- [neovim.md](neovim.md): Neovim equivalent.
+- [jetbrains.md](jetbrains.md): JetBrains equivalent.

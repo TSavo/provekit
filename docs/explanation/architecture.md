@@ -2,7 +2,7 @@
 
 A walk-through of the protocol's mechanics in roughly fifteen minutes. This document describes the v1.4.1 protocol catalog at CID `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641`. Every spec referenced here is itself content-addressed; CIDs are quoted where authoritativeness matters.
 
-> **v1.4 architectural cut:** every memento now has three layers — envelope (signed wrapper), header (substrate-verified data), body (tooling-interpreted metadata). The substrate verifies envelope + header. Body is opaque to the substrate but signed under the envelope, so tooling reads body fields with cryptographic provenance for free. New protocols add body conventions, never substrate primitives. See [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) §11–§12 for the multi-dimensional address-space framing this operationalizes, and [`docs/reference/cids.md`](../reference/cids.md) for the v1.4 spec list.
+> **v1.4 architectural cut:** every memento now has three layers: envelope (signed wrapper), header (substrate-verified data), body (tooling-interpreted metadata). The substrate verifies envelope + header. Body is opaque to the substrate but signed under the envelope, so tooling reads body fields with cryptographic provenance for free. New protocols add body conventions, never substrate primitives. See [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) §11 through §12 for the multi-dimensional address-space framing this operationalizes, and [`docs/reference/cids.md`](../reference/cids.md) for the v1.4 spec list.
 
 ## The architecture is a pipeline
 
@@ -12,11 +12,11 @@ ProvekIt is not a library you call. It is a pipeline you run. Data flows in one 
 
 `protocol/provekit-ir.cddl` is the root of the entire protocol. It defines:
 
-- `IrTerm` — variables, constants, constructors, lambdas, let-bindings
-- `IrFormula` — atomic predicates, connectives (and/or/not/implies), quantifiers (forall/exists), choice
-- `Sort` — primitive types (Int, String, Bool)
-- `Declaration` — contracts, bridges, evidence
-- `ProofBundle` — the catalog format (name, version, binaryCid, metadata, members)
+- `IrTerm`: variables, constants, constructors, lambdas, let-bindings
+- `IrFormula`: atomic predicates, connectives (and/or/not/implies), quantifiers (forall/exists), choice
+- `Sort`: primitive types (Int, String, Bool)
+- `Declaration`: contracts, bridges, evidence
+- `ProofBundle`: the catalog format (name, version, binaryCid, metadata, members)
 
 The grammar is machine-readable by the `cddl` crate. The spec is human-readable in `protocol/specs/2026-04-30-ir-formal-grammar.md`. Both are content-addressed.
 
@@ -24,9 +24,9 @@ The grammar is machine-readable by the `cddl` crate. The spec is human-readable 
 
 `provekit-ir-codegen` reads the CDDL and emits:
 
-1. **`provekit-ir-types/src/lib.rs`** — serde types matching the spec exactly. `Term`, `Formula`, `Sort`, `Declaration`, `BridgeDeclaration`, `EvidenceTerm`.
-2. **`provekit-ir-compiler-smt-lib/src/generated.rs`** — SMT-LIB emitter: `emit_term`, `emit_formula`, `emit_sort`.
-3. **`provekit-ir-compiler-coq/src/generated.rs`** — Coq emitter: `emit_term`, `emit_formula`, `sort_to_coq`.
+1. **`provekit-ir-types/src/lib.rs`**: serde types matching the spec exactly. `Term`, `Formula`, `Sort`, `Declaration`, `BridgeDeclaration`, `EvidenceTerm`.
+2. **`provekit-ir-compiler-smt-lib/src/generated.rs`**: SMT-LIB emitter: `emit_term`, `emit_formula`, `emit_sort`.
+3. **`provekit-ir-compiler-coq/src/generated.rs`**: Coq emitter: `emit_term`, `emit_formula`, `sort_to_coq`.
 
 The generated code is never hand-edited. Change the CDDL, run `cargo run -p provekit-ir-codegen`, all three files update automatically. The compilers use the generated types, so they always match the spec.
 
@@ -78,9 +78,9 @@ ProofBundle = {
 ```
 
 Key fields:
-- `binaryCid` — pins the compiled artifact. Change any bit, the CID changes, the proof fails.
-- `metadata` — freeform, decorative, signed but non-normative. For tooling, diagnostics, human review.
-- `members` — map from CID to canonical bytes. Every memento is content-addressed and recursively verifiable.
+- `binaryCid`: pins the compiled artifact. Change any bit, the CID changes, the proof fails.
+- `metadata`: freeform, decorative, signed but non-normative. For tooling, diagnostics, human review.
+- `members`: map from CID to canonical bytes. Every memento is content-addressed and recursively verifiable.
 
 ### Stage 5: Verification (the build-time gate)
 

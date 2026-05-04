@@ -59,11 +59,11 @@ The full canonical IR lives at `protocol/reference-contracts/ref-parseInt-v1.jso
 
 When implementations exist and bridge in, list them here:
 
-- [TypeScript] zod's `z.string().pipe(z.coerce.number().int())` chain — *bridge planned in `provekit-lift-zod` v0.4*
-- [Rust] `std::str::parse::<i32>()` — *bridge planned in `provekit-lift-contracts` for the contracts crate's `parseInt` model*
-- [Python] `int(...)` builtin — *bridge planned in `provekit-lift-py-stdlib`*
-- [Java] `Integer.parseInt(String)` — *bridge planned in `provekit-lift-java-jdk`*
-- [Go] `strconv.Atoi` — *bridge planned in `provekit-lift-go-stdlib`*
+- [TypeScript] zod's `z.string().pipe(z.coerce.number().int())` chain: *bridge planned in `provekit-lift-zod` v0.4*
+- [Rust] `std::str::parse::<i32>()`: *bridge planned in `provekit-lift-contracts` for the contracts crate's `parseInt` model*
+- [Python] `int(...)` builtin: *bridge planned in `provekit-lift-py-stdlib`*
+- [Java] `Integer.parseInt(String)`: *bridge planned in `provekit-lift-java-jdk`*
+- [Go] `strconv.Atoi`: *bridge planned in `provekit-lift-go-stdlib`*
 
 A consumer in any language whose pre-condition matches `ref-parseInt-v1` discharges at Tier 1 against any implementation bridging in.
 
@@ -78,19 +78,19 @@ For the most precise contract for a specific implementation, use a per-implement
 
 ## Why this reference exists
 
-Integer parsing is one of the most common cross-language call sites. Validation, coercion, and parsing of user input span every host language. A canonical reference for the basic semantics — "result in int32 range, canonical representation matches input substring" — covers the majority of use cases.
+Integer parsing is one of the most common cross-language call sites. Validation, coercion, and parsing of user input span every host language. A canonical reference for the basic semantics ("result in int32 range, canonical representation matches input substring") covers the majority of use cases.
 
 More precise references (locale-aware, whitespace-aware, prefix-aware) can be added as separate references. This v1 is the conservative core.
 
 ## Related references
 
-- [`ref-parseFloat-v1.md`](ref-parseFloat-v1.md) — float parsing.
-- `ref-parseInt-trimmed-v1` (proposed) — int parsing with whitespace handling.
-- `ref-parseInt-prefixes-v1` (proposed) — int parsing with hex/oct/binary prefixes.
-- `ref-parseInt-locale-v1` (proposed) — locale-aware digits.
+- [`ref-parseFloat-v1.md`](ref-parseFloat-v1.md): float parsing.
+- `ref-parseInt-trimmed-v1` (proposed): int parsing with whitespace handling.
+- `ref-parseInt-prefixes-v1` (proposed): int parsing with hex/oct/binary prefixes.
+- `ref-parseInt-locale-v1` (proposed): locale-aware digits.
 
 ## Read next
 
-- [`README.md`](README.md) — what reference contracts are.
-- [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md) — the mechanism this reference enables.
-- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md) — the worked demo using this reference.
+- [`README.md`](README.md): what reference contracts are.
+- [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md): the mechanism this reference enables.
+- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md): the worked demo using this reference.

@@ -123,6 +123,6 @@ The change is now load-bearing. Future contributions can use the new primitive f
 
 ## Read next
 
-- [release-process.md](release-process.md) — how the bump itself happens.
-- [docs/explanation/architecture.md](../explanation/architecture.md) — the architecture the spec governs.
-- [docs/reference/lattice-tractability.md](../reference/lattice-tractability.md) (when written) — the tractability theorem.
+- [release-process.md](release-process.md): how the bump itself happens.
+- [docs/explanation/architecture.md](../explanation/architecture.md): the architecture the spec governs.
+- [docs/reference/lattice-tractability.md](../reference/lattice-tractability.md) (when written): the tractability theorem.

@@ -132,5 +132,5 @@ The Rust kit integrates via the JetBrains Rust plugin. Rust-specific lift adapte
 ## Read next
 
 - [overview.md](overview.md).
-- [vscode.md](vscode.md) — VSCode equivalent.
-- [`../../contributing/writing-an-LSP-plugin.md`](../../contributing/writing-an-LSP-plugin.md) — porting to other editors.
+- [vscode.md](vscode.md): VSCode equivalent.
+- [`../../contributing/writing-an-LSP-plugin.md`](../../contributing/writing-an-LSP-plugin.md): porting to other editors.

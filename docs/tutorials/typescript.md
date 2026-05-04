@@ -1,13 +1,13 @@
 # Tutorial: TypeScript
 
-> **Status:** kit shipping (v1.4.1). Lift adapters shipping: `zod`, `class-validator`, `fast-check`. Verification today is via the Rust CLI as a subprocess; a native TypeScript CLI is planned. LSP plugin planned — until then, no IDE squigglies.
+> **Status:** kit shipping (v1.4.1). Lift adapters shipping: `zod`, `class-validator`, `fast-check`. Verification today is via the Rust CLI as a subprocess; a native TypeScript CLI is planned. LSP plugin planned (until then, no IDE squigglies).
 
 A walkthrough for TypeScript developers. By the end you have a `.proof` catalog of signed contract mementos for an npm package, lifted from existing `zod` schemas / `class-validator` decorators / `fast-check` properties, and verified via the Rust CLI.
 
 ## 1. What you'll have at the end
 
 - A `.proof` file shipping alongside your `package.json`.
-- Mementos derived from your existing `z.object`, `@IsEmail`, `fc.assert(fc.property(...))` annotations — no new spec language, no parallel spec to maintain.
+- Mementos derived from your existing `z.object`, `@IsEmail`, `fc.assert(fc.property(...))` annotations (no new spec language, no parallel spec to maintain).
 - A handshake report from `provekit prove` showing the discharge breakdown.
 
 ## 2. Prerequisites
@@ -67,11 +67,11 @@ The handshake walks the catalog, runs the three tiers, and reports the discharge
 
 ## What's next
 
-- [docs/how-to/publishing-a-proof.md](../how-to/publishing-a-proof.md) — ship the `.proof` alongside your npm package.
-- [docs/how-to/cross-domain-bridges.md](../how-to/cross-domain-bridges.md) — bind a TypeScript implementation to a reference contract that Rust / Python / Java implementations also bridge to.
-- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) — what `zod`, `class-validator`, `fast-check` adapters see and what they miss.
-- [docs/explanation/thesis.md](../explanation/thesis.md) — why the petabyte-to-64-bytes ratio works.
+- [docs/how-to/publishing-a-proof.md](../how-to/publishing-a-proof.md): ship the `.proof` alongside your npm package.
+- [docs/how-to/cross-domain-bridges.md](../how-to/cross-domain-bridges.md): bind a TypeScript implementation to a reference contract that Rust / Python / Java implementations also bridge to.
+- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md): what `zod`, `class-validator`, `fast-check` adapters see and what they miss.
+- [docs/explanation/thesis.md](../explanation/thesis.md): why the petabyte-to-64-bytes ratio works.
 
 ---
 
-*This tutorial is a stub. Contributions welcome — see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: actual npm package names, end-to-end runnable example, IDE wire-up once the LSP ships.*
+*This tutorial is a stub. Contributions welcome (see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: actual npm package names, end-to-end runnable example, IDE wire-up once the LSP ships.*)

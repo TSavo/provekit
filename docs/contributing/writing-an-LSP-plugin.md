@@ -187,5 +187,5 @@ Users who install the kit and the editor extension see red squigglies on contrac
 
 ## Read next
 
-- [docs/how-to/ide-integration/](../how-to/ide-integration/) — per-editor wire-up for shipping plugins.
-- [docs/reference/lsp-plugin-protocol.md](../reference/lsp-plugin-protocol.md) (when written) — the NDJSON protocol reference.
+- [docs/how-to/ide-integration/](../how-to/ide-integration/): per-editor wire-up for shipping plugins.
+- [docs/reference/lsp-plugin-protocol.md](../reference/lsp-plugin-protocol.md) (when written): the NDJSON protocol reference.

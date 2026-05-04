@@ -44,13 +44,13 @@ To support full mechanical short-circuit, each principle must also store:
 interface LibraryPrinciple {
   id: string;
   bugClassId: string;
-  dslSource: string;              // existing — the SAST query
-  smtTemplate: string;            // existing — for oracle #1
-  bindings: Binding[];            // existing — bind locus identifiers to SMT constants
-  fixTemplate: FixTemplate;       // NEW — parameterized AST transformation
-  testTemplate: TestTemplate;     // NEW — parameterized regression test
-  provenance: BugProvenance[];    // NEW — which BugsJS bugs / customer fixes contributed
-  alternateShapes?: ShapeRef[];   // existing (Leak 3 layer 1) — alternate syntactic forms
+  dslSource: string;              // existing: the SAST query
+  smtTemplate: string;            // existing: for oracle #1
+  bindings: Binding[];            // existing: bind locus identifiers to SMT constants
+  fixTemplate: FixTemplate;       // NEW: parameterized AST transformation
+  testTemplate: TestTemplate;     // NEW: parameterized regression test
+  provenance: BugProvenance[];    // NEW: which BugsJS bugs / customer fixes contributed
+  alternateShapes?: ShapeRef[];   // existing (Leak 3 layer 1): alternate syntactic forms
 }
 
 interface FixTemplate {

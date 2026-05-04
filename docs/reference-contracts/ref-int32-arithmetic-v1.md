@@ -56,12 +56,12 @@ A consumer's int32-range pre-condition matches; the bridge resolves; Tier 1 fire
 
 ## Related references
 
-- [`ref-uint32-arithmetic-v1.md`](ref-uint32-arithmetic-v1.md) — unsigned counterpart.
+- [`ref-uint32-arithmetic-v1.md`](ref-uint32-arithmetic-v1.md): unsigned counterpart.
 - `ref-int64-arithmetic-v1` (proposed).
-- `ref-int32-arithmetic-overflow-v1` (proposed) — explicit wrapping arithmetic semantics.
-- `ref-ieee754-arithmetic-v1` (proposed) — floating-point semantics.
+- `ref-int32-arithmetic-overflow-v1` (proposed): explicit wrapping arithmetic semantics.
+- `ref-ieee754-arithmetic-v1` (proposed): floating-point semantics.
 
 ## Read next
 
 - [`README.md`](README.md).
-- [`ref-parseInt-v1.md`](ref-parseInt-v1.md) — uses this reference internally.
+- [`ref-parseInt-v1.md`](ref-parseInt-v1.md): uses this reference internally.

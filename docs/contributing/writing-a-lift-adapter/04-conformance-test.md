@@ -137,5 +137,5 @@ The adapter is now load-bearing: any future change that affects canonical IR is 
 
 ## Read next
 
-- [05-publishing.md](05-publishing.md) — naming, versioning, distribution.
-- [docs/contributing/adapter-coverage-rubric.md](../adapter-coverage-rubric.md) (when written) — what counts as good coverage.
+- [05-publishing.md](05-publishing.md): naming, versioning, distribution.
+- [docs/contributing/adapter-coverage-rubric.md](../adapter-coverage-rubric.md) (when written): what counts as good coverage.

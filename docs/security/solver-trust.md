@@ -150,8 +150,8 @@ For everyone:
 
 ## Read next
 
-- [adapter-trust.md](adapter-trust.md) — lift adapters as TCB.
-- [signature-and-non-repudiation.md](signature-and-non-repudiation.md) — what signatures buy.
-- [threat-model.md](threat-model.md) — full threat coverage.
-- [`../contributing/writing-a-prover-backend.md`](../contributing/writing-a-prover-backend.md) — adding backends.
-- [`../explanation/compared-to/coq-fstar-lean.md`](../explanation/compared-to/coq-fstar-lean.md) (when written) — interactive theorem provers.
+- [adapter-trust.md](adapter-trust.md): lift adapters as TCB.
+- [signature-and-non-repudiation.md](signature-and-non-repudiation.md): what signatures buy.
+- [threat-model.md](threat-model.md): full threat coverage.
+- [`../contributing/writing-a-prover-backend.md`](../contributing/writing-a-prover-backend.md): adding backends.
+- [`../explanation/compared-to/coq-fstar-lean.md`](../explanation/compared-to/coq-fstar-lean.md) (when written): interactive theorem provers.

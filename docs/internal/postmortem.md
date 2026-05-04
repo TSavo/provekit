@@ -9,7 +9,7 @@
 
 "Logging is assertions made by eyeballs after the fact."
 
-Every `console.log` and `logger.info` a programmer writes is an implicit assertion — an `assert()` the programmer was too busy to formalize. provekit reads the surrounding code, derives what the programmer meant, expresses it as SMT-LIB, and proves it with Z3.
+Every `console.log` and `logger.info` a programmer writes is an implicit assertion: an `assert()` the programmer was too busy to formalize. provekit reads the surrounding code, derives what the programmer meant, expresses it as SMT-LIB, and proves it with Z3.
 
 The insight came in layers:
 
@@ -39,17 +39,17 @@ Tree-sitter parses the entry file. Import statements are resolved to source file
 
 For each file in topological order, assembles a context bundle per log statement: the file source, import sources, existing contracts from dependencies, calling context. Each bundle is everything the LLM needs for one derivation call.
 
-**Key design decision:** Context bundles are assembled before any LLM call. Phase 2 is deterministic and fast. The LLM sees a complete, pre-assembled prompt — not a live-assembled one that might vary.
+**Key design decision:** Context bundles are assembled before any LLM call. Phase 2 is deterministic and fast. The LLM sees a complete, pre-assembled prompt; not a live-assembled one that might vary.
 
 ### Phase 3: Contract Derivation
 **Input:** `bundles.json`
 **Output:** `.provekit/contracts/*.json`, `.provekit/derivation.json`
 
-For each call site in each bundle, sends the prompt to the LLM via Claude Agent SDK. Gets back SMT-LIB blocks. Feeds each to Z3. Writes contracts to disk. Contracts accumulate sequentially — derivation #N sees contracts #1 through #N-1.
+For each call site in each bundle, sends the prompt to the LLM via Claude Agent SDK. Gets back SMT-LIB blocks. Feeds each to Z3. Writes contracts to disk. Contracts accumulate sequentially: derivation #N sees contracts #1 through #N-1.
 
 **Key design decisions:**
-- **Sequential is the point.** Each derivation builds on all prior contracts. The context grows richer with each call site. This is not a performance problem — it's the accumulation loop working.
-- **Z3 validates every LLM output.** The LLM proposes, Z3 verifies. sat/unsat are ground truth on internal consistency (not on semantic correctness — the reviewer caught this distinction).
+- **Sequential is the point.** Each derivation builds on all prior contracts. The context grows richer with each call site. This is not a performance problem; it is the accumulation loop working.
+- **Z3 validates every LLM output.** The LLM proposes, Z3 verifies. sat/unsat are ground truth on internal consistency (not on semantic correctness; the reviewer caught this distinction).
 - **Vacuous filter.** Blocks where no assertion references two or more declared variables are rejected before Z3. Blocks with invented constants are prohibited by the prompt. This addresses the 27% noise rate found in the adversarial review.
 
 ### Phase 4: Principle Classification
@@ -84,7 +84,7 @@ The derivation prompt is the core of the system's capability. It evolved through
 6. **Full production prompt:** 7 principles, 7 teaching examples, two categories, principle tagging.
 7. **Vacuous prohibition:** "Every violation must model a code transition." Eliminated 27% noise.
 
-**Key insight:** The prompt matters more than the model. Haiku with a good prompt outperforms sonnet with a bad prompt. The teaching examples are the system's capability — not the model weights.
+**Key insight:** The prompt matters more than the model. Haiku with a good prompt outperforms sonnet with a bad prompt. The teaching examples are the system's capability; not the model weights.
 
 The prompt template lives at `prompts/invariant_derivation.md` and is assembled by Handlebars with template variables filled by Phase 2.
 
@@ -109,7 +109,7 @@ Real bugs found:
 
 ### orders.ts (cross-file, artifact pending)
 
-4 log statements with `inventory.ts` resolved as import. The LLM sees both files and derives cross-file precondition chains. Pipeline run in progress — artifact will be committed when complete.
+4 log statements with `inventory.ts` resolved as import. The LLM sees both files and derives cross-file precondition chains. Pipeline run in progress; artifact will be committed when complete.
 
 ### billing.ts (real production code, prior pipeline, artifact not preserved)
 
@@ -117,7 +117,7 @@ billing.ts was analyzed in a prior pipeline run (pre-refactor). The terminal out
 
 Real findings in production billing code:
 - **Credential exposure:** `authHeader.slice(7, 15)` leaks the full Bearer token when it's 8 chars or shorter. The "hint" is the entire secret.
-- **Audit-observation atomicity:** `logger.info("Operator cross-tenant access")` followed by a DB query — the audit record can describe a different state than what was actually served.
+- **Audit-observation atomicity:** `logger.info("Operator cross-tenant access")` followed by a DB query; the audit record can describe a different state than what was actually served.
 
 Both found from `logger.info` calls. Both confirmed by Z3.
 

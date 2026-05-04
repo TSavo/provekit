@@ -6,7 +6,7 @@ This is the deepest claim of the protocol's polyglot story. This doc unpacks the
 
 ## The setup
 
-Imagine three host languages — JavaScript, Rust, and Python — each with their own implementation of a function that parses integers. Each implementation has annotations:
+Imagine three host languages (JavaScript, Rust, and Python), each with their own implementation of a function that parses integers. Each implementation has annotations:
 
 ```javascript
 // JavaScript (using zod)
@@ -30,7 +30,7 @@ class ParseIntOutput(BaseModel):
     n: int = Field(..., ge=-2147483648, le=2147483647)
 ```
 
-Three different ecosystems, three different annotation libraries, three different syntaxes. Each implementation has been verified individually (perhaps by different tools — Z3 for the Rust contracts, a TypeScript checker for the zod schemas, pydantic's runtime validation paired with a property test).
+Three different ecosystems, three different annotation libraries, three different syntaxes. Each implementation has been verified individually (perhaps by different tools: Z3 for the Rust contracts, a TypeScript checker for the zod schemas, pydantic's runtime validation paired with a property test).
 
 ## The reference contract
 
@@ -111,7 +111,7 @@ Same target. Three bridges, all converging on `ref-parseInt-v1`.
 
 A consumer in JavaScript imports a Python ML library that calls `int(input_string)`. The Python library has shipped a `.proof` containing the Python bridge above.
 
-The JavaScript consumer's verifier sees the call site — Python's `int(...)` — and does the handshake:
+The JavaScript consumer's verifier sees the call site (Python's `int(...)`) and does the handshake:
 
 1. **Tier 1**: does the JavaScript consumer's pre-condition (whatever it is, at the call site) match the canonical IR for `ref-parseInt-v1`? If yes, hash equality discharges. Free.
 2. **Tier 2**: if no exact hash match, is there a cached implication memento for `(consumer-pre, ref-parseInt-v1)`? If yes, signature check discharges.
@@ -229,8 +229,8 @@ The combined effect is exactly what "compose across the dependency graph" means:
 
 ## Read next
 
-- [content-addressing-not-registry.md](content-addressing-not-registry.md) — the primitive cross-domain transfer is built on.
-- [monotonic-provability.md](monotonic-provability.md) — why bridges remain valid forever.
-- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md) — the worked demo.
-- [`../reference-contracts/README.md`](../reference-contracts/README.md) (when written) — the curated bridge anchors.
-- [thesis.md](thesis.md) — the full claim.
+- [content-addressing-not-registry.md](content-addressing-not-registry.md): the primitive cross-domain transfer is built on.
+- [monotonic-provability.md](monotonic-provability.md): why bridges remain valid forever.
+- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md): the worked demo.
+- [`../reference-contracts/README.md`](../reference-contracts/README.md) (when written): the curated bridge anchors.
+- [thesis.md](thesis.md): the full claim.

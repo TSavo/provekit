@@ -7,7 +7,7 @@ A walkthrough for Python developers. By the end you have a `.proof` catalog lift
 ## 1. What you'll have at the end
 
 - A `.proof` file alongside your Python package.
-- Mementos derived from your existing `pydantic` `Field` constraints, pytest tests, or `@provekit.contract` decorators — no parallel spec.
+- Mementos derived from your existing `pydantic` `Field` constraints, pytest tests, or `@provekit.contract` decorators (no parallel spec).
 - A handshake report from `provekit prove`.
 - LSP-driven squigglies in your editor on contract violations.
 
@@ -77,11 +77,11 @@ Same handshake, same discharge breakdown shape as the [Rust tutorial step 4](rus
 
 ## What's next
 
-- [docs/how-to/publishing-a-proof.md](../how-to/publishing-a-proof.md) — ship the `.proof` alongside your PyPI package.
-- [docs/how-to/cross-domain-bridges.md](../how-to/cross-domain-bridges.md) — bind a Python implementation to a reference contract.
-- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) — what `pydantic` and Layer-2 lift see and miss.
+- [docs/how-to/publishing-a-proof.md](../how-to/publishing-a-proof.md): ship the `.proof` alongside your PyPI package.
+- [docs/how-to/cross-domain-bridges.md](../how-to/cross-domain-bridges.md): bind a Python implementation to a reference contract.
+- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md): what `pydantic` and Layer-2 lift see and miss.
 - [docs/explanation/thesis.md](../explanation/thesis.md).
 
 ---
 
-*This tutorial is a stub. Contributions welcome — see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: end-to-end runnable example, LSP install per editor.*
+*This tutorial is a stub. Contributions welcome (see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: end-to-end runnable example, LSP install per editor.*)

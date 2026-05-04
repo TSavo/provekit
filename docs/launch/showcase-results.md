@@ -111,8 +111,8 @@ Same seed, same numbers (within nanosecond noise on Tier 1, microsecond noise on
 
 Two distinct hashing rules apply (see `protocol/specs/2026-04-30-protocol-catalog-format.md`):
 
-- **Spec files** (.md): raw-bytes BLAKE3-512 — `provekit-showcase hash-spec <path>`
-- **The catalog itself** (.json): JCS-canonical BLAKE3-512 — `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify`
+- **Spec files** (.md): raw-bytes BLAKE3-512: `provekit-showcase hash-spec <path>`
+- **The catalog itself** (.json): JCS-canonical BLAKE3-512: `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify`
 
 ```
 protocol catalog (JCS)  blake3-512:5b7701823f1e98b027173ac1961977db6e2f4125b8b3dba03c3aae5759a8c9780aca30bed9abdfdfe0b5a7a8748c29cfa2a058269386925e1753634019f05cd4

@@ -170,9 +170,9 @@ The pieces have been on the table since around 2016 (when LSP became universal a
 
 The structural shape matches earlier load-bearing assemblies:
 
-Bitcoin assembled hash chains + Merkle trees + Byzantine fault tolerance + proof-of-work + economic incentives — primitives that all existed in the literature — into a distributed timestamp server that did not exist as one thing. The 2008 paper's contribution was the assembly, not the components.
+Bitcoin assembled hash chains + Merkle trees + Byzantine fault tolerance + proof-of-work + economic incentives (primitives that all existed in the literature) into a distributed timestamp server that did not exist as one thing. The 2008 paper's contribution was the assembly, not the components.
 
-ProvekIt assembles content-addressed predicate canonicalization + LSP infrastructure + a unified cross-language linker abstraction + ProvekIt IR as common substrate — primitives that all exist — into a polyglot compile-time correctness gate that does not exist as one thing. The contribution is the assembly.
+ProvekIt assembles content-addressed predicate canonicalization + LSP infrastructure + a unified cross-language linker abstraction + ProvekIt IR as common substrate (primitives that all exist) into a polyglot compile-time correctness gate that does not exist as one thing. The contribution is the assembly.
 
 In both cases the components are public; the assembly is novel. The novelty is load-bearing because the assembly enables outcomes none of the components enables alone.
 
@@ -180,7 +180,7 @@ In both cases the components are public; the assembly is novel. The novelty is l
 
 **For developer ergonomics.** The user-facing surface is the type system they already know. Red squiggles for predicate violations, including cross-language violations, surfaced through the LSP plugin in their normal IDE. No new ceremony. The substrate disappears.
 
-**For polyglot codebases.** Cross-language correctness becomes a default, not an architectural project. A Go service calling a Rust extension via cgo, a Python script calling a C library via ctypes, a JavaScript front-end calling WASM, a Java backend calling .NET via JNI — every cross-language call is a call edge that the linker derives a bridge for. The bridge fails or succeeds; the failure is a diagnostic; the diagnostic is the same shape regardless of the language pair.
+**For polyglot codebases.** Cross-language correctness becomes a default, not an architectural project. A Go service calling a Rust extension via cgo, a Python script calling a C library via ctypes, a JavaScript front-end calling WASM, a Java backend calling .NET via JNI: every cross-language call is a call edge that the linker derives a bridge for. The bridge fails or succeeds; the failure is a diagnostic; the diagnostic is the same shape regardless of the language pair.
 
 **For supply chain trust.** A library's `.proof` bundle commits to the predicate-level correctness of every call site within it, content-addressed. A consumer pinning the bundle's `linkBundleCid` knows what they are getting at the predicate level: not the type signature, not the version label, not the SHA-256 of the binary. The actual semantic claim. Three-axis pins at consumer attestations compose contract, witness, and binary axes per manifesto §8.
 

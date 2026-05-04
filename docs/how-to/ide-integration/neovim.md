@@ -183,5 +183,5 @@ The C# LSP works alongside `omnisharp` or `csharp-ls`.
 ## Read next
 
 - [overview.md](overview.md).
-- [vscode.md](vscode.md) — VSCode equivalent.
-- [`../../contributing/writing-an-LSP-plugin.md`](../../contributing/writing-an-LSP-plugin.md) — porting to other editors.
+- [vscode.md](vscode.md): VSCode equivalent.
+- [`../../contributing/writing-an-LSP-plugin.md`](../../contributing/writing-an-LSP-plugin.md): porting to other editors.

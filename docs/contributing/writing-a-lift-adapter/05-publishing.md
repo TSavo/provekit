@@ -57,13 +57,13 @@ Each adapter ships a `COVERAGE.md` (or includes a section in the README) listing
 
 ## Skipped (warns)
 
-- z.string().datetime() — requires temporal sort, not yet in IR primitives
-- z.preprocess(...) — runtime transforms, not statically liftable
+- z.string().datetime(): requires temporal sort, not yet in IR primitives
+- z.preprocess(...): runtime transforms, not statically liftable
 
 ## Unrecognized (silently ignored)
 
-- Custom validators (z.custom(fn)) — by definition not statically liftable
-- z.lazy(...) — recursive schemas, planned for v0.4
+- Custom validators (z.custom(fn)): by definition not statically liftable
+- z.lazy(...): recursive schemas, planned for v0.4
 ```
 
 This manifest is the contract: users know exactly what the adapter sees. The `docs/reference/per-adapter-coverage.md` aggregator pulls from each adapter's manifest.
@@ -132,5 +132,5 @@ The adapter is now part of the substrate. Other adapters in other languages can 
 
 ## Read next
 
-- [docs/contributing/release-process.md](../release-process.md) (when written) — protocol bump coordination.
-- [docs/reference/per-adapter-coverage.md](../../reference/per-adapter-coverage.md) — the aggregator your adapter joins.
+- [docs/contributing/release-process.md](../release-process.md) (when written): protocol bump coordination.
+- [docs/reference/per-adapter-coverage.md](../../reference/per-adapter-coverage.md): the aggregator your adapter joins.

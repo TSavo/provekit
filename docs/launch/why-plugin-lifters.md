@@ -8,11 +8,11 @@ The plugin lifter is the only architectural element that lets the bounded substr
 
 ## Without the plugin lifter
 
-Every new authoring surface gets built into the Rust CLI. Every annotation library, every test framework, every domain-specific predicate language, every notation system humans have ever invented for expressing predicates — all of it lives inside one binary.
+Every new authoring surface gets built into the Rust CLI. Every annotation library, every test framework, every domain-specific predicate language, every notation system humans have ever invented for expressing predicates: all of it lives inside one binary.
 
 The matrix is N languages × M annotation libraries × K test frameworks × L domain DSLs. The matrix has no ceiling. Whoever ships the Rust CLI becomes the bottleneck for every adoption decision the protocol's user base ever makes.
 
-A pharma company wants to verify FDA-form invariants — they file a feature request and wait. A bank wants to lift its SOC2 controls — they file a feature request and wait. A chip vendor wants SystemVerilog assertion lifting — feature request, wait. The protocol's adoption ceiling is whatever the core team can ship in a quarter.
+A pharma company wants to verify FDA-form invariants; they file a feature request and wait. A bank wants to lift its SOC2 controls; they file a feature request and wait. A chip vendor wants SystemVerilog assertion lifting; feature request, wait. The protocol's adoption ceiling is whatever the core team can ship in a quarter.
 
 The "any verifiable proposition" claim is aspirational under this model. Operational reality is "any verifiable proposition we got around to writing a lifter for." Those are different protocols.
 
@@ -84,6 +84,6 @@ It is how ProvekIt becomes a substrate instead of a tool.
 
 It is the only place in the architecture where the bounded protocol meets the unbounded universe.
 
-Everything else — the canonical IR, the catalog, the foundation key, the verifier, the bluepaper's constant-time theorem — is the protocol substrate doing its job.
+Everything else (the canonical IR, the catalog, the foundation key, the verifier, the bluepaper's constant-time theorem) is the protocol substrate doing its job.
 
 The plugin lifter is what makes that substrate worth having.

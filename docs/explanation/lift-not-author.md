@@ -139,8 +139,8 @@ The five together are the operational consequences of "lift, don't author."
 
 ## Read next
 
-- [`../contributing/writing-a-lift-adapter/`](../contributing/writing-a-lift-adapter/) — how to write one.
-- [`../contributing/adapter-coverage-rubric.md`](../contributing/adapter-coverage-rubric.md) — coverage standards.
-- [content-addressing-not-registry.md](content-addressing-not-registry.md) — companion explanation.
-- [thesis.md](thesis.md) — the central claim that "lift, don't author" supports.
-- [`../reference/per-adapter-coverage.md`](../reference/per-adapter-coverage.md) — current coverage across shipping adapters.
+- [`../contributing/writing-a-lift-adapter/`](../contributing/writing-a-lift-adapter/): how to write one.
+- [`../contributing/adapter-coverage-rubric.md`](../contributing/adapter-coverage-rubric.md): coverage standards.
+- [content-addressing-not-registry.md](content-addressing-not-registry.md): companion explanation.
+- [thesis.md](thesis.md): the central claim that "lift, don't author" supports.
+- [`../reference/per-adapter-coverage.md`](../reference/per-adapter-coverage.md): current coverage across shipping adapters.

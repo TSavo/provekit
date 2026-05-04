@@ -6,7 +6,7 @@
 
 The structure of a ProvekIt `.proof` is not a design choice. It is the canonical encoding of "a chain of content-addressed, signed implications." Any system attempting to compose formal verifications across vendors, languages, and decades requires this data structure; ProvekIt is one canonical instantiation.
 
-The vertical stack of formal verification — from the Schrödinger equation to application bytecode — is a chain of mathematical implications. Quantum mechanics implies semiconductor physics. Semiconductor physics implies transistor behavior. Transistor behavior implies gate-level logic. Gate-level logic implies register-transfer level. RTL implies microarchitecture. Microarchitecture implies the instruction set architecture. The ISA implies the semantics of compiled bytecode. Bytecode semantics imply the source language semantics. Source semantics, plus annotations, imply behavioral contracts.
+The vertical stack of formal verification, from the Schrödinger equation to application bytecode, is a chain of mathematical implications. Quantum mechanics implies semiconductor physics. Semiconductor physics implies transistor behavior. Transistor behavior implies gate-level logic. Gate-level logic implies register-transfer level. RTL implies microarchitecture. Microarchitecture implies the instruction set architecture. The ISA implies the semantics of compiled bytecode. Bytecode semantics imply the source language semantics. Source semantics, plus annotations, imply behavioral contracts.
 
 At every link, there is a theorem with antecedent and consequent. At every link, the theorem is in principle content-addressable, signable, and reusable. Today, these implications exist in disconnected silos: HOL4 proofs of ARM, Coq proofs of CompCert, Lean proofs of cryptographic primitives, F\* proofs of TLS. None of these compose without ad-hoc bridging. Together they describe a stack from physics to application, but no current protocol composes them automatically.
 
@@ -43,7 +43,7 @@ The full stack, top to bottom:
 
 Each row is a formal model. Each transition between rows is a theorem. Together they describe the entirety of "what happens when you run this code."
 
-Most of this is, today, informal. The gap between "the running CPU obeys the ISA" and "the ISA's bytes correspond to the source program" is rarely formalized end to end. But each individual transition has been formalized in some setting, somewhere, by someone — and the union of those formalizations is the vertical stack of formal verification as it exists today.
+Most of this is, today, informal. The gap between "the running CPU obeys the ISA" and "the ISA's bytes correspond to the source program" is rarely formalized end to end. But each individual transition has been formalized in some setting, somewhere, by someone, and the union of those formalizations is the vertical stack of formal verification as it exists today.
 
 ## 2. Each layer is an implication
 
@@ -62,7 +62,7 @@ This pattern is universal:
 - **CompCert implies C compilation correctness**: given C source, the compiled assembly preserves the source's behavior under specified semantics.
 - **Hash-bounded contract implies API behavior**: given a function annotated with `@Min(0)`, the function's domain is constrained accordingly.
 
-Every link is `(antecedent_layer ⊢ consequent_layer)` with evidence. The evidence varies — kernel-checked proof terms, peer-reviewed mathematical arguments, simulation results, formal model checking outcomes — but the structural shape is the same.
+Every link is `(antecedent_layer ⊢ consequent_layer)` with evidence. The evidence varies (kernel-checked proof terms, peer-reviewed mathematical arguments, simulation results, formal model checking outcomes) but the structural shape is the same.
 
 The shape: **claim X implies claim Y, here is the evidence**.
 
@@ -96,9 +96,9 @@ A consumer's pin on a verified library is the canonical rank-3 tuple `(contractC
 
 Each axis is a different content projection (manifesto §11 in [`03-substrate-not-blockchain.md`](03-substrate-not-blockchain.md)); each catches a different attack class; the rank of the pin matches the rank of the assertion (manifesto §12).
 
-The vertical stack's links are also rank-N tuples. A claim about gate-level logic implying RTL semantics is structurally `(rtlSpecCid, gateNetlistCid, equivalenceProofCid, signerCid)` — rank-4 at minimum. An implication from BSIM transistor models to drift-diffusion equations is `(bsimModelCid, ddEquationsCid, derivationProofCid, calibrationDataCid, signerCid)` — rank-5.
+The vertical stack's links are also rank-N tuples. A claim about gate-level logic implying RTL semantics is structurally `(rtlSpecCid, gateNetlistCid, equivalenceProofCid, signerCid)`, rank-4 at minimum. An implication from BSIM transistor models to drift-diffusion equations is `(bsimModelCid, ddEquationsCid, derivationProofCid, calibrationDataCid, signerCid)`, rank-5.
 
-Each link in the chain has its own rank. ProvekIt's substrate transports tuples of any rank without modification. **This is the structural identity in its sharpest form: the data structure isn't just `(antecedent, consequent, evidence, signature)` — it is a tuple of arbitrary rank, where each component is a content-only projection of one axis of the assertion.**
+Each link in the chain has its own rank. ProvekIt's substrate transports tuples of any rank without modification. **This is the structural identity in its sharpest form: the data structure isn't just `(antecedent, consequent, evidence, signature)`; it is a tuple of arbitrary rank, where each component is a content-only projection of one axis of the assertion.**
 
 A protocol that supports only rank-1 pins cannot transport the vertical stack. A protocol that conflates content axes with envelope-state axes (collapsing `contractCid` and `attestationCid` onto one term, the pre-v1.4 mistake) loses predicates and produces drift. ProvekIt v1.4 is the protocol naming the rank-N tuple as primitive.
 
@@ -106,11 +106,11 @@ A protocol that supports only rank-1 pins cannot transport the vertical stack. A
 
 A common mistake in early content-addressing systems is to project rank-N relations onto rank-1 CIDs (the "sign the bundle file's bytes" pattern). This loses a predicate. The discarded axes leak back as drift: the bundle's hash moves on every honest re-mint because envelope state varies, and pins break that should hold.
 
-For standardization, this matters concretely. Reviewers at DO-178C, Common Criteria, ISO 26262 evaluations always ask: **how do you know the running binary corresponds to the formally verified specification?** Single-axis pinning answers "trust the signature" — an answer acceptable to no high-assurance regime.
+For standardization, this matters concretely. Reviewers at DO-178C, Common Criteria, ISO 26262 evaluations always ask: **how do you know the running binary corresponds to the formally verified specification?** Single-axis pinning answers "trust the signature", an answer acceptable to no high-assurance regime.
 
 Rank-3 pinning answers: the binary's hash is checked at runtime against `binaryCid`; the contract is identified by its content-only `contractCid`; the witness chain is signed by a prover whose backend the regime accepts; all three are bound together by the consumer's own signed attestation. Each axis has a distinct adversarial model and a distinct verification mechanism. **This is the shape regulators have always asked for, expressed as content-addressed CIDs with mathematically-defined composition.**
 
-The standardization argument in §9–§14 below assumes rank-3 pinning is the protocol's posture. Single-axis pinning would not satisfy any of the regimes in scope. Multi-dimensional pinning is the substrate the standards-track work needs — and it shipped in v1.4.
+The standardization argument in §9 through §14 below assumes rank-3 pinning is the protocol's posture. Single-axis pinning would not satisfy any of the regimes in scope. Multi-dimensional pinning is the substrate the standards-track work needs, and it shipped in v1.4.
 
 Some properties this data structure must have, in any deployment:
 
@@ -144,7 +144,7 @@ The map from generic implication to ProvekIt:
 | Permissionless publication | No central authority; mint and publish anywhere |
 | Composability | DAG of mementos; bridges chain across `.proof` files |
 
-ProvekIt is one canonical instantiation. Other instantiations are possible — a different hash function, a different signature scheme, a different canonicalization rule. The protocol's choices (BLAKE3-512, Ed25519, JCS) are pragmatic; another instantiation with different choices would have the same structural shape and would interoperate with ProvekIt only via translation layers.
+ProvekIt is one canonical instantiation. Other instantiations are possible: a different hash function, a different signature scheme, a different canonicalization rule. The protocol's choices (BLAKE3-512, Ed25519, JCS) are pragmatic; another instantiation with different choices would have the same structural shape and would interoperate with ProvekIt only via translation layers.
 
 The relevant claim is not "ProvekIt's specific choices are mandatory." It is "the data structure ProvekIt uses is the data structure any content-addressed verification protocol must use."
 
@@ -285,7 +285,7 @@ DO-178C is the current FAA / EASA-accepted standard for avionics software. DO-33
 ### Where ProvekIt currently stands relative to DO-178C
 
 - **DO-333 §FM.6.7.b**: requires that formal methods be "based on mathematical models and have a well-defined syntax and semantics, including operations." ProvekIt's IR + canonical form + handshake satisfy this requirement.
-- **DO-333 §FM.6.7.c**: requires that formal methods be sound — "if the analysis claims a property holds, it does." ProvekIt's soundness rests on the configured backend's soundness; with a constructive-proof backend (Coq, Lean), DO-333 soundness is achieved.
+- **DO-333 §FM.6.7.c**: requires that formal methods be sound: "if the analysis claims a property holds, it does." ProvekIt's soundness rests on the configured backend's soundness; with a constructive-proof backend (Coq, Lean), DO-333 soundness is achieved.
 - **DO-330**: requires that any formal-verification tool used be qualified at the appropriate Tool Qualification Level (TQL). For DAL A software (the highest), TQL-1 verification tools are required.
 
 ProvekIt's specific gaps:
@@ -551,7 +551,7 @@ BLAKE3-512 is collision-resistant to the best of current cryptographic knowledge
 
 A `.proof` and a chain of formally verified software from quantum physics to bytecode are 1:1 identical at the data-structure level. The data structure is `(antecedentCid, consequentCid, evidence, signature)`, composed via DAG.
 
-Each layer of the vertical stack — quantum mechanics, semiconductor physics, transistor models, gate-level logic, microarchitecture, ISA, machine code, bytecode, compiler IR, source semantics, application contracts — is a chain of such tuples. ProvekIt provides the canonical content-addressed encoding.
+Each layer of the vertical stack (quantum mechanics, semiconductor physics, transistor models, gate-level logic, microarchitecture, ISA, machine code, bytecode, compiler IR, source semantics, application contracts) is a chain of such tuples. ProvekIt provides the canonical content-addressed encoding.
 
 The protocol does not produce verifications. It transports them. It composes them. It distributes them. It makes them auditable end to end, mathematically rather than heuristically.
 
@@ -559,7 +559,7 @@ The road to standardization is well-defined: per-standard engagement on multi-ye
 
 This is the work of a generation. It is also the work that no other protocol has positioned itself to do. The structural identity between `.proof` and the vertical stack is not an accident; it is the canonical encoding of what content-addressed verification at scale requires. ProvekIt is the form, and the vertical stack is the substance.
 
-Whoever invests in this work — in the engineering, in the standards engagement, in the industry pilots — invests in the only protocol that can compose the chain. The chain has been built piece by piece for sixty years; the substrate has been waiting. Now it is here.
+Whoever invests in this work (in the engineering, in the standards engagement, in the industry pilots) invests in the only protocol that can compose the chain. The chain has been built piece by piece for sixty years; the substrate has been waiting. Now it is here.
 
 ## References
 
@@ -586,8 +586,8 @@ Whoever invests in this work — in the engineering, in the standards engagement
 
 ## Read next
 
-- [`../explanation/thesis.md`](../explanation/thesis.md) — the central claim of the protocol.
-- [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md) — the bridge mechanism.
-- [`../explanation/boundaries.md`](../explanation/boundaries.md) — the explicit non-claims.
-- [`../security/threat-model.md`](../security/threat-model.md) — what the protocol catches and what it does not.
-- [`../contributing/proposing-a-spec-change.md`](../contributing/proposing-a-spec-change.md) — adding new IR primitives to capture more of the vertical stack.
+- [`../explanation/thesis.md`](../explanation/thesis.md): the central claim of the protocol.
+- [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md): the bridge mechanism.
+- [`../explanation/boundaries.md`](../explanation/boundaries.md): the explicit non-claims.
+- [`../security/threat-model.md`](../security/threat-model.md): what the protocol catches and what it does not.
+- [`../contributing/proposing-a-spec-change.md`](../contributing/proposing-a-spec-change.md): adding new IR primitives to capture more of the vertical stack.

@@ -81,6 +81,6 @@ The protocol catalog's CID is the protocol version. Verifying the catalog is the
 
 ## Read next
 
-- [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) — full formal protocol specification with all spec CIDs.
-- [`../explanation/architecture.md`](../explanation/architecture.md) — protocol mechanics.
-- [`../contributing/build.md`](../contributing/build.md) — how to recompute via `make conformance`.
+- [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md): full formal protocol specification with all spec CIDs.
+- [`../explanation/architecture.md`](../explanation/architecture.md): protocol mechanics.
+- [`../contributing/build.md`](../contributing/build.md): how to recompute via `make conformance`.

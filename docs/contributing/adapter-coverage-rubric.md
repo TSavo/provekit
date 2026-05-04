@@ -78,7 +78,7 @@ Cross-adapter equivalence is the strongest test. It catches subtle canonicalizat
 When deciding whether to put an annotation in A or B, apply this smell test:
 
 - Can you write down the canonical IR by hand?
-- Does the IR have any "fudge" — sort coercions, bound-variable renaming, predicate composition that doesn't quite match the annotation's semantics?
+- Does the IR have any "fudge": sort coercions, bound-variable renaming, predicate composition that doesn't quite match the annotation's semantics?
 - Would a careful reader of the canonical IR be surprised by what it claims?
 
 If any answer is "yes," the annotation belongs in B. Don't lift fudge.
@@ -106,14 +106,14 @@ z.literal(V), z.enum([...]), z.nativeEnum(E)
 
 ## B: skipped with warning (8 annotations)
 
-z.string().datetime() — temporal sort not yet in IR primitives [provekit#142]
-z.string().ip() — requires ip-format predicate [provekit#143]
-z.preprocess(...) — runtime transforms, structurally not liftable
-z.transform(...) — same
-z.refine(fn) — custom predicate; refines runtime, not statically liftable
-z.lazy(...) — recursive schemas, planned for v0.4 [provekit#144]
-z.intersection([...]) — intersect of schemas; semantics differ from logical and
-z.brand(...) — phantom-type tagging; no IR equivalent
+z.string().datetime(): temporal sort not yet in IR primitives [provekit#142]
+z.string().ip(): requires ip-format predicate [provekit#143]
+z.preprocess(...): runtime transforms, structurally not liftable
+z.transform(...): same
+z.refine(fn): custom predicate; refines runtime, not statically liftable
+z.lazy(...): recursive schemas, planned for v0.4 [provekit#144]
+z.intersection([...]): intersect of schemas; semantics differ from logical and
+z.brand(...): phantom-type tagging; no IR equivalent
 
 ## C: unrecognized (0 annotations as of 2025-12-01)
 
@@ -124,7 +124,7 @@ Adapter does not validate syntactic well-formedness; defers to zod's parser.
 ## Cross-adapter parity
 
 Tested against:
-- (none currently — zod is the only TypeScript schema library this adapter covers)
+- (none currently; zod is the only TypeScript schema library this adapter covers)
 
 ## Real-codebase sample
 
@@ -146,6 +146,6 @@ This is the slow path. Coverage grows monotonically over time; old codebases ben
 
 ## Read next
 
-- [writing-a-lift-adapter/01-pick-a-source-library.md](writing-a-lift-adapter/01-pick-a-source-library.md) — coverage tiers (A/B/C) per adapter.
-- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) — aggregator across all shipping adapters.
-- [proposing-a-spec-change.md](proposing-a-spec-change.md) — when an IR primitive doesn't exist yet.
+- [writing-a-lift-adapter/01-pick-a-source-library.md](writing-a-lift-adapter/01-pick-a-source-library.md): coverage tiers (A/B/C) per adapter.
+- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md): aggregator across all shipping adapters.
+- [proposing-a-spec-change.md](proposing-a-spec-change.md): when an IR primitive doesn't exist yet.

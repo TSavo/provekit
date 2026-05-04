@@ -21,7 +21,7 @@ A monorepo with four services in four languages, each shipping a `.proof`. A con
 
 ## 2. The load-bearing primitive: reference contracts
 
-The bridge mechanism only works if multiple implementations bridge to the **same** target CID. That target is a curated reference contract — a canonical anchor like:
+The bridge mechanism only works if multiple implementations bridge to the **same** target CID. That target is a curated reference contract (a canonical anchor like:)
 
 - `ref-parseInt-v1` (ECMA-262 `parseInt` semantics)
 - `ref-email-format-v1` (RFC 5322 email validation)
@@ -89,7 +89,7 @@ cross-service handshake:
 hash-discharge fraction (cross-language): 0.96
 ```
 
-The 96% fraction is the proof of the claim. Tier 1 means `memcmp` returned zero on the publisher's post-hash and the consumer's pre-hash — one CPU instruction per discharge. No solver invocation, no signature check, no symbol-name lookup. Just hash equality across language boundaries.
+The 96% fraction is the proof of the claim. Tier 1 means `memcmp` returned zero on the publisher's post-hash and the consumer's pre-hash (one CPU instruction per discharge. No solver invocation, no signature check, no symbol-name lookup. Just hash equality across language boundaries).
 
 ## What this validates
 
@@ -97,10 +97,10 @@ The thesis says: "the verification problem at supply-chain scale has the same sh
 
 ## What's next
 
-- [docs/explanation/thesis.md](../explanation/thesis.md) — the full claim.
-- [docs/explanation/cross-domain-verification.md](../explanation/cross-domain-verification.md) — the mechanism in depth.
-- [docs/reference-contracts/](../reference-contracts/) — the curated anchor set this demo depends on.
-- [docs/contributing/porting-to-a-new-language.md](../contributing/porting-to-a-new-language.md) — to add another service in your language.
+- [docs/explanation/thesis.md](../explanation/thesis.md): the full claim.
+- [docs/explanation/cross-domain-verification.md](../explanation/cross-domain-verification.md): the mechanism in depth.
+- [docs/reference-contracts/](../reference-contracts/): the curated anchor set this demo depends on.
+- [docs/contributing/porting-to-a-new-language.md](../contributing/porting-to-a-new-language.md): to add another service in your language.
 
 ---
 

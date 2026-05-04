@@ -1,6 +1,6 @@
 # Writing a kit, step 5: the self-contracts package
 
-The self-contracts package is the conformance gate's strongest check. Every kit mints a fixed self-contracts catalog under the foundation key. The minted bundle's CID is pinned in `make conformance`. A single byte of drift in any kit component — canonicalizer, claim envelope codec, proof envelope codec — causes the self-contracts CID to drift, which the harness detects.
+The self-contracts package is the conformance gate's strongest check. Every kit mints a fixed self-contracts catalog under the foundation key. The minted bundle's CID is pinned in `make conformance`. A single byte of drift in any kit component (canonicalizer, claim envelope codec, proof envelope codec) causes the self-contracts CID to drift, which the harness detects.
 
 This is the strongest test because it composes every layer your kit has built. Steps 1-4 ensure individual fixtures pass; step 5 ensures the *whole stack composed* produces identical output.
 
@@ -36,7 +36,7 @@ Drift in any layer changes the bytes:
 - Drift in the claim envelope codec changes the outer CIDs of contract mementos.
 - Drift in the CBOR encoder changes the bundle's outer CID.
 - Drift in the signing path changes the bundle's signature, which changes the outer CID.
-- Drift in the timestamp format, public key encoding, any small detail — propagates to the outer CID.
+- Drift in the timestamp format, public key encoding, any small detail propagates to the outer CID.
 
 The pinned outer CID is a single 64-byte test that exercises all of this. If your kit produces it, every layer is correct.
 
@@ -87,11 +87,11 @@ This is one of the few coordinated activities in ProvekIt. A v1.2.0 release is g
 
 ## Bridge IR gap
 
-Several kits today (C#, Java, Ruby, C++) ship "partial" bridge IR — they pass the happy-path bytes-equality fixture but cannot construct or round-trip the full v1.1.0 9-field BridgeDeclaration. These kits' self-contracts may include a bridge member, which means partial-bridge kits cannot fully mint self-contracts.
+Several kits today (C#, Java, Ruby, C++) ship "partial" bridge IR: they pass the happy-path bytes-equality fixture but cannot construct or round-trip the full v1.1.0 9-field BridgeDeclaration. These kits' self-contracts may include a bridge member, which means partial-bridge kits cannot fully mint self-contracts.
 
 This is a known issue tracked per-kit (see [`docs/reference/per-language-status.md`](../../reference/per-language-status.md)). Step 6 covers the full bridge IR.
 
-If you are porting a new kit, do step 6 before pinning self-contracts. If you ship without full bridge support, your kit is "self-contracts-partial" — usable but not fully conformant.
+If you are porting a new kit, do step 6 before pinning self-contracts. If you ship without full bridge support, your kit is "self-contracts-partial": usable but not fully conformant.
 
 ## When this step is done
 
@@ -99,5 +99,5 @@ Your kit's `mint-self-contracts` produces a bundle whose outer CID matches a pin
 
 ## Read next
 
-- [06-bridge-IR.md](06-bridge-IR.md) — the full v1.1.0 BridgeDeclaration shape.
-- [docs/contributing/release-process.md](../release-process.md) (when written) — protocol version bumps and re-pinning.
+- [06-bridge-IR.md](06-bridge-IR.md): the full v1.1.0 BridgeDeclaration shape.
+- [docs/contributing/release-process.md](../release-process.md) (when written): protocol version bumps and re-pinning.

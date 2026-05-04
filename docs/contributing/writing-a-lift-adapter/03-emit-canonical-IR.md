@@ -147,5 +147,5 @@ Given a structured intermediate from step 2, your canonicalization layer produce
 
 ## Read next
 
-- [04-conformance-test.md](04-conformance-test.md) — the fixture-based conformance gate.
-- [docs/reference/ir/](../../reference/ir/) (when written) — IR primitives and canonical predicates reference.
+- [04-conformance-test.md](04-conformance-test.md): the fixture-based conformance gate.
+- [docs/reference/ir/](../../reference/ir/) (when written): IR primitives and canonical predicates reference.

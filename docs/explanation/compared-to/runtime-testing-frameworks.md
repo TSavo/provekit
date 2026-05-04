@@ -97,7 +97,7 @@ Property-based testing (Hypothesis, fast-check, proptest, QuickCheck) sits betwe
 
 ProvekIt's lift adapters for `proptest` and `hypothesis` (planned) lift the property-test specifications into canonical IR. The lifted contracts are the same shape as proof-level contracts; the property-test author's specification becomes a proof candidate.
 
-This is a sweet spot: property tests are easier to write than proofs, and the lift adapter promotes them into the protocol's substrate. Whether the property is then re-verified by Z3 (or another backend) at Tier 3 — promoting the test into a proof — is the verifier's choice.
+This is a sweet spot: property tests are easier to write than proofs, and the lift adapter promotes them into the protocol's substrate. Whether the property is then re-verified by Z3 (or another backend) at Tier 3 (promoting the test into a proof) is the verifier's choice.
 
 ## Decision tree for testing strategy
 
@@ -145,7 +145,7 @@ The right framing: ProvekIt formalizes and federates the contract-style work tes
 
 ## Read next
 
-- [coq-fstar-lean.md](coq-fstar-lean.md) — interactive theorem provers.
-- [kani-prusti-creusot.md](kani-prusti-creusot.md) — Rust-specific provers.
-- [`../boundaries.md`](../boundaries.md) — what ProvekIt is NOT.
-- [`../cold-start.md`](../cold-start.md) — when proofs amortize and when they don't.
+- [coq-fstar-lean.md](coq-fstar-lean.md): interactive theorem provers.
+- [kani-prusti-creusot.md](kani-prusti-creusot.md): Rust-specific provers.
+- [`../boundaries.md`](../boundaries.md): what ProvekIt is NOT.
+- [`../cold-start.md`](../cold-start.md): when proofs amortize and when they don't.

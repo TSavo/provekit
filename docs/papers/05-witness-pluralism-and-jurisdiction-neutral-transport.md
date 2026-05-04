@@ -9,11 +9,11 @@ The v1.4 substrate is content-agnostic. Static analyzer attestations, formal ver
 1. **Witness pluralism in kind.** Every category of claim about a binary rides on one substrate.
 2. **Witness pluralism in valence.** Negative attestations ("binary X fails contract Y") are first-class. Adversarial witnesses share the infrastructure with positive witnesses; consumer policy decides what to do with each. CVE, NVD, GHSA become memento streams. Yank-by-counter-witness is a primitive operation, not a registry feature.
 3. **Linear scaling.** New witnesses, kits, consumers compose at O(N+M+K), not O(N×M×K). This is the marketplace property, made literal.
-4. **Existing frameworks reduce to body conventions.** SLSA, Sigstore, in-toto, SCITT, CycloneDX, OSCAL — every supply-chain framework is expressible as body schema plus tooling under the substrate.
+4. **Existing frameworks reduce to body conventions.** SLSA, Sigstore, in-toto, SCITT, CycloneDX, OSCAL: every supply-chain framework is expressible as body schema plus tooling under the substrate.
 5. **Transport is fungible.** Content-addressing makes distribution mechanism irrelevant. Mementos flow through IPFS, BitTorrent, HTTPS, git, S3, USB sticks, Bitcoin OP_RETURN. There can be no ProvekIt server because there can't be one.
 6. **Spec authorship is not spec ownership.** The architect authored the substrate; the marketplace forms downstream. The reference implementation bootstraps adoption without controlling it. This is the cURL/HTTP relationship made explicit.
 
-These consequences restructure the standardization story. Regulators publish content-addressed policy mementos naming their (contract spec + trusted signer set) requirements. Consumers pin to policy CIDs. The per-regulator standardization ask collapses from "amend this regime's text" to "publish a memento under your authority key" — measured in 1-2-year horizons rather than 10-15-year ones for the regulator-acceptance phase, while the substrate-level engineering work (TCB minimization, tool qualification, conformance harness) continues on the longer track.
+These consequences restructure the standardization story. Regulators publish content-addressed policy mementos naming their (contract spec + trusted signer set) requirements. Consumers pin to policy CIDs. The per-regulator standardization ask collapses from "amend this regime's text" to "publish a memento under your authority key", measured in 1-2-year horizons rather than 10-15-year ones for the regulator-acceptance phase, while the substrate-level engineering work (TCB minimization, tool qualification, conformance harness) continues on the longer track.
 
 This paper makes the claims precise, develops the security and governance implications, and proposes the standardization restructure that follows.
 
@@ -27,10 +27,10 @@ The v1.4 substrate-layers spec (`2026-05-03-substrate-layers-envelope-header-bod
 +-----------------+
 |    ENVELOPE     |  signer, declaredAt, signature
 +-----------------+
-|     HEADER      |  data — what the substrate verifies
+|     HEADER      |  data: what the substrate verifies
 |     (data)      |  (kind, content cid, required references)
 +-----------------+
-|      BODY       |  metadata — what tooling interprets
+|      BODY       |  metadata: what tooling interprets
 |   (metadata)    |  (everything else)
 +-----------------+
 ```
@@ -157,7 +157,7 @@ This is what existing supply-chain attestation frameworks (CSAF, OpenVEX) approx
 
 ### §3.4 Defenders and attackers share infrastructure
 
-This is the security-theoretic consequence. The substrate has no anti-adversarial layer. An attacker can publish whatever signed memento they wish — including fraudulent positive witnesses for malicious binaries, fraudulent counter-witnesses against legitimate binaries, fake advisories, fake compliance attestations.
+This is the security-theoretic consequence. The substrate has no anti-adversarial layer. An attacker can publish whatever signed memento they wish, including fraudulent positive witnesses for malicious binaries, fraudulent counter-witnesses against legitimate binaries, fake advisories, fake compliance attestations.
 
 The substrate does not stop them. Two reasons it doesn't need to:
 
@@ -194,7 +194,7 @@ Pre-substrate, "vulnerability scanning" and "verification" are separate tools wi
 
 ## §4. Linear scaling
 
-The witness-pluralism claim is structural. The §10 closure-by-composition claim makes it operational. Together they yield a scaling property that distinguishes the substrate from coordinating systems. §4.1–§4.3 motivate. §4.4 states the formal claim as the Substrate Independence Theorem with three constituent lemmas. §4.5 enumerates seven corollaries that follow mechanically from the theorem.
+The witness-pluralism claim is structural. The §10 closure-by-composition claim makes it operational. Together they yield a scaling property that distinguishes the substrate from coordinating systems. Sections 4.1 through 4.3 motivate. §4.4 states the formal claim as the Substrate Independence Theorem with three constituent lemmas. §4.5 enumerates seven corollaries that follow mechanically from the theorem.
 
 ### §4.1 The math
 
@@ -206,7 +206,7 @@ With §10 closure, the three axes are independent. An analyzer ships its tool wi
 
 ### §4.2 The marketplace property
 
-The N+M+K vs. N×M×K distinction is the marketplace property, made literal. The npm registry has approximately 2.5 million packages because adding a package is O(1) — the package author publishes; consumers pull; no per-package consumer-side coordination. A coordinating registry with the same number of participants would have O(N×M×K) coordination cost; the system would not scale, and ecosystems empirically don't reach those scales unless they shed coordination.
+The N+M+K vs. N×M×K distinction is the marketplace property, made literal. The npm registry has approximately 2.5 million packages because adding a package is O(1): the package author publishes; consumers pull; no per-package consumer-side coordination. A coordinating registry with the same number of participants would have O(N×M×K) coordination cost; the system would not scale, and ecosystems empirically don't reach those scales unless they shed coordination.
 
 The witness layer scales the same way. Adding semgrep does not require coordination with Coverity, with the Rust kit, with the Python kit, or with any specific consumer. semgrep ships its tool; consumers who trust semgrep's signing key add it to their policy; nothing else needs to change. The same is true for adding a new kit (e.g., the planned C++ lift adapter for `[[expects:]]` and `[[ensures:]]`) and for adding a new consumer (a new project, a new team, a new regulated environment).
 
@@ -214,7 +214,7 @@ Without this property, the substrate would be just another supply-chain attestat
 
 ### §4.3 The architectural humility behind the leverage
 
-The N+M+K scaling is not a feature added to the substrate; it is what falls out when the substrate refuses to coordinate. Each refusal — to validate body fields, to centralize signer trust, to mandate witness types, to bind to a distribution mechanism — is what enables the next composition step. Architectural humility is the leverage. The substrate is small precisely so that the composition layer can be unbounded.
+The N+M+K scaling is not a feature added to the substrate; it is what falls out when the substrate refuses to coordinate. Each refusal (to validate body fields, to centralize signer trust, to mandate witness types, to bind to a distribution mechanism) is what enables the next composition step. Architectural humility is the leverage. The substrate is small precisely so that the composition layer can be unbounded.
 
 A counterfactual substrate with more centralization (a registry of approved analyzers, a mandated witness-type taxonomy, a trust-anchor program) would have lower ecosystem-bootstrap friction at the cost of marketplace scaling. It would look more like a traditional standards body: high coordination cost per participant, low total participant count, slow evolution. The witness layer would not host arbitrarily many analyzers because each would need to be approved.
 
@@ -222,7 +222,7 @@ The substrate's design choice is the opposite. The architect specifies; nobody o
 
 ### §4.4 The Substrate Independence Theorem
 
-The motivation in §4.1–§4.3 is now stated as a formal claim. Three independence lemmas establish that producers, consumers, and policy authors each operate without cross-axis coordination. The theorem is their composition.
+The motivation in sections 4.1 through 4.3 is now stated as a formal claim. Three independence lemmas establish that producers, consumers, and policy authors each operate without cross-axis coordination. The theorem is their composition.
 
 **Lemma 4.4.1 (Producer Independence).** Let two witness producers P_i and P_j each emit signed mementos under the canonical envelope using their respective signing keys. Verification of either P_i's or P_j's mementos requires only the substrate spec at its content-addressed CID and the relevant signer's public key. P_i has zero shared state with P_j; the coordination cost between any pair of producers is exactly zero.
 
@@ -335,7 +335,7 @@ OSCAL is mechanically the closest existing framework to the substrate's policy-a
 
 ### §5.7 The implication
 
-Existing supply-chain frameworks are not competitors to the substrate. They are body conventions the substrate transports natively. A SLSA-conformant build system, a Sigstore-rooted signing pipeline, an in-toto pipeline, a SCITT transparency log, a CycloneDX SBOM generator, an OSCAL profile authoring tool — all are tools that emit body content the substrate transports.
+Existing supply-chain frameworks are not competitors to the substrate. They are body conventions the substrate transports natively. A SLSA-conformant build system, a Sigstore-rooted signing pipeline, an in-toto pipeline, a SCITT transparency log, a CycloneDX SBOM generator, an OSCAL profile authoring tool: all are tools that emit body content the substrate transports.
 
 The substrate is the wire under all of them. Adoption does not require choosing one framework over another. The substrate is multilingual: it carries SLSA and Sigstore and in-toto and SCITT and CycloneDX and OSCAL simultaneously. Consumers configure their policy to require whichever combination of frameworks their jurisdiction or threat model demands.
 
@@ -424,7 +424,7 @@ TCP carries packets. The protocol is content-agnostic: the transport does not kn
 
 TCP got standardized once: RFC 793 in 1981, with subsequent maintenance. Application protocols are independent: HTTP/0.9 in 1991, HTTP/1.0 in 1996 (RFC 1945), HTTP/1.1 in 1997 (RFC 2068), HTTP/2 in 2015 (RFC 7540), HTTP/3 in 2022 (RFC 9114). Each application protocol's specification is a separate document; each has its own working group; each evolves on its own schedule. TCP itself is essentially unchanged.
 
-The composition produces an ecosystem in which different jurisdictions, networks, and applications all share infrastructure. Different countries' firewall policies layer on top of TCP without re-specifying TCP. Different content-moderation regimes layer on top without re-specifying. PCI-DSS for payments, HIPAA for healthcare, FedRAMP for federal cloud — each is a regime layered on top of TLS (which is layered on top of TCP). None requires TCP or TLS to amend; they layer policy.
+The composition produces an ecosystem in which different jurisdictions, networks, and applications all share infrastructure. Different countries' firewall policies layer on top of TCP without re-specifying TCP. Different content-moderation regimes layer on top without re-specifying. PCI-DSS for payments, HIPAA for healthcare, FedRAMP for federal cloud: each is a regime layered on top of TLS (which is layered on top of TCP). None requires TCP or TLS to amend; they layer policy.
 
 ProvekIt's substrate has the same architectural shape. The substrate (sign + hash + reference + envelope/header/body, plus the four invariants) is the wire. Application protocols ride on top: SLSA-style provenance, Sigstore-rooted signing, in-toto pipelines, SCITT transparency, OSCAL controls, regulator policies. Each application protocol defines its own body conventions.
 
@@ -573,7 +573,7 @@ The substrate-level engineering work (TCB minimization, constructive-proof backe
 
 **New framing:** Each Protection Profile becomes a policy memento. A PP for a smart-card OS, an HSM, a TEE, or a high-assurance database is signed by the PP authoring authority (typically a national scheme); its body specifies the same shape as §10.1's DO-178C policy.
 
-Consumers in CC-certified products pin to the relevant PP's policy CID. National schemes can publish their own variants; the CCRA's mutual-recognition mechanism becomes "PP A's policy memento is recognized by jurisdictions X, Y, Z" — itself a memento of recognitions, signed by each jurisdiction's authority.
+Consumers in CC-certified products pin to the relevant PP's policy CID. National schemes can publish their own variants; the CCRA's mutual-recognition mechanism becomes "PP A's policy memento is recognized by jurisdictions X, Y, Z", itself a memento of recognitions, signed by each jurisdiction's authority.
 
 Estimated horizon: 1-2 years per PP, parallelizable across PPs. CCRA mutual recognition becomes a side question; jurisdictions independently honor PPs by including their CIDs in their own policy memento sets.
 
@@ -617,7 +617,7 @@ A complete paper engages plausible counterarguments. Eight of them follow.
 
 ### "This sounds too easy. Real standardization is harder."
 
-Yes, the substrate-level standardization is hard. TCB minimization (constructive-proof backends, multi-backend concurrence, formal semantics for the IR), tool qualification kits (TQL-1 evidence packages), conformance harness governance, multi-vendor interoperability testing — all are years of engineering work. This is paper 04's track and is not collapsed by anything in this paper.
+Yes, the substrate-level standardization is hard. TCB minimization (constructive-proof backends, multi-backend concurrence, formal semantics for the IR), tool qualification kits (TQL-1 evidence packages), conformance harness governance, multi-vendor interoperability testing: all are years of engineering work. This is paper 04's track and is not collapsed by anything in this paper.
 
 What collapses is the regulator-level adoption ask. Pre-substrate, "DO-178C accepts hash-bounded verification" was a 10-15 year project of amending DO-333. Post-substrate, "RTCA publishes a DO-178C-DAL-A policy memento" is a 1-2 year publication project. The regulator's work shrinks; the substrate-level work does not.
 
@@ -629,7 +629,7 @@ This is the same shape as TLS certificate handling. Each jurisdiction has its ow
 
 ### "Why isn't SLSA / Sigstore / SCITT good enough?"
 
-These frameworks are good and complementary, not replaced. §5 explicitly maps them onto the substrate as body conventions. The substrate's value-add is composition: SLSA can attest build provenance, Sigstore can root identity, SCITT can provide transparency, OSCAL can author controls — all simultaneously, on the same wire, with one trust calculus. Existing frameworks specify both transport and content together; the substrate separates them, enabling composition.
+These frameworks are good and complementary, not replaced. §5 explicitly maps them onto the substrate as body conventions. The substrate's value-add is composition: SLSA can attest build provenance, Sigstore can root identity, SCITT can provide transparency, OSCAL can author controls, all simultaneously, on the same wire, with one trust calculus. Existing frameworks specify both transport and content together; the substrate separates them, enabling composition.
 
 ### "What about discovery? Without a central registry, how do consumers find policy mementos?"
 
@@ -641,7 +641,7 @@ Nothing. Anyone can publish a memento under their own signing key. Adoption requ
 
 This is the same shape as DNSSEC (anyone can publish a zone, but trust is anchored at root keys), TLS (anyone can issue a certificate under their own CA, but trust is anchored at root stores), and PGP/GPG (anyone can sign, but trust is web-of-trust or explicit). The substrate inherits the shape and the security model.
 
-### "Adversarial witnesses produce a denial-of-service attack — flood the network with fake CVEs."
+### "Adversarial witnesses produce a denial-of-service attack: flood the network with fake CVEs."
 
 A flood of fake adversarial witnesses (under non-trusted signing keys) consumes bandwidth but does not affect verification. Consumers honor only adversarial witnesses from their `advisoryAuthorities` trust set. A fake CVE under an unknown key is unconsumed. The flood is wasted effort.
 
@@ -693,7 +693,7 @@ The papers compose. Paper 04 makes the architectural claim and walks the enginee
 
 ## §13. Conclusion
 
-The substrate is content-agnostic. Every external claim about a binary — analyzer attestation, formal verifier output, test run, build provenance, audit signoff, reproducibility claim, regulator policy, adversarial witness — is the same envelope/header/body shape. Different signers, different body conventions, same wire format.
+The substrate is content-agnostic. Every external claim about a binary (analyzer attestation, formal verifier output, test run, build provenance, audit signoff, reproducibility claim, regulator policy, adversarial witness) is the same envelope/header/body shape. Different signers, different body conventions, same wire format.
 
 This produces six operational consequences. Witnesses pluralize in kind, in valence. Composition is free, so ecosystem extension scales linearly. Existing frameworks reduce to body conventions the substrate carries natively. Transport is fungible, so distribution mechanism is independent of substrate semantics. Spec authorship is not spec ownership, so implementations are forkable and the marketplace forms downstream.
 
@@ -711,7 +711,7 @@ The substrate stays small. The composition layer carries the world.
 
 - Paper 01 (Whitepaper): `docs/papers/01-whitepaper.md`
 - Paper 02 (Bluepaper): `docs/papers/02-bluepaper.md`
-- Paper 03 (Substrate, not Blockchain): `docs/papers/03-substrate-not-blockchain.md` — manifesto §10 closure, §11 multi-dimensional address, §12 rank-N tuple
+- Paper 03 (Substrate, not Blockchain): `docs/papers/03-substrate-not-blockchain.md`: manifesto §10 closure, §11 multi-dimensional address, §12 rank-N tuple
 - Paper 04 (Vertical Stack and Standardization): `docs/papers/04-vertical-stack-and-standardization.md`
 - Multi-dimensional pinning: `docs/security/multi-dimensional-pinning.md`
 - Threat model (v1.4): `docs/security/threat-model.md`

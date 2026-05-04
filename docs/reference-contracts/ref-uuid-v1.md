@@ -41,10 +41,10 @@ Canonical regex:
 
 ## Implementations that bridge to this reference
 
-- [TypeScript] zod's `z.string().uuid()` — *bridge planned*
-- [Python] pydantic's `UUID4` (and friends) — *bridge planned*
-- [Rust] `uuid::Uuid` parsing — *bridge planned*
-- [Java] `java.util.UUID.fromString` — *bridge planned*
+- [TypeScript] zod's `z.string().uuid()`: *bridge planned*
+- [Python] pydantic's `UUID4` (and friends): *bridge planned*
+- [Rust] `uuid::Uuid` parsing: *bridge planned*
+- [Java] `java.util.UUID.fromString`: *bridge planned*
 
 ## Limitations
 
@@ -55,4 +55,4 @@ Canonical regex:
 ## Read next
 
 - [`README.md`](README.md).
-- [`ref-email-format-v1.md`](ref-email-format-v1.md) — sibling reference.
+- [`ref-email-format-v1.md`](ref-email-format-v1.md): sibling reference.

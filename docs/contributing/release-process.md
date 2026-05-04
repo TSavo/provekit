@@ -9,7 +9,7 @@ This document is for protocol maintainers. End users should never need it; adapt
 A ProvekIt release is many things at once:
 
 1. **A new protocol catalog** with a new CID.
-2. **Updated specs** (IR grammar, proof file format, handshake algorithm, lattice tractability theorem, signatures, kit standard) — only those that changed.
+2. **Updated specs** (IR grammar, proof file format, handshake algorithm, lattice tractability theorem, signatures, kit standard), only those that changed.
 3. **Updated kits**, one per host language, all re-minting their self-contracts to match the new catalog.
 4. **Updated conformance fixtures** if the canonical input/output bytes changed.
 5. **Updated tooling**: `provekit` CLI, lift adapters that depend on new IR primitives.
@@ -116,6 +116,6 @@ The next release cycle begins with adapter requests, spec proposals, and bug rep
 
 ## Read next
 
-- [proposing-a-spec-change.md](proposing-a-spec-change.md) (when written) — how a spec change gets proposed and accepted.
-- [docs/governance/protocol-versions.md](../governance/protocol-versions.md) (when written) — version policy.
-- [docs/reference/cids.md](../reference/cids.md) — current catalog CID.
+- [proposing-a-spec-change.md](proposing-a-spec-change.md) (when written): how a spec change gets proposed and accepted.
+- [docs/governance/protocol-versions.md](../governance/protocol-versions.md) (when written): version policy.
+- [docs/reference/cids.md](../reference/cids.md): current catalog CID.

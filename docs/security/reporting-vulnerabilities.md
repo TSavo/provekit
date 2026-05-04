@@ -64,7 +64,7 @@ Example template:
 provekit-canonicalizer, version 1.1.0, in implementations/rust/provekit-canonicalizer
 
 ## Severity
-High — produces non-canonical bytes for a specific edge case, breaking
+High: produces non-canonical bytes for a specific edge case, breaking
 cross-kit conformance.
 
 ## Reproduction
@@ -145,6 +145,6 @@ If you discover a chain of vulnerabilities involving ProvekIt and a third party,
 
 ## Read next
 
-- [threat-model.md](threat-model.md) — the threat surface ProvekIt covers.
-- [signature-and-non-repudiation.md](signature-and-non-repudiation.md) — what the protocol's signatures buy.
-- [`SECURITY.md`](../../SECURITY.md) (when written) — the canonical security policy at repo root.
+- [threat-model.md](threat-model.md): the threat surface ProvekIt covers.
+- [signature-and-non-repudiation.md](signature-and-non-repudiation.md): what the protocol's signatures buy.
+- [`SECURITY.md`](../../SECURITY.md) (when written): the canonical security policy at repo root.

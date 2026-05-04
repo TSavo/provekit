@@ -125,5 +125,5 @@ When something breaks, you know which layer to fix.
 
 ## Read next
 
-- [03-emit-canonical-IR.md](03-emit-canonical-IR.md) — mapping recognized annotations to canonical IR formulas.
-- [docs/reference/ir/grammar.md](../../reference/ir/grammar.md) (when written) — IR grammar reference.
+- [03-emit-canonical-IR.md](03-emit-canonical-IR.md): mapping recognized annotations to canonical IR formulas.
+- [docs/reference/ir/grammar.md](../../reference/ir/grammar.md) (when written): IR grammar reference.

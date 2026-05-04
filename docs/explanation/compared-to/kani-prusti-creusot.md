@@ -187,7 +187,7 @@ For Rust verification specifically, ProvekIt is a federation layer. The verifica
 
 ## Read next
 
-- [coq-fstar-lean.md](coq-fstar-lean.md) — interactive theorem provers.
-- [`../../contributing/writing-a-lift-adapter/`](../../contributing/writing-a-lift-adapter/) — how to lift a new prover's annotations.
-- [`../../security/solver-trust.md`](../../security/solver-trust.md) — TCB for different backends.
-- [`../boundaries.md`](../boundaries.md) — what ProvekIt is NOT.
+- [coq-fstar-lean.md](coq-fstar-lean.md): interactive theorem provers.
+- [`../../contributing/writing-a-lift-adapter/`](../../contributing/writing-a-lift-adapter/): how to lift a new prover's annotations.
+- [`../../security/solver-trust.md`](../../security/solver-trust.md): TCB for different backends.
+- [`../boundaries.md`](../boundaries.md): what ProvekIt is NOT.
