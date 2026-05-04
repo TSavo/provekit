@@ -132,6 +132,10 @@ pub struct ProveArgs {
     pub kit: Option<String>,
     #[command(flatten)]
     pub out: OutputFlags,
+    /// Additional project directories whose .proof files should also be loaded
+    /// (e.g., an OpenAPI spec project for cross-kit verification).
+    #[arg(long = "with", num_args = 0..)]
+    pub with: Vec<String>,
 }
 
 #[derive(Parser, Debug, Clone)]

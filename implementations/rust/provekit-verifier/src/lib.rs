@@ -32,6 +32,7 @@
 // Stages 3-5 fan out per callsite via rayon (mirrors the C++
 // std::async fan-out and Go goroutines).
 
+pub mod call_edge_loader;
 pub mod cbor_decode;
 pub mod enumerate_callsites;
 pub mod formula_rewrite;

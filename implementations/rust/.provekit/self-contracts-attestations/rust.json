@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1",
+  "kind": "self-contracts-attestation",
+  "lang": "rust",
+  "cid": "blake3-512:60df6322388ff7d9ccd1b9ee9d6457fdfe89a51b3d2d73a34daa0131f65c80543331832eb88920fe514ebb799bc655808f152d36274542ac9879c862a33f3a92",
+  "contractSetCid": "blake3-512:8f4bcc3c3e748ae303f8c8da80245f291e803eb2d241224c75c7ac470631e4dee7ff2e0ff59af571db3d506485c115acaddfd91e4e4315eb04ee37c035ddbc69",
+  "declaredAt": "2026-05-03T18:00:00Z",
+  "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "signature": "ed25519:XQhbaHNNhD9hCbkfmtnVZsUZz0pd7CSLuG1qCM8Rq2FF51qUZSpXh5Wg2DVGWYeD1ZHH9D2m0HKIlN9U57U4CA=="
+}

@@ -500,9 +500,16 @@ pub fn run(args: ProveArgs) -> u8 {
         return crate::EXIT_USER_ERROR;
     }
 
+    let extra_projects: Vec<PathBuf> = args
+        .with
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+
     let cfg = RunnerConfig {
         project_root: project_root.clone(),
         z3_path: args.z3,
+        extra_projects,
         ..Default::default()
     };
     let runner = Runner::new(cfg);
