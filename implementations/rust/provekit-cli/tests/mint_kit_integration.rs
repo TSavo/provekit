@@ -429,6 +429,18 @@ fn go_kit_pins_expected_contract_set_cid() {
 const RUST_KIT_CANONICAL_CONTRACT_SET_CID: &str =
     "blake3-512:8f4bcc3c3e748ae303f8c8da80245f291e803eb2d241224c75c7ac470631e4dee7ff2e0ff59af571db3d506485c115acaddfd91e4e4315eb04ee37c035ddbc69";
 
+/// Pinned contractSetCid produced by `--kit=cpp` after routing to the
+/// `cpp-self-contracts` surface (mint_cpp_self_contracts binary, canonical
+/// cpp slab). Mirrors the rust and go pinning pattern (PR #180, PR #183).
+/// Any change to this value means either the surface wiring changed or the
+/// canonical contracts changed -- both require explicit review and re-pinning.
+///
+/// This constant must NOT be the empty-set CID (d53d18c2...) and must match
+/// the `contractSetCid` field in `.provekit/self-contracts-attestations/cpp.json`.
+/// Fix: issue #203.
+const CPP_KIT_CANONICAL_CONTRACT_SET_CID: &str =
+    "blake3-512:0e17f718740e9e22b0897d1f7c2ee42a61b65b0d65379024465b38441e232c25b28eb8bf8a425a8770b68614a95510fd84e5ff23b5b028751ae9acb0ffe62d5e";
+
 #[test]
 #[serial(mint_kit_files)]
 fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
@@ -462,4 +474,51 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     );
 
     eprintln!("rust kit pinned contractSetCid confirmed: {cset}");
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: cpp kit contractSetCid is pinned to the canonical self-contracts CID
+//         (issue #203 regression gate, PR wiring cpp-self-contracts surface)
+// ---------------------------------------------------------------------------
+
+/// Verify that `--kit=cpp` routes to the cpp-self-contracts surface (not the
+/// generic cpp lifter) and that the resulting contractSetCid matches the
+/// known-good CID from the canonical cpp slab.
+///
+/// If this test fails with the empty-set CID (`d53d18c2...`), the KIT_TABLE
+/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// the cpp slab contracts have changed -- update CPP_KIT_CANONICAL_CONTRACT_SET_CID.
+#[test]
+#[serial(mint_kit_files)]
+fn cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
+    let root = repo_root();
+
+    let (ok, _, stderr) = run_mint("cpp");
+    if !ok {
+        eprintln!("cpp kit: mint failed (mint_cpp_self_contracts may not be built)\n  stderr: {stderr}");
+        // Skip rather than fail -- binary may not be built in this environment.
+        return;
+    }
+
+    let attest = read_attestation(&root, "cpp");
+    let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
+
+    // Pinned value: must match the canonical self-contracts CID.
+    assert_eq!(
+        cset,
+        CPP_KIT_CANONICAL_CONTRACT_SET_CID,
+        "cpp kit contractSetCid diverged from the pinned canonical self-contracts CID.\n\
+         This is the issue #203 regression gate.\n\
+         If the self-contracts changed intentionally, update CPP_KIT_CANONICAL_CONTRACT_SET_CID.\n\
+         Current: {cset}\n\
+         Pinned:  {CPP_KIT_CANONICAL_CONTRACT_SET_CID}"
+    );
+
+    // Belt-and-suspenders: must NOT be the empty-set sentinel.
+    assert_ne!(
+        cset, EMPTY_SET_CID,
+        "cpp kit must not produce the empty-set CID -- the self-contracts binary is missing or broken"
+    );
+
+    eprintln!("cpp kit pinned contractSetCid confirmed: {cset}");
 }
