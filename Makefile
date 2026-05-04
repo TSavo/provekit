@@ -325,6 +325,18 @@ mint-c: build-rust build-c-self-contracts
 		(echo "FAIL: c self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=c" && exit 1)
 
+.PHONY: mint-php
+mint-php: build-rust
+	@echo ">> minting php self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=php --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/php.json "$$cset" || \
+		(echo "FAIL: php self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=php" && exit 1)
+
 # NOTE: mint-swift excluded from all-mint (macOS-only). java + python wired up
 # after their Side A landings (#207, #205) — both produce content-meaningful
 # contractSetCids and ship pinned attestations. ruby/zig/c/php pending their

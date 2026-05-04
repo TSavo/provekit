@@ -105,6 +105,7 @@ pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     ("ruby",       "ruby",        "ruby-self-contracts",  "ruby"),
     ("zig",        "zig",         "zig-self-contracts",   "zig"),
     ("c",          "c",           "c-self-contracts",     "c"),
+    ("php",        "php",         "php-self-contracts",   "php"),
 ];
 
 /// Resolve `--kit=<name>` to the canonical project path, lift surface, and lang key.
