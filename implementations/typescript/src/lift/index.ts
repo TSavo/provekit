@@ -33,10 +33,11 @@ import type { ClaimEnvelope } from "../claimEnvelope/types.js";
 import { buildProofEnvelope } from "../proofEnvelope/index.js";
 import { computeCid } from "../canonicalizer/hash.js";
 
-import { liftFile as liftZodFile } from "./adapters/zod.js";
-import { liftFile as liftFastCheckFile } from "./adapters/fast-check.js";
+import { liftFile as liftZodFile }            from "./adapters/zod.js";
+import { liftFile as liftFastCheckFile }      from "./adapters/fast-check.js";
 import { liftFile as liftClassValidatorFile } from "./adapters/class-validator.js";
-import { liftFile as liftVitestTestsFile } from "./adapters/vitest-tests.js";
+import { liftFile as liftVitestTestsFile }    from "./adapters/vitest-tests.js";
+import { liftFile as liftProvekitAnnotationsFile } from "./adapters/provekit-annotations.js";
 import type { ContractDecl, LiftReport, AdapterReport } from "./types.js";
 
 export type {
@@ -45,6 +46,7 @@ export type {
   AdapterReport,
   AdapterOutput,
   AdapterWarning,
+  CallEdgeDecl,
 } from "./types.js";
 
 export { liftZodFile, liftFastCheckFile, liftClassValidatorFile, liftVitestTestsFile };
@@ -150,6 +152,7 @@ export function liftPath(root: string): LiftReport {
     "fast-check": { adapter: "fast-check", seen: 0, lifted: 0, warnings: [] },
     "class-validator": { adapter: "class-validator", seen: 0, lifted: 0, warnings: [] },
     "vitest-tests": { adapter: "vitest-tests", seen: 0, lifted: 0, warnings: [] },
+    "provekit-annotations": { adapter: "provekit-annotations", seen: 0, lifted: 0, warnings: [] },
   };
   let filesScanned = 0;
   const parseErrors: Array<{ path: string; message: string }> = [];
@@ -188,6 +191,12 @@ export function liftPath(root: string): LiftReport {
     adapterReports["vitest-tests"]!.lifted += vt.lifted;
     adapterReports["vitest-tests"]!.warnings.push(...vt.warnings);
     decls.push(...vt.decls);
+
+    const pka = liftProvekitAnnotationsFile(sf, filePath);
+    adapterReports["provekit-annotations"]!.seen += pka.seen;
+    adapterReports["provekit-annotations"]!.lifted += pka.lifted;
+    adapterReports["provekit-annotations"]!.warnings.push(...pka.warnings);
+    decls.push(...pka.decls);
   }
 
   return {
@@ -197,6 +206,7 @@ export function liftPath(root: string): LiftReport {
       adapterReports["fast-check"]!,
       adapterReports["class-validator"]!,
       adapterReports["vitest-tests"]!,
+      adapterReports["provekit-annotations"]!,
     ],
     filesScanned,
     parseErrors,
@@ -215,6 +225,8 @@ export interface MintOutput {
   contractCids: Record<string, string>;
   /** Number of decls collapsed by content-addressed dedup. */
   deduplicated: number;
+  /** Call edges for annotation-driven cross-kit bridges. */
+  callEdges: CallEdgeDecl[];
 }
 
 export class NameCollisionDifferentIrError extends Error {
@@ -289,12 +301,27 @@ export function mintProof(decls: ContractDecl[], opts: LiftOptions): MintOutput 
     declaredAt: opts.producedAt,
   });
 
+  // Generate call edges for annotation-driven cross-kit bridges
+  const callEdges: CallEdgeDecl[] = [];
+  for (const d of decls) {
+    if (!d.targetContract || !d.sourceLine) continue;
+    if (!contractCids[d.name]) continue;
+    callEdges.push({
+      sourceContractCid: contractCids[d.name]!,
+      targetContractCid: null,
+      targetSymbol: d.targetContract,
+      callSiteLocus: { file: d.sourcePath, line: d.sourceLine, col: 0 },
+      evidenceTerm: { kind: "atomic", name: "true", args: [] },
+    });
+  }
+
   return {
     bytes: built.bytes,
     cid: built.cid,
     memberCount: members.size,
     contractCids,
     deduplicated,
+    callEdges,
   };
 }
 

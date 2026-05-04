@@ -1,0 +1,19 @@
+[package]
+name = "provekit-lift-openapi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt lift adapter for OpenAPI/Swagger and Protobuf specs. Reads spec files, emits IR contracts via the provekit-lift/1 RPC plugin protocol."
+
+[[bin]]
+name = "provekit-lift-openapi"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+thiserror = { workspace = true }
+walkdir = { workspace = true }
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
