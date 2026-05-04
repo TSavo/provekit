@@ -152,6 +152,50 @@ Baselines are versioned per-language, not globally. `<lang>-baseline-v1` and `<l
 
 A new major language version (Python 4, Java 22, etc.) starts a new baseline major version. Old baselines remain pinnable by CID indefinitely.
 
+## Implementation notes (lessons from the rust pilot, #257)
+
+These are institutional notes per-kit agents need before authoring their baseline. Captured from the rust-std-baseline-v1 pilot landing as PR #292.
+
+### Disclaimer is a layered-memento member, not raw bytes
+
+The disclaimer text must ship as a `kind=disclaimer` v1.2 layered memento member of the proof envelope. Raw-bytes-as-member fails the verifier's rule-2 CID re-derivation: the verifier expects each member's bytes to round-trip through the layered-memento decoder, and a non-memento blob fails that round-trip.
+
+The disclaimer member's content-CID is the value of `baseline.disclaimer_cid` in the envelope metadata.
+
+### Foundation v0 seed: redeclare locally, don't depend on cli
+
+The foundation seed lives at `implementations/rust/provekit-cli/src/cmd_mint.rs::FOUNDATION_V0_SEED = [0x42u8; 32]`. Per-kit baseline crates should redeclare the constant locally rather than depend on the CLI crate. This keeps baseline crates lightweight and avoids a downward dependency from a substrate crate to the CLI binary.
+
+```rust
+const FOUNDATION_V0_SEED: [u8; 32] = [0x42u8; 32];
+```
+
+Repeat across kits — same 32 bytes, redeclared in each kit's baseline orchestrator.
+
+### Envelope assembly helpers are currently private
+
+`provekit-claim-envelope::assemble_layered` and `build_header` are private in the rust kit (and probably equivalents in other kits). Baseline orchestrators inline-replicate the envelope assembly logic until a public helper is upstreamed.
+
+Filed as a follow-up: `[refactor] expose envelope assembly helpers as a public API for baseline crates`.
+
+### `.gitignore` allowlist for `.provekit/baselines/`
+
+The repo's global `.gitignore` typically excludes `**/*.proof` to keep test mints out of the tree. Baseline `.proof` files MUST be tracked; add an allowlist line:
+
+```
+!.provekit/baselines/*.proof
+```
+
+### Predicate density is reachable at floor without G1-G4
+
+The rust pilot reached the **2-predicate floor on every one of 58 builtins** using ONLY the current DSL surface (`forall`/`eq`/`gte`/`ctor`/`num`/`strConst`/`startsWith`). The floor is empirically realistic; agents do NOT need G1-G4 to ship a compliant baseline.
+
+Where the agent would have used G1-G4 (deferred to post-launch per #256):
+- `lt`/`lte`: tightening Vec/slice numeric bounds
+- `or`/`not`: nullable-return predicates (Option/Result)
+
+These would have lifted ~70% of builtins from 2-predicate floor to aspirational 3+ density. Empirical signal that G1-G4 is high-value and worth landing soon.
+
 ## What this rubric is NOT
 
 - It is not a quality gate for the steward's eventual signature. The steward can sign at whatever density they want; the foundation baseline is the floor.
