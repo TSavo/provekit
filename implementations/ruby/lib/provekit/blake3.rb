@@ -24,10 +24,18 @@
 # Fallback chain handles bundler-cached layouts where the freshly
 # compiled .so isn't on $LOAD_PATH at first require time:
 #   1. require "provekit_blake3" -- gem-installed location
-#   2. require_relative the in-tree build artifact
+#   2. require absolute path to the in-tree build artifact (under
+#      both the new `provekit_blake3` and legacy `provekit/blake3`
+#      names produced by the cached older build)
+#
+# All LoadErrors are accumulated and surfaced together if every
+# candidate fails. Surfacing the full list rather than only the
+# primary makes diagnosis easier when the .so exists but fails to
+# load for a distinct reason (missing symbol, wrong arch, etc.).
 begin
   require "provekit_blake3"
 rescue LoadError => primary_err
+  errors = [primary_err]
   candidates = [
     File.expand_path("../../ext/provekit_blake3/provekit_blake3", __dir__),
     File.expand_path("../../ext/provekit_blake3/provekit/blake3", __dir__),
@@ -38,11 +46,15 @@ rescue LoadError => primary_err
       require path
       loaded = true
       break
-    rescue LoadError
+    rescue LoadError => fallback_err
+      errors << fallback_err
       next
     end
   end
-  raise primary_err unless loaded
+  unless loaded
+    detail = errors.map.with_index { |e, i| "  [#{i}] #{e.class}: #{e.message}" }.join("\n")
+    raise LoadError, "could not load provekit_blake3 native extension:\n#{detail}"
+  end
 end
 
 module Provekit
