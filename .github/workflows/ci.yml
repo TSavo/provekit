@@ -448,35 +448,47 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: Install build-essential (all kits)
+      - name: Install build-essential + kit-specific deps
         # Every kit's `make prove-<kit>` needs make on PATH. Without
         # this unconditional step, prove-{rust,ts,csharp,java,python,
         # ruby,zig} fail with `make: command not found` because the
         # ephemeral runners don't ship make pre-installed and PR #165's
         # original conditional install only fired for cpp/c.
+        #
+        # Routes through apt-cacher-ng on battleaxe + 5-attempt retry
+        # with linear backoff (matches conformance gate's pattern).
+        # Combines build-essential (all kits) with cpp/c-specific deps
+        # in one apt invocation so we only retry once per matrix entry.
         run: |
           set -euo pipefail
-          # Route through apt-cacher-ng on battleaxe if available
-          # (matches conformance gate's pattern).
+          # Route through apt-cacher-ng on battleaxe if available.
           if curl -fsS --max-time 2 http://localhost:3142/acng-report.html >/dev/null 2>&1; then
             echo 'Acquire::http::Proxy "http://localhost:3142";' | sudo tee /etc/apt/apt.conf.d/00-apt-cacher-ng >/dev/null
           fi
-          sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends build-essential
-
-      - name: Install system deps (cpp)
-        if: matrix.kit == 'cpp'
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            clang \
-            libssl-dev \
-            nlohmann-json3-dev
-
-      - name: Install system deps (c)
-        if: matrix.kit == 'c'
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            libssl-dev
+          # Build dep list per kit. build-essential is always needed
+          # for `make`; cpp/c add their own libs.
+          DEPS="build-essential"
+          case "${{ matrix.kit }}" in
+            cpp) DEPS="$DEPS clang libssl-dev nlohmann-json3-dev" ;;
+            c)   DEPS="$DEPS libssl-dev" ;;
+          esac
+          MAX_ATTEMPTS=5
+          for attempt in $(seq 1 $MAX_ATTEMPTS); do
+            echo "::group::apt install attempt $attempt"
+            if sudo apt-get update -y && sudo apt-get install -y --no-install-recommends $DEPS; then
+              echo "::endgroup::"
+              echo "apt install succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              wait_s=$((attempt * 30))
+              echo "apt install attempt $attempt failed; sleeping ${wait_s}s before retry"
+              sleep $wait_s
+            fi
+          done
+          echo "apt install failed after $MAX_ATTEMPTS attempts" >&2
+          exit 1
 
       - name: Set up Java (java)
         if: matrix.kit == 'java'
