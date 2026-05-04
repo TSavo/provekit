@@ -7,6 +7,7 @@
 // tagged unions, and a custom JSON encoder for JCS key ordering.
 
 import Foundation
+import ProvekitCrypto
 
 // MARK: - Sort
 
@@ -237,22 +238,13 @@ public enum Jcs {
     }
 }
 
-// BLAKE3 not available in CryptoKit — delegate to Python for v1.1.
-public enum Blake3 {
-    public static func hex(_ data: Data) -> String {
-        let tmpDir = FileManager.default.temporaryDirectory
-        let path = tmpDir.appendingPathComponent("pk_hash_\(UUID().uuidString)").path
-        FileManager.default.createFile(atPath: path, contents: data)
-        let script = "import blake3; d=open('\(path)','rb').read(); print('blake3-512:'+blake3.blake3(d).digest(length=64).hex())"
-        let task = Process()
-        task.launchPath = "/usr/bin/python3"
-        task.arguments = ["-c", script]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.launch()
-        task.waitUntilExit()
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        try? FileManager.default.removeItem(atPath: path)
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
+// BLAKE3 — delegates to the native pure-Swift / vendored-C implementation
+// in ProvekitCrypto. The legacy python-shellout has been retired; output
+// is byte-equivalent to the previous shell-out behavior because both
+// ultimately call the BLAKE3 reference implementation.
+//
+// This typealias preserves the existing module-local API surface
+// (`Provekit.Blake3.hex(_:)`) used by CrossKitBridges, ConformanceRunner,
+// and MintSwiftSelfContracts. New code should `import ProvekitCrypto`
+// directly and use `ProvekitCrypto.Blake3`.
+public typealias Blake3 = ProvekitCrypto.Blake3

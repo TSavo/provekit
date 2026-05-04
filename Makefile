@@ -408,6 +408,7 @@ test-java: build-java
 test-swift: build-swift
 	cd implementations/swift && swift run conformance
 	cd implementations/swift && swift run test-swift-lsp
+	cd implementations/swift && swift run test-swift-crypto
 
 .PHONY: test-zig
 test-zig:
