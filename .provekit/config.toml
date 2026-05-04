@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Default solver portfolio for the ProvekIt workspace.
+#
+# Loaded by provekit-verifier via `SolversConfig::load(project_root)`
+# (see `implementations/rust/provekit-verifier/src/solvers/config.rs`).
+# The runner picks this up automatically; passing
+# `RunnerConfig.solvers_config` from a host process overrides this file.
+#
+# Spec: protocol/specs/2026-05-02-multi-solver-protocol-v2.md (§7).
+#
+# Closes:
+#   - #251 (cvc5 in default portfolio)
+#   - #252 Tier 1 (Vampire in default portfolio via SMT-LIB-v2.6)
+#
+# Mode: first-wins
+# -----------------
+# We use `first-wins` (not `consensus`) so that solvers absent from the
+# host's PATH degrade gracefully: any seat that fails to spawn returns
+# Undecidable, the post-collection sort skips it, and the first
+# definitive verdict from an installed solver authors the result.
+# This keeps single-solver developer environments (z3 only) working
+# byte-for-byte, while CI (which installs all four) exercises the full
+# portfolio. `coverage_required` (v2 §7) is intentionally unset; we do
+# not opt into the v2 ConsensusCoverage rule from this PR. That gate
+# can land later when the OpacityManifest types are wired through.
+#
+# IR-compiler tags
+# ----------------
+# `smt-lib-v2.6` routes to `SubprocessSolver` (generic SMT-LIB-v2.6
+# subprocess); `coq` routes to `CoqSubprocessSolver` (per
+# `registry::is_coq_compiler`). The v2 spec text uses `gallina` for
+# Coq's IR-compiler tag, but the existing
+# `provekit_ir_compiler_coq::DIALECT` constant is `"coq"`, so we match
+# the implementation rather than the spec example.
+
+[solvers]
+mode = "first-wins"
+portfolio = ["z3", "cvc5", "vampire", "coq"]
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"
+
+[solvers.cvc5]
+binary = "cvc5"
+ir_compiler = "smt-lib-v2.6"
+# `--lang=smt2` selects the SMT-LIB-v2 input dialect; `--produce-models`
+# is required for cvc5 to emit model assignments after `(check-sat)`
+# returns sat (parity with z3's default behavior under `-smt2 -in`).
+flags = ["--lang=smt2", "--produce-models"]
+timeout_seconds = 30
+version = "1.x"
+
+[solvers.vampire]
+binary = "vampire"
+ir_compiler = "smt-lib-v2.6"
+# Tier 1 of #252: Vampire in SMT-LIB-2 mode. `--input_syntax smtlib2`
+# tells Vampire to parse SMT-LIB rather than its native TPTP;
+# `--output_mode smtcomp` switches output to the SMT-COMP-conformant
+# `sat`/`unsat`/`unknown` lines that the generic `SubprocessSolver`
+# parser expects. Tier 2 (a dedicated TPTP `provekit-ir-compiler-vampire`
+# crate) is deferred per #252 until empirical signal that Vampire's
+# UNKNOWN rate on SMT-LIB inputs justifies the second pipeline.
+flags = ["--input_syntax", "smtlib2", "--output_mode", "smtcomp"]
+timeout_seconds = 30
+version = "4.x"
+
+[solvers.coq]
+binary = "coqc"
+ir_compiler = "coq"
+timeout_seconds = 60
+version = "8.x"

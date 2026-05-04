@@ -126,7 +126,7 @@ jobs:
       # rubygem on Ruby 3.x exposes 64-byte XOF mode (per PR #226 notes).
       # ---------------------------------------------------------------
 
-      - name: Install C++ system deps + z3 + libyaml
+      - name: Install C++ system deps + z3 + cvc5 + libyaml
         # z3 is the SMT solver invoked by the TS workflow producer's
         # checkImplication / bridgeEnforcement / circularProof tests
         # (`provekit prove` substrate). Without it on PATH, every
@@ -135,6 +135,11 @@ jobs:
         # `expected 'undecidable' to be 'equivalent'`. The `prove`
         # workflow in provekit.yml installed z3; this gate did not.
         # Closes task #215 ("CI: TS workflow producer tests failing").
+        #
+        # cvc5 joins z3 in the default solver portfolio per
+        # `.provekit/config.toml` (closes #251). Ubuntu Noble apt ships
+        # cvc5 at `/usr/bin/cvc5` (verified via packages.ubuntu.com
+        # filelist).
         #
         # libyaml-dev is needed for Ruby's psych (YAML) extension;
         # bundler-cache fails with `libyaml-0.so.2: cannot open shared
@@ -145,12 +150,31 @@ jobs:
             build-essential \
             clang \
             cmake \
+            cvc5 \
             libsodium-dev \
             libssl-dev \
             libyaml-dev \
             maven \
             nlohmann-json3-dev \
             z3
+
+      - name: Install Vampire (upstream GitHub release)
+        # Vampire joins the default solver portfolio per
+        # `.provekit/config.toml` (closes #252 Tier 1). The original
+        # plan in #252 assumed `apt-get install vampire` on Ubuntu
+        # Noble, but Vampire is NOT packaged in any Ubuntu suite
+        # (verified via packages.ubuntu.com search). The upstream
+        # release at github.com/vprover/vampire ships a static x86_64
+        # Linux binary in vampire-Linux-X64.zip. We pin to v5.0.1
+        # (current latest as of 2026-05).
+        run: |
+          cd /tmp
+          curl -fsSL -o vampire.zip \
+            https://github.com/vprover/vampire/releases/download/v5.0.1/vampire-Linux-X64.zip
+          unzip -q vampire.zip
+          sudo install -m 0755 vampire /usr/local/bin/vampire
+          vampire --version | head -1
+
 
       - name: Set up Ruby 3.3
         # mint-ruby-self-contracts (PR #234, issue #209) ships a Ruby

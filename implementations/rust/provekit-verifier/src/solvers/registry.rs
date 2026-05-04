@@ -174,6 +174,85 @@ ir_compiler = "coq"
     }
 
     #[test]
+    fn build_recognizes_default_workspace_portfolio() {
+        // Closes #251 (cvc5) + #252 Tier 1 (Vampire).
+        //
+        // Asserts that the canonical `.provekit/config.toml` shipped at
+        // the workspace root parses cleanly and registers all four
+        // default-portfolio solvers with the right ir_compiler tags.
+        // This is a registry-build smoke test only: it does not spawn
+        // any solver binary, so it passes even on hosts that lack
+        // cvc5/vampire/coqc on PATH (which is the whole point of the
+        // first-wins mode in the default config).
+        //
+        // The TOML body below MUST stay byte-for-byte in sync with the
+        // `[solvers]` block of `.provekit/config.toml` at the repo
+        // root. If you tune flags or version pins there, mirror them
+        // here.
+        let toml = r#"
+[solvers]
+mode = "first-wins"
+portfolio = ["z3", "cvc5", "vampire", "coq"]
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"
+
+[solvers.cvc5]
+binary = "cvc5"
+ir_compiler = "smt-lib-v2.6"
+flags = ["--lang=smt2", "--produce-models"]
+timeout_seconds = 30
+version = "1.x"
+
+[solvers.vampire]
+binary = "vampire"
+ir_compiler = "smt-lib-v2.6"
+flags = ["--input_syntax", "smtlib2", "--output_mode", "smtcomp"]
+timeout_seconds = 30
+version = "4.x"
+
+[solvers.coq]
+binary = "coqc"
+ir_compiler = "coq"
+timeout_seconds = 60
+version = "8.x"
+"#;
+        let c = SolversConfig::from_toml(toml).expect("config parses");
+        let r = build(&c);
+
+        // All four seats register.
+        for name in ["z3", "cvc5", "vampire", "coq"] {
+            assert!(r.contains_key(name), "{name} seat missing from registry");
+        }
+
+        // SMT seats route to the generic SubprocessSolver
+        // (ir_compiler tag round-trips as "smt-lib-v2.6").
+        for name in ["z3", "cvc5", "vampire"] {
+            let s = r.get(name).unwrap();
+            assert_eq!(s.name(), name);
+            assert_eq!(
+                s.ir_compiler(),
+                "smt-lib-v2.6",
+                "{name} should route to the SMT-LIB SubprocessSolver",
+            );
+        }
+
+        // Coq seat routes to CoqSubprocessSolver. The Coq solver's
+        // ir_compiler() tag is COQ_DIALECT ("coq"), and (per
+        // `build_recognizes_coq_ir_compiler`) handing it SMT-LIB MUST
+        // surface an IR-JSON parse error rather than a binary-spawn
+        // error. We only check the tag here; the load-bearing
+        // dispatch assertion already lives in the dedicated test
+        // above.
+        let coq = r.get("coq").unwrap();
+        assert_eq!(coq.ir_compiler(), "coq");
+    }
+
+    #[test]
     fn build_keeps_smt_solvers_for_non_coq_ir_compiler() {
         // Sanity check: an `ir_compiler = "smt-lib-v2.6"` solver is
         // still built as a SubprocessSolver. This confirms the Coq
