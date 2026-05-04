@@ -98,5 +98,59 @@ module Provekit
     rescue StandardError
       false
     end
+
+    # ------------------------------------------------------------------
+    # Signer: minimal handle bundling per-actor stable fields.
+    #
+    # Used by Provekit::ClaimEnvelope.from_contract_decl(decl, signer).
+    # Only the fields stable per-actor live on the Signer; per-attestation
+    # fields (produced_at, authoring, input_cids) are passed at call time.
+    #
+    # The producer-id ("ruby-kit@1.0", "rust-test@1.0", etc.) is bound
+    # into the contract's bindingHash (per `mint_contract` derivation
+    # `bindingHash = hash(JCS({producerId, contractName, propertyHash}))`)
+    # so it lives on the Signer rather than being recomputed at every
+    # call.
+    # ------------------------------------------------------------------
+    class Signer
+      attr_reader :seed, :producer_id
+
+      def initialize(seed:, producer_id:)
+        unless seed.is_a?(String) && seed.bytesize == 32
+          raise ArgumentError, "Signer seed must be exactly 32 bytes"
+        end
+        unless producer_id.is_a?(String) && !producer_id.empty?
+          raise ArgumentError, "Signer producer_id must be a non-empty String"
+        end
+        @seed = seed.b.freeze
+        @producer_id = producer_id.dup.freeze
+      end
+
+      # Convenience: a Signer using the public foundation v0 test seed.
+      # Foundation v0 is the publicly-known cross-kit test seed; it is
+      # appropriate for fixtures and conformance tests, not production.
+      def self.foundation_v0(producer_id: "ruby-kit@1.0")
+        new(seed: FOUNDATION_V0_SEED, producer_id: producer_id)
+      end
+
+      # Self-identifying public-key string: "ed25519:<base64>".
+      def pubkey_string
+        Provekit::Signing.ed25519_pubkey_string(@seed)
+      end
+
+      # Build a v1.2-layered ClaimEnvelope from a `ContractDecl`.
+      # Convenience delegate to `Provekit::ClaimEnvelope.from_contract_decl`.
+      # Loaded lazily to avoid the signing -> claim_envelope -> signing
+      # require cycle.
+      def sign_claim(decl, produced_at:, authoring: nil, input_cids: nil)
+        require_relative "claim_envelope"
+        Provekit::ClaimEnvelope.from_contract_decl(
+          decl, self,
+          produced_at: produced_at,
+          authoring: authoring,
+          input_cids: input_cids,
+        )
+      end
+    end
   end
 end

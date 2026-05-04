@@ -10,12 +10,16 @@
 #   Provekit::Cbor          - deterministic CBOR encoder (RFC 8949 §4.2.1).
 #   Provekit::Signing       - Ed25519 sign/verify, self-identifying string form.
 #   Provekit::ProofEnvelope - .proof envelope build + verify.
+#   Provekit::ClaimEnvelope - v1.2 layered claim envelope minter.
+#   Provekit::ContractSet   - contractSetCid computation.
 
 require_relative "provekit/blake3"
 require_relative "provekit/ir"
 require_relative "provekit/cbor"
 require_relative "provekit/signing"
 require_relative "provekit/proof_envelope"
+require_relative "provekit/claim_envelope"
+require_relative "provekit/contract_set"
 
 module Provekit
   # Single canonical JCS encoder for the kit. Aliases the implementation
