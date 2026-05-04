@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.provekit</groupId>
+        <artifactId>provekit-lift-java-parent</artifactId>
+        <version>0.1.0</version>
+    </parent>
+
+    <artifactId>provekit-self-contracts</artifactId>
+    <packaging>jar</packaging>
+
+    <description>
+        ProvekIt Java Side B — native crypto substrate. Pure-Java BLAKE3-512,
+        JCS canonicalizer (RFC 8785), deterministic CBOR (RFC 8949 §4.2.1),
+        Ed25519 (built into java.security since JDK 15), claim envelope, and
+        proof envelope. Output is byte-identical to the rust reference for
+        the same canonical input.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

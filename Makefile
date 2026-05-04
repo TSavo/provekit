@@ -401,6 +401,9 @@ test-python:
 .PHONY: test-java
 test-java: build-java
 	mvn test -q -f implementations/java/provekit-lift-java-core/pom.xml
+	# Side B: native crypto substrate (#208). Pure-Java BLAKE3 + JCS +
+	# Ed25519 + CBOR + proof envelope, byte-equivalent to rust + python.
+	mvn test -q -f implementations/java/provekit-self-contracts/pom.xml
 
 .PHONY: test-swift
 test-swift: build-swift

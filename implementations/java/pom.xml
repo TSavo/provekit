@@ -28,6 +28,7 @@
         <module>provekit-lift-java-jpa</module>
         <module>provekit-lift-java-hibernate</module>
         <module>provekit-lift-java-integration-tests</module>
+        <module>provekit-self-contracts</module>
     </modules>
 
     <dependencyManagement>
