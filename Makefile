@@ -289,15 +289,8 @@ mint-python: build-rust
 		(echo "FAIL: python self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=python" && exit 1)
 
-.PHONY: build-ruby-ext
-build-ruby-ext:
-	@echo ">> building ruby BLAKE3 C extension (vendored, zero-deps)"
-	@cd implementations/ruby/ext/provekit_blake3 && \
-		(test -f Makefile || ruby extconf.rb >/dev/null) && \
-		$(MAKE) --no-print-directory >/dev/null
-
 .PHONY: mint-ruby
-mint-ruby: build-rust build-ruby-ext
+mint-ruby: build-rust
 	@echo ">> minting ruby self-contracts"
 	@mint_out=$$($(PROVEKIT) mint --kit=ruby --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
@@ -332,15 +325,27 @@ mint-c: build-rust build-c-self-contracts
 		(echo "FAIL: c self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=c" && exit 1)
 
+.PHONY: mint-php
+mint-php: build-rust
+	@echo ">> minting php self-contracts"
+	@mint_out=$$($(PROVEKIT) mint --kit=php --quiet); \
+	cid=$$(echo "$$mint_out" | head -1); \
+	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
+	echo "  cid:            $$cid"; \
+	echo "  contractSetCid: $$cset"; \
+	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/php.json "$$cset" || \
+		(echo "FAIL: php self-contracts attestation rejected; re-mint and commit:" && \
+		 echo "      $(PROVEKIT) mint --kit=php" && exit 1)
+
 # NOTE: mint-swift excluded from all-mint (macOS-only). java + python wired up
 # after their Side A landings (#207, #205) — both produce content-meaningful
 # contractSetCids and ship pinned attestations. ruby/zig/c/php pending their
 # Side A merges (#234, #241, #272, feat/php-kit) and toolchain CI integration
 # (#245 in flight, #274 follow-up).
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-ruby mint-zig
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-zig
 	@echo ""
-	@echo "==== all 10 core self-contract CIDs match pinned values ===="
+	@echo "==== all 9 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
@@ -349,7 +354,6 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python m
 	@printf "  %-8s  %s\n" "java"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/java.json)"
 	@printf "  %-8s  %s\n" "python" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/python.json)"
 	@printf "  %-8s  %s\n" "c"      "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/c.json)"
-	@printf "  %-8s  %s\n" "ruby"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ruby.json)"
 	@printf "  %-8s  %s\n" "zig"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/zig.json)"
 
 # --- Per-kit prove (C1-C8 conformance gate) ----------------------------------
@@ -411,7 +415,7 @@ prove-python: build-rust
 	$(PROVEKIT) prove --kit=python
 
 .PHONY: prove-ruby
-prove-ruby: build-rust build-ruby-ext
+prove-ruby: build-rust
 	@echo ">> proving ruby lift-plugin-protocol conformance (C1-C8)"
 	$(PROVEKIT) prove --kit=ruby
 

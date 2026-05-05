@@ -1,0 +1,68 @@
+lang = "go"
+kit = "go-kit"
+language_version = "1.22"
+
+[[builtins]]
+name = "strings_Contains"
+signature = "str_contains"
+arity = 2
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "strings_HasPrefix"
+signature = "str_has_prefix"
+arity = 2
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "strings_HasSuffix"
+signature = "str_has_suffix"
+arity = 2
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "strings_TrimSpace"
+signature = "str_trim_space"
+return_type = "string"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "len_string"
+signature = "str_len"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "str_len", right = 0}}]
+
+[[builtins]]
+name = "len_slice"
+signature = "slice_len"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "slice_len", right = 0}}]
+
+[[builtins]]
+name = "append"
+signature = "slice_append"
+arity = 2
+return_type = "slice"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "make_map"
+signature = "map_make"
+return_type = "map"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "map_len"
+signature = "map_len"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "map_len", right = 0}}]
+
+[[builtins]]
+name = "map_get"
+signature = "map_get"
+arity = 2
+return_type = "any"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]

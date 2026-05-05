@@ -1075,3 +1075,52 @@ fn zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 
     eprintln!("zig kit pinned contractSetCid confirmed: {cset}");
 }
+
+// ---------------------------------------------------------------------------
+// Test 15: php kit contractSetCid is pinned to the canonical self-contracts CID
+//          (step 7 of the 12/12 conformance epic #277)
+// ---------------------------------------------------------------------------
+
+/// Pinned contractSetCid produced by `--kit=php` after routing to the
+/// `php-self-contracts` surface (mint-php-self-contracts orchestrator,
+/// canonical 6-slab / 17-contract set).
+///
+/// UPDATE this constant after first successful `make mint-php` run.
+const PHP_KIT_CANONICAL_CONTRACT_SET_CID: &str =
+    "blake3-512:385e617be25516099e61118179fbb200967093448b85629f1cb5b8966dfcc06244cfcb9f59315780114fee7c9c415fcd1465fc8e85e8141d59f6b44a2df4a262";
+
+#[test]
+#[serial(mint_kit_files)]
+fn php_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
+    let scratch = ScratchRepo::new();
+    let root = scratch.root();
+
+    let (ok, stdout, _stderr) = run_mint(root, "php");
+    if !ok {
+        eprintln!("php kit: mint failed (php toolchain may not be available) -- skipping");
+        return;
+    }
+
+    assert!(
+        stdout.contains("contractSetCid:"),
+        "php kit: stdout must contain 'contractSetCid:'\n  stdout: {stdout}"
+    );
+
+    let attest = read_attestation(root, "php");
+    let cset = attest["contractSetCid"].as_str().unwrap();
+
+    if cset == EMPTY_SET_CID {
+        eprintln!("php kit: lifter binary not built -- skipping pinning assertion");
+        return;
+    }
+
+    if PHP_KIT_CANONICAL_CONTRACT_SET_CID.is_empty() {
+        eprintln!("php kit: placeholder CID — update PHP_KIT_CANONICAL_CONTRACT_SET_CID after first mint");
+        return;
+    }
+
+    assert_eq!(cset, PHP_KIT_CANONICAL_CONTRACT_SET_CID,
+        "php kit contractSetCid diverged from pinned canonical CID.\n\
+         If the self-contracts changed intentionally, update PHP_KIT_CANONICAL_CONTRACT_SET_CID."
+    );
+}

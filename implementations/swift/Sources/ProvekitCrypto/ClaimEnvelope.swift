@@ -162,6 +162,52 @@ public struct BridgeMintArgs: Sendable {
     }
 }
 
+// MARK: - v1.4 Bridge types
+
+/// Tagged-union target per 2026-05-03-bridge-target-dimensionality.md §1.R1.
+public enum BridgeTargetKind: String, Sendable { case contract, contractSet }
+
+public struct BridgeTarget: Sendable {
+    public let kind: BridgeTargetKind
+    public let cid: String
+
+    public init(kind: BridgeTargetKind, cid: String) {
+        self.kind = kind
+        self.cid = cid
+    }
+}
+
+/// v1.4 bridge mint inputs. Metadata fields are optional (nil = omit per §1.R2).
+public struct BridgeMintV14Args: Sendable {
+    public var name: String
+    public var sourceSymbol: String
+    public var sourceLayer: String
+    public var sourceContractCid: String
+    public var target: BridgeTarget
+
+    public var targetWitnessCid: String?
+    public var targetBinaryCid: String?
+    public var targetLayer: String?
+    public var targetContractSetCid: String?
+    public var producedBy: String?
+    public var producedAt: String?
+
+    public var declaredAt: String
+
+    public init(
+        name: String, sourceSymbol: String, sourceLayer: String,
+        sourceContractCid: String, target: BridgeTarget,
+        declaredAt: String
+    ) {
+        self.name = name
+        self.sourceSymbol = sourceSymbol
+        self.sourceLayer = sourceLayer
+        self.sourceContractCid = sourceContractCid
+        self.target = target
+        self.declaredAt = declaredAt
+    }
+}
+
 // MARK: - Minter
 
 /// Stateful envelope builder bound to one signing seed. The kit's mints
@@ -286,6 +332,66 @@ public struct ClaimMinter: Sendable {
             evidence: evidence
         )
         return finalize(unsigned: unsigned)
+    }
+
+    // ----- v1.4 bridge (layered envelope/header/body, tagged-union target) -----
+
+    public func mintBridgeV14(_ args: BridgeMintV14Args) throws -> MintedMemento {
+        if args.name.isEmpty { throw ClaimEnvelopeError.missingContractName }
+
+        // Build target
+        let target: JcsCanonical = .object([
+            ("kind", .string(args.target.kind.rawValue)),
+            ("cid", .string(args.target.cid)),
+        ])
+
+        // Build header (7 canonical fields per spec §1.R3)
+        let header: JcsCanonical = .object([
+            ("schemaVersion", .string("1")),
+            ("kind", .string("bridge")),
+            ("name", .string(args.name)),
+            ("sourceSymbol", .string(args.sourceSymbol)),
+            ("sourceLayer", .string(args.sourceLayer)),
+            ("sourceContractCid", .string(args.sourceContractCid)),
+            ("target", target),
+        ])
+
+        // Build metadata (omit nil fields per §1.R2)
+        var metaPairs: [(String, JcsCanonical)] = []
+        if let v = args.targetWitnessCid     { metaPairs.append(("targetWitnessCid", .string(v))) }
+        if let v = args.targetBinaryCid      { metaPairs.append(("targetBinaryCid", .string(v))) }
+        if let v = args.targetLayer          { metaPairs.append(("targetLayer", .string(v))) }
+        if let v = args.targetContractSetCid { metaPairs.append(("targetContractSetCid", .string(v))) }
+        if let v = args.producedBy           { metaPairs.append(("producedBy", .string(v))) }
+        if let v = args.producedAt           { metaPairs.append(("producedAt", .string(v))) }
+        let meta: JcsCanonical = .object(metaPairs)
+
+        // Sign: JCS({header, metadata})
+        let sigPayload: JcsCanonical = .object([
+            ("header", header),
+            ("metadata", meta),
+        ])
+        let sigPayloadBytes = JcsCanonicalizer.encode(sigPayload)
+        let sigStr = Ed25519.signatureString(message: sigPayloadBytes, seed: signerSeed)
+
+        // Build envelope
+        let pubkey = Ed25519.publicKeyString(fromSeed: signerSeed)
+        let envelope: JcsCanonical = .object([
+            ("signer", .string(pubkey)),
+            ("declaredAt", .string(args.declaredAt)),
+            ("signature", .string(sigStr)),
+        ])
+
+        // Full memento: {envelope, header, metadata}
+        let memento: JcsCanonical = .object([
+            ("envelope", envelope),
+            ("header", header),
+            ("metadata", meta),
+        ])
+        let canonical = JcsCanonicalizer.encode(memento)
+        let cid = Blake3.hex(canonical)
+
+        return MintedMemento(canonicalBytes: canonical, cid: cid)
     }
 
     // ----- helpers -----

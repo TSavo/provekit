@@ -1,70 +1,78 @@
 <?php
-/** ProvekIt PHP self-contracts — Main mint entry point (direct mode). */
+/** ProvekIt PHP self-contracts — Main mint orchestrator.
+ *  Side A pattern: walks the canonical PHP slab, mints each contract
+ *  as a signed layered memento, bundles into a .proof envelope.
+ *  Mirrors ruby/lib/provekit/self_contracts.rb.
+ */
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../provekit-ir-symbolic/src/Ir/Term.php';
-require_once __DIR__ . '/../../provekit-ir-symbolic/src/Ir/Formula.php';
-require_once __DIR__ . '/../../provekit-ir-symbolic/src/Ir/Declaration.php';
-require_once __DIR__ . '/../../provekit-ir-symbolic/src/Canonicalizer/Blake3.php';
-require_once __DIR__ . '/../../provekit-ir-symbolic/src/Canonicalizer/Jcs.php';
-require_once __DIR__ . '/../../provekit-ir-symbolic/src/Canonicalizer/Ed25519.php';
-require_once __DIR__ . '/../../provekit-ir-symbolic/src/ClaimEnvelope/Minter.php';
-require_once __DIR__ . '/../../provekit-ir-symbolic/src/ProofEnvelope/Builder.php';
-require_once __DIR__ . '/../slabs/slabs.php';
+$baseDir = dirname(__DIR__, 2);
+$irDir = $baseDir . '/../provekit-ir-symbolic/src';
+require_once $irDir . '/Ir/Term.php';
+require_once $irDir . '/Ir/Term.php';
+require_once $irDir . '/Ir/Formula.php';
+require_once $irDir . '/Ir/Declaration.php';
+require_once $irDir . '/Canonicalizer/Blake3.php';
+require_once $irDir . '/Canonicalizer/Jcs.php';
+require_once $irDir . '/Canonicalizer/Ed25519.php';
+require_once $irDir . '/ClaimEnvelope/Minter.php';
+require_once $irDir . '/ProofEnvelope/Builder.php';
+require_once __DIR__ . '/../../slabs/slabs.php';
 
-use ProvekIt\Ir\Collector;
+use ProvekIt\Ir\{Collector, ContractDecl};
 use ProvekIt\Canonicalizer\{Blake3, Jcs, Ed25519};
 use ProvekIt\ClaimEnvelope\Minter;
 use ProvekIt\ProofEnvelope\Builder;
-use ProvekIt\SelfContracts\Slabs;
+
+const PRODUCED_BY  = 'provekit-php-self-contracts@1.0';
+const DECLARED_AT  = '2026-05-03T18:00:00Z';
+const CATALOG_NAME = 'php-self-contracts';
+const CATALOG_VERSION = '1.0.0';
 
 function mintAll(string $outDir): array
 {
     $signer = Ed25519::foundation();
     $minter = new Minter($signer);
     $builder = new Builder($signer);
-    $producedBy = 'provekit-lift-php@0.1.0';
-    $producedAt = '2026-05-03T18:00:00Z';
+
+    $members = [];
     $contractCids = [];
 
-    // Pass 1: mint contracts from all slabs
-    $members = [];
-    foreach (Slabs() as $slab) {
+    foreach (\ProvekIt\SelfContracts\Slabs() as $slab) {
         Collector::reset();
         ($slab->run)();
-        $decls = Collector::finish();
+        $finished = Collector::finish();
 
-        foreach ($decls['contracts'] as $contract) {
-            $minted = $minter->mintContract($contract, $producedBy, $producedAt);
+        foreach ($finished['contracts'] as $contract) {
+            $minted = $minter->mintContract($contract, PRODUCED_BY, DECLARED_AT);
             $members[$minted['cid']] = $minted['canonicalBytes'];
             $contractCids[$contract->name] = $minted['cid'];
         }
     }
 
-    // Pass 2: mint bridges (cross-kit resolved)
-    // TODO: wire cross-kit bridge resolution from other kits' proof CIDs
+    $built = $builder->build(CATALOG_NAME, CATALOG_VERSION, $members, DECLARED_AT);
 
-    // Build proof envelope
-    $built = $builder->build('ir-document', '0.1.0', $members, $producedAt);
-
-    // Write .proof file
+    if (!is_dir($outDir)) { mkdir($outDir, 0755, true); }
     $proofPath = $outDir . '/' . $built['cid'] . '.proof';
     file_put_contents($proofPath, $built['bytes']);
 
+    $cidValues = array_values(array_filter($contractCids, fn($c) => str_starts_with($c, 'blake3-512:')));
+    sort($cidValues);
+    $contractSetCid = Blake3::cid(Jcs::encode($cidValues));
+
     return [
         'cid' => $built['cid'],
+        'contractSetCid' => $contractSetCid,
         'contractCount' => count($members),
         'proofPath' => $proofPath,
-        'contractCids' => $contractCids,
     ];
 }
 
-// Direct invocation (non-RPC)
-if (PHP_SAPI === 'cli' && !in_array('--rpc', $argv)) {
-    $outDir = $argv[1] ?? __DIR__ . '/../../';
+// Direct invocation (non-RPC) — prints to stdout for `make mint-php` parsing
+if (PHP_SAPI === 'cli' && !in_array('--rpc', $argv ?? [])) {
+    $outDir = $argv[1] ?? dirname(__DIR__, 2);
     $result = mintAll($outDir);
-    echo "catalog CID: {$result['cid']}\n";
-    echo "contracts: {$result['contractCount']}\n";
-    echo ".proof: {$result['proofPath']}\n";
+    echo "{$result['cid']}\n";
+    echo "contractSetCid: {$result['contractSetCid']}\n";
 }

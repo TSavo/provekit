@@ -120,4 +120,77 @@ class Minter
             'canonicalBytes' => Jcs::encode($decl),
         ];
     }
+
+    /**
+     * Mint a v1.4 BridgeDeclaration (layered envelope/header/body,
+     * tagged-union target). Per spec bridge-target-dimensionality.md §1.R1-R6.
+     *
+     * Canonical reference: rust/provekit-claim-envelope/src/lib.rs fn mint_bridge_v14.
+     *
+     * @param array $args with keys: name, sourceSymbol, sourceLayer,
+     *   sourceContractCid, target (['kind'=>'contract'|'contractSet','cid'=>'...']),
+     *   declaredAt, plus optional metadata fields.
+     */
+    public function mintBridgeV14(array $args): array
+    {
+        // Validate and normalize tagged-union target before signing (P1 #19).
+        // Extra keys or missing kind/cid would produce a malformed header that
+        // downstream verifiers reject. Reject early with a clear error.
+        $target = $args['target'] ?? null;
+        if (!is_array($target)) {
+            throw new \InvalidArgumentException("mintBridgeV14: 'target' must be an array");
+        }
+        $validKinds = ['contract', 'contractSet'];
+        $targetKind = $target['kind'] ?? null;
+        if (!in_array($targetKind, $validKinds, true)) {
+            throw new \InvalidArgumentException(
+                "mintBridgeV14: target.kind must be one of [" . implode(', ', $validKinds) . "], got: " . json_encode($targetKind)
+            );
+        }
+        if (empty($target['cid']) || !is_string($target['cid'])) {
+            throw new \InvalidArgumentException("mintBridgeV14: target.cid must be a non-empty string");
+        }
+        // Emit only the canonical two fields — strip any extra keys.
+        $normalizedTarget = ['cid' => $target['cid'], 'kind' => $targetKind];
+
+        // Build header (7 canonical fields per §1.R3)
+        $header = [
+            'schemaVersion' => '1',
+            'kind' => 'bridge',
+            'name' => $args['name'],
+            'sourceSymbol' => $args['sourceSymbol'],
+            'sourceLayer' => $args['sourceLayer'],
+            'sourceContractCid' => $args['sourceContractCid'],
+            'target' => $normalizedTarget,
+        ];
+
+        // Build metadata (omit missing fields per §1.R2)
+        $metaKeys = ['targetWitnessCid','targetBinaryCid','targetLayer',
+                      'targetContractSetCid','producedBy','producedAt'];
+        $meta = [];
+        foreach ($metaKeys as $k) {
+            if (!empty($args[$k])) $meta[$k] = $args[$k];
+        }
+
+        // Sign: JCS({header, metadata})
+        $sigPayload = ['header' => $header, 'metadata' => $meta];
+        $sigPayloadJcs = Jcs::encode($sigPayload);
+        $sig = $this->signer->signBase64($sigPayloadJcs);
+
+        // Build envelope
+        $env = [
+            'signer' => 'ed25519:' . $this->signer->pubKeyBase64(),
+            'declaredAt' => $args['declaredAt'],
+            'signature' => 'ed25519:' . $sig,
+        ];
+
+        // Full memento: {envelope, header, metadata}
+        $memento = ['envelope' => $env, 'header' => $header, 'metadata' => $meta];
+        $canonical = Jcs::encode($memento);
+
+        return [
+            'cid' => Blake3::cid($canonical),
+            'canonicalBytes' => $canonical,
+        ];
+    }
 }

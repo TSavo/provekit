@@ -41,7 +41,7 @@ class QuantifierFormula extends IrFormula {
 
 // ---------- Builder helpers (kit primitives) ----------
 
-function Var(string $name, ?Sort $sort = null): IrTerm {
+function V(string $name, ?Sort $sort = null): IrTerm {
     return new VarTerm($name);
 }
 
@@ -93,13 +93,13 @@ function NotNull(IrTerm $a): IrFormula {
     return new AtomicFormula('not_null', [$a]);
 }
 
-function And(IrFormula ...$operands): IrFormula {
+function And_(IrFormula ...$operands): IrFormula {
     $ops = array_values($operands);
     if (count($ops) === 1) return $ops[0];
     return new ConnectiveFormula('and', $ops);
 }
 
-function Or(IrFormula ...$operands): IrFormula {
+function Or_(IrFormula ...$operands): IrFormula {
     $ops = array_values($operands);
     if (count($ops) === 1) return $ops[0];
     return new ConnectiveFormula('or', $ops);
