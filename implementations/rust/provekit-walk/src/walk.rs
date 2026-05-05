@@ -130,13 +130,18 @@ pub fn walk_callsites_to_entry(
 
             // 2. Walk backward through the statements preceding this one.
             for (prev_idx, prev) in stmts[..idx].iter().enumerate().rev() {
-                if let Some((bound_name, bound_term)) = let_binding(prev) {
-                    wp = substitute_in_formula(wp, &bound_name, &bound_term);
-                    arrivals.push(Arrival {
-                        kind: ArrivalKind::LetBinding { name: bound_name },
-                        stmt_index: prev_idx,
-                        wp: Wp(wp.clone()),
-                    });
+                if let Some(bindings) = let_binding(prev) {
+                    // Destructuring lets emit multiple bindings per
+                    // statement; substitute them in declaration order
+                    // (left-to-right), and emit one arrival per binding.
+                    for (bound_name, bound_term) in bindings {
+                        wp = substitute_in_formula(wp, &bound_name, &bound_term);
+                        arrivals.push(Arrival {
+                            kind: ArrivalKind::LetBinding { name: bound_name },
+                            stmt_index: prev_idx,
+                            wp: Wp(wp.clone()),
+                        });
+                    }
                 }
                 // Non-let statements pass through without transformation in
                 // the MVP (e.g. `println!()`). Side-effecting statements are
@@ -345,25 +350,114 @@ fn walk_expr_for_callsites(
     }
 }
 
-/// If `stmt` is a `let pat = expr;` binding, return the bound name and
-/// the lifted IR term for `expr`. Otherwise None.
-fn let_binding(stmt: &Stmt) -> Option<(String, IrTerm)> {
+/// If `stmt` is a `let pat = expr;` binding, return one or more
+/// (bound-name, bound-term) pairs. Single bindings (`let x = e`) yield
+/// one pair; destructuring bindings (`let (a, b) = pair`,
+/// `let Point { x, y } = p`, `let [a, b] = arr`) yield one pair per
+/// bound name, with each name's term being a structural projection of
+/// the RHS.
+fn let_binding(stmt: &Stmt) -> Option<Vec<(String, IrTerm)>> {
     match stmt {
         Stmt::Local(Local {
             pat,
             init: Some(init),
             ..
         }) => {
-            let name = match pat {
-                Pat::Ident(p) => p.ident.to_string(),
-                Pat::Type(pt) => match &*pt.pat {
-                    Pat::Ident(p) => p.ident.to_string(),
-                    _ => return None,
-                },
-                _ => return None,
-            };
-            let term = lift_expr_to_term(init.expr.as_ref());
-            Some((name, term))
+            let rhs = lift_expr_to_term(init.expr.as_ref());
+            collect_pat_bindings(pat, rhs)
+        }
+        _ => None,
+    }
+}
+
+/// Walk a Pat tree, emitting one (name, projected-term) per bound name.
+fn collect_pat_bindings(pat: &Pat, rhs: IrTerm) -> Option<Vec<(String, IrTerm)>> {
+    let mut out = Vec::new();
+    collect_into(pat, rhs, &mut out)?;
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn collect_into(pat: &Pat, term: IrTerm, out: &mut Vec<(String, IrTerm)>) -> Option<()> {
+    match pat {
+        Pat::Ident(p) => {
+            out.push((p.ident.to_string(), term));
+            Some(())
+        }
+        Pat::Type(pt) => collect_into(&pt.pat, term, out),
+        Pat::Wild(_) => Some(()), // `_` binds nothing
+        Pat::Reference(r) => collect_into(&r.pat, term, out),
+        Pat::Paren(p) => collect_into(&p.pat, term, out),
+        Pat::Tuple(t) => {
+            // (a, b, c) destructures into projections of the RHS tuple.
+            for (i, sub) in t.elems.iter().enumerate() {
+                let projected = IrTerm::Ctor {
+                    name: "tuple_proj".to_string(),
+                    args: vec![
+                        term.clone(),
+                        IrTerm::Var {
+                            name: format!(".{}", i),
+                        },
+                    ],
+                };
+                collect_into(sub, projected, out)?;
+            }
+            Some(())
+        }
+        Pat::TupleStruct(ts) => {
+            // Variant(a, b, c): same shape as tuple but with the
+            // variant name embedded.
+            for (i, sub) in ts.elems.iter().enumerate() {
+                let projected = IrTerm::Ctor {
+                    name: "tuple_struct_proj".to_string(),
+                    args: vec![
+                        term.clone(),
+                        IrTerm::Var {
+                            name: format!(".{}", i),
+                        },
+                    ],
+                };
+                collect_into(sub, projected, out)?;
+            }
+            Some(())
+        }
+        Pat::Struct(s) => {
+            // Point { x, y }: each field binding gets a field-access
+            // projection.
+            for field in &s.fields {
+                let field_name = match &field.member {
+                    syn::Member::Named(id) => id.to_string(),
+                    syn::Member::Unnamed(idx) => idx.index.to_string(),
+                };
+                let projected = IrTerm::Ctor {
+                    name: "field".to_string(),
+                    args: vec![
+                        term.clone(),
+                        IrTerm::Var {
+                            name: format!(".{}", field_name),
+                        },
+                    ],
+                };
+                collect_into(&field.pat, projected, out)?;
+            }
+            Some(())
+        }
+        Pat::Slice(s) => {
+            // [a, b, c]: indexed projections.
+            for (i, sub) in s.elems.iter().enumerate() {
+                let projected = IrTerm::Ctor {
+                    name: "index".to_string(),
+                    args: vec![
+                        term.clone(),
+                        crate::wp::const_int(i as i64),
+                    ],
+                };
+                collect_into(sub, projected, out)?;
+            }
+            Some(())
         }
         _ => None,
     }

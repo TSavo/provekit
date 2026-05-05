@@ -301,6 +301,72 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
                 args,
             })
         }
+        Expr::Array(a) => {
+            let mut args = Vec::with_capacity(a.elems.len());
+            for e in &a.elems {
+                args.push(lift_expr_to_term(e)?);
+            }
+            Some(IrTerm::Ctor {
+                name: "array".to_string(),
+                args,
+            })
+        }
+        Expr::Repeat(r) => {
+            let elem = lift_expr_to_term(&r.expr)?;
+            let count = lift_expr_to_term(&r.len)?;
+            Some(IrTerm::Ctor {
+                name: "array_repeat".to_string(),
+                args: vec![elem, count],
+            })
+        }
+        Expr::Closure(c) => {
+            // `|x| body` lifts to IrTerm::Lambda. Multi-arg closures
+            // collapse into nested lambdas (right-associative). MVP
+            // supports closures with single Pat::Ident inputs; richer
+            // patterns are tagged for later.
+            let body = lift_expr_to_term(&c.body)?;
+            let mut term = body;
+            for input in c.inputs.iter().rev() {
+                let param_name = match input {
+                    syn::Pat::Ident(p) => p.ident.to_string(),
+                    syn::Pat::Type(pt) => match &*pt.pat {
+                        syn::Pat::Ident(p) => p.ident.to_string(),
+                        _ => return None,
+                    },
+                    _ => return None,
+                };
+                term = IrTerm::Lambda {
+                    param_name,
+                    param_sort: provekit_ir_types::Sort::Primitive {
+                        name: "Int".to_string(),
+                    },
+                    body: Box::new(term),
+                };
+            }
+            Some(term)
+        }
+        Expr::Await(a) => {
+            // `expr.await` desugars to a state machine that yields and
+            // resumes; for substrate purposes it produces the awaited
+            // value, so we lift as the inner expr.
+            lift_expr_to_term(&a.base)
+        }
+        Expr::Async(a) => {
+            // `async { body }` produces a Future. The substrate sees
+            // through to the body's eventual value: lift the trailing
+            // expression of the block.
+            if let Some(syn::Stmt::Expr(e, None)) = a.block.stmts.last() {
+                lift_expr_to_term(e)
+            } else {
+                None
+            }
+        }
+        Expr::If(_) | Expr::Match(_) | Expr::Block(_) => {
+            // Conditional / match / block expressions don't lift to a
+            // single canonical IR term in the MVP — they would need a
+            // case-analysis ctor. Tagged for future iteration.
+            None
+        }
         Expr::Binary(ExprBinary {
             left, op, right, ..
         }) => {

@@ -134,3 +134,56 @@ fn predicate_with_method_call() {
     assert!(json.contains("\"=\""));
     assert!(json.contains("\"method:is_empty\""));
 }
+
+#[test]
+fn closure_lifts_as_lambda() {
+    // |x| x + 1 lifts to IrTerm::Lambda { param=x, body=(x + 1) }.
+    let t = lift_expr_to_term(&parse_expr("|x| x + 1")).unwrap();
+    let json = serde_json::to_string(&t).unwrap();
+    assert!(json.contains("\"lambda\""), "expected lambda variant: {}", json);
+    assert!(json.contains("\"x\""));
+    assert!(json.contains("\"+\""));
+}
+
+#[test]
+fn multi_arg_closure_nests() {
+    // |x, y| x * y lifts to nested lambdas (right-associative): λx. λy. x * y.
+    let t = lift_expr_to_term(&parse_expr("|x, y| x * y")).unwrap();
+    let json = serde_json::to_string(&t).unwrap();
+    // Two lambda nodes in the JSON.
+    let lambda_count = json.matches("\"lambda\"").count();
+    assert!(lambda_count >= 2, "expected ≥2 nested lambdas: {}", json);
+}
+
+#[test]
+fn await_passes_through_to_inner() {
+    // future.await lifts as just `future`.
+    let awaited = lift_expr_to_term(&parse_expr("future.await")).unwrap();
+    let direct = lift_expr_to_term(&parse_expr("future")).unwrap();
+    assert_eq!(awaited, direct);
+}
+
+#[test]
+fn async_block_lifts_trailing_value() {
+    // async { 42 } produces a future that yields 42; lift as 42.
+    let t = lift_expr_to_term(&parse_expr("async { 42 }")).unwrap();
+    let direct = lift_expr_to_term(&parse_expr("42")).unwrap();
+    assert_eq!(t, direct);
+}
+
+#[test]
+fn array_literal_lifts_as_ctor() {
+    let t = lift_expr_to_term(&parse_expr("[1, 2, 3]")).unwrap();
+    let json = serde_json::to_string(&t).unwrap();
+    assert!(json.contains("\"array\""));
+    assert!(json.contains("1"));
+    assert!(json.contains("3"));
+}
+
+#[test]
+fn array_repeat_lifts_as_ctor() {
+    let t = lift_expr_to_term(&parse_expr("[0; 8]")).unwrap();
+    let json = serde_json::to_string(&t).unwrap();
+    assert!(json.contains("\"array_repeat\""));
+    assert!(json.contains("8"));
+}
