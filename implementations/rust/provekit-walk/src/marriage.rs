@@ -39,7 +39,7 @@ use crate::canonical::{cid_of_value, formula_to_canonical, jcs_bytes_of_value};
 use crate::charon_runner::{invoke_charon_on_rs_source, RunnerError};
 use crate::contract::{build_function_contract_with_file, FunctionContractMemento};
 use crate::llbc::LlbcError;
-use crate::llbc_lift::lift_llbc_function;
+use crate::llbc_lift::lift_llbc_function_with_types;
 use crate::wp::atomic_true;
 
 #[derive(Debug, Error)]
@@ -106,7 +106,12 @@ pub fn lift_marriage(
     let f = krate
         .function_by_name(fn_name)
         .map_err(MarriageError::Llbc)?;
-    let llbc = lift_llbc_function(f, rs_source_path.to_str()).map_err(MarriageError::Llbc)?;
+    let llbc = lift_llbc_function_with_types(
+        f,
+        rs_source_path.to_str(),
+        krate.type_decls_raw(),
+    )
+    .map_err(MarriageError::Llbc)?;
 
     Ok(marry(ast, llbc))
 }
@@ -216,7 +221,7 @@ mod tests {
         wrap_function_contract_cached, EnvelopeCache, DEV_SIGNER_SEED,
     };
     use crate::llbc::LlbcCrate;
-    use crate::llbc_lift::lift_llbc_function;
+    use crate::llbc_lift::lift_llbc_function_with_types;
 
     fn fixture_path(name: &str) -> std::path::PathBuf {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -239,7 +244,7 @@ mod tests {
         let ast = build_function_contract_with_file(&item_fn, None, Some(rs));
         let krate = LlbcCrate::from_path(fixture_path(llbc)).unwrap();
         let f = krate.function_by_name(fn_name).unwrap();
-        let llbc = lift_llbc_function(f, Some(rs)).unwrap();
+        let llbc = lift_llbc_function_with_types(f, Some(rs), krate.type_decls_raw()).unwrap();
         (ast, llbc)
     }
 
@@ -544,6 +549,54 @@ mod tests {
         assert!(
             post_str.contains("\"x\"") && post_str.contains("\"y\""),
             "merged post references both formals: {}",
+            post_str
+        );
+    }
+
+    // ---- Task 1: struct field access marriage ----
+
+    #[test]
+    fn marriage_on_struct_field_yields_identical() {
+        // `fn p(p: &Point) -> u32 { p.x }` — no source-level guards,
+        // no MIR-inserted asserts. Both layers derive `result =
+        // Ctor("field", [Var("p"), Var(".x")])`. LayerAgreement::Identical.
+        let (ast, llbc) = build_layers("struct_field.rs", "struct_field.llbc", "p");
+        let married = marry(ast, llbc);
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::Identical,
+            "struct field access: both layers agree; got {:?}",
+            married.agreement
+        );
+
+        let post_str = serde_json::to_string(&married.merged.post).unwrap();
+        assert!(
+            post_str.contains("\".x\""),
+            "merged post uses named field .x: {}",
+            post_str
+        );
+    }
+
+    // ---- Task 2: tuple element projection marriage ----
+
+    #[test]
+    fn marriage_on_tuple_field_yields_identical() {
+        // `fn t(p: (u32, u32)) -> u32 { p.0 }` — no guards, no MIR
+        // asserts. Both layers derive `result = Ctor("field", [Var("p"),
+        // Var(".0")])`. LayerAgreement::Identical.
+        let (ast, llbc) = build_layers("tuple_field.rs", "tuple_field.llbc", "t");
+        let married = marry(ast, llbc);
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::Identical,
+            "tuple field access: both layers agree; got {:?}",
+            married.agreement
+        );
+
+        let post_str = serde_json::to_string(&married.merged.post).unwrap();
+        assert!(
+            post_str.contains("\".0\""),
+            "merged post uses tuple index .0: {}",
             post_str
         );
     }

@@ -70,6 +70,13 @@ impl LlbcCrate {
             .as_str()
     }
 
+    /// The crate's type_decls array. Used by the LLBC lifter to resolve
+    /// struct field names from `Field(Adt(id), idx)` projections. Returns
+    /// `None` when the table is absent (e.g., test slices without types).
+    pub fn type_decls_raw(&self) -> Option<&Value> {
+        self.raw.get("translated")?.get("type_decls")
+    }
+
     /// Iterate all function declarations in the crate.
     pub fn fun_decls(&self) -> impl Iterator<Item = LlbcFunction<'_>> {
         self.raw

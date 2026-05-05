@@ -40,10 +40,27 @@ use crate::wp::atomic_true;
 
 /// Lift one LLBC function to a FunctionContractMemento. The
 /// `source_path` is annotated into the memento's locus for downstream
-/// developer-feedback paths.
+/// developer-feedback paths. `type_decls` is the raw JSON value of
+/// `translated.type_decls` from the parent `LlbcCrate` — pass
+/// `krate.type_decls_raw()` to enable struct field name resolution
+/// for `Field(Adt, idx)` projections. Pass `None` when the crate's
+/// type table is unavailable (test fixtures without types).
 pub fn lift_llbc_function(
     f: LlbcFunction<'_>,
     source_path: Option<&str>,
+) -> Result<FunctionContractMemento, LlbcError> {
+    lift_llbc_function_with_types(f, source_path, None)
+}
+
+/// Like `lift_llbc_function` but accepts the crate's type_decls for
+/// struct field name resolution. Callers that have an `LlbcCrate`
+/// should pass `krate.type_decls_raw()` so `Field(Adt, idx)`
+/// projections resolve to source field names (`.x`) instead of
+/// indices (`.0`), achieving byte equality with the AST layer.
+pub fn lift_llbc_function_with_types(
+    f: LlbcFunction<'_>,
+    source_path: Option<&str>,
+    type_decls: Option<&Value>,
 ) -> Result<FunctionContractMemento, LlbcError> {
     let fn_name = f.fn_name().ok_or_else(|| LlbcError::Schema {
         path: "item_meta.name".into(),
@@ -84,7 +101,7 @@ pub fn lift_llbc_function(
     // derivation, collapsing LayerAgreement::Both into LlbcExtra
     // when MIR is the only layer that contributes.
     let mut post_contribs = pre_contribs;
-    if let Some(result_eq) = derive_return_equation(&stmts, &formals) {
+    if let Some(result_eq) = derive_return_equation(&stmts, &formals, type_decls) {
         post_contribs.push(result_eq);
     }
     let post_formula = simplify_conjunction(post_contribs);
@@ -111,6 +128,7 @@ pub fn lift_llbc_function(
 fn derive_return_equation(
     stmts: &[&Value],
     formals: &[(u32, String)],
+    type_decls: Option<&Value>,
 ) -> Option<IrFormula> {
     // Find the LAST assignment to local _0. (Charon emits a single
     // Assign for the return; we still scan in reverse to be robust
@@ -129,7 +147,7 @@ fn derive_return_equation(
             continue;
         }
         let prior = &stmts[..i];
-        if let Some(term) = rvalue_to_ir_term_for_post(&arr[1], prior, formals) {
+        if let Some(term) = rvalue_to_ir_term_for_post(&arr[1], prior, formals, type_decls) {
             return Some(IrFormula::Atomic {
                 name: "=".to_string(),
                 args: vec![IrTerm::Var { name: "result".to_string() }, term],
@@ -155,10 +173,11 @@ fn rvalue_to_ir_term_for_post(
     rvalue: &Value,
     prior: &[&Value],
     formals: &[(u32, String)],
+    type_decls: Option<&Value>,
 ) -> Option<IrTerm> {
     if let Some(use_op) = rvalue.get("Use") {
         if let Some(place) = use_op.get("Move").or_else(|| use_op.get("Copy")) {
-            return place_to_term_for_post(place, prior, formals);
+            return place_to_term_for_post(place, prior, formals, type_decls);
         }
         if let Some(constant) = use_op.get("Const") {
             return constant_to_ir_term(constant);
@@ -193,18 +212,32 @@ fn rvalue_to_ir_term_for_post(
     None
 }
 
-/// Lift a Place to an IrTerm. Handles:
+/// Lift a Place to an IrTerm for postcondition return-value derivation.
+/// Handles:
 ///   - `Local(N)` where _N is a formal: `Var(<formal name>)`.
 ///   - `Local(N)` where _N is a temp: traces _N's defining rvalue
 ///     via `rvalue_to_ir_term_for_post`.
-///   - `Projection(base, Field(Tuple, 0))` where base is `Local(N)`
-///     and _N := `BinaryOp(<CheckedOp>, lhs, rhs)`: lifts to the
-///     corresponding bare arithmetic ctor (the rustc CheckedMul +
-///     tuple-projection pattern for overflow-checked arithmetic).
+///   - `Projection(base, Deref)`: transparent; recurses on the base.
+///     Required for `&Point` references where the LLBC place chain is
+///     `Projection(Projection(Local(p_ref), Deref), Field(Adt, 0))`.
+///   - `Projection(base, Field(Tuple, idx))` where `field_idx == 0`
+///     AND the base local's rvalue is a BinaryOp with an arithmetic op:
+///     lifts to the bare arithmetic ctor (CheckedOp tuple-extraction
+///     shortcut; existing behavior preserved exactly).
+///   - `Projection(base, Field(Tuple, idx))` in all other cases:
+///     emits `Ctor("field", [base_term, Var(".N")])`. Matches AST's
+///     `Expr::Field(syn::Member::Unnamed(idx))` arm byte-for-byte.
+///   - `Projection(base, Field(Adt(adt_id, _), idx))`: resolves the
+///     field's source name from `type_decls[adt_id].kind.Struct[idx]`
+///     and emits `Ctor("field", [base_term, Var(".<name>")])`. Achieves
+///     byte equality with AST's `Expr::Field(syn::Member::Named)` arm.
+///     Falls back to index notation if type_decls is absent or lookup
+///     fails (foreign struct, opaque type, etc.).
 fn place_to_term_for_post(
     place: &Value,
     prior: &[&Value],
     formals: &[(u32, String)],
+    type_decls: Option<&Value>,
 ) -> Option<IrTerm> {
     let kind = place.get("kind")?;
     if let Some(local) = kind.get("Local").and_then(|v| v.as_u64()) {
@@ -213,7 +246,7 @@ fn place_to_term_for_post(
             return Some(IrTerm::Var { name: name.clone() });
         }
         let rvalue = find_last_assign_rvalue(prior, local)?;
-        return rvalue_to_ir_term_for_post(rvalue, prior, formals);
+        return rvalue_to_ir_term_for_post(rvalue, prior, formals, type_decls);
     }
     if let Some(proj_arr) = kind.get("Projection").and_then(|v| v.as_array()) {
         if proj_arr.len() != 2 {
@@ -221,31 +254,101 @@ fn place_to_term_for_post(
         }
         let base = &proj_arr[0];
         let elem = &proj_arr[1];
-        // Recognize Field(Tuple, 0) projection on a CheckedOp result.
+
+        // Deref projection: transparent for predicate purposes.
+        if elem.as_str() == Some("Deref") {
+            return place_to_term_for_post(base, prior, formals, type_decls);
+        }
+
         if let Some(field_arr) = elem.get("Field").and_then(|v| v.as_array()) {
             if field_arr.len() == 2 {
-                let field_idx = field_arr[1].as_u64()?;
-                if field_idx == 0 {
-                    let base_local = base.get("kind")?.get("Local").and_then(|v| v.as_u64())?
-                        as u32;
-                    let base_rvalue = find_last_assign_rvalue(prior, base_local)?;
-                    if let Some(arr) = base_rvalue.get("BinaryOp").and_then(|v| v.as_array()) {
-                        if arr.len() == 3 {
-                            let op = arr[0].as_str()?;
-                            let ir_op = mir_arith_op_to_ir_ctor(op)?;
-                            let l = operand_to_ir_term(&arr[1], prior, formals)?;
-                            let r = operand_to_ir_term(&arr[2], prior, formals)?;
-                            return Some(IrTerm::Ctor {
-                                name: ir_op.to_string(),
-                                args: vec![l, r],
-                            });
+                let field_kind = &field_arr[0];
+                let field_idx = field_arr[1].as_u64()? as usize;
+
+                // Tuple field projection.
+                if field_kind.get("Tuple").is_some() {
+                    // CheckedOp shortcut: Field(Tuple, 0) on a local whose
+                    // defining rvalue is a BinaryOp with an arithmetic op.
+                    // This is the rustc pattern for checked arithmetic —
+                    // the result is a (value, overflow_flag) tuple; we skip
+                    // the tuple wrapper and emit the bare arithmetic ctor.
+                    if field_idx == 0 {
+                        if let Some(base_local) =
+                            base.get("kind").and_then(|k| k.get("Local")).and_then(|v| v.as_u64())
+                        {
+                            let base_local = base_local as u32;
+                            if let Some(base_rv) = find_last_assign_rvalue(prior, base_local) {
+                                if let Some(arr) =
+                                    base_rv.get("BinaryOp").and_then(|v| v.as_array())
+                                {
+                                    if arr.len() == 3 {
+                                        let op = arr[0].as_str()?;
+                                        if let Some(ir_op) = mir_arith_op_to_ir_ctor(op) {
+                                            let l = operand_to_ir_term(&arr[1], prior, formals)?;
+                                            let r = operand_to_ir_term(&arr[2], prior, formals)?;
+                                            return Some(IrTerm::Ctor {
+                                                name: ir_op.to_string(),
+                                                args: vec![l, r],
+                                            });
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
+                    // General tuple element access (non-CheckedOp base, or
+                    // idx > 0). Emit Ctor("field", [base_term, Var(".N")]).
+                    let base_term = place_to_term_for_post(base, prior, formals, type_decls)?;
+                    return Some(IrTerm::Ctor {
+                        name: "field".to_string(),
+                        args: vec![
+                            base_term,
+                            IrTerm::Var { name: format!(".{}", field_idx) },
+                        ],
+                    });
+                }
+
+                // Adt (struct) field projection. Look up the field's source
+                // name from the crate's type_decls so the emitted term uses
+                // `.x` rather than `.0`, matching AST byte-for-byte.
+                if let Some(adt_arr) = field_kind.get("Adt").and_then(|v| v.as_array()) {
+                    let adt_id = adt_arr.first().and_then(|v| v.as_u64())? as usize;
+                    let field_name =
+                        type_decls.and_then(|td| adt_field_name(td, adt_id, field_idx))
+                            .unwrap_or_else(|| field_idx.to_string());
+                    let base_term = place_to_term_for_post(base, prior, formals, type_decls)?;
+                    return Some(IrTerm::Ctor {
+                        name: "field".to_string(),
+                        args: vec![
+                            base_term,
+                            IrTerm::Var { name: format!(".{}", field_name) },
+                        ],
+                    });
                 }
             }
         }
     }
     None
+}
+
+/// Look up a struct field's source name from the crate's type_decls.
+/// `type_decls` is the raw JSON value of `translated.type_decls` (an
+/// array). The Adt id is an index into this array matching `def_id`;
+/// fields are in `kind.Struct` in declaration order.
+///
+/// Returns `None` when:
+///   - `type_decls` is not an array (absent or wrong type)
+///   - no type_decl has `def_id == adt_id`
+///   - the type is not a struct (enum, tuple struct, etc.)
+///   - `field_idx` is out of range
+fn adt_field_name(type_decls: &Value, adt_id: usize, field_idx: usize) -> Option<String> {
+    let decls = type_decls.as_array()?;
+    let decl = decls.iter().find(|d| {
+        d.get("def_id").and_then(|v| v.as_u64()).map(|id| id as usize) == Some(adt_id)
+    })?;
+    let fields = decl.get("kind")?.get("Struct")?.as_array()?;
+    let field = fields.get(field_idx)?;
+    field.get("name")?.as_str().map(|s| s.to_string())
 }
 
 /// Trace an Assert's `cond` operand back to a `BinaryOp(Eq, x, 0)`
@@ -967,6 +1070,135 @@ mod tests {
         assert_eq!(
             ast_post_jcs, llbc_post_jcs,
             "cross-layer post formula bytes must match"
+        );
+    }
+
+    // ---- Task 1: struct field access (Adt projection) ----
+
+    #[test]
+    fn llbc_lifts_struct_field_to_named_field_ctor() {
+        // `fn p(p: &Point) -> u32 { p.x }` — LLBC emits a nested
+        // projection: Deref then Field(Adt(0, null), 0). The lifter
+        // must resolve field index 0 of type_decl 0 to name "x" from
+        // the crate's type_decls table.
+        let krate = LlbcCrate::from_path(fixture_path("struct_field.llbc")).unwrap();
+        let f = krate.function_by_name("p").unwrap();
+        let contract =
+            lift_llbc_function_with_types(f, Some("struct_field.rs"), krate.type_decls_raw())
+                .unwrap();
+
+        assert_eq!(contract.fn_name, "p");
+        assert_eq!(contract.formals, vec!["p".to_string()]);
+
+        // Post should contain `result = Ctor("field", [Var("p"), Var(".x")])`.
+        let post_str = serde_json::to_string(&contract.post).unwrap();
+        assert!(
+            post_str.contains("\"field\""),
+            "post should contain field ctor: {}",
+            post_str
+        );
+        assert!(
+            post_str.contains("\".x\""),
+            "post should use named field .x (not .0): {}",
+            post_str
+        );
+    }
+
+    #[test]
+    fn cross_layer_struct_field_byte_equality() {
+        // AST and LLBC agree on `result = Ctor("field", [Var("p"), Var(".x")])`.
+        // AST's Expr::Field(Named("x")) and LLBC's Field(Adt(0), 0) with
+        // type_decls name lookup both produce the same term bytes.
+        use crate::canonical::{formula_to_canonical, jcs_bytes_of_value};
+        use crate::contract::build_function_contract;
+
+        let src = std::fs::read_to_string(fixture_path("struct_field.rs")).unwrap();
+        let file: syn::File = syn::parse_str(&src).unwrap();
+        let item_fn = file
+            .items
+            .into_iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == "p" => Some(f),
+                _ => None,
+            })
+            .unwrap();
+        let ast_contract = build_function_contract(&item_fn, None);
+
+        let krate = LlbcCrate::from_path(fixture_path("struct_field.llbc")).unwrap();
+        let f = krate.function_by_name("p").unwrap();
+        let llbc_contract =
+            lift_llbc_function_with_types(f, Some("struct_field.rs"), krate.type_decls_raw())
+                .unwrap();
+
+        let ast_post = jcs_bytes_of_value(&formula_to_canonical(&ast_contract.post));
+        let llbc_post = jcs_bytes_of_value(&formula_to_canonical(&llbc_contract.post));
+        assert_eq!(
+            ast_post, llbc_post,
+            "struct field: AST and LLBC post must be byte-identical"
+        );
+    }
+
+    // ---- Task 2: general tuple element projection ----
+
+    #[test]
+    fn llbc_lifts_tuple_field_to_index_ctor() {
+        // `fn t(p: (u32, u32)) -> u32 { p.0 }` — LLBC emits
+        // Field(Tuple(2), 0) on a formal Local. The CheckedOp shortcut
+        // must NOT fire (base is a formal, not a BinaryOp result);
+        // the general tuple path must produce Ctor("field", [Var("p"), Var(".0")]).
+        let krate = LlbcCrate::from_path(fixture_path("tuple_field.llbc")).unwrap();
+        let f = krate.function_by_name("t").unwrap();
+        let contract =
+            lift_llbc_function_with_types(f, Some("tuple_field.rs"), krate.type_decls_raw())
+                .unwrap();
+
+        assert_eq!(contract.fn_name, "t");
+        assert_eq!(contract.formals, vec!["p".to_string()]);
+
+        let post_str = serde_json::to_string(&contract.post).unwrap();
+        assert!(
+            post_str.contains("\"field\""),
+            "post should contain field ctor: {}",
+            post_str
+        );
+        assert!(
+            post_str.contains("\".0\""),
+            "post should use index .0: {}",
+            post_str
+        );
+    }
+
+    #[test]
+    fn cross_layer_tuple_field_byte_equality() {
+        // AST emits Ctor("field", [Var("p"), Var(".0")]) for `p.0`
+        // via syn::Member::Unnamed. LLBC emits the same via the
+        // general Field(Tuple, idx) path. Bytes must match.
+        use crate::canonical::{formula_to_canonical, jcs_bytes_of_value};
+        use crate::contract::build_function_contract;
+
+        let src = std::fs::read_to_string(fixture_path("tuple_field.rs")).unwrap();
+        let file: syn::File = syn::parse_str(&src).unwrap();
+        let item_fn = file
+            .items
+            .into_iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == "t" => Some(f),
+                _ => None,
+            })
+            .unwrap();
+        let ast_contract = build_function_contract(&item_fn, None);
+
+        let krate = LlbcCrate::from_path(fixture_path("tuple_field.llbc")).unwrap();
+        let f = krate.function_by_name("t").unwrap();
+        let llbc_contract =
+            lift_llbc_function_with_types(f, Some("tuple_field.rs"), krate.type_decls_raw())
+                .unwrap();
+
+        let ast_post = jcs_bytes_of_value(&formula_to_canonical(&ast_contract.post));
+        let llbc_post = jcs_bytes_of_value(&formula_to_canonical(&llbc_contract.post));
+        assert_eq!(
+            ast_post, llbc_post,
+            "tuple field: AST and LLBC post must be byte-identical"
         );
     }
 }
