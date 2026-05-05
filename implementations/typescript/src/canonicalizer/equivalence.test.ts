@@ -967,17 +967,17 @@ describe("12. canonicalizeSort", () => {
     });
   });
 
-  it("recursively canonicalizes function domain + range", () => {
+  it("recursively canonicalizes function args + return", () => {
     expect(
       canonicalizeSort({
         kind: "function",
-        domain: [{ kind: "primitive", name: "Int" }],
-        range: { kind: "primitive", name: "Bool" },
+        args: [{ kind: "primitive", name: "Int" }],
+        return: { kind: "primitive", name: "Bool" },
       }),
     ).toEqual({
       kind: "function",
-      domain: [{ kind: "primitive", name: "Int" }],
-      range: { kind: "primitive", name: "Bool" },
+      args: [{ kind: "primitive", name: "Int" }],
+      return: { kind: "primitive", name: "Bool" },
     });
   });
 
