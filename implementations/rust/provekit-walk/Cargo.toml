@@ -14,6 +14,14 @@ path = "src/lib.rs"
 name = "provekit-walk-demo"
 path = "src/bin/walk_demo.rs"
 
+[[bin]]
+name = "provekit-walk-emit"
+path = "src/bin/walk_emit.rs"
+
+[[bin]]
+name = "provekit-walk-rpc"
+path = "src/bin/walk_rpc.rs"
+
 [dependencies]
 syn = { workspace = true }
 quote = { workspace = true }
@@ -21,5 +29,6 @@ proc-macro2 = { workspace = true }
 provekit-ir-types = { path = "../provekit-ir-types" }
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 serde_json = { workspace = true }
+base64 = { workspace = true }
 
 [dev-dependencies]
