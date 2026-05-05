@@ -185,10 +185,11 @@ pub fn lift_predicate(expr: &Expr) -> Option<IrFormula> {
             ..
         }) => {
             let inner = lift_predicate(expr)?;
-            Some(IrFormula::Not {
-                operands: vec![inner],
-            })
+            // Apply De Morgan / double-negation via the negate helper,
+            // so `!(x >= 10)` lifts to `x < 10`, not `¬(x ≥ 10)`.
+            Some(negate(inner))
         }
+        Expr::Paren(p) => lift_predicate(&p.expr),
         // Anything else is unrecognized in the MVP.
         _ => None,
     }
@@ -279,9 +280,7 @@ fn block_only_panics(block: &syn::Block) -> bool {
 }
 
 fn negate(f: IrFormula) -> IrFormula {
-    // Special-case ¬(a < b) → a ≥ b, and the other comparison flips.
-    // This produces the form Sir's bare demo expects: `if x < 10 panic`
-    // lifts to `x ≥ 10`, not `¬(x < 10)`.
+    // Comparison flips: `if x < 10 panic` lifts to `x ≥ 10`, not `¬(x < 10)`.
     if let IrFormula::Atomic { name, args } = &f {
         let flipped = match name.as_str() {
             "<" => Some("≥"),
@@ -299,7 +298,27 @@ fn negate(f: IrFormula) -> IrFormula {
             };
         }
     }
-    IrFormula::Not { operands: vec![f] }
+    // De Morgan's laws: push negation inward.
+    //   ¬(a ∧ b) → ¬a ∨ ¬b
+    //   ¬(a ∨ b) → ¬a ∧ ¬b
+    // Sir's "every else is the contraposition" — when the lifter
+    // produces the contraposition of `a && b` for an if-then-panic,
+    // the result is `¬a ∨ ¬b`, not the harder-to-discharge `¬(a ∧ b)`.
+    match f {
+        IrFormula::And { operands } => IrFormula::Or {
+            operands: operands.into_iter().map(negate).collect(),
+        },
+        IrFormula::Or { operands } => IrFormula::And {
+            operands: operands.into_iter().map(negate).collect(),
+        },
+        IrFormula::Not { mut operands } if operands.len() == 1 => {
+            // Double-negation elimination: ¬¬a → a.
+            operands.pop().unwrap()
+        }
+        other => IrFormula::Not {
+            operands: vec![other],
+        },
+    }
 }
 
 fn simplify_conjunction(parts: Vec<IrFormula>) -> IrFormula {
@@ -454,5 +473,73 @@ mod tests {
         let json = serde_json::to_string(post.as_formula()).unwrap();
         assert!(json.contains("\"+\""), "post should encode the + ctor: {}", json);
         assert!(json.contains("\"x\""));
+    }
+
+    #[test]
+    fn lifts_or_condition_with_de_morgan() {
+        // `if x < 10 || y < 5 panic` lifts to ¬(x<10 ∨ y<5)
+        // which simplifies via De Morgan to (x≥10 ∧ y≥5).
+        let item_fn = parse_fn(
+            r#"
+            fn h(x: u32, y: u32) -> u32 {
+                if x < 10 || y < 5 {
+                    panic!();
+                }
+                x * y
+            }
+        "#,
+        );
+        let pre = lift_function_precondition(&item_fn);
+        let json = serde_json::to_string(pre.as_formula()).unwrap();
+        // Expect an `and` of two `≥` atoms (De Morgan applied + comparison flips).
+        assert!(json.contains("\"and\""), "pre should be a conjunction: {}", json);
+        assert!(json.contains("\"≥\""), "pre should contain ≥ atoms: {}", json);
+        assert!(json.contains("\"x\"") && json.contains("\"y\""));
+    }
+
+    #[test]
+    fn lifts_and_condition_with_de_morgan() {
+        // `if x < 10 && y < 5 panic` lifts to ¬(x<10 ∧ y<5)
+        // which is (x≥10 ∨ y≥5).
+        let item_fn = parse_fn(
+            r#"
+            fn h(x: u32, y: u32) -> u32 {
+                if x < 10 && y < 5 {
+                    panic!();
+                }
+                x + y
+            }
+        "#,
+        );
+        let pre = lift_function_precondition(&item_fn);
+        let json = serde_json::to_string(pre.as_formula()).unwrap();
+        // Expect an `or` of two `≥` atoms.
+        assert!(json.contains("\"or\""), "pre should be a disjunction: {}", json);
+        assert!(json.contains("\"≥\""), "pre should contain ≥ atoms: {}", json);
+    }
+
+    #[test]
+    fn double_negation_eliminated() {
+        // `if !(x >= 10) panic` is equivalent to `if x < 10 panic`.
+        // The lifter should produce `x ≥ 10` (not `¬¬(x ≥ 10)`).
+        let item_fn = parse_fn(
+            r#"
+            fn n(x: u32) -> u32 {
+                if !(x >= 10) {
+                    panic!();
+                }
+                x * 2
+            }
+        "#,
+        );
+        let pre = lift_function_precondition(&item_fn);
+        let json = serde_json::to_string(pre.as_formula()).unwrap();
+        // The atomic ≥ should appear directly, with no `not` wrapper.
+        assert!(json.contains("\"≥\""), "pre should contain ≥ atom: {}", json);
+        assert!(
+            !json.contains("\"not\""),
+            "pre should NOT contain a `not` wrapper (double negation eliminated): {}",
+            json
+        );
     }
 }

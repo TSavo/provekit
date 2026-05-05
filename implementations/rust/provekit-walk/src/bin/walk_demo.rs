@@ -55,6 +55,22 @@ fn guarded_caller(input: u32) -> u32 {
 }
 "#;
 
+const MULTI_ARG_DEMO_SRC: &str = r#"
+fn h(x: u32, y: u32) -> u32 {
+    if x < 10 || y < 5 {
+        panic!("inputs out of range");
+    }
+    x * y
+}
+
+fn multi_caller() -> u32 {
+    let a: u32 = 42;
+    let b: u32 = 100;
+    let result = h(a, b);
+    result
+}
+"#;
+
 fn main() {
     println!("== provekit-walk demo: paper 07 machinery on Rust source ==\n");
 
@@ -110,8 +126,27 @@ fn main() {
     print_shadow_source(&s_guarded);
     print_cache_stats(&cache2);
 
+    println!(
+        "\n----------------------------------------------------------\n\
+         Demo 3: multi-argument callee `h(x, y)` with disjunctive\n\
+         guard `if x < 10 || y < 5 panic`. The lifter applies De Morgan\n\
+         to derive the precondition `x ≥ 10 ∧ y ≥ 5`. The walk\n\
+         substitutes both arguments at the callsite, producing a fully\n\
+         ground predicate at the entry arrival.\n\
+         ----------------------------------------------------------\n"
+    );
+
+    let mut cache3 = MintCache::new();
+    let s_multi = run_pipeline(MULTI_ARG_DEMO_SRC, "h", "multi_caller", &mut cache3);
+    print_shadow_source(&s_multi);
+    print_cache_stats(&cache3);
+
     println!("\n== Demo complete — paper 07's substrate at work on real source ==");
 }
+
+// `run_pipeline` only handles single-formal-parameter callees in the
+// existing helper. We add a second helper that walks every formal param
+// from the callee's signature.
 
 /// Run the parse → lift → walk → shadow pipeline on `src`, looking
 /// for `caller_name` as the function to walk and `callee_name` as
@@ -140,12 +175,19 @@ fn run_pipeline(
         pretty_formula(post.as_formula())
     );
 
-    let formal_param_name = first_param_name(&callee_fn).unwrap_or_else(|| "x".to_string());
+    let formal_params = {
+        let names = all_param_names(&callee_fn);
+        if names.is_empty() {
+            vec!["x".to_string()]
+        } else {
+            names
+        }
+    };
     let s = build_shadow_source(
         &caller_fn,
         &[CalleeContract {
             callee_name: callee_name.to_string(),
-            formal_params: vec![formal_param_name],
+            formal_params,
             precondition: pre,
         }],
     );
@@ -164,14 +206,19 @@ fn find_fn(file: &syn::File, name: &str) -> syn::ItemFn {
         .unwrap_or_else(|| panic!("function `{}` not found in source", name))
 }
 
-fn first_param_name(item_fn: &syn::ItemFn) -> Option<String> {
-    item_fn.sig.inputs.first().and_then(|arg| match arg {
-        syn::FnArg::Typed(pt) => match &*pt.pat {
-            syn::Pat::Ident(p) => Some(p.ident.to_string()),
+fn all_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
+    item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pt) => match &*pt.pat {
+                syn::Pat::Ident(p) => Some(p.ident.to_string()),
+                _ => None,
+            },
             _ => None,
-        },
-        _ => None,
-    })
+        })
+        .collect()
 }
 
 fn print_shadow_source(s: &ShadowSource) {
