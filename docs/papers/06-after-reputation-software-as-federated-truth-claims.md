@@ -8,7 +8,7 @@
 >
 > **What this paper argues.** That the consequence of shipping that protocol is not a better security tool. It is the substrate replacing reputation as the load-bearing trust mechanism in software supply chains, software engineering practice, software liability, and the relationship between closed and open source. The substrate is the diplomatic protocol between every truth-claim about software ever made.
 
-## §0 — The claim
+## §0: The claim
 
 Today, the artifact of software is code. Tomorrow, the artifact of software is the proof. Code becomes one implementation of the proof. Refactoring becomes generating different implementations of the same proof. AI becomes a proof-implementation generator. The engineer's job shifts from *write code that works* to *write the contract; agents write the code*.
 
@@ -16,7 +16,7 @@ This paper argues that the substrate ProvekIt ships is the move that makes that 
 
 We are after reputation. The substrate makes trust composable. What follows is what falls out.
 
-## §1 — Today's substrate
+## §1: Today's substrate
 
 Software in 2026 runs on a substrate of reputation, brand, and habit.
 
@@ -36,7 +36,7 @@ The substrate of reputation is also the substrate of the gap between what softwa
 
 This is what we are leaving behind.
 
-## §2 — The shift
+## §2: The shift
 
 Replace reputation with proof. Replace the package's identity (its name) with its content-CID. Replace the package's claims about itself (the README) with signed contracts about its behavior. Replace the substrate's silence with a verifier that answers, for any composition of dependencies, whether the composed behavior is consistent with the composed claims.
 
@@ -44,13 +44,13 @@ Three pieces have to be in place for this to work. None of them are individually
 
 **Cryptographic content-addressing.** Every artifact (function, module, binary, document, contract) is named by the BLAKE3-512 hash of its canonical bytes. There is no naming authority and no way to spoof identity by renaming. `lodash@4.17.21` is identified by `blake3-512:9f3a...`; a sabotaged copy of "the same thing" is identified by a different CID, and any consumer who pinned the CID rejects it on sight.
 
-**Signed claims.** Every contract about behavior — preconditions, postconditions, invariants, type signatures, length bounds, side-effect properties — is wrapped in a signed envelope. The signer's identity is the Ed25519 public key that signed it (carried inline as `ed25519:<base64-pubkey>` on memento envelopes, or as a CID resolving to a public-key memento in `.proof` catalogs). The contract's identity is content-addressed (BLAKE3-512 of the canonical encoding of the claim). Forgery requires breaking Ed25519 or BLAKE3, both of which are out of reach for the foreseeable future.
+**Signed claims.** Every contract about behavior (preconditions, postconditions, invariants, type signatures, length bounds, side-effect properties) is wrapped in a signed envelope. The signer's identity is the Ed25519 public key that signed it (carried inline as `ed25519:<base64-pubkey>` on memento envelopes, or as a CID resolving to a public-key memento in `.proof` catalogs). The contract's identity is content-addressed (BLAKE3-512 of the canonical encoding of the claim). Forgery requires breaking Ed25519 or BLAKE3, both of which are out of reach for the foreseeable future.
 
-**Composable verification.** Given a composition of artifacts (your application linking against lodash linking against its dependencies), the verifier composes the contracts: your application's properties are derivable from the composition of every dependency's signed contracts. If the composition is consistent, the application is verified. If it is inconsistent — your code's preconditions for some callsite are not established by the upstream's postconditions — the verifier surfaces the gap, with a proof witness showing why.
+**Composable verification.** Given a composition of artifacts (your application linking against lodash linking against its dependencies), the verifier composes the contracts: your application's properties are derivable from the composition of every dependency's signed contracts. If the composition is consistent, the application is verified. If it is inconsistent (your code's preconditions for some callsite are not established by the upstream's postconditions), the verifier surfaces the gap, with a proof witness showing why.
 
-The shift is from substrate-of-reputation to substrate-of-claims. Trust is no longer "who do you know" but "what is signed, by whom, that composes to what your application requires." Reputation does not disappear from the picture — you still pin keys belonging to entities you trust — but reputation moves from the substrate to the policy layer. The substrate's job becomes mechanical: verify claims, compose claims, surface mismatches. Trust policy is the consumer's call.
+The shift is from substrate-of-reputation to substrate-of-claims. Trust is no longer "who do you know" but "what is signed, by whom, that composes to what your application requires." Reputation does not disappear from the picture (you still pin keys belonging to entities you trust), but reputation moves from the substrate to the policy layer. The substrate's job becomes mechanical: verify claims, compose claims, surface mismatches. Trust policy is the consumer's call.
 
-## §3 — Engineering practice consequences
+## §3: Engineering practice consequences
 
 When proofs are first-class artifacts, several practices that defined software engineering for forty years stop being load-bearing.
 
@@ -64,21 +64,21 @@ When proofs are first-class artifacts, several practices that defined software e
 
 **Refactoring becomes bounded.** Any code transformation that preserves the contract is automatically safe; any transformation that breaks the contract is automatically caught. AI-driven refactoring becomes safe at scale because the contract catches drift. The category of "I don't want to touch this code because nobody understands it anymore" shrinks: the contract IS the understanding, the code is one implementation.
 
-**Bugs become contract violations with witnesses.** A bug today is a vague indictment of code: "this doesn't work right." A bug under the substrate is a precise indictment with a witness: "for input I, which satisfies precondition P, postcondition Q is violated." The CVE process changes shape. Vendors no longer need to triage "is this really a bug" — the witness is unambiguous. Patches become proof restorations rather than guesses; the patched code's contract is verified before the patch ships.
+**Bugs become contract violations with witnesses.** A bug today is a vague indictment of code: "this doesn't work right." A bug under the substrate is a precise indictment with a witness: "for input I, which satisfies precondition P, postcondition Q is violated." The CVE process changes shape. Vendors no longer need to triage "is this really a bug": the witness is unambiguous. Patches become proof restorations rather than guesses; the patched code's contract is verified before the patch ships.
 
 These changes are not speculation. They are mechanical consequences of the substrate. Each can be derived directly from the protocol's primitives.
 
-## §4 — Supply chain consequences
+## §4: Supply chain consequences
 
 This section is where the change is largest and least appreciated.
 
-Software supply chains today are reputation propagation. You install a package, transitively pulling in dozens of dependencies. Each dependency's trustworthiness derives from its maintainer's reputation, the registry's curation, and habit. When the chain breaks — a maintainer is compromised, a registry is exploited, a build system is suborned — the substrate offers no mechanism for detecting that the failure has occurred until something visible breaks.
+Software supply chains today are reputation propagation. You install a package, transitively pulling in dozens of dependencies. Each dependency's trustworthiness derives from its maintainer's reputation, the registry's curation, and habit. When the chain breaks (a maintainer is compromised, a registry is exploited, a build system is suborned), the substrate offers no mechanism for detecting that the failure has occurred until something visible breaks.
 
 Replace the chain with composition.
 
 **Dependency confusion attacks become arithmetically impossible.** When `lodash` and `lodahs` are both names in a registry, an attacker can publish a typo-squatted package and a fraction of users will install it. With CIDs as identity, `lodash@4.17.21` is `blake3-512:9f3a...`; a typo-squatted package has a different CID; a consumer who pinned the legitimate CID rejects the typo-squat on sight. Renaming attacks evaporate. Brand-equity attacks evaporate. The class of attack that depends on humans confusing names is closed.
 
-**Software bills of materials become meaningful.** An SBOM today lists names: "this binary contains version X of library Y." This is theatre — the SBOM offers no mechanism to verify behavior against. An SBOM under the substrate lists CIDs and signed contracts: "this binary's behavior is the composition of these signed contracts; here is the proof; here is the chain of signatures." The downstream auditor doesn't have to take anyone's word for anything. They run the verifier.
+**Software bills of materials become meaningful.** An SBOM today lists names: "this binary contains version X of library Y." This is theatre: the SBOM offers no mechanism to verify behavior against. An SBOM under the substrate lists CIDs and signed contracts: "this binary's behavior is the composition of these signed contracts; here is the proof; here is the chain of signatures." The downstream auditor doesn't have to take anyone's word for anything. They run the verifier.
 
 **Transitive trust becomes a Merkle composition.** Today, if you install foo which depends on bar which depends on baz, you are implicitly trusting three signers, three release processes, and three review chains. Each transitively-trusted entity is a hidden assumption. With signed contracts, the composition is explicit: foo's claims about its behavior depend on bar's claims about its behavior depend on baz's claims about its behavior. Each link is a signed claim from a key you pin. If you don't pin a key in the chain, the chain breaks at that point and surfaces. Hidden assumptions become visible.
 
@@ -90,7 +90,7 @@ Replace the chain with composition.
 
 This last point cascades. Once any class of software can be insured against contract violation, every other class of software is comparatively underinsurable. Capital flows toward the insurable. The pressure to ship signed contracts is no longer "best practice"; it is "you cannot get insurance otherwise."
 
-## §5 — The closed-vs-open source reckoning
+## §5: The closed-vs-open source reckoning
 
 Open source has long held an implicit advantage in trustworthiness: you can read the source, therefore you can audit the behavior. The fine print: almost nobody actually reads the source of the libraries they depend on. The "open source means audited" claim is mostly a ritual rather than a practice. But it has been a real advantage in marketing terms, and in regulated environments it has been a real basis for procurement decisions.
 
@@ -104,7 +104,7 @@ The countervailing force: open source can ship the same proofs, and additionally
 
 For closed source, the substrate is a license to compete on equal trustworthiness terms. This is good for buyers in regulated industries, bad for vendors who have been hiding behind closed source as a proxy for "you can't audit our claims." Vendors who never made claims worth auditing now have to make them.
 
-## §6 — Why now
+## §6: Why now
 
 The pieces have been around a long time.
 
@@ -113,7 +113,7 @@ The pieces have been around a long time.
 - Content-addressable storage was a research idea in the 1980s.
 - Cryptographic signatures became practical in the 1990s.
 - Package managers proliferated in the 2000s.
-- Distributed verification — Bitcoin, Git, IPFS — became default cultural mental models in the 2010s.
+- Distributed verification (Bitcoin, Git, IPFS) became default cultural mental models in the 2010s.
 
 The IDEA of "every piece of software ships with a signed proof of its behavior" is not new. The pieces have been shippable, separately, for a generation. Yet here we are in 2026 and software still runs on reputation. Why?
 
@@ -125,17 +125,17 @@ Three constraints relaxed roughly simultaneously, and the substrate finally beca
 
 **Distributed signature verification became cheap.** Ed25519 (2011) on commodity hardware verifies in microseconds. PGP-of-yore made signature checking feel expensive and ritualistic; the modern stack makes it free. Every save can sign; every load can verify. The cost is invisible.
 
-These three relaxations are recent — within the last decade for hashing and signing, within the last few years for AI authoring. The substrate is finally cheap enough that "every save signs, every load verifies, every save indexes claims, every diff propagates verification" stops being a performance issue. Combined with the cultural shift to content-addressing as default mental model (post-Bitcoin, post-Git, post-IPFS), the substrate stops being a research curiosity and starts being a normal way to build software.
+These three relaxations are recent: within the last decade for hashing and signing, within the last few years for AI authoring. The substrate is finally cheap enough that "every save signs, every load verifies, every save indexes claims, every diff propagates verification" stops being a performance issue. Combined with the cultural shift to content-addressing as default mental model (post-Bitcoin, post-Git, post-IPFS), the substrate stops being a research curiosity and starts being a normal way to build software.
 
 The window is now. Five years ago, the cost of the substrate was visible to users; the substrate was research. Five years from now, every major language will have its own ad-hoc version of this and they will not interoperate. The window for a single content-addressable substrate that federates across every language is now.
 
-## §7 — Counterarguments
+## §7: Counterarguments
 
 This section engages the obvious objections seriously. Each is real; each has a response; some responses are partial.
 
 ### "Formal verification has been tried; it doesn't scale."
 
-Formal verification with hand-authored full functional correctness proofs (CompCert, seL4) is research-grade and does not scale. The substrate this paper describes is not that. It is signed contracts at whatever density the signer can afford, composed across signers, verified locally. A signer can sign weak contracts (just type signatures and length bounds) and the substrate still works; verification finds the gaps. The substrate is therefore not in competition with full functional correctness — it is the floor on which full functional correctness is one extreme and signed-type-signatures-only is the other. Both are valid. The substrate makes the spectrum useful.
+Formal verification with hand-authored full functional correctness proofs (CompCert, seL4) is research-grade and does not scale. The substrate this paper describes is not that. It is signed contracts at whatever density the signer can afford, composed across signers, verified locally. A signer can sign weak contracts (just type signatures and length bounds) and the substrate still works; verification finds the gaps. The substrate is therefore not in competition with full functional correctness; it is the floor on which full functional correctness is one extreme and signed-type-signatures-only is the other. Both are valid. The substrate makes the spectrum useful.
 
 ### "Nobody will write the contracts."
 
@@ -153,7 +153,7 @@ What the substrate enables is per-language participation. The first language who
 
 ### "What about legacy code that doesn't have contracts?"
 
-Two responses. First: contracts can be added incrementally. A function with no signed contract is a function with `top` precondition and `top` postcondition — anything in, nothing claimed about out. Code that calls such functions falls back to its own contract (which may include manual assertions). The substrate degrades gracefully; it does not require all-or-nothing adoption.
+Two responses. First: contracts can be added incrementally. A function with no signed contract is a function with `top` precondition and `top` postcondition: anything in, nothing claimed about out. Code that calls such functions falls back to its own contract (which may include manual assertions). The substrate degrades gracefully; it does not require all-or-nothing adoption.
 
 Second: AI-driven contract inference can populate contracts for legacy code at scale. The contracts won't be optimal but they will be better than nothing. The signer's role is to audit and bless the inferred contracts. The substrate is a force multiplier for legacy modernization, not an obstacle to it.
 
@@ -165,7 +165,7 @@ The response is twofold. First: the substrate this paper describes is not asking
 
 It may still fail. Predicting cultural adoption is hard. But the failure modes of "developers don't want this" are different from the failure modes of "the technology can't ship." The latter is solved.
 
-## §8 — The diplomatic substrate framing
+## §8: The diplomatic substrate framing
 
 A remark to close on.
 
@@ -179,7 +179,7 @@ The protocol is not a tool. It is the diplomatic substrate that lets every tool 
 
 This is why "every piece of software ships with a real strong proof" is not aspirational rhetoric. It is the operational consequence of the substrate.
 
-## §9 — What this paper is NOT
+## §9: What this paper is NOT
 
 - It is not a roadmap. The substrate ships at v1.0.0 with foundation baselines as a starting point; everything else is post-launch growth.
 - It is not a sales pitch. The substrate is the substrate; whether anyone adopts it is a separate question.
@@ -188,13 +188,13 @@ This is why "every piece of software ships with a real strong proof" is not aspi
 
 It is an argument that the protocol's consequences are bigger than the protocol's authors usually claim, and that the consequences are mechanically derivable rather than speculative. Each of the §3 and §4 consequences follows from the protocol's primitives. The civilizational scale is a property of the substrate, not a marketing claim about it.
 
-## §10 — Acknowledgments
+## §10: Acknowledgments
 
-The cypherpunks-mailing-list lineage is the formative context for this argument. PGP, Hashcash, b-money, RPOW, smart contracts, hash-as-trust-anchor — these are the conceptual ancestors of the substrate this paper describes. The 1995 dedup-via-hashing insight (Xdrive, predating rsync) is the original architectural cut. Digital Confetti (1998) is the original incentive-aligned-distribution sibling. eDonkey, ShareReactor, BitTorrent, and the entire P2P scene that followed are operational ancestors of the substrate; their architectures composed because content-addressing made composition possible. The substrate is the language-agnostic generalization of architectural moves that have been live in a narrower form for thirty years.
+The cypherpunks-mailing-list lineage is the formative context for this argument. PGP, Hashcash, b-money, RPOW, smart contracts, hash-as-trust-anchor: these are the conceptual ancestors of the substrate this paper describes. The 1995 dedup-via-hashing insight (Xdrive, predating rsync) is the original architectural cut. Digital Confetti (1998) is the original incentive-aligned-distribution sibling. eDonkey, ShareReactor, BitTorrent, and the entire P2P scene that followed are operational ancestors of the substrate; their architectures composed because content-addressing made composition possible. The substrate is the language-agnostic generalization of architectural moves that have been live in a narrower form for thirty years.
 
 The Apache JCS team page lists the architect of this protocol as a member during the iFilm era. The protocol's lineage is verifiable.
 
-## §11 — Citation
+## §11: Citation
 
 > Savo, T. (2026). *After Reputation: Software as Federated Truth-Claims*. ProvekIt Papers, vol. 6. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/provekit/blob/main/docs/papers/06-after-reputation-software-as-federated-truth-claims.md.
 

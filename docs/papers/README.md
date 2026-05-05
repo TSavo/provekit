@@ -16,9 +16,9 @@ The papers compose. Read them in order; later papers assume the framing earlier 
 
 4. **[The Vertical Stack, and the Road to Standardization](04-vertical-stack-and-standardization.md)**: A `.proof` and a chain of formally verified software from quantum physics to bytecode are 1:1 identical at the data-structure level. The standardization roadmap through DO-178C, Common Criteria EAL5+, ISO 26262, FDA SaMD, FedRAMP, IEC 62304, NIST SSDF, SLSA, EU Cyber Resilience Act. 5/10/15/20-year horizons.
 
-5. **[Witness Pluralism and Jurisdiction-Neutral Transport](05-witness-pluralism-and-jurisdiction-neutral-transport.md)** — Why the substrate moves through any pipe (HTTP, IPFS, dead-drops) and why federation across jurisdictions doesn't require any single party. The transport layer's design as an explicit non-feature, and what that buys.
+5. **[Witness Pluralism and Jurisdiction-Neutral Transport](05-witness-pluralism-and-jurisdiction-neutral-transport.md)**: Why the substrate moves through any pipe (HTTP, IPFS, dead-drops) and why federation across jurisdictions doesn't require any single party. The transport layer's design as an explicit non-feature, and what that buys.
 
-6. **[After Reputation: Software as Federated Truth-Claims](06-after-reputation-software-as-federated-truth-claims.md)** — The consequence of shipping the protocol. Why the substrate replaces reputation as the load-bearing trust mechanism in supply chains, engineering practice, liability, and the closed/open dichotomy. The substrate is the diplomatic protocol between every truth-claim about software ever made.
+6. **[After Reputation: Software as Federated Truth-Claims](06-after-reputation-software-as-federated-truth-claims.md)**: The consequence of shipping the protocol. Why the substrate replaces reputation as the load-bearing trust mechanism in supply chains, engineering practice, liability, and the closed/open dichotomy. The substrate is the diplomatic protocol between every truth-claim about software ever made.
 
 ## Future papers (planned)
 
