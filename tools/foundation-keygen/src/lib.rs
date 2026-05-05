@@ -76,6 +76,12 @@ pub const V1_4_0_DECLARED_AT: &str = "2026-05-03T15:00:00Z";
 /// same foundation key.
 pub const V1_4_1_DECLARED_AT: &str = "2026-05-03T18:00:00Z";
 
+/// Pinned `declaredAt` for v1.5.0. Minor bump: sort grammar grow adds
+/// FunctionSort and DependentSort variants (additive over v1.4.1; no
+/// breaking changes). Attestation signed against the new catalog CID
+/// under the same foundation key.
+pub const V1_5_0_DECLARED_AT: &str = "2026-05-05T12:00:00Z";
+
 /// Catalog file path, resolved relative to this crate's manifest dir.
 pub fn catalog_path() -> PathBuf {
     repo_root().join("protocol/specs/2026-04-30-protocol-catalog.json")

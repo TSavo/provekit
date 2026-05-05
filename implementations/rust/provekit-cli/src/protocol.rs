@@ -19,10 +19,10 @@ use serde_json::Value as Json;
 /// The protocol catalog CID this CLI declares conformance to. Kept in
 /// sync with `protocol/specs/2026-04-30-protocol-versioning.md`. If
 /// the catalog changes, bump this string AND ship a new CLI.
-/// Currently: v1.4.0 (additive over v1.3.1: substrate layering plus 3
-/// metadata-extension specs; no breaking changes).
+/// Currently: v1.5.0 (minor bump over v1.4.1: sort grammar grow adds
+/// FunctionSort + DependentSort variants; additive, no breaking changes).
 pub const EXPECTED_CATALOG_CID: &str =
-    "blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f";
+    "blake3-512:540e8c1f5f7fea880123203b30891771d421da953c34af6bfb1d56d4c1d25dfb2ae08af6f275f5b4a4d015c364588b3521116541fcf4ac32d69b4e46acee1843";
 
 /// Catalog JSON bytes embedded at compile time. The CLI never reads
 /// the on-disk spec file at runtime; `verify-protocol` recomputes from
@@ -40,12 +40,12 @@ pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] =
 
 /// Signed attestation bytes (the JSON object) embedded at compile
 /// time. Mirrors the committed
-/// `.provekit/catalog-signatures/v1.4.0.json` (current). The v1.3.1,
-/// v1.3.0, v1.2.0, and v1.1.0 attestations remain on-disk and as
+/// `.provekit/catalog-signatures/v1.5.0.json` (current). The v1.4.1,
+/// v1.4.0, v1.3.1, v1.3.0, v1.2.0, and v1.1.0 attestations remain on-disk and as
 /// embedded asset siblings for callers pinning to those versions; pass
 /// `--signature-file` + `--catalog` to verify against them explicitly.
 pub const EMBEDDED_CATALOG_SIGNATURE: &[u8] =
-    include_bytes!("../assets/catalog-signature-v1.4.0.json");
+    include_bytes!("../assets/catalog-signature-v1.5.0.json");
 
 /// Recompute the embedded catalog's CID using the same routine
 /// `tools/recompute-spec-cids` uses: parse JSON, JCS-encode, BLAKE3-512.
