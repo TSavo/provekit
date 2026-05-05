@@ -197,11 +197,23 @@ pub fn lift_predicate(expr: &Expr) -> Option<IrFormula> {
 
 /// Lift a Rust expression to a canonical `IrTerm`. Supported shapes:
 ///   - Integer literal: `IrTerm::Const { value: <num>, sort: Int }`.
+///   - Bool literal: `IrTerm::Const { value: <bool>, sort: Bool }`.
 ///   - Bare identifier: `IrTerm::Var { name: <ident> }`.
 ///   - Parenthesized expression: recurses on the inner expression.
-///   - Binary arithmetic (`+`, `-`, `*`, `/`, `%`): lifts to
-///     `IrTerm::Ctor { name: <op>, args: [lhs_term, rhs_term] }`.
-///   - Unary negation (`-x`): `IrTerm::Ctor { name: "neg", args: [...] }`.
+///   - Reference (`&x`, `&mut x`): unwraps; for substrate purposes
+///     a borrow is the value's identity (substitution-equivalent).
+///   - Cast (`x as u32`): unwraps to the inner term (the IR's Sort
+///     captures type changes; the term-level lift ignores casts).
+///   - Field access (`s.f`): `Ctor("field", [s_term, "f"])`.
+///   - Index (`a[i]`): `Ctor("index", [a_term, i_term])`.
+///   - Method call (`x.foo(args)`): `Ctor("method:foo", [x, ...args])`.
+///   - Range (`a..b`, `a..=b`): `Ctor("range", [a, b])` /
+///     `Ctor("range_incl", [a, b])`.
+///   - Tuple (`(a, b, c)`): `Ctor("tuple", [a, b, c])`.
+///   - Unary negation (`-x`), bitwise not (`!x` on integers):
+///     `Ctor("neg" / "bit-not", [...])`.
+///   - Binary arithmetic (`+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`,
+///     `<<`, `>>`): lifts to `Ctor(<op>, [lhs, rhs])`.
 /// Anything else returns None.
 pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
     match expr {
@@ -210,6 +222,12 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
                 Ok(v) => Some(crate::wp::const_int(v)),
                 Err(_) => None,
             },
+            Lit::Bool(b) => Some(IrTerm::Const {
+                value: serde_json::Value::Bool(b.value),
+                sort: provekit_ir_types::Sort::Primitive {
+                    name: "Bool".to_string(),
+                },
+            }),
             _ => None,
         },
         Expr::Path(syn::ExprPath { path, .. }) => {
@@ -217,6 +235,72 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
             Some(crate::wp::var(seg.ident.to_string()))
         }
         Expr::Paren(p) => lift_expr_to_term(&p.expr),
+        Expr::Reference(r) => lift_expr_to_term(&r.expr),
+        Expr::Cast(c) => lift_expr_to_term(&c.expr),
+        Expr::Field(f) => {
+            let base = lift_expr_to_term(&f.base)?;
+            let name = match &f.member {
+                syn::Member::Named(id) => id.to_string(),
+                syn::Member::Unnamed(idx) => idx.index.to_string(),
+            };
+            Some(IrTerm::Ctor {
+                name: "field".to_string(),
+                args: vec![
+                    base,
+                    IrTerm::Var {
+                        name: format!(".{}", name),
+                    },
+                ],
+            })
+        }
+        Expr::Index(i) => {
+            let arr = lift_expr_to_term(&i.expr)?;
+            let idx = lift_expr_to_term(&i.index)?;
+            Some(IrTerm::Ctor {
+                name: "index".to_string(),
+                args: vec![arr, idx],
+            })
+        }
+        Expr::MethodCall(m) => {
+            let receiver = lift_expr_to_term(&m.receiver)?;
+            let mut args = vec![receiver];
+            for a in &m.args {
+                let lifted = lift_expr_to_term(a)?;
+                args.push(lifted);
+            }
+            Some(IrTerm::Ctor {
+                name: format!("method:{}", m.method),
+                args,
+            })
+        }
+        Expr::Range(r) => {
+            let start = match &r.start {
+                Some(e) => lift_expr_to_term(e)?,
+                None => crate::wp::var("_"),
+            };
+            let end = match &r.end {
+                Some(e) => lift_expr_to_term(e)?,
+                None => crate::wp::var("_"),
+            };
+            let name = match r.limits {
+                syn::RangeLimits::HalfOpen(_) => "range",
+                syn::RangeLimits::Closed(_) => "range_incl",
+            };
+            Some(IrTerm::Ctor {
+                name: name.to_string(),
+                args: vec![start, end],
+            })
+        }
+        Expr::Tuple(t) => {
+            let mut args = Vec::with_capacity(t.elems.len());
+            for e in &t.elems {
+                args.push(lift_expr_to_term(e)?);
+            }
+            Some(IrTerm::Ctor {
+                name: "tuple".to_string(),
+                args,
+            })
+        }
         Expr::Binary(ExprBinary {
             left, op, right, ..
         }) => {
@@ -226,6 +310,11 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
                 BinOp::Mul(_) => "*",
                 BinOp::Div(_) => "/",
                 BinOp::Rem(_) => "%",
+                BinOp::BitAnd(_) => "&",
+                BinOp::BitOr(_) => "|",
+                BinOp::BitXor(_) => "^",
+                BinOp::Shl(_) => "<<",
+                BinOp::Shr(_) => ">>",
                 _ => return None,
             };
             let l = lift_expr_to_term(left)?;
@@ -235,14 +324,16 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
                 args: vec![l, r],
             })
         }
-        Expr::Unary(ExprUnary {
-            op: UnOp::Neg(_),
-            expr,
-            ..
-        }) => {
+        Expr::Unary(ExprUnary { op, expr, .. }) => {
             let inner = lift_expr_to_term(expr)?;
+            let name = match op {
+                UnOp::Neg(_) => "neg",
+                UnOp::Not(_) => "bit-not",
+                UnOp::Deref(_) => return Some(inner), // *x is x for substitution
+                _ => return None,
+            };
             Some(IrTerm::Ctor {
-                name: "neg".to_string(),
+                name: name.to_string(),
                 args: vec![inner],
             })
         }

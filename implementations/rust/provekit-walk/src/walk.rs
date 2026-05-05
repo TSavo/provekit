@@ -237,6 +237,27 @@ fn walk_expr_for_callsites(
                 walk_expr_for_callsites(a, callee_name, conditions, hits);
             }
         }
+        Expr::MethodCall(m) => {
+            // Method call `recv.foo(args)` is a callsite to `foo` if
+            // foo matches callee_name. The receiver becomes the
+            // implicit first argument (paper 07 normalizes
+            // `Type::method(recv, args)`).
+            if m.method == callee_name {
+                let mut all_args: Vec<Expr> = vec![(*m.receiver).clone()];
+                for a in &m.args {
+                    all_args.push(a.clone());
+                }
+                hits.push(CallsiteHit {
+                    args: all_args,
+                    conditions: conditions.clone(),
+                });
+            }
+            // Recurse into receiver and args for nested callsites.
+            walk_expr_for_callsites(&m.receiver, callee_name, conditions, hits);
+            for a in &m.args {
+                walk_expr_for_callsites(a, callee_name, conditions, hits);
+            }
+        }
         Expr::If(ExprIf {
             cond,
             then_branch,
