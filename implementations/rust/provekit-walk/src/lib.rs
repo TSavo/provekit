@@ -25,6 +25,7 @@
 
 pub mod canonical;
 pub mod chain;
+pub mod charon_runner;
 pub mod contract;
 pub mod emit;
 pub mod envelope;
