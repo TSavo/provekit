@@ -1,0 +1,84 @@
+lang = "java"
+kit = "java-kit"
+language_version = "21"
+
+[[builtins]]
+name = "String_length"
+signature = "str_len"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "str_len", right = 0}}]
+
+[[builtins]]
+name = "String_charAt"
+signature = "str_char_at"
+arity = 2
+return_type = "char"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "String_substring"
+signature = "str_substring"
+arity = 2
+return_type = "string"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "String_split"
+signature = "str_split"
+arity = 2
+return_type = "array"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "ArrayList_size"
+signature = "alist_size"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "alist_size", right = 0}}]
+
+[[builtins]]
+name = "ArrayList_add"
+signature = "alist_add"
+arity = 2
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "ArrayList_get"
+signature = "alist_get"
+arity = 2
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "HashMap_size"
+signature = "hmap_size"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "hmap_size", right = 0}}]
+
+[[builtins]]
+name = "HashMap_put"
+signature = "hmap_put"
+arity = 3
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "HashMap_get"
+signature = "hmap_get"
+arity = 2
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "Stream_filter"
+signature = "stream_filter"
+arity = 2
+return_type = "stream"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "Stream_map"
+signature = "stream_map"
+arity = 2
+return_type = "stream"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]

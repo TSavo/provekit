@@ -1,0 +1,82 @@
+lang = "swift"
+kit = "swift-kit"
+language_version = "5.10"
+
+[[builtins]]
+name = "String_count"
+signature = "str_count"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "str_count", right = 0}}]
+
+[[builtins]]
+name = "String_hasPrefix"
+signature = "str_has_prefix"
+arity = 2
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "String_hasSuffix"
+signature = "str_has_suffix"
+arity = 2
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "String_split"
+signature = "str_split"
+arity = 2
+return_type = "array"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "Array_count"
+signature = "arr_count"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "arr_count", right = 0}}]
+
+[[builtins]]
+name = "Array_append"
+signature = "arr_append"
+arity = 2
+return_type = "void"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "Array_filter"
+signature = "arr_filter"
+arity = 2
+return_type = "array"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "Array_map"
+signature = "arr_map"
+arity = 2
+return_type = "array"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "Dictionary_count"
+signature = "dict_count"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "dict_count", right = 0}}]
+
+[[builtins]]
+name = "Dictionary_keys"
+signature = "dict_keys"
+return_type = "array"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "Optional_map"
+signature = "opt_map"
+arity = 2
+return_type = "optional"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "Set_count"
+signature = "set_count"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "set_count", right = 0}}]

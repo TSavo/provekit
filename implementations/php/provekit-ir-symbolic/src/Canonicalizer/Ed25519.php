@@ -16,7 +16,7 @@ class Ed25519
 
         if (extension_loaded('sodium') && function_exists('sodium_crypto_sign_seed_keypair')) {
             $kp = sodium_crypto_sign_seed_keypair($seed);
-            $this->privKey = $kp;
+            $this->privKey = sodium_crypto_sign_secretkey($kp);
             $this->pubKey = sodium_crypto_sign_publickey($kp);
         } else {
             // Fallback: derive dummy (testing only — NOT cryptographically valid)

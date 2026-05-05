@@ -1529,6 +1529,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-baseline-std"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-symbolic",
+ "provekit-proof-envelope",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "provekit-build"
 version = "0.1.0"
 dependencies = [
@@ -1931,22 +1944,6 @@ dependencies = [
  "thiserror",
  "toml 0.8.23",
  "walkdir",
-]
-
-[[package]]
-name = "provekit-walk"
-version = "0.1.0"
-dependencies = [
- "base64",
- "proc-macro2",
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-types",
- "provekit-proof-envelope",
- "quote",
- "serde_json",
- "syn",
- "thiserror",
 ]
 
 [[package]]

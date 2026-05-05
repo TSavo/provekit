@@ -105,6 +105,7 @@ pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     ("ruby",       "ruby",        "ruby-self-contracts",  "ruby"),
     ("zig",        "zig",         "zig-self-contracts",   "zig"),
     ("c",          "c",           "c-self-contracts",     "c"),
+    ("php",        "php",         "php-self-contracts",   "php"),
 ];
 
 /// Resolve `--kit=<name>` to the canonical project path, lift surface, and lang key.
@@ -364,10 +365,6 @@ fn dispatch(
             std::fs::write(&out_path, &bytes)
                 .map_err(|e| format!("write {}: {e}", out_path.display()))?;
 
-            save_call_edges_if_present(
-                &lift_resp, &filename_cid, &project_root, out_dir,
-            );
-
             if !quiet {
                 for d in lift_resp
                     .get("diagnostics")
@@ -542,36 +539,6 @@ fn mint_from_ir_document(
     let built = build_proof_envelope(&proof_input);
 
     Ok((built.bytes, built.cid, contract_set_cid))
-}
-
-fn save_call_edges_if_present(
-    lift_resp: &Value,
-    filename_cid: &str,
-    _project_root: &Path,
-    out_dir: &Path,
-) {
-    let call_edges = match lift_resp.get("callEdges").and_then(|v| v.as_array()) {
-        Some(arr) if !arr.is_empty() => arr.clone(),
-        _ => return,
-    };
-
-    let edges_json = serde_json::json!({
-        "kind": "call-edges",
-        "proofCid": filename_cid,
-        "edges": call_edges,
-    });
-
-    // Encode via JCS (provekit_canonicalizer::encode_jcs) so the file's bytes
-    // and its content-CID are byte-deterministic across implementations.
-    // serde_json::to_string is not canonical (key order, whitespace) and
-    // would produce a non-portable CID.
-    let canonical = provekit_canonicalizer::encode_jcs(&json_to_cvalue(&edges_json));
-    let json_cid = provekit_canonicalizer::blake3_512_of(canonical.as_bytes());
-    let json_path = out_dir.join(format!("{json_cid}.call-edges.json"));
-
-    if let Err(e) = std::fs::write(&json_path, canonical.as_bytes()) {
-        eprintln!("warn: could not write call edges {}: {e}", json_path.display());
-    }
 }
 
 /// Convert `serde_json::Value` to `provekit_canonicalizer::Value`.

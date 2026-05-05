@@ -1,186 +1,119 @@
 <?php
-/** ProvekIt PHP self-contracts — Contract definitions. */
+/** ProvekIt PHP self-contracts — Canonical contract definitions.
+ *  Mirrors the Ruby/Go/Rust self-contracts slab pattern.
+ *  Contract names prefixed with `php_` per kit convention.
+ */
 
 namespace ProvekIt\SelfContracts;
 
 use function ProvekIt\Ir\{
-    Var, Num, Str, Ctor, Ctor1, Ctor2,
+    V, Num, Str, Ctor, Ctor1, Ctor2,
     Eq, Gte, Lte, Lt, Gt, NotNull,
-    And, ForAllRef, TrueAtom, StringLength, LenGte, LenLte,
+    And_, ForAllRef, TrueAtom, StringLength, LenGte, LenLte,
 };
-use ProvekIt\Ir\{Collector, Sort};
+use ProvekIt\Ir\{Collector, ContractDecl, Sort};
 
 // ──────────────────────────────────────────
-// 1. Canonicalizer contracts
+// 1. Blake3 contracts (mirrors ruby_blake3_*)
 // ──────────────────────────────────────────
 
-function InvariantsCanonicalizer(): void
+function invariantsBlake3(): void
 {
-    // EncodeJCS is deterministic
-    Collector::Must('EncodeJCS_is_deterministic',
-        ForAllRef('s', Eq(Ctor1('EncodeJCS', Var('s')), Ctor1('EncodeJCS', Var('s'))))
-    );
+    $hBytes = fn($s) => Ctor1('Blake3.bytes', $s);
+    $hHex   = fn($s) => Ctor1('Blake3.hex', $s);
 
-    // EncodeJCS of "true" has length 4
-    Collector::Contract('EncodeJCS_true_length_eq_4',
-        post: Eq(StringLength(Ctor1('EncodeJCS', Str('true'))), Num(4))
+    Collector::Contract('php_blake3_bytes_length_eq_64',
+        post: Eq(Ctor1('byte_length', $hBytes(V('s'))), Num(64))
     );
-
-    // BLAKE3-512 produces 128 hex chars
-    Collector::Must('BLAKE3_512_hex_length',
-        ForAllRef('data', Eq(
-            StringLength(Ctor1('Blake3_512', Var('data'))),
-            Num(128)
-        ))
+    Collector::Contract('php_blake3_hex_length_eq_139',
+        post: Eq(Ctor1('string_length', $hHex(V('s'))), Num(139))
     );
-
-    // BLAKE3-512 of empty string is deterministic
-    Collector::Contract('BLAKE3_512_empty_is_known',
-        post: Eq(
-            Ctor1('Blake3_512', Str('')),
-            Str('786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce')
-        )
-    );
-
-    // ED25519 sign-then-verify roundtrips
-    Collector::Must('ED25519_sign_verify_roundtrips',
-        ForAllRef('msg', Eq(
-            Ctor1('Ed25519_Verify', Ctor2('Pair', Ctor1('Ed25519_Sign', Var('msg')), Var('msg'))),
-            Ctor1('Bool', Var('true'))
-        ))
+    Collector::Contract('php_blake3_hex_is_deterministic',
+        post: Eq($hHex(V('s')), $hHex(V('s')))
     );
 }
 
 // ──────────────────────────────────────────
-// 2. IR contracts
+// 2. JCS contracts
 // ──────────────────────────────────────────
 
-function InvariantsIr(): void
+function invariantsJcs(): void
 {
-    // Forall formulas are self-consistent
-    Collector::Must('ForAll_var_is_bound',
-        ForAllRef('x', Gte(
-            StringLength(Ctor1('ForAll_body', Var('x'))),
-            Num(0)
-        ))
-    );
+    $enc = fn($v) => Ctor1('Jcs.encode', $v);
 
-    // And with one operand = identity
-    Collector::Contract('And_single_is_identity',
-        post: Eq(
-            Ctor1('And', Ctor1('Atomic', Ctor1('True', Var('x')))),
-            Ctor1('Atomic', Ctor1('True', Var('x')))
-        )
+    Collector::Contract('php_jcs_encode_is_deterministic',
+        post: Eq($enc(V('v')), $enc(V('v')))
     );
-
-    // Ctor term preserves arguments
-    Collector::Must('Ctor_preserves_arg_count',
-        ForAllRef('arg', Gte(
-            StringLength(Ctor1('Ctor_ArgCount', Var('arg'))),
-            Num(0)
-        ))
+    Collector::Contract('php_jcs_encode_true_length_eq_4',
+        post: Eq(StringLength($enc(Str('true'))), Num(4))
+    );
+    Collector::Contract('php_jcs_encode_null_length_eq_4',
+        post: Eq(StringLength($enc(Str('null'))), Num(4))
     );
 }
 
 // ──────────────────────────────────────────
-// 3. Claim envelope contracts
+// 3. CBOR contracts
 // ──────────────────────────────────────────
 
-function InvariantsClaimEnvelope(): void
+function invariantsCbor(): void
 {
-    // Contract CID is deterministic for same inputs
-    Collector::Must('ContractCid_deterministic',
-        ForAllRef('args', Eq(
-            Ctor1('ContractCid', Var('args')),
-            Ctor1('ContractCid', Var('args'))
-        ))
+    Collector::Contract('php_cbor_tstr_roundtrip_length_gte_1',
+        post: Gte(Ctor1('byte_length', Ctor1('Cbor.encode_tstr', V('s'))), Num(1))
     );
-
-    // Minted contract has non-empty CID
-    Collector::Contract('MintContract_produces_cid',
-        post: Gte(StringLength(Ctor1('MintContract_cid', Var('x'))), Num(10))
+    Collector::Contract('php_cbor_bstr_roundtrip_length_gte_1',
+        post: Gte(Ctor1('byte_length', Ctor1('Cbor.encode_bstr', V('b'))), Num(1))
     );
+    Collector::Contract('php_cbor_encode_key_is_deterministic',
+        post: Eq(Ctor1('Cbor.encode_key', V('k')), Ctor1('Cbor.encode_key', V('k')))
+    );
+}
 
-    // Signatures are 64 bytes
-    Collector::Must('Ed25519_signature_length_64',
-        ForAllRef('data', Eq(
-            StringLength(Ctor1('Ed25519_Sign', Var('data'))),
+// ──────────────────────────────────────────
+// 4. Signing contracts
+// ──────────────────────────────────────────
+
+function invariantsSigning(): void
+{
+    Collector::Contract('php_ed25519_signature_length_eq_64',
+        post: Eq(
+            Ctor1('byte_length', Ctor2('Signing.sign_with_seed', V('seed'), V('msg'))),
             Num(64)
-        ))
+        )
+    );
+    Collector::Contract('php_ed25519_sign_is_deterministic',
+        post: Eq(
+            Ctor2('Signing.sign_with_seed', V('seed'), V('msg')),
+            Ctor2('Signing.sign_with_seed', V('seed'), V('msg'))
+        )
     );
 }
 
 // ──────────────────────────────────────────
-// 4. Proof envelope contracts
+// 5. Proof envelope contracts
 // ──────────────────────────────────────────
 
-function InvariantsProofEnvelope(): void
+function invariantsProofEnvelope(): void
 {
-    // Build produces non-empty bytes
-    Collector::Contract('BuildEnvelope_produces_bytes',
-        post: Gt(StringLength(Ctor1('BuildEnvelope_bytes', Var('input'))), Num(0))
+    Collector::Contract('php_proof_envelope_build_produces_bytes',
+        post: Gt(StringLength(Ctor1('ProofEnvelope.build', V('input'))), Num(0))
     );
-
-    // Filename CID starts with blake3-512:
-    Collector::Must('FilenameCid_prefix',
-        ForAllRef('bytes', Gte(
-            StringLength(Ctor1('FilenameCid', Var('bytes'))),
-            Num(10)
-        ))
+    Collector::Contract('php_proof_envelope_cid_starts_with_prefix',
+        post: Gte(StringLength(Ctor1('ProofEnvelope.cid', V('input'))), Num(10))
     );
 }
 
 // ──────────────────────────────────────────
-// 5. Verifier contracts
+// 6. Lift plugin protocol contracts
 // ──────────────────────────────────────────
 
-function InvariantsVerifier(): void
+function invariantsLiftPluginProtocol(): void
 {
-    // Load_all_proofs indexes all contracts
-    Collector::Must('LoadAllProofs_indexes_all',
-        ForAllRef('path', Gte(
-            StringLength(Ctor1('LoadAllProofs_memento_count', Var('path'))),
-            Num(0)
-        ))
+    Collector::Contract('php_lift_initialize_returns_capabilities',
+        post: Gte(StringLength(Ctor1('Lift.initialize.result', V('params'))), Num(0))
     );
-
-    // Verifier merge merges pools
-    Collector::Must('MementoPool_merge_idempotent',
-        ForAllRef('pool', Eq(
-            Ctor1('MementoPool_merge', Ctor2('Pair', Var('pool'), Var('pool'))),
-            Var('pool')
-        ))
-    );
-}
-
-// ──────────────────────────────────────────
-// 6. Lift plugin protocol bridges (cross-kit)
-// ──────────────────────────────────────────
-
-function InvariantsLiftPluginProtocol(): void
-{
-    // PHP kit conforms to lift plugin protocol C1-C11 invariants
-    // These are the cross-kit bridges connecting PHP contracts to Rust canonical contracts.
-
-    // C1: initialize returns capabilities
-    Collector::Must('PHP_Lift_initialize_returns_capabilities',
-        ForAllRef('params', Gte(StringLength(Ctor1('Lift_initialize_result', Var('params'))), Num(0)))
-    );
-
-    // C2: lift returns proof-envelope shape
-    Collector::Must('PHP_Lift_returns_proof_envelope',
-        ForAllRef('params', Eq(
-            Ctor1('Lift_response_kind', Var('params')),
-            Str('proof-envelope')
-        ))
-    );
-
-    // C3: source_paths is non-empty
-    Collector::Must('PHP_Lift_source_paths_non_empty',
-        ForAllRef('params', Gt(
-            StringLength(Ctor1('Lift_source_paths', Var('params'))),
-            Num(2)
-        ))
+    Collector::Contract('php_lift_returns_proof_envelope',
+        post: Eq(Ctor1('Lift.response.kind', V('params')), Str('proof-envelope'))
     );
 }
 
@@ -192,7 +125,6 @@ class Slab
 {
     public function __construct(
         public readonly string $label,
-        public readonly string $path,
         public readonly \Closure $run,
     ) {}
 }
@@ -201,11 +133,11 @@ class Slab
 function Slabs(): array
 {
     return [
-        new Slab('canonicalizer',     'Canonicalizer/',     InvariantsCanonicalizer(...)),
-        new Slab('ir',                'Ir/',                InvariantsIr(...)),
-        new Slab('claim_envelope',    'ClaimEnvelope/',     InvariantsClaimEnvelope(...)),
-        new Slab('proof_envelope',    'ProofEnvelope/',     InvariantsProofEnvelope(...)),
-        new Slab('verifier',          'Verifier/',          InvariantsVerifier(...)),
-        new Slab('lift_protocol',     'LiftPluginProtocol/', InvariantsLiftPluginProtocol(...)),
+        new Slab('blake3',         invariantsBlake3(...)),
+        new Slab('jcs',            invariantsJcs(...)),
+        new Slab('cbor',           invariantsCbor(...)),
+        new Slab('signing',        invariantsSigning(...)),
+        new Slab('proof_envelope', invariantsProofEnvelope(...)),
+        new Slab('lift_protocol',  invariantsLiftPluginProtocol(...)),
     ];
 }

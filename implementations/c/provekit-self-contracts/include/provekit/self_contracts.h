@@ -249,7 +249,45 @@ void pksc_proof_output_free(pksc_proof_output *out);
  * Returns 1 if all three checks pass, 0 otherwise. */
 int pksc_proof_verify(const uint8_t *proof_bytes, size_t proof_len,
                       const char *expected_cid,
-                      const uint8_t signer_pk[PKSC_ED25519_PK_LEN]);
+                       const uint8_t signer_pk[PKSC_ED25519_PK_LEN]);
+
+/* ----------------------------------------------------------------------- */
+/* Bridge v1.4 (layered envelope/header/body, tagged-union target).        */
+/* Per protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.       */
+/* ----------------------------------------------------------------------- */
+
+/* Tagged-union target kind */
+#define PKSC_BRIDGE_TARGET_CONTRACT    "contract"
+#define PKSC_BRIDGE_TARGET_CONTRACTSET "contractSet"
+
+/* Result of pksc_mint_bridge_v14. Caller must free →cid and →canonical_bytes. */
+typedef struct pksc_bridge_v14_result {
+    char   *cid;            /* malloc'd, NUL-terminated */
+    uint8_t *canonical_bytes; /* malloc'd */
+    size_t   canonical_len;
+} pksc_bridge_v14_result;
+
+void pksc_bridge_v14_result_free(pksc_bridge_v14_result *r);
+
+/* Mint a v1.4 layered bridge memento.
+ *   seed:       32-byte Ed25519 seed (e.g. PKSC_FOUNDATION_V0_SEED).
+ *   declared_at: RFC 3339 timestamp for envelope.declaredAt.
+ *   args:        header fields (name, source_symbol, source_layer,
+ *                source_contract_cid) and target (kind, cid).
+ *   metadata:    NULL-terminated array of {key, val} pairs; NULL entries omitted.
+ * Returns 0 on success, -1 on error. */
+int pksc_mint_bridge_v14(pksc_bridge_v14_result *out,
+                         const uint8_t seed[PKSC_ED25519_SEED_LEN],
+                         const char *declared_at,
+                         const char *name,
+                         const char *source_symbol,
+                         const char *source_layer,
+                         const char *source_contract_cid,
+                         const char *target_kind,
+                         const char *target_cid,
+                         const char **metadata_keys,
+                         const char **metadata_vals,
+                         int metadata_count);
 
 #ifdef __cplusplus
 }
