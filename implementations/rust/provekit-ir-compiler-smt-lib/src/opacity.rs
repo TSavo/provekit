@@ -241,12 +241,19 @@ pub fn manifest_for_formula(formula: &Formula) -> OpacityManifest {
 
 /// Convert a `serde_json::Value` into the canonicalizer's `Value`.
 ///
-/// The canonicalizer carries `i64` integers; non-integer numbers (which
-/// the IR does not produce — see spec for canonical IR shape) are
-/// rendered as their `serde_json` string form, then parsed as integers.
-/// Floats fall through to a string representation, which keeps
-/// determinism but signals (via shape mismatch) that the input violates
-/// the IR's integer-only number rule.
+/// The canonicalizer carries `i64` integers; non-integer JSON numbers
+/// (floats, NaN, Infinity, u64 > i64::MAX) violate the IR's
+/// integer-only number rule and CANNOT be canonically represented in
+/// the substrate's Value type. Silent stringification would produce
+/// distinct positionCids across implementations for the same logical
+/// IR subtree (one impl stringifies, another impl might error or fail
+/// the JSON schema check), breaking cross-implementation
+/// byte-equivalence.
+///
+/// Per Supra omnia, rectum: fail loud at the first unrepresentable
+/// number rather than corrupt the cross-impl CID. The compile aborts
+/// with a clear message naming the offending number; the caller fixes
+/// the upstream IR-JSON or extends the canonicalizer.
 fn serde_json_to_canonicalizer_value(j: &serde_json::Value) -> Value {
     match j {
         serde_json::Value::Null => Value::Null,
@@ -255,15 +262,28 @@ fn serde_json_to_canonicalizer_value(j: &serde_json::Value) -> Value {
             if let Some(i) = n.as_i64() {
                 Value::Integer(i)
             } else if let Some(u) = n.as_u64() {
-                // Map u64 in 0..=i64::MAX to Integer; saturate at i64::MAX
-                // (the IR never produces values this large in practice).
                 if u <= i64::MAX as u64 {
                     Value::Integer(u as i64)
                 } else {
-                    Value::String(u.to_string())
+                    panic!(
+                        "opacity positionCid: u64 number {u} exceeds i64::MAX; \
+                         IR violates integer-only number rule. Cross-impl \
+                         positionCid would diverge if silently stringified. \
+                         Fix the upstream IR-JSON or extend the canonicalizer."
+                    );
                 }
             } else {
-                Value::String(n.to_string())
+                // Float / NaN / Infinity — JSON numbers that aren't
+                // integers. The canonicalizer's Value doesn't carry
+                // them; any mapping is implementation-defined and
+                // breaks cross-impl byte-equivalence.
+                panic!(
+                    "opacity positionCid: non-integer JSON number {n} \
+                     cannot be canonically represented. IR violates \
+                     integer-only number rule. Cross-impl positionCid \
+                     would diverge if silently stringified. Fix the \
+                     upstream IR-JSON or extend the canonicalizer."
+                );
             }
         }
         serde_json::Value::String(s) => Value::String(s.clone()),
