@@ -31,6 +31,7 @@ pub mod emit;
 pub mod envelope;
 pub mod lift;
 pub mod llbc;
+pub mod llbc_calls;
 pub mod llbc_lift;
 pub mod marriage;
 pub mod locus;

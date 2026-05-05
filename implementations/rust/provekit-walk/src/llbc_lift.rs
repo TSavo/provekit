@@ -64,6 +64,31 @@ pub fn lift_llbc_function_with_types(
     source_path: Option<&str>,
     type_decls: Option<&Value>,
 ) -> Result<FunctionContractMemento, LlbcError> {
+    lift_llbc_function_with_registry(
+        f,
+        source_path,
+        type_decls,
+        None,
+        &crate::llbc_calls::empty_registry(),
+    )
+}
+
+/// Full-power LLBC lift: `lift_llbc_function_with_types` plus
+/// callsite composition. When a Call statement is encountered in the
+/// body, the lifter looks up the callee in `registry`, substitutes
+/// actuals for formals in the callee's pre, and pushes the result
+/// into the caller's pre contributions (paper 07 §6 composition).
+///
+/// `fun_decls` is the raw `translated.fun_decls` JSON array used to
+/// resolve FunDeclIds to callee names. Pass `None` to skip call
+/// resolution; existing tests that don't need calls are unaffected.
+pub fn lift_llbc_function_with_registry(
+    f: LlbcFunction<'_>,
+    source_path: Option<&str>,
+    type_decls: Option<&Value>,
+    fun_decls: Option<&Value>,
+    registry: &crate::llbc_calls::ContractRegistry,
+) -> Result<FunctionContractMemento, LlbcError> {
     let fn_name = f.fn_name().ok_or_else(|| LlbcError::Schema {
         path: "item_meta.name".into(),
         detail: "no Ident in name path".into(),
@@ -106,10 +131,13 @@ pub fn lift_llbc_function_with_types(
     let stmts: Vec<&Value> = f.statements().map(|s| s.raw()).collect();
 
     // Pre-contributions: if-panic Switch chains + MIR-inserted Asserts
-    // (overflow, bounds, division-by-zero, …).
+    // (overflow, bounds, division-by-zero, …) + callsite compositions.
     let mut pre_contribs: Vec<IrFormula> = Vec::new();
     collect_if_panic_contributions(&[], &stmts, &formals, &named_locals, false, &mut pre_contribs);
     collect_assert_contributions(&stmts, &formals, &named_locals, &mut pre_contribs);
+    if let Some(fd) = fun_decls {
+        collect_call_contributions(&stmts, &formals, &named_locals, fd, registry, &mut pre_contribs);
+    }
     let pre_formula = simplify_conjunction(pre_contribs.clone());
 
     // Postcondition: every pre-contribution still holds at the
@@ -497,6 +525,61 @@ fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
         "Shl" | "ShlUnchecked" => Some("<<"),
         "Shr" | "ShrUnchecked" => Some(">>"),
         _ => None,
+    }
+}
+
+/// Collect predicate atoms from `Call` statements: substitute the
+/// callee's pre with actuals supplied at the callsite, push the
+/// result into the caller's pre contributions. This is paper 07
+/// §6's "compose for free" — every callsite composes the callee's
+/// content-addressed precondition into the caller's contract.
+///
+/// Unresolved callees (cross-crate, dyn dispatch, FFI, callee not in
+/// registry) are skipped silently. Future work: emit
+/// `Effect::UnresolvedCall { name }` so the substrate refuses to
+/// compose against them rather than implicitly assuming `true`.
+fn collect_call_contributions(
+    stmts: &[&Value],
+    formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
+    fun_decls: &Value,
+    registry: &crate::llbc_calls::ContractRegistry,
+    out: &mut Vec<IrFormula>,
+) {
+    for (i, s) in stmts.iter().enumerate() {
+        let Some((func_id, args)) = crate::llbc_calls::extract_call_target(s) else {
+            continue;
+        };
+        let Some(callee_name) = crate::llbc_calls::fundecl_name_by_id(fun_decls, func_id) else {
+            continue;
+        };
+        let Some(callee) = registry.get(&callee_name) else {
+            continue;
+        };
+        // Lift each actual argument. The trace runs back through prior
+        // statements (everything before this Call).
+        let prior = &stmts[..i];
+        let mut arg_terms: Vec<IrTerm> = Vec::with_capacity(args.len());
+        let mut all_lifted = true;
+        for op in args.iter() {
+            match operand_to_ir_term(op, prior, formals, named_locals) {
+                Some(t) => arg_terms.push(t),
+                None => {
+                    all_lifted = false;
+                    break;
+                }
+            }
+        }
+        if !all_lifted {
+            continue;
+        }
+        if arg_terms.len() != callee.formals.len() {
+            // Arity mismatch — likely a generic / trait method we're
+            // resolving incorrectly. Skip rather than emit garbage.
+            continue;
+        }
+        let composed = crate::llbc_calls::compose_callsite_pre(callee, &arg_terms);
+        out.push(composed);
     }
 }
 

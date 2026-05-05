@@ -77,6 +77,12 @@ impl LlbcCrate {
         self.raw.get("translated")?.get("type_decls")
     }
 
+    /// The `translated` sub-object of the CrateData. Used by callsite
+    /// composition in `llbc_calls` to look up FunDecls by FunDeclId.
+    pub fn raw_translated(&self) -> Option<&Value> {
+        self.raw.get("translated")
+    }
+
     /// Iterate all function declarations in the crate.
     pub fn fun_decls(&self) -> impl Iterator<Item = LlbcFunction<'_>> {
         self.raw
