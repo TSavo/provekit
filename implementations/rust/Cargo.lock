@@ -1924,6 +1924,7 @@ dependencies = [
  "provekit-ir-compiler-smt-lib",
  "provekit-ir-symbolic",
  "provekit-proof-envelope",
+ "provekit-walk",
  "rayon",
  "serde",
  "serde_json",

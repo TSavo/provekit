@@ -10,6 +10,7 @@
 
 use std::collections::BTreeMap;
 
+use provekit_walk::contract::OpacityMementoLookup;
 use serde_json::Value as Json;
 use serde::Serialize;
 
@@ -102,6 +103,28 @@ pub struct MementoPool {
     pub cid_to_name: BTreeMap<String, String>,
     /// Contract name -> CID (reverse index)
     pub name_to_cid: BTreeMap<String, String>,
+
+    // ---- Opacity discharge indexes (issue #384 B.5) ----
+    //
+    // These maps are indexed during `insert()` when a memento of the
+    // corresponding discharge kind is loaded. The substrate's
+    // `compose_function_contracts_checked` queries these via the
+    // `OpacityMementoLookup` impl below.
+
+    /// loopCid (from header.loopCid of a LoopInvariantMemento) ->
+    /// memento CID. Populated when a "loop-invariant" kind memento is
+    /// inserted. Spec: protocol/specs/2026-05-05-loop-invariant-memento.md
+    pub loop_cid_to_memento: BTreeMap<String, String>,
+
+    /// tryCid (from header.tryCid of a TryBranchMemento) -> memento CID.
+    /// Populated when a "try-branch" kind memento is inserted.
+    /// Spec: protocol/specs/2026-05-05-try-branch-memento.md
+    pub try_cid_to_memento: BTreeMap<String, String>,
+
+    /// bodyFnCid (from header.bodyFnCid of a ClosureBindingMemento) ->
+    /// memento CID. Populated when a "closure-binding" kind memento is
+    /// inserted. Spec: protocol/specs/2026-05-05-closure-binding-memento.md
+    pub body_fn_cid_to_memento: BTreeMap<String, String>,
 }
 
 /// Key for implication lookups: (antecedent CID, consequent CID).
@@ -294,9 +317,45 @@ impl MementoPool {
                     }
                 } else {
                     self.cid_to_name.insert(memento_cid.clone(), n.clone());
-                    self.name_to_cid.insert(n, memento_cid);
+                    self.name_to_cid.insert(n, memento_cid.clone());
                 }
             }
+        }
+
+        // ---- Opacity discharge indexing (issue #384 B.5) ----
+        // Index discharge mementos by their opacity-site CID fields so that
+        // OpacityMementoLookup queries are O(log n) BTreeMap lookups rather
+        // than a full pool scan.
+        //
+        // Both v1.1 flat (evidence.body.*) and v1.2 layered (header.*) shapes
+        // are covered by memento_body_field / memento_kind.
+        let kind = self.mementos.get(&memento_cid).and_then(|e| memento_kind(e)).map(str::to_string);
+        match kind.as_deref() {
+            Some("loop-invariant") => {
+                // header.loopCid (v1.2) or evidence.body.loopCid (v1.1)
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let Some(loop_cid) = memento_body_field(env, "loopCid").and_then(|v| v.as_str()) {
+                        self.loop_cid_to_memento.entry(loop_cid.to_string()).or_insert(memento_cid.clone());
+                    }
+                }
+            }
+            Some("try-branch") => {
+                // header.tryCid (v1.2) or evidence.body.tryCid (v1.1)
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let Some(try_cid) = memento_body_field(env, "tryCid").and_then(|v| v.as_str()) {
+                        self.try_cid_to_memento.entry(try_cid.to_string()).or_insert(memento_cid.clone());
+                    }
+                }
+            }
+            Some("closure-binding") => {
+                // header.bodyFnCid (v1.2) or evidence.body.bodyFnCid (v1.1)
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let Some(body_fn_cid) = memento_body_field(env, "bodyFnCid").and_then(|v| v.as_str()) {
+                        self.body_fn_cid_to_memento.entry(body_fn_cid.to_string()).or_insert(memento_cid.clone());
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -392,6 +451,38 @@ impl MementoPool {
                 self.name_to_cid.insert(k, v);
             }
         }
+        // Opacity discharge indexes: first-insertion wins (same policy as
+        // other single-valued indexes). Collisions on these keys mean two
+        // proofs supply different discharge mementos for the same opacity
+        // site — keep the first, let the substrate use whichever it loaded
+        // first.
+        for (k, v) in other.loop_cid_to_memento {
+            self.loop_cid_to_memento.entry(k).or_insert(v);
+        }
+        for (k, v) in other.try_cid_to_memento {
+            self.try_cid_to_memento.entry(k).or_insert(v);
+        }
+        for (k, v) in other.body_fn_cid_to_memento {
+            self.body_fn_cid_to_memento.entry(k).or_insert(v);
+        }
+    }
+}
+
+/// `MementoPool` implements `OpacityMementoLookup` so that
+/// `compose_function_contracts_checked` in `provekit-walk` can query
+/// whether a discharge memento is present for a given opacity site CID.
+///
+/// Each lookup is an O(log n) BTreeMap probe against the three
+/// opacity-discharge indexes populated by `MementoPool::insert()`.
+impl OpacityMementoLookup for MementoPool {
+    fn has_loop_invariant(&self, loop_cid: &str) -> bool {
+        self.loop_cid_to_memento.contains_key(loop_cid)
+    }
+    fn has_try_branch(&self, try_cid: &str) -> bool {
+        self.try_cid_to_memento.contains_key(try_cid)
+    }
+    fn has_closure_binding(&self, body_fn_cid: &str) -> bool {
+        self.body_fn_cid_to_memento.contains_key(body_fn_cid)
     }
 }
 

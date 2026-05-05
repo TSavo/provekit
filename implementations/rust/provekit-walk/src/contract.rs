@@ -369,6 +369,110 @@ fn sort_to_value(s: &Sort) -> Arc<Value> {
     }
 }
 
+// ---- Opacity discharge ----
+
+/// Trait for querying whether a discharge memento is present for a
+/// given opacity effect. Implemented by `MementoPool` in
+/// `provekit-verifier`; in-crate tests use a mock.
+///
+/// Each method returns `true` iff a conforming discharge memento for
+/// that specific site is present in the pool and has passed all
+/// validation rules defined in the corresponding spec:
+///   - `LoopInvariantMemento`  (protocol/specs/2026-05-05-loop-invariant-memento.md)
+///   - `TryBranchMemento`      (protocol/specs/2026-05-05-try-branch-memento.md)
+///   - `ClosureBindingMemento` (protocol/specs/2026-05-05-closure-binding-memento.md)
+///   - `UnresolvedCall`:       no memento kind yet; always undischarged.
+pub trait OpacityMementoLookup {
+    fn has_loop_invariant(&self, loop_cid: &str) -> bool;
+    fn has_try_branch(&self, try_cid: &str) -> bool;
+    fn has_closure_binding(&self, body_fn_cid: &str) -> bool;
+}
+
+/// A no-op pool that never has any discharge mementos. Used as the
+/// default when callers don't yet track opacity discharge.
+pub struct EmptyOpacityPool;
+impl OpacityMementoLookup for EmptyOpacityPool {
+    fn has_loop_invariant(&self, _: &str) -> bool { false }
+    fn has_try_branch(&self, _: &str) -> bool { false }
+    fn has_closure_binding(&self, _: &str) -> bool { false }
+}
+
+/// Error returned when composition is refused because an opacity effect
+/// is not discharged by a memento in the pool.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpacityError {
+    /// An `Effect::OpaqueLoop { loop_cid }` is present but no
+    /// `LoopInvariantMemento` with that `loopCid` is in the pool.
+    LoopNotDischarged { loop_cid: String },
+    /// An `Effect::EarlyReturn { try_cid }` is present but no
+    /// `TryBranchMemento` with that `tryCid` is in the pool.
+    EarlyReturnNotDischarged { try_cid: String },
+    /// An `Effect::ClosureCapture { body_fn_cid, .. }` is present but
+    /// no `ClosureBindingMemento` with that `bodyFnCid` is in the pool.
+    ClosureCaptureNotDischarged { body_fn_cid: String },
+    /// An `Effect::UnresolvedCall { name }` is present. No discharge
+    /// memento kind exists yet; composition is always refused.
+    UnresolvedCallNotDischarged { name: String },
+}
+
+impl std::fmt::Display for OpacityError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LoopNotDischarged { loop_cid } =>
+                write!(f, "opacity: OpaqueLoop(loopCid={loop_cid}) has no LoopInvariantMemento in pool"),
+            Self::EarlyReturnNotDischarged { try_cid } =>
+                write!(f, "opacity: EarlyReturn(tryCid={try_cid}) has no TryBranchMemento in pool"),
+            Self::ClosureCaptureNotDischarged { body_fn_cid } =>
+                write!(f, "opacity: ClosureCapture(bodyFnCid={body_fn_cid}) has no ClosureBindingMemento in pool"),
+            Self::UnresolvedCallNotDischarged { name } =>
+                write!(f, "opacity: UnresolvedCall({name}) has no discharge memento kind"),
+        }
+    }
+}
+
+impl EffectSet {
+    /// Check whether all opacity effects in this set are discharged by
+    /// the given pool. Returns `Ok(())` iff:
+    ///   - there are no opacity effects at all, OR
+    ///   - every opacity effect has a corresponding memento in `pool`.
+    ///
+    /// Non-opacity effects (Reads/Writes/Io/Unsafe/Panics) are NOT
+    /// checked here; composition with non-opacity effects is refused
+    /// by `compose_function_contracts` separately.
+    ///
+    /// Returns the FIRST undischarged opacity effect as an error.
+    /// The caller can collect all errors by iterating effects directly.
+    pub fn check_opacity_effects(&self, pool: &dyn OpacityMementoLookup) -> Result<(), OpacityError> {
+        for effect in &self.effects {
+            match effect {
+                Effect::OpaqueLoop { loop_cid } => {
+                    if !pool.has_loop_invariant(loop_cid) {
+                        return Err(OpacityError::LoopNotDischarged { loop_cid: loop_cid.clone() });
+                    }
+                }
+                Effect::EarlyReturn { try_cid } => {
+                    if !pool.has_try_branch(try_cid) {
+                        return Err(OpacityError::EarlyReturnNotDischarged { try_cid: try_cid.clone() });
+                    }
+                }
+                Effect::ClosureCapture { body_fn_cid, .. } => {
+                    if !pool.has_closure_binding(body_fn_cid) {
+                        return Err(OpacityError::ClosureCaptureNotDischarged { body_fn_cid: body_fn_cid.clone() });
+                    }
+                }
+                Effect::UnresolvedCall { name } => {
+                    return Err(OpacityError::UnresolvedCallNotDischarged { name: name.clone() });
+                }
+                // Non-opacity effects: Reads/Writes/Io/Unsafe/Panics do not
+                // participate in memento-based discharge.
+                Effect::Reads { .. } | Effect::Writes { .. } | Effect::Io
+                | Effect::Unsafe | Effect::Panics => {}
+            }
+        }
+        Ok(())
+    }
+}
+
 // ---- Composition ----
 
 #[derive(Debug, Clone)]
@@ -459,6 +563,117 @@ pub fn compose_function_contracts(
         canonical_bytes,
         cid,
     })
+}
+
+/// Compose two function contracts with opacity discharge checking.
+///
+/// This is the substrate-verifier-facing API. It distinguishes three
+/// refusal reasons:
+///
+/// 1. `Err(OpacityError::*)` — a contract carries an opacity effect
+///    (`OpaqueLoop`, `EarlyReturn`, `ClosureCapture`, `UnresolvedCall`)
+///    with no corresponding discharge memento in `pool`. The caller
+///    knows exactly which effect is undischarged.
+///
+/// 2. `Ok(None)` — composition refused for a non-opacity reason:
+///    an unconditionally-blocking effect (Reads/Writes/Io/Unsafe/Panics)
+///    is present, `formal_idx` is out of bounds, or the inner post has
+///    no result equation.
+///
+/// 3. `Ok(Some(composed))` — all opacity effects are discharged by
+///    mementos in `pool`, no unconditionally-blocking effects are
+///    present, and composition succeeded.
+///
+/// Design note: unlike `compose_function_contracts`, this function
+/// allows contracts whose ONLY impure effects are opacity effects that
+/// are fully discharged. The existing `compose_function_contracts`
+/// (which refuses on ANY effect) remains unchanged for pre-discharge
+/// callers.
+pub fn compose_function_contracts_checked(
+    outer: &FunctionContractMemento,
+    inner: &FunctionContractMemento,
+    formal_idx: usize,
+    pool: &dyn OpacityMementoLookup,
+) -> Result<Option<ComposedFunctionContract>, OpacityError> {
+    // Phase 1: check opacity effects on both sides. Returns the first
+    // undischarged opacity effect as a typed error.
+    outer.effects.check_opacity_effects(pool)?;
+    inner.effects.check_opacity_effects(pool)?;
+
+    // Phase 2: check for unconditionally-blocking effects. After opacity
+    // discharge, only Reads/Writes/Io/Unsafe/Panics can still block.
+    // A contract that had ONLY opacity effects — all now discharged — has
+    // no remaining blockers; one that still has non-opacity impure effects
+    // is still refused.
+    let outer_non_opacity_pure = outer.effects.effects.iter().all(|e| matches!(
+        e,
+        Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
+        | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
+    ));
+    let inner_non_opacity_pure = inner.effects.effects.iter().all(|e| matches!(
+        e,
+        Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
+        | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
+    ));
+    if !outer_non_opacity_pure || !inner_non_opacity_pure {
+        return Ok(None);
+    }
+
+    if formal_idx >= outer.formals.len() {
+        return Ok(None);
+    }
+
+    // Phase 3: perform the actual composition (same logic as
+    // compose_function_contracts, duplicated here to avoid the
+    // is_pure() gate in that function).
+    let inner_result_name = inner.result_var_name();
+    let inner_post_renamed = crate::wp::substitute_in_formula(
+        inner.post.clone(),
+        "result",
+        &IrTerm::Var { name: inner_result_name.clone() },
+    );
+    let inner_value = match find_result_equation(&inner_post_renamed, &inner_result_name) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    let outer_formal = &outer.formals[formal_idx];
+    let outer_pre_substituted =
+        crate::wp::substitute_in_formula(outer.pre.clone(), outer_formal, &inner_value);
+    let outer_post_substituted =
+        crate::wp::substitute_in_formula(outer.post.clone(), outer_formal, &inner_value);
+    let pre = IrFormula::And {
+        operands: vec![
+            inner.pre.clone(),
+            IrFormula::Implies {
+                operands: vec![inner_post_renamed, outer_pre_substituted],
+            },
+        ],
+    };
+    let post = outer_post_substituted;
+    let value = Value::object([
+        ("schemaVersion", Value::string("1")),
+        ("kind", Value::string("composed-function-contract")),
+        (
+            "components",
+            Value::array(vec![
+                Value::string(outer.cid.clone()),
+                Value::string(inner.cid.clone()),
+            ]),
+        ),
+        ("formalIdx", Value::integer(formal_idx as i64)),
+        ("pre", formula_to_canonical(&pre)),
+        ("post", formula_to_canonical(&post)),
+    ]);
+    let canonical_bytes = jcs_bytes_of_value(&value);
+    let cid = cid_of_value(&value);
+    Ok(Some(ComposedFunctionContract {
+        component_cids: vec![outer.cid.clone(), inner.cid.clone()],
+        formal_idx,
+        pre,
+        post,
+        canonical_bytes,
+        cid,
+    }))
 }
 
 /// Compose with the inner being an already-composed contract. Used
@@ -1118,5 +1333,190 @@ mod tests {
             "Vec<u32> and SomeStruct formals must produce distinct sorts"
         );
         assert_ne!(f_vec.cid, f_struct.cid);
+    }
+
+    // ---- Issue #384 B.5: opacity discharge tests ----
+
+    /// Mock pool for testing: pre-seeded with specific loop_cid values.
+    struct MockPool {
+        loop_cids: Vec<String>,
+        try_cids: Vec<String>,
+        body_fn_cids: Vec<String>,
+    }
+
+    impl MockPool {
+        fn empty() -> Self {
+            Self { loop_cids: vec![], try_cids: vec![], body_fn_cids: vec![] }
+        }
+        fn with_loop(mut self, cid: &str) -> Self {
+            self.loop_cids.push(cid.to_string());
+            self
+        }
+        fn with_try(mut self, cid: &str) -> Self {
+            self.try_cids.push(cid.to_string());
+            self
+        }
+        fn with_closure(mut self, cid: &str) -> Self {
+            self.body_fn_cids.push(cid.to_string());
+            self
+        }
+    }
+
+    impl OpacityMementoLookup for MockPool {
+        fn has_loop_invariant(&self, loop_cid: &str) -> bool {
+            self.loop_cids.iter().any(|c| c == loop_cid)
+        }
+        fn has_try_branch(&self, try_cid: &str) -> bool {
+            self.try_cids.iter().any(|c| c == try_cid)
+        }
+        fn has_closure_binding(&self, body_fn_cid: &str) -> bool {
+            self.body_fn_cids.iter().any(|c| c == body_fn_cid)
+        }
+    }
+
+    /// Build a FunctionContractMemento from a `fn f(x: u32) -> u32` shell
+    /// with a manually injected effect. Used by opacity tests below.
+    fn contract_with_effects(name: &str, effects: Vec<Effect>) -> FunctionContractMemento {
+        let mut c = build_function_contract(
+            &parse_fn(&format!("fn {}(x: u32) -> u32 {{ x }}", name)),
+            None,
+        );
+        for e in effects {
+            c.effects.add(e);
+        }
+        // Recompute cid so it reflects the new effects set.
+        let val = crate::contract::build_memento_value(&c);
+        c.canonical_bytes = crate::canonical::jcs_bytes_of_value(&val);
+        c.cid = crate::canonical::cid_of_value(&val);
+        c
+    }
+
+    /// A contract with OpaqueLoop + no LoopInvariantMemento in pool →
+    /// compose_function_contracts_checked returns Err.
+    #[test]
+    fn opaque_loop_without_memento_blocks_composition() {
+        let loop_cid = "blake3-512:aabb".repeat(8); // fake stable cid
+        let outer = contract_with_effects("outer", vec![Effect::OpaqueLoop { loop_cid: loop_cid.clone() }]);
+        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
+        let pool = MockPool::empty(); // no loop invariant
+        let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
+        assert!(
+            matches!(result, Err(OpacityError::LoopNotDischarged { .. })),
+            "expected LoopNotDischarged, got {:?}", result
+        );
+    }
+
+    /// Same contract with OpaqueLoop + matching LoopInvariantMemento in pool →
+    /// compose_function_contracts_checked succeeds (returns Ok(Some(...))).
+    #[test]
+    fn opaque_loop_with_memento_allows_composition() {
+        let loop_cid = "blake3-512:aabb".repeat(8);
+        let outer = contract_with_effects("outer", vec![Effect::OpaqueLoop { loop_cid: loop_cid.clone() }]);
+        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
+        let pool = MockPool::empty().with_loop(&loop_cid);
+        let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
+        // outer has only an OpaqueLoop (now discharged) and inner is pure →
+        // composition should succeed.
+        assert!(
+            matches!(result, Ok(Some(_))),
+            "expected Ok(Some(_)) after discharge, got {:?}", result
+        );
+    }
+
+    /// EarlyReturn + no TryBranchMemento → Err(EarlyReturnNotDischarged).
+    #[test]
+    fn early_return_without_memento_blocks_composition() {
+        let try_cid = "blake3-512:ccdd".repeat(8);
+        let outer = contract_with_effects("outer", vec![Effect::EarlyReturn { try_cid: try_cid.clone() }]);
+        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
+        let pool = MockPool::empty();
+        let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
+        assert!(
+            matches!(result, Err(OpacityError::EarlyReturnNotDischarged { .. })),
+            "expected EarlyReturnNotDischarged, got {:?}", result
+        );
+    }
+
+    /// EarlyReturn + matching TryBranchMemento → Ok(Some(_)).
+    #[test]
+    fn early_return_with_memento_allows_composition() {
+        let try_cid = "blake3-512:ccdd".repeat(8);
+        let outer = contract_with_effects("outer", vec![Effect::EarlyReturn { try_cid: try_cid.clone() }]);
+        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
+        let pool = MockPool::empty().with_try(&try_cid);
+        let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
+        assert!(
+            matches!(result, Ok(Some(_))),
+            "expected Ok(Some(_)) after discharge, got {:?}", result
+        );
+    }
+
+    /// ClosureCapture + no ClosureBindingMemento → Err(ClosureCaptureNotDischarged).
+    #[test]
+    fn closure_capture_without_memento_blocks_composition() {
+        let body_fn_cid = "blake3-512:eeff".repeat(8);
+        let outer = contract_with_effects("outer", vec![Effect::ClosureCapture { body_fn_cid: body_fn_cid.clone(), n_captures: 1 }]);
+        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
+        let pool = MockPool::empty();
+        let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
+        assert!(
+            matches!(result, Err(OpacityError::ClosureCaptureNotDischarged { .. })),
+            "expected ClosureCaptureNotDischarged, got {:?}", result
+        );
+    }
+
+    /// ClosureCapture + matching ClosureBindingMemento → Ok(Some(_)).
+    #[test]
+    fn closure_capture_with_memento_allows_composition() {
+        let body_fn_cid = "blake3-512:eeff".repeat(8);
+        let outer = contract_with_effects("outer", vec![Effect::ClosureCapture { body_fn_cid: body_fn_cid.clone(), n_captures: 1 }]);
+        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
+        let pool = MockPool::empty().with_closure(&body_fn_cid);
+        let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
+        assert!(
+            matches!(result, Ok(Some(_))),
+            "expected Ok(Some(_)) after discharge, got {:?}", result
+        );
+    }
+
+    /// UnresolvedCall always blocks composition regardless of pool contents.
+    #[test]
+    fn unresolved_call_always_blocks_composition() {
+        let outer = contract_with_effects("outer", vec![Effect::UnresolvedCall { name: "some_fn".to_string() }]);
+        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
+        let pool = MockPool::empty();
+        let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
+        assert!(
+            matches!(result, Err(OpacityError::UnresolvedCallNotDischarged { .. })),
+            "expected UnresolvedCallNotDischarged, got {:?}", result
+        );
+    }
+
+    /// Non-opacity impure effects (Io) still block composition even
+    /// after all opacity effects are discharged: returns Ok(None).
+    #[test]
+    fn non_opacity_effects_still_block_after_opacity_discharge() {
+        let loop_cid = "blake3-512:1122".repeat(8);
+        // Contract has both OpaqueLoop (dischargeable) and Io (not dischargeable).
+        let outer = contract_with_effects("outer", vec![
+            Effect::OpaqueLoop { loop_cid: loop_cid.clone() },
+            Effect::Io,
+        ]);
+        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
+        let pool = MockPool::empty().with_loop(&loop_cid);
+        let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
+        // OpaqueLoop is discharged → no OpacityError. But Io blocks → Ok(None).
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None) when non-opacity effect blocks, got {:?}", result
+        );
+    }
+
+    /// check_opacity_effects returns Ok(()) for a pure contract.
+    #[test]
+    fn check_opacity_pure_contract_is_ok() {
+        let f = build_function_contract(&parse_fn(r#"fn f(x: u32) -> u32 { x * 2 }"#), None);
+        let pool = MockPool::empty();
+        assert!(f.effects.check_opacity_effects(&pool).is_ok());
     }
 }
