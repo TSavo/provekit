@@ -27,10 +27,28 @@ public static class Serialize
 {
     // ----- to canonicalizer Value (used by the hashing flow) ------------
 
-    public static V SortToValue(Sort s) => V.Object(
-        ("kind", V.String("primitive")),
-        ("name", V.String(s.Name))
-    );
+    public static V SortToValue(Sort s) => s switch
+    {
+        // Locked key order: kind, name.
+        Sort.Primitive p => V.Object(
+            ("kind", V.String("primitive")),
+            ("name", V.String(p.Name))
+        ),
+        // Locked key order: kind, args, return.
+        Sort.Function f => V.Object(
+            ("kind", V.String("function")),
+            ("args", V.Array(f.Args.Select(SortToValue).ToArray())),
+            ("return", SortToValue(f.Return))
+        ),
+        // Locked key order: kind, name, indexVar, indexSort.
+        Sort.Dependent d => V.Object(
+            ("kind", V.String("dependent")),
+            ("name", V.String(d.Name)),
+            ("indexVar", V.String(d.IndexVar)),
+            ("indexSort", SortToValue(d.IndexSort))
+        ),
+        _ => throw new ArgumentException($"unknown Sort variant: {s.GetType().Name}")
+    };
 
     public static V TermToValue(Term t) => t switch
     {
@@ -193,9 +211,39 @@ public static class Serialize
 
     private static void WriteSort(System.Text.StringBuilder sb, Sort s)
     {
-        sb.Append("{\"kind\":\"primitive\",\"name\":");
-        WriteString(sb, s.Name);
-        sb.Append('}');
+        switch (s)
+        {
+            case Sort.Primitive p:
+                // Locked key order: kind, name.
+                sb.Append("{\"kind\":\"primitive\",\"name\":");
+                WriteString(sb, p.Name);
+                sb.Append('}');
+                break;
+            case Sort.Function f:
+                // Locked key order: kind, args, return.
+                sb.Append("{\"kind\":\"function\",\"args\":[");
+                for (int i = 0; i < f.Args.Length; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    WriteSort(sb, f.Args[i]);
+                }
+                sb.Append("],\"return\":");
+                WriteSort(sb, f.Return);
+                sb.Append('}');
+                break;
+            case Sort.Dependent d:
+                // Locked key order: kind, name, indexVar, indexSort.
+                sb.Append("{\"kind\":\"dependent\",\"name\":");
+                WriteString(sb, d.Name);
+                sb.Append(",\"indexVar\":");
+                WriteString(sb, d.IndexVar);
+                sb.Append(",\"indexSort\":");
+                WriteSort(sb, d.IndexSort);
+                sb.Append('}');
+                break;
+            default:
+                throw new ArgumentException($"unknown Sort variant: {s.GetType().Name}");
+        }
     }
 
     private static void WriteTerm(System.Text.StringBuilder sb, Term t)
