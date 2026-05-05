@@ -28,6 +28,8 @@ quote = { workspace = true }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 provekit-ir-types = { path = "../provekit-ir-types" }
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+provekit-claim-envelope = { path = "../provekit-claim-envelope" }
+provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 serde_json = { workspace = true }
 base64 = { workspace = true }
 

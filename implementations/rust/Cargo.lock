@@ -1936,9 +1936,12 @@ dependencies = [
 name = "provekit-walk"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "proc-macro2",
  "provekit-canonicalizer",
+ "provekit-claim-envelope",
  "provekit-ir-types",
+ "provekit-proof-envelope",
  "quote",
  "serde_json",
  "syn",
