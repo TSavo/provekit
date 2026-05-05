@@ -32,7 +32,7 @@ pub mod wp;
 pub use canonical::{
     cid_of_value, formula_to_canonical, jcs_bytes_of_value, serde_to_canonical, term_to_canonical,
 };
-pub use lift::{lift_function_precondition, lift_predicate};
+pub use lift::{lift_function_postcondition, lift_function_precondition, lift_predicate};
 pub use shadow::{
     build_shadow_source, compose_chain, compose_edges, edge_memento_cid, edge_memento_value,
     CalleeContract, ComposedEdge, ShadowArrival, ShadowSlot, ShadowSource,

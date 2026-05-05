@@ -10,6 +10,10 @@ description = "ProvekIt walk: backward WP propagation from callsites to allocati
 name = "provekit_walk"
 path = "src/lib.rs"
 
+[[bin]]
+name = "provekit-walk-demo"
+path = "src/bin/walk_demo.rs"
+
 [dependencies]
 syn = { workspace = true }
 quote = { workspace = true }
