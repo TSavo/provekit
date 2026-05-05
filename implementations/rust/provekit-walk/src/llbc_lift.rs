@@ -1030,8 +1030,10 @@ fn collect_call_contributions(
                 kind: atomic_kind,
                 ordering: None,
             });
-            // Fall through so the call also participates in callee lookup
-            // (it won't be in registry but that's expected for core).
+            // Atomic calls are fully classified by AtomicAccess; skip
+            // callee-name lookup to avoid spurious UnresolvedCall noise
+            // for cross-crate atomic intrinsics (e.g. core::sync::atomic).
+            continue;
         }
         let Some(callee_name) = crate::llbc_calls::fundecl_name_by_id(fun_decls, func_id) else {
             continue;
