@@ -108,6 +108,56 @@ pub enum Effect {
         body_fn_cid: String,
         n_captures: usize,
     },
+    /// Accepts a `Pin<P>` formal parameter. The substrate treats
+    /// Pin'd references as opaque until a PinProjectionMemento
+    /// supplies the projection safety proof. `target` is the formal
+    /// parameter name.
+    PinnedReference { target: String },
+    /// Accepts or dereferences a raw pointer (`*const T` or `*mut T`)
+    /// in a formal parameter position. `target` is the formal
+    /// parameter name; `mutable` distinguishes `*mut` from `*const`.
+    /// This is always co-present with `Effect::Unsafe` since raw
+    /// pointer derefs require an unsafe block to be safe-Rust
+    /// observable, but the pin/rawptr detection fires on the formal
+    /// type, not on a dereference site — so `Unsafe` is emitted
+    /// independently by the unsafe-block scanner.
+    RawPointerProvenance { target: String, mutable: bool },
+    /// Calls an atomic intrinsic (core::sync::atomic::Atomic*).
+    /// `target` is the local variable (or expression) being accessed;
+    /// `kind` is the operation class; `ordering` is the memory-order
+    /// string when it can be statically determined (may be None when
+    /// the ordering is passed as a runtime argument).
+    AtomicAccess {
+        target: String,
+        kind: AtomicKind,
+        ordering: Option<String>,
+    },
+}
+
+/// Operation class for `Effect::AtomicAccess`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AtomicKind {
+    /// Atomic load (load, peek).
+    Load,
+    /// Atomic store.
+    Store,
+    /// Read-modify-write (fetch_add, fetch_sub, fetch_and, fetch_or,
+    /// fetch_xor, fetch_nand, swap, fetch_update).
+    Rmw,
+    /// Compare-and-swap (compare_exchange, compare_exchange_weak,
+    /// compare_and_swap [deprecated]).
+    Cas,
+}
+
+impl AtomicKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AtomicKind::Load => "load",
+            AtomicKind::Store => "store",
+            AtomicKind::Rmw => "rmw",
+            AtomicKind::Cas => "cas",
+        }
+    }
 }
 
 impl Effect {
@@ -144,6 +194,30 @@ impl Effect {
                 ("bodyFnCid", Value::string(body_fn_cid.clone())),
                 ("nCaptures", Value::integer(*n_captures as i64)),
             ]),
+            Effect::PinnedReference { target } => Value::object([
+                ("kind", Value::string("pinned_reference")),
+                ("target", Value::string(target.clone())),
+            ]),
+            Effect::RawPointerProvenance { target, mutable } => Value::object([
+                ("kind", Value::string("raw_ptr_provenance")),
+                ("mutable", Value::boolean(*mutable)),
+                ("target", Value::string(target.clone())),
+            ]),
+            Effect::AtomicAccess {
+                target,
+                kind,
+                ordering,
+            } => {
+                let mut fields: Vec<(&str, Arc<Value>)> = vec![
+                    ("kind", Value::string("atomic_access")),
+                    ("atomicKind", Value::string(kind.as_str())),
+                    ("target", Value::string(target.clone())),
+                ];
+                if let Some(ord) = ordering {
+                    fields.push(("ordering", Value::string(ord.clone())));
+                }
+                Value::object(fields)
+            }
         }
     }
 
@@ -162,6 +236,20 @@ impl Effect {
                 body_fn_cid,
                 n_captures,
             } => format!("8:closure_capture:{}:{}", body_fn_cid, n_captures),
+            Effect::PinnedReference { target } => format!("9:pinned_reference:{}", target),
+            Effect::RawPointerProvenance { target, mutable } => {
+                format!("10:raw_ptr_provenance:{}:{}", target, mutable)
+            }
+            Effect::AtomicAccess {
+                target,
+                kind,
+                ordering,
+            } => format!(
+                "11:atomic_access:{}:{}:{}",
+                target,
+                kind.as_str(),
+                ordering.as_deref().unwrap_or("")
+            ),
         }
     }
 }
@@ -463,10 +551,17 @@ impl EffectSet {
                 Effect::UnresolvedCall { name } => {
                     return Err(OpacityError::UnresolvedCallNotDischarged { name: name.clone() });
                 }
-                // Non-opacity effects: Reads/Writes/Io/Unsafe/Panics do not
-                // participate in memento-based discharge.
+                // Non-opacity effects: Reads/Writes/Io/Unsafe/Panics and the
+                // structural type-boundary effects (PinnedReference,
+                // RawPointerProvenance, AtomicAccess) do not participate in
+                // memento-based discharge. They unconditionally block composition
+                // via the outer_non_opacity_pure check in
+                // compose_function_contracts_checked.
                 Effect::Reads { .. } | Effect::Writes { .. } | Effect::Io
-                | Effect::Unsafe | Effect::Panics => {}
+                | Effect::Unsafe | Effect::Panics
+                | Effect::PinnedReference { .. }
+                | Effect::RawPointerProvenance { .. }
+                | Effect::AtomicAccess { .. } => {}
             }
         }
         Ok(())

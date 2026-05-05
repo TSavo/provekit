@@ -149,6 +149,40 @@ pub fn lift_llbc_function_with_registry(
         })
         .collect();
 
+    // Formal opacity effects: scan formals (indices 1..=arg_count) for
+    // raw-pointer and Pin types. These are detected from the formal's
+    // Ty JSON, not from the body — a function that ACCEPTS a *mut T is
+    // already opaque at the type boundary regardless of what it does.
+    //
+    // RawPointerProvenance: emitted whenever a formal is *const/*mut.
+    // PinnedReference: emitted whenever a formal is Pin<P> (checked via
+    //   type_decls; trailing-Ident-only would mis-fire on other "Pin"-named types).
+    //
+    // Both are pre-filled into `formal_opacity_effects` here so they can
+    // be merged into the main EffectSet after `detect_effects_llbc` runs.
+    let mut formal_opacity_effects: Vec<Effect> = Vec::new();
+    for (idx, formal_name) in &formals {
+        if let Some(ty_raw) = formal_ty_raws.get(idx) {
+            // Check raw pointer.
+            if let Some(mutable) = ty_raw_is_raw_ptr(ty_raw) {
+                formal_opacity_effects.push(Effect::RawPointerProvenance {
+                    target: formal_name.clone(),
+                    mutable,
+                });
+            }
+            // Check Pin Adt.
+            else if let Some(adt_id) = ty_raw_adt_id(ty_raw) {
+                if let Some(td) = type_decls {
+                    if is_pin_adt(td, adt_id) {
+                        formal_opacity_effects.push(Effect::PinnedReference {
+                            target: formal_name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     let stmts: Vec<&Value> = f.statements().map(|s| s.raw()).collect();
 
     // Pre-contributions: if-panic Switch chains + MIR-inserted Asserts
@@ -196,6 +230,10 @@ pub fn lift_llbc_function_with_registry(
                 n_captures: cap.n_captures,
             });
         }
+    }
+    // Merge formal opacity effects (Pin / raw-ptr) detected above.
+    for e in formal_opacity_effects {
+        effects.add(e);
     }
     if let Some(fd) = fun_decls {
         collect_call_contributions(&stmts, &formals, &named_locals, fd, registry, &mut pre_contribs, &mut effects);
@@ -715,6 +753,65 @@ fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
 ///     Switch::If whose then- or else-branch leads to Abort (the
 ///     canonical panic pattern emitted by Charon for `if cond { panic!() }`).
 ///   - `Io`: any Call to a function whose resolved name contains I/O
+/// Return true when the Charon Adt described by `adt_id` (a numeric
+/// `def_id.index`) corresponds to `core::pin::Pin` in `type_decls`.
+/// We check that the type_decl's `item_meta.name` path ends with the
+/// two segments `["pin", "Pin"]` (both as Ident entries). Trailing
+/// path alone (just "Pin") is insufficient because other types can
+/// have the same trailing Ident.
+fn is_pin_adt(type_decls: &Value, adt_id: u64) -> bool {
+    let Some(tds) = type_decls.as_array() else {
+        return false;
+    };
+    for td in tds {
+        let td_index = td
+            .get("def_id")
+            .and_then(|d| d.get("index"))
+            .and_then(|i| i.as_u64());
+        if td_index != Some(adt_id) {
+            continue;
+        }
+        let Some(name_arr) = td.get("item_meta").and_then(|m| m.get("name")).and_then(|v| v.as_array()) else {
+            return false;
+        };
+        // Collect Ident strings from the name path.
+        let idents: Vec<&str> = name_arr
+            .iter()
+            .filter_map(|seg| {
+                let arr = seg.get("Ident")?.as_array()?;
+                arr.first()?.as_str()
+            })
+            .collect();
+        // Must end with [..., "pin", "Pin"].
+        let n = idents.len();
+        return n >= 2 && idents[n - 1] == "Pin" && idents[n - 2] == "pin";
+    }
+    false
+}
+
+/// Scan the raw Ty JSON of a formal parameter and return
+/// `(is_raw_ptr, mutable)` if it is a raw pointer type, else `None`.
+/// Charon raw-pointer shape: `{"Untagged": {"RawPtr": [<inner_ty>, "Mut"|"Not"]}}`.
+fn ty_raw_is_raw_ptr(ty_raw: &Value) -> Option<bool> {
+    let inner = ty_raw.get("Untagged")?;
+    let arr = inner.get("RawPtr")?.as_array()?;
+    let mutability = arr.get(1)?.as_str()?;
+    Some(mutability == "Mut")
+}
+
+/// Scan the raw Ty JSON of a formal parameter and return the numeric
+/// Adt def_id index if it is an Adt, else `None`.
+/// Charon Adt shape: `{"Untagged": {"Adt": {"id": {"Adt": N}, "generics": {...}}}}`.
+fn ty_raw_adt_id(ty_raw: &Value) -> Option<u64> {
+    let inner = ty_raw.get("Untagged")?;
+    let adt = inner.get("Adt")?;
+    let id = adt.get("id")?;
+    id.get("Adt")?.as_u64()
+}
+
+/// Detect IO, Panics effects from the body statements. Does NOT handle
+/// Unsafe (injected from `signature.is_unsafe`) or UnresolvedCall.
+/// IO is inferred by matching callee names against known I/O
 ///     substrings (print, io, fmt, display).
 ///
 /// `UnresolvedCall` effects are populated separately by
@@ -919,6 +1016,25 @@ fn collect_call_contributions(
         let Some((func_id, args)) = crate::llbc_calls::extract_call_target(s) else {
             continue;
         };
+        // Atomic detection: check before callee-name lookup so we capture
+        // cross-crate atomics that will never appear in the registry.
+        if let Some((atomic_kind, type_name)) =
+            crate::llbc_calls::detect_atomic_call(fun_decls, func_id)
+        {
+            // The target is the first argument (the &self receiver). We use
+            // the type_name as a stable target label when we can't trace
+            // the actual operand easily. Ordering extraction is deferred
+            // (TODO #385: parse the ordering const from the args list).
+            effects.add(Effect::AtomicAccess {
+                target: type_name,
+                kind: atomic_kind,
+                ordering: None,
+            });
+            // Atomic calls are fully classified by AtomicAccess; skip
+            // callee-name lookup to avoid spurious UnresolvedCall noise
+            // for cross-crate atomic intrinsics (e.g. core::sync::atomic).
+            continue;
+        }
         let Some(callee_name) = crate::llbc_calls::fundecl_name_by_id(fun_decls, func_id) else {
             continue;
         };
@@ -2414,6 +2530,74 @@ mod tests {
             pre_str.contains("\u{2260}"),
             "match_arms contract must still contain != after B.7; got {}",
             pre_str
+        );
+    }
+
+    // ---- #385: RawPointerProvenance from formal *mut T ----
+
+    #[test]
+    fn raw_ptr_formal_emits_raw_pointer_provenance_effect() {
+        // `raw_ptr.llbc` has `unsafe fn write_via_raw(p: *mut u32)`.
+        // The formal's Ty is RawPtr(U32, Mut).
+        // Lifter must emit Effect::RawPointerProvenance { target: "p", mutable: true }.
+        use crate::contract::Effect;
+        let krate = LlbcCrate::from_path(fixture_path("raw_ptr.llbc")).unwrap();
+        let f = krate.function_by_name("write_via_raw").unwrap();
+        let contract = lift_llbc_function(f, Some("raw_ptr.rs")).unwrap();
+        let has_effect = contract
+            .effects
+            .effects
+            .iter()
+            .any(|e| matches!(e, Effect::RawPointerProvenance { target, mutable: true } if target == "p"));
+        assert!(
+            has_effect,
+            "write_via_raw must carry RawPointerProvenance(p, mutable=true); got {:?}",
+            contract.effects.effects
+        );
+    }
+
+    // ---- #385: PinnedReference from formal Pin<P> ----
+
+    #[test]
+    fn pin_formal_emits_pinned_reference_effect() {
+        // `pin.llbc` has `fn take_pin(pinned: Pin<&mut u32>)`.
+        // The formal's Ty is Adt(id=0) where type_decls[0] is core::pin::Pin.
+        // Lifter must emit Effect::PinnedReference { target: "pinned" }.
+        use crate::contract::Effect;
+        let krate = LlbcCrate::from_path(fixture_path("pin.llbc")).unwrap();
+        let f = krate.function_by_name("take_pin").unwrap();
+        let contract =
+            lift_llbc_function_with_types(f, Some("pin.rs"), krate.type_decls_raw()).unwrap();
+        let has_effect = contract
+            .effects
+            .effects
+            .iter()
+            .any(|e| matches!(e, Effect::PinnedReference { target } if target == "pinned"));
+        assert!(
+            has_effect,
+            "take_pin must carry PinnedReference(pinned); got {:?}",
+            contract.effects.effects
+        );
+    }
+
+    // ---- #385: AtomicAccess from core::sync::atomic::AtomicU32::fetch_add ----
+
+    #[test]
+    fn atomic_fetch_add_call_emits_atomic_access_rmw_effect() {
+        // `atomic.llbc` has `fn bump(counter: &AtomicU32)` that calls
+        // `fetch_add` (fun_decl 0, path: core::sync::atomic::AtomicU32::fetch_add).
+        // Lifter must emit Effect::AtomicAccess { kind: Rmw, target: "AtomicU32", ... }.
+        use crate::contract::{AtomicKind, Effect};
+        let krate = LlbcCrate::from_path(fixture_path("atomic.llbc")).unwrap();
+        let registry = crate::llbc_calls::lift_llbc_crate(&krate, Some("atomic.rs")).unwrap();
+        let contract = registry.get("bump").expect("bump must lift");
+        let has_effect = contract.effects.effects.iter().any(|e| {
+            matches!(e, Effect::AtomicAccess { target, kind: AtomicKind::Rmw, .. } if target == "AtomicU32")
+        });
+        assert!(
+            has_effect,
+            "bump must carry AtomicAccess(AtomicU32, Rmw); got {:?}",
+            contract.effects.effects
         );
     }
 }

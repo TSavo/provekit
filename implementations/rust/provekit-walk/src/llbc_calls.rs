@@ -118,6 +118,78 @@ pub fn fun_decls_array(krate: &LlbcCrate) -> Option<&Value> {
 }
 
 /// Look up a function declaration by its `def_id` (FunDeclId) in the
+/// crate's fun_decls table and return ALL Ident segments of its
+/// item_meta.name path in order (left-to-right). For example, a
+/// function at `core::sync::atomic::AtomicU32::fetch_add` yields
+/// `["core", "sync", "atomic", "AtomicU32", "fetch_add"]`. `None` if
+/// the decl is not found or the name path is empty.
+pub fn fundecl_path_segments_by_id(fun_decls: &Value, id: u64) -> Option<Vec<String>> {
+    let arr = fun_decls.as_array()?;
+    let decl = arr.iter().find(|d| d.get("def_id").and_then(|v| v.as_u64()) == Some(id))?;
+    let elems = decl.get("item_meta")?.get("name")?.as_array()?;
+    let segs: Vec<String> = elems
+        .iter()
+        .filter_map(|e| {
+            let ident = e.get("Ident")?.as_array()?;
+            ident.first()?.as_str().map(|s| s.to_string())
+        })
+        .collect();
+    if segs.is_empty() { None } else { Some(segs) }
+}
+
+/// Map from method name suffix to `AtomicKind`. Returns `None` if the
+/// method is not a recognised atomic operation.
+///
+/// Recognised prefixes / exact names:
+///   load                        → Load
+///   store                       → Store
+///   compare_exchange{,_weak},
+///   compare_and_swap            → Cas
+///   fetch_*, swap               → Rmw
+pub fn atomic_kind_for_method(method: &str) -> Option<crate::contract::AtomicKind> {
+    use crate::contract::AtomicKind;
+    match method {
+        "load" => Some(AtomicKind::Load),
+        "store" => Some(AtomicKind::Store),
+        "compare_exchange" | "compare_exchange_weak" | "compare_and_swap" => {
+            Some(AtomicKind::Cas)
+        }
+        m if m.starts_with("fetch_") || m == "swap" => Some(AtomicKind::Rmw),
+        _ => None,
+    }
+}
+
+/// Return `Some((AtomicKind, type_name))` when `func_id` resolves to a
+/// call on one of the `core::sync::atomic::Atomic*` types, where
+/// `type_name` is the `Atomic*` struct name (e.g. `"AtomicU32"`).
+/// Returns `None` if the call is not an atomic intrinsic.
+pub fn detect_atomic_call(
+    fun_decls: &Value,
+    func_id: u64,
+) -> Option<(crate::contract::AtomicKind, String)> {
+    let segs = fundecl_path_segments_by_id(fun_decls, func_id)?;
+    // Expected shape: [..., "core", "sync", "atomic", "AtomicXxx", method]
+    // We require at least 5 segments and the Atomic* type to start with "Atomic".
+    if segs.len() < 5 {
+        return None;
+    }
+    let n = segs.len();
+    let method = &segs[n - 1];
+    let type_name = &segs[n - 2];
+    let ns_a = &segs[n - 3]; // "atomic"
+    let ns_b = &segs[n - 4]; // "sync"
+    let ns_c = &segs[n - 5]; // "core"
+    if ns_c != "core" || ns_b != "sync" || ns_a != "atomic" {
+        return None;
+    }
+    if !type_name.starts_with("Atomic") {
+        return None;
+    }
+    let kind = atomic_kind_for_method(method)?;
+    Some((kind, type_name.clone()))
+}
+
+/// Look up a function declaration by its `def_id` (FunDeclId) in the
 /// crate's fun_decls table and return the trailing `Ident` of its
 /// item_meta.name path. `None` if not found or path is malformed.
 pub fn fundecl_name_by_id(fun_decls: &Value, id: u64) -> Option<String> {
