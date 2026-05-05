@@ -1945,6 +1945,7 @@ dependencies = [
  "quote",
  "serde_json",
  "syn",
+ "thiserror",
 ]
 
 [[package]]

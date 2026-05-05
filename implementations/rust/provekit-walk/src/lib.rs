@@ -29,6 +29,7 @@ pub mod contract;
 pub mod emit;
 pub mod envelope;
 pub mod lift;
+pub mod llbc;
 pub mod locus;
 pub mod loops_and_exceptions;
 pub mod shadow;
