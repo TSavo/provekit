@@ -9,12 +9,20 @@ use serde_json::{json, Value as Json};
 pub fn report_to_json(r: &Report) -> Json {
     let rows: Vec<Json> = r.rows.iter().map(row_to_json).collect();
     let load_errors: Vec<Json> = r.load_errors.iter().map(load_error_to_json).collect();
+    let call_edges: Vec<Json> = r.call_edges.iter().map(|ce| {
+        json!({
+            "sourceContractCid": ce.source_contract_cid,
+            "targetContractCid": ce.target_contract_cid,
+            "file": ce.file,
+        })
+    }).collect();
     json!({
         "totalCallsites": r.total_callsites,
         "discharged": r.discharged,
         "violations": r.violations,
         "rows": rows,
         "loadErrors": load_errors,
+        "callEdges": call_edges,
     })
 }
 
@@ -86,6 +94,18 @@ pub fn print_report_pretty(r: &Report, quiet: bool) {
             println!("{}", "Load errors:".red().bold());
             for e in &r.load_errors {
                 println!("  {}: {}", e.proof_path, e.reason);
+            }
+        }
+        if !r.call_edges.is_empty() {
+            println!();
+            println!("{}", "Call edges:".dimmed());
+            for ce in &r.call_edges {
+                println!(
+                    "  {} -> {}  ({})",
+                    ce.source_contract_cid.chars().take(32).collect::<String>(),
+                    ce.target_contract_cid.chars().take(32).collect::<String>(),
+                    ce.file
+                );
             }
         }
     }

@@ -40,7 +40,15 @@ pub struct ProofEnvelopeInput {
     /// e.g. `"blake3-512:abc..."`) to that member's canonical bytes
     /// (JCS-JSON bytes for memento envelopes).
     pub members: BTreeMap<String, Vec<u8>>,
-    /// CID of the signer's public-key memento (or any resolvable CID).
+    /// Identity carried into the envelope's `signer` field. Two valid
+    /// shapes per the memento-envelope grammar:
+    ///   1. `blake3-512:<hex>` — CID resolving to a pubkey memento
+    ///      (canonical, used by `.proof` catalogs)
+    ///   2. `ed25519:<base64-pubkey>` — inline self-identifying form
+    ///      (used by memento envelopes that don't pin a separate
+    ///      pubkey memento, e.g. fixtures and standalone declarations)
+    /// The struct field name is preserved for backwards compatibility;
+    /// either form is accepted by the wire format.
     pub signer_cid: String,
     /// Ed25519 seed bytes; deterministic signing for tests/demos.
     pub signer_seed: Ed25519Seed,

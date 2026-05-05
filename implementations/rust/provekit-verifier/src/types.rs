@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value as Json;
+use serde::Serialize;
 
 /// Return the kind discriminator of a memento, regardless of shape:
 ///
@@ -97,6 +98,10 @@ pub struct MementoPool {
     /// last-writer-wins to silently swap them.
     pub bundle_members: BTreeMap<String, std::collections::BTreeSet<String>>,
     pub load_errors: Vec<LoadError>,
+    /// Contract CID -> contract name (indexed during load)
+    pub cid_to_name: BTreeMap<String, String>,
+    /// Contract name -> CID (reverse index)
+    pub name_to_cid: BTreeMap<String, String>,
 }
 
 /// Key for implication lookups: (antecedent CID, consequent CID).
@@ -249,7 +254,50 @@ impl MementoPool {
                     .insert(hash.to_string(), memento_cid.clone());
             }
         }
-        self.mementos.insert(memento_cid, envelope);
+        self.mementos.insert(memento_cid.clone(), envelope);
+
+        // Index by contract name for cross-kit resolution.
+        // Gate on memento kind: only contract-shaped mementos carry a
+        // contractName/name that's a stable cross-kit identifier. Other
+        // kinds (implication, etc.) sometimes have a header.name field
+        // but it's not a contract identity, so indexing them would
+        // mis-resolve call edges.
+        let env_for_name = self.mementos.get(&memento_cid);
+        let is_contract = env_for_name
+            .and_then(memento_kind)
+            == Some("contract");
+        if is_contract {
+            let name = env_for_name
+                .and_then(|env| {
+                    env.pointer("/header/contractName")
+                        .or_else(|| env.pointer("/header/name"))
+                        .or_else(|| env.pointer("/evidence/body/contractName"))
+                        .or_else(|| env.pointer("/evidence/body/name"))
+                })
+                .and_then(|v| v.as_str());
+
+            if let Some(n) = name {
+                let n = n.to_string();
+                // Detect collisions: same contract name, different CIDs.
+                // Across merged projects this can happen when two
+                // independent kits emit the same contract name. Keep the
+                // first insertion (winner-keeps-it) and surface the
+                // collision in load_errors so the verifier surfaces it.
+                if let Some(existing) = self.name_to_cid.get(&n) {
+                    if existing != &memento_cid {
+                        self.load_errors.push(LoadError {
+                            proof_path: memento_cid.clone(),
+                            reason: format!(
+                                "duplicate contract name `{n}` resolves to two CIDs: {existing} (kept) and {memento_cid} (dropped)"
+                            ),
+                        });
+                    }
+                } else {
+                    self.cid_to_name.insert(memento_cid.clone(), n.clone());
+                    self.name_to_cid.insert(n, memento_cid);
+                }
+            }
+        }
     }
 
     /// Sub-formula composition: walk the formula DAG and return all
@@ -292,6 +340,58 @@ impl MementoPool {
         }
 
         verified
+    }
+
+    /// Merge another pool into this one.
+    ///
+    /// Collision policy: for keys that already exist in `self`, the
+    /// existing value wins (insert-only-if-absent). Cross-project merges
+    /// must not silently overwrite earlier-loaded resolutions; surface
+    /// collisions via `load_errors` so the verifier reports them.
+    pub fn merge(&mut self, other: Self) {
+        for (cid, env) in other.mementos {
+            if !self.mementos.contains_key(&cid) {
+                self.mementos.insert(cid, env);
+            }
+        }
+        for (k, v) in other.formula_to_memento {
+            if let Some(existing) = self.formula_to_memento.get(&k) {
+                if existing != &v {
+                    self.load_errors.push(LoadError {
+                        proof_path: v.clone(),
+                        reason: format!(
+                            "merge collision for formula `{k}`: kept `{existing}`, dropped `{v}`"
+                        ),
+                    });
+                }
+            } else {
+                self.formula_to_memento.insert(k, v);
+            }
+        }
+        for (k, v) in other.bridges_by_symbol {
+            self.bridges_by_symbol.entry(k).or_insert(v);
+        }
+        for (k, vs) in other.bundle_members {
+            self.bundle_members.entry(k).or_default().extend(vs);
+        }
+        self.load_errors.extend(other.load_errors);
+        for (k, v) in other.cid_to_name {
+            self.cid_to_name.entry(k).or_insert(v);
+        }
+        for (k, v) in other.name_to_cid {
+            if let Some(existing) = self.name_to_cid.get(&k) {
+                if existing != &v {
+                    self.load_errors.push(LoadError {
+                        proof_path: v.clone(),
+                        reason: format!(
+                            "merge collision for contract name `{k}`: kept `{existing}`, dropped `{v}`"
+                        ),
+                    });
+                }
+            } else {
+                self.name_to_cid.insert(k, v);
+            }
+        }
     }
 }
 
@@ -413,6 +513,13 @@ pub struct ReportRow {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResolvedCallEdge {
+    pub source_contract_cid: String,
+    pub target_contract_cid: String,
+    pub file: String,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Report {
     pub total_callsites: usize,
@@ -420,6 +527,7 @@ pub struct Report {
     pub violations: usize,
     pub rows: Vec<ReportRow>,
     pub load_errors: Vec<LoadError>,
+    pub call_edges: Vec<ResolvedCallEdge>,
 }
 
 #[cfg(test)]

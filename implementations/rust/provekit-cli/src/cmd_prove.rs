@@ -44,6 +44,7 @@ use provekit_self_contracts::lift_plugin_protocol::{
 };
 use provekit_verifier::{Runner, RunnerConfig};
 
+use crate::project_config::read_project_config;
 use crate::report_fmt;
 use crate::ProveArgs;
 
@@ -500,9 +501,36 @@ pub fn run(args: ProveArgs) -> u8 {
         return crate::EXIT_USER_ERROR;
     }
 
+    let cfg_doc = read_project_config(&project_root);
+
+    // Resolve `--with` paths relative to project_root unless absolute,
+    // matching how `[verify].callees` is resolved (project-root-anchored).
+    // Without this, `--with foo` depends on CWD and breaks when prove is
+    // invoked outside the project root.
+    let mut extra_projects: Vec<PathBuf> = args
+        .with
+        .iter()
+        .map(|s| {
+            let p = PathBuf::from(s);
+            if p.is_absolute() {
+                p
+            } else {
+                project_root.join(p)
+            }
+        })
+        .collect();
+
+    for callee in &cfg_doc.callees {
+        let p = project_root.join(callee);
+        if p.exists() {
+            extra_projects.push(p);
+        }
+    }
+
     let cfg = RunnerConfig {
         project_root: project_root.clone(),
         z3_path: args.z3,
+        extra_projects,
         ..Default::default()
     };
     let runner = Runner::new(cfg);
