@@ -40,47 +40,73 @@ use crate::wp;
 /// substitutes actuals for formals in f's pre.
 pub type ContractRegistry = HashMap<String, FunctionContractMemento>;
 
-/// Empty registry — used by entry points that don't need callsite
+/// Empty registry -- used by entry points that don't need callsite
 /// composition (e.g., legacy `lift_llbc_function` callers).
 pub fn empty_registry() -> ContractRegistry {
     ContractRegistry::new()
 }
 
-/// Lift every function in the crate, building a registry as we go.
-/// Calls are composed against the registry as it's built — earlier
-/// functions in `fun_decls` order are available to later ones. For
-/// recursive functions or forward references, the first lift sees an
-/// empty entry; subsequent compositions can pick up the contract on a
-/// second pass if needed (not yet implemented).
+/// Lift every function in the crate using a fix-point loop (Task C, #383).
+///
+/// Runs up to MAX_LIFT_PASSES until the set of contract CIDs stabilizes.
+/// This handles forward references and mutual recursion: if `outer` appears
+/// before `inner` in `fun_decls`, the first pass lifts `outer` without seeing
+/// `inner`'s contract; the second pass re-lifts `outer` with the now-populated
+/// registry and picks up the composition. Functions that are truly recursive
+/// and never stabilize settle at the last computed contract after
+/// MAX_LIFT_PASSES.
 ///
 /// `source_path` is annotated into each contract's locus.
+const MAX_LIFT_PASSES: usize = 10;
+
 pub fn lift_llbc_crate(
     krate: &LlbcCrate,
     source_path: Option<&str>,
 ) -> Result<ContractRegistry, LlbcError> {
-    let mut registry = ContractRegistry::new();
     let type_decls = krate.type_decls_raw();
     let fun_decls_raw = fun_decls_array(krate);
 
-    for f in krate.fun_decls() {
-        let Some(name) = f.fn_name() else {
-            continue;
-        };
-        match crate::llbc_lift::lift_llbc_function_with_registry(
-            f,
-            source_path,
-            type_decls,
-            fun_decls_raw,
-            &registry,
-        ) {
-            Ok(contract) => {
-                registry.insert(name, contract);
-            }
-            Err(_) => {
-                // Skip non-structured bodies (extern, intrinsic, trait method).
+    let mut registry = ContractRegistry::new();
+
+    for _pass in 0..MAX_LIFT_PASSES {
+        let mut new_registry = ContractRegistry::new();
+
+        for f in krate.fun_decls() {
+            let Some(name) = f.fn_name() else {
+                continue;
+            };
+            match crate::llbc_lift::lift_llbc_function_with_registry(
+                f,
+                source_path,
+                type_decls,
+                fun_decls_raw,
+                &registry,
+            ) {
+                Ok(contract) => {
+                    new_registry.insert(name, contract);
+                }
+                Err(_) => {
+                    // Skip non-structured bodies (extern, intrinsic, trait method).
+                }
             }
         }
+
+        // Stable when every function has the same CID as the prior pass.
+        let stable = new_registry.len() == registry.len()
+            && new_registry.iter().all(|(name, contract)| {
+                registry
+                    .get(name)
+                    .map(|prev| prev.cid == contract.cid)
+                    .unwrap_or(false)
+            });
+
+        registry = new_registry;
+
+        if stable {
+            break;
+        }
     }
+
     Ok(registry)
 }
 
@@ -96,7 +122,8 @@ pub fn fun_decls_array(krate: &LlbcCrate) -> Option<&Value> {
 /// item_meta.name path. `None` if not found or path is malformed.
 pub fn fundecl_name_by_id(fun_decls: &Value, id: u64) -> Option<String> {
     let arr = fun_decls.as_array()?;
-    let decl = arr.iter().find(|d| d.get("def_id").and_then(|v| v.as_u64()) == Some(id))?;
+    let decl =
+        arr.iter().find(|d| d.get("def_id").and_then(|v| v.as_u64()) == Some(id))?;
     let elems = decl.get("item_meta")?.get("name")?.as_array()?;
     elems.iter().rev().find_map(|e| {
         let ident = e.get("Ident")?.as_array()?;
@@ -107,6 +134,18 @@ pub fn fundecl_name_by_id(fun_decls: &Value, id: u64) -> Option<String> {
 /// Extract the FunDeclId and the args operands from a Call statement.
 /// Returns `None` for non-Call statements or for Call kinds we don't
 /// resolve (FnPtr, dyn dispatch, closure invocation).
+///
+/// # Trait method dispatch (Task A investigation -- #383)
+///
+/// Charon resolves monomorphic trait method calls to `Fun.Regular = <FunDeclId>`
+/// when the concrete impl is statically known at the call site. For example,
+/// `s.m()` where `s: &S` and `S: T` produces `kind.Fun.Regular = <impl_m_id>` --
+/// the same JSON shape as a direct function call. `fundecl_name_by_id` then
+/// looks up the impl's trailing Ident name from `fun_decls`.
+///
+/// Dynamic dispatch (`dyn T`) uses a different encoding (not `Fun.Regular`) and
+/// is not yet supported -- calls through `dyn` trait objects are skipped silently
+/// by this function returning `None`.
 pub fn extract_call_target(stmt: &Value) -> Option<(u64, Vec<&Value>)> {
     let call = stmt.get("kind")?.get("Call")?;
     let func = call.get("func")?;
@@ -120,6 +159,20 @@ pub fn extract_call_target(stmt: &Value) -> Option<(u64, Vec<&Value>)> {
         .map(|arr| arr.iter().collect())
         .unwrap_or_default();
     Some((func_id, args))
+}
+
+/// Extract the destination local index from a Call statement's `dest` field.
+/// Returns `Some(local_id)` when the call's return value is assigned to a named
+/// local (including _0, the return-value slot). Returns `None` if not a Call
+/// statement or the dest is a complex place (projection).
+///
+/// Used by `derive_return_equation` in `llbc_lift.rs` to detect the pattern
+/// `Call(callee, args, dest: _0)` where the function's return value is set
+/// by a Call rather than an Assign (Task B, #383).
+pub fn call_dest_local(stmt: &Value) -> Option<u32> {
+    let call = stmt.get("kind")?.get("Call")?;
+    let dest = call.get("dest")?;
+    dest.get("kind")?.get("Local")?.as_u64().map(|n| n as u32)
 }
 
 /// Substitute actuals for formals in the callee's pre. The callee's
@@ -154,8 +207,8 @@ mod tests {
         //   fn inner(y: u32) -> u32 { if y < 5 { panic!(); } y }
         //   fn outer(x: u32) -> u32 { inner(x) }
         // After full-crate lift:
-        //   inner.pre = (y ≥ 5)
-        //   outer.pre = (x ≥ 5)   -- inner's pre with y → x substituted
+        //   inner.pre = (y >= 5)
+        //   outer.pre = (x >= 5)   -- inner's pre with y -> x substituted
         let krate = LlbcCrate::from_path(fixture_path("calls.llbc")).unwrap();
         let registry = lift_llbc_crate(&krate, Some("calls.rs")).unwrap();
 
@@ -172,7 +225,7 @@ mod tests {
         assert_eq!(outer.formals, vec!["x".to_string()]);
         let outer_pre_str = serde_json::to_string(&outer.pre).unwrap();
         // The substrate keystone: outer's pre carries the SUBSTITUTED
-        // inner.pre — `y → x`. So outer.pre references x (not y).
+        // inner.pre -- `y -> x`. So outer.pre references x (not y).
         assert!(
             outer_pre_str.contains("\"x\""),
             "outer's pre references x (after composition): {}",
@@ -183,10 +236,10 @@ mod tests {
             "outer's pre must NOT reference y (formal substituted away): {}",
             outer_pre_str
         );
-        // The predicate is ≥ 5 — same atom as inner's pre.
+        // The predicate is >= 5 -- same atom as inner's pre.
         assert!(
-            outer_pre_str.contains("\"\\u2265\"") || outer_pre_str.contains("≥"),
-            "outer's pre has the ≥ predicate: {}",
+            outer_pre_str.contains("\"\\u2265\"") || outer_pre_str.contains("\u{2265}"),
+            "outer's pre has the >= predicate: {}",
             outer_pre_str
         );
     }
@@ -194,8 +247,8 @@ mod tests {
     #[test]
     fn compose_callsite_pre_substitutes_formal_to_actual() {
         // Direct unit test on the composition primitive. Build a
-        // synthetic callee with pre = (y ≥ 5), substitute y → Var("x"),
-        // assert the result is (x ≥ 5).
+        // synthetic callee with pre = (y >= 5), substitute y -> Var("x"),
+        // assert the result is (x >= 5).
         use crate::contract::{EffectSet, FunctionContractMemento};
         use crate::locus::Locus;
         use crate::wp::{atomic_ge, const_int, var};
@@ -217,9 +270,66 @@ mod tests {
             cid: String::new(),
         };
         let composed = compose_callsite_pre(&callee, &[var("x")]);
-        // Should be (x ≥ 5).
+        // Should be (x >= 5).
         let s = serde_json::to_string(&composed).unwrap();
         assert!(s.contains("\"x\""));
         assert!(!s.contains("\"y\""));
+    }
+
+    // ---- Task B: Call-dest return-value derivation ----
+
+    #[test]
+    fn outer_post_references_call_inner() {
+        // `fn outer(x: u32) -> u32 { inner(x) }` -- _0 is set by the
+        // Call's dest, not by an Assign. After Task B, outer.post should
+        // contain `result = Ctor("call:inner", [Var("x")])`.
+        let krate = LlbcCrate::from_path(fixture_path("calls.llbc")).unwrap();
+        let registry = lift_llbc_crate(&krate, Some("calls.rs")).unwrap();
+
+        let outer = registry.get("outer").expect("outer lifted");
+        let post_str = serde_json::to_string(&outer.post).unwrap();
+        assert!(
+            post_str.contains("call:inner"),
+            "outer.post should reference call:inner: {}",
+            post_str
+        );
+        assert!(
+            post_str.contains("result"),
+            "outer.post should have result = ...: {}",
+            post_str
+        );
+    }
+
+    // ---- Task C: Fix-point lift stability ----
+
+    #[test]
+    fn fixpoint_lift_is_stable_after_two_passes() {
+        // The fixpoint fixture has inner + outer with inner using `y < 3`.
+        // Run lift_llbc_crate (fix-point) and assert both contracts are
+        // present and outer.pre references x (not y), proving the second
+        // pass picked up inner's contract.
+        let krate = LlbcCrate::from_path(fixture_path("fixpoint.llbc")).unwrap();
+        let registry = lift_llbc_crate(&krate, Some("fixpoint.rs")).unwrap();
+
+        let inner = registry.get("inner").expect("inner lifted");
+        let inner_pre_str = serde_json::to_string(&inner.pre).unwrap();
+        assert!(
+            inner_pre_str.contains("\"y\""),
+            "inner.pre references formal y: {}",
+            inner_pre_str
+        );
+
+        let outer = registry.get("outer").expect("outer lifted after fix-point");
+        let outer_pre_str = serde_json::to_string(&outer.pre).unwrap();
+        assert!(
+            outer_pre_str.contains("\"x\""),
+            "outer.pre references x after fix-point composition: {}",
+            outer_pre_str
+        );
+
+        // Fix-point stability: run again and check CIDs are identical.
+        let registry2 = lift_llbc_crate(&krate, Some("fixpoint.rs")).unwrap();
+        let outer2 = registry2.get("outer").expect("outer in second run");
+        assert_eq!(outer.cid, outer2.cid, "outer.cid must be stable across runs");
     }
 }

@@ -36,7 +36,7 @@ use serde_json::Value;
 
 use provekit_ir_types::{IrFormula, IrTerm};
 
-use crate::contract::{build_function_contract_with_file, FunctionContractMemento};
+use crate::contract::{build_function_contract_with_file, Effect, EffectSet, FunctionContractMemento};
 use crate::llbc::{LlbcError, LlbcFunction};
 use crate::wp::atomic_true;
 
@@ -135,8 +135,9 @@ pub fn lift_llbc_function_with_registry(
     let mut pre_contribs: Vec<IrFormula> = Vec::new();
     collect_if_panic_contributions(&[], &stmts, &formals, &named_locals, false, &mut pre_contribs);
     collect_assert_contributions(&stmts, &formals, &named_locals, &mut pre_contribs);
+    let mut effects = detect_effects_llbc(&stmts, fun_decls, registry);
     if let Some(fd) = fun_decls {
-        collect_call_contributions(&stmts, &formals, &named_locals, fd, registry, &mut pre_contribs);
+        collect_call_contributions(&stmts, &formals, &named_locals, fd, registry, &mut pre_contribs, &mut effects);
     }
     let pre_formula = simplify_conjunction(pre_contribs.clone());
 
@@ -149,7 +150,9 @@ pub fn lift_llbc_function_with_registry(
     // derivation, collapsing LayerAgreement::Both into LlbcExtra
     // when MIR is the only layer that contributes.
     let mut post_contribs = pre_contribs;
-    if let Some(result_eq) = derive_return_equation(&stmts, &formals, type_decls, &named_locals) {
+    if let Some(result_eq) =
+        derive_return_equation(&stmts, &formals, type_decls, &named_locals, fun_decls, registry)
+    {
         post_contribs.push(result_eq);
     }
     let post_formula = simplify_conjunction(post_contribs);
@@ -162,6 +165,9 @@ pub fn lift_llbc_function_with_registry(
     // from the surface AST).
     let item_fn = synth_item_fn(&fn_name, &formals);
     let mut contract = build_function_contract_with_file(&item_fn, None, source_path);
+    // Set LLBC-derived effects on the contract before override_formulas so
+    // build_memento_value sees the correct effect set when recomputing the CID.
+    contract.effects = effects;
     // Override the lifted formulas with the LLBC-derived ones, then
     // recompute canonical bytes + CID so result_var_name and the
     // header.cid path are consistent.
@@ -173,36 +179,96 @@ pub fn lift_llbc_function_with_registry(
 /// IrTerm and emit `result = <term>` as a postcondition atom. Returns
 /// None when the return is unit (Aggregate of empty Tuple), or when
 /// the trace can't be resolved to a recognized shape.
+///
+/// # Call-dest derivation (Task B, #383)
+///
+/// When `_0` is set by a Call statement's `dest` (not by an Assign rvalue),
+/// the standard Assign scan misses the return-value binding. This function
+/// also scans for Call statements whose `dest.kind.Local == 0` and lifts
+/// them to `result = Ctor("call:<callee_name>", [arg_terms...])`. This is a
+/// symbolic representation of the call's return value; downstream consumers
+/// can pattern-match `call:<name>` to compose with the callee's post.
+///
+/// The AST walk does not handle `Expr::Call` (free function calls) in
+/// `lift_expr_to_term_inner`, so this derivation is LLBC-first (LlbcExtra).
 fn derive_return_equation(
     stmts: &[&Value],
     formals: &[(u32, String)],
     type_decls: Option<&Value>,
     named_locals: &HashMap<u32, String>,
+    fun_decls: Option<&Value>,
+    registry: &crate::llbc_calls::ContractRegistry,
 ) -> Option<IrFormula> {
-    // Find the LAST assignment to local _0. (Charon emits a single
-    // Assign for the return; we still scan in reverse to be robust
-    // to alternative shapes.)
+    // Scan in reverse — both Assign and Call-dest paths.
     for (i, s) in stmts.iter().enumerate().rev() {
-        let Some(arr) = stmt_kind_payload(s, "Assign").and_then(|v| v.as_array()) else {
-            continue;
-        };
-        if arr.len() != 2 {
+        // --- Assign path: _0 := <rvalue> ---
+        if let Some(arr) = stmt_kind_payload(s, "Assign").and_then(|v| v.as_array()) {
+            if arr.len() == 2 {
+                if let Some(local) = place_to_local_id(&arr[0]) {
+                    if local == 0 {
+                        let prior = &stmts[..i];
+                        if let Some(term) = rvalue_to_ir_term_for_post(
+                            &arr[1],
+                            prior,
+                            formals,
+                            type_decls,
+                            named_locals,
+                        ) {
+                            return Some(IrFormula::Atomic {
+                                name: "=".to_string(),
+                                args: vec![IrTerm::Var { name: "result".to_string() }, term],
+                            });
+                        }
+                        return None;
+                    }
+                }
+            }
             continue;
         }
-        let Some(local) = place_to_local_id(&arr[0]) else {
-            continue;
-        };
-        if local != 0 {
-            continue;
+
+        // --- Call-dest path: Call(callee, args, dest: _0) ---
+        // When the return value is set by a Call rather than an Assign,
+        // derive `result = Ctor("call:<callee_name>", [arg_terms...])`.
+        if let Some(dest_local) = crate::llbc_calls::call_dest_local(s) {
+            if dest_local == 0 {
+                if let Some(fd) = fun_decls {
+                    if let Some((func_id, args)) = crate::llbc_calls::extract_call_target(s) {
+                        if let Some(callee_name) =
+                            crate::llbc_calls::fundecl_name_by_id(fd, func_id)
+                        {
+                            let prior = &stmts[..i];
+                            let mut arg_terms: Vec<IrTerm> = Vec::with_capacity(args.len());
+                            let mut all_lifted = true;
+                            for op in args.iter() {
+                                match operand_to_ir_term(op, prior, formals, named_locals) {
+                                    Some(t) => arg_terms.push(t),
+                                    None => {
+                                        all_lifted = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if all_lifted {
+                                // `registry` reserved for future post-composition
+                                let _ = registry;
+                                return Some(IrFormula::Atomic {
+                                    name: "=".to_string(),
+                                    args: vec![
+                                        IrTerm::Var { name: "result".to_string() },
+                                        IrTerm::Ctor {
+                                            name: format!("call:{}", callee_name),
+                                            args: arg_terms,
+                                        },
+                                    ],
+                                });
+                            }
+                        }
+                    }
+                }
+                // Call-dest to _0 but couldn't resolve: stop.
+                return None;
+            }
         }
-        let prior = &stmts[..i];
-        if let Some(term) = rvalue_to_ir_term_for_post(&arr[1], prior, formals, type_decls, named_locals) {
-            return Some(IrFormula::Atomic {
-                name: "=".to_string(),
-                args: vec![IrTerm::Var { name: "result".to_string() }, term],
-            });
-        }
-        return None;
     }
     None
 }
@@ -279,10 +345,14 @@ fn rvalue_to_ir_term_for_post(
 ///   - `Projection(base, Field(Tuple, idx))` in all other cases:
 ///     emits `Ctor("field", [base_term, Var(".N")])`. Matches AST's
 ///     `Expr::Field(syn::Member::Unnamed(idx))`.
-///   - `Projection(base, Field(Adt(adt_id, _), idx))`: resolves the
-///     field's source name from `type_decls[adt_id].kind.Struct[idx]`
-///     and emits `Ctor("field", [base_term, Var(".<name>")])`. Falls
-///     back to index notation if type_decls is absent or lookup fails.
+///   - `Projection(base, Field(Adt(adt_id, variant_id), idx))`: resolves
+///     the field's source name from type_decls. When variant_id is null
+///     (struct), looks up `kind.Struct[idx].name`. When variant_id is N
+///     (enum variant), looks up `kind.Enum[N].fields[idx].name`. Unnamed
+///     fields (tuple variants) have null name and fall back to index
+///     notation. Emits `Ctor("field", [base_term, Var(".<name>")])`.
+///     Falls back to index notation if type_decls is absent or lookup
+///     fails.
 fn place_to_term_for_post(
     place: &Value,
     prior: &[&Value],
@@ -391,13 +461,34 @@ fn place_to_term_for_post(
                     });
                 }
 
-                // Adt (struct) field projection. Look up the field's source
-                // name from the crate's type_decls so the emitted term uses
-                // `.x` rather than `.0`, matching AST byte-for-byte.
+                // Adt (struct or enum variant) field projection. Look up
+                // the field's source name from the crate's type_decls so
+                // the emitted term uses `.x` rather than `.0`, matching
+                // AST byte-for-byte for struct fields.
+                //
+                // Charon encodes the Adt field kind as a two-element JSON
+                // array: [adt_id, variant_id]. For structs the adt_id is a
+                // plain integer and variant_id is null (or absent). For
+                // enum variant projections (after a Switch::Match arm),
+                // variant_id is the variant index as an integer.
+                //
+                // Layer-divergence note: enum-variant field projection in
+                // LLBC only appears inside a Switch::Match arm, which the
+                // current lifter does not walk for postcondition derivation
+                // (match-arm traversal is out of scope for this MVP). So
+                // this branch fires for enum fields that appear in simpler
+                // reference contexts. Cross-layer byte equality does NOT
+                // hold for enum match patterns because AST does not lift
+                // match arms at all; this is an LlbcExtra site per paper
+                // 07's layered-agreement taxonomy.
                 if let Some(adt_arr) = field_kind.get("Adt").and_then(|v| v.as_array()) {
                     let adt_id = adt_arr.first().and_then(|v| v.as_u64())? as usize;
+                    // adt_arr[1] is variant_id: Some(N) for enum variants,
+                    // null or absent for structs.
+                    let variant_id =
+                        adt_arr.get(1).and_then(|v| v.as_u64()).map(|n| n as usize);
                     let field_name = type_decls
-                        .and_then(|td| adt_field_name(td, adt_id, field_idx))
+                        .and_then(|td| adt_field_name(td, adt_id, variant_id, field_idx))
                         .unwrap_or_else(|| field_idx.to_string());
                     let base_term =
                         place_to_term_for_post(base, prior, formals, type_decls, named_locals)?;
@@ -425,13 +516,27 @@ fn place_to_term_for_post(
 ///   - no type_decl has `def_id == adt_id`
 ///   - the type is not a struct (enum, tuple struct, etc.)
 ///   - `field_idx` is out of range
-fn adt_field_name(type_decls: &Value, adt_id: usize, field_idx: usize) -> Option<String> {
+fn adt_field_name(
+    type_decls: &Value,
+    adt_id: usize,
+    variant_id: Option<usize>,
+    field_idx: usize,
+) -> Option<String> {
     let decls = type_decls.as_array()?;
     let decl = decls.iter().find(|d| {
         d.get("def_id").and_then(|v| v.as_u64()).map(|id| id as usize) == Some(adt_id)
     })?;
-    let fields = decl.get("kind")?.get("Struct")?.as_array()?;
+    let kind = decl.get("kind")?;
+    let fields = if let Some(vid) = variant_id {
+        let variants = kind.get("Enum")?.as_array()?;
+        let variant = variants.get(vid)?;
+        variant.get("fields")?.as_array()?
+    } else {
+        kind.get("Struct")?.as_array()?
+    };
     let field = fields.get(field_idx)?;
+    // Unnamed fields (tuple variants / tuple structs) have `"name": null`.
+    // Return None so the caller emits the numeric index fallback.
     field.get("name")?.as_str().map(|s| s.to_string())
 }
 
@@ -528,16 +633,79 @@ fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
     }
 }
 
+/// Detect effects from the LLBC body statements. Scans for:
+///   - `Panics`: any `Abort` statement directly in the body, or a
+///     Switch::If whose then- or else-branch leads to Abort (the
+///     canonical panic pattern emitted by Charon for `if cond { panic!() }`).
+///   - `Io`: any Call to a function whose resolved name contains I/O
+///     substrings (print, io, fmt, display).
+///
+/// `UnresolvedCall` effects are populated separately by
+/// `collect_call_contributions`, which has registry access.
+pub fn detect_effects_llbc(
+    stmts: &[&Value],
+    fun_decls: Option<&Value>,
+    registry: &crate::llbc_calls::ContractRegistry,
+) -> EffectSet {
+    let _ = registry; // Io detection uses callee name strings, not registry lookup
+    let mut set = EffectSet::empty();
+
+    for s in stmts.iter() {
+        // Panics: bare Abort statement.
+        if stmt_kind_tag(s) == Some("Abort") {
+            set.add(Effect::Panics);
+            continue;
+        }
+
+        // Panics: Switch::If whose then- or else-branch leads to Abort.
+        if let Some(switch) = stmt_kind_payload(s, "Switch") {
+            if let Some(if_arr) = switch.get("If").and_then(|v| v.as_array()) {
+                if if_arr.len() == 3 {
+                    let then_block = &if_arr[1];
+                    let else_block = &if_arr[2];
+                    if block_leads_to_abort(then_block, false)
+                        || block_leads_to_abort(else_block, false)
+                    {
+                        set.add(Effect::Panics);
+                    }
+                }
+            }
+        }
+
+        // Io: Call to a function whose resolved name contains I/O substrings.
+        if let Some((func_id, _args)) = crate::llbc_calls::extract_call_target(s) {
+            if let Some(fd) = fun_decls {
+                if let Some(callee_name) = crate::llbc_calls::fundecl_name_by_id(fd, func_id) {
+                    if is_io_callee_name(&callee_name) {
+                        set.add(Effect::Io);
+                    }
+                }
+            }
+        }
+    }
+    set
+}
+
+/// Return true when a callee name indicates I/O. Matches against
+/// well-known substrings in std::io / fmt path components.
+fn is_io_callee_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    matches!(lower.as_str(), "print" | "println" | "eprint" | "eprintln" | "write_fmt" | "fmt")
+        || lower.contains("io")
+        || lower.contains("print")
+        || lower.contains("display")
+}
+
 /// Collect predicate atoms from `Call` statements: substitute the
 /// callee's pre with actuals supplied at the callsite, push the
 /// result into the caller's pre contributions. This is paper 07
 /// §6's "compose for free" — every callsite composes the callee's
 /// content-addressed precondition into the caller's contract.
 ///
-/// Unresolved callees (cross-crate, dyn dispatch, FFI, callee not in
-/// registry) are skipped silently. Future work: emit
-/// `Effect::UnresolvedCall { name }` so the substrate refuses to
-/// compose against them rather than implicitly assuming `true`.
+/// When a callee's name can be resolved from fun_decls but is NOT in the
+/// registry, emit `Effect::UnresolvedCall { name }` into `effects`. This
+/// advertises that the caller's contract depends on a function whose
+/// effects are unknown; substrate must refuse composition until resolved.
 fn collect_call_contributions(
     stmts: &[&Value],
     formals: &[(u32, String)],
@@ -545,6 +713,7 @@ fn collect_call_contributions(
     fun_decls: &Value,
     registry: &crate::llbc_calls::ContractRegistry,
     out: &mut Vec<IrFormula>,
+    effects: &mut EffectSet,
 ) {
     for (i, s) in stmts.iter().enumerate() {
         let Some((func_id, args)) = crate::llbc_calls::extract_call_target(s) else {
@@ -554,6 +723,8 @@ fn collect_call_contributions(
             continue;
         };
         let Some(callee) = registry.get(&callee_name) else {
+            // Task B: callee name resolved but not in registry -> UnresolvedCall.
+            effects.add(Effect::UnresolvedCall { name: callee_name });
             continue;
         };
         // Lift each actual argument. The trace runs back through prior
@@ -715,6 +886,11 @@ fn overflow_op_tag(descriptor: &Value) -> Option<String> {
 /// `parent_falls_through_to_abort` is true when reaching the end of
 /// the current block (without a Return/Abort inside it) leads to an
 /// Abort in the enclosing scope.
+///
+/// Handles two Switch variants:
+///   - `Switch::If`: the binary if-panic pattern (existing).
+///   - `Switch::SwitchInt`: multi-arm `match` where arms leading to
+///     Abort contribute `Atomic("≠", [discr, lit])` per literal.
 fn collect_if_panic_contributions(
     prior: &[&Value],
     stmts: &[&Value],
@@ -727,15 +903,6 @@ fn collect_if_panic_contributions(
         let Some(switch) = stmt_kind_payload(s, "Switch") else {
             continue;
         };
-        let Some(if_arr) = switch.get("If").and_then(|v| v.as_array()) else {
-            continue;
-        };
-        if if_arr.len() != 3 {
-            continue;
-        }
-        let discr = &if_arr[0];
-        let then_block = &if_arr[1];
-        let else_block = &if_arr[2];
 
         // Where does the path AFTER this Switch end up? If the next
         // non-bookkeeping statement is Abort, the fall-through aborts.
@@ -744,41 +911,105 @@ fn collect_if_panic_contributions(
         let post_switch_aborts =
             tail_aborts_or_inherit(&stmts[i + 1..], parent_falls_through_to_abort);
 
-        // Is the THEN branch the panic side?
-        let then_aborts = block_leads_to_abort(then_block, post_switch_aborts);
-        if !then_aborts {
-            // Not an if-panic at this level. Skip; recursing into the
-            // else-block of a non-panic Switch would conflate
-            // narrowing with precondition, which is out of scope for
-            // the if-panic class.
-            continue;
-        }
-
-        // Trace the discriminant. The trace is allowed to walk back
-        // through the parent `prior` plus the current block's
-        // pre-Switch statements.
+        // Build the local prior for discriminant tracing: parent prior plus
+        // pre-switch statements in the current block.
         let mut local_prior: Vec<&Value> = Vec::with_capacity(prior.len() + i);
         local_prior.extend(prior.iter().copied());
         local_prior.extend(stmts[..i].iter().copied());
-        if let Some(pred) = discriminant_to_formula(discr, &local_prior, formals, named_locals) {
-            out.push(negate_predicate(pred));
+
+        // --- Switch::If (binary if-panic) ---
+        if let Some(if_arr) = switch.get("If").and_then(|v| v.as_array()) {
+            if if_arr.len() == 3 {
+                let discr = &if_arr[0];
+                let then_block = &if_arr[1];
+                let else_block = &if_arr[2];
+
+                let then_aborts = block_leads_to_abort(then_block, post_switch_aborts);
+                if then_aborts {
+                    if let Some(pred) =
+                        discriminant_to_formula(discr, &local_prior, formals, named_locals)
+                    {
+                        out.push(negate_predicate(pred));
+                    }
+                    // Recurse into the else-block: short-circuited `||` / `&&`
+                    // emits another Switch nested in the else side.
+                    let mut new_prior = local_prior.clone();
+                    new_prior.push(s);
+                    let inner_stmts: Vec<&Value> = block_statements(else_block);
+                    collect_if_panic_contributions(
+                        &new_prior,
+                        &inner_stmts,
+                        formals,
+                        named_locals,
+                        post_switch_aborts,
+                        out,
+                    );
+                }
+                // If then doesn't abort: not an if-panic. Skip.
+            }
+            continue;
         }
 
-        // Recurse into the else-block: short-circuited `||` / `&&`
-        // emits another Switch nested in the else side. The inner
-        // block's "parent fall-through" property is whatever this
-        // Switch's post-tail does.
-        let mut new_prior = local_prior.clone();
-        new_prior.push(s); // include this Switch in prior for inner discr-trace
-        let inner_stmts: Vec<&Value> = block_statements(else_block);
-        collect_if_panic_contributions(
-            &new_prior,
-            &inner_stmts,
-            formals,
-            named_locals,
-            post_switch_aborts,
-            out,
-        );
+        // --- Switch::SwitchInt (multi-arm match) ---
+        // JSON shape: {"SwitchInt": [discr, lit_ty, [[[scalar,...], block], ...], otherwise_block]}
+        // Arm pattern literals are bare {"Scalar": {"Unsigned": ["U32","0"]}} objects;
+        // NOT wrapped in the `kind.Literal.Scalar` envelope that `constant_to_ir_term`
+        // expects. `arm_scalar_to_ir_term` handles this shape.
+        if let Some(si_arr) = switch.get("SwitchInt").and_then(|v| v.as_array()) {
+            if si_arr.len() != 4 {
+                continue;
+            }
+            let discr = &si_arr[0];
+            let arms = match si_arr[2].as_array() {
+                Some(a) => a,
+                None => continue,
+            };
+            let otherwise_block = &si_arr[3];
+
+            // If the otherwise-block aborts, the precondition is a disjunction
+            // of matched literals (an `Or`, not a conjunction of `!=` atoms).
+            // Out of scope for MVP. Skip.
+            if block_leads_to_abort(otherwise_block, post_switch_aborts) {
+                continue;
+            }
+
+            // Lift the discriminant to an IR term (e.g. Var("x") for a formal).
+            let Some(discr_term) =
+                operand_to_ir_term(discr, &local_prior, formals, named_locals)
+            else {
+                continue;
+            };
+
+            // For each arm whose block leads to Abort, emit Atomic("!=", [discr, lit])
+            // for every literal in that arm's pattern. Turns `0 | 1 => panic!()`
+            // into the conjunction `x != 0 /\ x != 1`.
+            for arm in arms {
+                let arm_arr = match arm.as_array() {
+                    Some(a) => a,
+                    None => continue,
+                };
+                if arm_arr.len() != 2 {
+                    continue;
+                }
+                let patterns = match arm_arr[0].as_array() {
+                    Some(p) => p,
+                    None => continue,
+                };
+                let arm_block = &arm_arr[1];
+                if !block_leads_to_abort(arm_block, post_switch_aborts) {
+                    continue;
+                }
+                for scalar_val in patterns {
+                    if let Some(lit_term) = arm_scalar_to_ir_term(scalar_val) {
+                        out.push(IrFormula::Atomic {
+                            name: "≠".to_string(),
+                            args: vec![discr_term.clone(), lit_term],
+                        });
+                    }
+                }
+            }
+            continue;
+        }
     }
 }
 
@@ -933,6 +1164,26 @@ fn constant_to_ir_term(constant: &Value) -> Option<IrTerm> {
     let scalar = lit.get("Scalar")?;
     if let Some(uns) = scalar.get("Unsigned").and_then(|v| v.as_array()) {
         // ["U32", "10"]
+        let s = uns.get(1)?.as_str()?;
+        let n: i64 = s.parse().ok()?;
+        return Some(crate::wp::const_int(n));
+    }
+    if let Some(sgn) = scalar.get("Signed").and_then(|v| v.as_array()) {
+        let s = sgn.get(1)?.as_str()?;
+        let n: i64 = s.parse().ok()?;
+        return Some(crate::wp::const_int(n));
+    }
+    None
+}
+
+/// Lift a bare arm-pattern scalar (as appears in `SwitchInt` arm patterns)
+/// to an IrTerm. Arm pattern literals in Charon's JSON have the shape
+/// `{"Scalar": {"Unsigned": ["U32", "0"]}}` or `{"Scalar": {"Signed": ["I32", "1"]}}` --
+/// note the absence of the `kind.Literal` wrapper that `constant_to_ir_term`
+/// expects. This helper handles the bare-Scalar encoding directly.
+fn arm_scalar_to_ir_term(scalar_val: &Value) -> Option<IrTerm> {
+    let scalar = scalar_val.get("Scalar")?;
+    if let Some(uns) = scalar.get("Unsigned").and_then(|v| v.as_array()) {
         let s = uns.get(1)?.as_str()?;
         let n: i64 = s.parse().ok()?;
         return Some(crate::wp::const_int(n));
@@ -1373,4 +1624,106 @@ mod tests {
             "tuple field: AST and LLBC post must be byte-identical"
         );
     }
+    // ---- Task A: SwitchInt multi-arm match ----
+
+    #[test]
+    fn llbc_lifts_match_arms_to_neq_conjunction() {
+        // `fn f(x: u32) { match x { 0 | 1 => panic!(), _ => {} } }`
+        // Charon emits Switch::SwitchInt with one arm carrying patterns
+        // [0, 1] that leads to Abort (via fall-through). The lift should
+        // produce pre = (x ≠ 0) /\ (x ≠ 1).
+        let krate = LlbcCrate::from_path(fixture_path("match_arms.llbc")).unwrap();
+        let f = krate.function_by_name("f").unwrap();
+        let contract = lift_llbc_function(f, Some("match_arms.rs")).unwrap();
+
+        assert_eq!(contract.fn_name, "f");
+        assert_eq!(contract.formals, vec!["x".to_string()]);
+
+        match &contract.pre {
+            IrFormula::And { operands } => {
+                assert_eq!(operands.len(), 2, "expected two ≠ conjuncts for 0|1 arm: {:?}", contract.pre);
+                for op in operands {
+                    match op {
+                        IrFormula::Atomic { name, args } => {
+                            assert_eq!(name, "≠", "predicate must be ≠: {}", name);
+                            assert_eq!(args.len(), 2);
+                            match &args[0] {
+                                IrTerm::Var { name } => assert_eq!(name, "x"),
+                                other => panic!("expected Var(x), got {:?}", other),
+                            }
+                        }
+                        other => panic!("expected Atomic ≠, got {:?}", other),
+                    }
+                }
+            }
+            other => panic!("expected And conjunction, got {:?}", other),
+        }
+    }
+
+    // ---- Task A: LLBC Panics effect detection ----
+
+    #[test]
+    fn detect_effects_llbc_emits_panics_for_abort_body() {
+        // `fn f(x: u32) { if x < 10 { panic!() } }` — clean.llbc has
+        // an Abort statement in the body. detect_effects_llbc must emit
+        // Effect::Panics.
+        use crate::contract::Effect;
+        let krate = LlbcCrate::from_path(fixture_path("clean.llbc")).unwrap();
+        let f = krate.function_by_name("f").unwrap();
+        let contract = lift_llbc_function(f, Some("clean.rs")).unwrap();
+        assert!(
+            contract.effects.effects.contains(&Effect::Panics),
+            "clean.rs has panic! — LLBC contract must carry Effect::Panics; got {:?}",
+            contract.effects.effects
+        );
+    }
+
+    #[test]
+    fn detect_effects_llbc_pure_for_no_abort_body() {
+        // `fn t(p: (u32, u32)) -> u32 { p.0 }` — no abort, no calls.
+        // Effects should be empty (pure).
+        let krate = LlbcCrate::from_path(fixture_path("tuple_field.llbc")).unwrap();
+        let f = krate.function_by_name("t").unwrap();
+        let contract =
+            lift_llbc_function_with_types(f, Some("tuple_field.rs"), krate.type_decls_raw())
+                .unwrap();
+        assert!(
+            contract.effects.is_pure(),
+            "tuple_field has no panic/io — LLBC contract should be pure; got {:?}",
+            contract.effects.effects
+        );
+    }
+
+    // ---- Task B: UnresolvedCall effect via empty registry ----
+
+    #[test]
+    fn empty_registry_emits_unresolved_call_for_outer() {
+        // `outer` calls `inner` (defined in the same crate). When we lift
+        // `outer` with an EMPTY registry (no inner contract registered),
+        // the lifter cannot resolve `inner` and must emit
+        // Effect::UnresolvedCall { name: "inner" } in outer's effect set.
+        use crate::contract::Effect;
+        use crate::llbc_calls::{empty_registry, fun_decls_array};
+        let krate = LlbcCrate::from_path(fixture_path("calls.llbc")).unwrap();
+        let outer = krate.function_by_name("outer").unwrap();
+        let fun_decls = fun_decls_array(&krate);
+        let contract = lift_llbc_function_with_registry(
+            outer,
+            Some("calls.rs"),
+            krate.type_decls_raw(),
+            fun_decls,
+            &empty_registry(), // intentionally empty — forces unresolved
+        )
+        .unwrap();
+
+        let has_unresolved = contract.effects.effects.iter().any(|e| {
+            matches!(e, Effect::UnresolvedCall { name } if name == "inner")
+        });
+        assert!(
+            has_unresolved,
+            "outer calls inner with empty registry — must carry UnresolvedCall(inner); got {:?}",
+            contract.effects.effects
+        );
+    }
+
 }
