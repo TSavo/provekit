@@ -56,7 +56,7 @@ func TestFuncOf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
-	want := `{"kind":"function","domain":[{"kind":"primitive","name":"Int"},{"kind":"primitive","name":"Int"}],"range":{"kind":"primitive","name":"Bool"}}`
+	want := `{"kind":"function","args":[{"kind":"primitive","name":"Int"},{"kind":"primitive","name":"Int"}],"return":{"kind":"primitive","name":"Bool"}}`
 	if string(got) != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
