@@ -73,6 +73,16 @@ pub enum Effect {
     Panics,
     /// Calls a function whose effect-set is unknown to the lifter.
     UnresolvedCall { name: String },
+    /// Contains a loop whose invariant has not been supplied. The
+    /// `loop_cid` is the JCS-byte BLAKE3-512 hash of the loop's
+    /// LLBC body block — it identifies the loop independent of the
+    /// containing function. A separate `LoopInvariantMemento`
+    /// keyed by this loop_cid supplies the invariant + decreasing
+    /// function; the substrate refuses to compose this contract
+    /// downstream until that memento is present and verified.
+    /// Per paper 07 §11 — loops are first-class deferred memento
+    /// targets.
+    OpaqueLoop { loop_cid: String },
 }
 
 impl Effect {
@@ -93,6 +103,10 @@ impl Effect {
                 ("kind", Value::string("unresolved_call")),
                 ("name", Value::string(name.clone())),
             ]),
+            Effect::OpaqueLoop { loop_cid } => Value::object([
+                ("kind", Value::string("opaque_loop")),
+                ("loopCid", Value::string(loop_cid.clone())),
+            ]),
         }
     }
 
@@ -105,6 +119,7 @@ impl Effect {
             Effect::Unsafe => "3:unsafe".to_string(),
             Effect::Panics => "4:panics".to_string(),
             Effect::UnresolvedCall { name } => format!("5:unresolved:{}", name),
+            Effect::OpaqueLoop { loop_cid } => format!("6:opaque_loop:{}", loop_cid),
         }
     }
 }

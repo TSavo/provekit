@@ -229,6 +229,7 @@ fn effect_summary(effects: &[provekit_walk::contract::Effect]) -> String {
             Unsafe => "unsafe".to_string(),
             Panics => "panics".to_string(),
             UnresolvedCall { name } => format!("unresolved({})", name),
+            OpaqueLoop { loop_cid } => format!("opaque_loop({})", &loop_cid[..16.min(loop_cid.len())]),
         })
         .collect();
     format!("[{}]", parts.join(", "))

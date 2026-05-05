@@ -33,6 +33,7 @@ pub mod lift;
 pub mod llbc;
 pub mod llbc_calls;
 pub mod llbc_lift;
+pub mod llbc_loops;
 pub mod marriage;
 pub mod locus;
 pub mod loops_and_exceptions;

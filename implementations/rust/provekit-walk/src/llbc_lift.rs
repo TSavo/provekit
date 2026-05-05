@@ -142,6 +142,16 @@ pub fn lift_llbc_function_with_registry(
     if f.is_unsafe() {
         effects.add(Effect::Unsafe);
     }
+    // Loop detection: every Loop in the body becomes Effect::OpaqueLoop
+    // keyed by its content-addressed body hash. Per paper 07 §11, loops
+    // are deferred proof obligations — the substrate refuses to compose
+    // a contract carrying OpaqueLoop until a LoopInvariantMemento keyed
+    // by the loop_cid is supplied. Honest opacity, not silent assumption.
+    for lp in crate::llbc_loops::extract_loops(&stmts) {
+        effects.add(Effect::OpaqueLoop {
+            loop_cid: lp.loop_cid,
+        });
+    }
     if let Some(fd) = fun_decls {
         collect_call_contributions(&stmts, &formals, &named_locals, fd, registry, &mut pre_contribs, &mut effects);
     }
