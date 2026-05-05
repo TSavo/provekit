@@ -25,24 +25,48 @@ from .canonicalizer import Value, varr, vint, vobj, vstr, vnull
 
 
 @dataclass(frozen=True)
-class Sort:
+class PrimitiveSort:
     name: str  # "Int" / "Real" / "String" / "Bool"
 
 
+@dataclass(frozen=True)
+class FunctionSort:
+    args: Tuple["Sort", ...]
+    return_: "Sort"
+
+
+@dataclass(frozen=True)
+class DependentSort:
+    name: str
+    index_var: str
+    index_sort: "Sort"
+
+
+Sort = Union[PrimitiveSort, FunctionSort, DependentSort]
+
+
 def Int() -> Sort:
-    return Sort("Int")
+    return PrimitiveSort("Int")
 
 
 def Real() -> Sort:
-    return Sort("Real")
+    return PrimitiveSort("Real")
 
 
 def String() -> Sort:
-    return Sort("String")
+    return PrimitiveSort("String")
 
 
 def Bool() -> Sort:
-    return Sort("Bool")
+    return PrimitiveSort("Bool")
+
+
+def FuncOf(args: List[Sort], ret: Sort) -> Sort:
+    return FunctionSort(tuple(args), ret)
+
+
+def Dependent(name: str, index_var: str, index_sort: Sort) -> Sort:
+    return DependentSort(name, index_var, index_sort)
 
 
 # Term ----------------------------------------------------------------------
@@ -214,16 +238,23 @@ class EvidenceTerm:
 
 
 def evidence_to_value(e: EvidenceTerm) -> Value:
-    return vobj([
-        ("kind", vstr("evidence")),
-        ("proofType", vstr(e.proof_type)),
-        ("certificate", vobj([
-            ("tool", vstr(e.certificate.tool)),
-            ("version", vstr(e.certificate.version)),
-            ("formulaHash", vstr(e.certificate.formula_hash)),
-            ("proofData", vstr(e.certificate.proof_data)),
-        ])),
-    ])
+    return vobj(
+        [
+            ("kind", vstr("evidence")),
+            ("proofType", vstr(e.proof_type)),
+            (
+                "certificate",
+                vobj(
+                    [
+                        ("tool", vstr(e.certificate.tool)),
+                        ("version", vstr(e.certificate.version)),
+                        ("formulaHash", vstr(e.certificate.formula_hash)),
+                        ("proofData", vstr(e.certificate.proof_data)),
+                    ]
+                ),
+            ),
+        ]
+    )
 
 
 # ContractDecl --------------------------------------------------------------
@@ -243,59 +274,93 @@ class ContractDecl:
 
 
 def sort_to_value(s: Sort) -> Value:
-    return vobj([("kind", vstr("primitive")), ("name", vstr(s.name))])
+    if isinstance(s, PrimitiveSort):
+        return vobj([("kind", vstr("primitive")), ("name", vstr(s.name))])
+    if isinstance(s, FunctionSort):
+        return vobj(
+            [
+                ("kind", vstr("function")),
+                ("args", varr([sort_to_value(a) for a in s.args])),
+                ("return", sort_to_value(s.return_)),
+            ]
+        )
+    if isinstance(s, DependentSort):
+        return vobj(
+            [
+                ("kind", vstr("dependent")),
+                ("name", vstr(s.name)),
+                ("indexVar", vstr(s.index_var)),
+                ("indexSort", sort_to_value(s.index_sort)),
+            ]
+        )
+    raise TypeError(f"unknown Sort: {type(s)!r}")
 
 
 def term_to_value(t: Term) -> Value:
     if isinstance(t, _Var):
         return vobj([("kind", vstr("var")), ("name", vstr(t.name))])
     if isinstance(t, _ConstInt):
-        return vobj([
-            ("kind", vstr("const")),
-            ("value", vint(t.value)),
-            ("sort", sort_to_value(t.sort)),
-        ])
+        return vobj(
+            [
+                ("kind", vstr("const")),
+                ("value", vint(t.value)),
+                ("sort", sort_to_value(t.sort)),
+            ]
+        )
     if isinstance(t, _ConstStr):
-        return vobj([
-            ("kind", vstr("const")),
-            ("value", vstr(t.value)),
-            ("sort", sort_to_value(t.sort)),
-        ])
+        return vobj(
+            [
+                ("kind", vstr("const")),
+                ("value", vstr(t.value)),
+                ("sort", sort_to_value(t.sort)),
+            ]
+        )
     if isinstance(t, _ConstBool):
         from .canonicalizer import vbool
-        return vobj([
-            ("kind", vstr("const")),
-            ("value", vbool(t.value)),
-            ("sort", sort_to_value(t.sort)),
-        ])
+
+        return vobj(
+            [
+                ("kind", vstr("const")),
+                ("value", vbool(t.value)),
+                ("sort", sort_to_value(t.sort)),
+            ]
+        )
     if isinstance(t, _Ctor):
-        return vobj([
-            ("kind", vstr("ctor")),
-            ("name", vstr(t.name)),
-            ("args", varr([term_to_value(a) for a in t.args])),
-        ])
+        return vobj(
+            [
+                ("kind", vstr("ctor")),
+                ("name", vstr(t.name)),
+                ("args", varr([term_to_value(a) for a in t.args])),
+            ]
+        )
     raise TypeError(f"unknown Term: {type(t)!r}")
 
 
 def formula_to_value(f: Formula) -> Value:
     if isinstance(f, _Atomic):
-        return vobj([
-            ("kind", vstr("atomic")),
-            ("name", vstr(f.name)),
-            ("args", varr([term_to_value(a) for a in f.args])),
-        ])
+        return vobj(
+            [
+                ("kind", vstr("atomic")),
+                ("name", vstr(f.name)),
+                ("args", varr([term_to_value(a) for a in f.args])),
+            ]
+        )
     if isinstance(f, _Connective):
-        return vobj([
-            ("kind", vstr(f.kind)),
-            ("operands", varr([formula_to_value(o) for o in f.operands])),
-        ])
+        return vobj(
+            [
+                ("kind", vstr(f.kind)),
+                ("operands", varr([formula_to_value(o) for o in f.operands])),
+            ]
+        )
     if isinstance(f, _Quantifier):
-        return vobj([
-            ("kind", vstr(f.kind)),
-            ("name", vstr(f.name)),
-            ("sort", sort_to_value(f.sort)),
-            ("body", formula_to_value(f.body)),
-        ])
+        return vobj(
+            [
+                ("kind", vstr(f.kind)),
+                ("name", vstr(f.name)),
+                ("sort", sort_to_value(f.sort)),
+                ("body", formula_to_value(f.body)),
+            ]
+        )
     raise TypeError(f"unknown Formula: {type(f)!r}")
 
 
@@ -306,20 +371,28 @@ def subst_var_in_term(t: Term, formal: str, actual: Term) -> Term:
     if isinstance(t, _Var):
         return actual if t.name == formal else t
     if isinstance(t, _Ctor):
-        return _Ctor(t.name, tuple(subst_var_in_term(a, formal, actual) for a in t.args))
+        return _Ctor(
+            t.name, tuple(subst_var_in_term(a, formal, actual) for a in t.args)
+        )
     return t  # const variants are inert
 
 
 def subst_var_in_formula(f: Formula, formal: str, actual: Term) -> Formula:
     if isinstance(f, _Atomic):
-        return _Atomic(f.name, tuple(subst_var_in_term(a, formal, actual) for a in f.args))
+        return _Atomic(
+            f.name, tuple(subst_var_in_term(a, formal, actual) for a in f.args)
+        )
     if isinstance(f, _Connective):
-        return _Connective(f.kind, tuple(subst_var_in_formula(o, formal, actual) for o in f.operands))
+        return _Connective(
+            f.kind, tuple(subst_var_in_formula(o, formal, actual) for o in f.operands)
+        )
     if isinstance(f, _Quantifier):
         # Don't substitute under a shadowing binder.
         if f.name == formal:
             return f
-        return _Quantifier(f.kind, f.name, f.sort, subst_var_in_formula(f.body, formal, actual))
+        return _Quantifier(
+            f.kind, f.name, f.sort, subst_var_in_formula(f.body, formal, actual)
+        )
     raise TypeError(f"unknown Formula: {type(f)!r}")
 
 
@@ -429,11 +502,13 @@ class Locus:
 
 def locus_to_value(loc: Locus) -> Value:
     """Emit Locus as a Value with JCS-canonical key order: column, file, line."""
-    return vobj([
-        ("column", vint(loc.column)),
-        ("file", vstr(loc.file)),
-        ("line", vint(loc.line)),
-    ])
+    return vobj(
+        [
+            ("column", vint(loc.column)),
+            ("file", vstr(loc.file)),
+            ("line", vint(loc.line)),
+        ]
+    )
 
 
 # CallEdgeDecl ----------------------------------------------------------------
@@ -462,16 +537,20 @@ def call_edge_decl_to_value(c: CallEdgeDecl) -> Value:
     JCS-canonical key order: callSiteLocus, evidenceTerm, kind, schemaVersion,
     sourceContractCid, targetContractCid, targetSymbol.
     """
-    target_cid_value: Value = vnull() if c.target_contract_cid is None else vstr(c.target_contract_cid)
-    return vobj([
-        ("callSiteLocus", locus_to_value(c.call_site_locus)),
-        ("evidenceTerm", formula_to_value(c.evidence_term)),
-        ("kind", vstr("call-edge")),
-        ("schemaVersion", vstr("1")),
-        ("sourceContractCid", vstr(c.source_contract_cid)),
-        ("targetContractCid", target_cid_value),
-        ("targetSymbol", vstr(c.target_symbol)),
-    ])
+    target_cid_value: Value = (
+        vnull() if c.target_contract_cid is None else vstr(c.target_contract_cid)
+    )
+    return vobj(
+        [
+            ("callSiteLocus", locus_to_value(c.call_site_locus)),
+            ("evidenceTerm", formula_to_value(c.evidence_term)),
+            ("kind", vstr("call-edge")),
+            ("schemaVersion", vstr("1")),
+            ("sourceContractCid", vstr(c.source_contract_cid)),
+            ("targetContractCid", target_cid_value),
+            ("targetSymbol", vstr(c.target_symbol)),
+        ]
+    )
 
 
 def call_edges_to_value(edges: List["CallEdgeDecl"]) -> Value:

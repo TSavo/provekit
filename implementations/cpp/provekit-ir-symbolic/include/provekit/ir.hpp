@@ -33,14 +33,43 @@ namespace provekit::ir {
 // Sort
 // ---------------------------------------------------------------------------
 
-struct Sort {
+struct Sort;
+
+struct PrimitiveSort {
   std::string name;  // "Int", "Real", "String", "Bool"
 };
 
-inline Sort Int() { return Sort{"Int"}; }
-inline Sort Real() { return Sort{"Real"}; }
-inline Sort String() { return Sort{"String"}; }
-inline Sort Bool() { return Sort{"Bool"}; }
+struct FunctionSort {
+  std::vector<std::shared_ptr<Sort>> args;
+  std::shared_ptr<Sort> return_;
+};
+
+struct DependentSort {
+  std::string name;
+  std::string indexVar;
+  std::shared_ptr<Sort> indexSort;
+};
+
+struct Sort {
+  std::variant<PrimitiveSort, FunctionSort, DependentSort> v;
+};
+
+inline std::shared_ptr<Sort> make_primitive_sort(std::string name) {
+  return std::make_shared<Sort>(Sort{PrimitiveSort{std::move(name)}});
+}
+
+inline Sort Int() { return Sort{PrimitiveSort{"Int"}}; }
+inline Sort Real() { return Sort{PrimitiveSort{"Real"}}; }
+inline Sort String() { return Sort{PrimitiveSort{"String"}}; }
+inline Sort Bool() { return Sort{PrimitiveSort{"Bool"}}; }
+
+inline std::shared_ptr<Sort> FuncOf(std::vector<std::shared_ptr<Sort>> args, std::shared_ptr<Sort> ret) {
+  return std::make_shared<Sort>(Sort{FunctionSort{std::move(args), std::move(ret)}});
+}
+
+inline std::shared_ptr<Sort> Dependent(std::string name, std::string indexVar, std::shared_ptr<Sort> indexSort) {
+  return std::make_shared<Sort>(Sort{DependentSort{std::move(name), std::move(indexVar), std::move(indexSort)}});
+}
 
 // ---------------------------------------------------------------------------
 // Term , VarTerm (no sort), ConstTerm (sort kept), CtorTerm (no sort).
@@ -487,9 +516,31 @@ inline void write_string(std::ostringstream& out, const std::string& s) {
 }
 
 inline void write_sort(std::ostringstream& out, const Sort& s) {
-  out << "{\"kind\":\"primitive\",\"name\":";
-  write_string(out, s.name);
-  out << "}";
+  std::visit([&out](const auto& v) {
+    using T = std::decay_t<decltype(v)>;
+    if constexpr (std::is_same_v<T, PrimitiveSort>) {
+      out << "{\"kind\":\"primitive\",\"name\":";
+      write_string(out, v.name);
+      out << "}";
+    } else if constexpr (std::is_same_v<T, FunctionSort>) {
+      out << "{\"kind\":\"function\",\"args\":[";
+      for (size_t i = 0; i < v.args.size(); i++) {
+        if (i > 0) out << ",";
+        write_sort(out, *v.args[i]);
+      }
+      out << "],\"return\":";
+      write_sort(out, *v.return_);
+      out << "}";
+    } else if constexpr (std::is_same_v<T, DependentSort>) {
+      out << "{\"kind\":\"dependent\",\"name\":";
+      write_string(out, v.name);
+      out << ",\"indexVar\":";
+      write_string(out, v.indexVar);
+      out << ",\"indexSort\":";
+      write_sort(out, *v.indexSort);
+      out << "}";
+    }
+  }, s.v);
 }
 
 inline void write_term(std::ostringstream& out, const Term& t);

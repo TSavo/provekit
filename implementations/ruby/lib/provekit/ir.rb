@@ -11,7 +11,7 @@ module Provekit
   module IR
     # ── Sort ────────────────────────────────────────────────────
 
-    Sort = Struct.new(:name) do
+    PrimitiveSort = Struct.new(:name) do
       def self.Int    = new("Int")
       def self.Real   = new("Real")
       def self.String = new("String")
@@ -20,26 +20,34 @@ module Provekit
       def self.Node   = new("Node")
     end
 
+    FunctionSort = Struct.new(:args, :return_) do
+    end
+
+    DependentSort = Struct.new(:name, :index_var, :index_sort) do
+    end
+
+    Sort = PrimitiveSort
+
     # ── Term ────────────────────────────────────────────────────
 
     def self.var(name:)
       { kind: :var, name: name }
     end
 
-    def self.num(value)
-      { kind: :const, value: value.to_i, sort: Sort.Int }
+      def self.num(value)
+      { kind: :const, value: value.to_i, sort: PrimitiveSort.Int }
     end
 
     def self.str(value)
-      { kind: :const, value: value.to_s, sort: Sort.String }
+      { kind: :const, value: value.to_s, sort: PrimitiveSort.String }
     end
 
     def self.bool(value)
-      { kind: :const, value: !!value, sort: Sort.Bool }
+      { kind: :const, value: !!value, sort: PrimitiveSort.Bool }
     end
 
     def self.null_ref
-      { kind: :const, value: nil, sort: Sort.Ref }
+      { kind: :const, value: nil, sort: PrimitiveSort.Ref }
     end
 
     def self.ctor(name, *args)
@@ -178,7 +186,17 @@ module Provekit
       end
 
       def self.emit_sort(sort)
-        %({"kind":"primitive","name":#{emit_string(sort.name)}})
+        case sort
+        when PrimitiveSort
+          %({"kind":"primitive","name":#{emit_string(sort.name)}})
+        when FunctionSort
+          args_json = "[#{sort.args.map { |a| encode(a) }.join(',')}]"
+          %({"kind":"function","args":#{args_json},"return":#{encode(sort.return_)}})
+        when DependentSort
+          %({"kind":"dependent","name":#{emit_string(sort.name)},"indexVar":#{emit_string(sort.index_var)},"indexSort":#{emit_sort(sort.index_sort)}})
+        else
+          raise "unknown sort: #{sort.class}"
+        end
       end
 
       def self.emit_const(value)

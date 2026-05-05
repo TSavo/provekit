@@ -184,7 +184,7 @@ describe("emitLean — sort mapping", () => {
   });
 
   it("throws LeanUnsupportedError for function sort", () => {
-    const fnSort: Sort = { kind: "function", domain: [Int], range: Bool };
+    const fnSort: Sort = { kind: "function", args: [Int], return: Bool };
     const f: IrFormula = {
       kind: "forall", name: "_x0", sort: fnSort, body: { kind: "atomic", name: "true", args: [] },
     };

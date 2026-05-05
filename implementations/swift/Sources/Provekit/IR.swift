@@ -11,14 +11,17 @@ import ProvekitCrypto
 
 // MARK: - Sort
 
-public struct Sort: Equatable, Hashable, Sendable {
-    public let name: String
-    public static let int = Sort(name: "Int")
-    public static let real = Sort(name: "Real")
-    public static let string = Sort(name: "String")
-    public static let bool = Sort(name: "Bool")
-    public static let ref = Sort(name: "Ref")
-    public static let node = Sort(name: "Node")
+public indirect enum Sort: Equatable, Hashable, Sendable {
+    case primitive(String)
+    case function(args: [Sort], return_: Sort)
+    case dependent(name: String, indexVar: String, indexSort: Sort)
+
+    public static let int = Sort.primitive("Int")
+    public static let real = Sort.primitive("Real")
+    public static let string = Sort.primitive("String")
+    public static let bool = Sort.primitive("Bool")
+    public static let ref = Sort.primitive("Ref")
+    public static let node = Sort.primitive("Node")
 }
 
 // MARK: - Term
@@ -211,7 +214,19 @@ public enum Jcs {
     // Helpers
 
     static func sortToValue(_ s: Sort) -> JcsValue {
-        .obj(("kind", .string("primitive")), ("name", .string(s.name)))
+        switch s {
+        case .primitive(let name):
+            return .obj(("kind", .string("primitive")), ("name", .string(name)))
+        case .function(let args, let return_):
+            return .obj(("args", .arr(args.map(sortToValue))),
+                        ("kind", .string("function")),
+                        ("return", sortToValue(return_)))
+        case .dependent(let name, let indexVar, let indexSort):
+            return .obj(("indexSort", sortToValue(indexSort)),
+                        ("indexVar", .string(indexVar)),
+                        ("kind", .string("dependent")),
+                        ("name", .string(name)))
+        }
     }
 
     static func constValToValue(_ cv: ConstValue) -> JcsValue {
