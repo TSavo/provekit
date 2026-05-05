@@ -32,6 +32,16 @@ impl From<ir::Sort> for Sort {
     fn from(s: ir::Sort) -> Self {
         match s {
             ir::Sort::Primitive { name } => Sort { name },
+            // The symbolic-side `Sort` wrapper is primitive-only; it does
+            // not yet model Function/Dependent. Deferred to #331 (Coq) /
+            // #332 (SMT-LIB) along with the rest of the v1.5.0 grammar
+            // grow downstream of the canonical `provekit-ir-types::Sort`.
+            ir::Sort::Function { .. } | ir::Sort::Dependent { .. } => {
+                unimplemented!(
+                    "FunctionSort/DependentSort not supported in symbolic Sort wrapper: \
+                     deferred to #331 (Coq) / #332 (SMT-LIB)"
+                )
+            }
         }
     }
 }
