@@ -175,16 +175,18 @@ fn parse_fn(src: &str, name: &str) -> Result<syn::ItemFn, String> {
 }
 
 fn all_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
+    // Must return length == arity. Non-Ident patterns get a stable placeholder.
     item_fn
         .sig
         .inputs
         .iter()
-        .filter_map(|arg| match arg {
+        .enumerate()
+        .map(|(i, arg)| match arg {
+            syn::FnArg::Receiver(_) => "__self".to_string(),
             syn::FnArg::Typed(pt) => match &*pt.pat {
-                syn::Pat::Ident(p) => Some(p.ident.to_string()),
-                _ => None,
+                syn::Pat::Ident(p) => p.ident.to_string(),
+                _ => format!("__arg{}", i),
             },
-            _ => None,
         })
         .collect()
 }

@@ -24,10 +24,17 @@ pub fn serde_to_canonical(j: JsonValue) -> Arc<Value> {
         JsonValue::Number(n) => match n.as_i64() {
             Some(i) => Value::integer(i),
             None => {
-                // Fall back to string for floats/u64-out-of-i64-range. The IR's
-                // const-int sort is the only numeric path the MVP exercises;
-                // anything else is a placeholder.
-                Value::string(n.to_string())
+                // A float or u64-out-of-i64-range number must NOT be encoded as
+                // a plain string: that would make the numeric constant 42.5 and
+                // the string "42.5" produce identical CIDs, breaking content-
+                // address distinctness. Use a tagged object to distinguish the
+                // source type from a literal string value.
+                Value::object(vec![
+                    (
+                        "__provekit_non_i64_number__".to_string(),
+                        Value::string(n.to_string()),
+                    ),
+                ])
             }
         },
         JsonValue::String(s) => Value::string(s),
@@ -90,5 +97,33 @@ mod tests {
         let v1 = formula_to_canonical(&f1);
         let v2 = formula_to_canonical(&f2);
         assert_ne!(cid_of_value(&v1), cid_of_value(&v2));
+    }
+
+    #[test]
+    fn non_i64_number_distinct_from_string_of_same_digits() {
+        // Bug #8: a JSON Number that doesn't fit i64 (e.g. 42.5) must
+        // NOT canonicalize to the same value as the string "42.5".
+        // Before the fix, both fell through to Value::string(n.to_string()).
+        let number_json: serde_json::Value = serde_json::from_str("42.5").unwrap();
+        let string_json: serde_json::Value = serde_json::from_str("\"42.5\"").unwrap();
+
+        let number_canon = serde_to_canonical(number_json);
+        let string_canon = serde_to_canonical(string_json);
+
+        // Their CIDs must differ — they are distinct source types.
+        assert_ne!(
+            cid_of_value(&number_canon),
+            cid_of_value(&string_canon),
+            "float 42.5 and string \"42.5\" must produce distinct CIDs"
+        );
+
+        // The number canonical value must be a tagged object, not a plain string.
+        let bytes = encode_jcs(&number_canon);
+        let reparsed: serde_json::Value = serde_json::from_str(&bytes).unwrap();
+        assert!(
+            reparsed.is_object(),
+            "non-i64 number must canonicalize to a tagged object, not a string: {}",
+            bytes
+        );
     }
 }

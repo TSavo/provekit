@@ -104,12 +104,16 @@ fn all_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
         .sig
         .inputs
         .iter()
-        .filter_map(|arg| match arg {
+        .enumerate()
+        .map(|(i, arg)| match arg {
+            syn::FnArg::Receiver(_) => "__self".to_string(),
             syn::FnArg::Typed(pt) => match &*pt.pat {
-                syn::Pat::Ident(p) => Some(p.ident.to_string()),
-                _ => None,
+                syn::Pat::Ident(p) => p.ident.to_string(),
+                // Non-Ident patterns (`_: u32`, `(a, b): ...`, etc.) get a
+                // stable positional placeholder so the arity stays aligned
+                // with the callee's actual argument count.
+                _ => format!("__arg{}", i),
             },
-            _ => None,
         })
         .collect()
 }

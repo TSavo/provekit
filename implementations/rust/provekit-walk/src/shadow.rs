@@ -408,14 +408,17 @@ fn source_kind_label_for(
             _ => "let:<pat>".to_string(),
         },
         Stmt::Expr(_, _) => {
-            // If any arrival here is a callsite, name the callee for
-            // human-readable labels. Otherwise it's a plain expression.
-            if let Some(a) = arrivals.iter().find(|a| {
-                // The callsite is the arrival whose source_index matches
-                // this slot AND whose predecessor_cid is None (it's a
-                // chain root).
-                a.predecessor_cid.is_none()
-            }) {
+            // If any arrival here is the callsite root for its chain, name the
+            // callee for human-readable labels. Otherwise it's a plain expression.
+            //
+            // The callsite root is the arrival whose `callee_root_cid` equals
+            // its own `cid` — only the chain root satisfies this. Both the
+            // allocation arrival and intermediate arrivals have `callee_root_cid`
+            // pointing to the chain root (not themselves).
+            // Using `predecessor_cid.is_none()` is WRONG: both the allocation
+            // (minted first, no predecessor yet) and the callsite root (minted
+            // last, nothing points toward it) have `predecessor_cid == None`.
+            if let Some(a) = arrivals.iter().find(|a| a.callee_root_cid == a.cid) {
                 format!("callsite:{}", a.callee_name)
             } else {
                 "stmt".to_string()
@@ -430,19 +433,23 @@ fn source_kind_label_for(
 
 /// Each `ShadowArrival` is one v1.5.0-shape edge memento. This helper
 /// returns the JCS-canonical bytes of that edge as a `ContractDecl`-shape
-/// value (per paper 07 §11): `pre = pre_wp`, `post = post_wp`, witness
-/// placeholder pending solver dispatch.
+/// value (per paper 07 §11): `kind = "contract"`, `pre = pre_wp`,
+/// `post = post_wp`, `outBinding` = result binding, plus `evidence` carrying
+/// the walk provenance.
+///
+/// Shape matches the substrate's `ContractDecl` parser (schemaVersion "2")
+/// that existing parsers (provekit-claim-envelope, Zig, Go) accept:
+///   { schemaVersion, kind:"contract", name, outBinding, pre, post, evidence }
 pub fn edge_memento_value(arrival: &ShadowArrival) -> Arc<Value> {
-    Value::object([
-        ("schemaVersion", Value::string("1")),
-        ("kind", Value::string("edge")),
+    let name = format!(
+        "{}@{}/{}",
+        arrival.callee_name, arrival.fn_name, arrival.source_index
+    );
+    let evidence = Value::object([
+        ("kind", Value::string("walk-arrival")),
         ("fnName", Value::string(arrival.fn_name.clone())),
         ("sourceIndex", Value::integer(arrival.source_index as i64)),
         ("calleeName", Value::string(arrival.callee_name.clone())),
-        ("p", formula_to_canonical(arrival.pre_wp.as_formula())),
-        ("q", formula_to_canonical(arrival.post_wp.as_formula())),
-        // Placeholder: substrate-side mint replaces this with a real
-        // EvidenceCertificate carrying the chosen solver's witness.
         (
             "witness",
             Value::object([
@@ -450,6 +457,15 @@ pub fn edge_memento_value(arrival: &ShadowArrival) -> Arc<Value> {
                 ("note", Value::string("MVP walk; solver dispatch deferred")),
             ]),
         ),
+    ]);
+    Value::object([
+        ("schemaVersion", Value::string("2")),
+        ("kind", Value::string("contract")),
+        ("name", Value::string(name)),
+        ("outBinding", Value::string("result".to_string())),
+        ("pre", formula_to_canonical(arrival.pre_wp.as_formula())),
+        ("post", formula_to_canonical(arrival.post_wp.as_formula())),
+        ("evidence", evidence),
     ])
 }
 
@@ -540,5 +556,131 @@ fn compose_components(
         component_cids,
         canonical_bytes,
         cid,
+    }
+}
+
+#[cfg(test)]
+mod shadow_tests {
+    use super::*;
+    use crate::lift::lift_function_precondition;
+
+    fn parse_fn_local(src: &str, name: &str) -> syn::ItemFn {
+        let file: syn::File = syn::parse_str(src).unwrap();
+        file.items
+            .into_iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == name => Some(f),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("fn `{}` not found", name))
+    }
+
+    // Bug #4: two callsites to the same callee with identical argument expressions in the
+    // same function must produce DISTINCT callsite-root arrival CIDs.
+    #[test]
+    fn duplicate_callsites_get_distinct_arrival_cids() {
+        let src = r#"
+            fn f(x: u32) -> u32 { if x < 10 { panic!(); } x * 2 }
+            fn main() {
+                let y: u32 = 42;
+                let r1 = f(y);
+                let r2 = f(y);
+            }
+        "#;
+        let f_fn = parse_fn_local(src, "f");
+        let main_fn = parse_fn_local(src, "main");
+        let pre = lift_function_precondition(&f_fn);
+        let s = build_shadow_source(
+            &main_fn,
+            &[CalleeContract {
+                callee_name: "f".to_string(),
+                formal_params: vec!["x".to_string()],
+                precondition: pre,
+            }],
+        );
+        let root_cids: Vec<String> = s
+            .all_arrivals()
+            .filter(|(_, a)| a.callee_root_cid == a.cid)
+            .map(|(_, a)| a.cid.clone())
+            .collect();
+        assert!(
+            root_cids.len() >= 2,
+            "expected at least 2 callsite-root arrivals for two f() calls, got {}",
+            root_cids.len()
+        );
+        let unique: std::collections::HashSet<&String> = root_cids.iter().collect();
+        assert_eq!(
+            unique.len(),
+            root_cids.len(),
+            "each callsite must produce a distinct callsite-root CID; got: {:?}",
+            root_cids
+        );
+    }
+
+    // Bug #3: bare Stmt::Expr callsites must be labelled `callsite:<callee>`.
+    #[test]
+    fn bare_expr_callsite_slot_gets_callsite_label() {
+        let src = r#"
+            fn f(x: u32) -> u32 { if x < 10 { panic!(); } x * 2 }
+            fn main() {
+                let y: u32 = 42;
+                f(y);
+            }
+        "#;
+        let f_fn = parse_fn_local(src, "f");
+        let main_fn = parse_fn_local(src, "main");
+        let pre = lift_function_precondition(&f_fn);
+        let s = build_shadow_source(
+            &main_fn,
+            &[CalleeContract {
+                callee_name: "f".to_string(),
+                formal_params: vec!["x".to_string()],
+                precondition: pre,
+            }],
+        );
+        let has_callsite_label = s
+            .slots
+            .iter()
+            .any(|slot| slot.source_kind_label == "callsite:f");
+        assert!(
+            has_callsite_label,
+            "expected a slot with source_kind_label=callsite:f, got labels: {:?}",
+            s.slots
+                .iter()
+                .map(|sl| &sl.source_kind_label)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // Bug #5: edge_memento_value must emit `kind: "contract"` with substrate-parser fields.
+    #[test]
+    fn edge_memento_emits_contract_shape() {
+        let src = r#"
+            fn f(x: u32) -> u32 { if x < 10 { panic!(); } x * 2 }
+            fn main() { let y: u32 = 42; let result = f(y); }
+        "#;
+        let f_fn = parse_fn_local(src, "f");
+        let main_fn = parse_fn_local(src, "main");
+        let pre = lift_function_precondition(&f_fn);
+        let s = build_shadow_source(
+            &main_fn,
+            &[CalleeContract {
+                callee_name: "f".to_string(),
+                formal_params: vec!["x".to_string()],
+                precondition: pre,
+            }],
+        );
+        for (_, arrival) in s.all_arrivals() {
+            let bytes = jcs_bytes_of_value(&edge_memento_value(arrival));
+            let parsed: serde_json::Value =
+                serde_json::from_slice(&bytes).expect("valid JSON from edge_memento_value");
+            assert_eq!(parsed["kind"].as_str(), Some("contract"), "must emit kind:contract");
+            assert_eq!(parsed["schemaVersion"].as_str(), Some("2"), "must emit schemaVersion:2");
+            assert!(parsed["name"].is_string(), "must include name field");
+            assert!(parsed["outBinding"].is_string(), "must include outBinding field");
+            assert!(!parsed["pre"].is_null(), "must include pre field");
+            assert!(!parsed["post"].is_null(), "must include post field");
+            assert!(!parsed["evidence"].is_null(), "must include evidence field");
+        }
     }
 }

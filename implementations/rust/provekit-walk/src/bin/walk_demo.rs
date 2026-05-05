@@ -98,10 +98,12 @@ fn main() {
         second_run_hits,
         second_run_total - second_run_hits
     );
-    println!(
-        "Second-run cache hit rate: {:.1}% — work was cached, not re-derived.",
-        100.0 * second_run_hits as f64 / second_run_total as f64
-    );
+    if second_run_total > 0 {
+        println!(
+            "Second-run cache hit rate: {:.1}% — work was cached, not re-derived.",
+            100.0 * second_run_hits as f64 / second_run_total as f64
+        );
+    }
     assert_eq!(
         s_first.cid, s_second.cid,
         "shadow source CID is deterministic across runs"
@@ -304,12 +306,13 @@ fn all_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
         .sig
         .inputs
         .iter()
-        .filter_map(|arg| match arg {
+        .enumerate()
+        .map(|(i, arg)| match arg {
+            syn::FnArg::Receiver(_) => "__self".to_string(),
             syn::FnArg::Typed(pt) => match &*pt.pat {
-                syn::Pat::Ident(p) => Some(p.ident.to_string()),
-                _ => None,
+                syn::Pat::Ident(p) => p.ident.to_string(),
+                _ => format!("__arg{}", i),
             },
-            _ => None,
         })
         .collect()
 }
@@ -344,10 +347,15 @@ fn print_shadow_source(s: &ShadowSource) {
     }
 
     // Compose the longest chain (per callsite-root) and print its CID.
+    // A callsite-root arrival is the one whose callee_root_cid equals its
+    // own cid — it is the anchor of the chain. Using predecessor_cid.is_none()
+    // is wrong: both the allocation arrival and the callsite root have
+    // predecessor_cid == None (different reasons), so using that predicate
+    // picks whichever one iteration hits first and often selects the allocation.
     if let Some(first_callsite_root) = s
         .slots
         .iter()
-        .flat_map(|s| s.arrivals.iter().filter(|a| a.predecessor_cid.is_none()))
+        .flat_map(|s| s.arrivals.iter().filter(|a| a.callee_root_cid == a.cid))
         .next()
     {
         let chain = collect_chain(s, &first_callsite_root.callee_root_cid);

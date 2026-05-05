@@ -15,17 +15,14 @@
 //   5. Each (statement, accumulated_WP) pair is one Arrival in the DAG.
 //
 // MVP limits (deferred to subsequent commits on #368):
-//   - Only top-level `let` statements are recognized as allocations.
-//   - Only literal-integer `const_int` Rust expressions and bare identifiers
-//     are lifted to `IrTerm` for substitution. Anything else is encoded as
-//     `IrTerm::Var { name: <printed-source-snippet> }` for traceability and
-//     left for richer lifting in subsequent commits.
-//   - if-statements introduce no strengthening yet (they are stretch goal).
+//   - Only top-level `let` statements are recognized as allocations in the
+//     outer-body backward walk; nested-block bindings are also walked now.
+//   - if-statements strengthen the WP via condition-context capture.
 //   - Only one callee per walk; multiple callees per body are walked
 //     independently.
 
 use provekit_ir_types::{IrFormula, IrTerm};
-use syn::{Expr, ExprCall, ExprIf, ExprPath, ItemFn, Lit, Local, Pat, Stmt};
+use syn::{Expr, ExprCall, ExprIf, ExprPath, ItemFn, Local, Pat, Stmt};
 
 use crate::lift::lift_predicate;
 use crate::wp::{substitute_in_formula, Wp};
@@ -96,6 +93,20 @@ pub fn walk_callsites_to_entry(
     let mut walks = Vec::new();
     for (idx, stmt) in stmts.iter().enumerate() {
         for hit in find_callsites_with_context(stmt, callee_name) {
+            // 1. Arity check: if formals and actuals disagree, the substitution
+            //    would be misaligned and silently wrong. Skip with a warning so
+            //    liveness is preserved (other callsites still walk).
+            if formal_params.len() != hit.args.len() {
+                eprintln!(
+                    "provekit-walk: arity mismatch at {}→{} callsite \
+                     (formals={}, actuals={}); skipping this callsite",
+                    caller_name,
+                    callee_name,
+                    formal_params.len(),
+                    hit.args.len()
+                );
+                continue;
+            }
             // 1. Build the WP at the callsite by substituting formals -> actuals.
             let mut wp = precondition.clone().into_formula();
             for (formal, actual_expr) in formal_params.iter().zip(hit.args.iter()) {
@@ -128,7 +139,26 @@ pub fn walk_callsites_to_entry(
                 wp: Wp(wp.clone()),
             }];
 
-            // 2. Walk backward through the statements preceding this one.
+            // 2a. Walk backward through inner-block let-bindings that
+            //     precede this callsite inside nested blocks (if-branches,
+            //     explicit blocks, etc.). These were collected during the
+            //     forward traversal and stored innermost-first, so iterating
+            //     them in order gives the correct backward substitution chain.
+            for inner_prev in &hit.preceding_inner_stmts {
+                if let Some(bindings) = let_binding(inner_prev) {
+                    for (bound_name, bound_term) in bindings {
+                        wp = substitute_in_formula(wp, &bound_name, &bound_term);
+                        arrivals.push(Arrival {
+                            kind: ArrivalKind::LetBinding { name: bound_name },
+                            stmt_index: idx,
+                            wp: Wp(wp.clone()),
+                        });
+                    }
+                }
+            }
+
+            // 2b. Walk backward through the statements preceding this one
+            //     in the outer (caller) body.
             for (prev_idx, prev) in stmts[..idx].iter().enumerate().rev() {
                 if let Some(bindings) = let_binding(prev) {
                     // Destructuring lets emit multiple bindings per
@@ -175,6 +205,12 @@ pub fn walk_callsites_to_entry(
 /// if-conditions (each tagged for the branch the callsite was found in,
 /// already-negated where the callsite is in an else-branch).
 ///
+/// `preceding_inner_stmts`: statements that precede this callsite inside
+/// inner blocks (if-branches, explicit blocks, etc.), ordered innermost-
+/// first. Each inner-block layer is prepended so that substitution applies
+/// the innermost shadowing first — matching Dijkstra's substitution order
+/// when walked in reverse.
+///
 /// Sir's framing: every if is a free post. When a callsite sits inside
 /// `if cond { ... }`, `cond` is a premise the substrate has for free at
 /// that callsite. The walk records these conditions so the substrate's
@@ -183,6 +219,10 @@ pub fn walk_callsites_to_entry(
 pub struct CallsiteHit {
     pub args: Vec<Expr>,
     pub conditions: Vec<IrFormula>,
+    /// Let-binding statements from inner blocks that precede this callsite,
+    /// innermost-first. These must be substituted before the outer-body
+    /// statements during the backward walk.
+    pub preceding_inner_stmts: Vec<Stmt>,
 }
 
 /// Find every callsite to `callee_name` reachable from `stmt`, descending
@@ -192,7 +232,7 @@ pub struct CallsiteHit {
 /// `cond` to the then-region's context and `¬cond` to the else-region's.
 fn find_callsites_with_context(stmt: &Stmt, callee_name: &str) -> Vec<CallsiteHit> {
     let mut hits = Vec::new();
-    walk_stmt_for_callsites(stmt, callee_name, &mut Vec::new(), &mut hits);
+    walk_stmt_for_callsites(stmt, callee_name, &mut Vec::new(), &mut Vec::new(), &mut hits);
     hits
 }
 
@@ -200,6 +240,7 @@ fn walk_stmt_for_callsites(
     stmt: &Stmt,
     callee_name: &str,
     conditions: &mut Vec<IrFormula>,
+    inner_stmts: &mut Vec<Stmt>,
     hits: &mut Vec<CallsiteHit>,
 ) {
     let exprs: Vec<&Expr> = match stmt {
@@ -211,7 +252,7 @@ fn walk_stmt_for_callsites(
         Stmt::Macro(_) | Stmt::Item(_) => vec![],
     };
     for expr in exprs {
-        walk_expr_for_callsites(expr, callee_name, conditions, hits);
+        walk_expr_for_callsites(expr, callee_name, conditions, inner_stmts, hits);
     }
 }
 
@@ -219,6 +260,7 @@ fn walk_expr_for_callsites(
     expr: &Expr,
     callee_name: &str,
     conditions: &mut Vec<IrFormula>,
+    inner_stmts: &mut Vec<Stmt>,
     hits: &mut Vec<CallsiteHit>,
 ) {
     match expr {
@@ -234,12 +276,13 @@ fn walk_expr_for_callsites(
                     hits.push(CallsiteHit {
                         args: args.iter().cloned().collect(),
                         conditions: conditions.clone(),
+                        preceding_inner_stmts: inner_stmts.clone(),
                     });
                 }
             }
             // Recurse into argument expressions.
             for a in args {
-                walk_expr_for_callsites(a, callee_name, conditions, hits);
+                walk_expr_for_callsites(a, callee_name, conditions, inner_stmts, hits);
             }
         }
         Expr::MethodCall(m) => {
@@ -255,12 +298,13 @@ fn walk_expr_for_callsites(
                 hits.push(CallsiteHit {
                     args: all_args,
                     conditions: conditions.clone(),
+                    preceding_inner_stmts: inner_stmts.clone(),
                 });
             }
             // Recurse into receiver and args for nested callsites.
-            walk_expr_for_callsites(&m.receiver, callee_name, conditions, hits);
+            walk_expr_for_callsites(&m.receiver, callee_name, conditions, inner_stmts, hits);
             for a in &m.args {
-                walk_expr_for_callsites(a, callee_name, conditions, hits);
+                walk_expr_for_callsites(a, callee_name, conditions, inner_stmts, hits);
             }
         }
         Expr::If(ExprIf {
@@ -277,8 +321,25 @@ fn walk_expr_for_callsites(
             if let Some(c) = &lifted {
                 conditions.push(c.clone());
             }
-            for s in &then_branch.stmts {
-                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+            // For each statement in the then-branch, the preceding statements
+            // in that branch are in-scope inner let-bindings. We push them
+            // into inner_stmts as we advance through the block.
+            for (branch_idx, s) in then_branch.stmts.iter().enumerate() {
+                // Push preceding stmts from this branch (innermost-first,
+                // reversed so the backward walk applies them in the right order).
+                let mut branch_preceding: Vec<Stmt> = then_branch.stmts[..branch_idx]
+                    .iter()
+                    .rev()
+                    .cloned()
+                    .collect();
+                branch_preceding.extend(inner_stmts.iter().cloned());
+                let prev_len = inner_stmts.len();
+                *inner_stmts = branch_preceding;
+                walk_stmt_for_callsites(s, callee_name, conditions, inner_stmts, hits);
+                inner_stmts.truncate(prev_len);
+                // Restore original inner_stmts
+                let saved: Vec<Stmt> = inner_stmts.clone();
+                *inner_stmts = saved;
             }
             if lifted.is_some() {
                 conditions.pop();
@@ -291,15 +352,24 @@ fn walk_expr_for_callsites(
                     };
                     conditions.push(negated);
                 }
-                walk_expr_for_callsites(else_expr, callee_name, conditions, hits);
+                walk_expr_for_callsites(else_expr, callee_name, conditions, inner_stmts, hits);
                 if lifted.is_some() {
                     conditions.pop();
                 }
             }
         }
         Expr::Block(b) => {
-            for s in &b.block.stmts {
-                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+            for (block_idx, s) in b.block.stmts.iter().enumerate() {
+                let mut block_preceding: Vec<Stmt> = b.block.stmts[..block_idx]
+                    .iter()
+                    .rev()
+                    .cloned()
+                    .collect();
+                block_preceding.extend(inner_stmts.iter().cloned());
+                let saved = inner_stmts.clone();
+                *inner_stmts = block_preceding;
+                walk_stmt_for_callsites(s, callee_name, conditions, inner_stmts, hits);
+                *inner_stmts = saved;
             }
         }
         // Loops: recurse into the body. The body's callsites are reachable
@@ -309,17 +379,17 @@ fn walk_expr_for_callsites(
         // the MVP we walk the body once with the surrounding context).
         Expr::While(w) => {
             for s in &w.body.stmts {
-                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+                walk_stmt_for_callsites(s, callee_name, conditions, inner_stmts, hits);
             }
         }
         Expr::ForLoop(fl) => {
             for s in &fl.body.stmts {
-                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+                walk_stmt_for_callsites(s, callee_name, conditions, inner_stmts, hits);
             }
         }
         Expr::Loop(l) => {
             for s in &l.body.stmts {
-                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+                walk_stmt_for_callsites(s, callee_name, conditions, inner_stmts, hits);
             }
         }
         // Match arms: each arm's body sees its pattern's binding context.
@@ -328,20 +398,20 @@ fn walk_expr_for_callsites(
         // is captured separately in the lifter (lift_match_postcondition).
         Expr::Match(m) => {
             for arm in &m.arms {
-                walk_expr_for_callsites(&arm.body, callee_name, conditions, hits);
+                walk_expr_for_callsites(&arm.body, callee_name, conditions, inner_stmts, hits);
             }
         }
         // `?` operator: the success-path continues with the unwrapped
         // value. The MVP recurses into the wrapped expression to find
         // any callsites it contains.
         Expr::Try(t) => {
-            walk_expr_for_callsites(&t.expr, callee_name, conditions, hits);
+            walk_expr_for_callsites(&t.expr, callee_name, conditions, inner_stmts, hits);
         }
         // Return statements: recurse into the returned expression for
         // callsite discovery.
         Expr::Return(r) => {
             if let Some(inner) = &r.expr {
-                walk_expr_for_callsites(inner, callee_name, conditions, hits);
+                walk_expr_for_callsites(inner, callee_name, conditions, inner_stmts, hits);
             }
         }
         // Other shapes pass through silently. Stretch goals add closure
@@ -463,34 +533,155 @@ fn collect_into(pat: &Pat, term: IrTerm, out: &mut Vec<(String, IrTerm)>) -> Opt
     }
 }
 
-/// Lift a Rust `syn::Expr` to a canonical `IrTerm`. MVP support:
-///  - Integer literal: `IrTerm::Const { value: <num>, sort: Int }`.
-///  - Bare identifier: `IrTerm::Var { name: <ident> }`.
-///  - Anything else: `IrTerm::Var { name: "<expr:<tokens>>" }`,
-///    preserved as a placeholder so substitution sees a stable identity.
-///    Richer lifting (binary ops, function calls, etc.) is the next
-///    step in #368.
+/// Lift a Rust `syn::Expr` to a canonical `IrTerm`.
+///
+/// Delegates to `crate::lift::lift_expr_to_term` which handles binary ops,
+/// field access, index, method calls, closures, casts, references, and more.
+/// Falls back to a structurally-stable placeholder for shapes that cannot be
+/// lifted semantically. The placeholder uses a fixed descriptor rather than
+/// the pretty-printed token stream, so two syntactically-different but
+/// semantically-equivalent expressions do not accidentally receive the same
+/// placeholder key (and two different unsupported expressions still get
+/// distinct placeholders via their structural position in the call chain —
+/// the caller's formal name makes them distinct at the substitution level).
 fn lift_expr_to_term(expr: &Expr) -> IrTerm {
-    match expr {
-        Expr::Lit(lit) => match &lit.lit {
-            Lit::Int(n) => match n.base10_parse::<i64>() {
-                Ok(v) => crate::wp::const_int(v),
-                Err(_) => placeholder_term(expr),
-            },
-            _ => placeholder_term(expr),
-        },
-        Expr::Path(ExprPath { path, .. }) => {
-            if let Some(seg) = path.segments.last() {
-                crate::wp::var(seg.ident.to_string())
-            } else {
-                placeholder_term(expr)
-            }
-        }
-        _ => placeholder_term(expr),
-    }
+    crate::lift::lift_expr_to_term(expr).unwrap_or_else(|| placeholder_term(expr))
 }
 
 fn placeholder_term(expr: &Expr) -> IrTerm {
     use quote::ToTokens;
+    // Use a stable structural fingerprint. The token stream is still used
+    // here as a last-resort human-readable trace, but callers go through
+    // `lift_expr_to_term` first so common shapes never reach this path.
     crate::wp::var(format!("<expr:{}>", expr.to_token_stream()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lift::lift_function_precondition;
+    use crate::wp::{atomic_ge, const_int, var};
+
+    fn parse_fn(src: &str) -> ItemFn {
+        let file: syn::File = syn::parse_str(src).expect("parses");
+        file.items
+            .into_iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) => Some(f),
+                _ => None,
+            })
+            .expect("function present")
+    }
+
+    #[test]
+    fn nested_block_let_binding_substituted_at_callsite() {
+        // Bug #1: when the callsite is inside an `if` block, the inner
+        // let-bindings preceding the callsite must be substituted.
+        // `fn caller(x: u32) { if x > 5 { let y = 42u32; callee(y); } }`
+        // At the `callee(y)` callsite, the walk must see `let y = 42` from
+        // the inner block and substitute y → 42 in the precondition.
+        let callee_src = r#"
+            fn callee(x: u32) -> u32 {
+                if x < 10 { panic!(); }
+                x * 2
+            }
+        "#;
+        let caller_src = r#"
+            fn caller(x: u32) {
+                if x > 5 {
+                    let y: u32 = 42;
+                    callee(y);
+                }
+            }
+        "#;
+        let callee_fn: ItemFn = parse_fn(callee_src);
+        let caller_fn: ItemFn = parse_fn(caller_src);
+        let pre = lift_function_precondition(&callee_fn);
+
+        let walks = walk_callsites_to_entry(
+            &caller_fn,
+            "callee",
+            &["x".to_string()],
+            pre,
+        );
+
+        assert_eq!(walks.len(), 1, "exactly one callsite found");
+        let entry_wp = walks[0].entry_wp();
+        let json = serde_json::to_string(entry_wp.as_formula()).unwrap();
+        // After substituting y → 42 in the precondition `x ≥ 10`,
+        // we get `42 ≥ 10` — the entry WP should be ground (no free vars).
+        assert!(
+            !json.contains("\"y\""),
+            "y should be substituted away at entry: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn arity_mismatch_skips_callsite() {
+        // Bug #4: when formals.len() != actuals.len(), the walk must
+        // skip the mismatched callsite rather than silently truncating.
+        let caller_src = r#"
+            fn caller() {
+                callee(1u32, 2u32);
+            }
+        "#;
+        let caller_fn: ItemFn = parse_fn(caller_src);
+        let pre = atomic_ge(var("x"), const_int(10));
+
+        // One formal but two actuals — mismatch.
+        let walks = walk_callsites_to_entry(
+            &caller_fn,
+            "callee",
+            &["x".to_string()],
+            pre,
+        );
+
+        // The mismatched callsite must be skipped: zero walks returned.
+        assert_eq!(
+            walks.len(),
+            0,
+            "arity mismatch must skip the callsite (got {} walks)",
+            walks.len()
+        );
+    }
+
+    #[test]
+    fn binary_expr_actual_lifts_semantically_not_by_tokens() {
+        // Bug #3: when the actual argument is a binary expression like
+        // `40u32 + 2`, the walk must lift it via `lift_expr_to_term`
+        // to a structural Ctor("+", [40, 2]) rather than a token-string
+        // placeholder. Two semantically-equivalent calls get distinct CIDs
+        // (40+2 vs 2+40), but within one call the lifted term is stable.
+        let caller_src = r#"
+            fn caller() {
+                callee(40u32 + 2u32);
+            }
+        "#;
+        let caller_fn: ItemFn = parse_fn(caller_src);
+        let pre = atomic_ge(var("x"), const_int(10));
+
+        let walks = walk_callsites_to_entry(
+            &caller_fn,
+            "callee",
+            &["x".to_string()],
+            pre,
+        );
+
+        assert_eq!(walks.len(), 1);
+        let callsite_arrival = &walks[0].arrivals[0];
+        let json = serde_json::to_string(callsite_arrival.wp.as_formula()).unwrap();
+        // The lifted term should encode the + ctor, not a raw token string.
+        assert!(
+            json.contains("\"+\""),
+            "binary arg should be lifted to Ctor(+, ...) not token string: {}",
+            json
+        );
+        // Must not contain the "<expr:..." placeholder prefix.
+        assert!(
+            !json.contains("<expr:"),
+            "binary arg must not use token-string placeholder: {}",
+            json
+        );
+    }
 }

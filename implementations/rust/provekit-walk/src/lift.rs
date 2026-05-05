@@ -25,13 +25,15 @@
 //   - early-return patterns beyond `panic!`.
 //   - postcondition lifting from `return` expressions.
 
+use std::collections::HashSet;
+
 use provekit_ir_types::{IrFormula, IrTerm};
 use syn::{
-    BinOp, Expr, ExprBinary, ExprIf, ExprMacro, ExprUnary, ItemFn, Lit, Macro, Stmt, StmtMacro,
-    UnOp,
+    BinOp, Expr, ExprBinary, ExprIf, ExprMacro, ExprUnary, ItemFn, Lit, Local, Macro, Pat, Stmt,
+    StmtMacro, UnOp,
 };
 
-use crate::wp::Wp;
+use crate::wp::{free_vars_formula, Wp};
 
 // ---- LiftCtx: scope-tracked name resolution ----
 //
@@ -131,23 +133,49 @@ pub fn lift_function_precondition(item_fn: &ItemFn) -> Wp {
 /// postcondition is the conjunction of every such derived fact.
 pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
     let mut ctx = LiftCtx::new();
-    let mut accum: Vec<IrFormula> = Vec::new();
 
-    // 1. Same control-flow contributions as the precondition: every
-    //    if-then-panic / assert! / etc. that holds at function entry
-    //    also holds at every return point in the MVP's recognized
-    //    patterns (none of them mutate input variables).
-    for stmt in &item_fn.block.stmts {
+    // 1. Collect entry-assertion contributions, but track which names are
+    //    subsequently shadowed by `let` bindings. An entry assertion
+    //    `assert!(x >= 5)` that is followed LATER by `let x = 0` is UNSOUND to
+    //    copy into the postcondition: after `let x = 0` the name `x` means
+    //    something else. Drop any entry assertion whose free variables are
+    //    shadowed by a `let` at a LATER position in the body.
+    //
+    //    Algorithm: walk statements in order, collecting (formula, position)
+    //    pairs for assertions. Then for each assertion, collect names bound by
+    //    `let` statements that come AFTER the assertion's index, and filter out
+    //    assertions whose free variables overlap those later-bound names.
+    let stmts = &item_fn.block.stmts;
+    let mut entry_assertions: Vec<(IrFormula, usize)> = Vec::new();
+    for (i, stmt) in stmts.iter().enumerate() {
         if let Some(predicate) = lift_stmt_contribution(stmt, &mut ctx) {
-            accum.push(predicate);
+            entry_assertions.push((predicate, i));
         }
     }
+
+    // Keep only assertions whose free variables are NOT shadowed by a LATER
+    // `let` binding. A `let` that precedes the assertion is fine (it introduces
+    // the name the assertion references); only later rebindings are unsound.
+    let mut accum: Vec<IrFormula> = entry_assertions
+        .into_iter()
+        .filter(|(formula, assert_idx)| {
+            let free = free_vars_formula(formula);
+            // Collect names bound by `let` statements at positions AFTER this assertion.
+            let mut later_bound: HashSet<String> = HashSet::new();
+            for stmt in stmts.iter().skip(assert_idx + 1) {
+                collect_let_bound_names(stmt, &mut later_bound);
+            }
+            // Keep this assertion only if none of its free vars are rebound later.
+            free.is_disjoint(&later_bound)
+        })
+        .map(|(formula, _)| formula)
+        .collect();
 
     // 2. Trailing-expression derivation: if the function body ends with
     //    an expression statement (no trailing semicolon), that
     //    expression is the function's return value. Derive
     //    `result = <lifted expression>` and add to the postcondition.
-    if let Some(Stmt::Expr(e, None)) = item_fn.block.stmts.last() {
+    if let Some(Stmt::Expr(e, None)) = stmts.last() {
         if let Some(term) = lift_expr_to_term_inner(e, &mut ctx) {
             let result_var = IrTerm::Var {
                 name: "result".to_string(),
@@ -159,7 +187,79 @@ pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
         }
     }
 
+    // 3. Explicit `return expr;` tails. If the body has an explicit
+    //    `return <expr>;` statement, derive `result = <lifted expr>`.
+    for stmt in stmts {
+        if let Some(formula) = lift_return_stmt_postcondition(stmt, &mut ctx) {
+            accum.push(formula);
+        }
+    }
+
     Wp(simplify_conjunction(accum))
+}
+
+/// Collect all names bound by `let` patterns at the top level of a statement.
+/// Used for the shadowing check in `lift_function_postcondition`.
+fn collect_let_bound_names(stmt: &Stmt, out: &mut HashSet<String>) {
+    if let Stmt::Local(Local { pat, .. }) = stmt {
+        collect_pat_names(pat, out);
+    }
+}
+
+/// Recursively collect all bound names from a pattern.
+fn collect_pat_names(pat: &Pat, out: &mut HashSet<String>) {
+    match pat {
+        Pat::Ident(p) => {
+            out.insert(p.ident.to_string());
+        }
+        Pat::Type(pt) => collect_pat_names(&pt.pat, out),
+        Pat::Reference(r) => collect_pat_names(&r.pat, out),
+        Pat::Paren(p) => collect_pat_names(&p.pat, out),
+        Pat::Tuple(t) => {
+            for sub in &t.elems {
+                collect_pat_names(sub, out);
+            }
+        }
+        Pat::TupleStruct(ts) => {
+            for sub in &ts.elems {
+                collect_pat_names(sub, out);
+            }
+        }
+        Pat::Struct(s) => {
+            for field in &s.fields {
+                collect_pat_names(&field.pat, out);
+            }
+        }
+        Pat::Slice(s) => {
+            for sub in &s.elems {
+                collect_pat_names(sub, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// If a statement is an explicit `return <expr>;`, derive
+/// `result = <lifted expr>`. Returns None for other statement kinds.
+fn lift_return_stmt_postcondition(stmt: &Stmt, ctx: &mut LiftCtx) -> Option<IrFormula> {
+    let expr = match stmt {
+        Stmt::Expr(e, Some(_)) => e, // Expr with trailing semicolon
+        _ => return None,
+    };
+    if let Expr::Return(ret) = expr {
+        if let Some(inner) = &ret.expr {
+            if let Some(term) = lift_expr_to_term_inner(inner, ctx) {
+                let result_var = IrTerm::Var {
+                    name: "result".to_string(),
+                };
+                return Some(IrFormula::Atomic {
+                    name: "=".to_string(),
+                    args: vec![result_var, term],
+                });
+            }
+        }
+    }
+    None
 }
 
 /// What does this single statement contribute to the function's
@@ -181,7 +281,7 @@ fn lift_macro_contribution(mac: &Macro, ctx: &mut LiftCtx) -> Option<IrFormula> 
     let seg = mac.path.segments.last()?;
     let name = seg.ident.to_string();
     match name.as_str() {
-        "assert" | "debug_assert" => {
+        "assert" => {
             let parsed_cond = syn::parse2::<Expr>(mac.tokens.clone()).ok()?;
             // assert!(c) parses to just c. assert!(c, "msg") parses
             // as a tuple-expr; take the first elem.
@@ -191,6 +291,9 @@ fn lift_macro_contribution(mac: &Macro, ctx: &mut LiftCtx) -> Option<IrFormula> 
             };
             lift_predicate_inner(first, ctx)
         }
+        // debug_assert! is compiled out in release builds. Lifting its
+        // predicate as a real contract would misrepresent what holds in
+        // release mode. Skip it entirely.
         _ => None,
     }
 }
@@ -922,6 +1025,115 @@ mod tests {
         assert!(
             json.contains("\"x\""),
             "post should reference the formal x: {}",
+            json
+        );
+    }
+
+    // ---- bug-fix regression tests ----
+
+    #[test]
+    fn debug_assert_not_lifted_to_postcondition() {
+        // Bug #5: `debug_assert!` is compiled out in release builds.
+        // It must NOT contribute to the postcondition.
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: u32) -> u32 {
+                debug_assert!(x >= 5);
+                x * 2
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn);
+        let json = serde_json::to_string(post.as_formula()).unwrap();
+        // The postcondition should NOT include the debug_assert predicate.
+        // It should only have the trailing-expression derivation.
+        assert!(
+            !json.contains("\"≥\""),
+            "debug_assert! must NOT appear in postcondition: {}",
+            json
+        );
+        // The trailing `x * 2` should still derive a result postcondition.
+        assert!(
+            json.contains("\"result\""),
+            "postcondition should still include result = x * 2: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn assert_shadowed_by_later_let_dropped_from_postcondition() {
+        // Bug #6: `assert!(x >= 5); let x = 0; x` — the assert refers to
+        // the original `x`, but `let x = 0` rebinds `x` afterward.
+        // The assert is UNSOUND in the postcondition and must be dropped.
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: u32) -> u32 {
+                assert!(x >= 5);
+                let x = 0u32;
+                x
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn);
+        let json = serde_json::to_string(post.as_formula()).unwrap();
+        // The original assert!(x >= 5) is unsound after let x = 0.
+        // It must NOT appear in the postcondition.
+        assert!(
+            !json.contains("\"≥\""),
+            "shadowed assert! must NOT appear in postcondition: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn assert_not_shadowed_stays_in_postcondition() {
+        // Bug #6 complementary: when no later `let` shadows the assert's
+        // free variables, the assert correctly stays in the postcondition.
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: u32, y: u32) -> u32 {
+                assert!(x >= 5);
+                let z = 0u32;   // shadows `z`, not `x`
+                x + y
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn);
+        let json = serde_json::to_string(post.as_formula()).unwrap();
+        // `x` is NOT rebound; the assert should remain.
+        assert!(
+            json.contains("\"≥\""),
+            "non-shadowed assert! should remain in postcondition: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn explicit_return_derives_result_postcondition() {
+        // Bug #7: `fn f() -> i32 { return x + 1; }` must derive
+        // `result = x + 1` in the postcondition.
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: i32) -> i32 {
+                return x + 1;
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn);
+        let json = serde_json::to_string(post.as_formula()).unwrap();
+        assert!(
+            json.contains("\"result\""),
+            "explicit return expr must derive result = ...: {}",
+            json
+        );
+        assert!(
+            json.contains("\"+\""),
+            "explicit return expr must include the + ctor: {}",
+            json
+        );
+        assert!(
+            json.contains("\"x\""),
+            "explicit return expr must reference x: {}",
             json
         );
     }

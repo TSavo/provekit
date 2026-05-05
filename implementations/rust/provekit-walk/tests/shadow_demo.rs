@@ -301,11 +301,14 @@ fn edge_memento_emits_p_implies_q_over_x() {
     assert_eq!(cid_a, cid_b);
     assert!(cid_a.starts_with("blake3-512:"));
 
-    // Spot-check the memento's JSON structure exposes p, q, and witness.
+    // Spot-check the memento's JSON structure exposes pre, post, and evidence.
+    // The edge memento now emits kind:"contract" (schemaVersion "2") with
+    // pre/post instead of the old p/q fields, and evidence wrapping the witness.
     let json = serde_json::to_string(&serialize_value(&value)).unwrap();
-    assert!(json.contains("\"p\""));
-    assert!(json.contains("\"q\""));
-    assert!(json.contains("\"witness\""));
+    assert!(json.contains("\"pre\""), "expected pre field in contract memento: {}", json);
+    assert!(json.contains("\"post\""), "expected post field in contract memento: {}", json);
+    assert!(json.contains("\"evidence\""), "expected evidence field in contract memento: {}", json);
+    assert!(json.contains("\"kind\":\"contract\""), "expected kind:contract in memento: {}", json);
 }
 
 #[test]
