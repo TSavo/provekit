@@ -647,4 +647,34 @@ mod tests {
             post_str
         );
     }
+
+    // ---- Task A: SwitchInt multi-arm match marriage ----
+
+    #[test]
+    fn marriage_on_match_arms_yields_llbc_extra() {
+        // `fn f(x: u32) { match x { 0 | 1 => panic!(), _ => {} } }`
+        // AST walk: Expr::Match returns None from lift_expr_contribution,
+        // so pre is trivially-true. AST contributes nothing to pre.
+        // LLBC walk: Switch::SwitchInt arm [0,1] leads to Abort (via
+        // fall-through to post-switch Abort). Lifter emits x != 0 /\ x != 1.
+        // Agreement: LlbcExtra (LLBC sees more; AST sees nothing in pre;
+        // both see trivial-true post since fn returns unit).
+        let (ast, llbc) = build_layers("match_arms.rs", "match_arms.llbc", "f");
+        let married = marry(ast, llbc);
+
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::LlbcExtra,
+            "match arms: LLBC contributes != atoms AST doesn't see; got {:?}",
+            married.agreement
+        );
+
+        // The merged pre carries the != atoms from LLBC.
+        let merged_pre_str = serde_json::to_string(&married.merged.pre).unwrap();
+        assert!(
+            merged_pre_str.contains("\u{2260}"),
+            "merged pre includes the != predicate: {}",
+            merged_pre_str
+        );
+    }
 }

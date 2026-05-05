@@ -1726,4 +1726,117 @@ mod tests {
         );
     }
 
+    // ---- Task A: enum variant projection (adt_field_name with variant_id) ----
+    //
+    // These unit tests exercise adt_field_name directly using synthetic
+    // serde_json::json! values, matching the JSON shape confirmed from
+    // the enum_field.llbc fixture. No fixture file or Charon invocation
+    // required. Cross-layer byte equality does NOT hold for enum match
+    // patterns because the AST walk does not lift match arms at all;
+    // this is an LlbcExtra site per paper 07's layered-agreement taxonomy.
+
+    #[test]
+    fn adt_field_name_struct_returns_named_field() {
+        // Struct: kind.Struct = [{name: "x", ...}, {name: "y", ...}]
+        // variant_id = None.
+        let type_decls = serde_json::json!([
+            {
+                "def_id": 0,
+                "kind": {
+                    "Struct": [
+                        {"name": "x", "ty": {}},
+                        {"name": "y", "ty": {}}
+                    ]
+                }
+            }
+        ]);
+        assert_eq!(
+            adt_field_name(&type_decls, 0, None, 0),
+            Some("x".to_string()),
+            "struct field 0 should be named x"
+        );
+        assert_eq!(
+            adt_field_name(&type_decls, 0, None, 1),
+            Some("y".to_string()),
+            "struct field 1 should be named y"
+        );
+    }
+
+    #[test]
+    fn adt_field_name_enum_named_variant_returns_field_name() {
+        // Enum `E { A(u32), B { x: u32 } }`:
+        // kind.Enum[0] = variant A with unnamed field (name: null).
+        // kind.Enum[1] = variant B with named field x.
+        // Matches the JSON shape from tests/fixtures/enum_field.llbc.
+        let type_decls = serde_json::json!([
+            {
+                "def_id": 0,
+                "kind": {
+                    "Enum": [
+                        {
+                            "name": "A",
+                            "fields": [{"name": null, "ty": {}}]
+                        },
+                        {
+                            "name": "B",
+                            "fields": [{"name": "x", "ty": {}}]
+                        }
+                    ]
+                }
+            }
+        ]);
+        // Variant A (idx 0), field 0: unnamed field returns None so the
+        // caller uses the numeric index fallback (.0).
+        assert_eq!(
+            adt_field_name(&type_decls, 0, Some(0), 0),
+            None,
+            "unnamed tuple-variant field should return None (caller uses .0)"
+        );
+        // Variant B (idx 1), field 0: named field "x".
+        assert_eq!(
+            adt_field_name(&type_decls, 0, Some(1), 0),
+            Some("x".to_string()),
+            "named enum variant field should return its source name"
+        );
+    }
+
+    #[test]
+    fn adt_field_name_unknown_adt_id_returns_none() {
+        let type_decls = serde_json::json!([
+            {"def_id": 0, "kind": {"Struct": [{"name": "x", "ty": {}}]}}
+        ]);
+        assert_eq!(
+            adt_field_name(&type_decls, 99, None, 0),
+            None,
+            "unknown adt_id should return None"
+        );
+    }
+
+    #[test]
+    fn adt_field_name_out_of_range_field_idx_returns_none() {
+        let type_decls = serde_json::json!([
+            {"def_id": 0, "kind": {"Struct": [{"name": "x", "ty": {}}]}}
+        ]);
+        assert_eq!(
+            adt_field_name(&type_decls, 0, None, 5),
+            None,
+            "out-of-range field_idx should return None"
+        );
+    }
+
+    // Task B: closure captures.
+    //
+    // Skipped. The Aggregate rvalue in Charon's LLBC uses "Adt" as the
+    // AggregateKind for closures (there is no distinct "Closure" variant in
+    // the JSON). The closure type is an opaque ADT whose def_id points to
+    // the closure type in type_decls, but detecting "this ADT is a closure
+    // type" requires navigating the type_decls table and checking for a
+    // closure-specific marker. That lookup is entangled with generic def_id
+    // resolution machinery not yet at the LLBC layer. Landing a partial match
+    // arm that fires on ANY Adt aggregate would corrupt rvalue_to_ir_term_for_post
+    // for ordinary struct construction. Skipped per the task's explicit
+    // "skip if tangled" discipline.
+    //
+    // The closure_capture.llbc fixture and closure_capture.rs source are
+    // retained in tests/fixtures/ as reference material for a future commit.
 }
