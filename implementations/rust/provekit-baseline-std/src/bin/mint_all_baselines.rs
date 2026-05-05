@@ -20,16 +20,18 @@ use serde::Deserialize;
 
 const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 
+#[allow(dead_code)] // nullary ctor; not used by current predicate set but kept for future extensibility
 fn ctor0(name: &str) -> Rc<Term> {
     Rc::new(Term::Ctor { name: name.into(), args: vec![] })
 }
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor { name: name.into(), args: vec![arg] })
 }
+#[allow(dead_code)] // binary ctor; not used by current predicate set but kept for future extensibility
 fn ctor2(name: &str, a: Rc<Term>, b: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor { name: name.into(), args: vec![a, b] })
 }
-fn ctorN(name: &str, args: Vec<Rc<Term>>) -> Rc<Term> {
+fn ctor_n(name: &str, args: Vec<Rc<Term>>) -> Rc<Term> {
     Rc::new(Term::Ctor { name: name.into(), args })
 }
 
@@ -86,7 +88,7 @@ fn apply_builtin(sig: &str, arity: usize, vars: &[Rc<Term>]) -> Rc<Term> {
     } else if arity == 1 || vars.len() < 2 {
         ctor1(sig, vars.first().cloned().unwrap_or_else(|| Rc::new(Term::Var { name: "_".into() })))
     } else {
-        ctorN(sig, vars[..arity.min(vars.len())].to_vec())
+        ctor_n(sig, vars[..arity.min(vars.len())].to_vec())
     }
 }
 
