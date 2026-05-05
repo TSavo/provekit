@@ -60,8 +60,15 @@ export function canonicalizeSort(sort: Sort): CanonicalSort {
     case "function":
       return {
         kind: "function",
-        domain: sort.domain.map(canonicalizeSort),
-        range: canonicalizeSort(sort.range),
+        args: sort.args.map(canonicalizeSort),
+        return: canonicalizeSort(sort.return),
+      };
+    case "dependent":
+      return {
+        kind: "dependent",
+        name: sort.name,
+        indexVar: sort.indexVar,
+        indexSort: canonicalizeSort(sort.indexSort),
       };
   }
 }

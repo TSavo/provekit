@@ -30,18 +30,26 @@ public sealed interface Sort {
         }
     }
 
-    record Function(Sort[] domain, Sort range) implements Sort {
+    record Function(Sort[] args, Sort ret) implements Sort {
         public String toJson() {
-            StringBuilder sb = new StringBuilder("{\"kind\":\"function\",\"domain\":[");
-            for (int i = 0; i < domain.length; i++) {
+            StringBuilder sb = new StringBuilder("{\"kind\":\"function\",\"args\":[");
+            for (int i = 0; i < args.length; i++) {
                 if (i > 0) sb.append(",");
-                sb.append(domain[i].toJson());
+                sb.append(args[i].toJson());
             }
-            sb.append("],\"range\":");
-            sb.append(range.toJson());
+            sb.append("],\"return\":");
+            sb.append(ret.toJson());
             sb.append("}");
             return sb.toString();
         }
+    }
+
+    record Dependent(String name, String indexVar, Sort indexSort) implements Sort {
+        public String toJson() {
+            return "{\"kind\":\"dependent\",\"name\":\"" + escape(name) + "\",\"indexVar\":\"" + escape(indexVar) + "\",\"indexSort\":" + indexSort.toJson() + "}";
+        }
+
+        public String kind() { return "dependent"; }
     }
 
     Sort Bool = new Primitive("Bool");

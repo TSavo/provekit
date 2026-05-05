@@ -9,7 +9,15 @@ pub fn emit_term(term: &Term) -> String {
     match term {
         Term::Var { name, .. } => name.clone(),
         Term::Const { value, sort, .. } => {
-            let sort_name = match sort { Sort::Primitive { name } => name.as_str() };
+            // Coq: Function/Dependent sorts on a Const are structurally unusual but
+            // not unsound — Coq's higher-order universe permits e.g. `(fun x => x) : nat -> nat`
+            // as a constant inhabiting a function sort. `emit_const_value` ignores the sort name
+            // (it only branches on the JSON value shape), so we feed it the empty string for
+            // non-primitive sorts and let the value's own JSON dictate the surface form.
+            let sort_name = match sort {
+                Sort::Primitive { name } => name.as_str(),
+                Sort::Function { .. } | Sort::Dependent { .. } => "",
+            };
             return emit_const_value(value, sort_name);
         },
         Term::Ctor { name, args, .. } => {
@@ -111,8 +119,39 @@ fn emit_sort(sort: &Sort) -> String {
     "Bool" => "bool".to_string(),
     _ => "Z".to_string(),
 },
+        // FunctionSort: Coq function arrow `A1 -> A2 -> ... -> Ret`. Coq's `->` is
+        // right-associative, so a function-typed argument MUST be parenthesized to
+        // preserve meaning: `(A -> B) -> C` differs from `A -> B -> C`. Soundness
+        // depends on this. Issue #331; see protocol/specs/multi-solver-protocol-v2.md
+        // — Coq's portfolio seat covers higher-order, so this position is NOT opaque.
+        Sort::Function { args, ret } => {
+            let mut parts: Vec<String> = args.iter().map(|a| emit_sort_paren(a)).collect();
+            parts.push(emit_sort_paren(ret));
+            return parts.join(" -> ");
+        },
+        // DependentSort: Coq Π-type. `Vec` indexed by `n: nat` becomes
+        // `forall n : nat, Vec n`. The instantiated form (`<name> <index_var>`)
+        // matches the canonical dependent-product shape in Coq, where the sort
+        // name is applied to the bound index. Issue #331.
+        Sort::Dependent { name, index_var, index_sort } => {
+            return format!("forall {} : {}, {} {}", index_var, emit_sort(index_sort), name, index_var);
+        },
     }
 }
+
+/// Wrap a sort emission in parens when its surface form would re-associate
+/// inside a function arrow chain. `Sort::Function` (right-associative `->`)
+/// and `Sort::Dependent` (leading `forall ...,`) both extend maximally to
+/// the right in Coq's grammar, so an unparenthesized occurrence in argument
+/// position silently changes scope. `Sort::Primitive` is a single token
+/// and needs no wrapping.
+fn emit_sort_paren(sort: &Sort) -> String {
+    match sort {
+        Sort::Function { .. } | Sort::Dependent { .. } => format!("({})", emit_sort(sort)),
+        Sort::Primitive { .. } => emit_sort(sort),
+    }
+}
+
 fn sort_to_coq(sort: &Sort) -> String {
     match sort {
         Sort::Primitive { name } => match name.as_str() {
@@ -121,6 +160,24 @@ fn sort_to_coq(sort: &Sort) -> String {
     "Bool" => "bool".to_string(),
     _ => "Z".to_string(),
 },
+        // Identical Coq syntax to `emit_sort`; this entry point is used in formula
+        // binder positions (Forall/Exists/Choice). See `emit_sort` for soundness
+        // notes on associativity (Function) and Π-type shape (Dependent).
+        Sort::Function { args, ret } => {
+            let mut parts: Vec<String> = args.iter().map(|a| sort_to_coq_paren(a)).collect();
+            parts.push(sort_to_coq_paren(ret));
+            return parts.join(" -> ");
+        },
+        Sort::Dependent { name, index_var, index_sort } => {
+            return format!("forall {} : {}, {} {}", index_var, sort_to_coq(index_sort), name, index_var);
+        },
+    }
+}
+
+fn sort_to_coq_paren(sort: &Sort) -> String {
+    match sort {
+        Sort::Function { .. } | Sort::Dependent { .. } => format!("({})", sort_to_coq(sort)),
+        Sort::Primitive { .. } => sort_to_coq(sort),
     }
 }
 fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {

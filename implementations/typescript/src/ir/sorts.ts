@@ -56,6 +56,6 @@ export function TupleOf(...elements: Sort[]): Sort {
 }
 
 /** Construct a function sort. */
-export function FuncOf(domain: Sort[], range: Sort): Sort {
-  return { kind: "function", domain, range };
+export function FuncOf(args: Sort[], ret: Sort): Sort {
+  return { kind: "function", args, return: ret };
 }

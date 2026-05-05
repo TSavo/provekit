@@ -100,7 +100,8 @@ const PRIMITIVE_SORT_KEYS = ["kind", "name"] as const;
 const BITVEC_SORT_KEYS = ["kind", "width"] as const;
 const SET_SORT_KEYS = ["kind", "element"] as const;
 const TUPLE_SORT_KEYS = ["kind", "elements"] as const;
-const FUNCTION_SORT_KEYS = ["kind", "domain", "range"] as const;
+const FUNCTION_SORT_KEYS = ["kind", "args", "return"] as const;
+const DEPENDENT_SORT_KEYS = ["kind", "name", "indexVar", "indexSort"] as const;
 
 const CANONICAL_PRIMITIVE_SORTS: ReadonlySet<string> = new Set([
   "Bool",
@@ -623,10 +624,12 @@ function parseSortValue(value: unknown, path: string, opts: ParseOptions): Sort 
       return parseTupleSort(obj, path, opts);
     case "function":
       return parseFunctionSort(obj, path, opts);
+    case "dependent":
+      return parseDependentSort(obj, path, opts);
     default:
       throw new GrammarParseError({
         path: `${path}/kind`,
-        expected: '"primitive" | "bitvec" | "set" | "tuple" | "function"',
+        expected: '"primitive" | "bitvec" | "set" | "tuple" | "function" | "dependent"',
         actual: kind,
       });
   }
@@ -704,11 +707,24 @@ function parseFunctionSort(
 ): Sort {
   enforceClosedKeys(obj, path, FUNCTION_SORT_KEYS, []);
   if (opts.strict) enforceKeyOrder(obj, path, FUNCTION_SORT_KEYS);
-  const domain = expectArray(obj["domain"], `${path}/domain`).map((d, i) =>
-    parseSortValue(d, `${path}/domain/${i}`, opts),
+  const args = expectArray(obj["args"], `${path}/args`).map((a, i) =>
+    parseSortValue(a, `${path}/args/${i}`, opts),
   );
-  const range = parseSortValue(obj["range"], `${path}/range`, opts);
-  return { kind: "function", domain, range };
+  const ret = parseSortValue(obj["return"], `${path}/return`, opts);
+  return { kind: "function", args, return: ret };
+}
+
+function parseDependentSort(
+  obj: Record<string, unknown>,
+  path: string,
+  opts: ParseOptions,
+): Sort {
+  enforceClosedKeys(obj, path, DEPENDENT_SORT_KEYS, []);
+  if (opts.strict) enforceKeyOrder(obj, path, DEPENDENT_SORT_KEYS);
+  const name = expectString(obj["name"], `${path}/name`, "string dependent sort name");
+  const indexVar = expectString(obj["indexVar"], `${path}/indexVar`, "string index variable");
+  const indexSort = parseSortValue(obj["indexSort"], `${path}/indexSort`, opts);
+  return { kind: "dependent", name, indexVar, indexSort };
 }
 
 // ---------------------------------------------------------------------------
@@ -1007,8 +1023,17 @@ export function emitSort(s: Sort): string {
       return (
         "{" +
         `"kind":"function",` +
-        `"domain":[${s.domain.map(emitSort).join(",")}],` +
-        `"range":${emitSort(s.range)}` +
+        `"args":[${s.args.map(emitSort).join(",")}],` +
+        `"return":${emitSort(s.return)}` +
+        "}"
+      );
+    case "dependent":
+      return (
+        "{" +
+        `"kind":"dependent",` +
+        `"name":${JSON.stringify(s.name)},` +
+        `"indexVar":${JSON.stringify(s.indexVar)},` +
+        `"indexSort":${emitSort(s.indexSort)}` +
         "}"
       );
   }

@@ -76,7 +76,9 @@ function sortKeySort(s: CanonicalSort): string {
     case "tuple":
       return `T:${s.elements.map(sortKeySort).join(",")}`;
     case "function":
-      return `F:${s.domain.map(sortKeySort).join(",")}:${sortKeySort(s.range)}`;
+      return `F:${s.args.map(sortKeySort).join(",")}:${sortKeySort(s.return)}`;
+    case "dependent":
+      return `D:${s.name}:${s.indexVar}:${sortKeySort(s.indexSort)}`;
   }
 }
 

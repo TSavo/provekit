@@ -256,7 +256,10 @@ class PhpFileParser
                 return new \ProvekIt\Ir\ConnectiveFormula($json['kind'], $ops);
             case 'forall':
             case 'exists':
-                $sort = new \ProvekIt\Ir\Sort($json['sort']['name'] ?? 'Ref');
+                // Sort is abstract; construct the Primitive variant via the
+                // static helper. (Function/Dependent quantifier sorts could
+                // be added here when the lifter starts emitting them.)
+                $sort = \ProvekIt\Ir\Sort::Primitive($json['sort']['name'] ?? 'Ref');
                 return new \ProvekIt\Ir\QuantifierFormula(
                     $json['kind'], $json['name'], $sort,
                     $this->jsonToFormula($json['body'])
@@ -272,7 +275,7 @@ class PhpFileParser
             'var' => new \ProvekIt\Ir\VarTerm($json['name']),
             'const' => new \ProvekIt\Ir\ConstTerm(
                 $json['value'],
-                new \ProvekIt\Ir\Sort($json['sort']['name'] ?? 'Ref')
+                \ProvekIt\Ir\Sort::Primitive($json['sort']['name'] ?? 'Ref')
             ),
             'ctor' => new \ProvekIt\Ir\CtorTerm(
                 $json['name'],

@@ -289,8 +289,15 @@ mint-python: build-rust
 		(echo "FAIL: python self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=python" && exit 1)
 
+.PHONY: build-ruby-ext
+build-ruby-ext:
+	@echo ">> building ruby BLAKE3 C extension (vendored, zero-deps)"
+	@cd implementations/ruby/ext/provekit_blake3 && \
+		(test -f Makefile || ruby extconf.rb >/dev/null) && \
+		$(MAKE) --no-print-directory >/dev/null
+
 .PHONY: mint-ruby
-mint-ruby: build-rust
+mint-ruby: build-rust build-ruby-ext
 	@echo ">> minting ruby self-contracts"
 	@mint_out=$$($(PROVEKIT) mint --kit=ruby --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
@@ -331,9 +338,9 @@ mint-c: build-rust build-c-self-contracts
 # Side A merges (#234, #241, #272, feat/php-kit) and toolchain CI integration
 # (#245 in flight, #274 follow-up).
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-zig
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-ruby mint-zig
 	@echo ""
-	@echo "==== all 9 core self-contract CIDs match pinned values ===="
+	@echo "==== all 10 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
@@ -342,6 +349,7 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python m
 	@printf "  %-8s  %s\n" "java"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/java.json)"
 	@printf "  %-8s  %s\n" "python" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/python.json)"
 	@printf "  %-8s  %s\n" "c"      "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/c.json)"
+	@printf "  %-8s  %s\n" "ruby"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ruby.json)"
 	@printf "  %-8s  %s\n" "zig"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/zig.json)"
 
 # --- Per-kit prove (C1-C8 conformance gate) ----------------------------------
@@ -403,7 +411,7 @@ prove-python: build-rust
 	$(PROVEKIT) prove --kit=python
 
 .PHONY: prove-ruby
-prove-ruby: build-rust
+prove-ruby: build-rust build-ruby-ext
 	@echo ">> proving ruby lift-plugin-protocol conformance (C1-C8)"
 	$(PROVEKIT) prove --kit=ruby
 

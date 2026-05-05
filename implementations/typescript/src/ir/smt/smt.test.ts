@@ -332,9 +332,9 @@ describe("smt/sorts — emitSort", () => {
     );
   });
 
-  it("emits function sorts as (-> dom range)", () => {
+  it("emits function sorts as (-> dom ret)", () => {
     expect(
-      emitSort({ kind: "function", domain: [Int, Real], range: Bool }),
+      emitSort({ kind: "function", args: [Int, Real], return: Bool }),
     ).toBe("(-> Int Real Bool)");
   });
 });
@@ -352,7 +352,7 @@ describe("smt/sorts — collectUserSorts", () => {
     const ux: Sort = { kind: "primitive", name: "USort" };
     collectUserSorts(SetOf(ux), out);
     collectUserSorts({ kind: "tuple", elements: [Int, ux] }, out);
-    collectUserSorts({ kind: "function", domain: [ux], range: ux }, out);
+    collectUserSorts({ kind: "function", args: [ux], return: ux }, out);
     expect([...out]).toEqual(["USort"]);
   });
 });

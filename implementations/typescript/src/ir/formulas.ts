@@ -27,7 +27,8 @@ export type Sort =
   | { kind: "bitvec"; width: number }
   | { kind: "set"; element: Sort }
   | { kind: "tuple"; elements: Sort[] }
-  | { kind: "function"; domain: Sort[]; range: Sort };
+  | { kind: "function"; args: Sort[]; return: Sort }
+  | { kind: "dependent"; name: string; indexVar: string; indexSort: Sort };
 
 // ---------------------------------------------------------------------------
 // Terms
