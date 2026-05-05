@@ -23,7 +23,7 @@ Every if-statement, assertion, and type signature becomes a signed, binding dema
 
 **Bug classes vanish.** NullPointerException is no longer a runtime event. Neither is use-after-free, SQL injection, path traversal, or any bug class your error handlers exist to catch.
 
-**Software engineering shifts.** The artifact stops being code; the artifact is the proof. Code becomes one implementation. Refactoring becomes proof-preserving rewrite. AI becomes a contract-implementation generator.
+**Software engineering shifts.** The artifact is the proof. Code is one implementation. Refactoring becomes proof-preserving rewrite. AI becomes a contract-implementation generator.
 
 **Supply chains compose.** Every dependency's signed contracts compose into your application's verified properties. Dependency confusion becomes arithmetically impossible. SBOMs become meaningful artifacts.
 
