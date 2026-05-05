@@ -275,7 +275,43 @@ True. The response is twofold and identical to After Reputation's. First, the su
 
 It may still fail. Predicting cultural adoption is hard. But the failure modes of "developers do not want this" are different from the failure modes of "the technology cannot ship." The technology ships. The cache grows. The theorem holds.
 
-## §11: The diplomatic substrate framing, extended
+## §11: What you'd reach for first, and why you don't need to
+
+If you read the substrate's claim and then look at the v1.5.0 protocol, you might reach for four things you expect to need. None are needed. The rebuttals are operational discipline you can absorb up front rather than learning by re-implementing.
+
+**You might reach for: edge mementos as a first-class type.**
+
+The substrate is a DAG of cached implications, so the natural artifact is "an edge memento" with structure `(p-CID, q-CID, witness-CID, signer, signature)`. v1.5.0 doesn't have that type.
+
+It doesn't need to. A `ContractDecl` with `pre = p`, `post = q`, with the witness carried in `EvidenceCertificate.proofData`, is byte-equivalent to an edge memento. Content-addressing means equivalent structure hashes to the same CID regardless of what the type is named. ContractDecl-overloading works.
+
+Whether ContractDecl-overloading remains the right collapse at scale, or whether elevation to a first-class `EdgeMemento` type is cleaner, is a question we genuinely don't know yet. The call-edges-as-structured-artifact infrastructure only landed in #348. There is no operational history. Elevating before evidence is over-engineering. Decided by data, year out.
+
+**You might reach for: foundation boundary-provenance vocabulary in the protocol.**
+
+Predicates like `untrusted(x)`, `network_input(x)`, `attacker_controlled(x)`, `freed(p)`, `lock_held(L)` need to be normative for cross-kit propagation to work. Surely the protocol must standardize them?
+
+It doesn't. Catalogs version independently of the protocol. The foundation-baseline catalog (per language) is where standardized predicates land, signed by the canonical authority for each language. The protocol carries arbitrary atomic formulas; the catalog standardizes the vocabulary. Catalog grow is not protocol grow.
+
+**You might reach for: per-language drop-shape mementos.**
+
+For the dropper to write missing code, it needs to know `requires sanitized` translates to `@SafeSQL` in Java, `#[verifier::requires]` in Rust, `assert` in Python. Where does that mapping live? In the protocol?
+
+In the kit. Each kit's dropper is per-kit code with hardcoded knowledge of the host language's idioms for the foundation-catalog predicates it cares about. This scales fine for the launch corpus (a few dozen common predicates). At larger scale, drop-shape mementos may be worth standardizing. Empirical question, decided after operating.
+
+**You might reach for: allocation/read site addressing in the IR.**
+
+The completeness lemma cites `Allocations × Reads`. The IR doesn't have explicit `Allocation` or `Read` types. Surely the IR needs to grow?
+
+It doesn't. The IR's `Lambda` binds (allocation), `Let` binds (allocation), `Var` references (read). The SSA structure is implicit in the binding nesting. Lifters walk the AST and emit the right structure. The Cartesian product is computed kit-side from the existing IR primitives. The IR is at the right granularity.
+
+### The empirical milestone
+
+The right gate for "v1.5.0 IS the substrate" is not a v1.6 bump or a re-read of this paper. It is the conformance epic, tracked at issue #277. Twelve kits producing byte-identical mementos against the same fixtures. The remaining kits are the pressure path; when conformance closes, the substrate-as-substrate claim is empirically grounded by demonstration, not by argument.
+
+This is the milestone that retires the "do we need v1.6" question. Until conformance closes, anyone can construct a hypothetical for which v1.5.0 might be insufficient. After conformance closes, the hypotheticals are decidable empirically against the byte-equivalence record. The discipline is to ship v1.5.0, ship this paper as discipline-on-the-substrate, accumulate operational data, and propose v1.6 only if and when empirical operation surfaces a genuine gap.
+
+## §12: The diplomatic substrate framing, extended
 
 After Reputation argued that ProvekIt is the diplomatic substrate between every truth-claim about software ever made. This paper extends the framing.
 
@@ -289,7 +325,15 @@ This is why "bug classes vanish structurally" is not aspirational rhetoric. It i
 
 What humans contribute, in the long run, is novel witness shapes for genuinely new patterns. Most everyday verification work becomes lookup. The genuinely creative work, designing new safety primitives, becomes the human's. The mechanical work disappears into the substrate.
 
-## §12: What this paper is NOT
+### The same conversation, from two sides
+
+This paper and *The Vertical Stack and the Road to Standardization* (paper 04) are the same conversation seen from two sides. Paper 04 maps what falls out in regulated industries when this paper's discipline is properly applied: DO-178C, Common Criteria EAL5+, ISO 26262, FDA SaMD, FedRAMP, IEC 62304, NIST SSDF, SLSA, the EU Cyber Resilience Act. Each of those frameworks asks for guarantees that prior verification approaches cannot underwrite at scale, because their results are ephemeral and unsigned. The substrate's federated, content-addressed, monotonically-accumulating proof DAG is what underwriters can underwrite.
+
+Paper 04 is the destination. Paper 07 is the path. Without leaf-discharge structural elimination, regulated industries cannot underwrite the substrate's claims. With it, the substrate enters the procurement, certification, and audit pipelines that paper 04 maps. Every chunk of standardization horizon paper 04 catalogs becomes operationally tractable once the discipline of this paper is in place.
+
+The two papers compose: 04 is what discipline-properly-applied gets you in the regulated world; 07 is the discipline that earns those outcomes. Read together, they describe a single arc from "verification today is fragmented and ephemeral" through "the substrate replaces fragmentation with federated proof" to "regulated industries can finally underwrite software the way they underwrite physical engineering."
+
+## §13: What this paper is NOT
 
 - It is not a roadmap for fully automated bug-class elimination across every language at once. The substrate ships incrementally; coverage grows as lifters and droppers extend their reach.
 - It is not a sales pitch. The substrate is the substrate; whether anyone adopts it is a separate question.
@@ -298,7 +342,7 @@ What humans contribute, in the long run, is novel witness shapes for genuinely n
 
 It is an argument that bug-class elimination becomes a theorem rather than a heuristic once the substrate is in place, and that the theorem's proof is constructive and short. The mechanical consequences fall out. The civilizational scale is a property of the substrate, not a marketing claim about it.
 
-## §13: Acknowledgments
+## §14: Acknowledgments
 
 Patrick Cousot and Radhia Cousot framed abstract interpretation in 1977 with the foresight that data-flow analysis is mathematically a Galois connection between concrete and abstract domains. Their framework is the load-bearing mathematics of this paper. The substrate this paper describes is, in the most precise sense, their framework lifted to a content-addressed federated substrate. Fifty years on, their work is still doing the work.
 
@@ -312,7 +356,7 @@ The Apache JCS team page lists the architect of this protocol as a member during
 
 The structural-elimination theorem was articulated in conversation with Claude Opus 4.7 (1M context) on 2026-05-04. The proof is constructive; the framing emerged in dialogue; the responsibility for the substrate's actual operation rests with the maintainers.
 
-## §14: Citation
+## §15: Citation
 
 > Savo, T. (2026). *After Verification: Bug Classes as Missing Edges in the Federated Proof Substrate*. ProvekIt Papers, vol. 7. Content-addressed at: blake3-512:&lt;CID at publication&gt;. Available at https://github.com/TSavo/provekit/blob/main/docs/papers/07-after-verification-bug-classes-as-missing-edges.md.
 
