@@ -454,6 +454,14 @@ fn sort_to_value(s: &Sort) -> Arc<Value> {
                 Value::string("function-or-dependent-sort-not-yet-modeled"),
             ),
         ]),
+        // IEEE-754 float sort (added by #385). Canonical encoding carries
+        // `kind: "float"` and the bit-width so downstream solvers can pick
+        // the right float theory. NaN/inf/ordering semantics are deliberately
+        // NOT modelled at this layer; see Sort::Float doc comment.
+        Sort::Float { width } => Value::object([
+            ("kind", Value::string("float")),
+            ("width", Value::integer(i64::from(*width))),
+        ]),
     }
 }
 

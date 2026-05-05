@@ -45,9 +45,34 @@ use provekit_ir_types::Sort;
 /// This replaces the old `infer_sort` in `contract.rs` and `type_decl.rs`,
 /// which used `quote::ToTokens` + string matching and produced "Int" for
 /// every type that didn't match a hardcoded string arm.
+///
+/// For IEEE-754 float types (`f32`, `f64`), returns `Sort::Float { width }`
+/// directly rather than `Sort::Primitive { name: "F32" }`. All other types
+/// still go through the Primitive path.
 pub fn syn_type_to_sort(ty: &syn::Type) -> Sort {
+    // Peek for float before falling through to the string-name path.
+    if let Some(float_sort) = syn_type_to_float_sort(ty) {
+        return float_sort;
+    }
     let name = syn_type_to_sort_name(ty);
     Sort::Primitive { name }
+}
+
+/// If `ty` is a bare float primitive (`f32` / `f64`), return the
+/// appropriate `Sort::Float { width }`. Returns `None` for all other types.
+fn syn_type_to_float_sort(ty: &syn::Type) -> Option<Sort> {
+    if let syn::Type::Path(p) = ty {
+        let segments = &p.path.segments;
+        if segments.len() == 1 && segments[0].arguments.is_none() {
+            let ident = segments[0].ident.to_string();
+            return match ident.as_str() {
+                "f32" => Some(Sort::Float { width: 32 }),
+                "f64" => Some(Sort::Float { width: 64 }),
+                _ => None,
+            };
+        }
+    }
+    None
 }
 
 fn syn_type_to_sort_name(ty: &syn::Type) -> String {
@@ -214,6 +239,11 @@ fn primitive_sort_name(ident: &str) -> Option<&'static str> {
 /// name: "Unknown" }` for shapes that aren't yet handled (documented
 /// with TODO below).
 ///
+/// For IEEE-754 float types (`{"Literal": {"Float": "F32"}}` /
+/// `{"Literal": {"Float": "F64"}}`), returns `Sort::Float { width }`
+/// directly, which agrees byte-for-byte with `syn_type_to_sort` on
+/// `f32`/`f64`.
+///
 /// To translate a `LlbcLocal`'s type, pass `local.ty_raw()`:
 ///
 /// ```ignore
@@ -225,8 +255,33 @@ fn primitive_sort_name(ident: &str) -> Option<&'static str> {
 /// struct or enum) resolves to the source type name. Pass `None` when
 /// only primitive types are expected (e.g. unit tests).
 pub fn ty_to_sort(ty: Option<&serde_json::Value>, type_decls: Option<&serde_json::Value>) -> Sort {
+    // Peek for float before the string-name path so we return Sort::Float,
+    // not Sort::Primitive { name: "F32" }.
+    if let Some(inner) = ty.and_then(|v| v.get("Untagged")) {
+        if let Some(lit) = inner.get("Literal") {
+            if let Some(float_sort) = charon_float_literal_to_sort(lit) {
+                return float_sort;
+            }
+        }
+    }
     let name = ty_to_sort_name(ty, type_decls);
     Sort::Primitive { name }
+}
+
+/// If the Charon literal JSON is a float type descriptor, return
+/// `Sort::Float { width }`. Returns `None` for non-float literals.
+///
+/// Charon encodes float types as `{"Float": "F32"}` / `{"Float": "F64"}`.
+fn charon_float_literal_to_sort(lit: &serde_json::Value) -> Option<Sort> {
+    let float_tag = lit.get("Float")?.as_str()?;
+    let width = match float_tag {
+        "F16" => 16,
+        "F32" => 32,
+        "F64" => 64,
+        "F128" => 128,
+        _ => return None,
+    };
+    Some(Sort::Float { width })
 }
 
 fn ty_to_sort_name(
@@ -700,5 +755,90 @@ mod tests {
         assert_ne!(foo, bar);
         assert_eq!(foo, Sort::Primitive { name: "Foo".to_string() });
         assert_eq!(bar, Sort::Primitive { name: "Bar".to_string() });
+    }
+
+    // ---- Sort::Float: syn path ----
+
+    #[test]
+    fn syn_f32_produces_float32_sort() {
+        let s = syn_type_to_sort(&parse_ty("f32"));
+        assert_eq!(s, Sort::Float { width: 32 }, "f32 must yield Sort::Float{{32}}");
+    }
+
+    #[test]
+    fn syn_f64_produces_float64_sort() {
+        let s = syn_type_to_sort(&parse_ty("f64"));
+        assert_eq!(s, Sort::Float { width: 64 }, "f64 must yield Sort::Float{{64}}");
+    }
+
+    #[test]
+    fn syn_f32_and_f64_are_distinct() {
+        let a = syn_type_to_sort(&parse_ty("f32"));
+        let b = syn_type_to_sort(&parse_ty("f64"));
+        assert_ne!(a, b, "f32 and f64 must produce distinct Sorts");
+    }
+
+    #[test]
+    fn syn_f64_and_u64_are_distinct() {
+        let f = syn_type_to_sort(&parse_ty("f64"));
+        let u = syn_type_to_sort(&parse_ty("u64"));
+        assert_ne!(f, u, "f64 and u64 must produce distinct Sorts");
+    }
+
+    // ---- Sort::Float: Charon LLBC path ----
+
+    #[test]
+    fn charon_float_f64_produces_float64_sort() {
+        let s = ty_to_sort(
+            Some(&json!({"Untagged": {"Literal": {"Float": "F64"}}})),
+            None,
+        );
+        assert_eq!(s, Sort::Float { width: 64 });
+    }
+
+    #[test]
+    fn charon_float_f32_produces_float32_sort() {
+        let s = ty_to_sort(
+            Some(&json!({"Untagged": {"Literal": {"Float": "F32"}}})),
+            None,
+        );
+        assert_eq!(s, Sort::Float { width: 32 });
+    }
+
+    #[test]
+    fn charon_float_f64_matches_syn_f64() {
+        // Agreement test: f64 via Charon and syn must produce identical Sorts.
+        let charon = ty_to_sort(
+            Some(&json!({"Untagged": {"Literal": {"Float": "F64"}}})),
+            None,
+        );
+        let syn_sort = syn_type_to_sort(&parse_ty("f64"));
+        assert_eq!(charon, syn_sort, "f64 via Charon and syn must agree");
+    }
+
+    #[test]
+    fn charon_float_f32_matches_syn_f32() {
+        let charon = ty_to_sort(
+            Some(&json!({"Untagged": {"Literal": {"Float": "F32"}}})),
+            None,
+        );
+        let syn_sort = syn_type_to_sort(&parse_ty("f32"));
+        assert_eq!(charon, syn_sort, "f32 via Charon and syn must agree");
+    }
+
+    #[test]
+    fn charon_float_f64_is_not_primitive() {
+        // Regression: before #385, float types fell through to
+        // Sort::Primitive { name: "F64" }. This test ensures we no longer
+        // emit the Primitive path for floats.
+        let s = ty_to_sort(
+            Some(&json!({"Untagged": {"Literal": {"Float": "F64"}}})),
+            None,
+        );
+        assert_ne!(
+            s,
+            Sort::Primitive { name: "F64".to_string() },
+            "float sort must NOT be Sort::Primitive after #385"
+        );
     }
 }
