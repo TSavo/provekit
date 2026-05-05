@@ -1,15 +1,82 @@
 lang = "zig"
 kit = "zig-kit"
-language_version = "1.0"
+language_version = "0.13"
 
 [[builtins]]
-name = "zig_std_size"
-signature = "size"
-return_type = "int"
-predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "size", right = 0}}]
+name = "slice_len"
+signature = "slice_len"
+return_type = "usize"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "slice_len", right = 0}}]
 
 [[builtins]]
-name = "zig_std_empty"
-signature = "is_empty"
+name = "slice_eql"
+signature = "slice_eql"
+arity = 2
 return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "ArrayList_len"
+signature = "alist_len"
+return_type = "usize"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "alist_len", right = 0}}]
+
+[[builtins]]
+name = "ArrayList_append"
+signature = "alist_append"
+arity = 2
+return_type = "void"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "ArrayList_pop"
+signature = "alist_pop"
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "HashMap_count"
+signature = "hmap_count"
+return_type = "usize"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "hmap_count", right = 0}}]
+
+[[builtins]]
+name = "HashMap_get"
+signature = "hmap_get"
+arity = 2
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "HashMap_put"
+signature = "hmap_put"
+arity = 3
+return_type = "void"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "GPA_alloc"
+signature = "gpa_alloc"
+arity = 2
+return_type = "slice"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "BoundedArray_len"
+signature = "barr_len"
+return_type = "usize"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "barr_len", right = 0}}]
+
+[[builtins]]
+name = "BoundedArray_get"
+signature = "barr_get"
+arity = 2
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "BoundedArray_set"
+signature = "barr_set"
+arity = 3
+return_type = "void"
 predicates = [{kind = "type_signature"}, {kind = "determinism"}]

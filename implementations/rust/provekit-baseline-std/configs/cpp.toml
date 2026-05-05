@@ -1,15 +1,79 @@
 lang = "cpp"
 kit = "cpp-kit"
-language_version = "1.0"
+language_version = "C++20"
 
 [[builtins]]
-name = "cpp_std_size"
-signature = "size"
-return_type = "int"
-predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "size", right = 0}}]
+name = "string_length"
+signature = "str_len"
+return_type = "size_t"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "str_len", right = 0}}]
 
 [[builtins]]
-name = "cpp_std_empty"
-signature = "is_empty"
+name = "string_substr"
+signature = "str_substr"
+arity = 2
+return_type = "string"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "string_find"
+signature = "str_find"
+arity = 2
+return_type = "size_t"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "vector_size"
+signature = "vec_size"
+return_type = "size_t"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "vec_size", right = 0}}]
+
+[[builtins]]
+name = "vector_push_back"
+signature = "vec_push_back"
+arity = 2
+return_type = "void"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "vector_pop_back"
+signature = "vec_pop_back"
+return_type = "void"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "map_size"
+signature = "map_size"
+return_type = "size_t"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "map_size", right = 0}}]
+
+[[builtins]]
+name = "map_find"
+signature = "map_find"
+arity = 2
+return_type = "iterator"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "optional_has_value"
+signature = "opt_has_value"
 return_type = "bool"
 predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "optional_value"
+signature = "opt_value"
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "unique_ptr_get"
+signature = "uptr_get"
+return_type = "ptr"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "shared_ptr_use_count"
+signature = "sptr_use_count"
+return_type = "long"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "sptr_use_count", right = 0}}]

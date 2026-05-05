@@ -1,15 +1,81 @@
 lang = "python"
 kit = "python-kit"
-language_version = "1.0"
+language_version = "3.12"
 
 [[builtins]]
-name = "python_std_size"
-signature = "size"
+name = "str_len"
+signature = "str_len"
 return_type = "int"
-predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "size", right = 0}}]
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "str_len", right = 0}}]
 
 [[builtins]]
-name = "python_std_empty"
-signature = "is_empty"
+name = "str_split"
+signature = "str_split"
+arity = 2
+return_type = "list"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "str_strip"
+signature = "str_strip"
+return_type = "str"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "str_startswith"
+signature = "str_startswith"
+arity = 2
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "list_len"
+signature = "list_len"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "list_len", right = 0}}]
+
+[[builtins]]
+name = "list_append"
+signature = "list_append"
+arity = 2
+return_type = "void"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "list_pop"
+signature = "list_pop"
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "dict_len"
+signature = "dict_len"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "dict_len", right = 0}}]
+
+[[builtins]]
+name = "dict_get"
+signature = "dict_get"
+arity = 2
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "dict_keys"
+signature = "dict_keys"
+return_type = "list"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "set_add"
+signature = "set_add"
+arity = 2
+return_type = "void"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "set_contains"
+signature = "set_contains"
+arity = 2
 return_type = "bool"
 predicates = [{kind = "type_signature"}, {kind = "determinism"}]

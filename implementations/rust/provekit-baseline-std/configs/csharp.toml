@@ -1,15 +1,83 @@
 lang = "csharp"
 kit = "csharp-kit"
-language_version = "1.0"
+language_version = "12.0"
 
 [[builtins]]
-name = "csharp_std_size"
-signature = "size"
+name = "string_Length"
+signature = "str_len"
 return_type = "int"
-predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "size", right = 0}}]
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "str_len", right = 0}}]
 
 [[builtins]]
-name = "csharp_std_empty"
-signature = "is_empty"
+name = "string_Contains"
+signature = "str_contains"
+arity = 2
 return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "string_Split"
+signature = "str_split"
+arity = 2
+return_type = "array"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "string_Trim"
+signature = "str_trim"
+return_type = "string"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "list_Count"
+signature = "list_count"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "list_count", right = 0}}]
+
+[[builtins]]
+name = "list_Add"
+signature = "list_add"
+arity = 2
+return_type = "void"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "list_Remove"
+signature = "list_remove"
+arity = 2
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "dict_Count"
+signature = "dict_count"
+return_type = "int"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "dict_count", right = 0}}]
+
+[[builtins]]
+name = "dict_TryGetValue"
+signature = "dict_try_get"
+arity = 3
+return_type = "bool"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "linq_FirstOrDefault"
+signature = "first_or_default"
+arity = 2
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "linq_Where"
+signature = "where_filter"
+arity = 2
+return_type = "enumerable"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "linq_Select"
+signature = "select_map"
+arity = 2
+return_type = "enumerable"
 predicates = [{kind = "type_signature"}, {kind = "determinism"}]

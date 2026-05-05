@@ -15,6 +15,13 @@ return_type = "bool"
 predicates = [{kind = "type_signature"}, {kind = "determinism"}]
 
 [[builtins]]
+name = "str_split"
+signature = "str_split"
+arity = 2
+return_type = "vec"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
 name = "vec_len"
 signature = "vec_len"
 return_type = "usize"
@@ -24,7 +31,7 @@ predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", 
 name = "vec_push"
 signature = "vec_push"
 arity = 2
-return_type = "vec"
+return_type = "void"
 predicates = [{kind = "type_signature"}, {kind = "determinism"}]
 
 [[builtins]]
@@ -40,6 +47,12 @@ return_type = "bool"
 predicates = [{kind = "type_signature"}, {kind = "determinism"}]
 
 [[builtins]]
+name = "option_unwrap"
+signature = "opt_unwrap"
+return_type = "object"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
 name = "result_is_ok"
 signature = "res_is_ok"
 return_type = "bool"
@@ -50,3 +63,16 @@ name = "hashmap_len"
 signature = "map_len"
 return_type = "usize"
 predicates = [{kind = "type_signature"}, {kind = "determinism"}, {kind = "gte", args = {left = "map_len", right = 0}}]
+
+[[builtins]]
+name = "hashmap_get"
+signature = "map_get"
+arity = 2
+return_type = "option"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
+
+[[builtins]]
+name = "slice_iter"
+signature = "slice_iter"
+return_type = "iterator"
+predicates = [{kind = "type_signature"}, {kind = "determinism"}]
