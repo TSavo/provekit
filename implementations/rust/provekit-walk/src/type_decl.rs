@@ -464,19 +464,7 @@ fn type_name(ty: &syn::Type) -> String {
 }
 
 fn infer_sort(ty: &syn::Type) -> Sort {
-    use quote::ToTokens;
-    let s = ty.to_token_stream().to_string();
-    let name = match s.trim() {
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-        | "u128" | "usize" => "Int",
-        "bool" => "Bool",
-        "f32" | "f64" => "Real",
-        "String" | "& str" | "&str" => "String",
-        _ => "Int",
-    };
-    Sort::Primitive {
-        name: name.to_string(),
-    }
+    crate::sort_translate::syn_type_to_sort(ty)
 }
 
 fn sort_to_value(s: &Sort) -> Arc<Value> {
@@ -636,5 +624,39 @@ mod tests {
         for (a, b) in set_a.impls.iter().zip(set_b.impls.iter()) {
             assert_eq!(a.cid, b.cid);
         }
+    }
+
+    // ---- Bug #384 A.1: struct-field sort-collapse regression tests ----
+
+    /// struct A { x: Vec<u32> } and struct A { x: SomeStruct } must produce
+    /// DISTINCT struct-decl CIDs. This was the false-collision from the old
+    /// infer_sort that collapsed every non-primitive type to "Int".
+    #[test]
+    fn struct_with_vec_field_distinct_from_struct_with_user_type_field() {
+        let f_vec = parse_file(r#"struct A { x: Vec<u32> }"#);
+        let f_user = parse_file(r#"struct A { x: SomeStruct }"#);
+        let set_vec = lift_file_type_decls(&f_vec, Some("test.rs"));
+        let set_user = lift_file_type_decls(&f_user, Some("test.rs"));
+        assert_eq!(set_vec.structs.len(), 1);
+        assert_eq!(set_user.structs.len(), 1);
+        assert_ne!(
+            set_vec.structs[0].cid, set_user.structs[0].cid,
+            "struct A {{ x: Vec<u32> }} and struct A {{ x: SomeStruct }} must have distinct CIDs"
+        );
+        assert_ne!(
+            set_vec.structs[0].fields[0].1,
+            set_user.structs[0].fields[0].1,
+            "Vec<u32> and SomeStruct field sorts must be distinct"
+        );
+    }
+
+    /// struct A { x: u32 } and struct A { x: bool } must produce distinct CIDs.
+    #[test]
+    fn struct_with_u32_field_distinct_from_bool_field() {
+        let f_u32 = parse_file(r#"struct A { x: u32 }"#);
+        let f_bool = parse_file(r#"struct A { x: bool }"#);
+        let set_u32 = lift_file_type_decls(&f_u32, Some("test.rs"));
+        let set_bool = lift_file_type_decls(&f_bool, Some("test.rs"));
+        assert_ne!(set_u32.structs[0].cid, set_bool.structs[0].cid);
     }
 }

@@ -98,9 +98,17 @@ pub fn lift_llbc_function_with_registry(
     // formals; their source names are preserved by Charon and we use
     // them verbatim so the lifted IR matches the AST walk's variable
     // names byte-for-byte.
+    //
+    // We also capture each formal's Charon Ty as raw JSON (the `ty`
+    // field on each local) so we can derive accurate Sorts below,
+    // replacing the old hardcoded-i64 approach. Local 0 is the return
+    // local; its Ty gives us the return Sort.
     let arg_count = f.arg_count().unwrap_or(0);
-    let formals: Vec<(u32, String)> = f
-        .locals()
+    // Collect locals once into a vec so we can iterate twice.
+    let all_locals: Vec<_> = f.locals().collect();
+
+    let formals: Vec<(u32, String)> = all_locals
+        .iter()
         .filter_map(|l| {
             let i = l.index()?;
             if i == 0 || i as usize > arg_count {
@@ -110,14 +118,27 @@ pub fn lift_llbc_function_with_registry(
         })
         .collect();
 
+    // formal_ty_raws: index → cloned raw Ty JSON for sort derivation.
+    // Index 0 = return local; 1..=arg_count = formals.
+    let formal_ty_raws: std::collections::HashMap<u32, Value> = all_locals
+        .iter()
+        .filter_map(|l| {
+            let i = l.index()?;
+            if i as usize > arg_count {
+                return None; // skip temporaries
+            }
+            l.ty_raw().map(|v| (i, v.clone()))
+        })
+        .collect();
+
     // Build a named-locals map for non-formal locals that have Charon-preserved
     // source names (i.e. let bindings). When tracing through Use-hops, we stop
     // at a named local and emit Var(name) rather than continuing the trace, so
     // that `let y = x; if y < 10 { panic!() }` produces Var("y") (matching the
     // AST walk's surface-level name) rather than tracing all the way back to
     // Var("x").
-    let named_locals: HashMap<u32, String> = f
-        .locals()
+    let named_locals: HashMap<u32, String> = all_locals
+        .iter()
         .filter_map(|l| {
             let i = l.index()?;
             // skip return local (0) and formals (1..=arg_count)
@@ -198,13 +219,29 @@ pub fn lift_llbc_function_with_registry(
     let post_formula = simplify_conjunction(post_contribs);
 
     // We synthesize a syn::ItemFn shell to reuse build_function_contract's
-    // memento-construction machinery — it sets up the locus, sorts,
-    // canonical bytes and CID, but uses our LLBC-derived pre/post
-    // formulas. The shell carries only the function name and formal
-    // sorts; its body is empty (the predicates come from LLBC, not
-    // from the surface AST).
+    // memento-construction machinery — it sets up the locus, canonical
+    // bytes and CID scaffolding, but uses our LLBC-derived pre/post
+    // formulas. The shell carries only the function name; its formal
+    // sorts are derived from Charon's locals table (below), not from
+    // syn type parsing. This eliminates the hardcoded i64 that caused
+    // all formal sorts to collapse to Sort::Primitive { name: "Int" }.
     let item_fn = synth_item_fn(&fn_name, &formals);
     let mut contract = build_function_contract_with_file(&item_fn, None, source_path);
+
+    // Overwrite formal_sorts from Charon's type table. Locals 1..=arg_count
+    // are formals in index order; local 0 is the return value.
+    // sort_translate::ty_to_sort handles the Charon {"Untagged": ...} shape
+    // and agrees byte-for-byte with syn_type_to_sort on primitive shapes,
+    // satisfying the marriage test's byte-equality invariant.
+    contract.formal_sorts = formals
+        .iter()
+        .map(|(idx, _)| {
+            crate::sort_translate::ty_to_sort(formal_ty_raws.get(idx).map(|v| v), type_decls)
+        })
+        .collect();
+    contract.return_sort =
+        crate::sort_translate::ty_to_sort(formal_ty_raws.get(&0).map(|v| v), type_decls);
+
     // Set LLBC-derived effects on the contract before override_formulas so
     // build_memento_value sees the correct effect set when recomputing the CID.
     contract.effects = effects;
@@ -1337,11 +1374,21 @@ fn simplify_conjunction(parts: Vec<IrFormula>) -> IrFormula {
 
 /// Synthesize a minimal `syn::ItemFn` carrying just the name and formal
 /// idents. We reuse `build_function_contract`'s plumbing for sort
-/// extraction and locus, then override pre/post with LLBC-derived
-/// formulas.
+/// Synthesize a minimal syn::ItemFn shell so we can reuse
+/// `build_function_contract_with_file` for locus extraction.
+/// Formals are typed as `()` (Unit) here — their actual sorts are
+/// overwritten from Charon's locals table immediately after the
+/// call returns. The body is empty; all predicates come from LLBC.
+///
+/// We use `()` rather than `i64` (the old approach) because `()` is
+/// a clearly-intentional placeholder and avoids misleading sort output
+/// in the unlikely case where the sort-overwrite path has a bug.
 fn synth_item_fn(name: &str, formals: &[(u32, String)]) -> syn::ItemFn {
     let formal_names: Vec<String> = formals.iter().map(|(_, n)| n.clone()).collect();
-    let formal_args: Vec<String> = formal_names.iter().map(|n| format!("{}: i64", n)).collect();
+    let formal_args: Vec<String> = formal_names
+        .iter()
+        .map(|n| format!("{}: ()", n))
+        .collect();
     let src = format!("fn {}({}) {{}}", name, formal_args.join(", "));
     syn::parse_str::<syn::ItemFn>(&src).expect("synth fn parses")
 }

@@ -843,19 +843,7 @@ fn extract_return_sort(item_fn: &ItemFn) -> Sort {
 }
 
 fn infer_sort(ty: &syn::Type) -> Sort {
-    use quote::ToTokens;
-    let s = ty.to_token_stream().to_string();
-    let name = match s.trim() {
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-        | "u128" | "usize" => "Int",
-        "bool" => "Bool",
-        "f32" | "f64" => "Real",
-        "String" | "& str" | "&str" => "String",
-        _ => "Int", // Conservative default; richer Sort inference is its own issue.
-    };
-    Sort::Primitive {
-        name: name.to_string(),
-    }
+    crate::sort_translate::syn_type_to_sort(ty)
 }
 
 /// Find a top-level `<var> = <expr>` equation in a formula and return
@@ -1074,5 +1062,61 @@ mod tests {
     #[test]
     fn _unused_helpers() {
         let _ = atomic_ge(var("x"), const_int(1));
+    }
+
+    // ---- Bug #384 A.1: sort-collapse regression tests ----
+
+    /// fn f(x: u32) and fn f(x: bool) must produce DISTINCT contracts
+    /// (distinct formal_sorts → distinct content_cid). This was the
+    /// primary false-collision from the old token-string infer_sort.
+    #[test]
+    fn u32_and_bool_formals_produce_distinct_cids() {
+        let f_u32 = build_function_contract(&parse_fn(r#"fn f(x: u32) {}"#), None);
+        let f_bool = build_function_contract(&parse_fn(r#"fn f(x: bool) {}"#), None);
+        assert_ne!(
+            f_u32.cid, f_bool.cid,
+            "u32 and bool formals must produce distinct contract CIDs"
+        );
+        assert_ne!(f_u32.formal_sorts, f_bool.formal_sorts);
+    }
+
+    /// Lifetime annotation on a reference must NOT change the formal sort
+    /// or the contract CID. This was the false-split from whitespace
+    /// tokenisation: &'a str tokenised as "& 'a str" (with spaces)
+    /// fell to the catch-all, while &str matched the explicit arm.
+    #[test]
+    fn ref_lifetime_annotation_does_not_change_cid() {
+        let with_lt = build_function_contract(
+            &parse_fn(r#"fn f<'a>(s: &'a str) {}"#),
+            None,
+        );
+        let without_lt = build_function_contract(
+            &parse_fn(r#"fn f(s: &str) {}"#),
+            None,
+        );
+        assert_eq!(
+            with_lt.formal_sorts, without_lt.formal_sorts,
+            "&'a str and &str must produce the same formal sort"
+        );
+        // CIDs will differ because fn names include the lifetime parameter
+        // in the AST (`fn f<'a>` vs `fn f`), but formal_sorts must agree.
+    }
+
+    /// Vec<u32> and a user struct produce distinct formal sorts.
+    #[test]
+    fn vec_and_user_struct_formals_are_distinct() {
+        let f_vec = build_function_contract(
+            &parse_fn(r#"fn f(x: Vec<u32>) {}"#),
+            None,
+        );
+        let f_struct = build_function_contract(
+            &parse_fn(r#"fn f(x: SomeStruct) {}"#),
+            None,
+        );
+        assert_ne!(
+            f_vec.formal_sorts, f_struct.formal_sorts,
+            "Vec<u32> and SomeStruct formals must produce distinct sorts"
+        );
+        assert_ne!(f_vec.cid, f_struct.cid);
     }
 }

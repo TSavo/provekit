@@ -40,6 +40,7 @@ pub mod marriage;
 pub mod locus;
 pub mod loops_and_exceptions;
 pub mod shadow;
+pub mod sort_translate;
 pub mod type_decl;
 pub mod walk;
 pub mod wp;

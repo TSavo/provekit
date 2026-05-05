@@ -202,6 +202,14 @@ impl<'a> LlbcLocal<'a> {
     pub fn name(&self) -> Option<&'a str> {
         self.raw.get("name")?.as_str()
     }
+
+    /// The local's Charon type as raw JSON. The shape is always
+    /// `{"Untagged": <ty>}` at the top level, matching Charon's
+    /// `Ty` serialization. Use `sort_translate::ty_to_sort` to
+    /// convert to a `Sort`.
+    pub fn ty_raw(&self) -> Option<&'a Value> {
+        self.raw.get("ty")
+    }
 }
 
 /// One LLBC statement. The kind is the discriminator: a single-key
