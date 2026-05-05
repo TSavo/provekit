@@ -54,6 +54,7 @@ use syn::{Expr, ExprUnsafe, FnArg, ItemFn, Pat, Stmt};
 
 use crate::canonical::{cid_of_value, formula_to_canonical, jcs_bytes_of_value};
 use crate::lift::{lift_function_postcondition, lift_function_precondition};
+use crate::locus::Locus;
 use crate::wp::{substitute_in_formula, Wp};
 
 // ---- Effect set ----
@@ -145,6 +146,7 @@ pub struct FunctionContractMemento {
     pub post: IrFormula,
     pub body_cid: Option<String>,
     pub effects: EffectSet,
+    pub locus: Locus,
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
 }
@@ -180,10 +182,22 @@ impl FunctionContractMemento {
 
 /// Build a FunctionContractMemento for an `ItemFn`. The body_cid is
 /// optional — pass None when the body's shadow source isn't computed
-/// (e.g., during a lift-only pass).
+/// (e.g., during a lift-only pass). The locus carries source-position
+/// metadata for downstream developer feedback; pass None to use an
+/// unknown/empty locus.
 pub fn build_function_contract(
     item_fn: &ItemFn,
     body_cid: Option<String>,
+) -> FunctionContractMemento {
+    build_function_contract_with_file(item_fn, body_cid, None)
+}
+
+/// Build a FunctionContractMemento with an explicit source file path
+/// for locus annotation.
+pub fn build_function_contract_with_file(
+    item_fn: &ItemFn,
+    body_cid: Option<String>,
+    file_path: Option<&str>,
 ) -> FunctionContractMemento {
     let fn_name = item_fn.sig.ident.to_string();
     let (formals, formal_sorts) = extract_formals(item_fn);
@@ -191,6 +205,7 @@ pub fn build_function_contract(
     let pre = lift_function_precondition(item_fn).into_formula();
     let post = lift_function_postcondition(item_fn).into_formula();
     let effects = detect_effects(item_fn);
+    let locus = Locus::from_span(item_fn.sig.ident.span(), file_path);
 
     let value = build_value(
         &fn_name,
@@ -201,6 +216,7 @@ pub fn build_function_contract(
         &post,
         body_cid.as_deref(),
         &effects,
+        &locus,
     );
     let canonical_bytes = jcs_bytes_of_value(&value);
     let cid = cid_of_value(&value);
@@ -214,6 +230,7 @@ pub fn build_function_contract(
         post,
         body_cid,
         effects,
+        locus,
         canonical_bytes,
         cid,
     }
@@ -228,6 +245,7 @@ fn build_value(
     post: &IrFormula,
     body_cid: Option<&str>,
     effects: &EffectSet,
+    locus: &Locus,
 ) -> Arc<Value> {
     let formals_arr: Vec<Arc<Value>> = formals.iter().map(|n| Value::string(n.clone())).collect();
     let formal_sorts_arr: Vec<Arc<Value>> =
@@ -247,6 +265,7 @@ fn build_value(
         ("post", formula_to_canonical(post)),
         ("bodyCid", body_cid_val),
         ("effects", effects.to_value()),
+        ("locus", locus.to_value()),
     ])
 }
 
