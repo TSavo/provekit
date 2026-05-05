@@ -49,28 +49,49 @@ pub fn lift_function_precondition(item_fn: &ItemFn) -> Wp {
 }
 
 /// Lift the implicit postcondition from a function body. Returns the
-/// conjunction of predicates that hold at every reachable return point.
+/// conjunction of predicates DERIVED from the body's structure that
+/// hold at every reachable return point.
 ///
-/// Sir's framing: every if-statement is a postcondition, every else is
-/// the contraposition. For if-then-panic, the panic-eliminated branch
-/// is unreachable for the return; the contraposition (¬cond) survives
-/// to every reachable return. For asserts, the asserted predicate
-/// holds afterward.
+/// Derivation sources:
+///   - if-then-panic: ¬cond holds for the non-panic continuation
+///     (Sir's "every if is a free post; every else is the contraposition").
+///   - assert!(c): c holds afterward.
+///   - Trailing return expression: derives `result = <expr>` where
+///     <expr> is lifted to an IrTerm and named-result equates with it.
 ///
-/// In the MVP the postcondition coincides with the precondition for
-/// functions whose body does not mutate input variables: every contract
-/// the body asserts to enter its happy path also holds at the happy
-/// path's return. Richer postconditions (return-value relations,
-/// state mutations) extend this in subsequent commits.
+/// This is real derivation: facts the substrate produces from the
+/// body's structure that did not appear as explicit annotations. The
+/// postcondition is the conjunction of every such derived fact.
 pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
-    // For each top-level statement, the contributions to the
-    // postcondition are exactly the same predicates the precondition
-    // collects. The lifter assumes the body does not reduce or
-    // contradict these predicates by the time control reaches a return
-    // point — true for the MVP's recognized patterns (if-then-panic
-    // and assert!()) because both are fact-introductions for the
-    // continuation, not fact-eliminations.
-    lift_function_precondition(item_fn)
+    let mut accum: Vec<IrFormula> = Vec::new();
+
+    // 1. Same control-flow contributions as the precondition: every
+    //    if-then-panic / assert! / etc. that holds at function entry
+    //    also holds at every return point in the MVP's recognized
+    //    patterns (none of them mutate input variables).
+    for stmt in &item_fn.block.stmts {
+        if let Some(predicate) = lift_stmt_contribution(stmt) {
+            accum.push(predicate);
+        }
+    }
+
+    // 2. Trailing-expression derivation: if the function body ends with
+    //    an expression statement (no trailing semicolon), that
+    //    expression is the function's return value. Derive
+    //    `result = <lifted expression>` and add to the postcondition.
+    if let Some(Stmt::Expr(e, None)) = item_fn.block.stmts.last() {
+        if let Some(term) = lift_expr_to_term(e) {
+            let result_var = IrTerm::Var {
+                name: "result".to_string(),
+            };
+            accum.push(IrFormula::Atomic {
+                name: "=".to_string(),
+                args: vec![result_var, term],
+            });
+        }
+    }
+
+    Wp(simplify_conjunction(accum))
 }
 
 /// What does this single statement contribute to the function's
@@ -173,10 +194,14 @@ pub fn lift_predicate(expr: &Expr) -> Option<IrFormula> {
     }
 }
 
-/// Lift a Rust expression to a canonical `IrTerm`. Currently supports
-/// integer literals and bare identifiers; richer shapes return None
-/// (the lifter falls back to "no contribution" for the surrounding
-/// predicate).
+/// Lift a Rust expression to a canonical `IrTerm`. Supported shapes:
+///   - Integer literal: `IrTerm::Const { value: <num>, sort: Int }`.
+///   - Bare identifier: `IrTerm::Var { name: <ident> }`.
+///   - Parenthesized expression: recurses on the inner expression.
+///   - Binary arithmetic (`+`, `-`, `*`, `/`, `%`): lifts to
+///     `IrTerm::Ctor { name: <op>, args: [lhs_term, rhs_term] }`.
+///   - Unary negation (`-x`): `IrTerm::Ctor { name: "neg", args: [...] }`.
+/// Anything else returns None.
 pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
     match expr {
         Expr::Lit(lit) => match &lit.lit {
@@ -191,6 +216,35 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
             Some(crate::wp::var(seg.ident.to_string()))
         }
         Expr::Paren(p) => lift_expr_to_term(&p.expr),
+        Expr::Binary(ExprBinary {
+            left, op, right, ..
+        }) => {
+            let op_name = match op {
+                BinOp::Add(_) => "+",
+                BinOp::Sub(_) => "-",
+                BinOp::Mul(_) => "*",
+                BinOp::Div(_) => "/",
+                BinOp::Rem(_) => "%",
+                _ => return None,
+            };
+            let l = lift_expr_to_term(left)?;
+            let r = lift_expr_to_term(right)?;
+            Some(IrTerm::Ctor {
+                name: op_name.to_string(),
+                args: vec![l, r],
+            })
+        }
+        Expr::Unary(ExprUnary {
+            op: UnOp::Neg(_),
+            expr,
+            ..
+        }) => {
+            let inner = lift_expr_to_term(expr)?;
+            Some(IrTerm::Ctor {
+                name: "neg".to_string(),
+                args: vec![inner],
+            })
+        }
         _ => None,
     }
 }
@@ -353,5 +407,52 @@ mod tests {
             ],
         };
         assert_eq!(pre.as_formula(), &expected);
+    }
+
+    #[test]
+    fn postcondition_derives_return_value_relation() {
+        // f's body: `if x < 10 panic; x * 2`.
+        // Derived post: `(x ≥ 10) ∧ (result = x * 2)`.
+        // The first conjunct is the contraposition lifted from the
+        // if-then-panic. The second is derived from the trailing
+        // return expression `x * 2`.
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: u32) -> u32 {
+                if x < 10 { panic!(); }
+                x * 2
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn);
+        let json = serde_json::to_string(post.as_formula()).unwrap();
+        assert!(json.contains("\"≥\""), "post should include x ≥ 10: {}", json);
+        // The return-value derivation: result = x * 2.
+        assert!(
+            json.contains("\"result\""),
+            "post should include `result` variable: {}",
+            json
+        );
+        assert!(
+            json.contains("\"*\""),
+            "post should include the multiplication ctor: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn binary_ops_lift_to_ctor_terms() {
+        // `x + 5` lifts to Ctor("+", [Var("x"), Const(5)]).
+        let item_fn = parse_fn(
+            r#"
+            fn k(x: u32) -> u32 {
+                x + 5
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn);
+        let json = serde_json::to_string(post.as_formula()).unwrap();
+        assert!(json.contains("\"+\""), "post should encode the + ctor: {}", json);
+        assert!(json.contains("\"x\""));
     }
 }
