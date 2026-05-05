@@ -24,6 +24,7 @@
 //  - Pointer aliasing.
 
 pub mod canonical;
+pub mod contract;
 pub mod emit;
 pub mod lift;
 pub mod loops_and_exceptions;
