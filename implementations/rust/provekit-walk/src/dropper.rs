@@ -130,26 +130,44 @@ pub struct Gap {
 ///
 /// Currently supports: "not_null".
 ///
-/// Returns one Gap per walk where the gap is detected.
+/// **Skip policy**: if the predicate's argument is not a simple `Var` (e.g.
+/// it is a constructor expression, a function call, or a literal), the
+/// dropper has no concrete identifier to guard. Such gaps are skipped with
+/// a diagnostic to stderr (matching `walk.rs`'s eprintln pattern for
+/// arity-mismatch skips). The gap remains visible to a downstream tool that
+/// inspects walks directly; only the dropper's emission path is best-effort.
+///
+/// Returns one Gap per walk where the gap is detected and a Var argument
+/// was extracted.
 pub fn detect_gaps(walks: &[CallsiteWalk], predicate: &str) -> Vec<Gap> {
     let mut gaps = Vec::new();
     for walk in walks {
         let entry = walk.entry_wp();
-        if formula_contains_predicate(entry.as_formula(), predicate) {
-            let var_name = predicate_var_arg(entry.as_formula(), predicate)
-                .unwrap_or_else(|| "_".to_string());
-            // The callsite is the first arrival in the walk; its stmt_index
-            // is the body position of the callsite statement.
-            let callsite_stmt_index = walk.arrivals.first().map(|a| a.stmt_index).unwrap_or(0);
-            gaps.push(Gap {
-                caller_name: walk.caller_name.clone(),
-                callee_name: walk.callee_name.clone(),
-                predicate: predicate.to_string(),
-                var_name,
-                callsite_stmt_index,
-                entry_wp: entry.clone(),
-            });
+        if !formula_contains_predicate(entry.as_formula(), predicate) {
+            continue;
         }
+        let Some(var_name) = predicate_var_arg(entry.as_formula(), predicate) else {
+            // Non-Var argument: skip with a diagnostic. Matches walk.rs's
+            // arity-mismatch skip pattern (line 100). This preserves liveness
+            // for other walks; the gap is not silently rendered as `_.is_none()`.
+            eprintln!(
+                "provekit-walk/dropper: predicate `{}` in {}->{} entry WP has \
+                 non-Var argument; skipping gap (no concrete identifier to guard)",
+                predicate, walk.caller_name, walk.callee_name
+            );
+            continue;
+        };
+        // The callsite is the first arrival in the walk; its stmt_index
+        // is the body position of the callsite statement.
+        let callsite_stmt_index = walk.arrivals.first().map(|a| a.stmt_index).unwrap_or(0);
+        gaps.push(Gap {
+            caller_name: walk.caller_name.clone(),
+            callee_name: walk.callee_name.clone(),
+            predicate: predicate.to_string(),
+            var_name,
+            callsite_stmt_index,
+            entry_wp: entry.clone(),
+        });
     }
     gaps
 }
@@ -207,38 +225,78 @@ pub enum DropTemplate {
     Expect,
 }
 
+/// Reason a `DropTemplate` cannot currently be rendered to compilable Rust.
+///
+/// The Defensive template is the only currently-renderable variant. The other
+/// three exist in the enum for documenting the policy axis (paper 07 §7), but
+/// their render paths produce uncompilable Rust without additional context
+/// (caller-supplied error types, fresh-name binding for shadowing, etc.).
+/// The render method returns this error rather than emitting broken source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotRenderable {
+    /// The template family is documented but not yet implemented in a
+    /// compilable form. Carries the family name for diagnostic context.
+    Scaffolding {
+        family: &'static str,
+        reason: &'static str,
+    },
+}
+
+impl std::fmt::Display for NotRenderable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NotRenderable::Scaffolding { family, reason } => {
+                write!(f, "DropTemplate::{family} is scaffolding only: {reason}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for NotRenderable {}
+
 impl DropTemplate {
     /// Render the template as Rust source text, with `var` substituted.
+    ///
+    /// Returns `Ok(text)` for the Defensive template, which produces compilable
+    /// guard code. Returns `Err(NotRenderable::Scaffolding)` for the other three
+    /// templates because their render paths produce uncompilable Rust:
+    /// - `Recoverable` references an undefined `NullInput` error type.
+    /// - `EarlyReturn` requires the caller's return type to implement `Default`.
+    /// - `Expect` shadows `var` with the unwrapped type, breaking the callsite.
+    ///
+    /// The non-Defensive variants remain in the enum so the policy axis from
+    /// paper 07 §7 is documented in code, but their render paths are gated
+    /// behind this `Result` until the lifter and dropper are extended to
+    /// produce verified, compilable output for them. See follow-up issues
+    /// (#407 for Expect's shadowing, etc).
     ///
     /// The rendered text is a complete Rust statement (or pair of statements)
     /// that should be inserted immediately before the callsite in the source.
     /// Trailing newline included so splicing is text-clean.
-    pub fn render(&self, var: &str) -> String {
+    pub fn render(&self, var: &str) -> Result<String, NotRenderable> {
         match self {
-            DropTemplate::Defensive => {
-                format!(
-                    "    if {var}.is_none() {{ panic!(\"not_null: {var} must be Some\"); }}\n",
-                    var = var
-                )
-            }
-            DropTemplate::Recoverable => {
-                format!(
-                    "    if {var}.is_none() {{ return Err(NullInput); }}\n",
-                    var = var
-                )
-            }
-            DropTemplate::EarlyReturn => {
-                format!(
-                    "    if {var}.is_none() {{ return Default::default(); }}\n",
-                    var = var
-                )
-            }
-            DropTemplate::Expect => {
-                format!(
-                    "    let {var} = {var}.expect(\"not_null: invariant: caller must supply non-null {var}\");\n",
-                    var = var
-                )
-            }
+            DropTemplate::Defensive => Ok(format!(
+                "    if {var}.is_none() {{ panic!(\"not_null: {var} must be Some\"); }}\n",
+                var = var
+            )),
+            DropTemplate::Recoverable => Err(NotRenderable::Scaffolding {
+                family: "Recoverable",
+                reason:
+                    "render emits `return Err(NullInput)` but no error type is defined; \
+                     pending caller-supplied error_expr support",
+            }),
+            DropTemplate::EarlyReturn => Err(NotRenderable::Scaffolding {
+                family: "EarlyReturn",
+                reason:
+                    "render emits `return Default::default()` which requires the caller's \
+                     return type to implement Default; not closure-verified by current lifter",
+            }),
+            DropTemplate::Expect => Err(NotRenderable::Scaffolding {
+                family: "Expect",
+                reason:
+                    "render shadows the original variable with a different type, breaking \
+                     downstream callsites; pending fresh-name binding (see issue #407)",
+            }),
         }
     }
 
@@ -298,43 +356,74 @@ pub struct EmitResult {
 
 /// Splice the chosen template into `source` for the given gap.
 ///
-/// Insertion strategy: we find the line that is a callsite expression (not a
-/// function definition). A callsite line matches `{callee_name}(` but does
-/// NOT start with `fn ` after trimming. We skip function-signature lines.
-/// This handles the common case where the callee name appears both as a
-/// function definition and as a call expression in the same file.
+/// Insertion strategy is **AST-anchored**, not line-pattern-based:
 ///
-/// Nested callsites (inside if-branches) are deferred to Phase 4.
+/// 1. Parse `source` with `syn::parse_str`.
+/// 2. Locate the function whose `sig.ident` matches `gap.caller_name`.
+///    There may be multiple functions in the file calling the same callee;
+///    we splice into the SPECIFIC caller named by the gap.
+/// 3. Look up `caller.block.stmts[gap.callsite_stmt_index]` and read its
+///    span (`Spanned::span(stmt).start().line`). This is the exact 1-indexed
+///    source line of the callsite statement, robust to multi-line statements,
+///    multi-callsite functions, and shared callee names across functions.
+/// 4. Splice the rendered guard text immediately before that line.
 ///
-/// Returns `None` if the callee call pattern cannot be located in the source.
+/// Nested callsites within compound statements (e.g., inside `if` arms): the
+/// `stmt_index` from the walker still points at the enclosing statement, so
+/// the guard is inserted before the enclosing statement. This is conservative
+/// (the guard runs unconditionally), but correct in the sense that the
+/// invariant holds at the callsite. Per-branch guard placement is deferred.
+///
+/// Returns `None` if:
+/// - the source does not parse, OR
+/// - the named caller is not present in the file, OR
+/// - the `callsite_stmt_index` is out of range for the caller's body, OR
+/// - the chosen template is scaffolding (render returns NotRenderable).
 pub fn emit_drop(
     source: &str,
     gap: &Gap,
     template: DropTemplate,
 ) -> Option<EmitResult> {
-    let guard_text = template.render(&gap.var_name);
+    use syn::spanned::Spanned;
 
-    // Find the line containing the callsite pattern `{callee_name}(` that is
-    // a call expression, not a function definition. A function-definition line
-    // contains `fn ` before the callee name; a call expression line does not.
-    let callee_pattern = format!("{}(", gap.callee_name);
-    let lines: Vec<&str> = source.lines().collect();
+    let guard_text = template.render(&gap.var_name).ok()?;
 
-    let insert_before = lines.iter().position(|l| {
-        let trimmed = l.trim();
-        // Must contain the call pattern.
-        if !trimmed.contains(&callee_pattern) {
-            return false;
+    // Parse the source so we can resolve callsite locations via syn spans
+    // rather than line-pattern matching.
+    let file: syn::File = syn::parse_str(source).ok()?;
+
+    // Locate the SPECIFIC caller named by the gap. This is the P1a fix:
+    // a multi-function file with the same callee in multiple callers must
+    // route the splice to the function named on the gap.
+    let caller_fn = file.items.iter().find_map(|item| {
+        if let syn::Item::Fn(f) = item {
+            if f.sig.ident == gap.caller_name {
+                return Some(f);
+            }
         }
-        // Must NOT be a function definition (fn keyword before callee name).
-        let fn_def_pattern = format!("fn {}", gap.callee_name);
-        !trimmed.starts_with("fn ") && !trimmed.contains(&fn_def_pattern)
+        None
     })?;
+
+    // Resolve the callsite statement by index within the caller's body.
+    let callsite_stmt = caller_fn.block.stmts.get(gap.callsite_stmt_index)?;
+
+    // The span's start line is 1-indexed; convert to 0-indexed for splicing.
+    let callsite_line_1indexed = callsite_stmt.span().start().line;
+    if callsite_line_1indexed == 0 {
+        // Defensive: a span with line 0 would produce an underflow below.
+        return None;
+    }
+    let insert_before_idx = callsite_line_1indexed - 1;
+
+    let lines: Vec<&str> = source.lines().collect();
+    if insert_before_idx >= lines.len() {
+        return None;
+    }
 
     let guard_trimmed = guard_text.trim_end_matches('\n');
     let mut result_lines: Vec<&str> = Vec::with_capacity(lines.len() + 1);
     for (i, line) in lines.iter().enumerate() {
-        if i == insert_before {
+        if i == insert_before_idx {
             // Insert guard before the callsite line.
             result_lines.push(guard_trimmed);
         }
@@ -346,7 +435,7 @@ pub fn emit_drop(
         modified_source,
         template,
         var_name: gap.var_name.clone(),
-        insert_line: insert_before + 1, // 1-indexed
+        insert_line: callsite_line_1indexed,
     })
 }
 
@@ -487,22 +576,92 @@ pub fn verify_closure(
 
 // ---- Public API ----
 
-/// Run all three phases (detect + lookup + emit) for a source file and
-/// a known callee precondition. Returns the emit result for the first
-/// gap found using the default (Defensive) template.
+/// Reasons `drop_gap` may fail to produce a verified, closing emission.
 ///
-/// This is the main entry point for the dropper's end-to-end path.
+/// All variants are recoverable and inspectable. The `ClosureVerificationFailed`
+/// variant carries the failed `EmitResult` so callers can see the proposed
+/// emission even when re-lift didn't confirm DAG closure (useful for
+/// debugging the dropper or extending the verifier).
+#[derive(Debug, Clone)]
+pub enum DropFailure {
+    /// The source could not be parsed as a Rust file.
+    SourceParseFailed,
+    /// The named caller function does not appear in the source.
+    CallerNotFound { caller_name: String },
+    /// No gap matching `predicate` was detected in any walk from the caller.
+    NoGapDetected { predicate: String },
+    /// The predicate has no template family in the kit's `templates_for` table.
+    UnknownPredicate { predicate: String },
+    /// The requested template is not currently a verified candidate for this
+    /// predicate. For the MVP, only `DropTemplate::Defensive` is verified.
+    TemplateNotCandidate {
+        predicate: String,
+        requested: DropTemplate,
+    },
+    /// The template's render path is scaffolding-only (see `NotRenderable`).
+    NotRenderable(NotRenderable),
+    /// `emit_drop` could not splice the source (parse failure, missing caller,
+    /// or out-of-range stmt_index).
+    EmitFailed,
+    /// The emission was produced but `verify_closure` could not confirm that
+    /// the gap is structurally discharged after re-lift. The proposed
+    /// `EmitResult` is included for inspection.
+    ClosureVerificationFailed { emit: EmitResult },
+}
+
+impl std::fmt::Display for DropFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DropFailure::SourceParseFailed => write!(f, "source did not parse as Rust"),
+            DropFailure::CallerNotFound { caller_name } => {
+                write!(f, "caller `{caller_name}` not found in source")
+            }
+            DropFailure::NoGapDetected { predicate } => {
+                write!(f, "no gap for predicate `{predicate}` detected in any walk")
+            }
+            DropFailure::UnknownPredicate { predicate } => {
+                write!(f, "predicate `{predicate}` has no template family in this kit")
+            }
+            DropFailure::TemplateNotCandidate { predicate, requested } => {
+                write!(
+                    f,
+                    "template {:?} is not a verified candidate for predicate `{predicate}`",
+                    requested
+                )
+            }
+            DropFailure::NotRenderable(e) => write!(f, "{e}"),
+            DropFailure::EmitFailed => write!(f, "emit_drop could not splice the source"),
+            DropFailure::ClosureVerificationFailed { .. } => {
+                write!(f, "emission produced but re-lift did not confirm DAG closure")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DropFailure {}
+
+/// Run all four steps of the dropper end-to-end: detect, lookup, emit, **verify**.
+///
+/// This is the main entry point for the dropper. Per paper 07 §7, an emission
+/// that does not actually close the gap is not generative completion. This
+/// function therefore calls `verify_closure` after `emit_drop` and only
+/// returns `Ok(EmitResult)` when re-lift structurally confirms the gap is
+/// discharged. Failed verifications return `Err(DropFailure::ClosureVerificationFailed)`
+/// carrying the proposed emission for inspection.
+///
 /// Phase 4 (mint-on-miss via solver portfolio) is deferred.
 ///
 /// Parameters:
 /// - `source`: the Rust source text containing both the callee and caller.
 /// - `callee_name`: the function whose precondition has a gap.
+/// - `caller_name`: the function calling `callee_name` where the gap arises.
 /// - `callee_formal_params`: formal parameter names for the callee.
 /// - `callee_precondition`: the WP representing the callee's precondition.
 /// - `predicate`: the leaf predicate name to look for (e.g. "not_null").
-/// - `template`: which drop template to use (default: Defensive).
+/// - `template`: which drop template to use.
 ///
-/// Returns `None` if no gap is found or no template matches the predicate.
+/// Errors are returned as `DropFailure` rather than `None` so callers can
+/// distinguish parse failures from missing gaps from verification failures.
 pub fn drop_gap(
     source: &str,
     callee_name: &str,
@@ -511,40 +670,76 @@ pub fn drop_gap(
     callee_precondition: Wp,
     predicate: &str,
     template: DropTemplate,
-) -> Option<EmitResult> {
-    let file: syn::File = syn::parse_str(source).ok()?;
+) -> Result<EmitResult, DropFailure> {
+    let file: syn::File =
+        syn::parse_str(source).map_err(|_| DropFailure::SourceParseFailed)?;
 
-    let caller_fn = file.items.iter().find_map(|item| {
-        if let syn::Item::Fn(f) = item {
-            if f.sig.ident == caller_name {
-                return Some(f.clone());
+    let caller_fn = file
+        .items
+        .iter()
+        .find_map(|item| {
+            if let syn::Item::Fn(f) = item {
+                if f.sig.ident == caller_name {
+                    return Some(f.clone());
+                }
             }
-        }
-        None
-    })?;
+            None
+        })
+        .ok_or_else(|| DropFailure::CallerNotFound {
+            caller_name: caller_name.to_string(),
+        })?;
 
     // Phase 1: detect gaps.
     let walks = walk_callsites_to_entry(
         &caller_fn,
         callee_name,
         callee_formal_params,
-        callee_precondition,
+        callee_precondition.clone(),
     );
     let gaps = detect_gaps(&walks, predicate);
-    let gap = gaps.into_iter().next()?;
+    let gap = gaps
+        .into_iter()
+        .next()
+        .ok_or_else(|| DropFailure::NoGapDetected {
+            predicate: predicate.to_string(),
+        })?;
 
     // Phase 2: look up candidate templates.
     let candidates = templates_for(predicate);
     if candidates.is_empty() {
-        return None;
+        return Err(DropFailure::UnknownPredicate {
+            predicate: predicate.to_string(),
+        });
     }
-    // Verify the requested template is in the candidate list.
     if !candidates.contains(&template) {
-        return None;
+        return Err(DropFailure::TemplateNotCandidate {
+            predicate: predicate.to_string(),
+            requested: template,
+        });
     }
 
+    // Pre-render check: surface NotRenderable as a structured error rather
+    // than letting emit_drop swallow it as None.
+    template
+        .render(&gap.var_name)
+        .map_err(DropFailure::NotRenderable)?;
+
     // Phase 3: emit.
-    emit_drop(source, &gap, template)
+    let emit = emit_drop(source, &gap, template).ok_or(DropFailure::EmitFailed)?;
+
+    // Phase 4 (verification, not solver-portfolio): re-lift and confirm closure.
+    // The advisor flagged this as a correctness blocker -- a caller using
+    // drop_gap must only get back emissions that ACTUALLY close the gap.
+    if !verify_closure(
+        &emit.modified_source,
+        &gap,
+        callee_formal_params,
+        callee_precondition,
+    ) {
+        return Err(DropFailure::ClosureVerificationFailed { emit });
+    }
+
+    Ok(emit)
 }
 
 // ---- Tests ----
@@ -668,50 +863,67 @@ fn caller(x: u32) { f(x); }
 
     #[test]
     fn defensive_template_renders_panic_shape() {
-        let rendered = DropTemplate::Defensive.render("x");
+        let rendered = DropTemplate::Defensive
+            .render("x")
+            .expect("Defensive must render OK");
         assert!(rendered.contains("x.is_none()"), "must guard x");
         assert!(rendered.contains("panic!"), "must panic on violation");
         assert!(rendered.contains("not_null"), "panic msg must name invariant");
     }
 
     #[test]
-    fn recoverable_template_renders_err_shape() {
-        let rendered = DropTemplate::Recoverable.render("x");
-        assert!(rendered.contains("x.is_none()"), "must guard x");
-        assert!(rendered.contains("return Err"), "must return Err");
-    }
-
-    #[test]
-    fn early_return_template_renders_default_shape() {
-        let rendered = DropTemplate::EarlyReturn.render("x");
-        assert!(rendered.contains("x.is_none()"), "must guard x");
-        assert!(rendered.contains("Default::default()"), "must return default");
-    }
-
-    #[test]
-    fn expect_template_renders_expect_shape() {
-        let rendered = DropTemplate::Expect.render("x");
-        assert!(rendered.contains(".expect("), "must call .expect()");
-        assert!(rendered.contains("not_null"), "expect msg must name invariant");
-    }
-
-    #[test]
-    fn all_templates_substitute_var_name() {
-        let templates = [
-            DropTemplate::Defensive,
-            DropTemplate::Recoverable,
-            DropTemplate::EarlyReturn,
-            DropTemplate::Expect,
-        ];
-        for tmpl in &templates {
-            let rendered = tmpl.render("my_var");
-            assert!(
-                rendered.contains("my_var"),
-                "{} template must contain var name 'my_var': {}",
-                tmpl.family_name(),
-                rendered
-            );
+    fn recoverable_template_returns_not_renderable() {
+        // Recoverable's render path emits `return Err(NullInput)` referencing
+        // an undefined error type. Per P1c, render returns NotRenderable rather
+        // than producing uncompilable Rust. Match the Scaffolding variant
+        // rather than asserting a specific message; the message text is a
+        // doc-only diagnostic and can be tightened without breaking the test.
+        let result = DropTemplate::Recoverable.render("x");
+        let err = result.expect_err("Recoverable must return NotRenderable");
+        match err {
+            NotRenderable::Scaffolding { family, .. } => {
+                assert_eq!(family, "Recoverable");
+            }
         }
+    }
+
+    #[test]
+    fn early_return_template_returns_not_renderable() {
+        let result = DropTemplate::EarlyReturn.render("x");
+        let err = result.expect_err("EarlyReturn must return NotRenderable");
+        match err {
+            NotRenderable::Scaffolding { family, .. } => {
+                assert_eq!(family, "EarlyReturn");
+            }
+        }
+    }
+
+    #[test]
+    fn expect_template_returns_not_renderable() {
+        // Expect would shadow `var` with the unwrapped type, breaking the
+        // callsite. Render returns NotRenderable until issue #407 lands a
+        // fresh-name binding.
+        let result = DropTemplate::Expect.render("x");
+        let err = result.expect_err("Expect must return NotRenderable");
+        match err {
+            NotRenderable::Scaffolding { family, .. } => {
+                assert_eq!(family, "Expect");
+            }
+        }
+    }
+
+    #[test]
+    fn defensive_template_substitutes_var_name() {
+        // Only Defensive is currently renderable; other variants return
+        // NotRenderable and are exercised by their dedicated tests above.
+        let rendered = DropTemplate::Defensive
+            .render("my_var")
+            .expect("Defensive renders OK");
+        assert!(
+            rendered.contains("my_var"),
+            "Defensive template must contain var name 'my_var': {}",
+            rendered
+        );
     }
 
     // ---- Phase 3: source emission tests ----
@@ -841,8 +1053,7 @@ fn caller(x: u32) { f(x); }
             DropTemplate::Defensive,
         );
 
-        assert!(result.is_some(), "drop_gap must succeed for not_null fixture");
-        let emit = result.unwrap();
+        let emit = result.expect("drop_gap must succeed for not_null fixture");
         assert_eq!(emit.template, DropTemplate::Defensive);
         assert_eq!(emit.var_name, "x");
         // The modified source must be parseable.
@@ -852,5 +1063,270 @@ fn caller(x: u32) { f(x); }
         let guard_pos = emit.modified_source.find("x.is_none()").expect("guard present");
         let callsite_pos = emit.modified_source.find("f(x)").expect("callsite present");
         assert!(guard_pos < callsite_pos, "guard before callsite");
+    }
+
+    // ---- P1b: drop_gap calls verify_closure ----
+
+    #[test]
+    fn drop_gap_returns_template_not_candidate_for_scaffolding() {
+        // Recoverable is in the enum but not in templates_for("not_null"),
+        // so drop_gap should return TemplateNotCandidate (NOT swallow as None).
+        let result = drop_gap(
+            FIXTURE_SRC,
+            "f",
+            "caller",
+            &["x".to_string()],
+            not_null_wp("x"),
+            "not_null",
+            DropTemplate::Recoverable,
+        );
+        match result {
+            Err(DropFailure::TemplateNotCandidate { requested, .. }) => {
+                assert_eq!(requested, DropTemplate::Recoverable);
+            }
+            other => panic!("expected TemplateNotCandidate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn drop_gap_returns_no_gap_detected_for_unrelated_predicate() {
+        // The fixture's WP is `not_null(x)`. Querying for an unrelated
+        // predicate ("some_unknown_predicate") never matches the WP, so
+        // no gap is detected. This is the documented short-circuit before
+        // template lookup -- detect_gaps runs first.
+        let result = drop_gap(
+            FIXTURE_SRC,
+            "f",
+            "caller",
+            &["x".to_string()],
+            not_null_wp("x"),
+            "some_unknown_predicate",
+            DropTemplate::Defensive,
+        );
+        match result {
+            Err(DropFailure::NoGapDetected { predicate }) => {
+                assert_eq!(predicate, "some_unknown_predicate");
+            }
+            other => panic!("expected NoGapDetected, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn drop_gap_returns_unknown_predicate_when_gap_exists_but_no_table_entry() {
+        // To hit UnknownPredicate, a gap MUST be detected first. We
+        // synthesize a precondition with predicate `unknown_pred(x)` and
+        // query for the same predicate. detect_gaps emits the gap;
+        // templates_for("unknown_pred") returns &[] -> UnknownPredicate.
+        let unknown_pred_wp = Wp(IrFormula::Atomic {
+            name: "unknown_pred".to_string(),
+            args: vec![IrTerm::Var {
+                name: "x".to_string(),
+            }],
+        });
+        let result = drop_gap(
+            FIXTURE_SRC,
+            "f",
+            "caller",
+            &["x".to_string()],
+            unknown_pred_wp,
+            "unknown_pred",
+            DropTemplate::Defensive,
+        );
+        match result {
+            Err(DropFailure::UnknownPredicate { predicate }) => {
+                assert_eq!(predicate, "unknown_pred");
+            }
+            other => panic!("expected UnknownPredicate, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn drop_gap_returns_caller_not_found_for_missing_caller() {
+        let result = drop_gap(
+            FIXTURE_SRC,
+            "f",
+            "nonexistent_caller",
+            &["x".to_string()],
+            not_null_wp("x"),
+            "not_null",
+            DropTemplate::Defensive,
+        );
+        match result {
+            Err(DropFailure::CallerNotFound { caller_name }) => {
+                assert_eq!(caller_name, "nonexistent_caller");
+            }
+            other => panic!("expected CallerNotFound, got {:?}", other),
+        }
+    }
+
+    // ---- P1a: multi-function placement (acceptance test) ----
+
+    #[test]
+    fn emit_drop_routes_to_correct_caller_in_multi_function_file() {
+        // Two callers, both call `f`. Only `caller_a` has a gap (passes a Var
+        // expression `x`). `caller_b` passes the same name but is a separate
+        // function -- the guard must land in `caller_a`'s body, NOT before
+        // `caller_b`'s call to `f`.
+        let src = "\
+fn f(x: Option<i32>) -> i32 {
+    x.unwrap()
+}
+
+fn caller_a(x: Option<i32>) {
+    f(x);
+}
+
+fn caller_b(x: Option<i32>) {
+    f(x);
+}
+";
+        let file: syn::File = syn::parse_str(src).expect("parses");
+        let caller_a = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == "caller_a" => Some(f.clone()),
+                _ => None,
+            })
+            .expect("caller_a fn");
+
+        let precondition = not_null_wp("x");
+        let walks =
+            walk_callsites_to_entry(&caller_a, "f", &["x".to_string()], precondition);
+        let gaps = detect_gaps(&walks, "not_null");
+        assert_eq!(gaps.len(), 1, "one gap in caller_a");
+        let gap = &gaps[0];
+        assert_eq!(gap.caller_name, "caller_a");
+
+        let result = emit_drop(src, gap, DropTemplate::Defensive).expect("emit succeeds");
+
+        // The guard line must be between caller_a's `fn` line and caller_b's
+        // `fn` line. We assert the structural invariant on the modified source.
+        let modified = &result.modified_source;
+        let caller_a_pos = modified.find("fn caller_a").expect("caller_a present");
+        let caller_b_pos = modified.find("fn caller_b").expect("caller_b present");
+        let guard_pos = modified.find("x.is_none()").expect("guard present");
+        assert!(
+            caller_a_pos < guard_pos && guard_pos < caller_b_pos,
+            "guard must land between caller_a and caller_b. \
+             caller_a@{}, guard@{}, caller_b@{}\nmodified:\n{}",
+            caller_a_pos,
+            guard_pos,
+            caller_b_pos,
+            modified
+        );
+
+        // Also: the modified source must parse cleanly (no broken Rust).
+        syn::parse_str::<syn::File>(modified).expect("modified source parses");
+    }
+
+    #[test]
+    fn emit_drop_routes_to_correct_callsite_in_multi_callsite_function() {
+        // Caller has TWO callsites to `f` separated by a let-binding. The gap
+        // points at the SECOND callsite (callsite_stmt_index = 2). The guard
+        // must land before the second callsite, not the first.
+        let src = "\
+fn f(x: Option<i32>) -> i32 {
+    x.unwrap()
+}
+
+fn caller(x: Option<i32>) {
+    f(x);
+    let y = x;
+    f(y);
+}
+";
+        let file: syn::File = syn::parse_str(src).expect("parses");
+        let caller_fn = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == "caller" => Some(f.clone()),
+                _ => None,
+            })
+            .expect("caller fn");
+
+        let precondition = not_null_wp("x");
+        let walks =
+            walk_callsites_to_entry(&caller_fn, "f", &["x".to_string()], precondition);
+        let gaps = detect_gaps(&walks, "not_null");
+        // Both callsites produce gaps (two separate walks). Pick the second gap
+        // explicitly by stmt_index.
+        assert!(gaps.len() >= 2, "two callsites yield two gaps");
+        let second_gap = gaps
+            .iter()
+            .find(|g| g.callsite_stmt_index == 2)
+            .expect("gap at stmt_index 2 (second f call)");
+
+        let result =
+            emit_drop(src, second_gap, DropTemplate::Defensive).expect("emit succeeds");
+        let modified = &result.modified_source;
+
+        // Locate the guard and the two callsites in the modified text.
+        // The guard must land BETWEEN the let-binding line and the second
+        // callsite, NOT before the first callsite.
+        let first_call_pos = modified.find("f(x);").expect("first call f(x) present");
+        let let_y_pos = modified.find("let y").expect("let y present");
+        let second_call_pos = modified.find("f(y);").expect("second call f(y) present");
+        let guard_pos = modified.find("is_none()").expect("guard present");
+
+        assert!(
+            first_call_pos < let_y_pos,
+            "first callsite must precede let-binding"
+        );
+        assert!(
+            let_y_pos < guard_pos,
+            "guard must follow let-binding (not precede first callsite)"
+        );
+        assert!(
+            guard_pos < second_call_pos,
+            "guard must precede second callsite"
+        );
+
+        syn::parse_str::<syn::File>(modified).expect("modified source parses");
+    }
+
+    // ---- P1d: detect_gaps skips non-Var arguments ----
+
+    #[test]
+    fn detect_gaps_skips_non_var_predicate_arg() {
+        // Construct a walks list with an entry WP whose predicate argument is
+        // NOT a Var (it's a Const). detect_gaps must skip rather than emit a
+        // Gap with var_name = "_". We synthesize a CallsiteWalk with a
+        // hand-crafted entry arrival containing the non-Var predicate.
+        use crate::walk::{Arrival, ArrivalKind, CallsiteWalk};
+        use crate::wp::const_int;
+
+        let non_var_formula = IrFormula::Atomic {
+            name: "not_null".to_string(),
+            args: vec![const_int(0)],
+        };
+        let walk = CallsiteWalk {
+            caller_name: "caller".to_string(),
+            callee_name: "f".to_string(),
+            arrivals: vec![
+                Arrival {
+                    kind: ArrivalKind::Callsite {
+                        callee: "f".to_string(),
+                    },
+                    stmt_index: 0,
+                    wp: Wp(non_var_formula.clone()),
+                },
+                Arrival {
+                    kind: ArrivalKind::FunctionEntry {
+                        fn_name: "caller".to_string(),
+                    },
+                    stmt_index: 1,
+                    wp: Wp(non_var_formula),
+                },
+            ],
+        };
+
+        let gaps = detect_gaps(std::slice::from_ref(&walk), "not_null");
+        assert!(
+            gaps.is_empty(),
+            "non-Var predicate argument must be skipped, got gaps: {:?}",
+            gaps
+        );
     }
 }

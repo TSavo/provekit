@@ -63,7 +63,7 @@ pub use shadow::{
 };
 pub use dropper::{
     detect_gaps, drop_gap, emit_drop, formula_contains_predicate, predicate_var_arg,
-    templates_for, verify_closure, DropTemplate, EmitResult, Gap,
+    templates_for, verify_closure, DropFailure, DropTemplate, EmitResult, Gap, NotRenderable,
 };
 pub use walk::{walk_callsites_to_entry, Arrival, CallsiteWalk};
 pub use wp::{
