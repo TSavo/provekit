@@ -24,9 +24,10 @@
 //   - Only one callee per walk; multiple callees per body are walked
 //     independently.
 
-use provekit_ir_types::IrTerm;
-use syn::{Expr, ExprCall, ExprPath, ItemFn, Lit, Local, Pat, Stmt};
+use provekit_ir_types::{IrFormula, IrTerm};
+use syn::{Expr, ExprCall, ExprIf, ExprPath, ItemFn, Lit, Local, Pat, Stmt};
 
+use crate::lift::lift_predicate;
 use crate::wp::{substitute_in_formula, Wp};
 
 /// One step in the walk. Records the WP that holds at this AST location
@@ -94,12 +95,29 @@ pub fn walk_callsites_to_entry(
     let stmts: &[Stmt] = &caller.block.stmts;
     let mut walks = Vec::new();
     for (idx, stmt) in stmts.iter().enumerate() {
-        for callsite_args in find_callsites_in_stmt(stmt, callee_name) {
+        for hit in find_callsites_with_context(stmt, callee_name) {
             // 1. Build the WP at the callsite by substituting formals -> actuals.
             let mut wp = precondition.clone().into_formula();
-            for (formal, actual_expr) in formal_params.iter().zip(callsite_args.iter()) {
+            for (formal, actual_expr) in formal_params.iter().zip(hit.args.iter()) {
                 let actual_term = lift_expr_to_term(actual_expr);
                 wp = substitute_in_formula(wp, formal, &actual_term);
+            }
+            // Premise the WP on every in-scope if-condition: if any of the
+            // surrounding conditions failed, the callsite would not have
+            // been reached, so the WP would not need to hold. Encode this
+            // as `(c1 ∧ c2 ∧ ...) → wp` — the conditions are free posts
+            // at the callsite, available as premises for substrate
+            // discharge.
+            if !hit.conditions.is_empty() {
+                let premise = match hit.conditions.len() {
+                    1 => hit.conditions[0].clone(),
+                    _ => IrFormula::And {
+                        operands: hit.conditions.clone(),
+                    },
+                };
+                wp = IrFormula::Implies {
+                    operands: vec![premise, wp],
+                };
             }
 
             let mut arrivals = vec![Arrival {
@@ -147,12 +165,38 @@ pub fn walk_callsites_to_entry(
 
 // ----- internals -----
 
-/// Find every direct call to `callee_name` in `stmt`. Returns the actual
-/// argument expressions of each found callsite. MVP supports calls in
-/// `let _ = f(...)`, expression statements, and assignments; nested calls
-/// are walked too.
-fn find_callsites_in_stmt(stmt: &Stmt, callee_name: &str) -> Vec<Vec<Expr>> {
+/// One callsite found during context-aware traversal: the actual
+/// arguments at the callsite, plus the conjunction of in-scope
+/// if-conditions (each tagged for the branch the callsite was found in,
+/// already-negated where the callsite is in an else-branch).
+///
+/// Sir's framing: every if is a free post. When a callsite sits inside
+/// `if cond { ... }`, `cond` is a premise the substrate has for free at
+/// that callsite. The walk records these conditions so the substrate's
+/// downstream discharge can use them.
+#[derive(Debug, Clone)]
+pub struct CallsiteHit {
+    pub args: Vec<Expr>,
+    pub conditions: Vec<IrFormula>,
+}
+
+/// Find every callsite to `callee_name` reachable from `stmt`, descending
+/// into if-statement branches and tracking the surrounding condition
+/// context. The condition context flips sign when descending into the
+/// else-branch: `if cond { then-region } else { else-region }` adds
+/// `cond` to the then-region's context and `¬cond` to the else-region's.
+fn find_callsites_with_context(stmt: &Stmt, callee_name: &str) -> Vec<CallsiteHit> {
     let mut hits = Vec::new();
+    walk_stmt_for_callsites(stmt, callee_name, &mut Vec::new(), &mut hits);
+    hits
+}
+
+fn walk_stmt_for_callsites(
+    stmt: &Stmt,
+    callee_name: &str,
+    conditions: &mut Vec<IrFormula>,
+    hits: &mut Vec<CallsiteHit>,
+) {
     let exprs: Vec<&Expr> = match stmt {
         Stmt::Local(local) => match &local.init {
             Some(init) => vec![init.expr.as_ref()],
@@ -162,30 +206,81 @@ fn find_callsites_in_stmt(stmt: &Stmt, callee_name: &str) -> Vec<Vec<Expr>> {
         Stmt::Macro(_) | Stmt::Item(_) => vec![],
     };
     for expr in exprs {
-        collect_calls(expr, callee_name, &mut hits);
+        walk_expr_for_callsites(expr, callee_name, conditions, hits);
     }
-    hits
 }
 
-fn collect_calls(expr: &Expr, callee_name: &str, out: &mut Vec<Vec<Expr>>) {
-    if let Expr::Call(ExprCall { func, args, .. }) = expr {
-        if let Expr::Path(ExprPath { path, .. }) = func.as_ref() {
-            if path
-                .segments
-                .last()
-                .map(|s| s.ident == callee_name)
-                .unwrap_or(false)
-            {
-                out.push(args.iter().cloned().collect());
+fn walk_expr_for_callsites(
+    expr: &Expr,
+    callee_name: &str,
+    conditions: &mut Vec<IrFormula>,
+    hits: &mut Vec<CallsiteHit>,
+) {
+    match expr {
+        Expr::Call(ExprCall { func, args, .. }) => {
+            // Direct call check at this expression.
+            if let Expr::Path(ExprPath { path, .. }) = func.as_ref() {
+                if path
+                    .segments
+                    .last()
+                    .map(|s| s.ident == callee_name)
+                    .unwrap_or(false)
+                {
+                    hits.push(CallsiteHit {
+                        args: args.iter().cloned().collect(),
+                        conditions: conditions.clone(),
+                    });
+                }
+            }
+            // Recurse into argument expressions.
+            for a in args {
+                walk_expr_for_callsites(a, callee_name, conditions, hits);
             }
         }
-        // Walk nested calls inside arguments too.
-        for a in args {
-            collect_calls(a, callee_name, out);
+        Expr::If(ExprIf {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        }) => {
+            // Lift the condition; if it doesn't lift to an IrFormula we
+            // proceed without adding a context entry (the walker is
+            // best-effort: missing conditions are equivalent to `true`).
+            let lifted = lift_predicate(cond);
+            // Then-branch: condition holds.
+            if let Some(c) = &lifted {
+                conditions.push(c.clone());
+            }
+            for s in &then_branch.stmts {
+                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+            }
+            if lifted.is_some() {
+                conditions.pop();
+            }
+            // Else-branch: ¬condition holds.
+            if let Some((_, else_expr)) = else_branch {
+                if let Some(c) = &lifted {
+                    let negated = IrFormula::Not {
+                        operands: vec![c.clone()],
+                    };
+                    conditions.push(negated);
+                }
+                walk_expr_for_callsites(else_expr, callee_name, conditions, hits);
+                if lifted.is_some() {
+                    conditions.pop();
+                }
+            }
         }
+        Expr::Block(b) => {
+            for s in &b.block.stmts {
+                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+            }
+        }
+        // Other shapes (loops, match, etc.) would recurse here in a richer
+        // walker. The MVP exercises Call, If, Block; other shapes pass
+        // through silently.
+        _ => {}
     }
-    // Other expression shapes (Block, If, Match, etc.) would recurse here in
-    // a richer walker. The MVP fixture doesn't exercise them.
 }
 
 /// If `stmt` is a `let pat = expr;` binding, return the bound name and
