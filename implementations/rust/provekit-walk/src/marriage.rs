@@ -423,14 +423,23 @@ mod tests {
             "merged pre includes the slice length via PtrMetadata lift: {}",
             merged_pre_str
         );
-        // LLBC contributes at least one atom AST didn't.
-        assert!(
-            matches!(
-                married.agreement,
-                LayerAgreement::LlbcExtra | LayerAgreement::Both
-            ),
-            "MIR sees the bounds check; AST doesn't. got {:?}",
+        // LLBC contributes the BoundsCheck atom; AST sees no guard.
+        // After the Index-rvalue post-collapse fix, both layers derive
+        // `result = s[i]`, so the only asymmetry is the pre-side bounds
+        // check — agreement collapses to LlbcExtra exactly.
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::LlbcExtra,
+            "MIR sees the bounds check; both layers agree on post. got {:?}",
             married.agreement
+        );
+
+        // Both layers derive the result = s[i] postcondition.
+        let merged_post_str = serde_json::to_string(&married.merged.post).unwrap();
+        assert!(
+            merged_post_str.contains("index"),
+            "merged post carries the index postcondition (result = s[i]): {}",
+            merged_post_str
         );
     }
 
@@ -454,13 +463,51 @@ mod tests {
             "merged pre includes the ≠ predicate: {}",
             merged_pre_str
         );
-        assert!(
-            matches!(
-                married.agreement,
-                LayerAgreement::LlbcExtra | LayerAgreement::Both
-            ),
-            "MIR sees the div-by-zero check; AST doesn't. got {:?}",
+        // After the BinaryOp object-form fix, both layers derive
+        // `result = x / y`, so the only asymmetry is the pre-side
+        // div-by-zero atom — agreement collapses to LlbcExtra exactly.
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::LlbcExtra,
+            "MIR sees div-by-zero check; both layers agree on post. got {:?}",
             married.agreement
+        );
+    }
+
+    #[test]
+    fn marriage_on_multihop_let_binding_yields_identical() {
+        // `fn f(x: u32) { let y = x; if y < 10 { panic!(); } }`
+        //
+        // AST walk sees `if y < 10 { panic!() }` and produces
+        // `Atomic("≥", [Var("y"), Const(10)])` — `y` is a free Var at
+        // the surface level.
+        //
+        // LLBC walk traces back through the discriminant chain:
+        //   _3 := BinaryOp(Lt, Move(_4), Const(10))
+        //   _4 := Use(Copy(_2))   -- _2 has source name "y"
+        //   _2 := Use(Copy(_1))   -- _1 is formal "x"
+        //
+        // Without the named-local stop rule, LLBC would trace through
+        // _2 to _1 and emit Var("x"), diverging from the AST walk's
+        // Var("y"). With the stop rule: when _2 has name="y" in
+        // Charon's locals table, we stop and emit Var("y") — matching
+        // AST byte-for-byte. Agreement is Identical.
+        let (ast, llbc) = build_layers("multihop.rs", "multihop.llbc", "f");
+        let married = marry(ast, llbc);
+
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::Identical,
+            "named-local stop rule: LLBC stops at Var(y) matching AST. got {:?}",
+            married.agreement
+        );
+
+        // The pre formula is (y >= 10).
+        let pre_str = serde_json::to_string(&married.merged.pre).unwrap();
+        assert!(
+            pre_str.contains("\"y\""),
+            "pre references the let-binding name y, not the formal x: {}",
+            pre_str
         );
     }
 
