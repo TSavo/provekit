@@ -195,8 +195,6 @@ A `LoopInvariantMemento` discharges exactly ONE `OpaqueLoop` effect — the one 
 }
 ```
 
-In this example `decreasingFunctionHash` is absent from `header` because... wait, the example has `decreasingFunction` in metadata but no `decreasingFunctionHash` in header. Per §4.1 that is a reject. Corrected:
-
 ```json
 {
   "envelope": {
