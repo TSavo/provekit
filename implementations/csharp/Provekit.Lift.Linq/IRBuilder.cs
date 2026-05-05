@@ -28,6 +28,8 @@ namespace Provekit.Lift.Linq;
 public abstract record Sort
 {
     public sealed record Primitive(string Name) : Sort;
+    public sealed record Function(Sort[] Args, Sort Return) : Sort;
+    public sealed record Dependent(string Name, string IndexVar, Sort IndexSort) : Sort;
 }
 
 public abstract record Term
@@ -213,8 +215,31 @@ public static class IREmit
         switch (s)
         {
             case Sort.Primitive p:
+                // Locked key order: kind, name.
                 sb.Append("{\"kind\":\"primitive\",\"name\":");
                 WriteString(sb, p.Name);
+                sb.Append('}');
+                return;
+            case Sort.Function f:
+                // Locked key order: kind, args, return — JCS-alphabetical.
+                sb.Append("{\"args\":[");
+                for (int i = 0; i < f.Args.Length; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    WriteSort(sb, f.Args[i]);
+                }
+                sb.Append("],\"kind\":\"function\",\"return\":");
+                WriteSort(sb, f.Return);
+                sb.Append('}');
+                return;
+            case Sort.Dependent d:
+                // Locked key order: kind, name, indexVar, indexSort — JCS-alphabetical.
+                sb.Append("{\"indexSort\":");
+                WriteSort(sb, d.IndexSort);
+                sb.Append(",\"indexVar\":");
+                WriteString(sb, d.IndexVar);
+                sb.Append(",\"kind\":\"dependent\",\"name\":");
+                WriteString(sb, d.Name);
                 sb.Append('}');
                 return;
         }
