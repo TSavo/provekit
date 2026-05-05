@@ -9,7 +9,13 @@ pub fn emit_term(term: &Term) -> String {
     match term {
         Term::Var { name, .. } => name.clone(),
         Term::Const { value, sort, .. } => {
-            let sort_name = match sort { Sort::Primitive { name } => name.as_str() };
+            let sort_name = match sort {
+                Sort::Primitive { name } => name.as_str(),
+                // FunctionSort/DependentSort: deferred to #331 (Coq compiler v1.5.0 grammar grow).
+                Sort::Function { .. } | Sort::Dependent { .. } => {
+                    unimplemented!("FunctionSort/DependentSort: deferred to #331 (Coq)")
+                }
+            };
             return emit_const_value(value, sort_name);
         },
         Term::Ctor { name, args, .. } => {
@@ -111,6 +117,10 @@ fn emit_sort(sort: &Sort) -> String {
     "Bool" => "bool".to_string(),
     _ => "Z".to_string(),
 },
+        // FunctionSort/DependentSort: deferred to #331 (Coq compiler v1.5.0 grammar grow).
+        Sort::Function { .. } | Sort::Dependent { .. } => {
+            unimplemented!("FunctionSort/DependentSort: deferred to #331 (Coq)")
+        }
     }
 }
 fn sort_to_coq(sort: &Sort) -> String {
@@ -121,6 +131,10 @@ fn sort_to_coq(sort: &Sort) -> String {
     "Bool" => "bool".to_string(),
     _ => "Z".to_string(),
 },
+        // FunctionSort/DependentSort: deferred to #331 (Coq compiler v1.5.0 grammar grow).
+        Sort::Function { .. } | Sort::Dependent { .. } => {
+            unimplemented!("FunctionSort/DependentSort: deferred to #331 (Coq)")
+        }
     }
 }
 fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
