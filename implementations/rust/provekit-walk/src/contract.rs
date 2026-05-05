@@ -351,6 +351,120 @@ pub fn compose_function_contracts(
     })
 }
 
+/// Compose with the inner being an already-composed contract. Used
+/// during chain folding so each step keeps composing without losing
+/// the previous composition's CID.
+pub fn compose_with_composed(
+    outer: &FunctionContractMemento,
+    inner: &ComposedFunctionContract,
+    formal_idx: usize,
+) -> Option<ComposedFunctionContract> {
+    if !outer.is_pure() {
+        return None;
+    }
+    if formal_idx >= outer.formals.len() {
+        return None;
+    }
+
+    // The inner ComposedFunctionContract's post still has the result-
+    // equation form (because outer's post was substituted into it
+    // during the prior compose step). Extract it directly without
+    // renaming — the inner's CID-namespaced result name is preserved.
+    let inner_value = find_result_equation(&inner.post, "result").or_else(|| {
+        // Fallback: scan for any result__-prefixed equation.
+        find_namespaced_result(&inner.post)
+    })?;
+
+    let outer_formal = &outer.formals[formal_idx];
+    let outer_pre_substituted =
+        substitute_in_formula(outer.pre.clone(), outer_formal, &inner_value);
+    let outer_post_substituted =
+        substitute_in_formula(outer.post.clone(), outer_formal, &inner_value);
+
+    let pre = IrFormula::And {
+        operands: vec![
+            inner.pre.clone(),
+            IrFormula::Implies {
+                operands: vec![inner.post.clone(), outer_pre_substituted],
+            },
+        ],
+    };
+    let post = outer_post_substituted;
+
+    let mut components = vec![outer.cid.clone()];
+    components.extend(inner.component_cids.iter().cloned());
+    let component_values: Vec<Arc<Value>> =
+        components.iter().map(|c| Value::string(c.clone())).collect();
+    let value = Value::object([
+        ("schemaVersion", Value::string("1")),
+        ("kind", Value::string("composed-function-contract")),
+        ("components", Value::array(component_values)),
+        ("formalIdx", Value::integer(formal_idx as i64)),
+        ("pre", formula_to_canonical(&pre)),
+        ("post", formula_to_canonical(&post)),
+    ]);
+    let canonical_bytes = jcs_bytes_of_value(&value);
+    let cid = cid_of_value(&value);
+
+    Some(ComposedFunctionContract {
+        component_cids: components,
+        formal_idx,
+        pre,
+        post,
+        canonical_bytes,
+        cid,
+    })
+}
+
+/// One step in an N-deep chain composition. The contract receives the
+/// previous step's result at `formal_idx`. The first step's formal_idx
+/// is unused (it's the chain's source).
+#[derive(Debug, Clone, Copy)]
+pub struct ChainStep<'a> {
+    pub contract: &'a FunctionContractMemento,
+    pub formal_idx: usize,
+}
+
+/// Compose a chain of pure function contracts left-to-right. Each
+/// step's contract receives the previous step's result at its
+/// `formal_idx`-th formal. Returns None if any contract is impure or
+/// the chain is shorter than 2 steps.
+///
+/// The chain's overall CID is derivable from its component CIDs in
+/// order — re-composing the same chain produces the same CID
+/// byte-for-byte.
+pub fn compose_chain_contracts(steps: &[ChainStep<'_>]) -> Option<ComposedFunctionContract> {
+    if steps.len() < 2 {
+        return None;
+    }
+    let mut acc = compose_function_contracts(
+        steps[1].contract,
+        steps[0].contract,
+        steps[1].formal_idx,
+    )?;
+    for step in &steps[2..] {
+        acc = compose_with_composed(step.contract, &acc, step.formal_idx)?;
+    }
+    Some(acc)
+}
+
+fn find_namespaced_result(formula: &IrFormula) -> Option<IrTerm> {
+    match formula {
+        IrFormula::Atomic { name, args } if name == "=" && args.len() == 2 => {
+            for (var_arg, value_arg) in [(&args[0], &args[1]), (&args[1], &args[0])] {
+                if let IrTerm::Var { name: n } = var_arg {
+                    if n.starts_with("result__") {
+                        return Some(value_arg.clone());
+                    }
+                }
+            }
+            None
+        }
+        IrFormula::And { operands } => operands.iter().find_map(find_namespaced_result),
+        _ => None,
+    }
+}
+
 // ---- Effect detection ----
 
 fn detect_effects(item_fn: &ItemFn) -> EffectSet {

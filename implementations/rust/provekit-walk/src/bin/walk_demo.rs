@@ -141,7 +141,97 @@ fn main() {
     print_shadow_source(&s_multi);
     print_cache_stats(&cache3);
 
+    println!(
+        "\n----------------------------------------------------------\n\
+         Demo 4: pure-function bundle compression (#376).\n\
+         Each function emits a FunctionContractMemento with effect-set.\n\
+         Composing two pure contracts (f ∘ g) by hash combination\n\
+         collapses into a single composed CID — paper 07 §6's\n\
+         'compose for free, compress to nothing' made empirical.\n\
+         ----------------------------------------------------------\n"
+    );
+
+    demo_pure_composition();
+
     println!("\n== Demo complete — paper 07's substrate at work on real source ==");
+}
+
+fn demo_pure_composition() {
+    use provekit_walk::contract::{
+        build_function_contract, compose_chain_contracts, compose_function_contracts, ChainStep,
+    };
+
+    let f_src = r#"fn double(x: u32) -> u32 { x * 2 }"#;
+    let g_src = r#"fn inc(y: u32) -> u32 { y + 1 }"#;
+    let h_src = r#"fn shout(z: u32) -> u32 { println!("{}", z); z }"#;
+
+    let f_fn: syn::ItemFn = syn::parse_str(f_src).unwrap();
+    let g_fn: syn::ItemFn = syn::parse_str(g_src).unwrap();
+    let h_fn: syn::ItemFn = syn::parse_str(h_src).unwrap();
+
+    let f = build_function_contract(&f_fn, None);
+    let g = build_function_contract(&g_fn, None);
+    let h = build_function_contract(&h_fn, None);
+
+    println!("Pure contract `double`:");
+    println!("  cid     {}", f.cid);
+    println!("  effects {} (pure: {})", effect_summary(&f.effects.effects), f.is_pure());
+    println!("Pure contract `inc`:");
+    println!("  cid     {}", g.cid);
+    println!("  effects {} (pure: {})", effect_summary(&g.effects.effects), g.is_pure());
+    println!("Impure contract `shout` (println! → Io effect):");
+    println!("  cid     {}", h.cid);
+    println!("  effects {} (pure: {})", effect_summary(&h.effects.effects), h.is_pure());
+
+    println!("\nCompose double(inc(y)):");
+    match compose_function_contracts(&f, &g, 0) {
+        Some(composed) => {
+            println!("  ✓ composed CID: {}", composed.cid);
+            println!("    components:    {} (pure-pair → bundle)", composed.component_cids.len());
+        }
+        None => println!("  ✗ compose returned None"),
+    }
+
+    println!("\nCompose double(shout(z)) (refused — shout has Io effect):");
+    match compose_function_contracts(&f, &h, 0) {
+        Some(_) => println!("  ✗ should have refused!"),
+        None => println!("  ✓ compose refused: impure contract (shout has Io effect)"),
+    }
+
+    println!("\nCompose chain double(inc(double(z))) (3-deep, all pure):");
+    let f2 = f.clone();
+    let chain = vec![
+        ChainStep { contract: &f2, formal_idx: 0 },
+        ChainStep { contract: &g, formal_idx: 0 },
+        ChainStep { contract: &f, formal_idx: 0 },
+    ];
+    match compose_chain_contracts(&chain) {
+        Some(composed) => {
+            println!("  ✓ composed CID:    {}", composed.cid);
+            println!("    components: {} entries (chain compressed to one CID)", composed.component_cids.len());
+            println!("    bytes:       {} JCS-canonical", composed.canonical_bytes.len());
+        }
+        None => println!("  ✗ chain compose returned None"),
+    }
+}
+
+fn effect_summary(effects: &[provekit_walk::contract::Effect]) -> String {
+    use provekit_walk::contract::Effect::*;
+    if effects.is_empty() {
+        return "[]".to_string();
+    }
+    let parts: Vec<String> = effects
+        .iter()
+        .map(|e| match e {
+            Reads { target } => format!("reads({})", target),
+            Writes { target } => format!("writes({})", target),
+            Io => "io".to_string(),
+            Unsafe => "unsafe".to_string(),
+            Panics => "panics".to_string(),
+            UnresolvedCall { name } => format!("unresolved({})", name),
+        })
+        .collect();
+    format!("[{}]", parts.join(", "))
 }
 
 // `run_pipeline` only handles single-formal-parameter callees in the
