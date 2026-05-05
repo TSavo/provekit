@@ -89,12 +89,33 @@ pub fn lift_llbc_function(
     Ok(contract)
 }
 
-/// Walk the body's top-level statements. For each `Switch::If(discr,
-/// then=[], _)` immediately followed by an `Abort`, record `¬discr` as
-/// a precondition contribution. Conjoin all contributions.
+/// Walk the body for if-panic patterns. For each `Switch::If(discr,
+/// then-leads-to-abort, _)`, record `¬discr` as a precondition
+/// contribution and recurse into the else-branch (which may contain
+/// nested if-panic Switches from short-circuited compound conditions
+/// like `||` and `&&`). Conjoin all contributions in source order so
+/// the byte-encoding matches the AST walk's De Morgan output.
 fn derive_precondition(stmts: &[&Value], formals: &[(u32, String)]) -> IrFormula {
     let mut contribs: Vec<IrFormula> = Vec::new();
+    // Top-level: falling through the entire body returns; doesn't abort.
+    collect_if_panic_contributions(&[], stmts, formals, false, &mut contribs);
+    simplify_conjunction(contribs)
+}
 
+/// Recursive collector. `prior` is the chain of statements the
+/// discriminant traces are allowed to reach back through (the
+/// concatenation of every enclosing block's stmts up to the current
+/// Switch). `stmts` is the current block being scanned.
+/// `parent_falls_through_to_abort` is true when reaching the end of
+/// the current block (without a Return/Abort inside it) leads to an
+/// Abort in the enclosing scope.
+fn collect_if_panic_contributions(
+    prior: &[&Value],
+    stmts: &[&Value],
+    formals: &[(u32, String)],
+    parent_falls_through_to_abort: bool,
+    out: &mut Vec<IrFormula>,
+) {
     for (i, s) in stmts.iter().enumerate() {
         let Some(switch) = stmt_kind_payload(s, "Switch") else {
             continue;
@@ -107,40 +128,86 @@ fn derive_precondition(stmts: &[&Value], formals: &[(u32, String)]) -> IrFormula
         }
         let discr = &if_arr[0];
         let then_block = &if_arr[1];
-        // The if-panic pattern Charon emits: empty THEN block, then
-        // an Abort at the next top-level statement (THEN falls through
-        // to the post-Switch sequence which immediately aborts).
-        let then_empty = block_statements(then_block).is_empty();
-        let next_aborts = stmts
-            .get(i + 1)
-            .map(|s2| stmt_kind_tag(s2) == Some("StorageDead"))
-            .unwrap_or(false)
-            && stmts
-                .iter()
-                .skip(i + 1)
-                .find(|s2| stmt_kind_tag(*s2) != Some("StorageDead"))
-                .map(|s2| stmt_kind_tag(s2) == Some("Abort"))
-                .unwrap_or(false);
-        // Common shape: empty THEN with an Abort somewhere after the
-        // following StorageDead chain (the "then-falls-through-to-
-        // panic" idiom).
-        let direct_abort = stmts
-            .iter()
-            .skip(i + 1)
-            .find(|s2| stmt_kind_tag(*s2) != Some("StorageDead"))
-            .map(|s2| stmt_kind_tag(s2) == Some("Abort"))
-            .unwrap_or(false);
-        if !then_empty || !(next_aborts || direct_abort) {
+        let else_block = &if_arr[2];
+
+        // Where does the path AFTER this Switch end up? If the next
+        // non-bookkeeping statement is Abort, the fall-through aborts.
+        // If we reach the end of `stmts` without hitting Abort or a
+        // Return-equivalent, defer to the parent.
+        let post_switch_aborts =
+            tail_aborts_or_inherit(&stmts[i + 1..], parent_falls_through_to_abort);
+
+        // Is the THEN branch the panic side?
+        let then_aborts = block_leads_to_abort(then_block, post_switch_aborts);
+        if !then_aborts {
+            // Not an if-panic at this level. Skip; recursing into the
+            // else-block of a non-panic Switch would conflate
+            // narrowing with precondition, which is out of scope for
+            // the if-panic class.
             continue;
         }
 
-        let prior = &stmts[..i];
-        if let Some(pred) = discriminant_to_formula(discr, prior, formals) {
-            contribs.push(negate_predicate(pred));
+        // Trace the discriminant. The trace is allowed to walk back
+        // through the parent `prior` plus the current block's
+        // pre-Switch statements.
+        let mut local_prior: Vec<&Value> = Vec::with_capacity(prior.len() + i);
+        local_prior.extend(prior.iter().copied());
+        local_prior.extend(stmts[..i].iter().copied());
+        if let Some(pred) = discriminant_to_formula(discr, &local_prior, formals) {
+            out.push(negate_predicate(pred));
         }
-    }
 
-    simplify_conjunction(contribs)
+        // Recurse into the else-block: short-circuited `||` / `&&`
+        // emits another Switch nested in the else side. The inner
+        // block's "parent fall-through" property is whatever this
+        // Switch's post-tail does.
+        let mut new_prior = local_prior.clone();
+        new_prior.push(s); // include this Switch in prior for inner discr-trace
+        let inner_stmts: Vec<&Value> = block_statements(else_block);
+        collect_if_panic_contributions(
+            &new_prior,
+            &inner_stmts,
+            formals,
+            post_switch_aborts,
+            out,
+        );
+    }
+}
+
+/// True if the block's statements contain an Abort directly, OR all
+/// statements are bookkeeping and falling through the block reaches
+/// an Abort (per the parent-aware tail propagation).
+fn block_leads_to_abort(block: &Value, parent_falls_through_to_abort: bool) -> bool {
+    let stmts = block_statements(block);
+    if stmts.iter().any(|s| stmt_kind_tag(s) == Some("Abort")) {
+        return true;
+    }
+    // All bookkeeping → falling through this block reaches the parent's
+    // post-switch position.
+    if stmts.iter().all(|s| is_bookkeeping(s)) {
+        return parent_falls_through_to_abort;
+    }
+    false
+}
+
+/// True if the tail (statements after the current Switch) leads to an
+/// Abort, considering parent fall-through. The first non-bookkeeping
+/// statement in the tail decides:
+///   - Abort: tail aborts
+///   - anything else (Return, Assign, another Switch, ...): doesn't abort
+///   - empty (only bookkeeping or no remaining statements): defer to parent
+fn tail_aborts_or_inherit(tail: &[&Value], parent_falls_through_to_abort: bool) -> bool {
+    match tail.iter().find(|s| !is_bookkeeping(s)) {
+        Some(s) => stmt_kind_tag(s) == Some("Abort"),
+        None => parent_falls_through_to_abort,
+    }
+}
+
+fn is_bookkeeping(stmt: &&Value) -> bool {
+    matches!(
+        stmt_kind_tag(stmt),
+        Some("StorageDead") | Some("StorageLive") | Some("Nop")
+    )
 }
 
 /// `_local := BinaryOp(op, lhs, rhs)` → `Atomic(ir_op, [lhs_term, rhs_term])`.
@@ -431,6 +498,83 @@ mod tests {
             }
             other => panic!("expected Atomic ≥, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn lifts_compound_or_to_conjunction_of_negated_atoms() {
+        // `if x < 10 || y < 5 panic` short-circuits in MIR into nested
+        // Switches: outer aborts when x<10, else inner aborts when
+        // y<5. After ¬-flip the contribution is (x≥10) ∧ (y≥5),
+        // matching what AST's De Morgan produces from the same source.
+        let krate = LlbcCrate::from_path(fixture_path("compound_or.llbc")).unwrap();
+        let h = krate.function_by_name("h").unwrap();
+        let contract = lift_llbc_function(h, Some("compound_or.rs")).unwrap();
+
+        assert_eq!(contract.fn_name, "h");
+        assert_eq!(contract.formals, vec!["x".to_string(), "y".to_string()]);
+
+        match &contract.pre {
+            IrFormula::And { operands } => {
+                assert_eq!(operands.len(), 2, "two conjuncts: x≥10 ∧ y≥5");
+                // First conjunct: x ≥ 10
+                match &operands[0] {
+                    IrFormula::Atomic { name, args } => {
+                        assert_eq!(name, "≥");
+                        match &args[0] {
+                            IrTerm::Var { name } => assert_eq!(name, "x"),
+                            other => panic!("expected Var(x), got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected first conjunct ≥, got {:?}", other),
+                }
+                // Second conjunct: y ≥ 5
+                match &operands[1] {
+                    IrFormula::Atomic { name, args } => {
+                        assert_eq!(name, "≥");
+                        match &args[0] {
+                            IrTerm::Var { name } => assert_eq!(name, "y"),
+                            other => panic!("expected Var(y), got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected second conjunct ≥, got {:?}", other),
+                }
+            }
+            other => panic!("expected And, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cross_layer_compound_or_predicate_equality() {
+        // The compound-condition empirical claim: `if x<10 || y<5
+        // panic` lifts to byte-identical formulas through both
+        // layers. AST applies De Morgan in the predicate lift; LLBC
+        // walks the nested Switch::If chain and accumulates ¬-flipped
+        // conjuncts. They converge.
+        use crate::canonical::{formula_to_canonical, jcs_bytes_of_value};
+        use crate::contract::build_function_contract;
+
+        let src = std::fs::read_to_string(fixture_path("compound_or.rs")).unwrap();
+        let file: syn::File = syn::parse_str(&src).unwrap();
+        let item_fn = file
+            .items
+            .into_iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == "h" => Some(f),
+                _ => None,
+            })
+            .unwrap();
+        let ast_contract = build_function_contract(&item_fn, None);
+
+        let krate = LlbcCrate::from_path(fixture_path("compound_or.llbc")).unwrap();
+        let h = krate.function_by_name("h").unwrap();
+        let llbc_contract = lift_llbc_function(h, Some("compound_or.rs")).unwrap();
+
+        let ast_pre = jcs_bytes_of_value(&formula_to_canonical(&ast_contract.pre));
+        let llbc_pre = jcs_bytes_of_value(&formula_to_canonical(&llbc_contract.pre));
+        assert_eq!(
+            ast_pre, llbc_pre,
+            "cross-layer compound-OR pre formula bytes must match"
+        );
     }
 
     #[test]
