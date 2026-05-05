@@ -141,7 +141,7 @@ See [reference-contracts/README.md](reference-contracts/README.md) for what refe
 
 ## Governance and protocol versions
 
-This documentation describes protocol catalog v1.4.1, CID `blake3-512:dc2f42ff...` (full CID in [`reference/cids.md`](reference/cids.md)). v1.4.1 is a patch over v1.4.0 (re-syncs + clarifications, no protocol-level breaking changes); v1.4.0 mementos and `.proof` bundles remain valid forever against the bytes they were minted for. Verify your local install conforms via `provekit verify-protocol`. For protocol governance, version transitions, and conformance claims, see [governance/](governance/).
+This documentation describes protocol catalog v1.5.0, CID `blake3-512:540e8c1f...` (full CID in [`reference/cids.md`](reference/cids.md)). v1.5.0 is a minor bump over v1.4.1 (sort grammar grow: FunctionSort + DependentSort added, additive, no breaking changes); v1.4.1 mementos and `.proof` bundles remain valid forever against the bytes they were minted for. Verify your local install conforms via `provekit verify-protocol`. For protocol governance, version transitions, and conformance claims, see [governance/](governance/).
 
 ## Internal / project-meta
 

@@ -1,6 +1,6 @@
 # ProvekIt Architecture
 
-A walk-through of the protocol's mechanics in roughly fifteen minutes. This document describes the v1.4.1 protocol catalog at CID `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641`. Every spec referenced here is itself content-addressed; CIDs are quoted where authoritativeness matters.
+A walk-through of the protocol's mechanics in roughly fifteen minutes. This document describes the v1.5.0 protocol catalog at CID `blake3-512:540e8c1f5f7fea880123203b30891771d421da953c34af6bfb1d56d4c1d25dfb2ae08af6f275f5b4a4d015c364588b3521116541fcf4ac32d69b4e46acee1843`. Every spec referenced here is itself content-addressed; CIDs are quoted where authoritativeness matters.
 
 > **v1.4 architectural cut:** every memento now has three layers: envelope (signed wrapper), header (substrate-verified data), body (tooling-interpreted metadata). The substrate verifies envelope + header. Body is opaque to the substrate but signed under the envelope, so tooling reads body fields with cryptographic provenance for free. New protocols add body conventions, never substrate primitives. See [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) §11 through §12 for the multi-dimensional address-space framing this operationalizes, and [`docs/reference/cids.md`](../reference/cids.md) for the v1.4 spec list.
 
