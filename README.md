@@ -1,5 +1,8 @@
 # ProvekIt
 
+> *Supra omnia, rectum.*
+> — T
+
 Every if-statement is a contract — a guarantee about state, time, and place. Get any of it wrong, and the whole contract breaks. This is the bug class that exists in all upstream code; it's why if-statements exist at all.
 
 But contracts don't travel. Not across domains, not even within them. The check fires locally and disappears — three function calls deep, your code has no idea what guarantees the leaf function requires. Contracts live INSIDE the code, not beneath it. Nothing demands all code conform.
