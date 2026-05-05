@@ -116,7 +116,7 @@ ProvekIt adds value when one or more of:
 
 - **You have Rust dependencies and non-Rust consumers** (or vice versa). The lift adapter promotes Rust annotations to canonical IR; bridges connect to non-Rust consumers' contracts.
 - **You're publishing a Rust library to a registry** (`crates.io`). Shipping a `.proof` alongside the crate makes consumers' verification cheaper. Cache effects help.
-- **You want supply-chain `binaryCid` pinning.** Kani/Prusti/Creusot don't pin compiled artifacts; ProvekIt's `binaryCid` adds this.
+- **You want supply-chain rank-3 pinning.** Kani/Prusti/Creusot don't pin compiled artifacts; ProvekIt's rank-3 pin (`contractCid`, `witnessCid`, `binaryCid`, per [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md)) adds this.
 - **You want federated proof reuse.** A `(post, pre)` pair discharged by Kani in one project becomes available to every other project's verifier. Kani would re-run otherwise.
 
 The combination is: use Kani/Prusti/Creusot to verify, use ProvekIt to publish and distribute.

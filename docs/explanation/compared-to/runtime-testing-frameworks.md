@@ -114,7 +114,7 @@ Tests at your boundary aren't enough. The proof of dependency contracts comes fr
 
 Goal: supply-chain verification.
   ↓
-Tests don't help. ProvekIt's binaryCid + signed contracts is the path.
+Tests don't help. ProvekIt's rank-3 pin (`contractCid`, `witnessCid`, `binaryCid` per [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md)) plus signed contracts is the path.
 
 Goal: cross-language behavioral guarantees.
   ↓

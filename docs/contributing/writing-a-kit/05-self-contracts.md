@@ -13,7 +13,7 @@ The exact contents are pinned in the protocol catalog. They include (at minimum)
 - A small set of canonical Term and Formula instances exercising each IR primitive.
 - A canonical Sort declaration.
 - A canonical contract declaration (pre/post pair).
-- A canonical bridge declaration (the v1.1.0 9-field shape).
+- A canonical bridge declaration (the v1.4 layered shape: envelope/header/metadata with tagged-union target).
 - Foundation key public key and signature over each member.
 
 Every kit writes a `mint-self-contracts` script (or equivalent) that constructs these mementos and packages them into a `.proof` bundle. The script's output, byte-for-byte, must hash to the pinned CID.
@@ -87,11 +87,13 @@ This is one of the few coordinated activities in ProvekIt. A v1.2.0 release is g
 
 ## Bridge IR gap
 
-Several kits today (C#, Java, Ruby, C++) ship "partial" bridge IR: they pass the happy-path bytes-equality fixture but cannot construct or round-trip the full v1.1.0 9-field BridgeDeclaration. These kits' self-contracts may include a bridge member, which means partial-bridge kits cannot fully mint self-contracts.
+The v1.4 bridge shape (envelope/header/metadata with tagged-union target, per [`protocol/specs/2026-05-03-bridge-target-dimensionality.md`](../../../protocol/specs/2026-05-03-bridge-target-dimensionality.md)) supersedes the v1.1.0 flat 9-field BridgeDeclaration. The v1.1 shape is no longer the canonical target; kits are migrating to the v1.4 layered shape in tracked per-kit PRs (#188, #190, #192, #193).
 
-This is a known issue tracked per-kit (see [`docs/reference/per-language-status.md`](../../reference/per-language-status.md)). Step 6 covers the full bridge IR.
+During this migration window, some kits may still mint self-contracts against the v1.1 shape while others have moved to v1.4. This creates a temporary gap: self-contracts produced by v1.1-era kits and v1.4-era kits are different, so their bundle CIDs will not converge until every kit has migrated.
 
-If you are porting a new kit, do step 6 before pinning self-contracts. If you ship without full bridge support, your kit is "self-contracts-partial": usable but not fully conformant.
+This gap is tracked per-kit in [`docs/reference/per-language-status.md`](../../reference/per-language-status.md). If you are porting a new kit, target the v1.4 layered shape from the start. Do not implement the v1.1 flat shape.
+
+If you ship before completing bridge IR, your kit is "self-contracts-partial": usable but not fully conformant. Bridge IR completeness gates full conformance.
 
 ## When this step is done
 
@@ -99,5 +101,5 @@ Your kit's `mint-self-contracts` produces a bundle whose outer CID matches a pin
 
 ## Read next
 
-- [06-bridge-IR.md](06-bridge-IR.md): the full v1.1.0 BridgeDeclaration shape.
+- [06-bridge-IR.md](06-bridge-IR.md): the full v1.4 layered bridge shape (envelope/header/metadata, tagged-union target).
 - [docs/contributing/release-process.md](../release-process.md) (when written): protocol version bumps and re-pinning.

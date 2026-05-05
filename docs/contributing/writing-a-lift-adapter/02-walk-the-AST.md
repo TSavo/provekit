@@ -94,6 +94,19 @@ For each annotation you recognize, extract:
 
 These five pieces are enough to construct a canonical IR formula plus a binding to the call site.
 
+## Call-edge emission
+
+Under the Bridge Linkage Protocol ([`protocol/specs/2026-05-03-bridge-linkage-protocol.md`](../../../protocol/specs/2026-05-03-bridge-linkage-protocol.md) §1 R1), a lift adapter emits two streams per compilation unit:
+
+1. **Contract mementos** (`kind: "contract"`): the canonical IR formulas for recognized annotations (step 3).
+2. **Call-edge mementos** (`kind: "call-edge"`): one per call site within the lifted code.
+
+A call edge captures the caller-callee relationship: `sourceContractCid` (the calling function's contract), `targetContractCid` or `targetSymbol` (the callee), `callSiteLocus`, and an `evidenceTerm` encoding the satisfaction obligation `post_callee ⊃ pre_caller`. When the target contract is not yet known (cross-kit calls), set `targetContractCid: null` and populate `targetSymbol` for linker resolution.
+
+The two streams are emitted in the same response envelope. The linker (`provekit prove`) derives bridge mementos mechanically from the union of contracts and call edges across all kits. The adapter must NOT emit `kind: "bridge"` mementos directly; bridges are linker-derived.
+
+Walk the AST for call sites the same way you walk for annotations: parse, recognize the call graph, extract caller-callee pairs and locus information. This data flows alongside the canonical IR formulas produced in step 3.
+
 ## Type information matters
 
 The bridge's `boundCallSiteSorts` and `boundReturnSort` come from the type system. If your adapter cannot recover the type information from the AST, it cannot construct a full bridge.

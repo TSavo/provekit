@@ -45,12 +45,12 @@ Almost nowhere. The questions are orthogonal:
 A complete supply-chain artifact:
 
 1. **CycloneDX SBOM**: lists every component, every version, every license, every known vulnerability.
-2. **ProvekIt `.proof`**: signs behavioral contracts on the components, pins the binary CID, encodes bridges.
+2. **ProvekIt `.proof`**: signs behavioral contracts on the components, carries the rank-3 pin (`contractCid`, `witnessCid`, `binaryCid` per [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md)), encodes bridges.
 
 A consumer's verification pipeline:
 
 1. Parse the SBOM. Confirm no known-vulnerable versions are present.
-2. Parse the `.proof`. Confirm the signature, verify the handshake, check `binaryCid` against the running artifact.
+2. Parse the `.proof`. Confirm the signature, verify the handshake, check the rank-3 axes (`binaryCid` against the running artifact, `contractCid` against the pinned contract, `witnessCid` against trusted prover chains).
 3. (Optional) Cross-reference: every component listed in the SBOM should have a corresponding `.proof` (if available) or be flagged as unverified.
 
 The SBOM's role is "is this list of components acceptable?" The `.proof`'s role is "does this artifact behave as claimed?"
@@ -84,9 +84,9 @@ If you have an SBOM but no behavioral verification, you know what's there but no
 The SBOM doesn't catch this. The version string is correct; the binary differs. You'd need either:
 
 - A registry that signs releases (Sigstore + transparency log).
-- A `.proof` whose `binaryCid` matches the legitimate binary; the malicious binary's hash mismatches; verification fails.
+- A `.proof` whose rank-3 pin (`contractCid`, `witnessCid`, `binaryCid`) matches the legitimate artifact and its contract; the malicious binary's hash mismatches; verification fails.
 
-ProvekIt's `binaryCid` provides exactly this defense. SBOM enumerates; `binaryCid` validates.
+ProvekIt's rank-3 pin provides exactly this defense. SBOM enumerates; rank-3 validates.
 
 ## ProvekIt limits SBOM addresses
 

@@ -36,7 +36,7 @@ Imagine you ship a Rust crate. A complete posture combines all of these:
 4. **Sigstore signing.** The build artifact and its provenance are signed with a Sigstore identity rooted in the maintainer's OIDC issuer.
 5. **in-toto attestation chain.** Each pipeline step (build, test, sign, publish) is a signed in-toto attestation.
 6. **SCITT transparency log entry.** The Sigstore signature is recorded in a transparency log; consumers can verify.
-7. **ProvekIt `.proof`.** Behavioral contracts on the crate's exported functions are signed, content-addressed, with `binaryCid` pinning the compiled artifact.
+7. **ProvekIt `.proof`.** Behavioral contracts on the crate's exported functions are signed, content-addressed, with a rank-3 pin (`contractCid`, `witnessCid`, `binaryCid`) per [`multi-dimensional-pinning.md`](../../security/multi-dimensional-pinning.md).
 
 Each layer answers a different question:
 
@@ -52,7 +52,7 @@ A consumer downloading the crate runs all the verifications:
 - Verify SLSA provenance matches expected build environment.
 - Verify Sigstore signature against trusted identity.
 - Verify SCITT transparency log entry.
-- Verify ProvekIt `.proof`'s `binaryCid` matches the running artifact, all signatures verify, the handshake discharges the consumer's call sites.
+- Verify ProvekIt `.proof`: `binaryCid` matches the running artifact, `contractCid` resolves to the pinned contract, `witnessCid` chains to a trusted prover, all signatures verify, the handshake discharges the consumer's call sites.
 
 If all five layers pass, the consumer has high confidence in identity, provenance, integrity, inventory, and behavior. Each layer alone is partial; the combination is strong.
 
@@ -158,7 +158,7 @@ ProvekIt's relationship to the supply-chain space:
 
 - **Not competitive with SLSA / Sigstore / in-toto / SCITT.** They cover identity, provenance, transparency. ProvekIt covers behavior.
 - **Strongly complementary.** ProvekIt's signatures should ride on Sigstore identities. ProvekIt's discharge should be in-toto-attested. ProvekIt's bundles should land in SCITT.
-- **Independently valuable.** Even without the others, ProvekIt's `binaryCid` + content-addressed contracts adds a layer not present in any other framework.
+- **Independently valuable.** Even without the others, ProvekIt's rank-3 pin (`contractCid`, `witnessCid`, `binaryCid`) and content-addressed contracts add a layer not present in any other framework.
 
 For organizations with mature supply-chain practices: add ProvekIt as the behavioral layer.
 For organizations bootstrapping supply-chain practices: ProvekIt is one of several first-tier components; pick what's load-bearing for your threat model.
