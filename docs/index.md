@@ -2,7 +2,7 @@
 
 **ProvekIt is not a formal verification framework. It is a protocol for content-addressing formal verifications.**
 
-Same primitive as Bitcoin (currency), Git (source history), BitTorrent (content distribution), IPFS (the addressable web) — applied to behavioral verification. Verify a petabyte of behavior by comparing 64 bytes.
+Same primitive as Bitcoin (currency), Git (source history), BitTorrent (content distribution), IPFS (the addressable web): applied to behavioral verification. Verify a petabyte of behavior by comparing 64 bytes.
 
 This page is a routing front door. Pick the row that matches what brought you here.
 

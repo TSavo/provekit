@@ -4,7 +4,7 @@ ProvekIt's `.proof` bundle is the supply-chain artifact. Under v1.4, the supply-
 
 This doc walks through the supply-chain attack scenarios and what the protocol does (and doesn't) defend against.
 
-> See [`multi-dimensional-pinning.md`](multi-dimensional-pinning.md) for the architectural foundation and [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) §11–§12 for the manifesto-level framing of address-as-vector-space and rank-N pinning.
+> See [`multi-dimensional-pinning.md`](multi-dimensional-pinning.md) for the architectural foundation and [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) §11 through §12 for the manifesto-level framing of address-as-vector-space and rank-N pinning.
 
 ## The attack surface
 
@@ -41,7 +41,7 @@ See [what-binaryCid-catches.md](what-binaryCid-catches.md).
 
 ### Cross-language proof transfer
 
-A dependency in language A ships a `.proof` with bridges to reference contracts. A consumer in language B verifies the bridges. Cross-language behavioral checks happen at Tier 1 of the handshake — content-addressed, no solver invocation.
+A dependency in language A ships a `.proof` with bridges to reference contracts. A consumer in language B verifies the bridges. Cross-language behavioral checks happen at Tier 1 of the handshake; content-addressed, no solver invocation.
 
 This means an attacker cannot satisfy the consumer's contract on the B side while violating it on the A side: the bridge anchors the behavior to a shared canonical contract via its content-only `contractCid` (per `2026-05-03-contract-cid-vs-attestation-cid.md` R3, bridges reference contractCids, not attestationCids), so multiple kits and signers converge on the same contract identity.
 
@@ -145,8 +145,8 @@ The protocol's structure is "every step is content-addressed and signed." This m
 
 ## Read next
 
-- [what-binaryCid-catches.md](what-binaryCid-catches.md) — detailed walkthrough of binary substitution scenarios.
-- [what-binaryCid-does-not-catch.md](what-binaryCid-does-not-catch.md) — limits of `binaryCid`.
-- [signature-and-non-repudiation.md](signature-and-non-repudiation.md) — signing scheme details.
-- [`../explanation/compared-to/slsa-sigstore-in-toto-scitt.md`](../explanation/compared-to/slsa-sigstore-in-toto-scitt.md) (when written) — how ProvekIt complements other supply-chain tools.
-- [reporting-vulnerabilities.md](reporting-vulnerabilities.md) — operational security practices.
+- [what-binaryCid-catches.md](what-binaryCid-catches.md): detailed walkthrough of binary substitution scenarios.
+- [what-binaryCid-does-not-catch.md](what-binaryCid-does-not-catch.md): limits of `binaryCid`.
+- [signature-and-non-repudiation.md](signature-and-non-repudiation.md): signing scheme details.
+- [`../explanation/compared-to/slsa-sigstore-in-toto-scitt.md`](../explanation/compared-to/slsa-sigstore-in-toto-scitt.md) (when written): how ProvekIt complements other supply-chain tools.
+- [reporting-vulnerabilities.md](reporting-vulnerabilities.md): operational security practices.

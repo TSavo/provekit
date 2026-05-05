@@ -43,11 +43,11 @@ This is a conservative simplification. Full RFC 5322 (and RFC 5321 for the SMTP 
 
 ## Implementations that bridge to this reference
 
-- [TypeScript] zod's `z.string().email()` — *bridge planned in `provekit-lift-zod` v0.4*
-- [Python] pydantic's `EmailStr` — *bridge planned in `provekit-lift-pydantic` v0.5*
-- [Java] Bean Validation's `@Email` — *bridge planned in `provekit-lift-java-bean-validation`*
-- [C#] `[EmailAddress]` data annotation — *bridge planned in `Provekit.Lift.DataAnnotations`*
-- [Ruby] active_model `validates :email, format: { with: URI::MailTo::EMAIL_REGEXP }` — *bridge planned in `provekit-lift-active_model`*
+- [TypeScript] zod's `z.string().email()`: *bridge planned in `provekit-lift-zod` v0.4*
+- [Python] pydantic's `EmailStr`: *bridge planned in `provekit-lift-pydantic` v0.5*
+- [Java] Bean Validation's `@Email`: *bridge planned in `provekit-lift-java-bean-validation`*
+- [C#] `[EmailAddress]` data annotation: *bridge planned in `Provekit.Lift.DataAnnotations`*
+- [Ruby] active_model `validates :email, format: { with: URI::MailTo::EMAIL_REGEXP }`: *bridge planned in `provekit-lift-active_model`*
 
 When all five bridges ship, an email validation in any of these languages discharges at Tier 1 against an email validation in any other.
 
@@ -66,12 +66,12 @@ Email validation is one of the most common patterns in any input-validation surf
 
 ## Related references
 
-- `ref-email-rfc5322-v1` (proposed) — full RFC 5322 with display name support.
-- `ref-email-eai-v1` (proposed) — internationalized email (RFC 6531).
-- `ref-url-format-v1` (proposed) — URL validation.
+- `ref-email-rfc5322-v1` (proposed): full RFC 5322 with display name support.
+- `ref-email-eai-v1` (proposed): internationalized email (RFC 6531).
+- `ref-url-format-v1` (proposed): URL validation.
 
 ## Read next
 
 - [`README.md`](README.md).
 - [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md).
-- [`../contributing/writing-a-lift-adapter/03-emit-canonical-IR.md`](../contributing/writing-a-lift-adapter/03-emit-canonical-IR.md) — how an adapter produces the bridge to this reference.
+- [`../contributing/writing-a-lift-adapter/03-emit-canonical-IR.md`](../contributing/writing-a-lift-adapter/03-emit-canonical-IR.md): how an adapter produces the bridge to this reference.

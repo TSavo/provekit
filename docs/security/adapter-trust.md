@@ -76,7 +76,7 @@ Every adapter is a piece of software. It has bugs. The bugs may be:
 - **Detected by adapter unit tests** (best case).
 - **Detected by conformance fixtures** (good).
 - **Detected by cross-adapter parity tests** (better).
-- **Not detected** (worst case — silent wrongness).
+- **Not detected** (worst case, silent wrongness).
 
 A user's TCB includes every adapter their dependencies' `.proof` files invoked. If a dependency's `.proof` was produced by `provekit-lift-zod` v0.3.1, and v0.3.1 has a bug in handling `z.string().email()`, the user's verifier discharges call sites against the buggy IR.
 
@@ -128,7 +128,7 @@ Each layer has its own audit story. The protocol provides tools for auditing; us
 
 ## Read next
 
-- [solver-trust.md](solver-trust.md) — solver as TCB.
-- [signature-and-non-repudiation.md](signature-and-non-repudiation.md) — what signatures buy.
-- [`../contributing/adapter-coverage-rubric.md`](../contributing/adapter-coverage-rubric.md) — what counts as good coverage.
-- [`../contributing/writing-a-lift-adapter/04-conformance-test.md`](../contributing/writing-a-lift-adapter/04-conformance-test.md) — the fixture-based defense.
+- [solver-trust.md](solver-trust.md): solver as TCB.
+- [signature-and-non-repudiation.md](signature-and-non-repudiation.md): what signatures buy.
+- [`../contributing/adapter-coverage-rubric.md`](../contributing/adapter-coverage-rubric.md): what counts as good coverage.
+- [`../contributing/writing-a-lift-adapter/04-conformance-test.md`](../contributing/writing-a-lift-adapter/04-conformance-test.md): the fixture-based defense.

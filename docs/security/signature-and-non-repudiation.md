@@ -1,6 +1,6 @@
 # Signature and non-repudiation
 
-ProvekIt is a protocol for content-addressing formal verifications. Every memento — every contract, every implication, every bridge, every proof bundle — is signed. This doc explains exactly what the signature buys and what it does not.
+ProvekIt is a protocol for content-addressing formal verifications. Every memento (every contract, every implication, every bridge, every proof bundle) is signed. This doc explains exactly what the signature buys and what it does not.
 
 ## The signature scheme
 
@@ -28,7 +28,7 @@ For different memento kinds, the signature covers different bytes:
 
 ### Claim envelope (contract memento)
 
-Signature is over `innerBytes` — the canonical IR bytes inside the envelope. See [`../contributing/writing-a-kit/03-claim-envelope.md`](../contributing/writing-a-kit/03-claim-envelope.md).
+Signature is over `innerBytes`, the canonical IR bytes inside the envelope. See [`../contributing/writing-a-kit/03-claim-envelope.md`](../contributing/writing-a-kit/03-claim-envelope.md).
 
 A valid signature attests: "the holder of this private key claims that the function (or scope) bound to this contract satisfies the canonical IR formula at this `contractCid`" (the content-only hash of the IR bytes; signer-independent per `2026-05-03-contract-cid-vs-attestation-cid.md`).
 
@@ -160,7 +160,7 @@ This is the smaller-than-correctness, larger-than-nothing claim of cryptographic
 
 ## Read next
 
-- [threat-model.md](threat-model.md) — threat model the signatures defend against.
-- [solver-trust.md](solver-trust.md) — how prover signatures fit in.
-- [adapter-trust.md](adapter-trust.md) — adapter signatures and the trust chain.
-- [`../contributing/writing-a-kit/03-claim-envelope.md`](../contributing/writing-a-kit/03-claim-envelope.md) — how the signing actually works in code.
+- [threat-model.md](threat-model.md): threat model the signatures defend against.
+- [solver-trust.md](solver-trust.md): how prover signatures fit in.
+- [adapter-trust.md](adapter-trust.md): adapter signatures and the trust chain.
+- [`../contributing/writing-a-kit/03-claim-envelope.md`](../contributing/writing-a-kit/03-claim-envelope.md): how the signing actually works in code.

@@ -152,7 +152,7 @@ What being content-addressed forbids:
 
 ## Read next
 
-- [monotonic-provability.md](monotonic-provability.md) — what monotonicity means and why it matters.
-- [cross-domain-verification.md](cross-domain-verification.md) — how content-addressing enables cross-language transfer.
-- [thesis.md](thesis.md) — the full claim.
-- [`../security/signature-and-non-repudiation.md`](../security/signature-and-non-repudiation.md) — signature scheme over the content-addressed bytes.
+- [monotonic-provability.md](monotonic-provability.md): what monotonicity means and why it matters.
+- [cross-domain-verification.md](cross-domain-verification.md): how content-addressing enables cross-language transfer.
+- [thesis.md](thesis.md): the full claim.
+- [`../security/signature-and-non-repudiation.md`](../security/signature-and-non-repudiation.md): signature scheme over the content-addressed bytes.

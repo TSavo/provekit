@@ -154,7 +154,7 @@ The protocol's correctness theorems (in `protocol/specs/`) include monotonicity 
 
 ## Read next
 
-- [content-addressing-not-registry.md](content-addressing-not-registry.md) — the primitive monotonicity is built on.
-- [cross-domain-verification.md](cross-domain-verification.md) — how monotonicity makes cross-language transfer permanent.
-- [thesis.md](thesis.md) — the full claim.
-- [cold-start.md](cold-start.md) — how monotonicity affects bootstrap.
+- [content-addressing-not-registry.md](content-addressing-not-registry.md): the primitive monotonicity is built on.
+- [cross-domain-verification.md](cross-domain-verification.md): how monotonicity makes cross-language transfer permanent.
+- [thesis.md](thesis.md): the full claim.
+- [cold-start.md](cold-start.md): how monotonicity affects bootstrap.

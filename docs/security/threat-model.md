@@ -2,7 +2,7 @@
 
 What attacks does ProvekIt actually catch? What does it not? This document is the explicit threat model. It is precise about what the protocol detects, mathematically; it is precise about what falls outside its scope.
 
-> **v1.4 update.** Multi-dimensional pinning (the rank-3 consumer pin: `(contractCid, witnessCid, binaryCid)`) closes attack classes that were structurally open under v1.1's single-CID pinning. The "lying contracts paired with matching binaries" attack class — previously listed as the most important non-catch — is closed at the rank-3 level. See [`multi-dimensional-pinning.md`](multi-dimensional-pinning.md) for the architecture; the table below has been updated accordingly.
+> **v1.4 update.** Multi-dimensional pinning (the rank-3 consumer pin: `(contractCid, witnessCid, binaryCid)`) closes attack classes that were structurally open under v1.1's single-CID pinning. The "lying contracts paired with matching binaries" attack class (previously listed as the most important non-catch) is closed at the rank-3 level. See [`multi-dimensional-pinning.md`](multi-dimensional-pinning.md) for the architecture; the table below has been updated accordingly.
 
 ## The asset
 
@@ -86,7 +86,7 @@ Detection under v1.4 rank-3: the consumer's pin includes `witnessCid`. The attac
 
 What remains: if the attacker compromises a trusted prover key, they can mint witnesses for any contract / binary pair. Mitigation: hardware-key signing for prover keys; quorum signing requiring N-of-M attestations; revocation lists. The protocol provides hooks for these; the operator chooses their threat model.
 
-Pre-v1.4, this attack class was structurally not caught — single-CID pinning collapsed the `(contract, witness, binary)` tuple onto a single CID. v1.4's rank-3 framing makes the attack class catchable. See [`multi-dimensional-pinning.md`](multi-dimensional-pinning.md).
+Pre-v1.4, this attack class was structurally not caught; single-CID pinning collapsed the `(contract, witness, binary)` tuple onto a single CID. v1.4's rank-3 framing makes the attack class catchable. See [`multi-dimensional-pinning.md`](multi-dimensional-pinning.md).
 
 ## Does NOT catch: solver bugs
 
@@ -196,10 +196,10 @@ Use them together. ProvekIt's strength is behavioral contracts as a content-addr
 
 ## Read next
 
-- [what-binaryCid-catches.md](what-binaryCid-catches.md) — the supply-chain anchor in detail.
-- [what-binaryCid-does-not-catch.md](what-binaryCid-does-not-catch.md) — the limits of `binaryCid`.
-- [solver-trust.md](solver-trust.md) — Tier 3 backends as TCB.
-- [adapter-trust.md](adapter-trust.md) — lift adapters as TCB.
-- [signature-and-non-repudiation.md](signature-and-non-repudiation.md) — what the signatures buy.
-- [supply-chain.md](supply-chain.md) — supply-chain attack scenarios.
-- [../explanation/boundaries.md](../explanation/boundaries.md) — what ProvekIt is NOT.
+- [what-binaryCid-catches.md](what-binaryCid-catches.md): the supply-chain anchor in detail.
+- [what-binaryCid-does-not-catch.md](what-binaryCid-does-not-catch.md): the limits of `binaryCid`.
+- [solver-trust.md](solver-trust.md): Tier 3 backends as TCB.
+- [adapter-trust.md](adapter-trust.md): lift adapters as TCB.
+- [signature-and-non-repudiation.md](signature-and-non-repudiation.md): what the signatures buy.
+- [supply-chain.md](supply-chain.md): supply-chain attack scenarios.
+- [../explanation/boundaries.md](../explanation/boundaries.md): what ProvekIt is NOT.

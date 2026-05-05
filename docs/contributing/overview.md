@@ -22,7 +22,7 @@ This page is the contributor on-ramp. Pick the row that matches what you want to
 
 Every implementation in ProvekIt is held to one rule: **the bytes you emit for a canonical formula must equal the bytes any other implementation emits for the same canonical formula**. The contract is enforced by the conformance harness; running `make ci` re-derives every spec CID, mints every kit's self-contracts, and fails on any drift.
 
-This means contributions land or don't land on a single empirical question: does your code produce the canonical bytes? The harness has a `conformance` target for each kit. Make it green, and the kit is conformant. Don't make it green, and the kit is broken — regardless of how good the code looks.
+This means contributions land or don't land on a single empirical question: does your code produce the canonical bytes? The harness has a `conformance` target for each kit. Make it green, and the kit is conformant. Don't make it green, and the kit is broken, regardless of how good the code looks.
 
 The social contract is the conformance harness. Everything else is convention.
 

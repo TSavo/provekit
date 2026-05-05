@@ -36,12 +36,12 @@ The pipeline has four stages, each with a clean seam:
 
 ## Required reading, in order
 
-1. `docs/launch/substrate-not-blockchain.md` — manifesto §1-§12. The substrate posture and why it stays small.
-2. `docs/launch/the-pieces-on-the-table.md` — twelve-step architectural derivation. Steps 6-9 cover bridges and the linker specifically.
-3. `docs/launch/path-to-default.md` — adoption strategy. Explains why the LSP path is the priority.
-4. `protocol/specs/2026-05-03-bridge-linkage-protocol.md` — normative. The lifter output contract: two streams (contracts + call-edges), the derived bridge shape, the linker derivation algorithm.
-5. `protocol/specs/2026-05-04-linker-daemon-protocol.md` — normative. The daemon wire protocol: five JSON-RPC methods, socket location, lifecycle, cache/snapshot.
-6. `protocol/specs/2026-04-30-ir-formal-grammar.md` — normative. The IR grammar: how predicates are expressed as content-addressed JSON trees.
+1. `docs/launch/substrate-not-blockchain.md`: manifesto §1-§12. The substrate posture and why it stays small.
+2. `docs/launch/the-pieces-on-the-table.md`: twelve-step architectural derivation. Steps 6-9 cover bridges and the linker specifically.
+3. `docs/launch/path-to-default.md`: adoption strategy. Explains why the LSP path is the priority.
+4. `protocol/specs/2026-05-03-bridge-linkage-protocol.md`: normative. The lifter output contract: two streams (contracts + call-edges), the derived bridge shape, the linker derivation algorithm.
+5. `protocol/specs/2026-05-04-linker-daemon-protocol.md`: normative. The daemon wire protocol: five JSON-RPC methods, socket location, lifecycle, cache/snapshot.
+6. `protocol/specs/2026-04-30-ir-formal-grammar.md`: normative. The IR grammar: how predicates are expressed as content-addressed JSON trees.
 
 After those six, the remaining specs in `protocol/specs/` are reference material to consult as needed.
 
@@ -253,10 +253,10 @@ Run `make test-rust` to confirm.
 
 The pattern is the same for other languages, but the implementation language and parser tools differ:
 
-- **Go:** `implementations/go/provekit-lift-go-tests/` — uses Go AST via `go/ast` and `go/parser`.
-- **Python:** `implementations/python/provekit-lift-py-tests/` — uses `ast` module from stdlib.
-- **C#:** `implementations/csharp/Provekit.Lift.DataAnnotations/` — uses Roslyn `SyntaxTree` API.
-- **Ruby:** `implementations/ruby/lib/provekit/lift/` — uses the `parser` gem.
+- **Go:** `implementations/go/provekit-lift-go-tests/`: uses Go AST via `go/ast` and `go/parser`.
+- **Python:** `implementations/python/provekit-lift-py-tests/`: uses `ast` module from stdlib.
+- **C#:** `implementations/csharp/Provekit.Lift.DataAnnotations/`: uses Roslyn `SyntaxTree` API.
+- **Ruby:** `implementations/ruby/lib/provekit/lift/`: uses the `parser` gem.
 
 ## Where things live
 

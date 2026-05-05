@@ -10,14 +10,14 @@ The same content has different addresses depending on which axes the projection 
 
 | Dimension | What it projects over | Same content → same address? |
 |---|---|---|
-| `contractCid` | One ContractDecl (JCS bytes only) | YES — signer-independent |
-| `contractSetCid` | A sorted set of contractCids | YES — order-independent |
-| `attestationCid` | (contractCid + signer + declaredAt + signature) | NO — different witnesses produce different CIDs of the same content |
-| Bundle file CID | content + envelopes + minting state + disk layout | NO — drifts on every honest re-mint |
+| `contractCid` | One ContractDecl (JCS bytes only) | YES: signer-independent |
+| `contractSetCid` | A sorted set of contractCids | YES: order-independent |
+| `attestationCid` | (contractCid + signer + declaredAt + signature) | NO: different witnesses produce different CIDs of the same content |
+| Bundle file CID | content + envelopes + minting state + disk layout | NO: drifts on every honest re-mint |
 
 The first two are **content-only** projections: any party with the content computes the same CID. The third and fourth are **signer-and-time-addressed**: by design distinguishable across witnesses.
 
-The substrate's primary act is choosing which dimension to project through. **Choosing the wrong dimension is the failure mode.** Pin a bundle file's bytes as if they were a contract identity, and the address moves every time anyone re-mints — same contract, different address, because the dimension included signer state and mint timestamps.
+The substrate's primary act is choosing which dimension to project through. **Choosing the wrong dimension is the failure mode.** Pin a bundle file's bytes as if they were a contract identity, and the address moves every time anyone re-mints: same contract, different address, because the dimension included signer state and mint timestamps.
 
 The pre-v1.4 protocol conflated these axes. The v1.4 specs (`contract-cid-vs-attestation-cid`, `contract-set-extension`, `substrate-layers-envelope-header-body`, `version-chains-pinning`, `bridge-target-dimensionality`) are the substrate naming the dimensions it is willing to converge on.
 
@@ -34,7 +34,7 @@ A single CID is rank-1. It expresses existence ("this content exists"). It does 
 | "This witness chain attests that this binary fulfills this contract" | 3 | `(witnessCid, contractCid, binaryCid)` |
 | "This binary satisfies this contract under this build provenance" | 4 | `(binaryCid, contractCid, buildProvenanceCid, witnessCid)` |
 
-A rank-N relation pinned as a single CID loses a predicate. The lost dimension does not vanish; it leaks back as drift. A 2-relation pinned as a single bundle-file CID looks stable when both axes happen to align and unstable whenever one moves while the other doesn't — the unstable case looks like a hash bug rather than a rank bug.
+A rank-N relation pinned as a single CID loses a predicate. The lost dimension does not vanish; it leaks back as drift. A 2-relation pinned as a single bundle-file CID looks stable when both axes happen to align and unstable whenever one moves while the other doesn't; the unstable case looks like a hash bug rather than a rank bug.
 
 The discipline: name the relation you're claiming, count its axes, build a tuple of that rank, project each axis through a content-only dimension. The rest is the substrate doing what it already does.
 
@@ -64,9 +64,9 @@ Each is independently attackable. The combined attack requires three independent
 
 - A new contract whose `contractCid` differs from what the consumer pinned.
 - OR, if the attacker forges the same `contractCid` somehow, a witness whose signing key is not in the consumer's trust set.
-- OR, if the attacker has a trusted prover key, they can mint a witness — but that's a key-compromise attack, not a contract-substitution attack.
+- OR, if the attacker has a trusted prover key, they can mint a witness; but that's a key-compromise attack, not a contract-substitution attack.
 
-In all paths, the consumer's rank-3 pin breaks. The "lying contract paired with matching binary" attack class is closed at the rank-3 level. The remaining residue — "trusted prover key compromise produces fraudulent witnesses" — is exactly what is structurally required: a key compromise is needed to attack a key-rooted system. That's the irreducible TCB.
+In all paths, the consumer's rank-3 pin breaks. The "lying contract paired with matching binary" attack class is closed at the rank-3 level. The remaining residue ("trusted prover key compromise produces fraudulent witnesses") is exactly what is structurally required: a key compromise is needed to attack a key-rooted system. That's the irreducible TCB.
 
 ### Re-attestation by different signers
 
@@ -78,13 +78,13 @@ In all paths, the consumer's rank-3 pin breaks. The "lying contract paired with 
 
 **Pre-v1.4:** an attacker ships an old vulnerable version of a library at a new version label. The consumer's version-string-based pin (`"^18.2.0"`) doesn't catch this because version strings are honor-system.
 
-**v1.4:** `contract-set-extension` requires `previousContractSetCid` to chain back to the consumer's pinned base. A downgrade breaks the chain — `oldSet ⊆ newSet` fails. The consumer's `~18.2.0` resolution becomes a DAG walk, not a string match.
+**v1.4:** `contract-set-extension` requires `previousContractSetCid` to chain back to the consumer's pinned base. A downgrade breaks the chain; `oldSet ⊆ newSet` fails. The consumer's `~18.2.0` resolution becomes a DAG walk, not a string match.
 
 ### Shim poisoning / placeholder strings
 
-**Pre-v1.4:** bridges had `targetContractCid: "pending-csharp-counterpart:<name>"` or `targetProofCid: "deferred:phase-3-proof-bundle"`. These are anti-substrate: the field name says "CID" but the value is not a CID. They violate closure (manifesto §10) — the substrate cannot compute a CID for the named target.
+**Pre-v1.4:** bridges had `targetContractCid: "pending-csharp-counterpart:<name>"` or `targetProofCid: "deferred:phase-3-proof-bundle"`. These are anti-substrate: the field name says "CID" but the value is not a CID. They violate closure (manifesto §10); the substrate cannot compute a CID for the named target.
 
-**v1.4:** `bridge-target-dimensionality` mandates tagged-union targets. Either `{"kind": "contract", "cid": <real CID>}` or `{"kind": "contractSet", "cid": <real CID>}`. Placeholder strings are forbidden at the spec level; conformance tests reject them. **OMIT, don't stringify** — if a witness or binary axis is unknown at mint time, the corresponding body field is absent, not a string placeholder.
+**v1.4:** `bridge-target-dimensionality` mandates tagged-union targets. Either `{"kind": "contract", "cid": <real CID>}` or `{"kind": "contractSet", "cid": <real CID>}`. Placeholder strings are forbidden at the spec level; conformance tests reject them. **OMIT, don't stringify**: if a witness or binary axis is unknown at mint time, the corresponding body field is absent, not a string placeholder.
 
 ## What this does NOT catch
 
@@ -137,7 +137,7 @@ v1.4's envelope/header/body layering enforces what is and isn't substrate-load-b
 - **Header (substrate-verified)**: kind, cid, plus kind-specific required fields. Substrate verifies the four invariants over header content references.
 - **Body (tooling-interpreted)**: everything else, signed under the envelope's signature. Substrate is opaque to body; tooling reads body fields for domain-specific protocols.
 
-Why this matters for multi-dimensional pinning: the witness and binary axes live in body, not in header. The substrate doesn't validate these — it can't, because their semantics are domain-specific (what does "binaryCid matches the running binary" mean when the binary is a `.dylib` vs. a Wasm module vs. a smart contract on-chain?). The consumer's tooling validates these per the consumer's threat model.
+Why this matters for multi-dimensional pinning: the witness and binary axes live in body, not in header. The substrate doesn't validate these; it can't, because their semantics are domain-specific (what does "binaryCid matches the running binary" mean when the binary is a `.dylib` vs. a Wasm module vs. a smart contract on-chain?). The consumer's tooling validates these per the consumer's threat model.
 
 The substrate stays small. The composition layer (rank-N pinning, version chains, witness DAGs) carries the world.
 
@@ -153,9 +153,9 @@ The standardization argument in [`../papers/04-vertical-stack-and-standardizatio
 
 ## Read next
 
-- [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) — the manifesto. §11 (address-as-multi-dimensional) and §12 (pin-as-tuple).
-- [`threat-model.md`](threat-model.md) — the full threat coverage matrix, updated for v1.4.
-- [`what-binaryCid-catches.md`](what-binaryCid-catches.md) — `binaryCid` as one axis of three.
-- [`supply-chain.md`](supply-chain.md) — supply-chain attack scenarios under rank-3 pinning.
-- [`../papers/04-vertical-stack-and-standardization.md`](../papers/04-vertical-stack-and-standardization.md) — why this matters for DO-178C / Common Criteria / ISO 26262.
+- [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md): the manifesto. §11 (address-as-multi-dimensional) and §12 (pin-as-tuple).
+- [`threat-model.md`](threat-model.md): the full threat coverage matrix, updated for v1.4.
+- [`what-binaryCid-catches.md`](what-binaryCid-catches.md): `binaryCid` as one axis of three.
+- [`supply-chain.md`](supply-chain.md): supply-chain attack scenarios under rank-3 pinning.
+- [`../papers/04-vertical-stack-and-standardization.md`](../papers/04-vertical-stack-and-standardization.md): why this matters for DO-178C / Common Criteria / ISO 26262.
 - The v1.4 specs themselves: `protocol/specs/2026-05-03-bridge-target-dimensionality.md`, `protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md`, `protocol/specs/2026-05-03-contract-set-extension.md`, `protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md`, `protocol/specs/2026-05-03-version-chains-pinning.md`.

@@ -39,16 +39,16 @@ Reference contracts are the bootstrap accelerant for the protocol. See [`../expl
 
 Each reference contract has its own `.md` documentation page in this directory:
 
-- [`ref-parseInt-v1.md`](ref-parseInt-v1.md) — ECMA-262 `parseInt` semantics
-- [`ref-parseFloat-v1.md`](ref-parseFloat-v1.md) — ECMA-262 `parseFloat` semantics
-- [`ref-email-format-v1.md`](ref-email-format-v1.md) — RFC 5322 email format validation
-- [`ref-uuid-v1.md`](ref-uuid-v1.md) — RFC 4122 UUID format
-- [`ref-iso8601-date-v1.md`](ref-iso8601-date-v1.md) — ISO 8601 date format
-- [`ref-ip-address-v1.md`](ref-ip-address-v1.md) — IP address validation
-- [`ref-uint32-arithmetic-v1.md`](ref-uint32-arithmetic-v1.md) — 32-bit unsigned arithmetic
-- [`ref-int32-arithmetic-v1.md`](ref-int32-arithmetic-v1.md) — 32-bit signed arithmetic
-- [`ref-malloc-v1.md`](ref-malloc-v1.md) — POSIX `malloc` semantics
-- [`ref-ieee754-arithmetic-v1.md`](ref-ieee754-arithmetic-v1.md) — IEEE-754 floating-point arithmetic
+- [`ref-parseInt-v1.md`](ref-parseInt-v1.md): ECMA-262 `parseInt` semantics
+- [`ref-parseFloat-v1.md`](ref-parseFloat-v1.md): ECMA-262 `parseFloat` semantics
+- [`ref-email-format-v1.md`](ref-email-format-v1.md): RFC 5322 email format validation
+- [`ref-uuid-v1.md`](ref-uuid-v1.md): RFC 4122 UUID format
+- [`ref-iso8601-date-v1.md`](ref-iso8601-date-v1.md): ISO 8601 date format
+- [`ref-ip-address-v1.md`](ref-ip-address-v1.md): IP address validation
+- [`ref-uint32-arithmetic-v1.md`](ref-uint32-arithmetic-v1.md): 32-bit unsigned arithmetic
+- [`ref-int32-arithmetic-v1.md`](ref-int32-arithmetic-v1.md): 32-bit signed arithmetic
+- [`ref-malloc-v1.md`](ref-malloc-v1.md): POSIX `malloc` semantics
+- [`ref-ieee754-arithmetic-v1.md`](ref-ieee754-arithmetic-v1.md): IEEE-754 floating-point arithmetic
 
 Each page documents:
 
@@ -151,8 +151,8 @@ Contributing a new reference contract or refining an existing one is the highest
 
 ## Read next
 
-- [`ref-parseInt-v1.md`](ref-parseInt-v1.md) — the canonical example.
-- [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md) — the mechanism reference contracts enable.
-- [`../explanation/cold-start.md`](../explanation/cold-start.md) — why reference contracts accelerate adoption.
-- [`../contributing/proposing-a-spec-change.md`](../contributing/proposing-a-spec-change.md) — when adding a reference requires a spec change.
-- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md) — the worked cross-language demo.
+- [`ref-parseInt-v1.md`](ref-parseInt-v1.md): the canonical example.
+- [`../explanation/cross-domain-verification.md`](../explanation/cross-domain-verification.md): the mechanism reference contracts enable.
+- [`../explanation/cold-start.md`](../explanation/cold-start.md): why reference contracts accelerate adoption.
+- [`../contributing/proposing-a-spec-change.md`](../contributing/proposing-a-spec-change.md): when adding a reference requires a spec change.
+- [`../tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md): the worked cross-language demo.

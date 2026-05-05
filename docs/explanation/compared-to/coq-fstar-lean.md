@@ -19,7 +19,7 @@ Coq, F\*, Lean, Isabelle, Agda are all **interactive theorem provers** (ITPs). T
 
 The kernel is the TCB. A proof term checked by the kernel is sound modulo the kernel's correctness; the kernel is typically 10kloc of carefully-written code.
 
-This is the highest assurance level available in formal verification. seL4, CompCert, Verdi, Tezos's smart contract verifier — all rely on ITP-level assurance.
+This is the highest assurance level available in formal verification. seL4, CompCert, Verdi, Tezos's smart contract verifier, all rely on ITP-level assurance.
 
 ## What ProvekIt does
 
@@ -166,7 +166,7 @@ The current state is "Z3 is the default backend; ITP backends are explicitly in 
 
 ## Read next
 
-- [kani-prusti-creusot.md](kani-prusti-creusot.md) — Rust-specific provers.
-- [`../../contributing/writing-a-prover-backend.md`](../../contributing/writing-a-prover-backend.md) — adding a new backend.
-- [`../../security/solver-trust.md`](../../security/solver-trust.md) — TCB for different backends.
-- [`../boundaries.md`](../boundaries.md) — what ProvekIt is NOT.
+- [kani-prusti-creusot.md](kani-prusti-creusot.md): Rust-specific provers.
+- [`../../contributing/writing-a-prover-backend.md`](../../contributing/writing-a-prover-backend.md): adding a new backend.
+- [`../../security/solver-trust.md`](../../security/solver-trust.md): TCB for different backends.
+- [`../boundaries.md`](../boundaries.md): what ProvekIt is NOT.

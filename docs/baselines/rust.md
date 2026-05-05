@@ -8,7 +8,7 @@ Catalog file: [`.provekit/baselines/rust-std-baseline-v1.proof`](../../.provekit
 ## Disclaimer
 
 ```
-Foundation baseline catalog — advisory only.
+Foundation baseline catalog: advisory only.
 
 This catalog asserts hidden predicates about the named language's
 standard library. It is signed by the ProvekIt foundation key as a
@@ -20,7 +20,7 @@ It is NOT authoritative.
 The authoritative signer for this language's contracts is the
 language steward (named below). If they sign their own catalog,
 prefer it over this one. If they have not, fork this catalog and
-sign your own — see docs/contributing/signing-your-own-catalog.md.
+sign your own; see docs/contributing/signing-your-own-catalog.md.
 ```
 
 ```
@@ -66,7 +66,7 @@ Each contract carries one of three predicate shapes:
   f(x)`). Vacuously true under Z3 equality, but explicit so
   non-determinism becomes a documented exception.
 - `<builtin>__<structural>`: at least one further predicate per builtin
-  where structurally natural — length floor, idempotence, post-state
+  where structurally natural, length floor, idempotence, post-state
   shape, function congruence with another builtin (`is_empty` agrees
   with `len_eq_zero`), tag-preservation (`Option::map` preserves the
   Some/None tag), etc.
@@ -105,7 +105,7 @@ for v1.0.0:
 - `forall(sort, |v| body)`
 - `eq(a, b)`
 - `gte(a, b)`
-- `ctor(name, args)` — kit-defined operations
+- `ctor(name, args)`: kit-defined operations
 - `num(n)` / `str_const(s)`
 - `must(name, formula)` / `contract(name, args)`
 
@@ -118,7 +118,7 @@ disclaimer addendum for the per-language gap notes).
 
 ## Change log
 
-### v1 — initial publication (2026-05-03)
+### v1: initial publication (2026-05-03)
 
 - 58 builtins covered across 7 slabs (string/vec/option/result/slice/hashmap/iter).
 - 157 ContractDecls; predicate density floor (>= 2 per builtin) met

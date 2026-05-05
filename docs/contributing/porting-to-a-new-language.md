@@ -12,7 +12,7 @@ A port comprises five pieces, in dependency order:
 2. **The kit** (IR types, canonicalizer, claim envelope, proof envelope, self-contracts, bridge IR). The substrate every other piece sits on top of.
 3. **At least one lift adapter.** A kit with no lift adapter cannot demonstrate the lift-not-author story. Pick the most idiomatic annotation library in your language ecosystem and target it first.
 4. **CLI integration.** For most v1.x ports, this means "use the Rust CLI as a subprocess." A native CLI in your language is optional and can come later.
-5. **LSP plugin** (optional but high-value). Without an LSP, users get no in-editor squigglies — the most visible product surface.
+5. **LSP plugin** (optional but high-value). Without an LSP, users get no in-editor squigglies, the most visible product surface.
 
 Total scope: multi-week project for one engineer comfortable in the language. The conformance harness gives you a deterministic bar to hit; you'll know when you're done.
 
@@ -50,7 +50,7 @@ See [writing-a-kit/01-conformance-first.md](writing-a-kit/01-conformance-first.m
 
 ### Step 2: canonicalizer
 
-JCS (RFC 8785) for JSON canonicalization, then BLAKE3-512. Every byte matters. Trailing whitespace, key ordering, number representation, escape handling — all of it is specified, and any deviation breaks conformance.
+JCS (RFC 8785) for JSON canonicalization, then BLAKE3-512. Every byte matters. Trailing whitespace, key ordering, number representation, escape handling: all of it is specified, and any deviation breaks conformance.
 
 See [writing-a-kit/02-canonicalizer.md](writing-a-kit/02-canonicalizer.md).
 
@@ -84,7 +84,7 @@ Pick the most idiomatic annotation library in your ecosystem. Don't pick the mos
 
 See [writing-a-lift-adapter/](writing-a-lift-adapter/) for the five-step series.
 
-### Step 8: optional but valuable — LSP plugin
+### Step 8: optional but valuable (LSP plugin)
 
 NDJSON over stdio. Five plugins ship today (Rust, Python, Zig, Ruby, C#). The protocol is small: `initialize`, `parse`, `shutdown`. If your kit reaches Step 7, the LSP is straightforward.
 
@@ -134,6 +134,6 @@ You don't need our blessing. The harness is the gate. Open the PR.
 
 ## What to read next
 
-- [writing-a-kit/01-conformance-first.md](writing-a-kit/01-conformance-first.md) — start here.
-- [docs/reference/kit-standard.md](../reference/kit-standard.md) (when written) — the authoritative spec.
-- [`protocol/specs/`](../../protocol/specs/) — the protocol's content-addressed source of truth.
+- [writing-a-kit/01-conformance-first.md](writing-a-kit/01-conformance-first.md): start here.
+- [docs/reference/kit-standard.md](../reference/kit-standard.md) (when written): the authoritative spec.
+- [`protocol/specs/`](../../protocol/specs/): the protocol's content-addressed source of truth.

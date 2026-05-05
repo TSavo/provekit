@@ -78,7 +78,7 @@ provekit prove
 
 ## What's next
 
-- [docs/how-to/publishing-a-proof.md](../how-to/publishing-a-proof.md) — ship the `.proof` alongside your gem.
+- [docs/how-to/publishing-a-proof.md](../how-to/publishing-a-proof.md): ship the `.proof` alongside your gem.
 - [docs/how-to/cross-domain-bridges.md](../how-to/cross-domain-bridges.md).
 - [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md).
 - [docs/explanation/thesis.md](../explanation/thesis.md).

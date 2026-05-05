@@ -2,12 +2,12 @@
 
 > **Status:** kit shipping (v1.4.1). Lift adapters shipping: Bean Validation, JML, Spring Web, Cofoja, plus bindings for Spring Security, Swagger, Jackson, JPA, Hibernate. Embedded verifier and LSP plugin planned. Verification via the Rust CLI.
 
-A walkthrough for Java / JVM developers. By the end you have a `.proof` catalog lifted from existing `@NotNull`, `@Email`, `@Min`, `//@ requires`, `@RequestParam` annotations — across Bean Validation, JML, Spring, and Cofoja sources, all canonicalized to the same IR.
+A walkthrough for Java / JVM developers. By the end you have a `.proof` catalog lifted from existing `@NotNull`, `@Email`, `@Min`, `//@ requires`, `@RequestParam` annotations (across Bean Validation, JML, Spring, and Cofoja sources, all canonicalized to the same IR).
 
 ## 1. What you'll have at the end
 
 - A `.proof` file alongside your Maven artifact.
-- Mementos derived from existing JVM annotations across multiple annotation idioms — without rewriting any code.
+- Mementos derived from existing JVM annotations across multiple annotation idioms (without rewriting any code).
 - Cross-domain integration: `@NotNull`, `//@ requires x != null`, and `@RequestParam(required=true)` produce identical IR; the Bean Validation adapter and the JML adapter and the Spring Web adapter agree by hash.
 
 ## 2. Prerequisites
@@ -91,11 +91,11 @@ This is what makes mixed-style codebases (Spring + JML + Bean Validation) partic
 
 ## What's next
 
-- [docs/how-to/publishing-a-proof.md](../how-to/publishing-a-proof.md) — ship the `.proof` alongside your Maven artifact.
+- [docs/how-to/publishing-a-proof.md](../how-to/publishing-a-proof.md): ship the `.proof` alongside your Maven artifact.
 - [docs/how-to/cross-domain-bridges.md](../how-to/cross-domain-bridges.md).
-- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) — what each adapter sees and misses.
+- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md): what each adapter sees and misses.
 - [docs/explanation/thesis.md](../explanation/thesis.md).
 
 ---
 
-*This tutorial is a stub. Contributions welcome — see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: actual `mvn provekit:lift` plugin coordinates, end-to-end runnable example.*
+*This tutorial is a stub. Contributions welcome (see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: actual `mvn provekit:lift` plugin coordinates, end-to-end runnable example.*)

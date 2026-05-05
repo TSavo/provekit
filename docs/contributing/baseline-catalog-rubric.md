@@ -4,9 +4,9 @@ What does a per-language baseline catalog need to contain before it ships at v1.
 
 ## The principle
 
-**A baseline catalog captures the hidden predicates of a language's standard library at a level real programs can build on.** Not the most fundamental predicates. Not the most documented. The ones that programs in that language _actually call_, with the contracts those programs _actually rely on_ — encoded explicitly so a verifier can reason about them.
+**A baseline catalog captures the hidden predicates of a language's standard library at a level real programs can build on.** Not the most fundamental predicates. Not the most documented. The ones that programs in that language _actually call_, with the contracts those programs _actually rely on_, encoded explicitly so a verifier can reason about them.
 
-A foundation-baseline catalog is not authoritative. It's the worked example showing the substrate carries weight. The authoritative signer for a language's contracts is the language steward — the people who wrote the language. The baseline exists so users have something to verify against until the steward signs.
+A foundation-baseline catalog is not authoritative. It's the worked example showing the substrate carries weight. The authoritative signer for a language's contracts is the language steward (the people who wrote the language). The baseline exists so users have something to verify against until the steward signs.
 
 ## What ships at v1.0.0
 
@@ -27,9 +27,9 @@ A consumer who pins this catalog gets the foundation's claim that these contract
 
 **"Top builtin" means most-called in real programs**, not most documented or most fundamental. Sources of truth, ranked:
 
-1. **The kit's existing test suite** — what does the lifter already exercise? If a builtin appears in the kit's test fixtures, it's already shown up in real code somewhere.
-2. **GitHub corpus frequency** — sample a few hundred public repos in the language, grep for builtin calls, take the top 50 by call frequency.
-3. **Language steward's "essentials" documentation** — when available (e.g., MDN's Web APIs, Python's `dir(builtins)`, Rust's `std` prelude). Treat as a hint, not a list to copy verbatim.
+1. **The kit's existing test suite**: what does the lifter already exercise? If a builtin appears in the kit's test fixtures, it's already shown up in real code somewhere.
+2. **GitHub corpus frequency**: sample a few hundred public repos in the language, grep for builtin calls, take the top 50 by call frequency.
+3. **Language steward's "essentials" documentation**: when available (e.g., MDN's Web APIs, Python's `dir(builtins)`, Rust's `std` prelude). Treat as a hint, not a list to copy verbatim.
 
 Do not target "comprehensive coverage of the standard library." That's a different artifact and it's not what ships at v1.0.0.
 
@@ -38,21 +38,21 @@ Do not target "comprehensive coverage of the standard library." That's a differe
 **Floor: 2 predicates per builtin.** At minimum:
 
 - **Type signature.** Input types, output type. Encoded via `forall` + `eq(ctor("type_of", ...), strConst("..."))`.
-- **Determinism.** Same input, same output. Encoded via `forall` + `eq(ctor("f", x), ctor("f", x))`. (Some builtins are non-deterministic — `time()`, `random()`, file IO. Those get an explicit `non_deterministic` predicate instead.)
+- **Determinism.** Same input, same output. Encoded via `forall` + `eq(ctor("f", x), ctor("f", x))`. (Some builtins are non-deterministic: `time()`, `random()`, file IO. Those get an explicit `non_deterministic` predicate instead.)
 
 **Aspiration: 4-5 predicates** when the builtin has obvious additional structure:
 
-- **Length / size bounds** — `len(s) >= 0`, `len(strlen(s)) == strlen(s) + 1` for null-terminated, etc.
-- **Totality vs. partiality** — does it always return, or can it throw / return null on bad input?
-- **Self-identifying prefix** — outputs that carry their own type tag (e.g., `blake3-512:...`, `ed25519:...`).
-- **Side effects** — file IO, mutation of arguments, global state.
-- **Edge cases** — behavior on empty input, on the largest representable value, on null.
+- **Length / size bounds**: `len(s) >= 0`, `len(strlen(s)) == strlen(s) + 1` for null-terminated, etc.
+- **Totality vs. partiality**: does it always return, or can it throw / return null on bad input?
+- **Self-identifying prefix**: outputs that carry their own type tag (e.g., `blake3-512:...`, `ed25519:...`).
+- **Side effects**: file IO, mutation of arguments, global state.
+- **Edge cases**: behavior on empty input, on the largest representable value, on null.
 
 **Out of scope for the baseline**: predicates the current formula DSL can't express (see #256 DSL extension survey). Ship without them; the language steward's signature can add them later.
 
 ### 3. Advisory metadata shape
 
-Every baseline catalog carries advisory metadata at the **envelope level** (not per-contract — all contracts in a baseline share advisory status). The metadata is part of the catalog's signed bytes.
+Every baseline catalog carries advisory metadata at the **envelope level** (not per-contract; all contracts in a baseline share advisory status). The metadata is part of the catalog's signed bytes.
 
 ```json
 {
@@ -70,12 +70,12 @@ Every baseline catalog carries advisory metadata at the **envelope level** (not 
 
 Field semantics:
 
-- `signer_role` — one of `foundation-baseline`, `language-steward`, `community`. The verifier exposes this so consumers can apply trust policy by role.
-- `baseline.version` — schema version of the baseline metadata block. Starts at 1.
-- `baseline.language` — the language identifier (matches the kit alias: `rust`, `go`, `cpp`, ...).
-- `baseline.language_version` — the language version this baseline was authored against. When the language ships a new release, a new baseline is minted; old baselines remain pinnable by CID.
-- `baseline.kit_version` — the kit's version at authoring time. If the kit changes how it lifts, a new baseline gets a new kit_version even if the language hasn't moved.
-- `baseline.disclaimer_cid` — content-CID of the disclaimer text. The disclaimer text travels with the catalog as a member; this field pins its content.
+- `signer_role`: one of `foundation-baseline`, `language-steward`, `community`. The verifier exposes this so consumers can apply trust policy by role.
+- `baseline.version`: schema version of the baseline metadata block. Starts at 1.
+- `baseline.language`: the language identifier (matches the kit alias: `rust`, `go`, `cpp`, ...).
+- `baseline.language_version`: the language version this baseline was authored against. When the language ships a new release, a new baseline is minted; old baselines remain pinnable by CID.
+- `baseline.kit_version`: the kit's version at authoring time. If the kit changes how it lifts, a new baseline gets a new kit_version even if the language hasn't moved.
+- `baseline.disclaimer_cid`: content-CID of the disclaimer text. The disclaimer text travels with the catalog as a member; this field pins its content.
 
 ### 4. Disclaimer text
 
@@ -84,7 +84,7 @@ Verbatim base text + per-language addendum. The base ensures consumers learn one
 **Base (verbatim across catalogs):**
 
 ```
-Foundation baseline catalog — advisory only.
+Foundation baseline catalog: advisory only.
 
 This catalog asserts hidden predicates about the named language's
 standard library. It is signed by the ProvekIt foundation key as a
@@ -96,7 +96,7 @@ It is NOT authoritative.
 The authoritative signer for this language's contracts is the
 language steward (named below). If they sign their own catalog,
 prefer it over this one. If they have not, fork this catalog and
-sign your own — see docs/contributing/signing-your-own-catalog.md.
+sign your own; see docs/contributing/signing-your-own-catalog.md.
 ```
 
 **Per-language addendum:**
@@ -148,7 +148,7 @@ The rust pilot (#257) walks this workflow end-to-end on the lowest-risk kit, val
 
 ## Versioning
 
-Baselines are versioned per-language, not globally. `<lang>-baseline-v1` and `<lang>-baseline-v2` can coexist; consumers pin whichever version they want. A new minor release of a language doesn't force a new baseline version unless the kit's authoring changes — minor releases that add builtins without changing existing semantics extend an existing baseline (members appended, contractSetCid changes, signed envelope re-emitted as `<lang>-baseline-v1.<minor>.proof` if needed).
+Baselines are versioned per-language, not globally. `<lang>-baseline-v1` and `<lang>-baseline-v2` can coexist; consumers pin whichever version they want. A new minor release of a language doesn't force a new baseline version unless the kit's authoring changes; minor releases that add builtins without changing existing semantics extend an existing baseline (members appended, contractSetCid changes, signed envelope re-emitted as `<lang>-baseline-v1.<minor>.proof` if needed).
 
 A new major language version (Python 4, Java 22, etc.) starts a new baseline major version. Old baselines remain pinnable by CID indefinitely.
 

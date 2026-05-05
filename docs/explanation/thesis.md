@@ -2,7 +2,7 @@
 
 **ProvekIt is not a formal verification framework. It is a protocol for content-addressing formal verifications.**
 
-Z3, Coq, Lean, F\*, Isabelle, Kani, Prusti, Creusot, Dafny, TLA+, CBMC — those are formal verification frameworks. They consume formulas and produce verdicts. ProvekIt does not consume formulas, does not produce verdicts. ProvekIt provides the substrate over which the verdicts of those frameworks are published, signed, distributed, federated, and composed.
+Z3, Coq, Lean, F\*, Isabelle, Kani, Prusti, Creusot, Dafny, TLA+, CBMC: those are formal verification frameworks. They consume formulas and produce verdicts. ProvekIt does not consume formulas, does not produce verdicts. ProvekIt provides the substrate over which the verdicts of those frameworks are published, signed, distributed, federated, and composed.
 
 This is the same shape as Bitcoin (content-addressed currency, no central mint), Git (content-addressed source history, no master copy), BitTorrent (content-addressed content distribution, no central server), IPFS (content-addressed web, no registry). Each of those took a domain that was thought to require a central authority and showed it admits a content-addressed protocol with no central party. ProvekIt applies the same primitive to behavioral verification.
 

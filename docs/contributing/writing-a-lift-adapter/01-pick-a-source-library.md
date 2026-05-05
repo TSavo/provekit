@@ -87,6 +87,6 @@ This becomes the README of your adapter and the basis for the conformance fixtur
 
 ## Read next
 
-- [02-walk-the-AST.md](02-walk-the-AST.md) — language-specific AST walking.
-- [docs/contributing/adapter-coverage-rubric.md](../adapter-coverage-rubric.md) (when written) — what counts as good coverage.
-- [docs/reference/per-adapter-coverage.md](../../reference/per-adapter-coverage.md) — current coverage for shipping adapters.
+- [02-walk-the-AST.md](02-walk-the-AST.md): language-specific AST walking.
+- [docs/contributing/adapter-coverage-rubric.md](../adapter-coverage-rubric.md) (when written): what counts as good coverage.
+- [docs/reference/per-adapter-coverage.md](../../reference/per-adapter-coverage.md): current coverage for shipping adapters.

@@ -8,7 +8,7 @@
 >
 > **A binary is a signed DAG of correctness.**
 
-Software's correctness — the property that code does what it claims to do —
+Software's correctness, the property that code does what it claims to do,
 becomes a content-addressed artifact. A 32-byte hash. Composable. Durable.
 Verifiable mechanically by anyone who runs the math.
 
@@ -17,7 +17,7 @@ consumes the binary re-verifies the DAG with their own proofkit, under their
 own producers, against their own kit catalogs. The signature attests to
 identity; the consumer's re-verification attests to validity.
 
-There is no third state. The hash chain composes — bytes, source, proofs,
+There is no third state. The hash chain composes: bytes, source, proofs,
 spec leaves, hardware attestation, all the way down to the silicon. Or it
 doesn't. Either the code does exactly what it says, or the signature doesn't
 match.
@@ -29,7 +29,7 @@ We replace nothing. We absorb.
 Type checkers, linters, test runners, formal provers, code reviewers, CI
 systems, deployment gates, audit traversals, package registries, dependency
 managers, supply-chain attestation tools, runtime monitors, hardware
-attestation chains — these existing trust artifacts do not get displaced.
+attestation chains; these existing trust artifacts do not get displaced.
 They become producers in a unified substrate. Each emits content-addressed
 mementos signed by its own identity. The substrate composes them into one
 DAG. The DAG IS the codebase's correctness. The DAG IS the audit trail.
@@ -46,8 +46,8 @@ verify the hash chain or you don't. If you don't, the artifact is rejected.
 
 ## The architectural primitive
 
-The same architectural primitive — content-addressed hash-and-trust with
-producer fungibility — has ridden through five prior domains:
+The same architectural primitive (content-addressed hash-and-trust with
+producer fungibility) has ridden through five prior domains:
 
 | Year | Domain | Reduction |
 |---|---|---|
@@ -108,7 +108,7 @@ inverted because the DAG holds the constraints, not the actors.
 TypeScript. The same LLM can write invariants for the same TypeScript.
 Even shitty invariants raise the correctness floor. Once the invariants
 exist, they constrain every future code path through shadow AST walking
-— including paths the original LLM never imagined. The framework doesn't
+- including paths the original LLM never imagined. The framework doesn't
 make LLMs smarter. It makes the GATE mechanical.
 
 **Library upgrades become proof-hash diffs.** Upgrading lodash 1.x to 2.x
@@ -120,8 +120,8 @@ every callsite that's about to fail and exactly why.
 package whose proof DAG contains a memento with this propertyHash."
 Discover libraries by what they prove, not by what they're named.
 
-**Supply chain attacks structurally collapse.** Tampering at any layer —
-hardware, OS, binary, source, proof, kit, spec — breaks a hash. The chain
+**Supply chain attacks structurally collapse.** Tampering at any layer
+(hardware, OS, binary, source, proof, kit, spec) breaks a hash. The chain
 refuses to compose. The artifact is rejected. The remaining attack surface
 is the substrate of computation itself: silicon, spec leaves, the math.
 
@@ -140,8 +140,8 @@ scale; hash-chain trust scales because the math doesn't have a maintainer.
 
 The codebase is not durable. The spec is.
 
-Every line of TypeScript currently in `src/` will be rewritten — once,
-twice, ten times — over the next decade. New implementations will emerge
+Every line of TypeScript currently in `src/` will be rewritten (once,
+twice, ten times) over the next decade. New implementations will emerge
 in Go, Rust, Mojo, languages that don't exist yet. The current code is
 the FIRST implementation, the operational existence proof. It is
 replaceable.
@@ -176,8 +176,8 @@ authenticity (camera attestation as memento), AI provenance (training
 data attestation as memento), supply chain (manufacturing attestation
 as memento), and beyond.
 
-Each domain's existing trust authorities — peer reviewers, auditors,
-courts, regulators — become producers. The substrate gives them a
+Each domain's existing trust authorities (peer reviewers, auditors,
+courts, regulators) become producers. The substrate gives them a
 content-addressed memento format to sign. The DAG composes their
 attestations across domains. Cross-domain claims become DAG walks.
 
@@ -217,8 +217,8 @@ compose them. Seven tiers of capture by selling exactly one thing
 
 ## Closing
 
-The architectural primitive — content-addressed hash-and-trust with
-producer fungibility and adversarial re-verification — has ridden
+The architectural primitive (content-addressed hash-and-trust with
+producer fungibility and adversarial re-verification) has ridden
 through five prior domains and arrived at the one that verifies all
 others.
 

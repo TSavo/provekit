@@ -8,7 +8,7 @@ This is purely a library-quality workstream. No harvest infrastructure changes; 
 
 ## Scope: 6 principles, in priority order by current hit count
 
-### 1. `falsy-default` — 161 hits (top of the noise list)
+### 1. `falsy-default`: 161 hits (top of the noise list)
 
 Current DSL:
 ```dsl
@@ -25,29 +25,29 @@ Tightening direction:
 
 This matches the original JSON's `requiresParamRef: true` field that the DSL translation dropped due to a capability gap (the FIXME comment in the file).
 
-### 2. `addition-overflow` — 88 hits
+### 2. `addition-overflow`: 88 hits
 
 Current DSL: matches any `+`. Tightening:
-- `require no $guard: node where narrows.narrowing_kind == "literal_lt"` near the addition site (any prior comparison against a literal — `< MAX`, `<= 1000`, etc.)
+- `require no $guard: node where narrows.narrowing_kind == "literal_lt"` near the addition site (any prior comparison against a literal, such as `< MAX`, `<= 1000`, etc.)
 - Or constrain to additions whose RHS flows from a parameter (data_flow check, same shape as falsy-default)
 
 Realistic outcome: from 88 hits down to maybe 15-25.
 
-### 3. `subtraction-underflow` — 51 hits
+### 3. `subtraction-underflow`: 51 hits
 
 Same shape as addition-overflow. Match `-`, require no guard against zero or against the LHS bound. Tightening fix mirrors #2.
 
-### 4. `multiplication-overflow` — 11 hits
+### 4. `multiplication-overflow`: 11 hits
 
 Same family as #2-3. Probably the same `require no narrows` shape.
 
-### 5. `throw-uncaught` — 11 hits
+### 5. `throw-uncaught`: 11 hits
 
 Current DSL: `throws.is_inside_handler == false`. The FIXME comment notes an extractor gap: throws inside the try-block (not the catch-block) report `is_inside_handler == false`, so the principle over-matches throws that ARE going to be caught by the surrounding try.
 
 This needs an extractor change, not a DSL change: add `throws.is_inside_try` column. Then tighten DSL with `and throws.is_inside_try == false`. **Capability work, not principle work.** Track separately.
 
-### 6. `empty-collection-loop` — 3 hits
+### 6. `empty-collection-loop`: 3 hits
 
 Already tight (constrains to `loop_kind == "for_of"` only). Low-priority.
 
@@ -57,7 +57,7 @@ For each tightened principle, re-run `scripts/harvest-recognize-report.ts` and c
 - Before tightening: high hit count, mix of real and shape-only matches
 - After tightening: lower hit count, but the matches that remain are honest
 
-Also: the candidates that LOSE coverage from the tightened principle become eligible for Phase 2-B discovery — they need new principles distilled. The hit-count drop becomes Phase 2-B's growth budget.
+Also: the candidates that LOSE coverage from the tightened principle become eligible for Phase 2-B discovery; they need new principles distilled. The hit-count drop becomes Phase 2-B's growth budget.
 
 If tightening a principle drops it from 161 hits to 30, that's 131 candidates that should produce new principles via discovery, each one a new bug class for the library.
 

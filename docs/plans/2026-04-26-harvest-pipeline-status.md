@@ -1,4 +1,4 @@
-# BugsJS Harvest Pipeline — Status (2026-04-26)
+# BugsJS Harvest Pipeline: Status (2026-04-26)
 
 **Operational record for the harvest pipeline build.** Phase 1, 2-A, 2-B, and Phase 4 (lite) shipped this session. End-to-end smoke validated on a real BugsJS bug.
 
@@ -60,7 +60,7 @@ The 6-principle library is already earning its keep on real bugs.
 
 ## Validation: locus constraint matters
 
-A naive "principle matches anywhere in any changed file" recognizer reports 100% coverage. With the locus constraint (`@@ -<start>,<len>` from the unified diff, ±3-line neighborhood for ts-morph node-to-source slack), express drops from spurious 100% to a believable 63%. The remaining 161 falsy-default hits ARE within the diff's hunk range — meaningful as evidence even if a fraction are syntactic-shape false positives.
+A naive "principle matches anywhere in any changed file" recognizer reports 100% coverage. With the locus constraint (`@@ -<start>,<len>` from the unified diff, ±3-line neighborhood for ts-morph node-to-source slack), express drops from spurious 100% to a believable 63%. The remaining 161 falsy-default hits ARE within the diff's hunk range; this is meaningful as evidence even if a fraction are syntactic-shape false positives.
 
 ## Discovery quality on the same input is variable
 
@@ -68,7 +68,7 @@ Two consecutive smoke runs on express-bug-1 (the Allow-header dedup bug):
 - Run 1: produced `ArrayPushWithoutDedupGuard` + `ArrayConcatWithoutDedupGuard` using `same_value` cross-references. Both passed adversarial validation.
 - Run 2: produced `ArrayPushWithoutConditionalGuard` + `ArrayPushApplyWithoutFilterGuard` without `same_value` constraints. Both rejected at 3/3 false-positive.
 
-The adversarial validator correctly rejects the broader run-2 shapes — the gate is doing its job. But this is real LLM variance on the same prompt. The same risk class as the Bug-1 v9-v22 chase yesterday: fix-loop infrastructure can be perfected, principle-distillation quality varies per call.
+The adversarial validator correctly rejects the broader run-2 shapes; the gate is doing its job. But this is real LLM variance on the same prompt. The same risk class as the Bug-1 v9-v22 chase yesterday: fix-loop infrastructure can be perfected, principle-distillation quality varies per call.
 
 For the harvest pipeline this is OK: rejected discoveries don't pollute the library. The Phase 4 validation gate is mechanical.
 
@@ -79,23 +79,23 @@ End-to-end discovery takes ~11 min per candidate (sonnet invariant synthesis + s
 ## Tests
 
 42 harvest tests across 7 modules:
-- extractBugs.test.ts (8) — Bug-N..Bug-N-fix tag walking + filters
-- recognize.test.ts (10) — locus-constrained matching, parseDiffDirtyLines
-- provenance.test.ts (6) — appendHarvestProvenance idempotence
-- synthesize.test.ts (8) — BugSignal + FixCandidate synthesis
-- discover.test.ts (3) — discoverPrinciple end-to-end with stub LLM
-- validate.test.ts (4) — positive + negative cohort validation
-- promote.test.ts (3) — staging→library promotion with merge
+- extractBugs.test.ts (8): Bug-N..Bug-N-fix tag walking + filters
+- recognize.test.ts (10): locus-constrained matching, parseDiffDirtyLines
+- provenance.test.ts (6): appendHarvestProvenance idempotence
+- synthesize.test.ts (8): BugSignal + FixCandidate synthesis
+- discover.test.ts (3): discoverPrinciple end-to-end with stub LLM
+- validate.test.ts (4): positive + negative cohort validation
+- promote.test.ts (3): staging→library promotion with merge
 
 463 total fix-loop tests passing.
 
 ## Commits this session (8 total)
 
 ```
-d8ffb09  Phase 1 extractor — Bug-N..Bug-N-fix → HarvestCandidate
+d8ffb09  Phase 1 extractor: Bug-N..Bug-N-fix → HarvestCandidate
 3b1be40  Phase 2-A recognition (locus-constrained, no LLM)
 03e3fd3  Provenance writeback (idempotent, batched)
-f4566cf  Phase 2-B discovery — first real principle from a real diff
+f4566cf  Phase 2-B discovery: first real principle from a real diff
 b95f90e  gitignore staging output
 7b1c30f  Provenance writeback wired + Phase 4 staging→library promotion
 ```
@@ -103,8 +103,8 @@ b95f90e  gitignore staging output
 ## What's left for #97
 
 - **Calibration on 30-bug subset** per the original spec. Not run yet beyond the single express-bug-1 smoke. Would consume ~5 hours sequential.
-- **Phase 5 continuous wiring** — same pipeline plumbed into customer fix loops so every closed bug feeds the harvest. Not started.
-- **Discovery parallelism** — current script processes serially. Parallelizing across the LLM provider would cut wall-time materially.
-- **Tighter principle library** — the existing 6 entries (falsy-default, addition-overflow, etc.) match too broadly. Refining their DSL with proper `require no` predicates would reduce spurious recognition without changing harvest infrastructure.
+- **Phase 5 continuous wiring**: same pipeline plumbed into customer fix loops so every closed bug feeds the harvest. Not started.
+- **Discovery parallelism**: current script processes serially. Parallelizing across the LLM provider would cut wall-time materially.
+- **Tighter principle library**: the existing 6 entries (falsy-default, addition-overflow, etc.) match too broadly. Refining their DSL with proper `require no` predicates would reduce spurious recognition without changing harvest infrastructure.
 
 The pipeline itself is functional and tested. The remaining work is calibration runs + parallelism + library refinement, not architecture.

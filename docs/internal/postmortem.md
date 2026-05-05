@@ -9,7 +9,7 @@
 
 "Logging is assertions made by eyeballs after the fact."
 
-Every `console.log` and `logger.info` a programmer writes is an implicit assertion — an `assert()` the programmer was too busy to formalize. provekit reads the surrounding code, derives what the programmer meant, expresses it as SMT-LIB, and proves it with Z3.
+Every `console.log` and `logger.info` a programmer writes is an implicit assertion: an `assert()` the programmer was too busy to formalize. provekit reads the surrounding code, derives what the programmer meant, expresses it as SMT-LIB, and proves it with Z3.
 
 The insight came in layers:
 
@@ -39,17 +39,17 @@ Tree-sitter parses the entry file. Import statements are resolved to source file
 
 For each file in topological order, assembles a context bundle per log statement: the file source, import sources, existing contracts from dependencies, calling context. Each bundle is everything the LLM needs for one derivation call.
 
-**Key design decision:** Context bundles are assembled before any LLM call. Phase 2 is deterministic and fast. The LLM sees a complete, pre-assembled prompt — not a live-assembled one that might vary.
+**Key design decision:** Context bundles are assembled before any LLM call. Phase 2 is deterministic and fast. The LLM sees a complete, pre-assembled prompt; not a live-assembled one that might vary.
 
 ### Phase 3: Contract Derivation
 **Input:** `bundles.json`
 **Output:** `.provekit/contracts/*.json`, `.provekit/derivation.json`
 
-For each call site in each bundle, sends the prompt to the LLM via Claude Agent SDK. Gets back SMT-LIB blocks. Feeds each to Z3. Writes contracts to disk. Contracts accumulate sequentially — derivation #N sees contracts #1 through #N-1.
+For each call site in each bundle, sends the prompt to the LLM via Claude Agent SDK. Gets back SMT-LIB blocks. Feeds each to Z3. Writes contracts to disk. Contracts accumulate sequentially: derivation #N sees contracts #1 through #N-1.
 
 **Key design decisions:**
-- **Sequential is the point.** Each derivation builds on all prior contracts. The context grows richer with each call site. This is not a performance problem — it's the accumulation loop working.
-- **Z3 validates every LLM output.** The LLM proposes, Z3 verifies. sat/unsat are ground truth on internal consistency (not on semantic correctness — the reviewer caught this distinction).
+- **Sequential is the point.** Each derivation builds on all prior contracts. The context grows richer with each call site. This is not a performance problem; it is the accumulation loop working.
+- **Z3 validates every LLM output.** The LLM proposes, Z3 verifies. sat/unsat are ground truth on internal consistency (not on semantic correctness; the reviewer caught this distinction).
 - **Vacuous filter.** Blocks where no assertion references two or more declared variables are rejected before Z3. Blocks with invented constants are prohibited by the prompt. This addresses the 27% noise rate found in the adversarial review.
 
 ### Phase 4: Principle Classification
@@ -84,7 +84,7 @@ The derivation prompt is the core of the system's capability. It evolved through
 6. **Full production prompt:** 7 principles, 7 teaching examples, two categories, principle tagging.
 7. **Vacuous prohibition:** "Every violation must model a code transition." Eliminated 27% noise.
 
-**Key insight:** The prompt matters more than the model. Haiku with a good prompt outperforms sonnet with a bad prompt. The teaching examples are the system's capability — not the model weights.
+**Key insight:** The prompt matters more than the model. Haiku with a good prompt outperforms sonnet with a bad prompt. The teaching examples are the system's capability; not the model weights.
 
 The prompt template lives at `prompts/invariant_derivation.md` and is assembled by Handlebars with template variables filled by Phase 2.
 
@@ -109,7 +109,7 @@ Real bugs found:
 
 ### orders.ts (cross-file, artifact pending)
 
-4 log statements with `inventory.ts` resolved as import. The LLM sees both files and derives cross-file precondition chains. Pipeline run in progress — artifact will be committed when complete.
+4 log statements with `inventory.ts` resolved as import. The LLM sees both files and derives cross-file precondition chains. Pipeline run in progress; artifact will be committed when complete.
 
 ### billing.ts (real production code, prior pipeline, artifact not preserved)
 
@@ -117,7 +117,7 @@ billing.ts was analyzed in a prior pipeline run (pre-refactor). The terminal out
 
 Real findings in production billing code:
 - **Credential exposure:** `authHeader.slice(7, 15)` leaks the full Bearer token when it's 8 chars or shorter. The "hint" is the entire secret.
-- **Audit-observation atomicity:** `logger.info("Operator cross-tenant access")` followed by a DB query — the audit record can describe a different state than what was actually served.
+- **Audit-observation atomicity:** `logger.info("Operator cross-tenant access")` followed by a DB query; the audit record can describe a different state than what was actually served.
 
 Both found from `logger.info` calls. Both confirmed by Z3.
 
@@ -188,7 +188,7 @@ Two rounds of independent adversarial review. Every criticism was either incorpo
 3. **Tree-sitter for AST.** Multi-language from the start. The parser doesn't know it's only doing TypeScript.
 4. **Handlebars for prompt templating.** Template variables filled mechanically by Phase 2. The prompt is a file, not embedded strings.
 5. **Filesystem as the bus.** Each phase reads from disk, writes immutable output to disk. Phases are independently runnable. State is inspectable. No in-memory coupling.
-6. **Sequential derivation.** Each call site sees all prior contracts. The context grows richer. This is not a performance problem — it's the accumulation loop.
+6. **Sequential derivation.** Each call site sees all prior contracts. The context grows richer. This is not a performance problem; it's the accumulation loop.
 7. **Vacuous filter at two levels.** Prompt prohibits, verifier rejects. Defense in depth for the 27% noise rate.
 8. **Adversarial validation with different model.** haiku adversary against sonnet derivation. Shared-bias laundering addressed.
 9. **Dependency chain tracking.** `depends_on` hashes record which contracts were in context. Staleness propagates backward through the graph.
@@ -238,11 +238,11 @@ Eight sections, ~50 commits, ~580 tests. From the bug-loop plan at `docs/plans/2
 - **Section A (substrate):** SAST tables (nodes, children, kind, 16 capability tables), data-flow edges with closed slot vocabulary, dominance + post-dominance, incremental re-index, DSL parser/compiler/evaluator with capability + relation registries, 14 of 23 seed principles migrated.
 - **Section B (intake + orchestration):** intake adapter registry (`BugSignal.source` is data, not enum), SAST-backed locator, remediation layer registry (`primaryLayer` is data, not enum), `provekit fix <ref>` CLI, orchestrator scaffold.
 - **Section C (generation + verification):** invariant formulator (oracle #1), scratch overlay, fix candidate generator (oracle #2), complementary changes (oracle #3), mutation-verified regression test (oracle #9), principle/capability candidate (oracles #6/#14/#16/#17/#18). Each is a stage; each is gated by Z3 or runtime verifiers, not LLM self-confidence.
-- **Section D (bundle + apply + learn):** artifact-kind registry (4th primitive — each kind names which oracles its verification requires), bundle coherence runner, transactional apply with substrate-rollback, learning layer that promotes principles into the library.
+- **Section D (bundle + apply + learn):** artifact-kind registry (4th primitive; each kind names which oracles its verification requires), bundle coherence runner, transactional apply with substrate-rollback, learning layer that promotes principles into the library.
 
 ### The architectural moves that mattered
 
-1. **Five primitive registries.** Capabilities, DSL relations, intake adapters, remediation layers, artifact kinds. Each is a runtime `Map<name, descriptor>`. Adding a new bug class, a new query relation, a new fix layer, a new artifact type — all are `register*({...})` calls, never code changes. Closed enums are death.
+1. **Five primitive registries.** Capabilities, DSL relations, intake adapters, remediation layers, artifact kinds. Each is a runtime `Map<name, descriptor>`. Adding a new bug class, a new query relation, a new fix layer, a new artifact type: all are `register*({...})` calls, never code changes. Closed enums are death.
 
 2. **18 oracles, layered.** 13 for fix bundles (Z3 confirmation, primary fix gate, complementary gate, no-regression, bundle coherence, adversarial validation, witness replay, no-new-gaps, mutation-verified test, full suite, SAST coherence, DSL no-regressions, gap closure). +5 for substrate bundles (migration safety, cross-codebase regression, extractor coverage, substrate consistency, principle-needs-capability). No LLM output enters the library without surviving its full applicable set.
 
@@ -320,13 +320,13 @@ The research question is answered. The first real-LLM bundle landed. The remaini
 
 4. **Oracle #7 (witness replay) and #12 (DSL no-regressions).** Same MVP-stub pattern. Real implementations are scoped, just not yet built.
 
-5. **The 8 remaining A8 capability gaps.** Each is a substrate bundle waiting for its first real bug. Some closed in #66-69 (same_value relation, parser opens, varDeref args, explicit relation calls). The other half — string_composition for shell-injection, encloses for loop-accumulator, control-flow capabilities for guard-narrowing — stay queued.
+5. **The 8 remaining A8 capability gaps.** Each is a substrate bundle waiting for its first real bug. Some closed in #66-69 (same_value relation, parser opens, varDeref args, explicit relation calls). The other half (string_composition for shell-injection, encloses for loop-accumulator, control-flow capabilities for guard-narrowing) stay queued.
 
 6. **Multi-language support.** Currently TypeScript-only via ts-morph. Tree-sitter wiring exists for the analyze layer; the fix-loop's SAST builder is TS-specific. Generalizing the capability extractors to other languages is a per-language task.
 
 7. **Concurrency.** Today: single-user, single-process, single-worktree. The capability registry is a process-local Map. Multi-user setups need either a shared registry or per-tenant isolation.
 
-8. **Performance.** Each dogfood run takes 2–8 minutes on Opus 4.7 (LLM-latency-bound). Cheaper tier choice per stage (haiku for intake/classify, sonnet for proposals, opus for invariant formulation) would cut this. Opus everywhere is conservative; production wants tiered selection.
+8. **Performance.** Each dogfood run takes 2 to 8 minutes on Opus 4.7 (LLM-latency-bound). Cheaper tier choice per stage (haiku for intake/classify, sonnet for proposals, opus for invariant formulation) would cut this. Opus everywhere is conservative; production wants tiered selection.
 
-The architecture holds. Every piece traces back to "logs are assertions made with eyeballs — what if they weren't." The closed loop now lets the system fix the bugs eyeballs would have found, prove the fixes are real, and learn the bug class so the next eyeballs never have to.
+The architecture holds. Every piece traces back to "logs are assertions made with eyeballs; what if they weren't." The closed loop now lets the system fix the bugs eyeballs would have found, prove the fixes are real, and learn the bug class so the next eyeballs never have to.
 

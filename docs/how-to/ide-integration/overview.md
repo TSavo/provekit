@@ -9,11 +9,11 @@ ProvekIt LSP plugins shipping today:
 | Zig | `provekit-lift-zig --rpc` | shipping (v1.4.1) |
 | Ruby | `provekit-lsp-ruby` | shipping (v1.4.1) |
 | C# | `Provekit.Lsp.Plugin` | shipping (v1.4.1) |
-| TypeScript | — | planned for v1.2 |
-| Go | — | planned for v1.2 |
-| C++ | — | planned for v1.2 |
-| Java / JVM | — | planned for v1.2 |
-| Swift | — | planned |
+| TypeScript | | planned for v1.2 |
+| Go | | planned for v1.2 |
+| C++ | | planned for v1.2 |
+| Java / JVM | | planned for v1.2 |
+| Swift | | planned |
 
 If your kit is not in the shipping list, the in-editor squigglies are not yet available. The CLI loop (`cargo provekit-lift && provekit prove`) still works.
 
@@ -110,8 +110,8 @@ lsp:
 
 ## Read next
 
-- [vscode.md](vscode.md) — VSCode integration.
-- [neovim.md](neovim.md) — Neovim integration.
-- [jetbrains.md](jetbrains.md) — JetBrains family.
-- [emacs.md](emacs.md) — Emacs integration.
-- [`../../contributing/writing-an-LSP-plugin.md`](../../contributing/writing-an-LSP-plugin.md) — for porting to a new editor or kit.
+- [vscode.md](vscode.md): VSCode integration.
+- [neovim.md](neovim.md): Neovim integration.
+- [jetbrains.md](jetbrains.md): JetBrains family.
+- [emacs.md](emacs.md): Emacs integration.
+- [`../../contributing/writing-an-LSP-plugin.md`](../../contributing/writing-an-LSP-plugin.md): for porting to a new editor or kit.

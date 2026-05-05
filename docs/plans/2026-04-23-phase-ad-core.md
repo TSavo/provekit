@@ -6,7 +6,7 @@
 
 **Goal:** Ship encoding-gap localization (the thesis-distinctive capability from THESIS.md) on top of v1's existing harness by adding a SQLite+Drizzle data layer for traces, clauses, witnesses, and gap reports; a Z3 model parser; a runtime value serializer; snapshot-based instrumented execution; and a domain-aware comparator with three sort-specific agents (IEEE specials, outcome mismatch, path not taken).
 
-**Architecture:** The SAST IR and principle DSL come in a later phase. For this plan, v1 JSON contracts stay as-is; new data (traces, witnesses, gaps) lands in SQLite via Drizzle. Bindings are line-referenced (source_line + source_expr) — when SAST arrives in Phase B, a migration adds `bound_to_node` FK to nodes and backfills. Everything in the schema is relational; no JSON columns. Runtime values are stored as a graph (`runtime_values` + `object_members` + `array_elements`).
+**Architecture:** The SAST IR and principle DSL come in a later phase. For this plan, v1 JSON contracts stay as-is; new data (traces, witnesses, gaps) lands in SQLite via Drizzle. Bindings are line-referenced (source_line + source_expr) (when SAST arrives in Phase B, a migration adds `bound_to_node` FK to nodes and backfills). Everything in the schema is relational; no JSON columns. Runtime values are stored as a graph (`runtime_values` + `object_members` + `array_elements`).
 
 **Tech Stack:** TypeScript, vitest, ts-morph (already in deps), better-sqlite3 (new), drizzle-orm + drizzle-kit (new), Z3 CLI (already used via execSync).
 
@@ -17,33 +17,33 @@
 ## File Structure
 
 **New files (schema):**
-- `src/db/index.ts` — Drizzle DB connection + type exports
-- `src/db/schema/runtimeValues.ts` — `runtime_values`, `runtime_value_object_members`, `runtime_value_array_elements`
-- `src/db/schema/traces.ts` — `traces`, `trace_values`
-- `src/db/schema/clauses.ts` — `clauses`, `clause_bindings`, `clause_witnesses`
-- `src/db/schema/gapReports.ts` — `gap_reports`
-- `src/db/schema/index.ts` — re-exports all schemas
-- `drizzle.config.ts` — drizzle-kit config
+- `src/db/index.ts`: Drizzle DB connection + type exports
+- `src/db/schema/runtimeValues.ts`: `runtime_values`, `runtime_value_object_members`, `runtime_value_array_elements`
+- `src/db/schema/traces.ts`: `traces`, `trace_values`
+- `src/db/schema/clauses.ts`: `clauses`, `clause_bindings`, `clause_witnesses`
+- `src/db/schema/gapReports.ts`: `gap_reports`
+- `src/db/schema/index.ts`: re-exports all schemas
+- `drizzle.config.ts`: drizzle-kit config
 
 **New files (D-core):**
-- `src/z3/modelParser.ts` — parse Z3 `(model ...)` output
-- `src/z3/persistWitness.ts` — write parsed model to `clause_witnesses` + `runtime_values`
-- `src/runtime/valueSerializer.ts` — serialize JS value → `runtime_values` graph
-- `src/runtime/snapshotInstrumentation.ts` — ts-morph AST rewrite at signal line
-- `src/bindings/validator.ts` — line-based binding validation
-- `src/comparator/core.ts` — orchestrates sort agents
-- `src/comparator/agents/ieeeSpecials.ts` — Real sort vs IEEE 754
-- `src/comparator/agents/outcomeMismatch.ts` — return vs throw disagreement
-- `src/comparator/agents/pathNotTaken.ts` — witness path vs trace path
-- `src/gapDetection.ts` — full pipeline: parse + instrument + compare + persist
+- `src/z3/modelParser.ts`: parse Z3 `(model ...)` output
+- `src/z3/persistWitness.ts`: write parsed model to `clause_witnesses` + `runtime_values`
+- `src/runtime/valueSerializer.ts`: serialize JS value → `runtime_values` graph
+- `src/runtime/snapshotInstrumentation.ts`: ts-morph AST rewrite at signal line
+- `src/bindings/validator.ts`: line-based binding validation
+- `src/comparator/core.ts`: orchestrates sort agents
+- `src/comparator/agents/ieeeSpecials.ts`: Real sort vs IEEE 754
+- `src/comparator/agents/outcomeMismatch.ts`: return vs throw disagreement
+- `src/comparator/agents/pathNotTaken.ts`: witness path vs trace path
+- `src/gapDetection.ts`: full pipeline: parse + instrument + compare + persist
 
 **Modified files:**
-- `package.json` — add better-sqlite3, drizzle-orm, drizzle-kit
-- `src/harness.ts` — add `captureTrace` option to `runHarness`
-- `src/cli.ts` — add `--gaps` flag to `explain` subcommand
-- `prompts/invariant_derivation.md` — LLM emits `smt_bindings` per clause
-- `src/contracts.ts` — extend `Violation` type with optional `smt_bindings` field for transitional v1 compat
-- `.gitignore` — add `.neurallog/neurallog.db`, `.neurallog/neurallog.db-journal`
+- `package.json`: add better-sqlite3, drizzle-orm, drizzle-kit
+- `src/harness.ts`: add `captureTrace` option to `runHarness`
+- `src/cli.ts`: add `--gaps` flag to `explain` subcommand
+- `prompts/invariant_derivation.md`: LLM emits `smt_bindings` per clause
+- `src/contracts.ts`: extend `Violation` type with optional `smt_bindings` field for transitional v1 compat
+- `.gitignore`: add `.neurallog/neurallog.db`, `.neurallog/neurallog.db-journal`
 
 **Test files:**
 - `src/db/index.test.ts`
@@ -86,7 +86,7 @@ Expected: installs complete without errors. `package.json` gains four new entrie
 
 - [ ] **Step 1.2: Add `.gitignore` entries for the DB file**
 
-Edit `.gitignore` — add at end:
+Edit `.gitignore`: add at end:
 ```
 .neurallog/neurallog.db
 .neurallog/neurallog.db-journal
@@ -177,7 +177,7 @@ git commit -m "chore: add better-sqlite3 + drizzle; wire DB connection"
 
 ---
 
-## Task 2: Schema — runtime_values graph
+## Task 2: Schema (runtime_values graph)
 
 **Files:**
 - Create: `src/db/schema/runtimeValues.ts`
@@ -356,7 +356,7 @@ git commit -m "db: runtime_values graph with object_members and array_elements"
 
 ---
 
-## Task 3: Schema — traces + trace_values
+## Task 3: Schema (traces + trace_values)
 
 **Files:**
 - Create: `src/db/schema/traces.ts`
@@ -422,7 +422,7 @@ describe("traces schema", () => {
 });
 ```
 
-Note: this test uses `clauseId: 1` without a real clauses row — acceptable for isolation because foreign key on clauseId is added only after `clauses` schema lands (Task 4). Enforce this ordering: Task 3's migration MUST NOT declare the clauseId FK; Task 4 adds it.
+Note: this test uses `clauseId: 1` without a real clauses row (acceptable for isolation because foreign key on clauseId is added only after `clauses` schema lands (Task 4)). Enforce this ordering: Task 3's migration MUST NOT declare the clauseId FK; Task 4 adds it.
 
 - [ ] **Step 3.2: Run test to verify it fails**
 
@@ -480,7 +480,7 @@ export const traceValues = sqliteTable(
 );
 ```
 
-Delete the `import { nodes } from "./nodes.js";` line — nodes doesn't exist yet. Correction: don't import at all.
+Delete the `import { nodes } from "./nodes.js";` line (nodes doesn't exist yet). Correction: don't import at all.
 
 Revised file (final form for this step):
 ```typescript
@@ -555,7 +555,7 @@ git commit -m "db: traces + trace_values schema"
 
 ---
 
-## Task 4: Schema — clauses + clause_bindings + clause_witnesses
+## Task 4: Schema (clauses + clause_bindings + clause_witnesses)
 
 **Files:**
 - Create: `src/db/schema/clauses.ts`
@@ -742,7 +742,7 @@ git commit -m "db: clauses + clause_bindings + clause_witnesses schema"
 
 ---
 
-## Task 5: Schema — gap_reports
+## Task 5: Schema (gap_reports)
 
 **Files:**
 - Create: `src/db/schema/gapReports.ts`
@@ -1019,7 +1019,7 @@ function tokenize(s: string): string[] {
       continue;
     }
     if (c === '"') {
-      // string literal — scan to closing quote (Z3 doubles internal quotes)
+      // string literal (scan to closing quote (Z3 doubles internal quotes))
       let j = i + 1;
       let buf = '"';
       while (j < s.length) {
@@ -1624,7 +1624,7 @@ function findStatementAtLine(body: Block, line: number) {
       return s;
     }
   }
-  // Signal line not inside any statement — use last statement as fallback
+  // Signal line not inside any statement (use last statement as fallback)
   return statements.length ? statements[statements.length - 1] : null;
 }
 ```
@@ -1878,7 +1878,7 @@ export async function runHarnessWithTrace(args: RunHarnessWithTraceArgs): Promis
 }
 ```
 
-Note: the `Date.now = () => 0;` stub conflicts with our own `capturedAt: Date.now()` after the stub is restored — we must record `capturedAt` BEFORE restoring or AFTER; the code above records after restoration (after `finally`), which is correct since `Date.now` is back to real by then.
+Note: the `Date.now = () => 0;` stub conflicts with our own `capturedAt: Date.now()` after the stub is restored (we must record `capturedAt` BEFORE restoring or AFTER; the code above records after restoration (after `finally`), which is correct since `Date.now` is back to real by then).
 
 - [ ] **Step 10.4: Run test to verify it passes**
 
@@ -2534,7 +2534,7 @@ export async function detectGaps(args: DetectGapsArgs): Promise<void> {
     if (name) runtimeByConstant.set(name, row);
   }
 
-  // 5. Compute visited lines (for path-not-taken) — currently "line covered" is
+  // 5. Compute visited lines (for path-not-taken) (currently "line covered" is)
   // approximated as "any trace_value exists for any capture at this line."
   // A proper implementation waits for SAST + richer instrumentation.
   const visitedLines = new Set<number>();
@@ -2863,7 +2863,7 @@ export function explainGaps(db: Db, contractKey: string): string {
   const lines: string[] = [];
   for (const row of rows) {
     const header = row.atNodeRef ? `encoding-gap at ${row.atNodeRef}` : `encoding-gap`;
-    const constName = row.smtConstant ? ` — ${row.smtConstant}` : "";
+    const constName = row.smtConstant ? ` (${row.smtConstant}` : "";)
     lines.push(`${header}${constName}`);
 
     if (row.smtValueId) {
@@ -2930,7 +2930,7 @@ if (args.includes("--gaps")) {
 ```
 
 If `src/cli.ts` uses a different CLI pattern (e.g., a commander-style
-setup or a custom argv walker), adapt accordingly — the core is that
+setup or a custom argv walker), adapt accordingly (the core is that)
 `--gaps` short-circuits to `explainGaps`.
 
 - [ ] **Step 17.4: Run test to verify it passes**
@@ -3038,7 +3038,7 @@ describe("end-to-end: division-by-zero produces IEEE gap", () => {
 - [ ] **Step 18.3: Run test to verify it fails**
 
 Run: `npx vitest run src/e2e.gapDetection.test.ts`
-Expected: FAIL on first run — reason depends on environment; investigate the first failure before retrying. Common first-run issues:
+Expected: FAIL on first run (reason depends on environment; investigate the first failure before retrying). Common first-run issues:
 - Working directory affects migration resolution: the test uses a fresh db path; drizzle migrations must be resolvable from the test process cwd (typically repo root).
 - `loadModuleWithPrivates` needs `typescript` available; the project already depends on it (see `src/moduleLoader.ts:11`).
 
@@ -3091,9 +3091,9 @@ Spec coverage check (from `docs/specs/2026-04-23-provekit-v2-design.md`, Phase A
 No spec gaps. Two items deliberately deferred to later phases per the
 revised phasing:
 
-- `bound_to_node` FK on `clause_bindings` to `nodes(id)` — requires SAST
+- `bound_to_node` FK on `clause_bindings` to `nodes(id)`: requires SAST
   (Phase B).
-- Transitive `data_flow_transitive` materialization — Phase B.
+- Transitive `data_flow_transitive` materialization (Phase B).
 
 These do not block A-thin + D-core; they appear in later phase plans.
 
@@ -3117,11 +3117,11 @@ Plan complete and saved to
 
 Two execution options:
 
-1. **Subagent-Driven (recommended)** — a fresh subagent executes each task;
+1. **Subagent-Driven (recommended)** (a fresh subagent executes each task;)
    two-stage review between tasks; fast iteration, isolated context per
    task.
 
-2. **Inline Execution** — tasks execute in this session via
+2. **Inline Execution** (tasks execute in this session via)
    executing-plans; batch execution with checkpoints for review.
 
 Which approach?

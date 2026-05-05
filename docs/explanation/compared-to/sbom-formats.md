@@ -124,6 +124,6 @@ Most enterprises today ship SBOMs, increasingly require them from suppliers, but
 
 ## Read next
 
-- [slsa-sigstore-in-toto-scitt.md](slsa-sigstore-in-toto-scitt.md) — the broader supply-chain framework comparison.
-- [`../../security/supply-chain.md`](../../security/supply-chain.md) — supply-chain attack scenarios.
-- [`../../security/what-binaryCid-catches.md`](../../security/what-binaryCid-catches.md) — what `binaryCid` provides.
+- [slsa-sigstore-in-toto-scitt.md](slsa-sigstore-in-toto-scitt.md): the broader supply-chain framework comparison.
+- [`../../security/supply-chain.md`](../../security/supply-chain.md): supply-chain attack scenarios.
+- [`../../security/what-binaryCid-catches.md`](../../security/what-binaryCid-catches.md): what `binaryCid` provides.

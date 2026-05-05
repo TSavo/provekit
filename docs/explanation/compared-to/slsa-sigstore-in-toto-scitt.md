@@ -9,7 +9,7 @@ The supply-chain attestation space has multiple frameworks with different goals.
 - **in-toto**: a framework for capturing build steps as signed attestations. The "ITE" (in-toto Enhancement) family of specs.
 - **SCITT**: Supply Chain Integrity, Transparency, and Trust (IETF). Standardizes attestation transparency logs.
 - **CycloneDX / SPDX**: SBOM (Software Bill of Materials) formats. Inventory of components.
-- **ProvekIt**: a protocol for content-addressing **behavioral verifications**. Not inventory, not provenance, not identity — what the code *does*.
+- **ProvekIt**: a protocol for content-addressing **behavioral verifications**. Not inventory, not provenance, not identity; what the code *does*.
 
 ProvekIt is in a different category from the others. It complements all of them.
 
@@ -165,8 +165,8 @@ For organizations bootstrapping supply-chain practices: ProvekIt is one of sever
 
 ## Read next
 
-- [`../../security/supply-chain.md`](../../security/supply-chain.md) — supply-chain attack scenarios in depth.
-- [`../../security/what-binaryCid-catches.md`](../../security/what-binaryCid-catches.md) — binary integrity defense.
-- [coq-fstar-lean.md](coq-fstar-lean.md) — interactive theorem provers (different category).
-- [sbom-formats.md](sbom-formats.md) (when written) — CycloneDX / SPDX in depth.
-- [`../boundaries.md`](../boundaries.md) — what ProvekIt is NOT.
+- [`../../security/supply-chain.md`](../../security/supply-chain.md): supply-chain attack scenarios in depth.
+- [`../../security/what-binaryCid-catches.md`](../../security/what-binaryCid-catches.md): binary integrity defense.
+- [coq-fstar-lean.md](coq-fstar-lean.md): interactive theorem provers (different category).
+- [sbom-formats.md](sbom-formats.md) (when written): CycloneDX / SPDX in depth.
+- [`../boundaries.md`](../boundaries.md): what ProvekIt is NOT.

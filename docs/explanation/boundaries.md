@@ -42,7 +42,7 @@ If a regulator requires Coq, F\*, Lean, or Isabelle output, those tools remain t
 
 The signature on a `.proof` documents who claimed what. It does not vouch for the claimant's competence, judgment, or motivation. A signed memento from a malicious developer is a valid memento at the signature layer; the verifier checks the trust set, not the claimant's intent.
 
-Under v1.4's rank-3 consumer pin (`contractCid, witnessCid, binaryCid`), the consumer's threat model is rich: they choose which contractCids they accept, which prover keys they trust for witnesses, and they verify the binaryCid against the running artifact. A malicious developer would need to (a) author a contract the consumer is willing to bind to, AND (b) procure a witness signed by a prover the consumer trusts, AND (c) ship a binary whose hash matches what the consumer verifies — coherently. That bar is high; not infinite.
+Under v1.4's rank-3 consumer pin (`contractCid, witnessCid, binaryCid`), the consumer's threat model is rich: they choose which contractCids they accept, which prover keys they trust for witnesses, and they verify the binaryCid against the running artifact. A malicious developer would need to (a) author a contract the consumer is willing to bind to, AND (b) procure a witness signed by a prover the consumer trusts, AND (c) ship a binary whose hash matches what the consumer verifies, coherently. That bar is high; not infinite.
 
 The trust decision belongs to the verifier:
 
@@ -73,7 +73,7 @@ This is what "the residue at Tier 3 is real work" means. The IR's expressiveness
 
 ## ProvekIt does not solve the cold-start problem
 
-The headline metric — hash-discharge fraction — depends on the lattice being seeded with enough cached implications to make Tier 1 the common case. An empty lattice means every call site falls through to Tier 3 (Z3 invocation per pair), which is slow.
+The headline metric (hash-discharge fraction) depends on the lattice being seeded with enough cached implications to make Tier 1 the common case. An empty lattice means every call site falls through to Tier 3 (Z3 invocation per pair), which is slow.
 
 Early adopters of ProvekIt face an empty lattice. Their first runs are mostly Tier 3, mostly slow, with low Tier 1 fraction. The lattice grows from each project that adopts; the cost amortizes; the discharge fraction approaches the theoretical asymptote.
 
@@ -124,7 +124,7 @@ ProvekIt makes (1) cheap and (2) verifiable but does not perform either for you.
 
 ## ProvekIt is not Bitcoin
 
-The lineage to Bitcoin / Git / BitTorrent / IPFS is structural — content-addressing as a primitive. The lineage is not financial, not adversarial-minded in the same way, not subject to the same incentive engineering.
+The lineage to Bitcoin / Git / BitTorrent / IPFS is structural (content-addressing as a primitive). The lineage is not financial, not adversarial-minded in the same way, not subject to the same incentive engineering.
 
 Specifically: ProvekIt does not have a token, does not have miners, does not have a consensus mechanism, does not have block reorganizations. The "registry" is a passive set of mementos that any peer can store; there is no party whose downtime breaks anything; there is no adversarial validation game.
 
@@ -144,7 +144,7 @@ That is the thesis. Stripping the overclaims makes the remaining claim clearer.
 
 ## Read next
 
-- [thesis.md](thesis.md) — the central claim, in detail.
-- [cold-start.md](cold-start.md) — the bootstrap problem.
-- [../security/threat-model.md](../security/threat-model.md) (when written) — what ProvekIt catches and what it doesn't.
-- [compared-to/](compared-to/) — head-to-head comparisons with adjacent tools.
+- [thesis.md](thesis.md): the central claim, in detail.
+- [cold-start.md](cold-start.md): the bootstrap problem.
+- [../security/threat-model.md](../security/threat-model.md) (when written): what ProvekIt catches and what it doesn't.
+- [compared-to/](compared-to/): head-to-head comparisons with adjacent tools.

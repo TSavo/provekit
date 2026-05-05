@@ -6,7 +6,7 @@
 
 **Goal:** Wire Phase D gap detection into `neurallog analyze` so running the CLI against a source file produces `gap_reports` rows in SQLite, visible via `explain --gaps`. No separate commands. Gap output shows up alongside proofs in the normal workflow.
 
-**Architecture:** The existing pipeline runs mechanical templates (via `TemplateEngine`) that produce Z3-verified SMT-LIB blocks. We extend those templates to also emit per-constant source bindings — derived automatically from the AST match data they already have. Violations carry bindings through `buildContracts`. A new `GapDetectionPhase` between derivation and axiom phases reads violations, synthesizes harness inputs from the Z3 witness, calls `detectGaps`, and persists to SQLite. CEGAR-refined violations mark bindings stale and skip. The dormant `invariant_derivation.md` LLM path gets removed.
+**Architecture:** The existing pipeline runs mechanical templates (via `TemplateEngine`) that produce Z3-verified SMT-LIB blocks. We extend those templates to also emit per-constant source bindings (derived automatically from the AST match data they already have). Violations carry bindings through `buildContracts`. A new `GapDetectionPhase` between derivation and axiom phases reads violations, synthesizes harness inputs from the Z3 witness, calls `detectGaps`, and persists to SQLite. CEGAR-refined violations mark bindings stale and skip. The dormant `invariant_derivation.md` LLM path gets removed.
 
 **Tech Stack:** TypeScript, vitest, tree-sitter (existing), Drizzle + better-sqlite3 (from Phase A-thin), ts-morph (from Phase D-core). No new deps.
 
@@ -18,7 +18,7 @@
 
 **What the template engine does today.** `src/templates/TemplateEngine.ts:generateProofs` walks a function's AST, matches principles' `astPatterns` against nodes, extracts a `Record<string, string>` of template variable → source variable names (e.g., `{left: "a", right: "b", numerator: "a", denominator: "b"}` for `a / b`), and substitutes those names into the principle's `smt2Template` to produce Z3-verifiable SMT-LIB. The match data is thrown away after substitution.
 
-**What's missing for bindings.** Each template variable corresponds to a specific AST child node with a specific `startPosition.row` and `.text`. Those are the source_line and source_expr fields of an `SmtBinding`. The sort comes from parsing the generated smt2's `(declare-const X SORT)` lines — no schema change needed.
+**What's missing for bindings.** Each template variable corresponds to a specific AST child node with a specific `startPosition.row` and `.text`. Those are the source_line and source_expr fields of an `SmtBinding`. The sort comes from parsing the generated smt2's `(declare-const X SORT)` lines (no schema change needed).
 
 **Why there's a dormant LLM path.** `DerivationPhase.buildPrompt` + `compiledTemplate` load `invariant_derivation.md` but have zero call sites. POSTMORTEM.md's thesis committed to Layer 2 (mechanical templates) as the steady-state pipeline; the LLM-per-signal prompt was vestigial from an earlier era. Deleting it removes confusion and ~90 LOC.
 
@@ -26,7 +26,7 @@
 
 **Constraints you'll hit.**
 - The safe-name transform in `instantiateTemplate` (line 272: `value.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 30)`) means the SMT constant name may differ from the raw source text. Bindings must record the *transformed* name (as it appears in the SMT) not the raw source text. Mismatching this breaks the comparator join.
-- Templates use `{{var}}_<line>` for unsubstituted placeholders (line 278). These synthetic constants have no source correspondent — bindings for them get `source_line: 0, source_expr: "<abstract>"`.
+- Templates use `{{var}}_<line>` for unsubstituted placeholders (line 278). These synthetic constants have no source correspondent (bindings for them get `source_line: 0, source_expr: "<abstract>"`).
 - CEGAR refinement (`DerivationPhase.ts` around line 857) rewrites `v.smt2`. The variable names may change. Bindings from the original match become stale. For Phase A-thin: mark stale and skip gap detection on refined violations.
 
 ---
@@ -34,19 +34,19 @@
 ## File structure
 
 **New:**
-- `src/pipeline/GapDetectionPhase.ts` — new phase; wires violations to `detectGaps`
-- `src/inputs/synthesizer.ts` — parse Z3 model + bindings → JS inputs for harness
+- `src/pipeline/GapDetectionPhase.ts`: new phase; wires violations to `detectGaps`
+- `src/inputs/synthesizer.ts`: parse Z3 model + bindings → JS inputs for harness
 - `src/pipeline/GapDetectionPhase.test.ts`, `src/inputs/synthesizer.test.ts`
 
 **Modified:**
-- `src/contracts.ts` — `SmtBinding` type + optional field on `Violation` (already done in prior commit; verify)
-- `src/templates/Template.ts` — extend `TemplateResult` with `bindings: SmtBinding[]`
-- `src/templates/TemplateEngine.ts` — extract bindings from match data
-- `src/templates/TemplateEngine.test.ts` — binding extraction tests
-- `src/pipeline/DerivationPhase.ts` — (a) remove dormant `buildPrompt`/`compiledTemplate`/`loadTemplate`; (b) carry `bindings` through `buildContracts` onto `Violation.smt_bindings`; (c) in CEGAR refinement, mark refined violations with a `bindings_stale` flag (or clear their `smt_bindings`)
-- `src/pipeline/Pipeline.ts` — construct `GapDetectionPhase`; call it between `derivationPhase.execute` and `axiomPhase.execute`
+- `src/contracts.ts`: `SmtBinding` type + optional field on `Violation` (already done in prior commit; verify)
+- `src/templates/Template.ts`: extend `TemplateResult` with `bindings: SmtBinding[]`
+- `src/templates/TemplateEngine.ts`: extract bindings from match data
+- `src/templates/TemplateEngine.test.ts`: binding extraction tests
+- `src/pipeline/DerivationPhase.ts`: (a) remove dormant `buildPrompt`/`compiledTemplate`/`loadTemplate`; (b) carry `bindings` through `buildContracts` onto `Violation.smt_bindings`; (c) in CEGAR refinement, mark refined violations with a `bindings_stale` flag (or clear their `smt_bindings`)
+- `src/pipeline/Pipeline.ts`: construct `GapDetectionPhase`; call it between `derivationPhase.execute` and `axiomPhase.execute`
 
-**Deleted:** nothing from disk — `prompts/invariant_derivation.md` stays as reference documentation (it's cited from the design doc); only the unused loader code in `DerivationPhase.ts` goes.
+**Deleted:** nothing from disk (`prompts/invariant_derivation.md` stays as reference documentation (it's cited from the design doc); only the unused loader code in `DerivationPhase.ts` goes).
 
 ---
 
@@ -56,7 +56,7 @@
 
 **Files:**
 - Modify: `src/pipeline/DerivationPhase.ts`
-- Test: no dedicated test — the full suite passing after removal is the signal
+- Test: no dedicated test (the full suite passing after removal is the signal)
 
 **What to do:**
 
@@ -67,7 +67,7 @@ Run from the worktree root:
 grep -rn "buildPrompt\|compiledTemplate\|loadTemplate" src --include="*.ts"
 ```
 
-Expected: only definitions in `DerivationPhase.ts`. If any consumer references them, STOP and escalate — the plan's premise is wrong.
+Expected: only definitions in `DerivationPhase.ts`. If any consumer references them, STOP and escalate (the plan's premise is wrong).
 
 - [ ] **Step 1.2: Remove the dormant code from `DerivationPhase.ts`**
 
@@ -76,7 +76,7 @@ Delete:
 - The `this.compiledTemplate = this.loadTemplate();` initialization.
 - The entire `loadTemplate()` method.
 - The entire `buildPrompt()` method.
-- The `import Handlebars from "handlebars"` / `import { readFileSync } from "fs"` (only if they're no longer used elsewhere in the file — check first).
+- The `import Handlebars from "handlebars"` / `import { readFileSync } from "fs"` (only if they're no longer used elsewhere in the file (check first)).
 
 Leave `prompts/invariant_derivation.md` on disk. It's referenced from the v2 design doc as example material for LLM-extracted bindings and worked examples. The binding-emission section you wrote in Task 16 of the prior plan is still valuable reference.
 
@@ -103,7 +103,7 @@ invariant_derivation.md is reference documentation, not runtime input."
 
 ## Task 2: Emit bindings for `binary_expression` templates (divide-by-zero as the prototype)
 
-**Why this first:** binary_expression is the highest-leverage pattern — divide, modulo, add/sub/mul overflow, falsy-default, all share the `left`/`right` / `numerator`/`denominator` variable shape. Getting this pattern right generalizes to 6+ principles. It's also where the canonical gap-detection case (0/0 → NaN) lives.
+**Why this first:** binary_expression is the highest-leverage pattern (divide, modulo, add/sub/mul overflow, falsy-default, all share the `left`/`right` / `numerator`/`denominator` variable shape). Getting this pattern right generalizes to 6+ principles. It's also where the canonical gap-detection case (0/0 → NaN) lives.
 
 **Files:**
 - Modify: `src/templates/Template.ts` (extend `TemplateResult`)
@@ -135,16 +135,16 @@ into a tree-sitter AST using the existing `parseFile` from `src/parser.ts`.
 
 2. Call `templateEngine.generateProofs(fnNode, "divide", "src/divide.ts")`.
 
-3. Find the result whose `principle` is `division-by-zero` (or whichever ID the seed principle uses — check `.neurallog/principles/division-by-zero.json`).
+3. Find the result whose `principle` is `division-by-zero` (or whichever ID the seed principle uses (check `.neurallog/principles/division-by-zero.json`)).
 
 4. Assert:
    - `result.bindings` is non-empty
-   - There's a binding for the denominator with `source_expr: "b"` (or the safe-name of it — inspect `result.smt2` to see what constant name was actually used), `source_line: 2`, `sort: "Real"` (parsed from the `(declare-const ... Real)` in the smt2)
+   - There's a binding for the denominator with `source_expr: "b"` (or the safe-name of it (inspect `result.smt2` to see what constant name was actually used), `source_line: 2`, `sort: "Real"` (parsed from the `(declare-const ..). Real)` in the smt2)
    - Any unsubstituted placeholder in the smt2 (e.g., `sum_2`) gets a binding with `source_line: 0, source_expr: "<abstract>"`
 
-Keep the test focused — one function, one assertion block. You'll generalize in later tasks.
+Keep the test focused (one function, one assertion block). You'll generalize in later tasks.
 
-- [ ] **Step 2.3: Run it — verify it fails**
+- [ ] **Step 2.3: Run it (verify it fails**)
 
 ```bash
 npx vitest run src/templates/TemplateEngine.bindings.test.ts
@@ -158,7 +158,7 @@ In `src/templates/Template.ts`, add:
 ```ts
 import type { SmtBinding } from "../contracts.js";
 ```
-(Path style — check whether existing imports in this file use `.js` or not; match that.)
+(Path style (check whether existing imports in this file use `.js` or not; match that.))
 
 Add to `TemplateResult`:
 ```ts
@@ -172,7 +172,7 @@ In `TemplateEngine.ts`, add a private method `extractBindings(node, vars, genera
 - Parse `(declare-const NAME SORT)` lines from `generatedSmt2` via a simple regex. Build `Map<smtName, sort>`.
 - For each `(templateVarName, sourceName)` in `vars` where the key doesn't start with `_` (those are internal guards):
   - Compute the safeName the same way `instantiateTemplate` does: `sourceName.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 30) || templateVarName`. This is the name that actually appears in the emitted SMT.
-  - Look up the sort from the declare-const map. If not present (the template variable wasn't declared), skip — it's not an SMT constant in this block.
+  - Look up the sort from the declare-const map. If not present (the template variable wasn't declared), skip (it's not an SMT constant in this block).
   - Find the AST source position for this template variable: re-walk `node` (the matched AST node) and use the same accessors the matchPattern code used to extract the variable. For binary_expression with variables `left`, `right`, `numerator`, `denominator`: those all come from `node.childForFieldName("left")` / `"right"`. Record `source_line: child.startPosition.row + 1`, `source_expr: child.text.slice(0, 80)`.
   - Emit the binding.
 - For each SMT constant in the declare-const map that wasn't matched to a template variable (synthetic `_<line>` names from the fallback substitution), emit an abstract binding: `{smt_constant: name, source_line: 0, source_expr: "<abstract>", sort}`.
@@ -183,7 +183,7 @@ Return `SmtBinding[]`.
 
 Where `results.push({signalLine, signalType, smt2, claim, principle, confidence})` currently happens (around line 54), also include `bindings: this.extractBindings(node, match, smt2, line)`.
 
-- [ ] **Step 2.7: Run the test — verify it passes**
+- [ ] **Step 2.7: Run the test (verify it passes**)
 
 ```bash
 npx vitest run src/templates/TemplateEngine.bindings.test.ts
@@ -223,8 +223,8 @@ Re-read `TemplateEngine.matchPattern` and for each `if (pattern.nodeType === ...
 
 - `binary_expression`: `left`/`right`/`numerator`/`denominator`/`param` → children by field name `"left"`, `"right"`, and `findParamRef` result.
 - `non_null_expression`: `value` → `node.firstNamedChild`.
-- `try_statement`: no variables extracted into `vars` — handler emptiness is a guard, not a binding.
-- `await_expression`, `throw_statement`: same — guards only, no user-visible SMT constants beyond what the smt2Template declares internally. Those will fall through to the abstract sentinel.
+- `try_statement`: no variables extracted into `vars`: handler emptiness is a guard, not a binding.
+- `await_expression`, `throw_statement`: same (guards only, no user-visible SMT constants beyond what the smt2Template declares internally). Those will fall through to the abstract sentinel.
 - `assignment_expression`: `prop` → `left.childForFieldName("property")`.
 - `if_statement`: `condition` (text), `var` (modified variable name from `findModifiedVars`).
 - `for_*`/`while`: `accumulator` from `findAccumulator`.
@@ -241,7 +241,7 @@ Extract a small helper `astNodeForVar(matchNode, pattern, varName): SyntaxNode |
 - `non_null_expression` + `value` → `matchNode.firstNamedChild`
 - etc.
 
-For vars keys where no clean AST node exists (e.g., `condition` from an if_statement — it's the raw text of the whole condition, not a single node), emit the binding with `source_line: <matchNode.startPosition.row + 1>, source_expr: <vars[key].slice(0, 80)>, sort: <from declare-const>`.
+For vars keys where no clean AST node exists (e.g., `condition` from an if_statement (it's the raw text of the whole condition, not a single node), emit the binding with `source_line: <matchNode.startPosition.row + 1>, source_expr: <vars[key].slice(0, 80)>, sort: <from declare-const>`).
 
 - [ ] **Step 3.3: Extend the test to cover each pattern type**
 
@@ -249,7 +249,7 @@ Add test cases for at least: non_null_expression (a `!` assertion on a nullable 
 
 For each, assert bindings are non-empty and that at least one binding has a plausible `source_line` matching where the variable appears in the fixture source.
 
-- [ ] **Step 3.4: Run — verify pass**
+- [ ] **Step 3.4: Run (verify pass**)
 
 ```bash
 npx vitest run
@@ -266,7 +266,7 @@ git commit -m "templates: binding extraction for non_null, call, try, assignment
 
 ## Task 4: Carry bindings through `buildContracts` onto `Violation.smt_bindings`
 
-**Why:** templates now produce bindings, but `DerivationPhase.buildContracts` builds `Violation` objects from `VerificationResult[]`. Those VerificationResults currently don't carry bindings — they're constructed from TemplateResult but only `smt2`, `principle`, etc. are forwarded. Need to add bindings to VerificationResult and plumb it through.
+**Why:** templates now produce bindings, but `DerivationPhase.buildContracts` builds `Violation` objects from `VerificationResult[]`. Those VerificationResults currently don't carry bindings (they're constructed from TemplateResult but only `smt2`, `principle`, etc). are forwarded. Need to add bindings to VerificationResult and plumb it through.
 
 **Files:**
 - Modify: `src/pipeline/DerivationPhase.ts` (around line 197-209 where templateVerifications gets built; and `buildContracts` where Violations are constructed)
@@ -284,7 +284,7 @@ Likely in verifier.ts or a types file. Extend it with an optional `bindings?: Sm
 
 - [ ] **Step 4.2: Write the failing test**
 
-Create `src/pipeline/DerivationPhase.bindings.test.ts`. Use the existing `examples/division-by-zero.ts` (or a similar fixture). Construct a minimal pipeline — graph phase, context phase, derivation phase — and assert that the resulting `Contract.violations[N].smt_bindings` is populated for at least one violation.
+Create `src/pipeline/DerivationPhase.bindings.test.ts`. Use the existing `examples/division-by-zero.ts` (or a similar fixture). Construct a minimal pipeline (graph phase, context phase, derivation phase (and assert that the resulting `Contract.violations[N].smt_bindings` is populated for at least one violation)).
 
 (If setting up the pipeline is heavy, alternatively call `DerivationPhase.executeForFile` directly with a hand-built FunctionNode input.)
 
@@ -294,7 +294,7 @@ Where `templateVerifications.push({...})` happens (line ~200), add `bindings: tr
 
 In `buildContracts`, where a Violation gets constructed from a sat VerificationResult, add `smt_bindings: v.bindings`.
 
-- [ ] **Step 4.4: Run the test — verify it passes**
+- [ ] **Step 4.4: Run the test (verify it passes**)
 
 ```bash
 npx vitest run
@@ -309,7 +309,7 @@ git commit -m "derivation: carry template bindings onto Violation.smt_bindings"
 
 ---
 
-## Task 5: Input synthesizer — Z3 model + bindings + function params → JS inputs
+## Task 5: Input synthesizer (Z3 model + bindings + function params → JS inputs)
 
 **Why:** `detectGaps` needs an `inputs: Record<string, unknown>` to drive the harness. The Z3 witness contains values for SMT constants. Bindings tell us which SMT constants correspond to function parameters. Parameter names come from the function's AST. Put the three together and we have real inputs.
 
@@ -335,7 +335,7 @@ export interface SynthesizeArgs {
 export function synthesizeInputs(args: SynthesizeArgs): Record<string, unknown>;
 ```
 
-Returns an inputs object mapping parameter names to JS values. Parameters the Z3 model doesn't cover get sensible defaults (`0` for numeric params, `""` for string, etc.) or are omitted — the harness handles missing inputs gracefully.
+Returns an inputs object mapping parameter names to JS values. Parameters the Z3 model doesn't cover get sensible defaults (`0` for numeric params, `""` for string, etc.) or are omitted (the harness handles missing inputs gracefully).
 
 - [ ] **Step 5.2: Write the failing test**
 
@@ -348,7 +348,7 @@ Cases to cover:
 
 - [ ] **Step 5.3: Implement**
 
-Parse the function's parameter names from source. Simple approach: regex on the function declaration (`function NAME\(([^)]*)\)` then split on commas, strip type annotations). Robust approach: use ts-morph (already a dep). ts-morph is robust and matches what snapshot instrumentation uses — prefer it.
+Parse the function's parameter names from source. Simple approach: regex on the function declaration (`function NAME\(([^)]*)\)` then split on commas, strip type annotations). Robust approach: use ts-morph (already a dep). ts-morph is robust and matches what snapshot instrumentation uses (prefer it).
 
 For each parameter:
 - Find a binding whose `source_expr` matches the parameter name (normalize whitespace).
@@ -373,7 +373,7 @@ git commit -m "inputs: synthesize harness inputs from Z3 model + bindings + func
 
 ---
 
-## Task 6: CEGAR refinement — mark refined violations as bindings-stale
+## Task 6: CEGAR refinement (mark refined violations as bindings-stale)
 
 **Why:** CEGAR refinement rewrites `v.smt2`. The new SMT may reference different constant names. The template's original bindings are no longer trustworthy. Safest move: clear `smt_bindings` (or set a `bindings_stale: true` flag) so `GapDetectionPhase` skips these violations rather than running the detector on mismatched bindings.
 
@@ -426,7 +426,7 @@ ls src/pipeline/
 grep -n "Phase\|execute\|PhaseResult" src/pipeline/*.ts | head -20
 ```
 
-Match the existing phase interface — `execute(input, options): Promise<PhaseResult<Output>>`.
+Match the existing phase interface (`execute(input, options): Promise<PhaseResult<Output>>`).
 
 - [ ] **Step 7.2: Write the failing integration test**
 
@@ -465,7 +465,7 @@ export class GapDetectionPhase {
       // fetch contract from store to get absolute path
       // check bindings, witness
       // synthesize inputs
-      // call detectGaps — catch any exceptions, increment skipped.untestable
+      // call detectGaps (catch any exceptions, increment skipped.untestable)
     }
     
     db.$client.close();
@@ -503,7 +503,7 @@ const { data: gapReport } = await this.gapDetectionPhase.execute(
 
 Include `this.gapDetectionPhase = new GapDetectionPhase()` in the constructor, alongside the other phases.
 
-Also include `gapReport` in `PipelineResult` if tests or the CLI consume it (probably not for v1 — just log counts).
+Also include `gapReport` in `PipelineResult` if tests or the CLI consume it (probably not for v1 (just log counts)).
 
 - [ ] **Step 7.5: Run tests**
 
@@ -521,7 +521,7 @@ git commit -m "pipeline: GapDetectionPhase runs detectGaps on violations between
 
 ---
 
-## Task 8: End-to-end — `analyze` produces a gap, `explain --gaps` renders it
+## Task 8: End-to-end (`analyze` produces a gap, `explain --gaps` renders it)
 
 **Why:** final acceptance. If this works on a real fixture end-to-end, Phase A-thin + D-core + the integration is a shipped product feature.
 
@@ -535,9 +535,9 @@ git commit -m "pipeline: GapDetectionPhase runs detectGaps on violations between
 
 Create `src/e2eAnalyze.test.ts`:
 
-1. Set up a scratch project dir with `.neurallog/` created, the division-by-zero fixture copied to `src/divide.ts`, and `.neurallog/principles/*.json` copied over (or reference them from the main tree via symlink — whichever works).
+1. Set up a scratch project dir with `.neurallog/` created, the division-by-zero fixture copied to `src/divide.ts`, and `.neurallog/principles/*.json` copied over (or reference them from the main tree via symlink (whichever works)).
 
-2. Construct a `Pipeline`. Call `runFull` with `entryFilePath: <fixture path>`, `projectRoot: <scratch dir>`, `model: "sonnet"` (won't actually be used if LLM paths are disabled — the mechanical template engine takes over), `maxConcurrency: 1`.
+2. Construct a `Pipeline`. Call `runFull` with `entryFilePath: <fixture path>`, `projectRoot: <scratch dir>`, `model: "sonnet"` (won't actually be used if LLM paths are disabled (the mechanical template engine takes over), `maxConcurrency: 1`).
 
 3. After `runFull` completes, assert:
    - At least one Contract has a violation with populated `smt_bindings`.
@@ -609,7 +609,7 @@ Placeholder scan: none. Each task has concrete verification steps and commit mes
 
 Type consistency:
 - `SmtBinding` defined on `src/contracts.ts` (already done). Used by TemplateResult (Task 2), VerificationResult (Task 4), Violation (already), synthesizer (Task 5), GapDetectionPhase (Task 7).
-- `synthesizeInputs` returns `Record<string, unknown>` — matches what `detectGaps.inputs` consumes.
+- `synthesizeInputs` returns `Record<string, unknown>`: matches what `detectGaps.inputs` consumes.
 
 Scope check: one plan, one integration goal (`analyze` produces gaps). Not multi-subsystem.
 
@@ -619,7 +619,7 @@ Scope check: one plan, one integration goal (`analyze` produces gaps). Not multi
 
 Two execution options:
 
-1. **Subagent-Driven (recommended)** — fresh subagent per task, two-stage review, fast iteration.
-2. **Inline Execution** — executing-plans skill, batch with checkpoints.
+1. **Subagent-Driven (recommended)** (fresh subagent per task, two-stage review, fast iteration).
+2. **Inline Execution** (executing-plans skill, batch with checkpoints).
 
 Which?

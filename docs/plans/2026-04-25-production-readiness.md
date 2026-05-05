@@ -8,7 +8,7 @@
 
 ---
 
-## Tier 1 — Blocks real use (sequential)
+## Tier 1: Blocks real use (sequential)
 
 ### Task P1: C5 robustness for arbitrary projects
 
@@ -16,8 +16,8 @@
 
 **Files to touch:**
 - Modify: `src/fix/testGen.ts` (`runTestInOverlay`, `resolveMainRepoRoot`)
-- Create: `src/fix/testRunners/index.ts` — runner registry (sixth primitive registry)
-- Create: `src/fix/testRunners/{vitest,jest,mocha,nodetest,none}.ts` — per-runner adapters
+- Create: `src/fix/testRunners/index.ts` (runner registry, the sixth primitive registry)
+- Create: `src/fix/testRunners/{vitest,jest,mocha,nodetest,none}.ts` (per-runner adapters)
 
 **Approach:**
 
@@ -90,7 +90,7 @@ Document findings as commits. Most likely: edge cases around merge conflicts, st
 
 **Approach:**
 
-1. Pick one A8 capability gap (suggested: `encloses` for loop-accumulator-overflow — simple semantics, unlocks 5 principles per the memo).
+1. Pick one A8 capability gap (suggested: `encloses` for loop-accumulator-overflow; simple semantics, unlocks 5 principles per the memo).
 2. Build a scratch project with a fixture exhibiting the bug pattern.
 3. Write a bug report.
 4. Run `provekit fix bug-report.md --no-confirm --verbose`.
@@ -112,7 +112,7 @@ Each oracle that flakes or false-rejects is a real-LLM dogfood finding. Document
 
 ---
 
-## Tier 2 — Quality, breadth, operability (parallel)
+## Tier 2: Quality, breadth, operability (parallel)
 
 ### Task P4: Tiered model selection
 
@@ -122,7 +122,7 @@ Each oracle that flakes or false-rejects is a real-LLM dogfood finding. Document
 - Modify: `src/cli.fix.ts` (bridge defaults can stay Opus as a per-stage override)
 - Modify: `src/fix/orchestrator.ts` (pass per-stage model selection through)
 - Modify: each stage that calls the LLM, accept an optional `model` arg from a config map
-- Add: `src/fix/modelTiers.ts` — config: per-stage default model, env-overridable
+- Add: `src/fix/modelTiers.ts` (config: per-stage default model, env-overridable)
 
 **Approach:**
 
@@ -157,24 +157,24 @@ Override via `PROVEKIT_MODEL_<STAGE>=opus` env vars or `--model-tier <stage>=<ti
 **Files to touch:**
 - Each gap closure produces a substrate-bundle commit modifying:
   - `src/sast/schema/capabilities/<name>.ts` (new schema file)
-  - `src/sast/capabilities/extractor.ts` (or new file) — the new extractor
+  - `src/sast/capabilities/extractor.ts` (or new file), the new extractor
   - A new drizzle migration
   - One or more `.provekit/principles/<name>.dsl` migrations to use the new capability
 
 **Approach:**
 
 Sequence by complexity per the A8 memo:
-1. `encloses` (relation, not capability — simpler)
-2. Add structural capabilities for try_catch_block (already done as the empty-catch dogfood proof — skip)
+1. `encloses` (relation, not capability; simpler)
+2. Add structural capabilities for try_catch_block (already done as the empty-catch dogfood proof; skip)
 3. `has_default` column on decides for switch-no-default
 4. `literal_value` for ternary-branch-collapse
 5. Always-exits relation for guard-narrowing
-6. `data_flow_same_value` (already done as same_value relation #66 — skip)
+6. `data_flow_same_value` (already done as same_value relation #66; skip)
 7. String composition + tainted-flow for shell-injection
 8. Liveness analysis for variable-staleness (hardest)
 9. Termination analysis for while-loop-termination (hard)
 
-Per gap: write a bug-report fixture, run `provekit fix`, watch C6 propose the CapabilitySpec, verify oracles, apply. Each closure is its own substrate bundle — autonomous through the loop.
+Per gap: write a bug-report fixture, run `provekit fix`, watch C6 propose the CapabilitySpec, verify oracles, apply. Each closure is its own substrate bundle, autonomous through the loop.
 
 **Tests:** each gap's closure includes an updated equivalence test in `src/pipeline/DerivationPhase.dslEquivalence.test.ts` that asserts the previously-gap principle now migrates cleanly.
 
@@ -186,13 +186,13 @@ Per gap: write a bug-report fixture, run `provekit fix`, watch C6 propose the Ca
 
 ### Task P6: Operator CLI surface
 
-**Why:** The system runs but isn't operable. Bundles get persisted to the DB, audit trails accumulate, principle libraries grow — and there's no way for a human to inspect any of it. `provekit fix` is the input surface; we lack the output surface.
+**Why:** The system runs but isn't operable. Bundles get persisted to the DB, audit trails accumulate, principle libraries grow; and there's no way for a human to inspect any of it. `provekit fix` is the input surface; we lack the output surface.
 
 **Files to touch:**
-- Create: `src/cli/review.ts` — `provekit review <bundle-id>` walks audit trail
-- Create: `src/cli/pending.ts` — `provekit pending` lists pending_fixes queue
-- Create: `src/cli/promote.ts` — `provekit promote <principle> --tier warning` updates confidence_tier
-- Create: `src/cli/principles.ts` — `provekit principles list` enumerates the library
+- Create: `src/cli/review.ts` (`provekit review <bundle-id>` walks audit trail)
+- Create: `src/cli/pending.ts` (`provekit pending` lists pending_fixes queue)
+- Create: `src/cli/promote.ts` (`provekit promote <principle> --tier warning` updates confidence_tier)
+- Create: `src/cli/principles.ts` (`provekit principles list` enumerates the library)
 - Modify: `src/cli.ts` register new subcommands
 
 **Approach:**
@@ -226,7 +226,7 @@ Each subcommand is a thin DB-read with formatted output.
 
 ---
 
-## Tier 3 — Long-term (deeper architectural)
+## Tier 3: Long-term (deeper architectural)
 
 ### Task P7: Multi-language support
 
@@ -246,7 +246,7 @@ Phase 2 (P7b): pick a target language to prove the pattern. Suggested: Python (s
 
 Phase 3 (P7c): scale per-language as demand justifies.
 
-**Tests:** per-language SAST equivalence — building SAST from a Python fixture produces nodes/capabilities/dataflow rows comparable to the TS equivalent for analogous code.
+**Tests:** per-language SAST equivalence: building SAST from a Python fixture produces nodes/capabilities/dataflow rows comparable to the TS equivalent for analogous code.
 
 **Complexity:** Phase 1 is 3-4 tasks. Phase 2 is 8-12 tasks. Phase 3 is per-language at similar cost.
 
@@ -260,7 +260,7 @@ Phase 3 (P7c): scale per-language as demand justifies.
 
 **Files to touch:**
 - Modify: every registry module to optionally read from a shared store
-- Add: `src/registry/store.ts` — pluggable backend (in-process Map, SQLite-shared, postgres-shared)
+- Add: `src/registry/store.ts` (pluggable backend: in-process Map, SQLite-shared, postgres-shared)
 
 **Approach:**
 
@@ -283,8 +283,8 @@ Tier 3: for SaaS multi-tenant: per-tenant registry isolation. Tenant ID threaded
 **Why:** Currently `code_patch.isPresent` and `test_fix.isPresent` both fire when a bundle has a primary fix touching only test files. D1b unions oracle sets across all matching kinds, so the test_fix bundle inherits code_patch's full oracle list. Over-inclusive but not wrong; flagged in #58 review.
 
 **Files to touch:**
-- Modify: `src/fix/artifactKindRegistry.ts` — add `priority: number` field
-- Modify: `src/fix/bundleAssembly.ts` — when multiple kinds match, take highest priority and skip others (unless explicitly multi-kind)
+- Modify: `src/fix/artifactKindRegistry.ts` (add `priority: number` field)
+- Modify: `src/fix/bundleAssembly.ts` (when multiple kinds match, take highest priority and skip others, unless explicitly multi-kind)
 
 **Approach:**
 

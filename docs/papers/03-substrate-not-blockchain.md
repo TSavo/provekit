@@ -113,8 +113,8 @@ A proof bundle binds three independent CIDs: the contract it conforms to, the wi
 | Contract | Witness | Binary | Use case |
 |----------|---------|--------|----------|
 | pin | pin | pin | Frozen audit snapshot, total reproducibility |
-| pin | pin | float | "These auditors against this spec for the current build" — CI gate |
-| pin | float | pin | "Any chain proving this binary against this spec" — regulatory |
+| pin | pin | float | "These auditors against this spec for the current build": CI gate |
+| pin | float | pin | "Any chain proving this binary against this spec": regulatory |
 | pin | float | float | "Some binary, somehow audited, against this spec" |
 | float | pin | pin | "These auditors verified this build, against whatever spec is current" |
 | float | pin | float | "I trust these auditors, applied to anything" |

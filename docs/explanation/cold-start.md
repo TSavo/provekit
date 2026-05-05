@@ -1,6 +1,6 @@
 # Cold-start: the bootstrap problem, addressed honestly
 
-ProvekIt's headline metric — the hash-discharge fraction at Tier 1 — depends on the lattice of cached implications being well-populated. A populated lattice means the typical `(post, pre)` pair the verifier sees has already been discharged by some earlier verifier; the current run discharges it for free.
+ProvekIt's headline metric, the hash-discharge fraction at Tier 1, depends on the lattice of cached implications being well-populated. A populated lattice means the typical `(post, pre)` pair the verifier sees has already been discharged by some earlier verifier; the current run discharges it for free.
 
 An empty lattice means every pair falls through to Tier 3 (Z3 invocation), which is slow. Early adopters land here. This document is honest about the cold-start problem and the path through it.
 
@@ -51,7 +51,7 @@ discharged by cache:      6    (13%)
 discharged by solver:     1    (2%)
 ```
 
-The protocol's promise — "one CPU instruction per call site for the common case" — manifests at this stage. Tier 1 is the hot path; Tier 3 is rare.
+The protocol's promise, "one CPU instruction per call site for the common case", manifests at this stage. Tier 1 is the hot path; Tier 3 is rare.
 
 ## The bootstrap challenge
 
@@ -65,7 +65,7 @@ This is the bootstrap problem. ProvekIt's value compounds with adoption. Adoptio
 
 The reference contracts library ([`reference-contracts/`](../reference-contracts/) when written) is the bootstrap accelerant. A curated set of canonical bridge anchors (`ref-parseInt-v1`, `ref-email-format-v1`, `ref-uint32-arithmetic-v1`, etc.) gives every adapter a target.
 
-When the JavaScript `parseInt` adapter and the Rust `parse` adapter both bridge to `ref-parseInt-v1`, every codebase that uses either function and depends on the other gets cross-language Tier-1 discharge from day one — *because the lattice was pre-populated by the curated reference contracts*.
+When the JavaScript `parseInt` adapter and the Rust `parse` adapter both bridge to `ref-parseInt-v1`, every codebase that uses either function and depends on the other gets cross-language Tier-1 discharge from day one, because the lattice was pre-populated by the curated reference contracts.
 
 This is why the polyglot demo is the load-bearing piece (see [`docs/tutorials/polyglot-stack.md`](../tutorials/polyglot-stack.md)). It's not just a tutorial. It's an existence proof that the cold-start can be broken with curated bridge anchors.
 
@@ -109,7 +109,7 @@ Despite the cold-start, the protocol's design is correctly shaped for amortizati
 - **Discharge results are content-addressed and signed.** They are portable.
 - **The lattice grows monotonically.** Once a pair is discharged, it stays discharged forever (assuming the original signer's key remains trusted).
 
-So the asymptote — Tier 1 fraction approaches 95% — is reachable. The question is just how many adopters and how much elapsed time it takes to fill the lattice.
+So the asymptote (Tier 1 fraction approaches 95%) is reachable. The question is just how many adopters and how much elapsed time it takes to fill the lattice.
 
 ## Honest expectations for early adopters
 
@@ -131,7 +131,7 @@ The ceiling is not the protocol's; it's the network effect.
 
 ## When the cold-start is broken
 
-The cold-start is "broken" — i.e., new adopters reach high Tier 1 fractions on day one — when:
+The cold-start is "broken" (i.e., new adopters reach high Tier 1 fractions on day one) when:
 
 - Most popular packages in major language ecosystems ship `.proof` files.
 - A public implication server is widely used and contains millions of cached pairs.
@@ -145,12 +145,12 @@ ProvekIt does not solve the cold-start problem alone. It provides a substrate th
 
 This is honest. The thesis is monotonic provability and amortizing solver cost across the dependency graph; the thesis is achieved at the asymptote. Early adopters do not see the asymptote.
 
-The decision to adopt early is a bet on the protocol reaching the asymptote — a bet that adoption will compound. Adopt knowing this.
+The decision to adopt early is a bet on the protocol reaching the asymptote; a bet that adoption will compound. Adopt knowing this.
 
 ## Read next
 
-- [thesis.md](thesis.md) — the central claim.
-- [boundaries.md](boundaries.md) — what ProvekIt is not.
-- [../tutorials/polyglot-stack.md](../tutorials/polyglot-stack.md) — the cross-domain bootstrap accelerant.
-- [../reference-contracts/README.md](../reference-contracts/README.md) (when written) — curated bridge anchors.
-- [../security/threat-model.md](../security/threat-model.md) (when written) — what trust looks like in a partially-populated lattice.
+- [thesis.md](thesis.md): the central claim.
+- [boundaries.md](boundaries.md): what ProvekIt is not.
+- [../tutorials/polyglot-stack.md](../tutorials/polyglot-stack.md): the cross-domain bootstrap accelerant.
+- [../reference-contracts/README.md](../reference-contracts/README.md) (when written): curated bridge anchors.
+- [../security/threat-model.md](../security/threat-model.md) (when written): what trust looks like in a partially-populated lattice.

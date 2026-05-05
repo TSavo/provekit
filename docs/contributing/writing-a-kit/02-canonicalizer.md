@@ -6,7 +6,7 @@ This step is dense. Read it twice.
 
 ## What the canonicalizer does
 
-Input: an `IrFormula` (or `IrTerm`, `Sort`, `Declaration`, etc.) — a structured value matching the CDDL grammar at [`protocol/provekit-ir.cddl`](../../../protocol/provekit-ir.cddl).
+Input: an `IrFormula` (or `IrTerm`, `Sort`, `Declaration`, etc.), a structured value matching the CDDL grammar at [`protocol/provekit-ir.cddl`](../../../protocol/provekit-ir.cddl).
 
 Output: the BLAKE3-512 of the JCS-canonicalized JSON serialization of that value.
 
@@ -130,7 +130,7 @@ Steps 3 onward layer Ed25519 signing, CBOR encoding, and self-contracts on top o
 
 ## Read next
 
-- [03-claim-envelope.md](03-claim-envelope.md) — signed memento envelope (Ed25519).
-- [docs/reference/ir/canonical-form.md](../../reference/ir/canonical-form.md) (when written) — JCS + BLAKE3-512 reference.
-- RFC 8785 — JCS specification, full text.
-- BLAKE3 paper — hash function specification.
+- [03-claim-envelope.md](03-claim-envelope.md): signed memento envelope (Ed25519).
+- [docs/reference/ir/canonical-form.md](../../reference/ir/canonical-form.md) (when written): JCS + BLAKE3-512 reference.
+- RFC 8785: JCS specification, full text.
+- BLAKE3 paper: hash function specification.
