@@ -30,6 +30,8 @@
 // the AST walk's lift of the same source. The cross-layer cache hit
 // is paper 07 §6 across substrate layers.
 
+use std::collections::HashMap;
+
 use serde_json::Value;
 
 use provekit_ir_types::{IrFormula, IrTerm};
@@ -66,13 +68,31 @@ pub fn lift_llbc_function(
         })
         .collect();
 
+    // Build a named-locals map for non-formal locals that have Charon-preserved
+    // source names (i.e. let bindings). When tracing through Use-hops, we stop
+    // at a named local and emit Var(name) rather than continuing the trace, so
+    // that `let y = x; if y < 10 { panic!() }` produces Var("y") (matching the
+    // AST walk's surface-level name) rather than tracing all the way back to
+    // Var("x").
+    let named_locals: HashMap<u32, String> = f
+        .locals()
+        .filter_map(|l| {
+            let i = l.index()?;
+            // skip return local (0) and formals (1..=arg_count)
+            if i == 0 || i as usize <= arg_count {
+                return None;
+            }
+            l.name().map(|n| (i, n.to_string()))
+        })
+        .collect();
+
     let stmts: Vec<&Value> = f.statements().map(|s| s.raw()).collect();
 
     // Pre-contributions: if-panic Switch chains + MIR-inserted Asserts
     // (overflow, bounds, division-by-zero, …).
     let mut pre_contribs: Vec<IrFormula> = Vec::new();
-    collect_if_panic_contributions(&[], &stmts, &formals, false, &mut pre_contribs);
-    collect_assert_contributions(&stmts, &formals, &mut pre_contribs);
+    collect_if_panic_contributions(&[], &stmts, &formals, &named_locals, false, &mut pre_contribs);
+    collect_assert_contributions(&stmts, &formals, &named_locals, &mut pre_contribs);
     let pre_formula = simplify_conjunction(pre_contribs.clone());
 
     // Postcondition: every pre-contribution still holds at the
@@ -84,7 +104,7 @@ pub fn lift_llbc_function(
     // derivation, collapsing LayerAgreement::Both into LlbcExtra
     // when MIR is the only layer that contributes.
     let mut post_contribs = pre_contribs;
-    if let Some(result_eq) = derive_return_equation(&stmts, &formals) {
+    if let Some(result_eq) = derive_return_equation(&stmts, &formals, &named_locals) {
         post_contribs.push(result_eq);
     }
     let post_formula = simplify_conjunction(post_contribs);
@@ -111,6 +131,7 @@ pub fn lift_llbc_function(
 fn derive_return_equation(
     stmts: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
 ) -> Option<IrFormula> {
     // Find the LAST assignment to local _0. (Charon emits a single
     // Assign for the return; we still scan in reverse to be robust
@@ -129,7 +150,7 @@ fn derive_return_equation(
             continue;
         }
         let prior = &stmts[..i];
-        if let Some(term) = rvalue_to_ir_term_for_post(&arr[1], prior, formals) {
+        if let Some(term) = rvalue_to_ir_term_for_post(&arr[1], prior, formals, named_locals) {
             return Some(IrFormula::Atomic {
                 name: "=".to_string(),
                 args: vec![IrTerm::Var { name: "result".to_string() }, term],
@@ -145,8 +166,10 @@ fn derive_return_equation(
 ///     `place_to_term_for_post`.
 ///   - `BinaryOp(op, lhs, rhs)`: lifts to `Ctor(<op>, [...])` for
 ///     arithmetic ops (Add/Sub/Mul/Div/Rem, bitwise ops, and their
-///     Checked variants). Comparison ops are predicates, not terms;
-///     not handled here.
+///     Checked variants). The BinaryOp tag may be a bare string
+///     ("Add", "BitAnd") or an object form ({"Div": "UB"}) depending
+///     on how Charon encodes the overflow mode. Both forms are handled.
+///     Comparison ops are predicates, not terms; not handled here.
 ///   - `UnaryOp([Cast{...}, operand])`: transparent cast — the inner
 ///     operand is lifted directly. Matches AST's `Expr::Cast` arm
 ///     (lift_expr_to_term_inner unwraps to the inner expression),
@@ -155,10 +178,11 @@ fn rvalue_to_ir_term_for_post(
     rvalue: &Value,
     prior: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
 ) -> Option<IrTerm> {
     if let Some(use_op) = rvalue.get("Use") {
         if let Some(place) = use_op.get("Move").or_else(|| use_op.get("Copy")) {
-            return place_to_term_for_post(place, prior, formals);
+            return place_to_term_for_post(place, prior, formals, named_locals);
         }
         if let Some(constant) = use_op.get("Const") {
             return constant_to_ir_term(constant);
@@ -169,10 +193,10 @@ fn rvalue_to_ir_term_for_post(
         if arr.len() != 3 {
             return None;
         }
-        let op = arr[0].as_str()?;
+        let op = mir_arith_op_tag(&arr[0])?;
         let ir_op = mir_arith_op_to_ir_ctor(op)?;
-        let l = operand_to_ir_term(&arr[1], prior, formals)?;
-        let r = operand_to_ir_term(&arr[2], prior, formals)?;
+        let l = operand_to_ir_term(&arr[1], prior, formals, named_locals)?;
+        let r = operand_to_ir_term(&arr[2], prior, formals, named_locals)?;
         return Some(IrTerm::Ctor {
             name: ir_op.to_string(),
             args: vec![l, r],
@@ -186,7 +210,7 @@ fn rvalue_to_ir_term_for_post(
     if let Some(arr) = rvalue.get("UnaryOp").and_then(|v| v.as_array()) {
         if arr.len() == 2 {
             if arr[0].get("Cast").is_some() {
-                return operand_to_ir_term(&arr[1], prior, formals);
+                return operand_to_ir_term(&arr[1], prior, formals, named_locals);
             }
         }
     }
@@ -197,6 +221,12 @@ fn rvalue_to_ir_term_for_post(
 ///   - `Local(N)` where _N is a formal: `Var(<formal name>)`.
 ///   - `Local(N)` where _N is a temp: traces _N's defining rvalue
 ///     via `rvalue_to_ir_term_for_post`.
+///   - `Projection(base, "Deref")`: recursively lifts base (Charon
+///     emits a Deref hop before the Index when indexing through a
+///     reference to a slice).
+///   - `Projection(base, {"Index": {"offset": op, ...}})`: lifts
+///     to `Ctor("index", [base_term, offset_term])` matching the
+///     AST walk's `s[i]` → `Ctor("index", [s, i])` encoding.
 ///   - `Projection(base, Field(Tuple, 0))` where base is `Local(N)`
 ///     and _N := `BinaryOp(<CheckedOp>, lhs, rhs)`: lifts to the
 ///     corresponding bare arithmetic ctor (the rustc CheckedMul +
@@ -205,6 +235,7 @@ fn place_to_term_for_post(
     place: &Value,
     prior: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
 ) -> Option<IrTerm> {
     let kind = place.get("kind")?;
     if let Some(local) = kind.get("Local").and_then(|v| v.as_u64()) {
@@ -213,7 +244,7 @@ fn place_to_term_for_post(
             return Some(IrTerm::Var { name: name.clone() });
         }
         let rvalue = find_last_assign_rvalue(prior, local)?;
-        return rvalue_to_ir_term_for_post(rvalue, prior, formals);
+        return rvalue_to_ir_term_for_post(rvalue, prior, formals, named_locals);
     }
     if let Some(proj_arr) = kind.get("Projection").and_then(|v| v.as_array()) {
         if proj_arr.len() != 2 {
@@ -221,6 +252,22 @@ fn place_to_term_for_post(
         }
         let base = &proj_arr[0];
         let elem = &proj_arr[1];
+        // Deref projection: used before Index on slices accessed through a reference.
+        if elem.as_str() == Some("Deref") {
+            return place_to_term_for_post(base, prior, formals, named_locals);
+        }
+        // Index projection: `base[offset]` — Charon emits
+        //   Projection([Projection([Local(s), Deref]), Index{offset: Copy/Move(idx)}])
+        // We lift to Ctor("index", [base_term, idx_term]).
+        if let Some(idx_obj) = elem.get("Index") {
+            let base_term = place_to_term_for_post(base, prior, formals, named_locals)?;
+            let offset_op = idx_obj.get("offset")?;
+            let idx_term = operand_to_ir_term(offset_op, prior, formals, named_locals)?;
+            return Some(IrTerm::Ctor {
+                name: "index".to_string(),
+                args: vec![base_term, idx_term],
+            });
+        }
         // Recognize Field(Tuple, 0) projection on a CheckedOp result.
         if let Some(field_arr) = elem.get("Field").and_then(|v| v.as_array()) {
             if field_arr.len() == 2 {
@@ -231,10 +278,10 @@ fn place_to_term_for_post(
                     let base_rvalue = find_last_assign_rvalue(prior, base_local)?;
                     if let Some(arr) = base_rvalue.get("BinaryOp").and_then(|v| v.as_array()) {
                         if arr.len() == 3 {
-                            let op = arr[0].as_str()?;
+                            let op = mir_arith_op_tag(&arr[0])?;
                             let ir_op = mir_arith_op_to_ir_ctor(op)?;
-                            let l = operand_to_ir_term(&arr[1], prior, formals)?;
-                            let r = operand_to_ir_term(&arr[2], prior, formals)?;
+                            let l = operand_to_ir_term(&arr[1], prior, formals, named_locals)?;
+                            let r = operand_to_ir_term(&arr[2], prior, formals, named_locals)?;
                             return Some(IrTerm::Ctor {
                                 name: ir_op.to_string(),
                                 args: vec![l, r],
@@ -257,6 +304,7 @@ fn divisor_from_assert_cond(
     cond: Option<&Value>,
     prior: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
 ) -> Option<IrTerm> {
     let cond = cond?;
     let cond_local = operand_to_local_id(cond)?;
@@ -277,7 +325,7 @@ fn divisor_from_assert_cond(
     } else {
         return None;
     };
-    operand_to_ir_term(divisor_op, prior, formals)
+    operand_to_ir_term(divisor_op, prior, formals, named_locals)
 }
 
 fn is_zero_constant(operand: &Value) -> bool {
@@ -301,6 +349,19 @@ fn is_zero_constant(operand: &Value) -> bool {
     false
 }
 
+/// Extract the operator name from a BinaryOp tag that may be either a
+/// bare string ("Add", "Div", "BitAnd", …) or an object with overflow
+/// mode ({"Div": "UB"}, {"Mul": "Wrap"}, …). Charon encodes Div/Rem as
+/// objects in LLBC when UB semantics apply, but bare strings for
+/// checked variants and bitwise ops.
+fn mir_arith_op_tag(v: &Value) -> Option<&str> {
+    if let Some(s) = v.as_str() {
+        return Some(s);
+    }
+    // Object form: first key is the op name, value is the overflow mode.
+    v.as_object()?.keys().next().map(|k| k.as_str())
+}
+
 /// Map MIR arithmetic-op tag to IR ctor name. Handles:
 ///   - Bare arithmetic ops (Add/Sub/Mul/Div/Rem) and their Checked
 ///     variants (which produce a (value, overflow_bool) tuple in MIR).
@@ -308,10 +369,9 @@ fn is_zero_constant(operand: &Value) -> bool {
 ///     precondition that `collect_assert_contributions` emits is what
 ///     distinguishes "checked arithmetic" semantics in the substrate.
 ///   - Bitwise ops (BitAnd/BitOr/BitXor/Shl/Shr) — Charon encodes
-///     these as bare string tags in the BinaryOp array. They map to
-///     the same ctor names the AST walk uses (`&`, `|`, `^`, `<<`,
-///     `>>`), which ensures byte-identical IR when both layers lift
-///     the same bitwise expression.
+///     these as bare string tags. They map to the same ctor names the
+///     AST walk uses (`&`, `|`, `^`, `<<`, `>>`), ensuring byte-
+///     identical IR when both layers lift the same bitwise expression.
 fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
     match op {
         "Add" | "AddChecked" | "AddWithOverflow" => Some("+"),
@@ -334,6 +394,7 @@ fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
 fn collect_assert_contributions(
     stmts: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
     out: &mut Vec<IrFormula>,
 ) {
     for (i, s) in stmts.iter().enumerate() {
@@ -369,10 +430,10 @@ fn collect_assert_contributions(
             let Some(op_tag) = overflow_op_tag(op_descriptor) else {
                 continue;
             };
-            let Some(lhs_term) = operand_to_ir_term(&arr[1], prior, formals) else {
+            let Some(lhs_term) = operand_to_ir_term(&arr[1], prior, formals, named_locals) else {
                 continue;
             };
-            let Some(rhs_term) = operand_to_ir_term(&arr[2], prior, formals) else {
+            let Some(rhs_term) = operand_to_ir_term(&arr[2], prior, formals, named_locals) else {
                 continue;
             };
             out.push(IrFormula::Atomic {
@@ -384,7 +445,7 @@ fn collect_assert_contributions(
 
         // OverflowNeg(operand) -> Atomic("no-overflow:neg", [term]).
         if let Some(operand) = check_kind.get("OverflowNeg") {
-            let Some(t) = operand_to_ir_term(operand, prior, formals) else {
+            let Some(t) = operand_to_ir_term(operand, prior, formals, named_locals) else {
                 continue;
             };
             out.push(IrFormula::Atomic {
@@ -404,10 +465,10 @@ fn collect_assert_contributions(
             let Some(index_op) = obj.get("index") else {
                 continue;
             };
-            let Some(len_term) = operand_to_ir_term(len_op, prior, formals) else {
+            let Some(len_term) = operand_to_ir_term(len_op, prior, formals, named_locals) else {
                 continue;
             };
-            let Some(index_term) = operand_to_ir_term(index_op, prior, formals) else {
+            let Some(index_term) = operand_to_ir_term(index_op, prior, formals, named_locals) else {
                 continue;
             };
             out.push(IrFormula::Atomic {
@@ -428,7 +489,7 @@ fn collect_assert_contributions(
             || check_kind.get("RemainderByZero").is_some()
         {
             if let Some(divisor_term) =
-                divisor_from_assert_cond(assert_obj.get("cond"), prior, formals)
+                divisor_from_assert_cond(assert_obj.get("cond"), prior, formals, named_locals)
             {
                 out.push(IrFormula::Atomic {
                     name: "≠".to_string(),
@@ -463,6 +524,7 @@ fn collect_if_panic_contributions(
     prior: &[&Value],
     stmts: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
     parent_falls_through_to_abort: bool,
     out: &mut Vec<IrFormula>,
 ) {
@@ -503,7 +565,7 @@ fn collect_if_panic_contributions(
         let mut local_prior: Vec<&Value> = Vec::with_capacity(prior.len() + i);
         local_prior.extend(prior.iter().copied());
         local_prior.extend(stmts[..i].iter().copied());
-        if let Some(pred) = discriminant_to_formula(discr, &local_prior, formals) {
+        if let Some(pred) = discriminant_to_formula(discr, &local_prior, formals, named_locals) {
             out.push(negate_predicate(pred));
         }
 
@@ -518,6 +580,7 @@ fn collect_if_panic_contributions(
             &new_prior,
             &inner_stmts,
             formals,
+            named_locals,
             post_switch_aborts,
             out,
         );
@@ -566,6 +629,7 @@ fn discriminant_to_formula(
     operand: &Value,
     prior: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
 ) -> Option<IrFormula> {
     let local = operand_to_local_id(operand)?;
     let rvalue = find_last_assign_rvalue(prior, local)?;
@@ -576,8 +640,8 @@ fn discriminant_to_formula(
         }
         let mir_op = arr[0].as_str()?;
         let pred_name = mir_binop_to_ir_predicate(mir_op)?;
-        let lhs = operand_to_ir_term(&arr[1], prior, formals)?;
-        let rhs = operand_to_ir_term(&arr[2], prior, formals)?;
+        let lhs = operand_to_ir_term(&arr[1], prior, formals, named_locals)?;
+        let rhs = operand_to_ir_term(&arr[2], prior, formals, named_locals)?;
         return Some(IrFormula::Atomic {
             name: pred_name.to_string(),
             args: vec![lhs, rhs],
@@ -585,7 +649,7 @@ fn discriminant_to_formula(
     }
 
     if let Some(use_op) = rvalue.get("Use") {
-        return discriminant_to_formula(use_op, prior, formals);
+        return discriminant_to_formula(use_op, prior, formals, named_locals);
     }
 
     None
@@ -595,9 +659,10 @@ fn operand_to_ir_term(
     operand: &Value,
     prior: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
 ) -> Option<IrTerm> {
     if let Some(place) = operand.get("Move").or_else(|| operand.get("Copy")) {
-        return operand_place_to_ir_term(place, prior, formals);
+        return operand_place_to_ir_term(place, prior, formals, named_locals);
     }
     if let Some(constant) = operand.get("Const") {
         return constant_to_ir_term(constant);
@@ -613,10 +678,19 @@ fn operand_to_ir_term(
 /// rvalues — that's `place_to_term_for_post`'s job (used only for
 /// return-value derivation, where deep tracing is expected and
 /// matches the AST walk's lift).
+///
+/// Named-local stop rule (Task 3): if the temp local being traced has
+/// a Charon-preserved source name (i.e. it was a `let y = ...`
+/// binding), we emit `Var(name)` and stop — we do NOT continue
+/// tracing through its assignment. This makes `let y = x; if y < 10
+/// { panic!() }` produce `Var("y")` matching the AST walk's
+/// surface-level name rather than tracing all the way back to
+/// `Var("x")`.
 fn operand_place_to_ir_term(
     place: &Value,
     prior: &[&Value],
     formals: &[(u32, String)],
+    named_locals: &HashMap<u32, String>,
 ) -> Option<IrTerm> {
     let kind = place.get("kind")?;
     if let Some(local) = kind.get("Local").and_then(|v| v.as_u64()) {
@@ -624,9 +698,15 @@ fn operand_place_to_ir_term(
         if let Some((_, name)) = formals.iter().find(|(id, _)| *id == local) {
             return Some(IrTerm::Var { name: name.clone() });
         }
+        // Named-local stop: if this non-formal has a source name, emit
+        // Var(name) without tracing further. This keeps the predicate
+        // at the source-level name the programmer wrote.
+        if let Some(name) = named_locals.get(&local) {
+            return Some(IrTerm::Var { name: name.clone() });
+        }
         let rvalue = find_last_assign_rvalue(prior, local)?;
         if let Some(use_op) = rvalue.get("Use") {
-            return operand_to_ir_term(use_op, prior, formals);
+            return operand_to_ir_term(use_op, prior, formals, named_locals);
         }
         return None;
     }
@@ -636,9 +716,9 @@ fn operand_place_to_ir_term(
             let elem = &proj_arr[1];
             if let Some(name) = elem.as_str() {
                 match name {
-                    "Deref" => return operand_place_to_ir_term(base, prior, formals),
+                    "Deref" => return operand_place_to_ir_term(base, prior, formals, named_locals),
                     "PtrMetadata" => {
-                        let inner = operand_place_to_ir_term(base, prior, formals)?;
+                        let inner = operand_place_to_ir_term(base, prior, formals, named_locals)?;
                         return Some(IrTerm::Ctor {
                             name: "len".to_string(),
                             args: vec![inner],
