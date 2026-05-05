@@ -12,7 +12,12 @@ const std = @import("std");
 
 pub const Sort = union(enum) {
     primitive: []const u8,
-    function: struct { args: []const Sort, return_: Sort },
+    // FunctionSort recursively contains Sort. Zig requires pointer
+    // indirection on recursive type fields to break the dependency
+    // loop (same constraint that `dependent.index_sort` already
+    // satisfies via *const Sort). Slice-of-pointer for args, pointer
+    // for return.
+    function: struct { args: []const *const Sort, return_: *const Sort },
     dependent: struct { name: []const u8, index_var: []const u8, index_sort: *const Sort },
 
     pub const Bool = Sort{ .primitive = "Bool" };
@@ -34,11 +39,15 @@ pub const Sort = union(enum) {
             .function => |f| {
                 try jws.beginObject();
                 try jws.objectField("args");
-                try jws.write(f.args);
+                try jws.beginArray();
+                for (f.args) |arg_ptr| {
+                    try jws.write(arg_ptr.*);
+                }
+                try jws.endArray();
                 try jws.objectField("kind");
                 try jws.write("function");
                 try jws.objectField("return");
-                try jws.write(f.return_);
+                try jws.write(f.return_.*);
                 try jws.endObject();
             },
             .dependent => |d| {
