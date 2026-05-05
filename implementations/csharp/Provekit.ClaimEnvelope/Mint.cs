@@ -16,6 +16,7 @@
 // mismatches.
 
 using Provekit.Canonicalizer;
+using Provekit.IR;
 using Provekit.ProofEnvelope;
 using V = Provekit.Canonicalizer.Value;
 
@@ -330,22 +331,22 @@ public static class Mint
         if (args.ProducedAt is { } pa) metaEntries.Add(new("producedAt", V.String(pa)));
         var metadata = V.Object(metaEntries);
 
-        // Build envelope
-        var signerPubkey = Sign.Ed25519PubkeyString(args.SignerSeed);
-        var envEntries = new List<KeyValuePair<string, V>>
-        {
-            new("signer", V.String(signerPubkey)),
-            new("declaredAt", V.String(args.DeclaredAt)),
-        };
-        var envelope = V.Object(envEntries);
-
         // Sign: JCS({header, metadata})
         var sigPayload = Jcs.EncodeUtf8(V.Object(
             ("header", header),
             ("metadata", metadata)
         ));
         var sig = Sign.Ed25519SignString(args.SignerSeed, sigPayload);
-        envelope.AsObject().Add(new("signature", V.String(sig)));
+
+        // Build envelope (signer + declaredAt + signature). Construct
+        // with the signature inline rather than mutating an existing
+        // V.Object — V.Object's underlying list is read-only.
+        var signerPubkey = Sign.Ed25519PubkeyString(args.SignerSeed);
+        var envelope = V.Object(
+            ("signer", V.String(signerPubkey)),
+            ("declaredAt", V.String(args.DeclaredAt)),
+            ("signature", V.String(sig))
+        );
 
         // Full memento: {envelope, header, metadata}
         var memento = V.Object(

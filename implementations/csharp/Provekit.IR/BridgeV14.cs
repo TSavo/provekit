@@ -26,7 +26,11 @@ namespace Provekit.IR;
 public abstract record BridgeTargetV14
 {
     public abstract string Kind { get; }
-    public abstract string Cid { get; }
+    // `init` is required so the positional `Cid` parameter on the
+    // sealed subrecords (which the compiler synthesizes as
+    // `public string Cid { get; init; }`) can satisfy this abstract
+    // member. Without `init` the override fails with CS0546.
+    public abstract string Cid { get; init; }
 
     public sealed record Contract(string Cid) : BridgeTargetV14
     {
