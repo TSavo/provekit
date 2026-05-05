@@ -9,6 +9,7 @@ description = "ProvekIt: six-stage verifier pipeline (load, enumerate, resolve, 
 [dependencies]
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+provekit-walk = { path = "../provekit-walk" }
 provekit-ir-compiler-smt-lib = { path = "../provekit-ir-compiler-smt-lib" }
 provekit-ir-compiler = { path = "../provekit-ir-compiler" }
 provekit-ir-compiler-coq = { path = "../provekit-ir-compiler-coq" }
