@@ -33,15 +33,82 @@ use syn::{
 
 use crate::wp::Wp;
 
+// ---- LiftCtx: scope-tracked name resolution ----
+//
+// The shadow AST is the structural witness of the source. Per Sir's
+// "shadow AST pays rent" directive (#368), the lifter consults a
+// scope walker mirroring the shadow tree's structure when emitting IR
+// variable references. Each closure binder receives a globally-unique
+// id within the formula; references inside the closure body resolve
+// to that unique id; references outside (free variables) keep their
+// surface name. The result is that lifted IR is in barendregt form
+// for closure binders by construction — capture is impossible at the
+// lift layer for those binders. The capture-avoiding substitution in
+// `wp.rs` is the belt-and-suspenders second line.
+//
+// The binder counter is per-formula. Two structurally identical
+// inputs produce structurally identical IR (deterministic for content
+// addressing).
+struct LiftCtx {
+    next_binder_id: u32,
+    /// Stack of frames; each frame holds (surface_name, unique_name) pairs
+    /// in declaration order. Innermost frame shadows outer frames.
+    scope: Vec<Vec<(String, String)>>,
+}
+
+impl LiftCtx {
+    fn new() -> Self {
+        Self {
+            next_binder_id: 0,
+            scope: Vec::new(),
+        }
+    }
+
+    fn push_frame(&mut self) {
+        self.scope.push(Vec::new());
+    }
+
+    fn pop_frame(&mut self) {
+        self.scope.pop();
+    }
+
+    /// Bind `base` in the innermost frame to a fresh unique name; return
+    /// the unique name. Caller must have pushed at least one frame.
+    fn bind(&mut self, base: &str) -> String {
+        let id = self.next_binder_id;
+        self.next_binder_id += 1;
+        let unique = format!("{}#{}", base, id);
+        self.scope
+            .last_mut()
+            .expect("LiftCtx::bind without push_frame")
+            .push((base.to_string(), unique.clone()));
+        unique
+    }
+
+    /// Resolve a surface name to its unique form. If not bound in any
+    /// frame, the name is free in this formula and returned unchanged.
+    fn resolve(&self, base: &str) -> String {
+        for frame in self.scope.iter().rev() {
+            for (b, u) in frame.iter().rev() {
+                if b == base {
+                    return u.clone();
+                }
+            }
+        }
+        base.to_string()
+    }
+}
+
 /// Lift the implicit precondition from a function body. Walks every
 /// statement and conjoins the contribution of each pattern recognized.
 ///
 /// Returns `Wp(true)` if no patterns are recognized — this means the
 /// function makes no demands on its caller (a vacuous precondition).
 pub fn lift_function_precondition(item_fn: &ItemFn) -> Wp {
+    let mut ctx = LiftCtx::new();
     let mut accum: Vec<IrFormula> = Vec::new();
     for stmt in &item_fn.block.stmts {
-        if let Some(predicate) = lift_stmt_contribution(stmt) {
+        if let Some(predicate) = lift_stmt_contribution(stmt, &mut ctx) {
             accum.push(predicate);
         }
     }
@@ -63,6 +130,7 @@ pub fn lift_function_precondition(item_fn: &ItemFn) -> Wp {
 /// body's structure that did not appear as explicit annotations. The
 /// postcondition is the conjunction of every such derived fact.
 pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
+    let mut ctx = LiftCtx::new();
     let mut accum: Vec<IrFormula> = Vec::new();
 
     // 1. Same control-flow contributions as the precondition: every
@@ -70,7 +138,7 @@ pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
     //    also holds at every return point in the MVP's recognized
     //    patterns (none of them mutate input variables).
     for stmt in &item_fn.block.stmts {
-        if let Some(predicate) = lift_stmt_contribution(stmt) {
+        if let Some(predicate) = lift_stmt_contribution(stmt, &mut ctx) {
             accum.push(predicate);
         }
     }
@@ -80,7 +148,7 @@ pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
     //    expression is the function's return value. Derive
     //    `result = <lifted expression>` and add to the postcondition.
     if let Some(Stmt::Expr(e, None)) = item_fn.block.stmts.last() {
-        if let Some(term) = lift_expr_to_term(e) {
+        if let Some(term) = lift_expr_to_term_inner(e, &mut ctx) {
             let result_var = IrTerm::Var {
                 name: "result".to_string(),
             };
@@ -97,19 +165,19 @@ pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
 /// What does this single statement contribute to the function's
 /// implicit precondition? Returns None for statements that don't lift
 /// (let-bindings, plain expressions, etc.).
-fn lift_stmt_contribution(stmt: &Stmt) -> Option<IrFormula> {
+fn lift_stmt_contribution(stmt: &Stmt, ctx: &mut LiftCtx) -> Option<IrFormula> {
     match stmt {
-        Stmt::Expr(e, _) => lift_expr_contribution(e),
+        Stmt::Expr(e, _) => lift_expr_contribution(e, ctx),
         // `assert!(c);` at statement position parses to Stmt::Macro
         // (with optional trailing semicolon), not Stmt::Expr(Expr::Macro).
-        Stmt::Macro(StmtMacro { mac, .. }) => lift_macro_contribution(mac),
+        Stmt::Macro(StmtMacro { mac, .. }) => lift_macro_contribution(mac, ctx),
         _ => None,
     }
 }
 
 /// Recognize and lift macro contributions at statement or expression
 /// position. Used by both `Stmt::Macro` and `Expr::Macro` paths.
-fn lift_macro_contribution(mac: &Macro) -> Option<IrFormula> {
+fn lift_macro_contribution(mac: &Macro, ctx: &mut LiftCtx) -> Option<IrFormula> {
     let seg = mac.path.segments.last()?;
     let name = seg.ident.to_string();
     match name.as_str() {
@@ -121,13 +189,13 @@ fn lift_macro_contribution(mac: &Macro) -> Option<IrFormula> {
                 Expr::Tuple(t) => t.elems.first()?,
                 other => other,
             };
-            lift_predicate(first)
+            lift_predicate_inner(first, ctx)
         }
         _ => None,
     }
 }
 
-fn lift_expr_contribution(expr: &Expr) -> Option<IrFormula> {
+fn lift_expr_contribution(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrFormula> {
     // if-then-panic pattern: `if cond { panic!() }` lifts to ¬cond.
     if let Expr::If(ExprIf {
         cond,
@@ -137,14 +205,14 @@ fn lift_expr_contribution(expr: &Expr) -> Option<IrFormula> {
     }) = expr
     {
         if else_branch.is_none() && block_only_panics(then_branch) {
-            let cond_formula = lift_predicate(cond)?;
+            let cond_formula = lift_predicate_inner(cond, ctx)?;
             return Some(negate(cond_formula));
         }
     }
     // assert!()-shaped macros sometimes parse as Expr::Macro (e.g. when
     // they're the trailing tail expression of a block).
     if let Expr::Macro(ExprMacro { mac, .. }) = expr {
-        if let Some(formula) = lift_macro_contribution(mac) {
+        if let Some(formula) = lift_macro_contribution(mac, ctx) {
             return Some(formula);
         }
     }
@@ -154,25 +222,30 @@ fn lift_expr_contribution(expr: &Expr) -> Option<IrFormula> {
 /// Lift an arbitrary Rust predicate-shaped expression to `IrFormula`.
 /// Returns None for shapes the MVP does not yet handle.
 pub fn lift_predicate(expr: &Expr) -> Option<IrFormula> {
+    let mut ctx = LiftCtx::new();
+    lift_predicate_inner(expr, &mut ctx)
+}
+
+fn lift_predicate_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrFormula> {
     match expr {
         Expr::Binary(ExprBinary {
             left, op, right, ..
         }) => match op {
             BinOp::And(_) => {
-                let l = lift_predicate(left)?;
-                let r = lift_predicate(right)?;
+                let l = lift_predicate_inner(left, ctx)?;
+                let r = lift_predicate_inner(right, ctx)?;
                 Some(IrFormula::And { operands: vec![l, r] })
             }
             BinOp::Or(_) => {
-                let l = lift_predicate(left)?;
-                let r = lift_predicate(right)?;
+                let l = lift_predicate_inner(left, ctx)?;
+                let r = lift_predicate_inner(right, ctx)?;
                 Some(IrFormula::Or { operands: vec![l, r] })
             }
             _ => {
                 // Comparison: lift both sides as terms, pick the IR predicate name.
                 let name = bin_op_to_predicate_name(op)?;
-                let l_term = lift_expr_to_term(left)?;
-                let r_term = lift_expr_to_term(right)?;
+                let l_term = lift_expr_to_term_inner(left, ctx)?;
+                let r_term = lift_expr_to_term_inner(right, ctx)?;
                 Some(IrFormula::Atomic {
                     name: name.to_string(),
                     args: vec![l_term, r_term],
@@ -184,12 +257,12 @@ pub fn lift_predicate(expr: &Expr) -> Option<IrFormula> {
             expr,
             ..
         }) => {
-            let inner = lift_predicate(expr)?;
+            let inner = lift_predicate_inner(expr, ctx)?;
             // Apply De Morgan / double-negation via the negate helper,
             // so `!(x >= 10)` lifts to `x < 10`, not `¬(x ≥ 10)`.
             Some(negate(inner))
         }
-        Expr::Paren(p) => lift_predicate(&p.expr),
+        Expr::Paren(p) => lift_predicate_inner(&p.expr, ctx),
         // Anything else is unrecognized in the MVP.
         _ => None,
     }
@@ -216,6 +289,11 @@ pub fn lift_predicate(expr: &Expr) -> Option<IrFormula> {
 ///     `<<`, `>>`): lifts to `Ctor(<op>, [lhs, rhs])`.
 /// Anything else returns None.
 pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
+    let mut ctx = LiftCtx::new();
+    lift_expr_to_term_inner(expr, &mut ctx)
+}
+
+fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
     match expr {
         Expr::Lit(lit) => match &lit.lit {
             Lit::Int(n) => match n.base10_parse::<i64>() {
@@ -232,13 +310,15 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
         },
         Expr::Path(syn::ExprPath { path, .. }) => {
             let seg = path.segments.last()?;
-            Some(crate::wp::var(seg.ident.to_string()))
+            // Resolve through the scope stack: bound names map to their
+            // unique forms; free variables keep their surface name.
+            Some(crate::wp::var(ctx.resolve(&seg.ident.to_string())))
         }
-        Expr::Paren(p) => lift_expr_to_term(&p.expr),
-        Expr::Reference(r) => lift_expr_to_term(&r.expr),
-        Expr::Cast(c) => lift_expr_to_term(&c.expr),
+        Expr::Paren(p) => lift_expr_to_term_inner(&p.expr, ctx),
+        Expr::Reference(r) => lift_expr_to_term_inner(&r.expr, ctx),
+        Expr::Cast(c) => lift_expr_to_term_inner(&c.expr, ctx),
         Expr::Field(f) => {
-            let base = lift_expr_to_term(&f.base)?;
+            let base = lift_expr_to_term_inner(&f.base, ctx)?;
             let name = match &f.member {
                 syn::Member::Named(id) => id.to_string(),
                 syn::Member::Unnamed(idx) => idx.index.to_string(),
@@ -254,18 +334,18 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
             })
         }
         Expr::Index(i) => {
-            let arr = lift_expr_to_term(&i.expr)?;
-            let idx = lift_expr_to_term(&i.index)?;
+            let arr = lift_expr_to_term_inner(&i.expr, ctx)?;
+            let idx = lift_expr_to_term_inner(&i.index, ctx)?;
             Some(IrTerm::Ctor {
                 name: "index".to_string(),
                 args: vec![arr, idx],
             })
         }
         Expr::MethodCall(m) => {
-            let receiver = lift_expr_to_term(&m.receiver)?;
+            let receiver = lift_expr_to_term_inner(&m.receiver, ctx)?;
             let mut args = vec![receiver];
             for a in &m.args {
-                let lifted = lift_expr_to_term(a)?;
+                let lifted = lift_expr_to_term_inner(a, ctx)?;
                 args.push(lifted);
             }
             Some(IrTerm::Ctor {
@@ -275,11 +355,11 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
         }
         Expr::Range(r) => {
             let start = match &r.start {
-                Some(e) => lift_expr_to_term(e)?,
+                Some(e) => lift_expr_to_term_inner(e, ctx)?,
                 None => crate::wp::var("_"),
             };
             let end = match &r.end {
-                Some(e) => lift_expr_to_term(e)?,
+                Some(e) => lift_expr_to_term_inner(e, ctx)?,
                 None => crate::wp::var("_"),
             };
             let name = match r.limits {
@@ -294,7 +374,7 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
         Expr::Tuple(t) => {
             let mut args = Vec::with_capacity(t.elems.len());
             for e in &t.elems {
-                args.push(lift_expr_to_term(e)?);
+                args.push(lift_expr_to_term_inner(e, ctx)?);
             }
             Some(IrTerm::Ctor {
                 name: "tuple".to_string(),
@@ -304,7 +384,7 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
         Expr::Array(a) => {
             let mut args = Vec::with_capacity(a.elems.len());
             for e in &a.elems {
-                args.push(lift_expr_to_term(e)?);
+                args.push(lift_expr_to_term_inner(e, ctx)?);
             }
             Some(IrTerm::Ctor {
                 name: "array".to_string(),
@@ -312,8 +392,8 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
             })
         }
         Expr::Repeat(r) => {
-            let elem = lift_expr_to_term(&r.expr)?;
-            let count = lift_expr_to_term(&r.len)?;
+            let elem = lift_expr_to_term_inner(&r.expr, ctx)?;
+            let count = lift_expr_to_term_inner(&r.len, ctx)?;
             Some(IrTerm::Ctor {
                 name: "array_repeat".to_string(),
                 args: vec![elem, count],
@@ -321,22 +401,38 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
         }
         Expr::Closure(c) => {
             // `|x| body` lifts to IrTerm::Lambda. Multi-arg closures
-            // collapse into nested lambdas (right-associative). MVP
-            // supports closures with single Pat::Ident inputs; richer
-            // patterns are tagged for later.
-            let body = lift_expr_to_term(&c.body)?;
-            let mut term = body;
-            for input in c.inputs.iter().rev() {
-                let param_name = match input {
+            // collapse into nested lambdas (right-associative). Each
+            // closure parameter is bound in a fresh scope frame and
+            // assigned a globally-unique id by the LiftCtx; references
+            // to that name inside the closure body resolve to the
+            // unique form. The shadow AST's structural traversal owns
+            // this name resolution.
+            ctx.push_frame();
+            let mut unique_names: Vec<String> = Vec::with_capacity(c.inputs.len());
+            for input in &c.inputs {
+                let base = match input {
                     syn::Pat::Ident(p) => p.ident.to_string(),
                     syn::Pat::Type(pt) => match &*pt.pat {
                         syn::Pat::Ident(p) => p.ident.to_string(),
-                        _ => return None,
+                        _ => {
+                            ctx.pop_frame();
+                            return None;
+                        }
                     },
-                    _ => return None,
+                    _ => {
+                        ctx.pop_frame();
+                        return None;
+                    }
                 };
+                unique_names.push(ctx.bind(&base));
+            }
+            let body_lifted = lift_expr_to_term_inner(&c.body, ctx);
+            ctx.pop_frame();
+            let body = body_lifted?;
+            let mut term = body;
+            for unique in unique_names.into_iter().rev() {
                 term = IrTerm::Lambda {
-                    param_name,
+                    param_name: unique,
                     param_sort: provekit_ir_types::Sort::Primitive {
                         name: "Int".to_string(),
                     },
@@ -349,14 +445,14 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
             // `expr.await` desugars to a state machine that yields and
             // resumes; for substrate purposes it produces the awaited
             // value, so we lift as the inner expr.
-            lift_expr_to_term(&a.base)
+            lift_expr_to_term_inner(&a.base, ctx)
         }
         Expr::Async(a) => {
             // `async { body }` produces a Future. The substrate sees
             // through to the body's eventual value: lift the trailing
             // expression of the block.
             if let Some(syn::Stmt::Expr(e, None)) = a.block.stmts.last() {
-                lift_expr_to_term(e)
+                lift_expr_to_term_inner(e, ctx)
             } else {
                 None
             }
@@ -383,15 +479,15 @@ pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
                 BinOp::Shr(_) => ">>",
                 _ => return None,
             };
-            let l = lift_expr_to_term(left)?;
-            let r = lift_expr_to_term(right)?;
+            let l = lift_expr_to_term_inner(left, ctx)?;
+            let r = lift_expr_to_term_inner(right, ctx)?;
             Some(IrTerm::Ctor {
                 name: op_name.to_string(),
                 args: vec![l, r],
             })
         }
         Expr::Unary(ExprUnary { op, expr, .. }) => {
-            let inner = lift_expr_to_term(expr)?;
+            let inner = lift_expr_to_term_inner(expr, ctx)?;
             let name = match op {
                 UnOp::Neg(_) => "neg",
                 UnOp::Not(_) => "bit-not",
@@ -696,6 +792,136 @@ mod tests {
         assert!(
             !json.contains("\"not\""),
             "pre should NOT contain a `not` wrapper (double negation eliminated): {}",
+            json
+        );
+    }
+
+    // ---- shadow-AST scope tracking ----
+
+    #[test]
+    fn lift_closure_assigns_unique_param_id() {
+        // |x| x  ->  Lambda { x#0, body: Var x#0 }
+        let expr: Expr = syn::parse_str("|x| x").unwrap();
+        let term = lift_expr_to_term(&expr).unwrap();
+        match term {
+            IrTerm::Lambda {
+                param_name, body, ..
+            } => {
+                assert!(
+                    param_name.starts_with("x#"),
+                    "expected x#N, got {}",
+                    param_name
+                );
+                match *body {
+                    IrTerm::Var { name } => assert_eq!(
+                        name, param_name,
+                        "body's `x` must resolve to the closure's unique id"
+                    ),
+                    other => panic!("expected Var, got {:?}", other),
+                }
+            }
+            other => panic!("expected Lambda, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lift_nested_closures_get_distinct_ids() {
+        // |x| |x| x  ->  the inner `x` shadows the outer; the inner's
+        // unique id is what the body resolves to.
+        let expr: Expr = syn::parse_str("|x| |x| x").unwrap();
+        let term = lift_expr_to_term(&expr).unwrap();
+        match term {
+            IrTerm::Lambda {
+                param_name: outer,
+                body,
+                ..
+            } => match *body {
+                IrTerm::Lambda {
+                    param_name: inner,
+                    body: inner_body,
+                    ..
+                } => {
+                    assert_ne!(outer, inner, "outer and inner ids must differ");
+                    assert!(outer.starts_with("x#"));
+                    assert!(inner.starts_with("x#"));
+                    match *inner_body {
+                        IrTerm::Var { name } => {
+                            assert_eq!(name, inner, "innermost binding wins");
+                        }
+                        other => panic!("expected Var, got {:?}", other),
+                    }
+                }
+                other => panic!("expected nested Lambda, got {:?}", other),
+            },
+            other => panic!("expected Lambda, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lift_free_variable_keeps_original_name() {
+        // Bare `y` lifts to Var("y") — y is free in this context.
+        let expr: Expr = syn::parse_str("y").unwrap();
+        let term = lift_expr_to_term(&expr).unwrap();
+        match term {
+            IrTerm::Var { name } => {
+                assert_eq!(name, "y", "free variable keeps surface name");
+            }
+            other => panic!("expected Var, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lift_closure_does_not_capture_outer_reference() {
+        // |x| (x + y)  -- inside the closure, x is bound, y is free.
+        let expr: Expr = syn::parse_str("|x| x + y").unwrap();
+        let term = lift_expr_to_term(&expr).unwrap();
+        match term {
+            IrTerm::Lambda {
+                param_name, body, ..
+            } => {
+                assert!(param_name.starts_with("x#"));
+                let json = serde_json::to_string(&body).unwrap();
+                // Body should reference the unique x#N for x and bare "y" for y.
+                assert!(
+                    json.contains(&format!("\"{}\"", param_name)),
+                    "body should reference the unique x: {}",
+                    json
+                );
+                assert!(
+                    json.contains("\"y\""),
+                    "body should reference free y unchanged: {}",
+                    json
+                );
+            }
+            other => panic!("expected Lambda, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn lift_function_with_closure_keeps_formal_unscoped() {
+        // fn f(x) { let _ = |x| x; x }
+        // The trailing `x` is the function's formal — should be plain "x".
+        // The closure's body `x` is the closure's param — should be "x#N".
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: u32) -> u32 {
+                let _ = |x: u32| x;
+                x
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn);
+        let json = serde_json::to_string(post.as_formula()).unwrap();
+        // The trailing-expression derivation gives `result = x` (plain x).
+        assert!(
+            json.contains("\"result\""),
+            "post should derive result = x: {}",
+            json
+        );
+        // The plain "x" formal (not "x#N") should appear.
+        assert!(
+            json.contains("\"x\""),
+            "post should reference the formal x: {}",
             json
         );
     }

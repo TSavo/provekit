@@ -137,11 +137,18 @@ fn predicate_with_method_call() {
 
 #[test]
 fn closure_lifts_as_lambda() {
-    // |x| x + 1 lifts to IrTerm::Lambda { param=x, body=(x + 1) }.
+    // |x| x + 1 lifts to IrTerm::Lambda { param=x#N, body=(x#N + 1) }.
+    // Closure params are scope-resolved by the LiftCtx (#368 capture-
+    // soundness): the binder name carries a unique scope id, and the
+    // body's reference resolves to the same id.
     let t = lift_expr_to_term(&parse_expr("|x| x + 1")).unwrap();
     let json = serde_json::to_string(&t).unwrap();
     assert!(json.contains("\"lambda\""), "expected lambda variant: {}", json);
-    assert!(json.contains("\"x\""));
+    assert!(
+        json.contains("\"x#"),
+        "expected scope-resolved x#N param: {}",
+        json
+    );
     assert!(json.contains("\"+\""));
 }
 
