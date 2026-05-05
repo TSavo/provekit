@@ -12,7 +12,7 @@
  * needed (SMT-LIB doesn't have first-class function sorts in the AUFLIA
  * fragment; ALL logic supports them via parametric arrays for some
  * solvers — for now we declare uninterpreted function symbols by their
- * domain/range, not by their function-sort).
+ * args/return, not by their function-sort).
  */
 
 import type { Sort } from "../formulas.js";
@@ -46,10 +46,13 @@ export function emitSort(sort: Sort): string {
       return `(Tuple ${sort.elements.map(emitSort).join(" ")})`;
     case "function":
       // Function sorts aren't first-class in plain SMT-LIB. We render
-      // them as `(-> dom1 dom2 ... range)` which mirrors the SMT-LIB
+      // them as `(-> dom1 dom2 ... ret)` which mirrors the SMT-LIB
       // higher-order extension; consumers that don't support it should
       // not place function sorts in atomic positions.
-      return `(-> ${sort.domain.map(emitSort).join(" ")} ${emitSort(sort.range)})`;
+      return `(-> ${sort.args.map(emitSort).join(" ")} ${emitSort(sort.return)})`;
+    case "dependent":
+      // Dependent sorts are treated as opaque user-declared sorts.
+      return sort.name;
   }
 }
 
@@ -74,8 +77,11 @@ export function collectUserSorts(sort: Sort, out: Set<string>): void {
       for (const e of sort.elements) collectUserSorts(e, out);
       return;
     case "function":
-      for (const d of sort.domain) collectUserSorts(d, out);
-      collectUserSorts(sort.range, out);
+      for (const d of sort.args) collectUserSorts(d, out);
+      collectUserSorts(sort.return, out);
+      return;
+    case "dependent":
+      collectUserSorts(sort.indexSort, out);
       return;
   }
 }

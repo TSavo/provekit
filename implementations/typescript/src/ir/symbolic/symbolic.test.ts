@@ -718,7 +718,7 @@ vDescribe("lambda", () => {
 
   test("lambda infers function sort from param and body", () => {
     const lam = lambda("x", Int, num(42));
-    expect(termSort(lam)).toEqual({ kind: "function", domain: [Int], range: Int });
+    expect(termSort(lam)).toEqual({ kind: "function", args: [Int], return: Int });
   });
 });
 

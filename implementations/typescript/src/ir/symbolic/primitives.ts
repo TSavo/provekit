@@ -437,7 +437,7 @@ export function lambda(paramName: string, paramSort: Sort, body: IrTerm): IrTerm
   // Sort hint: function sort (paramSort → bodySort)
   const bodySort = inferSortHint(body);
   if (bodySort) {
-    attachSortHint(lam, { kind: "function", domain: [paramSort], range: bodySort });
+    attachSortHint(lam, { kind: "function", args: [paramSort], return: bodySort });
   }
   return lam;
 }

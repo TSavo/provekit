@@ -26,7 +26,8 @@ export type CanonicalSort =
   | { kind: "bitvec"; width: number }
   | { kind: "set"; element: CanonicalSort }
   | { kind: "tuple"; elements: CanonicalSort[] }
-  | { kind: "function"; domain: CanonicalSort[]; range: CanonicalSort };
+  | { kind: "function"; args: CanonicalSort[]; return: CanonicalSort }
+  | { kind: "dependent"; name: string; indexVar: string; indexSort: CanonicalSort };
 
 // ---------------------------------------------------------------------------
 // Terms

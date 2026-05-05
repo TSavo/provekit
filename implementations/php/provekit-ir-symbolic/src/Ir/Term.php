@@ -3,24 +3,47 @@
 
 namespace ProvekIt\Ir;
 
-enum SortKind: string { case Primitive = 'primitive'; }
+enum SortKind: string { case Primitive = 'primitive'; case Function = 'function'; case Dependent = 'dependent'; }
 
-class Sort implements \JsonSerializable {
+abstract class Sort implements \JsonSerializable {
+    abstract public function jsonSerialize(): array;
+
+    public static function Primitive(string $name): self    { return new PrimitiveSort($name); }
+    public static function FuncOf(array $args, Sort $ret): self { return new FunctionSort($args, $ret); }
+    public static function Dependent(string $name, string $indexVar, Sort $indexSort): self { return new DependentSort($name, $indexVar, $indexSort); }
+
+    public static function Bool():   self { return new PrimitiveSort('Bool'); }
+    public static function Int():    self { return new PrimitiveSort('Int'); }
+    public static function Real():   self { return new PrimitiveSort('Real'); }
+    public static function String(): self { return new PrimitiveSort('String'); }
+    public static function Ref():    self { return new PrimitiveSort('Ref'); }
+}
+
+class PrimitiveSort extends Sort {
+    public function __construct(public readonly string $name) {}
+    public function jsonSerialize(): array { return ['kind' => 'primitive', 'name' => $this->name]; }
+}
+
+class FunctionSort extends Sort {
+    public function __construct(
+        /** @var Sort[] */
+        public readonly array $args,
+        public readonly Sort $return_,
+    ) {}
+    public function jsonSerialize(): array {
+        return ['kind' => 'function', 'args' => array_map(fn($a) => $a->jsonSerialize(), $this->args), 'return' => $this->return_->jsonSerialize()];
+    }
+}
+
+class DependentSort extends Sort {
     public function __construct(
         public readonly string $name,
-        public readonly SortKind $kind = SortKind::Primitive,
+        public readonly string $indexVar,
+        public readonly Sort $indexSort,
     ) {}
-
     public function jsonSerialize(): array {
-        return ['kind' => $this->kind->value, 'name' => $this->name];
+        return ['kind' => 'dependent', 'name' => $this->name, 'indexVar' => $this->indexVar, 'indexSort' => $this->indexSort->jsonSerialize()];
     }
-
-    // Well-known sorts
-    public static function Bool():   self { return new self('Bool'); }
-    public static function Int():    self { return new self('Int'); }
-    public static function Real():   self { return new self('Real'); }
-    public static function String(): self { return new self('String'); }
-    public static function Ref():    self { return new self('Ref'); }
 }
 
 abstract class IrTerm implements \JsonSerializable {

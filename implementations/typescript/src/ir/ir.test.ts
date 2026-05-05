@@ -84,8 +84,8 @@ describe("sorts", () => {
   it("FuncOf constructs a function sort", () => {
     expect(FuncOf([Int], Bool)).toEqual({
       kind: "function",
-      domain: [{ kind: "primitive", name: "Int" }],
-      range: { kind: "primitive", name: "Bool" },
+      args: [{ kind: "primitive", name: "Int" }],
+      return: { kind: "primitive", name: "Bool" },
     });
   });
 });

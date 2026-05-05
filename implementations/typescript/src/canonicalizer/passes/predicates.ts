@@ -204,7 +204,9 @@ function sortKey(sort: CanonicalSort): string {
     case "tuple":
       return `T:${sort.elements.map(sortKey).join(",")}`;
     case "function":
-      return `F:${sort.domain.map(sortKey).join(",")}:${sortKey(sort.range)}`;
+      return `F:${sort.args.map(sortKey).join(",")}:${sortKey(sort.return)}`;
+    case "dependent":
+      return `D:${sort.name}:${sort.indexVar}:${sortKey(sort.indexSort)}`;
   }
 }
 
