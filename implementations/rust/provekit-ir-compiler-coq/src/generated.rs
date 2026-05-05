@@ -16,7 +16,7 @@ pub fn emit_term(term: &Term) -> String {
             // non-primitive sorts and let the value's own JSON dictate the surface form.
             let sort_name = match sort {
                 Sort::Primitive { name } => name.as_str(),
-                Sort::Function { .. } | Sort::Dependent { .. } | Sort::Float { .. } => "",
+                Sort::Function { .. } | Sort::Dependent { .. } | Sort::Float { .. } | Sort::Region { .. } => "",
             };
             return emit_const_value(value, sort_name);
         },
@@ -139,6 +139,9 @@ fn emit_sort(sort: &Sort) -> String {
         // FloatSort: IEEE-754 floats are opaque to the Coq compiler; emit as Z (integer
         // bit-pattern representation). Full FP reasoning is deferred (#332 / #385).
         Sort::Float { .. } => "Z".to_string(),
+        // RegionSort: lifetime variables are opaque to the Coq backend.
+        // Regions are pre-resolved in composition; emit as an opaque "Region" name.
+        Sort::Region { .. } => "Region".to_string(),
     }
 }
 
@@ -151,7 +154,7 @@ fn emit_sort(sort: &Sort) -> String {
 fn emit_sort_paren(sort: &Sort) -> String {
     match sort {
         Sort::Function { .. } | Sort::Dependent { .. } => format!("({})", emit_sort(sort)),
-        Sort::Primitive { .. } | Sort::Float { .. } => emit_sort(sort),
+        Sort::Primitive { .. } | Sort::Float { .. } | Sort::Region { .. } => emit_sort(sort),
     }
 }
 
@@ -176,13 +179,15 @@ fn sort_to_coq(sort: &Sort) -> String {
         },
         // FloatSort: opaque to the Coq binder positions; emit as Z (bit-pattern). #385.
         Sort::Float { .. } => "Z".to_string(),
+        // RegionSort: opaque to Coq binder positions; emit as "Region". #401.
+        Sort::Region { .. } => "Region".to_string(),
     }
 }
 
 fn sort_to_coq_paren(sort: &Sort) -> String {
     match sort {
         Sort::Function { .. } | Sort::Dependent { .. } => format!("({})", sort_to_coq(sort)),
-        Sort::Primitive { .. } | Sort::Float { .. } => sort_to_coq(sort),
+        Sort::Primitive { .. } | Sort::Float { .. } | Sort::Region { .. } => sort_to_coq(sort),
     }
 }
 fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {

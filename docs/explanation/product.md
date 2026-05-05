@@ -6,7 +6,7 @@ ProvekIt is a content-addressed verification protocol. It defines four things: a
 
 Verification reduces to hash comparison. When the publisher's post-condition and the consumer's pre-condition canonicalize to identical bytes, the call site is discharged for free. When they don't, a signed implication memento may exist that bridges them; the verifier checks the signature once and discharges every call site that shares the same `(post, pre)` pair. When neither path applies, Z3 runs once per novel pair, mints the result as a fresh implication memento, and every future verifier hits the cached path.
 
-ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libraries (verifier, IR, canonicalizer) for Rust, TypeScript, Go, and C++. The protocol version is itself a CID: v1.5.0 is shorthand for `blake3-512:540e8c1f5f7fea880123203b30891771d421da953c34af6bfb1d56d4c1d25dfb2ae08af6f275f5b4a4d015c364588b3521116541fcf4ac32d69b4e46acee1843`. Anyone with the spec bytes can verify that label locally.
+ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libraries (verifier, IR, canonicalizer) for Rust, TypeScript, Go, and C++. The protocol version is itself a CID: v1.6.0 is shorthand for `blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781`. Anyone with the spec bytes can verify that label locally.
 
 ## Who it's for
 
@@ -16,7 +16,7 @@ Three audiences, in order of immediate fit:
 
 **Application teams that depend on libraries they did not write.** A consumer's verifier walks the dependency tree, loads every `.proof` it finds, and discharges call sites against the cached contract mementos. The Tier-1 hash-discharge fraction is the headline metric: a high fraction means the consumer's expectations and the library's guarantees agree on shape. A low fraction means there is real work to do, and the work is the residue, not the average case. The verifier's cost is decoupled from the depth of the dependency tree.
 
-**Build-tool maintainers and language teams.** Per-language kits emit canonical IR. Per-language libs verify. The Rust CLI is one shipping implementation; alternative CLIs in any language are conforming as long as they accept the v1.5.0 catalog CID. The protocol is the contract; implementations are interchangeable.
+**Build-tool maintainers and language teams.** Per-language kits emit canonical IR. Per-language libs verify. The Rust CLI is one shipping implementation; alternative CLIs in any language are conforming as long as they accept the v1.6.0 catalog CID. The protocol is the contract; implementations are interchangeable.
 
 ## What ProvekIt replaces
 
@@ -114,8 +114,8 @@ A repository declares its conformance via a `provekit.config.yaml` at the projec
 
 ```yaml
 protocol:
-  cid: blake3-512:540e8c1f5f7fea880123203b30891771d421da953c34af6bfb1d56d4c1d25dfb2ae08af6f275f5b4a4d015c364588b3521116541fcf4ac32d69b4e46acee1843
-  version: v1.5.0
+  cid: blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781
+  version: v1.6.0
 
 publish:
   implications:

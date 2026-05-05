@@ -2,7 +2,7 @@
 //
 // recompute-spec-cids
 //
-// Catalog freeze tool (current target: v1.5.0). Computes BLAKE3-512 CIDs for every protocol
+// Catalog freeze tool (current target: v1.6.0). Computes BLAKE3-512 CIDs for every protocol
 // spec file listed in `protocol/specs/2026-04-30-protocol-catalog.json`,
 // substitutes them into the catalog (replacing `RECOMPUTE-AFTER-*`
 // placeholders), then computes the catalog's own CID as

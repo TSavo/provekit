@@ -34,10 +34,10 @@ The shipping adapters in v1.1 cover `proptest` and `contracts` for Rust. The v1.
 
 ## The protocol is its hash
 
-v1.5.0 is shorthand. The canonical name of v1.5.0 is
+v1.6.0 is shorthand. The canonical name of v1.6.0 is
 
 ```
-blake3-512:540e8c1f5f7fea880123203b30891771d421da953c34af6bfb1d56d4c1d25dfb2ae08af6f275f5b4a4d015c364588b3521116541fcf4ac32d69b4e46acee1843
+blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781
 ```
 
 the BLAKE3-512 hash of the JCS-canonical form of the protocol catalog. Anyone with the spec bytes can re-derive the CID locally. The repository ships a reference implementation at `tools/recompute-spec-cids/`; `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify` re-derives every CID and fails on any drift.

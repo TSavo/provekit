@@ -190,6 +190,19 @@ with accompanying English explanation.
 |-----------|---------|
 | ValidFields | `∀s → HasKey("name")∧IsString(name) ∧ HasKey("indexVar")∧IsString(indexVar) ∧ HasKey("indexSort")∧IsSort(indexSort)` |
 
+**FloatSort** (Section: Sorts)
+
+| Invariant | Formula |
+|-----------|---------|
+| ValidWidth | `∀s → HasKey("width")∧IsPositiveInteger(width) ∧ width ∈ {16,32,64,128}` |
+
+**RegionSort** (Section: Sorts)
+
+| Invariant | Formula |
+|-----------|---------|
+| ValidName | `∀s → HasKey("name")∧IsString(name)∧len(name)>0` |
+| OpaqueToBackends | `∀s, backend∈{SMT-LIB,Coq} → ¬ReachesBackend(s,backend)` |
+
 **Strict Mode** (Section: Reference Parser)
 | Invariant | Formula |
 |-----------|---------|
@@ -1044,7 +1057,7 @@ ensuring the proof is for the correct claim.
 ### Sort
 
 ```ebnf
-Sort ::= PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort | DependentSort
+Sort ::= PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort | DependentSort | FloatSort | RegionSort
 ```
 
 ### PrimitiveSort
@@ -1130,6 +1143,43 @@ DependentSort ::= "{"
 variable the type depends on (e.g. `"n"` for `Vec<n>`). `indexSort`
 constrains the sort of the index variable.
 
+### FloatSort
+
+Locked key order: `kind`, `width`.
+
+```ebnf
+FloatSort ::= "{"
+                "\"kind\"" ":" "\"float\"" ","
+                "\"width\"" ":" PositiveInteger
+              "}"
+```
+
+`width` is the bit-width of the IEEE-754 float: 16, 32, 64, or 128.
+FloatSort is opaque at the SMT-LIB and Coq layers (bit-pattern encoding);
+full floating-point theory is deferred to a follow-up RFC (#385).
+
+### RegionSort
+
+Locked key order: `kind`, `name` (alphabetical).
+
+```ebnf
+RegionSort ::= "{"
+                 "\"kind\"" ":" "\"region\"" ","
+                 "\"name\"" ":" String
+               "}"
+```
+
+`name` is a Rust lifetime name: e.g. `"'a"`, `"'static"`, or a fresh
+region variable like `"'r0"`. RegionSort is an opaque carrier for
+borrow-checker lifetime variables so that lifted Rust functions with
+lifetime parameters receive well-typed contracts without collapsing
+lifetimes into a primitive sort (which would break CID stability and
+the sort-collapse invariants from #384 A.1).
+
+RegionSort MUST NOT reach the SMT-LIB or Coq backends — regions are
+pre-resolved in composition. Prerequisite for #384 C.9 (Outlives
+predicates).
+
 ### Formal Invariants
 
 **INVARIANT PrimitiveSort.ValidName:**
@@ -1178,6 +1228,27 @@ A FunctionSort must have a non-empty `args` array of Sorts and a valid `return` 
                      HasKey(s, "indexSort") ∧ IsSort(s.indexSort)
 ```
 A DependentSort must have a non-empty `name`, a non-empty `indexVar`, and a valid `indexSort`.
+
+**INVARIANT FloatSort.ValidWidth:**
+```
+∀s: FloatSort → HasKey(s, "kind") ∧ s.kind = "float" ∧
+                HasKey(s, "width") ∧ IsPositiveInteger(s.width) ∧ s.width ∈ {16, 32, 64, 128}
+```
+A FloatSort must have a `width` field that is one of the four IEEE-754 standard widths.
+
+**INVARIANT RegionSort.ValidName:**
+```
+∀s: RegionSort → HasKey(s, "kind") ∧ s.kind = "region" ∧
+                  HasKey(s, "name") ∧ IsString(s.name) ∧ len(s.name) > 0
+```
+A RegionSort must have a non-empty string `name` field carrying the lifetime name.
+
+**INVARIANT RegionSort.OpaqueToBackends:**
+```
+∀s: RegionSort, backend: Backend →
+  backend ∈ {SMT-LIB, Coq} → ¬ReachesBackend(s, backend)
+```
+RegionSorts MUST be pre-resolved before reaching the SMT-LIB or Coq compiler layers.
 
 ### Sort Examples
 
@@ -1228,6 +1299,31 @@ A DependentSort must have a non-empty `name`, a non-empty `indexVar`, and a vali
     "return": {"kind": "primitive", "name": "Bool"}
   }
 }
+```
+
+**FloatSort — 32-bit float:**
+```json
+{"kind": "float", "width": 32}
+```
+
+**FloatSort — 64-bit float:**
+```json
+{"kind": "float", "width": 64}
+```
+
+**RegionSort — named lifetime:**
+```json
+{"kind": "region", "name": "'a"}
+```
+
+**RegionSort — static lifetime:**
+```json
+{"kind": "region", "name": "'static"}
+```
+
+**RegionSort — fresh region variable:**
+```json
+{"kind": "region", "name": "'r0"}
 ```
 
 ## Source positions

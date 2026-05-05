@@ -490,6 +490,12 @@ fn sort_to_value(s: &Sort) -> Arc<Value> {
             ("kind", Value::string("float")),
             ("width", Value::integer(i64::from(*width))),
         ]),
+        // RegionSort (added by #401). Carry kind + name so type_decl CIDs
+        // for lifetime-annotated fields are distinguishable from primitives.
+        Sort::Region { name } => Value::object([
+            ("kind", Value::string("region")),
+            ("name", Value::string(name.clone())),
+        ]),
     }
 }
 
