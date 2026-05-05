@@ -38,6 +38,7 @@ members = [
     "provekit-showcase",
     "examples/build_script_demo",
     "provekit-linkerd",
+    "provekit-walk",
 ]
 
 [workspace.package]

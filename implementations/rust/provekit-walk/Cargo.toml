@@ -1,0 +1,21 @@
+[package]
+name = "provekit-walk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt walk: backward WP propagation from callsites to allocations over Rust source. Issue #368 launch demo."
+
+[lib]
+name = "provekit_walk"
+path = "src/lib.rs"
+
+[dependencies]
+syn = { workspace = true }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
+provekit-ir-types = { path = "../provekit-ir-types" }
+provekit-canonicalizer = { path = "../provekit-canonicalizer" }
+serde_json = { workspace = true }
+
+[dev-dependencies]
