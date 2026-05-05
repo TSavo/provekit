@@ -333,12 +333,11 @@ fn walk_expr_for_callsites(
                     .cloned()
                     .collect();
                 branch_preceding.extend(inner_stmts.iter().cloned());
-                let prev_len = inner_stmts.len();
+                // Save and restore the caller's inner_stmts across the
+                // recursive descent — identical to the Block-arm pattern.
+                let saved = inner_stmts.clone();
                 *inner_stmts = branch_preceding;
                 walk_stmt_for_callsites(s, callee_name, conditions, inner_stmts, hits);
-                inner_stmts.truncate(prev_len);
-                // Restore original inner_stmts
-                let saved: Vec<Stmt> = inner_stmts.clone();
                 *inner_stmts = saved;
             }
             if lifted.is_some() {
@@ -413,6 +412,55 @@ fn walk_expr_for_callsites(
             if let Some(inner) = &r.expr {
                 walk_expr_for_callsites(inner, callee_name, conditions, inner_stmts, hits);
             }
+        }
+        // Common compound expression forms that can contain callsites. We
+        // recurse into their sub-expressions so a callsite inside
+        // `foo() && callee(x) > 0` or `(callee(x), y)` is not silently
+        // dropped (Bug #2).
+        Expr::Binary(b) => {
+            walk_expr_for_callsites(&b.left, callee_name, conditions, inner_stmts, hits);
+            walk_expr_for_callsites(&b.right, callee_name, conditions, inner_stmts, hits);
+        }
+        Expr::Unary(u) => {
+            walk_expr_for_callsites(&u.expr, callee_name, conditions, inner_stmts, hits);
+        }
+        Expr::Cast(c) => {
+            walk_expr_for_callsites(&c.expr, callee_name, conditions, inner_stmts, hits);
+        }
+        Expr::Paren(p) => {
+            walk_expr_for_callsites(&p.expr, callee_name, conditions, inner_stmts, hits);
+        }
+        Expr::Reference(r) => {
+            walk_expr_for_callsites(&r.expr, callee_name, conditions, inner_stmts, hits);
+        }
+        Expr::Field(f) => {
+            walk_expr_for_callsites(&f.base, callee_name, conditions, inner_stmts, hits);
+        }
+        Expr::Index(i) => {
+            walk_expr_for_callsites(&i.expr, callee_name, conditions, inner_stmts, hits);
+            walk_expr_for_callsites(&i.index, callee_name, conditions, inner_stmts, hits);
+        }
+        Expr::Range(r) => {
+            if let Some(start) = &r.start {
+                walk_expr_for_callsites(start, callee_name, conditions, inner_stmts, hits);
+            }
+            if let Some(end) = &r.end {
+                walk_expr_for_callsites(end, callee_name, conditions, inner_stmts, hits);
+            }
+        }
+        Expr::Tuple(t) => {
+            for elem in &t.elems {
+                walk_expr_for_callsites(elem, callee_name, conditions, inner_stmts, hits);
+            }
+        }
+        Expr::Array(a) => {
+            for elem in &a.elems {
+                walk_expr_for_callsites(elem, callee_name, conditions, inner_stmts, hits);
+            }
+        }
+        Expr::Assign(a) => {
+            walk_expr_for_callsites(&a.left, callee_name, conditions, inner_stmts, hits);
+            walk_expr_for_callsites(&a.right, callee_name, conditions, inner_stmts, hits);
         }
         // Other shapes pass through silently. Stretch goals add closure
         // bodies, async blocks, etc.
@@ -642,6 +690,105 @@ mod tests {
             walks.len(),
             0,
             "arity mismatch must skip the callsite (got {} walks)",
+            walks.len()
+        );
+    }
+
+    #[test]
+    fn nested_if_inner_stmts_not_leaked_across_branches() {
+        // Bug #1 (If-arm save/restore): when a nested `if` block processes its
+        // then-branch, the inner_stmts state must be restored before descending
+        // into the else-branch (or the next statement). Without the fix, the
+        // broken `truncate(prev_len)` restored only to the pre-branch length,
+        // but left the branch_preceding content in place for the outer caller.
+        //
+        // Concretely: a second callsite in the else-branch must NOT see the
+        // let-bindings from the then-branch as preceding stmts.
+        let caller_src = r#"
+            fn caller(x: u32) {
+                if x > 5 {
+                    let y: u32 = 42;
+                    callee(y);
+                } else {
+                    callee(x);
+                }
+            }
+        "#;
+        let caller_fn: ItemFn = parse_fn(caller_src);
+        let pre = atomic_ge(var("x"), const_int(10));
+
+        let walks = walk_callsites_to_entry(
+            &caller_fn,
+            "callee",
+            &["x".to_string()],
+            pre,
+        );
+
+        assert_eq!(walks.len(), 2, "two callsites: one in then, one in else");
+        // The else-branch callsite (second walk) must not have y substituted.
+        // It only has `x` as its argument — the entry WP should still refer
+        // to `x`, not to `42`.
+        let else_entry = walks[1].entry_wp();
+        let json = serde_json::to_string(else_entry.as_formula()).unwrap();
+        assert!(
+            json.contains("\"x\""),
+            "else-branch entry WP should reference x, not be ground: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn callsite_inside_binary_expr_is_found() {
+        // Bug #2: when a callsite appears inside a binary expression such as
+        // `if callee(x) > 0 {}` or `let z = callee(x) + 1;`, the walk must
+        // descend into both sides of the binary and find it. Before the fix
+        // the `_ => {}` arm silently dropped these callsites.
+        let caller_src = r#"
+            fn caller(x: u32) {
+                let z = callee(x) + 1;
+            }
+        "#;
+        let caller_fn: ItemFn = parse_fn(caller_src);
+        let pre = atomic_ge(var("x"), const_int(10));
+
+        let walks = walk_callsites_to_entry(
+            &caller_fn,
+            "callee",
+            &["x".to_string()],
+            pre,
+        );
+
+        assert_eq!(
+            walks.len(),
+            1,
+            "callsite inside binary expr must be found (got {} walks)",
+            walks.len()
+        );
+    }
+
+    #[test]
+    fn callsite_inside_paren_expr_is_found() {
+        // Bug #2: callsite nested inside a parenthesized expression must
+        // be discovered.
+        let caller_src = r#"
+            fn caller(x: u32) {
+                let z = (callee(x));
+            }
+        "#;
+        let caller_fn: ItemFn = parse_fn(caller_src);
+        let pre = atomic_ge(var("x"), const_int(10));
+
+        let walks = walk_callsites_to_entry(
+            &caller_fn,
+            "callee",
+            &["x".to_string()],
+            pre,
+        );
+
+        assert_eq!(
+            walks.len(),
+            1,
+            "callsite inside paren must be found (got {} walks)",
             walks.len()
         );
     }
