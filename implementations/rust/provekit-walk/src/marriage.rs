@@ -56,18 +56,43 @@ pub enum MarriageError {
     Llbc(#[from] LlbcError),
 }
 
+/// Why LLBC contributed atoms AST did not see.
+///
+/// `TypePrecision` is the current catch-all: sort refinements such as
+/// Int vs U32 that the surface AST cannot express. `LifetimeRelative`
+/// covers Outlives predicates emitted by the C.9 lifter (#384 C.9),
+/// classified by a predicate name starting with `"outlives"` in the
+/// atom set. `BorrowState` is reserved for mut/shared distinctions.
+///
+/// Classifier rule: atom predicate name starts with `"outlives"` ->
+/// `LifetimeRelative`; everything else -> `TypePrecision`.
+/// TODO(#401): once Sort::Region lands, update the classifier to also
+/// detect Region-kinded terms as LifetimeRelative.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LlbcExtraCategory {
+    /// Sort refinements (Int vs U32, Int vs Bool, etc.) and all
+    /// other uncategorized LLBC-only atoms. Default category.
+    TypePrecision,
+    /// Outlives predicates derived from borrow regions. AST has no
+    /// lifetime view, so these atoms are structurally AST-empty by
+    /// design. Does NOT fail the marriage discipline.
+    LifetimeRelative,
+    /// Mutability / sharing distinctions. Reserved for future use.
+    BorrowState,
+}
+
 /// How AST and LLBC layers compared on the conjuncts of pre and post.
-/// `Identical` means byte-equal pre AND post; `LlbcExtra` means LLBC
-/// contributed atoms AST didn't see (the common case for arithmetic
-/// or slice-indexing code where MIR sees overflow / bounds checks);
-/// `AstExtra` is rare but possible if MIR optimized something away;
-/// `Both` is a divergence requiring investigation.
+/// `Identical` means byte-equal pre AND post; `LlbcExtra(cat)` means
+/// LLBC contributed atoms AST did not see, classified by category;
+/// `AstExtra` is rare (MIR optimized something away);
+/// `Both(cat)` means both sides contributed extras, with category
+/// assigned to the LLBC-side extras (the only categorizable axis).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LayerAgreement {
     Identical,
-    LlbcExtra,
+    LlbcExtra(LlbcExtraCategory),
     AstExtra,
-    Both,
+    Both(LlbcExtraCategory),
 }
 
 /// The married result. Both diagnostic layer contracts and the merged
@@ -158,12 +183,53 @@ fn compare_layers(
     let llbc_only = !llbc_pre_atoms.difference(&ast_pre_atoms).next().is_none()
         || !llbc_post_atoms.difference(&ast_post_atoms).next().is_none();
 
+    // Collect the LLBC-exclusive atoms for category classification.
+    let llbc_extras_pre: Vec<IrFormula> = conjuncts(&llbc.pre)
+        .into_iter()
+        .filter(|f| !is_trivially_true(f))
+        .filter(|f| {
+            let bytes = jcs_bytes_of_value(&formula_to_canonical(f));
+            !ast_pre_atoms.contains(&bytes)
+        })
+        .collect();
+    let llbc_extras_post: Vec<IrFormula> = conjuncts(&llbc.post)
+        .into_iter()
+        .filter(|f| !is_trivially_true(f))
+        .filter(|f| {
+            let bytes = jcs_bytes_of_value(&formula_to_canonical(f));
+            !ast_post_atoms.contains(&bytes)
+        })
+        .collect();
+    let llbc_extras: Vec<IrFormula> = llbc_extras_pre
+        .into_iter()
+        .chain(llbc_extras_post)
+        .collect();
+
     match (ast_only, llbc_only) {
         (false, false) => LayerAgreement::Identical,
-        (false, true) => LayerAgreement::LlbcExtra,
+        (false, true) => LayerAgreement::LlbcExtra(classify_extras(&llbc_extras)),
         (true, false) => LayerAgreement::AstExtra,
-        (true, true) => LayerAgreement::Both,
+        (true, true) => LayerAgreement::Both(classify_extras(&llbc_extras)),
     }
+}
+
+/// Classify a slice of LLBC-exclusive atoms into a category.
+///
+/// Rule: if any atom's predicate name starts with `"outlives"`,
+/// the extras are `LifetimeRelative`. Otherwise `TypePrecision` is
+/// returned as the default catch-all.
+///
+/// TODO(#401): once Sort::Region lands, extend this to detect
+/// Region-kinded terms regardless of predicate name prefix.
+fn classify_extras(extras: &[IrFormula]) -> LlbcExtraCategory {
+    for formula in extras {
+        if let IrFormula::Atomic { name, .. } = formula {
+            if name.starts_with("outlives") {
+                return LlbcExtraCategory::LifetimeRelative;
+            }
+        }
+    }
+    LlbcExtraCategory::TypePrecision
 }
 
 fn atom_byte_set(f: &IrFormula) -> HashSet<Vec<u8>> {
@@ -377,7 +443,7 @@ mod tests {
         // atom on the pre side. Agreement collapses to LlbcExtra.
         assert_eq!(
             married.agreement,
-            LayerAgreement::LlbcExtra,
+            LayerAgreement::LlbcExtra(LlbcExtraCategory::TypePrecision),
             "post sides converge after return-value derivation; MIR-only is the no-overflow"
         );
 
@@ -429,7 +495,7 @@ mod tests {
         // check — agreement collapses to LlbcExtra exactly.
         assert_eq!(
             married.agreement,
-            LayerAgreement::LlbcExtra,
+            LayerAgreement::LlbcExtra(LlbcExtraCategory::TypePrecision),
             "MIR sees the bounds check; both layers agree on post. got {:?}",
             married.agreement
         );
@@ -468,7 +534,7 @@ mod tests {
         // div-by-zero atom — agreement collapses to LlbcExtra exactly.
         assert_eq!(
             married.agreement,
-            LayerAgreement::LlbcExtra,
+            LayerAgreement::LlbcExtra(LlbcExtraCategory::TypePrecision),
             "MIR sees div-by-zero check; both layers agree on post. got {:?}",
             married.agreement
         );
@@ -664,7 +730,7 @@ mod tests {
 
         assert_eq!(
             married.agreement,
-            LayerAgreement::LlbcExtra,
+            LayerAgreement::LlbcExtra(LlbcExtraCategory::TypePrecision),
             "match arms: LLBC contributes != atoms AST doesn't see; got {:?}",
             married.agreement
         );
@@ -674,6 +740,88 @@ mod tests {
         assert!(
             merged_pre_str.contains("\u{2260}"),
             "merged pre includes the != predicate: {}",
+            merged_pre_str
+        );
+    }
+
+    // ---- LifetimeRelative category: AST-empty LLBC-non-empty must not fail marriage ----
+
+    #[test]
+    fn lifetime_relative_llbc_extra_does_not_fail_marriage_discipline() {
+        // Demonstrates the core purpose of LlbcExtraCategory::LifetimeRelative.
+        //
+        // Setup: AST emits no atoms (trivial-true pre, trivial-true post).
+        // LLBC emits one atom whose name starts with "outlives" -- simulating
+        // the shape the C.9 lifter (#384 C.9) will emit for Outlives predicates
+        // derived from borrow regions. Sort::Region does not exist yet (#401);
+        // we simulate the structural shape by constructing the atom directly.
+        //
+        // Expected: agreement is LlbcExtra(LifetimeRelative), not a failure.
+        // The marriage discipline accepts this asymmetry as by-design: AST
+        // has no lifetime view. The test asserts the category is recognized
+        // and does not trigger any assertion failure.
+        use crate::canonical::{cid_of_value, jcs_bytes_of_value};
+        use crate::contract::{build_memento_value, EffectSet, FunctionContractMemento};
+        use crate::locus::Locus;
+        use provekit_ir_types::Sort;
+
+        // Construct a fake Outlives atom: Atomic("outlives:'a:'b", []).
+        // This simulates what the C.9 lifter will emit once Sort::Region
+        // lands in #401. The predicate name prefix "outlives" is the sole
+        // discriminant used by classify_extras today.
+        let outlives_atom = IrFormula::Atomic {
+            name: "outlives:'a:'b".to_string(),
+            args: vec![],
+        };
+
+        // AST contract: trivial-true pre and post (AST cannot see lifetimes).
+        // LLBC contract: outlives predicate in pre, trivial-true post.
+        let base = FunctionContractMemento {
+            fn_name: "stub_lifetime".to_string(),
+            formals: vec![],
+            formal_sorts: vec![],
+            return_sort: Sort::Primitive { name: "Unit".to_string() },
+            body_cid: None,
+            effects: EffectSet::empty(),
+            locus: Locus::unknown(),
+            pre: atomic_true().into_formula(),
+            post: atomic_true().into_formula(),
+            canonical_bytes: vec![],
+            cid: String::new(),
+        };
+
+        let ast_contract = {
+            let mut c = base.clone();
+            let v = build_memento_value(&c);
+            c.canonical_bytes = jcs_bytes_of_value(&v);
+            c.cid = cid_of_value(&v);
+            c
+        };
+
+        let llbc_contract = {
+            let mut c = base.clone();
+            // LLBC pre carries the outlives atom; AST sees nothing.
+            c.pre = outlives_atom;
+            let v = build_memento_value(&c);
+            c.canonical_bytes = jcs_bytes_of_value(&v);
+            c.cid = cid_of_value(&v);
+            c
+        };
+
+        let married = marry(ast_contract, llbc_contract);
+
+        // The asymmetry is categorized as LifetimeRelative, not TypePrecision.
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::LlbcExtra(LlbcExtraCategory::LifetimeRelative),
+            "outlives atom must be classified LifetimeRelative, not TypePrecision"
+        );
+
+        // The merged contract carries the outlives atom -- no information lost.
+        let merged_pre_str = serde_json::to_string(&married.merged.pre).unwrap();
+        assert!(
+            merged_pre_str.contains("outlives"),
+            "merged pre must include the outlives atom: {}",
             merged_pre_str
         );
     }
