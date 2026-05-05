@@ -457,3 +457,88 @@ pub fn edge_memento_value(arrival: &ShadowArrival) -> Arc<Value> {
 pub fn edge_memento_cid(arrival: &ShadowArrival) -> String {
     cid_of_value(&edge_memento_value(arrival))
 }
+
+/// One composed edge: a content-addressed link from `p` (the
+/// component chain's leftmost antecedent) to `q` (the rightmost
+/// consequent). The composed edge is a flat memento — readers don't
+/// need the intermediate steps to verify reachability; they verify
+/// each constituent CID is in the substrate, then trust hash
+/// combination.
+///
+/// Paper 07 §3: composition is hash combination, free, associative.
+/// Paper 07 §6: cached composed edges accelerate every future
+/// discharge that hits the same `(p, q)` shape.
+#[derive(Debug, Clone)]
+pub struct ComposedEdge {
+    pub p: provekit_ir_types::IrFormula,
+    pub q: provekit_ir_types::IrFormula,
+    pub component_cids: Vec<String>,
+    pub canonical_bytes: Vec<u8>,
+    pub cid: String,
+}
+
+/// Compose two adjacent edges into a single content-addressed edge.
+/// "Adjacent" means `e1.q == e2.p` semantically (the chain's middle
+/// predicate matches). The composed edge's CID is hash-combined from
+/// its components, mirroring Merkle-tree composition.
+///
+/// The function does not enforce semantic adjacency at the formula
+/// level — it composes structurally and lets the substrate's downstream
+/// soundness checks (multi-solver consensus) discharge. This matches
+/// the categorical view: morphism composition is mechanical; soundness
+/// of the chain is a separate proof obligation.
+pub fn compose_edges(left: &ShadowArrival, right: &ShadowArrival) -> ComposedEdge {
+    compose_components(
+        &left.pre_wp.as_formula().clone(),
+        &right.post_wp.as_formula().clone(),
+        vec![left.cid.clone(), right.cid.clone()],
+    )
+}
+
+/// Compose an arbitrary chain of edges. Order matters (this is the
+/// chain's left-to-right composition); empty chains panic.
+pub fn compose_chain<'a, I>(edges: I) -> ComposedEdge
+where
+    I: IntoIterator<Item = &'a ShadowArrival>,
+{
+    let mut iter = edges.into_iter();
+    let first = iter.next().expect("compose_chain requires at least one edge");
+    let mut p = first.pre_wp.as_formula().clone();
+    let mut q = first.post_wp.as_formula().clone();
+    let mut components = vec![first.cid.clone()];
+    for edge in iter {
+        q = edge.post_wp.as_formula().clone();
+        components.push(edge.cid.clone());
+    }
+    // Re-walk from the first to set p correctly (already set above; kept
+    // for clarity in the loop structure).
+    let _ = &mut p;
+    compose_components(&first.pre_wp.as_formula().clone(), &q, components)
+}
+
+fn compose_components(
+    p: &provekit_ir_types::IrFormula,
+    q: &provekit_ir_types::IrFormula,
+    component_cids: Vec<String>,
+) -> ComposedEdge {
+    let component_values: Vec<Arc<Value>> = component_cids
+        .iter()
+        .map(|c| Value::string(c.clone()))
+        .collect();
+    let value = Value::object([
+        ("schemaVersion", Value::string("1")),
+        ("kind", Value::string("composed-edge")),
+        ("p", formula_to_canonical(p)),
+        ("q", formula_to_canonical(q)),
+        ("components", Value::array(component_values)),
+    ]);
+    let canonical_bytes = jcs_bytes_of_value(&value);
+    let cid = cid_of_value(&value);
+    ComposedEdge {
+        p: p.clone(),
+        q: q.clone(),
+        component_cids,
+        canonical_bytes,
+        cid,
+    }
+}

@@ -34,8 +34,8 @@ pub use canonical::{
 };
 pub use lift::{lift_function_precondition, lift_predicate};
 pub use shadow::{
-    build_shadow_source, edge_memento_cid, edge_memento_value, CalleeContract, ShadowArrival,
-    ShadowSlot, ShadowSource,
+    build_shadow_source, compose_chain, compose_edges, edge_memento_cid, edge_memento_value,
+    CalleeContract, ComposedEdge, ShadowArrival, ShadowSlot, ShadowSource,
 };
 pub use walk::{walk_callsites_to_entry, Arrival, CallsiteWalk};
 pub use wp::{atomic_ge, atomic_lt, atomic_true, const_int, var, Wp};
