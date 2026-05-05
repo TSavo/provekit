@@ -1947,6 +1947,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-walk"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "proc-macro2",
+ "provekit-canonicalizer",
+ "provekit-claim-envelope",
+ "provekit-ir-types",
+ "provekit-proof-envelope",
+ "quote",
+ "serde_json",
+ "syn",
+ "thiserror",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
