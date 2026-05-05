@@ -32,7 +32,7 @@
 
 use serde_json::Value;
 
-use provekit_ir_types::{IrFormula, IrTerm, Sort};
+use provekit_ir_types::{IrFormula, IrTerm};
 
 use crate::contract::{build_function_contract_with_file, FunctionContractMemento};
 use crate::llbc::{LlbcError, LlbcFunction};
@@ -393,7 +393,10 @@ fn synth_item_fn(name: &str, formals: &[(u32, String)]) -> syn::ItemFn {
 }
 
 /// Replace the pre/post on the memento with LLBC-derived formulas and
-/// recompute the canonical bytes + CID.
+/// recompute the canonical bytes + CID. Uses contract.rs's shared
+/// `build_memento_value` helper so the bytes match what
+/// build_function_contract_with_file would produce given these
+/// formulas.
 fn override_formulas(
     mut c: FunctionContractMemento,
     pre: IrFormula,
@@ -403,60 +406,10 @@ fn override_formulas(
 
     c.pre = pre;
     c.post = post;
-    // Rebuild the canonical bytes following the same schema
-    // build_function_contract_with_file uses, so the CID matches what
-    // a from-scratch build would produce given these formulas.
-    let value = build_memento_value(&c);
+    let value = crate::contract::build_memento_value(&c);
     c.canonical_bytes = jcs_bytes_of_value(&value);
     c.cid = cid_of_value(&value);
     c
-}
-
-fn build_memento_value(c: &FunctionContractMemento) -> std::sync::Arc<provekit_canonicalizer::Value> {
-    use crate::canonical::formula_to_canonical;
-    use provekit_canonicalizer::Value as PValue;
-    use std::sync::Arc;
-
-    let mut entries: Vec<(&'static str, Arc<PValue>)> = Vec::new();
-    entries.push(("schemaVersion", PValue::string("1")));
-    entries.push(("kind", PValue::string("function-contract")));
-    entries.push(("fnName", PValue::string(c.fn_name.clone())));
-    let formals_arr: Vec<Arc<PValue>> = c
-        .formals
-        .iter()
-        .map(|n| PValue::string(n.clone()))
-        .collect();
-    entries.push(("formals", PValue::array(formals_arr)));
-    let formal_sorts_arr: Vec<Arc<PValue>> = c
-        .formal_sorts
-        .iter()
-        .map(|s| sort_to_canonical(s))
-        .collect();
-    entries.push(("formalSorts", PValue::array(formal_sorts_arr)));
-    entries.push(("returnSort", sort_to_canonical(&c.return_sort)));
-    entries.push(("pre", formula_to_canonical(&c.pre)));
-    entries.push(("post", formula_to_canonical(&c.post)));
-    entries.push((
-        "bodyCid",
-        c.body_cid
-            .as_ref()
-            .map(|c| PValue::string(c.clone()))
-            .unwrap_or(PValue::null()),
-    ));
-    let effects_arr: Vec<Arc<PValue>> = vec![]; // pure
-    entries.push(("effects", PValue::array(effects_arr)));
-    entries.push(("locus", c.locus.to_value()));
-    PValue::object(entries)
-}
-
-fn sort_to_canonical(sort: &Sort) -> std::sync::Arc<provekit_canonicalizer::Value> {
-    use provekit_canonicalizer::Value as PValue;
-    match sort {
-        Sort::Primitive { name } => PValue::object([
-            ("kind", PValue::string("primitive")),
-            ("name", PValue::string(name.clone())),
-        ]),
-    }
 }
 
 #[cfg(test)]

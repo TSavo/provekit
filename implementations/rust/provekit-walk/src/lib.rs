@@ -32,6 +32,7 @@ pub mod envelope;
 pub mod lift;
 pub mod llbc;
 pub mod llbc_lift;
+pub mod marriage;
 pub mod locus;
 pub mod loops_and_exceptions;
 pub mod shadow;

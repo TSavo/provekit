@@ -269,6 +269,24 @@ fn build_value(
     ])
 }
 
+/// Build the canonical `Value` for a `FunctionContractMemento`. Used
+/// by callers (LLBC lift, marriage) that need to recompute the
+/// memento's canonical bytes / CID after replacing fields like the
+/// pre/post formulas.
+pub fn build_memento_value(c: &FunctionContractMemento) -> Arc<Value> {
+    build_value(
+        &c.fn_name,
+        &c.formals,
+        &c.formal_sorts,
+        &c.return_sort,
+        &c.pre,
+        &c.post,
+        c.body_cid.as_deref(),
+        &c.effects,
+        &c.locus,
+    )
+}
+
 fn sort_to_value(s: &Sort) -> Arc<Value> {
     match s {
         Sort::Primitive { name } => Value::object([
