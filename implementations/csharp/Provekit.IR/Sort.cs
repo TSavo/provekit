@@ -3,7 +3,7 @@
 namespace Provekit.IR;
 
 /// <summary>
-/// IR-JSON v1.4.0 sort. Primitive / Function / Dependent tagged unions.
+/// IR-JSON v1.5.0 sort. Primitive / Function / Dependent tagged unions.
 /// </summary>
 public abstract record Sort
 {

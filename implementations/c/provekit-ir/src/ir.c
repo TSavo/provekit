@@ -20,13 +20,49 @@ pk_sort *pk_sort_primitive(const char *name) {
     pk_sort *s = (pk_sort *)calloc(1, sizeof(pk_sort));
     if (!s) return NULL;
     s->kind = PK_SORT_PRIMITIVE;
-    s->name = pk_strdup(name);
+    s->data.primitive.name = pk_strdup(name);
+    return s;
+}
+
+pk_sort *pk_sort_function(pk_sort **args, size_t n_args, pk_sort *ret) {
+    pk_sort *s = (pk_sort *)calloc(1, sizeof(pk_sort));
+    if (!s) return NULL;
+    s->kind = PK_SORT_FUNCTION;
+    s->data.function.args = args;
+    s->data.function.n_args = n_args;
+    s->data.function.ret = ret;
+    return s;
+}
+
+pk_sort *pk_sort_dependent(const char *name, const char *index_var, pk_sort *index_sort) {
+    pk_sort *s = (pk_sort *)calloc(1, sizeof(pk_sort));
+    if (!s) return NULL;
+    s->kind = PK_SORT_DEPENDENT;
+    s->data.dependent.name = pk_strdup(name);
+    s->data.dependent.index_var = pk_strdup(index_var);
+    s->data.dependent.index_sort = index_sort;
     return s;
 }
 
 void pk_sort_free(pk_sort *s) {
     if (!s) return;
-    free(s->name);
+    switch (s->kind) {
+        case PK_SORT_PRIMITIVE:
+            free(s->data.primitive.name);
+            break;
+        case PK_SORT_FUNCTION:
+            for (size_t i = 0; i < s->data.function.n_args; i++) {
+                pk_sort_free(s->data.function.args[i]);
+            }
+            free(s->data.function.args);
+            pk_sort_free(s->data.function.ret);
+            break;
+        case PK_SORT_DEPENDENT:
+            free(s->data.dependent.name);
+            free(s->data.dependent.index_var);
+            pk_sort_free(s->data.dependent.index_sort);
+            break;
+    }
     free(s);
 }
 

@@ -82,12 +82,53 @@ static void emit_formula_wrapper2(pk_buffer *buf, void *ctx) {
 /* Sort                                                                    */
 /* ----------------------------------------------------------------------- */
 
+typedef struct { pk_sort **args; size_t n; } sort_array_ctx;
+
+static void emit_sort_array_fn(pk_buffer *buf, void *ctx) {
+    sort_array_ctx *c = (sort_array_ctx *)ctx;
+    pk_buffer_append_char(buf, '[');
+    for (size_t i = 0; i < c->n; i++) {
+        if (i > 0) pk_buffer_append_char(buf, ',');
+        emit_sort(buf, c->args[i]);
+    }
+    pk_buffer_append_char(buf, ']');
+}
+
+static void emit_sort_wrapper(pk_buffer *buf, void *ctx) {
+    emit_sort(buf, (pk_sort *)ctx);
+}
+
 static void emit_sort(pk_buffer *buf, pk_sort *s) {
-    pk_field fields[] = {
-        {"kind",  (void (*)(pk_buffer *, void *))emit_string, "primitive"},
-        {"name",  (void (*)(pk_buffer *, void *))emit_string, s->name},
-    };
-    emit_object(buf, fields, 2);
+    switch (s->kind) {
+        case PK_SORT_PRIMITIVE: {
+            pk_field fields[] = {
+                {"kind", (void (*)(pk_buffer *, void *))emit_string, "primitive"},
+                {"name", (void (*)(pk_buffer *, void *))emit_string, s->data.primitive.name},
+            };
+            emit_object(buf, fields, 2);
+            break;
+        }
+        case PK_SORT_FUNCTION: {
+            sort_array_ctx args_ctx = { s->data.function.args, s->data.function.n_args };
+            pk_field fields[] = {
+                {"kind",   (void (*)(pk_buffer *, void *))emit_string, "function"},
+                {"args",   emit_sort_array_fn, &args_ctx},
+                {"return", emit_sort_wrapper, s->data.function.ret},
+            };
+            emit_object(buf, fields, 3);
+            break;
+        }
+        case PK_SORT_DEPENDENT: {
+            pk_field fields[] = {
+                {"kind",      (void (*)(pk_buffer *, void *))emit_string, "dependent"},
+                {"name",      (void (*)(pk_buffer *, void *))emit_string, s->data.dependent.name},
+                {"indexVar",  (void (*)(pk_buffer *, void *))emit_string, s->data.dependent.index_var},
+                {"indexSort", emit_sort_wrapper, s->data.dependent.index_sort},
+            };
+            emit_object(buf, fields, 4);
+            break;
+        }
+    }
 }
 
 void pk_emit_sort(pk_buffer *buf, pk_sort *s) {
