@@ -20,6 +20,8 @@ The papers compose. Read them in order; later papers assume the framing earlier 
 
 6. **[After Reputation: Software as Federated Truth-Claims](06-after-reputation-software-as-federated-truth-claims.md)**: The consequence of shipping the protocol. Why the substrate replaces reputation as the load-bearing trust mechanism in supply chains, engineering practice, liability, and the closed/open dichotomy. The substrate is the diplomatic protocol between every truth-claim about software ever made.
 
+7. **[After Verification: Bug Classes as Missing Edges in the Federated Proof Substrate](07-after-verification-bug-classes-as-missing-edges.md)**: The deeper consequence. Once droppers close the loop with lifters over weakest-precondition propagation, leaf-discharge bug classes become structurally impossible. Contains a constructive theorem (Structural Elimination of Leaf-Discharge Bug Classes) with proof by induction on data-flow path length. Articulates the substrate's algebraic shape (thin Heyting category over content-addressed predicates), the completeness lemma (`Allocations × Reads` is enumerable and exhaustive), and the generative-completion property (the substrate computes what is missing and writes the code that supplies it). Cousot 1977 plus content-addressing plus federation, lifted to a planet-scale proof DAG.
+
 ## Future papers (planned)
 
 - *Multi-dimensional pinning as supply-chain integrity*: rank-3 pins close the lying-contract attack class that single-CID pinning leaves open. Why v1.4's address-space-as-vector-space framing is the substrate the standards-track work needs.
