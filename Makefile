@@ -289,8 +289,15 @@ mint-python: build-rust
 		(echo "FAIL: python self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=python" && exit 1)
 
+.PHONY: build-ruby-ext
+build-ruby-ext:
+	@echo ">> building ruby BLAKE3 C extension (vendored, zero-deps)"
+	@cd implementations/ruby/ext/provekit_blake3 && \
+		(test -f Makefile || ruby extconf.rb >/dev/null) && \
+		$(MAKE) --no-print-directory >/dev/null
+
 .PHONY: mint-ruby
-mint-ruby: build-rust
+mint-ruby: build-rust build-ruby-ext
 	@echo ">> minting ruby self-contracts"
 	@mint_out=$$($(PROVEKIT) mint --kit=ruby --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
@@ -404,7 +411,7 @@ prove-python: build-rust
 	$(PROVEKIT) prove --kit=python
 
 .PHONY: prove-ruby
-prove-ruby: build-rust
+prove-ruby: build-rust build-ruby-ext
 	@echo ">> proving ruby lift-plugin-protocol conformance (C1-C8)"
 	$(PROVEKIT) prove --kit=ruby
 
