@@ -102,7 +102,25 @@ fn validate_term(term: &provekit_ir_types::IrTerm) -> Result<(), String> {
         }
         provekit_ir_types::IrTerm::Const { .. } => Ok(()),
         provekit_ir_types::IrTerm::Ctor { args, .. } => args.iter().try_for_each(validate_term),
-        provekit_ir_types::IrTerm::Lambda { body, .. } => validate_term(body),
+        provekit_ir_types::IrTerm::Lambda { param_sort, body, .. } => {
+            // Reject opaque sorts on the bare-term path. The
+            // formula-compilation path emits an OpacityManifest as a
+            // soundness disclaimer; the bare-term path has no manifest
+            // mechanism, so silently substituting OPAQUE_TERM_PLACEHOLDER
+            // would produce a mistranslated term that legacy term-only
+            // callers consume without seeing the disclaimer. Fail-fast.
+            if crate::opacity::classify_sort(param_sort).is_some() {
+                return Err(format!(
+                    "lambda paramSort is opaque ({:?}); bare-term emission \
+                     path cannot emit a soundness disclaimer (no \
+                     OpacityManifest available). Use compile_to_parts \
+                     instead, which surfaces opaque positions in the \
+                     manifest.",
+                    param_sort
+                ));
+            }
+            validate_term(body)
+        }
         provekit_ir_types::IrTerm::Let { body, .. } => validate_term(body),
     }
 }
