@@ -139,13 +139,16 @@ fn emit_sort(sort: &Sort) -> String {
     }
 }
 
-/// Wrap a sort emission in parens when it is a `Sort::Function`, so right-associative
-/// `->` does not silently re-bracket nested function args. Primitive and Dependent
-/// emissions are self-delimited (single token / leading `forall`) and need no parens.
+/// Wrap a sort emission in parens when its surface form would re-associate
+/// inside a function arrow chain. `Sort::Function` (right-associative `->`)
+/// and `Sort::Dependent` (leading `forall ...,`) both extend maximally to
+/// the right in Coq's grammar, so an unparenthesized occurrence in argument
+/// position silently changes scope. `Sort::Primitive` is a single token
+/// and needs no wrapping.
 fn emit_sort_paren(sort: &Sort) -> String {
     match sort {
-        Sort::Function { .. } => format!("({})", emit_sort(sort)),
-        _ => emit_sort(sort),
+        Sort::Function { .. } | Sort::Dependent { .. } => format!("({})", emit_sort(sort)),
+        Sort::Primitive { .. } => emit_sort(sort),
     }
 }
 
@@ -173,8 +176,8 @@ fn sort_to_coq(sort: &Sort) -> String {
 
 fn sort_to_coq_paren(sort: &Sort) -> String {
     match sort {
-        Sort::Function { .. } => format!("({})", sort_to_coq(sort)),
-        _ => sort_to_coq(sort),
+        Sort::Function { .. } | Sort::Dependent { .. } => format!("({})", sort_to_coq(sort)),
+        Sort::Primitive { .. } => sort_to_coq(sort),
     }
 }
 fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {

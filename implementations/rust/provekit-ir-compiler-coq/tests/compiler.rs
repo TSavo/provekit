@@ -220,6 +220,36 @@ fn dependent_sort_in_lambda_param_position() {
 }
 
 #[test]
+fn dependent_sort_in_function_arg_position_is_parenthesized() {
+    // Coq's `forall` extends maximally to the right, so an unparenthesized
+    // DependentSort in a FunctionSort argument silently re-scopes the binder:
+    //   `forall n : Z, Vec n -> bool`     parses as   `forall n : Z, (Vec n -> bool)`
+    //   `(forall n : Z, Vec n) -> bool`   is the intended type
+    // The emitter must wrap Sort::Dependent in parens whenever it sits in
+    // function-argument position. Three reviewers (chatgpt-codex / Copilot /
+    // CodeRabbit) flagged this on PR #364; positive + negative assertions.
+    let ir = json!({
+        "kind": "forall",
+        "name": "f",
+        "sort": {
+            "kind": "function",
+            "args": [
+                {"kind": "dependent", "name": "Vec", "indexVar": "n",
+                 "indexSort": {"kind": "primitive", "name": "Int"}}
+            ],
+            "return": {"kind": "primitive", "name": "Bool"}
+        },
+        "body": {"kind": "atomic", "name": "true", "args": []}
+    });
+    let compiler = CoqCompiler::new();
+    let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
+    assert!(coq_code.contains("(forall n : Z, Vec n) -> bool"),
+            "Expected parenthesized Π-type in arg position, got:\n{}", coq_code);
+    assert!(!coq_code.contains("forall n : Z, Vec n -> bool"),
+            "Unparenthesized Π-type leaks binder into function arrow:\n{}", coq_code);
+}
+
+#[test]
 fn function_sort_serde_roundtrip() {
     // IR JSON -> Sort -> IR JSON: byte-identical via canonical serde.
     let original = json!({
