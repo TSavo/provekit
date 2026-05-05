@@ -67,12 +67,27 @@ pub fn lift_llbc_function(
         .collect();
 
     let stmts: Vec<&Value> = f.statements().map(|s| s.raw()).collect();
-    let pre_formula = derive_precondition(&stmts, &formals);
-    // Postcondition mirrors the precondition for the if-panic class:
-    // every reachable point on the non-panic side still satisfies the
-    // contraposition. Matches the AST walk's `lift_function_postcondition`
-    // behavior for fixtures without a trailing return expression.
-    let post_formula = pre_formula.clone();
+
+    // Pre-contributions: if-panic Switch chains + MIR-inserted Asserts
+    // (overflow, bounds, division-by-zero, …).
+    let mut pre_contribs: Vec<IrFormula> = Vec::new();
+    collect_if_panic_contributions(&[], &stmts, &formals, false, &mut pre_contribs);
+    collect_assert_contributions(&stmts, &formals, &mut pre_contribs);
+    let pre_formula = simplify_conjunction(pre_contribs.clone());
+
+    // Postcondition: every pre-contribution still holds at the
+    // function's return point (matches AST walk behavior). Plus a
+    // return-value derivation traced through MIR's `_0 := ...` chain
+    // — including the tuple-projection-on-CheckedOp pattern rustc
+    // emits for arithmetic. This makes the LLBC walk's post atoms
+    // align byte-for-byte with the AST walk's `result = <expr>`
+    // derivation, collapsing LayerAgreement::Both into LlbcExtra
+    // when MIR is the only layer that contributes.
+    let mut post_contribs = pre_contribs;
+    if let Some(result_eq) = derive_return_equation(&stmts, &formals) {
+        post_contribs.push(result_eq);
+    }
+    let post_formula = simplify_conjunction(post_contribs);
 
     // We synthesize a syn::ItemFn shell to reuse build_function_contract's
     // memento-construction machinery — it sets up the locus, sorts,
@@ -89,22 +104,202 @@ pub fn lift_llbc_function(
     Ok(contract)
 }
 
-/// Walk the body for if-panic patterns AND MIR-inserted Assert
-/// statements. For each `Switch::If(discr, then-leads-to-abort, _)`,
-/// record `¬discr` as a precondition contribution and recurse into
-/// the else-branch (which may contain nested if-panic Switches from
-/// short-circuited compound conditions like `||` and `&&`). For
-/// Assert statements with overflow check_kind, record the
-/// no-overflow predicate the assertion enforces — this is what MIR
-/// sees that the surface AST does not. Conjoin all contributions in
-/// source order so the byte-encoding matches the AST walk's De
-/// Morgan output (and adds the MIR-only atoms after).
-fn derive_precondition(stmts: &[&Value], formals: &[(u32, String)]) -> IrFormula {
-    let mut contribs: Vec<IrFormula> = Vec::new();
-    // Top-level: falling through the entire body returns; doesn't abort.
-    collect_if_panic_contributions(&[], stmts, formals, false, &mut contribs);
-    collect_assert_contributions(stmts, formals, &mut contribs);
-    simplify_conjunction(contribs)
+/// Trace MIR's `_0 := <rvalue>` chain back to a source-equivalent
+/// IrTerm and emit `result = <term>` as a postcondition atom. Returns
+/// None when the return is unit (Aggregate of empty Tuple), or when
+/// the trace can't be resolved to a recognized shape.
+fn derive_return_equation(
+    stmts: &[&Value],
+    formals: &[(u32, String)],
+) -> Option<IrFormula> {
+    // Find the LAST assignment to local _0. (Charon emits a single
+    // Assign for the return; we still scan in reverse to be robust
+    // to alternative shapes.)
+    for (i, s) in stmts.iter().enumerate().rev() {
+        let Some(arr) = stmt_kind_payload(s, "Assign").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        if arr.len() != 2 {
+            continue;
+        }
+        let Some(local) = place_to_local_id(&arr[0]) else {
+            continue;
+        };
+        if local != 0 {
+            continue;
+        }
+        let prior = &stmts[..i];
+        if let Some(term) = rvalue_to_ir_term_for_post(&arr[1], prior, formals) {
+            return Some(IrFormula::Atomic {
+                name: "=".to_string(),
+                args: vec![IrTerm::Var { name: "result".to_string() }, term],
+            });
+        }
+        return None;
+    }
+    None
+}
+
+/// Lift an Rvalue to an IrTerm for postcondition derivation. Handles:
+///   - `Use(Move/Copy(place))`: traces the place via
+///     `place_to_term_for_post`.
+///   - `BinaryOp(op, lhs, rhs)`: lifts to `Ctor(<op>, [...])` for
+///     arithmetic ops (Add/Sub/Mul/Div/Rem and their Checked
+///     variants). Comparison ops are predicates, not terms; not
+///     handled here.
+fn rvalue_to_ir_term_for_post(
+    rvalue: &Value,
+    prior: &[&Value],
+    formals: &[(u32, String)],
+) -> Option<IrTerm> {
+    if let Some(use_op) = rvalue.get("Use") {
+        if let Some(place) = use_op.get("Move").or_else(|| use_op.get("Copy")) {
+            return place_to_term_for_post(place, prior, formals);
+        }
+        if let Some(constant) = use_op.get("Const") {
+            return constant_to_ir_term(constant);
+        }
+        return None;
+    }
+    if let Some(arr) = rvalue.get("BinaryOp").and_then(|v| v.as_array()) {
+        if arr.len() != 3 {
+            return None;
+        }
+        let op = arr[0].as_str()?;
+        let ir_op = mir_arith_op_to_ir_ctor(op)?;
+        let l = operand_to_ir_term(&arr[1], prior, formals)?;
+        let r = operand_to_ir_term(&arr[2], prior, formals)?;
+        return Some(IrTerm::Ctor {
+            name: ir_op.to_string(),
+            args: vec![l, r],
+        });
+    }
+    None
+}
+
+/// Lift a Place to an IrTerm. Handles:
+///   - `Local(N)` where _N is a formal: `Var(<formal name>)`.
+///   - `Local(N)` where _N is a temp: traces _N's defining rvalue
+///     via `rvalue_to_ir_term_for_post`.
+///   - `Projection(base, Field(Tuple, 0))` where base is `Local(N)`
+///     and _N := `BinaryOp(<CheckedOp>, lhs, rhs)`: lifts to the
+///     corresponding bare arithmetic ctor (the rustc CheckedMul +
+///     tuple-projection pattern for overflow-checked arithmetic).
+fn place_to_term_for_post(
+    place: &Value,
+    prior: &[&Value],
+    formals: &[(u32, String)],
+) -> Option<IrTerm> {
+    let kind = place.get("kind")?;
+    if let Some(local) = kind.get("Local").and_then(|v| v.as_u64()) {
+        let local = local as u32;
+        if let Some((_, name)) = formals.iter().find(|(id, _)| *id == local) {
+            return Some(IrTerm::Var { name: name.clone() });
+        }
+        let rvalue = find_last_assign_rvalue(prior, local)?;
+        return rvalue_to_ir_term_for_post(rvalue, prior, formals);
+    }
+    if let Some(proj_arr) = kind.get("Projection").and_then(|v| v.as_array()) {
+        if proj_arr.len() != 2 {
+            return None;
+        }
+        let base = &proj_arr[0];
+        let elem = &proj_arr[1];
+        // Recognize Field(Tuple, 0) projection on a CheckedOp result.
+        if let Some(field_arr) = elem.get("Field").and_then(|v| v.as_array()) {
+            if field_arr.len() == 2 {
+                let field_idx = field_arr[1].as_u64()?;
+                if field_idx == 0 {
+                    let base_local = base.get("kind")?.get("Local").and_then(|v| v.as_u64())?
+                        as u32;
+                    let base_rvalue = find_last_assign_rvalue(prior, base_local)?;
+                    if let Some(arr) = base_rvalue.get("BinaryOp").and_then(|v| v.as_array()) {
+                        if arr.len() == 3 {
+                            let op = arr[0].as_str()?;
+                            let ir_op = mir_arith_op_to_ir_ctor(op)?;
+                            let l = operand_to_ir_term(&arr[1], prior, formals)?;
+                            let r = operand_to_ir_term(&arr[2], prior, formals)?;
+                            return Some(IrTerm::Ctor {
+                                name: ir_op.to_string(),
+                                args: vec![l, r],
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Trace an Assert's `cond` operand back to a `BinaryOp(Eq, x, 0)`
+/// definition and return `x` as an IrTerm. Used by DivisionByZero
+/// and RemainderByZero handlers because Charon's check_kind operand
+/// for those variants is the dividend, not the divisor — the actual
+/// runtime check is in the cond.
+fn divisor_from_assert_cond(
+    cond: Option<&Value>,
+    prior: &[&Value],
+    formals: &[(u32, String)],
+) -> Option<IrTerm> {
+    let cond = cond?;
+    let cond_local = operand_to_local_id(cond)?;
+    let cond_rvalue = find_last_assign_rvalue(prior, cond_local)?;
+    let arr = cond_rvalue.get("BinaryOp").and_then(|v| v.as_array())?;
+    if arr.len() != 3 {
+        return None;
+    }
+    if arr[0].as_str() != Some("Eq") {
+        return None;
+    }
+    let lhs = &arr[1];
+    let rhs = &arr[2];
+    let divisor_op = if is_zero_constant(rhs) {
+        lhs
+    } else if is_zero_constant(lhs) {
+        rhs
+    } else {
+        return None;
+    };
+    operand_to_ir_term(divisor_op, prior, formals)
+}
+
+fn is_zero_constant(operand: &Value) -> bool {
+    let Some(constant) = operand.get("Const") else {
+        return false;
+    };
+    let Some(scalar) = constant
+        .get("kind")
+        .and_then(|k| k.get("Literal"))
+        .and_then(|l| l.get("Scalar"))
+    else {
+        return false;
+    };
+    for variant in ["Unsigned", "Signed"] {
+        if let Some(arr) = scalar.get(variant).and_then(|v| v.as_array()) {
+            if let Some(s) = arr.get(1).and_then(|v| v.as_str()) {
+                return s == "0";
+            }
+        }
+    }
+    false
+}
+
+/// Map MIR arithmetic-op tag to IR ctor name. Handles bare ops
+/// (Add/Sub/Mul/Div/Rem) and their Checked variants (which produce
+/// a (value, overflow_bool) tuple in MIR). Both forms lift to the
+/// same ctor at the IR layer; the no-overflow precondition that
+/// `collect_assert_contributions` emits is what distinguishes
+/// "checked arithmetic" semantics in the substrate.
+fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
+    match op {
+        "Add" | "AddChecked" | "AddWithOverflow" => Some("+"),
+        "Sub" | "SubChecked" | "SubWithOverflow" => Some("-"),
+        "Mul" | "MulChecked" | "MulWithOverflow" => Some("*"),
+        "Div" => Some("/"),
+        "Rem" => Some("%"),
+        _ => None,
+    }
 }
 
 /// Collect predicate atoms from `Assert` statements in the body. This
@@ -126,34 +321,95 @@ fn collect_assert_contributions(
         let Some(check_kind) = assert_obj.get("check_kind") else {
             continue;
         };
-        // Recognized check_kinds:
-        //   Overflow: [{ "Mul": "Wrap" } | { "Add": ... } | ..., lhs_operand, rhs_operand]
-        //     -> emit Atomic("no-overflow:<op>", [lhs_term, rhs_term]).
+        // Recognized check_kinds (Charon's BuiltinAssertKind enum):
+        //   Overflow(BinOp, lhs, rhs)
+        //   OverflowNeg(operand)
+        //   BoundsCheck { len, index }
+        //   DivisionByZero(divisor)
+        //   RemainderByZero(divisor)
         //
-        // The Assert's expected=false + Overflow check_kind means
-        // "must not overflow" — the negation is the precondition we
-        // want to record.
+        // Other variants (MisalignedPointerDereference, NullPointerDereference,
+        // InvalidEnumConstruction) are out of scope for the MVP — their
+        // semantic predicates require type-system reasoning we don't yet
+        // do at the LLBC layer.
+        let prior = &stmts[..i];
+
+        // Overflow: [{ "Mul": "Wrap" } | { "Add": ... } | ..., lhs, rhs]
         if let Some(arr) = check_kind.get("Overflow").and_then(|v| v.as_array()) {
             if arr.len() < 3 {
                 continue;
             }
             let op_descriptor = &arr[0];
-            let lhs = &arr[1];
-            let rhs = &arr[2];
             let Some(op_tag) = overflow_op_tag(op_descriptor) else {
                 continue;
             };
-            let prior = &stmts[..i];
-            let Some(lhs_term) = operand_to_ir_term(lhs, prior, formals) else {
+            let Some(lhs_term) = operand_to_ir_term(&arr[1], prior, formals) else {
                 continue;
             };
-            let Some(rhs_term) = operand_to_ir_term(rhs, prior, formals) else {
+            let Some(rhs_term) = operand_to_ir_term(&arr[2], prior, formals) else {
                 continue;
             };
             out.push(IrFormula::Atomic {
                 name: format!("no-overflow:{}", op_tag),
                 args: vec![lhs_term, rhs_term],
             });
+            continue;
+        }
+
+        // OverflowNeg(operand) -> Atomic("no-overflow:neg", [term]).
+        if let Some(operand) = check_kind.get("OverflowNeg") {
+            let Some(t) = operand_to_ir_term(operand, prior, formals) else {
+                continue;
+            };
+            out.push(IrFormula::Atomic {
+                name: "no-overflow:neg".to_string(),
+                args: vec![t],
+            });
+            continue;
+        }
+
+        // BoundsCheck { len, index } -> Atomic("<", [index, len]).
+        // The implicit predicate is `index < len`. Charon's Assert
+        // expected=true here means "the bounds-check passed."
+        if let Some(obj) = check_kind.get("BoundsCheck").and_then(|v| v.as_object()) {
+            let Some(len_op) = obj.get("len") else {
+                continue;
+            };
+            let Some(index_op) = obj.get("index") else {
+                continue;
+            };
+            let Some(len_term) = operand_to_ir_term(len_op, prior, formals) else {
+                continue;
+            };
+            let Some(index_term) = operand_to_ir_term(index_op, prior, formals) else {
+                continue;
+            };
+            out.push(IrFormula::Atomic {
+                name: "<".to_string(),
+                args: vec![index_term, len_term],
+            });
+            continue;
+        }
+
+        // DivisionByZero / RemainderByZero. Charon's check_kind
+        // operand is informational (it's the dividend, not the
+        // divisor — likely passed in for error reporting). The
+        // actual runtime check is in the assert's `cond`: a Bool
+        // local whose definition is `BinaryOp(Eq, divisor, 0)`. We
+        // trace the cond, extract the non-zero operand, and emit
+        // `Atomic("≠", [divisor, 0])`.
+        if check_kind.get("DivisionByZero").is_some()
+            || check_kind.get("RemainderByZero").is_some()
+        {
+            if let Some(divisor_term) =
+                divisor_from_assert_cond(assert_obj.get("cond"), prior, formals)
+            {
+                out.push(IrFormula::Atomic {
+                    name: "≠".to_string(),
+                    args: vec![divisor_term, crate::wp::const_int(0)],
+                });
+            }
+            continue;
         }
     }
 }
@@ -315,19 +571,57 @@ fn operand_to_ir_term(
     formals: &[(u32, String)],
 ) -> Option<IrTerm> {
     if let Some(place) = operand.get("Move").or_else(|| operand.get("Copy")) {
-        let local = place_to_local_id(place)?;
+        return operand_place_to_ir_term(place, prior, formals);
+    }
+    if let Some(constant) = operand.get("Const") {
+        return constant_to_ir_term(constant);
+    }
+    None
+}
+
+/// Lift a Place to an IrTerm for the discriminant / Assert-operand
+/// trace. Handles bare `Local`, `Projection(base, Deref)`,
+/// `Projection(base, PtrMetadata)` (the slice-fat-pointer length
+/// component, lifted as `Ctor("len", [base])`), and one Use-hop
+/// trace through prior assignments. Does NOT trace through BinaryOp
+/// rvalues — that's `place_to_term_for_post`'s job (used only for
+/// return-value derivation, where deep tracing is expected and
+/// matches the AST walk's lift).
+fn operand_place_to_ir_term(
+    place: &Value,
+    prior: &[&Value],
+    formals: &[(u32, String)],
+) -> Option<IrTerm> {
+    let kind = place.get("kind")?;
+    if let Some(local) = kind.get("Local").and_then(|v| v.as_u64()) {
+        let local = local as u32;
         if let Some((_, name)) = formals.iter().find(|(id, _)| *id == local) {
             return Some(IrTerm::Var { name: name.clone() });
         }
-        // Not a formal — trace one Use-hop back to its definition.
         let rvalue = find_last_assign_rvalue(prior, local)?;
         if let Some(use_op) = rvalue.get("Use") {
             return operand_to_ir_term(use_op, prior, formals);
         }
         return None;
     }
-    if let Some(constant) = operand.get("Const") {
-        return constant_to_ir_term(constant);
+    if let Some(proj_arr) = kind.get("Projection").and_then(|v| v.as_array()) {
+        if proj_arr.len() == 2 {
+            let base = &proj_arr[0];
+            let elem = &proj_arr[1];
+            if let Some(name) = elem.as_str() {
+                match name {
+                    "Deref" => return operand_place_to_ir_term(base, prior, formals),
+                    "PtrMetadata" => {
+                        let inner = operand_place_to_ir_term(base, prior, formals)?;
+                        return Some(IrTerm::Ctor {
+                            name: "len".to_string(),
+                            args: vec![inner],
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
     None
 }

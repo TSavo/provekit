@@ -366,13 +366,14 @@ mod tests {
         let (ast, llbc) = build_layers("overflow.rs", "overflow.llbc", "g");
         let married = marry(ast, llbc);
 
-        assert!(
-            matches!(
-                married.agreement,
-                LayerAgreement::LlbcExtra | LayerAgreement::Both
-            ),
-            "MIR contributes at least one atom AST didn't see; got {:?}",
-            married.agreement
+        // After the LLBC return-value derivation lands (#383), the
+        // post side stops contributing AST-only atoms (both layers
+        // see `result = x*2`); the only asymmetry is MIR's no-overflow
+        // atom on the pre side. Agreement collapses to LlbcExtra.
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::LlbcExtra,
+            "post sides converge after return-value derivation; MIR-only is the no-overflow"
         );
 
         // The MIR-only no-overflow atom is in the merged contract.
@@ -393,6 +394,68 @@ mod tests {
             merged_post_str.contains("result"),
             "merged post still carries AST's result-equation: {}",
             merged_post_str
+        );
+    }
+
+    #[test]
+    fn marriage_on_slice_index_surfaces_bounds_check_atom() {
+        // `fn at(s: &[u32], i: usize) -> u32 { s[i] }` — AST sees no
+        // source-level guard. MIR inserts a BoundsCheck assert
+        // (i < s.len()). Marriage should surface that as a MIR-only
+        // atom in the merged contract's pre.
+        let (ast, llbc) = build_layers("bounds.rs", "bounds.llbc", "at");
+        let married = marry(ast, llbc);
+
+        let merged_pre_str = serde_json::to_string(&married.merged.pre).unwrap();
+        // The bounds atom: `Atomic("<", [Var("i"), Ctor("len", [Var("s")])])`.
+        assert!(
+            merged_pre_str.contains("\"i\""),
+            "merged pre references the index formal: {}",
+            merged_pre_str
+        );
+        assert!(
+            merged_pre_str.contains("len"),
+            "merged pre includes the slice length via PtrMetadata lift: {}",
+            merged_pre_str
+        );
+        // LLBC contributes at least one atom AST didn't.
+        assert!(
+            matches!(
+                married.agreement,
+                LayerAgreement::LlbcExtra | LayerAgreement::Both
+            ),
+            "MIR sees the bounds check; AST doesn't. got {:?}",
+            married.agreement
+        );
+    }
+
+    #[test]
+    fn marriage_on_division_surfaces_div_by_zero_atom() {
+        // `fn d(x: u32, y: u32) -> u32 { x / y }` — AST sees no guard.
+        // MIR inserts DivisionByZero assert. Marriage merges in the
+        // `y ≠ 0` predicate.
+        let (ast, llbc) = build_layers("divmod.rs", "divmod.llbc", "d");
+        let married = marry(ast, llbc);
+
+        let merged_pre_str = serde_json::to_string(&married.merged.pre).unwrap();
+        // The div-by-zero atom: `Atomic("≠", [Var("y"), Const(0)])`.
+        assert!(
+            merged_pre_str.contains("\"y\""),
+            "merged pre references the divisor formal: {}",
+            merged_pre_str
+        );
+        assert!(
+            merged_pre_str.contains("\"\\u2260\"") || merged_pre_str.contains("≠"),
+            "merged pre includes the ≠ predicate: {}",
+            merged_pre_str
+        );
+        assert!(
+            matches!(
+                married.agreement,
+                LayerAgreement::LlbcExtra | LayerAgreement::Both
+            ),
+            "MIR sees the div-by-zero check; AST doesn't. got {:?}",
+            married.agreement
         );
     }
 
