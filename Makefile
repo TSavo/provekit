@@ -337,11 +337,10 @@ mint-php: build-rust
 		(echo "FAIL: php self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=php" && exit 1)
 
-# NOTE: mint-swift excluded from all-mint (macOS-only). java + python wired up
-# after their Side A landings (#207, #205) — both produce content-meaningful
-# contractSetCids and ship pinned attestations. ruby/zig/c/php pending their
-# Side A merges (#234, #241, #272, feat/php-kit) and toolchain CI integration
-# (#245 in flight, #274 follow-up).
+# NOTE: all-mint runs 9 of 12 kits (Linux/CI subset).
+# Excluded: swift (macOS-only; use mint-swift on macOS), ruby (attestation
+# exists but CI toolchain integration pending, #234), php (pending feat/php-kit).
+# zig and c were added after their Side A merges (#283, #272) and are included.
 .PHONY: all-mint
 all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-zig
 	@echo ""
