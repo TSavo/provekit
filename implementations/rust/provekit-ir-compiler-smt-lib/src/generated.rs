@@ -9,13 +9,7 @@ pub fn emit_term(term: &Term) -> String {
     match term {
         Term::Var { name, .. } => name.clone(),
         Term::Const { value, sort, .. } => {
-            let sort_name = match sort {
-                Sort::Primitive { name } => name.as_str(),
-                // FunctionSort/DependentSort: deferred to #332 (SMT-LIB compiler v1.5.0 grammar grow).
-                Sort::Function { .. } | Sort::Dependent { .. } => {
-                    unimplemented!("FunctionSort/DependentSort: deferred to #332 (SMT-LIB)")
-                }
-            };
+            let sort_name = match sort { Sort::Primitive { name } => name.as_str() };
             return emit_const_value(value, sort_name);
         },
         Term::Ctor { name, args, .. } => {
@@ -105,10 +99,6 @@ pub fn emit_formula(formula: &Formula) -> String {
 fn emit_sort(sort: &Sort) -> String {
     match sort {
         Sort::Primitive { name } => name.clone(),
-        // FunctionSort/DependentSort: deferred to #332 (SMT-LIB compiler v1.5.0 grammar grow).
-        Sort::Function { .. } | Sort::Dependent { .. } => {
-            unimplemented!("FunctionSort/DependentSort: deferred to #332 (SMT-LIB)")
-        }
     }
 }
 fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
