@@ -48,6 +48,31 @@ pub fn lift_function_precondition(item_fn: &ItemFn) -> Wp {
     Wp(simplify_conjunction(accum))
 }
 
+/// Lift the implicit postcondition from a function body. Returns the
+/// conjunction of predicates that hold at every reachable return point.
+///
+/// Sir's framing: every if-statement is a postcondition, every else is
+/// the contraposition. For if-then-panic, the panic-eliminated branch
+/// is unreachable for the return; the contraposition (¬cond) survives
+/// to every reachable return. For asserts, the asserted predicate
+/// holds afterward.
+///
+/// In the MVP the postcondition coincides with the precondition for
+/// functions whose body does not mutate input variables: every contract
+/// the body asserts to enter its happy path also holds at the happy
+/// path's return. Richer postconditions (return-value relations,
+/// state mutations) extend this in subsequent commits.
+pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
+    // For each top-level statement, the contributions to the
+    // postcondition are exactly the same predicates the precondition
+    // collects. The lifter assumes the body does not reduce or
+    // contradict these predicates by the time control reaches a return
+    // point — true for the MVP's recognized patterns (if-then-panic
+    // and assert!()) because both are fact-introductions for the
+    // continuation, not fact-eliminations.
+    lift_function_precondition(item_fn)
+}
+
 /// What does this single statement contribute to the function's
 /// implicit precondition? Returns None for statements that don't lift
 /// (let-bindings, plain expressions, etc.).
