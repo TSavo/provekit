@@ -1,119 +1,165 @@
 // SPDX-License-Identifier: Apache-2.0
 // GENERATED SMT-LIB v2.6 compiler
+//
+// Edits since codegen:
+//   - Manual extension of the `Sort` match arms in `emit_term`/`emit_sort`
+//     to handle the v1.5.0 `Function` + `Dependent` variants. We do NOT
+//     translate these — SMT-LIB v2.6 lacks predicate quantification and
+//     dependent types. The compiler emits an OpacityManifest entry at the
+//     PARENT IR node (see `crate::opacity`) and substitutes a dummy
+//     placeholder here so the SMT script stays well-formed. The manifest
+//     entry is the soundness disclaimer; the placeholder is just
+//     scaffolding so downstream byte-by-byte comparators don't crash.
+//   - Removed dead duplicate match arms for `Term::Ctor`/`Lambda`/`Let`
+//     (boy-scout: they were unreachable and warned on every build).
+//   - Removed an erroneous `let mut` on a non-mutated binding.
 
 use std::collections::{BTreeMap, BTreeSet};
 use provekit_ir_compiler::{CompiledFormula, FreeVar};
 use provekit_ir_types::*;
 
+use crate::opacity::classify_sort;
+
+/// Placeholder term emitted at an opaque position. SMT-LIB has no
+/// well-typed value of an arbitrary unsupported sort, so we emit `0`
+/// (smallest valid Int literal). Soundness is *not* claimed by this
+/// substitution; soundness flows from the OpacityManifest entry the
+/// compiler emits for the parent node, which forces the multi-solver
+/// verifier to require another solver to cover the position.
+const OPAQUE_TERM_PLACEHOLDER: &str = "0";
+
+/// Placeholder formula emitted at an opaque quantifier (Forall /
+/// Exists / Choice with an unsupported sort). `true` keeps the SMT
+/// assertion well-formed; the manifest entry forces consensus
+/// coverage from another solver (per multi-solver-protocol-v2 §5).
+const OPAQUE_FORMULA_PLACEHOLDER: &str = "true";
+
 pub fn emit_term(term: &Term) -> String {
     match term {
         Term::Var { name, .. } => name.clone(),
         Term::Const { value, sort, .. } => {
+            // Function/Dependent sorts are opaque at this Const node;
+            // the manifest pass marks the parent. Emit a placeholder
+            // so the SMT script stays well-formed.
             let sort_name = match sort {
                 Sort::Primitive { name } => name.as_str(),
-                // FunctionSort/DependentSort: deferred to #332 (SMT-LIB compiler v1.5.0 grammar grow).
                 Sort::Function { .. } | Sort::Dependent { .. } => {
-                    unimplemented!("FunctionSort/DependentSort: deferred to #332 (SMT-LIB)")
+                    return OPAQUE_TERM_PLACEHOLDER.to_string();
                 }
             };
             return emit_const_value(value, sort_name);
-        },
+        }
         Term::Ctor { name, args, .. } => {
-            if args.is_empty() { return name.clone(); };
-            let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
-            let args_str: Vec<String> = args_str.collect();
+            if args.is_empty() {
+                return name.clone();
+            }
+            let args_str: Vec<String> = args.iter().map(emit_term).collect();
             return format!("({} {})", name, args_str.join(" "));
-        },
+        }
         Term::Lambda { param_name, param_sort, body, .. } => {
+            // Opaque-parent rule: if the lambda's paramSort is a
+            // function or dependent sort, the parent is opaque.
+            // Emit a placeholder term; the manifest carries the
+            // disclaimer.
+            if classify_sort(param_sort).is_some() {
+                return OPAQUE_TERM_PLACEHOLDER.to_string();
+            }
             let sort_str = emit_sort(param_sort);
             let body_str = emit_term(body);
             return format!("(lambda (({} {})) {})", param_name, sort_str, body_str);
-        },
+        }
         Term::Let { bindings, body, .. } => {
-            let mut binding_strs = bindings.iter();
-            let binding_strs = binding_strs.map(|b| format!("({} {})", b.name, emit_term(&b.bound_term)));
-            let binding_strs: Vec<String> = binding_strs.collect();
+            let binding_strs: Vec<String> = bindings
+                .iter()
+                .map(|b| format!("({} {})", b.name, emit_term(&b.bound_term)))
+                .collect();
             let body_str = emit_term(body);
             return format!("(let ({}) {})", binding_strs.join(" "), body_str);
-        },
-        Term::Ctor { name, args } => {
-            if args.is_empty() { return name.clone(); };
-            let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
-            let args_str: Vec<String> = args_str.collect();
-            return format!("({} {})", name, args_str.join(" "));
-        },
-        Term::Lambda { param_name, param_sort, body } => {
-            let sort_str = emit_sort(param_sort);
-            let body_str = emit_term(body);
-            return format!("(lambda (({} {})) {})", param_name, sort_str, body_str);
-        },
-        Term::Let { bindings, body } => {
-            let binding_strs = bindings.iter();
-            let binding_strs = binding_strs.map(|b| format!("({} {})", b.name, emit_term(&b.bound_term)));
-            let binding_strs: Vec<String> = binding_strs.collect();
-            let body_str = emit_term(body);
-            return format!("(let ({}) {})", binding_strs.join(" "), body_str);
-        },
+        }
     }
 }
 pub fn emit_formula(formula: &Formula) -> String {
     match formula {
         Formula::Atomic { name, args } => {
             let smt_name = smt_atomic_name(name);
-            if args.is_empty() { return smt_name.to_string(); };
-            let args_str = args.iter();
-            let args_str = args_str.map(|a| emit_term(a));
-            let args_str: Vec<String> = args_str.collect();
+            if args.is_empty() {
+                return smt_name.to_string();
+            }
+            let args_str: Vec<String> = args.iter().map(emit_term).collect();
             return format!("({} {})", smt_name, args_str.join(" "));
-        },
+        }
         Formula::And { operands } => {
-            let ops_str = operands.iter();
-            let ops_str = ops_str.map(|o| emit_formula(o));
-            let ops_str: Vec<String> = ops_str.collect();
+            let ops_str: Vec<String> = operands.iter().map(emit_formula).collect();
             return format!("({} {})", "and", ops_str.join(" "));
-        },
+        }
         Formula::Or { operands } => {
-            let ops_str = operands.iter();
-            let ops_str = ops_str.map(|o| emit_formula(o));
-            let ops_str: Vec<String> = ops_str.collect();
+            let ops_str: Vec<String> = operands.iter().map(emit_formula).collect();
             return format!("({} {})", "or", ops_str.join(" "));
-        },
+        }
         Formula::Not { operands } => format!("(not {})", emit_formula(&operands[0])),
-        Formula::Implies { operands } => format!("(=> {} {})", emit_formula(&operands[0]), emit_formula(&operands[1])),
+        Formula::Implies { operands } => {
+            format!("(=> {} {})", emit_formula(&operands[0]), emit_formula(&operands[1]))
+        }
         Formula::Forall { name, sort, body } => {
+            if classify_sort(sort).is_some() {
+                return OPAQUE_FORMULA_PLACEHOLDER.to_string();
+            }
             let sort_str = emit_sort(sort);
             let body_str = emit_formula(body);
             return format!("(forall (({} {})) {})", name, sort_str, body_str);
-        },
+        }
         Formula::Exists { name, sort, body } => {
+            if classify_sort(sort).is_some() {
+                return OPAQUE_FORMULA_PLACEHOLDER.to_string();
+            }
             let sort_str = emit_sort(sort);
             let body_str = emit_formula(body);
             return format!("(exists (({} {})) {})", name, sort_str, body_str);
-        },
+        }
         Formula::Choice { var_name, sort, body } => {
+            if classify_sort(sort).is_some() {
+                return OPAQUE_FORMULA_PLACEHOLDER.to_string();
+            }
             let sort_str = emit_sort(sort);
             let body_str = emit_formula(body);
             let var_y = format!("{}_y", var_name);
             let body_y = body_str.replace(var_name, &var_y);
-            let unique = format!("(and {} (forall (({} {})) (=> {} (= {} {}))))", body_str, var_y, sort_str, body_y, var_y, var_name);
+            let unique = format!(
+                "(and {} (forall (({} {})) (=> {} (= {} {}))))",
+                body_str, var_y, sort_str, body_y, var_y, var_name
+            );
             return format!("(exists (({} {})) {})", var_name, sort_str, unique);
-        },
+        }
     }
 }
 fn emit_sort(sort: &Sort) -> String {
     match sort {
         Sort::Primitive { name } => name.clone(),
-        // FunctionSort/DependentSort: deferred to #332 (SMT-LIB compiler v1.5.0 grammar grow).
+        // Function/Dependent sorts are not lowered here: every parent
+        // node is detected before reaching `emit_sort` and short-
+        // circuits to a placeholder. Reaching this arm would mean an
+        // emit-side path skipped the parent check — that's a bug in
+        // this crate, not a malformed input. See `crate::opacity` for
+        // the granularity rationale.
         Sort::Function { .. } | Sort::Dependent { .. } => {
-            unimplemented!("FunctionSort/DependentSort: deferred to #332 (SMT-LIB)")
+            unreachable!(
+                "emit_sort reached opaque sort; parent should have short-circuited \
+                 (issue #332: SMT-LIB opacity emission)"
+            )
         }
     }
 }
 fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
     match value {
-        serde_json::Value::Number(n) => if let Some(i) = n.as_i64() { i.to_string() } else if let Some(u) = n.as_u64() { u.to_string() } else { n.to_string() },
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.to_string()
+            } else if let Some(u) = n.as_u64() {
+                u.to_string()
+            } else {
+                n.to_string()
+            }
+        }
         serde_json::Value::Bool(b) => if *b { "true".to_string() } else { "false".to_string() },
         serde_json::Value::String(s) => format!("\"{}\"", s),
         _ => "0".to_string(),
@@ -127,65 +173,90 @@ fn smt_atomic_name(name: &str) -> &str {
         other => other,
     }
 }
-pub fn collect_free_vars_formula(formula: &Formula, out: &mut BTreeMap<String, String>, bound: &BTreeSet<String>) {
+pub fn collect_free_vars_formula(
+    formula: &Formula,
+    out: &mut BTreeMap<String, String>,
+    bound: &BTreeSet<String>,
+) {
     match formula {
         Formula::Atomic { args, .. } => {
             for a in args {
                 collect_free_vars_term(a, out, bound);
             }
-        },
+        }
         Formula::And { operands } => {
             for o in operands {
                 collect_free_vars_formula(o, out, bound);
             }
-        },
+        }
         Formula::Or { operands } => {
             for o in operands {
                 collect_free_vars_formula(o, out, bound);
             }
-        },
+        }
         Formula::Not { operands } => {
             for o in operands {
                 collect_free_vars_formula(o, out, bound);
             }
-        },
+        }
         Formula::Implies { operands } => {
             for o in operands {
                 collect_free_vars_formula(o, out, bound);
             }
-        },
-        Formula::Forall { name, sort: _, body } => {
+        }
+        Formula::Forall { name, sort, body } => {
+            // Opaque quantifier: the parent's placeholder has no free
+            // vars, so don't recurse into the body either.
+            if classify_sort(sort).is_some() {
+                return;
+            }
             let mut nb = bound.clone();
             nb.insert(name.clone());
             collect_free_vars_formula(body, out, &nb);
-        },
-        Formula::Exists { name, sort: _, body } => {
+        }
+        Formula::Exists { name, sort, body } => {
+            if classify_sort(sort).is_some() {
+                return;
+            }
             let mut nb = bound.clone();
             nb.insert(name.clone());
             collect_free_vars_formula(body, out, &nb);
-        },
-        Formula::Choice { var_name, sort: _, body } => {
+        }
+        Formula::Choice { var_name, sort, body } => {
+            if classify_sort(sort).is_some() {
+                return;
+            }
             let mut nb = bound.clone();
             nb.insert(var_name.clone());
             collect_free_vars_formula(body, out, &nb);
-        },
+        }
     }
 }
-pub fn collect_free_vars_term(term: &Term, out: &mut BTreeMap<String, String>, bound: &BTreeSet<String>) {
+pub fn collect_free_vars_term(
+    term: &Term,
+    out: &mut BTreeMap<String, String>,
+    bound: &BTreeSet<String>,
+) {
     match term {
-        Term::Var { name, .. } => if !bound.contains(name) { out.entry(name.clone()).or_insert("Int".to_string()); },
-        Term::Const { .. } => {
-        },
+        Term::Var { name, .. } => {
+            if !bound.contains(name) {
+                out.entry(name.clone()).or_insert("Int".to_string());
+            }
+        }
+        Term::Const { .. } => {}
         Term::Ctor { args, .. } => {
             for a in args {
                 collect_free_vars_term(a, out, bound);
             }
-        },
-        Term::Lambda { param_name, param_sort: _, body, .. } => {
+        }
+        Term::Lambda { param_name, param_sort, body, .. } => {
+            if classify_sort(param_sort).is_some() {
+                return;
+            }
             let mut nb = bound.clone();
             nb.insert(param_name.clone());
             collect_free_vars_term(body, out, &nb);
-        },
+        }
         Term::Let { bindings, body, .. } => {
             let mut current_bound = bound.clone();
             for b in bindings {
@@ -193,7 +264,7 @@ pub fn collect_free_vars_term(term: &Term, out: &mut BTreeMap<String, String>, b
                 current_bound.insert(b.name.clone());
             }
             collect_free_vars_term(body, out, &current_bound);
-        },
+        }
     }
 }
 pub fn compile_formula(formula: &Formula) -> CompiledFormula {
@@ -206,7 +277,9 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
         preamble.push_str(&format!("(declare-const {} {})\n", name, sort));
     }
     let body = format!("(assert (not {}))\n(check-sat)\n", emit_formula(formula));
-    let free_vars_vec = free_vars.into_iter().map(|(name, sort)| FreeVar { name, sort });
-    let free_vars_vec = free_vars_vec.collect();
+    let free_vars_vec: Vec<FreeVar> = free_vars
+        .into_iter()
+        .map(|(name, sort)| FreeVar { name, sort })
+        .collect();
     return CompiledFormula { preamble, body, free_vars: free_vars_vec };
 }

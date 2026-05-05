@@ -14,6 +14,12 @@ use provekit_ir_compiler::{
 };
 
 mod generated;
+pub mod opacity;
+
+pub use opacity::{
+    manifest_for_formula, OpacityEntry, OpacityManifest, OPACITY_PROTOCOL_VERSION,
+    REASON_DEPENDENT_TYPE, REASON_PREDICATE_QUANTIFICATION,
+};
 
 pub const DIALECT: &str = "smt-lib-v2.6";
 pub const COMPILER_NAME: &str = "smt-lib-reference";
@@ -141,10 +147,29 @@ pub fn emit(ir_formula: &Json) -> Result<String, String> {
 
 /// Compile to (preamble, body, free_vars). Pure; no I/O.
 pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileError> {
+    compile_to_parts_with_manifest(ir_formula).map(|(c, _)| c)
+}
+
+/// Compile + emit the OpacityManifest declaring positions SMT-LIB
+/// cannot soundly translate (FunctionSort, DependentSort).
+///
+/// The `CompiledFormula` portion is byte-identical to what
+/// `compile_to_parts` returns; the manifest is the additional v2
+/// emission required by `2026-05-02-ir-compiler-protocol-v2.md`.
+///
+/// We intentionally do NOT plumb the manifest through the
+/// `IrCompiler` trait (which targets `provekit-ir-compiler/1`); v2
+/// transport is a separate protocol identifier and the manifest is
+/// surfaced via this dedicated entry point until the trait grows a
+/// v2 surface.
+pub fn compile_to_parts_with_manifest(
+    ir_formula: &Json,
+) -> Result<(CompiledFormula, OpacityManifest), CompileError> {
     let formula: provekit_ir_types::Formula = serde_json::from_value(ir_formula.clone())
         .map_err(|e| CompileError::MalformedIr(e.to_string().into()))?;
     validate_formula(&formula).map_err(|e| CompileError::MalformedIr(e.into()))?;
-    Ok(generated::compile_formula(&formula))
+    let manifest = manifest_for_formula(&formula);
+    Ok((generated::compile_formula(&formula), manifest))
 }
 
 
