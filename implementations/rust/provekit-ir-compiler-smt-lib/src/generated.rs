@@ -9,7 +9,12 @@ pub fn emit_term(term: &Term) -> String {
     match term {
         Term::Var { name, .. } => name.clone(),
         Term::Const { value, sort, .. } => {
-            let sort_name = match sort { Sort::Primitive { name } => name.as_str() };
+            let sort_name = match sort {
+                Sort::Primitive { name } => name.as_str(),
+                Sort::Function { .. } | Sort::Dependent { .. } => {
+                    panic!("smt-lib: Const cannot carry a Function/Dependent sort in pure SMT-LIB v2.6");
+                }
+            };
             return emit_const_value(value, sort_name);
         },
         Term::Ctor { name, args, .. } => {
@@ -99,6 +104,12 @@ pub fn emit_formula(formula: &Formula) -> String {
 fn emit_sort(sort: &Sort) -> String {
     match sort {
         Sort::Primitive { name } => name.clone(),
+        Sort::Function { .. } => {
+            panic!("smt-lib emit_sort: FunctionSort unsupported (use a higher-order solver or curry into uninterpreted symbols)");
+        }
+        Sort::Dependent { .. } => {
+            panic!("smt-lib emit_sort: DependentSort unsupported in pure SMT-LIB v2.6");
+        }
     }
 }
 fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
