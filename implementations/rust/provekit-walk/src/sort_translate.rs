@@ -257,14 +257,15 @@ fn charon_inner_to_sort_name(
     }
 
     // Reference: {"Ref": [<region>, <inner_ty>, "Shared"|"Mut"]}
+    //
+    // Charon emits the inner Ty already fully wrapped as {"Untagged": ...}.
+    // Pass it directly to ty_to_sort_name — do NOT add another {"Untagged":}
+    // layer, which would produce double-wrapping and fall through to "Unknown".
     if let Some(arr) = inner.get("Ref").and_then(|v| v.as_array()) {
         if arr.len() == 3 {
             let inner_ty = &arr[1];
             let mutability = arr[2].as_str().unwrap_or("Shared");
-            let inner_sort = ty_to_sort_name(
-                Some(&serde_json::json!({"Untagged": inner_ty})),
-                type_decls,
-            );
+            let inner_sort = ty_to_sort_name(Some(inner_ty), type_decls);
             return if mutability == "Mut" {
                 format!("RefMut<{}>", inner_sort)
             } else {
@@ -274,21 +275,18 @@ fn charon_inner_to_sort_name(
     }
 
     // Slice: {"Slice": <elem_ty>}
+    //
+    // The elem Ty is also already {"Untagged": ...} wrapped in real Charon
+    // output — pass directly.
     if let Some(elem) = inner.get("Slice") {
-        let inner_sort = ty_to_sort_name(
-            Some(&serde_json::json!({"Untagged": elem})),
-            type_decls,
-        );
+        let inner_sort = ty_to_sort_name(Some(elem), type_decls);
         return format!("Slice<{}>", inner_sort);
     }
 
     // Array: {"Array": [<elem_ty>, <len>]}
     if let Some(arr) = inner.get("Array").and_then(|v| v.as_array()) {
         if !arr.is_empty() {
-            let inner_sort = ty_to_sort_name(
-                Some(&serde_json::json!({"Untagged": &arr[0]})),
-                type_decls,
-            );
+            let inner_sort = ty_to_sort_name(Some(&arr[0]), type_decls);
             return format!("Array<{}>", inner_sort);
         }
     }
@@ -298,10 +296,7 @@ fn charon_inner_to_sort_name(
         if arr.len() >= 2 {
             let inner_ty = &arr[0];
             let mutability = arr[1].as_str().unwrap_or("Not");
-            let inner_sort = ty_to_sort_name(
-                Some(&serde_json::json!({"Untagged": inner_ty})),
-                type_decls,
-            );
+            let inner_sort = ty_to_sort_name(Some(inner_ty), type_decls);
             return if mutability == "Mut" {
                 format!("PtrMut<{}>", inner_sort)
             } else {
@@ -611,11 +606,14 @@ mod tests {
 
     #[test]
     fn charon_ref_slice_u32_matches_syn() {
-        // &[u32] in Charon: {"Ref": [region, {"Slice": {"Literal": {"UInt":"U32"}}}, "Shared"]}
+        // &[u32] in real Charon output:
+        // {"Untagged": {"Ref": [region, {"Untagged": {"Slice": {"Untagged": {"Literal": {"UInt":"U32"}}}}}, "Shared"]}}
+        // The inner Ty elements are fully wrapped — they are passed directly
+        // to ty_to_sort_name without additional {"Untagged":} wrapping.
         let charon = ty_to_sort(
             Some(&json!({"Untagged": {"Ref": [
-                {"Static": null},
-                {"Slice": {"Literal": {"UInt": "U32"}}},
+                {"Var": {"Bound": [0, 0]}},
+                {"Untagged": {"Slice": {"Untagged": {"Literal": {"UInt": "U32"}}}}},
                 "Shared"
             ]}})),
             None,

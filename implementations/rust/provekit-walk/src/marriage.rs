@@ -677,4 +677,65 @@ mod tests {
             merged_pre_str
         );
     }
+
+    // ---- Sort-equality invariant: AST and LLBC paths must agree ----
+
+    #[test]
+    fn ast_and_llbc_formal_sorts_agree_on_bounds_fixture() {
+        // `fn at(s: &[u32], i: usize) -> u32 { s[i] }`
+        //
+        // This is the canonical cross-layer sort-equality check for the
+        // type-sort collapse fix (CodeRabbit #370 + #384 A.1).
+        //
+        // AST path (syn_type_to_sort):
+        //   s: &[u32]  → Sort::Primitive { name: "Ref<Slice<U32>>" }
+        //   i: usize   → Sort::Primitive { name: "Usize" }
+        //   return u32 → Sort::Primitive { name: "U32" }
+        //
+        // LLBC path (ty_to_sort from Charon JSON):
+        //   s: {"Ref": [region, {"Slice": {"Literal": {"UInt":"U32"}}}, "Shared"]}
+        //      → Sort::Primitive { name: "Ref<Slice<U32>>" }
+        //   i: {"Literal": {"UInt": "Usize"}}
+        //      → Sort::Primitive { name: "Usize" }
+        //   return: {"Literal": {"UInt": "U32"}}
+        //      → Sort::Primitive { name: "U32" }
+        //
+        // Before the fix, both paths collapsed to Sort::Primitive { name: "Int" }
+        // (the old catch-all), causing false CID collisions between functions
+        // with different argument types.
+        let (ast, llbc) = build_layers("bounds.rs", "bounds.llbc", "at");
+
+        assert_eq!(
+            ast.formal_sorts, llbc.formal_sorts,
+            "AST and LLBC paths must agree on formal_sorts for bounds::at.\n\
+             ast: {:?}\n\
+             llbc: {:?}",
+            ast.formal_sorts, llbc.formal_sorts
+        );
+        assert_eq!(
+            ast.return_sort, llbc.return_sort,
+            "AST and LLBC paths must agree on return_sort for bounds::at.\n\
+             ast: {:?}\n\
+             llbc: {:?}",
+            ast.return_sort, llbc.return_sort
+        );
+
+        // Verify the actual sort values are correct (not just equal-to-each-other).
+        use provekit_ir_types::Sort;
+        assert_eq!(
+            ast.formal_sorts,
+            vec![
+                Sort::Primitive { name: "Ref<Slice<U32>>".to_string() },
+                Sort::Primitive { name: "Usize".to_string() },
+            ],
+            "formal_sorts must be [Ref<Slice<U32>>, Usize]: {:?}",
+            ast.formal_sorts
+        );
+        assert_eq!(
+            ast.return_sort,
+            Sort::Primitive { name: "U32".to_string() },
+            "return_sort must be U32: {:?}",
+            ast.return_sort
+        );
+    }
 }
