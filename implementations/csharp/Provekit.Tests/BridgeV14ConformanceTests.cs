@@ -59,14 +59,19 @@ public class BridgeV14ConformanceTests
         var minted = Mint.MintBridgeV14(args);
         var jcsStr = System.Text.Encoding.UTF8.GetString(minted.CanonicalBytes);
 
-        // JCS bytes must match the bridge_decl_v1_4 fixture exactly
-        using var expected = JsonDocument.Parse(ExpectedJcs);
-        using var actual = JsonDocument.Parse(jcsStr);
-        Assert.Equal(expected.RootElement, actual.RootElement);
+        // JCS canonical bytes are byte-deterministic (RFC 8785), so the
+        // string comparison is the right invariant here. JsonElement
+        // value-equality is NOT — `JsonElement.Equals` falls back to
+        // ValueType bitwise comparison on the struct, which is never
+        // equal across two distinct JsonDocuments even when their
+        // serialized JSON is byte-identical.
+        Assert.Equal(ExpectedJcs, jcsStr);
 
-        // BLAKE3-512 hash must match pinned golden
-        var actualHash = $"blake3-512:{minted.Cid}";
-        Assert.Equal(ExpectedHash, actualHash);
+        // BLAKE3-512 hash must match pinned golden. `minted.Cid`
+        // already carries the `blake3-512:` self-identifying prefix
+        // per the canonicalizer's hash output convention (matches the
+        // Rust kit's contract).
+        Assert.Equal(ExpectedHash, minted.Cid);
     }
 
     [Fact]
