@@ -28,6 +28,7 @@ Legend: `+` shipping in v1.4.1 (current), `~` planned for v1.5 (next), `o` under
 | Ruby        | `+` | `~`  | `+ active_model, dry-validation, rspec`                 | `-`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
 | C#          | `+` | `+`  | `+ DataAnnotations, Linq`                               | `+ .NET attrs`           | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | Swift       | `+` | `~`  | `~`                                                     | `-`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
+| PHP         | `~` | `~`  | `~`                                                     | `-`                      | `~`               | `~ (use Rust CLI)`   | `-`                  |
 
 ## Cross-kit bridge readiness
 
@@ -47,12 +48,13 @@ The v1.4 substrate guarantees that depend on per-kit compliance are spread acros
 | TypeScript  | `+ inline (mint-ts-self-contracts)`         | `~ flat universal-claim-envelope` | `+ contractCidFromArgs` | `+ computeContractSetCid` | `~ flat targetContractCid; v1.4 migration pending` | `~ Phase 2 in flight`           | `+`                      |
 | Python      | `~ via provekit-lift-py-tests`              | `not assessed`             | `not assessed`           | `not assessed`       | `~ flat targetContractCid; v1.4 migration pending` | `~ Phase 2 in flight`           | `-`                      |
 | C++         | `+ provekit-self-contracts`                 | `~ flat universal-claim-envelope` | `+ contract_cid_from_args` | `+ compute_contract_set_cid` | `~ flat targetContractCid; v1.4 migration pending` | `-`                              | `+`                      |
-| C           | `-`                                         | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
-| Zig         | `-`                                         | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
-| Java / JVM  | `-`                                         | `not assessed`             | `not assessed`           | `not assessed`       | `+ mintBridgeV14 (BridgeDeclarationV14)` | `-`                              | `-`                      |
-| Ruby        | `-`                                         | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
+| C           | `~ mint-c-self-contracts (attestation pinned)` | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
+| Zig         | `~ mint-zig-self-contracts (attestation pinned)` | `not assessed`           | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
+| Java / JVM  | `~ provekit-java-self-contracts (attestation pinned)` | `not assessed`       | `not assessed`           | `not assessed`       | `+ mintBridgeV14 (BridgeDeclarationV14)` | `-`                              | `-`                      |
+| Ruby        | `~ mint-ruby-self-contracts (attestation pinned)` | `not assessed`           | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
 | C#          | `+ Provekit.SelfContracts`                  | `~ flat universal-claim-envelope` | `+ Mint.ContractCid`     | `+ contractSetCid in attestation` | `~ flat targetContractCid; v1.4 migration pending` | `-`                              | `+`                      |
-| Swift       | `-`                                         | `~ flat (no full mint pipeline)` | `not assessed (consumes rustContractCids lookup)` | `+ contractSetCid in mint-swift-self-contracts` | `~ v1.4 migration pending` | `-`                              | `-`                      |
+| Swift       | `~ mint-swift-self-contracts (attestation pinned)` | `~ flat (no full mint pipeline)` | `not assessed (consumes rustContractCids lookup)` | `+ contractSetCid in mint-swift-self-contracts` | `~ v1.4 migration pending` | `-`                              | `-`                      |
+| PHP         | `~ (in progress; no pinned attestation)`    | `not assessed`             | `not assessed`           | `not assessed`       | `not assessed`                       | `-`                              | `-`                      |
 
 Column meanings:
 
@@ -290,6 +292,22 @@ Column meanings:
 **LSP Plugin:** Yes. `ProveKitLSPSwift` implements the ProvekIt NDJSON LSP plugin protocol (parse-protocol v1) with `initialize`, `parse`, and `shutdown`.
 
 **Bridge IR:** v1.1.0 9-field shape supported (`Declaration.bridge` enum case round-trips byte-identical to the bridge_decl fixture, per PR #76). Under v1.4's bridge target dimensionality spec the kit's bridge emission needs to migrate to the layered shape with a tagged-union `target` field; that migration is pending alongside the rest of the kits. Self-contracts package and Phase 2 lift-plugin-protocol bridges deferred until the kit accumulates a runtime surface beyond conformance.
+
+## PHP
+
+**Kit:** In progress (`feat/php-kit`). `implementations/php/provekit-ir-symbolic` provides IR types, JCS canonical JSON emitter, and BLAKE3-512 hashing. `implementations/php/provekit-lift` provides a lift adapter and LSP daemon. Self-contracts orchestrator structure is in place (`implementations/php/provekit-self-contracts`); no pinned attestation yet.
+
+**Libs:** Under evaluation.
+
+**Lift adapters:** In progress. `implementations/php/provekit-lift/src/lifter.php` is the active lift adapter; coverage of PHP annotation libraries under evaluation.
+
+**Decorator macros:** PHP attributes (PHP 8+) are the natural authoring surface; under evaluation.
+
+**Embedded verifier:** Planned.
+
+**CLI:** Deferred. Use the Rust CLI.
+
+**LSP Plugin:** In progress. `implementations/php/provekit-lift/src/lspd.php` implements the ProvekIt NDJSON LSP plugin protocol; not yet shipped.
 
 ## Cross-language conformance
 
