@@ -38,6 +38,10 @@ name = "sign-catalog-v1-5-0"
 path = "src/bin/sign_catalog_v1_5_0.rs"
 
 [[bin]]
+name = "sign-catalog-v1-6-0"
+path = "src/bin/sign_catalog_v1_6_0.rs"
+
+[[bin]]
 name = "sign-self-contracts"
 path = "src/bin/sign_self_contracts.rs"
 

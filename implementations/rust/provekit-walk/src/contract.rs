@@ -462,6 +462,13 @@ fn sort_to_value(s: &Sort) -> Arc<Value> {
             ("kind", Value::string("float")),
             ("width", Value::integer(i64::from(*width))),
         ]),
+        // RegionSort (added by #401). Canonical encoding carries kind + name
+        // so contract CIDs for lifetime-parameterised functions are
+        // distinguishable from primitives and CID-stable across renames.
+        Sort::Region { name } => Value::object([
+            ("kind", Value::string("region")),
+            ("name", Value::string(name.clone())),
+        ]),
     }
 }
 

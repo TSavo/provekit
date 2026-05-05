@@ -1,6 +1,6 @@
 # Spec CIDs at HEAD
 
-Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.5.0). Verify the local install conforms via `provekit verify-protocol`.
+Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.6.0). Verify the local install conforms via `provekit verify-protocol`.
 
 ## Two hashing rules
 
@@ -16,16 +16,17 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 
 `--verify` reads every spec in raw bytes, hashes each, then reads the catalog, JCS-canonicalizes it, hashes that, and compares all values. Exit 0 iff every value matches.
 
-## Pinned CIDs (v1.5.0)
+## Pinned CIDs (v1.6.0)
 
 | Document | CID |
 |---|---|
-| **Protocol catalog (v1.5.0)** | `blake3-512:540e8c1f5f7fea880123203b30891771d421da953c34af6bfb1d56d4c1d25dfb2ae08af6f275f5b4a4d015c364588b3521116541fcf4ac32d69b4e46acee1843` |
+| **Protocol catalog (v1.6.0)** | `blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781` |
+| Protocol catalog (v1.5.0, historical) | `blake3-512:540e8c1f5f7fea880123203b30891771d421da953c34af6bfb1d56d4c1d25dfb2ae08af6f275f5b4a4d015c364588b3521116541fcf4ac32d69b4e46acee1843` |
 | Protocol catalog (v1.4.1, historical) | `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641` |
 | Protocol catalog (v1.4.0, historical) | `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f` |
 | Canonicalization grammar | `blake3-512:4d8c2940c53a59c678c8fb65e33dc2cb0ae8ae8a283b97b9c69fd678565653d15e6ee9dc3ffc6a32dc1ff035821b0c1a006f0455498d2ea91faef845d7b39830` |
 | Handshake algorithm | `blake3-512:acbf67dda9373c648e591d8ad74b8f8d56f4c92ba9c82bdc6690dc521e6f17012dd195e98a96b099090eeeb5a424312d90ff441c882d0e317a190561aa1a6925` |
-| IR formal grammar (v1.5.0: FunctionSort + DependentSort added) | `blake3-512:f1be0fad7947db90b273b1f6b5c416c2af684d0fd3f0120e7c31658d22deb910b6fc7b365f746724b3a3dacee3a1aad6aff77345e85a1ae0b534c9d3e260545e` |
+| IR formal grammar (v1.6.0: FloatSort + RegionSort added) | `blake3-512:7b8f7dfaa7aee77fc8788d02b5a8f0aceca035ba8dc0c713348fd71787250c34f1f6038f26df1ca9c6a829d9bba79899582c8e8c71047227310f2e7e034908b2` |
 | Lattice tractability theorem | `blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07` |
 | Memento envelope grammar | `blake3-512:8b6b9d9ccb7091cfa9d0993ac1d9b02057a6f7c5d9e36a05849630b8b02887073fad44114c5025740bb458e58741e41e24c438a041e1dde6e903ace7bd48278e` |
 | Proof file format | `blake3-512:a78f21484f8a55dbc0e3647433da95475820bad6f0db10643625315b030f7f114aec8710ea8cb3a4c3bfb096bf635487a31c86bec8978b90d0b4238b5eb6d266` |
@@ -35,6 +36,15 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 | Contract CID vs attestation CID | `blake3-512:53e136d9af29ce80b690f90c484e90c60f66f28c483b2038e03e7c6f6055f637527deb205e5558b47487b7d89ead461348d5e8981f2e9e8ccb30edd8867d47db` |
 | Contract set extension | `blake3-512:839e82096d04b1241ffa1f6158fcea6bfeb78f3836664a66a13ff11b3cde58d72e6c85bfc619ba1341f13b8375f655bdf5582b0eac91d27648f0048bee8f9867` |
 | Version chains pinning | `blake3-512:281bf014f6f0ebc9a5d455329ee033ff8b7ee85e001bcbdcb45a62c14e43855892c46462789ccb74961859e708eae70829fdf736798c17f59f0239ef78dd7e45` |
+
+## v1.6.0 changes (minor bump over v1.5.0)
+
+One property re-bake; no breaking changes. v1.5.0 mementos and `.proof` bundles remain valid forever against the bytes they were minted for.
+
+- **`ir-formal-grammar`** re-baked after the sort grammar grow in PR #401: `RegionSort` (kind=`region`, locked key order `kind/name`, `name` is a Rust lifetime identifier like `'a`, `'static`, or `'r0`) added to the IR sort algebra as a carrier for borrow-checker lifetime variables. The Sort union is now `PrimitiveSort | BitvecSort | SetSort | TupleSort | FunctionSort | DependentSort | FloatSort | RegionSort`. Formal invariants `RegionSort.ValidName` and `RegionSort.OpaqueToBackends` added.
+- **`ir-formal-grammar`** also absorbs `FloatSort` (kind=`float`, locked key order `kind/width`, width in {16, 32, 64, 128}), which was added to the Rust enum in PR #389 but was omitted from the spec prose. Formal invariant `FloatSort.ValidWidth` added.
+
+This is a schema-additive bump: contracts using pre-v1.6 sort variants continue to validate without modification. RegionSort is a prerequisite for #384 C.9 (Outlives predicates). Cross-kit conformance gate may go red while the 11 non-Rust kits add the RegionSort variant; that is expected and tracked as followup (mirrors the noted-followup from PR #361 / #389).
 
 ## v1.5.0 changes (minor bump over v1.4.1)
 
@@ -68,7 +78,7 @@ The v1.4.0 bump is additive over v1.3.1. New specs published with v1.4.0:
 - `bundle-attestation-protocol` (`2026-05-02-bundle-attestation-protocol.md`)
 - `opacity-manifest-grammar` (`2026-05-02-opacity-manifest-grammar.md`)
 
-The full list of v1.5.0 spec CIDs is in `protocol/specs/2026-04-30-protocol-catalog.json`. Recompute locally to verify.
+The full list of v1.6.0 spec CIDs is in `protocol/specs/2026-04-30-protocol-catalog.json`. Recompute locally to verify.
 
 ## Per-kit self-contracts CIDs (v1.4.1)
 

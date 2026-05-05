@@ -179,9 +179,10 @@ pub type ProofType = String;
 
 // NOTE: The `Sort` enum below has been MANUALLY extended beyond the
 // codegen output to add Function + Dependent variants per the v1.5.0
-// grammar grow (issue #330, rust gap from PR #361), and Float per #385.
+// grammar grow (issue #330, rust gap from PR #361), Float per #385,
+// and Region per #401 (v1.6.0 grammar grow).
 // The codegen (`provekit-ir-codegen`) currently only emits the Primitive
-// arm even though the CDDL spec defines a 6-way union. If you regenerate
+// arm even though the CDDL spec defines a 7-way union. If you regenerate
 // this file via `cargo run -p provekit-ir-codegen`, you WILL clobber the
 // manual extensions. Re-apply them from this comment block down through
 // the closing `}` of the `Sort` enum.
@@ -229,6 +230,25 @@ pub enum Sort {
     #[serde(rename = "float")]
     Float {
         width: u8,
+    },
+    /// Lifetime / region sort for borrow-checker lifetime variables.
+    /// `name` is the lifetime name, e.g. `"'a"`, `"'static"`, or a fresh
+    /// region variable like `"'r0"` emitted by Charon's region inference.
+    ///
+    /// ## Semantics
+    ///
+    /// Region sorts are pre-resolved in composition and MUST NOT reach the
+    /// SMT or Coq backends. They exist in the IR as opaque placeholders so
+    /// that lifted Rust functions with lifetime parameters can be given
+    /// well-typed contracts without silently collapsing lifetimes into a
+    /// primitive sort (which would break CID stability and sort-collapse
+    /// invariants from #384 A.1).
+    ///
+    /// JCS-canonical key order: `kind`, `name` (alphabetical).
+    /// Prerequisite for #384 C.9 (Outlives predicates).
+    #[serde(rename = "region")]
+    Region {
+        name: String,
     },
 }
 
