@@ -56,7 +56,7 @@ fn build_bundle_value(s: &ShadowSource) -> Arc<Value> {
         })
         .collect();
 
-    // Best-effort composed chain: take the first complete chain (if any).
+    // Best-effort composed chain: take the longest chain (stable tie-break).
     let composed_chain_value: Arc<Value> = match longest_chain(s) {
         Some(arrivals) if !arrivals.is_empty() => {
             let composed = compose_chain(arrivals.iter().copied());
@@ -85,10 +85,13 @@ fn build_bundle_value(s: &ShadowSource) -> Arc<Value> {
 }
 
 fn longest_chain(s: &ShadowSource) -> Option<Vec<&crate::shadow::ShadowArrival>> {
-    // Group arrivals by callee_root_cid and pick the chain with the
-    // most arrivals (typically the deepest walk for a given callsite).
-    use std::collections::HashMap;
-    let mut chains: HashMap<String, Vec<&crate::shadow::ShadowArrival>> = HashMap::new();
+    // Group arrivals by callee_root_cid and pick the chain with the most
+    // arrivals. BTreeMap (sorted by callee_root_cid key) guarantees
+    // deterministic iteration order so that when two chains have the same
+    // length the FIRST key in lexicographic order wins — result is
+    // byte-for-byte identical across calls regardless of HashMap seed.
+    use std::collections::BTreeMap;
+    let mut chains: BTreeMap<String, Vec<&crate::shadow::ShadowArrival>> = BTreeMap::new();
     for (_, arrival) in s.all_arrivals() {
         chains
             .entry(arrival.callee_root_cid.clone())
@@ -179,5 +182,59 @@ mod tests {
         // Suppress unused-helper warning; both calls below.
         let _bare = atomic_ge(var("x"), const_int(10));
         assert_ne!(make_bundle(src_a), make_bundle(src_b));
+    }
+
+    // Bug #1: longest_chain must be deterministic when two callees produce
+    // chains of equal length. With HashMap (random iteration) the tie-break
+    // was non-deterministic; with BTreeMap it picks the lexicographically
+    // first key every time.
+    #[test]
+    fn longest_chain_tie_break_is_deterministic() {
+        let src = r#"
+            fn f(x: u32) -> u32 { if x < 10 { panic!(); } x * 2 }
+            fn g(y: u32) -> u32 { if y < 5  { panic!(); } y + 1 }
+            fn main() {
+                let a: u32 = 42;
+                let b: u32 = 20;
+                let r1 = f(a);
+                let r2 = g(b);
+            }
+        "#;
+        let f_fn = parse_named(src, "f");
+        let g_fn = parse_named(src, "g");
+        let main_fn = parse_named(src, "main");
+        let pre_f = lift_function_precondition(&f_fn);
+        let pre_g = lift_function_precondition(&g_fn);
+        let s = build_shadow_source(
+            &main_fn,
+            &[
+                CalleeContract {
+                    callee_name: "f".to_string(),
+                    formal_params: vec!["x".to_string()],
+                    precondition: pre_f,
+                },
+                CalleeContract {
+                    callee_name: "g".to_string(),
+                    formal_params: vec!["y".to_string()],
+                    precondition: pre_g,
+                },
+            ],
+        );
+        let bytes_first = shadow_to_proof_ir(&s);
+        for _ in 0..50 {
+            assert_eq!(
+                bytes_first,
+                shadow_to_proof_ir(&s),
+                "bundle bytes must be deterministic across calls (tie-break in longest_chain)"
+            );
+        }
+        let cid_first = shadow_proof_ir_cid(&s);
+        for _ in 0..50 {
+            assert_eq!(
+                cid_first,
+                shadow_proof_ir_cid(&s),
+                "bundle CID must be deterministic across calls"
+            );
+        }
     }
 }
