@@ -276,9 +276,50 @@ fn walk_expr_for_callsites(
                 walk_stmt_for_callsites(s, callee_name, conditions, hits);
             }
         }
-        // Other shapes (loops, match, etc.) would recurse here in a richer
-        // walker. The MVP exercises Call, If, Block; other shapes pass
-        // through silently.
+        // Loops: recurse into the body. The body's callsites are reachable
+        // from the loop's pre-state; their conditions are unchanged from
+        // outside the loop (we don't yet add loop-iteration invariants
+        // here — that would require lift-side invariant inference; for
+        // the MVP we walk the body once with the surrounding context).
+        Expr::While(w) => {
+            for s in &w.body.stmts {
+                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+            }
+        }
+        Expr::ForLoop(fl) => {
+            for s in &fl.body.stmts {
+                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+            }
+        }
+        Expr::Loop(l) => {
+            for s in &l.body.stmts {
+                walk_stmt_for_callsites(s, callee_name, conditions, hits);
+            }
+        }
+        // Match arms: each arm's body sees its pattern's binding context.
+        // For the MVP we descend into every arm's body without
+        // narrowing the pattern as a predicate; the postcondition split
+        // is captured separately in the lifter (lift_match_postcondition).
+        Expr::Match(m) => {
+            for arm in &m.arms {
+                walk_expr_for_callsites(&arm.body, callee_name, conditions, hits);
+            }
+        }
+        // `?` operator: the success-path continues with the unwrapped
+        // value. The MVP recurses into the wrapped expression to find
+        // any callsites it contains.
+        Expr::Try(t) => {
+            walk_expr_for_callsites(&t.expr, callee_name, conditions, hits);
+        }
+        // Return statements: recurse into the returned expression for
+        // callsite discovery.
+        Expr::Return(r) => {
+            if let Some(inner) = &r.expr {
+                walk_expr_for_callsites(inner, callee_name, conditions, hits);
+            }
+        }
+        // Other shapes pass through silently. Stretch goals add closure
+        // bodies, async blocks, etc.
         _ => {}
     }
 }
