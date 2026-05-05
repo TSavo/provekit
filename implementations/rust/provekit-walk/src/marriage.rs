@@ -472,4 +472,79 @@ mod tests {
         assert_eq!(married.agreement, LayerAgreement::Identical);
         assert!(married.merged.cid.starts_with("blake3-512:"));
     }
+
+    #[test]
+    fn marriage_on_cast_yields_identical_result_equals_x() {
+        // Task A: `fn c(x: u8) -> u32 { x as u32 }`.
+        // AST: Expr::Cast(c) → lift inner expr → Var("x"), so post
+        // derives `result = x`.
+        // LLBC: Charon emits `UnaryOp([Cast{Scalar(U8,U32)}, Move(_1)])`.
+        // After the Cast-transparent arm in rvalue_to_ir_term_for_post,
+        // the inner operand traces back to the formal `x`, so post
+        // derives `result = x` as well.
+        // Cross-layer: byte-identical pre (trivial-true) and post
+        // (result = x). LayerAgreement::Identical.
+        let (ast, llbc) = build_layers("cast.rs", "cast.llbc", "c");
+        let married = marry(ast, llbc);
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::Identical,
+            "cast disappears at IR layer — both layers see `result = x`"
+        );
+
+        let post_str = serde_json::to_string(&married.merged.post).unwrap();
+        assert!(
+            post_str.contains("\"result\""),
+            "merged post carries result equation: {}",
+            post_str
+        );
+        assert!(
+            post_str.contains("\"x\""),
+            "merged post equates result with x: {}",
+            post_str
+        );
+        // Verify `=` predicate is the bridge (not `≥`, not `no-overflow`)
+        assert!(
+            post_str.contains("\"=\""),
+            "merged post is a result-equals predicate: {}",
+            post_str
+        );
+    }
+
+    #[test]
+    fn marriage_on_bitwise_and_yields_identical_result_equals_x_and_y() {
+        // Task B: `fn b(x: u32, y: u32) -> u32 { x & y }`.
+        // AST: BinOp::BitAnd → Ctor("&", [Var("x"), Var("y")]).
+        //   Post derives `result = x & y`.
+        // LLBC: BinaryOp(["BitAnd", ...]) → mir_arith_op_to_ir_ctor("BitAnd")
+        //   → "&" → Ctor("&", [Var("x"), Var("y")]).
+        //   Post derives `result = x & y`.
+        // No overflow assert for `&` in debug mode.
+        // Cross-layer: byte-identical pre (trivial-true) and post.
+        // LayerAgreement::Identical.
+        let (ast, llbc) = build_layers("bitwise.rs", "bitwise.llbc", "b");
+        let married = marry(ast, llbc);
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::Identical,
+            "bitwise AND produces identical IR from both layers"
+        );
+
+        let post_str = serde_json::to_string(&married.merged.post).unwrap();
+        assert!(
+            post_str.contains("\"result\""),
+            "merged post carries result equation: {}",
+            post_str
+        );
+        assert!(
+            post_str.contains("\"&\""),
+            "merged post encodes the bitwise AND ctor: {}",
+            post_str
+        );
+        assert!(
+            post_str.contains("\"x\"") && post_str.contains("\"y\""),
+            "merged post references both formals: {}",
+            post_str
+        );
+    }
 }

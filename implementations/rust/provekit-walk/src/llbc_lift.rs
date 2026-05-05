@@ -144,9 +144,13 @@ fn derive_return_equation(
 ///   - `Use(Move/Copy(place))`: traces the place via
 ///     `place_to_term_for_post`.
 ///   - `BinaryOp(op, lhs, rhs)`: lifts to `Ctor(<op>, [...])` for
-///     arithmetic ops (Add/Sub/Mul/Div/Rem and their Checked
-///     variants). Comparison ops are predicates, not terms; not
-///     handled here.
+///     arithmetic ops (Add/Sub/Mul/Div/Rem, bitwise ops, and their
+///     Checked variants). Comparison ops are predicates, not terms;
+///     not handled here.
+///   - `UnaryOp([Cast{...}, operand])`: transparent cast — the inner
+///     operand is lifted directly. Matches AST's `Expr::Cast` arm
+///     (lift_expr_to_term_inner unwraps to the inner expression),
+///     so `x as u32` produces `Var("x")` at the IR layer.
 fn rvalue_to_ir_term_for_post(
     rvalue: &Value,
     prior: &[&Value],
@@ -173,6 +177,18 @@ fn rvalue_to_ir_term_for_post(
             name: ir_op.to_string(),
             args: vec![l, r],
         });
+    }
+    // UnaryOp([op_descriptor, operand]): handle Cast transparently.
+    // Charon encodes `x as T` as `UnaryOp([{"Cast": ...}, operand])`.
+    // At the IR layer, casts are identity for predicate purposes — the
+    // cast disappears and only the inner operand matters. This matches
+    // AST's `Expr::Cast(c) => lift_expr_to_term_inner(&c.expr, ctx)`.
+    if let Some(arr) = rvalue.get("UnaryOp").and_then(|v| v.as_array()) {
+        if arr.len() == 2 {
+            if arr[0].get("Cast").is_some() {
+                return operand_to_ir_term(&arr[1], prior, formals);
+            }
+        }
     }
     None
 }
@@ -285,12 +301,17 @@ fn is_zero_constant(operand: &Value) -> bool {
     false
 }
 
-/// Map MIR arithmetic-op tag to IR ctor name. Handles bare ops
-/// (Add/Sub/Mul/Div/Rem) and their Checked variants (which produce
-/// a (value, overflow_bool) tuple in MIR). Both forms lift to the
-/// same ctor at the IR layer; the no-overflow precondition that
-/// `collect_assert_contributions` emits is what distinguishes
-/// "checked arithmetic" semantics in the substrate.
+/// Map MIR arithmetic-op tag to IR ctor name. Handles:
+///   - Bare arithmetic ops (Add/Sub/Mul/Div/Rem) and their Checked
+///     variants (which produce a (value, overflow_bool) tuple in MIR).
+///     Both forms lift to the same ctor at the IR layer; the no-overflow
+///     precondition that `collect_assert_contributions` emits is what
+///     distinguishes "checked arithmetic" semantics in the substrate.
+///   - Bitwise ops (BitAnd/BitOr/BitXor/Shl/Shr) — Charon encodes
+///     these as bare string tags in the BinaryOp array. They map to
+///     the same ctor names the AST walk uses (`&`, `|`, `^`, `<<`,
+///     `>>`), which ensures byte-identical IR when both layers lift
+///     the same bitwise expression.
 fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
     match op {
         "Add" | "AddChecked" | "AddWithOverflow" => Some("+"),
@@ -298,6 +319,11 @@ fn mir_arith_op_to_ir_ctor(op: &str) -> Option<&'static str> {
         "Mul" | "MulChecked" | "MulWithOverflow" => Some("*"),
         "Div" => Some("/"),
         "Rem" => Some("%"),
+        "BitAnd" => Some("&"),
+        "BitOr" => Some("|"),
+        "BitXor" => Some("^"),
+        "Shl" | "ShlUnchecked" => Some("<<"),
+        "Shr" | "ShrUnchecked" => Some(">>"),
         _ => None,
     }
 }
