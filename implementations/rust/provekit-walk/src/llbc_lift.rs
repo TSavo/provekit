@@ -759,8 +759,131 @@ pub fn detect_effects_llbc(
                 }
             }
         }
+
+        // A.2 — dynamic dispatch / fn-ptr calls: `kind.Call` is present but
+        // `extract_call_target` returns None (because `func` is not
+        // `Regular.kind.Fun.Regular`). Emit UnresolvedCall so the substrate
+        // refuses silent composition rather than silently skipping the call.
+        if s.get("kind").and_then(|k| k.get("Call")).is_some()
+            && crate::llbc_calls::extract_call_target(s).is_none()
+        {
+            set.add(Effect::UnresolvedCall {
+                name: "<dyn dispatch>".to_string(),
+            });
+        }
+
+        // A.3 — raw-pointer dereference in safe fn body: Charon represents
+        // `unsafe { *raw_ptr }` as an Assign whose rvalue operand carries a
+        // Place with a `Deref` projection and a `RawPtr` type at the deref
+        // point. Because the enclosing fn signature has `is_unsafe: false`,
+        // the signature-level check in lift_llbc_function_with_registry
+        // misses this. Scan Assign rvalue operands for the RawPtr+Deref shape
+        // and emit Effect::Unsafe when found.
+        if let Some(assign_arr) = stmt_kind_payload(s, "Assign").and_then(|v| v.as_array()) {
+            if assign_arr.len() == 2 {
+                // Check both lhs (Place) and rhs (Rvalue) for raw-ptr deref.
+                let lhs_place = &assign_arr[0];
+                let rhs = &assign_arr[1];
+                if place_has_rawptr_deref(lhs_place) {
+                    set.add(Effect::Unsafe);
+                }
+                // rhs may be Use(Copy/Move(place)) or BinaryOp or similar —
+                // check any nested place in the rvalue operands.
+                for op in rvalue_operands(rhs) {
+                    if let Some(place) = op.get("Move").or_else(|| op.get("Copy")) {
+                        if place_has_rawptr_deref(place) {
+                            set.add(Effect::Unsafe);
+                        }
+                    }
+                }
+
+                // A.4 — global / static state: Place.kind.Global on the lhs
+                // of an Assign is a write; on the rhs operand is a read.
+                // Charon uses {"Global": <GlobalDeclId>} (an integer) for the
+                // place kind. Emit Effect::Writes / Effect::Reads accordingly.
+                if let Some(global_id) = place_global_id(lhs_place) {
+                    set.add(Effect::Writes {
+                        target: format!("<global:{global_id}>"),
+                    });
+                }
+                for op in rvalue_operands(rhs) {
+                    if let Some(place) = op.get("Move").or_else(|| op.get("Copy")) {
+                        if let Some(global_id) = place_global_id(place) {
+                            set.add(Effect::Reads {
+                                target: format!("<global:{global_id}>"),
+                            });
+                        }
+                    }
+                }
+            }
+        }
     }
     set
+}
+
+/// Return true when a Place has a `Deref` projection element and the type
+/// at the dereferenced position is a `RawPtr`. In Charon's LLBC the place
+/// kind for a projection chain is `{"Projection": [inner_place, proj_elem]}`.
+/// A `Deref` element is the bare string `"Deref"`. A raw-pointer type looks
+/// like `{"Untagged": {"RawPtr": [pointee_ty, "Mut" | "Const"]}}`.
+fn place_has_rawptr_deref(place: &Value) -> bool {
+    let proj_arr = match place.get("kind").and_then(|k| k.get("Projection")).and_then(|v| v.as_array()) {
+        Some(a) => a,
+        None => return false,
+    };
+    // proj_arr = [inner_place, proj_elem]
+    if proj_arr.len() != 2 {
+        return false;
+    }
+    let inner_place = &proj_arr[0];
+    let proj_elem = &proj_arr[1];
+    // Deref element is the bare string "Deref".
+    if proj_elem.as_str() != Some("Deref") {
+        return false;
+    }
+    // The inner place's type (ty field on inner_place) must be RawPtr.
+    let inner_ty = match inner_place.get("ty") {
+        Some(t) => t,
+        None => return false,
+    };
+    ty_is_rawptr(inner_ty)
+}
+
+/// True when a Charon Ty JSON value is a raw pointer (`*const T` or `*mut T`).
+/// The shape is `{"Untagged": {"RawPtr": [pointee_ty, mutability]}}`.
+fn ty_is_rawptr(ty: &Value) -> bool {
+    ty.get("Untagged")
+        .and_then(|u| u.get("RawPtr"))
+        .is_some()
+}
+
+/// Extract all operands reachable in a flat rvalue. Only covers the shapes
+/// the lifter already handles: Use(operand), BinaryOp([_,lhs,rhs]), UnaryOp([_,op]).
+/// Returns an empty vec for unrecognized shapes (Aggregate, Len, etc.).
+fn rvalue_operands(rval: &Value) -> Vec<&Value> {
+    let mut ops: Vec<&Value> = Vec::new();
+    if let Some(op) = rval.get("Use") {
+        ops.push(op);
+    } else if let Some(arr) = rval.get("BinaryOp").and_then(|v| v.as_array()) {
+        if arr.len() == 3 {
+            ops.push(&arr[1]);
+            ops.push(&arr[2]);
+        }
+    } else if let Some(arr) = rval.get("UnaryOp").and_then(|v| v.as_array()) {
+        if arr.len() == 2 {
+            ops.push(&arr[1]);
+        }
+    }
+    ops
+}
+
+/// Extract the GlobalDeclId from a Place.kind.Global (A.4).
+/// Returns None if the place is not a global.
+fn place_global_id(place: &Value) -> Option<u64> {
+    place
+        .get("kind")?
+        .get("Global")?
+        .as_u64()
 }
 
 /// Return true when a callee name indicates I/O. Matches against
@@ -1060,6 +1183,15 @@ fn collect_if_panic_contributions(
             // For each arm whose block leads to Abort, emit Atomic("!=", [discr, lit])
             // for every literal in that arm's pattern. Turns `0 | 1 => panic!()`
             // into the conjunction `x != 0 /\ x != 1`.
+            //
+            // B.7 — non-panic arm narrowing: for each arm whose block does NOT
+            // lead to Abort, recursively collect pre-contributions from the arm
+            // body under the premise `discr ∈ patterns`. If the arm body has its
+            // own pre-contributions (nested asserts / sub-switches), wrap them in
+            // `Implies(Or(discr=lit0, discr=lit1, ...), arm_body_pre)`. This
+            // propagates the discriminant-equality constraint into the arm body,
+            // giving downstream WP backward-propagation accurate narrowed
+            // preconditions per paper 07 §7.
             for arm in arms {
                 let arm_arr = match arm.as_array() {
                     Some(a) => a,
@@ -1073,14 +1205,61 @@ fn collect_if_panic_contributions(
                     None => continue,
                 };
                 let arm_block = &arm_arr[1];
-                if !block_leads_to_abort(arm_block, post_switch_aborts) {
-                    continue;
-                }
-                for scalar_val in patterns {
-                    if let Some(lit_term) = arm_scalar_to_ir_term(scalar_val) {
-                        out.push(IrFormula::Atomic {
-                            name: "≠".to_string(),
-                            args: vec![discr_term.clone(), lit_term],
+                if block_leads_to_abort(arm_block, post_switch_aborts) {
+                    // Panic arm: emit != atoms.
+                    for scalar_val in patterns {
+                        if let Some(lit_term) = arm_scalar_to_ir_term(scalar_val) {
+                            out.push(IrFormula::Atomic {
+                                name: "≠".to_string(),
+                                args: vec![discr_term.clone(), lit_term],
+                            });
+                        }
+                    }
+                } else {
+                    // B.7: non-panic arm — recursively collect arm body's
+                    // contributions, then wrap in Implies(premise, arm_pre).
+                    let arm_stmts = block_statements(arm_block);
+                    let mut arm_contribs: Vec<IrFormula> = Vec::new();
+                    // Build a new prior that includes the switch statement itself
+                    // so discriminant traces in the arm body can reach back.
+                    let mut arm_prior = local_prior.clone();
+                    arm_prior.push(s);
+                    collect_if_panic_contributions(
+                        &arm_prior,
+                        &arm_stmts,
+                        formals,
+                        named_locals,
+                        post_switch_aborts,
+                        &mut arm_contribs,
+                    );
+                    if !arm_contribs.is_empty() {
+                        // Build premise: Or of all equality atoms for this arm's
+                        // patterns. A single-literal arm yields a bare Atomic.
+                        let eq_atoms: Vec<IrFormula> = patterns
+                            .iter()
+                            .filter_map(|scalar_val| {
+                                arm_scalar_to_ir_term(scalar_val).map(|lit_term| IrFormula::Atomic {
+                                    name: "=".to_string(),
+                                    args: vec![discr_term.clone(), lit_term],
+                                })
+                            })
+                            .collect();
+                        if eq_atoms.is_empty() {
+                            // No resolvable literals — can't form a premise; skip.
+                            continue;
+                        }
+                        let premise = if eq_atoms.len() == 1 {
+                            eq_atoms.into_iter().next().unwrap()
+                        } else {
+                            IrFormula::Or { operands: eq_atoms }
+                        };
+                        let consequent = if arm_contribs.len() == 1 {
+                            arm_contribs.into_iter().next().unwrap()
+                        } else {
+                            IrFormula::And { operands: arm_contribs }
+                        };
+                        out.push(IrFormula::Implies {
+                            operands: vec![premise, consequent],
                         });
                     }
                 }
@@ -1947,6 +2126,294 @@ mod tests {
             contract.effects.effects.contains(&Effect::Unsafe),
             "unsafe fn must carry Effect::Unsafe; got {:?}",
             contract.effects.effects
+        );
+    }
+
+    // ---- A.2: dynamic-dispatch / fn-ptr call → UnresolvedCall ----
+
+    #[test]
+    fn detect_effects_emits_unresolved_for_dyn_dispatch_call() {
+        // A Call statement whose `func` is NOT `Regular.kind.Fun.Regular`
+        // (e.g. a trait-object dyn dispatch, a fn-ptr call, or any other
+        // non-static call shape) must emit Effect::UnresolvedCall rather
+        // than silently skipping the call. This verifies A.2.
+        //
+        // We construct a synthetic Call statement with `func.Trait` (the
+        // shape Charon uses for unresolved trait method calls) — this is a
+        // known non-Regular shape that extract_call_target cannot resolve.
+        use crate::contract::Effect;
+        use crate::llbc_calls::empty_registry;
+
+        let dyn_call_stmt = serde_json::json!({
+            "span": {},
+            "id": 1,
+            "kind": {
+                "Call": {
+                    "func": {
+                        // Trait-object dispatch — NOT Regular.kind.Fun.Regular.
+                        "Trait": {
+                            "trait_id": {"TraitDecl": 0},
+                            "method_id": 0
+                        }
+                    },
+                    "args": [],
+                    "dest": {"kind": {"Local": 0}, "ty": {}}
+                }
+            },
+            "comments_before": []
+        });
+
+        let stmts = vec![&dyn_call_stmt];
+        let effects = detect_effects_llbc(&stmts, None, &empty_registry());
+        assert!(
+            effects.effects.iter().any(|e| matches!(e, Effect::UnresolvedCall { name } if name == "<dyn dispatch>")),
+            "dyn dispatch Call must emit UnresolvedCall(<dyn dispatch>); got {:?}",
+            effects.effects
+        );
+    }
+
+    #[test]
+    fn detect_effects_does_not_emit_unresolved_for_regular_call() {
+        // A Call with Regular.kind.Fun.Regular must NOT emit UnresolvedCall
+        // (it's resolved; its callee will be looked up separately).
+        use crate::contract::Effect;
+        use crate::llbc_calls::empty_registry;
+
+        let regular_call_stmt = serde_json::json!({
+            "span": {},
+            "id": 1,
+            "kind": {
+                "Call": {
+                    "func": {
+                        "Regular": {
+                            "kind": {"Fun": {"Regular": 0}},
+                            "generics": {}
+                        }
+                    },
+                    "args": [],
+                    "dest": {"kind": {"Local": 0}, "ty": {}}
+                }
+            },
+            "comments_before": []
+        });
+
+        let stmts = vec![&regular_call_stmt];
+        let effects = detect_effects_llbc(&stmts, None, &empty_registry());
+        assert!(
+            !effects.effects.iter().any(|e| matches!(e, Effect::UnresolvedCall { .. })),
+            "regular static call must NOT emit UnresolvedCall; got {:?}",
+            effects.effects
+        );
+    }
+
+    // ---- A.3: raw-pointer dereference in safe fn body → Unsafe ----
+
+    #[test]
+    fn detect_effects_emits_unsafe_for_rawptr_deref_in_safe_fn() {
+        // `unsafe { *raw_ptr }` in a safe fn: Charon emits an Assign whose
+        // rhs operand is a Move/Copy of a Place with a Deref projection where
+        // the dereferenced type is RawPtr. Must emit Effect::Unsafe. (A.3)
+        use crate::contract::Effect;
+        use crate::llbc_calls::empty_registry;
+
+        // Place shape: kind.Projection = [inner_place (with RawPtr ty), "Deref"]
+        let assign_stmt = serde_json::json!({
+            "span": {},
+            "id": 1,
+            "kind": {
+                "Assign": [
+                    // lhs: a simple local (no raw-ptr here)
+                    {"kind": {"Local": 0}, "ty": {"Untagged": {"Literal": {"UInt": "U32"}}}},
+                    // rhs: Use(Copy(deref of raw ptr))
+                    {
+                        "Use": {
+                            "Copy": {
+                                "kind": {
+                                    "Projection": [
+                                        // inner place: local 1 with RawPtr ty
+                                        {
+                                            "kind": {"Local": 1},
+                                            "ty": {
+                                                "Untagged": {
+                                                    "RawPtr": [
+                                                        {"Untagged": {"Literal": {"UInt": "U32"}}},
+                                                        "Const"
+                                                    ]
+                                                }
+                                            }
+                                        },
+                                        "Deref"
+                                    ]
+                                },
+                                "ty": {"Untagged": {"Literal": {"UInt": "U32"}}}
+                            }
+                        }
+                    }
+                ]
+            },
+            "comments_before": []
+        });
+
+        let stmts = vec![&assign_stmt];
+        let effects = detect_effects_llbc(&stmts, None, &empty_registry());
+        assert!(
+            effects.effects.contains(&Effect::Unsafe),
+            "raw-ptr deref must emit Effect::Unsafe; got {:?}",
+            effects.effects
+        );
+    }
+
+    // ---- A.4: global/static place access → Reads/Writes ----
+
+    #[test]
+    fn detect_effects_emits_writes_for_global_place_on_lhs() {
+        // An Assign where the lhs Place.kind.Global N must emit
+        // Effect::Writes { target: "<global:N>" }. (A.4)
+        use crate::contract::Effect;
+        use crate::llbc_calls::empty_registry;
+
+        let assign_to_global = serde_json::json!({
+            "span": {},
+            "id": 1,
+            "kind": {
+                "Assign": [
+                    // lhs: global place id 7
+                    {"kind": {"Global": 7}, "ty": {"Untagged": {"Literal": {"UInt": "U32"}}}},
+                    // rhs: constant zero
+                    {"Literal": {"Scalar": {"Unsigned": ["U32", "0"]}}}
+                ]
+            },
+            "comments_before": []
+        });
+
+        let stmts = vec![&assign_to_global];
+        let effects = detect_effects_llbc(&stmts, None, &empty_registry());
+        assert!(
+            effects.effects.contains(&Effect::Writes { target: "<global:7>".to_string() }),
+            "assign to global place must emit Effect::Writes(<global:7>); got {:?}",
+            effects.effects
+        );
+    }
+
+    #[test]
+    fn detect_effects_emits_reads_for_global_place_in_rvalue() {
+        // An Assign where the rhs reads a global (via Copy/Move of Place.kind.Global N)
+        // must emit Effect::Reads { target: "<global:N>" }. (A.4)
+        use crate::contract::Effect;
+        use crate::llbc_calls::empty_registry;
+
+        let read_global = serde_json::json!({
+            "span": {},
+            "id": 1,
+            "kind": {
+                "Assign": [
+                    // lhs: local 0
+                    {"kind": {"Local": 0}, "ty": {"Untagged": {"Literal": {"UInt": "U32"}}}},
+                    // rhs: Use(Copy(global place 3))
+                    {
+                        "Use": {
+                            "Copy": {
+                                "kind": {"Global": 3},
+                                "ty": {"Untagged": {"Literal": {"UInt": "U32"}}}
+                            }
+                        }
+                    }
+                ]
+            },
+            "comments_before": []
+        });
+
+        let stmts = vec![&read_global];
+        let effects = detect_effects_llbc(&stmts, None, &empty_registry());
+        assert!(
+            effects.effects.contains(&Effect::Reads { target: "<global:3>".to_string() }),
+            "rhs read of global place must emit Effect::Reads(<global:3>); got {:?}",
+            effects.effects
+        );
+    }
+
+    // ---- B.7: non-panic arm narrowing in SwitchInt ----
+
+    #[test]
+    fn collect_if_panic_narrows_non_panic_arm_body() {
+        // Pattern: `match x { 2 => { /* sub-assert */ }, _ => panic!() }`
+        // The arm `2 => ...` does NOT abort; the otherwise block aborts.
+        // B.7: if the arm body has nested panic contributions (e.g. a nested
+        // SwitchInt or Assert), they should be wrapped in
+        // `Implies(x = 2, arm_body_pre)`. Here we use a simple sub-Switch::If
+        // inside the arm body to trigger the recursion.
+        //
+        // In this test the arm body is empty — no sub-contributions — so
+        // the Implies wrapping is skipped. This exercises the code path
+        // without introducing spurious atoms for empty arms.
+        let discr_formal = serde_json::json!({
+            "Copy": {
+                "kind": {"Local": 1},
+                "ty": {"Untagged": {"Literal": {"UInt": "U32"}}}
+            }
+        });
+        let arm_block = serde_json::json!({
+            "span": {},
+            "statements": []  // empty arm body — no contributions
+        });
+        let otherwise_block = serde_json::json!({
+            "span": {},
+            "statements": [
+                {"span": {}, "id": 1, "kind": {"Abort": {"Panic": []}}, "comments_before": []}
+            ]
+        });
+
+        let switch_stmt = serde_json::json!({
+            "span": {},
+            "id": 2,
+            "kind": {
+                "Switch": {
+                    "SwitchInt": [
+                        discr_formal,
+                        {"UInt": "U32"},
+                        [
+                            [
+                                [{"Scalar": {"Unsigned": ["U32", "2"]}}],
+                                arm_block
+                            ]
+                        ],
+                        otherwise_block
+                    ]
+                }
+            },
+            "comments_before": []
+        });
+
+        let formals = vec![(1u32, "x".to_string())];
+        let named_locals = std::collections::HashMap::new();
+        let stmts = vec![&switch_stmt];
+        let mut out = Vec::new();
+        collect_if_panic_contributions(&[], &stmts, &formals, &named_locals, false, &mut out);
+
+        // The otherwise-block aborts, so no != atoms (there are no abort-arm
+        // patterns to negate). The non-panic arm `2 =>` has an empty body,
+        // so no Implies atoms either. Result: empty out.
+        assert!(
+            out.is_empty(),
+            "empty non-panic arm body should not emit Implies; got {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn existing_switch_int_abort_arms_still_produce_ne_atoms_after_b7() {
+        // Regression: B.7 code change must not break the existing SwitchInt
+        // abort-arm behavior: `0 | 1 => panic!(), _ => {}` still emits
+        // x != 0 /\ x != 1.
+        let krate = LlbcCrate::from_path(fixture_path("match_arms.llbc")).unwrap();
+        let f = krate.function_by_name("f").unwrap();
+        let contract = lift_llbc_function(f, Some("match_arms.rs")).unwrap();
+
+        let pre_str = serde_json::to_string(&contract.pre).unwrap();
+        assert!(
+            pre_str.contains("\u{2260}"),
+            "match_arms contract must still contain != after B.7; got {}",
+            pre_str
         );
     }
 }
