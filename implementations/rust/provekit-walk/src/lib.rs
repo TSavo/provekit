@@ -46,4 +46,6 @@ pub use shadow::{
     CalleeContract, ComposedEdge, ShadowArrival, ShadowSlot, ShadowSource,
 };
 pub use walk::{walk_callsites_to_entry, Arrival, CallsiteWalk};
-pub use wp::{atomic_ge, atomic_lt, atomic_true, const_int, var, Wp};
+pub use wp::{
+    atomic_ge, atomic_lt, atomic_true, const_int, free_vars_formula, free_vars_term, var, Wp,
+};
