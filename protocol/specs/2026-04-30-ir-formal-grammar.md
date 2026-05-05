@@ -179,14 +179,16 @@ with accompanying English explanation.
 | ValidElements | `∀s → HasKey("elements") ∧ ∀e∈elements → IsSort(e)` |
 
 **FunctionSort** (Section: Sorts)
+
 | Invariant | Formula |
 |-----------|---------|
-| ValidArgsAndReturn | `∀s → HasKey("args")∧∀a∈args→IsSort(a) ∧ HasKey("return")∧IsSort(return)` |
+| ValidArgsAndReturn | `∀s → HasKey("args")∧IsArray(args)∧len(args)≥1∧∀a∈args→IsSort(a) ∧ HasKey("return")∧IsSort(return)` |
 
 **DependentSort** (Section: Sorts)
+
 | Invariant | Formula |
 |-----------|---------|
-| ValidFields | `∀s → HasKey("name")∧tstr(name) ∧ HasKey("indexVar")∧tstr(indexVar) ∧ HasKey("indexSort")∧IsSort(indexSort)` |
+| ValidFields | `∀s → HasKey("name")∧IsString(name) ∧ HasKey("indexVar")∧IsString(indexVar) ∧ HasKey("indexSort")∧IsSort(indexSort)` |
 
 **Strict Mode** (Section: Reference Parser)
 | Invariant | Formula |

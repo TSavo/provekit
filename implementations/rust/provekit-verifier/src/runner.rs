@@ -140,11 +140,11 @@ impl Runner {
             call_edge_loader::load_call_edge_files(&self.cfg.project_root);
         let obligations = call_edge_loader::process_call_edges(&call_edges, &pool);
 
-        // Report call edge obligations
-        for (source_cid, target_cid, locus) in &call_edge_loader::process_call_edges(
-            &call_edges,
-            &pool,
-        ) {
+        // Report resolved call-edge obligations using the single
+        // `obligations` computation above (do not call process_call_edges
+        // a second time — it's an O(callgraph) walk over all loaded
+        // mementos).
+        for (source_cid, target_cid, locus) in &obligations {
             let file = locus
                 .as_ref()
                 .and_then(|l| l.get("file"))

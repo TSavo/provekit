@@ -43,13 +43,32 @@ pub fn process_call_edges(
             .get("sourceContractCid")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        let locus = edge.get("callSiteLocus").cloned();
+
+        if source_cid.is_empty() {
+            continue;
+        }
+
+        // Prefer a direct targetContractCid (CID-as-identity) before
+        // falling back to symbol/name resolution. Direct CID is the
+        // strong identity per the substrate's content-address principle;
+        // name-based lookup is the lossy fallback used when the lifter
+        // didn't resolve to a CID at extraction time.
+        if let Some(tcid) = edge
+            .get("targetContractCid")
+            .and_then(|v| v.as_str())
+        {
+            if !tcid.is_empty() {
+                obligations.push((source_cid.to_string(), tcid.to_string(), locus));
+                continue;
+            }
+        }
+
         let target_symbol = edge
             .get("targetSymbol")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let locus = edge.get("callSiteLocus").cloned();
-
-        if source_cid.is_empty() || target_symbol.is_empty() {
+        if target_symbol.is_empty() {
             continue;
         }
 

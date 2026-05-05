@@ -503,10 +503,21 @@ pub fn run(args: ProveArgs) -> u8 {
 
     let cfg_doc = read_project_config(&project_root);
 
+    // Resolve `--with` paths relative to project_root unless absolute,
+    // matching how `[verify].callees` is resolved (project-root-anchored).
+    // Without this, `--with foo` depends on CWD and breaks when prove is
+    // invoked outside the project root.
     let mut extra_projects: Vec<PathBuf> = args
         .with
         .iter()
-        .map(PathBuf::from)
+        .map(|s| {
+            let p = PathBuf::from(s);
+            if p.is_absolute() {
+                p
+            } else {
+                project_root.join(p)
+            }
+        })
         .collect();
 
     for callee in &cfg_doc.callees {

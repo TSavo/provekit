@@ -561,11 +561,15 @@ fn save_call_edges_if_present(
         "edges": call_edges,
     });
 
-    let json_str = serde_json::to_string(&edges_json).unwrap_or_default();
-    let json_cid = provekit_canonicalizer::blake3_512_of(json_str.as_bytes());
+    // Encode via JCS (provekit_canonicalizer::encode_jcs) so the file's bytes
+    // and its content-CID are byte-deterministic across implementations.
+    // serde_json::to_string is not canonical (key order, whitespace) and
+    // would produce a non-portable CID.
+    let canonical = provekit_canonicalizer::encode_jcs(&json_to_cvalue(&edges_json));
+    let json_cid = provekit_canonicalizer::blake3_512_of(canonical.as_bytes());
     let json_path = out_dir.join(format!("{json_cid}.call-edges.json"));
 
-    if let Err(e) = std::fs::write(&json_path, &json_str) {
+    if let Err(e) = std::fs::write(&json_path, canonical.as_bytes()) {
         eprintln!("warn: could not write call edges {}: {e}", json_path.display());
     }
 }

@@ -190,11 +190,29 @@ LetBinding = {
 ; Sorts
 ; ================================================================
 
-Sort = PrimitiveSort / FunctionSort / DependentSort
+Sort = PrimitiveSort / BitvecSort / SetSort / TupleSort / FunctionSort / DependentSort
 
 PrimitiveSort = {
   kind: "primitive",
   name: PrimitiveSortName,
+}
+
+; Locked key order: kind, width
+BitvecSort = {
+  kind: "bitvec",
+  width: uint .gt 0,       ; positive integer (bit width)
+}
+
+; Locked key order: kind, element
+SetSort = {
+  kind: "set",
+  element: Sort,           ; sort of set elements (recursive)
+}
+
+; Locked key order: kind, elements
+TupleSort = {
+  kind: "tuple",
+  elements: [* Sort],      ; ordered sort list (zero or more)
 }
 
 ; Locked key order: kind, args, return
