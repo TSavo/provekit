@@ -107,8 +107,8 @@ inverted because the DAG holds the constraints, not the actors.
 **Vibe coding becomes safe by default.** The dumbest LLM can write
 TypeScript. The same LLM can write invariants for the same TypeScript.
 Even shitty invariants raise the correctness floor. Once the invariants
-exist, they constrain every future code path through shadow AST walking
-- including paths the original LLM never imagined. The framework doesn't
+exist, they constrain every future code path through shadow AST walking,
+including paths the original LLM never imagined. The framework doesn't
 make LLMs smarter. It makes the GATE mechanical.
 
 **Library upgrades become proof-hash diffs.** Upgrading lodash 1.x to 2.x

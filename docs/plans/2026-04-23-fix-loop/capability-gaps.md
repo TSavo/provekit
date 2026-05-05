@@ -13,7 +13,7 @@
 | Bucket | Count | Principles |
 |--------|-------|-----------|
 | Migrated (match-only, no guard suppression) | 8 | addition-overflow, subtraction-underflow, multiplication-overflow, find-undefined-result, match-null-result, split-empty-string, falsy-default, empty-collection-loop |
-| Migrated (guard-aware / structurally complete) | 3 | reduce-no-initial, throw-uncaught, unguarded-await (partial (over-matches) |)
+| Migrated (guard-aware / structurally complete) | 3 | reduce-no-initial, throw-uncaught, unguarded-await (partial, over-matches) |
 | Migrated (guard predicate present, non-functional) | 3 | division-by-zero, modulo-by-zero, null-assertion |
 | Capability-gap (not migrated) | 9 | shell-injection, empty-catch, guard-narrowing, loop-accumulator-overflow, param-mutation, switch-no-default, ternary-branch-collapse, variable-staleness, while-loop-termination |
 

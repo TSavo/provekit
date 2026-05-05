@@ -74,4 +74,4 @@ The handshake walks the catalog, runs the three tiers, and reports the discharge
 
 ---
 
-*This tutorial is a stub. Contributions welcome (see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: actual npm package names, end-to-end runnable example, IDE wire-up once the LSP ships.*)
+*This tutorial is a stub. Contributions welcome; see [docs/contributing/overview.md](../contributing/overview.md). Known gaps: actual npm package names, end-to-end runnable example, IDE wire-up once the LSP ships.*

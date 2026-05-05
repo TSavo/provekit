@@ -101,7 +101,7 @@ Run the existing principle library against the buggy snapshot. For each principl
 
 This is the same operation Leak 6 win 2 implements at C1 in production fix loops. The harvest pipeline calls it in batch.
 
-**Discovery mode (fallback (full LLM call).**)
+**Discovery mode (fallback: full LLM call).**
 
 Triggered when no existing principle matches the buggy snapshot. The LLM derives a new principle from the diff:
 
