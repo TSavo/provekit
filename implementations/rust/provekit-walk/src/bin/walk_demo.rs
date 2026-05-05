@@ -234,6 +234,9 @@ fn effect_summary(effects: &[provekit_walk::contract::Effect]) -> String {
             OpaqueLoop { loop_cid } => format!("opaque_loop({})", &loop_cid[..16.min(loop_cid.len())]),
             EarlyReturn { try_cid } => format!("early_return({})", &try_cid[..16.min(try_cid.len())]),
             ClosureCapture { body_fn_cid, n_captures } => format!("closure_capture({},{})", &body_fn_cid[..16.min(body_fn_cid.len())], n_captures),
+            PinnedReference { target } => format!("pinned_ref({})", target),
+            RawPointerProvenance { target, mutable } => format!("raw_ptr({},mutable={})", target, mutable),
+            AtomicAccess { target, kind, ordering } => format!("atomic({},{},{:?})", target, kind.as_str(), ordering),
         })
         .collect();
     format!("[{}]", parts.join(", "))
