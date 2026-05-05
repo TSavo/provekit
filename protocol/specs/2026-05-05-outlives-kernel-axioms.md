@@ -82,14 +82,12 @@ The kernel theory asserts the following three axioms unconditionally. A conformi
 **Formal statement:**
 
 ```
-∀ r: Region. Outlives(r, "'static")
+∀ r: Region. Outlives("'static", r)
 ```
 
-**Gloss:** Every region outlives `'static`. In Rust's lifetime model, `'static` is the longest-lived region — data that lives for the entire program execution. Any reference is valid for at least as long as `'static` demands (because `'static` demands "forever," so any shorter region satisfies this trivially by convention of directionality).
+**Gloss:** `'static` outlives every region. In Rust's lifetime model, `'static` is the longest-lived region, lasting for the entire program execution. Under this spec's definition, `Outlives(r1, r2)` means `r1` lasts at least as long as `r2`, so `Outlives("'static", r)` holds for all `r` because `'static` lasts at least as long as anything else.
 
-Note on directionality: `Outlives(r, "'static")` reads as "`r` outlives `'static`," which is the correct direction. The Rust notation `'a: 'b` means `'a` outlives `'b`, and every `'a: 'static` holds vacuously in the sense that `'static` is the minimum constraint, not the maximum lifetime. In this spec `Outlives(r1, r2)` means `r1` lasts at least as long as `r2`, so `Outlives(r, "'static")` holds for all `r` because `'static` imposes the weakest possible lower-bound constraint.
-
-**Prover rule:** When the prover checks `Outlives(r, "'static")` for any region `r`, it succeeds immediately.
+**Prover rule:** When the prover checks `Outlives("'static", r)` for any region `r`, it succeeds immediately.
 
 **Encoding note:** `'static` is `Sort::Region { name: "'static" }`, not a separate sort variant. The prover identifies it by name equality when applying this axiom.
 
@@ -156,7 +154,7 @@ After substitution, all region terms in `substituted_demands` are drawn from the
 For each `Outlives(a, b) ∈ substituted_demands`:
 
 1. If `a == b` (syntactic equality of region names): discharge by Reflexivity (§2.1). Continue to next demand.
-2. If `b == "'static"`: discharge by `'static` top (§2.3). Continue to next demand.
+2. If `a == "'static"`: discharge by `'static` top (§2.3). Continue to next demand.
 3. Search `caller_facts` and the closure of `caller_facts` under Transitivity (§2.2) for `Outlives(a, b)`. If found: discharge. Continue to next demand.
 4. If none of the above applies: the demand CANNOT be discharged. Record it as a `RegionCompositionFailure { demanded: Outlives(a, b) }`.
 
@@ -255,7 +253,7 @@ caller_facts: {} (empty — no where-clauses in caller)
 ```
 
 Step 1: `'y != 'x`, not reflexivity.
-Step 2: `'x != "'static"`, not `'static` top.
+Step 2: `'y != "'static"`, not `'static` top.
 Step 3: `Outlives("'y", "'x")` not in `caller_facts` or its transitive closure.
 Step 4: Record `RegionCompositionFailure { demanded: Outlives("'y", "'x") }`.
 
@@ -312,7 +310,7 @@ The prover maintains a **region fact set** per function context. It is a directe
 
 The three axioms are NOT stored as edges in `G`; they are evaluated on-the-fly:
 - Reflexivity: checked syntactically before any graph lookup.
-- `'static` top: checked by testing `r2 == "'static"` before any graph lookup.
+- `'static` top: checked by testing `r1 == "'static"` before any graph lookup.
 - Transitivity: evaluated as reachability in `G`.
 
 ### §8.2 Reachability for Transitivity
@@ -320,7 +318,7 @@ The three axioms are NOT stored as edges in `G`; they are evaluated on-the-fly:
 To discharge `Outlives(a, c)`:
 
 1. If `a == c`: succeed (Reflexivity).
-2. If `c == "'static"`: succeed (`'static` top).
+2. If `a == "'static"`: succeed (`'static` top).
 3. Run a depth-first or breadth-first reachability search from node `a` in `G`. If `c` is reachable from `a`: succeed (Transitivity).
 4. Otherwise: fail.
 
