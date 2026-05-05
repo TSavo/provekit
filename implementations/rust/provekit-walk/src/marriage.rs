@@ -751,7 +751,7 @@ mod tests {
         // Demonstrates the core purpose of LlbcExtraCategory::LifetimeRelative.
         //
         // Setup: AST emits no atoms (trivial-true pre, trivial-true post).
-        // LLBC emits one atom whose name starts with "outlives" -- simulating
+        // LLBC emits one atom whose name starts with "outlives", simulating
         // the shape the C.9 lifter (#384 C.9) will emit for Outlives predicates
         // derived from borrow regions. Sort::Region does not exist yet (#401);
         // we simulate the structural shape by constructing the atom directly.
@@ -817,7 +817,7 @@ mod tests {
             "outlives atom must be classified LifetimeRelative, not TypePrecision"
         );
 
-        // The merged contract carries the outlives atom -- no information lost.
+        // The merged contract carries the outlives atom: no information lost.
         let merged_pre_str = serde_json::to_string(&married.merged.pre).unwrap();
         assert!(
             merged_pre_str.contains("outlives"),
