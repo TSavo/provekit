@@ -350,6 +350,22 @@ fn sort_to_value(s: &Sort) -> Arc<Value> {
             ("kind", Value::string("primitive")),
             ("name", Value::string(name.clone())),
         ]),
+        // Function / Dependent sorts (added by #361 for the
+        // dependent-type / first-class-function-sort grammar
+        // expansion) aren't currently produced by the AST/LLBC
+        // walk's `synth_item_fn` shell — we always emit a plain
+        // primitive sort. Emit them as opaque so the contract
+        // canonical bytes stay valid if a downstream caller passes
+        // them through. Translating them faithfully into our IR
+        // sort encoding is tracked as part of #384 Tier A.1
+        // (type-aware predicate sorts).
+        Sort::Function { .. } | Sort::Dependent { .. } => Value::object([
+            ("kind", Value::string("opaque")),
+            (
+                "reason",
+                Value::string("function-or-dependent-sort-not-yet-modeled"),
+            ),
+        ]),
     }
 }
 

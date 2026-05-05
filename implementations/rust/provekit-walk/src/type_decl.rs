@@ -485,6 +485,17 @@ fn sort_to_value(s: &Sort) -> Arc<Value> {
             ("kind", Value::string("primitive")),
             ("name", Value::string(name.clone())),
         ]),
+        // Function / Dependent sorts (added by #361) aren't yet
+        // produced by the type_decl lifter — emit as opaque so the
+        // type_decl canonical bytes stay valid when Sort variants
+        // expand. Translating them faithfully is part of #384 A.1.
+        Sort::Function { .. } | Sort::Dependent { .. } => Value::object([
+            ("kind", Value::string("opaque")),
+            (
+                "reason",
+                Value::string("function-or-dependent-sort-not-yet-modeled"),
+            ),
+        ]),
     }
 }
 
