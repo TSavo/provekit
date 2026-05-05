@@ -89,17 +89,85 @@ pub fn lift_llbc_function(
     Ok(contract)
 }
 
-/// Walk the body for if-panic patterns. For each `Switch::If(discr,
-/// then-leads-to-abort, _)`, record `¬discr` as a precondition
-/// contribution and recurse into the else-branch (which may contain
-/// nested if-panic Switches from short-circuited compound conditions
-/// like `||` and `&&`). Conjoin all contributions in source order so
-/// the byte-encoding matches the AST walk's De Morgan output.
+/// Walk the body for if-panic patterns AND MIR-inserted Assert
+/// statements. For each `Switch::If(discr, then-leads-to-abort, _)`,
+/// record `¬discr` as a precondition contribution and recurse into
+/// the else-branch (which may contain nested if-panic Switches from
+/// short-circuited compound conditions like `||` and `&&`). For
+/// Assert statements with overflow check_kind, record the
+/// no-overflow predicate the assertion enforces — this is what MIR
+/// sees that the surface AST does not. Conjoin all contributions in
+/// source order so the byte-encoding matches the AST walk's De
+/// Morgan output (and adds the MIR-only atoms after).
 fn derive_precondition(stmts: &[&Value], formals: &[(u32, String)]) -> IrFormula {
     let mut contribs: Vec<IrFormula> = Vec::new();
     // Top-level: falling through the entire body returns; doesn't abort.
     collect_if_panic_contributions(&[], stmts, formals, false, &mut contribs);
+    collect_assert_contributions(stmts, formals, &mut contribs);
     simplify_conjunction(contribs)
+}
+
+/// Collect predicate atoms from `Assert` statements in the body. This
+/// catches MIR-inserted overflow / panic-on-failure asserts that the
+/// surface AST doesn't see — paper 07's "MIR sees more" lane.
+fn collect_assert_contributions(
+    stmts: &[&Value],
+    formals: &[(u32, String)],
+    out: &mut Vec<IrFormula>,
+) {
+    for (i, s) in stmts.iter().enumerate() {
+        let Some(assert_payload) = stmt_kind_payload(s, "Assert") else {
+            continue;
+        };
+        let Some(assert_obj) = assert_payload.get("assert") else {
+            continue;
+        };
+        let _expected = assert_obj.get("expected").and_then(|v| v.as_bool());
+        let Some(check_kind) = assert_obj.get("check_kind") else {
+            continue;
+        };
+        // Recognized check_kinds:
+        //   Overflow: [{ "Mul": "Wrap" } | { "Add": ... } | ..., lhs_operand, rhs_operand]
+        //     -> emit Atomic("no-overflow:<op>", [lhs_term, rhs_term]).
+        //
+        // The Assert's expected=false + Overflow check_kind means
+        // "must not overflow" — the negation is the precondition we
+        // want to record.
+        if let Some(arr) = check_kind.get("Overflow").and_then(|v| v.as_array()) {
+            if arr.len() < 3 {
+                continue;
+            }
+            let op_descriptor = &arr[0];
+            let lhs = &arr[1];
+            let rhs = &arr[2];
+            let Some(op_tag) = overflow_op_tag(op_descriptor) else {
+                continue;
+            };
+            let prior = &stmts[..i];
+            let Some(lhs_term) = operand_to_ir_term(lhs, prior, formals) else {
+                continue;
+            };
+            let Some(rhs_term) = operand_to_ir_term(rhs, prior, formals) else {
+                continue;
+            };
+            out.push(IrFormula::Atomic {
+                name: format!("no-overflow:{}", op_tag),
+                args: vec![lhs_term, rhs_term],
+            });
+        }
+    }
+}
+
+/// Map Charon's overflow op descriptor to a flat tag for the IR's
+/// predicate name. The descriptor shape is e.g. `{ "Mul": "Wrap" }`
+/// (Mul with wrap-on-overflow arithmetic). We flatten to
+/// `mul-wrap` / `add-wrap` / `sub-wrap` etc. so consumers can
+/// pattern-match on the predicate-name suffix.
+fn overflow_op_tag(descriptor: &Value) -> Option<String> {
+    let obj = descriptor.as_object()?;
+    let (op_name, mode_val) = obj.iter().next()?;
+    let mode = mode_val.as_str().unwrap_or("unknown");
+    Some(format!("{}-{}", op_name.to_lowercase(), mode.to_lowercase()))
 }
 
 /// Recursive collector. `prior` is the chain of statements the

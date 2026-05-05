@@ -346,6 +346,57 @@ mod tests {
     }
 
     #[test]
+    fn marriage_on_overflow_arithmetic_surfaces_mir_extras_in_merged() {
+        // The "MIR sees more" lane. `fn g(x: u32) -> u32 { x * 2 }`
+        // has no source-level preconditions — AST walk emits trivial-
+        // true pre. MIR inserts an overflow assert (CheckedMul +
+        // Assert on the overflow flag), so LLBC contributes a no-
+        // overflow predicate AST never saw.
+        //
+        // Agreement here is `Both`, not `LlbcExtra`, because the AST
+        // walk also derives `result = x * 2` from the trailing
+        // return expression — and the LLBC lift doesn't yet emit
+        // return-value derivations from MIR's tuple-projection +
+        // CheckedOp pattern (tracked separately under #383). On the
+        // pre side LLBC has more; on the post side AST has more.
+        //
+        // The OPERATIONAL claim — what the substrate sees — is that
+        // the merged contract carries BOTH layers' contributions.
+        // No information is lost in marriage.
+        let (ast, llbc) = build_layers("overflow.rs", "overflow.llbc", "g");
+        let married = marry(ast, llbc);
+
+        assert!(
+            matches!(
+                married.agreement,
+                LayerAgreement::LlbcExtra | LayerAgreement::Both
+            ),
+            "MIR contributes at least one atom AST didn't see; got {:?}",
+            married.agreement
+        );
+
+        // The MIR-only no-overflow atom is in the merged contract.
+        // This is the empirical "MIR sees more" demonstration —
+        // observable in the merged record, not asserted.
+        let merged_pre_str = serde_json::to_string(&married.merged.pre).unwrap();
+        assert!(
+            merged_pre_str.contains("no-overflow:mul-wrap"),
+            "merged pre carries the MIR-only no-overflow atom: {}",
+            merged_pre_str
+        );
+
+        // AST's `result = x*2` derivation also survives in merged.
+        // The marriage is symmetric: it doesn't drop AST's atoms in
+        // favor of LLBC's, or vice versa.
+        let merged_post_str = serde_json::to_string(&married.merged.post).unwrap();
+        assert!(
+            merged_post_str.contains("result"),
+            "merged post still carries AST's result-equation: {}",
+            merged_post_str
+        );
+    }
+
+    #[test]
     fn end_to_end_marriage_via_charon_runner() {
         // Full pipeline: write .rs → AST lift + Charon → LLBC lift →
         // marry → ONE married contract. No vendored fixture.
