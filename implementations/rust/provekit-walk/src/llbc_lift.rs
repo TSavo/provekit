@@ -152,6 +152,30 @@ pub fn lift_llbc_function_with_registry(
             loop_cid: lp.loop_cid,
         });
     }
+    // Try-branch (`?` operator) detection: each Switch::Match-after-
+    // Try::branch shape becomes Effect::EarlyReturn. Same opacity model
+    // as loops; substrate refuses composition until a TryBranchMemento
+    // supplies the success/failure-path contract pair.
+    for tr in crate::llbc_try::extract_try_branches(&stmts, fun_decls) {
+        effects.add(Effect::EarlyReturn {
+            try_cid: tr.try_cid,
+        });
+    }
+    // Closure-capture detection: each Aggregate(Adt) where the type is
+    // a synthetic closure type (path ends in Ident("closure")) becomes
+    // Effect::ClosureCapture. The closure body is a separate fun_decl
+    // (lifted normally); this effect records the link to the body and
+    // the count of captured operands.
+    if let Some(td) = type_decls {
+        for cap in
+            crate::llbc_closures::extract_closure_captures(&stmts, Some(td), fun_decls)
+        {
+            effects.add(Effect::ClosureCapture {
+                body_fn_cid: cap.body_fn_cid,
+                n_captures: cap.n_captures,
+            });
+        }
+    }
     if let Some(fd) = fun_decls {
         collect_call_contributions(&stmts, &formals, &named_locals, fd, registry, &mut pre_contribs, &mut effects);
     }

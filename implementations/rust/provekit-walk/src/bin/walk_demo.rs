@@ -230,6 +230,8 @@ fn effect_summary(effects: &[provekit_walk::contract::Effect]) -> String {
             Panics => "panics".to_string(),
             UnresolvedCall { name } => format!("unresolved({})", name),
             OpaqueLoop { loop_cid } => format!("opaque_loop({})", &loop_cid[..16.min(loop_cid.len())]),
+            EarlyReturn { try_cid } => format!("early_return({})", &try_cid[..16.min(try_cid.len())]),
+            ClosureCapture { body_fn_cid, n_captures } => format!("closure_capture({},{})", &body_fn_cid[..16.min(body_fn_cid.len())], n_captures),
         })
         .collect();
     format!("[{}]", parts.join(", "))

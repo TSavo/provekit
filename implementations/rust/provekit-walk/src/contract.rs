@@ -83,6 +83,31 @@ pub enum Effect {
     /// Per paper 07 §11 — loops are first-class deferred memento
     /// targets.
     OpaqueLoop { loop_cid: String },
+    /// Contains a `?` operator (Try-branch with early return). The
+    /// `try_cid` is the content hash of the Switch::Match block that
+    /// implements the Try-branch shape. A separate
+    /// `TryBranchMemento` (or specific Result/Option-shape spec)
+    /// supplies the success-path/failure-path contract pair. The
+    /// substrate refuses composition until that memento lands —
+    /// honest opacity rather than silent assumption that all `?`
+    /// callers handle the Err branch. Same shape of opacity as
+    /// OpaqueLoop.
+    EarlyReturn { try_cid: String },
+    /// Constructs a closure value. The closure body is itself a
+    /// regular fun_decl (Charon emits it as a Fn/FnMut/FnOnce trait
+    /// impl method) — its contract is lifted normally through the
+    /// usual pipeline. This effect records the link between the
+    /// CAPTURING site (this function) and the body fn: when the
+    /// closure is later called, the call composes against the body
+    /// contract. The substrate uses this effect to recognize that
+    /// composition through the call is mediated by the captured
+    /// environment. `body_fn_cid` is the body fun_decl's content_cid
+    /// once it's lifted; `n_captures` is the count of captured
+    /// values bundled at this site.
+    ClosureCapture {
+        body_fn_cid: String,
+        n_captures: usize,
+    },
 }
 
 impl Effect {
@@ -107,6 +132,18 @@ impl Effect {
                 ("kind", Value::string("opaque_loop")),
                 ("loopCid", Value::string(loop_cid.clone())),
             ]),
+            Effect::EarlyReturn { try_cid } => Value::object([
+                ("kind", Value::string("early_return")),
+                ("tryCid", Value::string(try_cid.clone())),
+            ]),
+            Effect::ClosureCapture {
+                body_fn_cid,
+                n_captures,
+            } => Value::object([
+                ("kind", Value::string("closure_capture")),
+                ("bodyFnCid", Value::string(body_fn_cid.clone())),
+                ("nCaptures", Value::integer(*n_captures as i64)),
+            ]),
         }
     }
 
@@ -120,6 +157,11 @@ impl Effect {
             Effect::Panics => "4:panics".to_string(),
             Effect::UnresolvedCall { name } => format!("5:unresolved:{}", name),
             Effect::OpaqueLoop { loop_cid } => format!("6:opaque_loop:{}", loop_cid),
+            Effect::EarlyReturn { try_cid } => format!("7:early_return:{}", try_cid),
+            Effect::ClosureCapture {
+                body_fn_cid,
+                n_captures,
+            } => format!("8:closure_capture:{}:{}", body_fn_cid, n_captures),
         }
     }
 }
