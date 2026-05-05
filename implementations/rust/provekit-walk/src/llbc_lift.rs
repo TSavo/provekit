@@ -2700,6 +2700,8 @@ mod tests {
             "bump must carry AtomicAccess(AtomicU32, Rmw); got {:?}",
             contract.effects.effects
         );
+    }
+
     // ---- IEEE-754 float lift (#385) ----
 
     #[test]

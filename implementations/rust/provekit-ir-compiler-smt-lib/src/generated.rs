@@ -11,8 +11,8 @@ pub fn emit_term(term: &Term) -> String {
         Term::Const { value, sort, .. } => {
             let sort_name = match sort {
                 Sort::Primitive { name } => name.as_str(),
-                Sort::Function { .. } | Sort::Dependent { .. } => {
-                    panic!("smt-lib: Const cannot carry a Function/Dependent sort in pure SMT-LIB v2.6");
+                Sort::Function { .. } | Sort::Dependent { .. } | Sort::Float { .. } => {
+                    panic!("smt-lib: Const cannot carry a Function/Dependent/Float sort in pure SMT-LIB v2.6");
                 }
             };
             return emit_const_value(value, sort_name);
@@ -109,6 +109,9 @@ fn emit_sort(sort: &Sort) -> String {
         }
         Sort::Dependent { .. } => {
             panic!("smt-lib emit_sort: DependentSort unsupported in pure SMT-LIB v2.6");
+        }
+        Sort::Float { .. } => {
+            panic!("smt-lib emit_sort: FloatSort unsupported in pure SMT-LIB v2.6 (use FP extensions)");
         }
     }
 }

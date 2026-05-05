@@ -36,9 +36,9 @@ impl From<ir::Sort> for Sort {
             // not yet model Function/Dependent. Deferred to #331 (Coq) /
             // #332 (SMT-LIB) along with the rest of the v1.5.0 grammar
             // grow downstream of the canonical `provekit-ir-types::Sort`.
-            ir::Sort::Function { .. } | ir::Sort::Dependent { .. } => {
+            ir::Sort::Function { .. } | ir::Sort::Dependent { .. } | ir::Sort::Float { .. } => {
                 unimplemented!(
-                    "FunctionSort/DependentSort not supported in symbolic Sort wrapper: \
+                    "FunctionSort/DependentSort/FloatSort not supported in symbolic Sort wrapper: \
                      deferred to #331 (Coq) / #332 (SMT-LIB)"
                 )
             }
