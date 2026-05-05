@@ -177,12 +177,34 @@ pub enum Value {
 
 pub type ProofType = String;
 
+// NOTE: The `Sort` enum below has been MANUALLY extended beyond the
+// codegen output to add Function + Dependent variants per the v1.5.0
+// grammar grow (issue #330, rust gap from PR #361). The codegen
+// (`provekit-ir-codegen`) currently only emits the Primitive arm even
+// though the CDDL spec defines a 6-way union. If you regenerate this
+// file via `cargo run -p provekit-ir-codegen`, you WILL clobber the
+// manual extension. Re-apply it from this comment block down through
+// the closing `}` of the `Sort` enum.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Sort {
     #[serde(rename = "primitive")]
     Primitive {
         name: PrimitiveSortName,
+    },
+    #[serde(rename = "function")]
+    Function {
+        args: Vec<Sort>,
+        #[serde(rename = "return")]
+        ret: Box<Sort>,
+    },
+    #[serde(rename = "dependent")]
+    Dependent {
+        name: String,
+        #[serde(rename = "indexVar")]
+        index_var: String,
+        #[serde(rename = "indexSort")]
+        index_sort: Box<Sort>,
     },
 }
 
