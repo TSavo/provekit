@@ -15,8 +15,11 @@
 // into the proof.ir bundle pipeline and the resolve/index
 // substrate-verifier path with no further translation.
 
+use std::collections::HashMap;
+
 use provekit_claim_envelope::{
-    mint_contract, Authoring, ClaimEnvelopeError, MintContractArgs, MintedEnvelope,
+    contract_cid as kit_contract_cid, mint_contract, Authoring, ClaimEnvelopeError,
+    MintContractArgs, MintedEnvelope,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -38,6 +41,61 @@ pub fn wrap_function_contract(
 ) -> Result<MintedEnvelope, ClaimEnvelopeError> {
     let args = mint_args(contract, produced_at, signer_seed);
     mint_contract(&args)
+}
+
+/// Content-addressed envelope cache + mint counter. Per #368 AC #6:
+/// "Second invocation hits cache (no re-mint, demonstrated via
+/// mint-counter assertion)" — paper 07 §6's "compose for free,
+/// compress to nothing" empirically.
+///
+/// Lookups are by `contract_cid` (signer-independent). The cache
+/// returns the previously-minted MintedEnvelope unchanged on hit;
+/// callers receive the same `cid` and `canonical_bytes` they would
+/// have re-minted, but without paying the Ed25519 signing cost.
+#[derive(Debug, Default)]
+pub struct EnvelopeCache {
+    /// contract_cid → cached MintedEnvelope
+    by_contract: HashMap<String, MintedEnvelope>,
+    /// Number of times mint_contract was actually invoked.
+    pub mints: u64,
+    /// Number of times the cache served a previously-minted envelope.
+    pub hits: u64,
+}
+
+impl EnvelopeCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_contract.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_contract.is_empty()
+    }
+}
+
+/// Wrap a FunctionContractMemento with a content-addressed cache: if the
+/// signer-independent `contract_cid` has already been minted into this
+/// cache, return the cached envelope (incrementing `cache.hits`);
+/// otherwise mint, insert, and return (incrementing `cache.mints`).
+pub fn wrap_function_contract_cached(
+    contract: &FunctionContractMemento,
+    produced_at: &str,
+    signer_seed: &Ed25519Seed,
+    cache: &mut EnvelopeCache,
+) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    let args = mint_args(contract, produced_at, signer_seed);
+    let cid = kit_contract_cid(&args);
+    if let Some(env) = cache.by_contract.get(&cid) {
+        cache.hits += 1;
+        return Ok(env.clone());
+    }
+    let env = mint_contract(&args)?;
+    cache.mints += 1;
+    cache.by_contract.insert(cid, env.clone());
+    Ok(env)
 }
 
 /// Build the `MintContractArgs` from a contract memento. Exposed so
@@ -170,5 +228,81 @@ mod tests {
         let cid_via_args = kit_contract_cid(&args);
         let env = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).unwrap();
         assert_eq!(cid_via_args, env.contract_cid);
+    }
+
+    // ---- AC #6: mint-counter cache assertion ----
+
+    #[test]
+    fn cached_wrap_first_invocation_mints_second_hits() {
+        // Closes #368 AC #6: "Second invocation hits cache (no re-mint,
+        // demonstrated via mint-counter assertion)."
+        let c = fixture_contract("fn inc(x: i64) -> i64 { x + 1 }");
+        let mut cache = EnvelopeCache::new();
+        assert_eq!(cache.mints, 0);
+        assert_eq!(cache.hits, 0);
+
+        // First invocation: mints, cache becomes non-empty.
+        let env1 =
+            wrap_function_contract_cached(&c, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+                .unwrap();
+        assert_eq!(cache.mints, 1, "first call must mint");
+        assert_eq!(cache.hits, 0);
+        assert_eq!(cache.len(), 1);
+
+        // Second invocation on the SAME source: hits the cache, mint counter
+        // does not increment.
+        let env2 =
+            wrap_function_contract_cached(&c, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+                .unwrap();
+        assert_eq!(cache.mints, 1, "second call must NOT re-mint");
+        assert_eq!(cache.hits, 1, "second call must register a hit");
+        assert_eq!(env1.cid, env2.cid);
+        assert_eq!(env1.canonical_bytes, env2.canonical_bytes);
+        assert_eq!(env1.contract_cid, env2.contract_cid);
+    }
+
+    #[test]
+    fn cached_wrap_distinct_contracts_each_mint_once() {
+        // Two distinct contracts each get minted once; cache.mints == 2,
+        // hits == 0. Then re-querying both produces 2 hits.
+        let c1 = fixture_contract("fn one(x: i64) -> i64 { x + 1 }");
+        let c2 = fixture_contract("fn two(x: i64) -> i64 { x + 2 }");
+        let mut cache = EnvelopeCache::new();
+
+        wrap_function_contract_cached(&c1, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+            .unwrap();
+        wrap_function_contract_cached(&c2, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+            .unwrap();
+        assert_eq!(cache.mints, 2);
+        assert_eq!(cache.hits, 0);
+
+        wrap_function_contract_cached(&c1, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+            .unwrap();
+        wrap_function_contract_cached(&c2, "2026-05-05T00:00:00Z", &DEV_SIGNER_SEED, &mut cache)
+            .unwrap();
+        assert_eq!(cache.mints, 2, "no re-mint");
+        assert_eq!(cache.hits, 2);
+    }
+
+    #[test]
+    fn cached_wrap_signer_independent_lookup() {
+        // contract_cid is signer-independent. Caching by contract_cid
+        // means two signers minting the same logical contract still
+        // produce a cache hit on the second call.
+        let c = fixture_contract("fn add(x: i64) -> i64 { x + 5 }");
+        let seed_a: Ed25519Seed = [0x11; 32];
+        let seed_b: Ed25519Seed = [0x22; 32];
+        let mut cache = EnvelopeCache::new();
+
+        let env_a =
+            wrap_function_contract_cached(&c, "2026-05-05T00:00:00Z", &seed_a, &mut cache).unwrap();
+        // Signer B asks for the same logical contract: cache returns the
+        // first signer's envelope (CIDs are content-addressed; the cache
+        // is signer-independent).
+        let env_b =
+            wrap_function_contract_cached(&c, "2026-05-05T00:00:00Z", &seed_b, &mut cache).unwrap();
+        assert_eq!(cache.mints, 1, "signer-independent cache means one mint");
+        assert_eq!(cache.hits, 1);
+        assert_eq!(env_a.cid, env_b.cid);
     }
 }
