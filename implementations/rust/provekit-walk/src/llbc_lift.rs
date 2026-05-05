@@ -136,6 +136,12 @@ pub fn lift_llbc_function_with_registry(
     collect_if_panic_contributions(&[], &stmts, &formals, &named_locals, false, &mut pre_contribs);
     collect_assert_contributions(&stmts, &formals, &named_locals, &mut pre_contribs);
     let mut effects = detect_effects_llbc(&stmts, fun_decls, registry);
+    // Unsafe detection: Charon records `signature.is_unsafe` on the FunDecl
+    // JSON; the statement-level scan cannot see it, so we inject it here
+    // where we have the full LlbcFunction.
+    if f.is_unsafe() {
+        effects.add(Effect::Unsafe);
+    }
     if let Some(fd) = fun_decls {
         collect_call_contributions(&stmts, &formals, &named_locals, fd, registry, &mut pre_contribs, &mut effects);
     }
@@ -1839,4 +1845,27 @@ mod tests {
     //
     // The closure_capture.llbc fixture and closure_capture.rs source are
     // retained in tests/fixtures/ as reference material for a future commit.
+
+    // ---- Task A: Unsafe effect via signature.is_unsafe ----
+
+    #[test]
+    fn detect_effects_llbc_emits_unsafe_for_unsafe_fn() {
+        // `drop_in_place` in closure_capture.llbc is a compiler-generated
+        // intrinsic with `signature.is_unsafe: true`. Lifting it must
+        // emit Effect::Unsafe in the contract's effect set.
+        use crate::contract::Effect;
+        let krate =
+            LlbcCrate::from_path(fixture_path("closure_capture.llbc")).unwrap();
+        let f = krate.function_by_name("drop_in_place").unwrap();
+        assert!(
+            f.is_unsafe(),
+            "drop_in_place must have is_unsafe=true in the fixture"
+        );
+        let contract = lift_llbc_function(f, Some("closure_capture.rs")).unwrap();
+        assert!(
+            contract.effects.effects.contains(&Effect::Unsafe),
+            "unsafe fn must carry Effect::Unsafe; got {:?}",
+            contract.effects.effects
+        );
+    }
 }
