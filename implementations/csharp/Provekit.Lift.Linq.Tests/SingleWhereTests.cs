@@ -52,13 +52,15 @@ public class SingleWhereTests
         //   sort: Ref (universe of xs)
         //   formula: forall _x0:Ref. (_x0 > 0) ⇒ member(_x0, positives)
         //   contract: { name: "positives_where", outBinding: "positives" }
-        var sortRef = new KitSort("Ref");
+        // After v1.5 Sort became an abstract record with sealed sub-records;
+        // construct the Primitive variant directly instead of `new Sort(...)`.
+        var sortRef = new KitSort.Primitive("Ref");
         var pred = new KitAtomic(">", new KitTerm[]
         {
             new KitVar("_x0"),
             // The literal `0` carries its own sort (Int) regardless of
             // the universe sort the quantifier ranges over.
-            new KitConst(new KitConstVal.Int(0), new KitSort("Int")),
+            new KitConst(new KitConstVal.Int(0), KitSort.Int),
         });
         var memb = new KitAtomic("member", new KitTerm[]
         {
