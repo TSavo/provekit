@@ -166,21 +166,44 @@ pub fn detect_gaps(walks: &[CallsiteWalk], predicate: &str) -> Vec<Gap> {
 ///
 /// Drop shapes are kit-resident per §11. This enum is the entire Rust
 /// kit's drop-shape catalog for the "not_null" predicate family.
+///
+/// **MVP closure verification status:**
+/// - `Defensive`: VERIFIED. The emitted `if {var}.is_none() { panic!(...) }` is
+///   recognized by lift.rs's if-then-panic path, producing a Not formula over
+///   the is_none method call. The re-lift confirms the predicate is discharged.
+/// - `Recoverable`: SCAFFOLDING, NOT CLOSURE-VERIFIED. The `return Err(NullInput)`
+///   body is not a panic; lift.rs's if-then-panic path does not recognize it.
+///   The lifter produces no guard-shaped precondition for this template.
+///   Also: `NullInput` is not defined in the caller's scope.
+/// - `EarlyReturn`: SCAFFOLDING, NOT CLOSURE-VERIFIED. Same as Recoverable.
+///   `return Default::default()` is not a panic; lifter does not recognize it.
+///   Additionally requires the return type to implement `Default`.
+/// - `Expect`: SCAFFOLDING, NOT CLOSURE-VERIFIED. `let x = x.expect(...)` is a
+///   let-binding, not an if-then-panic. The walker substitutes x -> x.expect(...),
+///   leaving the not_null predicate still present in the entry WP after re-lift.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropTemplate {
     /// Defensive: panic on violation. Surviving branch: not_null(x).
     /// Substrate edge minted: assert(x.is_some()) -> not_null(x).
     /// Shape: `if {var}.is_none() { panic!("not_null: {var} must be Some"); }`
+    /// **Closure-verified for the MVP.**
     Defensive,
     /// Recoverable guard: if-let with early return. Surviving branch: not_null(x).
     /// Shape: `if {var}.is_none() { return Err(NullInput); }`
     /// Caller now handles Err. Used when the caller has a Result return type.
+    /// **SCAFFOLDING -- not closure-verified. Lift.rs does not recognize non-panic
+    /// early-return bodies as precondition contributors. Do not use until the
+    /// lifter is extended for return-value early-exit patterns.**
     Recoverable,
     /// Early-return shape without if-let sugar.
     /// Shape: `if {var}.is_none() { return Default::default(); }`
+    /// **SCAFFOLDING -- not closure-verified. Same limitation as Recoverable.**
     EarlyReturn,
     /// Defensive with documented panic message.
     /// Shape: `let {var} = {var}.expect("invariant: caller must supply non-null {var}");`
+    /// **SCAFFOLDING -- not closure-verified. The let-binding is not recognized by
+    /// lift.rs's if-then-panic path. The walker substitutes x -> x.expect(...),
+    /// leaving the predicate undischarged in the entry WP.**
     Expect,
 }
 
@@ -240,15 +263,18 @@ impl DropTemplate {
 /// For the MVP launch corpus it is hardcoded -- empirical question
 /// resolved after operating at scale.
 ///
-/// Returns the full family for known predicates, empty slice for unknown.
+/// **MVP policy**: only `Defensive` is returned for "not_null" because it
+/// is the only template whose closure is verified by the current lifter
+/// (lift.rs recognizes if-then-panic bodies). The other three variants
+/// (`Recoverable`, `EarlyReturn`, `Expect`) are scaffolding -- their shapes
+/// exist in the enum for future extension but are not closure-verified.
+/// They will be added to this table when the lifter is extended to
+/// recognize their respective patterns.
+///
+/// Returns the verified template slice for known predicates, empty for unknown.
 pub fn templates_for(predicate: &str) -> &'static [DropTemplate] {
     match predicate {
-        "not_null" => &[
-            DropTemplate::Defensive,
-            DropTemplate::Recoverable,
-            DropTemplate::EarlyReturn,
-            DropTemplate::Expect,
-        ],
+        "not_null" => &[DropTemplate::Defensive],
         _ => &[],
     }
 }
@@ -326,36 +352,74 @@ pub fn emit_drop(
 
 // ---- Re-lift verification ----
 
+/// Structural helper: returns true if `formula` contains a `Not` node whose
+/// single operand is an `Atomic { name: "is_none" | "is_some", args }` where
+/// `args` contains a `Var { name: var_name }`.
+///
+/// This is the exact shape that lift.rs produces for the if-then-panic pattern:
+///   `if x.is_none() { panic!(...) }` => `Not([Atomic("is_none", [Var("x")])])`
+///
+/// We check this structurally rather than via substring search on serialized JSON
+/// to avoid false positives from other uses of "is_none" / "is_some" appearing
+/// as string literals, variable names, or comments in the source.
+fn formula_contains_guard_for(formula: &IrFormula, var_name: &str) -> bool {
+    match formula {
+        IrFormula::Not { operands } => {
+            // The canonical lift shape is Not with a single operand.
+            if operands.len() == 1 {
+                if let IrFormula::Atomic { name, args } = &operands[0] {
+                    let is_guard = matches!(name.as_str(), "is_none" | "is_some");
+                    let has_var = args.iter().any(|t| match t {
+                        IrTerm::Var { name } => name == var_name,
+                        _ => false,
+                    });
+                    if is_guard && has_var {
+                        return true;
+                    }
+                }
+            }
+            // Recurse into all Not operands in case the formula is nested.
+            operands.iter().any(|o| formula_contains_guard_for(o, var_name))
+        }
+        IrFormula::Atomic { .. } => false,
+        IrFormula::And { operands }
+        | IrFormula::Or { operands }
+        | IrFormula::Implies { operands } => {
+            operands.iter().any(|o| formula_contains_guard_for(o, var_name))
+        }
+        IrFormula::Forall { body, .. } | IrFormula::Exists { body, .. } => {
+            formula_contains_guard_for(body, var_name)
+        }
+        IrFormula::Choice { body, .. } => formula_contains_guard_for(body, var_name),
+    }
+}
+
 /// Verify that the dropper's emission closes the gap.
 ///
 /// Closure criterion: after emitting the guard, the re-lift of the modified
 /// source must show that the CALLER function's lifted precondition contains
-/// a guard that discharges the required predicate. Specifically:
+/// a structurally discharging formula for the required predicate.
 ///
 /// The lift.rs lifter reads the modified caller body and recognizes the
 /// emitted `if {var}.is_none() { panic!(...) }` as a precondition
-/// contributor via the if-then-panic pattern. This produces a formula of
-/// the form `!is_none({var})` in the caller's lifted precondition.
+/// contributor via the if-then-panic pattern. This produces:
+///   `Not { operands: [Atomic { name: "is_none", args: [Var { name: "x" }] }] }`
+/// in the caller's lifted precondition.
 ///
-/// The substrate then maps `!is_none(x)` to `not_null(x)` via the cached
-/// edge in the foundation catalog. The DAG closes because the caller's
-/// lifted precondition now establishes the condition the substrate uses
-/// to discharge `not_null`.
+/// Three structural closure criteria (any one suffices):
 ///
-/// For the MVP verification, we check that the caller's lifted precondition
-/// (via `lift_function_precondition`) contains either:
-/// (a) a formula referencing the variable with a guard shape (is_none / is_some
-///     method call style, which the lifter translates via if-then-panic), OR
-/// (b) the predicate is absent from the walker's entry WP entirely (fully
-///     discharged by static analysis), OR
-/// (c) the walker's entry WP is of the form `premise -> predicate` (the
-///     if-condition from the emitted guard became a premise in the walk).
+/// (a) The caller's lifted precondition (from `lift_function_precondition`)
+///     contains a `Not` formula whose single operand is `Atomic { name: "is_none"
+///     | "is_some" }` with a `Var` argument matching the gap variable. This is
+///     the exact shape the Defensive template's if-then-panic produces.
 ///
-/// This function implements check (b) and (c). Check (a) requires
-/// lift_function_precondition for the caller, which is the authoritative
-/// source of truth.
+/// (b) The gap predicate is absent from the walker's entry WP after re-walking
+///     the modified source.
 ///
-/// Returns `true` if the gap is closed.
+/// (c) The walker's entry WP is `Implies { premise, conclusion }` where the
+///     conclusion still contains the predicate but the premise encodes the guard.
+///
+/// Returns `true` if the gap is closed by any criterion.
 pub fn verify_closure(
     modified_source: &str,
     gap: &Gap,
@@ -380,25 +444,18 @@ pub fn verify_closure(
         None => return false,
     };
 
-    // Primary check: the caller's lifted precondition (from lift.rs) must
-    // now contain a guard-shaped formula. The if-then-panic the dropper
-    // emitted is read by lift.rs's if-then-panic recognizer, producing
-    // `!is_none(x)` (encoded as a negated method-call condition). This
-    // appears in the lifted precondition, confirming the DAG closes.
+    // Criterion (a): structural scan of the caller's lifted precondition.
+    //
+    // The Defensive template emits `if {var}.is_none() { panic!(...) }`.
+    // Lift.rs's if-then-panic path lifts this to:
+    //   Not { operands: [Atomic { name: "is_none", args: [Var { name: var }] }] }
+    // We check for that exact structure -- NOT a substring match on JSON.
     let caller_pre = lift_function_precondition(&caller_fn);
-    let caller_pre_json = serde_json::to_string(caller_pre.as_formula()).unwrap_or_default();
-    // The if-then-panic emitted uses "is_none" which, when lifted via the
-    // if-then-panic path, produces a Not formula referencing the condition.
-    // The serialized form will contain "is_none" from the method-call lift.
-    // Alternatively, for the Expect template (let x = x.expect(...)) the
-    // lifter sees a plain let-binding and the precondition stays as-is; in
-    // that case we fall through to the walk-based check.
-    if caller_pre_json.contains("is_none") || caller_pre_json.contains("is_some") {
+    if formula_contains_guard_for(caller_pre.as_formula(), &gap.var_name) {
         return true;
     }
 
-    // Secondary check: the walker's entry WP is either wrapped in Implies
-    // (guard condition became a premise) or the predicate is absent entirely.
+    // Criteria (b) and (c): re-walk the modified source and inspect entry WP.
     let walks = walk_callsites_to_entry(
         &caller_fn,
         &gap.callee_name,
@@ -409,7 +466,9 @@ pub fn verify_closure(
     for walk in &walks {
         let entry_wp = walk.entry_wp();
         let formula = entry_wp.as_formula();
-        // Check: predicate wrapped in Implies -> guard is a premise.
+
+        // Criterion (c): predicate is in conclusion of Implies.
+        // The guard became a premise on the surviving branch.
         if let IrFormula::Implies { operands } = formula {
             if operands.len() >= 2
                 && formula_contains_predicate(&operands[operands.len() - 1], &gap.predicate)
@@ -417,7 +476,8 @@ pub fn verify_closure(
                 return true;
             }
         }
-        // Check: predicate no longer appears at all -> fully discharged.
+
+        // Criterion (b): predicate absent entirely from entry WP.
         if !formula_contains_predicate(formula, &gap.predicate) {
             return true;
         }
@@ -588,13 +648,14 @@ fn caller(x: u32) { f(x); }
     // ---- Phase 2: cached-witness lookup tests ----
 
     #[test]
-    fn templates_for_not_null_returns_all_four() {
+    fn templates_for_not_null_returns_defensive_only() {
+        // Only the Defensive template is closure-verified for the MVP.
+        // Recoverable, EarlyReturn, and Expect are scaffolding variants in
+        // the enum but are not returned here until the lifter is extended
+        // to recognize their respective patterns as precondition contributors.
         let templates = templates_for("not_null");
-        assert_eq!(templates.len(), 4, "four template families for not_null");
+        assert_eq!(templates.len(), 1, "one verified template for not_null (MVP)");
         assert!(templates.contains(&DropTemplate::Defensive));
-        assert!(templates.contains(&DropTemplate::Recoverable));
-        assert!(templates.contains(&DropTemplate::EarlyReturn));
-        assert!(templates.contains(&DropTemplate::Expect));
     }
 
     #[test]
