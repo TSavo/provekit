@@ -3,7 +3,7 @@
 
 namespace ProvekIt\Ir;
 
-enum SortKind: string { case Primitive = 'primitive'; case Function = 'function'; case Dependent = 'dependent'; }
+enum SortKind: string { case Primitive = 'primitive'; case Function = 'function'; case Dependent = 'dependent'; case Region = 'region'; }
 
 abstract class Sort implements \JsonSerializable {
     abstract public function jsonSerialize(): array;
@@ -11,6 +11,7 @@ abstract class Sort implements \JsonSerializable {
     public static function Primitive(string $name): self    { return new PrimitiveSort($name); }
     public static function FuncOf(array $args, Sort $ret): self { return new FunctionSort($args, $ret); }
     public static function Dependent(string $name, string $indexVar, Sort $indexSort): self { return new DependentSort($name, $indexVar, $indexSort); }
+    public static function Region(string $name): self { return new RegionSort($name); }
 
     public static function Bool():   self { return new PrimitiveSort('Bool'); }
     public static function Int():    self { return new PrimitiveSort('Int'); }
@@ -43,6 +44,15 @@ class DependentSort extends Sort {
     ) {}
     public function jsonSerialize(): array {
         return ['kind' => 'dependent', 'name' => $this->name, 'indexVar' => $this->indexVar, 'indexSort' => $this->indexSort->jsonSerialize()];
+    }
+}
+
+class RegionSort extends Sort {
+    public function __construct(
+        public readonly string $name,
+    ) {}
+    public function jsonSerialize(): array {
+        return ['kind' => 'region', 'name' => $this->name];
     }
 }
 

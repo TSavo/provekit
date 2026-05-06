@@ -20,6 +20,7 @@ OUT_BIN="$OUT_DIR/provekit-lsp-cpp"
 
 if [ "${1:-}" = "--out" ] && [ -n "${2:-}" ]; then
     OUT_BIN="$2"
+    mkdir -p "$(dirname "$OUT_BIN")"
 fi
 
 CXX="${CXX:-clang++}"

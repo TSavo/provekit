@@ -685,4 +685,38 @@ mod tests {
             &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c"]
         );
     }
+
+    #[test]
+    fn declared_at_constants_are_pinned_iso8601() {
+        // Verify that all declaredAt constants are static ISO-8601 strings,
+        // never a live timestamp from SystemTime::now() or chrono::Utc::now().
+        // Adding a new version must pin the timestamp as a const -- not call
+        // into the clock at runtime -- to keep foundation-keygen output
+        // byte-identical across runs (closes item 6 of #300).
+        let pinned = [
+            V1_1_0_DECLARED_AT,
+            V1_2_0_DECLARED_AT,
+            V1_3_0_DECLARED_AT,
+            V1_3_1_DECLARED_AT,
+            V1_4_0_DECLARED_AT,
+            V1_4_1_DECLARED_AT,
+            V1_5_0_DECLARED_AT,
+            V1_6_0_DECLARED_AT,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        ];
+        for ts in &pinned {
+            // Must match ISO-8601 UTC shape: YYYY-MM-DDTHH:MM:SSZ (exactly 20 bytes)
+            let ts_bytes = ts.as_bytes();
+            assert!(
+                ts.len() == 20
+                    && ts.ends_with('Z')
+                    && ts_bytes[4] == b'-'
+                    && ts_bytes[7] == b'-'
+                    && ts_bytes[10] == b'T'
+                    && ts_bytes[13] == b':'
+                    && ts_bytes[16] == b':',
+                "declaredAt constant must be exactly YYYY-MM-DDTHH:MM:SSZ (20 bytes), got: {ts}"
+            );
+        }
+    }
 }

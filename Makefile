@@ -8,9 +8,9 @@
 #
 # Mainline targets:
 #   make help        — print this help
-#   make ci          — full conformance gate (catalog + protocol + 9 mints + tests)
-#   make conformance — catalog + protocol + 9 mint CIDs + self-contract tests
-#   make all-mint    — run all 9 mint commands; print CIDs (Linux/CI subset)
+#   make ci          — full conformance gate (catalog + protocol + 10 mints + tests)
+#   make conformance — catalog + protocol + 10 mint CIDs + self-contract tests
+#   make all-mint    — run all 10 mint commands; print CIDs (Linux/CI subset)
 #   make test-all    — run every language-native test suite (Linux/CI subset)
 #
 # Per-language targets:
@@ -64,9 +64,9 @@ help:
 	@echo "ProvekIt — top-level orchestrator"
 	@echo ""
 	@echo "Mainline:"
-	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 9 peer langs]"
-	@echo "  make conformance    catalog + protocol + 9 mint CIDs + self-contract tests"
-	@echo "  make all-mint       9 mint commands (Swift excluded: macOS-only, use mint-swift)"
+	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 10 peer langs]"
+	@echo "  make conformance    catalog + protocol + 10 mint CIDs + self-contract tests"
+	@echo "  make all-mint       10 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
@@ -337,14 +337,15 @@ mint-php: build-rust
 		(echo "FAIL: php self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=php" && exit 1)
 
-# NOTE: all-mint runs 9 of 12 kits (Linux/CI subset).
+# NOTE: all-mint runs 10 of 12 kits (Linux/CI subset).
 # Excluded: swift (macOS-only; use mint-swift on macOS), ruby (attestation
-# exists but CI toolchain integration pending, #234), php (pending feat/php-kit).
+# exists but CI toolchain integration pending, #234).
 # zig and c were added after their Side A merges (#283, #272) and are included.
+# php was added after its self-contracts attestation was signed (#393).
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-zig
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-zig mint-php
 	@echo ""
-	@echo "==== all 9 core self-contract CIDs match pinned values ===="
+	@echo "==== all 10 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
@@ -354,6 +355,7 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python m
 	@printf "  %-8s  %s\n" "python" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/python.json)"
 	@printf "  %-8s  %s\n" "c"      "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/c.json)"
 	@printf "  %-8s  %s\n" "zig"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/zig.json)"
+	@printf "  %-8s  %s\n" "php"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/php.json)"
 
 # --- Per-kit prove (C1-C8 conformance gate) ----------------------------------
 #
@@ -450,7 +452,7 @@ protocol-verify: build-rust
 	$(PROVEKIT) verify-protocol --signed
 
 .PHONY: conformance
-conformance: catalog-verify protocol-verify all-mint test-self-contracts conformance-sort-fixtures
+conformance: catalog-verify protocol-verify all-mint test-self-contracts conformance-region-fixture
 	@echo ""
 	@echo "==== conformance: PASS ===="
 
@@ -480,12 +482,16 @@ test-self-contracts-rust:
 		-p provekit-self-contracts --lib
 
 # --- Cross-kit conformance fixtures ------------------------------------------
+#
+# Byte-pinned fixtures that every kit must produce the same CID for.
+# Currently only the Rust kit has Sort::Region support; other kits
+# gracefully skip until their per-kit regen lands.
 
-.PHONY: conformance-sort-fixtures
-conformance-sort-fixtures:
-	@echo "=== FunctionSort byte-pinned fixture ==="
+.PHONY: conformance-region-fixture
+conformance-region-fixture:
+	@echo "=== Region+Dependent byte-pinned fixture ==="
 	@cargo test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-canonicalizer --test conformance_function_sort
+		-p provekit-canonicalizer --test conformance_region_dependent
 
 # --- Per-language test suites ------------------------------------------------
 

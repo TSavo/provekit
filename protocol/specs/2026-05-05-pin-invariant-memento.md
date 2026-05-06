@@ -117,7 +117,7 @@ The normative key order is declared in §1.1, NOT deferred to JCS lex-sort. This
 
 When the substrate verifier calls `check_opacity_effects(pool)` on a contract carrying `Effect::PinnedReference { target }`:
 
-1. The pool is queried via `lookup_pin_invariant(function_cid, target)` where `function_cid` is the enclosing contract's CID.
+1. The pool is queried via `lookup_pin_invariant(function_cid, target)` where `function_cid` is the enclosing contract's CID. The composite index key MUST be the byte string `functionCid\x00target` where `\x00` is the ASCII NUL separator. Conformant pool implementations MUST use this exact byte sequence as the lookup key to ensure federation: two parties holding the same memento bytes must agree on lookup keys regardless of language or pool implementation.
 2. If the pool returns `Some(PinInvariantMementoView { .. })` AND `view.invariant` is non-empty: the effect is discharged. Composition proceeds.
 3. If the pool returns `None` OR the view's `invariant` is empty: the effect is undischarged. Composition returns `Err(OpacityError::PinInvariantNotDischarged { target })`.
 

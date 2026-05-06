@@ -50,8 +50,12 @@ struct DependentSort {
   std::shared_ptr<Sort> indexSort;
 };
 
+struct RegionSort {
+  std::string name;
+};
+
 struct Sort {
-  std::variant<PrimitiveSort, FunctionSort, DependentSort> v;
+  std::variant<PrimitiveSort, FunctionSort, DependentSort, RegionSort> v;
 };
 
 inline std::shared_ptr<Sort> make_primitive_sort(std::string name) {
@@ -538,6 +542,10 @@ inline void write_sort(std::ostringstream& out, const Sort& s) {
       write_string(out, v.indexVar);
       out << ",\"indexSort\":";
       write_sort(out, *v.indexSort);
+      out << "}";
+    } else if constexpr (std::is_same_v<T, RegionSort>) {
+      out << "{\"kind\":\"region\",\"name\":";
+      write_string(out, v.name);
       out << "}";
     }
   }, s.v);
