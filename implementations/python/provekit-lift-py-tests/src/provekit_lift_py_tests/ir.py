@@ -36,13 +36,20 @@ class FunctionSort:
 
 
 @dataclass(frozen=True)
+
+class RegionSort:
+    def __init__(self, name: str):
+        self.name = name
+    def kind(self) -> str:
+        return "region"
+
 class DependentSort:
     name: str
     index_var: str
     index_sort: "Sort"
 
 
-Sort = Union[PrimitiveSort, FunctionSort, DependentSort]
+Sort = Union[PrimitiveSort, FunctionSort, DependentSort, RegionSort]
 
 
 def Int() -> Sort:

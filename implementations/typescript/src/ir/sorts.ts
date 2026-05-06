@@ -59,3 +59,8 @@ export function TupleOf(...elements: Sort[]): Sort {
 export function FuncOf(args: Sort[], ret: Sort): Sort {
   return { kind: "function", args, return: ret };
 }
+
+/** Construct a region sort for lifetime parameter tracking. */
+export function RegionOf(name: string): Sort {
+  return { kind: "region", name };
+}
