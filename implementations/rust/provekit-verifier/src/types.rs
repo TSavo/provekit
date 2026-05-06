@@ -362,6 +362,17 @@ impl MementoPool {
                     }
                 }
             }
+            Some("pin-invariant") => {
+                // header.functionCid + header.pinnedTarget -> composite key
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    let function_cid = memento_body_field(env, "functionCid").and_then(|v| v.as_str());
+                    let target = memento_body_field(env, "pinnedTarget").and_then(|v| v.as_str());
+                    if let (Some(fc), Some(t)) = (function_cid, target) {
+                        let key = format!("{}\x00{}", fc, t);
+                        self.pin_invariant_to_memento.entry(key).or_insert(memento_cid.clone());
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -500,7 +511,7 @@ impl OpacityMementoLookup for MementoPool {
         false
     }
     fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView> {
-        let key = format!("{}:{}", function_cid, target);
+        let key = format!("{}\x00{}", function_cid, target);
         let memento_cid = self.pin_invariant_to_memento.get(&key)?;
         let memento = self.mementos.get(memento_cid)?;
         let header = memento.get("header")?;
