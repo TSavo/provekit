@@ -217,8 +217,9 @@ jobs:
           set -euxo pipefail
           ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
           for attempt in 1 2 3 4 5; do
+            echo "Downloading Zig 0.16.0 (attempt ${attempt}/5)"
             rm -f /tmp/zig.tar.xz
-            if curl -fsSL --connect-timeout 30 "$ZIG_URL" -o /tmp/zig.tar.xz; then
+            if curl -fsSL --connect-timeout 30 --max-time 180 --speed-limit 102400 --speed-time 60 "$ZIG_URL" -o /tmp/zig.tar.xz; then
               break
             fi
             if [ "$attempt" -eq 5 ]; then
@@ -482,8 +483,9 @@ jobs:
           set -euxo pipefail
           ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
           for attempt in 1 2 3 4 5; do
+            echo "Downloading Zig 0.16.0 (attempt ${attempt}/5)"
             rm -f /tmp/zig.tar.xz
-            if curl -fsSL --connect-timeout 30 "$ZIG_URL" -o /tmp/zig.tar.xz; then
+            if curl -fsSL --connect-timeout 30 --max-time 180 --speed-limit 102400 --speed-time 60 "$ZIG_URL" -o /tmp/zig.tar.xz; then
               break
             fi
             if [ "$attempt" -eq 5 ]; then
