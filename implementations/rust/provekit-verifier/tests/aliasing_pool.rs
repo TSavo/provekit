@@ -16,13 +16,15 @@ fn blake3_cid(_data: &str) -> String {
 fn make_aliasing_memento(formal_a: &str, formal_b: &str, status: &str) -> serde_json::Value {
     use serde_json::json;
     json!({
-        "header": {
-            "kind": "aliasing-memento",
-            "formal_a": formal_a,
-            "formal_b": formal_b,
-        },
-        "metadata": {
-            "status": status,
+        "envelope": {
+            "header": {
+                "kind": "aliasing-memento",
+                "formal_a": formal_a,
+                "formal_b": formal_b,
+            },
+            "metadata": {
+                "status": status,
+            }
         }
     })
 }
