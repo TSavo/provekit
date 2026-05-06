@@ -1,0 +1,7 @@
+{
+  "kind": "function",
+  "args": [
+    {"kind": "primitive", "name": "Int"}
+  ],
+  "return": {"kind": "primitive", "name": "Bool"}
+}
