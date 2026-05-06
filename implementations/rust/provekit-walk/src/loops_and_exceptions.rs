@@ -48,7 +48,7 @@ use provekit_ir_types::{IrFormula, IrTerm};
 use syn::{Block, Expr, ExprForLoop, ExprLoop, ExprWhile, ItemFn, Pat, Stmt};
 
 use crate::canonical::{cid_of_value, formula_to_canonical, jcs_bytes_of_value};
-use crate::lift::lift_expr_to_term;
+use crate::lift::{lift_expr_to_term, lift_predicate};
 use crate::wp::Wp;
 
 // ---- Loop memento ----
@@ -109,15 +109,18 @@ fn visit_expr_for_loops(
     out: &mut Vec<LoopMemento>,
 ) {
     match expr {
-        Expr::While(ExprWhile { body, .. }) => {
+        Expr::While(ExprWhile { body, cond, .. }) => {
+            // Check for explicit invariant: `assert!(cond)` as first statement before loop
+            let invariant = find_explicit_invariant(body.stmts.first());
             let mutated = collect_mutated_vars(body);
+            let reason = if invariant.is_some() { "explicit_invariant" } else { "predicate_quantification" };
             out.push(mint_loop_memento(
                 fn_name,
                 source_index,
                 LoopKind::While,
                 pre_loop,
                 mutated,
-                "predicate_quantification",
+                reason,
             ));
             for s in &body.stmts {
                 if let Stmt::Expr(e, _) = s {
@@ -225,6 +228,29 @@ fn collect_mutated_in_expr(expr: &Expr, names: &mut Vec<String>) {
         }
         _ => {}
     }
+}
+
+/// Look at the first statement in a block to see if it's an explicit invariant.
+/// Returns the invariant formula if the first statement is `assert!(cond)`.
+fn find_explicit_invariant(stmt: Option<&Stmt>) -> Option<IrFormula> {
+    let stmt = stmt?;
+    if let Stmt::Item(_) = stmt {
+        return None;
+    }
+    if let Stmt::Expr(expr, _) = stmt {
+        if let Expr::Macro(mac) = expr {
+            let seg = mac.mac.path.segments.last()?;
+            if seg.ident.to_string() == "assert" {
+                let parsed = syn::parse2::<Expr>(mac.mac.tokens.clone()).ok()?;
+                if let Expr::Tuple(t) = parsed {
+                    let first = t.elems.first()?;
+                    return lift_predicate(first);
+                }
+                return lift_predicate(&parsed);
+            }
+        }
+    }
+    None
 }
 
 fn mint_loop_memento(
