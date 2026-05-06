@@ -83,3 +83,34 @@ LLM candidate -> lift -> verify closure -> FixReceipt
 ```
 
 Without a fix receipt, the model produced a candidate. With a fix receipt, the candidate has been connected to a witnessed obligation closure.
+
+## Section 5. Git Commit Binding
+
+A commit that claims to fix, preserve, or migrate behavior SHOULD carry a `.proof` root.
+
+The useful shape is:
+
+```text
+git commit object
+tree CID
+parent commit CID(s)
+diff/patch CID
+claimed obligation set CID
+fix receipt root(s)
+regression/preservation witness root(s)
+  -> commit proof root
+```
+
+The commit message may say "fix null boundary." The `.proof` root says which edge was closed, which bytes changed, which post-lift artifact closed it, and which policy admitted the closure.
+
+This makes generated commits accountable. An LLM may open a commit, but a protected branch can require the commit's `.proof` root to contain nontrivial fix receipts for every claimed semantic repair. The review question becomes:
+
+```text
+does this commit's proof root witness the behavioral claim it makes?
+```
+
+not:
+
+```text
+does this diff look like it probably fixes the bug?
+```
