@@ -132,6 +132,13 @@ pub enum Effect {
         kind: AtomicKind,
         ordering: Option<String>,
     },
+    /// Calls `drop_in_place`. Drops can run user-defined `Drop::drop`,
+    /// allocate, panic, or perform arbitrary side effects. The
+    /// substrate refuses to compose a contract carrying this effect
+    /// without an explicit discharge memento (or the callee's own
+    /// lifted contract, once the drop function body is liftable).
+    /// `name` is the name of the type being dropped.
+    Drop { name: String },
 }
 
 /// Operation class for `Effect::AtomicAccess`.
@@ -218,6 +225,10 @@ impl Effect {
                 }
                 Value::object(fields)
             }
+            Effect::Drop { name } => Value::object([
+                ("kind", Value::string("drop")),
+                ("name", Value::string(name.clone())),
+            ]),
         }
     }
 
@@ -250,6 +261,7 @@ impl Effect {
                 kind.as_str(),
                 ordering.as_deref().unwrap_or("")
             ),
+            Effect::Drop { name } => format!("12:drop:{}", name),
         }
     }
 }
@@ -489,6 +501,12 @@ pub trait OpacityMementoLookup {
     fn has_loop_invariant(&self, loop_cid: &str) -> bool;
     fn has_try_branch(&self, try_cid: &str) -> bool;
     fn has_closure_binding(&self, body_fn_cid: &str) -> bool;
+    /// Returns true when the pool contains a contract for the
+    /// type being dropped (i.e., the drop function has been lifted
+    /// and its effects have been reviewed). When false, composition
+    /// is refused — the substrate does not silently assume drops are
+    /// effect-free.
+    fn has_drop_contract(&self, type_name: &str) -> bool;
 }
 
 /// A no-op pool that never has any discharge mementos. Used as the
@@ -498,6 +516,7 @@ impl OpacityMementoLookup for EmptyOpacityPool {
     fn has_loop_invariant(&self, _: &str) -> bool { false }
     fn has_try_branch(&self, _: &str) -> bool { false }
     fn has_closure_binding(&self, _: &str) -> bool { false }
+    fn has_drop_contract(&self, _: &str) -> bool { false }
 }
 
 /// Error returned when composition is refused because an opacity effect
@@ -516,6 +535,7 @@ pub enum OpacityError {
     /// An `Effect::UnresolvedCall { name }` is present. No discharge
     /// memento kind exists yet; composition is always refused.
     UnresolvedCallNotDischarged { name: String },
+    DropNotDischarged { name: String },
 }
 
 impl std::fmt::Display for OpacityError {
@@ -529,6 +549,8 @@ impl std::fmt::Display for OpacityError {
                 write!(f, "opacity: ClosureCapture(bodyFnCid={body_fn_cid}) has no ClosureBindingMemento in pool"),
             Self::UnresolvedCallNotDischarged { name } =>
                 write!(f, "opacity: UnresolvedCall({name}) has no discharge memento kind"),
+            Self::DropNotDischarged { name } =>
+                write!(f, "opacity: Drop({name}) has no lifted drop function in pool"),
         }
     }
 }
@@ -565,6 +587,11 @@ impl EffectSet {
                 }
                 Effect::UnresolvedCall { name } => {
                     return Err(OpacityError::UnresolvedCallNotDischarged { name: name.clone() });
+                }
+                Effect::Drop { name } => {
+                    if !pool.has_drop_contract(name) {
+                        return Err(OpacityError::DropNotDischarged { name: name.clone() });
+                    }
                 }
                 // Non-opacity effects: Reads/Writes/Io/Unsafe/Panics and the
                 // structural type-boundary effects (PinnedReference,
@@ -719,11 +746,13 @@ pub fn compose_function_contracts_checked(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
+        | Effect::Drop { .. }
     ));
     let inner_non_opacity_pure = inner.effects.effects.iter().all(|e| matches!(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
+        | Effect::Drop { .. }
     ));
     if !outer_non_opacity_pure || !inner_non_opacity_pure {
         return Ok(None);
@@ -1481,6 +1510,9 @@ mod tests {
         }
         fn has_closure_binding(&self, body_fn_cid: &str) -> bool {
             self.body_fn_cids.iter().any(|c| c == body_fn_cid)
+        }
+        fn has_drop_contract(&self, _type_name: &str) -> bool {
+            false // no drop contracts in mock pool
         }
     }
 

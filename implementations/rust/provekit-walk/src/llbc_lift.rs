@@ -1051,6 +1051,18 @@ fn collect_call_contributions(
         let Some(callee_name) = crate::llbc_calls::fundecl_name_by_id(fun_decls, func_id) else {
             continue;
         };
+
+        // C.10 drop semantics: calls to drop_in_place are treated as opacity
+        // effects rather than ordinary calls. Drops can run user-defined
+        // Drop::drop, allocate, panic, or perform arbitrary side effects.
+        // The substrate refuses composition until a Drop function contract
+        // is present in the pool (or the drop body has been independently
+        // lifted and its contract reviewed).
+        if callee_name == "drop_in_place" {
+            effects.add(Effect::Drop { name: format!("drop:{}", callee_name) });
+            continue;
+        }
+
         let Some(callee) = registry.get(&callee_name) else {
             // Task B: callee name resolved but not in registry -> UnresolvedCall.
             effects.add(Effect::UnresolvedCall { name: callee_name });
