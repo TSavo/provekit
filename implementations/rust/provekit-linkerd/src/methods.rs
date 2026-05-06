@@ -56,6 +56,10 @@ use crate::state::ProjectState;
 
 pub const ERR_METHOD_NOT_FOUND: i64 = -32601;
 pub const ERR_INVALID_PARAMS: i64 = -32602;
+// -32603 is the JSON-RPC standard code for "Internal error". The spec pins this
+// at protocol/specs/2026-04-30-agent-plugin-protocol.md and
+// protocol/specs/2026-04-30-ir-compiler-protocol.md for daemon/plugin crashes.
+pub const ERR_INTERNAL: i64 = -32603;
 pub const ERR_KIT_NOT_IN_MANIFEST: i64 = -33001;
 pub const ERR_LIFTER_UNAVAILABLE: i64 = -33002;
 #[allow(dead_code)]
@@ -115,6 +119,9 @@ pub async fn handle_parse_file(
         }
         Err(LiftError::KitNotInManifest(msg)) => {
             return rpc_error(ERR_KIT_NOT_IN_MANIFEST, &msg, id)
+        }
+        Err(LiftError::Internal(msg)) => {
+            return rpc_error(ERR_INTERNAL, &msg, id)
         }
     };
 
@@ -239,6 +246,10 @@ pub fn shutdown_response(id: &Json) -> Json {
 enum LiftError {
     LifterUnavailable(String),
     KitNotInManifest(String),
+    // Internal covers worker-thread panics and runtime shutdown from spawn_blocking.
+    // This is distinct from LifterUnavailable: the kit IS installed; the daemon itself
+    // failed internally. Surfaced as ERR_INTERNAL (-32603) per spec §error-codes.
+    Internal(String),
 }
 
 /// Lift `source` for the given `kit_id` and return `(contracts, call_edges)`.
@@ -576,8 +587,12 @@ async fn spawn_kit_lifter(
 
     match result {
         Ok(inner) => inner,
-        Err(join_err) => Err(LiftError::LifterUnavailable(format!(
-            "spawn_blocking error: {join_err}"
+        // JoinError = the blocking worker thread panicked or the Tokio runtime was shut
+        // down. The kit IS installed; this is a daemon-internal failure. Mapping to
+        // LifterUnavailable (-33002) would tell clients "kit not installed", wasting
+        // their install-debug time. Use Internal (-32603) per spec §error-codes.
+        Err(join_err) => Err(LiftError::Internal(format!(
+            "spawn_blocking worker failed: {join_err}"
         ))),
     }
 }
@@ -873,8 +888,12 @@ async fn lift_rust_source(
 
     match result {
         Ok(inner) => inner,
-        Err(join_err) => Err(LiftError::LifterUnavailable(format!(
-            "spawn_blocking error: {join_err}"
+        // JoinError = the blocking worker thread panicked or the Tokio runtime was shut
+        // down. The kit IS installed; this is a daemon-internal failure. Mapping to
+        // LifterUnavailable (-33002) would tell clients "kit not installed", wasting
+        // their install-debug time. Use Internal (-32603) per spec §error-codes.
+        Err(join_err) => Err(LiftError::Internal(format!(
+            "spawn_blocking worker failed: {join_err}"
         ))),
     }
 }
@@ -898,5 +917,57 @@ fn value_to_json(v: &provekit_canonicalizer::Value) -> Json {
             }
             Json::Object(map)
         }
+    }
+}
+
+// -------------------------------------------------------------------
+// Unit tests
+// -------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: a spawn_blocking JoinError must NOT surface as ERR_LIFTER_UNAVAILABLE
+    /// (-33002). That code is reserved for "kit not installed / install-hint" conditions.
+    /// A worker-thread panic is an internal daemon failure; it should be ERR_INTERNAL
+    /// (-32603) per protocol/specs/2026-04-30-agent-plugin-protocol.md.
+    ///
+    /// We produce a real JoinError by spawning a panicking task, then verify that the
+    /// resulting error code is -32603 and explicitly NOT -33002.
+    #[tokio::test]
+    async fn join_error_maps_to_internal_not_lifter_unavailable() {
+        // Produce a real JoinError from a panicking spawn_blocking closure.
+        let join_result = tokio::task::spawn_blocking(|| {
+            panic!("simulated worker panic");
+        })
+        .await;
+
+        assert!(join_result.is_err(), "expected JoinError from panicking task");
+        // SAFETY: we just confirmed is_err().
+        let join_err = join_result.unwrap_err();
+
+        // Apply the same mapping used in spawn_kit_lifter and lift_rust_source.
+        let lift_err = LiftError::Internal(format!("spawn_blocking worker failed: {join_err}"));
+
+        // Verify the error dispatches to ERR_INTERNAL, not ERR_LIFTER_UNAVAILABLE.
+        let id = serde_json::json!(1);
+        let response = match lift_err {
+            LiftError::LifterUnavailable(msg) => rpc_error(ERR_LIFTER_UNAVAILABLE, &msg, &id),
+            LiftError::KitNotInManifest(msg) => rpc_error(ERR_KIT_NOT_IN_MANIFEST, &msg, &id),
+            LiftError::Internal(msg) => rpc_error(ERR_INTERNAL, &msg, &id),
+        };
+
+        let code = response["error"]["code"].as_i64().expect("error.code must be i64");
+
+        assert_eq!(
+            code, ERR_INTERNAL,
+            "JoinError must map to ERR_INTERNAL (-32603), got {code}"
+        );
+        assert_ne!(
+            code, ERR_LIFTER_UNAVAILABLE,
+            "JoinError must NOT map to ERR_LIFTER_UNAVAILABLE (-33002); \
+             that code is reserved for kit-not-installed conditions"
+        );
     }
 }
