@@ -1,0 +1,15 @@
+{
+  "kind": "FunctionContractMemento",
+  "schemaVersion": "2",
+  "name": "id_with_dependent_and_region",
+  "formalSorts": [
+    {"kind": "region", "name": "'a"},
+    {"kind": "dependent", "name": "Vec<n>", "indexVar": "n", "indexSort": {"kind": "primitive", "name": "Int"}}
+  ],
+  "returnSort": {"kind": "region", "name": "'a"},
+  "pre": {"kind": "atomic", "name": "true", "args": []},
+  "post": {"kind": "atomic", "name": "true", "args": []},
+  "effects": [],
+  "locus": {"file": null, "line": null, "column": null},
+  "bodyCid": null
+}
