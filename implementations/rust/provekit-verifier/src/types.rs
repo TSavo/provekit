@@ -365,8 +365,8 @@ impl MementoPool {
                 // Index by the sorted (formal_a, formal_b) pair
                 if let Some(env) = self.mementos.get(&memento_cid) {
                     if let (Some(formal_a), Some(formal_b)) = (
-                        memento_body_field(env, "formalA").and_then(|v| v.as_str()),
-                        memento_body_field(env, "formalB").and_then(|v| v.as_str()),
+                        memento_body_field(env, "formal_a").and_then(|v| v.as_str()),
+                        memento_body_field(env, "formal_b").and_then(|v| v.as_str()),
                     ) {
                         let mut pair = (formal_a.to_string(), formal_b.to_string());
                         // Sort the pair for canonical ordering

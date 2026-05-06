@@ -192,6 +192,12 @@ impl AliasingStatus {
 
 impl AliasingMemento {
     pub fn to_jcs_value(&self) -> Arc<Value> {
+        debug_assert!(
+            self.formal_a <= self.formal_b,
+            "AliasingMemento invariants violated: formal_a ({}) must be <= formal_b ({})",
+            self.formal_a,
+            self.formal_b
+        );
         Value::object([
             ("kind", Value::string("aliasing-memento")),
             ("formal_a", Value::string(self.formal_a.clone())),
