@@ -496,7 +496,7 @@ conformance-region-fixture:
 .PHONY: cross-kit-conformance
 cross-kit-conformance:
 	@echo "=== Catalog-pinned cross-kit conformance fixtures ==="
-	python3 conformance/run.py --profile linux
+	cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- --profile linux
 
 # --- Per-language test suites ------------------------------------------------
 

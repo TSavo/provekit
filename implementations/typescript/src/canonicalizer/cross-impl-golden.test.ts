@@ -1,13 +1,11 @@
 /**
  * Cross-implementation golden tests against fixtures.toml.
  *
- * Loads the canonical conformance fixtures (Rust-emitted JCS bytes +
- * BLAKE3-512 hashes) and asserts the TS canonicalizer produces
- * byte-identical output for every fixture: formula-level AND
+ * Loads the canonical conformance fixtures and asserts the TS kit produces
+ * the pinned protocol CID for every covered fixture: formula-level AND
  * declaration-level (contract / bridge declarations).
  *
- * Spec: conformance/fixtures.toml -- canonical JCS bytes + BLAKE3-512
- *       hashes for cross-implementation byte-equality.
+ * Spec: conformance/fixtures.toml -- catalog-pinned BLAKE3-512 CIDs.
  *
  * To regenerate Rust golden (do NOT touch in this PR):
  *   cd tools/v1-3-fields-probe && cargo run
@@ -204,8 +202,7 @@ function buildFormulaFor(name: string): IrFormula | null {
 //
 // Both shapes flow through the same generic `canonicalEncode` (sorted-keys
 // JCS) because there is no separate IR type for declarations on the TS
-// canonicalizer surface; the byte-equality contract is the JSON object
-// shape itself.
+// canonicalizer surface; conformance is judged by the resulting protocol CID.
 // -----------------------------------------------------------------------
 
 function buildDeclarationsFor(name: string): unknown | null {
@@ -277,7 +274,7 @@ const uncoveredFixtures = allFixtures.filter(
     !f.name.endsWith(DEFERRED_V14_SUFFIX),
 );
 
-describe("cross-impl golden: TS IR JCS vs Rust-emitted fixtures", () => {
+describe("cross-impl golden: TS IR fixture CIDs", () => {
   if (uncoveredFixtures.length > 0) {
     it(`uncovered fixtures: ${uncoveredFixtures.map((f) => f.name).join(", ")}`, () => {
       throw new Error(
@@ -287,17 +284,7 @@ describe("cross-impl golden: TS IR JCS vs Rust-emitted fixtures", () => {
   }
 
   for (const fixture of formulaFixtures) {
-    it(`"${fixture.name}" — JCS bytes match Rust golden`, () => {
-      const formula = buildFormulaFor(fixture.name)!;
-      const bytes = canonicalEncode(formula);
-      const actualJcs = bytes.toString("utf8");
-
-      expect(actualJcs, `JCS byte mismatch for "${fixture.name}"`).toBe(
-        fixture.jcs,
-      );
-    });
-
-    it(`"${fixture.name}" — BLAKE3-512 hash matches Rust golden`, () => {
+    it(`"${fixture.name}" — BLAKE3-512 CID matches catalog pin`, () => {
       const formula = buildFormulaFor(fixture.name)!;
       const bytes = canonicalEncode(formula);
       const actualHash = computeCid(bytes);
@@ -309,17 +296,7 @@ describe("cross-impl golden: TS IR JCS vs Rust-emitted fixtures", () => {
   }
 
   for (const fixture of declarationFixtures) {
-    it(`"${fixture.name}" — declaration JCS bytes match Rust golden`, () => {
-      const value = buildDeclarationsFor(fixture.name)!;
-      const bytes = canonicalEncode(value);
-      const actualJcs = bytes.toString("utf8");
-
-      expect(actualJcs, `JCS byte mismatch for "${fixture.name}"`).toBe(
-        fixture.jcs,
-      );
-    });
-
-    it(`"${fixture.name}" — declaration BLAKE3-512 hash matches Rust golden`, () => {
+    it(`"${fixture.name}" — declaration BLAKE3-512 CID matches catalog pin`, () => {
       const value = buildDeclarationsFor(fixture.name)!;
       const bytes = canonicalEncode(value);
       const actualHash = computeCid(bytes);

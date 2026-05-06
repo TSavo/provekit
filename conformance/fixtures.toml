@@ -1,18 +1,18 @@
 # Cross-language conformance fixtures.
 #
-# Every kit MUST emit these exact JCS bytes and BLAKE3-512 hashes.
+# Every kit MUST derive these BLAKE3-512 CIDs for the fixture content.
 # The Rust kit is the canonical reference implementation.
 #
 # These vectors are pinned to the protocol catalog below. Updating fixture
-# bytes is a catalog-versioned event, not test maintenance.
+# CIDs is a catalog-versioned event, not test maintenance.
 catalog_version = "v1.6.0-2026-05-05"
 catalog_cid = "blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781"
 #
 # To add a fixture:
 # 1. Define the IR tree in the Rust kit
-# 2. Record the JCS bytes and hash
+# 2. Record the fixture JCS and pinned CID
 # 3. Add the name and expected values here
-# 4. All other language kits must match
+# 4. All other language kits must derive the same CID
 
 [[fixture]]
 name = "eq_atomic"

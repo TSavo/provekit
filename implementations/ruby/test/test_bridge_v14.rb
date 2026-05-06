@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Ruby Bridge IR v1.4 — byte-equivalence + round-trip tests.
+# Ruby Bridge IR v1.4 — CID conformance + round-trip tests.
 # Pins against the canonical bridge_decl_v1_4 fixture in
 # conformance/fixtures.toml. Mirrors rust's
 # provekit-claim-envelope/tests/bridge_v14_roundtrip.rs.
 
 require "fileutils"
-require "json"
 require "minitest/autorun"
 require "tmpdir"
 
@@ -31,14 +30,11 @@ class TestBridgeV14 < Minitest::Test
   PRODUCED_BY = "provekit-canonical-reference@v1.4"
   PRODUCED_AT_ALT = "2026-05-03T00:00:00.000Z"
 
-  # Expected JCS bytes (from the fixture's jcs field)
-  EXPECTED_JCS = '{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:RMYnQheAjTz7Ydq2yr1yl2Ramj/5G4eyhIb0DH1u3HKI7+95UAZnB3hEdgz0wqc+9BSe38SVTc1CmvyK8YVIBw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"provekit-canonical-reference@v1.4","targetLayer":"rust-kit"}}'
-
   EXPECTED_HASH = "blake3-512:660ce98742d1f7ff326c994e4f6aba4d396d7fba0914db91a142c489e6d0901a7eff0ca206ce49bfa5b71eda289a138049fa8cf6461c5ef353703a78c0966cf2"
 
-  # ── Test: round-trip produces byte-identical JCS ──
+  # ── Test: round-trip produces the pinned protocol CID ──
 
-  def test_round_trip_byte_identical
+  def test_round_trip_cid_matches_fixture_pin
     target = Provekit::BridgeV14::BridgeTarget.contract(cid: TARGET_CID)
 
     args = Provekit::BridgeV14::MintBridgeV14Args.new(
@@ -56,16 +52,10 @@ class TestBridgeV14 < Minitest::Test
 
     minted = Provekit::ClaimEnvelope.mint_bridge_v14(args)
 
-    # Verify JCS bytes match the canonical fixture exactly
     jcs_str = minted.canonical_bytes
-    jcs_obj = JSON.parse(jcs_str)
 
-    expected = JSON.parse(EXPECTED_JCS)
-    assert_equal expected, jcs_obj, "JCS bytes must match the bridge_decl_v1_4 fixture"
-
-    # Verify BLAKE3-512 hash matches
     actual_hash = Provekit::Blake3.hex(jcs_str)
-    assert_equal EXPECTED_HASH, actual_hash, "BLAKE3-512 hash must match pinned golden"
+    assert_equal EXPECTED_HASH, actual_hash, "BLAKE3-512 CID must match pinned fixture"
   end
 
   # ── Test: tagged union variants ──

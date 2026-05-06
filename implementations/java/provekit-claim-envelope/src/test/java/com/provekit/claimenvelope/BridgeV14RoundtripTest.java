@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// v1.4 BridgeDeclaration byte-equality round-trip parity tests.
+// v1.4 BridgeDeclaration CID conformance and structural tests.
 //
 // Source of truth:
 //   protocol/specs/2026-05-03-bridge-target-dimensionality.md §1, §3
@@ -13,12 +13,11 @@
 //   1. Round-trip parity (acceptance #5):
 //        emit v1.4 bridge -> re-parse -> emit again -> byte-identical
 //
-//   2. Canonical fixture bytes for `conformance/fixtures.toml`:
-//        the `bridge_decl_v1_4` entry MUST match the JCS bytes and
-//        BLAKE3-512 hash this test asserts. If this test fires after
-//        a change to `mintBridgeV14`, you have changed the wire
-//        grammar; the fixture must be re-pinned (and the catalog
-//        bumped) per the protocol catalog versioning rules.
+//   2. Canonical fixture CID for `conformance/fixtures.toml`:
+//        the `bridge_decl_v1_4` entry MUST match the BLAKE3-512 CID this
+//        test asserts. If this test fires after a change to `mintBridgeV14`,
+//        the fixture must be re-pinned (and the catalog bumped) per the
+//        protocol catalog versioning rules.
 //
 //   3. Spec §1.R2 conformance: omitted metadata fields are ABSENT from
 //      the JCS bytes, NOT serialized as `null` and not as
@@ -82,19 +81,15 @@ class BridgeV14RoundtripTest {
     }
 
     @Test
-    void bridge_v14_canonical_fixture_bytes_pinned() {
+    void bridge_v14_canonical_fixture_cid_pinned() {
         // Spec §3 conformance: deterministic emission with valid CIDs.
         MintedEnvelope m = ClaimEnvelope.mintBridgeV14(canonicalFixtureArgs());
-        String bytes = new String(m.canonicalBytes, StandardCharsets.UTF_8);
         String hash = Blake3.blake3_512(m.canonicalBytes);
 
-        String expectedJcs =
-                "{\"envelope\":{\"declaredAt\":\"2026-05-03T00:00:00.000Z\",\"signature\":\"ed25519:RMYnQheAjTz7Ydq2yr1yl2Ramj/5G4eyhIb0DH1u3HKI7+95UAZnB3hEdgz0wqc+9BSe38SVTc1CmvyK8YVIBw==\",\"signer\":\"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=\"},\"header\":{\"kind\":\"bridge\",\"name\":\"rust-canonical-bridge-fixture\",\"schemaVersion\":\"1\",\"sourceContractCid\":\"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\",\"sourceLayer\":\"rust-kit\",\"sourceSymbol\":\"parseInt\",\"target\":{\"cid\":\"blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\"kind\":\"contract\"}},\"metadata\":{\"producedAt\":\"2026-05-03T00:00:00.000Z\",\"producedBy\":\"provekit-canonical-reference@v1.4\",\"targetLayer\":\"rust-kit\"}}";
         String expectedHash =
                 "blake3-512:660ce98742d1f7ff326c994e4f6aba4d396d7fba0914db91a142c489e6d0901a7eff0ca206ce49bfa5b71eda289a138049fa8cf6461c5ef353703a78c0966cf2";
 
-        assertEquals(expectedJcs, bytes, "v1.4 fixture JCS bytes MUST match conformance/fixtures.toml");
-        assertEquals(expectedHash, hash, "v1.4 fixture hash MUST match conformance/fixtures.toml");
+        assertEquals(expectedHash, hash, "v1.4 fixture CID MUST match conformance/fixtures.toml");
     }
 
     @Test

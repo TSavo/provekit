@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// v1.4 BridgeDeclaration byte-equality round-trip parity tests.
+// v1.4 BridgeDeclaration CID conformance and structural tests.
 //
 // Source of truth:
 //   protocol/specs/2026-05-03-bridge-target-dimensionality.md §1, §3
@@ -12,9 +12,9 @@
 //   1. Round-trip parity (acceptance #5):
 //        emit v1.4 bridge -> re-parse -> emit again -> byte-identical
 //
-//   2. Canonical fixture bytes for `conformance/fixtures.toml`:
-//        the `bridge_decl_v1_4` entry MUST match the JCS bytes and
-//        BLAKE3-512 hash this test prints / asserts.
+//   2. Canonical fixture CID for `conformance/fixtures.toml`:
+//        the `bridge_decl_v1_4` entry MUST match the BLAKE3-512 CID this
+//        test asserts.
 //
 //   3. Spec §1.R2 conformance: omitted metadata fields are ABSENT from
 //      the JCS bytes, NOT serialized as `null`.
@@ -23,7 +23,7 @@
 //      through both `Contract` and `ContractSet` variants.
 //
 // The fixture inputs (signer seed, CIDs, timestamps, names) are pinned
-// constants so the resulting JCS bytes are reproducible across kits.
+// constants so the resulting protocol CID is reproducible across kits.
 
 use std::sync::Arc;
 
@@ -255,31 +255,24 @@ fn bridge_v14_top_level_layered_shape() {
 }
 
 #[test]
-fn bridge_v14_canonical_fixture_bytes_pinned() {
+fn bridge_v14_canonical_fixture_cid_pinned() {
     // PINS the conformance/fixtures.toml `bridge_decl_v1_4` entry.
     // If you edit `mint_bridge_v14` and this test fires, you have
-    // changed the wire grammar. Update the fixture bytes/hash AND
-    // bump the catalog if the change propagates per the protocol
-    // catalog versioning rules.
+    // changed the protocol CID. Update the fixture hash AND bump the
+    // catalog if the change propagates per the protocol catalog
+    // versioning rules.
     //
-    // Print on failure so the new bytes/hash are visible in CI logs.
+    // Print on failure so the new CID is visible in CI logs.
     let m = mint_bridge_v14(&canonical_fixture_args());
-    let bytes = std::str::from_utf8(&m.canonical_bytes).expect("utf-8");
     let hash = blake3_512_of(m.canonical_bytes.as_slice());
 
-    // The expected values below MUST match `conformance/fixtures.toml`
-    // entry `bridge_decl_v1_4`. They are stamped here too so an
-    // accidental drift surfaces inside this crate's test suite, not
-    // only when the cross-language fixture loaders run.
-    let expected_jcs = r#"{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:RMYnQheAjTz7Ydq2yr1yl2Ramj/5G4eyhIb0DH1u3HKI7+95UAZnB3hEdgz0wqc+9BSe38SVTc1CmvyK8YVIBw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"provekit-canonical-reference@v1.4","targetLayer":"rust-kit"}}"#;
+    // The expected value below MUST match `conformance/fixtures.toml`
+    // entry `bridge_decl_v1_4`.
     let expected_hash = "blake3-512:660ce98742d1f7ff326c994e4f6aba4d396d7fba0914db91a142c489e6d0901a7eff0ca206ce49bfa5b71eda289a138049fa8cf6461c5ef353703a78c0966cf2";
 
-    if bytes != expected_jcs {
-        eprintln!("==== ACTUAL bridge_decl_v1_4 JCS bytes ====");
-        eprintln!("{}", bytes);
+    if hash != expected_hash {
         eprintln!("==== ACTUAL bridge_decl_v1_4 hash ====");
         eprintln!("{}", hash);
     }
-    assert_eq!(bytes, expected_jcs, "v1.4 fixture JCS bytes drift");
-    assert_eq!(hash, expected_hash, "v1.4 fixture hash drift");
+    assert_eq!(hash, expected_hash, "v1.4 fixture CID drift");
 }

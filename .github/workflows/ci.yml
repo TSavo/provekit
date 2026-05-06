@@ -1,12 +1,13 @@
 # ProvekIt — cross-language conformance gate
 #
 # Runs the same gate as `make ci` on every push and PR. Source of truth
-# for "is the protocol byte-deterministic across all 5 peer languages on
-# Linux x86_64 today" — answer is committed to the repo, not asserted.
+# for "do the kits derive the catalog-pinned protocol CIDs on Linux x86_64
+# today" — answer is committed to the repo, not asserted.
 #
 # Languages exercised:
 #   Rust 1.x stable, Go 1.22, .NET 10 (preview), Node 22 + pnpm 10,
-#   Python 3.12, Java 21 (Temurin) + Maven, clang++ via apt + vendored portable BLAKE3.
+#   Python 3.12, Java 21 (Temurin) + Maven, clang/clang++ via apt,
+#   C, C++, Zig, PHP, Ruby, and Swift in the macOS job.
 #
 # The Makefile is the contract. CI installs toolchains then calls `make`
 # targets so local dev and CI run the same code path. If you can run
@@ -52,6 +53,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             implementations/rust/target
+            tools/cross-kit-conformance/target
             tools/recompute-spec-cids/target
             tools/foundation-keygen/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
@@ -119,7 +121,7 @@ jobs:
           cache: maven
 
       # ---------------------------------------------------------------
-      # System-level deps: openssl, nlohmann-json, libblake3 (Ruby FFI),
+      # System-level deps: b3sum (PHP BLAKE3), openssl, nlohmann-json, libblake3 (Ruby FFI),
       # libyaml (Ruby psych/bundler runtime). Run BEFORE setup-ruby so
       # the bundler-cache step has libblake3 and libyaml already on the
       # host when it resolves and builds native gems.
@@ -150,6 +152,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
+            b3sum \
             build-essential \
             clang \
             cmake \
@@ -332,10 +335,10 @@ jobs:
         working-directory: implementations/rust
 
       - name: swift catalog-pinned fixtures
-        # Runs the central fixture harness in the macOS-only profile. This
-        # is the same conformance law as the Linux job, but restricted to
-        # Swift because the Swift kit is macOS-only.
-        run: python3 conformance/run.py --profile swift
+        # Runs the central Rust fixture harness in the macOS-only profile.
+        # This is the same conformance law as the Linux job, but restricted
+        # to Swift because the Swift kit is macOS-only.
+        run: cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- --profile swift
 
   # ---------------------------------------------------------------------------
   # Per-kit conformance gate: provekit prove --kit=<kit>
