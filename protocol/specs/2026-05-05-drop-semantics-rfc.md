@@ -56,6 +56,9 @@ pub enum Effect {
     Drop {
         /// The formal or local name of the value being dropped.
         target: String,
+        /// The Charon type path (e.g. "std::fs::File", "Vec<i32>"). Used to
+        /// look up the corresponding DropMemento in the verifier pool.
+        target_type: String,
         /// Classification of the drop behavior.
         drop_kind: DropKind,
     },
@@ -340,7 +343,7 @@ Where `DropRefusalReason` is:
 
 ### §6.1 Transitive drop composition
 
-A `Drop::drop` implementation may itself call other functions that have their own contracts. This RFC does NOT define how the substrate composes through a chain of nested drop calls. **RFC position:** drop body composition is deferred to v2. In v1, the substrate refuses composition for any drop with UserCode unless a DropMemento asserts `user_code_free: true` (downgrading it to Structural). If the drop needs to compose through nested calls, the author must provide pre-lifted contracts for those calls (outside the drop context) and compose them into the caller.
+A `Drop::drop` implementation may itself call other functions that have their own contracts. This RFC does NOT define how the substrate composes through a chain of nested drop calls. **RFC position:** drop body composition is deferred to v2. In v1, the substrate refuses composition for any drop with UserCode unless a `DropMemento` asserts `user_code_free: true` (downgrading it to Structural) OR the pool contains a lifted contract for the drop body (the `Drop::drop` implementation has been independently lifted and its contract reviewed). If the drop needs to compose through nested calls, the author must provide pre-lifted contracts for those calls (outside the drop context) and compose them into the caller.
 
 ### §6.2 Linear-types "must-drop" enforcement
 
