@@ -200,14 +200,11 @@ mod tests {
     }
 
     #[test]
-    fn expect_template_returns_not_renderable() {
-        let result = NotNullPredicate.render(DropTemplate::Expect, "x");
-        let err = result.expect_err("Expect must return NotRenderable");
-        match err {
-            NotRenderable::Scaffolding { family, .. } => {
-                assert_eq!(family, "Expect");
-            }
-        }
+    fn expect_template_renders_fresh_name_binding() {
+        let rendered = NotNullPredicate.render(DropTemplate::Expect, "x")
+            .expect("Expect must render OK with fresh-name binding (fix #407)");
+        assert!(rendered.contains("x_ok"), "fresh name x_ok preserves downstream types");
+        assert!(rendered.contains("x.expect"), "uses Option::expect");
     }
 
     #[test]
