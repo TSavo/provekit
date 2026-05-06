@@ -140,6 +140,13 @@ pub enum Effect {
         /// Sorted lexicographically for JCS byte-determinism.
         formals: Vec<String>,
     },
+    /// Calls `drop_in_place`. Drops can run user-defined `Drop::drop`,
+    /// allocate, panic, or perform arbitrary side effects. The
+    /// substrate refuses to compose a contract carrying this effect
+    /// without an explicit discharge memento (or the callee's own
+    /// lifted contract, once the drop function body is liftable).
+    /// `name` is the name of the type being dropped.
+    Drop { name: String },
 }
 
 /// Operation class for `Effect::AtomicAccess`.
@@ -267,6 +274,10 @@ impl Effect {
                     ("formals", Value::array(formals_arr)),
                 ])
             }
+            Effect::Drop { name } => Value::object([
+                ("kind", Value::string("drop")),
+                ("name", Value::string(name.clone())),
+            ]),
         }
     }
 
@@ -302,6 +313,7 @@ impl Effect {
             Effect::PossibleAliasing { formals } => {
                 format!("13:possible_aliasing:{}", formals.join(","))
             }
+            Effect::Drop { name } => format!("14:drop:{}", name),
         }
     }
 }
@@ -597,11 +609,6 @@ pub trait OpacityMementoLookup {
     fn has_loop_invariant(&self, loop_cid: &str) -> bool;
     fn has_try_branch(&self, try_cid: &str) -> bool;
     fn has_closure_binding(&self, body_fn_cid: &str) -> bool;
-    /// Returns true when the pool contains a contract for the
-    /// type being dropped (i.e., the drop function has been lifted
-    /// and its effects have been reviewed). When false, composition
-    /// is refused — the substrate does not silently assume drops are
-    /// effect-free.
     fn has_drop_contract(&self, type_name: &str) -> bool;
 }
 
@@ -634,6 +641,9 @@ pub enum OpacityError {
     /// An `Effect::PossibleAliasing` is present but the pair (formal_a, formal_b)
     /// has no matching AliasingMemento in auto_minted_mementos.
     AliasingNotDischarged { formal_a: String, formal_b: String },
+    /// An `Effect::Drop { name }` is present but no lifted drop
+    /// function contract for that type is in the pool.
+    DropNotDischarged { name: String },
 }
 
 impl std::fmt::Display for OpacityError {
@@ -649,6 +659,8 @@ impl std::fmt::Display for OpacityError {
                 write!(f, "opacity: UnresolvedCall({name}) has no discharge memento kind"),
             Self::AliasingNotDischarged { formal_a, formal_b } =>
                 write!(f, "aliasing: PossibleAliasing pair ({formal_a}, {formal_b}) has no AliasingMemento in auto_minted_mementos"),
+            Self::DropNotDischarged { name } =>
+                write!(f, "opacity: Drop({name}) has no lifted drop function in pool"),
         }
     }
 }
@@ -685,6 +697,11 @@ impl EffectSet {
                 }
                 Effect::UnresolvedCall { name } => {
                     return Err(OpacityError::UnresolvedCallNotDischarged { name: name.clone() });
+                }
+                Effect::Drop { name } => {
+                    if !pool.has_drop_contract(name) {
+                        return Err(OpacityError::DropNotDischarged { name: name.clone() });
+                    }
                 }
                 // PossibleAliasing is discharged by auto_minted_mementos in the
                 // contract bundle; the substrate verifier checks these before
@@ -848,12 +865,14 @@ pub fn compose_function_contracts_checked(
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
         | Effect::PossibleAliasing { .. }
+        | Effect::Drop { .. }
     ));
     let inner_non_opacity_pure = inner.effects.effects.iter().all(|e| matches!(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
         | Effect::PossibleAliasing { .. }
+        | Effect::Drop { .. }
     ));
     if !outer_non_opacity_pure || !inner_non_opacity_pure {
         return Ok(None);
