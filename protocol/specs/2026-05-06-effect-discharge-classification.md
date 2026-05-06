@@ -100,7 +100,7 @@ When `MementoPool::insert()` indexes a Drop classification memento, the index ke
 | `AtomicAccess { target, kind, ordering: None }` | MementoRequired | `atomic-ordering` | `(target, kind, ordering)` triple match |
 | `AtomicAccess { target, kind, ordering: Some(_) }` | Informational | — | Ordering statically known. No memento needed. |
 | `PossibleAliasing { formals }` | MementoRequired | `aliasing` | Every unordered pair in `formals` has a matching memento |
-| `Drop { name }` | MementoRequired | `drop` | `name` ≡ string equality with pool presence check (`has_drop_contract`) |
+| `Drop { name }` | MementoRequired | `drop` | `name` ≡ string equality with pool presence check (`has_drop_contract`). The match is anchored by `(function_cid, target_type)` — the `function_cid` prevents false discharge when the same type is dropped across two different function contracts. |
 | `Drop { .. }` with trivial/structural drop kind | Informational | — | Trivial/Structural drops do not block composition |
 
 ### §2.1 Discharge match rule semantics
