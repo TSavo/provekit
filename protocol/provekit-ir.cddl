@@ -328,3 +328,19 @@ Value = text / number / bool / null
 ; LetTerm: MUST NOT have a "sort" key at top level
 
 ; All node kinds: extra keys are forbidden (strict closed-object policy)
+
+; ================================================================
+; Discharge mementos (envelope/header/metadata layered, v1.4)
+; ================================================================
+; Spec: protocol/specs/2026-05-05-pin-invariant-memento.md
+
+; Locked key order: kind, schemaVersion, functionCid, pinnedTarget, invariant, ? note
+PinInvariantMemento = {
+  kind: "pin-invariant",
+  schemaVersion: "1",
+  functionCid: cid,
+  pinnedTarget: tstr,
+  invariant: tstr,
+  ? note: tstr,
+}
+

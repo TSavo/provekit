@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use provekit_walk::contract::OpacityMementoLookup;
+use provekit_walk::contract::{OpacityMementoLookup, PinInvariantMementoView};
 use serde_json::Value as Json;
 use serde::Serialize;
 
@@ -130,6 +130,13 @@ pub struct MementoPool {
     /// memento CID. Populated when an "aliasing-memento" kind memento is
     /// inserted. The key is the sorted pair of formal parameter names.
     pub aliasing_pair_to_memento: BTreeMap<(String, String), String>,
+
+    /// Composite key "functionCid\x00target" -> memento CID. Populated
+    /// when a "pin-invariant" kind memento is inserted. The composite
+    /// key ensures the memento is anchored to both the function contract
+    /// and the pinned parameter name.
+    /// Spec: protocol/specs/2026-05-05-pin-invariant-memento.md
+    pub pin_invariant_to_memento: BTreeMap<String, String>,
 }
 
 /// Key for implication lookups: (antecedent CID, consequent CID).
@@ -377,6 +384,17 @@ impl MementoPool {
                     }
                 }
             }
+            Some("pin-invariant") => {
+                // header.functionCid + header.pinnedTarget -> composite key
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    let function_cid = memento_body_field(env, "functionCid").and_then(|v| v.as_str());
+                    let target = memento_body_field(env, "pinnedTarget").and_then(|v| v.as_str());
+                    if let (Some(fc), Some(t)) = (function_cid, target) {
+                        let key = format!("{}\x00{}", fc, t);
+                        self.pin_invariant_to_memento.entry(key).or_insert(memento_cid.clone());
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -525,6 +543,17 @@ impl OpacityMementoLookup for MementoPool {
             pair = (pair.1, pair.0);
         }
         self.aliasing_pair_to_memento.contains_key(&pair)
+    }
+    fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView> {
+        let key = format!("{}\x00{}", function_cid, target);
+        let memento_cid = self.pin_invariant_to_memento.get(&key)?;
+        let memento = self.mementos.get(memento_cid)?;
+        let invariant = memento_body_field(memento, "invariant")?.as_str()?.to_string();
+        Some(PinInvariantMementoView {
+            function_cid: function_cid.to_string(),
+            pinned_target: target.to_string(),
+            invariant,
+        })
     }
 }
 
@@ -744,5 +773,60 @@ mod tests {
             matches!(result, ImplicationResult::Unknown),
             "Expected unknown, got {:?}", result
         );
+    }
+
+    // ---- PinInvariantMemento round-trip (real pool) ----
+
+    fn make_pin_invariant_memento(cid: &str, function_cid: &str, target: &str, invariant: &str) -> Json {
+        json!({
+            "cid": cid,
+            "envelope": {
+                "signer": "ed25519:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "declaredAt": "2026-05-05T00:00:00Z",
+                "signature": "ed25519:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "header": {
+                "schemaVersion": "1",
+                "kind": "pin-invariant",
+                "cid": cid,
+                "functionCid": function_cid,
+                "pinnedTarget": target
+            },
+            "metadata": {
+                "invariant": invariant
+            }
+        })
+    }
+
+    #[test]
+    fn pin_invariant_insert_lookup_roundtrip() {
+        let mut pool = MementoPool::default();
+        let fc = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let m_cid = format!("blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        pool.insert(
+            m_cid.clone(),
+            make_pin_invariant_memento(&m_cid, fc, "pin", "0 <= state"),
+        );
+        let view = pool.lookup_pin_invariant(fc, "pin");
+        assert!(view.is_some(), "expected Some after insert");
+        let v = view.unwrap();
+        assert_eq!(v.pinned_target, "pin");
+        assert!(!v.invariant.is_empty());
+        assert_eq!(v.function_cid, fc);
+    }
+
+    #[test]
+    fn pin_invariant_cross_function_cid_mismatch() {
+        let mut pool = MementoPool::default();
+        let fc_a = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let fc_b = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let m_cid = format!("blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+        pool.insert(
+            m_cid.clone(),
+            make_pin_invariant_memento(&m_cid, fc_a, "pin", "0 <= state"),
+        );
+        // Same target "pin" but different function CID — should NOT match
+        let view = pool.lookup_pin_invariant(fc_b, "pin");
+        assert!(view.is_none(), "cross-function-CID lookup must return None");
     }
 }
