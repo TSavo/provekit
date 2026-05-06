@@ -597,6 +597,12 @@ pub trait OpacityMementoLookup {
     fn has_loop_invariant(&self, loop_cid: &str) -> bool;
     fn has_try_branch(&self, try_cid: &str) -> bool;
     fn has_closure_binding(&self, body_fn_cid: &str) -> bool;
+    /// Returns true when the pool contains a contract for the
+    /// type being dropped (i.e., the drop function has been lifted
+    /// and its effects have been reviewed). When false, composition
+    /// is refused — the substrate does not silently assume drops are
+    /// effect-free.
+    fn has_drop_contract(&self, type_name: &str) -> bool;
     fn has_aliasing_memento(&self, formal_a: &str, formal_b: &str) -> bool;
 }
 
@@ -607,6 +613,7 @@ impl OpacityMementoLookup for EmptyOpacityPool {
     fn has_loop_invariant(&self, _: &str) -> bool { false }
     fn has_try_branch(&self, _: &str) -> bool { false }
     fn has_closure_binding(&self, _: &str) -> bool { false }
+    fn has_drop_contract(&self, _: &str) -> bool { false }
     fn has_aliasing_memento(&self, _: &str, _: &str) -> bool { false }
 }
 
@@ -1623,6 +1630,9 @@ mod tests {
         }
         fn has_closure_binding(&self, body_fn_cid: &str) -> bool {
             self.body_fn_cids.iter().any(|c| c == body_fn_cid)
+        }
+        fn has_drop_contract(&self, _: &str) -> bool {
+            false // no drop contracts in mock pool
         }
         fn has_aliasing_memento(&self, _a: &str, _b: &str) -> bool {
             false // no aliasing mementos in mock pool

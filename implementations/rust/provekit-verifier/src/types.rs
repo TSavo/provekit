@@ -125,6 +125,11 @@ pub struct MementoPool {
     /// memento CID. Populated when a "closure-binding" kind memento is
     /// inserted. Spec: protocol/specs/2026-05-05-closure-binding-memento.md
     pub body_fn_cid_to_memento: BTreeMap<String, String>,
+
+    /// AliasingMemento discharge index: (formal_a, formal_b) ->
+    /// memento CID. Populated when an "aliasing-memento" kind memento is
+    /// inserted. The key is the sorted pair of formal parameter names.
+    pub aliasing_pair_to_memento: BTreeMap<(String, String), String>,
 }
 
 /// Key for implication lookups: (antecedent CID, consequent CID).
@@ -355,6 +360,23 @@ impl MementoPool {
                     }
                 }
             }
+            Some("aliasing-memento") => {
+                // header.formalA and header.formalB (v1.2) or evidence.body.formalA/formalB (v1.1)
+                // Index by the sorted (formal_a, formal_b) pair
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let (Some(formal_a), Some(formal_b)) = (
+                        memento_body_field(env, "formalA").and_then(|v| v.as_str()),
+                        memento_body_field(env, "formalB").and_then(|v| v.as_str()),
+                    ) {
+                        let mut pair = (formal_a.to_string(), formal_b.to_string());
+                        // Sort the pair for canonical ordering
+                        if pair.0 > pair.1 {
+                            pair = (pair.1, pair.0);
+                        }
+                        self.aliasing_pair_to_memento.entry(pair).or_insert(memento_cid.clone());
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -465,6 +487,9 @@ impl MementoPool {
         for (k, v) in other.body_fn_cid_to_memento {
             self.body_fn_cid_to_memento.entry(k).or_insert(v);
         }
+        for (k, v) in other.aliasing_pair_to_memento {
+            self.aliasing_pair_to_memento.entry(k).or_insert(v);
+        }
     }
 }
 
@@ -491,6 +516,15 @@ impl OpacityMementoLookup for MementoPool {
         // is effect-free. Wire this to a real index once the
         // drop-contract memento spec lands under protocol/specs/.
         false
+    }
+    fn has_aliasing_memento(&self, formal_a: &str, formal_b: &str) -> bool {
+        // Check if the pool has an aliasing memento for this pair of formals.
+        // Canonicalize by sorting the pair.
+        let mut pair = (formal_a.to_string(), formal_b.to_string());
+        if pair.0 > pair.1 {
+            pair = (pair.1, pair.0);
+        }
+        self.aliasing_pair_to_memento.contains_key(&pair)
     }
 }
 
