@@ -210,27 +210,12 @@ jobs:
         # regression risk. ziglang.org keeps every release indefinitely.
         # Refresh this URL only when the kit's std API requirements change.
         #
-        # mlugg/setup-zig@v1 was tried in PR #245 and 404/503'd across
-        # every mirror; curl from ziglang.org is the simplest path that
-        # actually works.
-        run: |
-          set -euxo pipefail
-          ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
-          for attempt in 1 2 3 4 5; do
-            echo "Downloading Zig 0.16.0 (attempt ${attempt}/5)"
-            rm -f /tmp/zig.tar.xz
-            if curl -fsSL --connect-timeout 30 --max-time 180 --speed-limit 102400 --speed-time 60 "$ZIG_URL" -o /tmp/zig.tar.xz; then
-              break
-            fi
-            if [ "$attempt" -eq 5 ]; then
-              exit 1
-            fi
-            sleep $((attempt * 10))
-          done
-          sudo mkdir -p /usr/local/zig
-          sudo tar -xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
-          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
-          zig version
+        # Direct ziglang.org downloads are intentionally not bandwidth-
+        # guaranteed. setup-zig v2 uses the Zig community mirror list and
+        # verifies tarball signatures while keeping the compiler version pinned.
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
 
       # ---------------------------------------------------------------
       # The gate.
@@ -479,24 +464,9 @@ jobs:
 
       - name: Install Zig (zig)
         if: matrix.kit == 'zig'
-        run: |
-          set -euxo pipefail
-          ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
-          for attempt in 1 2 3 4 5; do
-            echo "Downloading Zig 0.16.0 (attempt ${attempt}/5)"
-            rm -f /tmp/zig.tar.xz
-            if curl -fsSL --connect-timeout 30 --max-time 180 --speed-limit 102400 --speed-time 60 "$ZIG_URL" -o /tmp/zig.tar.xz; then
-              break
-            fi
-            if [ "$attempt" -eq 5 ]; then
-              exit 1
-            fi
-            sleep $((attempt * 10))
-          done
-          sudo mkdir -p /usr/local/zig
-          sudo tar -xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
-          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
-          zig version
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
 
       - name: "prove-${{ matrix.kit }}"
         run: make prove-${{ matrix.kit }}
