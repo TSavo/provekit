@@ -270,9 +270,20 @@ impl DropTemplate {
     /// produce verified, compilable output for them. See follow-up issues
     /// (#407 for Expect's shadowing, etc).
     ///
-    /// The rendered text is a complete Rust statement (or pair of statements)
-    /// that should be inserted immediately before the callsite in the source.
+    /// The rendered text is a complete Rust statement that should be inserted
+    /// immediately before the callsite in the source.
     /// Trailing newline included so splicing is text-clean.
+    ///
+    /// Returns `Ok(text)` for `Defensive` and `Expect`. Returns
+    /// `Err(NotRenderable::Scaffolding)` for `Recoverable` and `EarlyReturn`
+    /// which still have unresolved context requirements (missing error types /
+    /// Default bound).
+    ///
+    /// Note: `Expect` is renderable but NOT closure-verified — the let-binding
+    /// pattern is not recognised by lift.rs's if-then-panic path. Callers that
+    /// go through `drop_gap` will receive `TemplateNotCandidate` until the
+    /// lifter is extended. Direct `emit_drop` callers get a type-correct
+    /// (compilable) emission; `verify_closure` will return false for it.
     pub fn render(&self, var: &str) -> Result<String, NotRenderable> {
         match self {
             DropTemplate::Defensive => Ok(format!(
@@ -291,12 +302,26 @@ impl DropTemplate {
                     "render emits `return Default::default()` which requires the caller's \
                      return type to implement Default; not closure-verified by current lifter",
             }),
-            DropTemplate::Expect => Err(NotRenderable::Scaffolding {
-                family: "Expect",
-                reason:
-                    "render shadows the original variable with a different type, breaking \
-                     downstream callsites; pending fresh-name binding (see issue #407)",
-            }),
+            DropTemplate::Expect => Ok(format!(
+                "    let {var}_checked = {var}.expect(\
+                    \"not_null: invariant: caller must supply non-null {var}\");\n",
+                var = var
+            )),
+        }
+    }
+
+    /// Returns `Some((old_arg, new_arg))` when the emitted template requires
+    /// the callsite argument to be rewritten in addition to inserting a guard
+    /// line. `emit_drop` applies this substitution to the callsite line.
+    ///
+    /// `Expect` binds a fresh name `{var}_checked` and must substitute it at
+    /// every argument occurrence of `{var}` on the callsite line to preserve
+    /// the original type (`Option<T>`) at the callee boundary.
+    /// The substitution is whole-word only to avoid spurious replacements.
+    pub fn callsite_arg_rewrite(&self, var: &str) -> Option<(String, String)> {
+        match self {
+            DropTemplate::Expect => Some((var.to_string(), format!("{var}_checked"))),
+            _ => None,
         }
     }
 
@@ -421,13 +446,19 @@ pub fn emit_drop(
     }
 
     let guard_trimmed = guard_text.trim_end_matches('\n');
-    let mut result_lines: Vec<&str> = Vec::with_capacity(lines.len() + 1);
+    let callsite_rewrite = template.callsite_arg_rewrite(&gap.var_name);
+    let mut result_lines: Vec<String> = Vec::with_capacity(lines.len() + 1);
     for (i, line) in lines.iter().enumerate() {
         if i == insert_before_idx {
-            // Insert guard before the callsite line.
-            result_lines.push(guard_trimmed);
+            result_lines.push(guard_trimmed.to_string());
         }
-        result_lines.push(line);
+        if i == insert_before_idx {
+            if let Some((old, new)) = &callsite_rewrite {
+                result_lines.push(replace_word(line, old, new));
+                continue;
+            }
+        }
+        result_lines.push(line.to_string());
     }
 
     let modified_source = result_lines.join("\n");
@@ -440,6 +471,38 @@ pub fn emit_drop(
 }
 
 // ---- Re-lift verification ----
+
+/// Replace whole-word occurrences of `old` with `new` in `text`.
+///
+/// A "word boundary" is checked by ensuring the character immediately before
+/// and after the match is not alphanumeric or `_`. This prevents, e.g.,
+/// replacing `x` inside `x_val` when only bare `x` is the target.
+fn replace_word(text: &str, old: &str, new: &str) -> String {
+    if old.is_empty() {
+        return text.to_string();
+    }
+    let mut result = String::with_capacity(text.len());
+    let mut remaining = text;
+    while let Some(pos) = remaining.find(old) {
+        let before = if pos == 0 {
+            None
+        } else {
+            remaining[..pos].chars().last()
+        };
+        let after = remaining[pos + old.len()..].chars().next();
+        let is_word_boundary = !before.map(|c| c.is_alphanumeric() || c == '_').unwrap_or(false)
+            && !after.map(|c| c.is_alphanumeric() || c == '_').unwrap_or(false);
+        if is_word_boundary {
+            result.push_str(&remaining[..pos]);
+            result.push_str(new);
+        } else {
+            result.push_str(&remaining[..pos + old.len()]);
+        }
+        remaining = &remaining[pos + old.len()..];
+    }
+    result.push_str(remaining);
+    result
+}
 
 /// Structural helper: returns true if `formula` contains a `Not` node whose
 /// single operand is an `Atomic { name: "is_none" | "is_some", args }` where
@@ -899,17 +962,34 @@ fn caller(x: u32) { f(x); }
     }
 
     #[test]
-    fn expect_template_returns_not_renderable() {
-        // Expect would shadow `var` with the unwrapped type, breaking the
-        // callsite. Render returns NotRenderable until issue #407 lands a
-        // fresh-name binding.
-        let result = DropTemplate::Expect.render("x");
-        let err = result.expect_err("Expect must return NotRenderable");
-        match err {
-            NotRenderable::Scaffolding { family, .. } => {
-                assert_eq!(family, "Expect");
-            }
-        }
+    fn expect_template_renders_fresh_name_binding() {
+        // Expect now renders a fresh-name let-binding. The old variable is
+        // preserved as an argument to `.expect()` so the Option<T> type is
+        // not consumed before the callsite.
+        let rendered = DropTemplate::Expect
+            .render("x")
+            .expect("Expect must render Ok after #407 fix");
+        assert!(
+            rendered.contains("x_checked"),
+            "must bind to fresh name x_checked: {rendered}"
+        );
+        assert!(
+            rendered.contains("x.expect("),
+            "must call .expect() on original var: {rendered}"
+        );
+        assert!(
+            rendered.contains("not_null"),
+            "expect message must name the invariant: {rendered}"
+        );
+    }
+
+    #[test]
+    fn expect_template_substitutes_var_name() {
+        let rendered = DropTemplate::Expect
+            .render("my_val")
+            .expect("Expect renders OK");
+        assert!(rendered.contains("my_val_checked"), "fresh name must use var: {rendered}");
+        assert!(rendered.contains("my_val.expect("), "must call expect on original: {rendered}");
     }
 
     #[test]
@@ -1328,5 +1408,64 @@ fn caller(x: Option<i32>) {
             "non-Var predicate argument must be skipped, got gaps: {:?}",
             gaps
         );
+    }
+
+    // ---- #407: Expect template fresh-name + callsite rewrite ----
+
+    #[test]
+    fn emit_drop_expect_inserts_let_binding_and_rewrites_callsite() {
+        let file: syn::File = syn::parse_str(FIXTURE_SRC).expect("parses");
+        let caller_fn = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(f) if f.sig.ident == "caller" => Some(f.clone()),
+                _ => None,
+            })
+            .expect("caller fn");
+
+        let precondition = not_null_wp("x");
+        let walks = walk_callsites_to_entry(
+            &caller_fn,
+            "f",
+            &["x".to_string()],
+            precondition,
+        );
+        let gaps = detect_gaps(&walks, "not_null");
+        let gap = &gaps[0];
+
+        let result = emit_drop(FIXTURE_SRC, gap, DropTemplate::Expect)
+            .expect("emit must succeed for Expect after #407 fix");
+
+        let modified = &result.modified_source;
+
+        // The let-binding must appear before the callsite.
+        let let_pos = modified.find("x_checked").expect("fresh name x_checked present");
+        let callsite_pos = modified.find("f(x_checked)").expect("callsite uses x_checked");
+        assert!(
+            let_pos < callsite_pos,
+            "let-binding must precede callsite: let@{let_pos}, callsite@{callsite_pos}"
+        );
+
+        // The original `f(x)` callsite must be rewritten to `f(x_checked)`.
+        assert!(
+            !modified.contains("f(x);"),
+            "original f(x) callsite must be rewritten to f(x_checked)"
+        );
+
+        // The modified source must parse cleanly (type-correct Rust).
+        syn::parse_str::<syn::File>(modified)
+            .expect("emitted Expect source must be syntactically valid");
+    }
+
+    #[test]
+    fn expect_callsite_arg_rewrite_returns_fresh_name_pair() {
+        let rewrite = DropTemplate::Expect.callsite_arg_rewrite("x");
+        assert_eq!(rewrite, Some(("x".to_string(), "x_checked".to_string())));
+    }
+
+    #[test]
+    fn defensive_callsite_arg_rewrite_returns_none() {
+        assert_eq!(DropTemplate::Defensive.callsite_arg_rewrite("x"), None);
     }
 }
