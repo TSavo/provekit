@@ -97,7 +97,7 @@ impl PredicateDescriptor for NotNullPredicate {
 /// Returns true if `formula` is a structural guard that discharges `not_null`
 /// for `var_name`:
 /// - `is_some(var_name)` (Atomic)
-/// - `Not([is_none(var_name)])` or `Not([is_some(var_name)])` (lift shape)
+/// - `Not([is_none(var_name)])` (lift shape; `Not(is_some)` is NOT a guard)
 fn is_guard_for(formula: &IrFormula, var_name: &str) -> bool {
     match formula {
         IrFormula::Atomic { name, args } => {
@@ -265,5 +265,30 @@ mod tests {
             ],
         };
         assert!(!NotNullPredicate.is_premise_guarded(&wp, "x"));
+    }
+
+    /// Regression: `Not(is_some(x))` means `x` is None, so it does NOT
+    /// discharge a not_null guard. Only `Not(is_none(x))` discharges.
+    #[test]
+    fn not_is_some_does_not_discharge_guard() {
+        let not_is_some = IrFormula::Not {
+            operands: vec![IrFormula::Atomic {
+                name: "is_some".into(),
+                args: vec![IrTerm::Var { name: "x".into() }],
+            }],
+        };
+        assert!(!is_guard_for(&not_is_some, "x"));
+
+        let wp = IrFormula::Implies {
+            operands: vec![
+                not_is_some.clone(),
+                IrFormula::Atomic {
+                    name: "not_null".into(),
+                    args: vec![IrTerm::Var { name: "x".into() }],
+                },
+            ],
+        };
+        assert!(!NotNullPredicate.is_premise_guarded(&wp, "x"));
+        assert!(!NotNullPredicate.guard_discharged(&not_is_some, "x"));
     }
 }
