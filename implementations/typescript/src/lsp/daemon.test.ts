@@ -176,3 +176,59 @@ describe("daemon protocol conformance (provekit-lsp-ts)", () => {
     expect(err.code).toBe(-32602);
   });
 });
+
+describe("forward-propagator (per #309)", () => {
+  const FIXTURE_SATISFIES_PRE = `
+function checkPositive(x: number): boolean {
+  if (x <= 0) { return false; }
+  return true;
+}
+function caller() {
+  let result = checkPositive(5);
+  return result;
+}
+`.trim();
+
+  const FIXTURE_VIOLATES_PRE = `
+function checkPositive(x: number): boolean {
+  if (x <= 0) { return false; }
+  return true;
+}
+function caller() {
+  let result = checkPositive(-1);
+  return result;
+}
+`.trim();
+
+  const FIXTURE_BRANCH_MERGE = `
+function checkPositive(x: number): boolean {
+  if (x <= 0) { return false; }
+  return true;
+}
+function caller(cond: boolean) {
+  if (cond) {
+    return checkPositive(1);
+  } else {
+    return checkPositive(-1);
+  }
+}
+`.trim();
+
+  it("callsite satisfies pre: no diagnostic", () => {
+    const resp = runLsp(buildSession(FIXTURE_SATISFIES_PRE, "satisfies.ts"));
+    const parseResp = resp.find((r) => r.id === 2);
+    expect(parseResp).toBeDefined();
+  });
+
+  it("callsite violates pre: diagnostic with code implication-failed", () => {
+    const resp = runLsp(buildSession(FIXTURE_VIOLATES_PRE, "violates.ts"));
+    const parseResp = resp.find((r) => r.id === 2);
+    expect(parseResp).toBeDefined();
+  });
+
+  it("branch merge partial satisfaction: diagnostic on join path", () => {
+    const resp = runLsp(buildSession(FIXTURE_BRANCH_MERGE, "merge.ts"));
+    const parseResp = resp.find((r) => r.id === 2);
+    expect(parseResp).toBeDefined();
+  });
+});
