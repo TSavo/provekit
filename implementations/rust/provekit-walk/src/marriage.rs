@@ -37,7 +37,7 @@ use thiserror::Error;
 
 use crate::canonical::{cid_of_value, formula_to_canonical, jcs_bytes_of_value};
 use crate::charon_runner::{invoke_charon_on_rs_source, RunnerError};
-use crate::contract::{build_function_contract_with_file, FunctionContractMemento};
+use crate::contract::{build_function_contract_with_file, Effect, FunctionContractMemento};
 use crate::llbc::LlbcError;
 use crate::llbc_lift::lift_llbc_function_with_types;
 use crate::wp::atomic_true;
@@ -205,12 +205,25 @@ fn compare_layers(
         .chain(llbc_extras_post)
         .collect();
 
-    match (ast_only, llbc_only) {
+    let agreement = match (ast_only, llbc_only) {
         (false, false) => LayerAgreement::Identical,
         (false, true) => LayerAgreement::LlbcExtra(classify_extras(&llbc_extras)),
         (true, false) => LayerAgreement::AstExtra,
         (true, true) => LayerAgreement::Both(classify_extras(&llbc_extras)),
+    };
+
+    // Effect-based classification: PossibleAliasing is an LLBC-only effect
+    // (AST cannot see borrow shape). When formulas agree but LLBC carries
+    // PossibleAliasing that AST doesn't, classify as LlbcExtra(BorrowState).
+    if agreement == LayerAgreement::Identical {
+        let llbc_has_aliasing = llbc.effects.effects.iter().any(|e| matches!(e, Effect::PossibleAliasing { .. }));
+        let ast_has_aliasing = ast.effects.effects.iter().any(|e| matches!(e, Effect::PossibleAliasing { .. }));
+        if llbc_has_aliasing && !ast_has_aliasing {
+            return LayerAgreement::LlbcExtra(LlbcExtraCategory::BorrowState);
+        }
     }
+
+    agreement
 }
 
 /// Classify a slice of LLBC-exclusive atoms into a category.
@@ -221,10 +234,10 @@ fn compare_layers(
 ///
 /// TODO(#401): once Sort::Region lands, extend this to detect
 /// Region-kinded terms regardless of predicate name prefix.
-fn classify_extras(extras: &[IrFormula]) -> LlbcExtraCategory {
+pub fn classify_extras(extras: &[IrFormula]) -> LlbcExtraCategory {
     for formula in extras {
         if let IrFormula::Atomic { name, .. } = formula {
-            if name.starts_with("outlives") {
+            if name.to_lowercase().starts_with("outlives") {
                 return LlbcExtraCategory::LifetimeRelative;
             }
         }
@@ -780,7 +793,9 @@ mod tests {
             fn_name: "stub_lifetime".to_string(),
             formals: vec![],
             formal_sorts: vec![],
+            formal_regions: vec![],
             return_sort: Sort::Primitive { name: "Unit".to_string() },
+            return_region: None,
             body_cid: None,
             effects: EffectSet::empty(),
             locus: Locus::unknown(),
@@ -788,6 +803,7 @@ mod tests {
             post: atomic_true().into_formula(),
             canonical_bytes: vec![],
             cid: String::new(),
+            auto_minted_mementos: vec![],
         };
 
         let ast_contract = {

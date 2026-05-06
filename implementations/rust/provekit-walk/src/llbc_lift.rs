@@ -30,13 +30,16 @@
 // the AST walk's lift of the same source. The cross-layer cache hit
 // is paper 07 §6 across substrate layers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
 use provekit_ir_types::{IrFormula, IrTerm};
 
-use crate::contract::{build_function_contract_with_file, Effect, EffectSet, FunctionContractMemento};
+use crate::contract::{
+    build_function_contract_with_file, AliasingMemento, AliasingStatus, Effect, EffectSet,
+    FunctionContractMemento,
+};
 use crate::llbc::{LlbcError, LlbcFunction};
 use crate::wp::atomic_true;
 
@@ -183,6 +186,52 @@ pub fn lift_llbc_function_with_registry(
         }
     }
 
+    // C.8 aliasing: detect shared-ref pairs with interior mutability,
+    // and auto-mint Disjoint mementos for &mut T formal pairs.
+    let mut auto_minted: Vec<AliasingMemento> = Vec::new();
+
+    let mut shared_ifmt: Vec<String> = Vec::new();
+    for (idx, formal_name) in &formals {
+        if let Some(ty_raw) = formal_ty_raws.get(idx) {
+            if crate::aliasing::is_shared_ref_charon_ty(ty_raw)
+                && crate::aliasing::has_unsafecell_transitive(
+                    ty_raw, type_decls, &mut HashSet::new(),
+                )
+            {
+                shared_ifmt.push(formal_name.clone());
+            }
+        }
+    }
+    shared_ifmt.sort();
+    if shared_ifmt.len() >= 2 {
+        formal_opacity_effects.push(Effect::PossibleAliasing { formals: shared_ifmt });
+    }
+
+    // Auto-mint Disjoint for &mut T formal pairs
+    let mut_ref_names: Vec<&str> = formals
+        .iter()
+        .filter(|(idx, _)| {
+            formal_ty_raws
+                .get(idx)
+                .map(|ty| crate::aliasing::is_mut_ref_charon_ty(ty))
+                .unwrap_or(false)
+        })
+        .map(|(_, name)| name.as_str())
+        .collect();
+
+    for i in 0..mut_ref_names.len() {
+        for j in (i + 1)..mut_ref_names.len() {
+            let a = mut_ref_names[i];
+            let b = mut_ref_names[j];
+            let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+            auto_minted.push(AliasingMemento {
+                formal_a: lo.to_string(),
+                formal_b: hi.to_string(),
+                status: AliasingStatus::Disjoint,
+            });
+        }
+    }
+
     let stmts: Vec<&Value> = f.statements().map(|s| s.raw()).collect();
 
     // Pre-contributions: if-panic Switch chains + MIR-inserted Asserts
@@ -256,6 +305,106 @@ pub fn lift_llbc_function_with_registry(
     }
     let post_formula = simplify_conjunction(post_contribs);
 
+    // ---- C.9: Region extraction from Charon LLBC ----
+    //
+    // Extract the generics.regions array from the function's raw JSON,
+    // build a region-index-to-name map, and use it to annotate each
+    // formal's region and the return type's region.
+    //
+    // Also read generics.regions_outlive and emit Outlives predicates
+    // into the pre formula.
+
+    // Build region map: body-id → region name.
+    // Charon's generics.regions is [{index: N, name: "'a", mutability: "..."}].
+    // Body-ids in Ref types correspond to these indices (1-based charon-esque).
+    // We map both index (0-based) and index+1 (the Body value) to the name.
+    let mut region_map: HashMap<u32, String> = HashMap::new();
+    if let Some(generics) = f.raw().get("generics") {
+        if let Some(regions) = generics.get("regions").and_then(|v| v.as_array()) {
+            for r in regions {
+                if let (Some(idx), Some(name)) = (
+                    r.get("index").and_then(|v| v.as_u64()).map(|v| v as u32),
+                    r.get("name").and_then(|v| v.as_str()),
+                ) {
+                    // TODO(#384 C.9): HRTB / late-bound regions have null names.
+                    // When name is "'a" we use it verbatim; when null, the
+                    // resolve_region_json fallback produces "'r<N>".
+                    let name_str = if name == "''" || name.is_empty() {
+                        format!("'r{}", idx)
+                    } else {
+                        name.to_string()
+                    };
+                    region_map.insert(idx, name_str.clone());
+                    // Charon may use Body(N) where N is idx or idx+1.
+                    // Map both to catch either encoding.
+                    region_map.entry(idx.saturating_add(1)).or_insert_with(|| name_str);
+                } else if let Some(idx) = r.get("index").and_then(|v| v.as_u64()).map(|v| v as u32) {
+                    // Null name: use fallback.
+                    let name_str = format!("'r{}", idx);
+                    region_map.insert(idx, name_str.clone());
+                    region_map.entry(idx.saturating_add(1)).or_insert_with(|| name_str);
+                }
+            }
+        }
+    }
+
+    // Build formal_regions: parallel vec to formals, indexed by formal order.
+    // Each element is Some(region_name) for Ref/RawPtr types, None otherwise.
+    let formal_regions: Vec<Option<String>> = formals
+        .iter()
+        .map(|(idx, _)| {
+            let ty_val = formal_ty_raws.get(idx)?;
+            crate::sort_translate::extract_region_name(ty_val, &region_map)
+        })
+        .collect();
+
+    // Return region from local 0's Ty.
+    let return_region: Option<String> = formal_ty_raws
+        .get(&0)
+        .and_then(|ty| crate::sort_translate::extract_region_name(ty, &region_map));
+
+    // Build Outlives predicates from generics.regions_outlive.
+    // The shape is [[region_a, region_b], ...] where each pair means
+    // "region_a outlives region_b" (region_a lives at least as long as region_b).
+    // Each element in the pair is a region JSON value (Body/Bound/Var/Static).
+    let mut region_facts: Vec<IrFormula> = Vec::new();
+    if let Some(generics) = f.raw().get("generics") {
+        if let Some(outlives_arr) = generics
+            .get("regions_outlive")
+            .and_then(|v| v.as_array())
+        {
+            for pair in outlives_arr {
+                let pair_arr = match pair.as_array() {
+                    Some(a) if a.len() == 2 => a,
+                    _ => continue,
+                };
+                let region_a = &pair_arr[0];
+                let region_b = &pair_arr[1];
+                let name_a = crate::sort_translate::resolve_region_json(region_a, &region_map)
+                    .unwrap_or_else(|| "'?name".to_string());
+                let name_b = crate::sort_translate::resolve_region_json(region_b, &region_map)
+                    .unwrap_or_else(|| "'?name".to_string());
+                region_facts.push(IrFormula::Atomic {
+                    name: "Outlives".to_string(),
+                    args: vec![region_term(&name_a), region_term(&name_b)],
+                });
+            }
+        }
+    }
+
+    // Inject region_facts into the pre formula as conjuncts.
+    // If pre is trivial-true, use region_facts directly.
+    // If pre has content, wrap as And(pre, region_fact_1, ..., region_fact_n).
+    let pre_with_regions = if region_facts.is_empty() {
+        pre_formula.clone()
+    } else if matches!(&pre_formula, IrFormula::Atomic { name, args } if name == "true" && args.is_empty()) {
+        simplify_conjunction(region_facts)
+    } else {
+        let mut operands = vec![pre_formula.clone()];
+        operands.extend(region_facts);
+        IrFormula::And { operands }
+    };
+
     // We synthesize a syn::ItemFn shell to reuse build_function_contract's
     // memento-construction machinery — it sets up the locus, canonical
     // bytes and CID scaffolding, but uses our LLBC-derived pre/post
@@ -280,13 +429,18 @@ pub fn lift_llbc_function_with_registry(
     contract.return_sort =
         crate::sort_translate::ty_to_sort(formal_ty_raws.get(&0).map(|v| v), type_decls);
 
+    // Set C.9 region fields on the contract.
+    contract.formal_regions = formal_regions;
+    contract.return_region = return_region;
+
     // Set LLBC-derived effects on the contract before override_formulas so
     // build_memento_value sees the correct effect set when recomputing the CID.
     contract.effects = effects;
+    contract.auto_minted_mementos = auto_minted;
     // Override the lifted formulas with the LLBC-derived ones, then
     // recompute canonical bytes + CID so result_var_name and the
     // header.cid path are consistent.
-    contract = override_formulas(contract, pre_formula, post_formula);
+    contract = override_formulas(contract, pre_with_regions, post_formula);
     Ok(contract)
 }
 
@@ -639,7 +793,7 @@ fn adt_field_name(
 ) -> Option<String> {
     let decls = type_decls.as_array()?;
     let decl = decls.iter().find(|d| {
-        d.get("def_id").and_then(|v| v.as_u64()).map(|id| id as usize) == Some(adt_id)
+        crate::aliasing::adt_decl_matches_id(d, adt_id as u64)
     })?;
     let kind = decl.get("kind")?;
     let fields = if let Some(vid) = variant_id {
@@ -777,11 +931,7 @@ fn is_pin_adt(type_decls: &Value, adt_id: u64) -> bool {
         return false;
     };
     for td in tds {
-        let td_index = td
-            .get("def_id")
-            .and_then(|d| d.get("index"))
-            .and_then(|i| i.as_u64());
-        if td_index != Some(adt_id) {
+        if !crate::aliasing::adt_decl_matches_id(td, adt_id) {
             continue;
         }
         let Some(name_arr) = td.get("item_meta").and_then(|m| m.get("name")).and_then(|v| v.as_array()) else {
@@ -1743,6 +1893,15 @@ fn simplify_conjunction(parts: Vec<IrFormula>) -> IrFormula {
         parts.into_iter().next().unwrap()
     } else {
         IrFormula::And { operands: parts }
+    }
+}
+
+/// Build an IrTerm for a region name. Uses the `@region:` prefix to
+/// avoid collision with value-term variables. The term carries no
+/// sort — the downstream substrate matches on the name prefix.
+fn region_term(name: &str) -> IrTerm {
+    IrTerm::Var {
+        name: format!("@region:{}", name),
     }
 }
 
@@ -2845,5 +3004,165 @@ mod tests {
         let b1 = jcs_bytes_of_value(&v1);
         let b2 = jcs_bytes_of_value(&v2);
         assert_eq!(b1, b2, "float-sort contract JCS bytes must be deterministic");
+    }
+
+    // ---- C.9: Region extraction + Outlives emission tests ----
+
+    #[test]
+    fn region_id_emits_single_region_a() {
+        let krate = LlbcCrate::from_path(fixture_path("region_id.llbc")).unwrap();
+        let f = krate.function_by_name("id").unwrap();
+        let contract = lift_llbc_function(f, Some("region_id.rs")).unwrap();
+
+        assert_eq!(contract.formals, vec!["x".to_string()]);
+        assert_eq!(
+            contract.formal_regions,
+            vec![Some("'a".to_string())],
+            "region_id: formal x should carry region 'a"
+        );
+        assert_eq!(
+            contract.return_region,
+            Some("'a".to_string()),
+            "region_id: return type should carry region 'a"
+        );
+
+        let pre_str = serde_json::to_string(&contract.pre).unwrap();
+        assert!(
+            !pre_str.contains("Outlives"),
+            "region_id has no outlives where-clauses"
+        );
+    }
+
+    #[test]
+    fn region_longer_emits_outlives_b_a() {
+        let krate = LlbcCrate::from_path(fixture_path("region_longer.llbc")).unwrap();
+        let f = krate.function_by_name("longer").unwrap();
+        let contract = lift_llbc_function(f, Some("region_longer.rs")).unwrap();
+
+        assert_eq!(contract.formals, vec!["x".to_string(), "_y".to_string()]);
+        assert_eq!(
+            contract.formal_regions,
+            vec![Some("'a".to_string()), Some("'b".to_string())],
+            "region_longer: x:'a, _y:'b"
+        );
+
+        let pre_str = serde_json::to_string(&contract.pre).unwrap();
+        assert!(
+            pre_str.contains("Outlives"),
+            "region_longer pre must contain Outlives: {}",
+            pre_str
+        );
+        assert!(
+            pre_str.contains("@region:'b"),
+            "Outlives must reference region 'b: {}",
+            pre_str
+        );
+        assert!(
+            pre_str.contains("@region:'a"),
+            "Outlives must reference region 'a: {}",
+            pre_str
+        );
+    }
+
+    #[test]
+    fn region_two_unrelated_emits_no_facts() {
+        let krate =
+            LlbcCrate::from_path(fixture_path("region_two_unrelated.llbc")).unwrap();
+        let f = krate.function_by_name("two").unwrap();
+        let contract = lift_llbc_function(f, Some("region_two_unrelated.rs")).unwrap();
+
+        assert_eq!(contract.formals, vec!["x".to_string(), "_y".to_string()]);
+        assert_eq!(
+            contract.formal_regions,
+            vec![Some("'a".to_string()), Some("'b".to_string())],
+            "region_two_unrelated: x:'a, _y:'b"
+        );
+
+        let pre_str = serde_json::to_string(&contract.pre).unwrap();
+        assert!(
+            !pre_str.contains("Outlives"),
+            "region_two_unrelated has no outlives where-clauses"
+        );
+    }
+
+    #[test]
+    fn region_static_emits_static_region() {
+        let krate = LlbcCrate::from_path(fixture_path("region_static.llbc")).unwrap();
+        let f = krate.function_by_name("give_static").unwrap();
+        let contract = lift_llbc_function(f, Some("region_static.rs")).unwrap();
+
+        assert!(contract.formals.is_empty(), "give_static has no formals");
+        assert!(contract.formal_regions.is_empty());
+        assert_eq!(
+            contract.return_region,
+            Some("'static".to_string()),
+            "give_static: return region should be 'static"
+        );
+    }
+
+    #[test]
+    fn non_reference_formals_have_none_region() {
+        let krate = LlbcCrate::from_path(fixture_path("clean.llbc")).unwrap();
+        let f = krate.function_by_name("f").unwrap();
+        let contract = lift_llbc_function(f, Some("clean.rs")).unwrap();
+
+        assert_eq!(contract.formals, vec!["x".to_string()]);
+        assert_eq!(
+            contract.formal_regions,
+            vec![None],
+            "clean: x is u32 (not a reference) — region should be None"
+        );
+        assert_eq!(
+            contract.return_region,
+            None,
+            "clean: return type is unit — region should be None"
+        );
+    }
+
+    #[test]
+    fn outlives_predicate_jcs_byte_deterministic() {
+        use crate::canonical::{formula_to_canonical, jcs_bytes_of_value};
+
+        let r_a = IrTerm::Var {
+            name: "@region:'a".to_string(),
+        };
+        let r_b = IrTerm::Var {
+            name: "@region:'b".to_string(),
+        };
+
+        let f1 = IrFormula::Atomic {
+            name: "Outlives".to_string(),
+            args: vec![r_a.clone(), r_b.clone()],
+        };
+        let f2 = IrFormula::Atomic {
+            name: "Outlives".to_string(),
+            args: vec![r_a, r_b],
+        };
+
+        let b1 = jcs_bytes_of_value(&formula_to_canonical(&f1));
+        let b2 = jcs_bytes_of_value(&formula_to_canonical(&f2));
+        assert_eq!(b1, b2, "Outlives predicates must be JCS byte-deterministic");
+    }
+
+    #[test]
+    fn region_id_marriage_categorizes_lifetime_relative() {
+        let outlives = IrFormula::Atomic {
+            name: "Outlives".to_string(),
+            args: vec![
+                IrTerm::Var {
+                    name: "@region:'b".to_string(),
+                },
+                IrTerm::Var {
+                    name: "@region:'a".to_string(),
+                },
+            ],
+        };
+
+        let category = crate::marriage::classify_extras(&[outlives]);
+        assert_eq!(
+            category,
+            crate::marriage::LlbcExtraCategory::LifetimeRelative,
+            "Outlives atom must be classified as LifetimeRelative"
+        );
     }
 }

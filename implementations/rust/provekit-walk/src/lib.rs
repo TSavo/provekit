@@ -26,6 +26,7 @@
 // dropper.rs (issue #382, Phases 1-3). Phase 4 (mint-on-miss via solver
 // portfolio) is deferred.
 
+pub mod aliasing;
 pub mod canonical;
 pub mod chain;
 pub mod dropper;
