@@ -81,7 +81,7 @@ For composite types, the lifter computes:
 
 ```
 classify(ty) =
-  if ty has user impl Drop:
+  if ty has a user-defined `impl Drop` (not a stdlib Structural drop like `String`, `Vec<T>`, `Box<T>`):
     UserCode
   else if ty is Copy or has no Drop and all fields Trivial:
     Trivial
