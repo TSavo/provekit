@@ -104,7 +104,7 @@ When walk encounters a Charon-emitted `drop_in_place(x)` call, the lifter must:
 1. Inspect `x`'s type via the type-decls table to locate the relevant Adt or primitive type declaration.
 2. Walk the type's drop implementation status:
    - If the type is `Copy` or has no `Drop` trait impl AND all its fields are also Trivial (recursive check): emit `Drop { target: "x", drop_kind: Trivial }`.
-   - If the type has an `impl Drop`: emit `Drop { target: "x", drop_kind: UserCode }` PLUS `Effect::Panics` and `Effect::Unsafe` (drops can panic; double-panic during unwind is UB).
+   - If the type has an `impl Drop`: emit `Drop { target: "x", drop_kind: UserCode }` PLUS `Effect::Panics` and `Effect::Unsafe` (drops can panic; double-panic during unwind is a process abort, not UB, but the substrate models both panic and double-panic as `Panics` — the `Unsafe` flag here is because Drop implementations may directly contain unsafe code via `unsafe impl Drop` or unsafe operations in the drop body).
    - Otherwise (no `Drop` impl, but at least one field has a non-Trivial drop): recursively classify each field's drop. Take the worst-case classification across all fields:
      - All fields Trivial: emit `Drop { target: "x", drop_kind: Trivial }` (already covered above).
      - Worst sub-field is Structural: emit `Drop { target: "x", drop_kind: Structural }`. No `Panics`/`Unsafe` (the recursive Structural drops are themselves classified, and any UserCode would have surfaced).
@@ -138,7 +138,9 @@ pub struct ScopedDrop {
 }
 ```
 
-**RFC recommendation:** Start with Alternative B (aggregated) for v1. Fine-grained per-site emission can be added as a non-breaking enhancement later, since both approaches emit the same classification information; the difference is only in error-reporting granularity. Aggregated emission avoids the combinatorial explosion of walking every scope-exit for every local.
+**RFC recommendation:** Start with Alternative B (aggregated) for v1. Fine-grained per-site emission can be added as an enhancement that requires CID migration (effects arrays are part of the content-addressed memento), since both approaches emit the same classification information; the difference is only in error-reporting granularity. Aggregated emission avoids the combinatorial explosion of walking every scope-exit for every local.
+
+**v1 resolution:** The v1 implementation uses individual `Effect::Drop` entries per drop site. The `ScopeExitDrops` aggregate shape is deferred to v2 pending a CID migration strategy (effects arrays are part of the content-addressed memento, so changing between aggregated and individual emission is a breaking change requiring CID migration — it is not a "non-breaking enhancement"). All discharge rules in §§5.1-5.3 and §7.4 are written against individual entries.
 
 ### §2.3 Generic types and monomorphization
 
@@ -180,7 +182,12 @@ pub struct DropMemento {
     /// True if the Drop impl is guaranteed not to panic.
     pub panic_free: bool,
 
-    /// True if the Drop impl does not allocate (heap / arena).
+    /// Whether the drop performs no heap allocation (no new allocate,
+    /// no internal resize, no rebalance). If false, the drop's allocation
+    /// behavior must be discharged separately via the drop body contract
+    /// or an `AllocationMemento` (not yet defined). In v1, `allocation_free`
+    /// is recorded but NOT independently enforced — it is a property
+    /// that the drop body contract verifies as part of its pre/post.
     pub allocation_free: bool,
 
     /// True if the Drop impl contains no user-defined logic; it only
@@ -242,9 +249,9 @@ fn write_and_close(file: File, data: &[u8]) {
 
 - `file: File`. `File::drop` calls `close(2)` which can fail (returns `io::Error` in Rust, but may panic if the fd is invalid in a debug build).
 - Effect: `Drop { target: "file", drop_kind: UserCode }`.
-- PLUS: `Effect::Panics`, `Effect::Unsafe` (user-defined Drop may panic; double-panic is UB).
+- PLUS: `Effect::Panics`, `Effect::Unsafe` (user-defined Drop may panic; double-panic during unwind is a process abort, not UB, but the substrate models both panic and double-panic as `Panics` — the `Unsafe` flag here is because Drop implementations may directly contain unsafe code via `unsafe impl Drop` or unsafe operations in the drop body).
 
-**Composition:** Refused unless the pool contains a `DropMemento` for `std::fs::File` asserting `panic_free: true` OR the pool contains the lifted drop body contract for `File::drop` (so the substrate can compose through the drop's own pre/post).
+**Composition:** Refused unless the pool contains a `DropMemento` for `std::fs::File` with `user_code_free: true` AND `panic_free: true` (downgrading the drop to Structural and clearing the Panics/Unsafe side-effects) OR the pool contains the lifted drop body contract for `File::drop` (so the substrate can compose through the drop's own pre/post).
 
 ### §4.4 Vec of Strings: nested Structural
 
@@ -275,7 +282,7 @@ fn lock_and_use(guard: MutexGuard<'_, u32>) -> u32 {
 - `guard: MutexGuard<'_, u32>`. `MutexGuard::drop` calls `Unlock`, which touches the `Mutex`'s internal state.
 - `MutexGuard::drop` is UserCode (it is user-defined in `std`).
 - Effect: `Drop { target: "guard", drop_kind: UserCode }`.
-- PLUS: `Effect::Panics`, `Effect::Unsafe` (drop may panic on poisoned mutex; double-panic is UB).
+- PLUS: `Effect::Panics`, `Effect::Unsafe` (drop may panic on poisoned mutex; double-panic during unwind is a process abort, not UB, but the substrate models both panic and double-panic as `Panics` — the `Unsafe` flag here is because Drop implementations may directly contain unsafe code via `unsafe impl Drop` or unsafe operations in the drop body).
 
 **Composition:** Refused without a `DropMemento` for `MutexGuard`. The author must provide one asserting the desired properties.
 
@@ -369,7 +376,7 @@ Structural drops in v1 assume the global allocator does not panic during dealloc
 
 **Question:** Should the lifter emit one `Effect::Drop` per drop site, or one aggregated `Effect::ScopeExitDrops` per function?
 
-**RFC recommendation:** Aggregated (§2.2, Alternative B) for v1. The classification information is the same in both approaches. Aggregated emission is simpler and avoids combinatorial explosion at scope-exit analysis. Fine-grained per-site emission can be added as a non-breaking enhancement later.
+**RFC recommendation:** Aggregated (§2.2, Alternative B) for v1. The classification information is the same in both approaches. Aggregated emission is simpler and avoids combinatorial explosion at scope-exit analysis. Fine-grained per-site emission can be added as an enhancement that requires CID migration (effects arrays are part of the content-addressed memento).
 
 ### §7.2 Generic type drop classification before monomorphization
 
