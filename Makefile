@@ -450,7 +450,7 @@ protocol-verify: build-rust
 	$(PROVEKIT) verify-protocol --signed
 
 .PHONY: conformance
-conformance: catalog-verify protocol-verify all-mint test-self-contracts
+conformance: catalog-verify protocol-verify all-mint test-self-contracts conformance-sort-fixtures
 	@echo ""
 	@echo "==== conformance: PASS ===="
 
@@ -478,6 +478,14 @@ test-self-contracts: test-self-contracts-rust
 test-self-contracts-rust:
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-self-contracts --lib
+
+# --- Cross-kit conformance fixtures ------------------------------------------
+
+.PHONY: conformance-sort-fixtures
+conformance-sort-fixtures:
+	@echo "=== FunctionSort byte-pinned fixture ==="
+	@cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-canonicalizer --test conformance_function_sort
 
 # --- Per-language test suites ------------------------------------------------
 
