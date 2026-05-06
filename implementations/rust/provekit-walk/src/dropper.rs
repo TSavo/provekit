@@ -303,7 +303,7 @@ impl DropTemplate {
                      return type to implement Default; not closure-verified by current lifter",
             }),
             DropTemplate::Expect => Ok(format!(
-                "    let {var}_checked = {var}.expect(\
+                "    let {var}_unwrapped = {var}.expect(\
                     \"not_null: invariant: caller must supply non-null {var}\");\n",
                 var = var
             )),
@@ -314,13 +314,13 @@ impl DropTemplate {
     /// the callsite argument to be rewritten in addition to inserting a guard
     /// line. `emit_drop` applies this substitution to the callsite line.
     ///
-    /// `Expect` binds a fresh name `{var}_checked` and must substitute it at
+    /// `Expect` binds a fresh name `{var}_unwrapped` and must substitute it at
     /// every argument occurrence of `{var}` on the callsite line to preserve
     /// the original type (`Option<T>`) at the callee boundary.
     /// The substitution is whole-word only to avoid spurious replacements.
     pub fn callsite_arg_rewrite(&self, var: &str) -> Option<(String, String)> {
         match self {
-            DropTemplate::Expect => Some((var.to_string(), format!("{var}_checked"))),
+            DropTemplate::Expect => Some((var.to_string(), format!("{var}_unwrapped"))),
             _ => None,
         }
     }
@@ -447,18 +447,31 @@ pub fn emit_drop(
 
     let guard_trimmed = guard_text.trim_end_matches('\n');
     let callsite_rewrite = template.callsite_arg_rewrite(&gap.var_name);
+
+    // Collision avoidance: if the fresh name already appears as a binding
+    // in the source, fall back to `{var}_inner` to avoid shadowing an
+    // existing binding that would change the type of the in-scope name.
+    let (old_name, new_name) = match &callsite_rewrite {
+        Some((old, new)) if source.contains(&format!("let {new}")) || source.contains(&format!("let mut {new}")) => {
+            let fallback = format!("{old}_inner");
+            (old.clone(), fallback)
+        }
+        Some((old, new)) => (old.clone(), new.clone()),
+        None => (String::new(), String::new()),
+    };
+
     let mut result_lines: Vec<String> = Vec::with_capacity(lines.len() + 1);
     for (i, line) in lines.iter().enumerate() {
         if i == insert_before_idx {
             result_lines.push(guard_trimmed.to_string());
-        }
-        if i == insert_before_idx {
-            if let Some((old, new)) = &callsite_rewrite {
-                result_lines.push(replace_word(line, old, new));
-                continue;
+            if callsite_rewrite.is_some() {
+                result_lines.push(replace_word(line, &old_name, &new_name));
+            } else {
+                result_lines.push(line.to_string());
             }
+        } else {
+            result_lines.push(line.to_string());
         }
-        result_lines.push(line.to_string());
     }
 
     let modified_source = result_lines.join("\n");
@@ -970,8 +983,8 @@ fn caller(x: u32) { f(x); }
             .render("x")
             .expect("Expect must render Ok after #407 fix");
         assert!(
-            rendered.contains("x_checked"),
-            "must bind to fresh name x_checked: {rendered}"
+            rendered.contains("x_unwrapped"),
+            "must bind to fresh name x_unwrapped: {rendered}"
         );
         assert!(
             rendered.contains("x.expect("),
@@ -988,7 +1001,7 @@ fn caller(x: u32) { f(x); }
         let rendered = DropTemplate::Expect
             .render("my_val")
             .expect("Expect renders OK");
-        assert!(rendered.contains("my_val_checked"), "fresh name must use var: {rendered}");
+        assert!(rendered.contains("my_val_unwrapped"), "fresh name must use var: {rendered}");
         assert!(rendered.contains("my_val.expect("), "must call expect on original: {rendered}");
     }
 
@@ -1440,17 +1453,17 @@ fn caller(x: Option<i32>) {
         let modified = &result.modified_source;
 
         // The let-binding must appear before the callsite.
-        let let_pos = modified.find("x_checked").expect("fresh name x_checked present");
-        let callsite_pos = modified.find("f(x_checked)").expect("callsite uses x_checked");
+        let let_pos = modified.find("x_unwrapped").expect("fresh name x_unwrapped present");
+        let callsite_pos = modified.find("f(x_unwrapped)").expect("callsite uses x_unwrapped");
         assert!(
             let_pos < callsite_pos,
             "let-binding must precede callsite: let@{let_pos}, callsite@{callsite_pos}"
         );
 
-        // The original `f(x)` callsite must be rewritten to `f(x_checked)`.
+        // The original `f(x)` callsite must be rewritten to `f(x_unwrapped)`.
         assert!(
             !modified.contains("f(x);"),
-            "original f(x) callsite must be rewritten to f(x_checked)"
+            "original f(x) callsite must be rewritten to f(x_unwrapped)"
         );
 
         // The modified source must parse cleanly (type-correct Rust).
@@ -1461,7 +1474,7 @@ fn caller(x: Option<i32>) {
     #[test]
     fn expect_callsite_arg_rewrite_returns_fresh_name_pair() {
         let rewrite = DropTemplate::Expect.callsite_arg_rewrite("x");
-        assert_eq!(rewrite, Some(("x".to_string(), "x_checked".to_string())));
+        assert_eq!(rewrite, Some(("x".to_string(), "x_unwrapped".to_string())));
     }
 
     #[test]
