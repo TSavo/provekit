@@ -66,8 +66,8 @@ use crate::{EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 
 /// Pinned `declaredAt` for self-contracts attestations minted under the
-/// unified pipeline. Matches v1.4.1 catalog declared_at for consistency.
-const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-03T18:00:00Z";
+/// unified pipeline. Matches the v1.6.0 catalog declared_at for consistency.
+const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 
 
 /// Canonical mapping from `--kit=<name>` to (project_subdir, lift_surface, lang_key).
@@ -854,6 +854,7 @@ mod tests {
         assert_eq!(a["schemaVersion"].as_str(), Some("1"));
         assert_eq!(a["kind"].as_str(), Some("self-contracts-attestation"));
         assert_eq!(a["lang"].as_str(), Some("rust"));
+        assert_eq!(a["declaredAt"].as_str(), Some("2026-05-05T18:00:00Z"));
         assert!(a["signature"].as_str().unwrap().starts_with("ed25519:"));
         assert!(a["signer"].as_str().unwrap().starts_with("ed25519:"));
     }

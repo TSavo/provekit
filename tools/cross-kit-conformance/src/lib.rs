@@ -318,6 +318,18 @@ fn run_cmd_env(
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if !envs.iter().any(|(key, _)| *key == "PATH") {
+        let current_path = std::env::var_os("PATH");
+        command.env(
+            "PATH",
+            prepend_unique_path_dirs(current_path.as_ref(), &runtime_bin_dir_candidates()),
+        );
+    }
+    if !envs.iter().any(|(key, _)| *key == "JAVA_HOME") {
+        if let Some(java_home) = detect_java_home() {
+            command.env("JAVA_HOME", java_home);
+        }
+    }
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -376,6 +388,44 @@ fn run_cmd_env(
             }
         }
     }
+}
+
+fn runtime_bin_dir_candidates() -> Vec<PathBuf> {
+    [
+        "/usr/local/opt/ruby/bin",
+        "/opt/homebrew/opt/ruby/bin",
+        "/usr/local/opt/openjdk/bin",
+        "/opt/homebrew/opt/openjdk/bin",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .filter(|p| p.is_dir())
+    .collect()
+}
+
+fn detect_java_home() -> Option<PathBuf> {
+    ["/usr/local/opt/openjdk", "/opt/homebrew/opt/openjdk"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|home| home.join("bin/java").is_file())
+}
+
+fn prepend_unique_path_dirs(base: Option<&OsString>, dirs: &[PathBuf]) -> OsString {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for dir in dirs {
+        if seen.insert(dir.clone()) {
+            out.push(dir.clone());
+        }
+    }
+    if let Some(base) = base {
+        for dir in std::env::split_paths(base) {
+            if seen.insert(dir.clone()) {
+                out.push(dir);
+            }
+        }
+    }
+    std::env::join_paths(out).unwrap_or_else(|_| base.cloned().unwrap_or_default())
 }
 
 fn spawn_output_reader<R>(mut pipe: R) -> thread::JoinHandle<Vec<u8>>
@@ -473,6 +523,7 @@ fn self_contract_bootstrap_targets(profile: Profile) -> Vec<&'static str> {
             "typescript" => Some("build-ts"),
             "csharp" => Some("build-csharp"),
             "java" => Some("build-java-self-contracts"),
+            "ruby" => Some("build-ruby"),
             "c" => Some("build-c-self-contracts"),
             "zig" => Some("build-zig"),
             "swift" => Some("build-swift"),
@@ -2593,7 +2644,47 @@ mod tests {
         assert!(producers
             .iter()
             .all(|producer| !producer.mint_kit_alias.is_empty()));
-        assert!(self_contract_bootstrap_targets(Profile::Linux).contains(&"build-rust"));
+        let targets = self_contract_bootstrap_targets(Profile::Linux);
+        assert!(targets.contains(&"build-rust"));
+        assert!(targets.contains(&"build-ruby"));
+    }
+
+    #[test]
+    fn conformance_path_prefers_homebrew_runtime_bins_before_usr_bin() {
+        let base = OsString::from(
+            "/usr/bin:/bin:/usr/local/opt/ruby/bin:/usr/local/opt/openjdk/bin:/usr/local/bin",
+        );
+        let got = prepend_unique_path_dirs(
+            Some(&base),
+            &[
+                PathBuf::from("/usr/local/opt/ruby/bin"),
+                PathBuf::from("/usr/local/opt/openjdk/bin"),
+            ],
+        );
+        let parts: Vec<_> = std::env::split_paths(&got).collect();
+
+        let ruby_pos = parts
+            .iter()
+            .position(|p| p == Path::new("/usr/local/opt/ruby/bin"))
+            .expect("ruby bin present");
+        let java_pos = parts
+            .iter()
+            .position(|p| p == Path::new("/usr/local/opt/openjdk/bin"))
+            .expect("openjdk bin present");
+        let usr_pos = parts
+            .iter()
+            .position(|p| p == Path::new("/usr/bin"))
+            .expect("/usr/bin present");
+
+        assert!(ruby_pos < usr_pos, "ruby bin must outrank /usr/bin");
+        assert!(java_pos < usr_pos, "openjdk bin must outrank /usr/bin");
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|p| p == &&PathBuf::from("/usr/local/opt/ruby/bin"))
+                .count(),
+            1
+        );
     }
 
     #[test]

@@ -60,6 +60,14 @@ VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-cont
 SELF_CONTRACTS_ATTEST_DIR := .provekit/self-contracts-attestations
 CONFORMANCE_PROFILE ?= linux
 CONFORMANCE_JOBS ?= 4
+RUBY ?= $(shell for p in /usr/local/opt/ruby/bin/ruby /opt/homebrew/opt/ruby/bin/ruby /usr/local/bin/ruby /opt/homebrew/bin/ruby; do if [ -x "$$p" ]; then echo "$$p"; exit; fi; done; command -v ruby || echo ruby)
+JAVA_HOME ?= $(shell for d in /usr/local/opt/openjdk /opt/homebrew/opt/openjdk; do if [ -x "$$d/bin/java" ]; then echo "$$d"; exit; fi; done)
+export JAVA_HOME
+ifeq ($(strip $(JAVA_HOME)),)
+export PATH := $(dir $(RUBY)):$(PATH)
+else
+export PATH := $(dir $(RUBY)):$(JAVA_HOME)/bin:$(PATH)
+endif
 
 .PHONY: help
 help:
@@ -67,15 +75,15 @@ help:
 	@echo ""
 	@echo "Mainline:"
 	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 10 peer langs]"
-	@echo "  make conformance    catalog + protocol + 10 mint CIDs + self-contract tests"
-	@echo "  make all-mint       10 mint commands (Swift excluded: macOS-only, use mint-swift)"
+	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
+	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make bootstrap-self-contracts"
 	@echo "                       re-sign attestations from live kit artifacts"
 	@echo "                       override: CONFORMANCE_PROFILE=all CONFORMANCE_JOBS=8"
 	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
-	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java)"
+	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java + ruby)"
 	@echo "  make build-rust     cargo build --release (workspace + tools)"
 	@echo "  make build-cpp      clang++ + vendored-blake3"
 	@echo "  make build-go       go build per Go module"
@@ -118,7 +126,7 @@ help:
 # with the Swift toolchain and is not run by Linux CI. Use `make build-swift`
 # directly on macOS.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-ts build-csharp build-java
+build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-ruby
 
 .PHONY: build-rust
 build-rust:
@@ -176,6 +184,11 @@ build-java-self-contracts:
 	# implementations/java/provekit-java-self-contracts/target/provekit-java-self-contracts.jar
 	# and the lift manifest spawns it with `java -jar`.
 	mvn -q -f implementations/java/pom.xml -pl provekit-java-self-contracts -am package -DskipTests
+
+.PHONY: build-ruby
+build-ruby:
+	cd implementations/ruby/ext/provekit_blake3 && $(RUBY) extconf.rb && $(MAKE)
+	cd implementations/ruby && $(RUBY) -Ilib -e 'require "provekit"; abort unless Provekit::Blake3.hex("provekit").start_with?("blake3-512:")'
 
 .PHONY: build-swift
 build-swift:
@@ -295,7 +308,7 @@ mint-python: build-rust
 		 echo "      $(PROVEKIT) mint --kit=python" && exit 1)
 
 .PHONY: mint-ruby
-mint-ruby: build-rust
+mint-ruby: build-rust build-ruby
 	@echo ">> minting ruby self-contracts"
 	@mint_out=$$($(PROVEKIT) mint --kit=ruby --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
@@ -342,15 +355,14 @@ mint-php: build-rust
 		(echo "FAIL: php self-contracts attestation rejected; re-mint and commit:" && \
 		 echo "      $(PROVEKIT) mint --kit=php" && exit 1)
 
-# NOTE: all-mint runs 10 of 12 kits (Linux/CI subset).
-# Excluded: swift (macOS-only; use mint-swift on macOS), ruby (attestation
-# exists but CI toolchain integration pending, #234).
+# NOTE: all-mint runs 11 of 12 kits (Linux/CI subset).
+# Excluded: swift (macOS-only; use mint-swift on macOS).
 # zig and c were added after their Side A merges (#283, #272) and are included.
 # php was added after its self-contracts attestation was signed (#393).
 .PHONY: all-mint
-all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-c mint-zig mint-php
+all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python mint-ruby mint-c mint-zig mint-php
 	@echo ""
-	@echo "==== all 10 core self-contract CIDs match pinned values ===="
+	@echo "==== all 11 core self-contract CIDs match pinned values ===="
 	@printf "  %-8s  %s\n" "rust"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/rust.json)"
 	@printf "  %-8s  %s\n" "go"     "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/go.json)"
 	@printf "  %-8s  %s\n" "cpp"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/cpp.json)"
@@ -358,6 +370,7 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python m
 	@printf "  %-8s  %s\n" "csharp" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/csharp.json)"
 	@printf "  %-8s  %s\n" "java"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/java.json)"
 	@printf "  %-8s  %s\n" "python" "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/python.json)"
+	@printf "  %-8s  %s\n" "ruby"   "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/ruby.json)"
 	@printf "  %-8s  %s\n" "c"      "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/c.json)"
 	@printf "  %-8s  %s\n" "zig"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/zig.json)"
 	@printf "  %-8s  %s\n" "php"    "(envelope: $(SELF_CONTRACTS_ATTEST_DIR)/php.json)"
