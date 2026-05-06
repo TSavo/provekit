@@ -366,6 +366,31 @@ fn lift_predicate_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrFormula> {
             Some(negate(inner))
         }
         Expr::Paren(p) => lift_predicate_inner(&p.expr, ctx),
+        // Zero-argument method calls that return bool: `.is_some()`, `.is_none()`,
+        // `.is_empty()`, `.is_err()`, `.is_ok()`. These are common predicate shapes
+        // in Rust and appear naturally in the dropper's emitted guard code.
+        // Each lifts to `IrFormula::Atomic { name: "is_some" (or similar), args: [recv] }`.
+        Expr::MethodCall(syn::ExprMethodCall {
+            receiver,
+            method,
+            args,
+            ..
+        }) if args.is_empty() => {
+            let method_name = method.to_string();
+            let is_bool_predicate = matches!(
+                method_name.as_str(),
+                "is_some" | "is_none" | "is_empty" | "is_err" | "is_ok"
+            );
+            if is_bool_predicate {
+                let recv_term = lift_expr_to_term_inner(receiver, ctx)?;
+                Some(IrFormula::Atomic {
+                    name: method_name,
+                    args: vec![recv_term],
+                })
+            } else {
+                None
+            }
+        }
         // Anything else is unrecognized in the MVP.
         _ => None,
     }
@@ -1134,6 +1159,49 @@ mod tests {
         assert!(
             json.contains("\"x\""),
             "explicit return expr must reference x: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn lifts_is_none_method_call_as_atomic_predicate() {
+        // `if x.is_none() { panic!() }` lifts to is_none(x) at the
+        // precondition (via the if-then-panic path: ¬panic_cond = ¬is_none(x)).
+        // This is the shape the dropper emits for the Defensive template.
+        let item_fn = parse_fn(
+            r#"
+            fn caller(x: Option<i32>) {
+                if x.is_none() { panic!("not_null: x must be Some"); }
+            }
+        "#,
+        );
+        let pre = lift_function_precondition(&item_fn);
+        let json = serde_json::to_string(pre.as_formula()).unwrap();
+        // The if-then-panic lifts ¬is_none(x) as the precondition.
+        // The JSON should contain "is_none" to confirm the method-call lift fired.
+        assert!(
+            json.contains("is_none"),
+            "if x.is_none() panic must lift is_none to precondition: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn lifts_is_some_method_call_as_atomic_predicate() {
+        // `if !x.is_some() { panic!() }` (double-negation via De Morgan)
+        // should also lift correctly.
+        let item_fn = parse_fn(
+            r#"
+            fn caller(x: Option<i32>) {
+                if !x.is_some() { panic!("not_null: x must be Some"); }
+            }
+        "#,
+        );
+        let pre = lift_function_precondition(&item_fn);
+        let json = serde_json::to_string(pre.as_formula()).unwrap();
+        assert!(
+            json.contains("is_some"),
+            "if !x.is_some() panic must lift is_some to precondition: {}",
             json
         );
     }
