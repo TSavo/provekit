@@ -1,0 +1,7 @@
+# Build artifacts
+*.o
+bin/
+*.tmp
+
+# Test output
+test_output.txt
