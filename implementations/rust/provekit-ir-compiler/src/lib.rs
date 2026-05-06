@@ -34,6 +34,32 @@ pub struct CompiledFormula {
     /// Free variables the compiler had to declare in `preamble`. Sort
     /// strings are dialect-native.
     pub free_vars: Vec<FreeVar>,
+    /// Opacity manifest recording positions the compiler could not
+    /// soundly translate. Empty when all positions were handled.
+    #[serde(default)]
+    pub opacity_manifest: OpacityManifest,
+}
+
+/// Opacity manifest emitted alongside a compiled formula. Records
+/// every IR position the compiler marked opaque (replaced with a
+/// dialect-specific trust-me placeholder).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct OpacityManifest {
+    #[serde(rename = "protocolVersion")]
+    pub protocol_version: String,
+    pub compiler: String,
+    #[serde(rename = "compilerVersion")]
+    pub compiler_version: String,
+    pub opacities: Vec<OpacityEntry>,
+}
+
+/// One opaque position recorded in an OpacityManifest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpacityEntry {
+    #[serde(rename = "positionCid")]
+    pub position_cid: String,
+    #[serde(rename = "reasonCode")]
+    pub reason_code: String,
 }
 
 /// One declared free variable in the compiled output.
