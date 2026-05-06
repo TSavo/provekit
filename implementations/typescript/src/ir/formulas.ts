@@ -28,7 +28,7 @@ export type Sort =
   | { kind: "set"; element: Sort }
   | { kind: "tuple"; elements: Sort[] }
   | { kind: "function"; args: Sort[]; return: Sort }
-  | { kind: "dependent"; name: string; indexVar: string; indexSort: Sort };
+  | { kind: "dependent"; name: string; indexVar: string; indexSort: Sort }
   | { kind: "region"; name: string };
 
 // ---------------------------------------------------------------------------
