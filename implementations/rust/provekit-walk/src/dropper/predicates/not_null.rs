@@ -106,7 +106,7 @@ fn is_guard_for(formula: &IrFormula, var_name: &str) -> bool {
         IrFormula::Not { operands } => {
             if operands.len() == 1 {
                 if let IrFormula::Atomic { name, args } = &operands[0] {
-                    return matches!(name.as_str(), "is_none" | "is_some")
+                    return matches!(name.as_str(), "is_none")
                         && has_var(args, var_name);
                 }
             }
@@ -132,7 +132,7 @@ fn formula_contains_guard_for(formula: &IrFormula, var_name: &str) -> bool {
         IrFormula::Not { operands } => {
             if operands.len() == 1 {
                 if let IrFormula::Atomic { name, args } = &operands[0] {
-                    let is_guard = matches!(name.as_str(), "is_none" | "is_some");
+                    let is_guard = matches!(name.as_str(), "is_some");
                     let has_var = args.iter().any(|t| match t {
                         IrTerm::Var { name } => name == var_name,
                         _ => false,
