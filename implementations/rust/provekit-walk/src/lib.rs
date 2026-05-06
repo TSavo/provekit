@@ -23,6 +23,7 @@
 //  - C kit (Clang CFG).
 //  - Pointer aliasing.
 
+pub mod aliasing;
 pub mod canonical;
 pub mod chain;
 pub mod charon_runner;

@@ -30,13 +30,16 @@
 // the AST walk's lift of the same source. The cross-layer cache hit
 // is paper 07 §6 across substrate layers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
 use provekit_ir_types::{IrFormula, IrTerm};
 
-use crate::contract::{build_function_contract_with_file, Effect, EffectSet, FunctionContractMemento};
+use crate::contract::{
+    build_function_contract_with_file, AliasingMemento, AliasingStatus, Effect, EffectSet,
+    FunctionContractMemento,
+};
 use crate::llbc::{LlbcError, LlbcFunction};
 use crate::wp::atomic_true;
 
@@ -183,6 +186,52 @@ pub fn lift_llbc_function_with_registry(
         }
     }
 
+    // C.8 aliasing: detect shared-ref pairs with interior mutability,
+    // and auto-mint Disjoint mementos for &mut T formal pairs.
+    let mut auto_minted: Vec<AliasingMemento> = Vec::new();
+
+    let mut shared_ifmt: Vec<String> = Vec::new();
+    for (idx, formal_name) in &formals {
+        if let Some(ty_raw) = formal_ty_raws.get(idx) {
+            if crate::aliasing::is_shared_ref_charon_ty(ty_raw)
+                && crate::aliasing::has_unsafecell_transitive(
+                    ty_raw, type_decls, &mut HashSet::new(),
+                )
+            {
+                shared_ifmt.push(formal_name.clone());
+            }
+        }
+    }
+    shared_ifmt.sort();
+    if shared_ifmt.len() >= 2 {
+        formal_opacity_effects.push(Effect::PossibleAliasing { formals: shared_ifmt });
+    }
+
+    // Auto-mint Disjoint for &mut T formal pairs
+    let mut_ref_names: Vec<&str> = formals
+        .iter()
+        .filter(|(idx, _)| {
+            formal_ty_raws
+                .get(idx)
+                .map(|ty| crate::aliasing::is_mut_ref_charon_ty(ty))
+                .unwrap_or(false)
+        })
+        .map(|(_, name)| name.as_str())
+        .collect();
+
+    for i in 0..mut_ref_names.len() {
+        for j in (i + 1)..mut_ref_names.len() {
+            let a = mut_ref_names[i];
+            let b = mut_ref_names[j];
+            let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+            auto_minted.push(AliasingMemento {
+                formal_a: lo.to_string(),
+                formal_b: hi.to_string(),
+                status: AliasingStatus::Disjoint,
+            });
+        }
+    }
+
     let stmts: Vec<&Value> = f.statements().map(|s| s.raw()).collect();
 
     // Pre-contributions: if-panic Switch chains + MIR-inserted Asserts
@@ -283,6 +332,7 @@ pub fn lift_llbc_function_with_registry(
     // Set LLBC-derived effects on the contract before override_formulas so
     // build_memento_value sees the correct effect set when recomputing the CID.
     contract.effects = effects;
+    contract.auto_minted_mementos = auto_minted;
     // Override the lifted formulas with the LLBC-derived ones, then
     // recompute canonical bytes + CID so result_var_name and the
     // header.cid path are consistent.

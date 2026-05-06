@@ -132,6 +132,14 @@ pub enum Effect {
         kind: AtomicKind,
         ordering: Option<String>,
     },
+    /// Emitted when a function has formal parameters that are shared
+    /// references (&T) to types with interior mutability. The substrate
+    /// refuses composition unless every pair in `formals` has a matching
+    /// AliasingMemento in the verifier pool.
+    PossibleAliasing {
+        /// Sorted lexicographically for JCS byte-determinism.
+        formals: Vec<String>,
+    },
 }
 
 /// Operation class for `Effect::AtomicAccess`.
@@ -157,6 +165,39 @@ impl AtomicKind {
             AtomicKind::Rmw => "rmw",
             AtomicKind::Cas => "cas",
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AliasingMemento {
+    pub formal_a: String,
+    pub formal_b: String,
+    pub status: AliasingStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AliasingStatus {
+    Disjoint,
+    MaybeAlias,
+}
+
+impl AliasingStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AliasingStatus::Disjoint => "Disjoint",
+            AliasingStatus::MaybeAlias => "MaybeAlias",
+        }
+    }
+}
+
+impl AliasingMemento {
+    pub fn to_jcs_value(&self) -> Arc<Value> {
+        Value::object([
+            ("kind", Value::string("AliasingMemento")),
+            ("formal_a", Value::string(self.formal_a.clone())),
+            ("formal_b", Value::string(self.formal_b.clone())),
+            ("status", Value::string(self.status.as_str())),
+        ])
     }
 }
 
@@ -218,6 +259,14 @@ impl Effect {
                 }
                 Value::object(fields)
             }
+            Effect::PossibleAliasing { formals } => {
+                let formals_arr: Vec<Arc<Value>> =
+                    formals.iter().map(|f| Value::string(f.clone())).collect();
+                Value::object([
+                    ("kind", Value::string("possible_aliasing")),
+                    ("formals", Value::array(formals_arr)),
+                ])
+            }
         }
     }
 
@@ -250,6 +299,9 @@ impl Effect {
                 kind.as_str(),
                 ordering.as_deref().unwrap_or("")
             ),
+            Effect::PossibleAliasing { formals } => {
+                format!("13:possible_aliasing:{}", formals.join(","))
+            }
         }
     }
 }
@@ -294,6 +346,7 @@ pub struct FunctionContractMemento {
     pub locus: Locus,
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
+    pub auto_minted_mementos: Vec<AliasingMemento>,
 }
 
 impl FunctionContractMemento {
@@ -378,6 +431,7 @@ pub fn build_function_contract_with_file(
         locus,
         canonical_bytes,
         cid,
+        auto_minted_mementos: vec![],
     }
 }
 
@@ -566,6 +620,10 @@ impl EffectSet {
                 Effect::UnresolvedCall { name } => {
                     return Err(OpacityError::UnresolvedCallNotDischarged { name: name.clone() });
                 }
+                // PossibleAliasing is discharged by auto_minted_mementos in the
+                // contract bundle; the substrate verifier checks these before
+                // composition. No pool check at this level.
+                Effect::PossibleAliasing { .. } => {}
                 // Non-opacity effects: Reads/Writes/Io/Unsafe/Panics and the
                 // structural type-boundary effects (PinnedReference,
                 // RawPointerProvenance, AtomicAccess) do not participate in
@@ -719,11 +777,13 @@ pub fn compose_function_contracts_checked(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
+        | Effect::PossibleAliasing { .. }
     ));
     let inner_non_opacity_pure = inner.effects.effects.iter().all(|e| matches!(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
+        | Effect::PossibleAliasing { .. }
     ));
     if !outer_non_opacity_pure || !inner_non_opacity_pure {
         return Ok(None);
