@@ -1,15 +1,15 @@
-# Drop Semantics — Design RFC
+# Drop Semantics: Design RFC
 
 **Status:** v1.0 RFC (design only, no implementation)
 **Date:** 2026-05-05
 **Closes:** #417 (#384 C.10)
 **Related:**
-- `2026-04-30-contract-merge-semantics.md` — `compose_function_contracts` procedure this spec augments
-- `2026-05-05-loop-invariant-memento.md` — discharge pattern for opacity effects
-- `2026-05-05-try-branch-memento.md` — sibling discharge memento
-- `2026-05-05-closure-binding-memento.md` — sibling discharge memento
-- #384 Tier C parent — C.10 drop semantics is a gap-closure item
-- PR #400 — existing `Effect::Drop { name }` as simple opacity marker
+- `2026-04-30-contract-merge-semantics.md`: `compose_function_contracts` procedure this spec augments
+- `2026-05-05-loop-invariant-memento.md`: discharge pattern for opacity effects
+- `2026-05-05-try-branch-memento.md`: sibling discharge memento
+- `2026-05-05-closure-binding-memento.md`: sibling discharge memento
+- #384 Tier C parent: C.10 drop semantics is a gap-closure item
+- PR #400: existing `Effect::Drop { name }` as simple opacity marker
 
 ---
 
@@ -19,11 +19,11 @@ Rust's `Drop::drop` implementations can panic, allocate, run arbitrary user code
 
 This RFC defines:
 
-1. `DropKind` — a tripartite classification of drop behavior (Trivial, Structural, UserCode).
-2. `Effect::Drop` — a new opacity-classified effect carrying the target formal and the DropKind.
-3. Lifter behavior — how walk inspects a formal's type to classify the drop and emit the effect.
-4. `DropMemento` — a user-authored memento whose presence overrides the pessimistic `Effect::Panics + Effect::Unsafe` chain for a specific Drop impl.
-5. Implicit drop-site emission — how the lifter handles scope-exit drops of locals and formals.
+1. `DropKind`: a tripartite classification of drop behavior (Trivial, Structural, UserCode).
+2. `Effect::Drop`: a new opacity-classified effect carrying the target formal and the DropKind.
+3. Lifter behavior: how walk inspects a formal's type to classify the drop and emit the effect.
+4. `DropMemento`: a user-authored memento whose presence overrides the pessimistic `Effect::Panics + Effect::Unsafe` chain for a specific Drop impl.
+5. Implicit drop-site emission: how the lifter handles scope-exit drops of locals and formals.
 
 The substrate verifier consults this classification when deciding whether drop effects are dischargeable via memento vs. unconditionally blocking.
 
@@ -72,6 +72,24 @@ pub enum Effect {
 
 `Trivial` and `Structural` drops do NOT require a `DropMemento` for composition. Their behavior is deterministic and non-observable at the substrate level: Trivial drops are no-ops, and Structural drops decompose into recursive drops of sub-fields which are themselves classified independently.
 
+### §1.4 Classification propagation
+
+For composite types, the lifter computes:
+
+```
+classify(ty) =
+  if ty has user impl Drop:
+    UserCode
+  else if ty is Copy or has no Drop and all fields Trivial:
+    Trivial
+  else:
+    max(classify(field_ty) for field_ty in ty.fields())
+```
+
+where `max` orders Trivial < Structural < UserCode. The classifier must visit every nested field type via the type-decls table. Cycle detection uses a visited-set keyed on Charon ADT def_id.
+
+This rule guarantees that no UserCode drop can be hidden behind a wrapper struct without a Drop impl. The substrate sees the worst-case classification at the outermost formal, and refuses composition unless a matching DropMemento is in the pool.
+
 ---
 
 ## §2. Lifter behavior
@@ -82,9 +100,12 @@ When walk encounters a Charon-emitted `drop_in_place(x)` call, the lifter must:
 
 1. Inspect `x`'s type via the type-decls table to locate the relevant Adt or primitive type declaration.
 2. Walk the type's drop implementation status:
-   - If the type is `Copy` or has no `Drop` trait impl and its fields are all Trivial: emit `Drop { target: "x", drop_kind: Trivial }`.
-   - If the type has no `Drop` impl but has non-trivial fields (e.g. `String`, `Vec<T>`): emit `Drop { target: "x", drop_kind: Structural }`.
+   - If the type is `Copy` or has no `Drop` trait impl AND all its fields are also Trivial (recursive check): emit `Drop { target: "x", drop_kind: Trivial }`.
    - If the type has an `impl Drop`: emit `Drop { target: "x", drop_kind: UserCode }` PLUS `Effect::Panics` and `Effect::Unsafe` (drops can panic; double-panic during unwind is UB).
+   - Otherwise (no `Drop` impl, but at least one field has a non-Trivial drop): recursively classify each field's drop. Take the worst-case classification across all fields:
+     - All fields Trivial: emit `Drop { target: "x", drop_kind: Trivial }` (already covered above).
+     - Worst sub-field is Structural: emit `Drop { target: "x", drop_kind: Structural }`. No `Panics`/`Unsafe` (the recursive Structural drops are themselves classified, and any UserCode would have surfaced).
+     - Worst sub-field is UserCode: emit `Drop { target: "x", drop_kind: UserCode }` PLUS `Effect::Panics` and `Effect::Unsafe`. The fact that the OUTER type has no user-defined `Drop` impl is irrelevant: the field's UserCode runs at scope exit.
 3. Do NOT attempt `compose_callsite_pre` for a `drop_in_place` call. The pre-contribution of a drop is the drop body's pre, which is opaque to the caller unless a `DropMemento` provides it.
 
 ### §2.2 Implicit drop sites
@@ -159,22 +180,13 @@ pub struct DropMemento {
     /// True if the Drop impl does not allocate (heap / arena).
     pub allocation_free: bool,
 
-    /// True if the Drop impl contains no user-defined logic — it only
+    /// True if the Drop impl contains no user-defined logic; it only
     /// drops fields recursively. Equivalent to classifying the drop as
     /// Structural rather than UserCode.
     pub user_code_free: bool,
 }
 
-pub enum DropMementoClaim {
-    /// The Drop impl for this type is panic-free, allocation-free, and
-    /// contains no user code. Composition treats it as Structural.
-    Benign,
 
-    /// The Drop impl for this type is panic-free and allocation-free,
-    /// but it DOES run user code. Composition proceeds with only those
-    /// guarantees.
-    NoSideEffects,
-}
 ```
 
 ### §3.2 Discharge rule
@@ -211,7 +223,7 @@ fn f(s: String) -> String { s }
 
 - `s` is dropped at function exit. `String::drop` frees the heap allocation (no user code).
 - Effect: `Drop { target: "s", drop_kind: Structural }`.
-- No `Panics` or `Unsafe` effects for this drop (Structural drops are panic-free by construction in the standard library, and the lifter's type-decls walk confirms this).
+- No `Panics` or `Unsafe` effects for this drop. `String::drop` does not panic in normal operation: it deallocates a heap buffer via the global allocator. The classifier verifies that all of `String`'s field drops are themselves Trivial or Structural (the heap pointer is a raw pointer, which is Trivial; the length and capacity are `usize`, also Trivial). Per §1.4, max(Trivial, Trivial, Trivial) = Trivial, but `String`'s explicit (or implicit) `Drop` invocation runs the deallocator. The deallocator is treated as Structural in v1: it does not panic in any specified case under the default `GlobalAlloc` impl, and any allocator that panics would itself need a DropMemento covering its allocator type.
 
 **Composition:** `Structural` drops compose without a `DropMemento`. The substrate recognizes Structural as deterministic.
 
@@ -264,6 +276,24 @@ fn lock_and_use(guard: MutexGuard<'_, u32>) -> u32 {
 
 **Composition:** Refused without a `DropMemento` for `MutexGuard`. The author must provide one asserting the desired properties.
 
+### §4.6 Wrapper without Drop impl, UserCode field
+
+```rust
+struct Wrapper { inner: MyPanickyType }
+// no impl Drop for Wrapper
+// MyPanickyType has impl Drop with panic
+```
+
+**Lifter output:**
+
+- `Wrapper` has no user `Drop` impl. The classifier recurses to fields.
+- `inner: MyPanickyType` classifies as `UserCode` (user-defined `Drop` impl).
+- max(UserCode) = UserCode.
+- Effect: `Drop { target: "w", drop_kind: UserCode }`.
+- PLUS `Effect::Panics`, `Effect::Unsafe` (the inner field's drop may panic).
+
+**Composition:** Refused without a `DropMemento` for either `Wrapper` or `MyPanickyType`. The wrapper-without-Drop-impl shape does NOT make the drop benign.
+
 ---
 
 ## §5. Substrate verifier behavior
@@ -300,9 +330,9 @@ DropNotDischarged {
 
 Where `DropRefusalReason` is:
 
-- `NoMemento` — no DropMemento in pool.
-- `PanicsNotDischarged` — memento present but `panic_free: false`.
-- `DropBodyNotInPool` — drop body contract needed but not in pool.
+- `NoMemento`: no DropMemento in pool.
+- `PanicsNotDischarged`: memento present but `panic_free: false`.
+- `DropBodyNotInPool`: drop body contract needed but not in pool.
 
 ---
 
@@ -323,6 +353,10 @@ Rust's `AsyncDrop` trait is unstable. This RFC does not address async drop futur
 ### §6.4 Trait object drops
 
 Drops on `dyn Drop` trait objects are late-bound and not monomorphized. The lifter cannot determine the concrete Drop impl at lift time. **RFC position:** emit `Effect::Drop { target, drop_kind: UserCode }` pessimistically. The substrate refuses composition until a `DropMemento` or the concrete drop body contract is available.
+
+### §6.5 Allocator-panicking drops
+
+Structural drops in v1 assume the global allocator does not panic during deallocation. If a custom allocator's `dealloc` can panic, the substrate currently does not detect this. A future RFC may add an `AllocatorMemento` that carries a panic-free claim about the configured allocator. Until then, code using a panicking allocator must explicitly emit `Effect::Panics` via author-provided memento.
 
 ---
 
