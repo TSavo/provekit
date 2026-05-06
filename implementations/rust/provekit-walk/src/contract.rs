@@ -833,6 +833,23 @@ pub fn compose_function_contracts_checked(
     outer.check_aliasing_discharged()?;
     inner.check_aliasing_discharged()?;
 
+    // Pool-based fallback: if auto_minted does not cover a pair,
+    // check the external pool for AliasingMemento discharge.
+    for effect in outer.effects.effects.iter().chain(inner.effects.effects.iter()) {
+        if let Effect::PossibleAliasing { formals } = effect {
+            if formals.len() < 2 { continue; }
+            for i in 0..formals.len() {
+                for j in (i+1)..formals.len() {
+                    let a = &formals[i];
+                    let b = &formals[j];
+                    if !pool.has_aliasing_memento(a, b) {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+
     // Phase 2: check for unconditionally-blocking effects. After opacity
     // and aliasing discharge, only Reads/Writes/Io/Unsafe/Panics and
     // structural type-boundary effects can still block.
