@@ -685,4 +685,27 @@ mod tests {
             &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c"]
         );
     }
+
+    #[test]
+    fn declared_at_constants_are_pinned_iso8601() {
+        let re = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$").unwrap();
+        let constants: &[(&str, &str)] = &[
+            ("V1_1_0_DECLARED_AT", V1_1_0_DECLARED_AT),
+            ("V1_2_0_DECLARED_AT", V1_2_0_DECLARED_AT),
+            ("V1_3_0_DECLARED_AT", V1_3_0_DECLARED_AT),
+            ("V1_3_1_DECLARED_AT", V1_3_1_DECLARED_AT),
+            ("V1_4_0_DECLARED_AT", V1_4_0_DECLARED_AT),
+            ("V1_4_1_DECLARED_AT", V1_4_1_DECLARED_AT),
+            ("V1_5_0_DECLARED_AT", V1_5_0_DECLARED_AT),
+            ("V1_6_0_DECLARED_AT", V1_6_0_DECLARED_AT),
+            ("SELF_CONTRACTS_DECLARED_AT_V1_3_1", SELF_CONTRACTS_DECLARED_AT_V1_3_1),
+        ];
+        assert_eq!(constants.len(), 9, "unexpected number of declared_at constants; update this test");
+        for (name, value) in constants {
+            assert!(
+                re.is_match(value),
+                "{name} = \"{value}\" is not a valid ISO 8601 UTC datetime"
+            );
+        }
+    }
 }

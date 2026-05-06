@@ -16,6 +16,7 @@ import SwiftLifter
 // MARK: - Test framework
 
 nonisolated(unsafe) var passed = 0
+nonisolated(unsafe) var skipped = 0
 nonisolated(unsafe) var failed = 0
 
 func test(_ name: String, block: () -> Bool) {
@@ -294,14 +295,13 @@ if let binaryPath = findLSPBinary() {
     }
 } else {
     print("SKIP: subprocess tests (binary not found; run `swift build` first, then `swift run test-swift-lsp`)")
-    print("PASS: subprocess tests (skipped — binary not yet built)")
-    passed += 1
+    skipped += 1
 }
 
 // MARK: - Result
 
 print("")
-print("Results: \(passed) passed, \(failed) failed")
+print("Results: \(passed) passed, \(skipped) skipped, \(failed) failed")
 if failed > 0 {
     exit(1)
 }

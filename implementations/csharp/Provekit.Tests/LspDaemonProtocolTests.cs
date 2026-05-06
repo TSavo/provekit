@@ -132,7 +132,11 @@ public class LspDaemonProtocolTests
         proc.StandardInput.Close();
 
         var output = proc.StandardOutput.ReadToEnd();
-        proc.WaitForExit(15_000);
+        if (!proc.WaitForExit(15_000))
+        {
+            proc.Kill(entireProcessTree: true);
+            throw new Exception("Process did not exit within 15000ms");
+        }
 
         Assert.Equal(0, proc.ExitCode);
 
