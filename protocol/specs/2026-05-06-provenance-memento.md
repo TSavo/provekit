@@ -34,6 +34,7 @@ ProvenanceHeader = {
   schemaVersion: "1",
   kind:          "ProvenanceMemento",
   target:        tstr,       ; the formal parameter name
+  functionCid:   cid,        ; contract CID anchoring the target name
   mutable:       bool,       ; true for *mut T, false for *const T
   properties:    [+ ProvenanceProperty],
 }
@@ -48,14 +49,32 @@ MementoMetadata = {
 }
 ```
 
-## §2. JCS canonical bytes + key order
+## §2. JCS canonical key order (normative)
 
-1. Build `header = {schemaVersion, kind, target, mutable, properties}`.
-2. Build `metadata = {allocSite?, pointedType?, producedBy?, producedAt?}`.
-3. Build `envelope = {signer, declaredAt}`.
-4. Sign `JCS({header, metadata})` with Ed25519.
-5. Full memento = `{envelope, header, metadata}`.
-6. CID = `BLAKE3-512(JCS(memento))`.
+The canonical JCS object uses this normatively declared key order, consistent with sibling discharge mementos:
+
+```json
+{
+  "kind": "ProvenanceMemento",
+  "schemaVersion": "1",
+  "target": "x",
+  "functionCid": "blake3-512:...",
+  "mutable": false,
+  "properties": ["NonNull", "Aligned", "Readable"]
+}
+```
+
+Optional metadata fields follow in JCS-sorted position after `properties`. When absent, keys are omitted entirely.
+
+### §2.1 Property semantics
+
+| Property    | Meaning |
+|-------------|---------|
+| `NonNull`   | The pointer is not null. Required for all provenance mementos. |
+| `Aligned`   | The pointer is properly aligned for `T` (meets `align_of::<T>()`). |
+| `Allocated` | The pointer points to valid allocated memory (heap, stack, or static). |
+| `Readable`  | The pointed-to memory is valid for reads (no use-after-free, no uninit). |
+| `Writable`  | The pointed-to memory is valid for writes (required when `mutable: true`). |
 
 ## §3. Content-addressing
 
@@ -115,6 +134,16 @@ unsafe fn write_raw(x: *mut u32, val: u32) {
 **Lifter output:** `Effect::RawPointerProvenance { target: "x", mutable: true }`. `Effect::Unsafe`.
 
 **Discharge:** `ProvenanceMemento` with `properties: ["NonNull", "Aligned", "Allocated", "Readable", "Writable"]`.
+
+## §5a. Signing authority and trust model
+
+### §5a.1 Signing ceremony
+
+A `ProvenanceMemento` MUST be signed by a curator-level key. The signing key follows the provenance path `secret/provekit/provenance-ed25519`. Signing proceeds: construct header/metadata → JCS-canonicalize → Ed25519 sign → place in `envelope.signature`.
+
+### §5a.2 Verifier validation
+
+The pool validates the signature before admitting the memento: extract pubkey, recompute JCS, verify Ed25519, reject on failure.
 
 ## §6. Out of scope (v1)
 
