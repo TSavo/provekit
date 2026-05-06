@@ -4,7 +4,7 @@
   "lang": "php",
   "cid": "blake3-512:16a8af822854fa6f4f1306b9f5e43030e21ccb901bea13f2cedb1a28a881c63e6daabbc4e93af472346c954759739f84debb8da174e6fda62e91319cb7dca555",
   "contractSetCid": "blake3-512:385e617be25516099e61118179fbb200967093448b85629f1cb5b8966dfcc06244cfcb9f59315780114fee7c9c415fcd1465fc8e85e8141d59f6b44a2df4a262",
-  "declaredAt": "2026-05-04T00:00:00Z",
+  "declaredAt": "2026-05-03T18:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:placeholder"
+  "signature": "ed25519:EmN1HwUmPHK7c9jxVFUgbp6bTyjycqnol42119oIjBsLlMGA4J582WTvaBzi4Rj1bCFvut9m7NNrtvxWHMFuCw=="
 }
