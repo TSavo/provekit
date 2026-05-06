@@ -113,6 +113,12 @@ pub struct LlbcFunction<'a> {
 }
 
 impl<'a> LlbcFunction<'a> {
+    /// Access the raw JSON for navigation to fields the typed
+    /// accessors don't yet expose (generics, predicates, etc.).
+    pub fn raw(&self) -> &'a Value {
+        self.raw
+    }
+
     /// The function's surface name (the last `Ident` element in the
     /// path). Returns None if the path is malformed.
     pub fn fn_name(&self) -> Option<String> {
