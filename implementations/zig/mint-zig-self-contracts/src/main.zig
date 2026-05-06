@@ -134,7 +134,7 @@ fn handleInitialize(w: *std.Io.Writer, id_raw: []const u8) !void {
             "\"capabilities\":{{" ++
             "\"authoring_surfaces\":[\"zig-self-contracts\"]," ++
             "\"ir_version\":\"v1.1.0\"," ++
-            "\"emits_signed_mementos\":false}}}}}}\n",
+            "\"emits_signed_mementos\":true}}}}}}\n",
         .{id_raw},
     );
 }

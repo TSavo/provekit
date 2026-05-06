@@ -126,23 +126,23 @@ pub fn self_contracts_attestation_path_for(lang: &str) -> PathBuf {
         .join(format!("{lang}.json"))
 }
 
-/// Pinned `declaredAt` for self-contracts attestations under the v0
-/// foundation key. One constant per protocol-catalog version because
-/// the attestation is bound to a catalog CID; bumping protocol versions
-/// regenerates the attestation. CID drift between catalog versions does
-/// not move this timestamp, so re-signing the same bundle CID under the
-/// same protocol version produces byte-identical output. v1 of the
-/// foundation key may use signing-time clocks; this is a v0 invariant.
+/// Historical pinned `declaredAt` for self-contracts attestations from
+/// the v1.3.1 catalog cut.
 pub const SELF_CONTRACTS_DECLARED_AT_V1_3_1: &str = "2026-05-02T17:00:00Z";
+
+/// Current pinned `declaredAt` for self-contracts attestations under the
+/// v0 foundation key. Self-contract attestations are regenerated as part
+/// of the protocol bootstrap for the current catalog cut, not with a live
+/// clock, so re-running the same bootstrap remains byte-identical.
+pub const SELF_CONTRACTS_DECLARED_AT_V1_6_0: &str = V1_6_0_DECLARED_AT;
 
 /// Recognized peer identifiers for self-contracts attestations.
 /// Kept in sync with the Makefile's `mint-<lang>` targets.
-/// All 11 peer kits use the same letter-envelope attestation shape;
+/// All 12 peer kits use the same letter-envelope attestation shape;
 /// the source tree no longer carries machine-local truth about its own
 /// bytes for any kit.
 pub const SELF_CONTRACTS_LANGS: &[&str] = &[
-    "rust", "go", "cpp", "ts", "csharp",
-    "swift", "java", "python", "ruby", "zig", "c",
+    "rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c", "php",
 ];
 
 /// Build the signed message body for a self-contracts attestation
@@ -186,7 +186,8 @@ pub fn build_signed_self_contracts_attestation(
         ));
     }
     let signer_pubkey = ed25519_pubkey_string(seed);
-    let message = build_self_contracts_message(lang, cid, contract_set_cid, declared_at, &signer_pubkey);
+    let message =
+        build_self_contracts_message(lang, cid, contract_set_cid, declared_at, &signer_pubkey);
     let bytes = attestation_signing_bytes(&message)?;
     let signature = ed25519_sign_string(seed, &bytes);
     Ok(json!({
@@ -257,9 +258,8 @@ pub fn verify_signed_self_contracts_attestation(
             .map(|s| s.to_string())
             .ok_or_else(|| format!("self-contracts attestation missing string field `{k}`"))
     };
-    let get_str_opt = |k: &str| -> Option<String> {
-        obj.get(k).and_then(|v| v.as_str()).map(|s| s.to_string())
-    };
+    let get_str_opt =
+        |k: &str| -> Option<String> { obj.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()) };
 
     let schema_version = get_str("schemaVersion")?;
     let kind = get_str("kind")?;
@@ -295,7 +295,10 @@ pub fn verify_signed_self_contracts_attestation(
         ),
         ("lang".to_string(), Value::string(lang)),
         ("cid".to_string(), Value::string(claimed_bundle_cid.clone())),
-        ("contractSetCid".to_string(), Value::string(claimed_contract_set_cid.clone())),
+        (
+            "contractSetCid".to_string(),
+            Value::string(claimed_contract_set_cid.clone()),
+        ),
         ("declaredAt".to_string(), Value::string(declared_at)),
         ("signer".to_string(), Value::string(signer.clone())),
     ];
@@ -331,10 +334,10 @@ fn repo_root() -> PathBuf {
 /// Compute the catalog CID via the same JCS-then-BLAKE3-512 path used
 /// by `tools/recompute-spec-cids/` and the CLI's `verify-protocol`.
 pub fn compute_catalog_cid_from_path(path: &Path) -> Result<String, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {}", path.display(), e))?;
-    let json: JsonValue = serde_json::from_str(&text)
-        .map_err(|e| format!("parse catalog json: {}", e))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {}", path.display(), e))?;
+    let json: JsonValue =
+        serde_json::from_str(&text).map_err(|e| format!("parse catalog json: {}", e))?;
     let canon = json_to_value(&json)?;
     let jcs = encode_jcs(&canon);
     Ok(blake3_512_of(jcs.as_bytes()))
@@ -345,9 +348,7 @@ fn json_to_value(j: &JsonValue) -> Result<Arc<Value>, String> {
         JsonValue::Null => Value::null(),
         JsonValue::Bool(b) => Value::boolean(*b),
         JsonValue::Number(n) => {
-            let i = n
-                .as_i64()
-                .ok_or_else(|| format!("non-i64 number: {}", n))?;
+            let i = n.as_i64().ok_or_else(|| format!("non-i64 number: {}", n))?;
             Value::integer(i)
         }
         JsonValue::String(s) => Value::string(s.clone()),
@@ -474,7 +475,7 @@ mod tests {
             "rust",
             cid,
             FAKE_CONTRACT_SET_CID,
-            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         )
         .unwrap();
         let b = build_signed_self_contracts_attestation(
@@ -482,7 +483,7 @@ mod tests {
             "rust",
             cid,
             FAKE_CONTRACT_SET_CID,
-            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         )
         .unwrap();
         assert_eq!(a, b);
@@ -496,7 +497,7 @@ mod tests {
             "perl",
             cid,
             FAKE_CONTRACT_SET_CID,
-            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         )
         .unwrap_err();
         assert!(err.contains("unknown lang"));
@@ -512,13 +513,12 @@ mod tests {
             "go",
             cid,
             FAKE_CONTRACT_SET_CID,
-            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         )
         .unwrap();
         let bytes = serde_json::to_vec(&attestation).unwrap();
-        let verdict = verify_signed_self_contracts_attestation(
-            &bytes, &pk, FAKE_CONTRACT_SET_CID,
-        ).unwrap();
+        let verdict =
+            verify_signed_self_contracts_attestation(&bytes, &pk, FAKE_CONTRACT_SET_CID).unwrap();
         assert!(verdict.signer_matches);
         assert!(verdict.signature_ok);
         assert!(verdict.contract_set_cid_matches);
@@ -536,14 +536,13 @@ mod tests {
             "cpp",
             cid,
             FAKE_CONTRACT_SET_CID,
-            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         )
         .unwrap();
         let bytes = serde_json::to_vec(&attestation).unwrap();
         let drifted_set_cid = "blake3-512:cafe0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-        let verdict = verify_signed_self_contracts_attestation(
-            &bytes, &pk, drifted_set_cid,
-        ).unwrap();
+        let verdict =
+            verify_signed_self_contracts_attestation(&bytes, &pk, drifted_set_cid).unwrap();
         assert!(verdict.signer_matches, "signer untouched");
         assert!(verdict.signature_ok, "signature still verifies");
         assert!(!verdict.contract_set_cid_matches, "contractSetCid drifted");
@@ -556,7 +555,7 @@ mod tests {
         // NOT a failure. Same contracts, different bundle bytes (different envelope
         // timestamps) must still pass when contractSetCid matches.
         let bundle_cid = "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-        let different_bundle_cid = "blake3-512:face0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+        let _different_bundle_cid = "blake3-512:face0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
         let pk = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
         // Attest with one bundle CID...
         let attestation = build_signed_self_contracts_attestation(
@@ -564,22 +563,24 @@ mod tests {
             "rust",
             bundle_cid,
             FAKE_CONTRACT_SET_CID,
-            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         )
         .unwrap();
         // ...and verify against a different bundle CID (same contractSetCid).
         // verify_signed_self_contracts_attestation takes contractSetCid, not bundle CID.
         // So we only check contractSetCid. Bundle drift is invisible to the verifier.
         let bytes = serde_json::to_vec(&attestation).unwrap();
-        let verdict = verify_signed_self_contracts_attestation(
-            &bytes, &pk, FAKE_CONTRACT_SET_CID,
-        ).unwrap();
+        let verdict =
+            verify_signed_self_contracts_attestation(&bytes, &pk, FAKE_CONTRACT_SET_CID).unwrap();
         assert!(verdict.signer_matches);
         assert!(verdict.signature_ok);
         assert!(verdict.contract_set_cid_matches);
         // The bundle CID in the attestation is `bundle_cid` but the observed
         // bundle is `different_bundle_cid`; this does NOT affect verdict.ok().
-        assert!(verdict.ok(), "same contractSetCid = pass, bundle CID drift is irrelevant");
+        assert!(
+            verdict.ok(),
+            "same contractSetCid = pass, bundle CID drift is irrelevant"
+        );
         // confirmed: claimed_bundle_cid is the one we signed with
         assert_eq!(verdict.claimed_bundle_cid, bundle_cid);
     }
@@ -593,16 +594,22 @@ mod tests {
             "kind": "self-contracts-attestation",
             "lang": "rust",
             "cid": "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-            "declaredAt": SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            "declaredAt": SELF_CONTRACTS_DECLARED_AT_V1_6_0,
             "signer": "ed25519:fake",
             "signature": "ed25519:fake",
         }))
         .unwrap();
-        let err = verify_signed_self_contracts_attestation(
-            &bytes, "ed25519:fake", FAKE_CONTRACT_SET_CID,
-        ).unwrap_err();
-        assert!(err.contains("contractSetCid"), "error should mention the missing field: {err}");
-        assert!(err.contains("spec #94"), "error should reference the spec: {err}");
+        let err =
+            verify_signed_self_contracts_attestation(&bytes, "ed25519:fake", FAKE_CONTRACT_SET_CID)
+                .unwrap_err();
+        assert!(
+            err.contains("contractSetCid"),
+            "error should mention the missing field: {err}"
+        );
+        assert!(
+            err.contains("spec #94"),
+            "error should reference the spec: {err}"
+        );
     }
 
     #[test]
@@ -614,14 +621,14 @@ mod tests {
             "lang": "rust",
             "cid": "blake3-512:beef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
             "contractSetCid": FAKE_CONTRACT_SET_CID,
-            "declaredAt": SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            "declaredAt": SELF_CONTRACTS_DECLARED_AT_V1_6_0,
             "signer": "ed25519:fake",
             "signature": "ed25519:fake",
         }))
         .unwrap();
-        let err = verify_signed_self_contracts_attestation(
-            &bytes, "ed25519:fake", FAKE_CONTRACT_SET_CID,
-        ).unwrap_err();
+        let err =
+            verify_signed_self_contracts_attestation(&bytes, "ed25519:fake", FAKE_CONTRACT_SET_CID)
+                .unwrap_err();
         assert!(err.contains("kind"));
     }
 
@@ -637,13 +644,12 @@ mod tests {
             "ts",
             cid,
             FAKE_CONTRACT_SET_CID,
-            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         )
         .unwrap();
         let bytes = serde_json::to_vec(&attestation).unwrap();
-        let verdict = verify_signed_self_contracts_attestation(
-            &bytes, &pk, FAKE_CONTRACT_SET_CID,
-        ).unwrap();
+        let verdict =
+            verify_signed_self_contracts_attestation(&bytes, &pk, FAKE_CONTRACT_SET_CID).unwrap();
         assert!(verdict.signer_matches);
         assert!(verdict.signature_ok);
         assert!(verdict.contract_set_cid_matches);
@@ -662,13 +668,12 @@ mod tests {
             "csharp",
             cid,
             FAKE_CONTRACT_SET_CID,
-            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         )
         .unwrap();
         let bytes = serde_json::to_vec(&attestation).unwrap();
-        let verdict = verify_signed_self_contracts_attestation(
-            &bytes, &pk, FAKE_CONTRACT_SET_CID,
-        ).unwrap();
+        let verdict =
+            verify_signed_self_contracts_attestation(&bytes, &pk, FAKE_CONTRACT_SET_CID).unwrap();
         assert!(verdict.signer_matches);
         assert!(verdict.signature_ok);
         assert!(verdict.contract_set_cid_matches);
@@ -676,13 +681,16 @@ mod tests {
     }
 
     #[test]
-    fn self_contracts_lang_set_is_eleven_peers() {
+    fn self_contracts_lang_set_is_twelve_peers() {
         // Guard the canonical kit suite. Adding or removing a peer is
         // a deliberate act; this test forces an explicit edit.
         // java/python/ruby/zig/c added in feat(cli): unify mint pipeline.
         assert_eq!(
             SELF_CONTRACTS_LANGS,
-            &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c"]
+            &[
+                "rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c",
+                "php"
+            ]
         );
     }
 
@@ -703,6 +711,7 @@ mod tests {
             V1_5_0_DECLARED_AT,
             V1_6_0_DECLARED_AT,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+            SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         ];
         for ts in &pinned {
             // Must match ISO-8601 UTC shape: YYYY-MM-DDTHH:MM:SSZ (exactly 20 bytes)

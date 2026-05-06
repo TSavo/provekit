@@ -345,7 +345,7 @@ class PhpLifter
 
         foreach ($lifted['decls'] as $decl) {
             $minted = $minter->mintContract($decl, $producedBy, $producedAt);
-            $members[$minted['cid']] = $minted['canonicalBytes'];
+            $members[$minted['envelopeCid']] = $minted['canonicalBytes'];
             $contractCids[$decl->name] = $minted['cid'];
         }
 

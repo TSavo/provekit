@@ -3,11 +3,11 @@
  * Orchestrator. Drives one full author + mint + bundle pass:
  *
  *   1. Author every contract slab in c_kit_invariants.c.
- *   2. For each ContractDecl, JCS-encode the canonical contract body
- *      {name, outBinding, pre?, post?, inv?} and hash to BLAKE3-512 to
- *      get the signer-independent contentCid (member CID).
- *   3. The member bytes are those same JCS bytes; the catalog wraps
- *      them via pksc_proof_build.
+ *   2. For each ContractDecl, mint a signed layered contract memento.
+ *      The memento header carries the signer-independent contentCid
+ *      BLAKE3-512(JCS({name, outBinding, pre?, post?, inv?})).
+ *   3. The proof member key is the attestation CID
+ *      BLAKE3-512(JCS(envelope)); member bytes are the full memento.
  *   4. contractSetCid = BLAKE3-512(JCS(sorted(contentCids))) — byte-
  *      identical to other kits per spec
  *      protocol/specs/2026-05-03-contract-set-extension.md §1.
@@ -38,15 +38,6 @@
 /* ----------------------------------------------------------------------- */
 /* helpers                                                                  */
 /* ----------------------------------------------------------------------- */
-
-static char *dup_cstr(const char *s) {
-    if (!s) return NULL;
-    size_t n = strlen(s);
-    char *p = (char *)malloc(n + 1);
-    if (!p) return NULL;
-    memcpy(p, s, n + 1);
-    return p;
-}
 
 /* Deep-copy a pksc_value tree. Used because each contract decl's pre/post/inv
  * is owned by the slab; we need an independent tree to assemble into the
@@ -95,6 +86,38 @@ static int cmp_str_ptr(const void *a, const void *b) {
     const char *sa = *(const char *const *)a;
     const char *sb = *(const char *const *)b;
     return strcmp(sa, sb);
+}
+
+static int obj_set_str(pksc_value *obj, const char *key, const char *value) {
+    pksc_value *v = pksc_v_str(value);
+    if (!v) return -1;
+    if (pksc_v_obj_set(obj, key, v) != 0) {
+        pksc_value_free(v);
+        return -1;
+    }
+    return 0;
+}
+
+static int obj_set_value_copy(pksc_value *obj, const char *key, const pksc_value *value) {
+    pksc_value *copy = value_copy(value);
+    if (!copy) return -1;
+    if (pksc_v_obj_set(obj, key, copy) != 0) {
+        pksc_value_free(copy);
+        return -1;
+    }
+    return 0;
+}
+
+static char *hash_value_cid(const pksc_value *value) {
+    pksc_bytes jcs;
+    pksc_bytes_init(&jcs);
+    if (pksc_jcs_encode(&jcs, value) != 0) {
+        pksc_bytes_free(&jcs);
+        return NULL;
+    }
+    char *cid = pksc_blake3_512_cid(jcs.data, jcs.len);
+    pksc_bytes_free(&jcs);
+    return cid;
 }
 
 /* contractSetCid = BLAKE3-512(JCS(sorted([cids...]))). Returns malloc'd
@@ -179,6 +202,245 @@ fail_o_only:
     return NULL;
 }
 
+static char *contract_content_cid(const mcsc_contract *c) {
+    pksc_value *body = build_contract_body(c);
+    if (!body) return NULL;
+    char *cid = hash_value_cid(body);
+    pksc_value_free(body);
+    return cid;
+}
+
+static char *contract_formula_hash(const pksc_value *formula) {
+    return hash_value_cid(formula);
+}
+
+static char *contract_property_hash(const mcsc_contract *c) {
+    pksc_value *o = pksc_v_obj_new();
+    if (!o) return NULL;
+    if (c->pre && obj_set_value_copy(o, "pre", c->pre) != 0) goto fail;
+    if (c->post && obj_set_value_copy(o, "post", c->post) != 0) goto fail;
+    if (c->inv && obj_set_value_copy(o, "inv", c->inv) != 0) goto fail;
+    if (obj_set_str(o, "outBinding", c->out_binding) != 0) goto fail;
+    char *cid = hash_value_cid(o);
+    pksc_value_free(o);
+    return cid;
+fail:
+    pksc_value_free(o);
+    return NULL;
+}
+
+static char *contract_binding_hash(const mcsc_contract *c, const char *property_hash) {
+    pksc_value *o = pksc_v_obj_new();
+    if (!o) return NULL;
+    if (obj_set_str(o, "producerId", MCSC_PRODUCED_BY) != 0) goto fail;
+    if (obj_set_str(o, "contractName", c->name) != 0) goto fail;
+    if (obj_set_str(o, "propertyHash", property_hash) != 0) goto fail;
+    char *cid = hash_value_cid(o);
+    pksc_value_free(o);
+    return cid;
+fail:
+    pksc_value_free(o);
+    return NULL;
+}
+
+static pksc_value *build_contract_header(const mcsc_contract *c,
+                                         const char *content_cid,
+                                         const char *binding_hash,
+                                         const char *property_hash) {
+    pksc_value *header = pksc_v_obj_new();
+    if (!header) return NULL;
+    if (obj_set_str(header, "schemaVersion", "2") != 0) goto fail;
+    if (obj_set_str(header, "kind", "contract") != 0) goto fail;
+    if (obj_set_str(header, "cid", content_cid) != 0) goto fail;
+    if (obj_set_str(header, "name", c->name) != 0) goto fail;
+    if (obj_set_str(header, "outBinding", c->out_binding) != 0) goto fail;
+    if (c->pre && obj_set_value_copy(header, "pre", c->pre) != 0) goto fail;
+    if (c->post && obj_set_value_copy(header, "post", c->post) != 0) goto fail;
+    if (c->inv && obj_set_value_copy(header, "inv", c->inv) != 0) goto fail;
+    if (obj_set_str(header, "verdict", "holds") != 0) goto fail;
+    if (obj_set_str(header, "bindingHash", binding_hash) != 0) goto fail;
+    if (obj_set_str(header, "propertyHash", property_hash) != 0) goto fail;
+    pksc_value *inputs = pksc_v_arr_new();
+    if (!inputs) goto fail;
+    if (pksc_v_obj_set(header, "inputCids", inputs) != 0) {
+        pksc_value_free(inputs);
+        goto fail;
+    }
+    return header;
+fail:
+    pksc_value_free(header);
+    return NULL;
+}
+
+static pksc_value *build_contract_metadata(const mcsc_contract *c) {
+    pksc_value *metadata = pksc_v_obj_new();
+    if (!metadata) return NULL;
+
+    pksc_value *authoring = pksc_v_obj_new();
+    if (!authoring) goto fail;
+    if (obj_set_str(authoring, "producerKind", "kit-author") != 0) goto fail_authoring;
+    if (obj_set_str(authoring, "author", MCSC_PRODUCED_BY) != 0) goto fail_authoring;
+    if (obj_set_str(authoring, "note", "self-contract from c slab") != 0) goto fail_authoring;
+    if (pksc_v_obj_set(metadata, "authoring", authoring) != 0) goto fail_authoring;
+    authoring = NULL;
+
+    if (obj_set_str(metadata, "producedBy", MCSC_PRODUCED_BY) != 0) goto fail;
+    if (obj_set_str(metadata, "producedAt", MCSC_DECLARED_AT) != 0) goto fail;
+
+    if (c->pre) {
+        char *h = contract_formula_hash(c->pre);
+        if (!h) goto fail;
+        int rc = obj_set_str(metadata, "preHash", h);
+        free(h);
+        if (rc != 0) goto fail;
+    }
+    if (c->post) {
+        char *h = contract_formula_hash(c->post);
+        if (!h) goto fail;
+        int rc = obj_set_str(metadata, "postHash", h);
+        free(h);
+        if (rc != 0) goto fail;
+    }
+    if (c->inv) {
+        char *h = contract_formula_hash(c->inv);
+        if (!h) goto fail;
+        int rc = obj_set_str(metadata, "invHash", h);
+        free(h);
+        if (rc != 0) goto fail;
+    }
+    return metadata;
+
+fail_authoring:
+    pksc_value_free(authoring);
+fail:
+    pksc_value_free(metadata);
+    return NULL;
+}
+
+static char *signing_payload_jcs(const pksc_value *header, const pksc_value *metadata) {
+    pksc_value *payload = pksc_v_obj_new();
+    if (!payload) return NULL;
+    if (obj_set_value_copy(payload, "header", header) != 0) goto fail;
+    if (obj_set_value_copy(payload, "metadata", metadata) != 0) goto fail;
+    char *jcs = pksc_jcs_encode_string(payload);
+    pksc_value_free(payload);
+    return jcs;
+fail:
+    pksc_value_free(payload);
+    return NULL;
+}
+
+static int mint_contract_memento(const mcsc_contract *c,
+                                 pksc_member *member,
+                                 char **content_cid_out) {
+    memset(member, 0, sizeof(*member));
+    *content_cid_out = NULL;
+
+    char *content_cid = contract_content_cid(c);
+    if (!content_cid) return -1;
+    char *property_hash = contract_property_hash(c);
+    if (!property_hash) goto fail_content;
+    char *binding_hash = contract_binding_hash(c, property_hash);
+    if (!binding_hash) goto fail_property;
+
+    pksc_value *header = build_contract_header(c, content_cid, binding_hash, property_hash);
+    if (!header) goto fail_binding;
+    pksc_value *metadata = build_contract_metadata(c);
+    if (!metadata) goto fail_header;
+
+    char *payload = signing_payload_jcs(header, metadata);
+    if (!payload) goto fail_metadata;
+    char *sig = pksc_ed25519_sign_string(PKSC_FOUNDATION_V0_SEED,
+        (const uint8_t *)payload, strlen(payload));
+    free(payload);
+    if (!sig) goto fail_metadata;
+    char *pubkey = pksc_ed25519_pubkey_string(PKSC_FOUNDATION_V0_SEED);
+    if (!pubkey) {
+        free(sig);
+        goto fail_metadata;
+    }
+
+    pksc_value *envelope = pksc_v_obj_new();
+    if (!envelope) {
+        free(pubkey);
+        free(sig);
+        goto fail_metadata;
+    }
+    if (obj_set_str(envelope, "signer", pubkey) != 0 ||
+        obj_set_str(envelope, "declaredAt", MCSC_DECLARED_AT) != 0 ||
+        obj_set_str(envelope, "signature", sig) != 0) {
+        pksc_value_free(envelope);
+        free(pubkey);
+        free(sig);
+        goto fail_metadata;
+    }
+    free(pubkey);
+    free(sig);
+
+    char *attestation_cid = hash_value_cid(envelope);
+    if (!attestation_cid) {
+        pksc_value_free(envelope);
+        goto fail_metadata;
+    }
+
+    pksc_value *memento = pksc_v_obj_new();
+    if (!memento) {
+        free(attestation_cid);
+        pksc_value_free(envelope);
+        goto fail_metadata;
+    }
+    if (pksc_v_obj_set(memento, "envelope", envelope) != 0) {
+        free(attestation_cid);
+        pksc_value_free(envelope);
+        pksc_value_free(memento);
+        goto fail_metadata;
+    }
+    envelope = NULL;
+    if (pksc_v_obj_set(memento, "header", header) != 0) {
+        free(attestation_cid);
+        pksc_value_free(header);
+        pksc_value_free(metadata);
+        pksc_value_free(memento);
+        goto fail_binding;
+    }
+    header = NULL;
+    if (pksc_v_obj_set(memento, "metadata", metadata) != 0) {
+        free(attestation_cid);
+        pksc_value_free(metadata);
+        pksc_value_free(memento);
+        goto fail_binding;
+    }
+    metadata = NULL;
+
+    char *canonical = pksc_jcs_encode_string(memento);
+    pksc_value_free(memento);
+    if (!canonical) {
+        free(attestation_cid);
+        goto fail_binding;
+    }
+
+    member->key = attestation_cid;
+    member->bytes = (uint8_t *)canonical;
+    member->len = strlen(canonical);
+    *content_cid_out = content_cid;
+
+    free(binding_hash);
+    free(property_hash);
+    return 0;
+
+fail_metadata:
+    pksc_value_free(metadata);
+fail_header:
+    pksc_value_free(header);
+fail_binding:
+    free(binding_hash);
+fail_property:
+    free(property_hash);
+fail_content:
+    free(content_cid);
+    return -1;
+}
+
 /* Make a directory if it doesn't exist. */
 static int ensure_dir(const char *path) {
     if (!path) return 0;
@@ -241,29 +503,13 @@ int mcsc_mint_one_run(const char *out_dir, mcsc_mint_result *out) {
         mcsc_slab *s = slabs->slabs[si];
         for (size_t ci = 0; ci < s->n; ci++) {
             const mcsc_contract *c = s->contracts[ci];
-            pksc_value *body = build_contract_body(c);
-            if (!body) goto fail;
-
-            pksc_bytes jcs;
-            pksc_bytes_init(&jcs);
-            if (pksc_jcs_encode(&jcs, body) != 0) {
-                pksc_value_free(body);
-                pksc_bytes_free(&jcs);
-                goto fail;
-            }
-            pksc_value_free(body);
-
-            char *cid = pksc_blake3_512_cid(jcs.data, jcs.len);
-            if (!cid) {
-                pksc_bytes_free(&jcs);
-                goto fail;
-            }
+            char *content_cid = NULL;
+            if (mint_contract_memento(c, &members[idx], &content_cid) != 0) goto fail;
 
             /* Detect duplicate CIDs across slabs. */
             for (size_t k = 0; k < idx; k++) {
-                if (strcmp(members[k].key, cid) == 0) {
-                    free(cid);
-                    pksc_bytes_free(&jcs);
+                if (strcmp(content_cids[k], content_cid) == 0) {
+                    free(content_cid);
                     fprintf(stderr,
                             "duplicate contract CID across slabs (contract `%s`)\n",
                             c->name);
@@ -271,15 +517,7 @@ int mcsc_mint_one_run(const char *out_dir, mcsc_mint_result *out) {
                 }
             }
 
-            members[idx].key = cid; /* takes ownership */
-            /* Move ownership of jcs.data into members[idx].bytes. */
-            members[idx].bytes = jcs.data;
-            members[idx].len = jcs.len;
-            jcs.data = NULL;
-            jcs.cap = jcs.len = 0;
-
-            content_cids[idx] = dup_cstr(cid);
-            if (!content_cids[idx]) goto fail;
+            content_cids[idx] = content_cid;
             idx++;
         }
     }

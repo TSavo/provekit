@@ -1,6 +1,7 @@
 # ProvekIt — top-level orchestrator
 #
-# Six-language polyglot. Each language owns its native build tool;
+# Twelve-kit polyglot. TypeScript is the center surface, but every kit
+# owns its native build tool;
 # this Makefile is glue, not a build system. `make ci` runs the same
 # gate the GitHub Actions workflow runs (Linux x86_64: Rust/Go/C++/TS/C#/Python).
 # Swift is macOS-only; use `make build-swift`, `make test-swift`, `make mint-swift`
@@ -8,9 +9,10 @@
 #
 # Mainline targets:
 #   make help        — print this help
-#   make ci          — full conformance gate (catalog + protocol + 10 mints + tests)
-#   make conformance — catalog + protocol + 10 mint CIDs + self-contract tests
-#   make all-mint    — run all 10 mint commands; print CIDs (Linux/CI subset)
+#   make ci          — full conformance gate (catalog + protocol + live mints + tests)
+#   make conformance — catalog + protocol + live mint CIDs + self-contract tests
+#   make all-mint    — run all 10 Linux/CI mint commands; print CIDs
+#   make bootstrap-self-contracts — re-sign attestations from live artifacts
 #   make test-all    — run every language-native test suite (Linux/CI subset)
 #
 # Per-language targets:
@@ -33,13 +35,11 @@
 #
 #   1. Make your code change in `implementations/<lang>/provekit-self-contracts`
 #      (or the language's analog).
-#   2. `make mint-<lang>`
-#      -> the mint target FAILS and prints the new bundle CID + contractSetCid.
-#   3. `cargo run --release --manifest-path tools/foundation-keygen/Cargo.toml \
-#         --bin sign-self-contracts -- <lang> <bundle-cid> <contract-set-cid>`
-#      -> rewrites `.provekit/self-contracts-attestations/<lang>.json` with
-#         a fresh foundation-v0 ed25519 signature over the new CID + contractSetCid.
-#   4. `git add .provekit/self-contracts-attestations/<lang>.json && git commit`
+#   2. `make bootstrap-self-contracts`
+#      -> builds the selected kit toolchains, mints verifier-loadable proof
+#         artifacts, and re-signs `.provekit/self-contracts-attestations/*.json`
+#         from the live bundle CID + contractSetCid.
+#   3. `git add .provekit/self-contracts-attestations/<lang>.json && git commit`
 #
 # The bundle (letter) does not know its own CID. The on-disk attestation
 # (envelope) names the CID and is signed externally. See
@@ -58,6 +58,8 @@ CATALOG_CID := blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11e
 PROVEKIT := implementations/rust/target/release/provekit
 VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
 SELF_CONTRACTS_ATTEST_DIR := .provekit/self-contracts-attestations
+CONFORMANCE_PROFILE ?= linux
+CONFORMANCE_JOBS ?= 4
 
 .PHONY: help
 help:
@@ -67,6 +69,9 @@ help:
 	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 10 peer langs]"
 	@echo "  make conformance    catalog + protocol + 10 mint CIDs + self-contract tests"
 	@echo "  make all-mint       10 mint commands (Swift excluded: macOS-only, use mint-swift)"
+	@echo "  make bootstrap-self-contracts"
+	@echo "                       re-sign attestations from live kit artifacts"
+	@echo "                       override: CONFORMANCE_PROFILE=all CONFORMANCE_JOBS=8"
 	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
@@ -496,7 +501,15 @@ conformance-region-fixture:
 .PHONY: cross-kit-conformance
 cross-kit-conformance:
 	@echo "=== Catalog-pinned cross-kit conformance fixtures ==="
-	cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- --profile linux
+	cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
+		--profile $(CONFORMANCE_PROFILE) --jobs $(CONFORMANCE_JOBS)
+
+.PHONY: bootstrap-self-contracts
+bootstrap-self-contracts:
+	@echo "=== Bootstrap self-contract attestations from live kit artifacts ==="
+	cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
+		--profile $(CONFORMANCE_PROFILE) --jobs $(CONFORMANCE_JOBS) \
+		--bootstrap-self-contract-attestations
 
 # --- Per-language test suites ------------------------------------------------
 

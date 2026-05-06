@@ -46,7 +46,7 @@ function mintAll(string $outDir): array
 
         foreach ($finished['contracts'] as $contract) {
             $minted = $minter->mintContract($contract, PRODUCED_BY, DECLARED_AT);
-            $members[$minted['cid']] = $minted['canonicalBytes'];
+            $members[$minted['envelopeCid']] = $minted['canonicalBytes'];
             $contractCids[$contract->name] = $minted['cid'];
         }
     }

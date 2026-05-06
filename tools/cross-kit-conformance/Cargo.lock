@@ -100,8 +100,8 @@ name = "cross-kit-conformance"
 version = "0.1.0"
 dependencies = [
  "provekit-canonicalizer",
- "provekit-claim-envelope",
  "provekit-self-contracts",
+ "provekit-verifier",
  "serde",
  "serde_json",
  "toml",

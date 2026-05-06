@@ -8,28 +8,26 @@
 //      content CID:
 //        contractCid = blake3-512(JCS({name, outBinding, pre?, post?, inv?}))
 //   3. Computes contractSetCid = blake3-512(JCS(<sorted contractCids>)).
-//   4. Builds a `.proof` catalog envelope using the just-landed Side B
-//      crypto substrate (provekit-proof-envelope-zig). Member set is
-//      empty in this tier-3 bootstrap because zig has no claim-envelope
-//      analog yet (no signed-memento minting). The contractSetCid is
-//      content-meaningful regardless.
+//   4. Mints each contract as a signed layered memento using the native
+//      Zig claim-envelope substrate, then bundles those mementos into a
+//      `.proof` catalog envelope.
 //   5. Emits the .proof bytes + filename CID + contractSetCid to caller.
 //
 // Cross-kit anchor: the contractSetCid for the same authored contracts
 // is signer-independent across all kits per spec #94 §1. The .proof
-// filename CID depends on the empty member set + name + version +
+// filename CID depends on the signed memento set + name + version +
 // declaredAt + signer; it is byte-deterministic across runs but is NOT
-// expected to match other kits (those bundle real signed mementos).
-//
-// Followups (out of scope for #213):
-//   * Port claim-envelope to zig (mint signed mementos).
-//   * Add closed-loop bridge declaration.
+// expected to match other kits.
 
 const std = @import("std");
 const provekit = @import("provekit-ir");
 const proof_env = @import("provekit-proof-envelope-zig");
+const sc = @import("provekit-self-contracts");
 
 const slab = @import("slab.zig");
+const ScValue = sc.jcs.Value;
+const ObjectBuilder = sc.jcs.ObjectBuilder;
+const ArrayBuilder = sc.jcs.ArrayBuilder;
 
 pub const PRODUCED_BY: []const u8 = "@provekit/zig-self-contracts@1.0";
 pub const DECLARED_AT: []const u8 = "2026-04-30T18:00:00.000Z";
@@ -171,6 +169,112 @@ fn computeContractSetCid(
 }
 
 // ---------------------------------------------------------------------------
+// IR -> provekit-self-contracts JCS Value conversion.
+// ---------------------------------------------------------------------------
+
+fn sortToValue(alloc: std.mem.Allocator, sort: provekit.Sort) !*ScValue {
+    var b = ObjectBuilder.init(alloc);
+    switch (sort) {
+        .primitive => |name| {
+            try b.add("kind", try ScValue.newString(alloc, "primitive"));
+            try b.add("name", try ScValue.newString(alloc, name));
+        },
+        .function => |f| {
+            var args = ArrayBuilder.init(alloc);
+            for (f.args) |arg| try args.append(try sortToValue(alloc, arg.*));
+            try b.add("args", try args.finish());
+            try b.add("kind", try ScValue.newString(alloc, "function"));
+            try b.add("return", try sortToValue(alloc, f.return_.*));
+        },
+        .dependent => |d| {
+            try b.add("indexSort", try sortToValue(alloc, d.index_sort.*));
+            try b.add("indexVar", try ScValue.newString(alloc, d.index_var));
+            try b.add("kind", try ScValue.newString(alloc, "dependent"));
+            try b.add("name", try ScValue.newString(alloc, d.name));
+        },
+        .region => |r| {
+            try b.add("kind", try ScValue.newString(alloc, "region"));
+            try b.add("name", try ScValue.newString(alloc, r.name));
+        },
+    }
+    return b.finish();
+}
+
+fn constValueToValue(alloc: std.mem.Allocator, value: provekit.Term.ConstValue) !*ScValue {
+    return switch (value) {
+        .int => |n| ScValue.newInt(alloc, n),
+        .string => |s| ScValue.newString(alloc, s),
+        .bool => |b| ScValue.newBool(alloc, b),
+        .null_void => ScValue.newNull(alloc),
+    };
+}
+
+fn termToValue(alloc: std.mem.Allocator, term: provekit.Term) !*ScValue {
+    var b = ObjectBuilder.init(alloc);
+    switch (term) {
+        .var_term => |t| {
+            try b.add("kind", try ScValue.newString(alloc, "var"));
+            try b.add("name", try ScValue.newString(alloc, t.name));
+        },
+        .const_term => |t| {
+            try b.add("kind", try ScValue.newString(alloc, "const"));
+            try b.add("sort", try sortToValue(alloc, t.sort));
+            try b.add("value", try constValueToValue(alloc, t.value));
+        },
+        .ctor_term => |t| {
+            var args = ArrayBuilder.init(alloc);
+            for (t.args) |arg| try args.append(try termToValue(alloc, arg));
+            try b.add("args", try args.finish());
+            try b.add("kind", try ScValue.newString(alloc, "ctor"));
+            try b.add("name", try ScValue.newString(alloc, t.name));
+        },
+    }
+    return b.finish();
+}
+
+fn connectiveKindName(kind: provekit.Formula.ConnectiveKind) []const u8 {
+    return switch (kind) {
+        .@"and" => "and",
+        .@"or" => "or",
+        .not => "not",
+        .implies => "implies",
+    };
+}
+
+fn quantifierKindName(kind: provekit.Formula.QuantifierKind) []const u8 {
+    return switch (kind) {
+        .forall => "forall",
+        .exists => "exists",
+    };
+}
+
+fn formulaToValue(alloc: std.mem.Allocator, formula: provekit.Formula) !*ScValue {
+    var b = ObjectBuilder.init(alloc);
+    switch (formula) {
+        .atomic => |f| {
+            var args = ArrayBuilder.init(alloc);
+            for (f.args) |arg| try args.append(try termToValue(alloc, arg));
+            try b.add("args", try args.finish());
+            try b.add("kind", try ScValue.newString(alloc, "atomic"));
+            try b.add("name", try ScValue.newString(alloc, f.name));
+        },
+        .connective => |f| {
+            var operands = ArrayBuilder.init(alloc);
+            for (f.operands) |operand| try operands.append(try formulaToValue(alloc, operand));
+            try b.add("kind", try ScValue.newString(alloc, connectiveKindName(f.kind)));
+            try b.add("operands", try operands.finish());
+        },
+        .quantifier => |f| {
+            try b.add("body", try formulaToValue(alloc, f.body.*));
+            try b.add("kind", try ScValue.newString(alloc, quantifierKindName(f.kind)));
+            try b.add("name", try ScValue.newString(alloc, f.name));
+            try b.add("sort", try sortToValue(alloc, f.sort));
+        },
+    }
+    return b.finish();
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point.
 // ---------------------------------------------------------------------------
 
@@ -178,11 +282,20 @@ pub fn mintSelfProof(alloc: std.mem.Allocator) !MintResult {
     var authoring = try slab.authorAll(alloc);
     defer authoring.deinit();
 
-    // 1. Compute every contract's content CID.
+    // 1. Mint every contract as a real signed memento and collect its
+    // signer-independent content CID for contractSetCid.
     var cids_list: std.ArrayList([]u8) = .empty;
     defer {
         for (cids_list.items) |c| alloc.free(c);
         cids_list.deinit(alloc);
+    }
+    var members_list: std.ArrayList(proof_env.Member) = .empty;
+    defer {
+        for (members_list.items) |m| {
+            alloc.free(m.cid);
+            alloc.free(m.bytes);
+        }
+        members_list.deinit(alloc);
     }
     var per_source: std.ArrayList(LabeledCount) = .empty;
     errdefer {
@@ -196,8 +309,29 @@ pub fn mintSelfProof(alloc: std.mem.Allocator) !MintResult {
         try per_source.append(alloc, .{ .label = label_dup, .count = s.contracts.len });
         for (s.contracts) |d| {
             const c = d.contract;
-            const cid = try contractContentCid(alloc, c);
-            try cids_list.append(alloc, cid);
+            var minted = try sc.claim_envelope.mintContract(alloc, .{
+                .contract_name = c.name,
+                .pre = if (c.pre) |pre| try formulaToValue(alloc, pre) else null,
+                .post = if (c.post) |post| try formulaToValue(alloc, post) else null,
+                .inv = if (c.inv) |inv| try formulaToValue(alloc, inv) else null,
+                .out_binding = c.out_binding,
+                .produced_by = PRODUCED_BY,
+                .produced_at = DECLARED_AT,
+                .input_cids = &.{},
+                .authoring = .{ .kit_author = .{
+                    .author = PRODUCED_BY,
+                    .note = "self-contract from zig slab",
+                } },
+                .signer_seed = sc.foundation.SEED,
+            });
+            var minted_transferred = false;
+            errdefer if (!minted_transferred) minted.deinit(alloc);
+            try cids_list.append(alloc, minted.contract_cid);
+            try members_list.append(alloc, .{
+                .cid = minted.cid,
+                .bytes = minted.canonical_bytes,
+            });
+            minted_transferred = true;
         }
         total += s.contracts.len;
     }
@@ -211,9 +345,7 @@ pub fn mintSelfProof(alloc: std.mem.Allocator) !MintResult {
     const contract_set_cid = try computeContractSetCid(alloc, cids_view.items);
     errdefer alloc.free(contract_set_cid);
 
-    // 3. Build the .proof envelope. Members map is empty in this Tier-3
-    //    bootstrap (no claim-envelope substrate yet); the contractSetCid
-    //    above is the cross-kit content-meaningful anchor.
+    // 3. Build the .proof envelope from the kit-emitted mementos.
     const signer_pubkey = try proof_env.sign.pubkeyString(alloc, proof_env.FOUNDATION_V0_SEED);
     defer alloc.free(signer_pubkey);
     const signer_cid = try proof_env.blake3_512_of(alloc, signer_pubkey);
@@ -222,7 +354,7 @@ pub fn mintSelfProof(alloc: std.mem.Allocator) !MintResult {
     const built = try proof_env.buildProofEnvelope(alloc, .{
         .name = CATALOG_NAME,
         .version = CATALOG_VERSION,
-        .members = &.{},
+        .members = members_list.items,
         .signer_cid = signer_cid,
         .declared_at = DECLARED_AT,
         .signer_seed = proof_env.FOUNDATION_V0_SEED,
@@ -255,6 +387,7 @@ test "mintSelfProof produces a content-meaningful contractSetCid" {
     try testing.expect(std.mem.startsWith(u8, r.filename_cid, "blake3-512:"));
     try testing.expect(r.total_contracts > 0);
     try testing.expect(r.proof_bytes.len > 0);
+    try testing.expect(r.proof_bytes.len > 1024);
 }
 
 test "mintSelfProof is byte-deterministic" {

@@ -4,7 +4,7 @@
   "lang": "go",
   "cid": "blake3-512:2cb536119bb99c4b7c24bc455672e0863b3b5392fabfc92c6db01828854ca6cb7f20a33d0c7b2f9415a7957fd844dcfe06dc668765d3ccbb08808cf08e9f92eb",
   "contractSetCid": "blake3-512:e23649f383162398556a508c2e69e035d6d231bfaf6e8926ced547fb19ddd9c65779f39fe31d85519c957bc40afa432c9be468eadfa5aac77f74f5de8c56324c",
-  "declaredAt": "2026-05-03T18:00:00Z",
+  "declaredAt": "2026-05-05T18:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:2QRap+bghkPM6R4MbkkZb+7nZmv7NEpqAPAuWYnk1ozJ5bDee5kGfe5Nd9N/71VrPEmcQfg4MIBPq9dC4zi2CA=="
+  "signature": "ed25519:EOa/hi83MZOMh+4Nht9csij6mhJY8hDdrlM4UA1ubJwOkkkzAtZHWRgbyEcJ0XHBMKGDdFrCAOx3Q+OZqzeWCg=="
 }
