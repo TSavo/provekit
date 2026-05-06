@@ -32,12 +32,12 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use provekit_ir_types::IrFormula;
+use provekit_ir_types::{IrFormula, IrTerm, Sort};
 use thiserror::Error;
 
 use crate::canonical::{cid_of_value, formula_to_canonical, jcs_bytes_of_value};
 use crate::charon_runner::{invoke_charon_on_rs_source, RunnerError};
-use crate::contract::{build_function_contract_with_file, FunctionContractMemento};
+use crate::contract::{build_function_contract_with_file, Effect, FunctionContractMemento};
 use crate::llbc::LlbcError;
 use crate::llbc_lift::lift_llbc_function_with_types;
 use crate::wp::atomic_true;
@@ -61,13 +61,14 @@ pub enum MarriageError {
 /// `TypePrecision` is the current catch-all: sort refinements such as
 /// Int vs U32 that the surface AST cannot express. `LifetimeRelative`
 /// covers Outlives predicates emitted by the C.9 lifter (#384 C.9),
-/// classified by a predicate name starting with `"outlives"` in the
-/// atom set. `BorrowState` is reserved for mut/shared distinctions.
+/// classified by a predicate name starting with `"outlives"` OR any
+/// predicate whose terms reference `Sort::Region`-tagged sorts.
+/// `BorrowState` is reserved for mut/shared distinctions.
 ///
-/// Classifier rule: atom predicate name starts with `"outlives"` ->
-/// `LifetimeRelative`; everything else -> `TypePrecision`.
-/// TODO(#401): once Sort::Region lands, update the classifier to also
-/// detect Region-kinded terms as LifetimeRelative.
+/// Classifier rules (checked in order):
+/// 1. Atom predicate name starts with `"outlives"` -> `LifetimeRelative`
+/// 2. Any term in the atom carries `Sort::Region` -> `LifetimeRelative`
+/// 3. Everything else -> `TypePrecision`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LlbcExtraCategory {
     /// Sort refinements (Int vs U32, Int vs Bool, etc.) and all
@@ -205,31 +206,106 @@ fn compare_layers(
         .chain(llbc_extras_post)
         .collect();
 
-    match (ast_only, llbc_only) {
+    let agreement = match (ast_only, llbc_only) {
         (false, false) => LayerAgreement::Identical,
         (false, true) => LayerAgreement::LlbcExtra(classify_extras(&llbc_extras)),
         (true, false) => LayerAgreement::AstExtra,
         (true, true) => LayerAgreement::Both(classify_extras(&llbc_extras)),
+    };
+
+    // Effect-based classification: PossibleAliasing is an LLBC-only effect
+    // (AST cannot see borrow shape). When formulas agree but LLBC carries
+    // PossibleAliasing that AST doesn't, classify as LlbcExtra(BorrowState).
+    if agreement == LayerAgreement::Identical {
+        let llbc_has_aliasing = llbc.effects.effects.iter().any(|e| matches!(e, Effect::PossibleAliasing { .. }));
+        let ast_has_aliasing = ast.effects.effects.iter().any(|e| matches!(e, Effect::PossibleAliasing { .. }));
+        if llbc_has_aliasing && !ast_has_aliasing {
+            return LayerAgreement::LlbcExtra(LlbcExtraCategory::BorrowState);
+        }
     }
+
+    agreement
 }
 
 /// Classify a slice of LLBC-exclusive atoms into a category.
 ///
-/// Rule: if any atom's predicate name starts with `"outlives"`,
-/// the extras are `LifetimeRelative`. Otherwise `TypePrecision` is
-/// returned as the default catch-all.
-///
-/// TODO(#401): once Sort::Region lands, extend this to detect
-/// Region-kinded terms regardless of predicate name prefix.
-fn classify_extras(extras: &[IrFormula]) -> LlbcExtraCategory {
+/// Rules (checked in order):
+/// 1. If any atom's predicate name starts with `"outlives"`, the extras
+///    are `LifetimeRelative`.
+/// 2. If any atom references a `Sort::Region`-tagged term (via `Const`
+///    sort or recursive descent through `Ctor` args), the extras are
+///    `LifetimeRelative`.
+/// 3. Otherwise `TypePrecision` is returned as the default catch-all.
+pub fn classify_extras(extras: &[IrFormula]) -> LlbcExtraCategory {
     for formula in extras {
-        if let IrFormula::Atomic { name, .. } = formula {
-            if name.starts_with("outlives") {
+        if let IrFormula::Atomic { name, args } = formula {
+            if name.to_lowercase().starts_with("outlives") {
                 return LlbcExtraCategory::LifetimeRelative;
+            }
+            for arg in args {
+                if term_has_region_sort(arg) {
+                    return LlbcExtraCategory::LifetimeRelative;
+                }
             }
         }
     }
     LlbcExtraCategory::TypePrecision
+}
+
+/// Walk an `IrTerm` to determine whether it carries a `Sort::Region`.
+///
+/// Checks `Const` sort fields and recurses through `Ctor` args and
+/// `Lambda` bodies. `Var` nodes have no sort metadata and are skipped.
+fn term_has_region_sort(term: &IrTerm) -> bool {
+    match term {
+        IrTerm::Const { sort: Sort::Region { .. }, .. } => true,
+        IrTerm::Const { .. } => false,
+        IrTerm::Var { .. } => false,
+        IrTerm::Ctor { args, .. } => args.iter().any(term_has_region_sort),
+        IrTerm::Lambda {
+            param_sort: Sort::Region { .. },
+            ..
+        } => true,
+        IrTerm::Lambda { body, .. } => term_has_region_sort(body),
+        IrTerm::Let { bindings, body } => {
+            bindings.iter().any(|b| term_has_region_sort(&b.bound_term))
+                || term_has_region_sort(body)
+        }
+    }
+}
+
+/// Check whether an `IrFormula` references a `Sort::Region` sort.
+/// Used by composition-level region checks; kept here for proximity
+/// to the term-level classifier.
+#[allow(dead_code)]
+fn term_has_region_sort_in_formula(f: &IrFormula) -> bool {
+    match f {
+        IrFormula::Atomic { args, .. } => args.iter().any(term_has_region_sort),
+        IrFormula::And { operands } | IrFormula::Or { operands } => {
+            operands.iter().any(term_has_region_sort_in_formula)
+        }
+        IrFormula::Not { operands } => {
+            operands.iter().any(term_has_region_sort_in_formula)
+        }
+        IrFormula::Implies { operands } => {
+            operands.iter().any(term_has_region_sort_in_formula)
+        }
+        IrFormula::Forall {
+            sort: Sort::Region { .. },
+            ..
+        }
+        | IrFormula::Exists {
+            sort: Sort::Region { .. },
+            ..
+        }
+        | IrFormula::Choice {
+            sort: Sort::Region { .. },
+            ..
+        } => true,
+        IrFormula::Forall { body, .. }
+        | IrFormula::Exists { body, .. }
+        | IrFormula::Choice { body, .. } => term_has_region_sort_in_formula(body),
+    }
 }
 
 fn atom_byte_set(f: &IrFormula) -> HashSet<Vec<u8>> {
@@ -780,7 +856,9 @@ mod tests {
             fn_name: "stub_lifetime".to_string(),
             formals: vec![],
             formal_sorts: vec![],
+            formal_regions: vec![],
             return_sort: Sort::Primitive { name: "Unit".to_string() },
+            return_region: None,
             body_cid: None,
             effects: EffectSet::empty(),
             locus: Locus::unknown(),
@@ -788,6 +866,7 @@ mod tests {
             post: atomic_true().into_formula(),
             canonical_bytes: vec![],
             cid: String::new(),
+            auto_minted_mementos: vec![],
         };
 
         let ast_contract = {
@@ -884,6 +963,133 @@ mod tests {
             Sort::Primitive { name: "U32".to_string() },
             "return_sort must be U32: {:?}",
             ast.return_sort
+        );
+    }
+
+    // ---- C.9 marriage hookup: Outlives + Region classification ----
+
+    #[test]
+    fn outlives_predicate_classified_as_lifetime_relative() {
+        // Test 1: Outlives atomic predicate classified as LifetimeRelative.
+        let outlives_atom = IrFormula::Atomic {
+            name: "Outlives".to_string(),
+            args: vec![
+                IrTerm::Var { name: "'a".to_string() },
+                IrTerm::Var { name: "'b".to_string() },
+            ],
+        };
+        let cat = classify_extras(&[outlives_atom]);
+        assert_eq!(
+            cat,
+            LlbcExtraCategory::LifetimeRelative,
+            "Outlives predicate must be LifetimeRelative"
+        );
+    }
+
+    #[test]
+    fn predicate_with_region_typed_term_classified_as_lifetime_relative() {
+        // Test 2: Non-Outlives predicate with a Sort::Region-tagged term
+        // still classified as LifetimeRelative.
+        let region_term = IrTerm::Const {
+            value: serde_json::json!("'a"),
+            sort: Sort::Region { name: "'a".to_string() },
+        };
+        let region_atom = IrFormula::Atomic {
+            name: "borrow_region".to_string(),
+            args: vec![region_term],
+        };
+        let cat = classify_extras(&[region_atom]);
+        assert_eq!(
+            cat,
+            LlbcExtraCategory::LifetimeRelative,
+            "predicate with Region-typed term must be LifetimeRelative"
+        );
+    }
+
+    #[test]
+    fn non_region_predicate_uses_default_classification() {
+        // Test 3: Non-region predicate uses the default TypePrecision.
+        let ge_atom = IrFormula::Atomic {
+            name: "\u{2265}".to_string(),
+            args: vec![
+                IrTerm::Var { name: "x".to_string() },
+                IrTerm::Const {
+                    value: serde_json::json!(10),
+                    sort: Sort::Primitive { name: "U32".to_string() },
+                },
+            ],
+        };
+        let cat = classify_extras(&[ge_atom]);
+        assert_eq!(
+            cat,
+            LlbcExtraCategory::TypePrecision,
+            "non-region predicate must default to TypePrecision"
+        );
+    }
+
+    #[test]
+    fn marriage_with_outlives_in_llbc_only_succeeds() {
+        // Test 4: Full marriage scenario with empty AST predicates and
+        // one Outlives in LLBC. Marriage succeeds with LlbcExtra(LifetimeRelative).
+        use crate::canonical::{cid_of_value, jcs_bytes_of_value};
+        use crate::contract::{build_memento_value, EffectSet, FunctionContractMemento};
+        use crate::locus::Locus;
+
+        let outlives_atom = IrFormula::Atomic {
+            name: "Outlives".to_string(),
+            args: vec![
+                IrTerm::Var { name: "'a".to_string() },
+                IrTerm::Var { name: "'b".to_string() },
+            ],
+        };
+
+        let base = FunctionContractMemento {
+            fn_name: "test_outlives_marriage".to_string(),
+            formals: vec![],
+            formal_sorts: vec![],
+            return_sort: Sort::Primitive { name: "Unit".to_string() },
+            body_cid: None,
+            effects: EffectSet::empty(),
+            locus: Locus::unknown(),
+            pre: atomic_true().into_formula(),
+            post: atomic_true().into_formula(),
+            canonical_bytes: vec![],
+            cid: String::new(),
+            auto_minted_mementos: vec![],
+            formal_regions: vec![],
+            return_region: None,
+        };
+
+        let ast_contract = {
+            let mut c = base.clone();
+            let v = build_memento_value(&c);
+            c.canonical_bytes = jcs_bytes_of_value(&v);
+            c.cid = cid_of_value(&v);
+            c
+        };
+
+        let llbc_contract = {
+            let mut c = base.clone();
+            c.pre = outlives_atom;
+            let v = build_memento_value(&c);
+            c.canonical_bytes = jcs_bytes_of_value(&v);
+            c.cid = cid_of_value(&v);
+            c
+        };
+
+        let married = marry(ast_contract, llbc_contract);
+
+        assert_eq!(
+            married.agreement,
+            LayerAgreement::LlbcExtra(LlbcExtraCategory::LifetimeRelative),
+            "marriage with Outlives in LLBC only must succeed as LifetimeRelative"
+        );
+
+        let merged_pre_str = serde_json::to_string(&married.merged.pre).unwrap();
+        assert!(
+            merged_pre_str.contains("Outlives"),
+            "merged pre must carry the Outlives atom: {}",
+            merged_pre_str
         );
     }
 }

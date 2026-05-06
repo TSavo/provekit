@@ -1573,6 +1573,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "hex",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1643,6 +1644,7 @@ dependencies = [
 name = "provekit-ir-compiler-smt-lib"
 version = "0.1.0"
 dependencies = [
+ "provekit-canonicalizer",
  "provekit-ir-compiler",
  "provekit-ir-types",
  "serde",

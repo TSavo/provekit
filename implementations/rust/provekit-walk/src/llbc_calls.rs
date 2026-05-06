@@ -332,7 +332,9 @@ mod tests {
             fn_name: "inner".into(),
             formals: vec!["y".into()],
             formal_sorts: vec![Sort::Primitive { name: "Int".into() }],
+            formal_regions: vec![],
             return_sort: Sort::Primitive { name: "Int".into() },
+            return_region: None,
             pre,
             post,
             body_cid: None,
@@ -340,6 +342,7 @@ mod tests {
             locus: Locus::unknown(),
             canonical_bytes: vec![],
             cid: String::new(),
+            auto_minted_mementos: vec![],
         };
         let composed = compose_callsite_pre(&callee, &[var("x")]);
         // Should be (x >= 5).

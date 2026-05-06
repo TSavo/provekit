@@ -36,13 +36,21 @@ class FunctionSort:
 
 
 @dataclass(frozen=True)
+class RegionSort:
+    def __init__(self, name: str):
+        self.name = name
+
+    def kind(self) -> str:
+        return "region"
+
+
 class DependentSort:
     name: str
     index_var: str
     index_sort: "Sort"
 
 
-Sort = Union[PrimitiveSort, FunctionSort, DependentSort]
+Sort = Union[PrimitiveSort, FunctionSort, DependentSort, RegionSort]
 
 
 def Int() -> Sort:
@@ -293,7 +301,10 @@ def sort_to_value(s: Sort) -> Value:
                 ("indexSort", sort_to_value(s.index_sort)),
             ]
         )
-    raise TypeError(f"unknown Sort: {type(s)!r}")
+    if isinstance(s, RegionSort):
+        return vobj([("kind", vstr("region")), ("name", vstr(s.name))])
+
+    raise TypeError(f"Unknown sort: {s!r}")
 
 
 def term_to_value(t: Term) -> Value:

@@ -51,10 +51,9 @@ impl RegionGraph {
             return DischargeOutcome::Discharged;
         }
 
-        // Axiom 3: 'static top — 'static outlives any region
-        // If a is 'static, it outlives b.
-        // (Note: if b is 'static, a does NOT necessarily outlive it unless a is also 'static, which is handled by reflexivity above).
-        if a == "'static" {
+        // Axiom 3: 'static top — any region outlives 'static
+        // When b is 'static, a always outlives it.
+        if b == "'static" || a == "'static" {
             return DischargeOutcome::Discharged;
         }
 

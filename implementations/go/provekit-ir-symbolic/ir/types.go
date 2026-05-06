@@ -142,6 +142,24 @@ func (s dependentSort) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type regionSort struct {
+	Name string
+}
+
+func (regionSort) sortMarker() {}
+
+func (s regionSort) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"kind":"region","name":`)
+	encoded, err := encodeJSON(s.Name)
+	if err != nil {
+		return nil, err
+	}
+	buf.Write(encoded)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
 var (
 	Bool   Sort = primitiveSort{Name: "Bool"}
 	Int    Sort = primitiveSort{Name: "Int"}
@@ -155,6 +173,7 @@ var (
 func SetOf(element Sort) Sort           { return setSort{Element: element} }
 func TupleOf(elements ...Sort) Sort     { return tupleSort{Elements: elements} }
 func FuncOf(args []Sort, ret Sort) Sort { return funcSort{Args: args, Return: ret} }
+func RegionOf(name string) Sort         { return regionSort{Name: name} }
 
 // ----------------------------------------------------------------------
 // Term: VarTerm (no sort in JSON), ConstTerm (sort kept), CtorTerm (no

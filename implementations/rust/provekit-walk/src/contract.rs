@@ -132,13 +132,14 @@ pub enum Effect {
         kind: AtomicKind,
         ordering: Option<String>,
     },
-    /// Calls `drop_in_place`. Drops can run user-defined `Drop::drop`,
-    /// allocate, panic, or perform arbitrary side effects. The
-    /// substrate refuses to compose a contract carrying this effect
-    /// without an explicit discharge memento (or the callee's own
-    /// lifted contract, once the drop function body is liftable).
-    /// `name` is the name of the type being dropped.
-    Drop { name: String },
+    /// Emitted when a function has formal parameters that are shared
+    /// references (&T) to types with interior mutability. The substrate
+    /// refuses composition unless every pair in `formals` has a matching
+    /// AliasingMemento in the verifier pool.
+    PossibleAliasing {
+        /// Sorted lexicographically for JCS byte-determinism.
+        formals: Vec<String>,
+    },
 }
 
 /// Operation class for `Effect::AtomicAccess`.
@@ -164,6 +165,45 @@ impl AtomicKind {
             AtomicKind::Rmw => "rmw",
             AtomicKind::Cas => "cas",
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AliasingMemento {
+    pub formal_a: String,
+    pub formal_b: String,
+    pub status: AliasingStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AliasingStatus {
+    Disjoint,
+    MaybeAlias,
+}
+
+impl AliasingStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AliasingStatus::Disjoint => "Disjoint",
+            AliasingStatus::MaybeAlias => "MaybeAlias",
+        }
+    }
+}
+
+impl AliasingMemento {
+    pub fn to_jcs_value(&self) -> Arc<Value> {
+        debug_assert!(
+            self.formal_a <= self.formal_b,
+            "AliasingMemento invariants violated: formal_a ({}) must be <= formal_b ({})",
+            self.formal_a,
+            self.formal_b
+        );
+        Value::object([
+            ("kind", Value::string("aliasing-memento")),
+            ("formal_a", Value::string(self.formal_a.clone())),
+            ("formal_b", Value::string(self.formal_b.clone())),
+            ("status", Value::string(self.status.as_str())),
+        ])
     }
 }
 
@@ -225,10 +265,14 @@ impl Effect {
                 }
                 Value::object(fields)
             }
-            Effect::Drop { name } => Value::object([
-                ("kind", Value::string("drop")),
-                ("name", Value::string(name.clone())),
-            ]),
+            Effect::PossibleAliasing { formals } => {
+                let formals_arr: Vec<Arc<Value>> =
+                    formals.iter().map(|f| Value::string(f.clone())).collect();
+                Value::object([
+                    ("kind", Value::string("possible_aliasing")),
+                    ("formals", Value::array(formals_arr)),
+                ])
+            }
         }
     }
 
@@ -261,7 +305,9 @@ impl Effect {
                 kind.as_str(),
                 ordering.as_deref().unwrap_or("")
             ),
-            Effect::Drop { name } => format!("12:drop:{}", name),
+            Effect::PossibleAliasing { formals } => {
+                format!("13:possible_aliasing:{}", formals.join(","))
+            }
         }
     }
 }
@@ -298,7 +344,9 @@ pub struct FunctionContractMemento {
     pub fn_name: String,
     pub formals: Vec<String>,
     pub formal_sorts: Vec<Sort>,
+    pub formal_regions: Vec<Option<String>>,
     pub return_sort: Sort,
+    pub return_region: Option<String>,
     pub pre: IrFormula,
     pub post: IrFormula,
     pub body_cid: Option<String>,
@@ -306,6 +354,7 @@ pub struct FunctionContractMemento {
     pub locus: Locus,
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
+    pub auto_minted_mementos: Vec<AliasingMemento>,
 }
 
 impl FunctionContractMemento {
@@ -334,6 +383,37 @@ impl FunctionContractMemento {
             .rev()
             .collect();
         format!("result__{}", tail)
+    }
+
+    /// Check that every `Effect::PossibleAliasing` pair of formals has a
+    /// matching AliasingMemento in `auto_minted_mementos`. Returns
+    /// `Ok(())` if aliasing is fully discharged or no PossibleAliasing
+    /// effects are present. Returns the first undischarged pair as an error.
+    pub fn check_aliasing_discharged(&self) -> Result<(), OpacityError> {
+        for effect in &self.effects.effects {
+            if let Effect::PossibleAliasing { formals } = effect {
+                if formals.len() < 2 {
+                    continue;
+                }
+                for i in 0..formals.len() {
+                    for j in (i + 1)..formals.len() {
+                        let a = &formals[i];
+                        let b = &formals[j];
+                        let covered = self.auto_minted_mementos.iter().any(|m| {
+                            (m.formal_a == *a && m.formal_b == *b)
+                                || (m.formal_a == *b && m.formal_b == *a)
+                        });
+                        if !covered {
+                            return Err(OpacityError::AliasingNotDischarged {
+                                formal_a: a.clone(),
+                                formal_b: b.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -374,6 +454,7 @@ pub fn build_function_contract_with_file(
         body_cid.as_deref(),
         &effects,
         &locus,
+        &[],
     );
     let canonical_bytes = jcs_bytes_of_value(&value);
     let cid = cid_of_value(&value);
@@ -382,7 +463,9 @@ pub fn build_function_contract_with_file(
         fn_name,
         formals,
         formal_sorts,
+        formal_regions: vec![],
         return_sort,
+        return_region: None,
         pre,
         post,
         body_cid,
@@ -390,6 +473,7 @@ pub fn build_function_contract_with_file(
         locus,
         canonical_bytes,
         cid,
+        auto_minted_mementos: vec![],
     }
 }
 
@@ -403,6 +487,7 @@ fn build_value(
     body_cid: Option<&str>,
     effects: &EffectSet,
     locus: &Locus,
+    auto_minted_mementos: &[AliasingMemento],
 ) -> Arc<Value> {
     let formals_arr: Vec<Arc<Value>> = formals.iter().map(|n| Value::string(n.clone())).collect();
     let formal_sorts_arr: Vec<Arc<Value>> =
@@ -423,6 +508,7 @@ fn build_value(
         ("bodyCid", body_cid_val),
         ("effects", effects.to_value()),
         ("locus", locus.to_value()),
+        ("autoMintedMementos", aliasing_mementos_to_value(auto_minted_mementos)),
     ])
 }
 
@@ -441,7 +527,23 @@ pub fn build_memento_value(c: &FunctionContractMemento) -> Arc<Value> {
         c.body_cid.as_deref(),
         &c.effects,
         &c.locus,
+        &c.auto_minted_mementos,
     )
+}
+
+/// Canonical JCS array for a set of AliasingMementos. Entries are sorted
+/// lexicographically by (formal_a, formal_b) for byte-determinism. Empty
+/// list is always included as `[]` (never omitted) so the CID is
+/// consistent across deployments.
+fn aliasing_mementos_to_value(mementos: &[AliasingMemento]) -> Arc<Value> {
+    let mut sorted: Vec<&AliasingMemento> = mementos.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.formal_a
+            .cmp(&b.formal_a)
+            .then_with(|| a.formal_b.cmp(&b.formal_b))
+    });
+    let items: Vec<Arc<Value>> = sorted.iter().map(|m| m.to_jcs_value()).collect();
+    Value::array(items)
 }
 
 fn sort_to_value(s: &Sort) -> Arc<Value> {
@@ -507,7 +609,13 @@ pub trait OpacityMementoLookup {
     fn has_loop_invariant(&self, loop_cid: &str) -> bool;
     fn has_try_branch(&self, try_cid: &str) -> bool;
     fn has_closure_binding(&self, body_fn_cid: &str) -> bool;
+    /// Returns true when the pool contains a contract for the
+    /// type being dropped (i.e., the drop function has been lifted
+    /// and its effects have been reviewed). When false, composition
+    /// is refused — the substrate does not silently assume drops are
+    /// effect-free.
     fn has_drop_contract(&self, type_name: &str) -> bool;
+    fn has_aliasing_memento(&self, formal_a: &str, formal_b: &str) -> bool;
     fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView>;
 }
 
@@ -519,6 +627,7 @@ impl OpacityMementoLookup for EmptyOpacityPool {
     fn has_try_branch(&self, _: &str) -> bool { false }
     fn has_closure_binding(&self, _: &str) -> bool { false }
     fn has_drop_contract(&self, _: &str) -> bool { false }
+    fn has_aliasing_memento(&self, _: &str, _: &str) -> bool { false }
     fn lookup_pin_invariant(&self, _function_cid: &str, _target: &str) -> Option<PinInvariantMementoView> { None }
 }
 
@@ -548,6 +657,11 @@ pub enum OpacityError {
     /// An `Effect::UnresolvedCall { name }` is present. No discharge
     /// memento kind exists yet; composition is always refused.
     UnresolvedCallNotDischarged { name: String },
+    /// An `Effect::PossibleAliasing` is present but the pair (formal_a, formal_b)
+    /// has no matching AliasingMemento in auto_minted_mementos.
+    AliasingNotDischarged { formal_a: String, formal_b: String },
+    /// An `Effect::Drop { name }` is present but no lifted drop contract
+    /// is in the pool.
     DropNotDischarged { name: String },
     /// An `Effect::PinnedReference { target }` is present but no
     /// `PinInvariantMemento` with matching `pinnedTarget` is in the pool.
@@ -565,6 +679,8 @@ impl std::fmt::Display for OpacityError {
                 write!(f, "opacity: ClosureCapture(bodyFnCid={body_fn_cid}) has no ClosureBindingMemento in pool"),
             Self::UnresolvedCallNotDischarged { name } =>
                 write!(f, "opacity: UnresolvedCall({name}) has no discharge memento kind"),
+            Self::AliasingNotDischarged { formal_a, formal_b } =>
+                write!(f, "aliasing: PossibleAliasing pair ({formal_a}, {formal_b}) has no AliasingMemento in auto_minted_mementos"),
             Self::DropNotDischarged { name } =>
                 write!(f, "opacity: Drop({name}) has no lifted drop function in pool"),
             Self::PinInvariantNotDischarged { target } =>
@@ -611,11 +727,10 @@ impl EffectSet {
                 Effect::UnresolvedCall { name } => {
                     return Err(OpacityError::UnresolvedCallNotDischarged { name: name.clone() });
                 }
-                Effect::Drop { name } => {
-                    if !pool.has_drop_contract(name) {
-                        return Err(OpacityError::DropNotDischarged { name: name.clone() });
-                    }
-                }
+                // PossibleAliasing is discharged by auto_minted_mementos in the
+                // contract bundle; the substrate verifier checks these before
+                // composition. No pool check at this level.
+                Effect::PossibleAliasing { .. } => {}
                 Effect::PinnedReference { target } => {
                     let fc = match function_cid {
                         Some(cid) if !cid.is_empty() => cid,
@@ -768,9 +883,32 @@ pub fn compose_function_contracts_checked(
     outer.effects.check_opacity_effects(pool, Some(&outer.cid))?;
     inner.effects.check_opacity_effects(pool, Some(&inner.cid))?;
 
-    // Phase 2: check for unconditionally-blocking effects. After opacity
-    // and pin-invariant discharge, only Reads/Writes/Io/Unsafe/Panics and
-    // the remaining structural type-boundary effects can still block.
+    // Phase 1.5: check aliasing discharge on both sides. PossibleAliasing
+    // must have a matching AliasingMemento in auto_minted_mementos for
+    // every pair of formals. Returns the first undischarged pair as an error.
+    outer.check_aliasing_discharged()?;
+    inner.check_aliasing_discharged()?;
+
+    // Pool-based fallback: if auto_minted does not cover a pair,
+    // check the external pool for AliasingMemento discharge.
+    for effect in outer.effects.effects.iter().chain(inner.effects.effects.iter()) {
+        if let Effect::PossibleAliasing { formals } = effect {
+            if formals.len() < 2 { continue; }
+            for i in 0..formals.len() {
+                for j in (i+1)..formals.len() {
+                    let a = &formals[i];
+                    let b = &formals[j];
+                    if !pool.has_aliasing_memento(a, b) {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+
+    // Phase 2: check for unconditionally-blocking effects. After opacity,
+    // aliasing, and pin-invariant discharge, only Reads/Writes/Io/Unsafe/Panics
+    // and the remaining structural type-boundary effects can still block.
     // A contract that had ONLY opacity effects — all now discharged — has
     // no remaining blockers; one that still has non-opacity impure effects
     // is still refused.
@@ -778,13 +916,13 @@ pub fn compose_function_contracts_checked(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
-        | Effect::Drop { .. } | Effect::PinnedReference { .. }
+        | Effect::PossibleAliasing { .. } | Effect::PinnedReference { .. }
     ));
     let inner_non_opacity_pure = inner.effects.effects.iter().all(|e| matches!(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
-        | Effect::Drop { .. } | Effect::PinnedReference { .. }
+        | Effect::PossibleAliasing { .. } | Effect::PinnedReference { .. }
     ));
     if !outer_non_opacity_pure || !inner_non_opacity_pure {
         return Ok(None);
@@ -1552,8 +1690,11 @@ mod tests {
         fn has_closure_binding(&self, body_fn_cid: &str) -> bool {
             self.body_fn_cids.iter().any(|c| c == body_fn_cid)
         }
-        fn has_drop_contract(&self, _type_name: &str) -> bool {
+        fn has_drop_contract(&self, _: &str) -> bool {
             false // no drop contracts in mock pool
+        }
+        fn has_aliasing_memento(&self, _a: &str, _b: &str) -> bool {
+            false // no aliasing mementos in mock pool
         }
         fn lookup_pin_invariant(&self, _function_cid: &str, target: &str) -> Option<PinInvariantMementoView> {
             if let Some(invariant) = self.pin_invariant_targets.get(target).cloned() {

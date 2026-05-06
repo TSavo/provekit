@@ -184,9 +184,14 @@ static void send_result(const std::string& id, const std::string& result_json) {
 static void send_error(const std::string& id, int code, const std::string& msg) {
     std::string safe_msg;
     for (char c : msg) {
-        if (c == '"') safe_msg += "\\\"";
-        else if (c == '\\') safe_msg += "\\\\";
-        else safe_msg += c;
+        switch (c) {
+            case '"':  safe_msg += "\\\""; break;
+            case '\\': safe_msg += "\\\\"; break;
+            case '\n': safe_msg += "\\n";  break;
+            case '\r': safe_msg += "\\r";  break;
+            case '\t': safe_msg += "\\t";  break;
+            default:   safe_msg += c;      break;
+        }
     }
     std::cout << "{\"jsonrpc\":\"2.0\",\"id\":" << id
               << ",\"error\":{\"code\":" << code

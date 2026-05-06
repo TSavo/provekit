@@ -237,7 +237,7 @@ fn effect_summary(effects: &[provekit_walk::contract::Effect]) -> String {
             PinnedReference { target } => format!("pinned_ref({})", target),
             RawPointerProvenance { target, mutable } => format!("raw_ptr({},mutable={})", target, mutable),
             AtomicAccess { target, kind, ordering } => format!("atomic({},{},{:?})", target, kind.as_str(), ordering),
-            Drop { name } => format!("drop({})", name),
+            PossibleAliasing { formals } => format!("possible_aliasing({})", formals.join(",")),
         })
         .collect();
     format!("[{}]", parts.join(", "))

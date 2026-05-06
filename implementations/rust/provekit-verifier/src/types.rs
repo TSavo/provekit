@@ -20,7 +20,7 @@ use serde::Serialize;
 /// * v1.1 flat:    `evidence.kind`
 pub fn memento_kind(envelope: &Json) -> Option<&str> {
     if envelope.get("envelope").is_some() {
-        envelope.pointer("/header/kind").and_then(|v| v.as_str())
+        envelope.pointer("/envelope/header/kind").and_then(|v| v.as_str())
     } else {
         envelope.pointer("/evidence/kind").and_then(|v| v.as_str())
     }
@@ -58,9 +58,9 @@ pub fn memento_body(envelope: &Json) -> Option<&Json> {
 pub fn memento_body_field<'a>(envelope: &'a Json, field: &str) -> Option<&'a Json> {
     if envelope.get("envelope").is_some() {
         envelope
-            .pointer("/header")
+            .pointer("/envelope/header")
             .and_then(|h| h.get(field))
-            .or_else(|| envelope.pointer("/metadata").and_then(|m| m.get(field)))
+            .or_else(|| envelope.pointer("/envelope/metadata").and_then(|m| m.get(field)))
     } else {
         envelope
             .pointer("/evidence/body")
@@ -125,6 +125,11 @@ pub struct MementoPool {
     /// memento CID. Populated when a "closure-binding" kind memento is
     /// inserted. Spec: protocol/specs/2026-05-05-closure-binding-memento.md
     pub body_fn_cid_to_memento: BTreeMap<String, String>,
+
+    /// AliasingMemento discharge index: (formal_a, formal_b) ->
+    /// memento CID. Populated when an "aliasing-memento" kind memento is
+    /// inserted. The key is the sorted pair of formal parameter names.
+    pub aliasing_pair_to_memento: BTreeMap<(String, String), String>,
 
     /// Composite key "functionCid\x00target" -> memento CID. Populated
     /// when a "pin-invariant" kind memento is inserted. The composite
@@ -362,6 +367,23 @@ impl MementoPool {
                     }
                 }
             }
+            Some("aliasing-memento") => {
+                // header.formal_a and header.formal_b (v1.2) or evidence.body.formal_a/formal_b (v1.1)
+                // Index by the sorted (formal_a, formal_b) pair
+                if let Some(env) = self.mementos.get(&memento_cid) {
+                    if let (Some(formal_a), Some(formal_b)) = (
+                        memento_body_field(env, "formal_a").and_then(|v| v.as_str()),
+                        memento_body_field(env, "formal_b").and_then(|v| v.as_str()),
+                    ) {
+                        let mut pair = (formal_a.to_string(), formal_b.to_string());
+                        // Sort the pair for canonical ordering
+                        if pair.0 > pair.1 {
+                            pair = (pair.1, pair.0);
+                        }
+                        self.aliasing_pair_to_memento.entry(pair).or_insert(memento_cid.clone());
+                    }
+                }
+            }
             Some("pin-invariant") => {
                 // header.functionCid + header.pinnedTarget -> composite key
                 if let Some(env) = self.mementos.get(&memento_cid) {
@@ -483,6 +505,9 @@ impl MementoPool {
         for (k, v) in other.body_fn_cid_to_memento {
             self.body_fn_cid_to_memento.entry(k).or_insert(v);
         }
+        for (k, v) in other.aliasing_pair_to_memento {
+            self.aliasing_pair_to_memento.entry(k).or_insert(v);
+        }
     }
 }
 
@@ -509,6 +534,15 @@ impl OpacityMementoLookup for MementoPool {
         // is effect-free. Wire this to a real index once the
         // drop-contract memento spec lands under protocol/specs/.
         false
+    }
+    fn has_aliasing_memento(&self, formal_a: &str, formal_b: &str) -> bool {
+        // Check if the pool has an aliasing memento for this pair of formals.
+        // Canonicalize by sorting the pair.
+        let mut pair = (formal_a.to_string(), formal_b.to_string());
+        if pair.0 > pair.1 {
+            pair = (pair.1, pair.0);
+        }
+        self.aliasing_pair_to_memento.contains_key(&pair)
     }
     fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView> {
         let key = format!("{}\x00{}", function_cid, target);
@@ -794,5 +828,33 @@ mod tests {
         // Same target "pin" but different function CID — should NOT match
         let view = pool.lookup_pin_invariant(fc_b, "pin");
         assert!(view.is_none(), "cross-function-CID lookup must return None");
+    }
+
+    #[test]
+    fn pin_invariant_v11_flat_shape_roundtrip() {
+        // v1.1 flat shape: no envelope wrapper, fields live in evidence.body.
+        // This exercises the fallback path in memento_body_field that reads
+        // from /evidence/body instead of /header and /metadata.
+        let mut pool = MementoPool::default();
+        let fc = "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let m_cid = "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let flat_memento = json!({
+            "cid": m_cid,
+            "evidence": {
+                "kind": "pin-invariant",
+                "body": {
+                    "functionCid": fc,
+                    "pinnedTarget": "pin",
+                    "invariant": "state >= 0"
+                }
+            }
+        });
+        pool.insert(m_cid.to_string(), flat_memento);
+        let view = pool.lookup_pin_invariant(fc, "pin");
+        assert!(view.is_some(), "v1.1 flat memento must be found via lookup");
+        let v = view.unwrap();
+        assert_eq!(v.pinned_target, "pin");
+        assert_eq!(v.invariant, "state >= 0");
+        assert_eq!(v.function_cid, fc);
     }
 }
