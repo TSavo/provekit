@@ -1055,6 +1055,9 @@ mod tests {
             post: atomic_true().into_formula(),
             canonical_bytes: vec![],
             cid: String::new(),
+            auto_minted_mementos: vec![],
+            formal_regions: vec![],
+            return_region: None,
         };
 
         let ast_contract = {

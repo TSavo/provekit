@@ -1644,6 +1644,7 @@ dependencies = [
 name = "provekit-ir-compiler-smt-lib"
 version = "0.1.0"
 dependencies = [
+ "provekit-canonicalizer",
  "provekit-ir-compiler",
  "provekit-ir-types",
  "serde",

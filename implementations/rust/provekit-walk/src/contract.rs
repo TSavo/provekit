@@ -199,6 +199,12 @@ impl AliasingStatus {
 
 impl AliasingMemento {
     pub fn to_jcs_value(&self) -> Arc<Value> {
+        debug_assert!(
+            self.formal_a <= self.formal_b,
+            "AliasingMemento invariants violated: formal_a ({}) must be <= formal_b ({})",
+            self.formal_a,
+            self.formal_b
+        );
         Value::object([
             ("kind", Value::string("aliasing-memento")),
             ("formal_a", Value::string(self.formal_a.clone())),
@@ -271,14 +277,15 @@ impl Effect {
                     formals.iter().map(|f| Value::string(f.clone())).collect();
                 Value::object([
                     ("kind", Value::string("possible_aliasing")),
-                    ("formals", Value::array(formals_arr)),
-                ])
-            }
+("formals", Value::array(formals_arr)),
+              ])
+              }
             Effect::Drop { name } => Value::object([
                 ("kind", Value::string("drop")),
                 ("name", Value::string(name.clone())),
             ]),
-        }
+          }
+      }
     }
 
     fn sort_key(&self) -> String {
@@ -310,11 +317,12 @@ impl Effect {
                 kind.as_str(),
                 ordering.as_deref().unwrap_or("")
             ),
-            Effect::PossibleAliasing { formals } => {
-                format!("13:possible_aliasing:{}", formals.join(","))
-            }
+Effect::PossibleAliasing { formals } => {
+                  format!("13:possible_aliasing:{}", formals.join(","))
+              }
             Effect::Drop { name } => format!("14:drop:{}", name),
-        }
+          }
+      }
     }
 }
 
@@ -615,7 +623,13 @@ pub trait OpacityMementoLookup {
     fn has_loop_invariant(&self, loop_cid: &str) -> bool;
     fn has_try_branch(&self, try_cid: &str) -> bool;
     fn has_closure_binding(&self, body_fn_cid: &str) -> bool;
+    /// Returns true when the pool contains a contract for the
+    /// type being dropped (i.e., the drop function has been lifted
+    /// and its effects have been reviewed). When false, composition
+    /// is refused — the substrate does not silently assume drops are
+    /// effect-free.
     fn has_drop_contract(&self, type_name: &str) -> bool;
+    fn has_aliasing_memento(&self, formal_a: &str, formal_b: &str) -> bool;
     fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView>;
 }
 
@@ -627,6 +641,7 @@ impl OpacityMementoLookup for EmptyOpacityPool {
     fn has_try_branch(&self, _: &str) -> bool { false }
     fn has_closure_binding(&self, _: &str) -> bool { false }
     fn has_drop_contract(&self, _: &str) -> bool { false }
+    fn has_aliasing_memento(&self, _: &str, _: &str) -> bool { false }
     fn lookup_pin_invariant(&self, _function_cid: &str, _target: &str) -> Option<PinInvariantMementoView> { None }
 }
 
@@ -661,6 +676,7 @@ pub enum OpacityError {
     AliasingNotDischarged { formal_a: String, formal_b: String },
     /// An `Effect::Drop { name }` is present but no lifted drop
     /// function contract for that type is in the pool.
+    DropNotDischarged { name: String },
     DropNotDischarged { name: String },
     /// An `Effect::PinnedReference { target }` is present but no
     /// `PinInvariantMemento` with matching `pinnedTarget` is in the pool.
@@ -731,6 +747,7 @@ impl EffectSet {
                         return Err(OpacityError::DropNotDischarged { name: name.clone() });
                     }
                 }
+                // PossibleAliasing is discharged by auto_minted_mementos in the
                 // PossibleAliasing is discharged by auto_minted_mementos in the
                 // contract bundle; the substrate verifier checks these before
                 // composition. No pool check at this level.
@@ -1679,8 +1696,11 @@ mod tests {
         fn has_closure_binding(&self, body_fn_cid: &str) -> bool {
             self.body_fn_cids.iter().any(|c| c == body_fn_cid)
         }
-        fn has_drop_contract(&self, _type_name: &str) -> bool {
+        fn has_drop_contract(&self, _: &str) -> bool {
             false // no drop contracts in mock pool
+        }
+        fn has_aliasing_memento(&self, _a: &str, _b: &str) -> bool {
+            false // no aliasing mementos in mock pool
         }
         fn lookup_pin_invariant(&self, _function_cid: &str, target: &str) -> Option<PinInvariantMementoView> {
             if let Some(invariant) = self.pin_invariant_targets.get(target).cloned() {

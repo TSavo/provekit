@@ -1,0 +1,6 @@
+{
+  "kind": "dependent",
+  "name": "Vec",
+  "indexVar": "n",
+  "indexSort": {"kind": "primitive", "name": "Int"}
+}

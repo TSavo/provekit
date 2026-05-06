@@ -147,4 +147,93 @@ pub fn compile_to_parts(ir_formula: &Json) -> Result<CompiledFormula, CompileErr
     Ok(generated::compile_formula(&formula))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use provekit_ir_compiler::OpacityManifest;
+
+    #[test]
+    fn functionsort_quantifier_emits_opacity_entry() {
+        // forall (f: Function) . true — FunctionSort in quantifier
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "f",
+            "sort": { "kind": "function", "args": [], "return": { "kind": "primitive", "name": "Bool" } },
+            "body": { "kind": "atomic", "name": "true", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert_eq!(result.opacity_manifest.opacities.len(), 1);
+        assert_eq!(result.opacity_manifest.opacities[0].reason_code, "predicate_quantification");
+        assert!(result.body.contains("(true)"));
+    }
+
+    #[test]
+    fn dependent_sort_quantifier_emits_opacity_entry() {
+        // exists (n: Dependent) . true — DependentSort in quantifier
+        let ir = serde_json::json!({
+            "kind": "exists",
+            "name": "n",
+            "sort": { "kind": "dependent", "name": "Vec<n>", "indexVar": "n", "indexSort": { "kind": "primitive", "name": "Int" } },
+            "body": { "kind": "atomic", "name": "true", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert_eq!(result.opacity_manifest.opacities.len(), 1);
+        assert_eq!(result.opacity_manifest.opacities[0].reason_code, "dependent_type");
+        assert!(result.body.contains("(true)"));
+    }
+
+    #[test]
+    fn primitive_sort_quantifier_no_opacity() {
+        // forall (x: Int) . x >= 0 — Int is supported
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "x",
+            "sort": { "kind": "primitive", "name": "Int" },
+            "body": { "kind": "atomic", "name": ">=", "args": [
+                { "kind": "var", "name": "x" },
+                { "kind": "const", "value": 0, "sort": { "kind": "primitive", "name": "Int" } }
+            ]}
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert!(result.opacity_manifest.opacities.is_empty());
+        assert!(result.body.contains("(forall ((x Int))"));
+    }
+
+    #[test]
+    fn opacity_manifest_has_correct_envelope() {
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "f",
+            "sort": { "kind": "function", "args": [], "return": { "kind": "primitive", "name": "Bool" } },
+            "body": { "kind": "atomic", "name": "true", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        let manifest = &result.opacity_manifest;
+        assert_eq!(manifest.protocol_version, "ir-compiler-protocol/2");
+        assert_eq!(manifest.compiler, "smt-lib-v2.6");
+        assert!(!manifest.compiler_version.is_empty());
+    }
+
+    #[test]
+    fn opacity_entries_sorted_by_position_cid() {
+        // Two quantifiers over opaque sorts — entries should be sorted.
+        let ir = serde_json::json!({
+            "kind": "and",
+            "operands": [
+                { "kind": "forall", "name": "f",
+                  "sort": { "kind": "function", "args": [], "return": { "kind": "primitive", "name": "Bool" } },
+                  "body": { "kind": "atomic", "name": "true", "args": [] } },
+                { "kind": "exists", "name": "n",
+                  "sort": { "kind": "dependent", "name": "Vec<n>", "indexVar": "n", "indexSort": { "kind": "primitive", "name": "Int" } },
+                  "body": { "kind": "atomic", "name": "true", "args": [] } }
+            ]
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert_eq!(result.opacity_manifest.opacities.len(), 2);
+        let cids: Vec<&str> = result.opacity_manifest.opacities.iter()
+            .map(|e| e.position_cid.as_str()).collect();
+        assert!(cids[0] <= cids[1], "opacities must be sorted by positionCid");
+    }
+}
+
 
