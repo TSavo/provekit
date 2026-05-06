@@ -15,6 +15,7 @@ public indirect enum Sort: Equatable, Hashable, Sendable {
     case primitive(String)
     case function(args: [Sort], return_: Sort)
     case dependent(name: String, indexVar: String, indexSort: Sort)
+    case region(name: String)
 
     public static let int = Sort.primitive("Int")
     public static let real = Sort.primitive("Real")
@@ -226,6 +227,8 @@ public enum Jcs {
                         ("indexVar", .string(indexVar)),
                         ("kind", .string("dependent")),
                         ("name", .string(name)))
+        case .region(let name):
+            return .obj(("kind", .string("region")), ("name", .string(name)))
         }
     }
 

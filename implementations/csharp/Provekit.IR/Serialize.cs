@@ -47,6 +47,10 @@ public static class Serialize
             ("indexVar", V.String(d.IndexVar)),
             ("indexSort", SortToValue(d.IndexSort))
         ),
+        Sort.RegionSort r => V.Object(
+            ("kind", V.String("region")),
+            ("name", V.String(r.Name))
+        ),
         _ => throw new ArgumentException($"unknown Sort variant: {s.GetType().Name}")
     };
 
@@ -239,6 +243,11 @@ public static class Serialize
                 WriteString(sb, d.IndexVar);
                 sb.Append(",\"indexSort\":");
                 WriteSort(sb, d.IndexSort);
+                sb.Append('}');
+                break;
+            case Sort.RegionSort r:
+                sb.Append("{\"kind\":\"region\",\"name\":");
+                WriteString(sb, r.Name);
                 sb.Append('}');
                 break;
             default:

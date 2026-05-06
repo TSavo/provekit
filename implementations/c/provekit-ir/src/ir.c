@@ -44,6 +44,14 @@ pk_sort *pk_sort_dependent(const char *name, const char *index_var, pk_sort *ind
     return s;
 }
 
+pk_sort *pk_sort_region(const char *name) {
+    pk_sort *s = (pk_sort *)calloc(1, sizeof(pk_sort));
+    if (!s) return NULL;
+    s->kind = PK_SORT_REGION;
+    s->data.region.name = pk_strdup(name);
+    return s;
+}
+
 void pk_sort_free(pk_sort *s) {
     if (!s) return;
     switch (s->kind) {
@@ -61,6 +69,9 @@ void pk_sort_free(pk_sort *s) {
             free(s->data.dependent.name);
             free(s->data.dependent.index_var);
             pk_sort_free(s->data.dependent.index_sort);
+            break;
+        case PK_SORT_REGION:
+            free(s->data.region.name);
             break;
     }
     free(s);
