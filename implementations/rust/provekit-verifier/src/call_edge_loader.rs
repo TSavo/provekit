@@ -54,10 +54,7 @@ pub fn process_call_edges(
         // strong identity per the substrate's content-address principle;
         // name-based lookup is the lossy fallback used when the lifter
         // didn't resolve to a CID at extraction time.
-        if let Some(tcid) = edge
-            .get("targetContractCid")
-            .and_then(|v| v.as_str())
-        {
+        if let Some(tcid) = edge.get("targetContractCid").and_then(|v| v.as_str()) {
             if !tcid.is_empty() {
                 obligations.push((source_cid.to_string(), tcid.to_string(), locus));
                 continue;
@@ -78,10 +75,7 @@ pub fn process_call_edges(
             target_symbol
         };
 
-        let target_cid = pool
-            .name_to_cid
-            .get(target_contract_name)
-            .cloned();
+        let target_cid = pool.name_to_cid.get(target_contract_name).cloned();
 
         if let Some(tcid) = target_cid {
             obligations.push((source_cid.to_string(), tcid, locus));

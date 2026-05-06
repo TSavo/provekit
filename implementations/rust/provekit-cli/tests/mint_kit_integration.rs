@@ -122,8 +122,7 @@ impl ScratchRepo {
             "c",
         ];
         let scratch_impls = scratch_root.join("implementations");
-        std::fs::create_dir_all(&scratch_impls)
-            .expect("create scratch implementations dir");
+        std::fs::create_dir_all(&scratch_impls).expect("create scratch implementations dir");
         for kit_dir_name in kits {
             let canonical_kit = canonical.join("implementations").join(kit_dir_name);
             if !canonical_kit.exists() {
@@ -150,8 +149,8 @@ impl ScratchRepo {
 /// boundary while still giving the lifter access to read-only source files
 /// and pre-built binaries (e.g. `./target/release/<lifter>`).
 fn symlink_contents(src: &Path, dst: &Path) {
-    let entries = std::fs::read_dir(src)
-        .unwrap_or_else(|e| panic!("read_dir {}: {e}", src.display()));
+    let entries =
+        std::fs::read_dir(src).unwrap_or_else(|e| panic!("read_dir {}: {e}", src.display()));
     for entry in entries {
         let entry = entry.expect("dir entry");
         let name = entry.file_name();
@@ -203,10 +202,9 @@ fn read_attestation(root: &Path, lang: &str) -> serde_json::Value {
         .join(".provekit")
         .join("self-contracts-attestations")
         .join(format!("{lang}.json"));
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
 }
 
 /// Assert that an attestation JSON has all required fields with correct types.
@@ -226,30 +224,30 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
         Some(lang),
         "{lang}: lang field must match"
     );
-    let cset = v["contractSetCid"].as_str().unwrap_or_else(|| {
-        panic!("{lang}: contractSetCid must be a string")
-    });
+    let cset = v["contractSetCid"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{lang}: contractSetCid must be a string"));
     assert!(
         cset.starts_with("blake3-512:"),
         "{lang}: contractSetCid must start with 'blake3-512:', got {cset}"
     );
-    let sig = v["signature"].as_str().unwrap_or_else(|| {
-        panic!("{lang}: signature must be a string")
-    });
+    let sig = v["signature"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{lang}: signature must be a string"));
     assert!(
         sig.starts_with("ed25519:"),
         "{lang}: signature must start with 'ed25519:', got {sig}"
     );
-    let signer = v["signer"].as_str().unwrap_or_else(|| {
-        panic!("{lang}: signer must be a string")
-    });
+    let signer = v["signer"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{lang}: signer must be a string"));
     assert!(
         signer.starts_with("ed25519:"),
         "{lang}: signer must start with 'ed25519:', got {signer}"
     );
-    let declared_at = v["declaredAt"].as_str().unwrap_or_else(|| {
-        panic!("{lang}: declaredAt must be a string")
-    });
+    let declared_at = v["declaredAt"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{lang}: declaredAt must be a string"));
     assert!(
         !declared_at.is_empty(),
         "{lang}: declaredAt must be non-empty"
@@ -275,7 +273,9 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
 /// must be built via `cd implementations/zig/mint-zig-self-contracts && zig build`.
 /// When zig is not on PATH the pinned-CID test skips cleanly (see
 /// `zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical`).
-const KITS_WITH_LIFTERS: &[&str] = &["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "c", "ruby", "zig"];
+const KITS_WITH_LIFTERS: &[&str] = &[
+    "rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "c", "ruby", "zig",
+];
 
 /// Kits without a lifter binary yet — produce the empty-set CID because the
 /// binary cannot be found (ENOENT on spawn). These declare the binary name but
@@ -367,7 +367,10 @@ fn kits_without_lifters_produce_empty_set_cid() {
     let root = scratch.root();
     for kit in KITS_WITHOUT_LIFTERS {
         let (ok, _, _) = run_mint(root, kit);
-        assert!(ok, "kit `{kit}`: mint must succeed even without a lifter binary");
+        assert!(
+            ok,
+            "kit `{kit}`: mint must succeed even without a lifter binary"
+        );
 
         let lang = if *kit == "ts" { "ts" } else { kit };
         let attest = read_attestation(root, lang);
@@ -592,18 +595,21 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 
     let (ok, _, stderr) = run_mint(root, "rust");
     if !ok {
-        eprintln!("rust kit: mint failed (mint-self-contracts may not be built)\n  stderr: {stderr}");
+        eprintln!(
+            "rust kit: mint failed (mint-self-contracts may not be built)\n  stderr: {stderr}"
+        );
         // Skip rather than fail — binary may not be built in this environment.
         return;
     }
 
     let attest = read_attestation(root, "rust");
-    let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
+    let cset = attest["contractSetCid"]
+        .as_str()
+        .expect("contractSetCid must be string");
 
     // Pinned value: must match the canonical self-contracts CID.
     assert_eq!(
-        cset,
-        RUST_KIT_CANONICAL_CONTRACT_SET_CID,
+        cset, RUST_KIT_CANONICAL_CONTRACT_SET_CID,
         "rust kit contractSetCid diverged from the pinned canonical self-contracts CID.\n\
          This is the issue #176 Tier 1 regression gate.\n\
          If the self-contracts changed intentionally, update RUST_KIT_CANONICAL_CONTRACT_SET_CID.\n\
@@ -646,9 +652,7 @@ fn ts_kit_pins_expected_contract_set_cid() {
 
     let (ok, stdout, stderr) = run_mint(root, "ts");
     if !ok {
-        eprintln!(
-            "ts kit: mint failed (node/tsx may not be available)\n  stderr: {stderr}"
-        );
+        eprintln!("ts kit: mint failed (node/tsx may not be available)\n  stderr: {stderr}");
         // Skip rather than fail -- node toolchain may not be present in all environments.
         return;
     }
@@ -693,18 +697,21 @@ fn cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 
     let (ok, _, stderr) = run_mint(root, "cpp");
     if !ok {
-        eprintln!("cpp kit: mint failed (mint_cpp_self_contracts may not be built)\n  stderr: {stderr}");
+        eprintln!(
+            "cpp kit: mint failed (mint_cpp_self_contracts may not be built)\n  stderr: {stderr}"
+        );
         // Skip rather than fail -- binary may not be built in this environment.
         return;
     }
 
     let attest = read_attestation(root, "cpp");
-    let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
+    let cset = attest["contractSetCid"]
+        .as_str()
+        .expect("contractSetCid must be string");
 
     // Pinned value: must match the canonical self-contracts CID.
     assert_eq!(
-        cset,
-        CPP_KIT_CANONICAL_CONTRACT_SET_CID,
+        cset, CPP_KIT_CANONICAL_CONTRACT_SET_CID,
         "cpp kit contractSetCid diverged from the pinned canonical self-contracts CID.\n\
          This is the issue #203 regression gate.\n\
          If the self-contracts changed intentionally, update CPP_KIT_CANONICAL_CONTRACT_SET_CID.\n\
@@ -750,9 +757,7 @@ fn java_kit_pins_expected_contract_set_cid() {
 
     let (ok, stdout, stderr) = run_mint(root, "java");
     if !ok {
-        eprintln!(
-            "java kit: mint failed (java/jar may not be available)\n  stderr: {stderr}"
-        );
+        eprintln!("java kit: mint failed (java/jar may not be available)\n  stderr: {stderr}");
         // Skip rather than fail -- jdk + built jar may not be present in
         // every test environment. CI builds the jar via `make build-java-self-contracts`.
         return;
@@ -886,7 +891,9 @@ fn python_kit_pins_expected_contract_set_cid() {
     );
 
     let attest = read_attestation(root, "python");
-    let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
+    let cset = attest["contractSetCid"]
+        .as_str()
+        .expect("contractSetCid must be string");
 
     assert_ne!(
         cset, EMPTY_SET_CID,
@@ -1049,7 +1056,9 @@ fn zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     }
 
     let attest = read_attestation(root, "zig");
-    let cset = attest["contractSetCid"].as_str().expect("contractSetCid must be string");
+    let cset = attest["contractSetCid"]
+        .as_str()
+        .expect("contractSetCid must be string");
 
     // Skip the pinning assertion if the lifter binary isn't built: when
     // the dispatcher hits ENOENT on spawn it returns ok=true with the
@@ -1064,8 +1073,7 @@ fn zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     }
 
     assert_eq!(
-        cset,
-        ZIG_KIT_CANONICAL_CONTRACT_SET_CID,
+        cset, ZIG_KIT_CANONICAL_CONTRACT_SET_CID,
         "zig kit contractSetCid diverged from the pinned canonical self-contracts CID.\n\
          This is the issue #213 regression gate.\n\
          If the self-contracts changed intentionally, update ZIG_KIT_CANONICAL_CONTRACT_SET_CID.\n\
@@ -1115,11 +1123,14 @@ fn php_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     }
 
     if PHP_KIT_CANONICAL_CONTRACT_SET_CID.is_empty() {
-        eprintln!("php kit: placeholder CID — update PHP_KIT_CANONICAL_CONTRACT_SET_CID after first mint");
+        eprintln!(
+            "php kit: placeholder CID — update PHP_KIT_CANONICAL_CONTRACT_SET_CID after first mint"
+        );
         return;
     }
 
-    assert_eq!(cset, PHP_KIT_CANONICAL_CONTRACT_SET_CID,
+    assert_eq!(
+        cset, PHP_KIT_CANONICAL_CONTRACT_SET_CID,
         "php kit contractSetCid diverged from pinned canonical CID.\n\
          If the self-contracts changed intentionally, update PHP_KIT_CANONICAL_CONTRACT_SET_CID."
     );

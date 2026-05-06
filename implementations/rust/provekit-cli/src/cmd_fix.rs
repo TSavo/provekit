@@ -8,9 +8,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use provekit_agent::loop_fix::{
-    run_fix_loop, FixLoopOptions, VerifyOutcome, Verifier,
-};
+use provekit_agent::loop_fix::{run_fix_loop, FixLoopOptions, Verifier, VerifyOutcome};
 use provekit_agent::{FilePatch, FixContext, ProvekitAgent, StubAgent};
 
 use crate::project_config::{read_project_config, read_user_config};
@@ -159,10 +157,7 @@ pub fn run(args: FixArgs) -> u8 {
                 println!("(re-run with --auto-apply to write patches; v1 prints only)");
             }
         } else {
-            println!(
-                "fix did not verify after {} attempts",
-                outcome.agent_calls
-            );
+            println!("fix did not verify after {} attempts", outcome.agent_calls);
             if let Some(r) = outcome.last_failure {
                 println!("last failure: {r}");
             }

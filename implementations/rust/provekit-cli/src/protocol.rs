@@ -28,15 +28,13 @@ pub const EXPECTED_CATALOG_CID: &str =
 /// the on-disk spec file at runtime; `verify-protocol` recomputes from
 /// the embedded copy so the answer is about what the binary IS, not
 /// where it was invoked from.
-pub const EMBEDDED_CATALOG_BYTES: &[u8] =
-    include_bytes!("../assets/protocol-catalog.json");
+pub const EMBEDDED_CATALOG_BYTES: &[u8] = include_bytes!("../assets/protocol-catalog.json");
 
 /// Foundation public key bytes (`ed25519:<base64>` form) embedded at
 /// compile time so `verify-protocol --signed` works for an installed
 /// binary anywhere on disk. Mirrors the committed
 /// `.provekit/keys/foundation-v0.pub`.
-pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] =
-    include_bytes!("../assets/foundation-v0.pub");
+pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] = include_bytes!("../assets/foundation-v0.pub");
 
 /// Signed attestation bytes (the JSON object) embedded at compile
 /// time. Mirrors the committed
@@ -108,8 +106,8 @@ pub fn verify_signed_attestation(
     pubkey_string: &str,
     expected_cid: &str,
 ) -> Result<SignedCatalogVerdict> {
-    let attestation: Json = serde_json::from_slice(signature_file_bytes)
-        .context("parse signed attestation JSON")?;
+    let attestation: Json =
+        serde_json::from_slice(signature_file_bytes).context("parse signed attestation JSON")?;
     let obj = attestation
         .as_object()
         .ok_or_else(|| anyhow!("signed attestation must be a JSON object"))?;
@@ -135,7 +133,10 @@ pub fn verify_signed_attestation(
     let entries: Vec<(String, Arc<Value>)> = vec![
         ("schemaVersion".to_string(), Value::string(schema_version)),
         ("protocolName".to_string(), Value::string(protocol_name)),
-        ("protocolVersion".to_string(), Value::string(protocol_version)),
+        (
+            "protocolVersion".to_string(),
+            Value::string(protocol_version),
+        ),
         ("catalogCid".to_string(), Value::string(catalog_cid.clone())),
         ("declaredAt".to_string(), Value::string(declared_at)),
         ("signer".to_string(), Value::string(signer.clone())),
@@ -204,10 +205,7 @@ mod tests {
     fn embedded_catalog_is_valid_json() {
         let v: Json = serde_json::from_slice(EMBEDDED_CATALOG_BYTES).expect("parse");
         assert!(v.is_object(), "catalog must be a JSON object");
-        let kind = v
-            .get("kind")
-            .and_then(|x| x.as_str())
-            .expect("kind field");
+        let kind = v.get("kind").and_then(|x| x.as_str()).expect("kind field");
         assert_eq!(kind, "catalog");
     }
 
@@ -229,12 +227,9 @@ mod tests {
     #[test]
     fn embedded_signature_verifies_against_embedded_pubkey() {
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict = verify_signed_attestation(
-            EMBEDDED_CATALOG_SIGNATURE,
-            &pk,
-            EXPECTED_CATALOG_CID,
-        )
-        .expect("verify");
+        let verdict =
+            verify_signed_attestation(EMBEDDED_CATALOG_SIGNATURE, &pk, EXPECTED_CATALOG_CID)
+                .expect("verify");
         assert!(verdict.signer_matches, "signer must match pubkey");
         assert!(verdict.cid_matches, "claimed CID must match expected");
         assert!(verdict.signature_ok, "Ed25519 signature must verify");
@@ -264,8 +259,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
 
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict =
-            verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
+        let verdict = verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
         assert!(verdict.cid_matches, "CID untouched");
         assert!(verdict.signer_matches, "signer untouched");
         assert!(!verdict.signature_ok, "tampered signature must fail");
@@ -285,8 +279,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
 
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict =
-            verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
+        let verdict = verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
         // Both CID-mismatch AND signature-fail surface; verifier must
         // refuse on either.
         assert!(!verdict.cid_matches);

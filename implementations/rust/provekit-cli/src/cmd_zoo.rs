@@ -113,8 +113,25 @@ struct ExposureFiles {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Dropper {
     available: bool,
+    #[serde(default)]
+    surface: Option<String>,
+    #[serde(default)]
+    source: Option<PathBuf>,
+    #[serde(default)]
+    target_symbol: Option<String>,
+    #[serde(default)]
+    proof_var: Option<String>,
+    #[serde(default)]
+    realizer_rpc: Option<CommandSpec>,
+    #[serde(default)]
+    output_source: Option<PathBuf>,
+    #[serde(default)]
+    closure_proof_ir_file: Option<PathBuf>,
+    #[serde(default)]
+    verify_output_file: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -294,6 +311,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
 
     let sat_witness = read_json(specimen_dir.join(&manifest.exposure.sat_witness_file))
         .map_err(ZooError::setup)?;
+    let dropper_report = verify_dropper(specimen_dir, &manifest).map_err(ZooError::verify)?;
     if !quiet {
         println!("zoo: {} hostCheck PASS", manifest.id);
         for (id, cid) in &cids {
@@ -306,6 +324,9 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
             "zoo: expected verify failure {} PASS",
             manifest.predicates.missing_edge
         );
+        if dropper_report.is_some() {
+            println!("zoo: dropper closed {} PASS", manifest.predicates.missing_edge);
+        }
     }
 
     Ok(json!({
@@ -322,6 +343,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
             "provekitVerify": manifest.expectations.provekit_verify,
         },
         "dropperAvailable": manifest.dropper.available,
+        "dropper": dropper_report,
         "wildSightings": manifest.wild_sightings,
         "satWitness": sat_witness,
     }))
@@ -395,6 +417,52 @@ fn validate_manifest_shape(manifest: &SpecimenManifest) -> Vec<String> {
         }
     }
 
+    if manifest.dropper.available {
+        if manifest.dropper.surface.as_deref().unwrap_or("").trim().is_empty() {
+            errors.push("dropper.surface is required when dropper.available is true".into());
+        }
+        if manifest.dropper.source.is_none() {
+            errors.push("dropper.source is required when dropper.available is true".into());
+        }
+        if manifest
+            .dropper
+            .target_symbol
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            errors.push("dropper.targetSymbol is required when dropper.available is true".into());
+        }
+        if manifest
+            .dropper
+            .proof_var
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            errors.push("dropper.proofVar is required when dropper.available is true".into());
+        }
+        match &manifest.dropper.realizer_rpc {
+            Some(command) if command.argv.is_empty() => {
+                errors.push("dropper.realizerRpc.argv is required when dropper.available is true".into())
+            }
+            None => errors.push("dropper.realizerRpc is required when dropper.available is true".into()),
+            Some(_) => {}
+        }
+        if manifest.dropper.output_source.is_none() {
+            errors.push("dropper.outputSource is required when dropper.available is true".into());
+        }
+        if manifest.dropper.closure_proof_ir_file.is_none() {
+            errors
+                .push("dropper.closureProofIrFile is required when dropper.available is true".into());
+        }
+        if manifest.dropper.verify_output_file.is_none() {
+            errors.push("dropper.verifyOutputFile is required when dropper.available is true".into());
+        }
+    }
+
     errors
 }
 
@@ -452,6 +520,43 @@ fn validate_paths(specimen_dir: &Path, manifest: &SpecimenManifest) -> Vec<Strin
             let full_path = specimen_dir.join(path);
             if !full_path.exists() {
                 errors.push(format!("missing {}", full_path.display()));
+            }
+        }
+    }
+
+    if manifest.dropper.available {
+        for path in [
+            manifest.dropper.source.as_ref(),
+            manifest.dropper.output_source.as_ref(),
+            manifest.dropper.closure_proof_ir_file.as_ref(),
+            manifest.dropper.verify_output_file.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if manifest_path_escapes_specimen_root(path) {
+                errors.push(format!(
+                    "invalid path `{}` escapes specimen root",
+                    path.display()
+                ));
+                continue;
+            }
+            let full_path = specimen_dir.join(path);
+            if !full_path.exists() {
+                errors.push(format!("missing {}", full_path.display()));
+            }
+        }
+        if let Some(command) = &manifest.dropper.realizer_rpc {
+            if manifest_path_escapes_specimen_root(&command.cwd) {
+                errors.push(format!(
+                    "invalid path `{}` escapes specimen root",
+                    command.cwd.display()
+                ));
+            } else {
+                let full_path = specimen_dir.join(&command.cwd);
+                if !full_path.exists() {
+                    errors.push(format!("missing {}", full_path.display()));
+                }
             }
         }
     }
@@ -834,6 +939,76 @@ wildSightings: []
             manifest.equivalence.required[0],
             ["provekit-native", "spring-web"]
         );
+    }
+
+    #[test]
+    fn parses_manifest_with_java_dropper_realizer() {
+        let raw = r#"
+id: BZ-SHAPE-005
+name: Java Null Boundary Equivalence
+kingdom: shape
+surface: java
+status: lab
+paths:
+  labLibrary: lab/library
+  labHarness: lab/harness
+  labKitRpc: lab/kit-rpc
+commands:
+  hostCheck:
+    cwd: lab/harness
+    argv: ["./run.sh"]
+predicates:
+  boundary: maybe_null(name)
+  sink: non_null(name)
+  missingEdge: maybe_null(name) => non_null(name)
+exposures:
+  - id: provekit-native
+    surface: java-provekit-native
+    harness: exposed/provekit-native/harness
+    kitRpc: exposed/provekit-native/kit-rpc
+    liftRpc:
+      cwd: exposed/provekit-native/kit-rpc
+      argv: ["./run-java-lifter.sh"]
+    proofIrFile: exposed/provekit-native/expected.proofir.json
+    diagnosticFile: exposed/provekit-native/expected-diagnostic.txt
+    lossiness:
+      erased: ["Java body"]
+      preserved: ["precondition neq(name, null)"]
+equivalence:
+  required: []
+expectations:
+  hostCompiler: pass
+  ordinaryTests: pass
+  provekitVerify: fail
+exposure:
+  satWitnessFile: exposed/sat-witness.json
+dropper:
+  available: true
+  surface: java-provekit-native
+  source: lab/library/src/main/java/zoo/UserDirectory.java
+  targetSymbol: lookup
+  proofVar: name
+  realizerRpc:
+    cwd: dropped/provekit-native/kit-rpc
+    argv: ["./run-java-realizer.sh"]
+  outputSource: dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java
+  closureProofIrFile: dropped/provekit-native/closure.proofir.json
+  verifyOutputFile: dropped/provekit-native/verify-output.json
+wildSightings: []
+"#;
+        let manifest: SpecimenManifest = serde_yaml::from_str(raw).expect("parse manifest");
+
+        assert!(manifest.dropper.available);
+        assert_eq!(manifest.dropper.surface.as_deref(), Some("java-provekit-native"));
+        assert_eq!(manifest.dropper.target_symbol.as_deref(), Some("lookup"));
+        assert_eq!(manifest.dropper.proof_var.as_deref(), Some("name"));
+        let realizer = manifest
+            .dropper
+            .realizer_rpc
+            .as_ref()
+            .expect("dropper realizer RPC config");
+        assert_eq!(realizer.cwd, PathBuf::from("dropped/provekit-native/kit-rpc"));
+        assert_eq!(realizer.argv, vec!["./run-java-realizer.sh"]);
     }
 
     #[test]

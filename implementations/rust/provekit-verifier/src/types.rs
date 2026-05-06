@@ -11,8 +11,8 @@
 use std::collections::BTreeMap;
 
 use provekit_walk::contract::{OpacityMementoLookup, PinInvariantMementoView};
-use serde_json::Value as Json;
 use serde::Serialize;
+use serde_json::Value as Json;
 
 /// Return the kind discriminator of a memento, regardless of shape:
 ///
@@ -40,7 +40,9 @@ pub fn memento_kind(envelope: &Json) -> Option<&str> {
 /// `memento_body_field` for those lookups.
 pub fn memento_body(envelope: &Json) -> Option<&Json> {
     if envelope.get("envelope").is_some() {
-        envelope.get("header").or_else(|| envelope.pointer("/envelope/header"))
+        envelope
+            .get("header")
+            .or_else(|| envelope.pointer("/envelope/header"))
     } else {
         envelope.pointer("/evidence/body")
     }
@@ -64,8 +66,16 @@ pub fn memento_body_field<'a>(envelope: &'a Json, field: &str) -> Option<&'a Jso
             .pointer("/header")
             .and_then(|h| h.get(field))
             .or_else(|| envelope.pointer("/metadata").and_then(|m| m.get(field)))
-            .or_else(|| envelope.pointer("/envelope/header").and_then(|h| h.get(field)))
-            .or_else(|| envelope.pointer("/envelope/metadata").and_then(|m| m.get(field)))
+            .or_else(|| {
+                envelope
+                    .pointer("/envelope/header")
+                    .and_then(|h| h.get(field))
+            })
+            .or_else(|| {
+                envelope
+                    .pointer("/envelope/metadata")
+                    .and_then(|m| m.get(field))
+            })
     } else {
         envelope
             .pointer("/evidence/body")
@@ -115,7 +125,6 @@ pub struct MementoPool {
     // corresponding discharge kind is loaded. The substrate's
     // `compose_function_contracts_checked` queries these via the
     // `OpacityMementoLookup` impl below.
-
     /// loopCid (from header.loopCid of a LoopInvariantMemento) ->
     /// memento CID. Populated when a "loop-invariant" kind memento is
     /// inserted. Spec: protocol/specs/2026-05-05-loop-invariant-memento.md
@@ -185,10 +194,8 @@ impl MementoPool {
         // metadata; under v1.1 they live in evidence.body.
         for (_, envelope) in &self.mementos {
             if memento_kind(envelope) == Some("implication") {
-                let ant = memento_body_field(envelope, "antecedentHash")
-                    .and_then(|v| v.as_str());
-                let con = memento_body_field(envelope, "consequentHash")
-                    .and_then(|v| v.as_str());
+                let ant = memento_body_field(envelope, "antecedentHash").and_then(|v| v.as_str());
+                let con = memento_body_field(envelope, "consequentHash").and_then(|v| v.as_str());
                 if ant == Some(antecedent_cid) && con == Some(consequent_cid) {
                     return Some(envelope);
                 }
@@ -200,7 +207,11 @@ impl MementoPool {
     /// Check if P → Q via transitive chaining.
     /// If P → R and R → Q are both in the pool, then P → Q.
     /// Uses BFS on the implication graph.
-    pub fn implies_transitive(&self, antecedent_cid: &str, consequent_cid: &str) -> Option<Vec<String>> {
+    pub fn implies_transitive(
+        &self,
+        antecedent_cid: &str,
+        consequent_cid: &str,
+    ) -> Option<Vec<String>> {
         if antecedent_cid == consequent_cid {
             return Some(vec![antecedent_cid.to_string()]);
         }
@@ -214,7 +225,10 @@ impl MementoPool {
                     memento_body_field(envelope, "antecedentHash").and_then(|v| v.as_str()),
                     memento_body_field(envelope, "consequentHash").and_then(|v| v.as_str()),
                 ) {
-                    graph.entry(ant.to_string()).or_default().push(con.to_string());
+                    graph
+                        .entry(ant.to_string())
+                        .or_default()
+                        .push(con.to_string());
                 }
             }
         }
@@ -260,7 +274,11 @@ impl MementoPool {
         // 2. Direct implication
         if let Some(memento) = self.verify_implication(antecedent_cid, consequent_cid) {
             return ImplicationResult::ProvenDirect {
-                memento_cid: memento.get("cid").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+                memento_cid: memento
+                    .get("cid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
             };
         }
 
@@ -303,9 +321,7 @@ impl MementoPool {
         // but it's not a contract identity, so indexing them would
         // mis-resolve call edges.
         let env_for_name = self.mementos.get(&memento_cid);
-        let is_contract = env_for_name
-            .and_then(memento_kind)
-            == Some("contract");
+        let is_contract = env_for_name.and_then(memento_kind) == Some("contract");
         if is_contract {
             let name = env_for_name
                 .and_then(|env| {
@@ -346,29 +362,45 @@ impl MementoPool {
         //
         // Both v1.1 flat (evidence.body.*) and v1.2 layered (header.*) shapes
         // are covered by memento_body_field / memento_kind.
-        let kind = self.mementos.get(&memento_cid).and_then(|e| memento_kind(e)).map(str::to_string);
+        let kind = self
+            .mementos
+            .get(&memento_cid)
+            .and_then(|e| memento_kind(e))
+            .map(str::to_string);
         match kind.as_deref() {
             Some("loop-invariant") => {
                 // header.loopCid (v1.2) or evidence.body.loopCid (v1.1)
                 if let Some(env) = self.mementos.get(&memento_cid) {
-                    if let Some(loop_cid) = memento_body_field(env, "loopCid").and_then(|v| v.as_str()) {
-                        self.loop_cid_to_memento.entry(loop_cid.to_string()).or_insert(memento_cid.clone());
+                    if let Some(loop_cid) =
+                        memento_body_field(env, "loopCid").and_then(|v| v.as_str())
+                    {
+                        self.loop_cid_to_memento
+                            .entry(loop_cid.to_string())
+                            .or_insert(memento_cid.clone());
                     }
                 }
             }
             Some("try-branch") => {
                 // header.tryCid (v1.2) or evidence.body.tryCid (v1.1)
                 if let Some(env) = self.mementos.get(&memento_cid) {
-                    if let Some(try_cid) = memento_body_field(env, "tryCid").and_then(|v| v.as_str()) {
-                        self.try_cid_to_memento.entry(try_cid.to_string()).or_insert(memento_cid.clone());
+                    if let Some(try_cid) =
+                        memento_body_field(env, "tryCid").and_then(|v| v.as_str())
+                    {
+                        self.try_cid_to_memento
+                            .entry(try_cid.to_string())
+                            .or_insert(memento_cid.clone());
                     }
                 }
             }
             Some("closure-binding") => {
                 // header.bodyFnCid (v1.2) or evidence.body.bodyFnCid (v1.1)
                 if let Some(env) = self.mementos.get(&memento_cid) {
-                    if let Some(body_fn_cid) = memento_body_field(env, "bodyFnCid").and_then(|v| v.as_str()) {
-                        self.body_fn_cid_to_memento.entry(body_fn_cid.to_string()).or_insert(memento_cid.clone());
+                    if let Some(body_fn_cid) =
+                        memento_body_field(env, "bodyFnCid").and_then(|v| v.as_str())
+                    {
+                        self.body_fn_cid_to_memento
+                            .entry(body_fn_cid.to_string())
+                            .or_insert(memento_cid.clone());
                     }
                 }
             }
@@ -385,18 +417,23 @@ impl MementoPool {
                         if pair.0 > pair.1 {
                             pair = (pair.1, pair.0);
                         }
-                        self.aliasing_pair_to_memento.entry(pair).or_insert(memento_cid.clone());
+                        self.aliasing_pair_to_memento
+                            .entry(pair)
+                            .or_insert(memento_cid.clone());
                     }
                 }
             }
             Some("pin-invariant") => {
                 // header.functionCid + header.pinnedTarget -> composite key
                 if let Some(env) = self.mementos.get(&memento_cid) {
-                    let function_cid = memento_body_field(env, "functionCid").and_then(|v| v.as_str());
+                    let function_cid =
+                        memento_body_field(env, "functionCid").and_then(|v| v.as_str());
                     let target = memento_body_field(env, "pinnedTarget").and_then(|v| v.as_str());
                     if let (Some(fc), Some(t)) = (function_cid, target) {
                         let key = format!("{}\x00{}", fc, t);
-                        self.pin_invariant_to_memento.entry(key).or_insert(memento_cid.clone());
+                        self.pin_invariant_to_memento
+                            .entry(key)
+                            .or_insert(memento_cid.clone());
                     }
                 }
             }
@@ -552,11 +589,17 @@ impl OpacityMementoLookup for MementoPool {
         }
         self.aliasing_pair_to_memento.contains_key(&pair)
     }
-    fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView> {
+    fn lookup_pin_invariant(
+        &self,
+        function_cid: &str,
+        target: &str,
+    ) -> Option<PinInvariantMementoView> {
         let key = format!("{}\x00{}", function_cid, target);
         let memento_cid = self.pin_invariant_to_memento.get(&key)?;
         let memento = self.mementos.get(memento_cid)?;
-        let invariant = memento_body_field(memento, "invariant")?.as_str()?.to_string();
+        let invariant = memento_body_field(memento, "invariant")?
+            .as_str()?
+            .to_string();
         Some(PinInvariantMementoView {
             function_cid: function_cid.to_string(),
             pinned_target: target.to_string(),
@@ -611,8 +654,10 @@ pub fn compute_formula_cid(formula: &Json) -> String {
                 Value::array(v)
             }
             Json::Object(map) => {
-                let entries: Vec<(String, _)> =
-                    map.iter().map(|(k, v)| (k.clone(), json_to_value(v))).collect();
+                let entries: Vec<(String, _)> = map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), json_to_value(v)))
+                    .collect();
                 std::sync::Arc::new(Value::Object(entries))
             }
         }
@@ -736,7 +781,8 @@ mod tests {
         let result = pool.can_implies(p, r);
         assert!(
             matches!(result, ImplicationResult::ProvenTransitive { .. }),
-            "Expected transitive proof for P → R, got {:?}", result
+            "Expected transitive proof for P → R, got {:?}",
+            result
         );
     }
 
@@ -752,7 +798,8 @@ mod tests {
         let result = pool.can_implies(p, q);
         assert!(
             matches!(result, ImplicationResult::ProvenDirect { .. }),
-            "Expected direct proof, got {:?}", result
+            "Expected direct proof, got {:?}",
+            result
         );
     }
 
@@ -765,7 +812,8 @@ mod tests {
         let result = pool.can_implies(p, p);
         assert!(
             matches!(result, ImplicationResult::ProvenReflexive),
-            "Expected reflexive proof, got {:?}", result
+            "Expected reflexive proof, got {:?}",
+            result
         );
     }
 
@@ -779,13 +827,19 @@ mod tests {
         let result = pool.can_implies(p, q);
         assert!(
             matches!(result, ImplicationResult::Unknown),
-            "Expected unknown, got {:?}", result
+            "Expected unknown, got {:?}",
+            result
         );
     }
 
     // ---- PinInvariantMemento round-trip (real pool) ----
 
-    fn make_pin_invariant_memento(cid: &str, function_cid: &str, target: &str, invariant: &str) -> Json {
+    fn make_pin_invariant_memento(
+        cid: &str,
+        function_cid: &str,
+        target: &str,
+        invariant: &str,
+    ) -> Json {
         json!({
             "cid": cid,
             "envelope": {

@@ -127,10 +127,7 @@ impl Solver for SubprocessSolver {
                                 verdict: ObligationVerdict::Undecidable,
                                 solver_name: self.name.clone(),
                                 solver_version: self.version.clone(),
-                                error: format!(
-                                    "timeout after {}s",
-                                    to.as_secs().max(1)
-                                ),
+                                error: format!("timeout after {}s", to.as_secs().max(1)),
                                 solver_stdout: String::new(),
                                 wall_clock: started.elapsed(),
                                 timed_out: true,
@@ -157,8 +154,7 @@ impl Solver for SubprocessSolver {
 
         eprintln!(
             "[provekit-verifier] waiting for solver {:?} to exit (timeout={:?})",
-            self.name,
-            self.timeout
+            self.name, self.timeout
         );
         let output = match child.wait_with_output() {
             Ok(o) => o,

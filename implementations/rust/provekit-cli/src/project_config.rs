@@ -257,9 +257,8 @@ mod tests {
     #[test]
     fn project_overrides_user_via_merge() {
         let project = parse_config("[agent]\nbackend = \"openai\"\n");
-        let user = parse_config(
-            "[authoring]\nsurface = \"ts-zod\"\n[agent]\nbackend = \"claude-code\"\n",
-        );
+        let user =
+            parse_config("[authoring]\nsurface = \"ts-zod\"\n[agent]\nbackend = \"claude-code\"\n");
         let (surface, agent) = merged_for_command(&project, &user, "must");
         assert_eq!(agent.as_deref(), Some("openai"));
         assert_eq!(surface.as_deref(), Some("ts-zod"));

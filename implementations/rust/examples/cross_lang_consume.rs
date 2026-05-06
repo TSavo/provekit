@@ -39,9 +39,7 @@ use std::process::ExitCode;
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_ir_symbolic::{
-    begin_collecting, eq, finish, must, num, parse_int, reset_collector,
-};
+use provekit_ir_symbolic::{begin_collecting, eq, finish, must, num, parse_int, reset_collector};
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
@@ -60,7 +58,9 @@ fn run() -> Result<(), String> {
     if argv.len() < 2 {
         return Err(format!(
             "Usage: {} <path-to-peer-proof>",
-            argv.first().map(String::as_str).unwrap_or("cross_lang_consume")
+            argv.first()
+                .map(String::as_str)
+                .unwrap_or("cross_lang_consume")
         ));
     }
     let peer_proof_path = PathBuf::from(&argv[1]);
@@ -81,7 +81,10 @@ fn run() -> Result<(), String> {
         .and_then(|s| s.to_str())
         .map(|s| s.replace("/tmp/", "").replace("-out-v11", ""))
         .unwrap_or_else(|| "peer".into());
-    let peer_node_dir = project_root.join("node_modules").join("@example").join(format!("{peer_label}-kit"));
+    let peer_node_dir = project_root
+        .join("node_modules")
+        .join("@example")
+        .join(format!("{peer_label}-kit"));
     let peer_dst = peer_node_dir.join(
         peer_proof_path
             .file_name()
@@ -105,10 +108,7 @@ fn run() -> Result<(), String> {
         eq(parse_int(num(5)), num(5)),
     );
     // parse_int(num(0)) -- should be UNSATISFIED (caught by peer's precondition)
-    must(
-        "calls-parseInt-with-zero",
-        eq(parse_int(num(0)), num(0)),
-    );
+    must("calls-parseInt-with-zero", eq(parse_int(num(0)), num(0)));
 
     let decls = finish();
     if decls.len() != 2 {
@@ -140,8 +140,7 @@ fn run() -> Result<(), String> {
             },
             signer_seed,
         };
-        let minted = mint_contract(&args)
-            .map_err(|e| format!("mint_contract({}): {e}", d.name))?;
+        let minted = mint_contract(&args).map_err(|e| format!("mint_contract({}): {e}", d.name))?;
         println!("  contract minted: {} -> CID {}", d.name, minted.cid);
         members.insert(minted.cid, minted.canonical_bytes);
     }
@@ -189,10 +188,7 @@ fn run() -> Result<(), String> {
 
     let mut ok = true;
     if report.total_callsites != 2 {
-        eprintln!(
-            "FAIL: expected 2 callsites, got {}",
-            report.total_callsites
-        );
+        eprintln!("FAIL: expected 2 callsites, got {}", report.total_callsites);
         ok = false;
     }
 

@@ -95,7 +95,8 @@ impl Solver for CoqSubprocessSolver {
         };
 
         // Write to temp file
-        let tmp_dir = std::env::temp_dir().join(format!("provekit-coq-{}-{}", 
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "provekit-coq-{}-{}",
             std::process::id(),
             started.elapsed().as_nanos()
         ));
@@ -211,20 +212,22 @@ impl Solver for CoqSubprocessSolver {
             }
         };
         let _ = std::fs::remove_dir_all(&tmp_dir);
-        
+
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let verdict = if output.status.success() {
             ObligationVerdict::Discharged
         } else {
             ObligationVerdict::Undecidable
         };
-        
+
         SolveResult {
             verdict,
             solver_name: self.name.clone(),
             solver_version: self.version.clone(),
-            error: if output.status.success() { String::new() } else { 
-                format!("coqc exited with code {:?}", output.status.code()) 
+            error: if output.status.success() {
+                String::new()
+            } else {
+                format!("coqc exited with code {:?}", output.status.code())
             },
             solver_stdout: stdout,
             wall_clock: started.elapsed(),

@@ -88,7 +88,10 @@ fn try_contrapositive(obligation: &Json, pool: &crate::types::MementoPool) -> Op
     let p_implies_q = Json::Object({
         let mut m = serde_json::Map::new();
         m.insert("kind".to_string(), Json::String("implies".to_string()));
-        m.insert("operands".to_string(), Json::Array(vec![p.clone(), q.clone()]));
+        m.insert(
+            "operands".to_string(),
+            Json::Array(vec![p.clone(), q.clone()]),
+        );
         m
     });
 
@@ -147,7 +150,10 @@ fn try_weaken(obligation: &Json, pool: &crate::types::MementoPool) -> Option<Tac
         let new_obligation = Json::Object({
             let mut m = serde_json::Map::new();
             m.insert("kind".to_string(), Json::String("implies".to_string()));
-            m.insert("operands".to_string(), Json::Array(vec![new_ant, consequent.clone()]));
+            m.insert(
+                "operands".to_string(),
+                Json::Array(vec![new_ant, consequent.clone()]),
+            );
             m
         });
 
@@ -213,15 +219,13 @@ fn is_formula_verified(formula: &Json, pool: &crate::types::MementoPool) -> bool
 /// Check if a formula is trivially true.
 fn is_trivially_true(formula: &Json) -> bool {
     match formula {
-        Json::Object(obj) => {
-            match get_str(obj, "kind") {
-                Some("atomic") => match get_str(obj, "name") {
-                    Some("true") => true,
-                    _ => false,
-                },
+        Json::Object(obj) => match get_str(obj, "kind") {
+            Some("atomic") => match get_str(obj, "name") {
+                Some("true") => true,
                 _ => false,
-            }
-        }
+            },
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -263,7 +267,8 @@ fn formula_summary(formula: &Json) -> String {
                     format!("{} {}", kind, name)
                 }
                 "and" | "or" | "implies" => {
-                    let count = obj.get("operands")
+                    let count = obj
+                        .get("operands")
                         .and_then(|v| v.as_array())
                         .map(|v| v.len())
                         .unwrap_or(0);

@@ -130,10 +130,7 @@ fn walk(v: &Json, theory: &mut FormulaTheory) {
 /// Apply the dispatch config: classify the formula, look up the named
 /// solver. Returns `None` if neither the matching tag nor `default` is
 /// configured.
-pub fn dispatch_for_formula<'a>(
-    formula: &Json,
-    dispatch: &'a DispatchConfig,
-) -> Option<&'a str> {
+pub fn dispatch_for_formula<'a>(formula: &Json, dispatch: &'a DispatchConfig) -> Option<&'a str> {
     let t = classify(formula);
     let by_theory = match t {
         FormulaTheory::Strings => dispatch.strings.as_deref(),

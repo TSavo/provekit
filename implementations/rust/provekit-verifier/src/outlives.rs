@@ -22,7 +22,10 @@ pub struct RegionGraph {
 
 impl RegionGraph {
     pub fn new() -> Self {
-        RegionGraph { facts: Vec::new(), regions: Vec::new() }
+        RegionGraph {
+            facts: Vec::new(),
+            regions: Vec::new(),
+        }
     }
 
     pub fn add_fact(&mut self, longer: &str, shorter: &str) {
@@ -101,7 +104,10 @@ pub fn build_region_subst(
     caller_actual_regions: &[Option<String>],
 ) -> HashMap<String, String> {
     let mut subst = HashMap::new();
-    for (formal, actual) in callee_formal_regions.iter().zip(caller_actual_regions.iter()) {
+    for (formal, actual) in callee_formal_regions
+        .iter()
+        .zip(caller_actual_regions.iter())
+    {
         if let (Some(f), Some(a)) = (formal, actual) {
             subst.insert(f.clone(), a.clone());
         }
@@ -131,7 +137,11 @@ pub fn compose_region_demands(
             failures.push((a.to_string(), b.to_string()));
         }
     }
-    if failures.is_empty() { Ok(()) } else { Err(failures) }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures)
+    }
 }
 
 #[cfg(test)]
@@ -148,7 +158,9 @@ mod tests {
     fn substitution_then_reflexivity() {
         let g = RegionGraph::new();
         let subst = HashMap::from([("'a".to_string(), "'x".to_string())]);
-        assert!(compose_region_demands(&g, &[("'a".to_string(), "'a".to_string())], &subst).is_ok());
+        assert!(
+            compose_region_demands(&g, &[("'a".to_string(), "'a".to_string())], &subst).is_ok()
+        );
     }
 
     #[test]
@@ -158,7 +170,9 @@ mod tests {
             ("'a".to_string(), "'static".to_string()),
             ("'b".to_string(), "'x".to_string()),
         ]);
-        assert!(compose_region_demands(&g, &[("'a".to_string(), "'b".to_string())], &subst).is_ok());
+        assert!(
+            compose_region_demands(&g, &[("'a".to_string(), "'b".to_string())], &subst).is_ok()
+        );
     }
 
     #[test]
@@ -169,7 +183,9 @@ mod tests {
             ("'a".to_string(), "'x".to_string()),
             ("'b".to_string(), "'y".to_string()),
         ]);
-        assert!(compose_region_demands(&g, &[("'a".to_string(), "'b".to_string())], &subst).is_ok());
+        assert!(
+            compose_region_demands(&g, &[("'a".to_string(), "'b".to_string())], &subst).is_ok()
+        );
     }
 
     #[test]
@@ -192,7 +208,9 @@ mod tests {
             ("'a".to_string(), "'x".to_string()),
             ("'b".to_string(), "'z".to_string()),
         ]);
-        assert!(compose_region_demands(&g, &[("'a".to_string(), "'b".to_string())], &subst).is_ok());
+        assert!(
+            compose_region_demands(&g, &[("'a".to_string(), "'b".to_string())], &subst).is_ok()
+        );
     }
 
     #[test]
@@ -218,7 +236,10 @@ mod tests {
     #[test]
     fn static_top_anything() {
         let g = RegionGraph::new();
-        assert!(matches!(g.check("'any", "'static"), DischargeOutcome::Discharged));
+        assert!(matches!(
+            g.check("'any", "'static"),
+            DischargeOutcome::Discharged
+        ));
     }
 
     #[test]

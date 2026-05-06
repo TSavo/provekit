@@ -7,9 +7,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use provekit_agent::{
-    run_must_loop, MustContext, MustLoopOptions, ProvekitAgent, StubAgent,
-};
+use provekit_agent::{run_must_loop, MustContext, MustLoopOptions, ProvekitAgent, StubAgent};
 
 use crate::project_config::{read_project_config, read_user_config};
 use crate::prompts::{resolve_prompt, substitute, PromptCommand, PromptOverrides};
