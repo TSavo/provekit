@@ -223,10 +223,10 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
         preamble.push_str("(assert (forall ((r Region)) (Outlives r r)))\n");
         // Kernel axiom 2: transitivity — Outlives(r1, r2) ∧ Outlives(r2, r3) → Outlives(r1, r3).
         preamble.push_str("(assert (forall ((r1 Region) (r2 Region) (r3 Region)) (=> (and (Outlives r1 r2) (Outlives r2 r3)) (Outlives r1 r3))))\n");
-        // Kernel axiom 3: 'static top element — Outlives(r, 'static) for every region r.
-        // 'static is encoded as a nullary function returning Region.
+        // Kernel axiom 3: 'static top element — Outlives('static, r) for every region r.
+        // 'static outlives every region per spec §2.3 (corrected in commit 655ab84).
         preamble.push_str("(declare-fun static_region () Region)\n");
-        preamble.push_str("(assert (forall ((r Region)) (Outlives r static_region)))\n");
+        preamble.push_str("(assert (forall ((r Region)) (Outlives static_region r)))\n");
     }
     for (name, sort) in free_vars.iter() {
         preamble.push_str(&format!("(declare-const {} {})\n", name, sort));
