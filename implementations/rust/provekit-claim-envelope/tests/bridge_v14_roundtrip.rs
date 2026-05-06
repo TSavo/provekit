@@ -77,8 +77,8 @@ fn fixture_seed() -> Ed25519Seed {
 const FIXTURE_NAME: &str = "rust-canonical-bridge-fixture";
 const FIXTURE_SOURCE_SYMBOL: &str = "parseInt";
 const FIXTURE_SOURCE_LAYER: &str = "rust-kit";
-const FIXTURE_SOURCE_CONTRACT_CID: &str = "blake3-512:source0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-const FIXTURE_TARGET_CONTRACT_CID: &str = "blake3-512:target0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+const FIXTURE_SOURCE_CONTRACT_CID: &str = "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+const FIXTURE_TARGET_CONTRACT_CID: &str = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
 const FIXTURE_DECLARED_AT: &str = "2026-05-03T00:00:00.000Z";
 
 fn canonical_fixture_args() -> MintBridgeV14Args {
@@ -186,7 +186,7 @@ fn bridge_v14_target_contract_set_variant() {
     // Spec §1.R1: `kind: "contractSet"` is the second variant.
     let mut args = canonical_fixture_args();
     args.target = BridgeTargetV14::ContractSet {
-        cid: "blake3-512:contractset0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".into(),
+        cid: "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222".into(),
     };
     let m = mint_bridge_v14(&args);
     let env: Json = serde_json::from_slice(&m.canonical_bytes).expect("parse");
@@ -271,8 +271,8 @@ fn bridge_v14_canonical_fixture_bytes_pinned() {
     // entry `bridge_decl_v1_4`. They are stamped here too so an
     // accidental drift surfaces inside this crate's test suite, not
     // only when the cross-language fixture loaders run.
-    let expected_jcs = r#"{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:GghyfAgvP5MtRcKjCBTvOf2qRqG13WboOLkZzkSbEbtNxqT+eDMcEup+RJWDOGBuhaBAR4jTPfM2w09iZsTuAw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:source0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:target0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"provekit-canonical-reference@v1.4","targetLayer":"rust-kit"}}"#;
-    let expected_hash = "blake3-512:270e867a46317f3c92a9af57d6aefe292f9a30a61149c1b7e22eb5500b203993ae029bce5e69dc6818ae0b2657d7960dac99b98c301c89050491c9d9c1852059";
+    let expected_jcs = r#"{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:RMYnQheAjTz7Ydq2yr1yl2Ramj/5G4eyhIb0DH1u3HKI7+95UAZnB3hEdgz0wqc+9BSe38SVTc1CmvyK8YVIBw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"provekit-canonical-reference@v1.4","targetLayer":"rust-kit"}}"#;
+    let expected_hash = "blake3-512:660ce98742d1f7ff326c994e4f6aba4d396d7fba0914db91a142c489e6d0901a7eff0ca206ce49bfa5b71eda289a138049fa8cf6461c5ef353703a78c0966cf2";
 
     if bytes != expected_jcs {
         eprintln!("==== ACTUAL bridge_decl_v1_4 JCS bytes ====");

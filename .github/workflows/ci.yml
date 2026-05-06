@@ -331,6 +331,12 @@ jobs:
         run: cargo test -p provekit-cli --test mint_kit_integration -- swift_kit_pins
         working-directory: implementations/rust
 
+      - name: swift catalog-pinned fixtures
+        # Runs the central fixture harness in the macOS-only profile. This
+        # is the same conformance law as the Linux job, but restricted to
+        # Swift because the Swift kit is macOS-only.
+        run: python3 conformance/run.py --profile swift
+
   # ---------------------------------------------------------------------------
   # Per-kit conformance gate: provekit prove --kit=<kit>
   #
@@ -420,6 +426,10 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Install python kit deps
+        if: matrix.kit == 'python'
+        run: pip install -e implementations/python/provekit-lift-py-tests
+
       - name: Install system deps (cpp)
         if: matrix.kit == 'cpp'
         run: |
@@ -451,20 +461,21 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: implementations/ruby
 
       - name: Install Zig (zig)
         if: matrix.kit == 'zig'
-        uses: mlugg/setup-zig@v1
-        with:
-          version: '0.13.0'
+        run: |
+          set -euxo pipefail
+          ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
+          curl -fsSL "$ZIG_URL" -o /tmp/zig.tar.xz
+          sudo mkdir -p /usr/local/zig
+          sudo tar -xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
+          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
+          zig version
 
       - name: "prove-${{ matrix.kit }}"
-        # Kits whose lift binaries don't yet implement the lift-plugin-protocol
-        # (java/python/ruby/zig/c) currently fail the C1-C8 gate. Allow those
-        # matrix entries to surface as red without blocking merge — the single
-        # `conformance` gate (which runs the wired kits) is the mandatory check.
-        # (Review feedback: PR #165 / Codex P1.)
-        continue-on-error: ${{ contains(fromJson('["java","python","ruby","zig","c"]'), matrix.kit) }}
         run: make prove-${{ matrix.kit }}
 
   prove-swift:

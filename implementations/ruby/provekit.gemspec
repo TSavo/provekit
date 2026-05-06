@@ -30,6 +30,7 @@ Gem::Specification.new do |s|
   s.require_paths = ["lib"]
 
   s.add_dependency "ed25519", "~> 1.4"
+  s.add_dependency "base64", ">= 0.2"
 
   s.add_development_dependency "minitest", ">= 5.0"
 end

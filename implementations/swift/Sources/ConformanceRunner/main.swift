@@ -18,6 +18,17 @@ if args.count > 1 && args[1] == "--fixture" {
         let body = Formula.implies(Formula.and(Formula.gte(x, z), Formula.lt(x, h)), Formula.gte(x, z))
         let q = Formula.forall(name: "x", sort: .int, body: body)
         print(Jcs.encode(Jcs.formulaToValue(q)), terminator: "")
+    case "contract_decl":
+        let pre = Formula.gte(Term.var(name: "x"), Term.num(0))
+        let d = Declaration.contract(name: "parseInt", outBinding: "out", pre: pre, post: nil, inv: nil)
+        print(Jcs.encodeDeclarations([d]), terminator: "")
+    case "bridge_decl_v1_1":
+        let b = Declaration.bridge(
+            name: "myBridge", sourceSymbol: "source", sourceLayer: "c-kit",
+            sourceContractCid: "bafySource", targetContractCid: "bafyTarget",
+            targetProofCid: "bafyProof", targetLayer: "coq", notes: "some notes"
+        )
+        print(Jcs.encode(Jcs.declToValue(b)), terminator: "")
     default:
         break
     }
@@ -70,8 +81,8 @@ let b = Declaration.bridge(
     sourceContractCid: "bafySource", targetContractCid: "bafyTarget",
     targetProofCid: "bafyProof", targetLayer: "coq", notes: "some notes"
 )
-let jcs5 = Jcs.encodeDeclarations([b])
-let expected5 = #"[{"kind":"bridge","name":"myBridge","notes":"some notes","sourceContractCid":"bafySource","sourceLayer":"c-kit","sourceSymbol":"source","targetContractCid":"bafyTarget","targetLayer":"coq","targetProofCid":"bafyProof"}]"#
+let jcs5 = Jcs.encode(Jcs.declToValue(b))
+let expected5 = #"{"kind":"bridge","name":"myBridge","notes":"some notes","sourceContractCid":"bafySource","sourceLayer":"c-kit","sourceSymbol":"source","targetContractCid":"bafyTarget","targetLayer":"coq","targetProofCid":"bafyProof"}"#
 if jcs5 != expected5 { print("GOT:  \(jcs5)"); print("EXP:  \(expected5)") }
 test("bridge JCS") { jcs5 == expected5 }
 

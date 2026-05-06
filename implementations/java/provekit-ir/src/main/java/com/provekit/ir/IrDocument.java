@@ -72,15 +72,15 @@ public class IrDocument {
             return this;
         }
         public Builder contract(String symbol, Formula precondition, Formula postcondition) {
-            declarations.add(new Declaration.Contract(symbol, precondition, postcondition, null, null));
+            declarations.add(new Declaration.Contract(symbol, "out", precondition, postcondition, null, null));
             return this;
         }
         public Builder contract(String symbol, Formula precondition, Formula postcondition, Formula invariant) {
-            declarations.add(new Declaration.Contract(symbol, precondition, postcondition, invariant, null));
+            declarations.add(new Declaration.Contract(symbol, "out", precondition, postcondition, invariant, null));
             return this;
         }
         public Builder contract(String symbol, Formula precondition, Formula postcondition, Formula invariant, String evidence) {
-            declarations.add(new Declaration.Contract(symbol, precondition, postcondition, invariant, evidence));
+            declarations.add(new Declaration.Contract(symbol, "out", precondition, postcondition, invariant, evidence));
             return this;
         }
         public IrDocument build() {

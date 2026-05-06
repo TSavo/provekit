@@ -8,12 +8,12 @@ public sealed interface Formula {
 
     record Atomic(String name, Term[] args) implements Formula {
         public String toJson() {
-            StringBuilder sb = new StringBuilder("{\"kind\":\"atomic\",\"name\":\"" + Sort.escape(name) + "\",\"args\":[");
+            StringBuilder sb = new StringBuilder("{\"args\":[");
             for (int i = 0; i < args.length; i++) {
                 if (i > 0) sb.append(",");
                 sb.append(args[i].toJson());
             }
-            sb.append("]}");
+            sb.append("],\"kind\":\"atomic\",\"name\":\"").append(Sort.escape(name)).append("\"}");
             return sb.toString();
         }
     }
@@ -36,7 +36,7 @@ public sealed interface Formula {
 
     record Quantifier(QuantifierKind kind, String name, Sort sort, Formula body) implements Formula {
         public String toJson() {
-            return "{\"kind\":\"" + kind.name() + "\",\"name\":\"" + Sort.escape(name) + "\",\"sort\":" + sort.toJson() + ",\"body\":" + body.toJson() + "}";
+            return "{\"body\":" + body.toJson() + ",\"kind\":\"" + kind.name() + "\",\"name\":\"" + Sort.escape(name) + "\",\"sort\":" + sort.toJson() + "}";
         }
     }
 

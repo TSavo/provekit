@@ -84,23 +84,17 @@ class BridgeV14RoundtripTest {
     @Test
     void bridge_v14_canonical_fixture_bytes_pinned() {
         // Spec §3 conformance: deterministic emission with valid CIDs.
-        // The hardcoded expectedJcs was un-pinned in #328 (CID values changed
-        // to pass the new validation regex). Byte-level conformance is still
-        // enforced by round_trip_byte_identical below.
         MintedEnvelope m = ClaimEnvelope.mintBridgeV14(canonicalFixtureArgs());
         String bytes = new String(m.canonicalBytes, StandardCharsets.UTF_8);
         String hash = Blake3.blake3_512(m.canonicalBytes);
 
-        assertTrue(bytes.startsWith("{\"envelope\":{\"declaredAt\":\"2026-05-03T00:00:00.000Z\","),
-                "v1.4 fixture MUST begin with envelope block");
-        assertTrue(bytes.contains("\"header\":{\"kind\":\"bridge\""),
-                "header MUST start with kind:bridge in JCS-sorted key order");
-        assertTrue(bytes.contains("\"schemaVersion\":\"1\""),
-                "schemaVersion MUST be \"1\"");
-        assertTrue(bytes.contains("\"name\":\"rust-canonical-bridge-fixture\""),
-                "name MUST be present");
-        assertTrue(hash.startsWith("blake3-512:"),
-                "hash MUST be a valid BLAKE3-512 CID");
+        String expectedJcs =
+                "{\"envelope\":{\"declaredAt\":\"2026-05-03T00:00:00.000Z\",\"signature\":\"ed25519:RMYnQheAjTz7Ydq2yr1yl2Ramj/5G4eyhIb0DH1u3HKI7+95UAZnB3hEdgz0wqc+9BSe38SVTc1CmvyK8YVIBw==\",\"signer\":\"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=\"},\"header\":{\"kind\":\"bridge\",\"name\":\"rust-canonical-bridge-fixture\",\"schemaVersion\":\"1\",\"sourceContractCid\":\"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\",\"sourceLayer\":\"rust-kit\",\"sourceSymbol\":\"parseInt\",\"target\":{\"cid\":\"blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\"kind\":\"contract\"}},\"metadata\":{\"producedAt\":\"2026-05-03T00:00:00.000Z\",\"producedBy\":\"provekit-canonical-reference@v1.4\",\"targetLayer\":\"rust-kit\"}}";
+        String expectedHash =
+                "blake3-512:660ce98742d1f7ff326c994e4f6aba4d396d7fba0914db91a142c489e6d0901a7eff0ca206ce49bfa5b71eda289a138049fa8cf6461c5ef353703a78c0966cf2";
+
+        assertEquals(expectedJcs, bytes, "v1.4 fixture JCS bytes MUST match conformance/fixtures.toml");
+        assertEquals(expectedHash, hash, "v1.4 fixture hash MUST match conformance/fixtures.toml");
     }
 
     @Test

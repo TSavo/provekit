@@ -289,7 +289,7 @@ fn run(write: bool) -> Result<(), String> {
     }
 
     // 7. Report.
-    println!("# Protocol catalog freeze (v1.5.0)");
+    println!("# Protocol catalog freeze (v1.6.0)");
     println!();
     println!("Catalog file:    {}", catalog_path.display());
     println!("Catalog CID:     {}", catalog_cid);

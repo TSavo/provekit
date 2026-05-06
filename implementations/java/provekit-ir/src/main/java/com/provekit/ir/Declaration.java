@@ -64,12 +64,13 @@ public sealed interface Declaration {
         }
     }
 
-    record Contract(String symbol, Formula precondition, Formula postcondition, Formula invariant, String evidence) implements Declaration {
+    record Contract(String name, String outBinding, Formula pre, Formula post, Formula inv, String evidence) implements Declaration {
         public String toJson() {
-            StringBuilder sb = new StringBuilder("{\"kind\":\"contract\",\"symbol\":\"" + Sort.escape(symbol) + "\"");
-            if (precondition != null) sb.append(",\"precondition\":").append(precondition.toJson());
-            sb.append(",\"postcondition\":").append(postcondition.toJson());
-            if (invariant != null) sb.append(",\"invariant\":").append(invariant.toJson());
+            StringBuilder sb = new StringBuilder("{\"kind\":\"contract\",\"name\":\"" + Sort.escape(name) + "\"");
+            sb.append(",\"outBinding\":\"").append(Sort.escape(outBinding)).append("\"");
+            if (pre != null) sb.append(",\"pre\":").append(pre.toJson());
+            if (post != null) sb.append(",\"post\":").append(post.toJson());
+            if (inv != null) sb.append(",\"inv\":").append(inv.toJson());
             if (evidence != null) sb.append(",\"evidence\":\"").append(Sort.escape(evidence)).append("\"");
             sb.append("}");
             return sb.toString();

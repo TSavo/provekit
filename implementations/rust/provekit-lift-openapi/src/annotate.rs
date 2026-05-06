@@ -287,7 +287,7 @@ fn find_function(content: &str, name: &str, lang: Lang) -> Option<(usize, usize,
             }
         };
 
-        if let Some(idx) = match_idx {
+        if let Some(_idx) = match_idx {
             let indent = line.len() - line.trim_start().len();
             let start = content.lines().take(i).map(|l| l.len() + 1).sum::<usize>();
             let end = start + line.len();
@@ -316,7 +316,7 @@ fn find_insertion_point(content: &str, line_start: usize) -> usize {
     }
 }
 
-fn build_annotation(op: &OpInfo, lang: Lang) -> String {
+fn build_annotation(op: &OpInfo, _lang: Lang) -> String {
     let mut parts = vec![format!("@provekit.target {}.{}", "openapi", op.contract_name)];
 
     if let Some(rc) = &op.response_constraints {

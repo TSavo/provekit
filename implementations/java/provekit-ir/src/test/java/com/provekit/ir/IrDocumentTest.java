@@ -17,7 +17,8 @@ public class IrDocumentTest {
         String json = doc.toJson();
         assertTrue(json.contains("\"version\":\"provekit-ir/1.1.0\""));
         assertTrue(json.contains("\"kind\":\"contract\""));
-        assertTrue(json.contains("\"symbol\":\"abs\""));
+        assertTrue(json.contains("\"name\":\"abs\""));
+        assertTrue(json.contains("\"outBinding\":\"out\""));
         assertTrue(json.contains("\"kind\":\"atomic\""));
         assertTrue(json.contains("\"name\":\"gte\""));
     }

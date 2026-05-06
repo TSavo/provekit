@@ -3,6 +3,11 @@
 # Every kit MUST emit these exact JCS bytes and BLAKE3-512 hashes.
 # The Rust kit is the canonical reference implementation.
 #
+# These vectors are pinned to the protocol catalog below. Updating fixture
+# bytes is a catalog-versioned event, not test maintenance.
+catalog_version = "v1.6.0-2026-05-05"
+catalog_cid = "blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781"
+#
 # To add a fixture:
 # 1. Define the IR tree in the Rust kit
 # 2. Record the JCS bytes and hash
@@ -11,18 +16,21 @@
 
 [[fixture]]
 name = "eq_atomic"
+capability = "ir.formula.jcs"
 description = "parse_int('42') = 42 — tests var, const (str, int), ctor, atomic formula"
 jcs = '{"args":[{"args":[{"kind":"const","sort":{"kind":"primitive","name":"String"},"value":"42"}],"kind":"ctor","name":"parse_int"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":42}],"kind":"atomic","name":"="}'
 hash = "blake3-512:5eade72c08811b2d38adcb158eced38f3d319de090d59b2fa7a77ad830169e18539d2b75d2a2838c545e644a688cf137603674523ff37f1586a650f6dd05aeaa"
 
 [[fixture]]
 name = "pattern1_bounded_loop"
+capability = "ir.formula.jcs"
 description = "forall x: (x >= 0 && x < 100) => x >= 0 — tests forall, and, implies, nested compare"
 jcs = '{"body":{"kind":"implies","operands":[{"kind":"and","operands":[{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":100}],"kind":"atomic","name":"<"}]},{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}]},"kind":"forall","name":"x","sort":{"kind":"primitive","name":"Int"}}'
 hash = "blake3-512:edace2a0634b696ec24a369d37580cf9ab77f2d7c3e83869240b77305aaefc4868054bc3cee789f74408e1adf0b1d88e6fdfcd9cc2e351ff586077dbb3a3bcea"
 
 [[fixture]]
 name = "contract_decl"
+capability = "ir.declaration.v1_1.jcs"
 description = "Contract with precondition: parseInt(x) requires x >= 0"
 jcs = '[{"kind":"contract","name":"parseInt","outBinding":"out","pre":{"args":[{"kind":"var","name":"x"},{"kind":"const","sort":{"kind":"primitive","name":"Int"},"value":0}],"kind":"atomic","name":"≥"}}]'
 hash = "blake3-512:5d1a287186e41d3fd9be0f4e9464e7905f35306e7bdeeeeb180279672eed4c8685e073d88ba8a222b34e1586adc3a05efb5ab4c71837299b48f2b4386353713f"
@@ -35,6 +43,7 @@ hash = "blake3-512:5d1a287186e41d3fd9be0f4e9464e7905f35306e7bdeeeeb180279672eed4
 # New emissions MUST use the v1.4 layered shape; see `bridge_decl_v1_4`.
 [[fixture]]
 name = "bridge_decl_v1_1"
+capability = "ir.declaration.v1_1.jcs"
 description = "v1.1 flat BridgeDeclaration (historical bytes); new emissions MUST use bridge_decl_v1_4"
 jcs = '{"kind":"bridge","name":"myBridge","notes":"some notes","sourceContractCid":"bafySource","sourceLayer":"c-kit","sourceSymbol":"source","targetContractCid":"bafyTarget","targetLayer":"coq","targetProofCid":"bafyProof"}'
 hash = "blake3-512:e3ace4fc4fd49561bc29d1739d8256c6d573642e4bfd5f4eb2994bb2ba5442b1e925a34b1e2a36ecb0a5e587ccf67ccce4d3184fe5e1fac67e893dce5126305b"
@@ -60,6 +69,7 @@ hash = "blake3-512:e3ace4fc4fd49561bc29d1739d8256c6d573642e4bfd5f4eb2994bb2ba544
 #   * substrate-layers §2 R2 signature covers JCS({header,metadata})
 [[fixture]]
 name = "bridge_decl_v1_4"
+capability = "claim.bridge.v1_4.jcs"
 description = "v1.4 layered BridgeDeclaration with tagged-union target {kind:contract, cid:...}"
-jcs = '{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:GghyfAgvP5MtRcKjCBTvOf2qRqG13WboOLkZzkSbEbtNxqT+eDMcEup+RJWDOGBuhaBAR4jTPfM2w09iZsTuAw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:source0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:target0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"provekit-canonical-reference@v1.4","targetLayer":"rust-kit"}}'
-hash = "blake3-512:270e867a46317f3c92a9af57d6aefe292f9a30a61149c1b7e22eb5500b203993ae029bce5e69dc6818ae0b2657d7960dac99b98c301c89050491c9d9c1852059"
+jcs = '{"envelope":{"declaredAt":"2026-05-03T00:00:00.000Z","signature":"ed25519:RMYnQheAjTz7Ydq2yr1yl2Ramj/5G4eyhIb0DH1u3HKI7+95UAZnB3hEdgz0wqc+9BSe38SVTc1CmvyK8YVIBw==","signer":"ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI="},"header":{"kind":"bridge","name":"rust-canonical-bridge-fixture","schemaVersion":"1","sourceContractCid":"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","sourceLayer":"rust-kit","sourceSymbol":"parseInt","target":{"cid":"blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111","kind":"contract"}},"metadata":{"producedAt":"2026-05-03T00:00:00.000Z","producedBy":"provekit-canonical-reference@v1.4","targetLayer":"rust-kit"}}'
+hash = "blake3-512:660ce98742d1f7ff326c994e4f6aba4d396d7fba0914db91a142c489e6d0901a7eff0ca206ce49bfa5b71eda289a138049fa8cf6461c5ef353703a78c0966cf2"

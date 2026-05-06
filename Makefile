@@ -452,7 +452,7 @@ protocol-verify: build-rust
 	$(PROVEKIT) verify-protocol --signed
 
 .PHONY: conformance
-conformance: catalog-verify protocol-verify all-mint test-self-contracts conformance-region-fixture
+conformance: catalog-verify protocol-verify all-mint test-self-contracts conformance-region-fixture cross-kit-conformance
 	@echo ""
 	@echo "==== conformance: PASS ===="
 
@@ -492,6 +492,11 @@ conformance-region-fixture:
 	@echo "=== Region+Dependent byte-pinned fixture ==="
 	@cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-canonicalizer --test conformance_region_dependent
+
+.PHONY: cross-kit-conformance
+cross-kit-conformance:
+	@echo "=== Catalog-pinned cross-kit conformance fixtures ==="
+	python3 conformance/run.py --profile linux
 
 # --- Per-language test suites ------------------------------------------------
 

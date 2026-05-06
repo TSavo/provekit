@@ -14,18 +14,18 @@ public sealed interface Term {
 
     record Const(Value value, Sort sort) implements Term {
         public String toJson() {
-            return "{\"kind\":\"const\",\"value\":" + value.toJson() + ",\"sort\":" + sort.toJson() + "}";
+            return "{\"kind\":\"const\",\"sort\":" + sort.toJson() + ",\"value\":" + value.toJson() + "}";
         }
     }
 
     record Ctor(String name, Term[] args, Sort sort) implements Term {
         public String toJson() {
-            StringBuilder sb = new StringBuilder("{\"kind\":\"ctor\",\"name\":\"" + Sort.escape(name) + "\",\"args\":[");
+            StringBuilder sb = new StringBuilder("{\"args\":[");
             for (int i = 0; i < args.length; i++) {
                 if (i > 0) sb.append(",");
                 sb.append(args[i].toJson());
             }
-            sb.append("]}");
+            sb.append("],\"kind\":\"ctor\",\"name\":\"").append(Sort.escape(name)).append("\"}");
             return sb.toString();
         }
     }
