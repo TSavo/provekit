@@ -176,7 +176,18 @@ A user-authored memento that overrides the pessimistic `Effect::Panics + Effect:
 
 ```rust
 pub struct DropMemento {
+    /// The contract CID of the function whose drop is being discharged.
+    /// Anchors the memento to the specific contract, preventing false
+    /// discharge across functions that drop the same type.
+    pub function_cid: String,
+
     /// The fully-qualified type name whose Drop impl this memento covers.
+    /// Canonical form: Charon's `TypeDecl::name` joined with `::` as
+    /// produced by the `type_name` helper in `aliasing.rs/adt_name_for_id`.
+    /// Example: `"core::cell::Cell"`, `"std::sync::MutexGuard"`.
+    /// Two kits MUST produce the same string for the same type; the
+    /// canonical form is `rustc`-def-path-hash stable, independent of
+    /// edition, lint level, or compilation flags.
     pub target_type: String,
 
     /// True if the Drop impl is guaranteed not to panic.
@@ -184,10 +195,9 @@ pub struct DropMemento {
 
     /// Whether the drop performs no heap allocation (no new allocate,
     /// no internal resize, no rebalance). If false, the drop's allocation
-    /// behavior must be discharged separately via the drop body contract
-    /// or an `AllocationMemento` (not yet defined). In v1, `allocation_free`
-    /// is recorded but NOT independently enforced — it is a property
-    /// that the drop body contract verifies as part of its pre/post.
+    /// effect prevents composition — the substrate refuses to compose
+    /// through a drop that allocates unless an explicit discharge path
+    /// exists (the drop body contract or an `AllocationMemento`).
     pub allocation_free: bool,
 
     /// True if the Drop impl contains no user-defined logic; it only
