@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use provekit_walk::contract::OpacityMementoLookup;
+use provekit_walk::contract::{OpacityMementoLookup, PinInvariantMementoView};
 use serde_json::Value as Json;
 use serde::Serialize;
 
@@ -125,6 +125,13 @@ pub struct MementoPool {
     /// memento CID. Populated when a "closure-binding" kind memento is
     /// inserted. Spec: protocol/specs/2026-05-05-closure-binding-memento.md
     pub body_fn_cid_to_memento: BTreeMap<String, String>,
+
+    /// Composite key "functionCid:target" -> memento CID. Populated
+    /// when a "pin-invariant" kind memento is inserted. The composite
+    /// key ensures the memento is anchored to both the function contract
+    /// and the pinned parameter name.
+    /// Spec: protocol/specs/2026-05-05-pin-invariant-memento.md
+    pub pin_invariant_to_memento: BTreeMap<String, String>,
 }
 
 /// Key for implication lookups: (antecedent CID, consequent CID).
@@ -491,6 +498,18 @@ impl OpacityMementoLookup for MementoPool {
         // is effect-free. Wire this to a real index once the
         // drop-contract memento spec lands under protocol/specs/.
         false
+    }
+    fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView> {
+        let key = format!("{}:{}", function_cid, target);
+        let memento_cid = self.pin_invariant_to_memento.get(&key)?;
+        let memento = self.mementos.get(memento_cid)?;
+        let header = memento.get("header")?;
+        let metadata = memento.get("metadata")?;
+        Some(PinInvariantMementoView {
+            function_cid: function_cid.to_string(),
+            pinned_target: target.to_string(),
+            invariant: metadata.get("invariant")?.as_str()?.to_string(),
+        })
     }
 }
 
