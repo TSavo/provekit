@@ -59,7 +59,7 @@ impl PredicateDescriptor for NotNullPredicate {
     }
 
     fn verified_templates(&self) -> &[DropTemplate] {
-        &[DropTemplate::Defensive]
+        &[DropTemplate::Defensive, DropTemplate::Expect]
     }
 
     fn render(&self, template: DropTemplate, var: &str) -> Result<String, NotRenderable> {
@@ -80,12 +80,10 @@ impl PredicateDescriptor for NotNullPredicate {
                     "render emits `return Default::default()` which requires the caller's \
                      return type to implement Default; not closure-verified by current lifter",
             }),
-            DropTemplate::Expect => Err(NotRenderable::Scaffolding {
-                family: "Expect",
-                reason:
-                    "render shadows the original variable with a different type, breaking \
-                     downstream callsites; pending fresh-name binding (see issue #407)",
-            }),
+            DropTemplate::Expect => Ok(format!(
+                "    let {var}_ok = {var}.expect(\"invariant: caller must supply non-null {var}\");\n",
+                var = var
+            )),
         }
     }
 
@@ -163,9 +161,9 @@ mod tests {
     use provekit_ir_types::{IrFormula, IrTerm};
 
     #[test]
-    fn not_null_predicate_verified_templates_returns_defensive_only() {
+    fn not_null_predicate_verified_templates_returns_defensive_and_expect() {
         let templates = NotNullPredicate.verified_templates();
-        assert_eq!(templates.len(), 1, "one verified template for not_null (MVP)");
+        assert_eq!(templates.len(), 2, "two verified templates for not_null");
         assert!(templates.contains(&DropTemplate::Defensive));
     }
 
