@@ -45,16 +45,13 @@ pub mod lift_plugin_protocol;
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
-    compute_contract_set_cid, contract_cid as compute_contract_cid,
-    mint_bridge, mint_contract, Authoring, MintBridgeArgs, MintContractArgs,
+    compute_contract_set_cid, contract_cid as compute_contract_cid, mint_bridge, mint_contract,
+    Authoring, MintBridgeArgs, MintContractArgs,
 };
 use provekit_ir_symbolic::serialize::formula_to_value;
-use provekit_ir_symbolic::{
-    begin_collecting, finish, reset_collector, ContractDecl,
-};
+use provekit_ir_symbolic::{begin_collecting, finish, reset_collector, ContractDecl};
 use provekit_proof_envelope::{
-    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed,
-    ProofEnvelopeInput,
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
 
 const PRODUCED_BY: &str = "provekit-self-contracts@1.0";
@@ -97,6 +94,9 @@ mod kit_invariants;
 #[path = "../../provekit-verifier/src/load_all_proofs.invariant.rs"]
 mod load_all_proofs_invariants;
 
+#[path = "../../provekit-verifier/src/proof_conformance.invariant.rs"]
+mod proof_conformance_invariants;
+
 #[path = "../../provekit-verifier/src/enumerate_callsites.invariant.rs"]
 mod enumerate_callsites_invariants;
 
@@ -108,6 +108,12 @@ mod instantiate_invariants;
 
 #[path = "../../provekit-verifier/src/smt_emitter.invariant.rs"]
 mod smt_emitter_invariants;
+
+#[path = "../../../java/provekit-realize-java-core/src/main/java/com/provekit/realize/JavaNullBoundaryRealizer.invariant.rs"]
+mod java_null_boundary_realizer_invariants;
+
+#[path = "../../provekit-cli/src/cmd_zoo.invariant.rs"]
+mod cmd_zoo_invariants;
 
 // catalog-format spec rules. Module is `pub mod catalog_format` above;
 // the alias here matches the slab-naming convention used in
@@ -248,6 +254,13 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
         ),
         run_one_slab(
             InvariantSource {
+                label: "proof_conformance",
+                path: "provekit-verifier/src/proof_conformance.invariant.rs",
+            },
+            proof_conformance_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
                 label: "enumerate_callsites",
                 path: "provekit-verifier/src/enumerate_callsites.invariant.rs",
             },
@@ -273,6 +286,20 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
                 path: "provekit-verifier/src/smt_emitter.invariant.rs",
             },
             smt_emitter_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "java_null_boundary_realizer",
+                path: "provekit-realize-java-core/src/main/java/com/provekit/realize/JavaNullBoundaryRealizer.invariant.rs",
+            },
+            java_null_boundary_realizer_invariants::invariants,
+        ),
+        run_one_slab(
+            InvariantSource {
+                label: "cmd_zoo",
+                path: "provekit-cli/src/cmd_zoo.invariant.rs",
+            },
+            cmd_zoo_invariants::invariants,
         ),
         run_one_slab(
             InvariantSource {
@@ -306,10 +333,7 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
     (slabs, bridges)
 }
 
-fn run_one_slab(
-    source: InvariantSource,
-    f: fn(),
-) -> AuthoredSlab {
+fn run_one_slab(source: InvariantSource, f: fn()) -> AuthoredSlab {
     reset_collector();
     begin_collecting();
     f();
@@ -447,17 +471,13 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
                 input_cids: vec![],
                 authoring: Authoring::KitAuthor {
                     author: PRODUCED_BY.into(),
-                    note: Some(format!(
-                        "self-contract from {}",
-                        slab.source.path
-                    )),
+                    note: Some(format!("self-contract from {}", slab.source.path)),
                 },
                 signer_seed,
             };
             // Compute the content CID (signer-independent) BEFORE minting (spec #94).
             let ccid = compute_contract_cid(&args);
-            let m = mint_contract(&args)
-                .map_err(|e| format!("mint_contract({}): {e}", d.name))?;
+            let m = mint_contract(&args).map_err(|e| format!("mint_contract({}): {e}", d.name))?;
             // Detect duplicate names ACROSS slabs and fail loud.
             if contract_cids.contains_key(&d.name) {
                 return Err(format!(
@@ -532,17 +552,14 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
         return Err("internal: cid missing blake3-512 prefix".into());
     }
     let path = out_dir.join(format!("{cid}.proof", cid = built.cid));
-    std::fs::write(&path, &built.bytes)
-        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    std::fs::write(&path, &built.bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
 
     // Compute contractSetCid per spec #94 §1.
     // contract_cids values are signer-independent content CIDs; compute set CID
     // from them. The sort inside compute_contract_set_cid makes the result
     // order-independent: two kits enumerating the same contracts in different
     // order produce the same contractSetCid.
-    let contract_set_cid = compute_contract_set_cid(
-        contract_cids.values().cloned().collect()
-    );
+    let contract_set_cid = compute_contract_set_cid(contract_cids.values().cloned().collect());
 
     Ok(MintResult {
         cid: built.cid,
@@ -580,8 +597,8 @@ mod tests {
     use provekit_ir_symbolic::parse::{parse_formula, ParseError};
     use provekit_ir_symbolic::serialize::{formula_to_value, marshal_declarations};
     use provekit_ir_symbolic::{
-        and_, atomic_, finish, gt, lt, make_var, must, not_, num, or_,
-        reset_collector, str_const, ContractDecl, Formula, Int, Term,
+        and_, atomic_, finish, gt, lt, make_var, must, not_, num, or_, reset_collector, str_const,
+        ContractDecl, Formula, Int, Term,
     };
     use std::rc::Rc;
 
@@ -679,7 +696,10 @@ mod tests {
     fn rejects_extra_key_on_var() {
         let raw = r#"{"kind":"var","name":"x","sort":{"kind":"primitive","name":"Int"}}"#;
         let v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        assert!(matches!(provekit_ir_symbolic::parse::parse_term(&v), Err(ParseError::ExtraKey { .. })));
+        assert!(matches!(
+            provekit_ir_symbolic::parse::parse_term(&v),
+            Err(ParseError::ExtraKey { .. })
+        ));
     }
 
     #[test]
@@ -704,7 +724,10 @@ mod tests {
     fn rejects_unknown_node_kind() {
         let raw = r#"{"kind":"xyzzy","args":[]}"#;
         let v: serde_json::Value = serde_json::from_str(raw).unwrap();
-        assert!(matches!(parse_formula(&v), Err(ParseError::UnknownKind { .. })));
+        assert!(matches!(
+            parse_formula(&v),
+            Err(ParseError::UnknownKind { .. })
+        ));
     }
 
     // -- INVARIANT 3: locked key order on serialize ---------------------------
@@ -712,7 +735,10 @@ mod tests {
     #[test]
     fn marshal_emits_locked_key_order_for_contract() {
         reset_collector();
-        must("foo", forall_with_name("x".into(), gt(make_var("x"), num(0))));
+        must(
+            "foo",
+            forall_with_name("x".into(), gt(make_var("x"), num(0))),
+        );
         let decls = finish();
         let s = marshal_declarations(&decls);
         let i_kind = s.find(r#""kind":"contract""#).expect("kind first");
@@ -742,8 +768,7 @@ mod tests {
         // Within each slab the contract names must be distinct.
         let (slabs, _) = author_all_invariants();
         for slab in &slabs {
-            let mut names: Vec<&str> =
-                slab.contracts.iter().map(|d| d.name.as_str()).collect();
+            let mut names: Vec<&str> = slab.contracts.iter().map(|d| d.name.as_str()).collect();
             names.sort();
             let original_len = names.len();
             names.dedup();

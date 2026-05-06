@@ -44,7 +44,7 @@ public final class JavaNullBoundaryRealizer {
         String patchCid = cid(plan.source() + "\n---provekit-drop---\n" + modifiedSource);
         String artifactCid = cid(modifiedSource);
         String postLiftCid = cid(lift.postLiftJson());
-        String closureWitnessCid = cid("{"
+        String closureWitnessJson = "{"
             + "\"kind\":\"TruthDischargeBodyClaim\","
             + "\"claimKind\":\"closure\","
             + "\"gapCid\":" + JsonUtil.quoted(plan.gapCid()) + ","
@@ -53,7 +53,8 @@ public final class JavaNullBoundaryRealizer {
             + "\"sourcePredicate\":" + JsonUtil.quoted(plan.sourcePredicate()) + ","
             + "\"targetPredicate\":" + JsonUtil.quoted(plan.targetPredicate()) + ","
             + "\"transformedArtifactCid\":" + JsonUtil.quoted(artifactCid)
-            + "}");
+            + "}";
+        String closureWitnessCid = cid(closureWitnessJson);
 
         return RealizerOutput.closed(
             plan,
@@ -61,6 +62,7 @@ public final class JavaNullBoundaryRealizer {
             artifactCid,
             postLiftCid,
             closureWitnessCid,
+            closureWitnessJson,
             modifiedSource,
             lift.postLiftJson()
         );
@@ -74,6 +76,9 @@ public final class JavaNullBoundaryRealizer {
         if (method.isEmpty()) return Optional.empty();
         cu.addImport("com.provekit.contract.Requires");
         MethodDeclaration declaration = method.get();
+        boolean parameterExists = declaration.getParameters().stream()
+            .anyMatch(p -> p.getNameAsString().equals(varName));
+        if (!parameterExists) return Optional.empty();
         boolean alreadyAnnotated = declaration.getAnnotations().stream()
             .anyMatch(ann -> ann.getNameAsString().endsWith("Requires"));
         if (!alreadyAnnotated) {

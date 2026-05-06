@@ -9,7 +9,9 @@ use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_symbolic::serialize::formula_to_value;
 use provekit_ir_symbolic::{forall, gt, must, num, reset_collector, Int};
-use provekit_proof_envelope::{build_proof_envelope, Ed25519Seed, ProofEnvelopeInput};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
 
 fn make_unique_dir(suffix: &str) -> PathBuf {
     let base = std::env::temp_dir();
@@ -63,7 +65,7 @@ fn fixture_proof_file_with_metadata(
         binary_cid: None,
         metadata,
         members,
-        signer_cid: "blake3-512:signer".into(),
+        signer_cid: ed25519_pubkey_string(&signer_seed),
         signer_seed,
         declared_at: declared_at.into(),
     });
@@ -191,16 +193,13 @@ fn proof_mint_protocol_generates_positive_and_negative_fixture_corpus() {
         serde_json::from_slice(&mint.stdout).expect("mint protocol JSON");
     assert_eq!(minted["kind"], "ProofProtocolCorpus");
     assert_eq!(minted["fixture_count"], 2);
-    assert!(
-        minted["fixtures"]
-            .as_array()
-            .expect("fixtures")
-            .iter()
-            .any(|fixture| fixture["expected"] == false)
-    );
+    assert!(minted["fixtures"]
+        .as_array()
+        .expect("fixtures")
+        .iter()
+        .any(|fixture| fixture["expected"] == false));
 
-    let protocol_path =
-        PathBuf::from(minted["protocol_path"].as_str().expect("protocol_path"));
+    let protocol_path = PathBuf::from(minted["protocol_path"].as_str().expect("protocol_path"));
     assert!(protocol_path.exists(), "protocol proof should be written");
 
     let implements = Command::new(&program)
@@ -228,13 +227,11 @@ fn proof_mint_protocol_generates_positive_and_negative_fixture_corpus() {
     assert_eq!(witness["kind"], "ProofProtocolImplementationWitness");
     assert_eq!(witness["result"], true);
     assert_eq!(witness["fixture_count"], 2);
-    assert!(
-        witness["checks"]
-            .as_array()
-            .expect("checks")
-            .iter()
-            .any(|check| check["result"] == false)
-    );
+    assert!(witness["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .any(|check| check["result"] == false));
     let _ = fs::remove_dir_all(&dir);
 }
 

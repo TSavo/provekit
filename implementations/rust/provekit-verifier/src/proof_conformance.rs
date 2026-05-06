@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use provekit_proof_envelope::ed25519_verify_string;
+use provekit_proof_envelope::{ed25519_verify_bytes, ed25519_verify_string};
 use serde::Serialize;
 use serde_json::Value as Json;
 
@@ -28,6 +28,7 @@ pub const PFCP_R5_MEMBER_CID: &str = "PFCP-R5-MEMBER-CID";
 pub const PFCP_R6_MEMBER_SIGNATURE: &str = "PFCP-R6-MEMBER-SIGNATURE";
 pub const PFCP_R7_METADATA_NON_NORMATIVE: &str = "PFCP-R7-METADATA-NON-NORMATIVE";
 pub const PFCP_R8_NO_ENCLOSING_FILE_CID_CLAIM: &str = "PFCP-R8-NO-ENCLOSING-FILE-CID-CLAIM";
+pub const PFCP_R9_CATALOG_SIGNATURE: &str = "PFCP-R9-CATALOG-SIGNATURE";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProofFileConformanceError {
@@ -181,6 +182,8 @@ pub fn validate_proof_bytes(path: &Path, bytes: &[u8]) -> ProofFileConformanceRe
         None => {}
     }
 
+    validate_catalog_signature(root, &mut report);
+
     let members = match root.get("members").and_then(CborValue::as_map) {
         Some(members) => members,
         None => {
@@ -195,6 +198,56 @@ pub fn validate_proof_bytes(path: &Path, bytes: &[u8]) -> ProofFileConformanceRe
     }
 
     report
+}
+
+fn validate_catalog_signature(
+    root: &BTreeMap<String, CborValue>,
+    report: &mut ProofFileConformanceReport,
+) {
+    let Some(signer) = root.get("signer").and_then(CborValue::as_tstr) else {
+        report.push_error(
+            PFCP_R9_CATALOG_SIGNATURE,
+            "catalog signer is missing or not text",
+        );
+        return;
+    };
+    if root
+        .get("declaredAt")
+        .and_then(CborValue::as_tstr)
+        .is_none()
+    {
+        report.push_error(
+            PFCP_R9_CATALOG_SIGNATURE,
+            "catalog declaredAt is missing or not text",
+        );
+        return;
+    }
+    let Some(signature) = root.get("signature").and_then(CborValue::as_bstr) else {
+        report.push_error(
+            PFCP_R9_CATALOG_SIGNATURE,
+            "catalog signature is missing or not a byte string",
+        );
+        return;
+    };
+    if !signer.starts_with("ed25519:") {
+        report.push_error(
+            PFCP_R9_CATALOG_SIGNATURE,
+            format!(
+                "catalog signer `{signer}` is not an inline ed25519 public key; CID signer resolution is not available in this bundle"
+            ),
+        );
+        return;
+    }
+
+    let mut unsigned = root.clone();
+    unsigned.remove("signature");
+    let unsigned_bytes = encode_cbor_value(&CborValue::Map(unsigned));
+    if !ed25519_verify_bytes(signer, signature, &unsigned_bytes) {
+        report.push_error(
+            PFCP_R9_CATALOG_SIGNATURE,
+            "catalog signature does not verify over the unsigned catalog body",
+        );
+    }
 }
 
 fn empty_report(path: &Path, file_cid: &str) -> ProofFileConformanceReport {

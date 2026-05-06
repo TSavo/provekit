@@ -1,5 +1,8 @@
 package com.provekit.realize;
 
+import java.nio.charset.StandardCharsets;
+
+import com.provekit.claimenvelope.Blake3;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,6 +43,11 @@ public class JavaNullBoundaryRealizerTest {
         assertTrue(output.transformedArtifactCid().startsWith("blake3-512:"));
         assertTrue(output.postLiftCid().startsWith("blake3-512:"));
         assertTrue(output.closureWitnessCid().startsWith("blake3-512:"));
+        assertEquals(
+            output.closureWitnessCid(),
+            Blake3.blake3_512(output.closureWitnessJson().getBytes(StandardCharsets.UTF_8))
+        );
+        assertTrue(output.toJson().contains("\"closureWitness\":{"));
     }
 
     @Test
@@ -82,5 +90,26 @@ public class JavaNullBoundaryRealizerTest {
         assertEquals("rejected", output.status());
         assertFalse(output.hasClosedInvariantEvidence(), "refusal must not look like closure evidence");
         assertNull(output.closureWitnessCid());
+    }
+
+    @Test
+    public void provekitNativeRefusesUnboundProofVariable() {
+        RealizerPlan plan = RealizerPlan.transform(
+            "blake3-512:gap",
+            "maybe_null(email)",
+            "non_null(email)",
+            "blake3-512:policy",
+            "java-provekit-native",
+            "lookup",
+            "email",
+            LAB_SOURCE
+        );
+
+        RealizerOutput output = new JavaNullBoundaryRealizer().realize(plan);
+
+        assertEquals("rejected", output.status());
+        assertFalse(output.hasClosedInvariantEvidence(), "unbound proof variable must not close");
+        assertNull(output.closureWitnessCid());
+        assertFalse(output.modifiedSource().contains("@Requires(\"email != null\")"));
     }
 }

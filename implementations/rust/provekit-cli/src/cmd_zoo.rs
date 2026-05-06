@@ -141,6 +141,13 @@ struct Dropper {
 }
 
 #[derive(Debug)]
+struct VerifiedDropperOutputCids {
+    transformed_artifact_cid: String,
+    post_lift_document_cid: String,
+    closure_witness_cid: String,
+}
+
+#[derive(Debug)]
 enum ZooError {
     Setup(String),
     Verify(String),
@@ -796,9 +803,11 @@ fn verify_dropper(
         ));
     }
 
-    let post_lift_ir = output
+    let post_lift_document = output
         .get("postLift")
-        .and_then(|post_lift| post_lift.get("ir"))
+        .ok_or_else(|| "dropper output missing postLift".to_string())?;
+    let post_lift_ir = post_lift_document
+        .get("ir")
         .ok_or_else(|| "dropper output missing postLift.ir".to_string())?;
     let expected_ir = read_json(specimen_dir.join(closure_ir_path))?;
     let post_lift_cid = proof_ir_cid(post_lift_ir)?;
@@ -808,9 +817,15 @@ fn verify_dropper(
             "dropper closure ProofIR CID mismatch: lifted {post_lift_cid}, expected {expected_ir_cid}"
         ));
     }
-    let transformed_artifact_cid = required_json_str(&output, "transformedArtifactCid")?;
-    let post_lift_document_cid = required_json_str(&output, "postLiftCid")?;
-    let closure_witness_cid = required_json_str(&output, "closureWitnessCid")?;
+    let output_cids = verify_dropper_output_cids(
+        &output,
+        modified_source,
+        post_lift_document,
+        &manifest.predicates,
+    )?;
+    let transformed_artifact_cid = output_cids.transformed_artifact_cid;
+    let post_lift_document_cid = output_cids.post_lift_document_cid;
+    let closure_witness_cid = output_cids.closure_witness_cid;
 
     let fix_receipt = read_json(specimen_dir.join(fix_receipt_path))?;
     if fix_receipt.get("kind").and_then(Value::as_str) != Some("FixReceipt") {
@@ -837,10 +852,10 @@ fn verify_dropper(
     require_receipt_field(
         &fix_receipt,
         "transformedArtifactCid",
-        transformed_artifact_cid,
+        &transformed_artifact_cid,
     )?;
-    require_receipt_field(&fix_receipt, "postLiftCid", post_lift_document_cid)?;
-    require_receipt_field(&fix_receipt, "closureWitnessCid", closure_witness_cid)?;
+    require_receipt_field(&fix_receipt, "postLiftCid", &post_lift_document_cid)?;
+    require_receipt_field(&fix_receipt, "closureWitnessCid", &closure_witness_cid)?;
     require_receipt_field(&fix_receipt, "closureProofIrCid", &post_lift_cid)?;
 
     let proof_plan_report = match &dropper.proof_plan_file {
@@ -1026,14 +1041,6 @@ fn verify_language_dropper_projection(
     }))
 }
 
-fn required_json_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
-    value
-        .get(field)
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| format!("dropper output missing {field}"))
-}
-
 fn json_pointer_str<'a>(value: &'a Value, pointer: &str) -> Option<&'a str> {
     value.pointer(pointer).and_then(Value::as_str)
 }
@@ -1063,6 +1070,83 @@ fn require_receipt_field(receipt: &Value, field: &str, expected: &str) -> Result
         ));
     }
     Ok(())
+}
+
+fn require_output_field(output: &Value, field: &str, expected: &str) -> Result<(), String> {
+    let actual = output.get(field).and_then(Value::as_str);
+    if actual != Some(expected) {
+        return Err(format!(
+            "dropper output {field} mismatch: expected recomputed {expected}, got {:?}",
+            actual
+        ));
+    }
+    Ok(())
+}
+
+fn verify_dropper_output_cids(
+    output: &Value,
+    modified_source: &str,
+    post_lift_document: &Value,
+    predicates: &Predicates,
+) -> Result<VerifiedDropperOutputCids, String> {
+    let transformed_artifact_cid =
+        provekit_canonicalizer::blake3_512_of(modified_source.as_bytes());
+    let post_lift_document_cid = json_document_cid(post_lift_document)?;
+    let gap_cid = provekit_canonicalizer::blake3_512_of(predicates.missing_edge.as_bytes());
+    let policy_cid = provekit_canonicalizer::blake3_512_of(b"bug-zoo-dropper-policy-v0");
+
+    require_output_field(output, "gapCid", &gap_cid)?;
+    require_output_field(output, "transformedArtifactCid", &transformed_artifact_cid)?;
+    require_output_field(output, "postLiftCid", &post_lift_document_cid)?;
+
+    let expected_closure_witness = closure_witness_body_value(
+        &gap_cid,
+        &policy_cid,
+        &post_lift_document_cid,
+        &predicates.boundary,
+        &predicates.sink,
+        &transformed_artifact_cid,
+    );
+    let closure_witness_document = output
+        .get("closureWitness")
+        .ok_or_else(|| "dropper output missing closureWitness".to_string())?;
+    if closure_witness_document != &expected_closure_witness {
+        return Err("dropper output closureWitness body mismatch".into());
+    }
+    let closure_witness_cid = json_document_cid(closure_witness_document)?;
+    require_output_field(output, "closureWitnessCid", &closure_witness_cid)?;
+
+    Ok(VerifiedDropperOutputCids {
+        transformed_artifact_cid,
+        post_lift_document_cid,
+        closure_witness_cid,
+    })
+}
+
+fn json_document_cid(value: &Value) -> Result<String, String> {
+    let bytes = serde_json::to_string(value)
+        .map_err(|e| format!("serialize JSON document for CID recomputation: {e}"))?;
+    Ok(provekit_canonicalizer::blake3_512_of(bytes.as_bytes()))
+}
+
+fn closure_witness_body_value(
+    gap_cid: &str,
+    policy_cid: &str,
+    post_lift_cid: &str,
+    source_predicate: &str,
+    target_predicate: &str,
+    transformed_artifact_cid: &str,
+) -> Value {
+    json!({
+        "kind": "TruthDischargeBodyClaim",
+        "claimKind": "closure",
+        "gapCid": gap_cid,
+        "policyCid": policy_cid,
+        "postLiftCid": post_lift_cid,
+        "sourcePredicate": source_predicate,
+        "targetPredicate": target_predicate,
+        "transformedArtifactCid": transformed_artifact_cid,
+    })
 }
 
 fn invoke_dropper_rpc(
@@ -1539,6 +1623,65 @@ wildSightings: []
             PathBuf::from("dropped/provekit-native/kit-rpc")
         );
         assert_eq!(realizer.argv, vec!["./run-java-realizer.sh"]);
+    }
+
+    #[test]
+    fn dropper_output_cids_must_be_derived_from_output_bodies() {
+        let predicates = Predicates {
+            boundary: "maybe_null(name)".into(),
+            sink: "non_null(name)".into(),
+            missing_edge: "maybe_null(name) => non_null(name)".into(),
+        };
+        let modified_source = "package zoo; final class UserDirectory {}";
+        let post_lift = json!({
+            "kind": "ir-document",
+            "ir": ["closed"],
+            "callEdges": [],
+            "diagnostics": [],
+        });
+        let transformed_artifact_cid =
+            provekit_canonicalizer::blake3_512_of(modified_source.as_bytes());
+        let post_lift_cid = json_document_cid(&post_lift).expect("post lift cid");
+        let gap_cid = provekit_canonicalizer::blake3_512_of(predicates.missing_edge.as_bytes());
+        let policy_cid = provekit_canonicalizer::blake3_512_of(b"bug-zoo-dropper-policy-v0");
+        let closure_witness = closure_witness_body_value(
+            &gap_cid,
+            &policy_cid,
+            &post_lift_cid,
+            &predicates.boundary,
+            &predicates.sink,
+            &transformed_artifact_cid,
+        );
+        let closure_witness_cid = json_document_cid(&closure_witness).expect("closure witness cid");
+        let output = json!({
+            "gapCid": gap_cid,
+            "transformedArtifactCid": transformed_artifact_cid,
+            "postLiftCid": post_lift_cid,
+            "closureWitnessCid": closure_witness_cid,
+            "closureWitness": closure_witness,
+        });
+
+        let verified =
+            verify_dropper_output_cids(&output, modified_source, &post_lift, &predicates)
+                .expect("derived output CIDs should verify");
+        assert_eq!(
+            verified.transformed_artifact_cid,
+            output["transformedArtifactCid"].as_str().unwrap()
+        );
+
+        let mut stale_artifact = output.clone();
+        stale_artifact["transformedArtifactCid"] = json!(format!("blake3-512:{}", "0".repeat(128)));
+        let err =
+            verify_dropper_output_cids(&stale_artifact, modified_source, &post_lift, &predicates)
+                .expect_err("stale artifact CID must be rejected");
+        assert!(err.contains("transformedArtifactCid mismatch"));
+
+        let mut stale_witness = output;
+        stale_witness["closureWitness"]["targetPredicate"] = json!("non_null(email)");
+        let err =
+            verify_dropper_output_cids(&stale_witness, modified_source, &post_lift, &predicates)
+                .expect_err("stale closure witness body must be rejected");
+        assert!(err.contains("closureWitness body mismatch"));
     }
 
     #[test]

@@ -13,6 +13,7 @@ public record RealizerOutput(
     String transformedArtifactCid,
     String postLiftCid,
     String closureWitnessCid,
+    String closureWitnessJson,
     String modifiedSource,
     String postLiftJson,
     List<String> diagnostics
@@ -23,6 +24,7 @@ public record RealizerOutput(
         String transformedArtifactCid,
         String postLiftCid,
         String closureWitnessCid,
+        String closureWitnessJson,
         String modifiedSource,
         String postLiftJson
     ) {
@@ -37,6 +39,7 @@ public record RealizerOutput(
             transformedArtifactCid,
             postLiftCid,
             closureWitnessCid,
+            closureWitnessJson,
             modifiedSource,
             postLiftJson,
             List.of()
@@ -51,6 +54,7 @@ public record RealizerOutput(
             "rejected",
             plan.planCid(),
             plan.gapCid(),
+            null,
             null,
             null,
             null,
@@ -73,6 +77,7 @@ public record RealizerOutput(
             null,
             null,
             null,
+            null,
             modifiedSource,
             "",
             List.of(reason)
@@ -87,6 +92,7 @@ public record RealizerOutput(
             && nonEmpty(transformedArtifactCid)
             && nonEmpty(postLiftCid)
             && nonEmpty(closureWitnessCid)
+            && nonEmpty(closureWitnessJson)
             && nonEmpty(modifiedSource)
             && nonEmpty(postLiftJson);
     }
@@ -103,6 +109,7 @@ public record RealizerOutput(
             + "\"transformedArtifactCid\":" + nullable(transformedArtifactCid) + ","
             + "\"postLiftCid\":" + nullable(postLiftCid) + ","
             + "\"closureWitnessCid\":" + nullable(closureWitnessCid) + ","
+            + "\"closureWitness\":" + (closureWitnessJson == null || closureWitnessJson.isEmpty() ? "null" : closureWitnessJson) + ","
             + "\"modifiedSource\":" + JsonUtil.quoted(modifiedSource) + ","
             + "\"postLift\":" + (postLiftJson == null || postLiftJson.isEmpty() ? "null" : postLiftJson) + ","
             + "\"diagnostics\":" + diagnosticsJson()

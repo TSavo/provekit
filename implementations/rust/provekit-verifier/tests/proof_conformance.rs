@@ -10,8 +10,12 @@ use std::path::PathBuf;
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_symbolic::serialize::formula_to_value;
 use provekit_ir_symbolic::{forall, gt, must, num, reset_collector, Int};
-use provekit_proof_envelope::{build_proof_envelope, Ed25519Seed, ProofEnvelopeInput};
-use provekit_verifier::proof_conformance::{validate_proof_file, PFCP_R1_FILENAME_CID};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
+use provekit_verifier::proof_conformance::{
+    validate_proof_file, PFCP_R1_FILENAME_CID, PFCP_R9_CATALOG_SIGNATURE,
+};
 
 fn make_unique_dir(suffix: &str) -> PathBuf {
     let base = std::env::temp_dir();
@@ -56,7 +60,7 @@ fn fixture_proof_bytes() -> (String, Vec<u8>) {
         binary_cid: None,
         metadata: None,
         members,
-        signer_cid: "blake3-512:signer".into(),
+        signer_cid: ed25519_pubkey_string(&signer_seed),
         signer_seed,
         declared_at: declared_at.into(),
     };
@@ -97,4 +101,59 @@ fn filename_cid_mismatch_reports_rule_1() {
         .iter()
         .any(|error| error.rule_id == PFCP_R1_FILENAME_CID));
     let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn unsigned_catalog_reports_catalog_signature_rule() {
+    let dir = make_unique_dir("unsigned-catalog");
+    let bytes = minimal_unsigned_catalog_bytes();
+    let cid = provekit_canonicalizer::blake3_512_of(&bytes);
+    let hex = cid.strip_prefix("blake3-512:").expect("cid prefix");
+    let path = dir.join(format!("{hex}.proof"));
+    fs::write(&path, bytes).expect("write proof");
+
+    let report = validate_proof_file(&path);
+
+    assert!(!report.ok(), "{report:#?}");
+    assert!(report
+        .errors
+        .iter()
+        .any(|error| error.rule_id == PFCP_R9_CATALOG_SIGNATURE));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn catalog_body_tamper_reports_catalog_signature_rule() {
+    let dir = make_unique_dir("catalog-tamper");
+    let (_cid, mut bytes) = fixture_proof_bytes();
+    let date_offset = bytes
+        .windows(b"2026".len())
+        .position(|window| window == b"2026")
+        .expect("fixture carries declaredAt");
+    bytes[date_offset + 3] = b'7';
+    let tampered_cid = provekit_canonicalizer::blake3_512_of(&bytes);
+    let hex = tampered_cid
+        .strip_prefix("blake3-512:")
+        .expect("cid prefix");
+    let path = dir.join(format!("{hex}.proof"));
+    fs::write(&path, bytes).expect("write proof");
+
+    let report = validate_proof_file(&path);
+
+    assert!(!report.ok(), "{report:#?}");
+    assert!(report
+        .errors
+        .iter()
+        .any(|error| error.rule_id == PFCP_R9_CATALOG_SIGNATURE));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+fn minimal_unsigned_catalog_bytes() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.push(0xa2);
+    bytes.extend_from_slice(&[0x64, b'k', b'i', b'n', b'd']);
+    bytes.extend_from_slice(&[0x67, b'c', b'a', b't', b'a', b'l', b'o', b'g']);
+    bytes.extend_from_slice(&[0x67, b'm', b'e', b'm', b'b', b'e', b'r', b's']);
+    bytes.push(0xa0);
+    bytes
 }

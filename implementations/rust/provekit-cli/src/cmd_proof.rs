@@ -472,10 +472,7 @@ fn mint_protocol_corpus(out_dir: &Path) -> Result<ProofProtocolCorpus, String> {
     let valid_path = write_cid_named_proof(out_dir, &valid.cid, &valid.bytes)?;
     let valid_name = file_name_string(&valid_path)?;
 
-    let invalid = build_fixture_proof(
-        "@provekit/proof-format/fixture/invalid-filename-cid",
-        0x72,
-    );
+    let invalid = build_fixture_proof("@provekit/proof-format/fixture/invalid-filename-cid", 0x72);
     let invalid_name = "invalid-filename-cid.proof";
     let invalid_path = out_dir.join(invalid_name);
     std::fs::write(&invalid_path, &invalid.bytes)
@@ -500,13 +497,22 @@ fn mint_protocol_corpus(out_dir: &Path) -> Result<ProofProtocolCorpus, String> {
         .map_err(|e| format!("serialize fixture manifest: {e}"))?;
     let mut metadata = BTreeMap::new();
     metadata.insert(PROOF_PROTOCOL_FIXTURES_METADATA_KEY.into(), manifest);
-    metadata.insert("provekit.proofProtocol.grammarCid".into(), DEFAULT_GRAMMAR_CID.into());
+    metadata.insert(
+        "provekit.proofProtocol.grammarCid".into(),
+        DEFAULT_GRAMMAR_CID.into(),
+    );
     metadata.insert(
         "provekit.proofProtocol.invariantSetCid".into(),
         DEFAULT_INVARIANT_SET_CID.into(),
     );
-    metadata.insert("provekit.proofProtocol.verifierCid".into(), DEFAULT_VERIFIER_CID.into());
-    metadata.insert("provekit.proofProtocol.policyCid".into(), "builtin:proof-format-v0".into());
+    metadata.insert(
+        "provekit.proofProtocol.verifierCid".into(),
+        DEFAULT_VERIFIER_CID.into(),
+    );
+    metadata.insert(
+        "provekit.proofProtocol.policyCid".into(),
+        "builtin:proof-format-v0".into(),
+    );
 
     let protocol = build_protocol_proof(metadata);
     let protocol_path = write_cid_named_proof(out_dir, &protocol.cid, &protocol.bytes)?;
@@ -532,14 +538,13 @@ struct BuiltProof {
 fn build_protocol_proof(metadata: BTreeMap<String, String>) -> BuiltProof {
     let signer_seed: Ed25519Seed = [0x70; 32];
     let signer_pubkey = ed25519_pubkey_string(&signer_seed);
-    let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
     let input = ProofEnvelopeInput {
         name: "@provekit/proof-format-protocol".into(),
         version: "0.1.0".into(),
         binary_cid: None,
         metadata: Some(metadata),
         members: BTreeMap::new(),
-        signer_cid,
+        signer_cid: signer_pubkey,
         signer_seed,
         declared_at: "2026-05-06T00:00:00.000Z".into(),
     };
@@ -572,14 +577,13 @@ fn build_fixture_proof(name: &str, seed_byte: u8) -> BuiltProof {
     let mut members = BTreeMap::new();
     members.insert(member.cid, member.canonical_bytes);
     let signer_pubkey = ed25519_pubkey_string(&signer_seed);
-    let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
     let input = ProofEnvelopeInput {
         name: name.into(),
         version: "0.1.0".into(),
         binary_cid: None,
         metadata: None,
         members,
-        signer_cid,
+        signer_cid: signer_pubkey,
         signer_seed,
         declared_at: declared_at.into(),
     };
