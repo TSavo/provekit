@@ -140,6 +140,13 @@ pub enum Effect {
         /// Sorted lexicographically for JCS byte-determinism.
         formals: Vec<String>,
     },
+    /// Calls `drop_in_place`. Drops can run user-defined `Drop::drop`,
+    /// allocate, panic, or perform arbitrary side effects. The
+    /// substrate refuses to compose a contract carrying this effect
+    /// without an explicit discharge memento (or the callee's own
+    /// lifted contract, once the drop function body is liftable).
+    /// `name` is the name of the type being dropped.
+    Drop { name: String },
 }
 
 /// Operation class for `Effect::AtomicAccess`.
@@ -270,10 +277,15 @@ impl Effect {
                     formals.iter().map(|f| Value::string(f.clone())).collect();
                 Value::object([
                     ("kind", Value::string("possible_aliasing")),
-                    ("formals", Value::array(formals_arr)),
-                ])
-            }
-        }
+("formals", Value::array(formals_arr)),
+              ])
+              }
+            Effect::Drop { name } => Value::object([
+                ("kind", Value::string("drop")),
+                ("name", Value::string(name.clone())),
+            ]),
+          }
+      }
     }
 
     fn sort_key(&self) -> String {
@@ -305,10 +317,12 @@ impl Effect {
                 kind.as_str(),
                 ordering.as_deref().unwrap_or("")
             ),
-            Effect::PossibleAliasing { formals } => {
-                format!("13:possible_aliasing:{}", formals.join(","))
-            }
-        }
+Effect::PossibleAliasing { formals } => {
+                  format!("13:possible_aliasing:{}", formals.join(","))
+              }
+            Effect::Drop { name } => format!("14:drop:{}", name),
+          }
+      }
     }
 }
 
@@ -660,8 +674,9 @@ pub enum OpacityError {
     /// An `Effect::PossibleAliasing` is present but the pair (formal_a, formal_b)
     /// has no matching AliasingMemento in auto_minted_mementos.
     AliasingNotDischarged { formal_a: String, formal_b: String },
-    /// An `Effect::Drop { name }` is present but no lifted drop contract
-    /// is in the pool.
+    /// An `Effect::Drop { name }` is present but no lifted drop
+    /// function contract for that type is in the pool.
+    DropNotDischarged { name: String },
     DropNotDischarged { name: String },
     /// An `Effect::PinnedReference { target }` is present but no
     /// `PinInvariantMemento` with matching `pinnedTarget` is in the pool.
@@ -727,6 +742,12 @@ impl EffectSet {
                 Effect::UnresolvedCall { name } => {
                     return Err(OpacityError::UnresolvedCallNotDischarged { name: name.clone() });
                 }
+                Effect::Drop { name } => {
+                    if !pool.has_drop_contract(name) {
+                        return Err(OpacityError::DropNotDischarged { name: name.clone() });
+                    }
+                }
+                // PossibleAliasing is discharged by auto_minted_mementos in the
                 // PossibleAliasing is discharged by auto_minted_mementos in the
                 // contract bundle; the substrate verifier checks these before
                 // composition. No pool check at this level.
@@ -889,23 +910,6 @@ pub fn compose_function_contracts_checked(
     outer.check_aliasing_discharged()?;
     inner.check_aliasing_discharged()?;
 
-    // Pool-based fallback: if auto_minted does not cover a pair,
-    // check the external pool for AliasingMemento discharge.
-    for effect in outer.effects.effects.iter().chain(inner.effects.effects.iter()) {
-        if let Effect::PossibleAliasing { formals } = effect {
-            if formals.len() < 2 { continue; }
-            for i in 0..formals.len() {
-                for j in (i+1)..formals.len() {
-                    let a = &formals[i];
-                    let b = &formals[j];
-                    if !pool.has_aliasing_memento(a, b) {
-                        return Ok(None);
-                    }
-                }
-            }
-        }
-    }
-
     // Phase 2: check for unconditionally-blocking effects. After opacity,
     // aliasing, and pin-invariant discharge, only Reads/Writes/Io/Unsafe/Panics
     // and the remaining structural type-boundary effects can still block.
@@ -916,13 +920,15 @@ pub fn compose_function_contracts_checked(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
-        | Effect::PossibleAliasing { .. } | Effect::PinnedReference { .. }
+        | Effect::PossibleAliasing { .. }
+        | Effect::Drop { .. } | Effect::PinnedReference { .. }
     ));
     let inner_non_opacity_pure = inner.effects.effects.iter().all(|e| matches!(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
         | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
-        | Effect::PossibleAliasing { .. } | Effect::PinnedReference { .. }
+        | Effect::PossibleAliasing { .. }
+        | Effect::Drop { .. } | Effect::PinnedReference { .. }
     ));
     if !outer_non_opacity_pure || !inner_non_opacity_pure {
         return Ok(None);
