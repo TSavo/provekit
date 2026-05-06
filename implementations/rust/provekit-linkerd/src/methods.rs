@@ -273,7 +273,7 @@ async fn lift_source(
                         .to_string(),
                 )
             })?;
-            spawn_kit_lifter(&binary, &[], file, source, "go-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "go-kit").await
         }
 
         "csharp" => {
@@ -284,7 +284,7 @@ async fn lift_source(
                         .to_string(),
                 )
             })?;
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "csharp-kit")
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "csharp-kit").await
         }
 
         "ruby" => {
@@ -295,7 +295,7 @@ async fn lift_source(
                         .to_string(),
                 )
             })?;
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "ruby-kit")
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "ruby-kit").await
         }
 
         "zig" => {
@@ -308,7 +308,7 @@ async fn lift_source(
             })?;
             // Note: zig lsp binary reads stdin directly (no --rpc flag needed).
             // callEdges may be omitted from its response; treated as empty.
-            spawn_kit_lifter(&binary, &[], file, source, "zig-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "zig-kit").await
         }
 
         "python" => Err(LiftError::LifterUnavailable(
@@ -329,7 +329,7 @@ async fn lift_source(
                         .to_string(),
                 )
             })?;
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "java-kit")
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "java-kit").await
         }
 
         "swift" => {
@@ -342,7 +342,7 @@ async fn lift_source(
                 )
             })?;
             // swift lsp binary reads stdin directly (no --rpc flag needed).
-            spawn_kit_lifter(&binary, &[], file, source, "swift-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "swift-kit").await
         }
 
         "ts" => {
@@ -356,7 +356,7 @@ async fn lift_source(
                 )
             })?;
             // ts lsp binary is a node CJS shim; reads stdin directly (no --rpc flag needed).
-            spawn_kit_lifter(&binary, &[], file, source, "ts-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "ts-kit").await
         }
 
         "cpp" => {
@@ -370,7 +370,7 @@ async fn lift_source(
                 )
             })?;
             // cpp lsp binary reads stdin directly (no --rpc flag needed).
-            spawn_kit_lifter(&binary, &[], file, source, "cpp-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "cpp-kit").await
         }
 
         "c" => {
@@ -384,7 +384,7 @@ async fn lift_source(
                 )
             })?;
             // c lsp binary requires --rpc flag (errors without it).
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "c-kit")
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "c-kit").await
         }
 
         other => Err(LiftError::KitNotInManifest(format!(
@@ -462,107 +462,124 @@ fn find_binary(name: &str) -> Option<String> {
 /// Missing fields:
 ///   - `callEdges` absent from response: treated as empty (zig case).
 ///   - `declarations` absent: treated as empty.
-fn spawn_kit_lifter(
+async fn spawn_kit_lifter(
     binary: &str,
     args: &[&str],
     file: &str,
     source: &str,
     kit_label: &str,
 ) -> Result<(Vec<LinkerContract>, Vec<LinkerCallEdge>), LiftError> {
-    let mut child = Command::new(binary)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| {
-            LiftError::LifterUnavailable(format!("spawn {binary}: {e}"))
+    // Owned copies for the 'static closure required by spawn_blocking.
+    let binary = binary.to_string();
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let file = file.to_string();
+    let source = source.to_string();
+    let kit_label = kit_label.to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let mut child = Command::new(&binary)
+            .args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| {
+                LiftError::LifterUnavailable(format!("spawn {binary}: {e}"))
+            })?;
+
+        let mut stdin = child.stdin.take().ok_or_else(|| {
+            LiftError::LifterUnavailable("no stdin handle".to_string())
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            LiftError::LifterUnavailable("no stdout handle".to_string())
+        })?;
+        let mut reader = BufReader::new(stdout);
+
+        // 1. Send initialize.
+        let init_req = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+        });
+        let init_line = serde_json::to_string(&init_req).unwrap() + "\n";
+        stdin.write_all(init_line.as_bytes()).map_err(|e| {
+            LiftError::LifterUnavailable(format!("write initialize to {binary}: {e}"))
         })?;
 
-    let mut stdin = child.stdin.take().ok_or_else(|| {
-        LiftError::LifterUnavailable("no stdin handle".to_string())
-    })?;
-    let stdout = child.stdout.take().ok_or_else(|| {
-        LiftError::LifterUnavailable("no stdout handle".to_string())
-    })?;
-    let mut reader = BufReader::new(stdout);
+        // 2. Read initialize response (discard).
+        let mut init_resp = String::new();
+        reader.read_line(&mut init_resp).map_err(|e| {
+            LiftError::LifterUnavailable(format!("read initialize from {binary}: {e}"))
+        })?;
 
-    // 1. Send initialize.
-    let init_req = serde_json::json!({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
-    });
-    let init_line = serde_json::to_string(&init_req).unwrap() + "\n";
-    stdin.write_all(init_line.as_bytes()).map_err(|e| {
-        LiftError::LifterUnavailable(format!("write initialize to {binary}: {e}"))
-    })?;
+        // 3. Send parse request.
+        let parse_req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "parse",
+            "params": { "path": file, "source": source }
+        });
+        let parse_line = serde_json::to_string(&parse_req).unwrap() + "\n";
+        stdin.write_all(parse_line.as_bytes()).map_err(|e| {
+            LiftError::LifterUnavailable(format!("write parse to {binary}: {e}"))
+        })?;
 
-    // 2. Read initialize response (discard).
-    let mut init_resp = String::new();
-    reader.read_line(&mut init_resp).map_err(|e| {
-        LiftError::LifterUnavailable(format!("read initialize from {binary}: {e}"))
-    })?;
+        // 4. Read parse response.
+        let mut resp_line = String::new();
+        reader.read_line(&mut resp_line).map_err(|e| {
+            LiftError::LifterUnavailable(format!("read parse from {binary}: {e}"))
+        })?;
 
-    // 3. Send parse request.
-    let parse_req = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "parse",
-        "params": { "path": file, "source": source }
-    });
-    let parse_line = serde_json::to_string(&parse_req).unwrap() + "\n";
-    stdin.write_all(parse_line.as_bytes()).map_err(|e| {
-        LiftError::LifterUnavailable(format!("write parse to {binary}: {e}"))
-    })?;
+        // Send shutdown and drop stdin to let the subprocess exit cleanly.
+        let shutdown_req = serde_json::json!({
+            "jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": {}
+        });
+        let shutdown_line = serde_json::to_string(&shutdown_req).unwrap() + "\n";
+        let _ = stdin.write_all(shutdown_line.as_bytes());
+        drop(stdin);
+        let _ = child.wait();
 
-    // 4. Read parse response.
-    let mut resp_line = String::new();
-    reader.read_line(&mut resp_line).map_err(|e| {
-        LiftError::LifterUnavailable(format!("read parse from {binary}: {e}"))
-    })?;
+        // 5. Parse response.
+        let resp: Json = serde_json::from_str(resp_line.trim()).map_err(|e| {
+            LiftError::LifterUnavailable(format!(
+                "parse JSON from {binary}: {e}; raw: {resp_line}"
+            ))
+        })?;
 
-    // Send shutdown and drop stdin to let the subprocess exit cleanly.
-    let shutdown_req = serde_json::json!({
-        "jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": {}
-    });
-    let shutdown_line = serde_json::to_string(&shutdown_req).unwrap() + "\n";
-    let _ = stdin.write_all(shutdown_line.as_bytes());
-    drop(stdin);
-    let _ = child.wait();
+        if let Some(err) = resp.get("error") {
+            return Err(LiftError::LifterUnavailable(format!(
+                "{binary} returned RPC error: {err}"
+            )));
+        }
 
-    // 5. Parse response.
-    let resp: Json = serde_json::from_str(resp_line.trim()).map_err(|e| {
-        LiftError::LifterUnavailable(format!(
-            "parse JSON from {binary}: {e}; raw: {resp_line}"
-        ))
-    })?;
+        let result = resp.get("result").ok_or_else(|| {
+            LiftError::LifterUnavailable(format!(
+                "{binary} response missing 'result' field"
+            ))
+        })?;
 
-    if let Some(err) = resp.get("error") {
-        return Err(LiftError::LifterUnavailable(format!(
-            "{binary} returned RPC error: {err}"
-        )));
+        // 6. Extract declarations array.
+        let decls_json = extract_array_field(result, "declarations");
+        let contracts = decls_json
+            .iter()
+            .filter_map(|decl| parse_declaration_to_contract(decl, &kit_label))
+            .collect::<Vec<_>>();
+
+        // 7. Extract callEdges array (may be absent for some kits, e.g. zig).
+        let edges_json = extract_array_field(result, "callEdges");
+        let call_edges = edges_json
+            .iter()
+            .filter_map(parse_call_edge)
+            .collect::<Vec<_>>();
+
+        Ok((contracts, call_edges))
+    })
+    .await;
+
+    match result {
+        Ok(inner) => inner,
+        Err(join_err) => Err(LiftError::LifterUnavailable(format!(
+            "spawn_blocking error: {join_err}"
+        ))),
     }
-
-    let result = resp.get("result").ok_or_else(|| {
-        LiftError::LifterUnavailable(format!(
-            "{binary} response missing 'result' field"
-        ))
-    })?;
-
-    // 6. Extract declarations array.
-    let decls_json = extract_array_field(result, "declarations");
-    let contracts = decls_json
-        .iter()
-        .filter_map(|decl| parse_declaration_to_contract(decl, kit_label))
-        .collect::<Vec<_>>();
-
-    // 7. Extract callEdges array (may be absent for some kits, e.g. zig).
-    let edges_json = extract_array_field(result, "callEdges");
-    let call_edges = edges_json
-        .iter()
-        .filter_map(parse_call_edge)
-        .collect::<Vec<_>>();
-
-    Ok((contracts, call_edges))
 }
 
 /// Extract a JSON array from a field in a result object.
