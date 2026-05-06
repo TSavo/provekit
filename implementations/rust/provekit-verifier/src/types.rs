@@ -829,4 +829,32 @@ mod tests {
         let view = pool.lookup_pin_invariant(fc_b, "pin");
         assert!(view.is_none(), "cross-function-CID lookup must return None");
     }
+
+    #[test]
+    fn pin_invariant_v11_flat_shape_roundtrip() {
+        // v1.1 flat shape: no envelope wrapper, fields live in evidence.body.
+        // This exercises the fallback path in memento_body_field that reads
+        // from /evidence/body instead of /header and /metadata.
+        let mut pool = MementoPool::default();
+        let fc = "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let m_cid = "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let flat_memento = json!({
+            "cid": m_cid,
+            "evidence": {
+                "kind": "pin-invariant",
+                "body": {
+                    "functionCid": fc,
+                    "pinnedTarget": "pin",
+                    "invariant": "state >= 0"
+                }
+            }
+        });
+        pool.insert(m_cid.to_string(), flat_memento);
+        let view = pool.lookup_pin_invariant(fc, "pin");
+        assert!(view.is_some(), "v1.1 flat memento must be found via lookup");
+        let v = view.unwrap();
+        assert_eq!(v.pinned_target, "pin");
+        assert_eq!(v.invariant, "state >= 0");
+        assert_eq!(v.function_cid, fc);
+    }
 }

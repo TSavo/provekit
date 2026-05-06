@@ -26,6 +26,10 @@ module Provekit
     DependentSort = Struct.new(:name, :index_var, :index_sort) do
     end
 
+    RegionSort = Struct.new(:name) do
+      def kind = "region"
+    end
+
     Sort = PrimitiveSort
 
     # ── Term ────────────────────────────────────────────────────
@@ -194,6 +198,8 @@ module Provekit
           %({"kind":"function","args":#{args_json},"return":#{encode(sort.return_)}})
         when DependentSort
           %({"kind":"dependent","name":#{emit_string(sort.name)},"indexVar":#{emit_string(sort.index_var)},"indexSort":#{emit_sort(sort.index_sort)}})
+        when RegionSort
+          %({"kind":"region","name":#{emit_string(sort.name)}})
         else
           raise "unknown sort: #{sort.class}"
         end

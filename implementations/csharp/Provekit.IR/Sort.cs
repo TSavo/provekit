@@ -10,6 +10,7 @@ public abstract record Sort
     public sealed record Primitive(string Name) : Sort;
     public sealed record Function(Sort[] Args, Sort Return) : Sort;
     public sealed record Dependent(string Name, string IndexVar, Sort IndexSort) : Sort;
+    public sealed record RegionSort(string Name) : Sort;
 
     public static Sort Int => new Primitive("Int");
     public static Sort Real => new Primitive("Real");
