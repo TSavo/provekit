@@ -77,9 +77,8 @@ export class SolverPool {
   }
 
   async shutdown(): Promise<void> {
-    for (const worker of this.available) {
-      await this.killWorker(worker);
-    }
+    // Kill all available workers
+    await Promise.all(this.available.map((w) => this.killWorker(w)));
     this.available = [];
     this.initialized = false;
   }

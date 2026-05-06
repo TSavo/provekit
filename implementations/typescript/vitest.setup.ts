@@ -15,4 +15,6 @@ export async function setup(): Promise<void> {
 
 export async function teardown(): Promise<void> {
   await shutdownGlobalPool();
+  // Give process shutdown a moment to complete
+  await new Promise((resolve) => setTimeout(resolve, 100));
 }
