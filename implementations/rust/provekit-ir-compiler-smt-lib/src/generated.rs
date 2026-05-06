@@ -208,8 +208,26 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
     let mut free_vars = BTreeMap::new();
     let bound = BTreeSet::new();
     collect_free_vars_formula(formula, &mut free_vars, &bound);
+
+    // Check whether the formula references Outlives — if so, inject the
+    // kernel axioms (per protocol/specs/2026-05-05-outlives-kernel-axioms.md §2).
+    let has_outlives = has_outlives_predicate(formula);
+
     let mut preamble = String::new();
     preamble.push_str("(set-logic ALL)\n");
+    if has_outlives {
+        // Declare the Region sort and Outlives predicate.
+        preamble.push_str("(declare-sort Region 0)\n");
+        preamble.push_str("(declare-fun Outlives (Region Region) Bool)\n");
+        // Kernel axiom 1: reflexivity — Outlives(r, r) always holds.
+        preamble.push_str("(assert (forall ((r Region)) (Outlives r r)))\n");
+        // Kernel axiom 2: transitivity — Outlives(r1, r2) ∧ Outlives(r2, r3) → Outlives(r1, r3).
+        preamble.push_str("(assert (forall ((r1 Region) (r2 Region) (r3 Region)) (=> (and (Outlives r1 r2) (Outlives r2 r3)) (Outlives r1 r3))))\n");
+        // Kernel axiom 3: 'static top element — Outlives(r, 'static) for every region r.
+        // 'static is encoded as a nullary function returning Region.
+        preamble.push_str("(declare-fun static_region () Region)\n");
+        preamble.push_str("(assert (forall ((r Region)) (Outlives r static_region)))\n");
+    }
     for (name, sort) in free_vars.iter() {
         preamble.push_str(&format!("(declare-const {} {})\n", name, sort));
     }
@@ -217,4 +235,20 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
     let free_vars_vec = free_vars.into_iter().map(|(name, sort)| FreeVar { name, sort });
     let free_vars_vec = free_vars_vec.collect();
     return CompiledFormula { preamble, body, free_vars: free_vars_vec };
+}
+
+/// Recursively check whether a formula tree references the `Outlives`
+/// atomic predicate.
+fn has_outlives_predicate(formula: &Formula) -> bool {
+    match formula {
+        Formula::Atomic { name, .. } => name == "Outlives",
+        Formula::And { operands } | Formula::Or { operands } | Formula::Implies { operands } => {
+            operands.iter().any(|o| has_outlives_predicate(o))
+        }
+        Formula::Not { operands } => operands.iter().any(|o| has_outlives_predicate(o)),
+        Formula::Forall { body, .. } | Formula::Exists { body, .. } => {
+            has_outlives_predicate(body)
+        }
+        Formula::Choice { body, .. } => has_outlives_predicate(body),
+    }
 }
