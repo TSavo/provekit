@@ -142,6 +142,7 @@ public class LspDaemonProtocolTests
             throw new Exception("Process did not exit within 15000ms");
         }
         var output = await outputTask;
+        await stderrDrain; // drain stderr to avoid unobserved exception
 
         Assert.Equal(0, proc.ExitCode);
 
