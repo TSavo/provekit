@@ -29,11 +29,13 @@ mod cmd_lift;
 mod cmd_link;
 mod cmd_mint;
 mod cmd_must;
+mod cmd_proof;
 mod cmd_prove;
 mod cmd_search;
 mod cmd_verify_protocol;
 mod cmd_version;
 mod cmd_witness;
+mod cmd_zoo;
 mod project_config;
 mod prompts;
 mod protocol;
@@ -75,6 +77,8 @@ pub struct OutputFlags {
 enum Cmd {
     /// Run the six-stage verifier: load proofs, enumerate callsites, solve obligations, report.
     Prove(ProveArgs),
+    /// Work with .proof artifacts: hash, inspect, check conformance.
+    Proof(cmd_proof::ProofArgs),
     /// Same as `prove`. Reserved for a future split.
     Verify(ProveArgs),
     /// Look up a formula by content. Parses an IR-JSON formula file, hashes it, reports the CID.
@@ -113,6 +117,8 @@ enum Cmd {
     /// Linker pass: derive bridges from (contracts ∪ call-edges), emit LinkBundle.
     /// Per spec protocol/specs/2026-05-03-bridge-linkage-protocol.md R2-R5.
     Link(LinkArgs),
+    /// Run Bug Zoo specimens: host check, lift exposures, compare boundary ProofIR.
+    Zoo(cmd_zoo::ZooArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -275,6 +281,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let code = match cli.cmd {
         Cmd::Prove(a) | Cmd::Verify(a) => cmd_prove::run(a),
+        Cmd::Proof(a) => cmd_proof::run(a),
         Cmd::Ask(a) => cmd_ask::run(a),
         Cmd::Search(a) => cmd_search::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
@@ -291,6 +298,7 @@ fn main() -> ExitCode {
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
         Cmd::Link(a) => cmd_link::run(a),
+        Cmd::Zoo(a) => cmd_zoo::run(a),
     };
     ExitCode::from(code)
 }

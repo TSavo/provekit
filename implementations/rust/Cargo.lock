@@ -1607,6 +1607,7 @@ dependencies = [
  "provekit-verifier",
  "serde",
  "serde_json",
+ "serde_yaml",
  "serial_test",
  "tempfile",
  "thiserror",

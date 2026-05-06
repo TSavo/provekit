@@ -21,6 +21,7 @@
         <module>provekit-java-self-contracts</module>
         <module>provekit-lift-java-core</module>
         <module>provekit-lift-java-bean-validation</module>
+        <module>provekit-lift-java-provekit-native</module>
         <module>provekit-lift-java-jml</module>
         <module>provekit-lift-java-cofoja</module>
         <module>provekit-lift-java-spring-web</module>
@@ -51,4 +52,27 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>targeted-test-reactor</id>
+            <activation>
+                <property>
+                    <name>test</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.5.4</version>
+                        <configuration>
+                            <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
