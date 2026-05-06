@@ -1,0 +1,9 @@
+{
+  "status": "closed",
+  "missingEdge": "maybe_null(name) => non_null(name)",
+  "mode": "transform",
+  "surface": "java-provekit-native",
+  "targetSymbol": "lookup",
+  "proofVar": "name",
+  "invariant": "closed output requires transformed artifact CID, post-lift CID, and closure witness CID"
+}

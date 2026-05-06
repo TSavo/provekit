@@ -14,3 +14,5 @@ The exposed bug is the missing edge from a caller that may provide null to a sin
 ```text
 maybe_null(name) => non_null(name)
 ```
+
+The dropped variant is not the historical fix. It is the Java ORP realizer emitting a native edge-closing shape, then being accepted only after the Java lifter sees the resulting `neq(name, null)` boundary.

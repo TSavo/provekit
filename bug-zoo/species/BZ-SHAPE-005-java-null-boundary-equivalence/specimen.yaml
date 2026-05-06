@@ -56,5 +56,15 @@ expectations:
 exposure:
   satWitnessFile: exposed/sat-witness.json
 dropper:
-  available: false
+  available: true
+  surface: java-provekit-native
+  source: lab/library/src/main/java/zoo/UserDirectory.java
+  targetSymbol: lookup
+  proofVar: name
+  realizerRpc:
+    cwd: dropped/provekit-native/kit-rpc
+    argv: ["./run-java-realizer.sh"]
+  outputSource: dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java
+  closureProofIrFile: dropped/provekit-native/closure.proofir.json
+  verifyOutputFile: dropped/provekit-native/verify-output.json
 wildSightings: []
