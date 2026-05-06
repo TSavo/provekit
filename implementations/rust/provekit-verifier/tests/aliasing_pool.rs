@@ -35,18 +35,9 @@ fn aliasing_memento_pool_insert_and_query() {
     let memento = make_aliasing_memento("x", "y", "Disjoint");
     let cid = blake3_cid("test");
     pool.insert(cid.clone(), memento);
-    assert!(
-        pool.has_aliasing_memento("x", "y"),
-        "pool must find aliasing memento for (x, y) "
-    );
-    assert!(
-        pool.has_aliasing_memento("y", "x"),
-        "pool must find aliasing memento for (y, x) — order-independent lookup "
-    );
-    assert!(
-        pool.has_aliasing_memento("x", "y"),
-        "pool must find aliasing memento for (x, y) — idempotent "
-    );
+    assert!(pool.has_aliasing_memento("x", "y"), "pool must find aliasing memento for (x, y) ");
+    assert!(pool.has_aliasing_memento("y", "x"), "pool must find aliasing memento for (y, x) — order-independent lookup ");
+    assert!(pool.has_aliasing_memento("x", "y"), "pool must find aliasing memento for (x, y) — idempotent ");
 }
 
 #[test]

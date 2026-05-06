@@ -20,7 +20,7 @@ use serde::Serialize;
 /// * v1.1 flat:    `evidence.kind`
 pub fn memento_kind(envelope: &Json) -> Option<&str> {
     if envelope.get("envelope").is_some() {
-        envelope.pointer("/header/kind").and_then(|v| v.as_str())
+        envelope.pointer("/envelope/header/kind").and_then(|v| v.as_str())
     } else {
         envelope.pointer("/evidence/kind").and_then(|v| v.as_str())
     }
@@ -58,9 +58,9 @@ pub fn memento_body(envelope: &Json) -> Option<&Json> {
 pub fn memento_body_field<'a>(envelope: &'a Json, field: &str) -> Option<&'a Json> {
     if envelope.get("envelope").is_some() {
         envelope
-            .pointer("/header")
+            .pointer("/envelope/header")
             .and_then(|h| h.get(field))
-            .or_else(|| envelope.pointer("/metadata").and_then(|m| m.get(field)))
+            .or_else(|| envelope.pointer("/envelope/metadata").and_then(|m| m.get(field)))
     } else {
         envelope
             .pointer("/evidence/body")
@@ -361,7 +361,7 @@ impl MementoPool {
                 }
             }
             Some("aliasing-memento") => {
-                // header.formalA and header.formalB (v1.2) or evidence.body.formalA/formalB (v1.1)
+                // header.formal_a and header.formal_b (v1.2) or evidence.body.formal_a/formal_b (v1.1)
                 // Index by the sorted (formal_a, formal_b) pair
                 if let Some(env) = self.mementos.get(&memento_cid) {
                     if let (Some(formal_a), Some(formal_b)) = (
