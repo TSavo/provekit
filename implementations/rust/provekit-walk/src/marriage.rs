@@ -234,10 +234,10 @@ fn compare_layers(
 ///
 /// TODO(#401): once Sort::Region lands, extend this to detect
 /// Region-kinded terms regardless of predicate name prefix.
-fn classify_extras(extras: &[IrFormula]) -> LlbcExtraCategory {
+pub fn classify_extras(extras: &[IrFormula]) -> LlbcExtraCategory {
     for formula in extras {
         if let IrFormula::Atomic { name, .. } = formula {
-            if name.starts_with("outlives") {
+            if name.to_lowercase().starts_with("outlives") {
                 return LlbcExtraCategory::LifetimeRelative;
             }
         }
@@ -793,7 +793,9 @@ mod tests {
             fn_name: "stub_lifetime".to_string(),
             formals: vec![],
             formal_sorts: vec![],
+            formal_regions: vec![],
             return_sort: Sort::Primitive { name: "Unit".to_string() },
+            return_region: None,
             body_cid: None,
             effects: EffectSet::empty(),
             locus: Locus::unknown(),

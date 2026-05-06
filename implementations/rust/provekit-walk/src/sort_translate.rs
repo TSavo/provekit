@@ -531,6 +531,83 @@ fn extract_type_decl_name(td: &serde_json::Value) -> Option<String> {
     None
 }
 
+// ---- Region extraction from Charon Ty ----
+
+/// Extract the region name from a Charon `Ty` value. Returns `Some(name)`
+/// when the outermost Ty is a `Ref` or `RawPtr` carrying a region, and
+/// `None` for all other types (primitives, Adts, slices, etc.).
+///
+/// The region in Charon's JSON may appear in several shapes depending
+/// on the Charon version and the kind of region:
+///
+/// ```text
+///   {"Body": N}              — body-bound region (implicit lifetime)
+///   {"Bound": {"region_id": N, "var_id": M}} — generic-bound region
+///   {"Var": "'a"}            — named region variable
+///   {"Var": {"name": "'a"}}  — alternative named shape
+///   {"Static": true}         — 'static lifetime
+/// ```
+///
+/// Body/Bound regions are resolved to their generic name (from the
+/// `generics.regions` array) by the caller via a lookup map, not here.
+/// This function returns the region JSON value so the lifter can
+/// produce a descriptive default like `'rN` from the region index.
+///
+/// Caller should pass `region_map: &HashMap<u32, String>` to resolve
+/// Body/Bound ids to source names.
+pub fn extract_region_name(
+    ty: &serde_json::Value,
+    region_map: &std::collections::HashMap<u32, String>,
+) -> Option<String> {
+    let inner = ty.get("Untagged")?;
+
+    // Ref: [region, inner_ty, mutability]
+    if let Some(ref_arr) = inner.get("Ref").and_then(|v| v.as_array()) {
+        if let Some(region) = ref_arr.first() {
+            return resolve_region_json(region, region_map);
+        }
+    }
+
+    // RawPtr: [inner_ty, mutability] — RawPtr doesn't carry a region
+    // in the JSON (the pointee does, but it's not at this level).
+
+    None
+}
+
+pub fn resolve_region_json(
+    region: &serde_json::Value,
+    region_map: &std::collections::HashMap<u32, String>,
+) -> Option<String> {
+    // Static
+    if region.get("Static").and_then(|v| v.as_bool()) == Some(true) {
+        return Some("'static".to_string());
+    }
+
+    // Var: either a bare string "'a" or an object {"name": "'a"}
+    if let Some(var_str) = region.get("Var").and_then(|v| v.as_str()) {
+        return Some(var_str.to_string());
+    }
+    if let Some(var_obj) = region.get("Var") {
+        if let Some(name) = var_obj.get("name").and_then(|v| v.as_str()) {
+            return Some(name.to_string());
+        }
+    }
+
+    // Bound: {"region_id": N, "var_id": M}
+    if let Some(bound) = region.get("Bound") {
+        let rid = bound.get("region_id").and_then(|v| v.as_u64())? as u32;
+        return region_map.get(&rid).cloned().or_else(|| Some(format!("'r{}", rid)));
+    }
+
+    // Body: N (body-bound region, De Bruijn-like index)
+    if let Some(body_id) = region.get("Body").and_then(|v| v.as_u64()) {
+        let id = body_id as u32;
+        return region_map.get(&id).cloned().or_else(|| Some(format!("'r{}", id)));
+    }
+
+    None
+}
+
 // ---- Tests ----
 
 #[cfg(test)]

@@ -193,7 +193,7 @@ impl AliasingStatus {
 impl AliasingMemento {
     pub fn to_jcs_value(&self) -> Arc<Value> {
         Value::object([
-            ("kind", Value::string("AliasingMemento")),
+            ("kind", Value::string("aliasing-memento")),
             ("formal_a", Value::string(self.formal_a.clone())),
             ("formal_b", Value::string(self.formal_b.clone())),
             ("status", Value::string(self.status.as_str())),
@@ -338,7 +338,9 @@ pub struct FunctionContractMemento {
     pub fn_name: String,
     pub formals: Vec<String>,
     pub formal_sorts: Vec<Sort>,
+    pub formal_regions: Vec<Option<String>>,
     pub return_sort: Sort,
+    pub return_region: Option<String>,
     pub pre: IrFormula,
     pub post: IrFormula,
     pub body_cid: Option<String>,
@@ -375,6 +377,37 @@ impl FunctionContractMemento {
             .rev()
             .collect();
         format!("result__{}", tail)
+    }
+
+    /// Check that every `Effect::PossibleAliasing` pair of formals has a
+    /// matching AliasingMemento in `auto_minted_mementos`. Returns
+    /// `Ok(())` if aliasing is fully discharged or no PossibleAliasing
+    /// effects are present. Returns the first undischarged pair as an error.
+    pub fn check_aliasing_discharged(&self) -> Result<(), OpacityError> {
+        for effect in &self.effects.effects {
+            if let Effect::PossibleAliasing { formals } = effect {
+                if formals.len() < 2 {
+                    continue;
+                }
+                for i in 0..formals.len() {
+                    for j in (i + 1)..formals.len() {
+                        let a = &formals[i];
+                        let b = &formals[j];
+                        let covered = self.auto_minted_mementos.iter().any(|m| {
+                            (m.formal_a == *a && m.formal_b == *b)
+                                || (m.formal_a == *b && m.formal_b == *a)
+                        });
+                        if !covered {
+                            return Err(OpacityError::AliasingNotDischarged {
+                                formal_a: a.clone(),
+                                formal_b: b.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -415,6 +448,7 @@ pub fn build_function_contract_with_file(
         body_cid.as_deref(),
         &effects,
         &locus,
+        &[],
     );
     let canonical_bytes = jcs_bytes_of_value(&value);
     let cid = cid_of_value(&value);
@@ -423,7 +457,9 @@ pub fn build_function_contract_with_file(
         fn_name,
         formals,
         formal_sorts,
+        formal_regions: vec![],
         return_sort,
+        return_region: None,
         pre,
         post,
         body_cid,
@@ -445,6 +481,7 @@ fn build_value(
     body_cid: Option<&str>,
     effects: &EffectSet,
     locus: &Locus,
+    auto_minted_mementos: &[AliasingMemento],
 ) -> Arc<Value> {
     let formals_arr: Vec<Arc<Value>> = formals.iter().map(|n| Value::string(n.clone())).collect();
     let formal_sorts_arr: Vec<Arc<Value>> =
@@ -465,6 +502,7 @@ fn build_value(
         ("bodyCid", body_cid_val),
         ("effects", effects.to_value()),
         ("locus", locus.to_value()),
+        ("autoMintedMementos", aliasing_mementos_to_value(auto_minted_mementos)),
     ])
 }
 
@@ -483,7 +521,23 @@ pub fn build_memento_value(c: &FunctionContractMemento) -> Arc<Value> {
         c.body_cid.as_deref(),
         &c.effects,
         &c.locus,
+        &c.auto_minted_mementos,
     )
+}
+
+/// Canonical JCS array for a set of AliasingMementos. Entries are sorted
+/// lexicographically by (formal_a, formal_b) for byte-determinism. Empty
+/// list is always included as `[]` (never omitted) so the CID is
+/// consistent across deployments.
+fn aliasing_mementos_to_value(mementos: &[AliasingMemento]) -> Arc<Value> {
+    let mut sorted: Vec<&AliasingMemento> = mementos.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.formal_a
+            .cmp(&b.formal_a)
+            .then_with(|| a.formal_b.cmp(&b.formal_b))
+    });
+    let items: Vec<Arc<Value>> = sorted.iter().map(|m| m.to_jcs_value()).collect();
+    Value::array(items)
 }
 
 fn sort_to_value(s: &Sort) -> Arc<Value> {
@@ -570,6 +624,9 @@ pub enum OpacityError {
     /// An `Effect::UnresolvedCall { name }` is present. No discharge
     /// memento kind exists yet; composition is always refused.
     UnresolvedCallNotDischarged { name: String },
+    /// An `Effect::PossibleAliasing` is present but the pair (formal_a, formal_b)
+    /// has no matching AliasingMemento in auto_minted_mementos.
+    AliasingNotDischarged { formal_a: String, formal_b: String },
 }
 
 impl std::fmt::Display for OpacityError {
@@ -583,6 +640,8 @@ impl std::fmt::Display for OpacityError {
                 write!(f, "opacity: ClosureCapture(bodyFnCid={body_fn_cid}) has no ClosureBindingMemento in pool"),
             Self::UnresolvedCallNotDischarged { name } =>
                 write!(f, "opacity: UnresolvedCall({name}) has no discharge memento kind"),
+            Self::AliasingNotDischarged { formal_a, formal_b } =>
+                write!(f, "aliasing: PossibleAliasing pair ({formal_a}, {formal_b}) has no AliasingMemento in auto_minted_mementos"),
         }
     }
 }
@@ -768,11 +827,15 @@ pub fn compose_function_contracts_checked(
     outer.effects.check_opacity_effects(pool)?;
     inner.effects.check_opacity_effects(pool)?;
 
+    // Phase 1.5: check aliasing discharge on both sides. PossibleAliasing
+    // must have a matching AliasingMemento in auto_minted_mementos for
+    // every pair of formals. Returns the first undischarged pair as an error.
+    outer.check_aliasing_discharged()?;
+    inner.check_aliasing_discharged()?;
+
     // Phase 2: check for unconditionally-blocking effects. After opacity
-    // discharge, only Reads/Writes/Io/Unsafe/Panics can still block.
-    // A contract that had ONLY opacity effects — all now discharged — has
-    // no remaining blockers; one that still has non-opacity impure effects
-    // is still refused.
+    // and aliasing discharge, only Reads/Writes/Io/Unsafe/Panics and
+    // structural type-boundary effects can still block.
     let outer_non_opacity_pure = outer.effects.effects.iter().all(|e| matches!(
         e,
         Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
