@@ -703,6 +703,227 @@ fn invoke_lift_rpc_exchange(
     }
 }
 
+fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Option<Value>, String> {
+    if !manifest.dropper.available {
+        return Ok(None);
+    }
+
+    let dropper = &manifest.dropper;
+    let source_path = required_dropper_path(&dropper.source, "dropper.source")?;
+    let output_source_path =
+        required_dropper_path(&dropper.output_source, "dropper.outputSource")?;
+    let closure_ir_path =
+        required_dropper_path(&dropper.closure_proof_ir_file, "dropper.closureProofIrFile")?;
+    let verify_output_path =
+        required_dropper_path(&dropper.verify_output_file, "dropper.verifyOutputFile")?;
+    let surface = required_dropper_str(&dropper.surface, "dropper.surface")?;
+    let target_symbol = required_dropper_str(&dropper.target_symbol, "dropper.targetSymbol")?;
+    let proof_var = required_dropper_str(&dropper.proof_var, "dropper.proofVar")?;
+    let realizer_rpc = dropper
+        .realizer_rpc
+        .as_ref()
+        .ok_or_else(|| "dropper.realizerRpc is required".to_string())?;
+
+    let source_abs = specimen_dir.join(source_path);
+    let source = std::fs::read_to_string(&source_abs)
+        .map_err(|e| format!("read {}: {e}", source_abs.display()))?;
+
+    let output = invoke_dropper_rpc(
+        specimen_dir,
+        realizer_rpc,
+        surface,
+        target_symbol,
+        proof_var,
+        &source,
+        &manifest.predicates,
+    )?;
+
+    if output.get("status").and_then(Value::as_str) != Some("closed") {
+        return Err(format!("dropper output was not closed: {output}"));
+    }
+
+    let modified_source = output
+        .get("modifiedSource")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "dropper output missing modifiedSource".to_string())?;
+    let expected_source_abs = specimen_dir.join(output_source_path);
+    let expected_source = std::fs::read_to_string(&expected_source_abs)
+        .map_err(|e| format!("read {}: {e}", expected_source_abs.display()))?;
+    if modified_source != expected_source {
+        return Err(format!(
+            "dropper modified source mismatch against {}",
+            expected_source_abs.display()
+        ));
+    }
+
+    let post_lift_ir = output
+        .get("postLift")
+        .and_then(|post_lift| post_lift.get("ir"))
+        .ok_or_else(|| "dropper output missing postLift.ir".to_string())?;
+    let expected_ir = read_json(specimen_dir.join(closure_ir_path))?;
+    let post_lift_cid = proof_ir_cid(post_lift_ir)?;
+    let expected_ir_cid = proof_ir_cid(&expected_ir)?;
+    if post_lift_cid != expected_ir_cid {
+        return Err(format!(
+            "dropper closure ProofIR CID mismatch: lifted {post_lift_cid}, expected {expected_ir_cid}"
+        ));
+    }
+
+    let verify_output = read_json(specimen_dir.join(verify_output_path))?;
+    if verify_output.get("status").and_then(Value::as_str) != Some("closed") {
+        return Err("dropper verifyOutputFile must record status: closed".into());
+    }
+    if verify_output.get("missingEdge").and_then(Value::as_str)
+        != Some(manifest.predicates.missing_edge.as_str())
+    {
+        return Err("dropper verifyOutputFile missingEdge does not match manifest".into());
+    }
+
+    Ok(Some(json!({
+        "status": "closed",
+        "surface": surface,
+        "source": source_path,
+        "targetSymbol": target_symbol,
+        "proofVar": proof_var,
+        "transformedArtifactCid": output.get("transformedArtifactCid").cloned().unwrap_or(Value::Null),
+        "postLiftCid": output.get("postLiftCid").cloned().unwrap_or(Value::Null),
+        "closureWitnessCid": output.get("closureWitnessCid").cloned().unwrap_or(Value::Null),
+        "closureProofIrCid": post_lift_cid,
+        "verifyOutput": verify_output,
+    })))
+}
+
+fn invoke_dropper_rpc(
+    specimen_dir: &Path,
+    command: &CommandSpec,
+    surface: &str,
+    target_symbol: &str,
+    proof_var: &str,
+    source: &str,
+    predicates: &Predicates,
+) -> Result<Value, String> {
+    if command.argv.is_empty() {
+        return Err("dropper realizer argv is empty".into());
+    }
+    if manifest_path_escapes_specimen_root(&command.cwd) {
+        return Err(format!(
+            "invalid path `{}` escapes specimen root",
+            command.cwd.display()
+        ));
+    }
+
+    let cwd = specimen_dir.join(&command.cwd);
+    let workspace_root = specimen_dir
+        .canonicalize()
+        .unwrap_or_else(|_| specimen_dir.to_path_buf())
+        .to_string_lossy()
+        .to_string();
+    let mut cmd = Command::new(&command.argv[0]);
+    cmd.args(&command.argv[1..])
+        .current_dir(&cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("spawn dropper RPC in {}: {e}", cwd.display()))?;
+    let mut stdin = match child.stdin.take() {
+        Some(stdin) => stdin,
+        None => {
+            cleanup_rpc_child(&mut child, None, false);
+            return Err("dropper realizer has no stdin".into());
+        }
+    };
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            cleanup_rpc_child(&mut child, Some(stdin), false);
+            return Err("dropper realizer has no stdout".into());
+        }
+    };
+    let mut reader = BufReader::new(stdout);
+
+    let exchange_result = invoke_dropper_rpc_exchange(
+        &mut stdin,
+        &mut reader,
+        &workspace_root,
+        surface,
+        target_symbol,
+        proof_var,
+        source,
+        predicates,
+    );
+    drop(reader);
+    cleanup_rpc_child(&mut child, Some(stdin), exchange_result.is_ok());
+    exchange_result
+}
+
+fn invoke_dropper_rpc_exchange(
+    stdin: &mut ChildStdin,
+    reader: &mut impl BufRead,
+    workspace_root: &str,
+    surface: &str,
+    target_symbol: &str,
+    proof_var: &str,
+    source: &str,
+    predicates: &Predicates,
+) -> Result<Value, String> {
+    let init_req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "client": {"name": "provekit-zoo", "version": env!("CARGO_PKG_VERSION")},
+            "protocol_version": "provekit-orp/1",
+            "workspace_root": workspace_root,
+        },
+    });
+    writeln!(stdin, "{init_req}").map_err(|e| format!("write dropper initialize: {e}"))?;
+    let _ = read_response(reader, 1)?;
+
+    let gap_cid = provekit_canonicalizer::blake3_512_of(predicates.missing_edge.as_bytes());
+    let policy_cid = provekit_canonicalizer::blake3_512_of(b"bug-zoo-dropper-policy-v0");
+    let realize_req = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "realize",
+        "params": {
+            "plan": {
+                "kind": "RealizerPlan",
+                "schemaVersion": "1",
+                "mode": "transform",
+                "gapCid": gap_cid,
+                "sourcePredicate": predicates.boundary,
+                "targetPredicate": predicates.sink,
+                "policyCid": policy_cid,
+                "surface": surface,
+                "targetSymbol": target_symbol,
+                "proofVar": proof_var,
+                "source": source,
+            }
+        },
+    });
+    writeln!(stdin, "{realize_req}").map_err(|e| format!("write dropper realize: {e}"))?;
+    let result = read_response(reader, 2)?;
+    result
+        .get("output")
+        .cloned()
+        .ok_or_else(|| "dropper response missing output".into())
+}
+
+fn required_dropper_path<'a>(path: &'a Option<PathBuf>, field: &str) -> Result<&'a Path, String> {
+    path.as_deref()
+        .ok_or_else(|| format!("{field} is required when dropper.available is true"))
+}
+
+fn required_dropper_str<'a>(value: &'a Option<String>, field: &str) -> Result<&'a str, String> {
+    value
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("{field} is required when dropper.available is true"))
+}
+
 fn cleanup_rpc_child(child: &mut Child, stdin: Option<ChildStdin>, send_shutdown: bool) {
     if let Some(mut stdin) = stdin {
         if send_shutdown {
@@ -846,8 +1067,22 @@ mod tests {
             exposure: ExposureFiles {
                 sat_witness_file: "exposed/sat-witness.json".into(),
             },
-            dropper: Dropper { available: false },
+            dropper: unavailable_dropper(),
             wild_sightings: vec![],
+        }
+    }
+
+    fn unavailable_dropper() -> Dropper {
+        Dropper {
+            available: false,
+            surface: None,
+            source: None,
+            target_symbol: None,
+            proof_var: None,
+            realizer_rpc: None,
+            output_source: None,
+            closure_proof_ir_file: None,
+            verify_output_file: None,
         }
     }
 
