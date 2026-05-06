@@ -1,7 +1,11 @@
 node_modules/
 dist/
 *.smt2
+*.dSYM/
 .worktrees/
+**/.venv/
+**/__pycache__/
+*.egg-info/
 
 # Vendored BLAKE3 build artifacts (compiled into Side B + Side A static libs)
 tools/blake3-vendored/*.o
@@ -115,3 +119,14 @@ implementations/*/blake3-512:*.proof
 # Zig build artifacts
 implementations/zig/**/.zig-cache/
 implementations/zig/**/zig-out/
+
+# Ruby native extension build/copy artifacts regenerated from vendored sources.
+implementations/ruby/ext/provekit_blake3/Makefile
+implementations/ruby/ext/provekit_blake3/*.o
+implementations/ruby/ext/provekit_blake3/*.bundle
+implementations/ruby/ext/provekit_blake3/*.bundle.dSYM/
+implementations/ruby/ext/provekit_blake3/blake3.c
+implementations/ruby/ext/provekit_blake3/blake3_portable.c
+implementations/ruby/ext/provekit_blake3/blake3_dispatch.c
+implementations/ruby/ext/provekit_blake3/blake3.h
+implementations/ruby/ext/provekit_blake3/blake3_impl.h

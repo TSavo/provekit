@@ -277,15 +277,14 @@ impl Effect {
                     formals.iter().map(|f| Value::string(f.clone())).collect();
                 Value::object([
                     ("kind", Value::string("possible_aliasing")),
-("formals", Value::array(formals_arr)),
-              ])
-              }
+                    ("formals", Value::array(formals_arr)),
+                ])
+            }
             Effect::Drop { name } => Value::object([
                 ("kind", Value::string("drop")),
                 ("name", Value::string(name.clone())),
             ]),
-          }
-      }
+        }
     }
 
     fn sort_key(&self) -> String {
@@ -317,12 +316,11 @@ impl Effect {
                 kind.as_str(),
                 ordering.as_deref().unwrap_or("")
             ),
-Effect::PossibleAliasing { formals } => {
-                  format!("13:possible_aliasing:{}", formals.join(","))
-              }
+            Effect::PossibleAliasing { formals } => {
+                format!("13:possible_aliasing:{}", formals.join(","))
+            }
             Effect::Drop { name } => format!("14:drop:{}", name),
-          }
-      }
+        }
     }
 }
 
@@ -676,7 +674,6 @@ pub enum OpacityError {
     AliasingNotDischarged { formal_a: String, formal_b: String },
     /// An `Effect::Drop { name }` is present but no lifted drop
     /// function contract for that type is in the pool.
-    DropNotDischarged { name: String },
     DropNotDischarged { name: String },
     /// An `Effect::PinnedReference { target }` is present but no
     /// `PinInvariantMemento` with matching `pinnedTarget` is in the pool.

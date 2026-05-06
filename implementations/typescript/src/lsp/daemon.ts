@@ -116,7 +116,7 @@ function handleInitialize(id: unknown): void {
 }
 
 function handleParse(id: unknown, params: Record<string, unknown>): void {
-  const p = params as ParseParams;
+  const p = params as unknown as ParseParams;
   const path = p.path ?? "";
   const source = p.source ?? "";
   const language = p.language ?? "typescript";

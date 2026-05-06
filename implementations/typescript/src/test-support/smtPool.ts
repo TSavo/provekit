@@ -43,7 +43,7 @@ export interface SolverWorker {
   release(): void;
 }
 
-interface PoolWorkerInternal extends SolverWorker {
+interface PoolWorkerInternal extends Omit<SolverWorker, "release"> {
   process: ChildProcess;
   depth: number;
   buffer: string;

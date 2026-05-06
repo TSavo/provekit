@@ -53,6 +53,8 @@ export function emitSort(sort: Sort): string {
     case "dependent":
       // Dependent sorts are treated as opaque user-declared sorts.
       return sort.name;
+    case "region":
+      return "Region";
   }
 }
 
@@ -82,6 +84,9 @@ export function collectUserSorts(sort: Sort, out: Set<string>): void {
       return;
     case "dependent":
       collectUserSorts(sort.indexSort, out);
+      return;
+    case "region":
+      out.add("Region");
       return;
   }
 }

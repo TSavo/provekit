@@ -6,7 +6,7 @@ use serde_json::{json, Value as Json};
 
 use provekit_ir_compiler::{
     registry::Registry, Capabilities, CompileError, CompiledFormula, FreeVar, IrCompiler,
-    PROTOCOL_VERSION,
+    OpacityManifest, PROTOCOL_VERSION,
 };
 
 struct FakeCompiler {
@@ -26,6 +26,12 @@ impl IrCompiler for FakeCompiler {
                 name: "v".into(),
                 sort: "Int".into(),
             }],
+            opacity_manifest: OpacityManifest {
+                protocol_version: "ir-compiler-protocol/2".into(),
+                compiler: self.name.clone(),
+                compiler_version: "0.0".into(),
+                opacities: vec![],
+            },
         })
     }
     fn capabilities(&self) -> Capabilities {

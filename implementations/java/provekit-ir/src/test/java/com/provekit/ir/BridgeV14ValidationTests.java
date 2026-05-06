@@ -69,9 +69,7 @@ class BridgeV14ValidationTests {
     @Test
     void contract_rejects_non_128_hex() {
         // 127 hex chars -> one short of the required 128.
-        String shortCid = "blake3-512:"
-                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        String shortCid = "blake3-512:" + "a".repeat(127);
         assertEquals(127, shortCid.split(":", 2)[1].length(),
                 "test setup must produce exactly 127 hex chars");
         assertThrows(IllegalArgumentException.class,

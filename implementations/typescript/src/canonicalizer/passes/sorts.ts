@@ -70,5 +70,8 @@ export function canonicalizeSort(sort: Sort): CanonicalSort {
         indexVar: sort.indexVar,
         indexSort: canonicalizeSort(sort.indexSort),
       };
+
+    case "region":
+      return { kind: "primitive", name: "Region" };
   }
 }

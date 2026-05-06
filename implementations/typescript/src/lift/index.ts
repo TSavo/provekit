@@ -38,7 +38,7 @@ import { liftFile as liftFastCheckFile }      from "./adapters/fast-check.js";
 import { liftFile as liftClassValidatorFile } from "./adapters/class-validator.js";
 import { liftFile as liftVitestTestsFile }    from "./adapters/vitest-tests.js";
 import { liftFile as liftProvekitAnnotationsFile } from "./adapters/provekit-annotations.js";
-import type { ContractDecl, LiftReport, AdapterReport } from "./types.js";
+import type { ContractDecl, LiftReport, AdapterReport, CallEdgeDecl } from "./types.js";
 
 export type {
   ContractDecl,
@@ -68,6 +68,8 @@ export interface LiftOptions {
   catalogVersion: string;
   /** "Lifter" identity recorded in each contract's authoring block. */
   lifter: string;
+  /** Suppress duplicate-contract warnings on stderr. */
+  quiet?: boolean;
 }
 
 export function defaultLiftOptions(overrides: Partial<LiftOptions> = {}): LiftOptions {

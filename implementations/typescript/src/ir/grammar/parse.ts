@@ -1036,5 +1036,7 @@ export function emitSort(s: Sort): string {
         `"indexSort":${emitSort(s.indexSort)}` +
         "}"
       );
+    case "region":
+      return "{" + `"kind":"primitive",` + `"name":"Region"` + "}";
   }
 }

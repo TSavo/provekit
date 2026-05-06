@@ -530,8 +530,9 @@ test-c: build-c
 .PHONY: test-python
 test-python:
 	cd implementations/python/provekit-lift-py-tests && \
-		pip install --quiet -e . && \
-		pip install --quiet pytest && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e . pytest && \
 		pytest
 
 .PHONY: test-java

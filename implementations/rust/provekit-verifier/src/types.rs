@@ -20,7 +20,10 @@ use serde::Serialize;
 /// * v1.1 flat:    `evidence.kind`
 pub fn memento_kind(envelope: &Json) -> Option<&str> {
     if envelope.get("envelope").is_some() {
-        envelope.pointer("/envelope/header/kind").and_then(|v| v.as_str())
+        envelope
+            .pointer("/header/kind")
+            .or_else(|| envelope.pointer("/envelope/header/kind"))
+            .and_then(|v| v.as_str())
     } else {
         envelope.pointer("/evidence/kind").and_then(|v| v.as_str())
     }
@@ -37,7 +40,7 @@ pub fn memento_kind(envelope: &Json) -> Option<&str> {
 /// `memento_body_field` for those lookups.
 pub fn memento_body(envelope: &Json) -> Option<&Json> {
     if envelope.get("envelope").is_some() {
-        envelope.get("header")
+        envelope.get("header").or_else(|| envelope.pointer("/envelope/header"))
     } else {
         envelope.pointer("/evidence/body")
     }
@@ -58,8 +61,10 @@ pub fn memento_body(envelope: &Json) -> Option<&Json> {
 pub fn memento_body_field<'a>(envelope: &'a Json, field: &str) -> Option<&'a Json> {
     if envelope.get("envelope").is_some() {
         envelope
-            .pointer("/envelope/header")
+            .pointer("/header")
             .and_then(|h| h.get(field))
+            .or_else(|| envelope.pointer("/metadata").and_then(|m| m.get(field)))
+            .or_else(|| envelope.pointer("/envelope/header").and_then(|h| h.get(field)))
             .or_else(|| envelope.pointer("/envelope/metadata").and_then(|m| m.get(field)))
     } else {
         envelope
@@ -507,6 +512,9 @@ impl MementoPool {
         }
         for (k, v) in other.aliasing_pair_to_memento {
             self.aliasing_pair_to_memento.entry(k).or_insert(v);
+        }
+        for (k, v) in other.pin_invariant_to_memento {
+            self.pin_invariant_to_memento.entry(k).or_insert(v);
         }
     }
 }

@@ -7,8 +7,6 @@
 //
 // Coexists with existing v1.1 BridgeDeclaration.
 
-import type { Value as CValue } from "../canonicalizer/types.js";
-
 /** Tagged-union target per spec §1.R1. */
 export type BridgeTarget =
   | { kind: "contract"; cid: string }
