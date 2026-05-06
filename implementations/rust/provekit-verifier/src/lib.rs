@@ -39,6 +39,7 @@ pub mod formula_rewrite;
 pub mod handshake;
 pub mod instantiate;
 pub mod load_all_proofs;
+pub mod outlives;
 pub mod report;
 pub mod resolve_target;
 pub mod runner;
