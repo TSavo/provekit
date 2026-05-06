@@ -30,6 +30,7 @@ public abstract record Sort
     public sealed record Primitive(string Name) : Sort;
     public sealed record Function(Sort[] Args, Sort Return) : Sort;
     public sealed record Dependent(string Name, string IndexVar, Sort IndexSort) : Sort;
+    public sealed record RegionSort(string Name) : Sort;
 }
 
 public abstract record Term
@@ -240,6 +241,11 @@ public static class IREmit
                 WriteString(sb, d.IndexVar);
                 sb.Append(",\"kind\":\"dependent\",\"name\":");
                 WriteString(sb, d.Name);
+                sb.Append('}');
+                return;
+            case Sort.RegionSort r:
+                sb.Append("{\"kind\":\"region\",\"name\":");
+                WriteString(sb, r.Name);
                 sb.Append('}');
                 return;
         }
