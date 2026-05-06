@@ -688,23 +688,34 @@ mod tests {
 
     #[test]
     fn declared_at_constants_are_pinned_iso8601() {
-        let re = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$").unwrap();
-        let constants: &[(&str, &str)] = &[
-            ("V1_1_0_DECLARED_AT", V1_1_0_DECLARED_AT),
-            ("V1_2_0_DECLARED_AT", V1_2_0_DECLARED_AT),
-            ("V1_3_0_DECLARED_AT", V1_3_0_DECLARED_AT),
-            ("V1_3_1_DECLARED_AT", V1_3_1_DECLARED_AT),
-            ("V1_4_0_DECLARED_AT", V1_4_0_DECLARED_AT),
-            ("V1_4_1_DECLARED_AT", V1_4_1_DECLARED_AT),
-            ("V1_5_0_DECLARED_AT", V1_5_0_DECLARED_AT),
-            ("V1_6_0_DECLARED_AT", V1_6_0_DECLARED_AT),
-            ("SELF_CONTRACTS_DECLARED_AT_V1_3_1", SELF_CONTRACTS_DECLARED_AT_V1_3_1),
+        // Verify that all declaredAt constants are static ISO-8601 strings,
+        // never a live timestamp from SystemTime::now() or chrono::Utc::now().
+        // Adding a new version must pin the timestamp as a const -- not call
+        // into the clock at runtime -- to keep foundation-keygen output
+        // byte-identical across runs (closes item 6 of #300).
+        let pinned = [
+            V1_1_0_DECLARED_AT,
+            V1_2_0_DECLARED_AT,
+            V1_3_0_DECLARED_AT,
+            V1_3_1_DECLARED_AT,
+            V1_4_0_DECLARED_AT,
+            V1_4_1_DECLARED_AT,
+            V1_5_0_DECLARED_AT,
+            V1_6_0_DECLARED_AT,
+            SELF_CONTRACTS_DECLARED_AT_V1_3_1,
         ];
-        assert_eq!(constants.len(), 9, "unexpected number of declared_at constants; update this test");
-        for (name, value) in constants {
+        for ts in &pinned {
+            // Must match ISO-8601 UTC shape: YYYY-MM-DDTHH:MM:SSZ (exactly 20 bytes)
+            let ts_bytes = ts.as_bytes();
             assert!(
-                re.is_match(value),
-                "{name} = \"{value}\" is not a valid ISO 8601 UTC datetime"
+                ts.len() == 20
+                    && ts.ends_with('Z')
+                    && ts_bytes[4] == b'-'
+                    && ts_bytes[7] == b'-'
+                    && ts_bytes[10] == b'T'
+                    && ts_bytes[13] == b':'
+                    && ts_bytes[16] == b':',
+                "declaredAt constant must be exactly YYYY-MM-DDTHH:MM:SSZ (20 bytes), got: {ts}"
             );
         }
     }

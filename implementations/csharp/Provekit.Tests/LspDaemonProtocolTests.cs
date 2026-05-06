@@ -115,7 +115,7 @@ public class LspDaemonProtocolTests
         return sb.ToString();
     }
 
-    private static List<JsonDocument> RunLsp(string ndjson)
+    private static async Task<List<JsonDocument>> RunLsp(string ndjson)
     {
         var binary = BinaryPath();
         var psi = new ProcessStartInfo(binary, "--rpc")
@@ -131,12 +131,17 @@ public class LspDaemonProtocolTests
         proc.StandardInput.Write(ndjson);
         proc.StandardInput.Close();
 
-        var output = proc.StandardOutput.ReadToEnd();
+        // Drain stdout and stderr asynchronously so the timeout path
+        // is reachable even if the LSP process hangs. Blocking
+        // ReadToEnd() would deadlock before WaitForExit is called.
+        var outputTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrDrain = proc.StandardError.ReadToEndAsync(); // avoid pipe deadlock
         if (!proc.WaitForExit(15_000))
         {
             proc.Kill(entireProcessTree: true);
             throw new Exception("Process did not exit within 15000ms");
         }
+        var output = await outputTask;
 
         Assert.Equal(0, proc.ExitCode);
 
@@ -162,9 +167,9 @@ public class LspDaemonProtocolTests
     // ── Tests ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Initialize_ReturnsExpectedShape()
+    public async Task Initialize_ReturnsExpectedShape()
     {
-        var responses = RunLsp(BuildSession());
+        var responses = await RunLsp(BuildSession());
         var initResp = FindById(responses, 1);
 
         Assert.True(initResp.TryGetProperty("result", out var result),
@@ -176,9 +181,9 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
-    public void Parse_DeclarationsIsArray()
+    public async Task Parse_DeclarationsIsArray()
     {
-        var responses = RunLsp(BuildSession());
+        var responses = await RunLsp(BuildSession());
         var parseResp = FindById(responses, 2);
 
         Assert.False(parseResp.TryGetProperty("error", out _),
@@ -188,9 +193,9 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
-    public void Parse_CallEdgesIsArray()
+    public async Task Parse_CallEdgesIsArray()
     {
-        var responses = RunLsp(BuildSession());
+        var responses = await RunLsp(BuildSession());
         var parseResp = FindById(responses, 2);
 
         Assert.True(parseResp.TryGetProperty("result", out var result));
@@ -198,9 +203,9 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
-    public void Parse_WarningsIsArray()
+    public async Task Parse_WarningsIsArray()
     {
-        var responses = RunLsp(BuildSession());
+        var responses = await RunLsp(BuildSession());
         var parseResp = FindById(responses, 2);
 
         Assert.True(parseResp.TryGetProperty("result", out var result));
@@ -208,9 +213,9 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
-    public void Parse_DeclarationsContainContracts()
+    public async Task Parse_DeclarationsContainContracts()
     {
-        var responses = RunLsp(BuildSession());
+        var responses = await RunLsp(BuildSession());
         var parseResp = FindById(responses, 2);
 
         Assert.True(parseResp.TryGetProperty("result", out var result));
@@ -224,9 +229,9 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
-    public void Parse_DeclarationsHaveNameField()
+    public async Task Parse_DeclarationsHaveNameField()
     {
-        var responses = RunLsp(BuildSession());
+        var responses = await RunLsp(BuildSession());
         var parseResp = FindById(responses, 2);
 
         Assert.True(parseResp.TryGetProperty("result", out var result));
@@ -238,10 +243,10 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
-    public void Parse_EmptySourceReturnsEmptyArrays()
+    public async Task Parse_EmptySourceReturnsEmptyArrays()
     {
         var ndjson = BuildSession(source: "// no contracts here\n");
-        var responses = RunLsp(ndjson);
+        var responses = await RunLsp(ndjson);
         var parseResp = FindById(responses, 2);
 
         Assert.True(parseResp.TryGetProperty("result", out var result));
@@ -250,11 +255,11 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
-    public void Parse_ByteDeterminism()
+    public async Task Parse_ByteDeterminism()
     {
         var ndjson = BuildSession();
-        var run1 = RunLsp(ndjson);
-        var run2 = RunLsp(ndjson);
+        var run1 = await RunLsp(ndjson);
+        var run2 = await RunLsp(ndjson);
 
         var parse1 = FindById(run1, 2);
         var parse2 = FindById(run2, 2);
@@ -267,7 +272,7 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
-    public void Parse_UnknownLanguageParam_IsIgnored()
+    public async Task Parse_UnknownLanguageParam_IsIgnored()
     {
         // The C# plugin ignores unknown params keys; a 'language' field that
         // isn't C# doesn't cause an error (unlike the Python plugin which
@@ -281,7 +286,7 @@ public class LspDaemonProtocolTests
             new { jsonrpc = "2.0", id = 3, method = "shutdown" },
         };
         var ndjson = string.Join("\n", msgs.Select(m => JsonSerializer.Serialize(m))) + "\n";
-        var responses = RunLsp(ndjson);
+        var responses = await RunLsp(ndjson);
         var parseResp = FindById(responses, 2);
         Assert.True(parseResp.TryGetProperty("result", out _),
             "Expected result (not error) when extra 'language' param is present");
