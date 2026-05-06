@@ -394,8 +394,8 @@ async function invokeSolverWasm(
  * (Bitwuzla, Boolector, MathSAT, …) is a YAML edit, not a TS edit.
  *
  * For smt-lib entries the WASM-based z3-solver is tried first (no
- * system binary required). If WASM fails, we fall back to spawning
- * the configured binary on $PATH.
+ * system binary required). If WASM fails, we fall back to the solver
+ * pool (long-lived processes) to avoid per-invocation spawn overhead.
  */
 export async function invokeSolver(
   solver: SolverEntry,
@@ -406,45 +406,52 @@ export async function invokeSolver(
     try {
       return await invokeSolverWasm(script, solver.timeoutMs);
     } catch {
-      // Fall through to spawn-based fallback
+      // Fall through to pool-based fallback
     }
   }
 
-  // Fallback: spawn system binary via $PATH
-  const timeoutMs = solver.timeoutMs;
-  const args = solver.flags.map((flag) =>
-    flag
-      .replaceAll("{{TIMEOUT_MS}}", String(timeoutMs))
-      .replaceAll("{{TIMEOUT_S}}", String(Math.ceil(timeoutMs / 1000))),
-  );
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(solver.binary, args, { stdio: ["pipe", "pipe", "pipe"] });
-    } catch {
-      resolve("unknown");
-      return;
+  // Fallback: use solver pool for system binary
+  return await invokeSolverViaPool(solver, script);
+}
+
+/**
+ * Invoke a solver via the long-lived worker pool. Extracts declarations
+ * from the script and uses (push)/(pop) for per-query isolation.
+ */
+async function invokeSolverViaPool(
+  solver: SolverEntry,
+  script: string,
+): Promise<"sat" | "unsat" | "unknown" | "timeout"> {
+  // Late import to avoid circular dependency at module load time
+  const { getGlobalPool } = await import("../../test-support/smtPool.js");
+  const pool = await getGlobalPool();
+  const worker = await pool.acquire();
+
+  try {
+    worker.push();
+
+    // Send each line of the script (declarations + assertions)
+    for (const line of script.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0 || trimmed.startsWith(";")) continue;
+
+      if (trimmed.startsWith("(declare-") || trimmed.startsWith("(assert")) {
+        worker.assert(trimmed);
+      } else if (trimmed.startsWith("(check-sat")) {
+        // Skip; we'll call checkSat() explicitly
+      } else if (!trimmed.startsWith("(set-logic")) {
+        // Other commands: skip (set-logic will be implicit in pool)
+      }
     }
-    let stdout = "";
-    if (child.stdout) child.stdout.on("data", (c) => (stdout += c.toString()));
-    if (child.stderr) child.stderr.on("data", () => { /* discard */ });
-    const timer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch { /* ignore */ }
-      resolve("timeout");
-    }, timeoutMs + 250);
-    child.on("error", () => { clearTimeout(timer); resolve("unknown"); });
-    child.on("close", () => {
-      clearTimeout(timer);
-      const lines = stdout.trim().split("\n").map((l) => l.trim());
-      const last = lines[lines.length - 1] ?? "";
-      if (last === "sat" || last === "unsat" || last === "unknown") resolve(last);
-      else resolve("unknown");
-    });
-    if (child.stdin) {
-      child.stdin.write(script);
-      child.stdin.end();
-    }
-  });
+
+    const result = await worker.checkSat(solver.timeoutMs);
+    return result;
+  } catch {
+    return "unknown";
+  } finally {
+    worker.pop();
+    worker.release();
+  }
 }
 
 /**

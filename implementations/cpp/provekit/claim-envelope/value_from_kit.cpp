@@ -37,6 +37,12 @@ ValuePtr sort_to_value(const ::provekit::ir::Sort& sort) {
                     {"indexVar", Value::string(s.indexVar)},
                     {"indexSort", sort_to_value(*s.indexSort)},
                 });
+            } else if constexpr (std::is_same_v<S, ::provekit::ir::RegionSort>) {
+                // Locked key order: kind, name.
+                return Value::object({
+                    {"kind", Value::string("region")},
+                    {"name", Value::string(s.name)},
+                });
             }
         },
         sort.v);

@@ -57,6 +57,7 @@ class TestDaemonProtocol < Minitest::Test
   def test_initialize_response
     responses = run_lsp(build_session)
     init_resp = responses.find { |r| r["id"] == 1 }
+    assert init_resp, "Expected id 1 not found. Available ids: #{responses.map { |r| r['id'] }}"
     result = init_resp["result"]
     assert_equal "provekit-lsp-ruby", result["name"]
     assert_includes result["capabilities"], "parse"
@@ -65,6 +66,7 @@ class TestDaemonProtocol < Minitest::Test
   def test_parse_declarations_is_array
     responses = run_lsp(build_session)
     parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
     refute_includes parse_resp, "error",
                     "parse returned error: #{parse_resp.inspect}"
     assert_instance_of Array, parse_resp["result"]["declarations"],
@@ -74,6 +76,7 @@ class TestDaemonProtocol < Minitest::Test
   def test_parse_call_edges_is_array
     responses = run_lsp(build_session)
     parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
     assert_instance_of Array, parse_resp["result"]["callEdges"],
                        "callEdges should be Array, not #{parse_resp["result"]["callEdges"].class}"
   end
@@ -81,6 +84,7 @@ class TestDaemonProtocol < Minitest::Test
   def test_declarations_contain_contracts
     responses = run_lsp(build_session)
     parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
     decls = parse_resp["result"]["declarations"]
     assert decls.length >= 1,
            "Expected at least one declaration from contract-bearing fixture"
@@ -94,6 +98,7 @@ class TestDaemonProtocol < Minitest::Test
   def test_declarations_have_name_field
     responses = run_lsp(build_session)
     parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
     parse_resp["result"]["declarations"].each do |d|
       assert d.key?("name"), "declaration missing 'name': #{d.inspect}"
     end
@@ -102,6 +107,7 @@ class TestDaemonProtocol < Minitest::Test
   def test_empty_source_returns_empty_arrays
     responses = run_lsp(build_session(source: "# no contracts here\n"))
     parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
     result = parse_resp["result"]
     assert_equal [], result["declarations"]
     assert_equal [], result["callEdges"]
@@ -112,7 +118,9 @@ class TestDaemonProtocol < Minitest::Test
     run1 = run_lsp(ndjson)
     run2 = run_lsp(ndjson)
     parse1 = run1.find { |r| r["id"] == 2 }
+    assert parse1, "Expected id 2 not found in run1. Available ids: #{run1.map { |r| r['id'] }}"
     parse2 = run2.find { |r| r["id"] == 2 }
+    assert parse2, "Expected id 2 not found in run2. Available ids: #{run2.map { |r| r['id'] }}"
     assert_equal JSON.generate(parse1.sort.to_h),
                  JSON.generate(parse2.sort.to_h),
                  "parse response is not byte-deterministic across two runs"
@@ -121,6 +129,7 @@ class TestDaemonProtocol < Minitest::Test
   def test_unsupported_language_returns_error
     responses = run_lsp(build_session(source: "fn foo() {}", extra_params: { "language" => "go" }))
     parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
     assert parse_resp.key?("error"),
            "Expected error for unsupported language, got: #{parse_resp.inspect}"
     assert_equal(-32602, parse_resp["error"]["code"])

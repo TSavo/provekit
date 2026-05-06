@@ -58,3 +58,6 @@ path = "src/lib.rs"
 provekit-canonicalizer = { path = "../../implementations/rust/provekit-canonicalizer" }
 provekit-proof-envelope = { path = "../../implementations/rust/provekit-proof-envelope" }
 serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+regex = "1"

@@ -19,6 +19,7 @@ pub const Sort = union(enum) {
     // for return.
     function: struct { args: []const *const Sort, return_: *const Sort },
     dependent: struct { name: []const u8, index_var: []const u8, index_sort: *const Sort },
+    region: struct { name: []const u8 },
 
     pub const Bool = Sort{ .primitive = "Bool" };
     pub const Int = Sort{ .primitive = "Int" };
@@ -60,6 +61,14 @@ pub const Sort = union(enum) {
                 try jws.write("dependent");
                 try jws.objectField("name");
                 try jws.write(d.name);
+                try jws.endObject();
+            },
+            .region => |r| {
+                try jws.beginObject();
+                try jws.objectField("kind");
+                try jws.write("region");
+                try jws.objectField("name");
+                try jws.write(r.name);
                 try jws.endObject();
             },
         }
