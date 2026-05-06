@@ -131,6 +131,8 @@ struct Dropper {
     #[serde(default)]
     closure_proof_ir_file: Option<PathBuf>,
     #[serde(default)]
+    fix_receipt_file: Option<PathBuf>,
+    #[serde(default)]
     verify_output_file: Option<PathBuf>,
 }
 
@@ -458,8 +460,10 @@ fn validate_manifest_shape(manifest: &SpecimenManifest) -> Vec<String> {
             errors
                 .push("dropper.closureProofIrFile is required when dropper.available is true".into());
         }
-        if manifest.dropper.verify_output_file.is_none() {
-            errors.push("dropper.verifyOutputFile is required when dropper.available is true".into());
+        if manifest.dropper.fix_receipt_file.is_none()
+            && manifest.dropper.verify_output_file.is_none()
+        {
+            errors.push("dropper.fixReceiptFile is required when dropper.available is true".into());
         }
     }
 
@@ -529,7 +533,11 @@ fn validate_paths(specimen_dir: &Path, manifest: &SpecimenManifest) -> Vec<Strin
             manifest.dropper.source.as_ref(),
             manifest.dropper.output_source.as_ref(),
             manifest.dropper.closure_proof_ir_file.as_ref(),
-            manifest.dropper.verify_output_file.as_ref(),
+            manifest
+                .dropper
+                .fix_receipt_file
+                .as_ref()
+                .or(manifest.dropper.verify_output_file.as_ref()),
         ]
         .into_iter()
         .flatten()
@@ -714,8 +722,12 @@ fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Op
         required_dropper_path(&dropper.output_source, "dropper.outputSource")?;
     let closure_ir_path =
         required_dropper_path(&dropper.closure_proof_ir_file, "dropper.closureProofIrFile")?;
-    let verify_output_path =
-        required_dropper_path(&dropper.verify_output_file, "dropper.verifyOutputFile")?;
+    let fix_receipt_path = dropper
+        .fix_receipt_file
+        .as_ref()
+        .or(dropper.verify_output_file.as_ref())
+        .map(PathBuf::as_path)
+        .ok_or_else(|| "dropper.fixReceiptFile is required".to_string())?;
     let surface = required_dropper_str(&dropper.surface, "dropper.surface")?;
     let target_symbol = required_dropper_str(&dropper.target_symbol, "dropper.targetSymbol")?;
     let proof_var = required_dropper_str(&dropper.proof_var, "dropper.proofVar")?;
@@ -769,14 +781,17 @@ fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Op
         ));
     }
 
-    let verify_output = read_json(specimen_dir.join(verify_output_path))?;
-    if verify_output.get("status").and_then(Value::as_str) != Some("closed") {
-        return Err("dropper verifyOutputFile must record status: closed".into());
+    let fix_receipt = read_json(specimen_dir.join(fix_receipt_path))?;
+    if fix_receipt.get("kind").and_then(Value::as_str) != Some("FixReceipt") {
+        return Err("dropper fixReceiptFile must record kind: FixReceipt".into());
     }
-    if verify_output.get("missingEdge").and_then(Value::as_str)
+    if fix_receipt.get("status").and_then(Value::as_str) != Some("closed") {
+        return Err("dropper fixReceiptFile must record status: closed".into());
+    }
+    if fix_receipt.get("missingEdge").and_then(Value::as_str)
         != Some(manifest.predicates.missing_edge.as_str())
     {
-        return Err("dropper verifyOutputFile missingEdge does not match manifest".into());
+        return Err("dropper fixReceiptFile missingEdge does not match manifest".into());
     }
 
     Ok(Some(json!({
@@ -789,7 +804,7 @@ fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Op
         "postLiftCid": output.get("postLiftCid").cloned().unwrap_or(Value::Null),
         "closureWitnessCid": output.get("closureWitnessCid").cloned().unwrap_or(Value::Null),
         "closureProofIrCid": post_lift_cid,
-        "verifyOutput": verify_output,
+        "fixReceipt": fix_receipt,
     })))
 }
 
@@ -1082,6 +1097,7 @@ mod tests {
             realizer_rpc: None,
             output_source: None,
             closure_proof_ir_file: None,
+            fix_receipt_file: None,
             verify_output_file: None,
         }
     }

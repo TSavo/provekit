@@ -66,5 +66,5 @@ dropper:
     argv: ["./run-java-realizer.sh"]
   outputSource: dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java
   closureProofIrFile: dropped/provekit-native/closure.proofir.json
-  verifyOutputFile: dropped/provekit-native/verify-output.json
+  fixReceiptFile: dropped/provekit-native/fix-receipt.json
 wildSightings: []
