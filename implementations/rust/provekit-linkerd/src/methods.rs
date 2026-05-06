@@ -479,10 +479,10 @@ async fn spawn_kit_lifter(
     task::spawn_blocking(move || {
         let mut child = Command::new(&binary)
             .args(&args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
         .map_err(|e| {
             LiftError::LifterUnavailable(format!("spawn {binary}: {e}"))
         })?;
