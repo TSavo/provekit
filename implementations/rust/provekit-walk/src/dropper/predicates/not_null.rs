@@ -59,7 +59,7 @@ impl PredicateDescriptor for NotNullPredicate {
     }
 
     fn verified_templates(&self) -> &[DropTemplate] {
-        &[DropTemplate::Defensive, DropTemplate::Expect]
+        &[DropTemplate::Defensive]
     }
 
     fn render(&self, template: DropTemplate, var: &str) -> Result<String, NotRenderable> {
@@ -161,10 +161,11 @@ mod tests {
     use provekit_ir_types::{IrFormula, IrTerm};
 
     #[test]
-    fn not_null_predicate_verified_templates_returns_defensive_and_expect() {
+    fn not_null_predicate_verified_templates_returns_defensive_only() {
         let templates = NotNullPredicate.verified_templates();
-        assert_eq!(templates.len(), 2, "two verified templates for not_null");
+        assert_eq!(templates.len(), 1, "one verified template for not_null (Expect is scaffolding)");
         assert!(templates.contains(&DropTemplate::Defensive));
+        assert!(!templates.contains(&DropTemplate::Expect), "Expect is not closure-verified");
     }
 
     #[test]
