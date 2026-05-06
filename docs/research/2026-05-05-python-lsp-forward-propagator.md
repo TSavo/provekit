@@ -154,7 +154,7 @@ The `provekit-lift-py-tests` package already provides:
 - Python kit lives at `implementations/python/` with flat layout: `provekit-self-contracts.py` at root, `provekit-lift-py-tests/` as a Python package under `src/`.
 - No `pip install -e .` is used; the kit relies on `sys.path` injection. The `mint-python` Makefile target does not run a build step.
 - Test runner: `pytest` from within `provekit-lift-py-tests/`. Tests live in `tests/` and use `conftest.py` for fixtures.
-- Python 3.14 is the runtime (see `__pycache__` directories with `cpython-314` suffix).
+- Per `pyproject.toml`, the runtime requirement is `requires-python = ">=3.8"`. The `__pycache__` directory observed during local development reflects whichever 3.x interpreter the developer ran, not a project requirement.
 - The LSP module uses `from __future__ import annotations` and type hints throughout.
 - NDJSON protocol: one JSON object per line, `\n` terminated, flushed after each write.
 
@@ -170,4 +170,4 @@ The `provekit-lift-py-tests` package already provides:
 
 3. **What ForwardPropagator methods does the Python LSP need to support beyond `parse`?**
 
-   The current `lsp.py` only supports `initialize`, `parse`, and `shutdown`. The ForwardPropagator spec (#308) may require additional methods like `forwardPropagate` or `updateContracts`. These should be added to `lsp.py` when #320 is implemented. The Go LSP (`main.go:651 lines`) is the reference for the full method set.
+   The current `lsp.py` only supports `initialize`, `parse`, and `shutdown`. The ForwardPropagator spec (#308) may require additional methods like `forwardPropagate` or `updateContracts`. These should be added to `lsp.py` when #320 is implemented. See `implementations/go/cmd/provekit-lsp-go/main.go::handleRequest` (lines 78-95) for the RPC dispatch pattern.
