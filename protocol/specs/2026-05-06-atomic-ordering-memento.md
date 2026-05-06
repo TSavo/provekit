@@ -44,6 +44,7 @@ AtomicOrderingHeader = {
   target:        tstr,       ; the atomic variable / expression name
   ordering:      Ordering,   ; the concrete ordering
   atomicKind:    AtomicKind, ; Load / Store / Rmw / Cas
+  functionCid:   cid,        ; contract CID anchoring the target name
 }
 
 MementoMetadata = {
@@ -56,7 +57,23 @@ Ordering = "Relaxed" / "Acquire" / "Release" / "AcqRel" / "SeqCst"
 AtomicKind = "Load" / "Store" / "Rmw" / "Cas"
 ```
 
-## §2. JCS canonical bytes + key order
+## §2. JCS canonical key order (normative)
+
+The canonical JCS object whose BLAKE3-512 hash produces the memento CID uses this normatively declared key order, consistent with the sibling discharge memento family:
+
+```json
+{
+  "kind": "AtomicOrderingMemento",
+  "schemaVersion": "1",
+  "target": "counter",
+  "ordering": "SeqCst",
+  "atomicKind": "Rmw"
+}
+```
+
+Optional metadata fields (`atomicTargetType`, `producedBy`, `producedAt`) follow in JCS-sorted position after the required fields. When absent, those keys are omitted entirely (not `null`).
+
+### §2.1 Canonical bytes
 
 JCS encodes the memento as a flat object with keys in insertion order. The canonical key order for the memento value is:
 
@@ -143,6 +160,25 @@ After verification, the effect is discharged and composition proceeds with `orde
 **Lifter output:** `Effect::AtomicAccess { target: "flag", kind: Load, ordering: Some("Acquire") }`.
 
 **Composition:** Approved immediately. No memento needed — the ordering is statically known.
+
+## §5a. Signing authority and trust model
+
+### §5a.1 Signing ceremony
+
+An `AtomicOrderingMemento` MUST be signed by a curator-level key (`ed25519:<base64>`). The signing key follows the provenance path `secret/provekit/provenance-ed25519`.
+
+1. The author constructs the `header` and `metadata` objects per §1.
+2. The author produces JCS-canonical bytes of `{ header, metadata }`.
+3. The author signs those bytes with the curator Ed25519 key.
+4. The resulting signature is placed in `envelope.signature`.
+
+### §5a.2 Verifier validation
+
+Before an `AtomicOrderingMemento` is admitted into the pool:
+1. Extract `envelope.signer`.
+2. Recompute JCS of `{ header, metadata }`.
+3. Validate Ed25519 `signature` against those bytes and the pubkey.
+4. Reject on failure.
 
 ## §6. Out of scope (v1)
 
