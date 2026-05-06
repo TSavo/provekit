@@ -4,7 +4,6 @@
 // Implements `compose_region_demands` per protocol/specs/2026-05-05-outlives-kernel-axioms.md §4.
 
 use std::collections::HashMap;
-use provekit_ir_symbolic::{Formula, Term};
 
 /// A region fact: `r_a` outlives `r_b` (r_a lives at least as long as r_b).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,9 +42,9 @@ impl RegionGraph {
 
     /// Check whether `a` outlives `b` under the three kernel axioms:
     ///   1. Reflexivity: a == b → true
-    ///   2. Fact match: direct edge in the graph
-    ///   3. 'static top: b == "'static" → true
-    ///   4. Transitivity: a → ... → b via graph edges (naive DFS)
+    ///   2. Direct fact: a → b edge in the graph
+    ///   3. 'static top: any region outlives 'static
+    ///   4. Transitivity: a → ... → b via graph edges (DFS)
     pub fn check(&self, a: &str, b: &str) -> DischargeOutcome {
         // Axiom 1: reflexivity
         if a == b {
@@ -108,21 +107,6 @@ pub fn build_region_subst(
         }
     }
     subst
-}
-
-/// Extract a region name from an Term. The lifter stores regions with
-/// an `@region:` prefix on the var name for collision avoidance.
-pub fn extract_region_name(term: &Term) -> String {
-    match term {
-        Term::Var { name, .. } => {
-            if let Some(rest) = name.strip_prefix("@region:") {
-                rest.to_string()
-            } else {
-                name.clone()
-            }
-        }
-        _ => "?".to_string(),
-    }
 }
 
 /// Compose region demands: substitute callee's region predicates,
