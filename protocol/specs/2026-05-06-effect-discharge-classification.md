@@ -78,6 +78,8 @@ fn insert(&mut self, memento_cid: String, envelope: Json):
 
 Each memento kind spec defines its own header fields and match keys. The classification table (§2) maps effects to their memento kinds; the insert interface dispatches on those kinds. An effect whose memento kind has no insert arm is effectively undischargeable (same as `UnconditionallyBlocked`).
 
+When `MementoPool::insert()` indexes a Drop classification memento, the index key is the Charon `def_id` of the Drop'd type as recorded in the lifter's IR, NOT the textual name. Verifier lookups under `Effect::Drop { name }` MUST resolve `name` to the same `def_id` form before keying. Cross-crate renames of the underlying type therefore preserve discharge identity; renames at the lifter site that re-resolve to a different `def_id` invalidate prior mementos and require a re-mint.
+
 ---
 
 ## §2. Per-effect table
