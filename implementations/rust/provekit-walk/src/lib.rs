@@ -19,13 +19,17 @@
 //  - rustc MIR integration (this MVP uses surface AST; MIR is planned).
 //  - Match-arm narrowing, while-let, if-let.
 //  - Cross-function call-graph propagation.
-//  - The dropper / generative-completion path.
 //  - C kit (Clang CFG).
 //  - Pointer aliasing.
+//
+// The dropper / generative-completion path (paper 07 §7) is implemented in
+// dropper.rs (issue #382, Phases 1-3). Phase 4 (mint-on-miss via solver
+// portfolio) is deferred.
 
 pub mod aliasing;
 pub mod canonical;
 pub mod chain;
+pub mod dropper;
 pub mod charon_runner;
 pub mod contract;
 pub mod emit;
@@ -57,6 +61,10 @@ pub use lift::{lift_function_postcondition, lift_function_precondition, lift_pre
 pub use shadow::{
     build_shadow_source, compose_chain, compose_edges, edge_memento_cid, edge_memento_value,
     CalleeContract, ComposedEdge, ShadowArrival, ShadowSlot, ShadowSource,
+};
+pub use dropper::{
+    detect_gaps, drop_gap, emit_drop, formula_contains_predicate, predicate_var_arg,
+    templates_for, verify_closure, DropFailure, DropTemplate, EmitResult, Gap, NotRenderable,
 };
 pub use walk::{walk_callsites_to_entry, Arrival, CallsiteWalk};
 pub use wp::{

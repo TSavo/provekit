@@ -46,6 +46,7 @@ use provekit_canonicalizer::blake3_512_of;
 use provekit_linker::{LinkerCallEdge, LinkerContract};
 use serde_json::Value as Json;
 use tokio::sync::Mutex;
+use tokio::task;
 use tracing::instrument;
 
 use crate::state::ProjectState;
@@ -273,7 +274,7 @@ async fn lift_source(
                         .to_string(),
                 )
             })?;
-            spawn_kit_lifter(&binary, &[], file, source, "go-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "go-kit").await
         }
 
         "csharp" => {
@@ -284,7 +285,7 @@ async fn lift_source(
                         .to_string(),
                 )
             })?;
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "csharp-kit")
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "csharp-kit").await
         }
 
         "ruby" => {
@@ -295,7 +296,7 @@ async fn lift_source(
                         .to_string(),
                 )
             })?;
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "ruby-kit")
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "ruby-kit").await
         }
 
         "zig" => {
@@ -308,7 +309,7 @@ async fn lift_source(
             })?;
             // Note: zig lsp binary reads stdin directly (no --rpc flag needed).
             // callEdges may be omitted from its response; treated as empty.
-            spawn_kit_lifter(&binary, &[], file, source, "zig-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "zig-kit").await
         }
 
         "python" => Err(LiftError::LifterUnavailable(
@@ -329,7 +330,7 @@ async fn lift_source(
                         .to_string(),
                 )
             })?;
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "java-kit")
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "java-kit").await
         }
 
         "swift" => {
@@ -342,7 +343,7 @@ async fn lift_source(
                 )
             })?;
             // swift lsp binary reads stdin directly (no --rpc flag needed).
-            spawn_kit_lifter(&binary, &[], file, source, "swift-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "swift-kit").await
         }
 
         "ts" => {
@@ -356,7 +357,7 @@ async fn lift_source(
                 )
             })?;
             // ts lsp binary is a node CJS shim; reads stdin directly (no --rpc flag needed).
-            spawn_kit_lifter(&binary, &[], file, source, "ts-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "ts-kit").await
         }
 
         "cpp" => {
@@ -370,7 +371,7 @@ async fn lift_source(
                 )
             })?;
             // cpp lsp binary reads stdin directly (no --rpc flag needed).
-            spawn_kit_lifter(&binary, &[], file, source, "cpp-kit")
+            spawn_kit_lifter(&binary, &[], file, source, "cpp-kit").await
         }
 
         "c" => {
@@ -384,7 +385,7 @@ async fn lift_source(
                 )
             })?;
             // c lsp binary requires --rpc flag (errors without it).
-            spawn_kit_lifter(&binary, &["--rpc"], file, source, "c-kit")
+            spawn_kit_lifter(&binary, &["--rpc"], file, source, "c-kit").await
         }
 
         other => Err(LiftError::KitNotInManifest(format!(
@@ -462,19 +463,26 @@ fn find_binary(name: &str) -> Option<String> {
 /// Missing fields:
 ///   - `callEdges` absent from response: treated as empty (zig case).
 ///   - `declarations` absent: treated as empty.
-fn spawn_kit_lifter(
+async fn spawn_kit_lifter(
     binary: &str,
     args: &[&str],
     file: &str,
     source: &str,
     kit_label: &str,
 ) -> Result<(Vec<LinkerContract>, Vec<LinkerCallEdge>), LiftError> {
-    let mut child = Command::new(binary)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+    let binary = binary.to_string();
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let file = file.to_string();
+    let source = source.to_string();
+    let kit_label = kit_label.to_string();
+
+    task::spawn_blocking(move || {
+        let mut child = Command::new(&binary)
+            .args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
         .map_err(|e| {
             LiftError::LifterUnavailable(format!("spawn {binary}: {e}"))
         })?;
@@ -552,7 +560,7 @@ fn spawn_kit_lifter(
     let decls_json = extract_array_field(result, "declarations");
     let contracts = decls_json
         .iter()
-        .filter_map(|decl| parse_declaration_to_contract(decl, kit_label))
+        .filter_map(|decl| parse_declaration_to_contract(decl, &kit_label))
         .collect::<Vec<_>>();
 
     // 7. Extract callEdges array (may be absent for some kits, e.g. zig).
@@ -562,7 +570,8 @@ fn spawn_kit_lifter(
         .filter_map(parse_call_edge)
         .collect::<Vec<_>>();
 
-    Ok((contracts, call_edges))
+        Ok((contracts, call_edges))
+    }).await.map_err(|e| LiftError::LifterUnavailable(format!("spawn_blocking: {e}")))?
 }
 
 /// Extract a JSON array from a field in a result object.

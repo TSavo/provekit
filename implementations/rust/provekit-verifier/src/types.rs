@@ -484,6 +484,14 @@ impl OpacityMementoLookup for MementoPool {
     fn has_closure_binding(&self, body_fn_cid: &str) -> bool {
         self.body_fn_cid_to_memento.contains_key(body_fn_cid)
     }
+    fn has_drop_contract(&self, _type_name: &str) -> bool {
+        // No drop-contract discharge memento kind is specified yet
+        // (follow-up to issue #384). Return false so the substrate
+        // refuses composition rather than silently assuming the drop
+        // is effect-free. Wire this to a real index once the
+        // drop-contract memento spec lands under protocol/specs/.
+        false
+    }
 }
 
 /// Result of an implication check.
