@@ -142,7 +142,7 @@ pub const SELF_CONTRACTS_DECLARED_AT_V1_3_1: &str = "2026-05-02T17:00:00Z";
 /// bytes for any kit.
 pub const SELF_CONTRACTS_LANGS: &[&str] = &[
     "rust", "go", "cpp", "ts", "csharp",
-    "swift", "java", "python", "ruby", "zig", "c",
+    "swift", "java", "python", "ruby", "zig", "c", "php",
 ];
 
 /// Build the signed message body for a self-contracts attestation
