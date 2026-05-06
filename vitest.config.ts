@@ -15,5 +15,6 @@ export default defineConfig({
     env: {
       PROVEKIT_DISABLE_RECOGNIZE: "1",
     },
+    globalSetup: ["implementations/typescript/vitest.setup.ts"],
   },
 });
