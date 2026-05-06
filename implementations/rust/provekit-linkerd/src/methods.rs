@@ -46,6 +46,7 @@ use provekit_canonicalizer::blake3_512_of;
 use provekit_linker::{LinkerCallEdge, LinkerContract};
 use serde_json::Value as Json;
 use tokio::sync::Mutex;
+use tokio::task;
 use tracing::instrument;
 
 use crate::state::ProjectState;
@@ -56,10 +57,6 @@ use crate::state::ProjectState;
 
 pub const ERR_METHOD_NOT_FOUND: i64 = -32601;
 pub const ERR_INVALID_PARAMS: i64 = -32602;
-// -32603 is the JSON-RPC standard code for "Internal error". The spec pins this
-// at protocol/specs/2026-04-30-agent-plugin-protocol.md and
-// protocol/specs/2026-04-30-ir-compiler-protocol.md for daemon/plugin crashes.
-pub const ERR_INTERNAL: i64 = -32603;
 pub const ERR_KIT_NOT_IN_MANIFEST: i64 = -33001;
 pub const ERR_LIFTER_UNAVAILABLE: i64 = -33002;
 #[allow(dead_code)]
@@ -119,9 +116,6 @@ pub async fn handle_parse_file(
         }
         Err(LiftError::KitNotInManifest(msg)) => {
             return rpc_error(ERR_KIT_NOT_IN_MANIFEST, &msg, id)
-        }
-        Err(LiftError::Internal(msg)) => {
-            return rpc_error(ERR_INTERNAL, &msg, id)
         }
     };
 
@@ -246,10 +240,6 @@ pub fn shutdown_response(id: &Json) -> Json {
 enum LiftError {
     LifterUnavailable(String),
     KitNotInManifest(String),
-    // Internal covers worker-thread panics and runtime shutdown from spawn_blocking.
-    // This is distinct from LifterUnavailable: the kit IS installed; the daemon itself
-    // failed internally. Surfaced as ERR_INTERNAL (-32603) per spec §error-codes.
-    Internal(String),
 }
 
 /// Lift `source` for the given `kit_id` and return `(contracts, call_edges)`.
@@ -480,121 +470,108 @@ async fn spawn_kit_lifter(
     source: &str,
     kit_label: &str,
 ) -> Result<(Vec<LinkerContract>, Vec<LinkerCallEdge>), LiftError> {
-    // Owned copies for the 'static closure required by spawn_blocking.
     let binary = binary.to_string();
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let file = file.to_string();
     let source = source.to_string();
     let kit_label = kit_label.to_string();
 
-    let result = tokio::task::spawn_blocking(move || {
+    task::spawn_blocking(move || {
         let mut child = Command::new(&binary)
             .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|e| {
-                LiftError::LifterUnavailable(format!("spawn {binary}: {e}"))
-            })?;
-
-        let mut stdin = child.stdin.take().ok_or_else(|| {
-            LiftError::LifterUnavailable("no stdin handle".to_string())
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            LiftError::LifterUnavailable("no stdout handle".to_string())
-        })?;
-        let mut reader = BufReader::new(stdout);
-
-        // 1. Send initialize.
-        let init_req = serde_json::json!({
-            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
-        });
-        let init_line = serde_json::to_string(&init_req).unwrap() + "\n";
-        stdin.write_all(init_line.as_bytes()).map_err(|e| {
-            LiftError::LifterUnavailable(format!("write initialize to {binary}: {e}"))
+        .map_err(|e| {
+            LiftError::LifterUnavailable(format!("spawn {binary}: {e}"))
         })?;
 
-        // 2. Read initialize response (discard).
-        let mut init_resp = String::new();
-        reader.read_line(&mut init_resp).map_err(|e| {
-            LiftError::LifterUnavailable(format!("read initialize from {binary}: {e}"))
-        })?;
+    let mut stdin = child.stdin.take().ok_or_else(|| {
+        LiftError::LifterUnavailable("no stdin handle".to_string())
+    })?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        LiftError::LifterUnavailable("no stdout handle".to_string())
+    })?;
+    let mut reader = BufReader::new(stdout);
 
-        // 3. Send parse request.
-        let parse_req = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "parse",
-            "params": { "path": file, "source": source }
-        });
-        let parse_line = serde_json::to_string(&parse_req).unwrap() + "\n";
-        stdin.write_all(parse_line.as_bytes()).map_err(|e| {
-            LiftError::LifterUnavailable(format!("write parse to {binary}: {e}"))
-        })?;
+    // 1. Send initialize.
+    let init_req = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+    });
+    let init_line = serde_json::to_string(&init_req).unwrap() + "\n";
+    stdin.write_all(init_line.as_bytes()).map_err(|e| {
+        LiftError::LifterUnavailable(format!("write initialize to {binary}: {e}"))
+    })?;
 
-        // 4. Read parse response.
-        let mut resp_line = String::new();
-        reader.read_line(&mut resp_line).map_err(|e| {
-            LiftError::LifterUnavailable(format!("read parse from {binary}: {e}"))
-        })?;
+    // 2. Read initialize response (discard).
+    let mut init_resp = String::new();
+    reader.read_line(&mut init_resp).map_err(|e| {
+        LiftError::LifterUnavailable(format!("read initialize from {binary}: {e}"))
+    })?;
 
-        // Send shutdown and drop stdin to let the subprocess exit cleanly.
-        let shutdown_req = serde_json::json!({
-            "jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": {}
-        });
-        let shutdown_line = serde_json::to_string(&shutdown_req).unwrap() + "\n";
-        let _ = stdin.write_all(shutdown_line.as_bytes());
-        drop(stdin);
-        let _ = child.wait();
+    // 3. Send parse request.
+    let parse_req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "parse",
+        "params": { "path": file, "source": source }
+    });
+    let parse_line = serde_json::to_string(&parse_req).unwrap() + "\n";
+    stdin.write_all(parse_line.as_bytes()).map_err(|e| {
+        LiftError::LifterUnavailable(format!("write parse to {binary}: {e}"))
+    })?;
 
-        // 5. Parse response.
-        let resp: Json = serde_json::from_str(resp_line.trim()).map_err(|e| {
-            LiftError::LifterUnavailable(format!(
-                "parse JSON from {binary}: {e}; raw: {resp_line}"
-            ))
-        })?;
+    // 4. Read parse response.
+    let mut resp_line = String::new();
+    reader.read_line(&mut resp_line).map_err(|e| {
+        LiftError::LifterUnavailable(format!("read parse from {binary}: {e}"))
+    })?;
 
-        if let Some(err) = resp.get("error") {
-            return Err(LiftError::LifterUnavailable(format!(
-                "{binary} returned RPC error: {err}"
-            )));
-        }
+    // Send shutdown and drop stdin to let the subprocess exit cleanly.
+    let shutdown_req = serde_json::json!({
+        "jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": {}
+    });
+    let shutdown_line = serde_json::to_string(&shutdown_req).unwrap() + "\n";
+    let _ = stdin.write_all(shutdown_line.as_bytes());
+    drop(stdin);
+    let _ = child.wait();
 
-        let result = resp.get("result").ok_or_else(|| {
-            LiftError::LifterUnavailable(format!(
-                "{binary} response missing 'result' field"
-            ))
-        })?;
+    // 5. Parse response.
+    let resp: Json = serde_json::from_str(resp_line.trim()).map_err(|e| {
+        LiftError::LifterUnavailable(format!(
+            "parse JSON from {binary}: {e}; raw: {resp_line}"
+        ))
+    })?;
 
-        // 6. Extract declarations array.
-        let decls_json = extract_array_field(result, "declarations");
-        let contracts = decls_json
-            .iter()
-            .filter_map(|decl| parse_declaration_to_contract(decl, &kit_label))
-            .collect::<Vec<_>>();
+    if let Some(err) = resp.get("error") {
+        return Err(LiftError::LifterUnavailable(format!(
+            "{binary} returned RPC error: {err}"
+        )));
+    }
 
-        // 7. Extract callEdges array (may be absent for some kits, e.g. zig).
-        let edges_json = extract_array_field(result, "callEdges");
-        let call_edges = edges_json
-            .iter()
-            .filter_map(parse_call_edge)
-            .collect::<Vec<_>>();
+    let result = resp.get("result").ok_or_else(|| {
+        LiftError::LifterUnavailable(format!(
+            "{binary} response missing 'result' field"
+        ))
+    })?;
+
+    // 6. Extract declarations array.
+    let decls_json = extract_array_field(result, "declarations");
+    let contracts = decls_json
+        .iter()
+        .filter_map(|decl| parse_declaration_to_contract(decl, &kit_label))
+        .collect::<Vec<_>>();
+
+    // 7. Extract callEdges array (may be absent for some kits, e.g. zig).
+    let edges_json = extract_array_field(result, "callEdges");
+    let call_edges = edges_json
+        .iter()
+        .filter_map(parse_call_edge)
+        .collect::<Vec<_>>();
 
         Ok((contracts, call_edges))
-    })
-    .await;
-
-    match result {
-        Ok(inner) => inner,
-        // JoinError = the blocking worker thread panicked or the Tokio runtime was shut
-        // down. The kit IS installed; this is a daemon-internal failure. Mapping to
-        // LifterUnavailable (-33002) would tell clients "kit not installed", wasting
-        // their install-debug time. Use Internal (-32603) per spec §error-codes.
-        Err(join_err) => Err(LiftError::Internal(format!(
-            "spawn_blocking worker failed: {join_err}"
-        ))),
-    }
+    }).await.map_err(|e| LiftError::LifterUnavailable(format!("spawn_blocking: {e}")))?
 }
 
 /// Extract a JSON array from a field in a result object.
@@ -888,12 +865,8 @@ async fn lift_rust_source(
 
     match result {
         Ok(inner) => inner,
-        // JoinError = the blocking worker thread panicked or the Tokio runtime was shut
-        // down. The kit IS installed; this is a daemon-internal failure. Mapping to
-        // LifterUnavailable (-33002) would tell clients "kit not installed", wasting
-        // their install-debug time. Use Internal (-32603) per spec §error-codes.
-        Err(join_err) => Err(LiftError::Internal(format!(
-            "spawn_blocking worker failed: {join_err}"
+        Err(join_err) => Err(LiftError::LifterUnavailable(format!(
+            "spawn_blocking error: {join_err}"
         ))),
     }
 }
@@ -917,57 +890,5 @@ fn value_to_json(v: &provekit_canonicalizer::Value) -> Json {
             }
             Json::Object(map)
         }
-    }
-}
-
-// -------------------------------------------------------------------
-// Unit tests
-// -------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Regression: a spawn_blocking JoinError must NOT surface as ERR_LIFTER_UNAVAILABLE
-    /// (-33002). That code is reserved for "kit not installed / install-hint" conditions.
-    /// A worker-thread panic is an internal daemon failure; it should be ERR_INTERNAL
-    /// (-32603) per protocol/specs/2026-04-30-agent-plugin-protocol.md.
-    ///
-    /// We produce a real JoinError by spawning a panicking task, then verify that the
-    /// resulting error code is -32603 and explicitly NOT -33002.
-    #[tokio::test]
-    async fn join_error_maps_to_internal_not_lifter_unavailable() {
-        // Produce a real JoinError from a panicking spawn_blocking closure.
-        let join_result = tokio::task::spawn_blocking(|| {
-            panic!("simulated worker panic");
-        })
-        .await;
-
-        assert!(join_result.is_err(), "expected JoinError from panicking task");
-        // SAFETY: we just confirmed is_err().
-        let join_err = join_result.unwrap_err();
-
-        // Apply the same mapping used in spawn_kit_lifter and lift_rust_source.
-        let lift_err = LiftError::Internal(format!("spawn_blocking worker failed: {join_err}"));
-
-        // Verify the error dispatches to ERR_INTERNAL, not ERR_LIFTER_UNAVAILABLE.
-        let id = serde_json::json!(1);
-        let response = match lift_err {
-            LiftError::LifterUnavailable(msg) => rpc_error(ERR_LIFTER_UNAVAILABLE, &msg, &id),
-            LiftError::KitNotInManifest(msg) => rpc_error(ERR_KIT_NOT_IN_MANIFEST, &msg, &id),
-            LiftError::Internal(msg) => rpc_error(ERR_INTERNAL, &msg, &id),
-        };
-
-        let code = response["error"]["code"].as_i64().expect("error.code must be i64");
-
-        assert_eq!(
-            code, ERR_INTERNAL,
-            "JoinError must map to ERR_INTERNAL (-32603), got {code}"
-        );
-        assert_ne!(
-            code, ERR_LIFTER_UNAVAILABLE,
-            "JoinError must NOT map to ERR_LIFTER_UNAVAILABLE (-33002); \
-             that code is reserved for kit-not-installed conditions"
-        );
     }
 }
