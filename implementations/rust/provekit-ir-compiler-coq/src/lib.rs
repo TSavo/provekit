@@ -77,13 +77,17 @@ impl IrCompiler for CoqCompiler {
         if dialect != DIALECT {
             return Err(CompileError::UnsupportedDialect(dialect.to_string()));
         }
-        
         let (preamble, body, free_vars) = self.compile_inner(ir)?;
-        
         Ok(CompiledFormula {
             preamble,
             body,
             free_vars,
+            opacity_manifest: provekit_ir_compiler::OpacityManifest {
+                protocol_version: "ir-compiler-protocol/2".to_string(),
+                compiler: DIALECT.to_string(),
+                compiler_version: COMPILER_VERSION.to_string(),
+                opacities: vec![],
+            },
         })
     }
 
