@@ -120,6 +120,26 @@ use catalog_format as catalog_format_invariants;
 // name in `author_all_invariants()` reads `lift_plugin_protocol`.
 use lift_plugin_protocol as lift_plugin_protocol_invariants;
 
+/// The standard protocol-contract slab: lift-plugin-protocol C1-C8, split
+/// into the concrete contract facets authored by `lift_plugin_protocol.rs`.
+///
+/// This list is the stable ordering for the separate protocol contract set.
+/// The set CID itself is order-independent, but keeping the order named here
+/// makes missing/additive drift loud in tests and extraction tools.
+pub const LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES: &[&str] = &[
+    "lift_plugin_initialize_protocol_version_match",
+    "lift_plugin_initialize_capabilities_authoring_surfaces_nonempty",
+    "lift_plugin_initialize_capabilities_ir_version_starts_with_v",
+    "lift_plugin_lift_request_surface_is_string",
+    "lift_plugin_lift_request_source_paths_nonempty",
+    "lift_plugin_lift_request_source_paths_each_nonempty",
+    "lift_plugin_lift_request_surface_in_capabilities",
+    "lift_plugin_lift_response_kind_in_set",
+    "lift_plugin_lift_response_ir_document_array",
+    "lift_plugin_diagnostic_field_is_array",
+    "lift_emits_call_edge_stream",
+];
+
 // --- Orchestrator types ----------------------------------------------------
 
 /// Source-file label tagging which module of contracts we're walking.
@@ -295,6 +315,71 @@ fn run_one_slab(
     f();
     let contracts = finish();
     AuthoredSlab { source, contracts }
+}
+
+/// Derive the signer-independent contract CIDs for the standard protocol
+/// contract slab without minting the full Rust self-contracts bundle.
+pub fn lift_plugin_protocol_contract_cids() -> Result<BTreeMap<String, String>, String> {
+    let slab = run_one_slab(
+        InvariantSource {
+            label: "lift_plugin_protocol",
+            path: "provekit-self-contracts/src/lift_plugin_protocol.rs",
+        },
+        lift_plugin_protocol_invariants::invariants,
+    );
+    let signer_seed: Ed25519Seed = [0x42; 32];
+    let mut cids = BTreeMap::new();
+
+    for d in &slab.contracts {
+        let args = MintContractArgs {
+            contract_name: d.name.clone(),
+            pre: d.pre.as_deref().map(formula_to_value),
+            post: d.post.as_deref().map(formula_to_value),
+            inv: d.inv.as_deref().map(formula_to_value),
+            out_binding: d.out_binding.clone(),
+            produced_by: PRODUCED_BY.into(),
+            produced_at: DECLARED_AT.into(),
+            input_cids: vec![],
+            authoring: Authoring::KitAuthor {
+                author: PRODUCED_BY.into(),
+                note: Some(format!("protocol contract from {}", slab.source.path)),
+            },
+            signer_seed,
+        };
+        if cids.contains_key(&d.name) {
+            return Err(format!("duplicate protocol contract name `{}`", d.name));
+        }
+        cids.insert(d.name.clone(), compute_contract_cid(&args));
+    }
+
+    let mut missing = Vec::new();
+    for name in LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES {
+        if !cids.contains_key(*name) {
+            missing.push(*name);
+        }
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "lift_plugin_protocol slab missing {} expected contract(s): {}",
+            missing.len(),
+            missing.join(", ")
+        ));
+    }
+    if cids.len() != LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES.len() {
+        return Err(format!(
+            "lift_plugin_protocol slab emitted {} contract(s); expected {}",
+            cids.len(),
+            LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES.len()
+        ));
+    }
+
+    Ok(cids)
+}
+
+/// Derive the standard protocol contract-set CID.
+pub fn lift_plugin_protocol_contract_set_cid() -> Result<String, String> {
+    let cids = lift_plugin_protocol_contract_cids()?;
+    Ok(compute_contract_set_cid(cids.values().cloned().collect()))
 }
 
 /// Result from minting the self-proof.

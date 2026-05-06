@@ -1,4 +1,7 @@
 use provekit_canonicalizer::blake3_512_of;
+use provekit_claim_envelope::{
+    mint_bridge_v14, BridgeTargetV14, MintBridgeV14Args, MintedEnvelope,
+};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -16,6 +19,17 @@ const EXPECTED_CATALOG_CID: &str = concat!(
     "ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80",
     "f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781"
 );
+const EXPECTED_PROTOCOL_CONTRACT_SET_CID: &str = concat!(
+    "blake3-512:",
+    "2a4dc95d1af1ff9f7f5a3414dd7fef67ab342155f4ff204aaf333b2dab6441ec",
+    "ddd2ed2d53aaabb5c929eefa8d4155a9f7a1725f8ea2febefe04c4f7365c27ab"
+);
+const EMPTY_CONTRACT_SET_CID: &str = concat!(
+    "blake3-512:",
+    "d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab",
+    "09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229"
+);
+const PROTOCOL_BRIDGE_DECLARED_AT: &str = "2026-05-06T00:00:00.000Z";
 
 const CORE_FIXTURES: &[&str] = &[
     "eq_atomic",
@@ -55,6 +69,24 @@ struct FixtureToml {
     catalog_version: String,
     catalog_cid: String,
     fixture: Vec<Fixture>,
+}
+
+#[derive(Debug, Clone)]
+struct KitSelfContractAttestation {
+    kit: String,
+    attestation_lang: String,
+    contract_set_cid: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SelfContractAttestationJson {
+    #[serde(rename = "schemaVersion")]
+    schema_version: String,
+    kind: String,
+    lang: String,
+    cid: String,
+    #[serde(rename = "contractSetCid")]
+    contract_set_cid: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -305,6 +337,160 @@ fn cid_is_well_formed(s: &str) -> bool {
         && hex
             .bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+fn protocol_contract_set_cid() -> Result<String> {
+    provekit_self_contracts::lift_plugin_protocol_contract_set_cid()
+}
+
+fn attestation_lang_for_kit(kit: &str) -> &str {
+    match kit {
+        "typescript" => "ts",
+        other => other,
+    }
+}
+
+fn load_self_contract_attestations(profile: Profile) -> Result<Vec<KitSelfContractAttestation>> {
+    let mut out = Vec::new();
+    for kit in profile.required_kits() {
+        let attestation_lang = attestation_lang_for_kit(kit);
+        let path = repo_root()
+            .join(".provekit/self-contracts-attestations")
+            .join(format!("{attestation_lang}.json"));
+        let raw = fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let parsed: SelfContractAttestationJson =
+            serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))?;
+        if parsed.schema_version != "1" {
+            return Err(format!(
+                "{} schemaVersion={:?}; expected \"1\"",
+                path.display(),
+                parsed.schema_version
+            ));
+        }
+        if parsed.kind != "self-contracts-attestation" {
+            return Err(format!(
+                "{} kind={:?}; expected self-contracts-attestation",
+                path.display(),
+                parsed.kind
+            ));
+        }
+        if parsed.lang != attestation_lang {
+            return Err(format!(
+                "{} lang={:?}; expected {:?}",
+                path.display(),
+                parsed.lang,
+                attestation_lang
+            ));
+        }
+        if !cid_is_well_formed(&parsed.cid) {
+            return Err(format!(
+                "{} cid is malformed: {}",
+                path.display(),
+                parsed.cid
+            ));
+        }
+        if !cid_is_well_formed(&parsed.contract_set_cid) {
+            return Err(format!(
+                "{} contractSetCid is malformed: {}",
+                path.display(),
+                parsed.contract_set_cid
+            ));
+        }
+        if parsed.contract_set_cid == EMPTY_CONTRACT_SET_CID {
+            return Err(format!(
+                "{} contractSetCid is the empty-set sentinel; self-contracts are not wired",
+                path.display()
+            ));
+        }
+        out.push(KitSelfContractAttestation {
+            kit: kit.to_string(),
+            attestation_lang: attestation_lang.to_string(),
+            contract_set_cid: parsed.contract_set_cid,
+        });
+    }
+    Ok(out)
+}
+
+fn mint_protocol_contract_bridge(
+    attestation: &KitSelfContractAttestation,
+) -> Result<MintedEnvelope> {
+    if !cid_is_well_formed(&attestation.contract_set_cid) {
+        return Err(format!(
+            "{} self-contract set CID is malformed: {}",
+            attestation.kit, attestation.contract_set_cid
+        ));
+    }
+    let args = MintBridgeV14Args {
+        name: format!(
+            "{}-self-contracts-implements-provekit-protocol",
+            attestation.attestation_lang
+        ),
+        source_symbol: "self_contracts".into(),
+        source_layer: format!("{}-self-contracts", attestation.attestation_lang),
+        source_contract_cid: attestation.contract_set_cid.clone(),
+        target: BridgeTargetV14::ContractSet {
+            cid: EXPECTED_PROTOCOL_CONTRACT_SET_CID.into(),
+        },
+        target_witness_cid: None,
+        target_binary_cid: None,
+        target_layer: Some("provekit-protocol-contracts".into()),
+        target_contract_set_cid: None,
+        produced_by: Some("cross-kit-conformance@0.1".into()),
+        produced_at: Some(PROTOCOL_BRIDGE_DECLARED_AT.into()),
+        declared_at: PROTOCOL_BRIDGE_DECLARED_AT.into(),
+        signer_seed: [0x42; 32],
+    };
+    Ok(mint_bridge_v14(&args))
+}
+
+fn assert_protocol_bridge_targets_protocol_set(
+    canonical_bytes: &[u8],
+    attestation: &KitSelfContractAttestation,
+) -> Result<()> {
+    let raw = std::str::from_utf8(canonical_bytes)
+        .map_err(|e| format!("bridge bytes are not UTF-8: {e}"))?;
+    if raw.contains("pending-") || raw.contains("deferred:") || raw.contains("null") {
+        return Err("protocol bridge contains a placeholder or null".to_string());
+    }
+
+    let bridge: serde_json::Value =
+        serde_json::from_slice(canonical_bytes).map_err(|e| format!("parse bridge JCS: {e}"))?;
+    let header = bridge
+        .get("header")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| "bridge header missing or not an object".to_string())?;
+    if header.get("kind").and_then(|v| v.as_str()) != Some("bridge") {
+        return Err("bridge header.kind must be bridge".to_string());
+    }
+    if header.get("sourceContractCid").and_then(|v| v.as_str())
+        != Some(attestation.contract_set_cid.as_str())
+    {
+        return Err(format!(
+            "{} bridge sourceContractCid does not match self contractSetCid",
+            attestation.kit
+        ));
+    }
+    let expected_source_layer = format!("{}-self-contracts", attestation.attestation_lang);
+    if header.get("sourceLayer").and_then(|v| v.as_str()) != Some(expected_source_layer.as_str()) {
+        return Err(format!(
+            "{} bridge sourceLayer does not name the kit self-contracts layer",
+            attestation.kit
+        ));
+    }
+    let target = header
+        .get("target")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| "bridge header.target missing or not an object".to_string())?;
+    if target.get("kind").and_then(|v| v.as_str()) != Some("contractSet") {
+        return Err("bridge target.kind must be contractSet".to_string());
+    }
+    if target.get("cid").and_then(|v| v.as_str()) != Some(EXPECTED_PROTOCOL_CONTRACT_SET_CID) {
+        return Err(format!(
+            "{} bridge target.cid does not match pinned protocolContractSetCid",
+            attestation.kit
+        ));
+    }
+    Ok(())
 }
 
 fn load_fixtures() -> Result<FixtureToml> {
@@ -1603,6 +1789,36 @@ fn run_native_checks(checks: &[NativeCheck]) -> usize {
     failures
 }
 
+fn run_protocol_contract_gate(profile: Profile) -> Result<usize> {
+    println!("\nProtocol Contract Bridge Gate");
+    let got = protocol_contract_set_cid()?;
+    if got != EXPECTED_PROTOCOL_CONTRACT_SET_CID {
+        return Err(format!(
+            "protocolContractSetCid drift:\n  got:  {got}\n  want: {EXPECTED_PROTOCOL_CONTRACT_SET_CID}"
+        ));
+    }
+    println!("  protocolContractSetCid: {got}");
+
+    let mut failures = 0;
+    for attestation in load_self_contract_attestations(profile)? {
+        match mint_protocol_contract_bridge(&attestation).and_then(|bridge| {
+            assert_protocol_bridge_targets_protocol_set(&bridge.canonical_bytes, &attestation)
+        }) {
+            Ok(()) => {
+                println!(
+                    "  PASS {:<10} selfContractSetCid -> protocolContractSetCid",
+                    attestation.kit
+                );
+            }
+            Err(e) => {
+                failures += 1;
+                println!("  FAIL {:<10} {e}", attestation.kit);
+            }
+        }
+    }
+    Ok(failures)
+}
+
 fn print_help() {
     println!(
         "cross-kit-conformance\n\
@@ -1667,7 +1883,9 @@ fn run(profile: Profile) -> Result<usize> {
     }
     assert_profile_inventory(profile, &direct, &native)?;
 
-    let failures = run_direct_adapters(&direct, &fixtures) + run_native_checks(&native);
+    let failures = run_protocol_contract_gate(profile)?
+        + run_direct_adapters(&direct, &fixtures)
+        + run_native_checks(&native);
     println!("\nResult");
     if failures == 0 {
         println!("  all selected conformance CID checks passed");
@@ -1760,5 +1978,25 @@ mod tests {
         ));
         assert!(!cid_is_well_formed("blake3-512:ABC"));
         assert!(!cid_is_well_formed("sha256:abc"));
+    }
+
+    #[test]
+    fn protocol_contract_set_cid_is_pinned_to_rust_source() {
+        let got = protocol_contract_set_cid().expect("derive protocol contract set CID");
+        assert_eq!(got, EXPECTED_PROTOCOL_CONTRACT_SET_CID);
+    }
+
+    #[test]
+    fn protocol_contract_bridges_target_pinned_contract_set() {
+        let attestations =
+            load_self_contract_attestations(Profile::Linux).expect("load linux attestations");
+        assert_eq!(attestations.len(), 11);
+
+        for attestation in attestations {
+            let bridge = mint_protocol_contract_bridge(&attestation)
+                .expect("mint protocol contract-set bridge");
+            assert_protocol_bridge_targets_protocol_set(&bridge.canonical_bytes, &attestation)
+                .expect("bridge targets pinned protocol contract set");
+        }
     }
 }
