@@ -52,6 +52,13 @@ public sealed interface Sort {
         public String kind() { return "dependent"; }
     }
 
+    record Region(String name) implements Sort {
+        public String toJson() {
+            return "{\"kind\":\"region\",\"name\":\"" + escape(name) + "\"}";
+        }
+        public String kind() { return "region"; }
+    }
+
     Sort Bool = new Primitive("Bool");
     Sort Int = new Primitive("Int");
     Sort Real = new Primitive("Real");
