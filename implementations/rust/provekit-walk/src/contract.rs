@@ -617,7 +617,11 @@ impl EffectSet {
                     }
                 }
                 Effect::PinnedReference { target } => {
-                    match pool.lookup_pin_invariant(function_cid.unwrap_or(""), target) {
+                    let fc = match function_cid {
+                        Some(cid) if !cid.is_empty() => cid,
+                        _ => return Err(OpacityError::PinInvariantNotDischarged { target: target.clone() }),
+                    };
+                    match pool.lookup_pin_invariant(fc, target) {
                         Some(view) if !view.invariant.is_empty() => { /* discharged */ }
                         _ => return Err(OpacityError::PinInvariantNotDischarged { target: target.clone() }),
                     }
