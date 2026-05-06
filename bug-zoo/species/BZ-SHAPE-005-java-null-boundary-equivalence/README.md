@@ -17,4 +17,9 @@ maybe_null(name) => non_null(name)
 
 The dropped variant is not the historical fix. It is the Java ORP realizer emitting a native edge-closing shape, then being accepted only after the Java lifter sees the resulting `neq(name, null)` boundary.
 
+The dropped variant now carries two realization receipts before the fix receipt:
+
+- `proof-plan.json`: the target-neutral proof-first statement. It names the forbidden region `maybe_null(name) && !non_null(name)` and the eliminator that makes that region uninhabitable.
+- `language-dropper.json`: the Java language-dropper projection. It says how that proof plan becomes the `@Requires("name != null")` source shape in this Java specimen.
+
 The durable artifact is the fix receipt: it binds the generated host-language change to the exact missing edge it closed, the post-lift ProofIR, and the policy that admitted the closure.

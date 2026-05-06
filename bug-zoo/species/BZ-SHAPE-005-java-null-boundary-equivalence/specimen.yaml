@@ -65,6 +65,8 @@ dropper:
     cwd: dropped/provekit-native/kit-rpc
     argv: ["./run-java-realizer.sh"]
   outputSource: dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java
+  proofPlanFile: dropped/provekit-native/proof-plan.json
+  languageDropperFile: dropped/provekit-native/language-dropper.json
   closureProofIrFile: dropped/provekit-native/closure.proofir.json
   fixReceiptFile: dropped/provekit-native/fix-receipt.json
 wildSightings: []

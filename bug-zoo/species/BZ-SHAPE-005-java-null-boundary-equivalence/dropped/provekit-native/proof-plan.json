@@ -1,0 +1,46 @@
+{
+  "kind": "ProofPlan",
+  "schemaVersion": "1",
+  "problem": {
+    "kind": "bug-zoo-realization",
+    "species": "BZ-SHAPE-005",
+    "name": "Java Null Boundary Equivalence"
+  },
+  "obligation": {
+    "kind": "edge",
+    "sourcePredicate": "maybe_null(name)",
+    "targetPredicate": "non_null(name)",
+    "missingEdge": "maybe_null(name) => non_null(name)"
+  },
+  "policy": {
+    "mode": "proof_preferred",
+    "degradedEvidence": "refuse-for-this-specimen",
+    "policyCid": "blake3-512:f74e39d2e1913c6ba7d29c7fd9f88ec9a62151b2336ead78adf68eedfd185bac266d04034495cb5073e532571fa9a1ca896f72a351f91cd1fb9f6d7e83399f32"
+  },
+  "violationCondition": {
+    "kind": "and",
+    "formula": "maybe_null(name) && !non_null(name)",
+    "witnessFile": "exposed/sat-witness.json"
+  },
+  "objective": {
+    "kind": "unsat",
+    "formula": "maybe_null(name) && !non_null(name) after realization"
+  },
+  "eliminators": [
+    {
+      "kind": "strengthen-precondition",
+      "predicate": "non_null(name)",
+      "explanation": "Reject the null inhabitant before lookup executes."
+    },
+    {
+      "kind": "adapt-boundary",
+      "surfaceFamily": "java-contract",
+      "explanation": "Project the non-null precondition into a Java contract surface that the lifter already canonicalizes."
+    }
+  ],
+  "proofWitness": {
+    "kind": "contrapositive",
+    "statement": "Adding a boundary precondition equivalent to non_null(name) makes the violation condition maybe_null(name) && !non_null(name) uninhabitable for admitted calls.",
+    "closureWitnessCid": "blake3-512:38e31a2ce04b514a4e059eb30b52374214baaa4956eac95f86c3eef8bcdd64aa74c9f1e3bfb40b4413c72254d1e6a9aa12187d42d4f9c49ee1d91db7b9f517d0"
+  }
+}

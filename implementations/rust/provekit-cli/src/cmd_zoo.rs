@@ -129,6 +129,10 @@ struct Dropper {
     #[serde(default)]
     output_source: Option<PathBuf>,
     #[serde(default)]
+    proof_plan_file: Option<PathBuf>,
+    #[serde(default)]
+    language_dropper_file: Option<PathBuf>,
+    #[serde(default)]
     closure_proof_ir_file: Option<PathBuf>,
     #[serde(default)]
     fix_receipt_file: Option<PathBuf>,
@@ -327,7 +331,10 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
             manifest.predicates.missing_edge
         );
         if dropper_report.is_some() {
-            println!("zoo: dropper closed {} PASS", manifest.predicates.missing_edge);
+            println!(
+                "zoo: dropper closed {} PASS",
+                manifest.predicates.missing_edge
+            );
         }
     }
 
@@ -420,7 +427,14 @@ fn validate_manifest_shape(manifest: &SpecimenManifest) -> Vec<String> {
     }
 
     if manifest.dropper.available {
-        if manifest.dropper.surface.as_deref().unwrap_or("").trim().is_empty() {
+        if manifest
+            .dropper
+            .surface
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
             errors.push("dropper.surface is required when dropper.available is true".into());
         }
         if manifest.dropper.source.is_none() {
@@ -447,18 +461,27 @@ fn validate_manifest_shape(manifest: &SpecimenManifest) -> Vec<String> {
             errors.push("dropper.proofVar is required when dropper.available is true".into());
         }
         match &manifest.dropper.realizer_rpc {
-            Some(command) if command.argv.is_empty() => {
-                errors.push("dropper.realizerRpc.argv is required when dropper.available is true".into())
+            Some(command) if command.argv.is_empty() => errors
+                .push("dropper.realizerRpc.argv is required when dropper.available is true".into()),
+            None => {
+                errors.push("dropper.realizerRpc is required when dropper.available is true".into())
             }
-            None => errors.push("dropper.realizerRpc is required when dropper.available is true".into()),
             Some(_) => {}
         }
         if manifest.dropper.output_source.is_none() {
             errors.push("dropper.outputSource is required when dropper.available is true".into());
         }
+        if manifest.dropper.language_dropper_file.is_some()
+            && manifest.dropper.proof_plan_file.is_none()
+        {
+            errors.push(
+                "dropper.proofPlanFile is required when dropper.languageDropperFile is set".into(),
+            );
+        }
         if manifest.dropper.closure_proof_ir_file.is_none() {
-            errors
-                .push("dropper.closureProofIrFile is required when dropper.available is true".into());
+            errors.push(
+                "dropper.closureProofIrFile is required when dropper.available is true".into(),
+            );
         }
         if manifest.dropper.fix_receipt_file.is_none()
             && manifest.dropper.verify_output_file.is_none()
@@ -532,6 +555,8 @@ fn validate_paths(specimen_dir: &Path, manifest: &SpecimenManifest) -> Vec<Strin
         for path in [
             manifest.dropper.source.as_ref(),
             manifest.dropper.output_source.as_ref(),
+            manifest.dropper.proof_plan_file.as_ref(),
+            manifest.dropper.language_dropper_file.as_ref(),
             manifest.dropper.closure_proof_ir_file.as_ref(),
             manifest
                 .dropper
@@ -711,15 +736,17 @@ fn invoke_lift_rpc_exchange(
     }
 }
 
-fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Option<Value>, String> {
+fn verify_dropper(
+    specimen_dir: &Path,
+    manifest: &SpecimenManifest,
+) -> Result<Option<Value>, String> {
     if !manifest.dropper.available {
         return Ok(None);
     }
 
     let dropper = &manifest.dropper;
     let source_path = required_dropper_path(&dropper.source, "dropper.source")?;
-    let output_source_path =
-        required_dropper_path(&dropper.output_source, "dropper.outputSource")?;
+    let output_source_path = required_dropper_path(&dropper.output_source, "dropper.outputSource")?;
     let closure_ir_path =
         required_dropper_path(&dropper.closure_proof_ir_file, "dropper.closureProofIrFile")?;
     let fix_receipt_path = dropper
@@ -816,6 +843,36 @@ fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Op
     require_receipt_field(&fix_receipt, "closureWitnessCid", closure_witness_cid)?;
     require_receipt_field(&fix_receipt, "closureProofIrCid", &post_lift_cid)?;
 
+    let proof_plan_report = match &dropper.proof_plan_file {
+        Some(path) => Some(verify_proof_plan(
+            specimen_dir,
+            path,
+            &manifest.predicates,
+            &fix_receipt,
+        )?),
+        None => None,
+    };
+    let proof_plan_cid = proof_plan_report
+        .as_ref()
+        .and_then(|report| report.get("cid"))
+        .and_then(Value::as_str);
+
+    let language_dropper_report = match &dropper.language_dropper_file {
+        Some(path) => Some(verify_language_dropper_projection(
+            specimen_dir,
+            path,
+            proof_plan_cid,
+            surface,
+            target_symbol,
+            proof_var,
+            source_path,
+            output_source_path,
+            closure_ir_path,
+            &fix_receipt,
+        )?),
+        None => None,
+    };
+
     Ok(Some(json!({
         "status": "closed",
         "surface": surface,
@@ -827,8 +884,146 @@ fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Op
         "postLiftCid": post_lift_document_cid,
         "closureWitnessCid": closure_witness_cid,
         "closureProofIrCid": post_lift_cid,
+        "proofPlan": proof_plan_report,
+        "languageDropper": language_dropper_report,
         "fixReceipt": fix_receipt,
     })))
+}
+
+fn verify_proof_plan(
+    specimen_dir: &Path,
+    proof_plan_path: &Path,
+    predicates: &Predicates,
+    fix_receipt: &Value,
+) -> Result<Value, String> {
+    let path = specimen_dir.join(proof_plan_path);
+    let proof_plan = read_json(path)?;
+    if proof_plan.get("kind").and_then(Value::as_str) != Some("ProofPlan") {
+        return Err("dropper proofPlanFile must record kind: ProofPlan".into());
+    }
+    if proof_plan.get("schemaVersion").and_then(Value::as_str) != Some("1") {
+        return Err("dropper proofPlanFile must record schemaVersion: 1".into());
+    }
+    require_json_pointer(
+        &proof_plan,
+        "/obligation/missingEdge",
+        &predicates.missing_edge,
+        "dropper proofPlanFile",
+    )?;
+    require_json_pointer(
+        &proof_plan,
+        "/obligation/sourcePredicate",
+        &predicates.boundary,
+        "dropper proofPlanFile",
+    )?;
+    require_json_pointer(
+        &proof_plan,
+        "/obligation/targetPredicate",
+        &predicates.sink,
+        "dropper proofPlanFile",
+    )?;
+
+    let policy_mode = json_pointer_str(&proof_plan, "/policy/mode")
+        .ok_or_else(|| "dropper proofPlanFile missing /policy/mode".to_string())?;
+    if !matches!(
+        policy_mode,
+        "proof_required" | "proof_preferred" | "proof_optional"
+    ) {
+        return Err(format!(
+            "dropper proofPlanFile has unsupported policy mode `{policy_mode}`"
+        ));
+    }
+
+    let cid = canonical_json_cid(&proof_plan)?;
+    require_receipt_field(fix_receipt, "proofPlanCid", &cid)?;
+    require_receipt_field(fix_receipt, "proofPolicyMode", policy_mode)?;
+
+    Ok(json!({
+        "cid": cid,
+        "policyMode": policy_mode,
+        "violationCondition": json_pointer_str(&proof_plan, "/violationCondition/formula"),
+        "objective": json_pointer_str(&proof_plan, "/objective/formula"),
+    }))
+}
+
+fn verify_language_dropper_projection(
+    specimen_dir: &Path,
+    language_dropper_path: &Path,
+    proof_plan_cid: Option<&str>,
+    surface: &str,
+    target_symbol: &str,
+    proof_var: &str,
+    source_path: &Path,
+    output_source_path: &Path,
+    closure_ir_path: &Path,
+    fix_receipt: &Value,
+) -> Result<Value, String> {
+    let path = specimen_dir.join(language_dropper_path);
+    let projection = read_json(path)?;
+    if projection.get("kind").and_then(Value::as_str) != Some("LanguageDropperProjection") {
+        return Err(
+            "dropper languageDropperFile must record kind: LanguageDropperProjection".into(),
+        );
+    }
+    if projection.get("schemaVersion").and_then(Value::as_str) != Some("1") {
+        return Err("dropper languageDropperFile must record schemaVersion: 1".into());
+    }
+
+    let proof_plan_cid = proof_plan_cid
+        .ok_or_else(|| "language dropper projection requires a proof plan".to_string())?;
+    require_json_pointer(
+        &projection,
+        "/proofPlanCid",
+        proof_plan_cid,
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/surface",
+        surface,
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/targetSymbol",
+        target_symbol,
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/proofVar",
+        proof_var,
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/source",
+        &source_path.to_string_lossy(),
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/outputSource",
+        &output_source_path.to_string_lossy(),
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/postLift/proofIrFile",
+        &closure_ir_path.to_string_lossy(),
+        "dropper languageDropperFile",
+    )?;
+
+    let cid = canonical_json_cid(&projection)?;
+    require_receipt_field(fix_receipt, "languageDropperCid", &cid)?;
+
+    Ok(json!({
+        "cid": cid,
+        "kit": json_pointer_str(&projection, "/kit"),
+        "surface": surface,
+        "operation": json_pointer_str(&projection, "/operation/kind"),
+        "proofPlanCid": proof_plan_cid,
+    }))
 }
 
 fn required_json_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
@@ -837,6 +1032,26 @@ fn required_json_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, Strin
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| format!("dropper output missing {field}"))
+}
+
+fn json_pointer_str<'a>(value: &'a Value, pointer: &str) -> Option<&'a str> {
+    value.pointer(pointer).and_then(Value::as_str)
+}
+
+fn require_json_pointer(
+    value: &Value,
+    pointer: &str,
+    expected: &str,
+    context: &str,
+) -> Result<(), String> {
+    let actual = json_pointer_str(value, pointer);
+    if actual != Some(expected) {
+        return Err(format!(
+            "{context} {pointer} mismatch: expected {expected}, got {:?}",
+            actual
+        ));
+    }
+    Ok(())
 }
 
 fn require_receipt_field(receipt: &Value, field: &str, expected: &str) -> Result<(), String> {
@@ -1033,6 +1248,10 @@ fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
 }
 
 fn proof_ir_cid(value: &Value) -> Result<String, String> {
+    canonical_json_cid(value)
+}
+
+fn canonical_json_cid(value: &Value) -> Result<String, String> {
     let canonical = json_to_cvalue(value)?;
     let bytes = provekit_canonicalizer::encode_jcs(&canonical).into_bytes();
     Ok(provekit_canonicalizer::blake3_512_of(&bytes))
@@ -1138,6 +1357,8 @@ mod tests {
             proof_var: None,
             realizer_rpc: None,
             output_source: None,
+            proof_plan_file: None,
+            language_dropper_file: None,
             closure_proof_ir_file: None,
             fix_receipt_file: None,
             verify_output_file: None,
@@ -1285,6 +1506,8 @@ dropper:
     cwd: dropped/provekit-native/kit-rpc
     argv: ["./run-java-realizer.sh"]
   outputSource: dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java
+  proofPlanFile: dropped/provekit-native/proof-plan.json
+  languageDropperFile: dropped/provekit-native/language-dropper.json
   closureProofIrFile: dropped/provekit-native/closure.proofir.json
   verifyOutputFile: dropped/provekit-native/verify-output.json
 wildSightings: []
@@ -1292,15 +1515,29 @@ wildSightings: []
         let manifest: SpecimenManifest = serde_yaml::from_str(raw).expect("parse manifest");
 
         assert!(manifest.dropper.available);
-        assert_eq!(manifest.dropper.surface.as_deref(), Some("java-provekit-native"));
+        assert_eq!(
+            manifest.dropper.surface.as_deref(),
+            Some("java-provekit-native")
+        );
         assert_eq!(manifest.dropper.target_symbol.as_deref(), Some("lookup"));
         assert_eq!(manifest.dropper.proof_var.as_deref(), Some("name"));
+        assert_eq!(
+            manifest.dropper.proof_plan_file.as_deref(),
+            Some(Path::new("dropped/provekit-native/proof-plan.json"))
+        );
+        assert_eq!(
+            manifest.dropper.language_dropper_file.as_deref(),
+            Some(Path::new("dropped/provekit-native/language-dropper.json"))
+        );
         let realizer = manifest
             .dropper
             .realizer_rpc
             .as_ref()
             .expect("dropper realizer RPC config");
-        assert_eq!(realizer.cwd, PathBuf::from("dropped/provekit-native/kit-rpc"));
+        assert_eq!(
+            realizer.cwd,
+            PathBuf::from("dropped/provekit-native/kit-rpc")
+        );
         assert_eq!(realizer.argv, vec!["./run-java-realizer.sh"]);
     }
 
@@ -1363,6 +1600,35 @@ wildSightings: []
         assert!(errors
             .iter()
             .any(|error| error.contains("exposure `spring-web` liftRpc.argv is required")));
+    }
+
+    #[test]
+    fn validation_rejects_language_dropper_without_proof_plan() {
+        let mut manifest = valid_manifest();
+        manifest.dropper = Dropper {
+            available: true,
+            surface: Some("java-provekit-native".into()),
+            source: Some("lab/library/src/main/java/zoo/UserDirectory.java".into()),
+            target_symbol: Some("lookup".into()),
+            proof_var: Some("name".into()),
+            realizer_rpc: Some(CommandSpec {
+                cwd: "dropped/provekit-native/kit-rpc".into(),
+                argv: vec!["./run-java-realizer.sh".into()],
+            }),
+            output_source: Some(
+                "dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java".into(),
+            ),
+            proof_plan_file: None,
+            language_dropper_file: Some("dropped/provekit-native/language-dropper.json".into()),
+            closure_proof_ir_file: Some("dropped/provekit-native/closure.proofir.json".into()),
+            fix_receipt_file: Some("dropped/provekit-native/fix-receipt.json".into()),
+            verify_output_file: None,
+        };
+
+        let errors = validate_manifest_shape(&manifest);
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("dropper.proofPlanFile is required")));
     }
 
     #[test]

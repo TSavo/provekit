@@ -11,6 +11,7 @@
 - `2026-04-30-agent-plugin-protocol.md` - agent proposal surface
 - `2026-05-06-provenance-memento.md` - discharge memento shape and signing discipline
 - `2026-05-06-effect-discharge-classification.md` - effect discharge taxonomy
+- `2026-05-06-proofir-realization-compiler.md` - proof-first realization and artifact synthesis
 - `docs/superpowers/specs/2026-05-06-bug-zoo-design.md` - exposed/dropped lifecycle and re-lift acceptance rule
 - `docs/papers/09-lossy-boundary-compression.md` - paper-grade argument for boundary-domain loss and output constraint
 
@@ -97,6 +98,10 @@ ProofIR does not compile to application behavior. ProofIR MAY compile to witness
 **Witnesser.** A non-mutating realizer. It observes host context and emits evidence or refusal.
 
 **Dropper.** A mutating realizer. It emits a host artifact candidate and is accepted only after re-lift and closure verification.
+
+**ProofPlan.** A target-neutral ORP sub-artifact that names the forbidden region, usually `p and not(q)` for an edge `p -> q`, and the eliminator strategy intended to make that region uninhabitable. A proof plan is a proof-first realization artifact, not a host-language patch.
+
+**LanguageDropperProjection.** A target-specific ORP sub-artifact that binds a `ProofPlan` to a language, kit, surface, symbol, source artifact, output artifact, and post-lift expectation. It says how the target-neutral eliminator is projected into host source or host metadata.
 
 **Monitor.** A future long-lived witnesser. It attaches to a boundary and emits an evidence stream over time.
 
@@ -254,7 +259,167 @@ Gap obligation:
 }
 ```
 
-### Section 4.3 `RealizerOutput`
+### Section 4.3 `ProofPlan`
+
+`ProofPlan` is an optional but strongly preferred sub-artifact for ORP
+realization. It is target-neutral. It describes why a missing edge can be
+closed before any language dropper decides how to express the closure in
+host code.
+
+For an edge:
+
+```
+p -> q
+```
+
+the default proof-first form names the violation condition:
+
+```
+p and not(q)
+```
+
+and an objective:
+
+```
+unsat(p and not(q))
+```
+
+Canonical shape:
+
+```json
+{
+  "kind": "ProofPlan",
+  "schemaVersion": "1",
+  "problem": {
+    "kind": "orp-realization",
+    "planCid": "blake3-512:..."
+  },
+  "obligation": {
+    "kind": "edge",
+    "sourcePredicateCid": "blake3-512:...",
+    "targetPredicateCid": "blake3-512:...",
+    "gapCid": "blake3-512:..."
+  },
+  "policy": {
+    "mode": "proof_preferred",
+    "policyCid": "blake3-512:...",
+    "degradedEvidence": "mark"
+  },
+  "violationCondition": {
+    "kind": "formula",
+    "formulaCid": "blake3-512:..."
+  },
+  "objective": {
+    "kind": "unsat",
+    "formulaCid": "blake3-512:..."
+  },
+  "eliminators": [
+    {
+      "kind": "strengthen-precondition",
+      "predicateCid": "blake3-512:..."
+    }
+  ],
+  "proofWitnessCid": "blake3-512:..."
+}
+```
+
+Normative fields:
+
+| Field | Meaning |
+|---|---|
+| `kind` | MUST be `"ProofPlan"`. |
+| `schemaVersion` | MUST be `"1"` for this draft shape. |
+| `problem` | The realization problem, ORP plan, Bug Zoo specimen, or other context that produced the plan. |
+| `obligation` | The predicate, edge, or gap the plan is intended to discharge. |
+| `policy.mode` | `"proof_required"`, `"proof_preferred"`, or `"proof_optional"`. |
+| `policy.policyCid` | Policy governing plan acceptance. |
+| `violationCondition` | Formula naming the forbidden region. |
+| `objective` | Proof objective, usually unsatisfiability of the violation condition. |
+| `eliminators` | One or more target-neutral strategies for eliminating the forbidden region. |
+| `proofWitnessCid` | Optional witness for the plan itself. Policy decides whether this is required. |
+
+Policy modes:
+
+| Mode | Meaning |
+|---|---|
+| `proof_required` | A transform without a validating `ProofPlan` MUST be refused. |
+| `proof_preferred` | Proof-first transforms are preferred; proofless transforms MAY be accepted only with degraded-evidence marking. |
+| `proof_optional` | Direct candidate generation MAY be accepted when other target evidence satisfies policy. |
+
+Initial eliminator kinds:
+
+| Kind | Meaning |
+|---|---|
+| `strengthen-precondition` | Reject inputs or states for which the target predicate would fail. |
+| `construct-postcondition` | Construct or transform output so the target predicate holds. |
+| `preserve-invariant` | Maintain an invariant across a transition. |
+| `guard-effect` | Prevent an unsafe effect unless required facts hold. |
+| `adapt-boundary` | Insert or use a wrapper, annotation, schema, validator, or adapter at a boundary. |
+| `attest-runtime` | Produce runtime evidence that the bound value satisfies the predicate. |
+| `monitor-transition` | Emit or attach a checker that continues witnessing over time. |
+
+### Section 4.4 `LanguageDropperProjection`
+
+`LanguageDropperProjection` is an optional ORP sub-artifact for
+`transform` mode. It binds a proof plan to one language or framework
+surface. It is the formal place to say:
+
+```
+this proof plan projects into this host-language shape
+```
+
+Canonical shape:
+
+```json
+{
+  "kind": "LanguageDropperProjection",
+  "schemaVersion": "1",
+  "proofPlanCid": "blake3-512:...",
+  "kit": "java",
+  "surface": "java-provekit-native",
+  "targetSymbol": "lookup",
+  "bindings": [
+    {
+      "proofVar": "name",
+      "hostPath": "parameter:name"
+    }
+  ],
+  "sourceArtifactCid": "blake3-512:...",
+  "outputArtifactCid": "blake3-512:...",
+  "operation": {
+    "kind": "add-boundary-precondition",
+    "projection": "strengthen-precondition"
+  },
+  "postLift": {
+    "proofIrCid": "blake3-512:...",
+    "expectedPredicateCid": "blake3-512:..."
+  }
+}
+```
+
+Normative fields:
+
+| Field | Meaning |
+|---|---|
+| `kind` | MUST be `"LanguageDropperProjection"`. |
+| `schemaVersion` | MUST be `"1"` for this draft shape. |
+| `proofPlanCid` | CID of the `ProofPlan` being projected. |
+| `kit` | Host kit responsible for the projection. |
+| `surface` | Host surface used by the projection. |
+| `targetSymbol` | Host symbol or boundary being changed. |
+| `bindings` | ProofIR-to-host binding map. |
+| `sourceArtifactCid` | Pre-projection host artifact CID when known. |
+| `outputArtifactCid` | Candidate or transformed artifact CID when known. |
+| `operation` | Host operation and the proof-plan eliminator it realizes. |
+| `postLift` | Expected post-lift ProofIR evidence. |
+
+If `LanguageDropperProjection.proofPlanCid` is present, the referenced
+`ProofPlan` MUST be available by CID or declared as an external
+dependency. A projection without a proof plan is malformed; a proofless
+dropper should omit `LanguageDropperProjection` and mark its result
+according to policy.
+
+### Section 4.5 `RealizerOutput`
 
 All ORP outputs share:
 
@@ -276,7 +441,7 @@ All ORP outputs share:
 
 `status` determines the result variant.
 
-### Section 4.4 `WitnessResult`
+### Section 4.6 `WitnessResult`
 
 ```json
 {
@@ -299,7 +464,7 @@ All ORP outputs share:
 
 The `evidenceCid` points to the memento or proof artifact whose bytes verify the witness. The evidence artifact MUST be independently checkable from its bytes plus accepted policy.
 
-### Section 4.5 `TransformResult`
+### Section 4.7 `TransformResult`
 
 ```json
 {
@@ -310,6 +475,9 @@ The `evidenceCid` points to the memento or proof artifact whose bytes verify the
   "planCid": "blake3-512:...",
   "gapCid": "blake3-512:...",
   "patchCid": "blake3-512:...",
+  "proofPolicyMode": "proof_preferred",
+  "proofPlanCid": "blake3-512:...",
+  "languageDropperCid": "blake3-512:...",
   "transformedArtifactCid": "blake3-512:...",
   "postLiftCid": "blake3-512:...",
   "closureWitnessCid": "blake3-512:...",
@@ -326,7 +494,18 @@ For accepted transform outputs, `status` MUST be `"closed"` and `closureWitnessC
 
 A realizer MAY return `status: "candidate"` for an unapplied or unverified transform, but candidate outputs MUST NOT enter the substrate as closure evidence.
 
-### Section 4.6 `RefusalResult`
+`proofPlanCid` and `languageDropperCid` are optional in the wire shape
+but policy-significant. If `proofPolicyMode` is `"proof_required"`, an
+accepted `TransformResult` MUST include `proofPlanCid`. If
+`languageDropperCid` is present, `proofPlanCid` MUST also be present and
+the language dropper projection MUST reference the same proof plan.
+
+Under `proof_preferred`, a transform without `proofPlanCid` MAY be
+accepted only if the result explicitly marks degraded evidence in a
+policy-recognized field or receipt. Under `proof_optional`, policy may
+accept closure evidence without a proof plan.
+
+### Section 4.8 `RefusalResult`
 
 ```json
 {
@@ -370,13 +549,18 @@ Normative composition for droppers:
 
 ```
 closeByTransform(gap, artifact, policy):
-  candidate = transform(gap, artifact)
+  proofPlan = planProof(gap, policy) | omitted-by-policy
+  projection = project(proofPlan, artifact) | omitted-by-policy
+  candidate = transform(gap, artifact, proofPlan, projection)
   lifted    = lift(candidate.transformedArtifact)
   witness   = verify(gap.requiredEdge, lifted, policy)
   return TransformResult(status="closed", closureWitnessCid=witness.cid)
 ```
 
-If any step fails, the transform is not accepted. A transform candidate without post-lift closure is only a candidate.
+If any required step fails, the transform is not accepted. A transform
+candidate without post-lift closure is only a candidate. Whether
+`proofPlan` and `projection` are required is policy-selectable, but
+proof-first realization is the preferred ORP posture.
 
 The same checker bytecode MAY participate in multiple compositions:
 
@@ -459,15 +643,19 @@ Same lifecycle as other ProvekIt plugin protocols: complete in-flight requests, 
 
 2. **Droppers are never trusted directly.** A dropper output is accepted only after re-lift and closure witness. The patch itself is not a proof.
 
-3. **Checker bytecode is not application bytecode.** Compiled ProofIR checkers witness predicates; they do not implement the application behavior the predicates constrain.
+3. **Proofless transform is degraded evidence unless policy says otherwise.** A policy may allow direct candidate generation without a `ProofPlan`, but the output must not claim proof-first evidentiary strength.
 
-4. **Policy is explicit.** Every plan names a `policyCid`. A realizer may support a predicate and still fail under a stricter policy.
+4. **Language droppers project; they do not certify.** A `LanguageDropperProjection` states how a proof plan maps into a host-language shape. Acceptance still requires re-lift and closure witness.
 
-5. **Binding maps are part of the claim.** A witness over the wrong host value is invalid even if the predicate itself is true elsewhere.
+5. **Checker bytecode is not application bytecode.** Compiled ProofIR checkers witness predicates; they do not implement the application behavior the predicates constrain.
 
-6. **Mutation authority is mode-scoped.** `attest` mode must not modify the host context. `transform` mode may modify only declared artifacts. `monitor` mode may attach only at declared attachment points.
+6. **Policy is explicit.** Every plan names a `policyCid`. A realizer may support a predicate and still fail under a stricter policy.
 
-7. **Refusals fail closed.** Unsupported predicates, unsupported host contexts, invalid bindings, missing policy, and non-deterministic checker failure all return `RefusalResult`.
+7. **Binding maps are part of the claim.** A witness over the wrong host value is invalid even if the predicate itself is true elsewhere.
+
+8. **Mutation authority is mode-scoped.** `attest` mode must not modify the host context. `transform` mode may modify only declared artifacts. `monitor` mode may attach only at declared attachment points.
+
+9. **Refusals fail closed.** Unsupported predicates, unsupported host contexts, invalid bindings, missing policy, and non-deterministic checker failure all return `RefusalResult`.
 
 ## Section 8. Kit responsibilities
 
@@ -479,7 +667,9 @@ A conformant ORP kit:
 4. Includes enough provenance to identify the host artifact, realizer version, binding map, policy, and input CIDs.
 5. Refuses unsupported obligations explicitly.
 6. For `transform` mode, ensures accepted outputs include post-lift closure evidence.
-7. For checker bytecode targets, records the compiler CID, target runtime, predicate CID, and binding ABI.
+7. When emitting `proofPlanCid`, makes the referenced `ProofPlan` available by CID or declares it as an external dependency.
+8. When emitting `languageDropperCid`, makes the referenced `LanguageDropperProjection` available by CID and ensures it points at the same proof plan named by the transform.
+9. For checker bytecode targets, records the compiler CID, target runtime, predicate CID, and binding ABI.
 
 ## Section 9. Worked examples
 
@@ -569,6 +759,47 @@ attach check_amount to gateway -> witness stream
 ```
 
 The bytes may be the same. The ORP mode determines authority.
+
+### Section 9.4 Proof plan plus Java language dropper
+
+Gap:
+
+```
+maybe_null(name) -> non_null(name)
+```
+
+Proof plan:
+
+```
+violation condition: maybe_null(name) and not(non_null(name))
+objective: unsat(violation condition after realization)
+eliminator: strengthen-precondition(non_null(name))
+```
+
+Language dropper projection:
+
+```java
+@Requires("name != null")
+public String lookup(String name) {
+    return "user:" + name.toUpperCase();
+}
+```
+
+The projection is not accepted because it is Java, because it resembles a
+human fix, or because the dropper emitted it. It is accepted only when
+the Java lifter reads the transformed artifact back into ProofIR and the
+post-lift graph closes the named edge under policy.
+
+The receipt chain is:
+
+```
+ProofPlan CID
+  -> LanguageDropperProjection CID
+  -> transformed artifact CID
+  -> postLift CID
+  -> closureWitness CID
+  -> FixReceipt CID
+```
 
 ## Section 10. Non-goals
 

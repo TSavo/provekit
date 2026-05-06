@@ -119,6 +119,22 @@ fn java_null_boundary_specimen_checks() {
     assert_eq!(report["dropper"]["surface"], "java-provekit-native");
     assert_eq!(report["dropper"]["targetSymbol"], "lookup");
     assert_eq!(report["dropper"]["proofVar"], "name");
+    assert_eq!(
+        report["dropper"]["proofPlan"]["policyMode"],
+        "proof_preferred"
+    );
+    assert_eq!(
+        report["dropper"]["proofPlan"]["violationCondition"],
+        "maybe_null(name) && !non_null(name)"
+    );
+    assert_eq!(
+        report["dropper"]["languageDropper"]["operation"],
+        "add-boundary-precondition"
+    );
+    assert_eq!(
+        report["dropper"]["languageDropper"]["proofPlanCid"],
+        report["dropper"]["proofPlan"]["cid"]
+    );
 
     let native_cid = report["proofIrCids"]["provekit-native"]
         .as_str()

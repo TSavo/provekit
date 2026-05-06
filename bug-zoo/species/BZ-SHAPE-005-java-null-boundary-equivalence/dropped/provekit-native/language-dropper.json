@@ -1,0 +1,24 @@
+{
+  "kind": "LanguageDropperProjection",
+  "schemaVersion": "1",
+  "proofPlanCid": "blake3-512:e164a7b6fa9446cfe04f57e3139d3b5b43848871ac23bad42aa7201ddf58de63a56649f8c7750e1852bb3eb666244694c780fafa3d7ea16e3d3ced7b21890e85",
+  "kit": "java",
+  "surface": "java-provekit-native",
+  "targetSymbol": "lookup",
+  "proofVar": "name",
+  "source": "lab/library/src/main/java/zoo/UserDirectory.java",
+  "outputSource": "dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java",
+  "operation": {
+    "kind": "add-boundary-precondition",
+    "artifact": "@Requires(\"name != null\")",
+    "projection": "strengthen-precondition"
+  },
+  "postLift": {
+    "proofIrFile": "dropped/provekit-native/closure.proofir.json",
+    "preservedPredicate": "neq(name, null)"
+  },
+  "acceptance": {
+    "rule": "language dropper output is accepted only after re-lift and closure witness",
+    "fixReceiptFile": "dropped/provekit-native/fix-receipt.json"
+  }
+}
