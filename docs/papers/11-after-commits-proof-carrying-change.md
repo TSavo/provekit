@@ -588,6 +588,18 @@ branch policy admits or refuses
 
 No recursive hash problem appears because the binding is outside the commit object. The commit CID names the bytes. The CI-produced binding names the proof root over those bytes. A later merge commit, release tag, git note, or native object format can carry the binding forward.
 
+If a project wants the proof material tracked inside the repository, the repository can add a second, proof-materialization commit:
+
+```text
+payload commit changes code
+CI mints CommitProofBinding(payloadCommitCid, proofRootCid)
+proof-materialization commit records that binding under .proof/
+```
+
+That second commit is aesthetically ugly but operationally solvable. It is a bookkeeping commit, not the semantic repair. Its program-behavior claim should be preservation: source obligations are unchanged, and the proof index gained a binding for an earlier payload commit. Repositories that dislike the extra commit can use git notes, release attestations, CI artifacts, or signed external ledgers instead.
+
+The important rule is that the authoritative binding need not be stored inside the tree whose CID it binds. For bootstrap, the binding lives one layer above the commit. Native commit-object support can later move the proof root into the object itself.
+
 This is the same transition path as many supply-chain systems. First the artifact exists. Then a builder signs an attestation over it. Later, ecosystems learn to require and transport that attestation as if it had always been part of the artifact's shape.
 
 The eventual native object is still clean:
