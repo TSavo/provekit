@@ -3,12 +3,14 @@ use provekit_claim_envelope::{
     mint_bridge_v14, BridgeTargetV14, MintBridgeV14Args, MintedEnvelope,
 };
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, String>;
@@ -90,6 +92,12 @@ struct SelfContractAttestationJson {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RunConfig {
+    profile: Profile,
+    jobs: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Profile {
     Linux,
     Swift,
@@ -159,6 +167,32 @@ struct NativeCheck {
     cwd: PathBuf,
     timeout: Duration,
 }
+
+#[derive(Debug)]
+enum DirectCheckOutcome {
+    Pass,
+    MissingFixture(String),
+    AdapterError(String),
+    MalformedCid(String),
+    CidMismatch { got: String, want: String },
+}
+
+#[derive(Debug)]
+struct DirectCheckResult {
+    kit: &'static str,
+    fixture_name: String,
+    capability: String,
+    outcome: DirectCheckOutcome,
+}
+
+#[derive(Debug)]
+struct NativeCheckResult {
+    name: &'static str,
+    cmd: Vec<String>,
+    proc: ProcResult,
+}
+
+type OrderedJob<T> = Box<dyn FnOnce() -> T + Send + 'static>;
 
 #[derive(Debug)]
 struct TempDir {
@@ -1731,59 +1765,193 @@ fn assert_profile_inventory(
     Ok(())
 }
 
+fn default_jobs() -> usize {
+    let host = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    std::cmp::min(host, 4).max(1)
+}
+
+fn run_ordered_jobs<T: Send + 'static>(jobs: Vec<OrderedJob<T>>, max_jobs: usize) -> Vec<T> {
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+
+    let worker_count = std::cmp::min(max_jobs.max(1), jobs.len());
+    let queue: VecDeque<_> = jobs.into_iter().enumerate().collect();
+    let queue = Arc::new(Mutex::new(queue));
+    let (tx, rx) = mpsc::channel();
+    let mut handles = Vec::with_capacity(worker_count);
+
+    for _ in 0..worker_count {
+        let queue = Arc::clone(&queue);
+        let tx = tx.clone();
+        handles.push(thread::spawn(move || loop {
+            let next = queue
+                .lock()
+                .expect("ordered job queue poisoned")
+                .pop_front();
+            let Some((index, job)) = next else {
+                break;
+            };
+            let result = job();
+            tx.send((index, result))
+                .expect("ordered job receiver dropped");
+        }));
+    }
+    drop(tx);
+
+    let mut results = Vec::new();
+    for result in rx {
+        results.push(result);
+    }
+    for handle in handles {
+        handle.join().expect("ordered job panicked");
+    }
+    results.sort_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, result)| result).collect()
+}
+
+fn run_one_direct_adapter(
+    kit: &'static str,
+    emit: fn(&str) -> Result<String>,
+    fixtures: Vec<(String, Option<Fixture>)>,
+) -> Vec<DirectCheckResult> {
+    fixtures
+        .into_iter()
+        .map(|(fixture_name, fixture)| {
+            let Some(fixture) = fixture else {
+                return DirectCheckResult {
+                    kit,
+                    fixture_name: fixture_name.clone(),
+                    capability: String::new(),
+                    outcome: DirectCheckOutcome::MissingFixture(format!(
+                        "missing conformance fixture `{fixture_name}`"
+                    )),
+                };
+            };
+
+            match emit(&fixture_name) {
+                Ok(got) if !cid_is_well_formed(&got) => DirectCheckResult {
+                    kit,
+                    fixture_name,
+                    capability: fixture.capability,
+                    outcome: DirectCheckOutcome::MalformedCid(got),
+                },
+                Ok(got) if got == fixture.hash => DirectCheckResult {
+                    kit,
+                    fixture_name,
+                    capability: fixture.capability,
+                    outcome: DirectCheckOutcome::Pass,
+                },
+                Ok(got) => DirectCheckResult {
+                    kit,
+                    fixture_name,
+                    capability: fixture.capability,
+                    outcome: DirectCheckOutcome::CidMismatch {
+                        got,
+                        want: fixture.hash,
+                    },
+                },
+                Err(e) => DirectCheckResult {
+                    kit,
+                    fixture_name,
+                    capability: fixture.capability,
+                    outcome: DirectCheckOutcome::AdapterError(e),
+                },
+            }
+        })
+        .collect()
+}
+
+fn print_direct_result(result: &DirectCheckResult) -> usize {
+    match &result.outcome {
+        DirectCheckOutcome::Pass => {
+            println!("  PASS {} ({})", result.fixture_name, result.capability);
+            0
+        }
+        DirectCheckOutcome::MissingFixture(e) | DirectCheckOutcome::AdapterError(e) => {
+            println!("  FAIL {}: {e}", result.fixture_name);
+            1
+        }
+        DirectCheckOutcome::MalformedCid(got) => {
+            println!(
+                "  FAIL {}: adapter emitted malformed CID: {got:?}",
+                result.fixture_name
+            );
+            1
+        }
+        DirectCheckOutcome::CidMismatch { got, want } => {
+            println!("  FAIL {}: CID mismatch", result.fixture_name);
+            println!("    got:  {got}");
+            println!("    want: {want}");
+            1
+        }
+    }
+}
+
 fn run_direct_adapters(
     adapters: &[DirectAdapter],
     fixtures: &std::collections::BTreeMap<String, Fixture>,
+    jobs: usize,
 ) -> usize {
     let mut failures = 0;
-    for adapter in adapters {
-        println!("\n[{}] direct CID adapter", adapter.kit);
-        for fixture_name in adapter.fixtures {
-            let fixture = match require_fixture(fixtures, fixture_name) {
-                Ok(fixture) => fixture,
-                Err(e) => {
-                    failures += 1;
-                    println!("  FAIL {fixture_name}: {e}");
-                    continue;
-                }
-            };
-            let got = match (adapter.emit)(fixture_name) {
-                Ok(cid) => cid,
-                Err(e) => {
-                    failures += 1;
-                    println!("  FAIL {fixture_name}: {e}");
-                    continue;
-                }
-            };
-            if !cid_is_well_formed(&got) {
-                failures += 1;
-                println!("  FAIL {fixture_name}: adapter emitted malformed CID: {got:?}");
-                continue;
-            }
-            if got == fixture.hash {
-                println!("  PASS {fixture_name} ({})", fixture.capability);
-            } else {
-                failures += 1;
-                println!("  FAIL {fixture_name}: CID mismatch");
-                println!("    got:  {got}");
-                println!("    want: {}", fixture.hash);
-            }
+    let adapter_jobs: Vec<OrderedJob<Vec<DirectCheckResult>>> = adapters
+        .iter()
+        .map(|adapter| {
+            let kit = adapter.kit;
+            let emit = adapter.emit;
+            let adapter_fixtures = adapter
+                .fixtures
+                .iter()
+                .map(|name| ((*name).to_string(), fixtures.get(*name).cloned()))
+                .collect();
+            Box::new(move || run_one_direct_adapter(kit, emit, adapter_fixtures))
+                as OrderedJob<Vec<DirectCheckResult>>
+        })
+        .collect();
+
+    for adapter_results in run_ordered_jobs(adapter_jobs, jobs) {
+        if let Some(first) = adapter_results.first() {
+            println!("\n[{}] direct CID adapter", first.kit);
+        }
+        for result in adapter_results {
+            failures += print_direct_result(&result);
         }
     }
     failures
 }
 
-fn run_native_checks(checks: &[NativeCheck]) -> usize {
+fn run_native_checks(checks: &[NativeCheck], jobs: usize) -> usize {
     let mut failures = 0;
-    for check in checks {
-        println!("\n[native] {}", check.name);
-        let p = run_cmd(&check.cmd, &check.cwd, check.timeout);
-        if p.code == 0 {
-            println!("  PASS {}", check.cmd.join(" "));
+    let native_jobs: Vec<OrderedJob<NativeCheckResult>> = checks
+        .iter()
+        .map(|check| {
+            let name = check.name;
+            let cmd = check.cmd.clone();
+            let cwd = check.cwd.clone();
+            let timeout = check.timeout;
+            Box::new(move || {
+                let proc = run_cmd(&cmd, &cwd, timeout);
+                NativeCheckResult { name, cmd, proc }
+            }) as OrderedJob<NativeCheckResult>
+        })
+        .collect();
+
+    for result in run_ordered_jobs(native_jobs, jobs) {
+        println!("\n[native] {}", result.name);
+        if result.proc.code == 0 {
+            println!("  PASS {}", result.cmd.join(" "));
         } else {
             failures += 1;
-            println!("  FAIL {}", check.cmd.join(" "));
-            println!("{}", tail(&format!("{}\n{}", p.stderr, p.stdout), 4000));
+            println!("  FAIL {}", result.cmd.join(" "));
+            println!(
+                "{}",
+                tail(
+                    &format!("{}\n{}", result.proc.stderr, result.proc.stdout),
+                    4000
+                )
+            );
         }
     }
     failures
@@ -1823,20 +1991,26 @@ fn print_help() {
     println!(
         "cross-kit-conformance\n\
          \n\
-         Usage: cross-kit-conformance [--profile linux|swift|all]\n\
+         Usage: cross-kit-conformance [--profile linux|swift|all] [--jobs N]\n\
          \n\
          The Rust harness validates catalog-pinned fixture CIDs. Adapters may\n\
          produce any representation internally; the conformance boundary is\n\
-         the protocol CID."
+         the protocol CID.\n\
+         \n\
+         --jobs N runs selected kit/check jobs concurrently. The default is\n\
+         bounded to 4 so local and CI output stay usable."
     );
 }
 
-fn parse_profile<I, S>(args: I) -> Result<Profile>
+fn parse_config<I, S>(args: I) -> Result<RunConfig>
 where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
-    let mut profile = Profile::default_for_host();
+    let mut config = RunConfig {
+        profile: Profile::default_for_host(),
+        jobs: default_jobs(),
+    };
     let mut args = args.into_iter().map(Into::into).skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -1844,7 +2018,19 @@ where
                 let value = args
                     .next()
                     .ok_or_else(|| "--profile requires linux, swift, or all".to_string())?;
-                profile = Profile::parse(&value)?;
+                config.profile = Profile::parse(&value)?;
+            }
+            "--jobs" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--jobs requires a positive integer".to_string())?;
+                let jobs = value
+                    .parse::<usize>()
+                    .map_err(|_| format!("--jobs requires a positive integer, got `{value}`"))?;
+                if jobs == 0 {
+                    return Err("--jobs must be greater than zero".to_string());
+                }
+                config.jobs = jobs;
             }
             "-h" | "--help" => {
                 print_help();
@@ -1853,10 +2039,11 @@ where
             other => return Err(format!("unknown argument `{other}`")),
         }
     }
-    Ok(profile)
+    Ok(config)
 }
 
-fn run(profile: Profile) -> Result<usize> {
+fn run(config: RunConfig) -> Result<usize> {
+    let profile = config.profile;
     let fixture_file = load_fixtures()?;
     println!("\nCatalog-pinned Cross-Kit Conformance");
     assert_catalog_pin(&fixture_file)?;
@@ -1865,6 +2052,7 @@ fn run(profile: Profile) -> Result<usize> {
         "  catalog: {} {}",
         fixture_file.catalog_version, fixture_file.catalog_cid
     );
+    println!("  jobs: {}", config.jobs);
 
     let fixtures = make_fixture_map(fixture_file);
     for name in CORE_FIXTURES.iter().chain(["bridge_decl_v1_4"].iter()) {
@@ -1884,8 +2072,8 @@ fn run(profile: Profile) -> Result<usize> {
     assert_profile_inventory(profile, &direct, &native)?;
 
     let failures = run_protocol_contract_gate(profile)?
-        + run_direct_adapters(&direct, &fixtures)
-        + run_native_checks(&native);
+        + run_direct_adapters(&direct, &fixtures, config.jobs)
+        + run_native_checks(&native, config.jobs);
     println!("\nResult");
     if failures == 0 {
         println!("  all selected conformance CID checks passed");
@@ -1900,8 +2088,8 @@ where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
-    let profile = match parse_profile(args) {
-        Ok(profile) => profile,
+    let config = match parse_config(args) {
+        Ok(config) => config,
         Err(e) if e == "__help__" => return ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("fatal: {e}");
@@ -1909,7 +2097,7 @@ where
         }
     };
 
-    match run(profile) {
+    match run(config) {
         Ok(0) => ExitCode::SUCCESS,
         Ok(_) => ExitCode::FAILURE,
         Err(e) => {
@@ -1978,6 +2166,32 @@ mod tests {
         ));
         assert!(!cid_is_well_formed("blake3-512:ABC"));
         assert!(!cid_is_well_formed("sha256:abc"));
+    }
+
+    #[test]
+    fn jobs_argument_parses_and_rejects_zero() {
+        let config = parse_config(["cross-kit-conformance", "--profile", "linux", "--jobs", "3"])
+            .expect("parse config");
+        assert_eq!(config.profile, Profile::Linux);
+        assert_eq!(config.jobs, 3);
+
+        let err = parse_config(["cross-kit-conformance", "--jobs", "0"])
+            .expect_err("zero jobs must be rejected");
+        assert!(err.contains("greater than zero"), "got: {err}");
+    }
+
+    #[test]
+    fn ordered_jobs_preserve_input_order_when_finished_out_of_order() {
+        let jobs: Vec<OrderedJob<&'static str>> = vec![
+            Box::new(|| {
+                std::thread::sleep(Duration::from_millis(30));
+                "slow-first"
+            }),
+            Box::new(|| "fast-second"),
+        ];
+
+        let results = run_ordered_jobs(jobs, 2);
+        assert_eq!(results, vec!["slow-first", "fast-second"]);
     }
 
     #[test]
