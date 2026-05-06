@@ -739,6 +739,7 @@ fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Op
     let source_abs = specimen_dir.join(source_path);
     let source = std::fs::read_to_string(&source_abs)
         .map_err(|e| format!("read {}: {e}", source_abs.display()))?;
+    let source_artifact_cid = provekit_canonicalizer::blake3_512_of(source.as_bytes());
 
     let output = invoke_dropper_rpc(
         specimen_dir,
@@ -780,19 +781,40 @@ fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Op
             "dropper closure ProofIR CID mismatch: lifted {post_lift_cid}, expected {expected_ir_cid}"
         ));
     }
+    let transformed_artifact_cid = required_json_str(&output, "transformedArtifactCid")?;
+    let post_lift_document_cid = required_json_str(&output, "postLiftCid")?;
+    let closure_witness_cid = required_json_str(&output, "closureWitnessCid")?;
 
     let fix_receipt = read_json(specimen_dir.join(fix_receipt_path))?;
     if fix_receipt.get("kind").and_then(Value::as_str) != Some("FixReceipt") {
         return Err("dropper fixReceiptFile must record kind: FixReceipt".into());
     }
+    if fix_receipt.get("schemaVersion").and_then(Value::as_str) != Some("1") {
+        return Err("dropper fixReceiptFile must record schemaVersion: 1".into());
+    }
     if fix_receipt.get("status").and_then(Value::as_str) != Some("closed") {
         return Err("dropper fixReceiptFile must record status: closed".into());
+    }
+    if fix_receipt.get("mode").and_then(Value::as_str) != Some("transform") {
+        return Err("dropper fixReceiptFile must record mode: transform".into());
     }
     if fix_receipt.get("missingEdge").and_then(Value::as_str)
         != Some(manifest.predicates.missing_edge.as_str())
     {
         return Err("dropper fixReceiptFile missingEdge does not match manifest".into());
     }
+    require_receipt_field(&fix_receipt, "surface", surface)?;
+    require_receipt_field(&fix_receipt, "targetSymbol", target_symbol)?;
+    require_receipt_field(&fix_receipt, "proofVar", proof_var)?;
+    require_receipt_field(&fix_receipt, "sourceArtifactCid", &source_artifact_cid)?;
+    require_receipt_field(
+        &fix_receipt,
+        "transformedArtifactCid",
+        transformed_artifact_cid,
+    )?;
+    require_receipt_field(&fix_receipt, "postLiftCid", post_lift_document_cid)?;
+    require_receipt_field(&fix_receipt, "closureWitnessCid", closure_witness_cid)?;
+    require_receipt_field(&fix_receipt, "closureProofIrCid", &post_lift_cid)?;
 
     Ok(Some(json!({
         "status": "closed",
@@ -800,12 +822,32 @@ fn verify_dropper(specimen_dir: &Path, manifest: &SpecimenManifest) -> Result<Op
         "source": source_path,
         "targetSymbol": target_symbol,
         "proofVar": proof_var,
-        "transformedArtifactCid": output.get("transformedArtifactCid").cloned().unwrap_or(Value::Null),
-        "postLiftCid": output.get("postLiftCid").cloned().unwrap_or(Value::Null),
-        "closureWitnessCid": output.get("closureWitnessCid").cloned().unwrap_or(Value::Null),
+        "sourceArtifactCid": source_artifact_cid,
+        "transformedArtifactCid": transformed_artifact_cid,
+        "postLiftCid": post_lift_document_cid,
+        "closureWitnessCid": closure_witness_cid,
         "closureProofIrCid": post_lift_cid,
         "fixReceipt": fix_receipt,
     })))
+}
+
+fn required_json_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("dropper output missing {field}"))
+}
+
+fn require_receipt_field(receipt: &Value, field: &str, expected: &str) -> Result<(), String> {
+    let actual = receipt.get(field).and_then(Value::as_str);
+    if actual != Some(expected) {
+        return Err(format!(
+            "dropper fixReceiptFile {field} mismatch: expected {expected}, got {:?}",
+            actual
+        ));
+    }
+    Ok(())
 }
 
 fn invoke_dropper_rpc(

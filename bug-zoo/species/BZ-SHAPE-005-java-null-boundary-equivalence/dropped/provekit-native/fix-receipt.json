@@ -7,6 +7,11 @@
   "surface": "java-provekit-native",
   "targetSymbol": "lookup",
   "proofVar": "name",
+  "sourceArtifactCid": "blake3-512:3e9d3685ce13d94c6ea17facf6167f452a5fb605d0ebbc5513c584e0c44b508d7eb63bc4243866a25dc42c734d073e441505eccd5624e2140a5ee74b5f8c21c1",
+  "transformedArtifactCid": "blake3-512:02cd26c3df85986a754bb4393ac1f41aef1825d08a416a26c9f4a9b184d60168e2df6011e82c02d471c893da4b6bb8d9a8692cc509d48ad5cddf74f7ce5f71f3",
+  "postLiftCid": "blake3-512:4e59eb5f2afe480e6854d50eca1ea0304ca3d4a4cbc30600d358a89486337c07baefb13463e26535cd6cb6af9a202ba7248f8f236395027d2641380173b40867",
+  "closureWitnessCid": "blake3-512:38e31a2ce04b514a4e059eb30b52374214baaa4956eac95f86c3eef8bcdd64aa74c9f1e3bfb40b4413c72254d1e6a9aa12187d42d4f9c49ee1d91db7b9f517d0",
+  "closureProofIrCid": "blake3-512:0d611d8478a205ff040e7d0bcf6c21b12051340ecc5f00c3953af632b23fc01e069b4ad8a8699869163e135b9fde85792eba6acc54cd75cb3d3cc6a40a99ded4",
   "producer": {
     "name": "provekit-realize-java",
     "version": "0.1.0",
