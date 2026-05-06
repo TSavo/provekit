@@ -134,6 +134,14 @@ static void emit_sort(pk_buffer *buf, pk_sort *s) {
             emit_object(buf, fields, 4);
             break;
         }
+        case PK_SORT_REGION: {
+            pk_field fields[] = {
+                {"kind", (void (*)(pk_buffer *, void *))emit_string, "region"},
+                {"name", (void (*)(pk_buffer *, void *))emit_string, s->data.region.name},
+            };
+            emit_object(buf, fields, 2);
+            break;
+        }
     }
 }
 
