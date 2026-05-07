@@ -1,6 +1,6 @@
 # Tutorial: C#
 
-> **Status:** kit + canonicalizer + verifier shipping (v1.4.1). Lift adapters shipping: `DataAnnotations`, `LINQ`. LSP plugin shipping. Verification via the Rust CLI today; `Provekit.Verifier` in-process verifier planned.
+> **Status:** kit + canonicalizer + verifier shipping in the current v1.6.2 tree. Lift adapters shipping: `DataAnnotations`, `LINQ`. LSP plugin shipping. Verification via the Rust CLI today; `Provekit.Verifier` in-process verifier planned.
 
 A walkthrough for C# developers. By the end you have a `.proof` catalog lifted from `[Required]`, `[Range]`, `[StringLength]` data annotations and LINQ predicate quantifiers (`All`, `Any`).
 
@@ -65,7 +65,7 @@ provekit prove
 ## 6. Wire your IDE and CI
 
 - **IDE:** install the LSP plugin (`Provekit.Lsp.Plugin`). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
-- **CI:** see [docs/how-to/ci-integration/github-actions.md](../how-to/ci-integration/github-actions.md).
+- **CI:** see [content-addressed CI](../how-to/content-addressed-ci.md).
 
 ## What's next
 

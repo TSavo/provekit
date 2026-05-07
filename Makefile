@@ -22,7 +22,7 @@
 #
 # Determinism:
 #   make ci is the contract. If it's green, every peer's self-contracts
-#   round-trip to its pinned CID, the catalog v1.2.0 hash matches, and
+#   round-trip to its pinned CID, the v1.6.2 catalog hash matches, and
 #   every native test suite passes. Anything else is decoration.
 
 .DEFAULT_GOAL := help
@@ -49,11 +49,11 @@
 # binary-specific elaboration. The source tree no longer carries
 # machine-local truth about its own bytes for any of the five peer kits.
 #
-# `CATALOG_CID` is bumped to v1.6.0 here; the constant remains because
+# `CATALOG_CID` is bumped to v1.6.2 here; the constant remains because
 # `make help` echoes it. Follow-up: retire it the same way the
 # self-contracts CIDs are retired (read from the embedded catalog
 # signature attestation).
-CATALOG_CID := blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781
+CATALOG_CID := blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
 
 PROVEKIT := implementations/rust/target/release/provekit
 VERIFY_SELF_CONTRACTS := tools/foundation-keygen/target/release/verify-self-contracts
@@ -108,7 +108,7 @@ help:
 	@echo "Maintenance:"
 	@echo "  make clean          remove build artifacts"
 	@echo ""
-	@echo "Pinned CIDs (catalog v1.6.0):"
+	@echo "Pinned CIDs (catalog v1.6.2):"
 	@echo "  catalog: $(CATALOG_CID)"
 	@echo "  rust:    (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json"
 	@echo "  go:      (envelope) $(SELF_CONTRACTS_ATTEST_DIR)/go.json"

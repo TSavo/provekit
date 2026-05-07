@@ -3,7 +3,9 @@
 > *Supra omnia, rectum.*
 > — T
 
-The name is literal: **Prove `k(I)=t`**. `I` is an implementation artifact, `k` is the canonical projection that reads the contract boundary, and `t` is the truth claim the artifact is supposed to yield. ProvekIt does not ask you to trust the artifact; it asks for signed, content-addressed evidence that applying `k` to `I` produces `t`.
+The name is literal: **Prove `k(I)=t`**. `I` is an implementation artifact, `k` is the canonical projection that reads the claim boundary, and `t` is the truth claim the artifact is supposed to yield. ProvekIt does not ask you to trust the artifact; it asks for signed, content-addressed evidence that applying `k` to `I` produces `t`.
+
+ProvekIt is a toolchain for proving software correctness across domains. A domain can be a language, package ecosystem, protocol catalog, CI supply-chain closure, proof-file consumer, or generated repair. Cross-platform contract correctness is one use case. The general move is: name the proposition by CID, name the evidence by CID, sign the edge, and fail closed when the graph does not carry the claim.
 
 Every if-statement is a contract — a guarantee about state, time, and place. Get any of it wrong, and the whole contract breaks. This is the bug class that exists in all upstream code; it's why if-statements exist at all.
 
@@ -27,11 +29,11 @@ Every if-statement, assertion, and type signature becomes a signed, binding dema
 
 **Software engineering shifts.** The artifact is the proof. Code is one implementation. Refactoring becomes proof-preserving rewrite. AI becomes a contract-implementation generator.
 
-**Supply chains compose.** Every dependency's signed contracts compose into your application's verified properties. Dependency confusion becomes arithmetically impossible. SBOMs become meaningful artifacts.
+**Supply chains compose.** Every dependency's signed contracts compose into your application's verified properties. CI results bind to exact proof/toolchain/input closures. Dependency confusion becomes arithmetically impossible. SBOMs become meaningful artifacts.
 
 ## ProofIR is allowed to be lossy
 
-ProofIR is not a universal language for re-expressing every implementation detail of every programming language. It is a universal language for contract boundaries: preconditions, postconditions, invariants, protocol obligations, value predicates, resource states, signer claims, and the implication edges that connect them.
+ProofIR is not a universal language for re-expressing every implementation detail of every programming language. It is a universal language for claim boundaries: preconditions, postconditions, invariants, protocol obligations, value predicates, resource states, signer claims, CI blast radii, grammar conformance claims, realizer outputs, and the implication edges that connect them.
 
 That is why it can work across domains. A Spring annotation, a Zod validator, an OpenAPI schema, a Rust type invariant, and a ProvekIt-native contract can all collapse to the same canonical predicate when they assert the same boundary fact. The host-language texture can be discarded; the obligation survives.
 
@@ -45,17 +47,23 @@ Once lifted, that boundary is universal, comparable, solvable, translatable, con
 | **Understand the move** | [docs/papers/](docs/papers/) — recommended order: paper 03 → 06 → 02 |
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
 | **Read the spec** | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |
+| **Understand the new protocol/tooling surface** | [docs/reference/protocol-extensions.md](docs/reference/protocol-extensions.md) |
+| **Bind CI results to supply-chain inputs** | [docs/how-to/content-addressed-ci.md](docs/how-to/content-addressed-ci.md) |
+| **Run the Bug Zoo / dropper realizer lab** | [docs/how-to/bug-zoo.md](docs/how-to/bug-zoo.md) |
 | **Compare to other tools** | [docs/explanation/compared-to/](docs/explanation/compared-to/) |
 
-For more entry points (per-language tutorials, IDE integration, publishing a `.proof`, consuming a `.proof`, threat model, CLI reference, IR reference, spec CIDs), see [docs/index.md](docs/index.md).
+For more entry points (per-language tutorials, IDE integration, publishing a `.proof`, CICP, Bug Zoo, protocol extensions, threat model, and spec CIDs), see [docs/index.md](docs/index.md).
 
 ## Status
 
-- **Protocol catalog**: v1.4.1 (patch over v1.4.0; v1.4.0 mementos and `.proof` bundles remain valid)
-- **Catalog CID**: `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641`
+- **Protocol catalog**: v1.6.2 (patch over v1.6.1; catalogs the Content-Addressed CI Protocol as an extension-only protocol)
+- **Catalog CID**: `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`
 - **Canonical implementation**: Rust (`cargo install provekit`)
 - **Conforming implementations**: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C, PHP. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
-- **Conformance gate**: every kit's mint must match a pinned content-addressed CID before `make ci` is green.
+- **Protocol evolution**: PEP dogfoods catalog transitions as signed, content-addressed body-claims under `protocol/evolution/v1.6.1/` and `protocol/evolution/v1.6.2/`.
+- **Content-addressed CI**: CICP binds CI results to exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. Reuse is allowed only when that closure is byte-identical.
+- **Bug Zoo / realizers**: `provekit zoo` checks lab, exposed, dropped, and wild specimens; dropped specimens are accepted only after realizer output is re-lifted and bound to a fix receipt.
+- **Conformance gate**: catalog CIDs, proof-protocol fixtures, CICP vectors, self-contract attestations, and per-kit tests must agree before CI is green.
 
 The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
 
@@ -84,7 +92,7 @@ The core binary is:
 cargo install --path implementations/rust/provekit-cli
 ```
 
-`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. Any of these can fail closed; none requires the network.
+`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. `provekit proof`, `provekit protocol`, `provekit ci`, and `provekit zoo` cover proof-file conformance, PEP transitions, CICP supply-chain admission, and Bug Zoo specimens. Any of these can fail closed; none requires the network.
 
 For other host languages, see the polyglot-stack tutorial above. The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 
@@ -94,4 +102,4 @@ If you are working on ProvekIt itself (kit, lift adapter, prover backend, spec c
 
 ## License
 
-See [LICENSE](LICENSE).
+Source files use SPDX headers where present. A repository-level license file has not been added yet.

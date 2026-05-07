@@ -139,7 +139,7 @@ Kani verifies the assertion. The result is local to your codebase.
 
 With ProvekIt:
 
-1. `provekit-lift-kani` (planned for v1.2) walks `#[kani::proof]` and lifts to canonical IR.
+1. `provekit-lift-kani` walks `#[kani::proof]` and lifts to canonical IR.
 2. The lift produces a contract memento: "for `parse::<i32>()` on strings of length ≤ 18, no panic occurs."
 3. You publish the contract memento + Kani's discharge as an implication memento.
 4. A consumer (in any language with a `parse` equivalent) can bridge to this contract and inherit the verification.

@@ -96,7 +96,7 @@ Your language's BLAKE3 binding may default to SIMD-accelerated paths. Verify aga
 The CID is a string with a multibase prefix:
 
 ```
-blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641
+blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
 ```
 
 Format: `blake3-512:<128 lowercase hex digits>`. Lowercase. No leading `0x`. No padding.
@@ -131,6 +131,6 @@ Steps 3 onward layer Ed25519 signing, CBOR encoding, and self-contracts on top o
 ## Read next
 
 - [03-claim-envelope.md](03-claim-envelope.md): signed memento envelope (Ed25519).
-- [docs/reference/ir/canonical-form.md](../../reference/ir/canonical-form.md) (when written): JCS + BLAKE3-512 reference.
+- [docs/reference/ir/canonical-form.md](../../reference/ir/canonical-form.md): JCS + BLAKE3-512 reference.
 - RFC 8785: JCS specification, full text.
 - BLAKE3 paper: hash function specification.

@@ -154,5 +154,5 @@ The C# extension integrates with the .NET project structure. Lift adapters for `
 
 - [overview.md](overview.md): IDE integration matrix.
 - [neovim.md](neovim.md): Neovim equivalent.
-- [`../debugging-a-failed-handshake.md`](../debugging-a-failed-handshake.md) (when written) (when squigglies aren't right).
+- [`../debugging-a-failed-handshake.md`](../debugging-a-failed-handshake.md) (when squigglies aren't right).
 - [`../../contributing/writing-an-LSP-plugin.md`](../../contributing/writing-an-LSP-plugin.md): porting to a new editor or kit.

@@ -1,12 +1,14 @@
 # ProvekIt Architecture
 
-A walk-through of the protocol's mechanics in roughly fifteen minutes. This document describes the v1.6.0 protocol catalog at CID `blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781`. Every spec referenced here is itself content-addressed; CIDs are quoted where authoritativeness matters.
+A walk-through of the protocol's mechanics in roughly fifteen minutes. This document describes the v1.6.2 protocol catalog at CID `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`. Every spec referenced here is itself content-addressed; CIDs are quoted where authoritativeness matters.
 
 > **v1.4 architectural cut:** every memento now has three layers: envelope (signed wrapper), header (substrate-verified data), body (tooling-interpreted metadata). The substrate verifies envelope + header. Body is opaque to the substrate but signed under the envelope, so tooling reads body fields with cryptographic provenance for free. New protocols add body conventions, never substrate primitives. See [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) §11 through §12 for the multi-dimensional address-space framing this operationalizes, and [`docs/reference/cids.md`](../reference/cids.md) for the v1.4 spec list.
 
-## The architecture is a pipeline
+## The architecture is a claim pipeline
 
-ProvekIt is not a library you call. It is a pipeline you run. Data flows in one direction: CDDL → Codegen → Types → Compilers → Proof Bundle → Verification.
+ProvekIt is not only a library you call. It is a pipeline for proving content-addressed claims. Data flows in one direction: grammar or source surface -> canonical claim -> CID -> signed evidence -> proof bundle or extension witness -> verification.
+
+For application correctness, the source surface is a host-language contract idiom. For protocol evolution, the source surface is a catalog diff and policy. For CICP, it is a CI blast-radius closure. For Bug Zoo droppers, it is a proof plan, language projection, transformed artifact, post-lift ProofIR, and fix receipt.
 
 ### Stage 1: CDDL (the single source of truth)
 
@@ -155,11 +157,13 @@ The `binaryCid` field is the supply chain anchor:
 
 The alarm is not a security scan. It is a **mathematical contradiction.** The proof was minted for bytes with CID X. The running binary has CID Y. X ≠ Y. The proof is invalid for this binary.
 
-## Cross-language conformance
+## Cross-domain conformance
 
 The IR is language-agnostic. A Rust kit, a TypeScript kit, and a Go kit all emit the same canonical bytes for the same canonical formula. A contract memento minted by the Rust kit and a contract memento minted by the TypeScript kit, expressing the same proposition, share a CID.
 
 The handshake at Tier 1 sees them as identical. A TypeScript consumer of a Rust library has the same Tier-1 discharge fraction as a Rust consumer would. Cross-domain verification works because all kits bridge to the same reference contracts.
+
+The same principle applies beyond language boundaries. PEP bridges protocol catalog versions. CICP binds CI results to supply-chain input closures. GCP witnesses extension body grammar conformance. ORP and Bug Zoo droppers accept generated host artifacts only after re-lift proves closure. These are all domain crossings over the same signed CID graph.
 
 ## Fail-closed posture
 

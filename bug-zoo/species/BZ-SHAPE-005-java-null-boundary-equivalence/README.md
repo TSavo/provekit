@@ -1,8 +1,10 @@
 # BZ-SHAPE-005: Java Null Boundary Equivalence
 
-This specimen shows a null-boundary bug species.
+This specimen is the small, sharp version of a bug almost every Java service has shipped: a value that may be null reaches a boundary that requires non-null.
 
-The lab library compiles and runs with ordinary Java checks. The exposed variants add contract surfaces that engineers already use:
+The point is not that ProvekIt can recognize one annotation. The point is that different source surfaces can express the same boundary fact, and the zoo can prove they collapse to the same content-addressed claim.
+
+The lab library compiles and runs with ordinary Java checks. Nothing about the host toolchain says the edge is missing. The exposed variants add contract surfaces that engineers already use:
 
 - `provekit-native`: explicit ProvekIt-style `@Requires("name != null")`
 - `spring-web`: Spring's default required `@RequestParam`

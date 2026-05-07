@@ -14,7 +14,8 @@ The specs at `protocol/specs/` cover:
 - The lattice tractability theorem.
 - The signatures and non-repudiation spec.
 - The kit standard.
-- (Future) reference contract registries, prover backend interfaces, etc.
+- Extension protocols such as PEP, CICP, GCP, TDP, ORP, CBP, and FRP.
+- Reference contract registries, prover backend interfaces, and other claim families as they become cataloged.
 
 A change to any of these is a spec change. Common triggers:
 
@@ -23,6 +24,7 @@ A change to any of these is a spec change. Common triggers:
 3. **A clarification is needed.** A spec is ambiguous and two implementations diverged; the spec needs to disambiguate.
 4. **A bug fix.** The spec says something incorrect (rare but real).
 5. **A new bridge anchor.** The reference-contracts library wants to add `ref-uuid-v1` or similar.
+6. **A new extension body convention.** A protocol/tooling surface needs a signed claim family, such as a CI blast radius, grammar conformance claim, realizer output, or proof-file conformance witness.
 
 ## Before proposing
 
@@ -76,6 +78,8 @@ Who is going to do the work? Concretely:
 - Fixture additions/updates.
 - Lift adapter updates.
 - Tutorial and reference doc updates.
+- PEP transition body/witness under `protocol/evolution/<version>/` if the catalog changes.
+- CICP/proof-protocol/Bug Zoo vector updates if the new claim family affects CI, `.proof`, or realizer behavior.
 
 Most spec proposals fail because they have no adoption plan. Whoever proposes a change generally takes responsibility for shepherding the change through. Maintainers can help, but you're driving.
 
@@ -87,7 +91,7 @@ The review process:
 2. **Drafting.** If accepted in principle, the proposal moves to a draft RFC PR that lives in `docs/internal/rfcs/`. The PR contains the full spec diff plus all downstream changes.
 3. **Implementation.** The PR makes the spec change, updates every kit's codegen and self-contracts, updates every fixture. The PR is large; split into reviewable commits.
 4. **Conformance**. `make ci` passes. Every shipping kit re-mints successfully.
-5. **Merge into a release branch.** Spec changes don't ship on patch releases. They wait for the next minor or major.
+5. **Merge into a release branch.** Version class follows PEP. Extension-only catalog additions with no required kit emission, lift, canonicalization, or verifier changes may ship as patch-level transitions. Grammar changes, new core obligations, and required kit behavior changes generally wait for the next minor or major.
 
 The review prioritizes:
 
@@ -111,7 +115,7 @@ If the proposal fundamentally breaks tractability, it is rejected. The protocol'
 
 ## Backout
 
-A spec change in flight can be backed out before the catalog bump ships. After the bump, backout is hard: every kit that re-minted has the new pinned CID; reverting the spec means another bump.
+A spec change in flight can be backed out before the catalog bump ships. After the bump, backout is hard: every catalog transition, accepted CI witness, and kit attestation may have named the new catalog CID. Reverting the spec means another PEP transition and, if kit behavior changed, another conformance pass.
 
 Maintainers prefer to discover problems before the bump. The pre-release checklist (in [release-process.md](release-process.md)) is the gate.
 
@@ -125,4 +129,4 @@ The change is now load-bearing. Future contributions can use the new primitive f
 
 - [release-process.md](release-process.md): how the bump itself happens.
 - [docs/explanation/architecture.md](../explanation/architecture.md): the architecture the spec governs.
-- [docs/reference/lattice-tractability.md](../reference/lattice-tractability.md) (when written): the tractability theorem.
+- `docs/reference/lattice-tractability.md` (planned): the tractability theorem.

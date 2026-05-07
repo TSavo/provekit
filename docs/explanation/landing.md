@@ -1,6 +1,6 @@
-# ProvekIt: verify a petabyte of behavior by comparing 64 bytes
+# ProvekIt: prove software correctness across domains by comparing 64 bytes
 
-Modern dependency stacks are deep. ProvekIt collapses them to a hash comparison.
+Modern dependency stacks, protocol stacks, and CI supply chains are deep. ProvekIt collapses their load-bearing claims to content-addressed evidence.
 
 ```bash
 cargo install provekit
@@ -16,6 +16,8 @@ Three commands. Sixty-four bytes of comparison per call site. One CPU instructio
 
 A library publishes signed contract mementos along with its bytes. A consumer's verifier loads the mementos, walks every call site in the consumer's code, and runs a three-tier handshake: hash equality (free), cached implication memento (one signature verification), Z3 fallback (once per novel pair, mints the result for everyone else).
 
+The same graph carries non-callsite claims too: a protocol catalog transition admitted by PEP, a proof-file consumer admitted by proof-protocol fixtures, a CI result bound to a CICP blast radius, or a generated dropper transform accepted only after re-lift.
+
 `memcmp(local, expected, 64) == 0` is the protocol. The whole stack of human-published verified knowledge, at the average case, collapses to one CPU instruction.
 
 ## Why it works
@@ -30,14 +32,14 @@ Every annotation library in wide deployment already contains specifications. `pr
 
 ProvekIt does not compete with these libraries. It sits beneath them. Whatever annotation library a codebase already uses, the lift adapter promotes those annotations to content-addressed signed contract mementos, with no rewrites and no parallel spec to maintain. Authoring stays where the developer already is. Verification moves underneath.
 
-The shipping adapters in v1.1 cover `proptest` and `contracts` for Rust. The v1.2 roadmap covers `kani`, `prusti`, `zod`, `class-validator`, `fast-check`, `pydantic`, `deal`, `hypothesis`, `bean-validation`, JML, Cofoja, and `go-playground/validator`. The pattern is uniform: walk the idiom, emit canonical IR, mint a signed contract memento.
+The adapter surface covers Rust, TypeScript, Python, Java, Go, C#, Ruby, Zig, C++, C, Swift, and PHP at different depths. The pattern is uniform: walk the idiom, emit canonical IR or an extension body, mint a signed memento, and verify the claim by CID.
 
 ## The protocol is its hash
 
-v1.6.0 is shorthand. The canonical name of v1.6.0 is
+v1.6.2 is shorthand. The canonical name of v1.6.2 is
 
 ```
-blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781
+blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
 ```
 
 the BLAKE3-512 hash of the JCS-canonical form of the protocol catalog. Anyone with the spec bytes can re-derive the CID locally. The repository ships a reference implementation at `tools/recompute-spec-cids/`; `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify` re-derives every CID and fails on any drift.
@@ -46,17 +48,18 @@ There is no central authority that decides what a protocol version means. The by
 
 ## What ships
 
-- A canonical Rust CLI: `provekit`. Subcommands include `prove`, `verify-protocol`, `lift`, `dump`, `hash`, `ask`, `search`, `implicate`.
+- A canonical Rust CLI: `provekit`. Subcommands include `prove`, `verify-protocol`, `proof`, `protocol`, `ci`, `zoo`, `mint`, `dump`, `hash`, `ask`, `search`, `implicate`.
 - A Rust workspace of libraries: `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`, `provekit-verifier`, `provekit-macros`, `provekit-lift`, `provekit-lift-proptest`, `provekit-lift-contracts`.
-- Per-language kits and verifier libs for TypeScript, Go, and C++.
-- A protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json` and 13 spec documents, each addressed by CID.
+- Per-language kits, verifier libs, lift adapters, CICP vector checks, and self-contract attestations.
+- A protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json`, protocol extension specs, proof-protocol fixtures, CICP vectors, and PEP evolution witnesses.
 
-## What's planned for v1.2
+## What is active now
 
-- Build-script integration (`provekit-build`): contract violations become compile-time errors in Rust.
-- Stage 4 implication-server demo: the lattice tractability theorem made operational.
-- Lift adapters for `kani`, `prusti`, `zod`, `class-validator`, `fast-check`, `pydantic`, `deal`, `hypothesis`, `bean-validation`, `go-playground/validator`.
-- Per-language CLIs for TypeScript, Go, and Python.
+- PEP: protocol catalog evolution as signed, content-addressed data.
+- CICP: CI results bound to source/protocol/toolchain/config/witness closures.
+- Proof protocol: `.proof` consumer conformance fixtures and witnesses.
+- Bug Zoo: executable specimens with exposure equivalence and dropper/realizer closure receipts.
+- GCP/TDP/ORP/CBP/FRP draft specs: extension bodies, grammar conformance, realizers, checker bytecode, and fix receipts.
 
 ## Read further
 

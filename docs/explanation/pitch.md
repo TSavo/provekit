@@ -1,10 +1,10 @@
-# ProvekIt: verify a petabyte of behavior by comparing 64 bytes
+# ProvekIt: prove software correctness across domains by comparing 64 bytes
 
 A modern Rust workspace pulls in a few hundred crates. A modern npm project pulls in tens of thousands. A modern Go service drags in transitive C dependencies through cgo. Behind every `cargo build`, `npm install`, and `go mod tidy`, a developer is implicitly trusting a graph of code they have never read, written by people they have never met, doing things they cannot easily verify.
 
 The conventional answer is "run more tests." Tests are good. Tests are not the answer to behavioral verification at supply-chain scale. Tests verify a finite point set; properties hold over the whole input domain. The tools that do verify properties (Kani, Prusti, F\*, Dafny, TLA+) are heavyweight, language-bound, and demand specifications written and maintained alongside the code. They do not federate. They do not compose across packages. They do not survive a `cargo update`.
 
-ProvekIt is a content-addressed protocol for behavioral contracts. It does not compete with the verification tools above. It sits beneath them and makes their output portable, signed, and composable across the dependency graph.
+ProvekIt is a toolchain for proving content-addressed claims. Behavioral contracts are the first surface, but the same machinery proves claims about protocol evolution, proof-file conformance, CI supply-chain input closure, and generated repair closure. It does not compete with the verification tools above. It sits beneath them and makes their output portable, signed, and composable across the dependency graph.
 
 ## The petabyte-to-64-bytes ratio
 
@@ -46,7 +46,7 @@ The headline metric is the hash-discharge fraction: the share of call sites disc
 
 ## Compile-time errors, not runtime probes
 
-The Rust build-script integration (in flight, planned for v1.2) lifts contract violations into compile-time errors. ProvekIt becomes a smarter type system extension: a violated handshake fails the build, not a test run. The proof gate is the same gate the compiler already enforces, extended with semantic claims the type system cannot represent.
+Build-script integration lifts contract violations into compile-time errors. ProvekIt becomes a smarter type system extension: a violated handshake fails the build, not a test run. The proof gate is the same gate the compiler already enforces, extended with semantic claims the type system cannot represent.
 
 This is what the term "constraint-driven development" names. Software ages backwards: as the lattice of published implications grows, every codebase that adopts ProvekIt becomes easier to verify than the one shipped yesterday. The framework's value compounds with adoption rather than degrading.
 
@@ -60,7 +60,7 @@ cargo provekit-lift
 provekit prove
 ```
 
-The Rust CLI is the canonical shipping implementation for v1.6.0. Per-language libs (TypeScript, Go, C++) embed the verifier; per-language kits (authoring) emit canonical IR; per-language lift adapters bridge from existing annotation libraries. See [docs/reference/per-language-status.md](../reference/per-language-status.md) for the matrix.
+The Rust CLI is the canonical shipping implementation for v1.6.2. Per-language libs embed the verifier; per-language kits emit canonical IR and extension bodies; per-language lift adapters bridge from existing annotation libraries. See [docs/reference/per-language-status.md](../reference/per-language-status.md) for the matrix.
 
 ## What's not in the box
 

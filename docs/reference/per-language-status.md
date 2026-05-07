@@ -1,6 +1,13 @@
-# Per-language status
+# Per-language Status
 
-The matrix of what's shipping, what's planned, and what's under evaluation across host languages. Updated for protocol v1.4.1 (CID `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641`). The matrix below tracks the per-kit state under v1.4: substrate layering (envelope, header, body), contract-cid vs attestation-cid separation, contract-set extension fields, and bridge target dimensionality. Authoring-surface coverage for kit, libs, lift adapters, decorator macros, embedded verifier, CLI, and LSP plugin is unchanged from v1.1; the v1.4 readiness state is captured in the cross-kit bridge readiness matrix below. For the spec-by-spec list see [`cids.md`](cids.md).
+The matrix of what's shipping, what's planned, and what's under evaluation across host languages. Updated for protocol v1.6.2 (CID `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`).
+
+The current status has two layers:
+
+- **Active conformance surface:** protocol catalog verification, proof-protocol fixtures, CICP golden vectors, self-contract attestations, lift-plugin-protocol C1-C8 checks, and language-native tests.
+- **Historical v1.4 bridge readiness:** substrate layering, content-CID vs attestation-CID separation, contract-set fields, and tagged-union bridge targets. That table remains below because it still explains cross-kit bridge migration state.
+
+For the spec-by-spec list see [`cids.md`](cids.md). For PEP, CICP, GCP, ORP, CBP, proof protocol, and Bug Zoo surfaces see [`protocol-extensions.md`](protocol-extensions.md).
 
 ## Component glossary
 
@@ -11,7 +18,38 @@ The matrix of what's shipping, what's planned, and what's under evaluation acros
 - **Embedded verifier**: in-process verifier callable from the host language without spawning a subprocess.
 - **CLI**: shipping command-line implementation of `prove`, `verify-protocol`, `lift`, `dump`, etc.
 
-Legend: `+` shipping in v1.4.1 (current), `~` planned for v1.5 (next), `o` under evaluation, `-` not on roadmap.
+Legend: `+` shipping in the current v1.6.2 tree, `~` planned or partial, `o` under evaluation, `-` not on roadmap.
+
+## Active Conformance Surface
+
+| Surface | Status |
+|---|---|
+| Protocol catalog | `+` v1.6.2 catalog CID verified by `tools/recompute-spec-cids/` and `provekit verify-protocol --signed` |
+| PEP | `+` v1.6.1 and v1.6.2 dogfood transitions checked in under `protocol/evolution/` |
+| CICP | `+` Rust reference checker plus cross-language golden vectors in `protocol/conformance/cicp/` |
+| Proof protocol | `+` `.proof` fixture corpus and Rust proof-conformance checker under `provekit proof` |
+| CICP CI admission | `+` GitHub Actions computes blast radii, admits exact-closure reuse, and uploads candidate result witnesses |
+| Bug Zoo | `+` `provekit zoo` runs the Java null-boundary specimen with exposure equivalence and Java dropper/realizer closure |
+| ORP droppers/realizers | `~` Java proof-plan + language-dropper projection shipping in Bug Zoo; broader per-language realizer coverage is emerging |
+
+## CICP Golden-Vector Coverage
+
+All listed kits now carry CICP vector checks or equivalent language-library coverage:
+
+| Language | CICP vector status |
+|---|---|
+| Rust | `+` `libprovekit` reference checker and tests |
+| TypeScript | `+` canonicalizer conformance test |
+| Python | `+` pytest conformance test |
+| Java / JVM | `+` Maven conformance test |
+| C# | `+` test suite conformance |
+| Ruby | `+` minitest conformance |
+| Zig | `+` Zig test conformance |
+| Go | `+` canonicalizer conformance test |
+| C++ | `+` canonicalizer conformance test |
+| Swift | `+` Swift package conformance |
+| C | `+` C test runner conformance |
+| PHP | `+` PHP conformance test |
 
 ## Matrix
 
@@ -73,7 +111,7 @@ Column meanings:
 - `provekit-lift-proptest`: walks `proptest!` blocks. Coverage: `prop_assume!`, `prop_assert!`, `prop_assert_eq!`, `prop_assert_ne!`.
 - `provekit-lift-contracts`: walks `#[requires(...)]`, `#[ensures(...)]`, `#[invariant(...)]` macros from the `contracts` crate.
 
-**Lift adapters (shipping in v1.4.1):**
+**Lift adapters (shipping before v1.6.2):**
 - `provekit-lift-kani`: walks `#[kani::proof]` functions, `kani::assume`, `kani::assert`.
 - `provekit-lift-prusti`: walks `#[prusti_contracts::requires/ensures]`.
 
@@ -87,7 +125,7 @@ Column meanings:
 
 **Embedded verifier:** Yes. `provekit_verifier::run(project_root)` returns a `HandshakeReport` synchronously.
 
-**CLI:** `provekit` is the canonical shipping CLI for protocol v1.4.1. Subcommands: `prove`, `verify`, `verify-protocol`, `version`, `init`, `lift`, `dump`, `hash`, `ask`, `search`, `implicate`. Distributed via `cargo install provekit`.
+**CLI:** `provekit` is the canonical shipping CLI for protocol v1.6.2. Subcommands include `prove`, `proof`, `protocol`, `ci`, `zoo`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Distributed via `cargo install provekit` once published, or `cargo install --path implementations/rust/provekit-cli` from source.
 
 ## TypeScript
 
@@ -95,7 +133,7 @@ Column meanings:
 
 **Libs:** `ts-types-proof` lifts TypeScript type annotations into contract mementos. Embedded verifier shipping; usable from Node and from browsers (with the WASM build of the canonicalizer).
 
-**Lift adapters (shipping in v1.4.1):**
+**Lift adapters (shipping before v1.6.2):**
 - `provekit-lift-zod`: walks `z.object`, `z.string`, `z.number`, validator combinators. Full chain decoder for all major zod methods.
 - `provekit-lift-class-validator`: walks decorator-annotated class fields (`@IsNotEmpty`, `@MinLength`, `@Min`, `@Max`, `@IsEmail`, etc.).
 - `provekit-lift-fast-check`: walks `fc.assert(fc.property(...))` blocks. Lifts property tests to `forall` contracts.
@@ -118,7 +156,7 @@ Column meanings:
 
 **Libs:** Shipping. Embedded verifier callable from Go programs via a small CGO bridge to the canonicalizer; pure-Go verifier in flight.
 
-**Lift adapters (shipping in v1.4.1):**
+**Lift adapters (shipping before v1.6.2):**
 - `provekit-lift-validator`: walks `validate:` struct tags from `go-playground/validator`.
 
 **Lift adapters (planned for v1.5):**
@@ -138,7 +176,7 @@ Column meanings:
 
 **Libs:** Shipping. Embedded verifier links into existing C++ projects.
 
-**Lift adapters (shipping in v1.4.1):**
+**Lift adapters (shipping before v1.6.2):**
 - `provekit-lift-cpp-contracts`: walks `[[expects:]]` and `[[ensures:]]` attributes (C++26 contract syntax).
 
 **Lift adapters (under evaluation):**
@@ -160,7 +198,7 @@ Column meanings:
 
 **Libs:** Shipping. The canonicalizer is implemented in pure Python and is byte-identical to the Rust canonicalizer for all conformance tests. Performance is acceptable for typical project sizes; the WASM-backed path remains an option for v1.5 if profiling demands it.
 
-**Lift adapters (shipping in v1.4.1):**
+**Lift adapters (shipping before v1.6.2):**
 - `provekit.lift.pydantic`: walks `BaseModel` field annotations and `Field` constraints. Emits the same IR as Bean Validation `@Min`/`@Max`/`@Pattern`/`@Size` for equivalent constraints.
 - Layer 2 structural lift: walks pytest/unittest test files and recognizes bounded loops, helper inlining, multi-assertion characterization, and `@pytest.mark.parametrize`.
 

@@ -13,9 +13,10 @@ A ProvekIt release is many things at once:
 3. **Updated kits**, one per host language, all re-minting their self-contracts to match the new catalog.
 4. **Updated conformance fixtures** if the canonical input/output bytes changed.
 5. **Updated tooling**: `provekit` CLI, lift adapters that depend on new IR primitives.
-6. **Distributed packages** to crates.io, npm, PyPI, Maven Central, NuGet, RubyGems, etc.
+6. **Extension witnesses** where relevant: PEP body/witness artifacts, proof-protocol fixtures, CICP vectors, accepted CI result witnesses, or Bug Zoo closure receipts.
+7. **Distributed packages** to crates.io, npm, PyPI, Maven Central, NuGet, RubyGems, etc.
 
-Release cadence is slow. Major releases (v1.0 → v2.0) coincide with breaking protocol changes. Minor releases (v1.1 → v1.2) coincide with new IR primitives, new spec docs, or new conformance fixtures. Patch releases (v1.1.0 → v1.1.1) fix bugs without changing the catalog CID.
+Release cadence is deliberate. Major releases (v1.0 -> v2.0) coincide with breaking protocol changes. Minor releases (v1.1 -> v1.2) coincide with new IR primitives, new core obligations, or new required kit behavior. Patch releases can either fix implementation bugs without changing the catalog CID or, under PEP, add extension-only catalog properties that do not require new kit emission, lift, canonicalization, or core verifier behavior.
 
 ## Pre-release checklist
 
@@ -30,6 +31,8 @@ Before tagging:
 - [ ] Migration notes written if any spec change affects existing kits.
 - [ ] [`docs/reference/cids.md`](../reference/cids.md) updated to the new CIDs.
 - [ ] [`docs/reference/per-language-status.md`](../reference/per-language-status.md) updated.
+- [ ] PEP transition body/witness added under `protocol/evolution/<version>/` if the catalog CID changed.
+- [ ] CICP/proof-protocol/Bug Zoo docs and vectors updated if the release changes CI admission, `.proof` conformance, or realizer closure behavior.
 
 ## The bump itself
 
@@ -42,11 +45,13 @@ Bumping the catalog CID is a coordinated activity:
 5. **Re-mint self-contracts** in every kit. The new pinned CIDs replace the old ones in `make conformance`.
 6. **Update `provekit verify-protocol`** in the Rust CLI to expect the new catalog CID.
 7. **Update conformance fixtures** if the canonical input/output bytes changed.
-8. **Run `make ci`** to verify the whole stack.
-9. **Tag the release** in git.
-10. **Publish packages** in dependency order: protocol catalog first, then kits, then lift adapters, then tooling.
-11. **Update tutorials and how-to docs** to reference the new catalog CID where it appears.
-12. **Announce** on the project repository.
+8. **Emit or check the PEP transition** with `provekit protocol evolve` or `provekit protocol check-evolution`.
+9. **Update CICP accepted witnesses** only after reviewing candidate job-result witnesses as supply-chain artifacts.
+10. **Run `make ci`** to verify the whole stack.
+11. **Tag the release** in git.
+12. **Publish packages** in dependency order: protocol catalog first, then kits, then lift adapters, then tooling.
+13. **Update tutorials and how-to docs** to reference the new catalog CID where it appears.
+14. **Announce** on the project repository.
 
 ## Migration notes
 
@@ -84,7 +89,7 @@ The default kit behavior on encountering an unknown primitive is to log a warnin
 Publish in dependency order to avoid "I just published an adapter that depends on a kit version that isn't on npm yet" deadlocks:
 
 1. Protocol catalog CIDs (just file changes; no package).
-2. Rust workspace (canonical CLI). `cargo publish provekit-ir-types`, then `provekit-ir-symbolic`, then `provekit-claim-envelope`, then `provekit-proof-envelope`, then `provekit-self-contracts`, then `provekit-verifier`, then `provekit-cli`.
+2. Rust workspace (canonical CLI). Publish library crates before `provekit-cli`; include `libprovekit` when CICP or other reusable protocol body logic changed.
 3. Per-language kits in arbitrary order. Each kit's packages are published per its ecosystem's convention.
 4. Lift adapters per kit, after the kit is published.
 5. Tooling (LSP plugins, build-script integrations).
@@ -103,7 +108,7 @@ When the project grows, the release process should be automated: `make release` 
 
 After the release is announced:
 
-- Update [`docs/reference/cids.md`](../reference/cids.md) on `main` if not already.
+- Update [`docs/reference/cids.md`](../reference/cids.md) and [`docs/reference/protocol-extensions.md`](../reference/protocol-extensions.md) on `main` if not already.
 - Update tutorials that reference the catalog CID.
 - Watch for adapter authors reporting upgrade issues; respond in issues / PRs.
 - Wait roughly two weeks before considering the release "stable." Early-adopter feedback often reveals migration friction.
@@ -117,5 +122,5 @@ The next release cycle begins with adapter requests, spec proposals, and bug rep
 ## Read next
 
 - [proposing-a-spec-change.md](proposing-a-spec-change.md) (when written): how a spec change gets proposed and accepted.
-- [docs/governance/protocol-versions.md](../governance/protocol-versions.md) (when written): version policy.
+- `docs/governance/protocol-versions.md` (planned): version policy.
 - [docs/reference/cids.md](../reference/cids.md): current catalog CID.

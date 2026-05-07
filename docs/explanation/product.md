@@ -2,27 +2,33 @@
 
 ## What ProvekIt is
 
-ProvekIt is a content-addressed verification protocol. It defines four things: a canonical IR for behavioral formulas, a signed memento envelope wrapping IR with provenance, a published `.proof` catalog of mementos addressed by CID, and a three-tier handshake algorithm that verifies a consumer's call sites against a publisher's contracts in time decoupled from the size of the dependency graph.
+ProvekIt is a toolchain for proving content-addressed claims. It defines four core things: a canonical IR for claim boundaries, a signed memento envelope wrapping claims with provenance, a published `.proof` catalog of mementos addressed by CID, and a handshake algorithm that verifies a consumer's obligations against a publisher's evidence in time decoupled from the size of the dependency graph.
+
+Software correctness across domains is the center use case: language to language, package to package, protocol version to protocol version, CI result to supply-chain input closure, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that larger pattern.
 
 Verification reduces to hash comparison. When the publisher's post-condition and the consumer's pre-condition canonicalize to identical bytes, the call site is discharged for free. When they don't, a signed implication memento may exist that bridges them; the verifier checks the signature once and discharges every call site that shares the same `(post, pre)` pair. When neither path applies, Z3 runs once per novel pair, mints the result as a fresh implication memento, and every future verifier hits the cached path.
 
-ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libraries (verifier, IR, canonicalizer) for Rust, TypeScript, Go, and C++. The protocol version is itself a CID: v1.6.0 is shorthand for `blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781`. Anyone with the spec bytes can verify that label locally.
+ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libraries and kits. The protocol version is itself a CID: v1.6.2 is shorthand for `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`. Anyone with the spec bytes can verify that label locally.
 
 ## Who it's for
 
-Three audiences, in order of immediate fit:
+Five audiences, in order of immediate fit:
 
 **Library authors who want their behavioral guarantees to ship.** Today, a Rust crate that uses `proptest` invariants or `contracts` pre/post-conditions communicates those guarantees to whoever reads the crate's source. ProvekIt's lift adapter promotes the existing annotations to signed contract mementos that ship in a `.proof` catalog alongside the crate's bytes. Downstream consumers verify against the mementos without ever running the original test suite or invoking the original solver. The author's annotations stay where they are; the verification is now portable.
 
 **Application teams that depend on libraries they did not write.** A consumer's verifier walks the dependency tree, loads every `.proof` it finds, and discharges call sites against the cached contract mementos. The Tier-1 hash-discharge fraction is the headline metric: a high fraction means the consumer's expectations and the library's guarantees agree on shape. A low fraction means there is real work to do, and the work is the residue, not the average case. The verifier's cost is decoupled from the depth of the dependency tree.
 
-**Build-tool maintainers and language teams.** Per-language kits emit canonical IR. Per-language libs verify. The Rust CLI is one shipping implementation; alternative CLIs in any language are conforming as long as they accept the v1.6.0 catalog CID. The protocol is the contract; implementations are interchangeable.
+**Build-tool maintainers and language teams.** Per-language kits emit canonical IR. Per-language libs verify. The Rust CLI is one shipping implementation; alternative CLIs in any language are conforming as long as they accept the v1.6.2 catalog CID. The protocol is the contract; implementations are interchangeable.
+
+**Supply-chain and CI owners.** CICP turns a CI result into a claim about exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. A cached or reused result is admissible only when the current blast-radius CID matches a reviewed accepted witness.
+
+**Protocol and tooling authors.** PEP, GCP, TDP, ORP, CBP, and proof-protocol conformance let ProvekIt prove protocol/tooling claims with the same content-addressed graph used for application contracts.
 
 ## What ProvekIt replaces
 
 Nothing. ProvekIt does not replace `cargo test`, `npm test`, `go test`, or any other test runner. It does not replace `clippy`, `eslint`, `golangci-lint`, or any other linter. It does not replace Kani, Prusti, F\*, Dafny, TLA+, or any other formal verifier.
 
-ProvekIt replaces the absence of a portable, signed, composable substrate underneath those tools. Today, when `proptest` finds an invariant, that invariant lives in the test runner's output; nothing else can use it. When Kani proves a property, that property lives in Kani's output; nothing downstream can carry it forward. ProvekIt is the missing layer: lift the existing tool's output into a signed memento, address it by content, publish it in a `.proof`, and the next tool in the pipeline sees a cached fact instead of a fresh problem.
+ProvekIt replaces the absence of a portable, signed, composable substrate underneath those tools. Today, when `proptest` finds an invariant, that invariant lives in the test runner's output; nothing else can use it. When Kani proves a property, that property lives in Kani's output; nothing downstream can carry it forward. When CI goes green, the result usually does not name the exact proof/toolchain/input closure that made it meaningful. ProvekIt is the missing layer: lift the existing tool's output into a signed memento, address it by content, publish it in a `.proof` or extension witness, and the next tool in the pipeline sees a cached fact instead of a fresh problem.
 
 ## What ProvekIt complements
 
@@ -31,27 +37,27 @@ This list is comprehensive on purpose. ProvekIt sits beneath every annotation li
 **Rust:**
 - `proptest` (lift adapter shipping in v1.1)
 - `contracts` (lift adapter shipping in v1.1)
-- `kani`, `prusti` (lift adapters planned for v1.2)
+- `kani`, `prusti`
 - `creusot`, `flux` (lift adapters under evaluation)
 - `quickcheck` (idiom maps to `proptest` adapter shape)
 
 **TypeScript / JavaScript:**
-- `zod`, `class-validator`, `fast-check` (lift adapters planned for v1.2)
+- `zod`, `class-validator`, `fast-check`
 - `io-ts`, `runtypes`, `valibot`, `ajv` schemas (planned)
 - TypeScript's own type system (the `ts-types-proof` lib lifts type annotations)
 
 **Python:**
-- `pydantic`, `attrs`, `dataclasses-json` schemas (lift adapters planned for v1.2)
+- `pydantic`, `attrs`, `dataclasses-json` schemas
 - `deal`, `hypothesis`, `icontract` (planned)
 - `mypy` and `pyright` annotations (planned)
 
 **Java / JVM:**
-- Bean Validation (`jakarta.validation`, `javax.validation`) (planned for v1.2)
+- Bean Validation (`jakarta.validation`, `javax.validation`)
 - JML, Cofoja (planned)
 - KeY-style annotations, OpenJML (planned)
 
 **Go:**
-- `go-playground/validator` (planned for v1.2)
+- `go-playground/validator`
 - `ozzo-validation`, `validator.v9` (planned)
 - Build-tag-based assertions (planned)
 
@@ -97,7 +103,7 @@ provekit prove
 
 The verifier walks `<projectRoot>` and the dependency tree's `.proof` files, indexes the memento pool, runs the handshake at every call site, and reports the discharge breakdown. Exit code is 0 (everything discharged), 1 (violations or unresolved residue), 2 (user error), or 3 (solver unavailable / timeout).
 
-**3. Build-script integration (planned for v1.2).**
+**3. Build-script integration (planned).**
 
 ```rust
 // build.rs
@@ -114,8 +120,8 @@ A repository declares its conformance via a `provekit.config.yaml` at the projec
 
 ```yaml
 protocol:
-  cid: blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781
-  version: v1.6.0
+  cid: blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
+  version: v1.6.2
 
 publish:
   implications:

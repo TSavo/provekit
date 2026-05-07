@@ -151,6 +151,6 @@ The LSP server is not connected. Confirm `provekit-lsp --version` works from you
 
 ## What is next
 
-The demo uses the rust+go cross-kit path. The same architecture covers any language pair the daemon's kit dispatch supports. See [docs/per-language-status.md](per-language-status.md) for the current matrix of kits with LSP plugin support.
+The demo uses the rust+go cross-kit path. The same architecture covers any language pair the daemon's kit dispatch supports. See [docs/reference/per-language-status.md](reference/per-language-status.md) for the current matrix of kits with LSP plugin support.
 
 If you want to understand the architecture, write a new lifter, or contribute a new kit, the extender quickstart is [docs/quickstart-extender.md](quickstart-extender.md).

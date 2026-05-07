@@ -1,6 +1,6 @@
 # Tutorial: TypeScript
 
-> **Status:** kit shipping (v1.4.1). Lift adapters shipping: `zod`, `class-validator`, `fast-check`. Verification today is via the Rust CLI as a subprocess; a native TypeScript CLI is planned. LSP plugin planned (until then, no IDE squigglies).
+> **Status:** kit shipping in the current v1.6.2 tree. Lift adapters shipping: `zod`, `class-validator`, `fast-check`. Verification today is via the Rust CLI as a subprocess; a native TypeScript CLI is planned. LSP plugin planned (until then, no IDE squigglies).
 
 A walkthrough for TypeScript developers. By the end you have a `.proof` catalog of signed contract mementos for an npm package, lifted from existing `zod` schemas / `class-validator` decorators / `fast-check` properties, and verified via the Rust CLI.
 
@@ -62,8 +62,8 @@ The handshake walks the catalog, runs the three tiers, and reports the discharge
 
 ## 6. Wire your IDE and CI
 
-- **IDE:** the TypeScript LSP plugin is planned for v1.2. Until then, no in-editor squigglies. The `npx provekit-lift` + `provekit prove` cycle is the loop today.
-- **CI:** see [docs/how-to/ci-integration/github-actions.md](../how-to/ci-integration/github-actions.md) for the recipe (uses the same Rust CLI verifier).
+- **IDE:** the TypeScript LSP plugin is planned. Until then, no in-editor squigglies. The `npx provekit-lift` + `provekit prove` cycle is the loop today.
+- **CI:** see [docs/how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md) for the current supply-chain admission surface.
 
 ## What's next
 

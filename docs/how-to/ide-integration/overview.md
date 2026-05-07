@@ -4,15 +4,15 @@ ProvekIt LSP plugins shipping today:
 
 | Kit | Plugin | Status |
 |---|---|---|
-| Rust | `provekit-lsp-rust` | shipping (v1.4.1) |
-| Python | `provekit-lsp-py` | shipping (v1.4.1) |
-| Zig | `provekit-lift-zig --rpc` | shipping (v1.4.1) |
-| Ruby | `provekit-lsp-ruby` | shipping (v1.4.1) |
-| C# | `Provekit.Lsp.Plugin` | shipping (v1.4.1) |
-| TypeScript | | planned for v1.2 |
-| Go | | planned for v1.2 |
-| C++ | | planned for v1.2 |
-| Java / JVM | | planned for v1.2 |
+| Rust | `provekit-lsp-rust` | shipping in the current v1.6.2 tree |
+| Python | `provekit-lsp-py` | shipping in the current v1.6.2 tree |
+| Zig | `provekit-lift-zig --rpc` | shipping in the current v1.6.2 tree |
+| Ruby | `provekit-lsp-ruby` | shipping in the current v1.6.2 tree |
+| C# | `Provekit.Lsp.Plugin` | shipping in the current v1.6.2 tree |
+| TypeScript | | planned |
+| Go | | planned |
+| C++ | | planned |
+| Java / JVM | | planned |
 | Swift | | planned |
 
 If your kit is not in the shipping list, the in-editor squigglies are not yet available. The CLI loop (`cargo provekit-lift && provekit prove`) still works.
@@ -72,7 +72,7 @@ ProvekIt diagnostics use:
   - `information`: lifted contract; no violation.
   - `hint`: suggestion (e.g., "consider adding `@NotNull` to align with caller's contract").
 - **Source:** always `"provekit"`. Filter by source for "show only ProvekIt issues."
-- **Code:** stable error code, e.g., `PROVEKIT_E001`. See [`../../reference/error-codes.md`](../../reference/error-codes.md) (when written).
+- **Code:** stable error code, e.g., `PROVEKIT_E001`. See [`../../reference/error-codes.md`](../../reference/error-codes.md).
 - **Message:** human-readable. Includes the contract that was violated and (where possible) the source-library annotation that gave rise to the contract.
 
 Quick fixes (LSP `codeAction`) are forwards-looking; not all kits ship them yet. When they do, common patterns:
