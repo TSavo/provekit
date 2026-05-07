@@ -20,6 +20,7 @@ use clap::{Parser, Subcommand};
 
 mod cmd_agent;
 mod cmd_ask;
+mod cmd_ci;
 mod cmd_dump;
 mod cmd_fix;
 mod cmd_hash;
@@ -82,6 +83,8 @@ enum Cmd {
     Proof(cmd_proof::ProofArgs),
     /// Work with protocol catalog evolution artifacts.
     Protocol(cmd_protocol::ProtocolArgs),
+    /// Check content-addressed CI protocol artifacts.
+    Ci(cmd_ci::CiArgs),
     /// Same as `prove`. Reserved for a future split.
     Verify(ProveArgs),
     /// Look up a formula by content. Parses an IR-JSON formula file, hashes it, reports the CID.
@@ -286,6 +289,7 @@ fn main() -> ExitCode {
         Cmd::Prove(a) | Cmd::Verify(a) => cmd_prove::run(a),
         Cmd::Proof(a) => cmd_proof::run(a),
         Cmd::Protocol(a) => cmd_protocol::run(a),
+        Cmd::Ci(a) => cmd_ci::run(a),
         Cmd::Ask(a) => cmd_ask::run(a),
         Cmd::Search(a) => cmd_search::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
