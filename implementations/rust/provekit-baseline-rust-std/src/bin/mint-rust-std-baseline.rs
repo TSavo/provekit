@@ -19,7 +19,7 @@
 //   cargo run --release --bin mint-rust-std-baseline -- /tmp/rust-std-baseline
 //
 // Final landing path (move after mint):
-//   .provekit/baselines/rust-std-baseline-v1.proof
+//   .provekit/baselines/<cid>.proof
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -182,7 +182,7 @@ fn main() -> ExitCode {
     println!();
     println!("To land at the canonical path, copy:");
     println!(
-        "  cp {} .provekit/baselines/rust-std-baseline-v1.proof",
+        "  cp {} .provekit/baselines/",
         mint.path.display()
     );
 

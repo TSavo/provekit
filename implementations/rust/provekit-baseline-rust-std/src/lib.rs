@@ -4,8 +4,8 @@
 //
 // Foundation-baseline catalog for Rust's std library.
 //
-// This crate is the BUILD ORCHESTRATOR for `rust-std-baseline-v1.proof` —
-// the FOUNDATION-signed advisory catalog of hidden predicates about
+// This crate is the BUILD ORCHESTRATOR for the Rust content-addressed
+// foundation baseline catalog of hidden predicates about
 // std::* builtins (per `docs/contributing/baseline-catalog-rubric.md`).
 // It is _advisory_, not authoritative; the `rust-lang` team is the
 // authoritative steward for std contracts. See `docs/baselines/rust.md`
@@ -85,9 +85,8 @@ const DECLARED_AT: &str = "2026-05-03T18:00:00Z";
 const PRODUCED_BY: &str = "provekit-baseline-rust-std@0.1.0";
 
 /// Catalog identity stamped on the proof envelope. The version line is
-/// the rubric's `baseline.version` field (a positive integer per
-/// `baseline-catalog-rubric.md` §3); the catalog name follows the
-/// `<lang>-baseline-v<N>` convention from §"Compliance checklist".
+/// the rubric's `baseline.version` field. Publication uses the resulting
+/// proof CID as the canonical filename.
 pub const CATALOG_NAME: &str = "@provekit/baselines/rust-std";
 pub const CATALOG_VERSION: &str = "1.0.0";
 pub const BASELINE_VERSION: u32 = 1;
