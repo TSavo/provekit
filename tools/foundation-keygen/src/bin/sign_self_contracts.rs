@@ -30,7 +30,7 @@ use std::process::ExitCode;
 
 use foundation_keygen::{
     build_signed_self_contracts_attestation, self_contracts_attestation_path_for,
-    FOUNDATION_V0_SEED, SELF_CONTRACTS_DECLARED_AT_V1_3_1, SELF_CONTRACTS_LANGS,
+    FOUNDATION_V0_SEED, SELF_CONTRACTS_DECLARED_AT_V1_6_0, SELF_CONTRACTS_LANGS,
 };
 
 fn validate_cid(cid: &str, name: &str) -> Result<(), String> {
@@ -53,9 +53,12 @@ fn validate_cid(cid: &str, name: &str) -> Result<(), String> {
 
 fn run() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
-    let lang = args
-        .next()
-        .ok_or_else(|| "missing <lang> argument (rust|go|cpp|ts|csharp)".to_string())?;
+    let lang = args.next().ok_or_else(|| {
+        format!(
+            "missing <lang> argument; expected one of {:?}",
+            SELF_CONTRACTS_LANGS
+        )
+    })?;
     let cid = args
         .next()
         .ok_or_else(|| "missing <bundle-cid> argument (blake3-512:<128 hex>)".to_string())?;
@@ -83,7 +86,7 @@ fn run() -> Result<(), String> {
         &lang,
         &cid,
         &contract_set_cid,
-        SELF_CONTRACTS_DECLARED_AT_V1_3_1,
+        SELF_CONTRACTS_DECLARED_AT_V1_6_0,
     )?;
 
     let out_path = self_contracts_attestation_path_for(&lang);
@@ -100,7 +103,7 @@ fn run() -> Result<(), String> {
     println!("lang:              {}", lang);
     println!("cid:               {}", cid);
     println!("contractSetCid:    {}", contract_set_cid);
-    println!("declaredAt:        {}", SELF_CONTRACTS_DECLARED_AT_V1_3_1);
+    println!("declaredAt:        {}", SELF_CONTRACTS_DECLARED_AT_V1_6_0);
     println!("signer:            {}", attestation["signer"]);
     println!("signature:         {}", attestation["signature"]);
     println!();

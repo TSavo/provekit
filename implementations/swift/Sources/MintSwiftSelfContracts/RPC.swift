@@ -24,6 +24,7 @@
 
 import Foundation
 import Provekit
+import ProvekitCrypto
 
 // MARK: - RPC entry point
 
@@ -87,38 +88,24 @@ private func handleInitialize(id: Any?) {
 
 private func handleLift(id: Any?) {
     // Walk the slab (the `allContracts` array authored in main.swift) and
-    // emit a proof-envelope. The contractSetCid is the canonical
-    // BLAKE3-512(JCS(sorted(contractCids))) per
+    // emit a real signed-CBOR .proof bundle. The contractSetCid is the
+    // canonical BLAKE3-512(JCS(sorted(contractCids))) per
     // protocol/specs/2026-05-03-contract-set-extension.md §1, byte-identical
-    // to what the rust/go/cpp/ts kits produce for the same contracts.
-    //
-    // The .proof bundle format proper (CBOR + signed catalog memento) is
-    // Phase 3 deferred for the swift kit; this RPC emits a minimal
-    // JCS-JSON catalog whose filename_cid is the BLAKE3-512 of those
-    // bytes. This satisfies the rust dispatcher's `proof-envelope`
-    // contract (kind, filename_cid non-empty, bytes_base64 decodable) and
-    // produces a content-meaningful CID that changes when the slab changes,
-    // satisfying acceptance gate #2 of issue #211.
+    // to what the Rust verifier re-derives from the loaded member mementos.
+    let minted: SwiftSelfContractProof
+    do {
+        minted = try mintSwiftSelfContractProof(contracts: swiftSelfContracts())
+    } catch {
+        writeError(id: id, code: -32000, message: "LIFT_FAILED: \(error)")
+        return
+    }
 
-    let contracts = swiftSelfContracts()
-    let cids = contracts.map { contractContentCid($0) }
-    let setCid = computeContractSetCid(cids)
-
-    // Build the (Phase-3-deferred) catalog body. JCS-encoded; the file's
-    // filename CID is BLAKE3-512 of these bytes.
-    let catalogJcs = encodeSwiftCatalog(name: "@provekit/swift-self-contracts",
-                                        version: "1.0.0",
-                                        contracts: contracts,
-                                        contractCids: cids)
-    let catalogBytes = Data(catalogJcs.utf8)
-    let filenameCid = Blake3.hex(catalogBytes)
-
-    let b64 = catalogBytes.base64EncodedString()
+    let b64 = minted.bytes.base64EncodedString()
 
     let result: [String: Any] = [
         "kind": "proof-envelope",
-        "filename_cid": filenameCid,
-        "contract_set_cid": setCid,
+        "filename_cid": minted.filenameCid,
+        "contract_set_cid": minted.contractSetCid,
         "bytes_base64": b64,
         "diagnostics": [],
     ]
@@ -141,7 +128,7 @@ func contractContentCid(_ d: Declaration) -> String {
     guard case let .contract(name, outBinding, pre, post, inv) = d else {
         // Bridges aren't part of the swift self-contracts slab today;
         // if one shows up we'd fall back to encoding the full declaration.
-        return Blake3.hex(Data(Jcs.encode(Jcs.declToValue(d)).utf8))
+        return ProvekitCrypto.Blake3.hex(Data(Jcs.encode(Jcs.declToValue(d)).utf8))
     }
     var pairs: [(String, JcsValue)] = [
         ("name", .string(name)),
@@ -157,7 +144,7 @@ func contractContentCid(_ d: Declaration) -> String {
         pairs.append(("inv", Jcs.formulaToValue(inv)))
     }
     let jcs = Jcs.encode(.object(pairs))
-    return Blake3.hex(Data(jcs.utf8))
+    return ProvekitCrypto.Blake3.hex(Data(jcs.utf8))
 }
 
 /// Compute the contract set CID per spec `2026-05-03-contract-set-extension.md` §1:
@@ -169,43 +156,107 @@ func computeContractSetCid(_ cids: [String]) -> String {
     let sorted = cids.sorted()
     let arr: [JcsValue] = sorted.map { .string($0) }
     let jcs = Jcs.encode(.array(arr))
-    return Blake3.hex(Data(jcs.utf8))
+    return ProvekitCrypto.Blake3.hex(Data(jcs.utf8))
 }
 
-/// Build a minimal JCS-canonical catalog body. The filename_cid of the
-/// emitted .proof bundle is BLAKE3-512 of these bytes. NOT byte-equivalent
-/// to the rust/go/cpp/ts CBOR-signed catalog format; that's Phase 3 work
-/// (per the existing comment in MintSwiftSelfContracts/main.swift line 208).
-///
-/// Body shape:
-///   {
-///     contracts: <jcs declarations array>,
-///     contractCids: [<sorted contract content CIDs>],
-///     declaredAt: <ISO-8601>,
-///     kind: "swift-self-contracts-catalog-phase3-pending",
-///     name: <catalog name>,
-///     version: <catalog version>
-///   }
-///
-/// The presence of `contractCids` and `contracts` makes the bytes change
-/// when ANY contract field changes, satisfying issue #211 acceptance gate #2
-/// ("Bundle CID is content-meaningful").
-func encodeSwiftCatalog(name: String,
-                        version: String,
-                        contracts: [Declaration],
-                        contractCids: [String]) -> String {
-    let declsValue: JcsValue = .array(contracts.map(Jcs.declToValue))
-    let cidsValue: JcsValue = .array(contractCids.sorted().map { .string($0) })
-    let declaredAt = "2026-05-03T18:00:00Z"
-    let body: JcsValue = .object([
-        ("contractCids", cidsValue),
-        ("contracts", declsValue),
-        ("declaredAt", .string(declaredAt)),
-        ("kind", .string("swift-self-contracts-catalog-phase3-pending")),
-        ("name", .string(name)),
-        ("version", .string(version)),
-    ])
-    return Jcs.encode(body)
+private struct SwiftSelfContractProof {
+    let bytes: Data
+    let filenameCid: String
+    let contractSetCid: String
+}
+
+private enum SwiftSelfContractMintError: Error, CustomStringConvertible {
+    case nonIntegerNumber(String)
+    case noContractMembers
+
+    var description: String {
+        switch self {
+        case .nonIntegerNumber(let n):
+            return "self-contract formula contains non-integer JCS number: \(n)"
+        case .noContractMembers:
+            return "swift self-contract slab produced no contract members"
+        }
+    }
+}
+
+private let swiftSelfContractCatalogName = "@provekit/swift-self-contracts"
+private let swiftSelfContractCatalogVersion = "1.0.0"
+private let swiftSelfContractProducedBy = "swift-self-contracts@1.0.0"
+private let swiftSelfContractDeclaredAt = "2026-05-03T18:00:00Z"
+
+private func mintSwiftSelfContractProof(contracts: [Declaration]) throws -> SwiftSelfContractProof {
+    let minter = ClaimMinter(signerSeed: Ed25519.foundationV0Seed)
+    var members: [(String, Data)] = []
+    var contractCids: [String] = []
+
+    for declaration in contracts {
+        guard case let .contract(name, outBinding, pre, post, inv) = declaration else {
+            continue
+        }
+
+        let args = ContractMintArgs(
+            contractName: name,
+            pre: try pre.map { try formulaCanonical($0) },
+            post: try post.map { try formulaCanonical($0) },
+            inv: try inv.map { try formulaCanonical($0) },
+            outBinding: outBinding,
+            producedBy: swiftSelfContractProducedBy,
+            producedAt: swiftSelfContractDeclaredAt,
+            inputCids: [],
+            authoring: .kitAuthor(author: swiftSelfContractProducedBy, note: nil)
+        )
+
+        contractCids.append(contractCid(fromArgs: args))
+        let memento = try minter.mintContract(args)
+        members.append((memento.cid, memento.canonicalBytes))
+    }
+
+    if members.isEmpty {
+        throw SwiftSelfContractMintError.noContractMembers
+    }
+
+    let signerPubkey = Ed25519.publicKeyString(fromSeed: Ed25519.foundationV0Seed)
+    let signerCid = ProvekitCrypto.Blake3.hex(Data(signerPubkey.utf8))
+    let envelope = ProofEnvelopeBuilder.build(ProofEnvelopeInput(
+        name: swiftSelfContractCatalogName,
+        version: swiftSelfContractCatalogVersion,
+        members: members,
+        signerCid: signerCid,
+        signerSeed: Ed25519.foundationV0Seed,
+        declaredAt: swiftSelfContractDeclaredAt
+    ))
+
+    return SwiftSelfContractProof(
+        bytes: envelope.bytes,
+        filenameCid: envelope.filenameCid,
+        contractSetCid: ProvekitCrypto.computeContractSetCid(contractCids)
+    )
+}
+
+private func formulaCanonical(_ formula: Formula) throws -> JcsCanonical {
+    return try jcsCanonical(from: Jcs.formulaToValue(formula))
+}
+
+private func jcsCanonical(from value: JcsValue) throws -> JcsCanonical {
+    switch value {
+    case .string(let s):
+        return .string(s)
+    case .number(let n):
+        guard let i = Int64(n) else {
+            throw SwiftSelfContractMintError.nonIntegerNumber(n)
+        }
+        return .int(i)
+    case .bool(let b):
+        return .bool(b)
+    case .null:
+        return .null
+    case .array(let values):
+        return .array(try values.map { try jcsCanonical(from: $0) })
+    case .object(let pairs):
+        return .object(try pairs.map { (key, nested) in
+            (key, try jcsCanonical(from: nested))
+        })
+    }
 }
 
 // MARK: - JSON-RPC writers

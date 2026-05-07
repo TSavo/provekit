@@ -35,60 +35,47 @@ class Builder
         ];
     }
 
-    /**
-     * Simplified deterministic CBOR catalog encoding.
-     * Real implementation would use a proper CBOR library;
-     * this hand-rolled version produces correct structure for verification.
-     */
     private function encodeCatalog(string $name, string $version, array $members, string $declaredAt): string
     {
-        // CBOR map with deterministic integer keys
-        $map = [];
-
-        // Key 0: kind = "catalog"
-        $map[0] = $this->cborString('catalog');
-
-        // Key 1: name
-        $map[1] = $this->cborString($name . '@provekit/lift');
-
-        // Key 2: signer
-        $map[2] = $this->cborString(Blake3::cid($this->signer->pubKeyHex()));
-
-        // Key 3: members (CBOR map)
-        $membersCbor = chr(0xa0 | count($members)); // map header
+        ksort($members, SORT_STRING);
+        $memberPairs = [];
         foreach ($members as $cid => $bytes) {
-            $membersCbor .= $this->cborString($cid);
-            $membersCbor .= $this->cborBytes($bytes);
+            $memberPairs[$cid] = $this->cborBytes($bytes);
         }
-        $map[3] = $membersCbor;
+        $membersCbor = $this->cborMap($memberPairs);
 
-        // Key 4: version
-        $map[4] = $this->cborString($version);
+        $signer = 'ed25519:' . $this->signer->pubKeyBase64();
+        $signerCid = Blake3::cid($signer);
 
-        // Key 5: signature (sign canonical data)
-        $map[5] = $this->cborString(
-            'ed25519:' . $this->signer->signBase64($membersCbor)
-        );
+        $unsignedPairs = [
+            'kind' => $this->cborString('catalog'),
+            'name' => $this->cborString($name),
+            'version' => $this->cborString($version),
+            'members' => $membersCbor,
+            'signer' => $this->cborString($signerCid),
+            'declaredAt' => $this->cborString($declaredAt),
+        ];
+        $unsigned = $this->cborMap($unsignedPairs);
+        $signature = $this->signer->sign($unsigned);
 
-        // Key 6: declaredAt
-        $map[6] = $this->cborString($declaredAt);
-
-        // Deterministic: sort keys before encoding
-        ksort($map);
-        $buf = chr(0xa0 | count($map));
-        foreach ($map as $k => $v) {
-            $buf .= $this->cborInt($k) . $v;
-        }
-
-        return $buf;
+        $signedPairs = $unsignedPairs;
+        $signedPairs['signature'] = $this->cborBytes($signature);
+        return $this->cborMap($signedPairs);
     }
 
-    private function cborInt(int $n): string
+    private function cborMap(array $pairs): string
     {
-        if ($n <= 23) return chr($n);
-        if ($n <= 0xFF) return chr(0x18) . chr($n);
-        if ($n <= 0xFFFF) return chr(0x19) . pack('n', $n);
-        throw new \RuntimeException("int too large for hand-rolled CBOR");
+        $encoded = [];
+        foreach ($pairs as $key => $valueCbor) {
+            $encoded[$this->cborString((string)$key)] = $valueCbor;
+        }
+        ksort($encoded, SORT_STRING);
+
+        $buf = $this->cborHead(5, count($encoded));
+        foreach ($encoded as $keyCbor => $valueCbor) {
+            $buf .= $keyCbor . $valueCbor;
+        }
+        return $buf;
     }
 
     private function cborString(string $s): string

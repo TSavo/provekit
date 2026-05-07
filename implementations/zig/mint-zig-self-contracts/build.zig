@@ -17,6 +17,7 @@
 // Module imports:
 //   provekit-ir                — IR types + JCS + BLAKE3 helper
 //   provekit-proof-envelope-zig — buildProofEnvelope + sign helpers
+//   provekit-self-contracts    — native layered memento minting
 
 const std = @import("std");
 
@@ -39,6 +40,12 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const provekit_self_contracts = b.createModule(.{
+        .root_source_file = b.path("../provekit-self-contracts/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -46,6 +53,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "provekit-ir", .module = provekit_ir },
             .{ .name = "provekit-proof-envelope-zig", .module = provekit_proof_envelope },
+            .{ .name = "provekit-self-contracts", .module = provekit_self_contracts },
         },
     });
 

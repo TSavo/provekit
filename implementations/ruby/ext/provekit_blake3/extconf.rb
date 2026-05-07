@@ -8,7 +8,6 @@ require "fileutils"
 dir_config("blake3")
 
 $CFLAGS << " -std=c11"
-$DEFLIBPATH = []
 
 # Vendored BLAKE3 root.
 #

@@ -126,7 +126,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MintSwiftSelfContracts",
-            dependencies: ["Provekit"]
+            dependencies: ["Provekit", "ProvekitCrypto"]
         ),
         // LSPTests: standalone integration test runner (no XCTest/Testing dep needed).
         // `swift run test-swift-lsp` returns exit 0 on pass, non-zero on fail.

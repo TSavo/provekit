@@ -121,10 +121,10 @@ jobs:
           cache: maven
 
       # ---------------------------------------------------------------
-      # System-level deps: b3sum (PHP BLAKE3), openssl, nlohmann-json, libblake3 (Ruby FFI),
-      # libyaml (Ruby psych/bundler runtime). Run BEFORE setup-ruby so
-      # the bundler-cache step has libblake3 and libyaml already on the
-      # host when it resolves and builds native gems.
+      # System-level deps: PHP CLI + b3sum (PHP kit), openssl, nlohmann-json,
+      # libblake3 (Ruby FFI), libyaml (Ruby psych/bundler runtime). Run
+      # BEFORE setup-ruby so the bundler-cache step has libblake3 and libyaml
+      # already on the host when it resolves and builds native gems.
       #
       # cpp BLAKE3 is vendored at tools/blake3-vendored/; the Ruby kit's
       # FFI binding to libblake3 needs the system package because no
@@ -162,8 +162,10 @@ jobs:
             libyaml-dev \
             maven \
             nlohmann-json3-dev \
+            php-cli \
             unzip \
             z3
+          php -m | grep -q '^sodium$'
 
       - name: Install Vampire (upstream GitHub release)
         # Vampire joins the default solver portfolio per
@@ -210,17 +212,12 @@ jobs:
         # regression risk. ziglang.org keeps every release indefinitely.
         # Refresh this URL only when the kit's std API requirements change.
         #
-        # mlugg/setup-zig@v1 was tried in PR #245 and 404/503'd across
-        # every mirror; curl from ziglang.org is the simplest path that
-        # actually works.
-        run: |
-          set -euxo pipefail
-          ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
-          curl -fsSL "$ZIG_URL" -o /tmp/zig.tar.xz
-          sudo mkdir -p /usr/local/zig
-          sudo tar -xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
-          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
-          zig version
+        # Direct ziglang.org downloads are intentionally not bandwidth-
+        # guaranteed. setup-zig v2 uses the Zig community mirror list and
+        # verifies tarball signatures while keeping the compiler version pinned.
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
 
       # ---------------------------------------------------------------
       # The gate.
@@ -449,6 +446,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             build-essential \
+            libsodium-dev \
             libssl-dev
 
       - name: Set up Java (java)
@@ -458,6 +456,12 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
+
+      - name: Install Java deps (java)
+        if: matrix.kit == 'java'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends maven
 
       - name: Install Ruby (ruby)
         if: matrix.kit == 'ruby'
@@ -469,14 +473,18 @@ jobs:
 
       - name: Install Zig (zig)
         if: matrix.kit == 'zig'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Install PHP deps (php)
+        if: matrix.kit == 'php'
         run: |
-          set -euxo pipefail
-          ZIG_URL="https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz"
-          curl -fsSL "$ZIG_URL" -o /tmp/zig.tar.xz
-          sudo mkdir -p /usr/local/zig
-          sudo tar -xf /tmp/zig.tar.xz -C /usr/local/zig --strip-components=1
-          sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
-          zig version
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            b3sum \
+            php-cli
+          php -m | grep -q '^sodium$'
 
       - name: "prove-${{ matrix.kit }}"
         run: make prove-${{ matrix.kit }}

@@ -4,7 +4,7 @@
   "lang": "ruby",
   "cid": "blake3-512:6358ad54d0535d87be144d765127b7dcdde7fa6d807e27b8d85f4d3549609cd7fb573a711e7668152339753398c68dbb5e23dc2e0083ca5e7dc2c00e439d69da",
   "contractSetCid": "blake3-512:961be80d8a5ae8f3d8255462fc1845d5b45f30c0b4412c9d8b354078d63096ba363b6ae0dea4f2e35141213dc5c6b855156f434b5620a345bfbc20725bee00ff",
-  "declaredAt": "2026-05-03T18:00:00Z",
+  "declaredAt": "2026-05-05T18:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:gxKNFdrGsu4WXuIQuGwt7kOPevUrDH9STT2ZKz11J/Y9pkDD0vfYzZfY5RIyk9KcP5n0/vbPYSYTiAKuvW0GAg=="
+  "signature": "ed25519:1iayt6PHSkUK+2B9WW99wfvdBnBXTxH63nvyWFvooyo5JSw1IojEUMhYexIwamBgCdQ4sfQhLnVPPR5n5JlrBg=="
 }

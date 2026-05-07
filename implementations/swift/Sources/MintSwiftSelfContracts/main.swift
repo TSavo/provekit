@@ -49,10 +49,7 @@ let allContracts = swiftSelfContracts()
 let cids = allContracts.map { contractContentCid($0) }
 let contractSetCid = computeContractSetCid(cids)
 
-// The full signed-CBOR proof bundle is Phase 3 work for the swift kit;
-// the human-mode CID is a placeholder. The `--rpc` mode emits a real
-// content-meaningful filename_cid (see RPC.swift > handleLift).
-let bundleCidPlaceholder = "swift-kit-bundle:phase-3-deferred"
-
-print("catalog CID: \(bundleCidPlaceholder)")
+// Human mode is a lightweight inspection path. The `--rpc` mode mints the
+// real signed-CBOR proof artifact used by `provekit mint --kit=swift`.
+print("catalog CID: swift-kit-bundle:rpc-mode")
 print("contractSetCid: \(contractSetCid)")

@@ -1,11 +1,10 @@
-use provekit_canonicalizer::blake3_512_of;
-use provekit_claim_envelope::{
-    mint_bridge_v14, BridgeTargetV14, MintBridgeV14Args, MintedEnvelope,
-};
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use serde::Deserialize;
+use serde_json::Value as JsonValue;
 use std::collections::{HashSet, VecDeque};
 use std::ffi::OsString;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -31,7 +30,6 @@ const EMPTY_CONTRACT_SET_CID: &str = concat!(
     "d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab",
     "09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229"
 );
-const PROTOCOL_BRIDGE_DECLARED_AT: &str = "2026-05-06T00:00:00.000Z";
 
 const CORE_FIXTURES: &[&str] = &[
     "eq_atomic",
@@ -78,6 +76,7 @@ struct KitSelfContractAttestation {
     kit: String,
     attestation_lang: String,
     contract_set_cid: String,
+    path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,6 +94,7 @@ struct SelfContractAttestationJson {
 struct RunConfig {
     profile: Profile,
     jobs: usize,
+    bootstrap_self_contract_attestations: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +194,38 @@ struct NativeCheckResult {
 
 type OrderedJob<T> = Box<dyn FnOnce() -> T + Send + 'static>;
 
+#[derive(Debug, Clone, Copy)]
+struct SelfContractProducer {
+    kit: &'static str,
+    attestation_lang: &'static str,
+    mint_kit_alias: &'static str,
+}
+
+#[derive(Debug)]
+struct MintStdoutArtifact {
+    bundle_cid: String,
+    contract_set_cid: String,
+}
+
+#[derive(Debug)]
+struct LiveSelfContractArtifact {
+    kit: &'static str,
+    attestation_lang: &'static str,
+    bundle_cid: String,
+    contract_set_cid: String,
+    proof_bytes_len: usize,
+    proof_member_count: usize,
+    proof_contract_count: usize,
+}
+
+#[derive(Debug)]
+struct LiveProofArtifactValidation {
+    proof_bytes_len: usize,
+    proof_member_count: usize,
+    proof_contract_count: usize,
+    derived_contract_set_cid: String,
+}
+
 #[derive(Debug)]
 struct TempDir {
     path: PathBuf,
@@ -285,6 +317,18 @@ fn run_cmd_env(
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if !envs.iter().any(|(key, _)| *key == "PATH") {
+        let current_path = std::env::var_os("PATH");
+        command.env(
+            "PATH",
+            prepend_unique_path_dirs(current_path.as_ref(), &runtime_bin_dir_candidates()),
+        );
+    }
+    if !envs.iter().any(|(key, _)| *key == "JAVA_HOME") {
+        if let Some(java_home) = detect_java_home() {
+            command.env("JAVA_HOME", java_home);
+        }
+    }
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -300,40 +344,110 @@ fn run_cmd_env(
         }
     };
 
+    let stdout_reader = child.stdout.take().map(spawn_output_reader);
+    let stderr_reader = child.stderr.take().map(spawn_output_reader);
     let started = Instant::now();
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                let output = child.wait_with_output().expect("completed child output");
+            Ok(Some(status)) => {
                 return ProcResult {
-                    code: output.status.code().unwrap_or(1),
-                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                    code: status.code().unwrap_or(1),
+                    stdout: String::from_utf8_lossy(&join_output_reader(stdout_reader)).to_string(),
+                    stderr: String::from_utf8_lossy(&join_output_reader(stderr_reader)).to_string(),
                 };
             }
             Ok(None) => {
                 if started.elapsed() >= timeout {
                     let _ = child.kill();
-                    let output = child.wait_with_output().expect("killed child output");
-                    let mut stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                    let _ = child.wait();
+                    let stdout = join_output_reader(stdout_reader);
+                    let mut stderr =
+                        String::from_utf8_lossy(&join_output_reader(stderr_reader)).to_string();
                     stderr.push_str(&format!("\ntimeout after {}s", timeout.as_secs()));
                     return ProcResult {
                         code: -1,
-                        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                        stdout: String::from_utf8_lossy(&stdout).to_string(),
                         stderr,
                     };
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
             Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
                 return ProcResult {
                     code: 1,
-                    stdout: String::new(),
-                    stderr: e.to_string(),
-                }
+                    stdout: String::from_utf8_lossy(&join_output_reader(stdout_reader)).to_string(),
+                    stderr: format!(
+                        "{}\n{}",
+                        e,
+                        String::from_utf8_lossy(&join_output_reader(stderr_reader))
+                    ),
+                };
             }
         }
     }
+}
+
+fn runtime_bin_dir_candidates() -> Vec<PathBuf> {
+    [
+        "/usr/local/opt/ruby/bin",
+        "/opt/homebrew/opt/ruby/bin",
+        "/usr/local/opt/openjdk/bin",
+        "/opt/homebrew/opt/openjdk/bin",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .filter(|p| p.is_dir())
+    .collect()
+}
+
+fn ruby_bundle_exec_cmd(args: &[&str]) -> Vec<String> {
+    ["ruby", "-S", "bundle", "exec", "ruby"]
+        .into_iter()
+        .chain(args.iter().copied())
+        .map(String::from)
+        .collect()
+}
+
+fn detect_java_home() -> Option<PathBuf> {
+    ["/usr/local/opt/openjdk", "/opt/homebrew/opt/openjdk"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|home| home.join("bin/java").is_file())
+}
+
+fn prepend_unique_path_dirs(base: Option<&OsString>, dirs: &[PathBuf]) -> OsString {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for dir in dirs {
+        if seen.insert(dir.clone()) {
+            out.push(dir.clone());
+        }
+    }
+    if let Some(base) = base {
+        for dir in std::env::split_paths(base) {
+            if seen.insert(dir.clone()) {
+                out.push(dir);
+            }
+        }
+    }
+    std::env::join_paths(out).unwrap_or_else(|_| base.cloned().unwrap_or_default())
+}
+
+fn spawn_output_reader<R>(mut pipe: R) -> thread::JoinHandle<Vec<u8>>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = pipe.read_to_end(&mut bytes);
+        bytes
+    })
+}
+
+fn join_output_reader(handle: Option<thread::JoinHandle<Vec<u8>>>) -> Vec<u8> {
+    handle.and_then(|h| h.join().ok()).unwrap_or_default()
 }
 
 fn command_stdout(cmd: &[String], cwd: &Path, timeout: Duration) -> Result<String> {
@@ -384,13 +498,64 @@ fn attestation_lang_for_kit(kit: &str) -> &str {
     }
 }
 
+fn self_contract_producer_for(kit: &'static str) -> SelfContractProducer {
+    match kit {
+        "typescript" => SelfContractProducer {
+            kit,
+            attestation_lang: "ts",
+            mint_kit_alias: "ts",
+        },
+        other => SelfContractProducer {
+            kit,
+            attestation_lang: other,
+            mint_kit_alias: other,
+        },
+    }
+}
+
+fn self_contract_producers(profile: Profile) -> Vec<SelfContractProducer> {
+    profile
+        .required_kits()
+        .into_iter()
+        .map(self_contract_producer_for)
+        .collect()
+}
+
+fn self_contract_bootstrap_targets(profile: Profile) -> Vec<&'static str> {
+    let mut targets = vec!["build-rust"];
+    for producer in self_contract_producers(profile) {
+        let target = match producer.kit {
+            "go" => Some("build-go"),
+            "cpp" => Some("build-cpp"),
+            "typescript" => Some("build-ts"),
+            "csharp" => Some("build-csharp"),
+            "java" => Some("build-java-self-contracts"),
+            "ruby" => Some("build-ruby"),
+            "c" => Some("build-c-self-contracts"),
+            "zig" => Some("build-zig"),
+            "swift" => Some("build-swift"),
+            _ => None,
+        };
+        if let Some(target) = target {
+            if !targets.contains(&target) {
+                targets.push(target);
+            }
+        }
+    }
+    targets
+}
+
+fn attestation_path(lang: &str) -> PathBuf {
+    repo_root()
+        .join(".provekit/self-contracts-attestations")
+        .join(format!("{lang}.json"))
+}
+
 fn load_self_contract_attestations(profile: Profile) -> Result<Vec<KitSelfContractAttestation>> {
     let mut out = Vec::new();
     for kit in profile.required_kits() {
         let attestation_lang = attestation_lang_for_kit(kit);
-        let path = repo_root()
-            .join(".provekit/self-contracts-attestations")
-            .join(format!("{attestation_lang}.json"));
+        let path = attestation_path(attestation_lang);
         let raw = fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         let parsed: SelfContractAttestationJson =
             serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))?;
@@ -440,90 +605,290 @@ fn load_self_contract_attestations(profile: Profile) -> Result<Vec<KitSelfContra
             kit: kit.to_string(),
             attestation_lang: attestation_lang.to_string(),
             contract_set_cid: parsed.contract_set_cid,
+            path,
         });
     }
     Ok(out)
 }
 
-fn mint_protocol_contract_bridge(
-    attestation: &KitSelfContractAttestation,
-) -> Result<MintedEnvelope> {
-    if !cid_is_well_formed(&attestation.contract_set_cid) {
+fn parse_mint_stdout(stdout: &str) -> Result<MintStdoutArtifact> {
+    let bundle_cid = stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("blake3-512:"))
+        .ok_or_else(|| "mint output missing live bundle CID".to_string())?
+        .to_string();
+    if !cid_is_well_formed(&bundle_cid) {
+        return Err(format!("mint output bundle CID is malformed: {bundle_cid}"));
+    }
+
+    let contract_set_cid = stdout
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("contractSetCid:").map(str::trim))
+        .ok_or_else(|| "mint output missing contractSetCid".to_string())?
+        .to_string();
+    if !cid_is_well_formed(&contract_set_cid) {
         return Err(format!(
-            "{} self-contract set CID is malformed: {}",
-            attestation.kit, attestation.contract_set_cid
+            "mint output contractSetCid is malformed: {contract_set_cid}"
         ));
     }
-    let args = MintBridgeV14Args {
-        name: format!(
-            "{}-self-contracts-implements-provekit-protocol",
-            attestation.attestation_lang
-        ),
-        source_symbol: "self_contracts".into(),
-        source_layer: format!("{}-self-contracts", attestation.attestation_lang),
-        source_contract_cid: attestation.contract_set_cid.clone(),
-        target: BridgeTargetV14::ContractSet {
-            cid: EXPECTED_PROTOCOL_CONTRACT_SET_CID.into(),
-        },
-        target_witness_cid: None,
-        target_binary_cid: None,
-        target_layer: Some("provekit-protocol-contracts".into()),
-        target_contract_set_cid: None,
-        produced_by: Some("cross-kit-conformance@0.1".into()),
-        produced_at: Some(PROTOCOL_BRIDGE_DECLARED_AT.into()),
-        declared_at: PROTOCOL_BRIDGE_DECLARED_AT.into(),
-        signer_seed: [0x42; 32],
-    };
-    Ok(mint_bridge_v14(&args))
+
+    Ok(MintStdoutArtifact {
+        bundle_cid,
+        contract_set_cid,
+    })
 }
 
-fn assert_protocol_bridge_targets_protocol_set(
-    canonical_bytes: &[u8],
-    attestation: &KitSelfContractAttestation,
-) -> Result<()> {
-    let raw = std::str::from_utf8(canonical_bytes)
-        .map_err(|e| format!("bridge bytes are not UTF-8: {e}"))?;
-    if raw.contains("pending-") || raw.contains("deferred:") || raw.contains("null") {
-        return Err("protocol bridge contains a placeholder or null".to_string());
+fn provekit_bin() -> PathBuf {
+    repo_root().join("implementations/rust/target/release/provekit")
+}
+
+fn json_to_cvalue(j: &JsonValue) -> Arc<CValue> {
+    match j {
+        JsonValue::Null => CValue::null(),
+        JsonValue::Bool(b) => CValue::boolean(*b),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CValue::integer(i)
+            } else if let Some(u) = n.as_u64() {
+                CValue::integer(u as i64)
+            } else {
+                CValue::integer(0)
+            }
+        }
+        JsonValue::String(s) => CValue::string(s.clone()),
+        JsonValue::Array(items) => CValue::array(items.iter().map(json_to_cvalue).collect()),
+        JsonValue::Object(map) => CValue::object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), json_to_cvalue(v)))
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+fn compute_contract_set_cid(mut contract_cids: Vec<String>) -> String {
+    contract_cids.sort();
+    let values = contract_cids
+        .into_iter()
+        .map(CValue::string)
+        .collect::<Vec<_>>();
+    let jcs = encode_jcs(&CValue::array(values));
+    blake3_512_of(jcs.as_bytes())
+}
+
+fn contract_content_cid_from_memento(envelope: &JsonValue) -> Result<String> {
+    let body = provekit_verifier::types::memento_body(envelope)
+        .ok_or_else(|| "contract memento has no body/header".to_string())?;
+    let name = body
+        .get("name")
+        .or_else(|| body.get("contractName"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "contract memento missing name/contractName".to_string())?;
+    let out_binding = body
+        .get("outBinding")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "contract memento missing string outBinding".to_string())?;
+
+    let mut entries = vec![
+        ("name".to_string(), CValue::string(name.to_string())),
+        (
+            "outBinding".to_string(),
+            CValue::string(out_binding.to_string()),
+        ),
+    ];
+    for key in ["pre", "post", "inv"] {
+        if let Some(value) = body.get(key) {
+            entries.push((key.to_string(), json_to_cvalue(value)));
+        }
     }
 
-    let bridge: serde_json::Value =
-        serde_json::from_slice(canonical_bytes).map_err(|e| format!("parse bridge JCS: {e}"))?;
-    let header = bridge
-        .get("header")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| "bridge header missing or not an object".to_string())?;
-    if header.get("kind").and_then(|v| v.as_str()) != Some("bridge") {
-        return Err("bridge header.kind must be bridge".to_string());
+    let derived = blake3_512_of(encode_jcs(&CValue::object(entries)).as_bytes());
+    if let Some(header_cid) = body.get("cid").and_then(|v| v.as_str()) {
+        if header_cid != derived {
+            return Err(format!(
+                "contract content CID drift:\n  got:  {derived}\n  want: {header_cid}"
+            ));
+        }
     }
-    if header.get("sourceContractCid").and_then(|v| v.as_str())
-        != Some(attestation.contract_set_cid.as_str())
-    {
+    Ok(derived)
+}
+
+fn contract_content_cids_from_pool(pool: &provekit_verifier::MementoPool) -> Result<Vec<String>> {
+    let mut cids = Vec::new();
+    for (memento_cid, envelope) in &pool.mementos {
+        if provekit_verifier::types::memento_kind(envelope) == Some("contract") {
+            let cid = contract_content_cid_from_memento(envelope)
+                .map_err(|e| format!("contract member {memento_cid}: {e}"))?;
+            cids.push(cid);
+        }
+    }
+    Ok(cids)
+}
+
+fn validate_live_proof_artifact(
+    kit: &str,
+    artifact_dir: &Path,
+    bundle_cid: &str,
+) -> Result<LiveProofArtifactValidation> {
+    let proof_path = artifact_dir.join(format!("{bundle_cid}.proof"));
+    let bytes = fs::read(&proof_path).map_err(|e| format!("read {}: {e}", proof_path.display()))?;
+    if bytes.is_empty() {
+        return Err(format!("{kit} proof artifact is empty"));
+    }
+    let recomputed = blake3_512_of(&bytes);
+    if recomputed != bundle_cid {
         return Err(format!(
-            "{} bridge sourceContractCid does not match self contractSetCid",
-            attestation.kit
+            "{kit} proof artifact CID drift:\n  got:  {recomputed}\n  want: {bundle_cid}"
         ));
     }
-    let expected_source_layer = format!("{}-self-contracts", attestation.attestation_lang);
-    if header.get("sourceLayer").and_then(|v| v.as_str()) != Some(expected_source_layer.as_str()) {
+
+    let pool = provekit_verifier::load_all_proofs::run(artifact_dir);
+    if !pool.load_errors.is_empty() {
+        let details = pool
+            .load_errors
+            .iter()
+            .map(|e| format!("{}: {}", e.proof_path, e.reason))
+            .collect::<Vec<_>>()
+            .join("\n  ");
         return Err(format!(
-            "{} bridge sourceLayer does not name the kit self-contracts layer",
-            attestation.kit
+            "{kit} proof artifact has load errors:\n  {details}"
         ));
     }
-    let target = header
-        .get("target")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| "bridge header.target missing or not an object".to_string())?;
-    if target.get("kind").and_then(|v| v.as_str()) != Some("contractSet") {
-        return Err("bridge target.kind must be contractSet".to_string());
+
+    let members = pool
+        .bundle_members
+        .get(bundle_cid)
+        .ok_or_else(|| format!("{kit} proof artifact did not load bundle {bundle_cid}"))?;
+    if members.is_empty() {
+        return Err(format!("{kit} proof artifact loaded with zero members"));
     }
-    if target.get("cid").and_then(|v| v.as_str()) != Some(EXPECTED_PROTOCOL_CONTRACT_SET_CID) {
+
+    let contract_cids = contract_content_cids_from_pool(&pool)?;
+    if contract_cids.is_empty() {
+        return Err(format!("{kit} proof artifact has no contract mementos"));
+    }
+    let derived_contract_set_cid = compute_contract_set_cid(contract_cids.clone());
+
+    Ok(LiveProofArtifactValidation {
+        proof_bytes_len: bytes.len(),
+        proof_member_count: members.len(),
+        proof_contract_count: contract_cids.len(),
+        derived_contract_set_cid,
+    })
+}
+
+fn bootstrap_self_contract_toolchains(profile: Profile) -> Result<()> {
+    for target in self_contract_bootstrap_targets(profile) {
+        println!("  bootstrap: make {target}");
+        let cmd = vec!["make".to_string(), target.to_string()];
+        let proc = run_cmd(&cmd, &repo_root(), Duration::from_secs(900));
+        if proc.code != 0 {
+            return Err(command_error(&cmd, &proc));
+        }
+    }
+    Ok(())
+}
+
+fn mint_live_self_contract_artifact(
+    producer: SelfContractProducer,
+) -> Result<LiveSelfContractArtifact> {
+    let tmp = TempDir::new(&format!(
+        "pk_{}_self_contract_bootstrap",
+        producer.attestation_lang
+    ))?;
+    let cmd = vec![
+        provekit_bin().display().to_string(),
+        "mint".to_string(),
+        "--kit".to_string(),
+        producer.mint_kit_alias.to_string(),
+        "--quiet".to_string(),
+        "--no-attest".to_string(),
+        "--out".to_string(),
+        tmp.path().display().to_string(),
+    ];
+    let proc = run_cmd(&cmd, &repo_root(), Duration::from_secs(600));
+    if proc.code != 0 {
+        return Err(command_error(&cmd, &proc));
+    }
+
+    let parsed = parse_mint_stdout(&proc.stdout)?;
+    if parsed.contract_set_cid == EMPTY_CONTRACT_SET_CID {
+        return Err("live mint produced the empty self-contract set".to_string());
+    }
+
+    let proof = validate_live_proof_artifact(producer.kit, tmp.path(), &parsed.bundle_cid)?;
+    if proof.derived_contract_set_cid != parsed.contract_set_cid {
         return Err(format!(
-            "{} bridge target.cid does not match pinned protocolContractSetCid",
-            attestation.kit
+            "{} proof artifact contractSetCid drift:\n  got:  {}\n  want: {}",
+            producer.kit, proof.derived_contract_set_cid, parsed.contract_set_cid
         ));
     }
+
+    Ok(LiveSelfContractArtifact {
+        kit: producer.kit,
+        attestation_lang: producer.attestation_lang,
+        bundle_cid: parsed.bundle_cid,
+        contract_set_cid: parsed.contract_set_cid,
+        proof_bytes_len: proof.proof_bytes_len,
+        proof_member_count: proof.proof_member_count,
+        proof_contract_count: proof.proof_contract_count,
+    })
+}
+
+fn verify_self_contract_attestation(
+    attestation: &KitSelfContractAttestation,
+    observed_contract_set_cid: &str,
+) -> Result<()> {
+    let verifier = repo_root().join("tools/foundation-keygen/target/release/verify-self-contracts");
+    let cmd = vec![
+        verifier.display().to_string(),
+        attestation.path.display().to_string(),
+        observed_contract_set_cid.to_string(),
+    ];
+    let proc = run_cmd(&cmd, &repo_root(), Duration::from_secs(30));
+    if proc.code != 0 {
+        return Err(command_error(&cmd, &proc));
+    }
+    Ok(())
+}
+
+fn sign_self_contract_attestation(artifact: &LiveSelfContractArtifact) -> Result<()> {
+    let signer = repo_root().join("tools/foundation-keygen/target/release/sign-self-contracts");
+    let cmd = vec![
+        signer.display().to_string(),
+        artifact.attestation_lang.to_string(),
+        artifact.bundle_cid.clone(),
+        artifact.contract_set_cid.clone(),
+    ];
+    let proc = run_cmd(&cmd, &repo_root(), Duration::from_secs(30));
+    if proc.code != 0 {
+        return Err(command_error(&cmd, &proc));
+    }
+    Ok(())
+}
+
+fn assert_live_artifact_matches_attestation(
+    artifact: &LiveSelfContractArtifact,
+    attestation: &KitSelfContractAttestation,
+) -> Result<()> {
+    if artifact.attestation_lang != attestation.attestation_lang {
+        return Err(format!(
+            "{} live artifact lang={} but attestation lang={}",
+            artifact.kit, artifact.attestation_lang, attestation.attestation_lang
+        ));
+    }
+    if artifact.contract_set_cid != attestation.contract_set_cid {
+        return Err(format!(
+            "{} live contractSetCid does not match pinned attestation:\n  got:  {}\n  want: {}",
+            artifact.kit, artifact.contract_set_cid, attestation.contract_set_cid
+        ));
+    }
+    // Bundle CIDs are representation CIDs and are signed for provenance, but
+    // spec #94 makes contractSetCid the trust comparison. The verifier below
+    // validates the pinned attestation signature and compares that signed
+    // contractSetCid with the freshly-minted artifact.
+    verify_self_contract_attestation(attestation, &artifact.contract_set_cid)?;
     Ok(())
 }
 
@@ -1356,13 +1721,7 @@ else
 end
 "#;
     command_stdout(
-        &[
-            "ruby".into(),
-            "-Ilib".into(),
-            "-e".into(),
-            code.into(),
-            name.into(),
-        ],
+        &ruby_bundle_exec_cmd(&["-Ilib", "-e", code, name]),
         &root.join("implementations/ruby"),
         Duration::from_secs(60),
     )
@@ -1679,12 +2038,7 @@ fn linux_native_checks() -> Vec<NativeCheck> {
         NativeCheck {
             kit: "ruby",
             name: "ruby bridge_v1_4 fixture CID",
-            cmd: vec![
-                "ruby".into(),
-                "-Ilib".into(),
-                "-Itest".into(),
-                "test/test_bridge_v14.rb".into(),
-            ],
+            cmd: ruby_bundle_exec_cmd(&["-Ilib", "-Itest", "test/test_bridge_v14.rb"]),
             cwd: root.join("implementations/ruby"),
             timeout: Duration::from_secs(120),
         },
@@ -1957,8 +2311,12 @@ fn run_native_checks(checks: &[NativeCheck], jobs: usize) -> usize {
     failures
 }
 
-fn run_protocol_contract_gate(profile: Profile) -> Result<usize> {
-    println!("\nProtocol Contract Bridge Gate");
+fn run_protocol_contract_gate(
+    profile: Profile,
+    jobs: usize,
+    bootstrap_self_contract_attestations: bool,
+) -> Result<usize> {
+    println!("\nProtocol Contract Bootstrap Gate");
     let got = protocol_contract_set_cid()?;
     if got != EXPECTED_PROTOCOL_CONTRACT_SET_CID {
         return Err(format!(
@@ -1967,15 +2325,56 @@ fn run_protocol_contract_gate(profile: Profile) -> Result<usize> {
     }
     println!("  protocolContractSetCid: {got}");
 
+    bootstrap_self_contract_toolchains(profile)?;
+
+    let producers = self_contract_producers(profile);
+    let mint_jobs: Vec<OrderedJob<(SelfContractProducer, Result<LiveSelfContractArtifact>)>> =
+        producers
+            .into_iter()
+            .map(|producer| {
+                Box::new(move || {
+                    let result = mint_live_self_contract_artifact(producer);
+                    (producer, result)
+                })
+                    as OrderedJob<(SelfContractProducer, Result<LiveSelfContractArtifact>)>
+            })
+            .collect();
+
     let mut failures = 0;
-    for attestation in load_self_contract_attestations(profile)? {
-        match mint_protocol_contract_bridge(&attestation).and_then(|bridge| {
-            assert_protocol_bridge_targets_protocol_set(&bridge.canonical_bytes, &attestation)
+    let minted = run_ordered_jobs(mint_jobs, jobs);
+
+    if bootstrap_self_contract_attestations {
+        println!("  bootstrapping self-contract attestations from live kit artifacts");
+        for (_, result) in &minted {
+            if let Ok(artifact) = result {
+                if let Err(e) = sign_self_contract_attestation(artifact) {
+                    failures += 1;
+                    println!(
+                        "  FAIL {:<10} attestation bootstrap failed: {e}",
+                        artifact.kit
+                    );
+                }
+            }
+        }
+    }
+
+    let attestations = load_self_contract_attestations(profile)?;
+    for (producer, result) in minted {
+        let attestation = attestations
+            .iter()
+            .find(|a| a.attestation_lang == producer.attestation_lang)
+            .ok_or_else(|| format!("missing attestation for {}", producer.attestation_lang))?;
+        match result.and_then(|artifact| {
+            assert_live_artifact_matches_attestation(&artifact, attestation)?;
+            Ok(artifact)
         }) {
-            Ok(()) => {
+            Ok(artifact) => {
                 println!(
-                    "  PASS {:<10} selfContractSetCid -> protocolContractSetCid",
-                    attestation.kit
+                    "  PASS {:<10} live proof {} bytes, {} members, {} contracts; selfContractSetCid pinned",
+                    attestation.kit,
+                    artifact.proof_bytes_len,
+                    artifact.proof_member_count,
+                    artifact.proof_contract_count
                 );
             }
             Err(e) => {
@@ -1991,11 +2390,15 @@ fn print_help() {
     println!(
         "cross-kit-conformance\n\
          \n\
-         Usage: cross-kit-conformance [--profile linux|swift|all] [--jobs N]\n\
+         Usage: cross-kit-conformance [--profile linux|swift|all] [--jobs N] [--bootstrap-self-contract-attestations]\n\
          \n\
          The Rust harness validates catalog-pinned fixture CIDs. Adapters may\n\
          produce any representation internally; the conformance boundary is\n\
          the protocol CID.\n\
+         \n\
+         --bootstrap-self-contract-attestations re-signs the pinned\n\
+         .provekit/self-contracts-attestations/*.json files from live,\n\
+         verifier-loadable kit-emitted proof artifacts before checking them.\n\
          \n\
          --jobs N runs selected kit/check jobs concurrently. The default is\n\
          bounded to 4 so local and CI output stay usable."
@@ -2010,6 +2413,7 @@ where
     let mut config = RunConfig {
         profile: Profile::default_for_host(),
         jobs: default_jobs(),
+        bootstrap_self_contract_attestations: false,
     };
     let mut args = args.into_iter().map(Into::into).skip(1);
     while let Some(arg) = args.next() {
@@ -2031,6 +2435,9 @@ where
                     return Err("--jobs must be greater than zero".to_string());
                 }
                 config.jobs = jobs;
+            }
+            "--bootstrap-self-contract-attestations" | "--update-self-contract-attestations" => {
+                config.bootstrap_self_contract_attestations = true;
             }
             "-h" | "--help" => {
                 print_help();
@@ -2071,8 +2478,11 @@ fn run(config: RunConfig) -> Result<usize> {
     }
     assert_profile_inventory(profile, &direct, &native)?;
 
-    let failures = run_protocol_contract_gate(profile)?
-        + run_direct_adapters(&direct, &fixtures, config.jobs)
+    let failures = run_protocol_contract_gate(
+        profile,
+        config.jobs,
+        config.bootstrap_self_contract_attestations,
+    )? + run_direct_adapters(&direct, &fixtures, config.jobs)
         + run_native_checks(&native, config.jobs);
     println!("\nResult");
     if failures == 0 {
@@ -2170,10 +2580,18 @@ mod tests {
 
     #[test]
     fn jobs_argument_parses_and_rejects_zero() {
-        let config = parse_config(["cross-kit-conformance", "--profile", "linux", "--jobs", "3"])
-            .expect("parse config");
+        let config = parse_config([
+            "cross-kit-conformance",
+            "--profile",
+            "linux",
+            "--jobs",
+            "3",
+            "--bootstrap-self-contract-attestations",
+        ])
+        .expect("parse config");
         assert_eq!(config.profile, Profile::Linux);
         assert_eq!(config.jobs, 3);
+        assert!(config.bootstrap_self_contract_attestations);
 
         let err = parse_config(["cross-kit-conformance", "--jobs", "0"])
             .expect_err("zero jobs must be rejected");
@@ -2195,22 +2613,134 @@ mod tests {
     }
 
     #[test]
+    fn run_cmd_drains_large_child_stderr() {
+        let cmd = vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            "i=0; while [ $i -lt 20000 ]; do echo noisy >&2; i=$((i+1)); done; echo done"
+                .to_string(),
+        ];
+        let result = run_cmd(&cmd, &repo_root(), Duration::from_secs(10));
+        assert_eq!(result.code, 0, "stderr: {}", tail(&result.stderr, 400));
+        assert!(result.stdout.contains("done"));
+        assert!(
+            result.stderr.len() > 16 * 1024,
+            "test must exceed a small pipe buffer"
+        );
+    }
+
+    #[test]
+    fn self_contract_bootstrap_covers_linux_profile_with_real_mint_emitters() {
+        let producers = self_contract_producers(Profile::Linux);
+        let kits: Vec<_> = producers.iter().map(|producer| producer.kit).collect();
+        assert_eq!(kits, Profile::Linux.required_kits());
+        assert!(producers
+            .iter()
+            .all(|producer| !producer.mint_kit_alias.is_empty()));
+        let targets = self_contract_bootstrap_targets(Profile::Linux);
+        assert!(targets.contains(&"build-rust"));
+        assert!(targets.contains(&"build-ruby"));
+    }
+
+    #[test]
+    fn conformance_path_prefers_homebrew_runtime_bins_before_usr_bin() {
+        let base = OsString::from(
+            "/usr/bin:/bin:/usr/local/opt/ruby/bin:/usr/local/opt/openjdk/bin:/usr/local/bin",
+        );
+        let got = prepend_unique_path_dirs(
+            Some(&base),
+            &[
+                PathBuf::from("/usr/local/opt/ruby/bin"),
+                PathBuf::from("/usr/local/opt/openjdk/bin"),
+            ],
+        );
+        let parts: Vec<_> = std::env::split_paths(&got).collect();
+
+        let ruby_pos = parts
+            .iter()
+            .position(|p| p == Path::new("/usr/local/opt/ruby/bin"))
+            .expect("ruby bin present");
+        let java_pos = parts
+            .iter()
+            .position(|p| p == Path::new("/usr/local/opt/openjdk/bin"))
+            .expect("openjdk bin present");
+        let usr_pos = parts
+            .iter()
+            .position(|p| p == Path::new("/usr/bin"))
+            .expect("/usr/bin present");
+
+        assert!(ruby_pos < usr_pos, "ruby bin must outrank /usr/bin");
+        assert!(java_pos < usr_pos, "openjdk bin must outrank /usr/bin");
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|p| p == &&PathBuf::from("/usr/local/opt/ruby/bin"))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn ruby_fixture_commands_run_under_bundler() {
+        let cmd = ruby_bundle_exec_cmd(&["-Ilib", "-e", "puts :ok"]);
+        assert_eq!(
+            cmd,
+            vec!["ruby", "-S", "bundle", "exec", "ruby", "-Ilib", "-e", "puts :ok"]
+        );
+
+        let native = linux_native_checks()
+            .into_iter()
+            .find(|check| check.kit == "ruby")
+            .expect("ruby native check");
+        assert_eq!(&native.cmd[..5], ["ruby", "-S", "bundle", "exec", "ruby"]);
+    }
+
+    #[test]
+    fn mint_stdout_requires_bundle_and_contract_set_cids() {
+        let artifact = parse_mint_stdout(
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ncontractSetCid: blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+        )
+        .expect("parse full mint output");
+        assert_eq!(artifact.bundle_cid.len(), 139);
+        assert_eq!(artifact.contract_set_cid.len(), 139);
+
+        let err = parse_mint_stdout(
+            "contractSetCid: blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+        )
+        .expect_err("bundle cid is required");
+        assert!(err.contains("bundle CID"), "got: {err}");
+    }
+
+    #[test]
+    fn live_proof_validation_rejects_hash_correct_garbage() {
+        let tmp = TempDir::new("pk_garbage_proof").expect("tempdir");
+        let bytes = b"not a proof envelope";
+        let cid = blake3_512_of(bytes);
+        fs::write(tmp.path().join(format!("{cid}.proof")), bytes).expect("write garbage proof");
+
+        let err = validate_live_proof_artifact("rust", tmp.path(), &cid)
+            .expect_err("hash-correct garbage proof must be rejected");
+        assert!(err.contains("load errors"), "got: {err}");
+    }
+
+    #[test]
     fn protocol_contract_set_cid_is_pinned_to_rust_source() {
         let got = protocol_contract_set_cid().expect("derive protocol contract set CID");
         assert_eq!(got, EXPECTED_PROTOCOL_CONTRACT_SET_CID);
     }
 
     #[test]
-    fn protocol_contract_bridges_target_pinned_contract_set() {
+    fn self_contract_attestations_pin_non_empty_contract_set_cids() {
         let attestations =
             load_self_contract_attestations(Profile::Linux).expect("load linux attestations");
         assert_eq!(attestations.len(), 11);
 
         for attestation in attestations {
-            let bridge = mint_protocol_contract_bridge(&attestation)
-                .expect("mint protocol contract-set bridge");
-            assert_protocol_bridge_targets_protocol_set(&bridge.canonical_bytes, &attestation)
-                .expect("bridge targets pinned protocol contract set");
+            assert_ne!(
+                attestation.contract_set_cid, EMPTY_CONTRACT_SET_CID,
+                "{} self-contract set is empty",
+                attestation.kit
+            );
         }
     }
 }
