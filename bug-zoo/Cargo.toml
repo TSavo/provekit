@@ -1,0 +1,22 @@
+[package]
+name = "provekit-bug-zoo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Self-contained Bug Zoo runner for executable cross-language bug specimens."
+workspace = "../implementations/rust"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+provekit-canonicalizer = { path = "../implementations/rust/provekit-canonicalizer" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "provekit-bug-zoo"
+path = "src/main.rs"

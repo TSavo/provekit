@@ -1,0 +1,19 @@
+{
+  "kind": "LanguageDropperProjection",
+  "schemaVersion": "1",
+  "proofPlanCid": "blake3-512:ceb33e824d92a95cd5eb463f44379be8923f523927555b136a793138c06944f147baf17fcbb1f42c49049c5494256debfba4aeb041ea4fd4278ed3e9b9a7a0c7",
+  "kit": "typescript",
+  "surface": "typescript-native",
+  "targetSymbol": "lookup",
+  "proofVar": "name",
+  "source": "lab/library/src/UserDirectory.ts",
+  "outputSource": "dropped/typescript-native/library/src/UserDirectory.ts",
+  "operation": {
+    "kind": "add-nullish-guard",
+    "guard": "name == null",
+    "throw": "TypeError"
+  },
+  "postLift": {
+    "proofIrFile": "dropped/typescript-native/closure.proofir.json"
+  }
+}

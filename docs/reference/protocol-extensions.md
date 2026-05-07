@@ -32,14 +32,14 @@ These are protocol working notes in `protocol/specs/`. They are content-addresse
 | [Fix Receipt Protocol (FRP)](../../protocol/specs/2026-05-06-fix-receipt-protocol.md) | `blake3-512:57dab6ad40f1189479fb976043fd8dfcf7f223638e06ae888bc8e1a755f7b92ae1e036f3fbdb7266ce6164a9573b828609bc9e2ec2295ba6efb8415bfd32ed62` | Records closure receipts for changed behavior. |
 | [ProofIR Realization Compiler](../../protocol/specs/2026-05-06-proofir-realization-compiler.md) | `blake3-512:24b055345e4eb53dd6a1f4983370071e8df30c40b6e027977df5073d2ebee7fe74917c941e17114b216d01141b2473b363d2eb82612def8b94c940721761e0f3` | Describes compilation from ProofIR obligations to realization artifacts. |
 
-## CLI Surfaces
+## Tool Surfaces
 
 | Command | Purpose | Primary docs |
 |---|---|---|
 | `provekit proof hash/inspect/check/implements/mint-protocol` | Proof-file hashing, inspection, conformance, implementation witnesses, and fixture corpus minting. | [../../protocol/conformance/proof-protocol/README.md](../../protocol/conformance/proof-protocol/README.md) |
 | `provekit protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.2/README.md](../../protocol/evolution/v1.6.2/README.md) |
 | `provekit ci check/shadow/result/reuse` | Validate CICP bodies, compute blast radii, emit job results, and admit exact-closure reuse. | [../how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md) |
-| `provekit zoo [--all]` | Run Bug Zoo specimens through host checks, exposures, equivalence checks, and optional dropper closure. | [../how-to/bug-zoo.md](../how-to/bug-zoo.md) |
+| `cargo run --manifest-path bug-zoo/Cargo.toml -- [--all]` | Run self-contained Bug Zoo specimens through host checks, exposures, equivalence checks, and optional dropper closure. | [../how-to/bug-zoo.md](../how-to/bug-zoo.md) |
 
 ## Trust Boundary
 

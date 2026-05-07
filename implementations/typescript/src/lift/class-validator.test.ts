@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { liftPath, mintProof, defaultLiftOptions } from "./index.js";
@@ -74,6 +74,42 @@ describe("lift / class-validator adapter", () => {
     const decl = r.decls.find((d) => d.name === "EmailDto")!;
     const json = JSON.stringify(decl.pre);
     expect(json).toContain("matches_email_regex");
+  });
+
+  it("lifts class-validator string request shape to the same boundary as zod", () => {
+    const td = tempDir();
+    const zodDir = join(td, "zod");
+    const classValidatorDir = join(td, "class-validator");
+    mkdirSync(zodDir);
+    mkdirSync(classValidatorDir);
+
+    writeFileSync(
+      join(zodDir, "request.ts"),
+      `// @ts-nocheck
+       import { z } from "zod";
+       export const LookupRequest = z.object({ name: z.string() });
+      `,
+    );
+    writeFileSync(
+      join(classValidatorDir, "request.ts"),
+      `// @ts-nocheck
+       import { IsString } from "class-validator";
+       export class LookupRequest {
+         @IsString()
+         name: string;
+       }
+      `,
+    );
+
+    const zodDecl = liftPath(zodDir).decls.find((d) => d.name === "LookupRequest")!;
+    const classValidatorDecl = liftPath(classValidatorDir).decls.find(
+      (d) => d.name === "LookupRequest",
+    )!;
+
+    expect(classValidatorDecl.pre).toEqual(zodDecl.pre);
+    expect(JSON.stringify(zodDecl.pre)).toContain("kind-of");
+    expect(JSON.stringify(zodDecl.pre)).toContain("name");
+    expect(JSON.stringify(zodDecl.pre)).toContain("String");
   });
 
   it("Length(min, max) emits both >= and <= length conjuncts", () => {

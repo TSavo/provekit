@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// .invariant.rs for provekit-cli/src/cmd_zoo.rs
+// .invariant.rs for bug-zoo/src/lib.rs
 //
 // Public surface covered:
 //   * dropper receipt verification in `verify_dropper`
 //
 // Honest scope:
 //   The IR names the byte-derived CID obligations. The concrete byte
-//   derivation is operationally enforced by cmd_zoo tests and the zoo
-//   smoke specimen.
+//   derivation is operationally enforced by the self-contained Bug Zoo
+//   runner tests and smoke specimens.
 
 use std::rc::Rc;
 

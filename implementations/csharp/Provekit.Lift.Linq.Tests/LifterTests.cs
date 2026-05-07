@@ -87,6 +87,18 @@ public class LifterTests
     }
 
     [Fact]
+    public void NullBoundaryWherePreservesNullLiteral()
+    {
+        var lifter = new LinqLifter();
+        var ms = lifter.Lift(Read("null_boundary.cs"));
+
+        Assert.Single(ms);
+        var ir = ms[0].IrJson;
+        Assert.Contains("\"kind\":\"atomic\",\"name\":\"≠\"", ir);
+        Assert.Contains("\"kind\":\"const\",\"value\":null,\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"}", ir);
+    }
+
+    [Fact]
     public void QuerySyntaxAndMethodSyntaxYieldEquivalentMementoes()
     {
         var lifter = new LinqLifter();

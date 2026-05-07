@@ -44,6 +44,7 @@ Once lifted, that boundary is universal, comparable, solvable, translatable, con
 | | |
 | --- | --- |
 | **See it in my language — and every other language at the same time** | [docs/tutorials/polyglot-stack.md](docs/tutorials/polyglot-stack.md) |
+| **See a bug class collapse to the same bytes across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md) |
 | **Understand the move** | [docs/papers/](docs/papers/) — recommended order: paper 03 → 06 → 02 |
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
 | **Read the spec** | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |
@@ -62,10 +63,49 @@ For more entry points (per-language tutorials, IDE integration, publishing a `.p
 - **Conforming implementations**: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C, PHP. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
 - **Protocol evolution**: PEP dogfoods catalog transitions as signed, content-addressed body-claims under `protocol/evolution/v1.6.1/` and `protocol/evolution/v1.6.2/`.
 - **Content-addressed CI**: CICP binds CI results to exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. Reuse is allowed only when that closure is byte-identical.
-- **Bug Zoo / realizers**: `provekit zoo` checks lab, exposed, dropped, and wild specimens; dropped specimens are accepted only after realizer output is re-lifted and bound to a fix receipt.
+- **Bug Zoo / realizers**: the self-contained `bug-zoo/` runner checks lab, exposed, dropped, and wild specimens; dropped specimens are accepted only after realizer output is re-lifted and bound to a fix receipt.
 - **Conformance gate**: catalog CIDs, proof-protocol fixtures, CICP vectors, self-contract attestations, and per-kit tests must agree before CI is green.
 
 The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
+
+## Bug Zoo
+
+Bug Zoo is the executable lab for the claim above. Each specimen runs in an
+isolated host-language environment, uses that language's own compiler/kit to
+map source to a witnessed bug output, then checks that the canonical ProofIR
+signature is byte-identical across surfaces and languages. The normal proof
+gate for projects is `provekit prove`; Bug Zoo owns this check as
+self-contained machinery under `bug-zoo/`.
+
+In shorthand:
+
+```text
+k_lang(I) = t
+```
+
+`k_lang` is the language compiler as a ProvekIt kit/lifter, `I` is the source,
+and `t` is the witnessed output: canonical ProofIR bytes, CID, and receipt.
+Different languages can disagree in syntax, runtime behavior, and exception
+type while still compiling to the same witnessed `t`.
+
+The current null-boundary receipts show Java, TypeScript, and C# lifting the same
+missing edge:
+
+```text
+maybe_null(name) => non_null(name)
+```
+
+to the same ProofIR CID:
+
+```text
+blake3-512:0d611d8478a205ff040e7d0bcf6c21b12051340ecc5f00c3953af632b23fc01e069b4ad8a8699869163e135b9fde85792eba6acc54cd75cb3d3cc6a40a99ded4
+```
+
+Read [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md), or run:
+
+```sh
+cargo run --manifest-path bug-zoo/Cargo.toml -- --all
+```
 
 | Kit | Self-contracts | Lift-plugin-protocol bridges | LSP plugin |
 |---|---|---|---|
@@ -92,7 +132,7 @@ The core binary is:
 cargo install --path implementations/rust/provekit-cli
 ```
 
-`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. `provekit proof`, `provekit protocol`, `provekit ci`, and `provekit zoo` cover proof-file conformance, PEP transitions, CICP supply-chain admission, and Bug Zoo specimens. Any of these can fail closed; none requires the network.
+`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. `provekit proof`, `provekit protocol`, and `provekit ci` cover proof-file conformance, PEP transitions, and CICP supply-chain admission. Bug Zoo specimens are checked by the repo-owned runner under `bug-zoo/`. Any of these can fail closed; none requires the network.
 
 For other host languages, see the polyglot-stack tutorial above. The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 

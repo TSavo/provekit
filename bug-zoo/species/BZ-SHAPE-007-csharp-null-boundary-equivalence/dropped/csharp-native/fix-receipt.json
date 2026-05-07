@@ -1,0 +1,24 @@
+{
+  "kind": "FixReceipt",
+  "schemaVersion": "1",
+  "status": "closed",
+  "missingEdge": "maybe_null(name) => non_null(name)",
+  "mode": "transform",
+  "surface": "csharp-native",
+  "targetSymbol": "lookup",
+  "proofVar": "name",
+  "sourceArtifactCid": "blake3-512:09704e74073ceeb757ab49006442b66b9a4898f2b3ba0c1f77b72333ff74db6abc6fe9aab432e6382137194550bee14815e55b3e0c3a16147819c41552503657",
+  "transformedArtifactCid": "blake3-512:546bcf08fdaf43bec5370318207623753d8091fe93274f9e94a30a7831ffde1b737f0725a5e12482c080fab938cb2828a763952e0837e863e3b3d5ef66a23ecb",
+  "proofPolicyMode": "proof_preferred",
+  "proofPlanCid": "blake3-512:6183e8bbfccfa83927494a62d8787a71ff33f82b522e1d2c445a0eb21445e364105ce9f9117ac8c4aa223c4bf90f7169f1c7c9f23f8f7b426559105d1374ad6e",
+  "languageDropperCid": "blake3-512:26e932d91d7ad40ddf0ecdef3de0fa285182c92755c6f82d2e595d9b71f3496df79521632834dfccdcf66af8020c2c8374a84915f6f11ab8f48845dbf6f5ca7e",
+  "postLiftCid": "blake3-512:209a087d2638b71b93ccfb8ac7081e15b2759ac2e59907aaa5c38c2d0bc8d873663f5fafa5b4d57c452c23c9b9112147d2f14ef71b65dd210ad3e3d744d3a08b",
+  "closureWitnessCid": "blake3-512:0d7db11b2df12f815f5cf7aadae95886919466b93a7e77c05d685be6b49c25ff1f0518c9b3291bc77dc2a7fb1a46982b7c1191dd4bec91abbae13fa8521f2e21",
+  "closureProofIrCid": "blake3-512:0d611d8478a205ff040e7d0bcf6c21b12051340ecc5f00c3953af632b23fc01e069b4ad8a8699869163e135b9fde85792eba6acc54cd75cb3d3cc6a40a99ded4",
+  "producer": {
+    "name": "bug-zoo-csharp-null-boundary-realizer",
+    "version": "0",
+    "protocol": "provekit-orp/1"
+  },
+  "invariant": "A generated C# transform is accepted only when the proof plan is named, the language dropper projection is content-addressed, the transformed artifact is re-lifted, and the post-lift ProofIR closes the named missing edge under policy."
+}

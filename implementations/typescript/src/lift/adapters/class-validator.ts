@@ -301,6 +301,9 @@ function liftDecorator(
       return ok([ctorPred("is_boolean", [subject])]);
     }
     case "IsString": {
+      if (isStringSort) {
+        return ok([]);
+      }
       return ok([ctorPred("is_string", [subject])]);
     }
     case "IsDate": {

@@ -1,0 +1,28 @@
+{
+  "kind": "ProofPlan",
+  "schemaVersion": "1",
+  "producer": {
+    "name": "provekit-bug-zoo",
+    "version": "0.1.0"
+  },
+  "obligation": {
+    "missingEdge": "maybe_null(name) => non_null(name)",
+    "sourcePredicate": "maybe_null(name)",
+    "targetPredicate": "non_null(name)"
+  },
+  "violationCondition": {
+    "formula": "maybe_null(name) && !non_null(name)"
+  },
+  "objective": {
+    "formula": "maybe_null(name) && !non_null(name) after realization"
+  },
+  "policy": {
+    "mode": "proof_preferred",
+    "closure": "re-lift transformed TypeScript and require neq(name, null)"
+  },
+  "eliminator": {
+    "kind": "guard",
+    "condition": "name == null",
+    "effect": "throw before the non-null sink"
+  }
+}
