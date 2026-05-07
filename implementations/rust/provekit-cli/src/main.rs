@@ -30,6 +30,7 @@ mod cmd_link;
 mod cmd_mint;
 mod cmd_must;
 mod cmd_proof;
+mod cmd_protocol;
 mod cmd_prove;
 mod cmd_search;
 mod cmd_verify_protocol;
@@ -79,6 +80,8 @@ enum Cmd {
     Prove(ProveArgs),
     /// Work with .proof artifacts: hash, inspect, check conformance.
     Proof(cmd_proof::ProofArgs),
+    /// Work with protocol catalog evolution artifacts.
+    Protocol(cmd_protocol::ProtocolArgs),
     /// Same as `prove`. Reserved for a future split.
     Verify(ProveArgs),
     /// Look up a formula by content. Parses an IR-JSON formula file, hashes it, reports the CID.
@@ -282,6 +285,7 @@ fn main() -> ExitCode {
     let code = match cli.cmd {
         Cmd::Prove(a) | Cmd::Verify(a) => cmd_prove::run(a),
         Cmd::Proof(a) => cmd_proof::run(a),
+        Cmd::Protocol(a) => cmd_protocol::run(a),
         Cmd::Ask(a) => cmd_ask::run(a),
         Cmd::Search(a) => cmd_search::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),

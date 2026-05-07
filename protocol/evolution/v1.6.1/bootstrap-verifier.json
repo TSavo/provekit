@@ -1,0 +1,28 @@
+{
+  "kind": "ProtocolEvolutionVerifier",
+  "schemaVersion": "1",
+  "name": "provekit-pep-bootstrap-verifier",
+  "version": "0.1.0",
+  "acceptedTools": [
+    {
+      "name": "recompute-spec-cids",
+      "command": "cargo run --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify",
+      "purpose": "Recompute spec CIDs and candidate catalog CID."
+    },
+    {
+      "name": "compute_fixture_cid",
+      "command": "cargo run --manifest-path implementations/rust/Cargo.toml -p provekit-canonicalizer --bin compute_fixture_cid -- <json>",
+      "purpose": "Recompute JCS-based CIDs for catalog snapshots and PEP JSON bodies."
+    },
+    {
+      "name": "provekit verify-protocol --signed",
+      "command": "cargo test --manifest-path implementations/rust/Cargo.toml -p provekit-cli protocol::tests::embedded_signature_verifies_against_embedded_pubkey",
+      "purpose": "Verify embedded catalog signature path."
+    }
+  ],
+  "acceptedManualAssertions": [
+    "The only catalog property added in v1.6.1 is protocol-evolution-protocol.",
+    "The added property is an extension protocol and not a core substrate rule.",
+    "No language kit must change emitted ProofIR, canonicalization, lifting, or verification behavior to remain v1.6.1 compatible."
+  ]
+}
