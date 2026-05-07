@@ -388,6 +388,53 @@ impl CIReuseBodyClaim {
     }
 }
 
+pub fn admit_identical_reuse(
+    current: &CIBlastRadius,
+    previous: &CIJobResultBodyClaim,
+) -> Result<CIReuseBodyClaim> {
+    current.validate()?;
+    previous.validate()?;
+
+    if current.job_key != previous.job_key {
+        return Err(message(format!(
+            "previous result jobKey `{}` does not match current jobKey `{}`",
+            previous.job_key, current.job_key
+        )));
+    }
+    if previous.result != CIJobResult::Pass {
+        return Err(message(format!(
+            "previous result must be `pass`, got `{}`",
+            ci_job_result_name(&previous.result)
+        )));
+    }
+
+    let current_blast_radius_cid = current.cid()?;
+    if previous.blast_radius_cid != current_blast_radius_cid {
+        return Err(message(format!(
+            "previous result blastRadiusCid does not match current blast radius: previous={}, current={}",
+            previous.blast_radius_cid, current_blast_radius_cid
+        )));
+    }
+    if previous.policy_cid != current.policy_cid {
+        return Err(message(format!(
+            "previous result policyCid `{}` does not match current policyCid `{}`",
+            previous.policy_cid, current.policy_cid
+        )));
+    }
+
+    CIReuseInput {
+        job_key: current.job_key.clone(),
+        current_blast_radius_cid: current_blast_radius_cid.clone(),
+        previous_blast_radius_cid: previous.blast_radius_cid.clone(),
+        previous_result_witness_cid: previous.cid()?,
+        reuse_reason: CIReuseReason::IdenticalInputClosure,
+        bridge_witness_cids: Vec::new(),
+        policy_cid: current.policy_cid.clone(),
+        additional_input_cids: Vec::new(),
+    }
+    .build()
+}
+
 #[derive(Debug, Clone)]
 pub struct CIImpactInput {
     pub base_state_cid: String,
@@ -635,6 +682,14 @@ fn require_producer(producer: &CIProducer) -> Result<()> {
     require_nonempty("producer.kind", &producer.kind)?;
     require_nonempty("producer.name", &producer.name)?;
     require_nonempty("producer.version", &producer.version)
+}
+
+fn ci_job_result_name(result: &CIJobResult) -> &'static str {
+    match result {
+        CIJobResult::Pass => "pass",
+        CIJobResult::Fail => "fail",
+        CIJobResult::Flaky => "flaky",
+    }
 }
 
 fn message(message: impl Into<String>) -> ProvekitError {

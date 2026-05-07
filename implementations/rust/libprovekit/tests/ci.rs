@@ -2,8 +2,9 @@
 
 use libprovekit::canonical::{json_cid, json_jcs};
 use libprovekit::ci::{
-    CIBlastRadiusInput, CIImpactInput, CIJobResult, CIJobResultInput, CINondeterminism,
-    CINondeterminismMode, CIProducer, CIReuseInput, CIReuseReason,
+    admit_identical_reuse, CIBlastRadius, CIBlastRadiusInput, CIImpactInput, CIJobResult,
+    CIJobResultBodyClaim, CIJobResultInput, CINondeterminism, CINondeterminismMode, CIProducer,
+    CIReuseInput, CIReuseReason,
 };
 
 fn cid(ch: char) -> String {
@@ -34,6 +35,32 @@ fn blast_input(protocol_catalog_cid: String) -> CIBlastRadiusInput {
         },
         additional_input_cids: vec![cid('b')],
     }
+}
+
+fn job_result_for_blast(
+    blast: &CIBlastRadius,
+    result: CIJobResult,
+    blast_radius_cid: String,
+) -> CIJobResultBodyClaim {
+    CIJobResultInput {
+        job_key: blast.job_key.clone(),
+        blast_radius_cid,
+        result,
+        output_cid: cid('d'),
+        log_cid: cid('e'),
+        started_at: "2026-05-07T00:00:00Z".into(),
+        finished_at: "2026-05-07T00:01:00Z".into(),
+        runner_identity_cid: blast.runner_identity_cid.clone(),
+        policy_cid: blast.policy_cid.clone(),
+        producer: CIProducer {
+            kind: "ci-runner".into(),
+            name: "github-actions".into(),
+            version: "test".into(),
+        },
+        additional_input_cids: vec![],
+    }
+    .build()
+    .expect("build job result")
 }
 
 #[test]
@@ -163,6 +190,50 @@ fn reuse_body_claim_distinguishes_identical_lookup_from_bridged_reuse() {
     assert!(
         err.to_string()
             .contains("bridged reuse requires at least one bridge witness"),
+        "{err}"
+    );
+}
+
+#[test]
+fn identical_reuse_admission_requires_prior_pass_for_same_blast_radius() {
+    let blast = blast_input(cid('c')).build().expect("build blast radius");
+    let result = job_result_for_blast(&blast, CIJobResult::Pass, blast.cid().expect("blast cid"));
+    let result_cid = result.cid().expect("result cid");
+
+    let reuse = admit_identical_reuse(&blast, &result).expect("admit identical reuse");
+
+    assert_eq!(reuse.kind, "CIReuseBodyClaim");
+    assert_eq!(reuse.reuse_reason, CIReuseReason::IdenticalInputClosure);
+    assert_eq!(
+        reuse.current_blast_radius_cid,
+        blast.cid().expect("blast cid")
+    );
+    assert_eq!(
+        reuse.previous_blast_radius_cid,
+        blast.cid().expect("blast cid")
+    );
+    assert_eq!(reuse.previous_result_witness_cid, result_cid);
+    assert_eq!(reuse.policy_cid, blast.policy_cid);
+
+    let err = admit_identical_reuse(
+        &blast,
+        &job_result_for_blast(&blast, CIJobResult::Pass, cid('f')),
+    )
+    .expect_err("different blast radius must be refused");
+    assert!(
+        err.to_string()
+            .contains("previous result blastRadiusCid does not match current blast radius"),
+        "{err}"
+    );
+
+    let err = admit_identical_reuse(
+        &blast,
+        &job_result_for_blast(&blast, CIJobResult::Fail, blast.cid().expect("blast cid")),
+    )
+    .expect_err("failing result must be refused");
+    assert!(
+        err.to_string()
+            .contains("previous result must be `pass`, got `fail`"),
         "{err}"
     );
 }

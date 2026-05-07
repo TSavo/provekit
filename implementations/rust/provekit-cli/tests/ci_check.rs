@@ -156,6 +156,133 @@ fn blast_radius_body() -> Json {
     })
 }
 
+fn job_result_body(job_key: &str, blast_radius_cid: &str, result: &str, policy_cid: &str) -> Json {
+    json!({
+        "kind": "CIJobResultBodyClaim",
+        "schemaVersion": "1",
+        "jobKey": job_key,
+        "blastRadiusCid": blast_radius_cid,
+        "result": result,
+        "outputCid": cid('d'),
+        "logCid": cid('e'),
+        "startedAt": "2026-05-07T00:00:00Z",
+        "finishedAt": "2026-05-07T00:01:00Z",
+        "runnerIdentityCid": cid('4'),
+        "policyCid": policy_cid,
+        "inputCids": [
+            blast_radius_cid,
+            cid('d'),
+            cid('e'),
+            cid('4'),
+            policy_cid
+        ],
+        "producer": {
+            "kind": "ci-runner",
+            "name": "provekit-cli-test",
+            "version": "reuse-admission"
+        }
+    })
+}
+
+fn run_ci_reuse(
+    current_blast_radius: &Path,
+    previous_result: &Path,
+    reuse_out: &Path,
+) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("ci")
+        .arg("reuse")
+        .arg("--current-blast-radius")
+        .arg(current_blast_radius)
+        .arg("--previous-result")
+        .arg(previous_result)
+        .arg("--reuse-out")
+        .arg(reuse_out)
+        .arg("--json")
+        .output()
+        .expect("run provekit ci reuse")
+}
+
+#[test]
+fn ci_reuse_admits_identical_pass_result_and_writes_skip_witness() {
+    let dir = make_unique_dir("reuse-admit");
+    let blast_path = dir.join("blast-radius.json");
+    let result_path = dir.join("previous-result.json");
+    let reuse_path = dir.join("reuse.json");
+
+    let blast = blast_radius_body();
+    let blast_cid = jcs_cid(&blast);
+    let policy_cid = blast["policyCid"].as_str().expect("policy cid");
+    let result = job_result_body("provekit/conformance/rust", &blast_cid, "pass", policy_cid);
+    let result_cid = jcs_cid(&result);
+    write_json(&blast_path, &blast);
+    write_json(&result_path, &result);
+
+    let output = run_ci_reuse(&blast_path, &result_path, &reuse_path);
+
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: Json = serde_json::from_slice(&output.stdout).expect("reuse summary JSON");
+    assert_eq!(summary["kind"], "CIReuseAdmission");
+    assert_eq!(summary["ok"], true);
+    assert_eq!(summary["wouldSkip"], true);
+    assert_eq!(summary["skipReason"], "accepted-identical-input-closure");
+    assert_eq!(summary["currentBlastRadiusCid"], blast_cid);
+    assert_eq!(summary["previousResultWitnessCid"], result_cid);
+    assert_eq!(summary["reuseBodyPath"], reuse_path.display().to_string());
+
+    let reuse: Json = serde_json::from_slice(&fs::read(&reuse_path).expect("read reuse witness"))
+        .expect("parse reuse witness");
+    assert_eq!(reuse["kind"], "CIReuseBodyClaim");
+    assert_eq!(reuse["reuseReason"], "identical-input-closure");
+    assert_eq!(reuse["currentBlastRadiusCid"], blast_cid);
+    assert_eq!(reuse["previousBlastRadiusCid"], blast_cid);
+    assert_eq!(reuse["previousResultWitnessCid"], result_cid);
+    assert_eq!(reuse["policyCid"], policy_cid);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn ci_reuse_refuses_previous_result_for_different_blast_radius() {
+    let dir = make_unique_dir("reuse-refuse-radius");
+    let blast_path = dir.join("blast-radius.json");
+    let result_path = dir.join("previous-result.json");
+    let reuse_path = dir.join("reuse.json");
+
+    let blast = blast_radius_body();
+    let policy_cid = blast["policyCid"].as_str().expect("policy cid");
+    let result = job_result_body("provekit/conformance/rust", &cid('c'), "pass", policy_cid);
+    write_json(&blast_path, &blast);
+    write_json(&result_path, &result);
+
+    let output = run_ci_reuse(&blast_path, &result_path, &reuse_path);
+
+    assert!(
+        !output.status.success(),
+        "changed blast radius should be refused\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("previous result blastRadiusCid does not match current blast radius"),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !reuse_path.exists(),
+        "refused reuse must not write a skip witness"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn ci_shadow_emits_distinct_per_kit_blast_radii_with_protocol_inputs() {
     let repo = make_shadow_repo("shadow-distinct");

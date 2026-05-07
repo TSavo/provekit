@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use libprovekit::canonical::json_cid;
 use libprovekit::ci::{
-    check_ci_body, CIBlastRadius, CIBlastRadiusInput, CINondeterminism, CINondeterminismMode,
+    admit_identical_reuse, check_ci_body, CIBlastRadius, CIBlastRadiusInput, CIJobResultBodyClaim,
+    CINondeterminism, CINondeterminismMode,
 };
 use owo_colors::OwoColorize;
 use serde_json::{json, Value as Json};
@@ -35,6 +36,8 @@ pub enum CiCmd {
     Check(CiCheckArgs),
     /// Compute CICP blast-radius body claims without skipping any CI work yet.
     Shadow(CiShadowArgs),
+    /// Admit an identical-input-closure reuse witness for an accepted prior result.
+    Reuse(CiReuseArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -63,6 +66,21 @@ pub struct CiShadowArgs {
     /// Stable runner identity label included in each blast radius.
     #[arg(long, default_value = "provekit-ci-shadow/local")]
     pub runner_identity: String,
+    #[command(flatten)]
+    pub out: OutputFlags,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct CiReuseArgs {
+    /// Current CIBlastRadius JSON body.
+    #[arg(long)]
+    pub current_blast_radius: PathBuf,
+    /// Prior CIJobResultBodyClaim JSON body to consider for reuse.
+    #[arg(long)]
+    pub previous_result: PathBuf,
+    /// File path for the emitted CIReuseBodyClaim skip witness.
+    #[arg(long)]
+    pub reuse_out: PathBuf,
     #[command(flatten)]
     pub out: OutputFlags,
 }
@@ -111,13 +129,29 @@ pub fn run(args: CiArgs) -> u8 {
                 crate::EXIT_USER_ERROR
             }
         },
+        CiCmd::Reuse(args) => match run_reuse(&args) {
+            Ok(payload) => {
+                if args.out.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&payload)
+                            .unwrap_or_else(|_| payload.to_string())
+                    );
+                } else if !args.out.quiet {
+                    print_reuse_human(&payload);
+                }
+                crate::EXIT_OK
+            }
+            Err(e) => {
+                eprintln!("{}: {e}", "admission refused".red().bold());
+                crate::EXIT_VERIFY_FAIL
+            }
+        },
     }
 }
 
 fn run_check(args: &CiCheckArgs) -> Result<Json, String> {
-    let bytes = fs::read(&args.body).map_err(|e| format!("read {}: {e}", args.body.display()))?;
-    let body: Json = serde_json::from_slice(&bytes)
-        .map_err(|e| format!("parse {}: {e}", args.body.display()))?;
+    let body = read_json_file(&args.body)?;
     let check = check_ci_body(&body).map_err(|e| e.to_string())?;
 
     Ok(json!({
@@ -126,6 +160,48 @@ fn run_check(args: &CiCheckArgs) -> Result<Json, String> {
         "bodyKind": check.kind,
         "bodyCid": check.cid,
         "bodyPath": args.body.display().to_string(),
+    }))
+}
+
+fn run_reuse(args: &CiReuseArgs) -> Result<Json, String> {
+    let current_body = read_json_file(&args.current_blast_radius)?;
+    let current_check = check_ci_body(&current_body).map_err(|e| e.to_string())?;
+    if current_check.kind != "CIBlastRadius" {
+        return Err(format!(
+            "current blast radius body must be CIBlastRadius, got {}",
+            current_check.kind
+        ));
+    }
+    let current: CIBlastRadius = serde_json::from_value(current_body)
+        .map_err(|e| format!("parse current CIBlastRadius: {e}"))?;
+
+    let previous_body = read_json_file(&args.previous_result)?;
+    let previous_check = check_ci_body(&previous_body).map_err(|e| e.to_string())?;
+    if previous_check.kind != "CIJobResultBodyClaim" {
+        return Err(format!(
+            "previous result body must be CIJobResultBodyClaim, got {}",
+            previous_check.kind
+        ));
+    }
+    let previous: CIJobResultBodyClaim = serde_json::from_value(previous_body)
+        .map_err(|e| format!("parse previous CIJobResultBodyClaim: {e}"))?;
+
+    let reuse = admit_identical_reuse(&current, &previous).map_err(|e| e.to_string())?;
+    let reuse_body = serde_json::to_value(&reuse).map_err(|e| format!("serialize reuse: {e}"))?;
+    let reuse_check = check_ci_body(&reuse_body).map_err(|e| e.to_string())?;
+    write_json_file(&args.reuse_out, &reuse_body)?;
+
+    Ok(json!({
+        "kind": "CIReuseAdmission",
+        "ok": true,
+        "wouldSkip": true,
+        "skipReason": "accepted-identical-input-closure",
+        "jobKey": current.job_key,
+        "currentBlastRadiusCid": current_check.cid,
+        "previousResultWitnessCid": previous_check.cid,
+        "reuseBodyCid": reuse_check.cid,
+        "reuseBodyPath": args.reuse_out.display().to_string(),
+        "reuseBody": reuse_body,
     }))
 }
 
@@ -579,6 +655,11 @@ fn write_json_file(path: &Path, value: &Json) -> Result<(), String> {
     fs::write(path, text).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
+fn read_json_file(path: &Path) -> Result<Json, String> {
+    let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("parse {}: {e}", path.display()))
+}
+
 fn print_shadow_human(payload: &Json) {
     match payload["kind"].as_str() {
         Some("CIShadowSet") => {
@@ -602,4 +683,18 @@ fn print_shadow_human(payload: &Json) {
             println!("  status   : {}", "shadow only; build still runs".yellow());
         }
     }
+}
+
+fn print_reuse_human(payload: &Json) {
+    println!("{}", "ProvekIt CI reuse admission".bold());
+    println!("  job      : {}", payload["jobKey"].as_str().unwrap_or(""));
+    println!(
+        "  radius   : {}",
+        payload["currentBlastRadiusCid"].as_str().unwrap_or("")
+    );
+    println!(
+        "  reuse    : {}",
+        payload["reuseBodyCid"].as_str().unwrap_or("")
+    );
+    println!("  status   : {}", "skip admitted".green().bold());
 }
