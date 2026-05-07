@@ -1,0 +1,25 @@
+{
+  "kind": "CIJobResultBodyClaim",
+  "schemaVersion": "1",
+  "jobKey": "provekit/ci/c",
+  "blastRadiusCid": "blake3-512:62a0c412512c0caadb734ef89dbe037a9c8125edc9f7f0dcd553bafdc3d1ec4b9d0ffd1e6267a625e6a006f7d15ed542f9fee045ba4c2990e5bb67806a3622c6",
+  "result": "pass",
+  "outputCid": "blake3-512:7bd35fa629b3ceb74b142625736d5829625380d5843f84a0444009ba6d537b543de5eff31b2ee0994b17fdb8b209d834ba2fb8c5077e8c9596381f73b7972ff7",
+  "logCid": "blake3-512:9b55a24cfad3f821a0c89b8f19cd1937aa1c46636cabf364447cbb429bbf5a7ec03cc92c5ad2425c113272414ea9ecfdc468dafc1e674d8b0b0edb474c9d107e",
+  "startedAt": "2026-05-07T00:00:00Z",
+  "finishedAt": "2026-05-07T00:00:00Z",
+  "runnerIdentityCid": "blake3-512:ea57d5bb564e290c3cd6fa3e5355e411d279c37be83cd4085d856b6c1210ce27ea65012d9810b1d343aeddd9ddfffd4542991107a3c7cc5121447ac4722ccd4b",
+  "policyCid": "blake3-512:430f7ae604144abb9810c0ee83dedce757cd12ce1bb3457051c7c94fcccfc237ccb7a909fe471290367bf9649129bdb76d63a392e28f59dad74b5417612e5668",
+  "inputCids": [
+    "blake3-512:430f7ae604144abb9810c0ee83dedce757cd12ce1bb3457051c7c94fcccfc237ccb7a909fe471290367bf9649129bdb76d63a392e28f59dad74b5417612e5668",
+    "blake3-512:62a0c412512c0caadb734ef89dbe037a9c8125edc9f7f0dcd553bafdc3d1ec4b9d0ffd1e6267a625e6a006f7d15ed542f9fee045ba4c2990e5bb67806a3622c6",
+    "blake3-512:7bd35fa629b3ceb74b142625736d5829625380d5843f84a0444009ba6d537b543de5eff31b2ee0994b17fdb8b209d834ba2fb8c5077e8c9596381f73b7972ff7",
+    "blake3-512:9b55a24cfad3f821a0c89b8f19cd1937aa1c46636cabf364447cbb429bbf5a7ec03cc92c5ad2425c113272414ea9ecfdc468dafc1e674d8b0b0edb474c9d107e",
+    "blake3-512:ea57d5bb564e290c3cd6fa3e5355e411d279c37be83cd4085d856b6c1210ce27ea65012d9810b1d343aeddd9ddfffd4542991107a3c7cc5121447ac4722ccd4b"
+  ],
+  "producer": {
+    "kind": "ci-runner",
+    "name": "provekit-ci",
+    "version": "checked-in"
+  }
+}
