@@ -367,38 +367,12 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
-          tmp="$(mktemp -d)"
-          trap 'rm -rf "$tmp"' EXIT
-
-          count=0
-          for kit in rust go cpp ts csharp java python ruby zig c; do
-            implementations/rust/target/release/provekit ci shadow \
-              --kit "$kit" \
-              --out-dir "$tmp/$kit" \
-              --runner-identity "github-actions/Linux/X64" \
-              --json
-            implementations/rust/target/release/provekit ci reuse \
-              --current-blast-radius "$tmp/$kit/blast-radius.json" \
-              --accepted-dir .provekit/ci/accepted \
-              --reuse-out "$tmp/$kit/reuse.json" \
-              --json
-            count=$((count + 1))
-          done
-
-          kit=swift
-          implementations/rust/target/release/provekit ci shadow \
-            --kit "$kit" \
-            --out-dir "$tmp/$kit" \
-            --runner-identity "github-actions/macOS/X64" \
+          implementations/rust/target/release/provekit ci accept \
+            --repo . \
+            --all-kits \
+            --clean \
+            --check \
             --json
-          implementations/rust/target/release/provekit ci reuse \
-            --current-blast-radius "$tmp/$kit/blast-radius.json" \
-            --accepted-dir .provekit/ci/accepted \
-            --reuse-out "$tmp/$kit/reuse.json" \
-            --json
-          count=$((count + 1))
-
-          echo "accepted reuse admitted for $count checked-in prove jobs"
 
   # ---------------------------------------------------------------------------
   # Per-kit conformance gate: provekit prove --kit=<kit>

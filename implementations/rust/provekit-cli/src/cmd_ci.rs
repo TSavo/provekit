@@ -9,6 +9,8 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use libprovekit::canonical::json_cid;
@@ -40,6 +42,8 @@ pub enum CiCmd {
     Shadow(CiShadowArgs),
     /// Admit an identical-input-closure reuse witness for an accepted prior result.
     Reuse(CiReuseArgs),
+    /// Generate or check checked-in CICP accepted result witnesses.
+    Accept(CiAcceptArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -137,6 +141,42 @@ pub struct CiReuseArgs {
     pub out: OutputFlags,
 }
 
+#[derive(Parser, Debug, Clone)]
+pub struct CiAcceptArgs {
+    /// Repository root whose paths define the blast-radius closures.
+    #[arg(long, default_value = ".")]
+    pub repo: PathBuf,
+    /// Kit to accept. Known kits match `provekit mint --kit`.
+    #[arg(long, conflicts_with = "all_kits")]
+    pub kit: Option<String>,
+    /// Accept witnesses for the checked-in CICP prove-job kit set.
+    #[arg(long)]
+    pub all_kits: bool,
+    /// Root directory for checked-in accepted job-result witnesses.
+    #[arg(long, default_value = ".provekit/ci/accepted")]
+    pub out: PathBuf,
+    /// Candidate CIJobResultBodyClaim to accept. Use with a single --kit.
+    #[arg(long, conflicts_with = "results_dir")]
+    pub result: Option<PathBuf>,
+    /// Directory containing per-kit candidate job results as <kit>/job-result.json.
+    #[arg(long)]
+    pub results_dir: Option<PathBuf>,
+    /// Bootstrap mode: create a passing accepted result without importing a candidate result.
+    #[arg(long, conflicts_with_all = ["result", "results_dir"])]
+    pub assume_pass: bool,
+    /// Stable runner identity label. Defaults to GitHub Linux, except Swift macOS.
+    #[arg(long)]
+    pub runner_identity: Option<String>,
+    /// Refuse stale witnesses and print the missing set without writing files.
+    #[arg(long)]
+    pub check: bool,
+    /// Compute blast radii from a detached clean git worktree at HEAD.
+    #[arg(long)]
+    pub clean: bool,
+    #[command(flatten)]
+    pub flags: OutputFlags,
+}
+
 pub fn run(args: CiArgs) -> u8 {
     match args.cmd {
         CiCmd::Check(args) => match run_check(&args) {
@@ -217,6 +257,24 @@ pub fn run(args: CiArgs) -> u8 {
                 crate::EXIT_VERIFY_FAIL
             }
         },
+        CiCmd::Accept(args) => match run_accept(&args) {
+            Ok(payload) => {
+                if args.flags.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&payload)
+                            .unwrap_or_else(|_| payload.to_string())
+                    );
+                } else if !args.flags.quiet {
+                    print_accept_human(&payload);
+                }
+                crate::EXIT_OK
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                crate::EXIT_VERIFY_FAIL
+            }
+        },
     }
 }
 
@@ -244,37 +302,18 @@ fn run_result(args: &CiResultArgs) -> Result<Json, String> {
     }
     let blast: CIBlastRadius =
         serde_json::from_value(blast_body).map_err(|e| format!("parse CIBlastRadius: {e}"))?;
-    let result = ci_result_arg(args.result);
-    let output_cid = match &args.output_cid {
-        Some(cid) => cid.clone(),
-        None => ci_result_artifact_cid(&blast, &blast_check.cid, "output")?,
-    };
-    let log_cid = match &args.log_cid {
-        Some(cid) => cid.clone(),
-        None => ci_result_artifact_cid(&blast, &blast_check.cid, "log")?,
-    };
-
-    let result_body = CIJobResultInput {
-        job_key: blast.job_key.clone(),
-        blast_radius_cid: blast_check.cid.clone(),
-        result,
-        output_cid,
-        log_cid,
-        started_at: args.started_at.clone(),
-        finished_at: args.finished_at.clone(),
-        runner_identity_cid: blast.runner_identity_cid.clone(),
-        policy_cid: blast.policy_cid.clone(),
-        producer: CIProducer {
-            kind: args.producer_kind.clone(),
-            name: args.producer_name.clone(),
-            version: args.producer_version.clone(),
-        },
-        additional_input_cids: Vec::new(),
-    }
-    .build()
-    .map_err(|e| e.to_string())?;
-    let result_json =
-        serde_json::to_value(&result_body).map_err(|e| format!("serialize result: {e}"))?;
+    let result_json = build_result_body(
+        &blast,
+        &blast_check.cid,
+        args.result,
+        args.output_cid.clone(),
+        args.log_cid.clone(),
+        &args.started_at,
+        &args.finished_at,
+        &args.producer_kind,
+        &args.producer_name,
+        &args.producer_version,
+    )?;
     let result_check = check_ci_body(&result_json).map_err(|e| e.to_string())?;
     write_json_file(&args.out, &result_json)?;
 
@@ -287,6 +326,116 @@ fn run_result(args: &CiResultArgs) -> Result<Json, String> {
         "bodyCid": result_check.cid,
         "bodyPath": args.out.display().to_string(),
         "body": result_json,
+    }))
+}
+
+fn run_accept(args: &CiAcceptArgs) -> Result<Json, String> {
+    let source_repo = args
+        .repo
+        .canonicalize()
+        .map_err(|e| format!("canonicalize repo {}: {e}", args.repo.display()))?;
+    let accepted_dir = absolutize_under(&source_repo, &args.out);
+    let kits = selected_accept_kits(args)?;
+    if args.result.is_some() && kits.len() != 1 {
+        return Err("--result accepts exactly one --kit; use --results-dir with --all-kits".into());
+    }
+    let mut guard = None;
+    let working_repo = if args.clean {
+        let clean = CleanWorktree::create(&source_repo)?;
+        let path = clean.path.clone();
+        guard = Some(clean);
+        path
+    } else {
+        source_repo.clone()
+    };
+
+    let scratch = AcceptScratch::new()?;
+    let mut results = Vec::new();
+    let mut missing = Vec::new();
+    let mut added_count = 0usize;
+    let mut existing_count = 0usize;
+    let mut verified_count = 0usize;
+
+    for kit in kits {
+        let runner_identity = accept_runner_identity(args, &kit);
+        let shadow_dir = scratch.path.join(&kit);
+        build_shadow_for_kit(&working_repo, &shadow_dir, &kit, &runner_identity)?;
+        let blast_path = shadow_dir.join("blast-radius.json");
+        let blast_body = read_json_file(&blast_path)?;
+        let blast_check = check_ci_body(&blast_body).map_err(|e| e.to_string())?;
+        let blast: CIBlastRadius = serde_json::from_value(blast_body)
+            .map_err(|e| format!("parse CIBlastRadius for {kit}: {e}"))?;
+        let accepted_path = accepted_result_path(&accepted_dir, &blast, &blast_check.cid)?;
+
+        if accepted_path.exists() {
+            let witness_cid = verify_accepted_result(&blast, &blast_check.cid, &accepted_path)?;
+            existing_count += 1;
+            verified_count += 1;
+            results.push(json!({
+                "kit": kit,
+                "jobKey": blast.job_key,
+                "runnerIdentity": runner_identity,
+                "blastRadiusCid": blast_check.cid,
+                "acceptedResultPath": accepted_path.display().to_string(),
+                "witnessCid": witness_cid,
+                "status": "existing",
+            }));
+            continue;
+        }
+
+        missing.push((kit.clone(), blast_check.cid.clone(), accepted_path.clone()));
+        if args.check {
+            results.push(json!({
+                "kit": kit,
+                "jobKey": blast.job_key,
+                "runnerIdentity": runner_identity,
+                "blastRadiusCid": blast_check.cid,
+                "acceptedResultPath": accepted_path.display().to_string(),
+                "status": "missing",
+            }));
+            continue;
+        }
+
+        let (result_json, result_cid, source_kind, candidate_result_path) =
+            accept_result_input(args, &source_repo, &kit, &blast, &blast_check.cid)?;
+        write_json_file(&accepted_path, &result_json)?;
+        let witness_cid = verify_accepted_result(&blast, &blast_check.cid, &accepted_path)?;
+        added_count += 1;
+        verified_count += 1;
+        results.push(json!({
+            "kit": kit,
+            "jobKey": blast.job_key,
+            "runnerIdentity": runner_identity,
+            "blastRadiusCid": blast_check.cid,
+            "acceptedResultPath": accepted_path.display().to_string(),
+            "witnessCid": witness_cid,
+            "source": source_kind,
+            "candidateResultPath": candidate_result_path.map(|path| path.display().to_string()),
+            "status": "added",
+        }));
+        debug_assert_eq!(result_cid, witness_cid);
+    }
+
+    drop(guard);
+
+    if args.check && !missing.is_empty() {
+        return Err(stale_accept_error(args, &missing));
+    }
+
+    let missing_count = if args.check { missing.len() } else { 0 };
+
+    Ok(json!({
+        "kind": "CIAccept",
+        "ok": true,
+        "mode": if args.check { "check" } else { "write" },
+        "clean": args.clean,
+        "repo": source_repo.display().to_string(),
+        "acceptedDir": accepted_dir.display().to_string(),
+        "addedCount": added_count,
+        "existingCount": existing_count,
+        "missingCount": missing_count,
+        "verifiedCount": verified_count,
+        "results": results,
     }))
 }
 
@@ -414,6 +563,40 @@ fn selected_kits(args: &CiShadowArgs) -> Result<Vec<String>, String> {
     Ok(vec![kit])
 }
 
+const CICP_ACCEPT_KITS: &[&str] = &[
+    "rust", "go", "cpp", "ts", "csharp", "java", "python", "ruby", "zig", "c", "swift",
+];
+
+fn selected_accept_kits(args: &CiAcceptArgs) -> Result<Vec<String>, String> {
+    if args.all_kits {
+        return Ok(CICP_ACCEPT_KITS.iter().map(|kit| kit.to_string()).collect());
+    }
+    let kit = args
+        .kit
+        .clone()
+        .ok_or_else(|| "pass --kit <kit> or --all-kits".to_string())?;
+    if !CICP_ACCEPT_KITS.contains(&kit.as_str()) {
+        return Err(format!(
+            "unknown CICP accept kit `{kit}`; known kits: {}",
+            CICP_ACCEPT_KITS.join(", ")
+        ));
+    }
+    if resolve_kit(&kit).is_none() {
+        return Err(format!("unknown kit `{kit}`"));
+    }
+    Ok(vec![kit])
+}
+
+fn accept_runner_identity(args: &CiAcceptArgs, kit: &str) -> String {
+    args.runner_identity.clone().unwrap_or_else(|| {
+        if kit == "swift" {
+            "github-actions/macOS/X64".to_string()
+        } else {
+            "github-actions/Linux/X64".to_string()
+        }
+    })
+}
+
 fn build_shadow_for_kit(
     repo: &Path,
     out_dir: &Path,
@@ -500,9 +683,9 @@ fn build_shadow_for_kit(
     }
     .build()
     .map_err(|e| e.to_string())?;
-    let blast_cid = blast.cid().map_err(|e| e.to_string())?;
     let blast_body = serde_json::to_value(&blast).map_err(|e| format!("serialize body: {e}"))?;
-    check_ci_body(&blast_body).map_err(|e| e.to_string())?;
+    let blast_check = check_ci_body(&blast_body).map_err(|e| e.to_string())?;
+    let blast_cid = blast_check.cid;
 
     fs::create_dir_all(out_dir).map_err(|e| format!("create {}: {e}", out_dir.display()))?;
     let body_path = out_dir.join("blast-radius.json");
@@ -818,6 +1001,14 @@ fn safe_path_component(value: &str) -> Result<&str, String> {
     }
 }
 
+fn absolutize_under(repo: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        repo.join(path)
+    }
+}
+
 fn write_json_file(path: &Path, value: &Json) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
@@ -849,6 +1040,137 @@ fn ci_result_name(result: CiResultArg) -> &'static str {
     }
 }
 
+fn build_result_body(
+    blast: &CIBlastRadius,
+    blast_cid: &str,
+    result: CiResultArg,
+    output_cid: Option<String>,
+    log_cid: Option<String>,
+    started_at: &str,
+    finished_at: &str,
+    producer_kind: &str,
+    producer_name: &str,
+    producer_version: &str,
+) -> Result<Json, String> {
+    let output_cid = match output_cid {
+        Some(cid) => cid,
+        None => ci_result_artifact_cid(blast, blast_cid, "output")?,
+    };
+    let log_cid = match log_cid {
+        Some(cid) => cid,
+        None => ci_result_artifact_cid(blast, blast_cid, "log")?,
+    };
+    let result_body = CIJobResultInput {
+        job_key: blast.job_key.clone(),
+        blast_radius_cid: blast_cid.to_string(),
+        result: ci_result_arg(result),
+        output_cid,
+        log_cid,
+        started_at: started_at.to_string(),
+        finished_at: finished_at.to_string(),
+        runner_identity_cid: blast.runner_identity_cid.clone(),
+        policy_cid: blast.policy_cid.clone(),
+        producer: CIProducer {
+            kind: producer_kind.to_string(),
+            name: producer_name.to_string(),
+            version: producer_version.to_string(),
+        },
+        additional_input_cids: Vec::new(),
+    }
+    .build()
+    .map_err(|e| e.to_string())?;
+    serde_json::to_value(&result_body).map_err(|e| format!("serialize result: {e}"))
+}
+
+fn accept_result_input(
+    args: &CiAcceptArgs,
+    source_repo: &Path,
+    kit: &str,
+    blast: &CIBlastRadius,
+    blast_cid: &str,
+) -> Result<(Json, String, &'static str, Option<PathBuf>), String> {
+    if args.assume_pass {
+        let result_json = build_result_body(
+            blast,
+            blast_cid,
+            CiResultArg::Pass,
+            None,
+            None,
+            "2026-05-07T00:00:00Z",
+            "2026-05-07T00:00:00Z",
+            "ci-runner",
+            "provekit-ci",
+            "checked-in",
+        )?;
+        let result_cid =
+            verify_result_body_claim(blast, blast_cid, &result_json, "assumed pass result")?;
+        return Ok((result_json, result_cid, "assume-pass", None));
+    }
+
+    let candidate_path = match &args.result {
+        Some(path) => absolutize_under(source_repo, path),
+        None => {
+            let results_dir = args
+                .results_dir
+                .as_deref()
+                .map(|path| absolutize_under(source_repo, path))
+                .unwrap_or_else(|| source_repo.join(".provekit/ci-shadow"));
+            results_dir.join(kit).join("job-result.json")
+        }
+    };
+    let result_json = read_json_file(&candidate_path).map_err(|e| {
+        format!(
+            "{e}\nwrite mode imports a passed candidate result by default; pass --result, --results-dir, or --assume-pass"
+        )
+    })?;
+    let result_cid = verify_result_body_claim(
+        blast,
+        blast_cid,
+        &result_json,
+        &candidate_path.display().to_string(),
+    )?;
+    Ok((
+        result_json,
+        result_cid,
+        "candidate-result",
+        Some(candidate_path),
+    ))
+}
+
+fn verify_result_body_claim(
+    current: &CIBlastRadius,
+    current_cid: &str,
+    body: &Json,
+    label: &str,
+) -> Result<String, String> {
+    let check = check_ci_body(body).map_err(|e| e.to_string())?;
+    if check.kind != "CIJobResultBodyClaim" {
+        return Err(format!(
+            "accepted result body must be CIJobResultBodyClaim, got {}",
+            check.kind
+        ));
+    }
+    let previous: CIJobResultBodyClaim = serde_json::from_value(body.clone())
+        .map_err(|e| format!("parse accepted CIJobResultBodyClaim: {e}"))?;
+    admit_identical_reuse(current, &previous)
+        .map_err(|e| format!("{label} does not admit reuse for {current_cid}: {e}"))?;
+    Ok(check.cid)
+}
+
+fn verify_accepted_result(
+    current: &CIBlastRadius,
+    current_cid: &str,
+    previous_result_path: &Path,
+) -> Result<String, String> {
+    let previous_body = read_json_file(previous_result_path)?;
+    verify_result_body_claim(
+        current,
+        current_cid,
+        &previous_body,
+        &format!("accepted result witness {}", previous_result_path.display()),
+    )
+}
+
 fn ci_result_artifact_cid(
     blast: &CIBlastRadius,
     blast_cid: &str,
@@ -861,6 +1183,129 @@ fn ci_result_artifact_cid(
         "blastRadiusCid": blast_cid,
         "artifactKind": artifact_kind,
     }))
+}
+
+struct AcceptScratch {
+    path: PathBuf,
+}
+
+impl AcceptScratch {
+    fn new() -> Result<Self, String> {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("system clock before Unix epoch: {e}"))?
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("provekit-ci-accept-{stamp}"));
+        fs::create_dir_all(&path).map_err(|e| format!("create {}: {e}", path.display()))?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for AcceptScratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+struct CleanWorktree {
+    owner_repo: PathBuf,
+    path: PathBuf,
+    temp_root: PathBuf,
+}
+
+impl CleanWorktree {
+    fn create(repo: &Path) -> Result<Self, String> {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| format!("system clock before Unix epoch: {e}"))?
+            .as_nanos();
+        let temp_root = std::env::temp_dir().join(format!("provekit-ci-accept-worktree-{stamp}"));
+        let path = temp_root.join("repo");
+        fs::create_dir_all(&temp_root)
+            .map_err(|e| format!("create {}: {e}", temp_root.display()))?;
+        if let Err(e) = run_git(
+            repo,
+            &["worktree", "add", "--detach"],
+            Some(&path),
+            &["HEAD"],
+        ) {
+            let _ = fs::remove_dir_all(&temp_root);
+            return Err(e);
+        }
+        Ok(Self {
+            owner_repo: repo.to_path_buf(),
+            path,
+            temp_root,
+        })
+    }
+}
+
+impl Drop for CleanWorktree {
+    fn drop(&mut self) {
+        let path = self.path.display().to_string();
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(&self.owner_repo)
+            .arg("worktree")
+            .arg("remove")
+            .arg("--force")
+            .arg(&path)
+            .output();
+        let _ = fs::remove_dir_all(&self.temp_root);
+    }
+}
+
+fn run_git(
+    repo: &Path,
+    before_path: &[&str],
+    path: Option<&Path>,
+    after_path: &[&str],
+) -> Result<(), String> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(repo);
+    for arg in before_path {
+        command.arg(arg);
+    }
+    if let Some(path) = path {
+        command.arg(path);
+    }
+    for arg in after_path {
+        command.arg(arg);
+    }
+    let output = command
+        .output()
+        .map_err(|e| format!("spawn git in {}: {e}", repo.display()))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "git command failed in {}\nstdout={}\nstderr={}",
+            repo.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ))
+    }
+}
+
+fn stale_accept_error(args: &CiAcceptArgs, missing: &[(String, String, PathBuf)]) -> String {
+    let mut message =
+        String::from("CICP accepted witnesses are stale.\n\nRun:\n  provekit ci accept");
+    if args.all_kits {
+        message.push_str(" --all-kits");
+    } else if let Some(kit) = &args.kit {
+        message.push_str(" --kit ");
+        message.push_str(kit);
+    }
+    if args.clean {
+        message.push_str(" --clean");
+    }
+    message.push_str(" --out ");
+    message.push_str(&args.out.display().to_string());
+    message.push_str("\n\nMissing:\n");
+    for (kit, cid, path) in missing {
+        message.push_str(&format!("  {kit:<8} {cid} -> {}\n", path.display()));
+    }
+    message
 }
 
 fn print_result_human(payload: &Json) {
@@ -911,4 +1356,33 @@ fn print_reuse_human(payload: &Json) {
         payload["reuseBodyCid"].as_str().unwrap_or("")
     );
     println!("  status   : {}", "skip admitted".green().bold());
+}
+
+fn print_accept_human(payload: &Json) {
+    println!("{}", "ProvekIt CI accept".bold());
+    println!("  mode     : {}", payload["mode"].as_str().unwrap_or(""));
+    println!(
+        "  clean    : {}",
+        payload["clean"].as_bool().unwrap_or(false)
+    );
+    println!(
+        "  added    : {}",
+        payload["addedCount"].as_u64().unwrap_or(0)
+    );
+    println!(
+        "  existing : {}",
+        payload["existingCount"].as_u64().unwrap_or(0)
+    );
+    println!(
+        "  verified : {}",
+        payload["verifiedCount"].as_u64().unwrap_or(0)
+    );
+    for result in payload["results"].as_array().into_iter().flatten() {
+        println!(
+            "  {:<8} {:<8} {}",
+            result["kit"].as_str().unwrap_or(""),
+            result["status"].as_str().unwrap_or(""),
+            result["blastRadiusCid"].as_str().unwrap_or("")
+        );
+    }
 }

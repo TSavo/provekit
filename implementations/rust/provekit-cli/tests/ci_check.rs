@@ -113,6 +113,8 @@ fn run_ci_shadow(repo: &Path, kit: &str) -> Json {
         .arg(kit)
         .arg("--out-dir")
         .arg(out_dir)
+        .arg("--runner-identity")
+        .arg("github-actions/Linux/X64")
         .arg("--json")
         .output()
         .expect("run provekit ci shadow");
@@ -236,6 +238,229 @@ fn run_ci_result(blast_radius: &Path, out: &Path) -> std::process::Output {
         .arg("--json")
         .output()
         .expect("run provekit ci result")
+}
+
+fn run_ci_accept(
+    repo: &Path,
+    kit: &str,
+    accepted_dir: &Path,
+    extra_args: &[&str],
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_provekit"));
+    command
+        .arg("ci")
+        .arg("accept")
+        .arg("--repo")
+        .arg(repo)
+        .arg("--kit")
+        .arg(kit)
+        .arg("--out")
+        .arg(accepted_dir)
+        .arg("--json");
+    for arg in extra_args {
+        command.arg(arg);
+    }
+    command.output().expect("run provekit ci accept")
+}
+
+fn git_commit_all(repo: &Path, message: &str) {
+    let init = Command::new("git")
+        .arg("init")
+        .arg(repo)
+        .output()
+        .expect("git init");
+    assert!(
+        init.status.success(),
+        "git init failed\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&init.stdout),
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    let add = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("add")
+        .arg(".")
+        .output()
+        .expect("git add");
+    assert!(
+        add.status.success(),
+        "git add failed\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&add.stdout),
+        String::from_utf8_lossy(&add.stderr)
+    );
+
+    let commit = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .arg("-c")
+        .arg("user.email=provekit@example.test")
+        .arg("-c")
+        .arg("user.name=ProvekIt Test")
+        .arg("commit")
+        .arg("-m")
+        .arg(message)
+        .output()
+        .expect("git commit");
+    assert!(
+        commit.status.success(),
+        "git commit failed\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&commit.stdout),
+        String::from_utf8_lossy(&commit.stderr)
+    );
+}
+
+#[test]
+fn ci_accept_imports_candidate_job_result_by_default() {
+    let repo = make_shadow_repo("accept-generate");
+    let accepted_dir = repo.join(".provekit/ci/accepted");
+    let shadow = run_ci_shadow(&repo, "rust");
+    let blast_cid = shadow["blastRadiusCid"].as_str().expect("blast cid");
+    let candidate_path = repo.join(".provekit/ci-shadow/rust/job-result.json");
+    let output = run_ci_result(
+        &repo.join(".provekit/ci-shadow/rust/blast-radius.json"),
+        &candidate_path,
+    );
+    assert!(
+        output.status.success(),
+        "candidate result should be emitted\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let output = run_ci_accept(&repo, "rust", &accepted_dir, &[]);
+
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: Json = serde_json::from_slice(&output.stdout).expect("accept summary JSON");
+    assert_eq!(summary["kind"], "CIAccept");
+    assert_eq!(summary["ok"], true);
+    assert_eq!(summary["mode"], "write");
+    assert_eq!(summary["addedCount"], 1);
+    assert_eq!(summary["missingCount"], 0);
+    assert_eq!(summary["verifiedCount"], 1);
+
+    assert_eq!(summary["results"][0]["blastRadiusCid"], blast_cid);
+    assert_eq!(summary["results"][0]["source"], "candidate-result");
+    assert_eq!(
+        summary["results"][0]["candidateResultPath"],
+        candidate_path.canonicalize().unwrap().display().to_string()
+    );
+    let accepted_path = accepted_dir
+        .join("rust")
+        .join(format!("{blast_cid}.job-result.json"));
+    assert!(accepted_path.exists(), "accepted witness was written");
+
+    let result: Json = serde_json::from_slice(&fs::read(&accepted_path).expect("read result"))
+        .expect("parse result");
+    assert_eq!(result["kind"], "CIJobResultBodyClaim");
+    assert_eq!(result["blastRadiusCid"], blast_cid);
+    assert_eq!(result["result"], "pass");
+    let candidate: Json = serde_json::from_slice(&fs::read(&candidate_path).expect("read result"))
+        .expect("parse result");
+    assert_eq!(result, candidate);
+
+    let current = run_ci_shadow(&repo, "rust");
+    assert_eq!(current["blastRadiusCid"], blast_cid);
+
+    let reuse_path = repo.join(".provekit/ci-shadow/reuse.json");
+    let output = run_ci_reuse_from_accepted(
+        &repo.join(".provekit/ci-shadow/rust/blast-radius.json"),
+        &accepted_dir,
+        &reuse_path,
+    );
+    assert!(
+        output.status.success(),
+        "generated witness should admit reuse\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn ci_accept_write_requires_candidate_result_or_explicit_bootstrap() {
+    let repo = make_shadow_repo("accept-requires-result");
+    let accepted_dir = repo.join(".provekit/ci/accepted");
+
+    let output = run_ci_accept(&repo, "rust", &accepted_dir, &[]);
+
+    assert!(
+        !output.status.success(),
+        "write mode should not invent a passing result by default\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(".provekit/ci-shadow/rust/job-result.json"),
+        "stderr={stderr}"
+    );
+    assert!(stderr.contains("--assume-pass"), "stderr={stderr}");
+    assert!(
+        !accepted_dir.exists(),
+        "failed accept must not create accepted witnesses"
+    );
+
+    let _ = fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn ci_accept_check_reports_missing_witnesses_without_writing() {
+    let repo = make_shadow_repo("accept-check");
+    let accepted_dir = repo.join(".provekit/ci/accepted");
+
+    let output = run_ci_accept(&repo, "rust", &accepted_dir, &["--check"]);
+
+    assert!(
+        !output.status.success(),
+        "check mode should refuse stale accepted store\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("CICP accepted witnesses are stale"),
+        "stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("provekit ci accept"),
+        "stderr should include a repair command\nstderr={stderr}"
+    );
+    assert!(
+        !accepted_dir.exists(),
+        "check mode must not create accepted witnesses"
+    );
+
+    let _ = fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn ci_accept_clean_uses_detached_git_worktree() {
+    let repo = make_shadow_repo("accept-clean");
+    git_commit_all(&repo, "fixture repo");
+    let accepted_dir = repo.join(".provekit/ci/accepted");
+
+    let output = run_ci_accept(&repo, "rust", &accepted_dir, &["--clean", "--assume-pass"]);
+
+    assert!(
+        output.status.success(),
+        "clean accept should use a git worktree\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: Json = serde_json::from_slice(&output.stdout).expect("accept summary JSON");
+    assert_eq!(summary["clean"], true);
+    assert_eq!(summary["addedCount"], 1);
+    assert_eq!(summary["verifiedCount"], 1);
+
+    let _ = fs::remove_dir_all(&repo);
 }
 
 #[test]
