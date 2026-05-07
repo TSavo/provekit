@@ -1,7 +1,7 @@
 # Bug Zoo Null-Boundary Exhibits Design
 
 Date: 2026-05-07
-Status: Draft for review
+Status: Updated scope
 
 ## Purpose
 
@@ -36,8 +36,8 @@ Each language owns its own evidence states:
 - `lab/`: ordinary host-language specimen code that passes its normal checks.
 - `exhibit/`: contract/framework surfaces that expose the missing edge through
   the language kit and lift to canonical ProofIR.
-- `dropped/`: generated or realized edge-closing code, accepted only after
-  re-lift verifies closure.
+- `fixed/`: the paired exhibit source with the boundary closed; it uses the
+  same contract/framework surface and must lift cleanly.
 - `wild/`: real-world pinned sightings, created only when an advisory, commit,
   affected path, and evidence are available.
 
@@ -60,8 +60,9 @@ bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/
       spring-web/
       equivalence.json
       sat-witness.json
-    dropped/
+    fixed/
       provekit-native/
+      spring-web/
 
   typescript/
     lab/
@@ -70,8 +71,9 @@ bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/
       class-validator/
       equivalence.json
       sat-witness.json
-    dropped/
-      typescript-native/
+    fixed/
+      zod/
+      class-validator/
 
   csharp/
     lab/
@@ -81,8 +83,10 @@ bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/
       linq-where/
       equivalence.json
       sat-witness.json
-    dropped/
-      csharp-native/
+    fixed/
+      data-annotations/
+      provekit-annotations/
+      linq-where/
 ```
 
 Future real-world evidence is added under the relevant language only:
@@ -99,7 +103,7 @@ bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/
 
 ## Evidence Model
 
-The repeated code across `lab`, `exhibit`, and `dropped` is intentional. These
+The repeated code across `lab`, `exhibit`, and `fixed` is intentional. These
 folders are separate evidentiary states, not duplicate source for convenience.
 
 `lab/` proves the specimen is normal host-language code. It should compile,
@@ -111,9 +115,10 @@ be zod and class-validator. For C#, that can be DataAnnotations,
 `//provekit:` annotations, and LINQ. Each exhibit lifts through its language kit
 and must match the species-level missing edge.
 
-`dropped/` proves closure. It contains the language-specific output of the
-proof-first plan, language dropper, or realizer. The dropped artifact is accepted
-only when re-lift shows the missing edge is closed.
+`fixed/` proves closure. It contains the same exhibit surface after the source
+is changed to close the null boundary. The fixed artifact is accepted only when
+re-lift shows the expected ProofIR and the diagnostic no longer contains the
+missing edge.
 
 `wild/` proves field relevance. It contains pinned real-world sightings with
 source, advisory or commit identity, affected path, and evidence. It is created
@@ -137,31 +142,39 @@ languages:
     lab: java/lab
     exhibits:
       - id: provekit-native
+        fixed:
+          id: provekit-native
       - id: spring-web
-    dropped:
-      - id: provekit-native
+        fixed:
+          id: spring-web
   - id: typescript
     lab: typescript/lab
     exhibits:
       - id: zod
+        fixed:
+          id: zod
       - id: class-validator
-    dropped:
-      - id: typescript-native
+        fixed:
+          id: class-validator
   - id: csharp
     lab: csharp/lab
     exhibits:
       - id: data-annotations
+        fixed:
+          id: data-annotations
       - id: provekit-annotations
+        fixed:
+          id: provekit-annotations
       - id: linq-where
-    dropped:
-      - id: csharp-native
+        fixed:
+          id: linq-where
 ```
 
 The implementation can choose the exact YAML schema, but the model must preserve
 the species/language/state hierarchy:
 
 ```text
-species -> language -> lab | exhibit | dropped | wild
+species -> language -> lab | exhibit | fixed | wild
 ```
 
 ## ID Policy
@@ -179,8 +192,9 @@ confusing old commit history with the active taxonomy.
 
 The migration should be mechanical:
 
-- Move the Java `lab`, `exposed`, and `dropped` material under `java/`.
+- Move the Java `lab` and `exposed` material under `java/`.
 - Rename `exposed/` to `exhibit/`.
+- Create checked-in `fixed/` pairs for each exhibit.
 - Move the TypeScript material under `typescript/`.
 - Move the C# material under `csharp/`.
 - Delete placeholder `wild/` directories and README files unless they contain a
@@ -190,7 +204,7 @@ The migration should be mechanical:
 
 No behavior should change during the restructure. The Bug Zoo runner should
 still prove that every exhibit reaches the expected canonical ProofIR and that
-each dropped artifact closes the missing edge.
+each fixed artifact closes the missing edge.
 
 ## Validation
 
@@ -201,6 +215,8 @@ The restructure is complete when:
 - Direct C# discovery still works for DataAnnotations, ProvekIt annotations,
   and LINQ.
 - Java exhibit lifters still produce the same expected ProofIR.
+- Java ProvekIt-native `@Requires("name != null")` and `@NotNull` emit the same
+  IR for the null case.
 - Bug Zoo docs describe one null-boundary species with three language exhibits.
 - No empty `wild/` directory remains in the null-boundary species.
 
@@ -213,3 +229,7 @@ null-boundary receipts.
 
 This design does not require adding real-world sightings. `wild/` remains absent
 until a sighting is pinned with evidence.
+
+This design does not add a ProofIR compiler, template database, dropper,
+realizer, or fix-receipt generator. Those are later systems that can consume the
+checked-in `exhibit/` and `fixed/` pair.

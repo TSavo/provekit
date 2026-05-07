@@ -1,5 +1,13 @@
 # Bug Zoo Null-Boundary Exhibits Implementation Plan
 
+> **Superseded scope note (2026-05-07):** The accepted implementation no longer
+> uses `dropped/`, droppers, realizers, or checked-in fix receipts for this null
+> boundary specimen. The active story is Green/Red/Green: `lab/` is ordinary
+> passing host code, `exhibit/` adds a contract surface that ProveKit reports as
+> the missing edge, and `fixed/` carries the same exhibit surface with source
+> fixed so ProveKit runs clean. Treat the remaining task text below as historical
+> planning context, not active architecture.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Restructure the checked-in null-boundary Bug Zoo pack into one `BZ-SHAPE-005` species with Java, TypeScript, and C# language exhibits.

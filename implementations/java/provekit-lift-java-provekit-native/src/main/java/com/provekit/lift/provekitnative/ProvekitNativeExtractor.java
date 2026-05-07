@@ -8,7 +8,7 @@ import com.provekit.lift.*;
 
 public class ProvekitNativeExtractor implements Extractor {
     private static final String PACKAGE_NAME = "com.provekit.contract";
-    private static final Set<String> ANNOTATIONS = Set.of("Requires", "Ensures", "Invariant");
+    private static final Set<String> ANNOTATIONS = Set.of("Requires", "Ensures", "Invariant", "NotNull");
     private static final Set<String> COMPETING_PACKAGES = Set.of("com.google.java.contract");
 
     public String name() { return "provekit-native"; }
@@ -34,6 +34,14 @@ public class ProvekitNativeExtractor implements Extractor {
                 case "Invariant" -> extractString(ann).ifPresent(s -> invs.add(toIr(s)));
             }
         }
+        for (Parameter param : method.getParameters()) {
+            for (AnnotationExpr ann : param.getAnnotations()) {
+                if (!AnnotationSupport.belongsToFamily(cu, ann, PACKAGE_NAME, ANNOTATIONS, COMPETING_PACKAGES)) continue;
+                if (simpleName(ann.getNameAsString()).equals("NotNull")) {
+                    pres.add(nonNullIr(param.getNameAsString()));
+                }
+            }
+        }
         if (!pres.isEmpty() || !posts.isEmpty() || !invs.isEmpty()) {
             out.add(new ContractDecl(symbol, pres, posts, invs));
         }
@@ -57,6 +65,16 @@ public class ProvekitNativeExtractor implements Extractor {
 
     private String toIr(String expr) {
         return ContractExpressionParser.parseOrFallback(expr, "provekit_native_predicate");
+    }
+
+    private String nonNullIr(String varName) {
+        return "{\"kind\":\"atomic\",\"name\":\"neq\",\"args\":[{\"kind\":\"var\",\"name\":\""
+            + escape(varName)
+            + "\"},{\"kind\":\"const\",\"value\":null,\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"}}]}";
+    }
+
+    private String escape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private String simpleName(String fq) {

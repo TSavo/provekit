@@ -3,12 +3,13 @@
 // .invariant.rs for bug-zoo/src/lib.rs
 //
 // Public surface covered:
-//   * dropper receipt verification in `verify_dropper`
+//   * exhibit/fixed ProofIR CID verification in `check_specimen`
+//   * fixed diagnostic cleanliness in `expect_green_diagnostic`
 //
 // Honest scope:
 //   The IR names the byte-derived CID obligations. The concrete byte
-//   derivation is operationally enforced by the self-contained Bug Zoo
-//   runner tests and smoke specimens.
+//   derivation and red/green behavior are operationally enforced by the
+//   self-contained Bug Zoo runner tests and smoke specimens.
 
 use std::rc::Rc;
 
@@ -23,16 +24,16 @@ fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
 
 pub fn invariants() {
     contract(
-        "zoo_dropper_transformed_artifact_cid_is_derived",
+        "zoo_exhibit_proofir_cid_is_derived",
         ContractArgs {
-            post: Some(forall(String_(), |output| {
+            post: Some(forall(String_(), |lift| {
                 implies(
-                    atomic_("acceptedDropperOutput", vec![output.clone()]),
+                    atomic_("acceptedExhibitLift", vec![lift.clone()]),
                     atomic_(
                         "cidEquals",
                         vec![
-                            ctor1("transformedArtifactCid", output.clone()),
-                            ctor1("blake3_512_of", ctor1("modifiedSource", output)),
+                            ctor1("exhibitProofIrCid", lift.clone()),
+                            ctor1("json_document_cid", ctor1("exhibitProofIr", lift)),
                         ],
                     ),
                 )
@@ -42,16 +43,16 @@ pub fn invariants() {
     );
 
     contract(
-        "zoo_dropper_post_lift_cid_is_derived",
+        "zoo_fixed_proofir_cid_is_derived",
         ContractArgs {
-            post: Some(forall(String_(), |output| {
+            post: Some(forall(String_(), |lift| {
                 implies(
-                    atomic_("acceptedDropperOutput", vec![output.clone()]),
+                    atomic_("acceptedFixedLift", vec![lift.clone()]),
                     atomic_(
                         "cidEquals",
                         vec![
-                            ctor1("postLiftCid", output.clone()),
-                            ctor1("json_document_cid", ctor1("postLift", output)),
+                            ctor1("fixedProofIrCid", lift.clone()),
+                            ctor1("json_document_cid", ctor1("fixedProofIr", lift)),
                         ],
                     ),
                 )
@@ -61,18 +62,12 @@ pub fn invariants() {
     );
 
     contract(
-        "zoo_dropper_closure_witness_cid_is_derived",
+        "zoo_fixed_diagnostic_has_no_missing_edge",
         ContractArgs {
-            post: Some(forall(String_(), |output| {
+            post: Some(forall(String_(), |diagnostic| {
                 implies(
-                    atomic_("acceptedDropperOutput", vec![output.clone()]),
-                    atomic_(
-                        "cidEquals",
-                        vec![
-                            ctor1("closureWitnessCid", output.clone()),
-                            ctor1("json_document_cid", ctor1("closureWitness", output)),
-                        ],
-                    ),
+                    atomic_("acceptedFixedDiagnostic", vec![diagnostic.clone()]),
+                    atomic_("missingEdgeAbsent", vec![diagnostic]),
                 )
             })),
             ..Default::default()
