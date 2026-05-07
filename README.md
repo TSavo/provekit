@@ -44,6 +44,7 @@ Once lifted, that boundary is universal, comparable, solvable, translatable, con
 | | |
 | --- | --- |
 | **See it in my language — and every other language at the same time** | [docs/tutorials/polyglot-stack.md](docs/tutorials/polyglot-stack.md) |
+| **See a bug class collapse to the same bytes across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md) |
 | **Understand the move** | [docs/papers/](docs/papers/) — recommended order: paper 03 → 06 → 02 |
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
 | **Read the spec** | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |
@@ -66,6 +67,33 @@ For more entry points (per-language tutorials, IDE integration, publishing a `.p
 - **Conformance gate**: catalog CIDs, proof-protocol fixtures, CICP vectors, self-contract attestations, and per-kit tests must agree before CI is green.
 
 The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
+
+## Bug Zoo
+
+Bug Zoo is the executable lab for the claim above. Each specimen runs in an
+isolated host-language environment, uses that language's own kit to discover a
+bug, then asks `provekit zoo` to verify that the canonical ProofIR signature is
+byte-identical across surfaces and languages.
+
+The current null-boundary receipts show TypeScript and C# lifting the same
+missing edge:
+
+```text
+maybe_null(name) => non_null(name)
+```
+
+to the same ProofIR CID:
+
+```text
+blake3-512:0d611d8478a205ff040e7d0bcf6c21b12051340ecc5f00c3953af632b23fc01e069b4ad8a8699869163e135b9fde85792eba6acc54cd75cb3d3cc6a40a99ded4
+```
+
+Read [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md), or run:
+
+```sh
+(cd implementations/rust && cargo build -p provekit-cli)
+implementations/rust/target/debug/provekit zoo bug-zoo/species --all
+```
 
 | Kit | Self-contracts | Lift-plugin-protocol bridges | LSP plugin |
 |---|---|---|---|
