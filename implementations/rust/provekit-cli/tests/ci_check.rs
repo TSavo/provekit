@@ -39,6 +39,9 @@ fn jcs_cid(v: &Json) -> String {
 }
 
 fn write_json(path: &Path, value: &Json) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("mkdir parent");
+    }
     let mut bytes = serde_json::to_string_pretty(value).expect("serialize");
     bytes.push('\n');
     fs::write(path, bytes).expect("write json");
@@ -203,6 +206,75 @@ fn run_ci_reuse(
         .expect("run provekit ci reuse")
 }
 
+fn run_ci_reuse_from_accepted(
+    current_blast_radius: &Path,
+    accepted_dir: &Path,
+    reuse_out: &Path,
+) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("ci")
+        .arg("reuse")
+        .arg("--current-blast-radius")
+        .arg(current_blast_radius)
+        .arg("--accepted-dir")
+        .arg(accepted_dir)
+        .arg("--reuse-out")
+        .arg(reuse_out)
+        .arg("--json")
+        .output()
+        .expect("run provekit ci reuse from accepted store")
+}
+
+fn run_ci_result(blast_radius: &Path, out: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("ci")
+        .arg("result")
+        .arg("--blast-radius")
+        .arg(blast_radius)
+        .arg("--out")
+        .arg(out)
+        .arg("--json")
+        .output()
+        .expect("run provekit ci result")
+}
+
+#[test]
+fn ci_result_emits_pass_result_for_blast_radius() {
+    let dir = make_unique_dir("result-pass");
+    let blast_path = dir.join("blast-radius.json");
+    let result_path = dir.join("job-result.json");
+    let blast = blast_radius_body();
+    let blast_cid = jcs_cid(&blast);
+    write_json(&blast_path, &blast);
+
+    let output = run_ci_result(&blast_path, &result_path);
+
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: Json = serde_json::from_slice(&output.stdout).expect("result summary JSON");
+    assert_eq!(summary["kind"], "CIResult");
+    assert_eq!(summary["ok"], true);
+    assert_eq!(summary["result"], "pass");
+    assert_eq!(summary["blastRadiusCid"], blast_cid);
+    assert_eq!(summary["bodyPath"], result_path.display().to_string());
+
+    let result: Json = serde_json::from_slice(&fs::read(&result_path).expect("read result body"))
+        .expect("parse result body");
+    assert_eq!(result["kind"], "CIJobResultBodyClaim");
+    assert_eq!(result["jobKey"], "provekit/conformance/rust");
+    assert_eq!(result["blastRadiusCid"], blast_cid);
+    assert_eq!(result["result"], "pass");
+    assert_eq!(result["runnerIdentityCid"], cid('4'));
+    assert_eq!(result["policyCid"], cid('b'));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn ci_reuse_admits_identical_pass_result_and_writes_skip_witness() {
     let dir = make_unique_dir("reuse-admit");
@@ -244,6 +316,76 @@ fn ci_reuse_admits_identical_pass_result_and_writes_skip_witness() {
     assert_eq!(reuse["previousBlastRadiusCid"], blast_cid);
     assert_eq!(reuse["previousResultWitnessCid"], result_cid);
     assert_eq!(reuse["policyCid"], policy_cid);
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn ci_reuse_discovers_checked_in_accepted_witness_by_blast_radius() {
+    let dir = make_unique_dir("reuse-accepted-store");
+    let blast_path = dir.join("blast-radius.json");
+    let accepted_dir = dir.join(".provekit/ci/accepted");
+    let reuse_path = dir.join("reuse.json");
+
+    let blast = blast_radius_body();
+    let blast_cid = jcs_cid(&blast);
+    let policy_cid = blast["policyCid"].as_str().expect("policy cid");
+    let result = job_result_body("provekit/conformance/rust", &blast_cid, "pass", policy_cid);
+    let result_cid = jcs_cid(&result);
+    let accepted_path = accepted_dir
+        .join("rust")
+        .join(format!("{blast_cid}.job-result.json"));
+    write_json(&blast_path, &blast);
+    write_json(&accepted_path, &result);
+
+    let output = run_ci_reuse_from_accepted(&blast_path, &accepted_dir, &reuse_path);
+
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: Json = serde_json::from_slice(&output.stdout).expect("reuse summary JSON");
+    assert_eq!(summary["wouldSkip"], true);
+    assert_eq!(
+        summary["acceptedResultPath"],
+        accepted_path.display().to_string()
+    );
+    assert_eq!(summary["previousResultWitnessCid"], result_cid);
+    assert!(reuse_path.exists(), "accepted lookup writes reuse witness");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn ci_reuse_refuses_missing_checked_in_accepted_witness() {
+    let dir = make_unique_dir("reuse-missing-accepted");
+    let blast_path = dir.join("blast-radius.json");
+    let accepted_dir = dir.join(".provekit/ci/accepted");
+    let reuse_path = dir.join("reuse.json");
+
+    let blast = blast_radius_body();
+    write_json(&blast_path, &blast);
+
+    let output = run_ci_reuse_from_accepted(&blast_path, &accepted_dir, &reuse_path);
+
+    assert!(
+        !output.status.success(),
+        "missing accepted witness should not admit reuse\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("no accepted result witness"),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !reuse_path.exists(),
+        "missing accepted result writes nothing"
+    );
 
     let _ = fs::remove_dir_all(&dir);
 }

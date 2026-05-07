@@ -10,11 +10,11 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use libprovekit::canonical::json_cid;
 use libprovekit::ci::{
     admit_identical_reuse, check_ci_body, CIBlastRadius, CIBlastRadiusInput, CIJobResultBodyClaim,
-    CINondeterminism, CINondeterminismMode,
+    CIJobResultInput, CINondeterminism, CINondeterminismMode, CIProducer,
 };
 use owo_colors::OwoColorize;
 use serde_json::{json, Value as Json};
@@ -34,6 +34,8 @@ pub struct CiArgs {
 pub enum CiCmd {
     /// Check a CICP body claim and print its canonical CID.
     Check(CiCheckArgs),
+    /// Emit a CIJobResultBodyClaim for a completed job.
+    Result(CiResultArgs),
     /// Compute CICP blast-radius body claims without skipping any CI work yet.
     Shadow(CiShadowArgs),
     /// Admit an identical-input-closure reuse witness for an accepted prior result.
@@ -47,6 +49,49 @@ pub struct CiCheckArgs {
     pub body: PathBuf,
     #[command(flatten)]
     pub out: OutputFlags,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct CiResultArgs {
+    /// CIBlastRadius JSON body for the completed job.
+    #[arg(long)]
+    pub blast_radius: PathBuf,
+    /// File path for the emitted CIJobResultBodyClaim.
+    #[arg(long)]
+    pub out: PathBuf,
+    /// Job result to record.
+    #[arg(long, value_enum, default_value = "pass")]
+    pub result: CiResultArg,
+    /// CID of the job output artifact. Defaults to a deterministic checked-in marker CID.
+    #[arg(long)]
+    pub output_cid: Option<String>,
+    /// CID of the job log artifact. Defaults to a deterministic checked-in marker CID.
+    #[arg(long)]
+    pub log_cid: Option<String>,
+    /// Start time carried by the result witness.
+    #[arg(long, default_value = "2026-05-07T00:00:00Z")]
+    pub started_at: String,
+    /// Finish time carried by the result witness.
+    #[arg(long, default_value = "2026-05-07T00:00:00Z")]
+    pub finished_at: String,
+    /// Producer kind carried by the result witness.
+    #[arg(long, default_value = "ci-runner")]
+    pub producer_kind: String,
+    /// Producer name carried by the result witness.
+    #[arg(long, default_value = "provekit-ci")]
+    pub producer_name: String,
+    /// Producer version carried by the result witness.
+    #[arg(long, default_value = "checked-in")]
+    pub producer_version: String,
+    #[command(flatten)]
+    pub flags: OutputFlags,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CiResultArg {
+    Pass,
+    Fail,
+    Flaky,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -76,8 +121,15 @@ pub struct CiReuseArgs {
     #[arg(long)]
     pub current_blast_radius: PathBuf,
     /// Prior CIJobResultBodyClaim JSON body to consider for reuse.
-    #[arg(long)]
-    pub previous_result: PathBuf,
+    #[arg(
+        long,
+        conflicts_with = "accepted_dir",
+        required_unless_present = "accepted_dir"
+    )]
+    pub previous_result: Option<PathBuf>,
+    /// Root directory of checked-in accepted job-result witnesses.
+    #[arg(long, conflicts_with = "previous_result")]
+    pub accepted_dir: Option<PathBuf>,
     /// File path for the emitted CIReuseBodyClaim skip witness.
     #[arg(long)]
     pub reuse_out: PathBuf,
@@ -103,6 +155,24 @@ pub fn run(args: CiArgs) -> u8 {
                     );
                     println!("  body CID : {}", payload["bodyCid"].as_str().unwrap_or(""));
                     println!("  status   : {}", "admitted".green().bold());
+                }
+                crate::EXIT_OK
+            }
+            Err(e) => {
+                eprintln!("{}: {e}", "error".red().bold());
+                crate::EXIT_USER_ERROR
+            }
+        },
+        CiCmd::Result(args) => match run_result(&args) {
+            Ok(payload) => {
+                if args.flags.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&payload)
+                            .unwrap_or_else(|_| payload.to_string())
+                    );
+                } else if !args.flags.quiet {
+                    print_result_human(&payload);
                 }
                 crate::EXIT_OK
             }
@@ -163,6 +233,63 @@ fn run_check(args: &CiCheckArgs) -> Result<Json, String> {
     }))
 }
 
+fn run_result(args: &CiResultArgs) -> Result<Json, String> {
+    let blast_body = read_json_file(&args.blast_radius)?;
+    let blast_check = check_ci_body(&blast_body).map_err(|e| e.to_string())?;
+    if blast_check.kind != "CIBlastRadius" {
+        return Err(format!(
+            "blast radius body must be CIBlastRadius, got {}",
+            blast_check.kind
+        ));
+    }
+    let blast: CIBlastRadius =
+        serde_json::from_value(blast_body).map_err(|e| format!("parse CIBlastRadius: {e}"))?;
+    let result = ci_result_arg(args.result);
+    let output_cid = match &args.output_cid {
+        Some(cid) => cid.clone(),
+        None => ci_result_artifact_cid(&blast, &blast_check.cid, "output")?,
+    };
+    let log_cid = match &args.log_cid {
+        Some(cid) => cid.clone(),
+        None => ci_result_artifact_cid(&blast, &blast_check.cid, "log")?,
+    };
+
+    let result_body = CIJobResultInput {
+        job_key: blast.job_key.clone(),
+        blast_radius_cid: blast_check.cid.clone(),
+        result,
+        output_cid,
+        log_cid,
+        started_at: args.started_at.clone(),
+        finished_at: args.finished_at.clone(),
+        runner_identity_cid: blast.runner_identity_cid.clone(),
+        policy_cid: blast.policy_cid.clone(),
+        producer: CIProducer {
+            kind: args.producer_kind.clone(),
+            name: args.producer_name.clone(),
+            version: args.producer_version.clone(),
+        },
+        additional_input_cids: Vec::new(),
+    }
+    .build()
+    .map_err(|e| e.to_string())?;
+    let result_json =
+        serde_json::to_value(&result_body).map_err(|e| format!("serialize result: {e}"))?;
+    let result_check = check_ci_body(&result_json).map_err(|e| e.to_string())?;
+    write_json_file(&args.out, &result_json)?;
+
+    Ok(json!({
+        "kind": "CIResult",
+        "ok": true,
+        "result": ci_result_name(args.result),
+        "jobKey": blast.job_key,
+        "blastRadiusCid": blast_check.cid,
+        "bodyCid": result_check.cid,
+        "bodyPath": args.out.display().to_string(),
+        "body": result_json,
+    }))
+}
+
 fn run_reuse(args: &CiReuseArgs) -> Result<Json, String> {
     let current_body = read_json_file(&args.current_blast_radius)?;
     let current_check = check_ci_body(&current_body).map_err(|e| e.to_string())?;
@@ -175,7 +302,26 @@ fn run_reuse(args: &CiReuseArgs) -> Result<Json, String> {
     let current: CIBlastRadius = serde_json::from_value(current_body)
         .map_err(|e| format!("parse current CIBlastRadius: {e}"))?;
 
-    let previous_body = read_json_file(&args.previous_result)?;
+    let previous_result_path = match &args.previous_result {
+        Some(path) => path.clone(),
+        None => {
+            let accepted_dir = args
+                .accepted_dir
+                .as_ref()
+                .ok_or_else(|| "pass --previous-result or --accepted-dir".to_string())?;
+            let path = accepted_result_path(accepted_dir, &current, &current_check.cid)?;
+            if !path.exists() {
+                return Err(format!(
+                    "no accepted result witness for {} at {}",
+                    current_check.cid,
+                    path.display()
+                ));
+            }
+            path
+        }
+    };
+
+    let previous_body = read_json_file(&previous_result_path)?;
     let previous_check = check_ci_body(&previous_body).map_err(|e| e.to_string())?;
     if previous_check.kind != "CIJobResultBodyClaim" {
         return Err(format!(
@@ -199,6 +345,7 @@ fn run_reuse(args: &CiReuseArgs) -> Result<Json, String> {
         "jobKey": current.job_key,
         "currentBlastRadiusCid": current_check.cid,
         "previousResultWitnessCid": previous_check.cid,
+        "acceptedResultPath": previous_result_path.display().to_string(),
         "reuseBodyCid": reuse_check.cid,
         "reuseBodyPath": args.reuse_out.display().to_string(),
         "reuseBody": reuse_body,
@@ -320,10 +467,12 @@ fn build_shadow_for_kit(
         "markers": profile.toolchain_markers,
     }))?];
     let policy_cid = value_cid(&json!({
-        "kind": "CICPShadowPolicy",
+        "kind": "CICPCheckedInReusePolicy",
         "schemaVersion": "1",
-        "mode": "shadow-only",
-        "skipBuild": false,
+        "mode": "checked-in-accepted-witness",
+        "acceptedWitnessRoot": ".provekit/ci/accepted",
+        "reuseReasons": ["identical-input-closure"],
+        "skipBuildOnAcceptedReuse": true,
     }))?;
 
     let blast = CIBlastRadiusInput {
@@ -645,6 +794,30 @@ fn display_path(repo: &Path, path: &Path) -> String {
     }
 }
 
+fn accepted_result_path(
+    accepted_dir: &Path,
+    current: &CIBlastRadius,
+    blast_cid: &str,
+) -> Result<PathBuf, String> {
+    let subject = safe_path_component(&current.subject)?;
+    Ok(accepted_dir
+        .join(subject)
+        .join(format!("{blast_cid}.job-result.json")))
+}
+
+fn safe_path_component(value: &str) -> Result<&str, String> {
+    if value.is_empty()
+        || value.contains('/')
+        || value.contains('\\')
+        || value == "."
+        || value == ".."
+    {
+        Err(format!("invalid accepted-witness path component `{value}`"))
+    } else {
+        Ok(value)
+    }
+}
+
 fn write_json_file(path: &Path, value: &Json) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
@@ -658,6 +831,47 @@ fn write_json_file(path: &Path, value: &Json) -> Result<(), String> {
 fn read_json_file(path: &Path) -> Result<Json, String> {
     let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     serde_json::from_slice(&bytes).map_err(|e| format!("parse {}: {e}", path.display()))
+}
+
+fn ci_result_arg(result: CiResultArg) -> libprovekit::ci::CIJobResult {
+    match result {
+        CiResultArg::Pass => libprovekit::ci::CIJobResult::Pass,
+        CiResultArg::Fail => libprovekit::ci::CIJobResult::Fail,
+        CiResultArg::Flaky => libprovekit::ci::CIJobResult::Flaky,
+    }
+}
+
+fn ci_result_name(result: CiResultArg) -> &'static str {
+    match result {
+        CiResultArg::Pass => "pass",
+        CiResultArg::Fail => "fail",
+        CiResultArg::Flaky => "flaky",
+    }
+}
+
+fn ci_result_artifact_cid(
+    blast: &CIBlastRadius,
+    blast_cid: &str,
+    artifact_kind: &str,
+) -> Result<String, String> {
+    value_cid(&json!({
+        "kind": "CICheckedInResultArtifactReference",
+        "schemaVersion": "1",
+        "jobKey": blast.job_key,
+        "blastRadiusCid": blast_cid,
+        "artifactKind": artifact_kind,
+    }))
+}
+
+fn print_result_human(payload: &Json) {
+    println!("{}", "ProvekIt CI result".bold());
+    println!("  job      : {}", payload["jobKey"].as_str().unwrap_or(""));
+    println!(
+        "  radius   : {}",
+        payload["blastRadiusCid"].as_str().unwrap_or("")
+    );
+    println!("  body     : {}", payload["bodyCid"].as_str().unwrap_or(""));
+    println!("  status   : {}", payload["result"].as_str().unwrap_or(""));
 }
 
 fn print_shadow_human(payload: &Json) {
