@@ -446,6 +446,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             build-essential \
+            libsodium-dev \
             libssl-dev
 
       - name: Set up Java (java)
@@ -455,6 +456,12 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
+
+      - name: Install Java deps (java)
+        if: matrix.kit == 'java'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends maven
 
       - name: Install Ruby (ruby)
         if: matrix.kit == 'ruby'

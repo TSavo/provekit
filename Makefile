@@ -434,7 +434,7 @@ prove-python: build-rust
 	$(PROVEKIT) prove --kit=python
 
 .PHONY: prove-ruby
-prove-ruby: build-rust
+prove-ruby: build-rust build-ruby
 	@echo ">> proving ruby lift-plugin-protocol conformance (C1-C8)"
 	$(PROVEKIT) prove --kit=ruby
 
