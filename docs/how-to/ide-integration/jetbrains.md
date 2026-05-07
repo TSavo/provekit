@@ -6,14 +6,14 @@ JetBrains IDEs run a Java-based IDE platform with their own LSP support and a pl
 
 | IDE | Kit | Plugin | Status |
 |---|---|---|---|
-| IntelliJ IDEA | Java | (planned for v1.2) | not yet |
+| IntelliJ IDEA | Java | (planned) | not yet |
 | IntelliJ IDEA | Kotlin | (planned) | not yet |
 | PyCharm | Python | "ProvekIt for PyCharm" | shipping |
 | RubyMine | Ruby | "ProvekIt for RubyMine" | shipping |
 | Rider | C# | "ProvekIt for Rider" | shipping |
 | CLion | Rust (via Rust plugin) | "ProvekIt for CLion" | shipping |
-| GoLand | Go | (planned for v1.2) | not yet |
-| WebStorm | TypeScript | (planned for v1.2) | not yet |
+| GoLand | Go | (planned) | not yet |
+| WebStorm | TypeScript | (planned) | not yet |
 | Android Studio | Java/Kotlin | (planned) | not yet |
 
 > Plugin names and marketplace identifiers are placeholder until the plugins are published. Until then, sideload via `tools/jetbrains/<kit>/build/distributions/*.zip`.

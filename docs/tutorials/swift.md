@@ -45,7 +45,7 @@ provekit prove
 ## 6. Wire your IDE and CI
 
 - **IDE:** Swift LSP plugin planned.
-- **CI:** see [docs/how-to/ci-integration/github-actions.md](../how-to/ci-integration/github-actions.md).
+- **CI:** see [content-addressed CI](../how-to/content-addressed-ci.md).
 
 ## What's next
 

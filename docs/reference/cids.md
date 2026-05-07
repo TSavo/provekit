@@ -1,6 +1,6 @@
 # Spec CIDs at HEAD
 
-Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.6.0). Verify the local install conforms via `provekit verify-protocol`.
+Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.6.2). Verify the local install conforms via `provekit verify-protocol`.
 
 ## Two hashing rules
 
@@ -16,11 +16,13 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 
 `--verify` reads every spec in raw bytes, hashes each, then reads the catalog, JCS-canonicalizes it, hashes that, and compares all values. Exit 0 iff every value matches.
 
-## Pinned CIDs (v1.6.0)
+## Pinned CIDs (v1.6.2)
 
 | Document | CID |
 |---|---|
-| **Protocol catalog (v1.6.0)** | `blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781` |
+| **Protocol catalog (v1.6.2)** | `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f` |
+| Protocol catalog (v1.6.1, historical) | `blake3-512:fa1fbf90b7f092b732cd2b088d12210befe304065acbe0f9640785a911dd917f1c49fb90d1ff4dcd1861310cf739350ef60b46f1b54be0ea54ccb09d0c1b76f0` |
+| Protocol catalog (v1.6.0, historical) | `blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781` |
 | Protocol catalog (v1.5.0, historical) | `blake3-512:540e8c1f5f7fea880123203b30891771d421da953c34af6bfb1d56d4c1d25dfb2ae08af6f275f5b4a4d015c364588b3521116541fcf4ac32d69b4e46acee1843` |
 | Protocol catalog (v1.4.1, historical) | `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641` |
 | Protocol catalog (v1.4.0, historical) | `blake3-512:b0f2030d56c2fddf0ecbd7032bf0344c43e30677930e3b77188fcdc4ca6325d34649e51b2efa97d6985e4be6c43173f803254a7b05fc8bf31b92eb399b60f52f` |
@@ -36,6 +38,24 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 | Contract CID vs attestation CID | `blake3-512:53e136d9af29ce80b690f90c484e90c60f66f28c483b2038e03e7c6f6055f637527deb205e5558b47487b7d89ead461348d5e8981f2e9e8ccb30edd8867d47db` |
 | Contract set extension | `blake3-512:839e82096d04b1241ffa1f6158fcea6bfeb78f3836664a66a13ff11b3cde58d72e6c85bfc619ba1341f13b8375f655bdf5582b0eac91d27648f0048bee8f9867` |
 | Version chains pinning | `blake3-512:281bf014f6f0ebc9a5d455329ee033ff8b7ee85e001bcbdcb45a62c14e43855892c46462789ccb74961859e708eae70829fdf736798c17f59f0239ef78dd7e45` |
+| Protocol Evolution Protocol (PEP) | `blake3-512:d8827f89df20e5be38c4d5de851fe4e55420dcd6cacfd9b98f458c53e64e6ba07349e29f8da2fbab6cb7195b297c3704a70f489c020e3f55c96ef702c4a09949` |
+| Content-Addressed CI Protocol (CICP) | `blake3-512:4b63e8c58d59b54272407b624b67578b7e1a8fdeb71d41c7d5e18d3bd6d668e7f77c8e2b9a68a10d3732dda40baf66db27f87ab10cbdb1d52e857bcbb7d3ec47` |
+
+## v1.6.2 changes (patch over v1.6.1)
+
+One cataloged extension-only addition; no core verifier, ProofIR grammar, canonicalization, proof-file, or cross-language semantic obligation changed. v1.6.1 mementos, fixtures, `.proof` bundles, and kit conformance obligations remain valid forever against the bytes they were minted for.
+
+- **`content-addressed-ci-protocol`** added as a draft extension protocol for CI blast-radius bodies, job-result witnesses, reuse witnesses, and impact witnesses.
+- CICP makes CI results supply-chain claims: a result is tied to the exact source, protocol catalog, kit/toolchain, config, and witness input closure. Reuse is only an admissible consequence when that closure is byte-identical to a reviewed accepted result witness.
+- The PEP transition is recorded under [`../../protocol/evolution/v1.6.2/`](../../protocol/evolution/v1.6.2/), with a `ProtocolEvolutionBodyClaim` and TDP-shaped witness.
+
+## v1.6.1 changes (patch over v1.6.0)
+
+One cataloged extension-only addition; no core verifier, ProofIR grammar, canonicalization, proof-file, or cross-language semantic obligation changed. v1.6.0 mementos, fixtures, and `.proof` bundles remain valid forever against the bytes they were minted for.
+
+- **`protocol-evolution-protocol`** added as a draft extension protocol for signed, content-addressed protocol catalog transitions.
+- PEP dogfoods the version-label policy: extension-only catalog additions with no required language-kit emission, lift, canonicalization, or verifier changes may be patch-level transitions.
+- The transition is recorded under [`../../protocol/evolution/v1.6.1/`](../../protocol/evolution/v1.6.1/), with a `ProtocolEvolutionBodyClaim` and TDP-shaped witness.
 
 ## v1.6.0 changes (minor bump over v1.5.0)
 
@@ -78,25 +98,23 @@ The v1.4.0 bump is additive over v1.3.1. New specs published with v1.4.0:
 - `bundle-attestation-protocol` (`2026-05-02-bundle-attestation-protocol.md`)
 - `opacity-manifest-grammar` (`2026-05-02-opacity-manifest-grammar.md`)
 
-The full list of v1.6.0 spec CIDs is in `protocol/specs/2026-04-30-protocol-catalog.json`. Recompute locally to verify.
+The full list of v1.6.2 spec CIDs is in `protocol/specs/2026-04-30-protocol-catalog.json`. Recompute locally to verify.
 
-## Per-kit self-contracts CIDs (v1.4.1)
+## Per-kit self-contract attestations
 
-Each conformant peer ships hand-written contracts about its own public surface, mints them as signed mementos under the foundation key, and bundles into a `.proof` whose filename IS its catalog CID.
+Each conformant peer ships hand-written contracts about its own public surface, mints them as signed mementos under the foundation key, and signs an external attestation under `.provekit/self-contracts-attestations/`.
 
-| Kit | Self-contracts CID | Mint command |
-|---|---|---|
-| Rust | `blake3-512:3c905e3b27d279fb5d11e49af10d8f1d8c83aec207d0bb695d08cacba5c3192e56457d4683d93e71ffd18bd0acb65b72a2b49404490bce809e8dc1df7fd0bac8` | `cargo build --release --manifest-path implementations/rust/Cargo.toml --bin mint-self-contracts && implementations/rust/target/release/mint-self-contracts` |
-| Go | `blake3-512:906fa4f3ca32d97710e327c9e6e914e5c476a3cfdc326459b31dade24d9625c96f7f0595e3d91f316f73e2709a7f05ac79dd0ca768b6ff23cc2b384923487ac3` | `cd implementations/go/provekit-self-contracts && go run ./cmd/mint-go-self-contracts` |
-| C++ | `blake3-512:9335e6376d776819cfd3b2458da29bc258e7c2ebaad542a8613dd84f50c51c31d6e1a4346cea3903b8ad12294d96aef445d0ed838aa630835b9be0bc17e62842` | `tools/build-cpp-self-contracts.sh /tmp/provekit-cpp-self-out` |
-| TypeScript | `blake3-512:449339930add6457bf25542f2117a025daada4a4bd1de704737750ad6d1c1be814c284d31bb97159ca0b2d2c52f8c043a64533d3432195f5a0f338c5d4904d44` | `pnpm vitest run implementations/typescript/src/bin/mint-ts-self-contracts.test.ts --reporter=verbose` |
-| C# | `blake3-512:45d7cdbd0d5bfba5a1ee9e8386eb4d7dc1eab0882105753504a1f5c06de6f9fc4bd7038f56c7fcea693b152e2ab83de40ca4964a920816142ea43d5b9076415c` | `dotnet run --project implementations/csharp/Provekit.SelfContracts -- /tmp/csharp-self-out` |
+The live attestation files, not this page, are the source of truth for per-kit bundle and `contractSetCid` values. Verify them with:
 
-Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a value above does not match what your local mint produces, your bytes are not the bytes this protocol version was published against.
+```sh
+make conformance
+```
+
+Two runs producing the same CID is the framework verifying its own canonicalization is deterministic. If a local mint does not match its checked-in attestation, your bytes are not the bytes this protocol version was published against.
 
 ## Bluepaper recursive-verification
 
-The protocol catalog's CID is the protocol version. Verifying the catalog is the act of running the protocol; running the protocol verifies the catalog. There is no external authority. The bluepaper at [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) closes with this recursive verification recipe. Run `--verify`. If the computed catalog CID matches `540e8c1f...` (v1.5.0), `dc2f42ff...` (v1.4.1), or `b0f2030d...` (v1.4.0, historical), the bluepaper has just verified its own authority over the bytes you have.
+The protocol catalog's CID is the protocol version. Verifying the catalog is the act of running the protocol; running the protocol verifies the catalog. There is no external authority. The bluepaper at [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) closes with this recursive verification recipe. Run `--verify`. If the computed catalog CID matches `52bdb2be...719a0f` (v1.6.2), `fa1fbf90...1b76f0` (v1.6.1), `ce04a405...00e781` (v1.6.0), `540e8c1f...ee1843` (v1.5.0), `dc2f42ff...1dc641` (v1.4.1), or `b0f2030d...60f52f` (v1.4.0, historical), the bluepaper has just verified its own authority over the bytes you have.
 
 ## Read next
 

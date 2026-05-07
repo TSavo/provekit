@@ -1,6 +1,6 @@
 # Tutorial: Ruby
 
-> **Status:** kit shipping (v1.4.1). Lift adapters shipping: `active_model`, `dry-validation`, `rspec`. LSP plugin shipping. Verification via the Rust CLI. Requires Ruby 3+ (uses endless-method syntax).
+> **Status:** kit shipping in the current v1.6.2 tree. Lift adapters shipping: `active_model`, `dry-validation`, `rspec`. LSP plugin shipping. Verification via the Rust CLI. Requires Ruby 3+ (uses endless-method syntax).
 
 A walkthrough for Ruby developers. By the end you have a `.proof` catalog lifted from existing `validates :field, presence: true`, `Dry::Validation::Contract`, or RSpec matchers.
 
@@ -74,7 +74,7 @@ provekit prove
 ## 6. Wire your IDE and CI
 
 - **IDE:** install the LSP plugin (`bin/provekit-lsp-ruby`). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
-- **CI:** see [docs/how-to/ci-integration/github-actions.md](../how-to/ci-integration/github-actions.md).
+- **CI:** see [content-addressed CI](../how-to/content-addressed-ci.md).
 
 ## What's next
 

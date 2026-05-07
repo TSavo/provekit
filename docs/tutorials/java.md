@@ -1,6 +1,6 @@
 # Tutorial: Java / JVM
 
-> **Status:** kit shipping (v1.4.1). Lift adapters shipping: Bean Validation, JML, Spring Web, Cofoja, plus bindings for Spring Security, Swagger, Jackson, JPA, Hibernate. Embedded verifier and LSP plugin planned. Verification via the Rust CLI.
+> **Status:** kit shipping in the current v1.6.2 tree. Lift adapters shipping: Bean Validation, JML, Spring Web, Cofoja, plus bindings for Spring Security, Swagger, Jackson, JPA, Hibernate. Java realizer work is active in Bug Zoo. Embedded verifier and LSP plugin planned. Verification via the Rust CLI.
 
 A walkthrough for Java / JVM developers. By the end you have a `.proof` catalog lifted from existing `@NotNull`, `@Email`, `@Min`, `//@ requires`, `@RequestParam` annotations (across Bean Validation, JML, Spring, and Cofoja sources, all canonicalized to the same IR).
 
@@ -80,8 +80,8 @@ Same handshake, same discharge shape as the [Rust tutorial step 4](rust.md#step-
 
 ## 6. Wire your IDE and CI
 
-- **IDE:** the JVM LSP plugin is planned for v1.2. Until then, no in-editor squigglies.
-- **CI:** see [docs/how-to/ci-integration/github-actions.md](../how-to/ci-integration/github-actions.md).
+- **IDE:** the JVM LSP plugin is planned. Until then, no in-editor squigglies.
+- **CI:** see [docs/how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md).
 
 ## Cross-domain equivalence
 

@@ -145,7 +145,7 @@ LSP diagnostics carry severity, source, code, message, and range. ProvekIt diagn
 
 - **Severity**: `error` (contract violated), `warning` (contract requires Tier 3 fallback), `information` (lifted contract), `hint` (suggestion).
 - **Source**: always `"provekit"`. Editors filter by source for "show only ProvekIt issues."
-- **Code**: stable error code, e.g., `PROVEKIT_E001`. See [`docs/reference/error-codes.md`](../reference/error-codes.md) (when written).
+- **Code**: stable error code, e.g., `PROVEKIT_E001`. See [`docs/reference/error-codes.md`](../reference/error-codes.md).
 - **Message**: human-readable, includes the contract that was violated. Include the source-library annotation that gave rise to the contract, so users see "your `@Min(0)` is violated" rather than "atomic ge violated."
 - **Range**: the source range the violation applies to.
 

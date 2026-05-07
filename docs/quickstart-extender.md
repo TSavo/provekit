@@ -190,7 +190,9 @@ Every spec file gets a CID. After writing the spec:
 
 1. Run `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --write` to recompute all spec CIDs and update the catalog.
 2. Run `make catalog-verify` to confirm the catalog hash matches.
-3. If the catalog CID changes (it will, since you added a spec), update the `CATALOG_CID` variable in the Makefile and bump the protocol version in `protocol/specs/2026-04-30-protocol-catalog.json`.
+3. Decide the version class under PEP. Extension-only additions with no required kit emission, lift, canonicalization, or verifier change can be patch-level transitions. Grammar or core semantic obligations generally require a minor or major bump.
+4. If the catalog CID changes (it will, since you added a cataloged spec), update the `CATALOG_CID` variable in the Makefile, bump the protocol version in `protocol/specs/2026-04-30-protocol-catalog.json`, and add a PEP transition under `protocol/evolution/v<new-version>/`.
+5. Sign the catalog attestation and commit the PEP body/witness artifacts.
 
 Spec CIDs are self-identifying: the CID is a BLAKE3-512 hash of the spec file's bytes. Anyone can verify a spec's CID locally. No central party decides what a spec means; the bytes do.
 
@@ -303,7 +305,7 @@ docs/
 
 examples/
   polyglot-rust-go/   -- canonical cross-language demo (rust callee + go caller)
-  build_script_demo/  -- provekit-build build.rs integration (planned v1.2)
+  build_script_demo/  -- provekit-build build.rs integration
 
 .provekit/
   self-contracts-attestations/  -- per-kit signed attestation envelopes

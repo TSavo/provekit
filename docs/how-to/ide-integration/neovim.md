@@ -135,7 +135,7 @@ lspconfig.provekit_ruby.setup{}
 lspconfig.provekit_csharp.setup{}
 ```
 
-When TypeScript / Go / C++ / Java LSP plugins ship (planned for v1.2), add their configs analogously.
+When TypeScript / Go / C++ / Java LSP plugins ship, add their configs analogously.
 
 ## Troubleshooting
 

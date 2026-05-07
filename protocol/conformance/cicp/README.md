@@ -1,7 +1,9 @@
 # CICP Conformance Vectors
 
 These are language-library golden vectors for the Content-Addressed CI
-Protocol.
+Protocol. CICP is primarily a supply-chain admission surface: CI results
+must name the exact input closure they cover. Exact-closure reuse is a
+secondary consequence, not the main safety claim.
 
 Each passing vector contains a JSON body claim. A conforming language
 library must:

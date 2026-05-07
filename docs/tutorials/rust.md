@@ -1,12 +1,12 @@
 # Tutorial: Rust
 
-A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to the protocol catalog at CID `blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641` (v1.4.1), and you have run `provekit prove` against the catalog.
+A five-minute walkthrough for Rust developers. By the end you have a `.proof` catalog of signed contract mementos for a small Rust crate, you have verified the install conforms to the protocol catalog at CID `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f` (v1.6.2), and you have run `provekit prove` against the catalog.
 
 > **Other languages:** see [tutorials/](./) for TypeScript, Python, Java, C#, Ruby, Zig, and the [polyglot stack walkthrough](polyglot-stack.md). The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 
 For the current end-user quickstart (get a red squiggle in 10 minutes):
 
-> [docs/quickstart-end-user.md](quickstart-end-user.md)
+> [docs/quickstart-end-user.md](../quickstart-end-user.md)
 
 For the current extender quickstart (write a new kit lifter or protocol spec):
 
@@ -14,7 +14,7 @@ For the current extender quickstart (write a new kit lifter or protocol spec):
 cargo install provekit
 ```
 
-The installed binary is `provekit`. It is the canonical Rust implementation for protocol v1.4.1; alternative implementations in other languages conform to the same catalog CID.
+The installed binary is `provekit`. It is the canonical Rust implementation for protocol v1.6.2; alternative implementations in other languages conform to the same catalog CID.
 
 ## Step 2: confirm protocol conformance
 
@@ -25,7 +25,7 @@ provekit verify-protocol
 This reads the local CLI's declared catalog CID, recomputes every spec CID listed in the catalog from the spec bytes shipped with the install, and confirms the catalog hashes to the expected value:
 
 ```
-blake3-512:dc2f42ff8a4a66289cc19bfbd628898b8bd8e61d2148ecf609324cc2421c5c440a6c0e70e20ffbecabeb78e0253101d72823b7e3ab120a4d56cb67c8e31dc641
+blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
 ```
 
 A mismatch means either the install is corrupted or the binary was built against a different protocol version. The exit code is 0 on conformance, 1 on drift.
@@ -114,7 +114,7 @@ provekit search --consequent some-formula.json
 
 ## What's next
 
-- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) for the adoption guide per source library (`proptest`, `contracts`, and what's planned for v1.2).
+- [docs/reference/per-adapter-coverage.md](../reference/per-adapter-coverage.md) for the adoption guide per source library.
 - [docs/reference/per-language-status.md](../reference/per-language-status.md) for the matrix of kits, libs, and adapters across all host languages.
 - [docs/explanation/architecture.md](../explanation/architecture.md) for the four-layer model, the handshake, and the lattice tractability theorem.
 - [docs/explanation/thesis.md](../explanation/thesis.md) for the deeper architectural claim.

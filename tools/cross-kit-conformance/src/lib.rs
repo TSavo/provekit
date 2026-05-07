@@ -20,11 +20,6 @@ const EXPECTED_CATALOG_CID: &str = concat!(
     "52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd51",
     "3f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f"
 );
-const EXPECTED_PROTOCOL_CONTRACT_SET_CID: &str = concat!(
-    "blake3-512:",
-    "2a4dc95d1af1ff9f7f5a3414dd7fef67ab342155f4ff204aaf333b2dab6441ec",
-    "ddd2ed2d53aaabb5c929eefa8d4155a9f7a1725f8ea2febefe04c4f7365c27ab"
-);
 const EMPTY_CONTRACT_SET_CID: &str = concat!(
     "blake3-512:",
     "d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab",
@@ -2318,9 +2313,10 @@ fn run_protocol_contract_gate(
 ) -> Result<usize> {
     println!("\nProtocol Contract Bootstrap Gate");
     let got = protocol_contract_set_cid()?;
-    if got != EXPECTED_PROTOCOL_CONTRACT_SET_CID {
+    if got != provekit_self_contracts::ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID {
         return Err(format!(
-            "protocolContractSetCid drift:\n  got:  {got}\n  want: {EXPECTED_PROTOCOL_CONTRACT_SET_CID}"
+            "protocolContractSetCid drift:\n  got:  {got}\n  want: {}",
+            provekit_self_contracts::ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID
         ));
     }
     println!("  protocolContractSetCid: {got}");
@@ -2726,7 +2722,10 @@ mod tests {
     #[test]
     fn protocol_contract_set_cid_is_pinned_to_rust_source() {
         let got = protocol_contract_set_cid().expect("derive protocol contract set CID");
-        assert_eq!(got, EXPECTED_PROTOCOL_CONTRACT_SET_CID);
+        assert_eq!(
+            got,
+            provekit_self_contracts::ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID
+        );
     }
 
     #[test]

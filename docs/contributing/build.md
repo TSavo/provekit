@@ -1,6 +1,6 @@
 # Building ProvekIt from source
 
-ProvekIt is a multi-language polyglot. The main implementations today: Rust, Go, C++, TypeScript, C#, Python, Java, Ruby, Zig, Swift, C. The cross-language conformance gate runs the same way locally and in CI: every peer mints its own self-contracts under the foundation key, and every minted catalog must match the pinned content-addressed CID before the build is green.
+ProvekIt is a multi-language polyglot. The main implementations today: Rust, Go, C++, TypeScript, C#, Python, Java, Ruby, Zig, Swift, C, PHP. The cross-language conformance gate runs the same way locally and in CI: every peer mints its own self-contracts under the foundation key, and every minted catalog must match the pinned content-addressed CID before the build is green.
 
 The contract is the top-level [`Makefile`](../../Makefile). If `make ci` is green, the protocol is byte-deterministic across every peer on the host and every native test suite passes. The CI workflow at [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs the same `make ci` on `ubuntu-latest`.
 
@@ -12,6 +12,8 @@ make ci            # full gate (conformance + every language's tests)
 make conformance   # catalog + protocol + N mints match pinned CIDs
 make all-mint      # run all mint commands; print CIDs
 make test-all      # run all language-native test suites
+provekit ci ...    # CICP supply-chain admission and result witnesses
+provekit zoo ...   # Bug Zoo specimen/exposure/dropper checks
 make clean         # remove all build artifacts
 ```
 
@@ -78,6 +80,13 @@ The conformance gate is the heart of the polyglot story. Every implementation mi
    ```sh
    make conformance
    ```
+
+Additional protocol/tooling checks now run in CI:
+
+- **Proof protocol conformance.** `.proof` fixtures under `protocol/conformance/proof-protocol/` are checked by `provekit proof`.
+- **CICP vector conformance.** Every language library that emits CICP bodies must derive the same golden-vector CIDs in `protocol/conformance/cicp/`.
+- **CICP supply-chain admission.** The GitHub workflow computes kit blast radii, tries reuse only against checked-in accepted witnesses, and uploads candidate result witnesses for review when reuse is refused.
+- **Bug Zoo.** `provekit zoo` verifies exposed ProofIR equivalence and optional dropper closure receipts for checked-in specimens.
 
 If you are adding a new implementation, see [porting-to-a-new-language.md](porting-to-a-new-language.md) for how the conformance harness picks up your kit.
 

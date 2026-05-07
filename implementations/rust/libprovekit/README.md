@@ -14,7 +14,9 @@ The protocol topology is:
   workflows and embedded Rust workflows cannot drift.
 
 This crate currently exposes the Content-Addressed CI Protocol (CICP)
-body builders/checkers:
+body builders/checkers. CICP treats a CI result as a supply-chain claim
+over an exact source, catalog, kit/toolchain, config, and witness input
+closure:
 
 - `CIBlastRadius`
 - `CIJobResultBodyClaim`

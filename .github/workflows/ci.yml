@@ -227,9 +227,10 @@ jobs:
         run: make help
 
       - name: make conformance
-        # Catalog v1.2.0 hash equality, signed protocol verify, and all 5
-        # peer self-contract CIDs equal their pinned values. Failure here
-        # means the protocol has drifted and the PR is not mergeable.
+        # Catalog v1.6.2 hash equality, signed protocol verify, live mint
+        # attestations, self-contract tests, and cross-kit fixtures. Failure
+        # here means the protocol or a kit conformance surface drifted and
+        # the PR is not mergeable.
         run: make conformance
 
       - name: make test-all

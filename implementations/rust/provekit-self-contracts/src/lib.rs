@@ -143,6 +143,18 @@ pub const LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES: &[&str] = &[
     "lift_emits_call_edge_stream",
 ];
 
+/// Accepted contractSetCid for the standard lift-plugin-protocol slab above.
+///
+/// This is the protocol-only trust anchor peer kits bridge to. It is
+/// deliberately separate from any kit's full self-contract surface CID:
+/// protocol evolution must move this pin explicitly, while ordinary Rust
+/// dogfood-surface drift only moves the Rust kit pin.
+pub const ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID: &str = concat!(
+    "blake3-512:",
+    "2a4dc95d1af1ff9f7f5a3414dd7fef67ab342155f4ff204aaf333b2dab6441ec",
+    "ddd2ed2d53aaabb5c929eefa8d4155a9f7a1725f8ea2febefe04c4f7365c27ab"
+);
+
 // --- Orchestrator types ----------------------------------------------------
 
 /// Source-file label tagging which module of contracts we're walking.
