@@ -145,3 +145,36 @@ fn java_null_boundary_specimen_checks() {
     assert!(native_cid.starts_with("blake3-512:"));
     assert_eq!(native_cid, spring_cid);
 }
+
+#[test]
+fn typescript_discover_cli_finds_null_boundary_with_language_lifter() {
+    let root = repo_root();
+    let discover = root.join(
+        "bug-zoo/species/BZ-SHAPE-006-typescript-null-boundary-equivalence/tools/ts-boundary-discover.ts",
+    );
+    let harness = root.join(
+        "bug-zoo/species/BZ-SHAPE-006-typescript-null-boundary-equivalence/exposed/zod/harness",
+    );
+
+    let output = Command::new("pnpm")
+        .arg("exec")
+        .arg("tsx")
+        .arg(discover)
+        .arg("zod")
+        .arg(harness)
+        .current_dir(&root)
+        .output()
+        .expect("spawn typescript discover cli");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "typescript discover failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stdout.contains("\"kind\":\"bug-zoo-discovery\""));
+    assert!(stdout.contains("\"surface\":\"zod\""));
+    assert!(stdout.contains("\"lifter\":\"liftPath\""));
+    assert!(stdout.contains("\"missingEdge\":\"maybe_null(name) => non_null(name)\""));
+    assert!(stdout.contains("\"irEvidenceCid\":"));
+}

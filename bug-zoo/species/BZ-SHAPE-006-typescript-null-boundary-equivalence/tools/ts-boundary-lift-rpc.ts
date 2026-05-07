@@ -1,9 +1,8 @@
 import readline from "node:readline";
 
-import { liftPath } from "../../../../implementations/typescript/src/lift/index.js";
+import { discoverBoundary, nullBoundaryIr } from "./ts-boundary-discovery.js";
 
 const expectedAdapter = process.env.BUG_ZOO_TS_ADAPTER ?? "";
-const contractName = "LookupRequest";
 
 process.stdout.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EPIPE") {
@@ -12,50 +11,12 @@ process.stdout.on("error", (error: NodeJS.ErrnoException) => {
   throw error;
 });
 
-const nullBoundaryIr = [
-  {
-    kind: "contract",
-    symbol: "lookup",
-    precondition: {
-      kind: "atomic",
-      name: "neq",
-      args: [
-        { kind: "var", name: "name" },
-        { kind: "const", value: null, sort: { kind: "primitive", name: "Ref" } },
-      ],
-    },
-  },
-];
-
-function hasLookupNameStringBoundary(pre: unknown): boolean {
-  const text = JSON.stringify(pre);
-  return (
-    text.includes('"kind-of"') &&
-    text.includes('"field"') &&
-    text.includes('"name"') &&
-    text.includes('"String"')
-  );
-}
-
 function liftBoundary(workspaceRoot: string): unknown {
-  const report = liftPath(workspaceRoot);
-  const decl = report.decls.find(
-    (candidate) => candidate.name === contractName && candidate.adapter === expectedAdapter,
-  );
-  if (!decl) {
-    throw new Error(`missing ${expectedAdapter} ${contractName} contract in ${workspaceRoot}`);
-  }
-  if (!hasLookupNameStringBoundary(decl.pre)) {
-    throw new Error(`${expectedAdapter} ${contractName} did not lift a name:string boundary`);
-  }
+  const discovery = discoverBoundary(expectedAdapter, workspaceRoot);
   return {
     kind: "ir-document",
     ir: nullBoundaryIr,
-    source: {
-      adapter: decl.adapter,
-      contract: decl.name,
-      sourcePath: decl.sourcePath,
-    },
+    source: discovery,
   };
 }
 
