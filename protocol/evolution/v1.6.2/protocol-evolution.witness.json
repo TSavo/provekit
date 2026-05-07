@@ -1,0 +1,30 @@
+{
+  "kind": "TruthDischargeWitness",
+  "schemaVersion": "1",
+  "claimBodyCid": "blake3-512:74086e48f2cbaa3bb3dcee4fab1411c131fba1b637620d63983bff15eb15144455e7bfc94240631d16b10247a05b6c7ad2390160c3c7bcdd973d4eab8d098e0b",
+  "claimKind": "protocol-evolution",
+  "result": true,
+  "verifierCid": "blake3-512:fb1e040cb4e11ab9693566b081337b3dda7087d6ca41beaf7509b2a7ec72f41fad03db312e41fe672fc555799279f47163e7c4a9bd4e53a186a72f69ffa5489f",
+  "policyCid": "blake3-512:27e35c0e356d97aadd51589e054a25db392e1db7d6f10d3fc3c9452de2161c364e3530e086a44b65de48f5115200d43f19c90ec068c0fa8b36128f2946c58274",
+  "evidenceRootCid": "blake3-512:3463c8cd153d262eec88e117c242ca1024efc60595bfe37898e0cadd99c5408e4f0b24c1a256e83993e019992bb60944b111893438f986f3e6c85a504eade1f5",
+  "inputCids": [
+    "blake3-512:16d62ae58d3d3d14019f24b19d4c32d17e4e47c67d537d7da469c7e25acdd64b1d2e215a4dcb9b28b723d36b1afaee08062d1b50792f3c5fdb43d2778d9ad6b3",
+    "blake3-512:27e35c0e356d97aadd51589e054a25db392e1db7d6f10d3fc3c9452de2161c364e3530e086a44b65de48f5115200d43f19c90ec068c0fa8b36128f2946c58274",
+    "blake3-512:3463c8cd153d262eec88e117c242ca1024efc60595bfe37898e0cadd99c5408e4f0b24c1a256e83993e019992bb60944b111893438f986f3e6c85a504eade1f5",
+    "blake3-512:4b63e8c58d59b54272407b624b67578b7e1a8fdeb71d41c7d5e18d3bd6d668e7f77c8e2b9a68a10d3732dda40baf66db27f87ab10cbdb1d52e857bcbb7d3ec47",
+    "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f",
+    "blake3-512:74086e48f2cbaa3bb3dcee4fab1411c131fba1b637620d63983bff15eb15144455e7bfc94240631d16b10247a05b6c7ad2390160c3c7bcdd973d4eab8d098e0b",
+    "blake3-512:fa1fbf90b7f092b732cd2b088d12210befe304065acbe0f9640785a911dd917f1c49fb90d1ff4dcd1861310cf739350ef60b46f1b54be0ea54ccb09d0c1b76f0",
+    "blake3-512:fb1e040cb4e11ab9693566b081337b3dda7087d6ca41beaf7509b2a7ec72f41fad03db312e41fe672fc555799279f47163e7c4a9bd4e53a186a72f69ffa5489f"
+  ],
+  "execution": {
+    "startedAt": "1970-01-01T00:00:00Z",
+    "finishedAt": "1970-01-01T00:00:00Z",
+    "fuelUsed": 0
+  },
+  "metadata": {
+    "producer": "provekit-cicp-dogfood",
+    "producerVersion": "0.1.0",
+    "bootstrapNote": "TDP-shaped PEP witness emitted by extension-aware tooling; core verification does not execute PEP."
+  }
+}
