@@ -403,6 +403,14 @@ fn runtime_bin_dir_candidates() -> Vec<PathBuf> {
     .collect()
 }
 
+fn ruby_bundle_exec_cmd(args: &[&str]) -> Vec<String> {
+    ["ruby", "-S", "bundle", "exec", "ruby"]
+        .into_iter()
+        .chain(args.iter().copied())
+        .map(String::from)
+        .collect()
+}
+
 fn detect_java_home() -> Option<PathBuf> {
     ["/usr/local/opt/openjdk", "/opt/homebrew/opt/openjdk"]
         .into_iter()
@@ -1717,13 +1725,7 @@ else
 end
 "#;
     command_stdout(
-        &[
-            "ruby".into(),
-            "-Ilib".into(),
-            "-e".into(),
-            code.into(),
-            name.into(),
-        ],
+        &ruby_bundle_exec_cmd(&["-Ilib", "-e", code, name]),
         &root.join("implementations/ruby"),
         Duration::from_secs(60),
     )
@@ -2040,12 +2042,7 @@ fn linux_native_checks() -> Vec<NativeCheck> {
         NativeCheck {
             kit: "ruby",
             name: "ruby bridge_v1_4 fixture CID",
-            cmd: vec![
-                "ruby".into(),
-                "-Ilib".into(),
-                "-Itest".into(),
-                "test/test_bridge_v14.rb".into(),
-            ],
+            cmd: ruby_bundle_exec_cmd(&["-Ilib", "-Itest", "test/test_bridge_v14.rb"]),
             cwd: root.join("implementations/ruby"),
             timeout: Duration::from_secs(120),
         },
@@ -2685,6 +2682,21 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn ruby_fixture_commands_run_under_bundler() {
+        let cmd = ruby_bundle_exec_cmd(&["-Ilib", "-e", "puts :ok"]);
+        assert_eq!(
+            cmd,
+            vec!["ruby", "-S", "bundle", "exec", "ruby", "-Ilib", "-e", "puts :ok"]
+        );
+
+        let native = linux_native_checks()
+            .into_iter()
+            .find(|check| check.kit == "ruby")
+            .expect("ruby native check");
+        assert_eq!(&native.cmd[..5], ["ruby", "-S", "bundle", "exec", "ruby"]);
     }
 
     #[test]
