@@ -75,7 +75,6 @@ struct FixtureToml {
 struct KitSelfContractAttestation {
     kit: String,
     attestation_lang: String,
-    bundle_cid: String,
     contract_set_cid: String,
     path: PathBuf,
 }
@@ -605,7 +604,6 @@ fn load_self_contract_attestations(profile: Profile) -> Result<Vec<KitSelfContra
         out.push(KitSelfContractAttestation {
             kit: kit.to_string(),
             attestation_lang: attestation_lang.to_string(),
-            bundle_cid: parsed.cid,
             contract_set_cid: parsed.contract_set_cid,
             path,
         });
@@ -880,18 +878,16 @@ fn assert_live_artifact_matches_attestation(
             artifact.kit, artifact.attestation_lang, attestation.attestation_lang
         ));
     }
-    if artifact.bundle_cid != attestation.bundle_cid {
-        return Err(format!(
-            "{} live bundle CID does not match pinned attestation CID:\n  got:  {}\n  want: {}",
-            artifact.kit, artifact.bundle_cid, attestation.bundle_cid
-        ));
-    }
     if artifact.contract_set_cid != attestation.contract_set_cid {
         return Err(format!(
             "{} live contractSetCid does not match pinned attestation:\n  got:  {}\n  want: {}",
             artifact.kit, artifact.contract_set_cid, attestation.contract_set_cid
         ));
     }
+    // Bundle CIDs are representation CIDs and are signed for provenance, but
+    // spec #94 makes contractSetCid the trust comparison. The verifier below
+    // validates the pinned attestation signature and compares that signed
+    // contractSetCid with the freshly-minted artifact.
     verify_self_contract_attestation(attestation, &artifact.contract_set_cid)?;
     Ok(())
 }
@@ -2734,17 +2730,12 @@ mod tests {
     }
 
     #[test]
-    fn self_contract_attestations_pin_non_empty_live_artifact_cids() {
+    fn self_contract_attestations_pin_non_empty_contract_set_cids() {
         let attestations =
             load_self_contract_attestations(Profile::Linux).expect("load linux attestations");
         assert_eq!(attestations.len(), 11);
 
         for attestation in attestations {
-            assert!(
-                cid_is_well_formed(&attestation.bundle_cid),
-                "{} bundle cid is malformed",
-                attestation.kit
-            );
             assert_ne!(
                 attestation.contract_set_cid, EMPTY_CONTRACT_SET_CID,
                 "{} self-contract set is empty",
