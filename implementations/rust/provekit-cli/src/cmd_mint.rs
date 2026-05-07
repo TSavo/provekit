@@ -51,8 +51,13 @@ use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use provekit_claim_envelope::{compute_contract_set_cid, mint_contract, Authoring, MintContractArgs, contract_cid};
-use provekit_proof_envelope::{build_proof_envelope, ProofEnvelopeInput, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
+use provekit_claim_envelope::{
+    compute_contract_set_cid, contract_cid, mint_contract, Authoring, MintContractArgs,
+};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed,
+    ProofEnvelopeInput,
+};
 
 use crate::project_config::{read_project_config, read_user_config};
 use crate::OutputFlags;
@@ -68,7 +73,6 @@ const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 /// Pinned `declaredAt` for self-contracts attestations minted under the
 /// unified pipeline. Matches the v1.6.0 catalog declared_at for consistency.
 const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
-
 
 /// Canonical mapping from `--kit=<name>` to (project_subdir, lift_surface, lang_key).
 ///
@@ -94,31 +98,34 @@ const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 /// self-contracts lifter (PR #180 for go, PR #183 for rust).
 pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     // (kit_alias, project_subdir, lift_surface,           lang_key)
-    ("rust",       "rust",        "rust-self-contracts",  "rust"),
-    ("go",         "go",          "go-self-contracts",    "go"),
-    ("cpp",        "cpp",         "cpp-self-contracts",    "cpp"),
-    ("ts",         "typescript",  "typescript-self-contracts", "ts"),
-    ("csharp",     "csharp",      "csharp",               "csharp"),
-    ("swift",      "swift",       "swift-self-contracts", "swift"),
-    ("java",       "java",        "java-self-contracts",  "java"),
-    ("python",     "python",      "python-self-contracts", "python"),
-    ("ruby",       "ruby",        "ruby-self-contracts",  "ruby"),
-    ("zig",        "zig",         "zig-self-contracts",   "zig"),
-    ("c",          "c",           "c-self-contracts",     "c"),
-    ("php",        "php",         "php-self-contracts",   "php"),
+    ("rust", "rust", "rust-self-contracts", "rust"),
+    ("go", "go", "go-self-contracts", "go"),
+    ("cpp", "cpp", "cpp-self-contracts", "cpp"),
+    ("ts", "typescript", "typescript-self-contracts", "ts"),
+    ("csharp", "csharp", "csharp", "csharp"),
+    ("swift", "swift", "swift-self-contracts", "swift"),
+    ("java", "java", "java-self-contracts", "java"),
+    ("python", "python", "python-self-contracts", "python"),
+    ("ruby", "ruby", "ruby-self-contracts", "ruby"),
+    ("zig", "zig", "zig-self-contracts", "zig"),
+    ("c", "c", "c-self-contracts", "c"),
+    ("php", "php", "php-self-contracts", "php"),
 ];
 
 /// Resolve `--kit=<name>` to the canonical project path, lift surface, and lang key.
 /// Returns `(project_path, surface, lang_key)` relative to the CWD at
 /// which `provekit` is invoked (expected to be repo root).
 pub(crate) fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
-    KIT_TABLE.iter().find(|(alias, _, _, _)| *alias == kit).map(|(_, subdir, surface, lang)| {
-        (
-            PathBuf::from("implementations").join(subdir),
-            surface.to_string(),
-            lang.to_string(),
-        )
-    })
+    KIT_TABLE
+        .iter()
+        .find(|(alias, _, _, _)| *alias == kit)
+        .map(|(_, subdir, surface, lang)| {
+            (
+                PathBuf::from("implementations").join(subdir),
+                surface.to_string(),
+                lang.to_string(),
+            )
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -134,8 +141,8 @@ struct PluginManifest {
 }
 
 fn parse_manifest(path: &Path) -> Result<PluginManifest, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut m = PluginManifest::default();
     for line in text.lines() {
         let line = match line.find('#') {
@@ -336,9 +343,10 @@ fn dispatch(
     let _ = child.wait();
 
     // Process response: shape `proof-envelope` or `ir-document`
-    let kind = lift_resp.get("kind").and_then(|v| v.as_str()).ok_or(
-        "lift response missing `kind` field",
-    )?;
+    let kind = lift_resp
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .ok_or("lift response missing `kind` field")?;
     match kind {
         "proof-envelope" => {
             let filename_cid = lift_resp
@@ -391,8 +399,7 @@ fn dispatch(
                 .and_then(|v| v.as_array())
                 .ok_or("ir-document response missing `ir` array")?;
 
-            let (bytes, filename_cid, contract_set_cid) =
-                mint_from_ir_document(ir, &project_root)?;
+            let (bytes, filename_cid, contract_set_cid) = mint_from_ir_document(ir, &project_root)?;
 
             std::fs::create_dir_all(out_dir)
                 .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
@@ -401,9 +408,7 @@ fn dispatch(
                 .map_err(|e| format!("write {}: {e}", out_path.display()))?;
 
             if !quiet {
-                let diags = lift_resp
-                    .get("diagnostics")
-                    .and_then(|v| v.as_array());
+                let diags = lift_resp.get("diagnostics").and_then(|v| v.as_array());
 
                 if let Some(diags) = diags {
                     for d in diags {
@@ -464,10 +469,7 @@ fn mint_from_ir_document(
     let produced_at = "2026-05-03T18:00:00Z".to_string();
 
     for decl in ir {
-        let kind = decl
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let kind = decl.get("kind").and_then(|v| v.as_str()).unwrap_or("");
         if kind != "contract" {
             continue;
         }
@@ -510,8 +512,7 @@ fn mint_from_ir_document(
         let ccid = contract_cid(&args);
         content_cids.push(ccid);
 
-        let m = mint_contract(&args)
-            .map_err(|e| format!("mint contract: {e}"))?;
+        let m = mint_contract(&args).map_err(|e| format!("mint contract: {e}"))?;
 
         members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
     }
@@ -584,11 +585,7 @@ fn json_to_cvalue(j: &Value) -> Arc<CValue> {
 /// When `bundle_cid` is empty (lifter binary not found), the attestation
 /// records `cid: ""` — callers can detect the empty-lifter case via this
 /// field. The `contractSetCid` is still valid (it's the empty-set CID).
-fn build_signed_attestation(
-    lang: &str,
-    bundle_cid: &str,
-    contract_set_cid: &str,
-) -> Value {
+fn build_signed_attestation(lang: &str, bundle_cid: &str, contract_set_cid: &str) -> Value {
     let signer_pubkey = ed25519_pubkey_string(&FOUNDATION_V0_SEED);
 
     // Build the seven-field message body (no `signature`).
@@ -597,11 +594,20 @@ fn build_signed_attestation(
     // byte-identical to what sign-self-contracts produces.
     let entries: Vec<(String, Arc<CValue>)> = vec![
         ("schemaVersion".to_string(), CValue::string("1".to_string())),
-        ("kind".to_string(), CValue::string("self-contracts-attestation".to_string())),
+        (
+            "kind".to_string(),
+            CValue::string("self-contracts-attestation".to_string()),
+        ),
         ("lang".to_string(), CValue::string(lang.to_string())),
         ("cid".to_string(), CValue::string(bundle_cid.to_string())),
-        ("contractSetCid".to_string(), CValue::string(contract_set_cid.to_string())),
-        ("declaredAt".to_string(), CValue::string(SELF_CONTRACTS_DECLARED_AT.to_string())),
+        (
+            "contractSetCid".to_string(),
+            CValue::string(contract_set_cid.to_string()),
+        ),
+        (
+            "declaredAt".to_string(),
+            CValue::string(SELF_CONTRACTS_DECLARED_AT.to_string()),
+        ),
         ("signer".to_string(), CValue::string(signer_pubkey.clone())),
     ];
     let msg_obj = CValue::object(entries);
@@ -652,9 +658,7 @@ fn write_attestation(
 /// searching upward from `start`.
 fn find_attestation_dir(start: &Path) -> Result<PathBuf, String> {
     // Walk up through the directory tree looking for the attestation dir.
-    let abs = start
-        .canonicalize()
-        .unwrap_or_else(|_| start.to_path_buf());
+    let abs = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
     let mut cur = abs.as_path();
     loop {
         let candidate = cur.join(".provekit").join("self-contracts-attestations");
@@ -720,7 +724,11 @@ pub fn run(args: MintArgs) -> u8 {
     };
 
     if !project_root.exists() {
-        eprintln!("{}: project not found: {}", "error".red().bold(), project_root.display());
+        eprintln!(
+            "{}: project not found: {}",
+            "error".red().bold(),
+            project_root.display()
+        );
         return EXIT_USER_ERROR;
     }
 
@@ -767,7 +775,9 @@ pub fn run(args: MintArgs) -> u8 {
                     println!("  proof bytes:        {}", result.bytes_written);
                     println!(
                         "  .proof file:        {}",
-                        out_dir.join(format!("{}.proof", result.filename_cid)).display()
+                        out_dir
+                            .join(format!("{}.proof", result.filename_cid))
+                            .display()
                     );
                 } else {
                     println!("  (no .proof written — lifter binary not found)");
@@ -837,7 +847,9 @@ mod tests {
 
     #[test]
     fn resolve_kit_all_11_kits() {
-        let kits = ["rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c"];
+        let kits = [
+            "rust", "go", "cpp", "ts", "csharp", "swift", "java", "python", "ruby", "zig", "c",
+        ];
         for kit in kits {
             assert!(resolve_kit(kit).is_some(), "kit `{kit}` must resolve");
         }

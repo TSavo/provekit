@@ -33,14 +33,10 @@ use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
 use provekit_self_contracts::lift_plugin_protocol::{
-    verify_c1_initialize_protocol_version_match,
-    verify_c2_initialize_capabilities_populated,
-    verify_c3_lift_request_well_formed,
-    verify_c4_surface_in_capabilities,
-    verify_c5_response_kind_in_set,
-    verify_c6_ir_document_array,
-    verify_c7_diagnostics_field_is_array,
-    verify_c8_call_edge_stream_present,
+    verify_c1_initialize_protocol_version_match, verify_c2_initialize_capabilities_populated,
+    verify_c3_lift_request_well_formed, verify_c4_surface_in_capabilities,
+    verify_c5_response_kind_in_set, verify_c6_ir_document_array,
+    verify_c7_diagnostics_field_is_array, verify_c8_call_edge_stream_present,
 };
 use provekit_verifier::{Runner, RunnerConfig};
 
@@ -78,8 +74,8 @@ struct PluginManifest {
 }
 
 fn parse_manifest(path: &std::path::Path) -> Result<PluginManifest, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut m = PluginManifest::default();
     for line in text.lines() {
         let line = match line.find('#') {
@@ -170,11 +166,8 @@ fn read_full_response(reader: &mut impl BufRead, expected_id: i64) -> Result<Val
             "plugin closed stdout before responding to id={expected_id}"
         ));
     }
-    let v: Value = serde_json::from_str(line.trim()).map_err(|e| {
-        format!(
-            "parse JSON-RPC response id={expected_id}: {e}\n  raw: {line}"
-        )
-    })?;
+    let v: Value = serde_json::from_str(line.trim())
+        .map_err(|e| format!("parse JSON-RPC response id={expected_id}: {e}\n  raw: {line}"))?;
     if v.get("id").and_then(|id| id.as_i64()) != Some(expected_id) {
         return Err(format!(
             "response id mismatch: expected {expected_id}, got {:?}",
@@ -670,7 +663,10 @@ mod tests {
         let results = run_verifiers(&rpc);
         let c2 = &results[1];
         assert_eq!(c2.name, "C2: initialize capabilities_populated");
-        assert!(c2.result.is_err(), "C2 should fail on empty authoring_surfaces");
+        assert!(
+            c2.result.is_err(),
+            "C2 should fail on empty authoring_surfaces"
+        );
     }
 
     #[test]
@@ -699,7 +695,10 @@ mod tests {
         let results = run_verifiers(&rpc);
         let c4 = &results[3];
         assert_eq!(c4.name, "C4: lift surface_in_capabilities");
-        assert!(c4.result.is_err(), "C4 should fail when surface not in capabilities");
+        assert!(
+            c4.result.is_err(),
+            "C4 should fail when surface not in capabilities"
+        );
     }
 
     #[test]
@@ -751,7 +750,10 @@ mod tests {
         let results = run_verifiers(&rpc);
         let c7 = &results[6];
         assert_eq!(c7.name, "C7: diagnostics field_is_array");
-        assert!(c7.result.is_err(), "C7 should fail when diagnostics is not an array");
+        assert!(
+            c7.result.is_err(),
+            "C7 should fail when diagnostics is not an array"
+        );
     }
 
     #[test]
@@ -773,7 +775,10 @@ mod tests {
         let results = run_verifiers(&rpc);
         let c8 = &results[7];
         assert_eq!(c8.name, "C8: call_edge_stream_present");
-        assert!(c8.result.is_err(), "C8 should fail when proof-envelope has no call_edges");
+        assert!(
+            c8.result.is_err(),
+            "C8 should fail when proof-envelope has no call_edges"
+        );
     }
 
     #[test]
@@ -881,11 +886,13 @@ mod tests {
             .join("implementations/swift/.provekit/lift/swift-self-contracts/manifest.toml");
         if !manifest.exists() {
             // Be lenient: skip if running outside a full checkout.
-            eprintln!("skipping: swift manifest not present at {}", manifest.display());
+            eprintln!(
+                "skipping: swift manifest not present at {}",
+                manifest.display()
+            );
             return;
         }
-        let parsed = parse_manifest(&manifest)
-            .expect("swift-self-contracts manifest must parse");
+        let parsed = parse_manifest(&manifest).expect("swift-self-contracts manifest must parse");
         assert!(
             !parsed.command.is_empty(),
             "swift manifest must declare a command"
@@ -913,7 +920,10 @@ mod tests {
         });
         let results = run_verifiers(&rpc);
         let all_pass = results.iter().all(|r| r.result.is_ok());
-        assert!(!all_pass, "overall gate must fail when one contract is violated");
+        assert!(
+            !all_pass,
+            "overall gate must fail when one contract is violated"
+        );
         let failures: Vec<&str> = results
             .iter()
             .filter(|r| r.result.is_err())

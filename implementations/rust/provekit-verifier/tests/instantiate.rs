@@ -43,28 +43,35 @@ fn resolved(formula: serde_json::Value) -> ResolvedProperty {
 fn substitutes_var_for_bound_name_in_atomic() {
     let arg = Some(json!({"kind": "var", "name": "x"}));
     let r = instantiate::run(&resolved(forall_n_gt_0()), &arg).expect("instantiate");
-    let body = r.ir_formula.pointer("/body").expect("ir_formula is forall with body");
+    let body = r
+        .ir_formula
+        .pointer("/body")
+        .expect("ir_formula is forall with body");
     let args = body.pointer("/args").unwrap();
-    assert_eq!(
-        args[0],
-        json!({"kind": "var", "name": "x"})
-    );
+    assert_eq!(args[0], json!({"kind": "var", "name": "x"}));
 }
 
 #[test]
 fn body_kind_preserved_after_substitution() {
     let arg = Some(json!({"kind": "var", "name": "x"}));
     let r = instantiate::run(&resolved(forall_n_gt_0()), &arg).expect("instantiate");
-    let body = r.ir_formula.pointer("/body").expect("ir_formula is forall with body");
+    let body = r
+        .ir_formula
+        .pointer("/body")
+        .expect("ir_formula is forall with body");
     assert_eq!(body.get("kind").unwrap(), "atomic");
     assert_eq!(body.get("name").unwrap(), ">");
 }
 
 #[test]
 fn substitutes_const_term() {
-    let arg = Some(json!({"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}));
+    let arg =
+        Some(json!({"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}));
     let r = instantiate::run(&resolved(forall_n_gt_0()), &arg).expect("instantiate");
-    let body = r.ir_formula.pointer("/body").expect("ir_formula is forall with body");
+    let body = r
+        .ir_formula
+        .pointer("/body")
+        .expect("ir_formula is forall with body");
     let args = body.pointer("/args").unwrap();
     assert_eq!(args[0].get("value").unwrap(), 42);
 }
@@ -77,7 +84,10 @@ fn substitutes_ctor_term() {
         "args": [{"kind": "var", "name": "s"}]
     }));
     let r = instantiate::run(&resolved(forall_n_gt_0()), &arg).expect("instantiate");
-    let body = r.ir_formula.pointer("/body").expect("ir_formula is forall with body");
+    let body = r
+        .ir_formula
+        .pointer("/body")
+        .expect("ir_formula is forall with body");
     let args = body.pointer("/args").unwrap();
     assert_eq!(args[0].get("kind").unwrap(), "ctor");
     assert_eq!(args[0].get("name").unwrap(), "parseInt");
@@ -105,7 +115,10 @@ fn substitutes_in_connective_operands() {
     });
     let arg = Some(json!({"kind": "var", "name": "x"}));
     let r = instantiate::run(&resolved(formula), &arg).expect("instantiate");
-    let body = r.ir_formula.pointer("/body").expect("ir_formula is forall with body");
+    let body = r
+        .ir_formula
+        .pointer("/body")
+        .expect("ir_formula is forall with body");
     let ops = body.pointer("/operands").unwrap();
     // Both atomics should have arg[0] = {"kind":"var","name":"x"}
     assert_eq!(ops[0].pointer("/args/0/name").unwrap(), "x");
@@ -125,9 +138,13 @@ fn substitution_propagates_through_ctor_args() {
             ]
         }
     });
-    let arg = Some(json!({"kind": "const", "value": 7, "sort": {"kind": "primitive", "name": "Int"}}));
+    let arg =
+        Some(json!({"kind": "const", "value": 7, "sort": {"kind": "primitive", "name": "Int"}}));
     let r = instantiate::run(&resolved(formula), &arg).expect("instantiate");
-    let body = r.ir_formula.pointer("/body").expect("ir_formula is forall with body");
+    let body = r
+        .ir_formula
+        .pointer("/body")
+        .expect("ir_formula is forall with body");
     // Inside the ctor's args, n should be replaced.
     let ctor_arg0 = body.pointer("/args/0/args/0").unwrap();
     assert_eq!(ctor_arg0.get("value").unwrap(), 7);
@@ -159,12 +176,16 @@ fn inner_quantifier_with_same_name_blocks_substitution() {
             }
         }
     });
-    let arg = Some(json!({"kind": "const", "value": 99, "sort": {"kind": "primitive", "name": "Int"}}));
+    let arg =
+        Some(json!({"kind": "const", "value": 99, "sort": {"kind": "primitive", "name": "Int"}}));
     let r = instantiate::run(&resolved(formula), &arg).expect("instantiate");
     // Expected: the outer forall's body is `forall n. n > 0` and we
     // do NOT descend into shadowed inner-n. So inner-body's n stays a
     // var, not 99.
-    let outer_body = r.ir_formula.pointer("/body").expect("ir_formula is forall with body");
+    let outer_body = r
+        .ir_formula
+        .pointer("/body")
+        .expect("ir_formula is forall with body");
     let inner_body = outer_body.pointer("/body").unwrap();
     let n_in_inner = inner_body.pointer("/args/0").unwrap();
     assert_eq!(n_in_inner.get("kind").unwrap(), "var");
@@ -190,9 +211,13 @@ fn inner_quantifier_with_different_name_allows_substitution() {
             }
         }
     });
-    let arg = Some(json!({"kind": "const", "value": 5, "sort": {"kind": "primitive", "name": "Int"}}));
+    let arg =
+        Some(json!({"kind": "const", "value": 5, "sort": {"kind": "primitive", "name": "Int"}}));
     let r = instantiate::run(&resolved(formula), &arg).expect("instantiate");
-    let outer_body = r.ir_formula.pointer("/body").expect("ir_formula is forall with body");
+    let outer_body = r
+        .ir_formula
+        .pointer("/body")
+        .expect("ir_formula is forall with body");
     let inner_body = outer_body.pointer("/body").unwrap();
     let arg_n = inner_body.pointer("/args/0").unwrap();
     let arg_m = inner_body.pointer("/args/1").unwrap();

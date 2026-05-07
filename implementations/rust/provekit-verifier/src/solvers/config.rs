@@ -116,8 +116,8 @@ impl SolversConfig {
         if !path.exists() {
             return Ok(None);
         }
-        let body = std::fs::read_to_string(&path)
-            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let body =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
         Self::from_toml(&body).map(Some)
     }
 

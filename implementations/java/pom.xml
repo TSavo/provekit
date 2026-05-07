@@ -30,6 +30,7 @@
         <module>provekit-lift-java-jackson</module>
         <module>provekit-lift-java-jpa</module>
         <module>provekit-lift-java-hibernate</module>
+        <module>provekit-realize-java-core</module>
         <module>provekit-lift-java-integration-tests</module>
     </modules>
 

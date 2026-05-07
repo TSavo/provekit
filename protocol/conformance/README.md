@@ -1,7 +1,14 @@
 # Protocol Conformance Test Vectors
 
-Placeholder. Vectors land here as task #37 fills it in. Each vector
-is a small `.proof` file plus an oracle (expected verdict). Every
-reference implementation runs the same vectors via its own
-Bazel test target; agreement across implementations is the protocol's
-operational sanity check.
+This tree carries protocol-level vector corpora shared by every
+implementation.
+
+- `proof-protocol/`: `.proof` bundle conformance fixtures and expected
+  verdicts.
+- `cicp/`: Content-Addressed CI Protocol body-claim vectors. Each
+  language library should derive the pinned CIDs for passing vectors
+  and fail closed on refusal vectors.
+
+The Rust implementation is the reference oracle. Other language kits may
+use native data types, but the conformance boundary is the canonical CID
+over the vector body.

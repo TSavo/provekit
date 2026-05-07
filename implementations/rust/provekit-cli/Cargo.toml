@@ -21,6 +21,7 @@ provekit-agent = { path = "../provekit-agent" }
 provekit-lift = { path = "../provekit-lift" }
 provekit-linker = { path = "../provekit-linker" }
 provekit-self-contracts = { path = "../provekit-self-contracts" }
+libprovekit = { path = "../libprovekit" }
 
 # External.
 clap = { version = "4", features = ["derive"] }

@@ -9,9 +9,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use owo_colors::OwoColorize;
-use provekit_agent::{
-    run_lift_loop, LiftLoopOptions, ProposeContext, ProvekitAgent, StubAgent,
-};
+use provekit_agent::{run_lift_loop, LiftLoopOptions, ProposeContext, ProvekitAgent, StubAgent};
 use serde_json::json;
 
 use crate::project_config::{read_project_config, read_user_config};
@@ -159,7 +157,8 @@ pub fn run_agent(args: AgentLiftArgs) -> u8 {
         });
         println!("{}", serde_json::to_string_pretty(&j).unwrap_or_default());
     } else if !args.out.quiet {
-        println!("lift: minted {}, rejected {}, agent calls {}",
+        println!(
+            "lift: minted {}, rejected {}, agent calls {}",
             outcome.minted.len(),
             outcome.rejected.len(),
             outcome.agent_calls,

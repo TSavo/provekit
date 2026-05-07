@@ -88,6 +88,16 @@ pub const V1_5_0_DECLARED_AT: &str = "2026-05-05T12:00:00Z";
 /// new catalog CID under the same foundation key.
 pub const V1_6_0_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 
+/// Pinned `declaredAt` for v1.6.1. Patch bump: catalogs the PEP draft
+/// extension protocol without changing core verifier behavior or adding
+/// cross-kit semantic obligations.
+pub const V1_6_1_DECLARED_AT: &str = "2026-05-07T00:00:00Z";
+
+/// Pinned `declaredAt` for v1.6.2. Patch bump: catalogs the CICP draft
+/// extension protocol without changing core verifier behavior or adding
+/// cross-kit semantic obligations.
+pub const V1_6_2_DECLARED_AT: &str = "2026-05-07T01:00:00Z";
+
 /// Catalog file path, resolved relative to this crate's manifest dir.
 pub fn catalog_path() -> PathBuf {
     repo_root().join("protocol/specs/2026-04-30-protocol-catalog.json")

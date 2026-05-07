@@ -121,11 +121,7 @@ fn bundled_manifests() -> Vec<AgentManifest> {
             version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: "provekit-agent/1".into(),
             binary: "<bundled>".into(),
-            capabilities: vec![
-                "lift".into(),
-                "must".into(),
-                "fix".into(),
-            ],
+            capabilities: vec!["lift".into(), "must".into(), "fix".into()],
             source: "bundled".into(),
         },
         AgentManifest {
@@ -133,11 +129,7 @@ fn bundled_manifests() -> Vec<AgentManifest> {
             version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: "provekit-agent/1".into(),
             binary: "claude".into(),
-            capabilities: vec![
-                "lift".into(),
-                "must".into(),
-                "fix".into(),
-            ],
+            capabilities: vec!["lift".into(), "must".into(), "fix".into()],
             source: "bundled (skeleton; live mode behind `live` feature)".into(),
         },
         AgentManifest {
@@ -145,11 +137,7 @@ fn bundled_manifests() -> Vec<AgentManifest> {
             version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: "provekit-agent/1".into(),
             binary: "<HTTPS chat completions>".into(),
-            capabilities: vec![
-                "lift".into(),
-                "must".into(),
-                "fix".into(),
-            ],
+            capabilities: vec!["lift".into(), "must".into(), "fix".into()],
             source: "bundled (skeleton; live mode behind `live` feature)".into(),
         },
     ]
@@ -255,8 +243,7 @@ mod tests {
         binary = "/usr/local/bin/echo_agent.py"
         capabilities = ["must", "lift"]
         "#;
-        let m = parse_manifest(raw, std::path::Path::new("/tmp/manifest.toml"))
-            .expect("parsed");
+        let m = parse_manifest(raw, std::path::Path::new("/tmp/manifest.toml")).expect("parsed");
         assert_eq!(m.name, "echo-agent");
         assert_eq!(m.version, "0.1");
         assert_eq!(m.protocol_version, "provekit-agent/1");

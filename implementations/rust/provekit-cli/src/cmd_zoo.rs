@@ -113,8 +113,38 @@ struct ExposureFiles {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Dropper {
     available: bool,
+    #[serde(default)]
+    surface: Option<String>,
+    #[serde(default)]
+    source: Option<PathBuf>,
+    #[serde(default)]
+    target_symbol: Option<String>,
+    #[serde(default)]
+    proof_var: Option<String>,
+    #[serde(default)]
+    realizer_rpc: Option<CommandSpec>,
+    #[serde(default)]
+    output_source: Option<PathBuf>,
+    #[serde(default)]
+    proof_plan_file: Option<PathBuf>,
+    #[serde(default)]
+    language_dropper_file: Option<PathBuf>,
+    #[serde(default)]
+    closure_proof_ir_file: Option<PathBuf>,
+    #[serde(default)]
+    fix_receipt_file: Option<PathBuf>,
+    #[serde(default)]
+    verify_output_file: Option<PathBuf>,
+}
+
+#[derive(Debug)]
+struct VerifiedDropperOutputCids {
+    transformed_artifact_cid: String,
+    post_lift_document_cid: String,
+    closure_witness_cid: String,
 }
 
 #[derive(Debug)]
@@ -294,6 +324,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
 
     let sat_witness = read_json(specimen_dir.join(&manifest.exposure.sat_witness_file))
         .map_err(ZooError::setup)?;
+    let dropper_report = verify_dropper(specimen_dir, &manifest).map_err(ZooError::verify)?;
     if !quiet {
         println!("zoo: {} hostCheck PASS", manifest.id);
         for (id, cid) in &cids {
@@ -306,6 +337,12 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
             "zoo: expected verify failure {} PASS",
             manifest.predicates.missing_edge
         );
+        if dropper_report.is_some() {
+            println!(
+                "zoo: dropper closed {} PASS",
+                manifest.predicates.missing_edge
+            );
+        }
     }
 
     Ok(json!({
@@ -322,6 +359,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
             "provekitVerify": manifest.expectations.provekit_verify,
         },
         "dropperAvailable": manifest.dropper.available,
+        "dropper": dropper_report,
         "wildSightings": manifest.wild_sightings,
         "satWitness": sat_witness,
     }))
@@ -395,6 +433,70 @@ fn validate_manifest_shape(manifest: &SpecimenManifest) -> Vec<String> {
         }
     }
 
+    if manifest.dropper.available {
+        if manifest
+            .dropper
+            .surface
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            errors.push("dropper.surface is required when dropper.available is true".into());
+        }
+        if manifest.dropper.source.is_none() {
+            errors.push("dropper.source is required when dropper.available is true".into());
+        }
+        if manifest
+            .dropper
+            .target_symbol
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            errors.push("dropper.targetSymbol is required when dropper.available is true".into());
+        }
+        if manifest
+            .dropper
+            .proof_var
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            errors.push("dropper.proofVar is required when dropper.available is true".into());
+        }
+        match &manifest.dropper.realizer_rpc {
+            Some(command) if command.argv.is_empty() => errors
+                .push("dropper.realizerRpc.argv is required when dropper.available is true".into()),
+            None => {
+                errors.push("dropper.realizerRpc is required when dropper.available is true".into())
+            }
+            Some(_) => {}
+        }
+        if manifest.dropper.output_source.is_none() {
+            errors.push("dropper.outputSource is required when dropper.available is true".into());
+        }
+        if manifest.dropper.language_dropper_file.is_some()
+            && manifest.dropper.proof_plan_file.is_none()
+        {
+            errors.push(
+                "dropper.proofPlanFile is required when dropper.languageDropperFile is set".into(),
+            );
+        }
+        if manifest.dropper.closure_proof_ir_file.is_none() {
+            errors.push(
+                "dropper.closureProofIrFile is required when dropper.available is true".into(),
+            );
+        }
+        if manifest.dropper.fix_receipt_file.is_none()
+            && manifest.dropper.verify_output_file.is_none()
+        {
+            errors.push("dropper.fixReceiptFile is required when dropper.available is true".into());
+        }
+    }
+
     errors
 }
 
@@ -452,6 +554,49 @@ fn validate_paths(specimen_dir: &Path, manifest: &SpecimenManifest) -> Vec<Strin
             let full_path = specimen_dir.join(path);
             if !full_path.exists() {
                 errors.push(format!("missing {}", full_path.display()));
+            }
+        }
+    }
+
+    if manifest.dropper.available {
+        for path in [
+            manifest.dropper.source.as_ref(),
+            manifest.dropper.output_source.as_ref(),
+            manifest.dropper.proof_plan_file.as_ref(),
+            manifest.dropper.language_dropper_file.as_ref(),
+            manifest.dropper.closure_proof_ir_file.as_ref(),
+            manifest
+                .dropper
+                .fix_receipt_file
+                .as_ref()
+                .or(manifest.dropper.verify_output_file.as_ref()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if manifest_path_escapes_specimen_root(path) {
+                errors.push(format!(
+                    "invalid path `{}` escapes specimen root",
+                    path.display()
+                ));
+                continue;
+            }
+            let full_path = specimen_dir.join(path);
+            if !full_path.exists() {
+                errors.push(format!("missing {}", full_path.display()));
+            }
+        }
+        if let Some(command) = &manifest.dropper.realizer_rpc {
+            if manifest_path_escapes_specimen_root(&command.cwd) {
+                errors.push(format!(
+                    "invalid path `{}` escapes specimen root",
+                    command.cwd.display()
+                ));
+            } else {
+                let full_path = specimen_dir.join(&command.cwd);
+                if !full_path.exists() {
+                    errors.push(format!("missing {}", full_path.display()));
+                }
             }
         }
     }
@@ -598,6 +743,543 @@ fn invoke_lift_rpc_exchange(
     }
 }
 
+fn verify_dropper(
+    specimen_dir: &Path,
+    manifest: &SpecimenManifest,
+) -> Result<Option<Value>, String> {
+    if !manifest.dropper.available {
+        return Ok(None);
+    }
+
+    let dropper = &manifest.dropper;
+    let source_path = required_dropper_path(&dropper.source, "dropper.source")?;
+    let output_source_path = required_dropper_path(&dropper.output_source, "dropper.outputSource")?;
+    let closure_ir_path =
+        required_dropper_path(&dropper.closure_proof_ir_file, "dropper.closureProofIrFile")?;
+    let fix_receipt_path = dropper
+        .fix_receipt_file
+        .as_ref()
+        .or(dropper.verify_output_file.as_ref())
+        .map(PathBuf::as_path)
+        .ok_or_else(|| "dropper.fixReceiptFile is required".to_string())?;
+    let surface = required_dropper_str(&dropper.surface, "dropper.surface")?;
+    let target_symbol = required_dropper_str(&dropper.target_symbol, "dropper.targetSymbol")?;
+    let proof_var = required_dropper_str(&dropper.proof_var, "dropper.proofVar")?;
+    let realizer_rpc = dropper
+        .realizer_rpc
+        .as_ref()
+        .ok_or_else(|| "dropper.realizerRpc is required".to_string())?;
+
+    let source_abs = specimen_dir.join(source_path);
+    let source = std::fs::read_to_string(&source_abs)
+        .map_err(|e| format!("read {}: {e}", source_abs.display()))?;
+    let source_artifact_cid = provekit_canonicalizer::blake3_512_of(source.as_bytes());
+
+    let output = invoke_dropper_rpc(
+        specimen_dir,
+        realizer_rpc,
+        surface,
+        target_symbol,
+        proof_var,
+        &source,
+        &manifest.predicates,
+    )?;
+
+    if output.get("status").and_then(Value::as_str) != Some("closed") {
+        return Err(format!("dropper output was not closed: {output}"));
+    }
+
+    let modified_source = output
+        .get("modifiedSource")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "dropper output missing modifiedSource".to_string())?;
+    let expected_source_abs = specimen_dir.join(output_source_path);
+    let expected_source = std::fs::read_to_string(&expected_source_abs)
+        .map_err(|e| format!("read {}: {e}", expected_source_abs.display()))?;
+    if modified_source != expected_source {
+        return Err(format!(
+            "dropper modified source mismatch against {}",
+            expected_source_abs.display()
+        ));
+    }
+
+    let post_lift_document = output
+        .get("postLift")
+        .ok_or_else(|| "dropper output missing postLift".to_string())?;
+    let post_lift_ir = post_lift_document
+        .get("ir")
+        .ok_or_else(|| "dropper output missing postLift.ir".to_string())?;
+    let expected_ir = read_json(specimen_dir.join(closure_ir_path))?;
+    let post_lift_cid = proof_ir_cid(post_lift_ir)?;
+    let expected_ir_cid = proof_ir_cid(&expected_ir)?;
+    if post_lift_cid != expected_ir_cid {
+        return Err(format!(
+            "dropper closure ProofIR CID mismatch: lifted {post_lift_cid}, expected {expected_ir_cid}"
+        ));
+    }
+    let output_cids = verify_dropper_output_cids(
+        &output,
+        modified_source,
+        post_lift_document,
+        &manifest.predicates,
+    )?;
+    let transformed_artifact_cid = output_cids.transformed_artifact_cid;
+    let post_lift_document_cid = output_cids.post_lift_document_cid;
+    let closure_witness_cid = output_cids.closure_witness_cid;
+
+    let fix_receipt = read_json(specimen_dir.join(fix_receipt_path))?;
+    if fix_receipt.get("kind").and_then(Value::as_str) != Some("FixReceipt") {
+        return Err("dropper fixReceiptFile must record kind: FixReceipt".into());
+    }
+    if fix_receipt.get("schemaVersion").and_then(Value::as_str) != Some("1") {
+        return Err("dropper fixReceiptFile must record schemaVersion: 1".into());
+    }
+    if fix_receipt.get("status").and_then(Value::as_str) != Some("closed") {
+        return Err("dropper fixReceiptFile must record status: closed".into());
+    }
+    if fix_receipt.get("mode").and_then(Value::as_str) != Some("transform") {
+        return Err("dropper fixReceiptFile must record mode: transform".into());
+    }
+    if fix_receipt.get("missingEdge").and_then(Value::as_str)
+        != Some(manifest.predicates.missing_edge.as_str())
+    {
+        return Err("dropper fixReceiptFile missingEdge does not match manifest".into());
+    }
+    require_receipt_field(&fix_receipt, "surface", surface)?;
+    require_receipt_field(&fix_receipt, "targetSymbol", target_symbol)?;
+    require_receipt_field(&fix_receipt, "proofVar", proof_var)?;
+    require_receipt_field(&fix_receipt, "sourceArtifactCid", &source_artifact_cid)?;
+    require_receipt_field(
+        &fix_receipt,
+        "transformedArtifactCid",
+        &transformed_artifact_cid,
+    )?;
+    require_receipt_field(&fix_receipt, "postLiftCid", &post_lift_document_cid)?;
+    require_receipt_field(&fix_receipt, "closureWitnessCid", &closure_witness_cid)?;
+    require_receipt_field(&fix_receipt, "closureProofIrCid", &post_lift_cid)?;
+
+    let proof_plan_report = match &dropper.proof_plan_file {
+        Some(path) => Some(verify_proof_plan(
+            specimen_dir,
+            path,
+            &manifest.predicates,
+            &fix_receipt,
+        )?),
+        None => None,
+    };
+    let proof_plan_cid = proof_plan_report
+        .as_ref()
+        .and_then(|report| report.get("cid"))
+        .and_then(Value::as_str);
+
+    let language_dropper_report = match &dropper.language_dropper_file {
+        Some(path) => Some(verify_language_dropper_projection(
+            specimen_dir,
+            path,
+            proof_plan_cid,
+            surface,
+            target_symbol,
+            proof_var,
+            source_path,
+            output_source_path,
+            closure_ir_path,
+            &fix_receipt,
+        )?),
+        None => None,
+    };
+
+    Ok(Some(json!({
+        "status": "closed",
+        "surface": surface,
+        "source": source_path,
+        "targetSymbol": target_symbol,
+        "proofVar": proof_var,
+        "sourceArtifactCid": source_artifact_cid,
+        "transformedArtifactCid": transformed_artifact_cid,
+        "postLiftCid": post_lift_document_cid,
+        "closureWitnessCid": closure_witness_cid,
+        "closureProofIrCid": post_lift_cid,
+        "proofPlan": proof_plan_report,
+        "languageDropper": language_dropper_report,
+        "fixReceipt": fix_receipt,
+    })))
+}
+
+fn verify_proof_plan(
+    specimen_dir: &Path,
+    proof_plan_path: &Path,
+    predicates: &Predicates,
+    fix_receipt: &Value,
+) -> Result<Value, String> {
+    let path = specimen_dir.join(proof_plan_path);
+    let proof_plan = read_json(path)?;
+    if proof_plan.get("kind").and_then(Value::as_str) != Some("ProofPlan") {
+        return Err("dropper proofPlanFile must record kind: ProofPlan".into());
+    }
+    if proof_plan.get("schemaVersion").and_then(Value::as_str) != Some("1") {
+        return Err("dropper proofPlanFile must record schemaVersion: 1".into());
+    }
+    require_json_pointer(
+        &proof_plan,
+        "/obligation/missingEdge",
+        &predicates.missing_edge,
+        "dropper proofPlanFile",
+    )?;
+    require_json_pointer(
+        &proof_plan,
+        "/obligation/sourcePredicate",
+        &predicates.boundary,
+        "dropper proofPlanFile",
+    )?;
+    require_json_pointer(
+        &proof_plan,
+        "/obligation/targetPredicate",
+        &predicates.sink,
+        "dropper proofPlanFile",
+    )?;
+
+    let policy_mode = json_pointer_str(&proof_plan, "/policy/mode")
+        .ok_or_else(|| "dropper proofPlanFile missing /policy/mode".to_string())?;
+    if !matches!(
+        policy_mode,
+        "proof_required" | "proof_preferred" | "proof_optional"
+    ) {
+        return Err(format!(
+            "dropper proofPlanFile has unsupported policy mode `{policy_mode}`"
+        ));
+    }
+
+    let cid = canonical_json_cid(&proof_plan)?;
+    require_receipt_field(fix_receipt, "proofPlanCid", &cid)?;
+    require_receipt_field(fix_receipt, "proofPolicyMode", policy_mode)?;
+
+    Ok(json!({
+        "cid": cid,
+        "policyMode": policy_mode,
+        "violationCondition": json_pointer_str(&proof_plan, "/violationCondition/formula"),
+        "objective": json_pointer_str(&proof_plan, "/objective/formula"),
+    }))
+}
+
+fn verify_language_dropper_projection(
+    specimen_dir: &Path,
+    language_dropper_path: &Path,
+    proof_plan_cid: Option<&str>,
+    surface: &str,
+    target_symbol: &str,
+    proof_var: &str,
+    source_path: &Path,
+    output_source_path: &Path,
+    closure_ir_path: &Path,
+    fix_receipt: &Value,
+) -> Result<Value, String> {
+    let path = specimen_dir.join(language_dropper_path);
+    let projection = read_json(path)?;
+    if projection.get("kind").and_then(Value::as_str) != Some("LanguageDropperProjection") {
+        return Err(
+            "dropper languageDropperFile must record kind: LanguageDropperProjection".into(),
+        );
+    }
+    if projection.get("schemaVersion").and_then(Value::as_str) != Some("1") {
+        return Err("dropper languageDropperFile must record schemaVersion: 1".into());
+    }
+
+    let proof_plan_cid = proof_plan_cid
+        .ok_or_else(|| "language dropper projection requires a proof plan".to_string())?;
+    require_json_pointer(
+        &projection,
+        "/proofPlanCid",
+        proof_plan_cid,
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/surface",
+        surface,
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/targetSymbol",
+        target_symbol,
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/proofVar",
+        proof_var,
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/source",
+        &source_path.to_string_lossy(),
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/outputSource",
+        &output_source_path.to_string_lossy(),
+        "dropper languageDropperFile",
+    )?;
+    require_json_pointer(
+        &projection,
+        "/postLift/proofIrFile",
+        &closure_ir_path.to_string_lossy(),
+        "dropper languageDropperFile",
+    )?;
+
+    let cid = canonical_json_cid(&projection)?;
+    require_receipt_field(fix_receipt, "languageDropperCid", &cid)?;
+
+    Ok(json!({
+        "cid": cid,
+        "kit": json_pointer_str(&projection, "/kit"),
+        "surface": surface,
+        "operation": json_pointer_str(&projection, "/operation/kind"),
+        "proofPlanCid": proof_plan_cid,
+    }))
+}
+
+fn json_pointer_str<'a>(value: &'a Value, pointer: &str) -> Option<&'a str> {
+    value.pointer(pointer).and_then(Value::as_str)
+}
+
+fn require_json_pointer(
+    value: &Value,
+    pointer: &str,
+    expected: &str,
+    context: &str,
+) -> Result<(), String> {
+    let actual = json_pointer_str(value, pointer);
+    if actual != Some(expected) {
+        return Err(format!(
+            "{context} {pointer} mismatch: expected {expected}, got {:?}",
+            actual
+        ));
+    }
+    Ok(())
+}
+
+fn require_receipt_field(receipt: &Value, field: &str, expected: &str) -> Result<(), String> {
+    let actual = receipt.get(field).and_then(Value::as_str);
+    if actual != Some(expected) {
+        return Err(format!(
+            "dropper fixReceiptFile {field} mismatch: expected {expected}, got {:?}",
+            actual
+        ));
+    }
+    Ok(())
+}
+
+fn require_output_field(output: &Value, field: &str, expected: &str) -> Result<(), String> {
+    let actual = output.get(field).and_then(Value::as_str);
+    if actual != Some(expected) {
+        return Err(format!(
+            "dropper output {field} mismatch: expected recomputed {expected}, got {:?}",
+            actual
+        ));
+    }
+    Ok(())
+}
+
+fn verify_dropper_output_cids(
+    output: &Value,
+    modified_source: &str,
+    post_lift_document: &Value,
+    predicates: &Predicates,
+) -> Result<VerifiedDropperOutputCids, String> {
+    let transformed_artifact_cid =
+        provekit_canonicalizer::blake3_512_of(modified_source.as_bytes());
+    let post_lift_document_cid = json_document_cid(post_lift_document)?;
+    let gap_cid = provekit_canonicalizer::blake3_512_of(predicates.missing_edge.as_bytes());
+    let policy_cid = provekit_canonicalizer::blake3_512_of(b"bug-zoo-dropper-policy-v0");
+
+    require_output_field(output, "gapCid", &gap_cid)?;
+    require_output_field(output, "transformedArtifactCid", &transformed_artifact_cid)?;
+    require_output_field(output, "postLiftCid", &post_lift_document_cid)?;
+
+    let expected_closure_witness = closure_witness_body_value(
+        &gap_cid,
+        &policy_cid,
+        &post_lift_document_cid,
+        &predicates.boundary,
+        &predicates.sink,
+        &transformed_artifact_cid,
+    );
+    let closure_witness_document = output
+        .get("closureWitness")
+        .ok_or_else(|| "dropper output missing closureWitness".to_string())?;
+    if closure_witness_document != &expected_closure_witness {
+        return Err("dropper output closureWitness body mismatch".into());
+    }
+    let closure_witness_cid = json_document_cid(closure_witness_document)?;
+    require_output_field(output, "closureWitnessCid", &closure_witness_cid)?;
+
+    Ok(VerifiedDropperOutputCids {
+        transformed_artifact_cid,
+        post_lift_document_cid,
+        closure_witness_cid,
+    })
+}
+
+fn json_document_cid(value: &Value) -> Result<String, String> {
+    let bytes = serde_json::to_string(value)
+        .map_err(|e| format!("serialize JSON document for CID recomputation: {e}"))?;
+    Ok(provekit_canonicalizer::blake3_512_of(bytes.as_bytes()))
+}
+
+fn closure_witness_body_value(
+    gap_cid: &str,
+    policy_cid: &str,
+    post_lift_cid: &str,
+    source_predicate: &str,
+    target_predicate: &str,
+    transformed_artifact_cid: &str,
+) -> Value {
+    json!({
+        "kind": "TruthDischargeBodyClaim",
+        "claimKind": "closure",
+        "gapCid": gap_cid,
+        "policyCid": policy_cid,
+        "postLiftCid": post_lift_cid,
+        "sourcePredicate": source_predicate,
+        "targetPredicate": target_predicate,
+        "transformedArtifactCid": transformed_artifact_cid,
+    })
+}
+
+fn invoke_dropper_rpc(
+    specimen_dir: &Path,
+    command: &CommandSpec,
+    surface: &str,
+    target_symbol: &str,
+    proof_var: &str,
+    source: &str,
+    predicates: &Predicates,
+) -> Result<Value, String> {
+    if command.argv.is_empty() {
+        return Err("dropper realizer argv is empty".into());
+    }
+    if manifest_path_escapes_specimen_root(&command.cwd) {
+        return Err(format!(
+            "invalid path `{}` escapes specimen root",
+            command.cwd.display()
+        ));
+    }
+
+    let cwd = specimen_dir.join(&command.cwd);
+    let workspace_root = specimen_dir
+        .canonicalize()
+        .unwrap_or_else(|_| specimen_dir.to_path_buf())
+        .to_string_lossy()
+        .to_string();
+    let mut cmd = Command::new(&command.argv[0]);
+    cmd.args(&command.argv[1..])
+        .current_dir(&cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("spawn dropper RPC in {}: {e}", cwd.display()))?;
+    let mut stdin = match child.stdin.take() {
+        Some(stdin) => stdin,
+        None => {
+            cleanup_rpc_child(&mut child, None, false);
+            return Err("dropper realizer has no stdin".into());
+        }
+    };
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            cleanup_rpc_child(&mut child, Some(stdin), false);
+            return Err("dropper realizer has no stdout".into());
+        }
+    };
+    let mut reader = BufReader::new(stdout);
+
+    let exchange_result = invoke_dropper_rpc_exchange(
+        &mut stdin,
+        &mut reader,
+        &workspace_root,
+        surface,
+        target_symbol,
+        proof_var,
+        source,
+        predicates,
+    );
+    drop(reader);
+    cleanup_rpc_child(&mut child, Some(stdin), exchange_result.is_ok());
+    exchange_result
+}
+
+fn invoke_dropper_rpc_exchange(
+    stdin: &mut ChildStdin,
+    reader: &mut impl BufRead,
+    workspace_root: &str,
+    surface: &str,
+    target_symbol: &str,
+    proof_var: &str,
+    source: &str,
+    predicates: &Predicates,
+) -> Result<Value, String> {
+    let init_req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "client": {"name": "provekit-zoo", "version": env!("CARGO_PKG_VERSION")},
+            "protocol_version": "provekit-orp/1",
+            "workspace_root": workspace_root,
+        },
+    });
+    writeln!(stdin, "{init_req}").map_err(|e| format!("write dropper initialize: {e}"))?;
+    let _ = read_response(reader, 1)?;
+
+    let gap_cid = provekit_canonicalizer::blake3_512_of(predicates.missing_edge.as_bytes());
+    let policy_cid = provekit_canonicalizer::blake3_512_of(b"bug-zoo-dropper-policy-v0");
+    let realize_req = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "realize",
+        "params": {
+            "plan": {
+                "kind": "RealizerPlan",
+                "schemaVersion": "1",
+                "mode": "transform",
+                "gapCid": gap_cid,
+                "sourcePredicate": predicates.boundary,
+                "targetPredicate": predicates.sink,
+                "policyCid": policy_cid,
+                "surface": surface,
+                "targetSymbol": target_symbol,
+                "proofVar": proof_var,
+                "source": source,
+            }
+        },
+    });
+    writeln!(stdin, "{realize_req}").map_err(|e| format!("write dropper realize: {e}"))?;
+    let result = read_response(reader, 2)?;
+    result
+        .get("output")
+        .cloned()
+        .ok_or_else(|| "dropper response missing output".into())
+}
+
+fn required_dropper_path<'a>(path: &'a Option<PathBuf>, field: &str) -> Result<&'a Path, String> {
+    path.as_deref()
+        .ok_or_else(|| format!("{field} is required when dropper.available is true"))
+}
+
+fn required_dropper_str<'a>(value: &'a Option<String>, field: &str) -> Result<&'a str, String> {
+    value
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("{field} is required when dropper.available is true"))
+}
+
 fn cleanup_rpc_child(child: &mut Child, stdin: Option<ChildStdin>, send_shutdown: bool) {
     if let Some(mut stdin) = stdin {
         if send_shutdown {
@@ -650,6 +1332,10 @@ fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
 }
 
 fn proof_ir_cid(value: &Value) -> Result<String, String> {
+    canonical_json_cid(value)
+}
+
+fn canonical_json_cid(value: &Value) -> Result<String, String> {
     let canonical = json_to_cvalue(value)?;
     let bytes = provekit_canonicalizer::encode_jcs(&canonical).into_bytes();
     Ok(provekit_canonicalizer::blake3_512_of(&bytes))
@@ -741,8 +1427,25 @@ mod tests {
             exposure: ExposureFiles {
                 sat_witness_file: "exposed/sat-witness.json".into(),
             },
-            dropper: Dropper { available: false },
+            dropper: unavailable_dropper(),
             wild_sightings: vec![],
+        }
+    }
+
+    fn unavailable_dropper() -> Dropper {
+        Dropper {
+            available: false,
+            surface: None,
+            source: None,
+            target_symbol: None,
+            proof_var: None,
+            realizer_rpc: None,
+            output_source: None,
+            proof_plan_file: None,
+            language_dropper_file: None,
+            closure_proof_ir_file: None,
+            fix_receipt_file: None,
+            verify_output_file: None,
         }
     }
 
@@ -837,6 +1540,151 @@ wildSightings: []
     }
 
     #[test]
+    fn parses_manifest_with_java_dropper_realizer() {
+        let raw = r#"
+id: BZ-SHAPE-005
+name: Java Null Boundary Equivalence
+kingdom: shape
+surface: java
+status: lab
+paths:
+  labLibrary: lab/library
+  labHarness: lab/harness
+  labKitRpc: lab/kit-rpc
+commands:
+  hostCheck:
+    cwd: lab/harness
+    argv: ["./run.sh"]
+predicates:
+  boundary: maybe_null(name)
+  sink: non_null(name)
+  missingEdge: maybe_null(name) => non_null(name)
+exposures:
+  - id: provekit-native
+    surface: java-provekit-native
+    harness: exposed/provekit-native/harness
+    kitRpc: exposed/provekit-native/kit-rpc
+    liftRpc:
+      cwd: exposed/provekit-native/kit-rpc
+      argv: ["./run-java-lifter.sh"]
+    proofIrFile: exposed/provekit-native/expected.proofir.json
+    diagnosticFile: exposed/provekit-native/expected-diagnostic.txt
+    lossiness:
+      erased: ["Java body"]
+      preserved: ["precondition neq(name, null)"]
+equivalence:
+  required: []
+expectations:
+  hostCompiler: pass
+  ordinaryTests: pass
+  provekitVerify: fail
+exposure:
+  satWitnessFile: exposed/sat-witness.json
+dropper:
+  available: true
+  surface: java-provekit-native
+  source: lab/library/src/main/java/zoo/UserDirectory.java
+  targetSymbol: lookup
+  proofVar: name
+  realizerRpc:
+    cwd: dropped/provekit-native/kit-rpc
+    argv: ["./run-java-realizer.sh"]
+  outputSource: dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java
+  proofPlanFile: dropped/provekit-native/proof-plan.json
+  languageDropperFile: dropped/provekit-native/language-dropper.json
+  closureProofIrFile: dropped/provekit-native/closure.proofir.json
+  verifyOutputFile: dropped/provekit-native/verify-output.json
+wildSightings: []
+"#;
+        let manifest: SpecimenManifest = serde_yaml::from_str(raw).expect("parse manifest");
+
+        assert!(manifest.dropper.available);
+        assert_eq!(
+            manifest.dropper.surface.as_deref(),
+            Some("java-provekit-native")
+        );
+        assert_eq!(manifest.dropper.target_symbol.as_deref(), Some("lookup"));
+        assert_eq!(manifest.dropper.proof_var.as_deref(), Some("name"));
+        assert_eq!(
+            manifest.dropper.proof_plan_file.as_deref(),
+            Some(Path::new("dropped/provekit-native/proof-plan.json"))
+        );
+        assert_eq!(
+            manifest.dropper.language_dropper_file.as_deref(),
+            Some(Path::new("dropped/provekit-native/language-dropper.json"))
+        );
+        let realizer = manifest
+            .dropper
+            .realizer_rpc
+            .as_ref()
+            .expect("dropper realizer RPC config");
+        assert_eq!(
+            realizer.cwd,
+            PathBuf::from("dropped/provekit-native/kit-rpc")
+        );
+        assert_eq!(realizer.argv, vec!["./run-java-realizer.sh"]);
+    }
+
+    #[test]
+    fn dropper_output_cids_must_be_derived_from_output_bodies() {
+        let predicates = Predicates {
+            boundary: "maybe_null(name)".into(),
+            sink: "non_null(name)".into(),
+            missing_edge: "maybe_null(name) => non_null(name)".into(),
+        };
+        let modified_source = "package zoo; final class UserDirectory {}";
+        let post_lift = json!({
+            "kind": "ir-document",
+            "ir": ["closed"],
+            "callEdges": [],
+            "diagnostics": [],
+        });
+        let transformed_artifact_cid =
+            provekit_canonicalizer::blake3_512_of(modified_source.as_bytes());
+        let post_lift_cid = json_document_cid(&post_lift).expect("post lift cid");
+        let gap_cid = provekit_canonicalizer::blake3_512_of(predicates.missing_edge.as_bytes());
+        let policy_cid = provekit_canonicalizer::blake3_512_of(b"bug-zoo-dropper-policy-v0");
+        let closure_witness = closure_witness_body_value(
+            &gap_cid,
+            &policy_cid,
+            &post_lift_cid,
+            &predicates.boundary,
+            &predicates.sink,
+            &transformed_artifact_cid,
+        );
+        let closure_witness_cid = json_document_cid(&closure_witness).expect("closure witness cid");
+        let output = json!({
+            "gapCid": gap_cid,
+            "transformedArtifactCid": transformed_artifact_cid,
+            "postLiftCid": post_lift_cid,
+            "closureWitnessCid": closure_witness_cid,
+            "closureWitness": closure_witness,
+        });
+
+        let verified =
+            verify_dropper_output_cids(&output, modified_source, &post_lift, &predicates)
+                .expect("derived output CIDs should verify");
+        assert_eq!(
+            verified.transformed_artifact_cid,
+            output["transformedArtifactCid"].as_str().unwrap()
+        );
+
+        let mut stale_artifact = output.clone();
+        stale_artifact["transformedArtifactCid"] = json!(format!("blake3-512:{}", "0".repeat(128)));
+        let err =
+            verify_dropper_output_cids(&stale_artifact, modified_source, &post_lift, &predicates)
+                .expect_err("stale artifact CID must be rejected");
+        assert!(err.contains("transformedArtifactCid mismatch"));
+
+        let mut stale_witness = output;
+        stale_witness["closureWitness"]["targetPredicate"] = json!("non_null(email)");
+        let err =
+            verify_dropper_output_cids(&stale_witness, modified_source, &post_lift, &predicates)
+                .expect_err("stale closure witness body must be rejected");
+        assert!(err.contains("closureWitness body mismatch"));
+    }
+
+    #[test]
     fn validation_rejects_missing_lossiness() {
         let mut manifest = valid_manifest();
         manifest.exposures[0].lossiness.erased.clear();
@@ -895,6 +1743,35 @@ wildSightings: []
         assert!(errors
             .iter()
             .any(|error| error.contains("exposure `spring-web` liftRpc.argv is required")));
+    }
+
+    #[test]
+    fn validation_rejects_language_dropper_without_proof_plan() {
+        let mut manifest = valid_manifest();
+        manifest.dropper = Dropper {
+            available: true,
+            surface: Some("java-provekit-native".into()),
+            source: Some("lab/library/src/main/java/zoo/UserDirectory.java".into()),
+            target_symbol: Some("lookup".into()),
+            proof_var: Some("name".into()),
+            realizer_rpc: Some(CommandSpec {
+                cwd: "dropped/provekit-native/kit-rpc".into(),
+                argv: vec!["./run-java-realizer.sh".into()],
+            }),
+            output_source: Some(
+                "dropped/provekit-native/library/src/main/java/zoo/UserDirectory.java".into(),
+            ),
+            proof_plan_file: None,
+            language_dropper_file: Some("dropped/provekit-native/language-dropper.json".into()),
+            closure_proof_ir_file: Some("dropped/provekit-native/closure.proofir.json".into()),
+            fix_receipt_file: Some("dropped/provekit-native/fix-receipt.json".into()),
+            verify_output_file: None,
+        };
+
+        let errors = validate_manifest_shape(&manifest);
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("dropper.proofPlanFile is required")));
     }
 
     #[test]

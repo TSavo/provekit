@@ -103,17 +103,12 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
     }
 
     let catalog = decode(&bytes)?;
-    let m_root = catalog
-        .as_map()
-        .ok_or("catalog is not a map")?
-        .clone();
+    let m_root = catalog.as_map().ok_or("catalog is not a map")?.clone();
 
     let members = m_root
         .get("members")
         .ok_or("catalog has no `members` map")?;
-    let members_map = members
-        .as_map()
-        .ok_or("catalog `members` is not a map")?;
+    let members_map = members.as_map().ok_or("catalog `members` is not a map")?;
 
     for (cid, val) in members_map {
         if !cid.starts_with(HASH_TAG_PREFIX) {
@@ -204,8 +199,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
         if bridge_kind == Some("bridge") {
             if let Some(sym) = source_symbol {
                 if !sym.is_empty() {
-                    pool.bridges_by_symbol
-                        .insert(sym.to_string(), env.clone());
+                    pool.bridges_by_symbol.insert(sym.to_string(), env.clone());
                 }
             }
         }
@@ -258,8 +252,10 @@ fn json_to_value(j: &Json) -> std::sync::Arc<Value> {
             Value::array(v)
         }
         Json::Object(map) => {
-            let entries: Vec<(String, _)> =
-                map.iter().map(|(k, v)| (k.clone(), json_to_value(v))).collect();
+            let entries: Vec<(String, _)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), json_to_value(v)))
+                .collect();
             std::sync::Arc::new(Value::Object(entries))
         }
     }

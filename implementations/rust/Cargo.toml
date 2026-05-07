@@ -14,6 +14,7 @@ members = [
     "provekit-verifier",
     "provekit-self-contracts",
     "provekit-baseline-rust-std",
+    "libprovekit",
     "provekit-cli",
     "provekit-macros",
     "provekit-macros-rt",

@@ -26,6 +26,10 @@ The papers compose. Read them in order; later papers assume the framing earlier 
 
 9. **[Lossy Boundary Compression: Why ProofIR Is Universal Because It Forgets](09-lossy-boundary-compression.md)**: The universality argument for ProofIR. ProofIR is not a universal language for re-expressing every implementation detail; it is universal over contract boundaries. Lifters may discard implementation texture while preserving obligations, making cross-language, cross-framework, cross-time equivalence possible and turning LLM output into an admissibility-search problem.
 
+10. **[After Protocol Specs: How Protocols Actually Evolve](10-after-protocol-specs-how-protocols-actually-evolve.md)**: Protocol evolution as data. Protocols have contract boundaries too: grammars, state machines, invariants, profiles, conformance witnesses, refusals, and migration edges. A protocol version becomes a signed content-addressed graph; a protocol change becomes a witnessed edge from old root to new root.
+
+11. **[After Commits: Proof-Carrying Change as p -> q](11-after-commits-proof-carrying-change.md)**: The commit as semantic transition. A commit becomes `tree + parent + message + .proof root`, where `.proof` is the typed claim root: preservation receipts for same behavior, fix receipts for changed behavior, refusal receipts for explicit unknowns, and edge compression carrying the proof tree as `p -> q`. CI solves the bootstrap by signing `CommitProofBinding(commitCid, proofRootCid)` before native commit-object support exists.
+
 ## Future papers (planned)
 
 - *Multi-dimensional pinning as supply-chain integrity*: rank-3 pins close the lying-contract attack class that single-CID pinning leaves open. Why v1.4's address-space-as-vector-space framing is the substrate the standards-track work needs.

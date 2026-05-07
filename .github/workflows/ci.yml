@@ -337,6 +337,68 @@ jobs:
         # to Swift because the Swift kit is macOS-only.
         run: cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- --profile swift
 
+  cicp-reuse-smoke:
+    name: CICP checked-in reuse smoke
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust target dirs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            implementations/rust/target
+            tools/recompute-spec-cids/target
+            tools/foundation-keygen/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Validate checked-in CICP reuse witnesses
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          count=0
+          for kit in rust go cpp ts csharp java python ruby zig c; do
+            implementations/rust/target/release/provekit ci shadow \
+              --kit "$kit" \
+              --out-dir "$tmp/$kit" \
+              --runner-identity "github-actions/Linux/X64" \
+              --json
+            implementations/rust/target/release/provekit ci reuse \
+              --current-blast-radius "$tmp/$kit/blast-radius.json" \
+              --accepted-dir .provekit/ci/accepted \
+              --reuse-out "$tmp/$kit/reuse.json" \
+              --json
+            count=$((count + 1))
+          done
+
+          kit=swift
+          implementations/rust/target/release/provekit ci shadow \
+            --kit "$kit" \
+            --out-dir "$tmp/$kit" \
+            --runner-identity "github-actions/macOS/X64" \
+            --json
+          implementations/rust/target/release/provekit ci reuse \
+            --current-blast-radius "$tmp/$kit/blast-radius.json" \
+            --accepted-dir .provekit/ci/accepted \
+            --reuse-out "$tmp/$kit/reuse.json" \
+            --json
+          count=$((count + 1))
+
+          echo "accepted reuse admitted for $count checked-in prove jobs"
+
   # ---------------------------------------------------------------------------
   # Per-kit conformance gate: provekit prove --kit=<kit>
   #
@@ -486,8 +548,57 @@ jobs:
             php-cli
           php -m | grep -q '^sodium$'
 
+      - name: "CICP shadow blast radius (${{ matrix.kit }})"
+        run: |
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          implementations/rust/target/release/provekit ci shadow \
+            --kit "${{ matrix.kit }}" \
+            --out-dir ".provekit/ci-shadow/${{ matrix.kit }}" \
+            --runner-identity "github-actions/${{ runner.os }}/${{ runner.arch }}" \
+            --json
+
+      - name: "CICP reuse admission (${{ matrix.kit }})"
+        id: cicp_reuse
+        run: |
+          set +e
+          implementations/rust/target/release/provekit ci reuse \
+            --current-blast-radius ".provekit/ci-shadow/${{ matrix.kit }}/blast-radius.json" \
+            --accepted-dir .provekit/ci/accepted \
+            --reuse-out ".provekit/ci-shadow/${{ matrix.kit }}/reuse.json" \
+            --json > ".provekit/ci-shadow/${{ matrix.kit }}/reuse-summary.json" \
+            2> ".provekit/ci-shadow/${{ matrix.kit }}/reuse-error.txt"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "CICP_REUSE_HIT=true" >> "$GITHUB_ENV"
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            cat ".provekit/ci-shadow/${{ matrix.kit }}/reuse-summary.json"
+          else
+            echo "CICP_REUSE_HIT=false" >> "$GITHUB_ENV"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            cat ".provekit/ci-shadow/${{ matrix.kit }}/reuse-error.txt"
+          fi
+
       - name: "prove-${{ matrix.kit }}"
+        if: steps.cicp_reuse.outputs.hit != 'true'
         run: make prove-${{ matrix.kit }}
+
+      - name: "CICP candidate result (${{ matrix.kit }})"
+        if: steps.cicp_reuse.outputs.hit != 'true'
+        run: |
+          implementations/rust/target/release/provekit ci result \
+            --blast-radius ".provekit/ci-shadow/${{ matrix.kit }}/blast-radius.json" \
+            --out ".provekit/ci-shadow/${{ matrix.kit }}/job-result.json" \
+            --producer-name github-actions \
+            --producer-version "${{ github.run_id }}.${{ github.run_attempt }}" \
+            --json
+
+      - name: "Upload CICP shadow (${{ matrix.kit }})"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cicp-shadow-${{ matrix.kit }}
+          path: .provekit/ci-shadow/${{ matrix.kit }}
 
   prove-swift:
     name: "prove-swift (C1-C8 conformance, macOS)"
@@ -516,5 +627,54 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: CICP shadow blast radius (swift)
+        run: |
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          implementations/rust/target/release/provekit ci shadow \
+            --kit swift \
+            --out-dir .provekit/ci-shadow/swift \
+            --runner-identity "github-actions/${{ runner.os }}/${{ runner.arch }}" \
+            --json
+
+      - name: CICP reuse admission (swift)
+        id: cicp_reuse
+        run: |
+          set +e
+          implementations/rust/target/release/provekit ci reuse \
+            --current-blast-radius .provekit/ci-shadow/swift/blast-radius.json \
+            --accepted-dir .provekit/ci/accepted \
+            --reuse-out .provekit/ci-shadow/swift/reuse.json \
+            --json > .provekit/ci-shadow/swift/reuse-summary.json \
+            2> .provekit/ci-shadow/swift/reuse-error.txt
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "CICP_REUSE_HIT=true" >> "$GITHUB_ENV"
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            cat .provekit/ci-shadow/swift/reuse-summary.json
+          else
+            echo "CICP_REUSE_HIT=false" >> "$GITHUB_ENV"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            cat .provekit/ci-shadow/swift/reuse-error.txt
+          fi
+
       - name: prove-swift
+        if: steps.cicp_reuse.outputs.hit != 'true'
         run: make prove-swift
+
+      - name: CICP candidate result (swift)
+        if: steps.cicp_reuse.outputs.hit != 'true'
+        run: |
+          implementations/rust/target/release/provekit ci result \
+            --blast-radius .provekit/ci-shadow/swift/blast-radius.json \
+            --out .provekit/ci-shadow/swift/job-result.json \
+            --producer-name github-actions \
+            --producer-version "${{ github.run_id }}.${{ github.run_attempt }}" \
+            --json
+
+      - name: Upload CICP shadow (swift)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cicp-shadow-swift
+          path: .provekit/ci-shadow/swift

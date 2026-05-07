@@ -31,7 +31,10 @@ fn main() -> ExitCode {
     let (pool, callsites) = runner.run_load_and_enumerate();
 
     println!("  loaded mementos: {}", pool.mementos.len());
-    println!("  bridges by sourceSymbol: {}", pool.bridges_by_symbol.len());
+    println!(
+        "  bridges by sourceSymbol: {}",
+        pool.bridges_by_symbol.len()
+    );
     println!("  enumerated callsites: {}", callsites.len());
     if !pool.load_errors.is_empty() {
         eprintln!("LOAD ERRORS:");
@@ -53,7 +56,11 @@ fn main() -> ExitCode {
             }
         }
     }
-    println!("  resolved {} of {} callsites", resolved_ok, callsites.len());
+    println!(
+        "  resolved {} of {} callsites",
+        resolved_ok,
+        callsites.len()
+    );
     if resolved_ok != callsites.len() {
         return ExitCode::from(1);
     }

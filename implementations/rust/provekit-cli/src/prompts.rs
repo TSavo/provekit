@@ -105,12 +105,24 @@ pub fn resolve_prompt(cmd: PromptCommand, ov: &PromptOverrides<'_>) -> ResolvedP
 
     // Build the candidate list, project layer first.
     if let Some(project) = ov.project {
-        push_layer(&mut tried, &project.join(".provekit/prompts"), cmd_str, ov.agent, ov.surface);
+        push_layer(
+            &mut tried,
+            &project.join(".provekit/prompts"),
+            cmd_str,
+            ov.agent,
+            ov.surface,
+        );
         // Legacy flat file:
         tried.push(project.join(format!(".provekit/prompts/{cmd_str}.md")));
     }
     if let Some(home) = dirs_home_config() {
-        push_layer(&mut tried, &home.join("provekit/prompts"), cmd_str, ov.agent, ov.surface);
+        push_layer(
+            &mut tried,
+            &home.join("provekit/prompts"),
+            cmd_str,
+            ov.agent,
+            ov.surface,
+        );
     }
 
     for candidate in &tried {
@@ -190,7 +202,11 @@ mod tests {
             let rp = resolve_prompt(cmd, &PromptOverrides::default());
             assert_eq!(rp.source, "<bundled>");
             assert!(!rp.body.is_empty(), "{:?} bundled empty", cmd);
-            assert!(rp.body.contains("kit"), "{:?} prompt should mention kit", cmd);
+            assert!(
+                rp.body.contains("kit"),
+                "{:?} prompt should mention kit",
+                cmd
+            );
         }
     }
 

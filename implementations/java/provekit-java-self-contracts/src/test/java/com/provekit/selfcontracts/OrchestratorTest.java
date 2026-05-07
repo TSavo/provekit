@@ -21,6 +21,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.provekit.ir.ProofIrInvariants;
 import com.provekit.selfcontracts.Slab.AuthoredSlab;
 
 public class OrchestratorTest {
@@ -100,5 +101,21 @@ public class OrchestratorTest {
                     "kit-internal contract name must be `java_*`-prefixed: " + d.name);
             }
         }
+    }
+
+    @Test
+    void realizerInvariantIsAuthoredByJavaProofIrKit() {
+        assertEquals(
+            ProofIrInvariants.JAVA_NULL_BOUNDARY_REALIZER_CONTRACT_VAR_IS_BOUND_PARAMETER,
+            ProofIrInvariants.javaNullBoundaryRealizerContractVarIsBoundParameter().name());
+
+        List<AuthoredSlab> slabs = JavaKitInvariants.authorAll();
+        assertTrue(slabs.stream().anyMatch(s ->
+                s.label.equals("realizer")
+                    && s.path.endsWith("com/provekit/ir/ProofIrInvariants.java")
+                    && s.contracts.stream().anyMatch(d ->
+                        d.name.equals(
+                            ProofIrInvariants.JAVA_NULL_BOUNDARY_REALIZER_CONTRACT_VAR_IS_BOUND_PARAMETER))),
+            "self-contracts must package the Java ProofIR-authored realizer invariant");
     }
 }

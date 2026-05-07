@@ -45,7 +45,13 @@ pub fn run(args: SearchArgs) -> u8 {
         }
     };
 
-    match search(slot, &formula_path, args.project.as_deref(), args.out.json, args.out.quiet) {
+    match search(
+        slot,
+        &formula_path,
+        args.project.as_deref(),
+        args.out.json,
+        args.out.quiet,
+    ) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{}: {e:#}", "error".red().bold());
@@ -68,7 +74,9 @@ fn search(
     let canonical = encode_jcs(&formula_to_value(&f));
     let cid = blake3_512_of(canonical.as_bytes());
 
-    let project_root = project.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let project_root = project
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
     let hits = find_implication_hits(&slot, &cid, &project_root);
 
     if as_json {
@@ -156,10 +164,7 @@ fn find_implication_hits(slot: &Slot, needle: &str, project_root: &std::path::Pa
                 Some(e) => e,
                 None => continue,
             };
-            let kind = evidence
-                .get("kind")
-                .and_then(|k| k.as_str())
-                .unwrap_or("");
+            let kind = evidence.get("kind").and_then(|k| k.as_str()).unwrap_or("");
             if kind != "implication" {
                 continue;
             }
@@ -188,10 +193,8 @@ mod tests {
 
     #[test]
     fn search_with_no_proofs_is_empty() {
-        let dir = std::env::temp_dir().join(format!(
-            "provekit-cli-search-empty-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("provekit-cli-search-empty-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let hits = find_implication_hits(&Slot::Antecedent, "blake3-512:0", &dir);
         assert!(hits.is_empty());

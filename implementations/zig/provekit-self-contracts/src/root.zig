@@ -37,4 +37,5 @@ test {
     _ = @import("proof_envelope.zig");
     _ = @import("claim_envelope.zig");
     _ = @import("byte_equivalence_test.zig");
+    _ = @import("cicp_conformance_test.zig");
 }

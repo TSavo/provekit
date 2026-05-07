@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use owo_colors::OwoColorize;
-use provekit_claim_envelope::{contract_cid as compute_contract_cid, MintContractArgs, Authoring};
+use provekit_claim_envelope::{contract_cid as compute_contract_cid, Authoring, MintContractArgs};
 use provekit_lift::lift_path;
 use provekit_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs};
 use serde_json::Value as Json;
@@ -228,8 +228,7 @@ fn lift_go_call_edges(
                 "source": source
             }
         });
-        writeln!(stdin, "{}", parse_req)
-            .map_err(|e| format!("write parse request: {e}"))?;
+        writeln!(stdin, "{}", parse_req).map_err(|e| format!("write parse request: {e}"))?;
 
         let mut resp_line = String::new();
         reader
@@ -292,14 +291,8 @@ fn lift_go_call_edges(
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let locus = edge
-                        .get("callSiteLocus")
-                        .cloned()
-                        .unwrap_or(Json::Null);
-                    let evidence = edge
-                        .get("evidenceTerm")
-                        .cloned()
-                        .unwrap_or(Json::Null);
+                    let locus = edge.get("callSiteLocus").cloned().unwrap_or(Json::Null);
+                    let evidence = edge.get("evidenceTerm").cloned().unwrap_or(Json::Null);
 
                     all_call_edges.push(LinkerCallEdge {
                         source_contract_cid: source_cid,
@@ -315,10 +308,8 @@ fn lift_go_call_edges(
         resp_line.clear();
     }
 
-    let shutdown_req =
-        serde_json::json!({"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}});
-    writeln!(stdin, "{}", shutdown_req)
-        .map_err(|e| format!("write shutdown: {e}"))?;
+    let shutdown_req = serde_json::json!({"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}});
+    writeln!(stdin, "{}", shutdown_req).map_err(|e| format!("write shutdown: {e}"))?;
     drop(stdin);
 
     let _ = child.wait();

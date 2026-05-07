@@ -1,0 +1,26 @@
+{
+  "kind": "ProtocolEvolutionPolicy",
+  "schemaVersion": "1",
+  "name": "provekit-pep-bootstrap-v0",
+  "acceptedSigner": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
+  "acceptedChangeClass": "extension-only",
+  "versionLabelRule": {
+    "extensionOnlyWithoutCrossKitSemanticObligation": "patch"
+  },
+  "requiredChecks": [
+    "from catalog CID recomputes from from-catalog-v1.6.0.json",
+    "to catalog CID recomputes from to-catalog-v1.6.1.json",
+    "catalog diff contains exactly one added property",
+    "added property key is protocol-evolution-protocol",
+    "added property CID hashes to protocol/specs/2026-05-07-protocol-evolution-protocol.md",
+    "change class is extension-only",
+    "no core verifier behavior changed",
+    "no cross-kit semantic obligation changed",
+    "v1.6.1 catalog attestation signature verifies under acceptedSigner"
+  ],
+  "nonGoals": [
+    "execute extension bytecode in core verification",
+    "require language kit lifter changes",
+    "require cross-kit fixture value changes"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "kind": "CICPCheckedInReusePolicy",
+  "schemaVersion": "1",
+  "mode": "checked-in-accepted-witness",
+  "acceptedWitnessRoot": ".provekit/ci/accepted",
+  "reuseReasons": [
+    "identical-input-closure"
+  ],
+  "skipBuildOnAcceptedReuse": true
+}

@@ -19,33 +19,31 @@ use serde_json::Value as Json;
 /// The protocol catalog CID this CLI declares conformance to. Kept in
 /// sync with `protocol/specs/2026-04-30-protocol-versioning.md`. If
 /// the catalog changes, bump this string AND ship a new CLI.
-/// Currently: v1.6.0 (minor bump over v1.5.0: sort grammar grow adds
-/// RegionSort variant for lifetime variables; additive, no breaking changes).
+/// Currently: v1.6.2 (patch bump over v1.6.1: catalogs CICP as an
+/// extension-only protocol; no cross-kit semantic obligation changes).
 pub const EXPECTED_CATALOG_CID: &str =
-    "blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781";
+    "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f";
 
 /// Catalog JSON bytes embedded at compile time. The CLI never reads
 /// the on-disk spec file at runtime; `verify-protocol` recomputes from
 /// the embedded copy so the answer is about what the binary IS, not
 /// where it was invoked from.
-pub const EMBEDDED_CATALOG_BYTES: &[u8] =
-    include_bytes!("../assets/protocol-catalog.json");
+pub const EMBEDDED_CATALOG_BYTES: &[u8] = include_bytes!("../assets/protocol-catalog.json");
 
 /// Foundation public key bytes (`ed25519:<base64>` form) embedded at
 /// compile time so `verify-protocol --signed` works for an installed
 /// binary anywhere on disk. Mirrors the committed
 /// `.provekit/keys/foundation-v0.pub`.
-pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] =
-    include_bytes!("../assets/foundation-v0.pub");
+pub const EMBEDDED_FOUNDATION_PUBKEY: &[u8] = include_bytes!("../assets/foundation-v0.pub");
 
 /// Signed attestation bytes (the JSON object) embedded at compile
 /// time. Mirrors the committed
-/// `.provekit/catalog-signatures/v1.6.0.json` (current). The v1.5.0,
-/// v1.4.1, v1.4.0, v1.3.1, v1.3.0, v1.2.0, and v1.1.0 attestations remain on-disk and as
+/// `.provekit/catalog-signatures/v1.6.2.json` (current). The v1.6.1,
+/// v1.6.0, v1.5.0, v1.4.1, v1.4.0, v1.3.1, v1.3.0, v1.2.0, and v1.1.0 attestations remain on-disk and as
 /// embedded asset siblings for callers pinning to those versions; pass
 /// `--signature-file` + `--catalog` to verify against them explicitly.
 pub const EMBEDDED_CATALOG_SIGNATURE: &[u8] =
-    include_bytes!("../assets/catalog-signature-v1.6.0.json");
+    include_bytes!("../assets/catalog-signature-v1.6.2.json");
 
 /// Recompute the embedded catalog's CID using the same routine
 /// `tools/recompute-spec-cids` uses: parse JSON, JCS-encode, BLAKE3-512.
@@ -108,8 +106,8 @@ pub fn verify_signed_attestation(
     pubkey_string: &str,
     expected_cid: &str,
 ) -> Result<SignedCatalogVerdict> {
-    let attestation: Json = serde_json::from_slice(signature_file_bytes)
-        .context("parse signed attestation JSON")?;
+    let attestation: Json =
+        serde_json::from_slice(signature_file_bytes).context("parse signed attestation JSON")?;
     let obj = attestation
         .as_object()
         .ok_or_else(|| anyhow!("signed attestation must be a JSON object"))?;
@@ -135,7 +133,10 @@ pub fn verify_signed_attestation(
     let entries: Vec<(String, Arc<Value>)> = vec![
         ("schemaVersion".to_string(), Value::string(schema_version)),
         ("protocolName".to_string(), Value::string(protocol_name)),
-        ("protocolVersion".to_string(), Value::string(protocol_version)),
+        (
+            "protocolVersion".to_string(),
+            Value::string(protocol_version),
+        ),
         ("catalogCid".to_string(), Value::string(catalog_cid.clone())),
         ("declaredAt".to_string(), Value::string(declared_at)),
         ("signer".to_string(), Value::string(signer.clone())),
@@ -204,10 +205,7 @@ mod tests {
     fn embedded_catalog_is_valid_json() {
         let v: Json = serde_json::from_slice(EMBEDDED_CATALOG_BYTES).expect("parse");
         assert!(v.is_object(), "catalog must be a JSON object");
-        let kind = v
-            .get("kind")
-            .and_then(|x| x.as_str())
-            .expect("kind field");
+        let kind = v.get("kind").and_then(|x| x.as_str()).expect("kind field");
         assert_eq!(kind, "catalog");
     }
 
@@ -229,12 +227,9 @@ mod tests {
     #[test]
     fn embedded_signature_verifies_against_embedded_pubkey() {
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict = verify_signed_attestation(
-            EMBEDDED_CATALOG_SIGNATURE,
-            &pk,
-            EXPECTED_CATALOG_CID,
-        )
-        .expect("verify");
+        let verdict =
+            verify_signed_attestation(EMBEDDED_CATALOG_SIGNATURE, &pk, EXPECTED_CATALOG_CID)
+                .expect("verify");
         assert!(verdict.signer_matches, "signer must match pubkey");
         assert!(verdict.cid_matches, "claimed CID must match expected");
         assert!(verdict.signature_ok, "Ed25519 signature must verify");
@@ -264,8 +259,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
 
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict =
-            verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
+        let verdict = verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
         assert!(verdict.cid_matches, "CID untouched");
         assert!(verdict.signer_matches, "signer untouched");
         assert!(!verdict.signature_ok, "tampered signature must fail");
@@ -285,8 +279,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
 
         let pk = parse_pubkey_bytes(EMBEDDED_FOUNDATION_PUBKEY).expect("parse");
-        let verdict =
-            verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
+        let verdict = verify_signed_attestation(&bytes, &pk, EXPECTED_CATALOG_CID).expect("verify");
         // Both CID-mismatch AND signature-fail surface; verifier must
         // refuse on either.
         assert!(!verdict.cid_matches);

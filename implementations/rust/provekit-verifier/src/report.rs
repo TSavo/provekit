@@ -5,12 +5,7 @@
 
 use crate::types::{CallSite, LoadError, ObligationVerdict, Report, ReportRow};
 
-pub fn add_callsite(
-    cs: &CallSite,
-    verdict: ObligationVerdict,
-    reason: &str,
-    r: &mut Report,
-) {
+pub fn add_callsite(cs: &CallSite, verdict: ObligationVerdict, reason: &str, r: &mut Report) {
     r.total_callsites += 1;
     r.rows.push(ReportRow {
         callsite: cs.clone(),

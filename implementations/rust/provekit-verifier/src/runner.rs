@@ -136,8 +136,7 @@ impl Runner {
         }
 
         // Load and process call edges
-        let call_edges =
-            call_edge_loader::load_call_edge_files(&self.cfg.project_root);
+        let call_edges = call_edge_loader::load_call_edge_files(&self.cfg.project_root);
         let obligations = call_edge_loader::process_call_edges(&call_edges, &pool);
 
         // Report resolved call-edge obligations using the single
@@ -260,9 +259,7 @@ impl Runner {
     }
 }
 
-fn build_plan_and_registry(
-    cfg: &RunnerConfig,
-) -> (SolverPlan, HashMap<String, SolverHandle>) {
+fn build_plan_and_registry(cfg: &RunnerConfig) -> (SolverPlan, HashMap<String, SolverHandle>) {
     if let Some(sc) = &cfg.solvers_config {
         return (SolverPlan::from_config(sc), registry::build(sc));
     }
@@ -321,33 +318,42 @@ fn work_one(
 
     let consumer_pre = resolved.ir_formula.as_ref();
     let consumer_pre_hash = consumer_pre.map(formula_hash);
-    let producer_post = locate_producer_post(
-        &cs.arg_term,
-        &pool.mementos,
-        &pool.bridges_by_symbol,
-    );
+    let producer_post = locate_producer_post(&cs.arg_term, &pool.mementos, &pool.bridges_by_symbol);
 
     // Tier 0: Memento IS verification. Look up the formula CID in the pool.
     // The hash IS the boundary: we verify by hash lookup, not by solving.
     if let Some(pre_formula) = consumer_pre {
         if let Some(memento) = pool.verify(pre_formula) {
             n_hash.fetch_add(1, Ordering::Relaxed);
-            let memento_cid = memento.get("cid").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let memento_cid = memento
+                .get("cid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             return (
                 cs.clone(),
                 ObligationVerdict::Discharged,
-                format!("tier0: memento-is-verification (cid={})", short(memento_cid)),
+                format!(
+                    "tier0: memento-is-verification (cid={})",
+                    short(memento_cid)
+                ),
             );
         }
-        
+
         // Tier 0b: Sub-formula composition. If parts of the formula are
         // already verified, note them for partial discharge.
         let verified_subs = pool.find_verified_subformulas(pre_formula);
         if !verified_subs.is_empty() {
             // TODO: In v1, use verified_subs to build a reduced obligation
             // for the solver. For now, we just note it in telemetry.
-            let sub_cids: Vec<String> = verified_subs.into_iter().map(|(cid, _)| short(&cid)).collect();
-            eprintln!("info: formula has {} verified sub-formulas: {}", sub_cids.len(), sub_cids.join(", "));
+            let sub_cids: Vec<String> = verified_subs
+                .into_iter()
+                .map(|(cid, _)| short(&cid))
+                .collect();
+            eprintln!(
+                "info: formula has {} verified sub-formulas: {}",
+                sub_cids.len(),
+                sub_cids.join(", ")
+            );
         }
     }
 
@@ -362,12 +368,19 @@ fn work_one(
                 return (
                     cs.clone(),
                     ObligationVerdict::Discharged,
-                    format!("tier0c: implication proven direct (memento {})", short(&memento_cid)),
+                    format!(
+                        "tier0c: implication proven direct (memento {})",
+                        short(&memento_cid)
+                    ),
                 );
             }
             crate::types::ImplicationResult::ProvenTransitive { path } => {
                 n_hash.fetch_add(1, Ordering::Relaxed);
-                let path_str = path.iter().map(|s| short(s)).collect::<Vec<_>>().join(" → ");
+                let path_str = path
+                    .iter()
+                    .map(|s| short(s))
+                    .collect::<Vec<_>>()
+                    .join(" → ");
                 return (
                     cs.clone(),
                     ObligationVerdict::Discharged,
@@ -390,7 +403,10 @@ fn work_one(
             return (
                 cs.clone(),
                 ObligationVerdict::Discharged,
-                format!("tier1: hash equality (post == pre, hash={})", short(pre_hash)),
+                format!(
+                    "tier1: hash equality (post == pre, hash={})",
+                    short(pre_hash)
+                ),
             );
         }
         if let Some(cache_dir) = &cfg.cache_dir {
@@ -399,7 +415,10 @@ fn work_one(
                 return (
                     cs.clone(),
                     ObligationVerdict::Discharged,
-                    format!("tier2: cache hit (implication memento {})", short(&impl_cid)),
+                    format!(
+                        "tier2: cache hit (implication memento {})",
+                        short(&impl_cid)
+                    ),
                 );
             }
         }
@@ -410,9 +429,7 @@ fn work_one(
     let formula_for_dispatch: Option<Json>;
     let used_implication_form: bool;
 
-    if let (Some((post_formula, _)), Some(pre_formula)) =
-        (producer_post.as_ref(), consumer_pre)
-    {
+    if let (Some((post_formula, _)), Some(pre_formula)) = (producer_post.as_ref(), consumer_pre) {
         used_implication_form = true;
         let implication = match build_implication_obligation(post_formula, pre_formula) {
             Ok(f) => f,
@@ -437,7 +454,10 @@ fn work_one(
                     format!("tier3a: tactic discharged ({reason})"),
                 );
             }
-            formula_rewrite::TacticResult::Reduced { new_formula, reason: _ } => {
+            formula_rewrite::TacticResult::Reduced {
+                new_formula,
+                reason: _,
+            } => {
                 // Use the reduced formula for SMT emission
                 smt = match smt_emitter::emit(&new_formula) {
                     Ok(s) => s,
@@ -495,8 +515,7 @@ fn work_one(
         formula_for_dispatch = Some(ob.ir_formula);
     }
 
-    let (verdict, reason, invs) =
-        run_plan(plan, registry, &smt, formula_for_dispatch.as_ref());
+    let (verdict, reason, invs) = run_plan(plan, registry, &smt, formula_for_dispatch.as_ref());
 
     n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
 
@@ -517,10 +536,8 @@ fn work_one(
         ) {
             for inv in &invs {
                 if inv.result.verdict == ObligationVerdict::Discharged {
-                    let prover_tag = format!(
-                        "{}@{}",
-                        inv.result.solver_name, inv.result.solver_version
-                    );
+                    let prover_tag =
+                        format!("{}@{}", inv.result.solver_name, inv.result.solver_version);
                     match mint_and_cache(
                         cache_dir,
                         seed,
@@ -570,13 +587,8 @@ fn short(s: &str) -> String {
     format!("blake3-512:{take}...")
 }
 
-fn build_implication_obligation(
-    post_formula: &Json,
-    pre_formula: &Json,
-) -> Result<Json, String> {
-    let post_obj = post_formula
-        .as_object()
-        .ok_or("post is not an object")?;
+fn build_implication_obligation(post_formula: &Json, pre_formula: &Json) -> Result<Json, String> {
+    let post_obj = post_formula.as_object().ok_or("post is not an object")?;
     let pre_obj = pre_formula.as_object().ok_or("pre is not an object")?;
     if post_obj.get("kind").and_then(|v| v.as_str()) != Some("forall") {
         return Err("post is not a forall".into());
@@ -592,15 +604,12 @@ fn build_implication_obligation(
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or("pre forall name missing")?;
-    let sort = post_obj
-        .get("sort")
-        .cloned()
-        .unwrap_or_else(|| {
-            pre_obj
-                .get("sort")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({"kind":"primitive","name":"Int"}))
-        });
+    let sort = post_obj.get("sort").cloned().unwrap_or_else(|| {
+        pre_obj
+            .get("sort")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"kind":"primitive","name":"Int"}))
+    });
     let post_body = post_obj.get("body").cloned().ok_or("post body missing")?;
     let pre_body = pre_obj.get("body").cloned().ok_or("pre body missing")?;
 
@@ -660,13 +669,9 @@ fn mint_and_cache(
     let binding_hash = blake3_512_of(encode_jcs(&bh).as_bytes());
     let property_hash = implication_property_hash(post_hash, pre_hash);
 
-    let mut input_cids = vec![
-        "blake3-512:0000".to_string(),
-        "blake3-512:0000".to_string(),
-    ];
+    let mut input_cids = vec!["blake3-512:0000".to_string(), "blake3-512:0000".to_string()];
     input_cids.sort();
-    let cids_arr: Vec<std::sync::Arc<Value>> =
-        input_cids.into_iter().map(Value::string).collect();
+    let cids_arr: Vec<std::sync::Arc<Value>> = input_cids.into_iter().map(Value::string).collect();
 
     // Header: schemaVersion / kind / cid + kind-specific REQUIRED.
     // The header CID hashes the substrate-load-bearing claim content
@@ -674,8 +679,14 @@ fn mint_and_cache(
     let header_content = Value::object([
         ("antecedentHash", Value::string(post_hash.to_string())),
         ("consequentHash", Value::string(pre_hash.to_string())),
-        ("antecedentCid", Value::string("blake3-512:0000".to_string())),
-        ("consequentCid", Value::string("blake3-512:0000".to_string())),
+        (
+            "antecedentCid",
+            Value::string("blake3-512:0000".to_string()),
+        ),
+        (
+            "consequentCid",
+            Value::string("blake3-512:0000".to_string()),
+        ),
         ("antecedentSlot", Value::string("post".to_string())),
         ("consequentSlot", Value::string("pre".to_string())),
     ]);
@@ -687,8 +698,14 @@ fn mint_and_cache(
         ("cid", Value::string(header_cid)),
         ("antecedentHash", Value::string(post_hash.to_string())),
         ("consequentHash", Value::string(pre_hash.to_string())),
-        ("antecedentCid", Value::string("blake3-512:0000".to_string())),
-        ("consequentCid", Value::string("blake3-512:0000".to_string())),
+        (
+            "antecedentCid",
+            Value::string("blake3-512:0000".to_string()),
+        ),
+        (
+            "consequentCid",
+            Value::string("blake3-512:0000".to_string()),
+        ),
         ("antecedentSlot", Value::string("post".to_string())),
         ("consequentSlot", Value::string("pre".to_string())),
         ("verdict", Value::string("holds")),
@@ -714,10 +731,7 @@ fn mint_and_cache(
     let metadata = std::sync::Arc::new(Value::Object(metadata_kvs));
 
     // Sign over JCS({header, metadata}) per spec §2 R2.
-    let signing_msg = Value::object([
-        ("header", header.clone()),
-        ("metadata", metadata.clone()),
-    ]);
+    let signing_msg = Value::object([("header", header.clone()), ("metadata", metadata.clone())]);
     let signing_bytes = encode_jcs(&signing_msg);
     let producer_sig = ed25519_sign_string(seed, signing_bytes.as_bytes());
 
@@ -765,9 +779,9 @@ fn mint_and_cache(
     let fname = format!("{}-{}.proof", property_hash, safe_prover);
     let path = cache_dir.join(fname);
     std::fs::write(path, built.bytes)?;
-    
+
     // Convert the canonicalizer Value back to serde_json for pool insertion
     let envelope_json: Json = serde_json::from_slice(&final_canonical)?;
-    
+
     Ok((cid, envelope_json))
 }

@@ -1,0 +1,16 @@
+{
+  "kind": "FixReceipt",
+  "schemaVersion": "1",
+  "status": "closed",
+  "missingEdge": "maybe_null(name) => non_null(name)",
+  "mode": "transform",
+  "surface": "java-provekit-native",
+  "targetSymbol": "lookup",
+  "proofVar": "name",
+  "producer": {
+    "name": "provekit-realize-java",
+    "version": "0.1.0",
+    "protocol": "provekit-orp/1"
+  },
+  "invariant": "A generated transform is accepted only when the transformed artifact is content-addressed, re-lifted, and the post-lift ProofIR closes the named missing edge under policy."
+}

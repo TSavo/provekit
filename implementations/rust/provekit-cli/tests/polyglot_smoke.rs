@@ -46,8 +46,14 @@ fn daemon_bin() -> PathBuf {
     // CI builds with --release; local cargo test uses debug. Try release first
     // (CI), fall back to debug (local). The binary is built by `cargo build`
     // before `cargo test` runs in CI's `make test-all` flow.
-    let release = workspace.join("target").join("release").join("provekit-linkerd");
-    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
+    let release = workspace
+        .join("target")
+        .join("release")
+        .join("provekit-linkerd");
+    let debug = workspace
+        .join("target")
+        .join("debug")
+        .join("provekit-linkerd");
     if release.exists() {
         release
     } else {
@@ -68,9 +74,12 @@ fn polyglot_sock() -> PathBuf {
 fn spawn_linkerd(sock: &PathBuf, idle_ms: u64) -> Child {
     let snap = std::env::temp_dir().join(format!("polyglot-snap-{}.bin", idle_ms));
     Command::new(daemon_bin())
-        .arg("--socket").arg(sock)
-        .arg("--snapshot").arg(&snap)
-        .arg("--idle-timeout-ms").arg(idle_ms.to_string())
+        .arg("--socket")
+        .arg(sock)
+        .arg("--snapshot")
+        .arg(&snap)
+        .arg("--idle-timeout-ms")
+        .arg(idle_ms.to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -339,14 +348,20 @@ fn test_failure_and_success_cids_differ() {
         let rust = make_process_contract();
         let go = make_go_caller_fail_contract();
         let edge = make_cgo_call_edge(&go);
-        link(LinkerInputs { contracts: vec![rust, go], call_edges: vec![edge] })
+        link(LinkerInputs {
+            contracts: vec![rust, go],
+            call_edges: vec![edge],
+        })
     };
 
     // Success bundle
     let success_out = {
         let rust = make_process_contract();
         let go = make_go_caller_ok_contract();
-        link(LinkerInputs { contracts: vec![rust, go], call_edges: vec![] })
+        link(LinkerInputs {
+            contracts: vec![rust, go],
+            call_edges: vec![],
+        })
     };
 
     let fail_cid = failure_out
@@ -413,14 +428,16 @@ fn test_daemon_polyglot_smoke() {
     let r1 = rpc(&sock, &parse_success);
     assert!(
         r1["result"]["diagnostics"].is_array() || r1.get("error").is_some(),
-        "parseFile must return diagnostics array or error: {:?}", r1
+        "parseFile must return diagnostics array or error: {:?}",
+        r1
     );
 
     // --- (b) parseFile same source again → projectStatus CID must be byte-identical.
     let r2 = rpc(&sock, &parse_success);
     assert!(
         r2["result"]["diagnostics"].is_array() || r2.get("error").is_some(),
-        "second parseFile must return diagnostics array or error: {:?}", r2
+        "second parseFile must return diagnostics array or error: {:?}",
+        r2
     );
 
     let status_req = serde_json::json!({
@@ -434,7 +451,8 @@ fn test_daemon_polyglot_smoke() {
         .expect("projectStatus must return linkBundleCid");
     assert!(
         cid1.starts_with("blake3-512:"),
-        "linkBundleCid must have blake3-512: prefix, got {:?}", cid1
+        "linkBundleCid must have blake3-512: prefix, got {:?}",
+        cid1
     );
 
     // Second projectStatus must be byte-identical (state hasn't changed).
@@ -463,7 +481,8 @@ fn test_daemon_polyglot_smoke() {
     let r3 = rpc(&sock, &parse_second);
     assert!(
         r3["result"]["diagnostics"].is_array() || r3.get("error").is_some(),
-        "parseFile second file must return diagnostics array or error: {:?}", r3
+        "parseFile second file must return diagnostics array or error: {:?}",
+        r3
     );
 
     let status3 = rpc(&sock, &status_req);
@@ -472,7 +491,8 @@ fn test_daemon_polyglot_smoke() {
         .expect("projectStatus must return linkBundleCid after second file");
     assert!(
         cid3.starts_with("blake3-512:"),
-        "post-second-file CID must have blake3-512: prefix, got {:?}", cid3
+        "post-second-file CID must have blake3-512: prefix, got {:?}",
+        cid3
     );
 
     // --- (d) shutdown → daemon exits cleanly within timeout.

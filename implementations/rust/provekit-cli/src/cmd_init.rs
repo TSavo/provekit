@@ -56,8 +56,7 @@ pub(crate) fn init_project(project: &Path, force: bool, quiet: bool) -> Result<(
     )?;
 
     let wf_dir = project.join(".github").join("workflows");
-    std::fs::create_dir_all(&wf_dir)
-        .with_context(|| format!("create {}", wf_dir.display()))?;
+    std::fs::create_dir_all(&wf_dir).with_context(|| format!("create {}", wf_dir.display()))?;
     let wf_path = wf_dir.join("provekit.yml");
     write_if_absent_or_force(
         &wf_path,
@@ -69,7 +68,10 @@ pub(crate) fn init_project(project: &Path, force: bool, quiet: bool) -> Result<(
     if !quiet {
         println!("{}", "Initialized ProvekIt project".green().bold());
         println!("  root          : {}", project.display());
-        println!("  provekit.toml : declares conformance to {}", EXPECTED_CATALOG_CID);
+        println!(
+            "  provekit.toml : declares conformance to {}",
+            EXPECTED_CATALOG_CID
+        );
         println!("  next steps    :");
         println!("    1. Author your first contract under .provekit/");
         println!("    2. Run `provekit prove` to verify the proof catalog.");
@@ -85,8 +87,7 @@ fn write_if_absent_or_force(path: &Path, contents: &str, force: bool, label: &st
             path.display()
         ));
     }
-    std::fs::write(path, contents)
-        .with_context(|| format!("write {}", path.display()))?;
+    std::fs::write(path, contents).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 
@@ -146,10 +147,8 @@ mod tests {
 
     #[test]
     fn init_creates_expected_files() {
-        let dir = std::env::temp_dir().join(format!(
-            "provekit-cli-init-test-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("provekit-cli-init-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -157,7 +156,11 @@ mod tests {
         assert!(dir.join("provekit.toml").exists());
         assert!(dir.join(".provekit").join("cache").exists());
         assert!(dir.join(".provekit").join("sample.invariant.rs").exists());
-        assert!(dir.join(".github").join("workflows").join("provekit.yml").exists());
+        assert!(dir
+            .join(".github")
+            .join("workflows")
+            .join("provekit.yml")
+            .exists());
 
         // Re-running without --force fails.
         let again = init_project(&dir, false, true);

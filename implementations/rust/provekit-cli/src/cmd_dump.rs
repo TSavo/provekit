@@ -28,11 +28,9 @@ pub fn run(args: DumpArgs) -> u8 {
 }
 
 fn dump(path: &PathBuf, as_json: bool, quiet: bool) -> Result<()> {
-    let bytes =
-        std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let derived_cid = blake3_512_of(&bytes);
-    let catalog =
-        decode(&bytes).with_context(|| format!("CBOR decode {}", path.display()))?;
+    let catalog = decode(&bytes).with_context(|| format!("CBOR decode {}", path.display()))?;
     let map = catalog
         .as_map()
         .ok_or_else(|| anyhow!("catalog root is not a CBOR map"))?;
@@ -85,7 +83,10 @@ fn dump(path: &PathBuf, as_json: bool, quiet: bool) -> Result<()> {
     Ok(())
 }
 
-fn get_tstr<'a>(map: &'a std::collections::BTreeMap<String, CborValue>, key: &str) -> Option<&'a str> {
+fn get_tstr<'a>(
+    map: &'a std::collections::BTreeMap<String, CborValue>,
+    key: &str,
+) -> Option<&'a str> {
     map.get(key).and_then(|v| v.as_tstr())
 }
 

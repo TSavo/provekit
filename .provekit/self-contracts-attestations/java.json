@@ -2,9 +2,9 @@
   "schemaVersion": "1",
   "kind": "self-contracts-attestation",
   "lang": "java",
-  "cid": "blake3-512:93dd048300ce9db0454fae4dd9639deca7d200de2edc005672213aec492e75c95c342ad174e3850e8ec31cfe09403c8f772fafff778254ea246367648b3a0e39",
-  "contractSetCid": "blake3-512:a22c97362e15faf1e848eeb7d668ba50eba8cfb851a72465f2cccb0ca9e12af198ec14cc0e65453a18b1e40bbd17497f8975b6e3625bbf2b6b31e6ca6aacb6e3",
+  "cid": "blake3-512:9c0684d1cbeabda91049dc61f544c552b66d657821e821c5e2a05043082a92ba434f731f776b7a1db3b87e8de1a5048966d1d5de2037640311fc2d32eb6082c7",
+  "contractSetCid": "blake3-512:36bf7c78c12b59cb77bf16d12b5a568ec80a590512a31578801caeee56edbc95317eef0a95993309d02711a2cf2d7a210de9e6db972dae819f8dfa28bc10f21b",
   "declaredAt": "2026-05-05T18:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:Lth14ZYM/WcmhG2gXdEe0i6qXg1Ez+Tqw/8GCZIDuIJibAFf1b4IJ7b3kbPSRFqZBW23+hBHhc03U529r8fhBA=="
+  "signature": "ed25519:S8zt5LrLqYE7wkGpolU8J2pUTFJiHxzo8A+CSYimPSVNKkhlcWJ3pZBdGg/Yq8+GvWP20jjknD//SKO+rMp6Bg=="
 }

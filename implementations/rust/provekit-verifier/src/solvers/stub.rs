@@ -24,10 +24,7 @@ pub struct StubSolver {
 }
 
 impl StubSolver {
-    pub fn new(
-        name: impl Into<String>,
-        verdict: ObligationVerdict,
-    ) -> Self {
+    pub fn new(name: impl Into<String>, verdict: ObligationVerdict) -> Self {
         Self {
             name: name.into(),
             version: "stub-0".into(),

@@ -287,8 +287,7 @@ fn multiple_proofs_in_one_dir_all_loaded() {
         let m = mint_contract(&args).expect("mint");
         members.insert(m.cid, m.canonical_bytes);
     }
-    let signer_cid =
-        blake3_512_of(ed25519_pubkey_string(&signer_seed).as_bytes());
+    let signer_cid = blake3_512_of(ed25519_pubkey_string(&signer_seed).as_bytes());
     let built = build_proof_envelope(&ProofEnvelopeInput {
         name: "@test/second".into(),
         version: "1.0.0".into(),

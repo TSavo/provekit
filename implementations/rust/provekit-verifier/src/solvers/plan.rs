@@ -45,9 +45,7 @@ pub fn run_plan(
     match plan {
         SolverPlan::Single(name) => single(name, registry, smt_script),
         SolverPlan::Chain(names) => chain(names, registry, smt_script),
-        SolverPlan::Portfolio { names, mode } => {
-            portfolio(names, *mode, registry, smt_script)
-        }
+        SolverPlan::Portfolio { names, mode } => portfolio(names, *mode, registry, smt_script),
         SolverPlan::Dispatch(d) => match formula {
             Some(f) => match dispatch_for_formula(f, d) {
                 Some(n) => single(n, registry, smt_script),
@@ -172,10 +170,7 @@ fn portfolio(
     // remaining solvers continue until natural completion or timeout.
     // The plan-execution semantics (first definitive verdict wins) is
     // still honored by the post-collection sort.
-    let results: Vec<SolveResult> = handles
-        .par_iter()
-        .map(|s| s.solve(smt))
-        .collect();
+    let results: Vec<SolveResult> = handles.par_iter().map(|s| s.solve(smt)).collect();
 
     match mode {
         PortfolioMode::FirstWins => {
@@ -304,14 +299,12 @@ fn reason_for(r: &SolveResult) -> String {
                 "solver '{}' returned sat (counterexample found)",
                 r.solver_name
             ),
-            ObligationVerdict::Undecidable => format!(
-                "solver '{}' returned unknown",
-                r.solver_name
-            ),
-            ObligationVerdict::Disagreement => format!(
-                "solver '{}' produced disagreement",
-                r.solver_name
-            ),
+            ObligationVerdict::Undecidable => {
+                format!("solver '{}' returned unknown", r.solver_name)
+            }
+            ObligationVerdict::Disagreement => {
+                format!("solver '{}' produced disagreement", r.solver_name)
+            }
         }
     }
 }

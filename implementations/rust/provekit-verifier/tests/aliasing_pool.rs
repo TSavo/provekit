@@ -10,7 +10,10 @@ use provekit_walk::contract::OpacityMementoLookup;
 fn blake3_cid(_data: &str) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    format!("blake3-512:test-aliasing-{:06}", COUNTER.fetch_add(1, Ordering::Relaxed))
+    format!(
+        "blake3-512:test-aliasing-{:06}",
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 fn make_aliasing_memento(formal_a: &str, formal_b: &str, status: &str) -> serde_json::Value {
@@ -35,9 +38,18 @@ fn aliasing_memento_pool_insert_and_query() {
     let memento = make_aliasing_memento("x", "y", "Disjoint");
     let cid = blake3_cid("test");
     pool.insert(cid.clone(), memento);
-    assert!(pool.has_aliasing_memento("x", "y"), "pool must find aliasing memento for (x, y) ");
-    assert!(pool.has_aliasing_memento("y", "x"), "pool must find aliasing memento for (y, x) — order-independent lookup ");
-    assert!(pool.has_aliasing_memento("x", "y"), "pool must find aliasing memento for (x, y) — idempotent ");
+    assert!(
+        pool.has_aliasing_memento("x", "y"),
+        "pool must find aliasing memento for (x, y) "
+    );
+    assert!(
+        pool.has_aliasing_memento("y", "x"),
+        "pool must find aliasing memento for (y, x) — order-independent lookup "
+    );
+    assert!(
+        pool.has_aliasing_memento("x", "y"),
+        "pool must find aliasing memento for (x, y) — idempotent "
+    );
 }
 
 #[test]
@@ -83,9 +95,15 @@ fn aliasing_memento_pool_multiple_pairs() {
     pool.insert(blake3_cid("m2"), m2);
 
     assert!(pool.has_aliasing_memento("a", "b"), "must find (a, b) ");
-    assert!(pool.has_aliasing_memento("b", "a"), "must find (a, b) reversed ");
+    assert!(
+        pool.has_aliasing_memento("b", "a"),
+        "must find (a, b) reversed "
+    );
     assert!(pool.has_aliasing_memento("b", "c"), "must find (b, c) ");
-    assert!(pool.has_aliasing_memento("c", "b"), "must find (b, c) reversed ");
+    assert!(
+        pool.has_aliasing_memento("c", "b"),
+        "must find (b, c) reversed "
+    );
     assert!(
         !pool.has_aliasing_memento("a", "c"),
         "must NOT find (a, c) — no memento for that pair "

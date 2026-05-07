@@ -224,10 +224,7 @@ mod tests {
         obj.insert("signature".into(), serde_json::Value::String(tampered));
         let bytes = serde_json::to_vec_pretty(&v).unwrap();
 
-        let path = temp_dir().join(format!(
-            "provekit-tamper-{}.json",
-            std::process::id()
-        ));
+        let path = temp_dir().join(format!("provekit-tamper-{}.json", std::process::id()));
         std::fs::write(&path, bytes).unwrap();
 
         let mut a = quiet_args();
@@ -256,10 +253,7 @@ mod tests {
         tampered.push(replacement);
         tampered.push_str(&body[1..]);
 
-        let path = temp_dir().join(format!(
-            "provekit-pubkey-{}.pub",
-            std::process::id()
-        ));
+        let path = temp_dir().join(format!("provekit-pubkey-{}.pub", std::process::id()));
         std::fs::write(&path, format!("{}\n", tampered)).unwrap();
 
         let mut a = quiet_args();

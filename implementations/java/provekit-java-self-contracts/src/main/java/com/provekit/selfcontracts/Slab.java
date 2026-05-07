@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Slab + ContractDecl + tiny formula DSL for the java self-contracts
-// orchestrator. Stays inside this module: the Java IR (provekit-ir) does
-// not yet expose a Collector / Term builder API, and the bootstrap
-// doesn't need one. Each slab function receives a Collector and authors
-// its contracts; the orchestrator drains every collector and mints.
+// orchestrator. Legacy kit-internal slabs still use this DSL directly.
+// New host-language invariants should be authored in the Java IR kit
+// (`provekit-ir`) and adapted here only at the packaging boundary.
 //
 // Formula shapes track the JCS Value tree the cross-kit `formulaToValue`
 // peer produces, so the bytes minted by this kit cohabit the same wire
@@ -22,6 +21,10 @@ import java.util.List;
 import java.util.function.Function;
 
 import com.provekit.claimenvelope.Jcs.Value;
+import com.provekit.ir.Declaration;
+import com.provekit.ir.Formula;
+import com.provekit.ir.Sort;
+import com.provekit.ir.Term;
 
 public final class Slab {
 
@@ -48,7 +51,7 @@ public final class Slab {
         }
     }
 
-    /** A named source of contract authoring: one .invariant.* sibling, conceptually. */
+    /** A named source of contract authoring. */
     public static final class AuthoredSlab {
         public final String label;
         public final String path;
@@ -79,6 +82,15 @@ public final class Slab {
         public List<ContractDecl> drain() {
             return List.copyOf(decls);
         }
+    }
+
+    public static ContractDecl fromIrContract(Declaration.Contract contract) {
+        return new ContractDecl(
+            contract.name(),
+            formulaValue(contract.pre()),
+            formulaValue(contract.post()),
+            formulaValue(contract.inv()),
+            contract.outBinding());
     }
 
     // ----------------------------------------------------------------
@@ -183,5 +195,114 @@ public final class Slab {
         // The rust peer uses ctor("true_const", str_const("")) as a "yes" sentinel
         // for predicates that have no IR-native expressible body. We mirror.
         return ctor("true_const", strConst(""));
+    }
+
+    private static Value formulaValue(Formula formula) {
+        if (formula == null) return null;
+        if (formula instanceof Formula.Atomic atomic) {
+            List<Value> args = new ArrayList<>();
+            for (Term arg : atomic.args()) {
+                args.add(termValue(arg));
+            }
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string("atomic"));
+            m.put("name", Value.string(atomic.name()));
+            m.put("args", Value.array(args));
+            return Value.object(m);
+        }
+        if (formula instanceof Formula.Connective connective) {
+            List<Value> operands = new ArrayList<>();
+            for (Formula operand : connective.operands()) {
+                operands.add(formulaValue(operand));
+            }
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string(connective.kind().name()));
+            m.put("operands", Value.array(operands));
+            return Value.object(m);
+        }
+        if (formula instanceof Formula.Quantifier quantifier) {
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string(quantifier.kind().name()));
+            m.put("name", Value.string(quantifier.name()));
+            m.put("sort", sortValue(quantifier.sort()));
+            m.put("body", formulaValue(quantifier.body()));
+            return Value.object(m);
+        }
+        if (formula instanceof Formula.Choice choice) {
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string("choice"));
+            m.put("varName", Value.string(choice.varName()));
+            m.put("sort", sortValue(choice.sort()));
+            m.put("body", formulaValue(choice.body()));
+            return Value.object(m);
+        }
+        throw new IllegalArgumentException("unsupported ProofIR formula: " + formula.getClass());
+    }
+
+    private static Value termValue(Term term) {
+        if (term instanceof Term.Var var) {
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string("var"));
+            m.put("name", Value.string(var.name()));
+            return Value.object(m);
+        }
+        if (term instanceof Term.Const constant) {
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string("const"));
+            m.put("value", constValue(constant.value()));
+            m.put("sort", sortValue(constant.sort()));
+            return Value.object(m);
+        }
+        if (term instanceof Term.Ctor ctor) {
+            List<Value> args = new ArrayList<>();
+            for (Term arg : ctor.args()) {
+                args.add(termValue(arg));
+            }
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string("ctor"));
+            m.put("name", Value.string(ctor.name()));
+            m.put("args", Value.array(args));
+            return Value.object(m);
+        }
+        if (term instanceof Term.Lambda lambda) {
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string("lambda"));
+            m.put("paramName", Value.string(lambda.paramName()));
+            m.put("paramSort", sortValue(lambda.paramSort()));
+            m.put("body", termValue(lambda.body()));
+            return Value.object(m);
+        }
+        if (term instanceof Term.Let let) {
+            List<Value> bindings = new ArrayList<>();
+            for (Term.LetBinding binding : let.bindings()) {
+                LinkedHashMap<String, Value> b = new LinkedHashMap<>();
+                b.put("name", Value.string(binding.name()));
+                b.put("boundTerm", termValue(binding.boundTerm()));
+                bindings.add(Value.object(b));
+            }
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string("let"));
+            m.put("bindings", Value.array(bindings));
+            m.put("body", termValue(let.body()));
+            return Value.object(m);
+        }
+        throw new IllegalArgumentException("unsupported ProofIR term: " + term.getClass());
+    }
+
+    private static Value sortValue(Sort sort) {
+        if (sort instanceof Sort.Primitive primitive) {
+            LinkedHashMap<String, Value> m = new LinkedHashMap<>();
+            m.put("kind", Value.string("primitive"));
+            m.put("name", Value.string(primitive.name()));
+            return Value.object(m);
+        }
+        throw new IllegalArgumentException("unsupported ProofIR sort: " + sort.getClass());
+    }
+
+    private static Value constValue(Term.Value value) {
+        if (value instanceof Term.Value.Int i) return Value.integer(i.value());
+        if (value instanceof Term.Value.Str s) return Value.string(s.value());
+        if (value instanceof Term.Value.Bool b) return Value.bool(b.value());
+        throw new IllegalArgumentException("unsupported ProofIR const value: " + value.getClass());
     }
 }

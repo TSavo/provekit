@@ -23,11 +23,13 @@ use serde_json::Value as Json;
 use crate::{EXIT_OK, EXIT_SOLVER_FAIL, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 pub fn run(args: crate::WitnessArgs) -> u8 {
-    let project_root = args.project.unwrap_or_else(|| std::env::current_dir().unwrap());
-    
+    let project_root = args
+        .project
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
+
     // 1. Load pool
     let pool = provekit_verifier::load_all_proofs::run(&project_root);
-    
+
     // 2. Find contract
     let contract = match pool.mementos.get(&args.contract_cid) {
         Some(c) => c,
@@ -36,7 +38,7 @@ pub fn run(args: crate::WitnessArgs) -> u8 {
             return EXIT_USER_ERROR;
         }
     };
-    
+
     // 3. Extract contract's post formula
     let post_formula = match extract_post(contract) {
         Some(f) => f,
@@ -45,7 +47,7 @@ pub fn run(args: crate::WitnessArgs) -> u8 {
             return EXIT_USER_ERROR;
         }
     };
-    
+
     // 4. Load property formula
     let property_formula = match load_formula(&args.property) {
         Ok(f) => f,
@@ -54,7 +56,7 @@ pub fn run(args: crate::WitnessArgs) -> u8 {
             return EXIT_USER_ERROR;
         }
     };
-    
+
     // 5. Build implication obligation
     let obligation = match build_witness_obligation(&post_formula, &property_formula) {
         Ok(o) => o,
@@ -63,7 +65,7 @@ pub fn run(args: crate::WitnessArgs) -> u8 {
             return EXIT_USER_ERROR;
         }
     };
-    
+
     // 6. Emit SMT-LIB
     let smt = match provekit_verifier::smt_emitter::emit(&obligation) {
         Ok(s) => s,
@@ -72,11 +74,14 @@ pub fn run(args: crate::WitnessArgs) -> u8 {
             return EXIT_SOLVER_FAIL;
         }
     };
-    
+
     // 7. Run solver
-    println!("witness: proving {} implies property...", short(&args.contract_cid));
+    println!(
+        "witness: proving {} implies property...",
+        short(&args.contract_cid)
+    );
     let result = run_solver(&args.z3, &smt);
-    
+
     match result {
         SolverOutput::Unsat => {
             println!("witness: proven! Minting memento...");
@@ -105,10 +110,7 @@ pub fn run(args: crate::WitnessArgs) -> u8 {
 }
 
 fn extract_post(contract: &Json) -> Option<Json> {
-    contract.get("evidence")?
-        .get("body")?
-        .get("post")
-        .cloned()
+    contract.get("evidence")?.get("body")?.get("post").cloned()
 }
 
 fn load_formula(path: &PathBuf) -> Result<Json, Box<dyn std::error::Error>> {
@@ -127,7 +129,10 @@ fn build_witness_obligation(post: &Json, property: &Json) -> Result<Json, String
     Ok(Json::Object({
         let mut m = serde_json::Map::new();
         m.insert("kind".to_string(), Json::String("implies".to_string()));
-        m.insert("operands".to_string(), Json::Array(vec![post.clone(), property.clone()]));
+        m.insert(
+            "operands".to_string(),
+            Json::Array(vec![post.clone(), property.clone()]),
+        );
         m
     }))
 }
@@ -140,9 +145,9 @@ enum SolverOutput {
 }
 
 fn run_solver(z3_path: &str, smt: &str) -> SolverOutput {
-    use std::process::{Command, Stdio};
     use std::io::Write;
-    
+    use std::process::{Command, Stdio};
+
     let mut child = match Command::new(z3_path)
         .arg("-in")
         .stdin(Stdio::piped())
@@ -153,21 +158,21 @@ fn run_solver(z3_path: &str, smt: &str) -> SolverOutput {
         Ok(c) => c,
         Err(e) => return SolverOutput::Error(format!("failed to spawn z3: {e}")),
     };
-    
+
     if let Some(mut stdin) = child.stdin.take() {
         if let Err(e) = stdin.write_all(smt.as_bytes()) {
             return SolverOutput::Error(format!("failed to write to z3 stdin: {e}"));
         }
     }
-    
+
     let output = match child.wait_with_output() {
         Ok(o) => o,
         Err(e) => return SolverOutput::Error(format!("z3 wait failed: {e}")),
     };
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     if stdout.trim() == "unsat" {
         SolverOutput::Unsat
     } else if stdout.trim() == "sat" {
@@ -175,7 +180,11 @@ fn run_solver(z3_path: &str, smt: &str) -> SolverOutput {
     } else if stdout.trim() == "unknown" {
         SolverOutput::Unknown
     } else {
-        SolverOutput::Error(format!("unexpected output: {} (stderr: {})", stdout.trim(), stderr.trim()))
+        SolverOutput::Error(format!(
+            "unexpected output: {} (stderr: {})",
+            stdout.trim(),
+            stderr.trim()
+        ))
     }
 }
 
