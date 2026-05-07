@@ -496,6 +496,7 @@ jobs:
             --json
 
       - name: "CICP reuse admission (${{ matrix.kit }})"
+        id: cicp_reuse
         run: |
           set +e
           implementations/rust/target/release/provekit ci reuse \
@@ -508,18 +509,20 @@ jobs:
           set -e
           if [ "$status" -eq 0 ]; then
             echo "CICP_REUSE_HIT=true" >> "$GITHUB_ENV"
+            echo "hit=true" >> "$GITHUB_OUTPUT"
             cat ".provekit/ci-shadow/${{ matrix.kit }}/reuse-summary.json"
           else
             echo "CICP_REUSE_HIT=false" >> "$GITHUB_ENV"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
             cat ".provekit/ci-shadow/${{ matrix.kit }}/reuse-error.txt"
           fi
 
       - name: "prove-${{ matrix.kit }}"
-        if: env.CICP_REUSE_HIT != 'true'
+        if: steps.cicp_reuse.outputs.hit != 'true'
         run: make prove-${{ matrix.kit }}
 
       - name: "CICP candidate result (${{ matrix.kit }})"
-        if: env.CICP_REUSE_HIT != 'true'
+        if: steps.cicp_reuse.outputs.hit != 'true'
         run: |
           implementations/rust/target/release/provekit ci result \
             --blast-radius ".provekit/ci-shadow/${{ matrix.kit }}/blast-radius.json" \
@@ -572,6 +575,7 @@ jobs:
             --json
 
       - name: CICP reuse admission (swift)
+        id: cicp_reuse
         run: |
           set +e
           implementations/rust/target/release/provekit ci reuse \
@@ -584,18 +588,20 @@ jobs:
           set -e
           if [ "$status" -eq 0 ]; then
             echo "CICP_REUSE_HIT=true" >> "$GITHUB_ENV"
+            echo "hit=true" >> "$GITHUB_OUTPUT"
             cat .provekit/ci-shadow/swift/reuse-summary.json
           else
             echo "CICP_REUSE_HIT=false" >> "$GITHUB_ENV"
+            echo "hit=false" >> "$GITHUB_OUTPUT"
             cat .provekit/ci-shadow/swift/reuse-error.txt
           fi
 
       - name: prove-swift
-        if: env.CICP_REUSE_HIT != 'true'
+        if: steps.cicp_reuse.outputs.hit != 'true'
         run: make prove-swift
 
       - name: CICP candidate result (swift)
-        if: env.CICP_REUSE_HIT != 'true'
+        if: steps.cicp_reuse.outputs.hit != 'true'
         run: |
           implementations/rust/target/release/provekit ci result \
             --blast-radius .provekit/ci-shadow/swift/blast-radius.json \
