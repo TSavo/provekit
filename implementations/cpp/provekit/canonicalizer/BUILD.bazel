@@ -66,3 +66,15 @@ cc_test(
         ":value",
     ],
 )
+
+cc_test(
+    name = "cicp_vectors_conformance_test",
+    srcs = ["cicp_vectors_test.cpp"],
+    copts = ["-std=c++17"],
+    data = ["//protocol/conformance:cicp_vectors"],
+    deps = [
+        ":hash",
+        ":jcs",
+        ":value",
+    ],
+)
