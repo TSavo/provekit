@@ -486,6 +486,22 @@ jobs:
             php-cli
           php -m | grep -q '^sodium$'
 
+      - name: "CICP shadow blast radius (${{ matrix.kit }})"
+        run: |
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          implementations/rust/target/release/provekit ci shadow \
+            --kit "${{ matrix.kit }}" \
+            --out-dir ".provekit/ci-shadow/${{ matrix.kit }}" \
+            --runner-identity "github-actions/${{ runner.os }}/${{ runner.arch }}" \
+            --json
+
+      - name: "Upload CICP shadow (${{ matrix.kit }})"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cicp-shadow-${{ matrix.kit }}
+          path: .provekit/ci-shadow/${{ matrix.kit }}
+
       - name: "prove-${{ matrix.kit }}"
         run: make prove-${{ matrix.kit }}
 
@@ -515,6 +531,22 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: CICP shadow blast radius (swift)
+        run: |
+          cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+          implementations/rust/target/release/provekit ci shadow \
+            --kit swift \
+            --out-dir .provekit/ci-shadow/swift \
+            --runner-identity "github-actions/${{ runner.os }}/${{ runner.arch }}" \
+            --json
+
+      - name: Upload CICP shadow (swift)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cicp-shadow-swift
+          path: .provekit/ci-shadow/swift
 
       - name: prove-swift
         run: make prove-swift

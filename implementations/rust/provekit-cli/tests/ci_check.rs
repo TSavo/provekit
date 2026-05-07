@@ -44,6 +44,87 @@ fn write_json(path: &Path, value: &Json) {
     fs::write(path, bytes).expect("write json");
 }
 
+fn write_file(path: &Path, text: &str) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("mkdir parent");
+    }
+    fs::write(path, text).expect("write file");
+}
+
+fn raw_cid(text: &str) -> String {
+    blake3_512_of(text.as_bytes())
+}
+
+fn make_shadow_repo(suffix: &str) -> PathBuf {
+    let repo = make_unique_dir(suffix);
+
+    write_file(
+        &repo.join("protocol/specs/2026-04-30-protocol-catalog.json"),
+        r#"{"protocol":"provekit","version":"test"}"#,
+    );
+    write_file(
+        &repo.join("protocol/specs/2026-05-07-content-addressed-ci-protocol.md"),
+        "# Content-Addressed CI Protocol\n\nCICP test spec v1.\n",
+    );
+    write_file(
+        &repo.join("protocol/conformance/cicp/vectors.json"),
+        r#"{"vectors":[]}"#,
+    );
+    write_file(
+        &repo.join("Makefile"),
+        "prove-rust:\n\tcargo test\nprove-go:\n\tgo test ./...\n",
+    );
+    write_file(&repo.join(".github/workflows/ci.yml"), "name: CI\n");
+
+    write_file(
+        &repo.join("implementations/rust/Cargo.toml"),
+        "[workspace]\n",
+    );
+    write_file(&repo.join("implementations/rust/Cargo.lock"), "# lock\n");
+    write_file(
+        &repo.join("implementations/rust/src/lib.rs"),
+        "pub fn rust_kit() {}\n",
+    );
+
+    write_file(
+        &repo.join("implementations/go/go.mod"),
+        "module example.com/provekit-go\n",
+    );
+    write_file(&repo.join("implementations/go/go.sum"), "# sum\n");
+    write_file(
+        &repo.join("implementations/go/main.go"),
+        "package main\nfunc main() {}\n",
+    );
+
+    repo
+}
+
+fn run_ci_shadow(repo: &Path, kit: &str) -> Json {
+    let out_dir = repo.join(".provekit/ci-shadow").join(kit);
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("ci")
+        .arg("shadow")
+        .arg("--repo")
+        .arg(repo)
+        .arg("--kit")
+        .arg(kit)
+        .arg("--out-dir")
+        .arg(out_dir)
+        .arg("--json")
+        .output()
+        .expect("run provekit ci shadow");
+
+    assert!(
+        output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    serde_json::from_slice(&output.stdout).expect("shadow summary JSON")
+}
+
 fn blast_radius_body() -> Json {
     json!({
         "kind": "CIBlastRadius",
@@ -73,6 +154,83 @@ fn blast_radius_body() -> Json {
             cid('7'), cid('8'), cid('9'), cid('a'), cid('b')
         ]
     })
+}
+
+#[test]
+fn ci_shadow_emits_distinct_per_kit_blast_radii_with_protocol_inputs() {
+    let repo = make_shadow_repo("shadow-distinct");
+
+    let rust = run_ci_shadow(&repo, "rust");
+    let go = run_ci_shadow(&repo, "go");
+
+    assert_eq!(rust["kind"], "CIShadow");
+    assert_eq!(rust["kit"], "rust");
+    assert_eq!(rust["wouldSkip"], false);
+    assert_eq!(rust["blastRadius"]["jobKey"], "provekit/ci/rust");
+    assert_eq!(go["blastRadius"]["jobKey"], "provekit/ci/go");
+
+    assert_ne!(
+        rust["blastRadiusCid"], go["blastRadiusCid"],
+        "each kit must have its own blast-radius CID"
+    );
+    assert_ne!(
+        rust["blastRadius"]["sourceClosureCid"], go["blastRadius"]["sourceClosureCid"],
+        "source closures must stay kit-specific"
+    );
+
+    let rust_body_path = repo.join(
+        rust["blastRadiusPath"]
+            .as_str()
+            .expect("blastRadiusPath string"),
+    );
+    assert!(
+        rust_body_path.exists(),
+        "body path exists: {rust_body_path:?}"
+    );
+
+    let body: Json =
+        serde_json::from_slice(&fs::read(&rust_body_path).expect("read blast-radius body"))
+            .expect("parse body");
+    let relevant = body["relevantSpecCids"]
+        .as_array()
+        .expect("relevantSpecCids array");
+    assert!(
+        relevant.iter().any(|cid| cid
+            == &Json::String(raw_cid(
+                "# Content-Addressed CI Protocol\n\nCICP test spec v1.\n"
+            ))),
+        "CICP protocol spec CID must be in the kit blast radius"
+    );
+    assert!(
+        relevant.iter().any(|cid| cid
+            == &Json::String(raw_cid(r#"{"protocol":"provekit","version":"test"}"#))),
+        "protocol catalog spec file CID must be in the kit blast radius"
+    );
+
+    let _ = fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn ci_shadow_protocol_spec_change_invalidates_same_kit_radius() {
+    let repo = make_shadow_repo("shadow-protocol-change");
+
+    let before = run_ci_shadow(&repo, "rust");
+    write_file(
+        &repo.join("protocol/specs/2026-05-07-content-addressed-ci-protocol.md"),
+        "# Content-Addressed CI Protocol\n\nCICP test spec v2.\n",
+    );
+    let after = run_ci_shadow(&repo, "rust");
+
+    assert_ne!(
+        before["blastRadiusCid"], after["blastRadiusCid"],
+        "protocol spec edits must invalidate kit blast-radius CIDs"
+    );
+    assert_ne!(
+        before["blastRadius"]["relevantSpecCids"], after["blastRadius"]["relevantSpecCids"],
+        "the protocol spec CID set should reflect the edited spec"
+    );
+
+    let _ = fs::remove_dir_all(&repo);
 }
 
 #[test]
