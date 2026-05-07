@@ -109,9 +109,6 @@ mod instantiate_invariants;
 #[path = "../../provekit-verifier/src/smt_emitter.invariant.rs"]
 mod smt_emitter_invariants;
 
-#[path = "../../../java/provekit-realize-java-core/src/main/java/com/provekit/realize/JavaNullBoundaryRealizer.invariant.rs"]
-mod java_null_boundary_realizer_invariants;
-
 #[path = "../../provekit-cli/src/cmd_zoo.invariant.rs"]
 mod cmd_zoo_invariants;
 
@@ -286,13 +283,6 @@ pub fn author_all_invariants() -> (Vec<AuthoredSlab>, Vec<SelfBridge>) {
                 path: "provekit-verifier/src/smt_emitter.invariant.rs",
             },
             smt_emitter_invariants::invariants,
-        ),
-        run_one_slab(
-            InvariantSource {
-                label: "java_null_boundary_realizer",
-                path: "provekit-realize-java-core/src/main/java/com/provekit/realize/JavaNullBoundaryRealizer.invariant.rs",
-            },
-            java_null_boundary_realizer_invariants::invariants,
         ),
         run_one_slab(
             InvariantSource {

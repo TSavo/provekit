@@ -735,7 +735,7 @@ fn cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 
 /// Pinned contractSetCid produced by `--kit=java` after routing to the
 /// `java-self-contracts` surface (`provekit-java-self-contracts.jar`,
-/// canonical 6-slab, 30-contract set). Mirrors the rust / cpp / ts / go
+/// canonical 7-slab, 31-contract set). Mirrors the rust / cpp / ts / go
 /// pinning pattern.
 ///
 /// If this test fails with the old empty-set CID (`d53d18c2...`), the
@@ -747,7 +747,7 @@ fn cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 ///   `implementations/java/.provekit/lift/java-self-contracts/manifest.toml`
 /// which spawns: `./provekit-java-self-contracts/run-rpc.sh --rpc`.
 const JAVA_CONTRACT_SET_CID: &str =
-    "blake3-512:a22c97362e15faf1e848eeb7d668ba50eba8cfb851a72465f2cccb0ca9e12af198ec14cc0e65453a18b1e40bbd17497f8975b6e3625bbf2b6b31e6ca6aacb6e3";
+    "blake3-512:36bf7c78c12b59cb77bf16d12b5a568ec80a590512a31578801caeee56edbc95317eef0a95993309d02711a2cf2d7a210de9e6db972dae819f8dfa28bc10f21b";
 
 #[test]
 #[serial(mint_kit_files)]
@@ -777,7 +777,7 @@ fn java_kit_pins_expected_contract_set_cid() {
     );
     assert_eq!(
         cset, JAVA_CONTRACT_SET_CID,
-        "java kit: contractSetCid does not match pinned value from 6-slab, 30-contract set (issue #207).\n\
+        "java kit: contractSetCid does not match pinned value from 7-slab, 31-contract set (issue #207).\n\
          If the self-contracts changed intentionally, update JAVA_CONTRACT_SET_CID."
     );
 

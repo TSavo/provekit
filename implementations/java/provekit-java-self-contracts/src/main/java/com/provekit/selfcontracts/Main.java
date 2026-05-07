@@ -21,12 +21,9 @@
 //                   this mode; spec is
 //                   protocol/specs/2026-04-30-lift-plugin-protocol.md.
 //
-// Authoring surface: java-self-contracts. Slabs walked:
-//   - catalog_format    13 contracts mirroring rust catalog_format.rs
-//
-// Future slabs (lift_plugin_protocol cross-kit bridges, provekit-claim-envelope
-// kit-internal invariants) are bootstrapped separately. This module ships
-// with a content-meaningful contractSetCid as the first deliverable.
+// Authoring surface: java-self-contracts. The orchestrator walks the slab
+// catalog in JavaKitInvariants, including Java ProofIR-authored invariants
+// packaged at the self-contract boundary.
 
 package com.provekit.selfcontracts;
 

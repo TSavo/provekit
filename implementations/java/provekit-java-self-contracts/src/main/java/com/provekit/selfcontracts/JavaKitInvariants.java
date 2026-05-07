@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Java kit-internal invariants. Each slab's contracts describe the
-// shape-level guarantees of the public surface in
-// implementations/java/provekit-claim-envelope/src/main/java/com/provekit/claimenvelope/.
+// Java kit-internal invariants. Each slab's contracts describe shape-level
+// guarantees of the Java kit public surfaces.
 //
 // Mirrors the cross-kit pattern (rust .invariant.rs, csharp
 // .invariant.cs, cpp .invariant.cpp): IR cannot model collision
@@ -19,6 +18,7 @@
 //   cbor              5 contracts
 //   proof_envelope    5 contracts
 //   claim_envelope    5 contracts
+//   realizer          1 contract
 
 package com.provekit.selfcontracts;
 
@@ -35,6 +35,7 @@ import static com.provekit.selfcontracts.Slab.strConst;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.provekit.ir.ProofIrInvariants;
 import com.provekit.selfcontracts.Slab.AuthoredSlab;
 import com.provekit.selfcontracts.Slab.Collector;
 
@@ -56,6 +57,7 @@ public final class JavaKitInvariants {
         out.add(authorEd25519());
         out.add(authorJcs());
         out.add(authorProofEnvelope());
+        out.add(authorRealizer());
         return out;
     }
 
@@ -286,5 +288,21 @@ public final class JavaKitInvariants {
             "proof_envelope",
             "implementations/java/provekit-claim-envelope/src/main/java/com/provekit/claimenvelope/ProofEnvelope.java",
             c.drain());
+    }
+
+    // -----------------------------------------------------------------
+    // Java ProofIR-authored realizer invariants
+    // -----------------------------------------------------------------
+
+    private static AuthoredSlab authorRealizer() {
+        List<Slab.ContractDecl> contracts = ProofIrInvariants.javaRealizerContracts()
+            .stream()
+            .map(Slab::fromIrContract)
+            .toList();
+
+        return new AuthoredSlab(
+            "realizer",
+            "implementations/java/provekit-ir/src/main/java/com/provekit/ir/ProofIrInvariants.java",
+            contracts);
     }
 }
