@@ -52,10 +52,28 @@ fn csharp_discover_cli_finds_null_boundary_with_language_lifter() {
         "bug-zoo/species/BZ-SHAPE-007-csharp-null-boundary-equivalence/exposed/linq-where/harness",
     );
 
+    let build = Command::new("dotnet")
+        .arg("build")
+        .arg(&project)
+        .arg("--nologo")
+        .arg("--verbosity")
+        .arg("quiet")
+        .current_dir(&root)
+        .output()
+        .expect("build csharp discover cli");
+
+    let build_stdout = String::from_utf8_lossy(&build.stdout);
+    let build_stderr = String::from_utf8_lossy(&build.stderr);
+    assert!(
+        build.status.success(),
+        "csharp discover build failed\nstdout:\n{build_stdout}\nstderr:\n{build_stderr}"
+    );
+
     let output = Command::new("dotnet")
         .arg("run")
         .arg("--project")
         .arg(project)
+        .arg("--no-build")
         .arg("--no-restore")
         .arg("--")
         .arg("discover")
