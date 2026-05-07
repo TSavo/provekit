@@ -33,10 +33,11 @@ Each zoo specimen separates discovery from verification.
    the lifter RPC, hashes it, compares it to checked-in witness bytes, and
    checks required equivalences across surfaces and languages.
 
-In shorthand: each language proves `k_lang(I) = t`, where `k_lang` is that
-language's kit lifting the native input `I`, and `t` is the canonical bug shape.
-When TypeScript, Java, and C# all land on the same `t`, the bug has a portable
-signature independent of its host-language syntax or exception type.
+In shorthand: each language proves `k_lang(I) = t`, where `k_lang` is the
+language compiler as a ProvekIt kit/lifter, `I` is source, and `t` is witnessed
+output: canonical ProofIR bytes, CID, and receipt. When TypeScript, Java, and
+C# all land on the same `t`, the bug has a portable signature independent of
+its host-language syntax or exception type.
 
 ## Current Null-Boundary Receipts
 
@@ -58,7 +59,7 @@ and the same ProofIR CID:
 blake3-512:0d611d8478a205ff040e7d0bcf6c21b12051340ecc5f00c3953af632b23fc01e069b4ad8a8699869163e135b9fde85792eba6acc54cd75cb3d3cc6a40a99ded4
 ```
 
-That CID is the receipt. The source languages disagree; the canonical bug shape
+That CID is the receipt. The source languages disagree; the witnessed output
 does not.
 
 ## Run It
@@ -78,16 +79,16 @@ pnpm exec tsx bug-zoo/species/BZ-SHAPE-006-typescript-null-boundary-equivalence/
 dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj -- discover csharp-linq bug-zoo/species/BZ-SHAPE-007-csharp-null-boundary-equivalence/exposed/linq-where/harness
 ```
 
-Those commands show the first phase: the language kit finds the native bug. The
-`provekit zoo` command shows the second phase: the canonical IR signature is
-byte-identical.
+Those commands show the first phase: the language compiler/kit maps source to a
+witnessed bug output. The `provekit zoo` command shows the second phase: the
+witnessed output is byte-identical.
 
 ## Why This Matters
 
 Bug Zoo turns the broad ProvekIt thesis into receipts:
 
 - ordinary code passes ordinary host checks;
-- each language's own kit discovers the missing contract edge;
+- each language's own compiler/kit maps source to a witnessed missing edge;
 - canonical ProofIR makes equivalent bug shapes hash to the same bytes;
 - droppers can close the edge only if re-lift verifies the closure.
 

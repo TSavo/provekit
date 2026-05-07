@@ -71,9 +71,10 @@ The protocol is content-addressed end to end. Each version's canonical name is i
 ## Bug Zoo
 
 Bug Zoo is the executable lab for the claim above. Each specimen runs in an
-isolated host-language environment, uses that language's own kit to discover a
-bug, then asks `provekit zoo` to verify that the canonical ProofIR signature is
-byte-identical across surfaces and languages.
+isolated host-language environment, uses that language's own compiler/kit to
+map source to a witnessed bug output, then asks `provekit zoo` to verify that
+the canonical ProofIR signature is byte-identical across surfaces and
+languages.
 
 In shorthand:
 
@@ -81,10 +82,10 @@ In shorthand:
 k_lang(I) = t
 ```
 
-`I` is the native program or specimen, `k_lang` is that language's kit/lifter,
-and `t` is the canonical ProofIR bug shape. Different languages can disagree in
-syntax, runtime behavior, and exception type while still lifting to the same
-`t`.
+`k_lang` is the language compiler as a ProvekIt kit/lifter, `I` is the source,
+and `t` is the witnessed output: canonical ProofIR bytes, CID, and receipt.
+Different languages can disagree in syntax, runtime behavior, and exception
+type while still compiling to the same witnessed `t`.
 
 The current null-boundary receipts show TypeScript and C# lifting the same
 missing edge:
