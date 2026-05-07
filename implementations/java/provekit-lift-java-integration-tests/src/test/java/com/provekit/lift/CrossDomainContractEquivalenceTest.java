@@ -93,6 +93,33 @@ public class CrossDomainContractEquivalenceTest {
     }
 
     @Test
+    public void provekitNativeNotNullConstraintMatchesRequires() {
+        String requiresSource = """
+            import com.provekit.contract.Requires;
+            public class ProvekitNativeService {
+                @Requires("name != null")
+                public String greet(String name) {
+                    return "Hello " + name;
+                }
+            }
+            """;
+
+        String notNullSource = """
+            import com.provekit.contract.NotNull;
+            public class ProvekitNativeService {
+                public String greet(@NotNull String name) {
+                    return "Hello " + name;
+                }
+            }
+            """;
+
+        String requiresIr = lift(new ProvekitNativeExtractor(), requiresSource);
+        String notNullIr = lift(new ProvekitNativeExtractor(), notNullSource);
+
+        assertEquals(requiresIr, notNullIr, "ProvekIt-native @NotNull must lift like @Requires(\"name != null\")");
+    }
+
+    @Test
     public void numericRangeConstraintIsUniversal() {
         // Bean Validation: @Min(0) @Max(100)
         String beanSource = """

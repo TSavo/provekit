@@ -576,7 +576,7 @@ fn go_kit_pins_expected_contract_set_cid() {
 /// lift-plugin protocol contract-set CID below; this pin covers the whole Rust
 /// kit surface, including but not limited to protocol contracts.
 const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
-    "blake3-512:af99d402c609d7dbdf89ba63a34e82bd713206ba3bd22ae5593e924f940bc5b6b239c1c2f2c1c109b8034e572c3861eb8ab93119b8e7995c2d8abc4f303e6cf9";
+    "blake3-512:404a1489b43a76b87f2b47592eaaf91ce2713af694c4a0ad1470f9e6a6195d541480d298e3b84c3542794e8423167f2cbde77c55e86ec6f22ba4187fe41cd405";
 
 /// Pinned contractSetCid produced by `--kit=cpp` after routing to the
 /// `cpp-self-contracts` surface (mint_cpp_self_contracts binary, canonical

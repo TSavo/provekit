@@ -45,11 +45,37 @@ fn all_specimens_pass() {
 }
 
 #[test]
+fn all_specimens_reports_one_null_boundary_species() {
+    let root = repo_root();
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit-bug-zoo"))
+        .arg(root.join("bug-zoo/species"))
+        .arg("--all")
+        .arg("--json")
+        .current_dir(&root)
+        .output()
+        .expect("spawn provekit-bug-zoo --all --json");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "provekit-bug-zoo --all --json failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("bug zoo JSON report parses");
+    assert_eq!(report["ok"], true);
+    let reports = report["reports"].as_array().expect("reports is an array");
+    assert_eq!(reports.len(), 1, "null-boundary is one species");
+    assert_eq!(reports[0]["id"], "BZ-SHAPE-005");
+    assert_eq!(reports[0]["languages"].as_array().unwrap().len(), 3);
+}
+
+#[test]
 fn csharp_discover_cli_finds_null_boundary_with_language_lifter() {
     let root = repo_root();
     let project = root.join("implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj");
     let harness = root.join(
-        "bug-zoo/species/BZ-SHAPE-007-csharp-null-boundary-equivalence/exposed/linq-where/harness",
+        "bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness",
     );
 
     let build = Command::new("dotnet")
@@ -100,10 +126,10 @@ fn csharp_discover_cli_finds_null_boundary_with_language_lifter() {
 fn typescript_discover_cli_finds_null_boundary_with_language_lifter() {
     let root = repo_root();
     let discover = root.join(
-        "bug-zoo/species/BZ-SHAPE-006-typescript-null-boundary-equivalence/tools/ts-boundary-discover.ts",
+        "bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/tools/ts-boundary-discover.ts",
     );
     let harness = root.join(
-        "bug-zoo/species/BZ-SHAPE-006-typescript-null-boundary-equivalence/exposed/zod/harness",
+        "bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/exhibit/zod/harness",
     );
 
     let output = Command::new("pnpm")
