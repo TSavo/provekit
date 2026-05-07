@@ -156,6 +156,40 @@ fn protocol_evolve_emits_body_and_witness_for_extension_only_patch() {
     assert_eq!(witness["claimBodyCid"], summary["bodyCid"]);
     assert_eq!(witness["claimBodyCid"], jcs_cid(&body));
 
+    let check_output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("protocol")
+        .arg("check-evolution")
+        .arg("--body")
+        .arg(&body_path)
+        .arg("--from")
+        .arg(&from_catalog)
+        .arg("--to")
+        .arg(&to_catalog)
+        .arg("--policy")
+        .arg(&policy)
+        .arg("--verifier")
+        .arg(&verifier)
+        .arg("--catalog-diff")
+        .arg(out_dir.join("catalog-diff.json"))
+        .arg("--json")
+        .output()
+        .expect("run provekit protocol check-evolution");
+
+    assert!(
+        check_output.status.success(),
+        "status={:?}\nstdout={}\nstderr={}",
+        check_output.status.code(),
+        String::from_utf8_lossy(&check_output.stdout),
+        String::from_utf8_lossy(&check_output.stderr)
+    );
+    let check_summary: Json =
+        serde_json::from_slice(&check_output.stdout).expect("check summary JSON");
+    assert_eq!(check_summary["kind"], "ProtocolEvolutionCheck");
+    assert_eq!(check_summary["ok"], true);
+    assert_eq!(check_summary["bodyCid"], jcs_cid(&body));
+    assert_eq!(check_summary["fromCatalogCid"], jcs_cid(&from));
+    assert_eq!(check_summary["toCatalogCid"], jcs_cid(&to));
+
     let _ = fs::remove_dir_all(&dir);
 }
 

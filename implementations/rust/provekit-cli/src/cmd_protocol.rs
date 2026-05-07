@@ -3,8 +3,8 @@
 // `provekit protocol ...` — protocol-catalog evolution workflow.
 //
 // The core verifier does not execute PEP. This command is extension-aware
-// tooling: it builds a signed-byte-graph-shaped claim that a catalog
-// transition is admissible under a named policy.
+// tooling: it builds or checks a signed-byte-graph-shaped claim that a
+// catalog transition is admissible under a named policy.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -29,6 +29,8 @@ pub struct ProtocolArgs {
 pub enum ProtocolCmd {
     /// Emit a PEP body and TDP-shaped witness for a catalog transition.
     Evolve(ProtocolEvolveArgs),
+    /// Check an already-built PEP body against its evidence bytes.
+    CheckEvolution(ProtocolCheckEvolutionArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -64,6 +66,33 @@ pub struct ProtocolEvolveArgs {
     pub out: OutputFlags,
 }
 
+#[derive(Parser, Debug, Clone)]
+pub struct ProtocolCheckEvolutionArgs {
+    /// Existing ProtocolEvolutionBodyClaim JSON.
+    #[arg(long)]
+    pub body: PathBuf,
+    /// Predecessor protocol catalog JSON.
+    #[arg(long = "from")]
+    pub from_catalog: PathBuf,
+    /// Successor protocol catalog JSON.
+    #[arg(long = "to")]
+    pub to_catalog: PathBuf,
+    /// Protocol evolution policy JSON artifact.
+    #[arg(long)]
+    pub policy: PathBuf,
+    /// Protocol evolution verifier JSON artifact.
+    #[arg(long)]
+    pub verifier: PathBuf,
+    /// Catalog diff JSON artifact named by the PEP body evidence.
+    #[arg(long = "catalog-diff")]
+    pub catalog_diff: PathBuf,
+    /// Optional signed catalog attestation JSON for the successor catalog.
+    #[arg(long)]
+    pub attestation: Option<PathBuf>,
+    #[command(flatten)]
+    pub out: OutputFlags,
+}
+
 pub fn run(args: ProtocolArgs) -> u8 {
     match args.cmd {
         ProtocolCmd::Evolve(args) => match run_evolve(args) {
@@ -89,6 +118,28 @@ pub fn run(args: ProtocolArgs) -> u8 {
                 crate::EXIT_USER_ERROR
             }
         },
+        ProtocolCmd::CheckEvolution(args) => match run_check_evolution(args) {
+            Ok(summary) => {
+                if summary.out.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&summary.payload)
+                            .unwrap_or_else(|_| summary.payload.to_string())
+                    );
+                } else if !summary.out.quiet {
+                    println!("{}", "ProvekIt protocol evolution check".bold());
+                    println!("  body CID     : {}", summary.body_cid);
+                    println!("  from catalog : {}", summary.from_catalog_cid);
+                    println!("  to catalog   : {}", summary.to_catalog_cid);
+                    println!("  status       : {}", "admitted".green().bold());
+                }
+                crate::EXIT_OK
+            }
+            Err(e) => {
+                eprintln!("{}: {e}", "error".red().bold());
+                crate::EXIT_USER_ERROR
+            }
+        },
     }
 }
 
@@ -99,6 +150,14 @@ struct EvolveSummary {
     body_cid: String,
     witness_cid: String,
     out_dir: PathBuf,
+    out: OutputFlags,
+}
+
+struct CheckEvolutionSummary {
+    payload: Json,
+    body_cid: String,
+    from_catalog_cid: String,
+    to_catalog_cid: String,
     out: OutputFlags,
 }
 
@@ -288,6 +347,52 @@ fn run_evolve(args: ProtocolEvolveArgs) -> Result<EvolveSummary, String> {
         body_cid: payload["bodyCid"].as_str().unwrap().to_string(),
         witness_cid: payload["witnessCid"].as_str().unwrap().to_string(),
         out_dir: args.out_dir,
+        out: args.out,
+        payload,
+    })
+}
+
+fn run_check_evolution(args: ProtocolCheckEvolutionArgs) -> Result<CheckEvolutionSummary, String> {
+    let body = read_json(&args.body)?;
+    let from = read_json(&args.from_catalog)?;
+    let to = read_json(&args.to_catalog)?;
+    let policy = read_json(&args.policy)?;
+    let verifier = read_json(&args.verifier)?;
+    let catalog_diff = read_json(&args.catalog_diff)?;
+    let catalog_attestation = match args.attestation.as_ref() {
+        Some(path) => Some(read_json_bytes(path)?),
+        None => None,
+    };
+
+    admit_protocol_evolution(
+        &from,
+        &to,
+        &policy,
+        &verifier,
+        catalog_attestation.as_ref().map(|(_json, bytes)| bytes.as_slice()),
+        &catalog_diff,
+        &body,
+    )?;
+
+    let body_cid = jcs_cid(&body)?;
+    let from_catalog_cid = jcs_cid(&from)?;
+    let to_catalog_cid = jcs_cid(&to)?;
+    let payload = json!({
+        "kind": "ProtocolEvolutionCheck",
+        "ok": true,
+        "bodyCid": body_cid,
+        "fromCatalogCid": from_catalog_cid,
+        "toCatalogCid": to_catalog_cid,
+        "changeClass": body["changeClass"].clone(),
+        "catalogDiffCid": body["evidence"]["catalogDiffCid"].clone(),
+        "policyCid": body["policyCid"].clone(),
+        "verifierCid": body["verifierCid"].clone(),
+    });
+
+    Ok(CheckEvolutionSummary {
+        body_cid: payload["bodyCid"].as_str().unwrap().to_string(),
+        from_catalog_cid: payload["fromCatalogCid"].as_str().unwrap().to_string(),
+        to_catalog_cid: payload["toCatalogCid"].as_str().unwrap().to_string(),
         out: args.out,
         payload,
     })
@@ -555,6 +660,8 @@ fn admit_protocol_evolution(
     }
     require_body_cid(body, "fromCatalogCid", &from_catalog_cid)?;
     require_body_cid(body, "toCatalogCid", &to_catalog_cid)?;
+    require_body_cid(body, "policyCid", &jcs_cid(policy)?)?;
+    require_body_cid(body, "verifierCid", &jcs_cid(verifier)?)?;
 
     let change_class = require_json_string(body, "changeClass", "PEP body")?;
     if !matches!(
@@ -610,6 +717,42 @@ fn require_body_cid(body: &Json, field: &str, expected: &str) -> Result<(), Stri
 }
 
 fn require_catalog_diff_matches_body(catalog_diff: &Json, body: &Json) -> Result<(), String> {
+    require_json_string(catalog_diff, "kind", "catalog diff")?
+        .eq("ProtocolCatalogDiff")
+        .then_some(())
+        .ok_or_else(|| "catalog diff kind must be `ProtocolCatalogDiff`".to_string())?;
+    require_json_string(catalog_diff, "schemaVersion", "catalog diff")?
+        .eq("1")
+        .then_some(())
+        .ok_or_else(|| "catalog diff schemaVersion must be `1`".to_string())?;
+    for field in [
+        "protocolName",
+        "fromCatalogCid",
+        "toCatalogCid",
+        "fromVersionLabel",
+        "toVersionLabel",
+        "changeClass",
+    ] {
+        let body_value = require_json_string(body, field, "PEP body")?;
+        let diff_value = require_json_string(catalog_diff, field, "catalog diff")?;
+        if body_value != diff_value {
+            return Err(format!(
+                "PEP admission refused: catalog diff `{field}` is `{diff_value}`, body has `{body_value}`"
+            ));
+        }
+    }
+    let diff_cid = jcs_cid(catalog_diff)?;
+    let evidence_diff_cid = body
+        .get("evidence")
+        .and_then(|v| v.get("catalogDiffCid"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "PEP body evidence missing string field `catalogDiffCid`".to_string())?;
+    if evidence_diff_cid != diff_cid {
+        return Err(format!(
+            "PEP admission refused: evidence catalogDiffCid is `{evidence_diff_cid}`, supplied catalog diff hashes to `{diff_cid}`"
+        ));
+    }
+
     let change_set = body
         .get("changeSet")
         .and_then(|v| v.as_object())

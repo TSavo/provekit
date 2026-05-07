@@ -28,3 +28,19 @@ and does not create a new cross-kit semantic obligation.
 
 The witness is deliberately outside the body it discharges. Parent claims
 that rely on this protocol transition should reference the witness root.
+
+## Check
+
+The already-built PEP body can be re-checked without regenerating the
+witness:
+
+```bash
+provekit protocol check-evolution \
+  --body protocol/evolution/v1.6.1/protocol-evolution.body.json \
+  --from protocol/evolution/v1.6.1/from-catalog-v1.6.0.json \
+  --to protocol/evolution/v1.6.1/to-catalog-v1.6.1.json \
+  --policy protocol/evolution/v1.6.1/bootstrap-policy.json \
+  --verifier protocol/evolution/v1.6.1/bootstrap-verifier.json \
+  --catalog-diff protocol/evolution/v1.6.1/catalog-diff.json \
+  --attestation .provekit/catalog-signatures/v1.6.1.json
+```
