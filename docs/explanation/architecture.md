@@ -163,7 +163,18 @@ The IR is language-agnostic. A Rust kit, a TypeScript kit, and a Go kit all emit
 
 The handshake at Tier 1 sees them as identical. A TypeScript consumer of a Rust library has the same Tier-1 discharge fraction as a Rust consumer would. Cross-domain verification works because all kits bridge to the same reference contracts.
 
-The same principle applies beyond language boundaries. PEP bridges protocol catalog versions. CICP binds CI results to supply-chain input closures. GCP witnesses extension body grammar conformance. ORP and Bug Zoo droppers accept generated host artifacts only after re-lift proves closure. These are all domain crossings over the same signed CID graph.
+The same principle applies beyond language boundaries. PEP bridges protocol
+catalog versions. CICP binds CI results to supply-chain input closures. GCP
+witnesses extension body grammar conformance. ORP and Bug Zoo droppers accept
+generated host artifacts only after re-lift proves closure. These are all
+domain crossings over the same signed CID graph.
+
+Bug Zoo is the executable version of this claim for bug classes. Each language
+uses its own compiler/kit to map source to a witnessed bug output, then the
+self-contained Bug Zoo runner verifies that the lifted ProofIR bytes are
+identical. The current null-boundary specimens show Java, TypeScript, and C#
+converging on the same missing edge, `maybe_null(name) => non_null(name)`, and
+the same ProofIR CID. See [`bug-zoo.md`](bug-zoo.md).
 
 ## Fail-closed posture
 

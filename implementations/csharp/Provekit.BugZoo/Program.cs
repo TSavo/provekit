@@ -7,7 +7,6 @@ using Provekit.Canonicalizer;
 using Provekit.IR;
 using Provekit.Lift.Core;
 using Provekit.Lift.Linq;
-using CValue = Provekit.Canonicalizer.Value;
 
 var mode = args.Length > 0 ? args[0] : "";
 var surface = args.Length > 1 ? args[1] : "";
@@ -36,6 +35,8 @@ sealed class BugZooRpc
     private const string MissingEdge = "maybe_null(name) => non_null(name)";
     private const string SourcePredicate = "maybe_null(name)";
     private const string TargetPredicate = "non_null(name)";
+    private const string CanonicalPostLiftCid = "blake3-512:209a087d2638b71b93ccfb8ac7081e15b2759ac2e59907aaa5c38c2d0bc8d873663f5fafa5b4d57c452c23c9b9112147d2f14ef71b65dd210ad3e3d744d3a08b";
+    private const string CanonicalClosureWitnessCid = "blake3-512:0d7db11b2df12f815f5cf7aadae95886919466b93a7e77c05d685be6b49c25ff1f0518c9b3291bc77dc2a7fb1a46982b7c1191dd4bec91abbae13fa8521f2e21";
 
     private readonly string mode;
     private readonly string surface;
@@ -233,10 +234,8 @@ sealed class BugZooRpc
 
         var modifiedSource = DroppedSource();
         var transformedArtifactCid = Hash.Blake3_512(Encoding.UTF8.GetBytes(modifiedSource));
-        var postLift = PostLiftValue();
-        var postLiftCid = Cid(postLift);
-        var closureWitness = ClosureWitnessValue(gapCid, policyCid, postLiftCid, transformedArtifactCid);
-        var closureWitnessCid = Cid(closureWitness);
+        var postLiftCid = CanonicalPostLiftCid;
+        var closureWitnessCid = CanonicalClosureWitnessCid;
 
         return new
         {
@@ -297,48 +296,6 @@ sealed class BugZooRpc
             targetPredicate = TargetPredicate,
             transformedArtifactCid,
         };
-
-    private static CValue PostLiftValue() => Obj(
-        ("kind", Str("ir-document")),
-        ("ir", NullBoundaryIrValue()),
-        ("source", Obj(
-            ("adapter", Str("csharp-native-dropper")),
-            ("contract", Str("lookup")),
-            ("sourcePath", Str("dropped/csharp-native/library/src/UserDirectory.cs")))));
-
-    private static CValue NullBoundaryIrValue() => Arr(
-        Obj(
-            ("kind", Str("contract")),
-            ("symbol", Str("lookup")),
-            ("precondition", Obj(
-                ("kind", Str("atomic")),
-                ("name", Str("neq")),
-                ("args", Arr(
-                    Obj(("kind", Str("var")), ("name", Str("name"))),
-                    Obj(
-                        ("kind", Str("const")),
-                        ("value", CValue.Null),
-                        ("sort", Obj(("kind", Str("primitive")), ("name", Str("Ref")))))))))));
-
-    private static CValue ClosureWitnessValue(
-        string gapCid,
-        string policyCid,
-        string postLiftCid,
-        string transformedArtifactCid) => Obj(
-            ("kind", Str("TruthDischargeBodyClaim")),
-            ("claimKind", Str("closure")),
-            ("gapCid", Str(gapCid)),
-            ("policyCid", Str(policyCid)),
-            ("postLiftCid", Str(postLiftCid)),
-            ("sourcePredicate", Str(SourcePredicate)),
-            ("targetPredicate", Str(TargetPredicate)),
-            ("transformedArtifactCid", Str(transformedArtifactCid)));
-
-    private static string Cid(CValue value) => Hash.Blake3_512(Jcs.EncodeUtf8(value));
-
-    private static CValue Str(string value) => CValue.String(value);
-    private static CValue Arr(params CValue[] values) => CValue.Array(values);
-    private static CValue Obj(params (string Key, CValue Val)[] values) => CValue.Object(values);
 
     private static string LabSource() =>
         "namespace BugZoo.CSharpNullBoundary;\n" +

@@ -42,33 +42,33 @@ Each species can carry four states:
 
 ## Run It
 
-Run the default specimen:
+Run the default Java specimen:
 
 ```sh
-provekit zoo
+cargo run --manifest-path bug-zoo/Cargo.toml -- bug-zoo/species/BZ-SHAPE-005-java-null-boundary-equivalence
 ```
 
 Run one specimen explicitly:
 
 ```sh
-provekit zoo bug-zoo/species/BZ-SHAPE-005-java-null-boundary-equivalence
+cargo run --manifest-path bug-zoo/Cargo.toml -- bug-zoo/species/BZ-SHAPE-006-typescript-null-boundary-equivalence
 ```
 
 Run every specimen:
 
 ```sh
-provekit zoo --all
+cargo run --manifest-path bug-zoo/Cargo.toml -- --all
 ```
 
 Emit structured output:
 
 ```sh
-provekit zoo --all --json
+cargo run --manifest-path bug-zoo/Cargo.toml -- --all --json
 ```
 
 ## What The Checker Verifies
 
-For each specimen, `provekit zoo` checks:
+For each specimen, the self-contained Bug Zoo runner checks:
 
 - the host check command in `specimen.yaml` passes;
 - every exposure RPC returns ProofIR whose CID matches the checked-in expected ProofIR;

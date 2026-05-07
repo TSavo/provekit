@@ -12,9 +12,29 @@ use clap::Parser;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
+const EXIT_OK: u8 = 0;
+const EXIT_VERIFY_FAIL: u8 = 1;
+const EXIT_USER_ERROR: u8 = 2;
+
+#[derive(Parser, Debug, Clone, Default)]
+pub struct OutputFlags {
+    /// Emit structured JSON instead of human-readable text.
+    #[arg(long)]
+    pub json: bool,
+    /// Suppress non-error output.
+    #[arg(long)]
+    pub quiet: bool,
+}
 
 #[derive(Parser, Debug, Clone)]
+#[command(
+    name = "provekit-bug-zoo",
+    version,
+    about = "Run self-contained Bug Zoo specimens and verify their witnessed ProofIR shape.",
+    long_about = "Bug Zoo is ProvekIt's executable laboratory. It runs each specimen with the \
+specimen's own host toolchain, invokes the language lifter RPC, and verifies the \
+canonical ProofIR bytes, CID, receipt, and optional dropper closure."
+)]
 pub struct ZooArgs {
     /// Specimen directory or specimen.yaml path. Defaults to bug-zoo/species.
     pub specimen: Option<PathBuf>,

@@ -20,10 +20,10 @@ The specimen has two explicit phases:
    dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj -- discover csharp-linq bug-zoo/species/BZ-SHAPE-007-csharp-null-boundary-equivalence/exposed/linq-where/harness
    ```
 
-2. Run the zoo verifier, which asks the lifter RPC for canonical ProofIR and
-   checks the byte-identical CID against the other C# exposures and the
+2. Run the Bug Zoo runner, which asks the lifter RPC for canonical ProofIR
+   and checks the byte-identical CID against the other C# exposures and the
    TypeScript/Java null-boundary witnesses:
 
    ```bash
-   provekit zoo bug-zoo/species/BZ-SHAPE-007-csharp-null-boundary-equivalence
+   cargo run --manifest-path bug-zoo/Cargo.toml -- bug-zoo/species/BZ-SHAPE-007-csharp-null-boundary-equivalence
    ```

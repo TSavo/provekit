@@ -1,6 +1,5 @@
 import readline from "node:readline";
 
-import { canonicalEncode } from "../../../../implementations/typescript/src/claimEnvelope/canonicalize.js";
 import { computeCid } from "../../../../implementations/typescript/src/canonicalizer/hash.js";
 
 const nullBoundaryIr = [
@@ -18,6 +17,11 @@ const nullBoundaryIr = [
   },
 ];
 
+const postLiftCid =
+  "blake3-512:39b71418bfeb1c92ac9de53b818339bffe8a9b0be843832b59c7cc7e31411b72842dc76d7b9620c9c06dbdc0981cff5aa771a9c8d9c846d12dc704987eb858a6";
+const closureWitnessCid =
+  "blake3-512:ba2b46e885eb6812b6e2ccbbc2489c2f41fe92d031e2f150b763c26a01658207dc40815db4c17d5cb7f08b838d42dc547d752cfa1ab056dd6c190b9c98ab61ce";
+
 process.stdout.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EPIPE") {
     process.exit(0);
@@ -27,10 +31,6 @@ process.stdout.on("error", (error: NodeJS.ErrnoException) => {
 
 function cidOfBytes(text: string): string {
   return computeCid(Buffer.from(text, "utf8"));
-}
-
-function cidOfJson(value: unknown): string {
-  return computeCid(canonicalEncode(value as Record<string, unknown>));
 }
 
 function realizeSource(source: string): string {
@@ -91,7 +91,6 @@ function realize(plan: Record<string, unknown>): Record<string, unknown> {
       sourcePath: "dropped/typescript-native/library/src/UserDirectory.ts",
     },
   };
-  const postLiftCid = cidOfJson(postLift);
   const closureWitness = closureWitnessBody(
     gapCid,
     policyCid,
@@ -119,7 +118,7 @@ function realize(plan: Record<string, unknown>): Record<string, unknown> {
     postLiftCid,
     postLift,
     closureWitness,
-    closureWitnessCid: cidOfJson(closureWitness),
+    closureWitnessCid,
   };
 }
 

@@ -26,12 +26,14 @@ neq(name, null)
 Each zoo specimen separates discovery from verification.
 
 1. **Language discovery.** The host language uses its own toolchain and kit.
-   TypeScript runs the TypeScript lifter (`liftPath`) through `pnpm exec tsx`.
-   C# runs the C# lifters through `dotnet`. The specimen does not reimplement
-   the kit inside the zoo; it asks the kit to find the bug in native source.
-2. **IR verification.** `provekit zoo` receives canonical Bug Zoo ProofIR from
-   the lifter RPC, hashes it, compares it to checked-in witness bytes, and
-   checks required equivalences across surfaces and languages.
+   Java runs Java lifters through Maven and the JVM. TypeScript runs the
+   TypeScript lifter (`liftPath`) through `pnpm exec tsx`. C# runs the C#
+   lifters through `dotnet`. The specimen does not reimplement the kit inside
+   the zoo; it asks the kit to find the bug in native source.
+2. **Proof verification.** The normal project gate is `provekit prove`. Bug Zoo
+   owns a self-contained runner under `bug-zoo/`: it receives canonical Bug Zoo
+   ProofIR from the lifter RPC, hashes it, compares it to checked-in witness
+   bytes, and checks required equivalences across surfaces and languages.
 
 In shorthand: each language proves `k_lang(I) = t`, where `k_lang` is the
 language compiler as a ProvekIt kit/lifter, `I` is source, and `t` is witnessed
@@ -43,11 +45,13 @@ its host-language syntax or exception type.
 
 The current zoo includes:
 
+- `BZ-SHAPE-005`: Java null boundary through ProvekIt-native annotations and
+  Spring Web `@RequestParam`.
 - `BZ-SHAPE-006`: TypeScript null boundary through zod and class-validator.
 - `BZ-SHAPE-007`: C# null boundary through DataAnnotations,
   `//provekit:` annotations, and LINQ `Where(name => name != null)`.
 
-Both species expose the same missing edge:
+All three species expose the same missing edge:
 
 ```text
 maybe_null(name) => non_null(name)
@@ -67,8 +71,7 @@ does not.
 From the repository root:
 
 ```sh
-(cd implementations/rust && cargo build -p provekit-cli)
-implementations/rust/target/debug/provekit zoo bug-zoo/species --all
+cargo run --manifest-path bug-zoo/Cargo.toml -- --all
 ```
 
 You can also run each discovery step directly:
@@ -80,8 +83,8 @@ dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.cspr
 ```
 
 Those commands show the first phase: the language compiler/kit maps source to a
-witnessed bug output. The `provekit zoo` command shows the second phase: the
-witnessed output is byte-identical.
+witnessed bug output. The `provekit-bug-zoo` runner is the lab harness for the
+second phase: proving the witnessed output is byte-identical for the specimen.
 
 ## Why This Matters
 

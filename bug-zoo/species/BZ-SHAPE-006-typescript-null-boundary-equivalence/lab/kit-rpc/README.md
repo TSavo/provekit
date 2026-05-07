@@ -6,5 +6,5 @@ There are two separate responsibilities:
 - `pnpm exec tsx tools/ts-boundary-discover.ts <surface> <workspaceRoot>` runs
   the TypeScript implementation lifter and emits native discovery evidence for
   the null-boundary bug.
-- `provekit zoo ...` invokes the lifter RPC, receives canonical Bug Zoo
-  ProofIR, and verifies the IR CID against the checked-in witness bytes.
+- The self-contained Bug Zoo runner invokes the lifter RPC, receives canonical
+  Bug Zoo ProofIR, and verifies the IR CID against the checked-in witness bytes.

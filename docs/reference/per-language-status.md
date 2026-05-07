@@ -29,7 +29,7 @@ Legend: `+` shipping in the current v1.6.2 tree, `~` planned or partial, `o` und
 | CICP | `+` Rust reference checker plus cross-language golden vectors in `protocol/conformance/cicp/` |
 | Proof protocol | `+` `.proof` fixture corpus and Rust proof-conformance checker under `provekit proof` |
 | CICP CI admission | `+` GitHub Actions computes blast radii, admits exact-closure reuse, and uploads candidate result witnesses |
-| Bug Zoo | `+` `provekit zoo` runs the Java null-boundary specimen with exposure equivalence and Java dropper/realizer closure |
+| Bug Zoo | `+` the self-contained `bug-zoo/` runner verifies Java, TypeScript, and C# null-boundary specimens with exposure equivalence and dropper/realizer closure |
 | ORP droppers/realizers | `~` Java proof-plan + language-dropper projection shipping in Bug Zoo; broader per-language realizer coverage is emerging |
 
 ## CICP Golden-Vector Coverage
