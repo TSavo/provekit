@@ -563,17 +563,20 @@ fn go_kit_pins_expected_contract_set_cid() {
 //         (issue #176 Tier 1 regression gate, PR #183)
 // ---------------------------------------------------------------------------
 
-/// Pinned contractSetCid produced by `--kit=rust` after routing to the
-/// `rust-self-contracts` surface (mint-self-contracts binary, canonical
-/// 11-contract slab). Any change to this value means either the surface
-/// wiring changed or the canonical contracts changed — both require explicit
-/// review and re-pinning.
+/// Pinned contractSetCid produced by `--kit=rust` after routing to the full
+/// `rust-self-contracts` surface (mint-self-contracts binary, 18 slabs,
+/// 113 contracts as of the protocol-bridge dogfood). Any change to this value
+/// means either the surface wiring changed or the canonical Rust
+/// self-contract surface changed -- both require explicit review and
+/// re-pinning.
 ///
 /// This constant must be updated whenever the canonical self-contracts slab is
 /// intentionally changed. It MUST NOT be the empty-set CID (d53d18c2...) or
-/// the generic workspace-lifter CID (ca9638b4...).
-const RUST_KIT_CANONICAL_CONTRACT_SET_CID: &str =
-    "blake3-512:8f4bcc3c3e748ae303f8c8da80245f291e803eb2d241224c75c7ac470631e4dee7ff2e0ff59af571db3d506485c115acaddfd91e4e4315eb04ee37c035ddbc69";
+/// the generic workspace-lifter CID (ca9638b4...). It is deliberately NOT the
+/// lift-plugin protocol contract-set CID below; this pin covers the whole Rust
+/// kit surface, including but not limited to protocol contracts.
+const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
+    "blake3-512:af99d402c609d7dbdf89ba63a34e82bd713206ba3bd22ae5593e924f940bc5b6b239c1c2f2c1c109b8034e572c3861eb8ab93119b8e7995c2d8abc4f303e6cf9";
 
 /// Pinned contractSetCid produced by `--kit=cpp` after routing to the
 /// `cpp-self-contracts` surface (mint_cpp_self_contracts binary, canonical
@@ -609,12 +612,12 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 
     // Pinned value: must match the canonical self-contracts CID.
     assert_eq!(
-        cset, RUST_KIT_CANONICAL_CONTRACT_SET_CID,
+        cset, RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID,
         "rust kit contractSetCid diverged from the pinned canonical self-contracts CID.\n\
          This is the issue #176 Tier 1 regression gate.\n\
-         If the self-contracts changed intentionally, update RUST_KIT_CANONICAL_CONTRACT_SET_CID.\n\
+         If the self-contracts changed intentionally, update RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID.\n\
          Current: {cset}\n\
-         Pinned:  {RUST_KIT_CANONICAL_CONTRACT_SET_CID}"
+         Pinned:  {RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID}"
     );
 
     // Belt-and-suspenders: must NOT be the empty-set sentinel.
@@ -624,6 +627,31 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     );
 
     eprintln!("rust kit pinned contractSetCid confirmed: {cset}");
+}
+
+#[test]
+fn lift_plugin_protocol_contract_set_cid_is_pinned_separately_from_rust_surface() {
+    let cset = provekit_self_contracts::lift_plugin_protocol_contract_set_cid()
+        .expect("derive lift-plugin-protocol contractSetCid");
+
+    assert_eq!(
+        provekit_self_contracts::LIFT_PLUGIN_PROTOCOL_CONTRACT_NAMES.len(),
+        11,
+        "lift-plugin-protocol pin expects the C1-C8 protocol facets split into 11 concrete contracts"
+    );
+    assert_eq!(
+        cset,
+        provekit_self_contracts::ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID,
+        "lift-plugin-protocol contractSetCid diverged from the pinned protocol target.\n\
+         This pin covers only the shared protocol contract slab, not the whole Rust kit surface.\n\
+         Current: {cset}\n\
+         Pinned:  {}",
+        provekit_self_contracts::ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID
+    );
+    assert_ne!(
+        cset, RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID,
+        "protocol contract-set CID must stay distinct from the full Rust self-contract surface CID"
+    );
 }
 
 // ---------------------------------------------------------------------------
