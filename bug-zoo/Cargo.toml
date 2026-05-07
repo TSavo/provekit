@@ -14,6 +14,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
 
+[dev-dependencies]
+tempfile = "3"
+
 [[bin]]
 name = "provekit-bug-zoo"
 path = "src/main.rs"
