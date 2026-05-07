@@ -188,7 +188,7 @@ build-java-self-contracts:
 .PHONY: build-ruby
 build-ruby:
 	cd implementations/ruby/ext/provekit_blake3 && $(RUBY) extconf.rb && $(MAKE)
-	cd implementations/ruby && $(RUBY) -Ilib -e 'require "provekit"; abort unless Provekit::Blake3.hex("provekit").start_with?("blake3-512:")'
+	cd implementations/ruby && $(RUBY) -S bundle exec $(RUBY) -Ilib -e 'require "provekit"; abort unless Provekit::Blake3.hex("provekit").start_with?("blake3-512:")'
 
 .PHONY: build-swift
 build-swift:
