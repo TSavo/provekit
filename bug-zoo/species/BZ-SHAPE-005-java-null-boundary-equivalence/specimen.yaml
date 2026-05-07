@@ -1,0 +1,60 @@
+id: BZ-SHAPE-005
+name: Java Null Boundary Equivalence
+kingdom: shape
+surface: java-provekit-native-and-spring-web
+status: lab
+paths:
+  labLibrary: lab/library
+  labHarness: lab/harness
+  labKitRpc: lab/kit-rpc
+commands:
+  hostCheck:
+    cwd: lab/harness
+    argv: ["./run.sh"]
+predicates:
+  boundary: maybe_null(name)
+  sink: non_null(name)
+  missingEdge: maybe_null(name) => non_null(name)
+exposures:
+  - id: provekit-native
+    surface: java-provekit-native
+    harness: exposed/provekit-native/harness
+    kitRpc: exposed/provekit-native/kit-rpc
+    liftRpc:
+      cwd: exposed/provekit-native/kit-rpc
+      argv: ["./run-java-lifter.sh"]
+    proofIrFile: exposed/provekit-native/expected.proofir.json
+    diagnosticFile: exposed/provekit-native/expected-diagnostic.txt
+    lossiness:
+      erased:
+        - Java method body string concatenation
+        - concrete annotation package name
+      preserved:
+        - precondition neq(name, null)
+  - id: spring-web
+    surface: java-spring-web
+    harness: exposed/spring-web/harness
+    kitRpc: exposed/spring-web/kit-rpc
+    liftRpc:
+      cwd: exposed/spring-web/kit-rpc
+      argv: ["./run-java-lifter.sh"]
+    proofIrFile: exposed/spring-web/expected.proofir.json
+    diagnosticFile: exposed/spring-web/expected-diagnostic.txt
+    lossiness:
+      erased:
+        - Spring request binding machinery
+        - Java method body string concatenation
+      preserved:
+        - precondition neq(name, null)
+equivalence:
+  required:
+    - [provekit-native, spring-web]
+expectations:
+  hostCompiler: pass
+  ordinaryTests: pass
+  provekitVerify: fail
+exposure:
+  satWitnessFile: exposed/sat-witness.json
+dropper:
+  available: false
+wildSightings: []

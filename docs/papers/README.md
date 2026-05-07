@@ -22,6 +22,10 @@ The papers compose. Read them in order; later papers assume the framing earlier 
 
 7. **[After Verification: Bug Classes as Missing Edges in the Federated Proof Substrate](07-after-verification-bug-classes-as-missing-edges.md)**: The deeper consequence. Once droppers close the loop with lifters over weakest-precondition propagation, leaf-discharge bug classes become structurally impossible. Contains a constructive theorem (Structural Elimination of Leaf-Discharge Bug Classes) with proof by induction on data-flow path length. Articulates the substrate's algebraic shape (thin Heyting category over content-addressed predicates), the completeness lemma (`Allocations × Reads` is enumerable and exhaustive), and the generative-completion property (the substrate computes what is missing and writes the code that supplies it). Cousot 1977 plus content-addressing plus federation, lifted to a planet-scale proof DAG.
 
+8. **[After Types: How I Learned to Stop Logging and Trust the Invariant Solver](08-after-types-stop-logging-trust-the-invariant-solver.md)**: The developer-workflow consequence. Types and forensic logs survive, but lose their load-bearing correctness role once invariant proof is a federated substrate. Types become editorial scaffolding; logs remain operational observability. The wall against leaf-discharge bugs moves to content-addressed invariant edges.
+
+9. **[Lossy Boundary Compression: Why ProofIR Is Universal Because It Forgets](09-lossy-boundary-compression.md)**: The universality argument for ProofIR. ProofIR is not a universal language for re-expressing every implementation detail; it is universal over contract boundaries. Lifters may discard implementation texture while preserving obligations, making cross-language, cross-framework, cross-time equivalence possible and turning LLM output into an admissibility-search problem.
+
 ## Future papers (planned)
 
 - *Multi-dimensional pinning as supply-chain integrity*: rank-3 pins close the lying-contract attack class that single-CID pinning leaves open. Why v1.4's address-space-as-vector-space framing is the substrate the standards-track work needs.

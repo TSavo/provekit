@@ -1,7 +1,9 @@
-# ProvekIt
+# ProvekIt: Prove `k(I)=t`
 
 > *Supra omnia, rectum.*
 > — T
+
+The name is literal: **Prove `k(I)=t`**. `I` is an implementation artifact, `k` is the canonical projection that reads the contract boundary, and `t` is the truth claim the artifact is supposed to yield. ProvekIt does not ask you to trust the artifact; it asks for signed, content-addressed evidence that applying `k` to `I` produces `t`.
 
 Every if-statement is a contract — a guarantee about state, time, and place. Get any of it wrong, and the whole contract breaks. This is the bug class that exists in all upstream code; it's why if-statements exist at all.
 
@@ -26,6 +28,14 @@ Every if-statement, assertion, and type signature becomes a signed, binding dema
 **Software engineering shifts.** The artifact is the proof. Code is one implementation. Refactoring becomes proof-preserving rewrite. AI becomes a contract-implementation generator.
 
 **Supply chains compose.** Every dependency's signed contracts compose into your application's verified properties. Dependency confusion becomes arithmetically impossible. SBOMs become meaningful artifacts.
+
+## ProofIR is allowed to be lossy
+
+ProofIR is not a universal language for re-expressing every implementation detail of every programming language. It is a universal language for contract boundaries: preconditions, postconditions, invariants, protocol obligations, value predicates, resource states, signer claims, and the implication edges that connect them.
+
+That is why it can work across domains. A Spring annotation, a Zod validator, an OpenAPI schema, a Rust type invariant, and a ProvekIt-native contract can all collapse to the same canonical predicate when they assert the same boundary fact. The host-language texture can be discarded; the obligation survives.
+
+Once lifted, that boundary is universal, comparable, solvable, translatable, content-addressable, and signable. It has canonical bytes and a CID. It can be carried across languages, repositories, package ecosystems, commits, and time. The contracts were often already in your code; ProvekIt turns them into accountable edges the rest of the graph must satisfy.
 
 ## I want to...
 

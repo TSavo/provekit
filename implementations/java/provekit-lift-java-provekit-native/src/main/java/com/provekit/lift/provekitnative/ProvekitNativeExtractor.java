@@ -1,4 +1,4 @@
-package com.provekit.lift.cofoja;
+package com.provekit.lift.provekitnative;
 
 import java.util.*;
 import com.github.javaparser.ast.*;
@@ -6,12 +6,12 @@ import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.provekit.lift.*;
 
-public class CofojaExtractor implements Extractor {
-    private static final String PACKAGE_NAME = "com.google.java.contract";
+public class ProvekitNativeExtractor implements Extractor {
+    private static final String PACKAGE_NAME = "com.provekit.contract";
     private static final Set<String> ANNOTATIONS = Set.of("Requires", "Ensures", "Invariant");
-    private static final Set<String> COMPETING_PACKAGES = Set.of("com.provekit.contract");
+    private static final Set<String> COMPETING_PACKAGES = Set.of("com.google.java.contract");
 
-    public String name() { return "cofoja"; }
+    public String name() { return "provekit-native"; }
 
     public List<ContractDecl> extract(CompilationUnit cu, String rawSource) {
         List<ContractDecl> out = new ArrayList<>();
@@ -56,7 +56,7 @@ public class CofojaExtractor implements Extractor {
     }
 
     private String toIr(String expr) {
-        return ContractExpressionParser.parseOrFallback(expr, "cofoja_predicate");
+        return ContractExpressionParser.parseOrFallback(expr, "provekit_native_predicate");
     }
 
     private String simpleName(String fq) {
