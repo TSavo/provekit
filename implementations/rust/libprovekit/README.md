@@ -27,3 +27,13 @@ canonical CIDs. The Rust CLI can validate those emitted bodies with:
 ```sh
 provekit ci check --body path/to/body.json
 ```
+
+Shared golden vectors live in:
+
+```text
+protocol/conformance/cicp/
+```
+
+Those files are the handoff target for language-library agents: derive
+the same CIDs for passing vectors and refuse the invalid vector with the
+same fail-closed condition.
