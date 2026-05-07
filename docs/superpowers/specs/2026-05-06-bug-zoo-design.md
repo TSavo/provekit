@@ -71,6 +71,10 @@ Value bugs teach the boundary of the claim: ProvekIt exposes structure and prove
 
 ## v0 Species Pack
 
+This section is the original expansion sketch, not the current checked-in ID
+registry. The implemented null-boundary pack now uses `BZ-SHAPE-005` for Java,
+`BZ-SHAPE-006` for TypeScript, and `BZ-SHAPE-007` for C#.
+
 Bug Zoo v0 should start with a mixed receipt pack rather than a single language or single domain.
 
 1. **BZ-SHAPE-001: SQL Identifier Injection**

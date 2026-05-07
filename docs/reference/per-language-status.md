@@ -5,7 +5,7 @@ The matrix of what's shipping, what's planned, and what's under evaluation acros
 The current status has two layers:
 
 - **Active conformance surface:** protocol catalog verification, proof-protocol fixtures, CICP golden vectors, self-contract attestations, lift-plugin-protocol C1-C8 checks, and language-native tests.
-- **Historical v1.4 bridge readiness:** substrate layering, content-CID vs attestation-CID separation, contract-set fields, and tagged-union bridge targets. That table remains below because it still explains cross-kit bridge migration state.
+- **Historical bridge-compatibility appendix:** older substrate-layering and bridge-target migration state. That appendix remains below for compatibility context only; the current protocol catalog is v1.6.2.
 
 For the spec-by-spec list see [`cids.md`](cids.md). For PEP, CICP, GCP, ORP, CBP, proof protocol, and Bug Zoo surfaces see [`protocol-extensions.md`](protocol-extensions.md).
 
@@ -30,7 +30,7 @@ Legend: `+` shipping in the current v1.6.2 tree, `~` planned or partial, `o` und
 | Proof protocol | `+` `.proof` fixture corpus and Rust proof-conformance checker under `provekit proof` |
 | CICP CI admission | `+` GitHub Actions computes blast radii, admits exact-closure reuse, and uploads candidate result witnesses |
 | Bug Zoo | `+` the self-contained `bug-zoo/` runner verifies Java, TypeScript, and C# null-boundary specimens with exposure equivalence and dropper/realizer closure |
-| ORP droppers/realizers | `~` Java proof-plan + language-dropper projection shipping in Bug Zoo; broader per-language realizer coverage is emerging |
+| ORP droppers/realizers | `~` Java, TypeScript, and C# proof-plan + language-dropper projections shipping in Bug Zoo; broader per-language realizer coverage is emerging |
 
 ## CICP Golden-Vector Coverage
 
@@ -68,50 +68,53 @@ All listed kits now carry CICP vector checks or equivalent language-library cove
 | Swift       | `+` | `~`  | `~`                                                     | `-`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
 | PHP         | `~` | `~`  | `~`                                                     | `-`                      | `~`               | `~ (use Rust CLI)`   | `-`                  |
 
-## Cross-kit bridge readiness
+## Historical Bridge-Compatibility Appendix
 
-This sub-matrix tracks the per-kit substrate state that supports cross-kit byte-equivalence proofs and lift-plugin-protocol bridges. The substrate guarantee depends on each kit independently asserting conformance against shared Rust contract CIDs; this table is what lets you see which kits can today.
+This appendix tracks the older bridge-shape migration state that led into the
+current v1.6.2 tree. It is compatibility history, not the current protocol
+version. The current conformance surface is the v1.6.2 catalog and the active
+matrix above.
 
-The v1.4 substrate guarantees that depend on per-kit compliance are spread across four specs:
+The historical substrate guarantees that depend on per-kit compliance are spread across four specs:
 
 - The substrate-layers cut (envelope, header, body) per [`2026-05-03-substrate-layers-envelope-header-body.md`](../../protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md): every signed memento decomposes into a signed envelope, a substrate-verified header, and a verifier-opaque metadata body. Required for any tooling that wants to add body fields without growing the substrate.
 - The contract-cid vs attestation-cid separation per [`2026-05-03-contract-cid-vs-attestation-cid.md`](../../protocol/specs/2026-05-03-contract-cid-vs-attestation-cid.md): each kit exposes a signer-independent `contract_cid(decl)` (or camelCase equivalent) returning the content-only CID, separate from the envelope hash returned as `attestation_cid`. Required for witness convergence across signers.
 - The contract-set extension per [`2026-05-03-contract-set-extension.md`](../../protocol/specs/2026-05-03-contract-set-extension.md): self-contracts attestations carry `contractSetCid` (REQUIRED) and `previousContractSetCid` (OPTIONAL). Required for verifying semver-minor extension claims.
 - The bridge target dimensionality per [`2026-05-03-bridge-target-dimensionality.md`](../../protocol/specs/2026-05-03-bridge-target-dimensionality.md): bridges emit a tagged-union `target` field (`{kind: "contract", cid}` or `{kind: "contractSet", cid}`) instead of a flat `targetContractCid`. Required for principled cross-kit bridges to contract sets vs single contracts, and to retire placeholder strings.
 
-| Language    | Self-contracts pkg                          | Layered envelope (v1.4 §1) | contract_cid separation | contractSetCid emit | Bridge IR v1.4 (tagged-union target) | Lift-plugin-protocol bridges    | Signed attestation       |
+| Language    | Self-contracts pkg                          | Layered envelope | contract_cid separation | contractSetCid emit | Bridge IR target | Lift-plugin-protocol bridges    | Signed attestation       |
 |-------------|---------------------------------------------|----------------------------|--------------------------|---------------------|--------------------------------------|----------------------------------|--------------------------|
 | Rust        | `+ provekit-self-contracts`                 | `+`                        | `+ contract_cid`         | `+`                 | `+ canonical reference (mint_bridge_v14, BridgeDeclarationV14)` | `+ source-of-truth (PR #84)`    | `+`                      |
-| Go          | `+ provekit-self-contracts`                 | `~ flat universal-claim-envelope` | `+ ContractCIDFromArgs` | `+ ComputeContractSetCID` | `~ flat targetContractCid; v1.4 migration pending` | `~ Phase 2 in flight`           | `+`                      |
-| TypeScript  | `+ inline (mint-ts-self-contracts)`         | `~ flat universal-claim-envelope` | `+ contractCidFromArgs` | `+ computeContractSetCid` | `~ flat targetContractCid; v1.4 migration pending` | `~ Phase 2 in flight`           | `+`                      |
-| Python      | `~ via provekit-lift-py-tests`              | `not assessed`             | `not assessed`           | `not assessed`       | `~ flat targetContractCid; v1.4 migration pending` | `~ Phase 2 in flight`           | `-`                      |
-| C++         | `+ provekit-self-contracts`                 | `~ flat universal-claim-envelope` | `+ contract_cid_from_args` | `+ compute_contract_set_cid` | `~ flat targetContractCid; v1.4 migration pending` | `-`                              | `+`                      |
-| C           | `~ mint-c-self-contracts (attestation pinned)` | `not assessed`             | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
-| Zig         | `~ mint-zig-self-contracts (attestation pinned)` | `not assessed`           | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
+| Go          | `+ provekit-self-contracts`                 | `~ flat universal-claim-envelope` | `+ ContractCIDFromArgs` | `+ ComputeContractSetCID` | `~ flat targetContractCid; historical migration pending` | `~ Phase 2 in flight`           | `+`                      |
+| TypeScript  | `+ inline (mint-ts-self-contracts)`         | `~ flat universal-claim-envelope` | `+ contractCidFromArgs` | `+ computeContractSetCid` | `~ flat targetContractCid; historical migration pending` | `~ Phase 2 in flight`           | `+`                      |
+| Python      | `~ via provekit-lift-py-tests`              | `not assessed`             | `not assessed`           | `not assessed`       | `~ flat targetContractCid; historical migration pending` | `~ Phase 2 in flight`           | `-`                      |
+| C++         | `+ provekit-self-contracts`                 | `~ flat universal-claim-envelope` | `+ contract_cid_from_args` | `+ compute_contract_set_cid` | `~ flat targetContractCid; historical migration pending` | `-`                              | `+`                      |
+| C           | `~ mint-c-self-contracts (attestation pinned)` | `not assessed`             | `not assessed`           | `not assessed`       | `~ historical migration pending`           | `-`                              | `-`                      |
+| Zig         | `~ mint-zig-self-contracts (attestation pinned)` | `not assessed`           | `not assessed`           | `not assessed`       | `~ historical migration pending`           | `-`                              | `-`                      |
 | Java / JVM  | `~ provekit-java-self-contracts (attestation pinned)` | `not assessed`       | `not assessed`           | `not assessed`       | `+ mintBridgeV14 (BridgeDeclarationV14)` | `-`                              | `-`                      |
-| Ruby        | `~ mint-ruby-self-contracts (attestation pinned)` | `not assessed`           | `not assessed`           | `not assessed`       | `~ v1.4 migration pending`           | `-`                              | `-`                      |
-| C#          | `+ Provekit.SelfContracts`                  | `~ flat universal-claim-envelope` | `+ Mint.ContractCid`     | `+ contractSetCid in attestation` | `~ flat targetContractCid; v1.4 migration pending` | `-`                              | `+`                      |
-| Swift       | `~ mint-swift-self-contracts (attestation pinned)` | `~ flat (no full mint pipeline)` | `not assessed (consumes rustContractCids lookup)` | `+ contractSetCid in mint-swift-self-contracts` | `~ v1.4 migration pending` | `-`                              | `-`                      |
+| Ruby        | `~ mint-ruby-self-contracts (attestation pinned)` | `not assessed`           | `not assessed`           | `not assessed`       | `~ historical migration pending`           | `-`                              | `-`                      |
+| C#          | `+ Provekit.SelfContracts`                  | `~ flat universal-claim-envelope` | `+ Mint.ContractCid`     | `+ contractSetCid in attestation` | `~ flat targetContractCid; historical migration pending` | `-`                              | `+`                      |
+| Swift       | `~ mint-swift-self-contracts (attestation pinned)` | `~ flat (no full mint pipeline)` | `not assessed (consumes rustContractCids lookup)` | `+ contractSetCid in mint-swift-self-contracts` | `~ historical migration pending` | `-`                              | `-`                      |
 | PHP         | `~ (in progress; no pinned attestation)`    | `not assessed`             | `not assessed`           | `not assessed`       | `not assessed`                       | `-`                              | `-`                      |
 
 Column meanings:
 
-- **Layered envelope**: `+` if the kit's mint code emits the v1.4 `{envelope, header, metadata}` shape per the substrate-layers spec. `~ flat universal-claim-envelope` if the kit still emits the v1.1 universal-claim-envelope shape (`cid` plus `producerSignature` at the top level). `not assessed` where the kit has no claim-envelope mint pipeline (Python, C, Zig, Java, Ruby) and the column was not investigated against an alternative codepath.
+- **Layered envelope**: `+` if the kit's mint code emits the `{envelope, header, metadata}` shape per the substrate-layers spec. `~ flat universal-claim-envelope` if the kit still emits the older flat shape (`cid` plus `producerSignature` at the top level). `not assessed` where the kit has no claim-envelope mint pipeline (Python, C, Zig, Java, Ruby) and the column was not investigated against an alternative codepath.
 - **contract_cid separation**: `+` plus the function name if the kit exposes a signer-independent `contract_cid(decl)` (or camelCase equivalent) per the contract-cid vs attestation-cid spec. `not assessed` where no such function was located in the implementation source.
 - **contractSetCid emit**: `+` if the kit's self-contracts mint emits `contractSetCid` in the attestation. `not assessed` where no self-contracts mint was located. `previousContractSetCid` is OPTIONAL per spec; no kit currently emits it (only the protocol catalog references the field name).
-- **Bridge IR v1.4 (tagged-union target)**: tracks emission of the tagged-union `target` field per [`2026-05-03-bridge-target-dimensionality.md`](../../protocol/specs/2026-05-03-bridge-target-dimensionality.md). Rust now carries the canonical reference: `BridgeDeclarationV14` is defined in `protocol/provekit-ir.cddl`, the Rust IR types are regenerated from that grammar in `implementations/rust/provekit-ir-types/src/lib.rs`, and `provekit-claim-envelope::mint_bridge_v14` emits the layered envelope/header/body shape with the tagged-union target. The conformance fixture `bridge_decl_v1_4` in `conformance/fixtures.toml` pins the canonical bytes. The v1.1 flat `mint_bridge` and the historical `bridge_decl` fixture are retained for back-compat per substrate-layers §4 (v1.1 mementos remain valid forever as historical bytes; new emissions MUST use v1.4). Other kits hold `~ flat targetContractCid; v1.4 migration pending` until they attach to the canonical reference; `~ v1.4 migration pending` is recorded for kits that emit a bridge under a kit-specific shape (Swift's `CrossKitBridges`, the C and Zig stubs). The v1.1.0 `o partial` tracker entries (Java #188 closed by Java migration; Ruby #190, C# #192, C++ #193 still pending) are unblocked by the canonical-reference PR.
+- **Bridge IR target**: tracks emission of the tagged-union `target` field per [`2026-05-03-bridge-target-dimensionality.md`](../../protocol/specs/2026-05-03-bridge-target-dimensionality.md). Rust now carries the canonical reference: `BridgeDeclarationV14` is defined in `protocol/provekit-ir.cddl`, the Rust IR types are regenerated from that grammar in `implementations/rust/provekit-ir-types/src/lib.rs`, and `provekit-claim-envelope::mint_bridge_v14` emits the layered envelope/header/body shape with the tagged-union target. The conformance fixture `bridge_decl_v1_4` in `conformance/fixtures.toml` pins the canonical bytes. The old flat `mint_bridge` and historical `bridge_decl` fixture are retained for back-compat per substrate-layers §4; new emissions use the layered tagged-union target. Other kits marked `historical migration pending` have not yet attached to that canonical bridge reference.
 
 ## Rust (canonical reference implementation)
 
-**Kit:** `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`. Shipping in v1.1.
+**Kit:** `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`. Shipping in the current v1.6.2 tree.
 
 **Libs:** `provekit-verifier`, plus the kit crates above. Embedded verifier callable from any Rust crate via the public API.
 
-**Lift adapters (shipping in v1.1):**
+**Lift adapters (shipping):**
 - `provekit-lift-proptest`: walks `proptest!` blocks. Coverage: `prop_assume!`, `prop_assert!`, `prop_assert_eq!`, `prop_assert_ne!`.
 - `provekit-lift-contracts`: walks `#[requires(...)]`, `#[ensures(...)]`, `#[invariant(...)]` macros from the `contracts` crate.
 
-**Lift adapters (shipping before v1.6.2):**
+**Lift adapters (shipping):**
 - `provekit-lift-kani`: walks `#[kani::proof]` functions, `kani::assume`, `kani::assert`.
 - `provekit-lift-prusti`: walks `#[prusti_contracts::requires/ensures]`.
 
@@ -121,50 +124,50 @@ Column meanings:
 
 **Decorator macros:** `provekit-macros` ships `#[provekit::contract]` and `#[provekit::verify]` for direct authoring when no lift target exists. The `provekit-macros-rt` crate carries the runtime support.
 
-**Build-script integration (planned for v1.5):** `provekit-build` lifts contract violations into compile-time errors via `build.rs`. Currently in flight; see `implementations/rust/provekit-build/` and `examples/build_script_demo/`.
+**Build-script integration:** `provekit-build` lifts contract violations into compile-time errors via `build.rs`. Currently in flight; see `implementations/rust/provekit-build/` and `examples/build_script_demo/`.
 
 **Embedded verifier:** Yes. `provekit_verifier::run(project_root)` returns a `HandshakeReport` synchronously.
 
-**CLI:** `provekit` is the canonical shipping CLI for protocol v1.6.2. Subcommands include `prove`, `proof`, `protocol`, `ci`, `zoo`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Distributed via `cargo install provekit` once published, or `cargo install --path implementations/rust/provekit-cli` from source.
+**CLI:** `provekit` is the canonical shipping CLI for protocol v1.6.2. Subcommands include `prove`, `proof`, `protocol`, `ci`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Bug Zoo is repo-owned machinery under `bug-zoo/`, not a public `provekit` subcommand. Distributed via `cargo install provekit` once published, or `cargo install --path implementations/rust/provekit-cli` from source.
 
 ## TypeScript
 
-**Kit:** Shipping in v1.1. The TypeScript kit emits the same canonical IR a Rust kit emits for the same proposition; cross-language conformance is direct.
+**Kit:** Shipping in the current v1.6.2 tree. The TypeScript kit emits the same canonical IR a Rust kit emits for the same proposition; cross-language conformance is direct.
 
 **Libs:** `ts-types-proof` lifts TypeScript type annotations into contract mementos. Embedded verifier shipping; usable from Node and from browsers (with the WASM build of the canonicalizer).
 
-**Lift adapters (shipping before v1.6.2):**
+**Lift adapters (shipping):**
 - `provekit-lift-zod`: walks `z.object`, `z.string`, `z.number`, validator combinators. Full chain decoder for all major zod methods.
 - `provekit-lift-class-validator`: walks decorator-annotated class fields (`@IsNotEmpty`, `@MinLength`, `@Min`, `@Max`, `@IsEmail`, etc.).
 - `provekit-lift-fast-check`: walks `fc.assert(fc.property(...))` blocks. Lifts property tests to `forall` contracts.
 
-**Lift adapters (planned for v1.5):**
+**Lift adapters (planned):**
 - `io-ts`, `runtypes`, `valibot`: validator-style schema libraries; lift logic is uniform across the family.
 - `ajv` schemas: JSON Schema Draft 7+ to canonical IR.
 
-**Decorator macros (planned for v1.5):** A `@provekit.contract(...)` decorator for direct authoring when no lift target exists.
+**Decorator macros (planned):** A `@provekit.contract(...)` decorator for direct authoring when no lift target exists.
 
 **Embedded verifier:** Yes. Available from Node directly; browser builds use the WASM canonicalizer plus a remote prover for Tier 3 fallback.
 
-**CLI:** Deferred to v1.5. Use the Rust CLI (`provekit prove`) for verification; the TypeScript libs handle authoring and lifting.
+**CLI:** Native TypeScript CLI planned. Use the Rust CLI (`provekit prove`) for verification; the TypeScript libs handle authoring and lifting.
 
 **LSP Plugin:** Yes. `provekit-lsp` implements the ProvekIt NDJSON LSP plugin protocol (daemon mode over stdio) with `initialize`, `parse`, and `shutdown`.
 
 ## Go
 
-**Kit:** Shipping in v1.1. `implementations/go/provekit-ir-symbolic` provides the IR library. The canonicalizer matches the Rust implementation byte-for-byte.
+**Kit:** Shipping in the current v1.6.2 tree. `implementations/go/provekit-ir-symbolic` provides the IR library. The canonicalizer matches the Rust implementation byte-for-byte.
 
 **Libs:** Shipping. Embedded verifier callable from Go programs via a small CGO bridge to the canonicalizer; pure-Go verifier in flight.
 
-**Lift adapters (shipping before v1.6.2):**
+**Lift adapters (shipping):**
 - `provekit-lift-validator`: walks `validate:` struct tags from `go-playground/validator`.
 
-**Lift adapters (planned for v1.5):**
+**Lift adapters (planned):**
 - `provekit-lift-ozzo`: walks `ozzo-validation` rule chains.
 
 **Decorator macros:** Go has no decorator syntax. Comment-block annotations (`//provekit:contract`) under evaluation.
 
-**Embedded verifier:** Yes. CGO bridge to the Rust canonicalizer; pure-Go canonicalizer planned for v1.5.
+**Embedded verifier:** Yes. CGO bridge to the Rust canonicalizer; pure-Go canonicalizer planned.
 
 **CLI:** Deferred. Use the Rust CLI.
 
@@ -172,11 +175,11 @@ Column meanings:
 
 ## C++
 
-**Kit:** Shipping in v1.1. `implementations/cpp/provekit-ir-symbolic` plus the canonicalizer. Header-only IR library; CMake integration shipped.
+**Kit:** Shipping in the current v1.6.2 tree. `implementations/cpp/provekit-ir-symbolic` plus the canonicalizer. Header-only IR library; CMake integration shipped.
 
 **Libs:** Shipping. Embedded verifier links into existing C++ projects.
 
-**Lift adapters (shipping before v1.6.2):**
+**Lift adapters (shipping):**
 - `provekit-lift-cpp-contracts`: walks `[[expects:]]` and `[[ensures:]]` attributes (C++26 contract syntax).
 
 **Lift adapters (under evaluation):**
@@ -194,15 +197,15 @@ Column meanings:
 
 ## Python
 
-**Kit:** Shipping in v1.1. `implementations/python/provekit-lift-py-tests` provides the IR library, canonicalizer (JCS + BLAKE3-512), Layer 2 lift adapter, decorator macros, Pydantic lift adapter, and embedded verifier.
+**Kit:** Shipping in the current v1.6.2 tree. `implementations/python/provekit-lift-py-tests` provides the IR library, canonicalizer (JCS + BLAKE3-512), Layer 2 lift adapter, decorator macros, Pydantic lift adapter, and embedded verifier.
 
-**Libs:** Shipping. The canonicalizer is implemented in pure Python and is byte-identical to the Rust canonicalizer for all conformance tests. Performance is acceptable for typical project sizes; the WASM-backed path remains an option for v1.5 if profiling demands it.
+**Libs:** Shipping. The canonicalizer is implemented in pure Python and is byte-identical to the Rust canonicalizer for all conformance tests. Performance is acceptable for typical project sizes; the WASM-backed path remains an option if profiling demands it.
 
-**Lift adapters (shipping before v1.6.2):**
+**Lift adapters (shipping):**
 - `provekit.lift.pydantic`: walks `BaseModel` field annotations and `Field` constraints. Emits the same IR as Bean Validation `@Min`/`@Max`/`@Pattern`/`@Size` for equivalent constraints.
 - Layer 2 structural lift: walks pytest/unittest test files and recognizes bounded loops, helper inlining, multi-assertion characterization, and `@pytest.mark.parametrize`.
 
-**Lift adapters (planned for v1.5):**
+**Lift adapters (planned):**
 - `provekit-lift-deal`: walks `@deal.pre`, `@deal.post`, `@deal.raises`.
 - `provekit-lift-hypothesis`: walks `@given(...)` test functions; shape similar to proptest.
 - `icontract`, `attrs`, `dataclasses-json` schemas.
@@ -217,13 +220,13 @@ Column meanings:
 
 ## Java / JVM
 
-**Kit:** Shipping in v1.1. Multi-module Maven project with SLF4J-style architecture: `provekit-lift-java-core` (facade) + per-annotation binding JARs, discovered via `java.util.ServiceLoader`.
+**Kit:** Shipping in the current v1.6.2 tree. Multi-module Maven project with SLF4J-style architecture: `provekit-lift-java-core` (facade) + per-annotation binding JARs, discovered via `java.util.ServiceLoader`.
 
-**Libs:** Shipping. `provekit-ir` provides IR types (`Formula`, `Term`, `Sort`, `Declaration`, `IrDocument`, `CallEdgeDecl`, plus the v1.4 layered `BridgeDeclarationV14` / `BridgeHeaderV14` / `BridgeMetadataV14` / `BridgeEnvelope` / `BridgeTarget` records).
+**Libs:** Shipping. `provekit-ir` provides IR types (`Formula`, `Term`, `Sort`, `Declaration`, `IrDocument`, `CallEdgeDecl`, plus the layered `BridgeDeclarationV14` / `BridgeHeaderV14` / `BridgeMetadataV14` / `BridgeEnvelope` / `BridgeTarget` records).
 
-**Bridge IR v1.4:** `provekit-claim-envelope::ClaimEnvelope.mintBridgeV14` emits the layered envelope/header/body shape with the tagged-union `target` field. Byte-identical to the rust canonical reference; pinned against the `bridge_decl_v1_4` conformance fixture in `BridgeV14RoundtripTest`. The legacy v1.1 9-field flat `Declaration.Bridge` and the v1.2 layered `mintBridge` remain available for back-compat per substrate-layers spec §4 (v1.1 mementos remain valid forever as historical bytes; new emissions MUST use v1.4). Closes #188.
+**Bridge IR compatibility:** `provekit-claim-envelope::ClaimEnvelope.mintBridgeV14` emits the layered envelope/header/body shape with the tagged-union `target` field. Byte-identical to the Rust canonical reference; pinned against the `bridge_decl_v1_4` conformance fixture in `BridgeV14RoundtripTest`. Legacy bridge shapes remain available only for back-compat with historical bytes. Closes #188.
 
-**Lift adapters (shipping in v1.1):**
+**Lift adapters (shipping):**
 - `provekit-lift-java-bean-validation`: walks `@NotNull`, `@Email`, `@Min`, `@Max`, `@Pattern`, `@Size`, `@Positive`, `@Negative`, `@AssertTrue`, `@AssertFalse`, `@DecimalMin`, `@DecimalMax`, `@Digits`, `@Future`, `@Past`.
 - `provekit-lift-java-jml`: walks `//@ requires`, `//@ ensures`, `//@ invariant` comment-block annotations. Uses a hand-written tokenizer + recursive-descent parser (no regex gymnastics) to produce structured IR that is byte-for-byte identical to Bean Validation for equivalent constraints.
 - `provekit-lift-java-spring-web`: walks `@RequestParam`, `@PathVariable`, `@RequestMapping`, etc.
@@ -234,23 +237,23 @@ Column meanings:
 
 **Decorator macros:** JVM annotations are the natural authoring surface.
 
-**Embedded verifier:** Planned for v1.5.
+**Embedded verifier:** Planned.
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Planned for v1.5.
+**LSP Plugin:** Planned.
 
 ## C
 
 **Kit:** Shipping. `implementations/c/provekit-ir` provides the IR library, JCS canonical JSON emitter, and BLAKE3-512 hash wrapper.
 
-**Libs:** Under evaluation. Native C BLAKE3 binding planned for v1.5; current implementation delegates hashing to the Python `blake3` module via subprocess.
+**Libs:** Under evaluation. Native C BLAKE3 binding planned; current implementation delegates hashing to the Python `blake3` module via subprocess.
 
-**Lift adapters:** Planned for v1.5. `assert.h` macro walking under evaluation.
+**Lift adapters:** Planned. `assert.h` macro walking under evaluation.
 
 **Decorator macros:** Under evaluation.
 
-**Embedded verifier:** Planned for v1.5.
+**Embedded verifier:** Planned.
 
 **CLI:** Deferred. Use the Rust CLI.
 
@@ -258,7 +261,7 @@ Column meanings:
 
 ## Zig
 
-**Kit:** Shipping in v1.1. `implementations/zig/provekit-ir` provides the IR library with JCS canonical JSON serialization and BLAKE3-512 hashing via `std.crypto.blake3`.
+**Kit:** Shipping in the current v1.6.2 tree. `implementations/zig/provekit-ir` provides the IR library with JCS canonical JSON serialization and BLAKE3-512 hashing via `std.crypto.blake3`.
 
 **Libs:** Under evaluation.
 
@@ -274,11 +277,11 @@ Column meanings:
 
 ## Ruby
 
-**Kit:** Shipping in v1.1. `implementations/ruby/lib/provekit/ir.rb` provides IR types, JCS canonical JSON emitter, and BLAKE3-512 hashing. Requires Ruby 3+ (uses endless-method syntax); macOS system Ruby 2.6 cannot parse the kit. Conformance harness prefers Homebrew Ruby automatically.
+**Kit:** Shipping in the current v1.6.2 tree. `implementations/ruby/lib/provekit/ir.rb` provides IR types, JCS canonical JSON emitter, and BLAKE3-512 hashing. Requires Ruby 3+ (uses endless-method syntax); macOS system Ruby 2.6 cannot parse the kit. Conformance harness prefers Homebrew Ruby automatically.
 
 **Libs:** Under evaluation.
 
-**Lift adapters (shipping in v1.1):**
+**Lift adapters (shipping):**
 - `provekit/lift/active_model`: walks `validates :field, presence: true, length: { minimum: N }` declarations.
 - `provekit/lift/dry_validation`: walks `Dry::Validation::Contract` rule definitions.
 - `provekit/lift/rspec`: walks `RSpec.describe` blocks; lifts `it { is_expected.to ... }` matchers.
@@ -291,15 +294,15 @@ Column meanings:
 
 **LSP Plugin:** Yes. `bin/provekit-lsp-ruby` implements the ProvekIt NDJSON LSP plugin protocol.
 
-**Bridge IR gap:** `Provekit::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. Originally tracked as task #190 against the v1.1.0 9-field shape; under v1.4's bridge target dimensionality spec the migration target is the layered shape with a tagged-union `target` field, so the gap is subsumed by the v1.4 migration rather than the v1.1.0 fix. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
+**Bridge IR gap:** `Provekit::IR.marshal_declarations` hardcodes `kind: "contract"` and cannot emit `Bridge` declarations. The migration target is the layered shape with a tagged-union `target` field. Blocks Phase 2 cross-kit bridges to Rust's lift-plugin-protocol contracts.
 
 ## C#
 
-**Kit:** Shipping in v1.1. `implementations/csharp/Provekit.IR`, `Provekit.Canonicalizer`, `Provekit.SelfContracts`, `Provekit.ClaimEnvelope`, `Provekit.ProofEnvelope`, `Provekit.Verifier`. Multi-project .NET 10 solution with full IR + canonicalizer parity to Rust.
+**Kit:** Shipping in the current v1.6.2 tree. `implementations/csharp/Provekit.IR`, `Provekit.Canonicalizer`, `Provekit.SelfContracts`, `Provekit.ClaimEnvelope`, `Provekit.ProofEnvelope`, `Provekit.Verifier`. Multi-project .NET 10 solution with full IR + canonicalizer parity to Rust.
 
 **Libs:** Shipping. `Provekit.Verifier` is the in-process verifier.
 
-**Lift adapters (shipping in v1.1):**
+**Lift adapters (shipping):**
 - `Provekit.Lift.DataAnnotations`: walks `[Required]`, `[StringLength]`, `[Range]`, `[RegularExpression]`, `[EmailAddress]`, etc.
 - `Provekit.Lift.Linq`: walks LINQ expression trees and lifts predicate quantifiers (`All`, `Any`) to `forall`/`exists` IR.
 
@@ -311,11 +314,11 @@ Column meanings:
 
 **LSP Plugin:** Yes. `Provekit.Lsp.Plugin` implements the ProvekIt NDJSON LSP plugin protocol.
 
-**Bridge IR gap:** `Provekit.IR.Collector.BridgeDecl` is `(TargetContractName, IrArgSorts, IrReturnSort)`, a lift-adapter helper, not the spec Bridge shape. Originally tracked as task #192 against the v1.1.0 9-field shape; under v1.4's bridge target dimensionality spec the migration target is the layered shape with a tagged-union `target` field, so the gap is subsumed by the v1.4 migration. Self-contracts attestation IS signed (the bundle CID is pinned, and `contractSetCid` is emitted), but Phase 2 cross-kit bridges require a separate spec-shaped `BridgeDeclaration` record to be added.
+**Bridge IR gap:** `Provekit.IR.Collector.BridgeDecl` is `(TargetContractName, IrArgSorts, IrReturnSort)`, a lift-adapter helper, not the spec Bridge shape. The migration target is the layered shape with a tagged-union `target` field. Self-contracts attestation IS signed (the bundle CID is pinned, and `contractSetCid` is emitted), but Phase 2 cross-kit bridges require a separate spec-shaped `BridgeDeclaration` record to be added.
 
 ## Swift
 
-**Kit:** Shipping in v1.1 (via PR #76). `implementations/swift/Sources/Provekit/IR.swift` provides IR types, JCS canonical JSON via `Jcs.encode`, and BLAKE3-512 hashing. The conformance runner at `Sources/ConformanceRunner/main.swift` validates byte-identical emission against the canonical Rust output for `eq_atomic`, `pattern1_bounded_loop`, `contract_decl`, `bridge_decl`.
+**Kit:** Shipping in the current v1.6.2 tree. `implementations/swift/Sources/Provekit/IR.swift` provides IR types, JCS canonical JSON via `Jcs.encode`, and BLAKE3-512 hashing. The conformance runner at `Sources/ConformanceRunner/main.swift` validates byte-identical emission against the canonical Rust output for `eq_atomic`, `pattern1_bounded_loop`, `contract_decl`, `bridge_decl`.
 
 **Libs:** Under evaluation.
 
@@ -323,13 +326,13 @@ Column meanings:
 
 **Decorator macros:** Swift property wrappers + macros (Swift 5.9+) under evaluation as the authoring surface.
 
-**Embedded verifier:** Planned for v1.5.
+**Embedded verifier:** Planned.
 
 **CLI:** Deferred. Use the Rust CLI.
 
 **LSP Plugin:** Yes. `ProveKitLSPSwift` implements the ProvekIt NDJSON LSP plugin protocol (parse-protocol v1) with `initialize`, `parse`, and `shutdown`.
 
-**Bridge IR:** v1.1.0 9-field shape supported (`Declaration.bridge` enum case round-trips byte-identical to the bridge_decl fixture, per PR #76). Under v1.4's bridge target dimensionality spec the kit's bridge emission needs to migrate to the layered shape with a tagged-union `target` field; that migration is pending alongside the rest of the kits. Self-contracts package and Phase 2 lift-plugin-protocol bridges deferred until the kit accumulates a runtime surface beyond conformance.
+**Bridge IR:** The historical flat bridge shape is supported (`Declaration.bridge` enum case round-trips byte-identical to the `bridge_decl` fixture, per PR #76). The kit still needs to migrate bridge emission to the layered shape with a tagged-union `target` field. Self-contracts package and Phase 2 lift-plugin-protocol bridges deferred until the kit accumulates a runtime surface beyond conformance.
 
 ## PHP
 
