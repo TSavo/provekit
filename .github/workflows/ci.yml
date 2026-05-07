@@ -121,10 +121,10 @@ jobs:
           cache: maven
 
       # ---------------------------------------------------------------
-      # System-level deps: b3sum (PHP BLAKE3), openssl, nlohmann-json, libblake3 (Ruby FFI),
-      # libyaml (Ruby psych/bundler runtime). Run BEFORE setup-ruby so
-      # the bundler-cache step has libblake3 and libyaml already on the
-      # host when it resolves and builds native gems.
+      # System-level deps: PHP CLI + b3sum (PHP kit), openssl, nlohmann-json,
+      # libblake3 (Ruby FFI), libyaml (Ruby psych/bundler runtime). Run
+      # BEFORE setup-ruby so the bundler-cache step has libblake3 and libyaml
+      # already on the host when it resolves and builds native gems.
       #
       # cpp BLAKE3 is vendored at tools/blake3-vendored/; the Ruby kit's
       # FFI binding to libblake3 needs the system package because no
@@ -162,8 +162,10 @@ jobs:
             libyaml-dev \
             maven \
             nlohmann-json3-dev \
+            php-cli \
             unzip \
             z3
+          php -m | grep -q '^sodium$'
 
       - name: Install Vampire (upstream GitHub release)
         # Vampire joins the default solver portfolio per
@@ -467,6 +469,15 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.16.0
+
+      - name: Install PHP deps (php)
+        if: matrix.kit == 'php'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            b3sum \
+            php-cli
+          php -m | grep -q '^sodium$'
 
       - name: "prove-${{ matrix.kit }}"
         run: make prove-${{ matrix.kit }}
