@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// baseline_pin — regression test pinning the rust-std-baseline-v1
+// baseline_pin — regression test pinning the Rust std baseline v1
 // catalog's contractSetCid + disclaimer_cid.
 //
 // Either of these CIDs changing means the catalog body changed
@@ -53,7 +53,7 @@ fn contract_set_cid_is_pinned() {
          Got:      {}\n\
          Pinned:   {}\n\
          If this change is intentional, update PINNED_CONTRACT_SET_CID and \
-         either bump rust-std-baseline-v1 to v1.<minor> (extension) or \
+         either bump the Rust std baseline to v1.<minor> (extension) or \
          v2 (semantic break).",
         m.contract_set_cid, PINNED_CONTRACT_SET_CID
     );

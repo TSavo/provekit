@@ -1546,6 +1546,7 @@ dependencies = [
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
  "provekit-proof-envelope",
+ "provekit-verifier",
  "serde",
  "serde_json",
  "toml 0.8.23",

@@ -1,7 +1,7 @@
 //! mint-all-baselines — config-driven baseline catalog generator.
 //! Reads per-language TOML configs, generates ContractDecls using
 //! provekit-ir-symbolic primitives, mints each into a signed memento,
-//! bundles into per-kit .proof files under .provekit/baselines/.
+//! bundles into per-kit content-addressed .proof files under .provekit/baselines/.
 
 use std::fs;
 use std::path::Path;
@@ -253,7 +253,7 @@ fn main() {
         .join("../../../.provekit/baselines");
 
     // 11 language kits. Rust is handled by provekit-baseline-rust-std (#292).
-    // Including rust here would produce a duplicate rust-std-baseline-v1 in .provekit/baselines/.
+    // Including rust here would produce a second rust baseline artifact.
     let langs = [
         "c", "cpp", "csharp", "go", "java", "php", "python",
         "ruby", "swift", "typescript", "zig",

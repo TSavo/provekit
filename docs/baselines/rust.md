@@ -3,7 +3,7 @@
 Foundation v1 advisory catalog of hidden predicates about Rust's
 `std::*` builtins. Authored against `rustc 1.81.0`.
 
-Catalog file: [`.provekit/baselines/rust-std-baseline-v1.proof`](../../.provekit/baselines/rust-std-baseline-v1.proof).
+Catalog file: [`.provekit/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec.proof`](../../.provekit/baselines/blake3-512:60dc813e4af21119e328a889a7bffd9d89ce381ac7c328c08d5788cba7986754c8804f35bf5d5bdbaa450a56f979fe19ef407270acc5bfd7f027097cd98c14ec.proof).
 
 ## Disclaimer
 
@@ -91,7 +91,7 @@ To re-mint locally:
 
 ```sh
 cargo run -p provekit-baseline-rust-std --bin mint-rust-std-baseline -- /tmp/stage
-cp /tmp/stage/blake3-512:*.proof .provekit/baselines/rust-std-baseline-v1.proof
+cp /tmp/stage/blake3-512:*.proof .provekit/baselines/
 ```
 
 Byte-determinism is asserted: the orchestrator mints into two separate

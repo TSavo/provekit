@@ -171,6 +171,18 @@ The Bean Validation adapter walks `@NotNull`, `@Email`, `@Min`, `@Max`, `@Patter
 
 Both libraries express full pre/post/invariant contracts in Java. The JML adapter walks `//@ requires`, `//@ ensures`, and `//@ invariant` comment-block annotations. The Cofoja adapter walks `@Requires` and `@Ensures` annotations. Both produce contract mementos identical in shape to the Rust `contracts` adapter's output.
 
+### Java: JUnit Jupiter
+
+```java
+@Test
+void parseFortyTwo() {
+    int actual = parseInt("42");
+    assertEquals(42, actual);
+}
+```
+
+The JUnit adapter treats unit assertions as point-specific behavior witnesses, not universal function contracts. `assertEquals(expected, actual)` binds an implication over the test-local value scope: local assignments become SSA binding facts, branch joins become guarded implications, and opaque branch conditions preserve source text when the condition is outside the v0 expression subset. The example above lifts the scoped fact `actual$0 = parseInt("42") => actual$0 = 42`; it does not mint any claim about `parseInt("43")`.
+
 ### Go: `go-playground/validator`
 
 ```go

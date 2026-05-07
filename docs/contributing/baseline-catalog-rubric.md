@@ -126,8 +126,8 @@ Any agent's baseline catalog output is checked against this list. The kit-level 
 - [ ] Companion doc at `docs/baselines/<lang>.md` exists with disclaimer + change log
 - [ ] All ContractDecls verify under `provekit verify --baseline=<lang>`
 - [ ] Catalog signs with foundation v0 ed25519 key
-- [ ] Catalog filename matches `baselines/<lang>-baseline-v<N>.proof` convention
-- [ ] Companion `<lang>-baseline-v<N>.proof.json` (the public attestation) lists the catalog CID + signer + roles
+- [ ] Catalog filename is content-addressed: `.provekit/baselines/<proof_cid>.proof`
+- [ ] Publication index entry lists proof CID, signer, signer role, authored-against version, status, and contract set CID
 
 ## Authoring workflow
 
@@ -139,16 +139,17 @@ For each language:
 4. Verify the metadata block matches the schema in section 3.
 5. Verify the disclaimer text matches the template in section 4.
 6. Sign with foundation v0.
-7. Commit the catalog at `.provekit/baselines/<lang>-baseline-v1.proof`.
+7. Commit the catalog at `.provekit/baselines/<proof_cid>.proof`.
 8. Write `docs/baselines/<lang>.md` with the disclaimer + change log.
 9. Run `provekit verify --baseline=<lang>` to confirm everything verifies.
-10. Open PR. CI gate runs the compliance checklist as assertions.
+10. Refresh the content-addressed publication index under `.provekit/baselines/`.
+11. Open PR. CI gate runs the compliance checklist as assertions.
 
 The rust pilot (#257) walks this workflow end-to-end on the lowest-risk kit, validates the rubric, and feeds any rough edges back to this doc.
 
 ## Versioning
 
-Baselines are versioned per-language, not globally. `<lang>-baseline-v1` and `<lang>-baseline-v2` can coexist; consumers pin whichever version they want. A new minor release of a language doesn't force a new baseline version unless the kit's authoring changes; minor releases that add builtins without changing existing semantics extend an existing baseline (members appended, contractSetCid changes, signed envelope re-emitted as `<lang>-baseline-v1.<minor>.proof` if needed).
+Baselines are versioned per-language, not globally. The signed envelope carries the baseline version, and the committed proof filename is the proof CID. A new minor release of a language does not force a new baseline version unless the kit's authoring changes; minor releases that add builtins without changing existing semantics extend an existing baseline with appended members, a new contractSetCid, and a re-emitted content-addressed proof file.
 
 A new major language version (Python 4, Java 22, etc.) starts a new baseline major version. Old baselines remain pinnable by CID indefinitely.
 

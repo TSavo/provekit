@@ -228,6 +228,7 @@ Column meanings:
 
 **Lift adapters (shipping):**
 - `provekit-lift-java-bean-validation`: walks `@NotNull`, `@Email`, `@Min`, `@Max`, `@Pattern`, `@Size`, `@Positive`, `@Negative`, `@AssertTrue`, `@AssertFalse`, `@DecimalMin`, `@DecimalMax`, `@Digits`, `@Future`, `@Past`.
+- `provekit-lift-java-junit`: walks JUnit Jupiter test assertions and emits point-specific value-scope implications. `assertEquals(42, parseInt("42"))` lifts only the witnessed term; local assignments become SSA binding facts and branch joins become guarded implications with opaque branch-condition atoms.
 - `provekit-lift-java-jml`: walks `//@ requires`, `//@ ensures`, `//@ invariant` comment-block annotations. Uses a hand-written tokenizer + recursive-descent parser (no regex gymnastics) to produce structured IR that is byte-for-byte identical to Bean Validation for equivalent constraints.
 - `provekit-lift-java-spring-web`: walks `@RequestParam`, `@PathVariable`, `@RequestMapping`, etc.
 - `provekit-lift-java-cofoja`: walks `@Requires`, `@Ensures`, `@Invariant` annotations.
