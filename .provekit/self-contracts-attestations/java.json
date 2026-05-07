@@ -4,7 +4,7 @@
   "lang": "java",
   "cid": "blake3-512:9c0684d1cbeabda91049dc61f544c552b66d657821e821c5e2a05043082a92ba434f731f776b7a1db3b87e8de1a5048966d1d5de2037640311fc2d32eb6082c7",
   "contractSetCid": "blake3-512:36bf7c78c12b59cb77bf16d12b5a568ec80a590512a31578801caeee56edbc95317eef0a95993309d02711a2cf2d7a210de9e6db972dae819f8dfa28bc10f21b",
-  "declaredAt": "2026-05-03T18:00:00Z",
+  "declaredAt": "2026-05-05T18:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:juw0KtYHCkU+1AljimRiuBM3F2TnJaMCwpaUKU77jyxbJ74bGQcS0sS+LBIwTatdIiCv8z+FrbAld1AmPoCqDg=="
+  "signature": "ed25519:S8zt5LrLqYE7wkGpolU8J2pUTFJiHxzo8A+CSYimPSVNKkhlcWJ3pZBdGg/Yq8+GvWP20jjknD//SKO+rMp6Bg=="
 }
