@@ -70,6 +70,7 @@ public static class IR
     public static Term Num(long v) => new Term.Const(v, Int());
     public static Term Str(string v) => new Term.Const(v, StringSort());
     public static Term BoolConst(bool v) => new Term.Const(v, Bool());
+    public static Term Null() => new Term.Const(null!, Ref());
     public static Term Ctor(string name, params Term[] args) => new Term.Ctor(name, args);
 
     public static Formula Atom(string name, params Term[] args) => new Formula.Atomic(name, args);
@@ -189,6 +190,7 @@ public static class IREmit
                     case int i: sb.Append(i); break;
                     case bool b: sb.Append(b ? "true" : "false"); break;
                     case string s: WriteString(sb, s); break;
+                    case null: sb.Append("null"); break;
                     default:
                         throw new InvalidOperationException($"unsupported const value: {c.Value?.GetType()}");
                 }

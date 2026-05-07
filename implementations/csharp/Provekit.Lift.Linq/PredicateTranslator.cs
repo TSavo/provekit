@@ -104,6 +104,8 @@ public sealed class PredicateTranslator
                 return IR.BoolConst(true);
             case LiteralExpressionSyntax l when l.IsKind(SyntaxKind.FalseLiteralExpression):
                 return IR.BoolConst(false);
+            case LiteralExpressionSyntax l when l.IsKind(SyntaxKind.NullLiteralExpression):
+                return IR.Null();
             case IdentifierNameSyntax id when id.Identifier.Text == _lambdaParamName:
                 return IR.Var(_boundVarName);
             case IdentifierNameSyntax id:
