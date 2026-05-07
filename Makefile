@@ -444,7 +444,7 @@ prove-zig: build-rust build-zig
 	$(PROVEKIT) prove --kit=zig
 
 .PHONY: prove-c
-prove-c: build-rust build-c
+prove-c: build-rust build-c build-c-self-contracts
 	@echo ">> proving c lift-plugin-protocol conformance (C1-C8)"
 	$(PROVEKIT) prove --kit=c
 
