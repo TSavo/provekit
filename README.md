@@ -75,6 +75,17 @@ isolated host-language environment, uses that language's own kit to discover a
 bug, then asks `provekit zoo` to verify that the canonical ProofIR signature is
 byte-identical across surfaces and languages.
 
+In shorthand:
+
+```text
+k_lang(I) = t
+```
+
+`I` is the native program or specimen, `k_lang` is that language's kit/lifter,
+and `t` is the canonical ProofIR bug shape. Different languages can disagree in
+syntax, runtime behavior, and exception type while still lifting to the same
+`t`.
+
 The current null-boundary receipts show TypeScript and C# lifting the same
 missing edge:
 
