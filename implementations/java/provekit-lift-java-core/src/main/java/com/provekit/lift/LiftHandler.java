@@ -39,6 +39,7 @@ public class LiftHandler {
             for (Extractor ex : extractors) {
                 decls.addAll(ex.extract(cu, source));
             }
+            decls = mergeDeclsBySymbol(decls);
             Map<String, String> contractIndex = buildContractIndex(decls);
             callEdges.addAll(JniResolver.resolve(cu, path, contractIndex));
         }
@@ -92,9 +93,11 @@ public class LiftHandler {
             ParseResult<CompilationUnit> result = new JavaParser().parse(source);
             if (!result.isSuccessful() || result.getResult().isEmpty()) return;
             CompilationUnit cu = result.getResult().get();
+            List<ContractDecl> fileDecls = new ArrayList<>();
             for (Extractor ex : extractors) {
-                decls.addAll(ex.extract(cu, source));
+                fileDecls.addAll(ex.extract(cu, source));
             }
+            decls.addAll(mergeDeclsBySymbol(fileDecls));
 
             // Build contract index from accumulated decls so far (including this file).
             // We use all decls accumulated up to this point; for single-file fixtures
@@ -107,6 +110,46 @@ public class LiftHandler {
             callEdges.addAll(jniEdges);
         } catch (IOException e) {
             System.err.println("Parse error " + path + ": " + e.getMessage());
+        }
+    }
+
+    private static List<ContractDecl> mergeDeclsBySymbol(List<ContractDecl> decls) {
+        Map<String, ContractDecl> merged = new LinkedHashMap<>();
+        for (ContractDecl decl : decls) {
+            ContractDecl existing = merged.get(decl.symbol);
+            if (existing == null) {
+                merged.put(decl.symbol, copyDecl(decl));
+            } else {
+                merged.put(decl.symbol, mergeDecl(existing, decl));
+            }
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    private static ContractDecl copyDecl(ContractDecl decl) {
+        return new ContractDecl(
+            decl.symbol,
+            new ArrayList<>(decl.preconditions),
+            new ArrayList<>(decl.postconditions),
+            new ArrayList<>(decl.invariants)
+        );
+    }
+
+    private static ContractDecl mergeDecl(ContractDecl left, ContractDecl right) {
+        List<String> pres = new ArrayList<>(left.preconditions);
+        List<String> posts = new ArrayList<>(left.postconditions);
+        List<String> invs = new ArrayList<>(left.invariants);
+        appendUnique(pres, right.preconditions);
+        appendUnique(posts, right.postconditions);
+        appendUnique(invs, right.invariants);
+        return new ContractDecl(left.symbol, pres, posts, invs);
+    }
+
+    private static void appendUnique(List<String> target, List<String> additions) {
+        for (String item : additions) {
+            if (!target.contains(item)) {
+                target.add(item);
+            }
         }
     }
 

@@ -14,8 +14,9 @@ destinations:
     claim: artifact admission through rank-3 pins, binaryCid, and CICP
   - id: bridgeworks
     path: bridgeworks
-    runnable: planned
-    claim: proof preservation across language, package, protocol, and CI boundaries
+    runnable: true
+    claim: ProofIR carries vertical contracts and .proof CIDs compress the implication DAG
+    command: cargo run --manifest-path menagerie/bridgeworks/Cargo.toml -- --all
   - id: protocol-switchyard
     path: protocol-switchyard
     runnable: planned

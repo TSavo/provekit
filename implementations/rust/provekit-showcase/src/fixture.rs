@@ -366,6 +366,7 @@ fn mint_one_implication(
         consequent_hash: b.pre_hash.clone(),
         antecedent_cid: a.cid.clone(),
         consequent_cid: b.cid.clone(),
+        additional_input_cids: Vec::new(),
         antecedent_slot: "post".to_string(),
         consequent_slot: "pre".to_string(),
         prover: SYNTHETIC_PROVER.to_string(),

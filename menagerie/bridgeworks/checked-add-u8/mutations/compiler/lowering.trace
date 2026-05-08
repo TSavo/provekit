@@ -1,0 +1,30 @@
+format: bridgeworks.lowering.trace.v1
+layer: compiler
+mutation_id: lowering_ignores_carry
+expected_refusal: missing compiler.lowering.preserves_checked_add
+source_contract: checked_add_u8.postcondition
+target_contract: isa.add8.carry_semantics
+
+[lowering]
+source_operation: checked_add_u8(a:u8, b:u8) -> result
+target_artifact: toy8.asm
+strategy: unchecked_add_u8
+
+[observed_sequence]
+1: LOAD_ARG r0, a
+2: LOAD_ARG r1, b
+3: ADD8 r2, r0, r1
+4: RET_OK r2
+
+[broken_preservation_markers]
+sum_source: (a + b) mod 256
+sum_target: r2
+carry_source: a + b >= 256
+carry_target: ignored
+overflow_branch: none
+ok_result_when: always
+overflow_result_when: never
+
+[adapter_expectations]
+do_not_emit_claim: compiler.lowering.preserves_checked_add
+refusal_reason: ADD8 carry flag is not consumed by BR_CARRY before RET_OK

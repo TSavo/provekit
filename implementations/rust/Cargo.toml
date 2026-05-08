@@ -41,6 +41,7 @@ members = [
     "provekit-linkerd",
     "provekit-baseline-std",
     "../../menagerie/bug-zoo",
+    "../../menagerie/bridgeworks",
 ]
 
 [workspace.package]

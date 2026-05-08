@@ -201,6 +201,7 @@ fn impl_args() -> MintImplicationArgs {
         consequent_hash: "blake3-512:ccc".into(),
         antecedent_cid: "blake3-512:zzz".into(),
         consequent_cid: "blake3-512:bbb".into(),
+        additional_input_cids: Vec::new(),
         antecedent_slot: "pre".into(),
         consequent_slot: "post".into(),
         prover: "z3@4.13".into(),
