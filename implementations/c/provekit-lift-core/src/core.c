@@ -164,24 +164,32 @@ static char *pk_c_append_array(char *dst, const pk_c_json_array *array) {
 static int pk_c_json_escaped_len(const char *text, size_t *out) {
     size_t len = 0;
     size_t i;
+    unsigned char ch;
 
     if (text == NULL || out == NULL) {
         return -1;
     }
 
     for (i = 0; text[i] != '\0'; i++) {
-        switch (text[i]) {
+        ch = (unsigned char)text[i];
+        switch (ch) {
         case '"':
         case '\\':
         case '\n':
         case '\r':
         case '\t':
+        case '\b':
+        case '\f':
             if (pk_c_checked_add_size(len, 2, &len) != 0) {
                 return -1;
             }
             break;
         default:
-            if (pk_c_checked_add_size(len, 1, &len) != 0) {
+            if (ch < 0x20) {
+                if (pk_c_checked_add_size(len, 6, &len) != 0) {
+                    return -1;
+                }
+            } else if (pk_c_checked_add_size(len, 1, &len) != 0) {
                 return -1;
             }
             break;
@@ -193,8 +201,10 @@ static int pk_c_json_escaped_len(const char *text, size_t *out) {
 }
 
 static char *pk_c_json_escape_string(const char *text) {
+    static const char hex[] = "0123456789abcdef";
     size_t len;
     size_t i;
+    unsigned char ch;
     char *escaped;
     char *dst;
 
@@ -210,7 +220,8 @@ static char *pk_c_json_escape_string(const char *text) {
 
     dst = escaped;
     for (i = 0; text[i] != '\0'; i++) {
-        switch (text[i]) {
+        ch = (unsigned char)text[i];
+        switch (ch) {
         case '"':
             *dst++ = '\\';
             *dst++ = '"';
@@ -231,8 +242,25 @@ static char *pk_c_json_escape_string(const char *text) {
             *dst++ = '\\';
             *dst++ = 't';
             break;
+        case '\b':
+            *dst++ = '\\';
+            *dst++ = 'b';
+            break;
+        case '\f':
+            *dst++ = '\\';
+            *dst++ = 'f';
+            break;
         default:
-            *dst++ = text[i];
+            if (ch < 0x20) {
+                *dst++ = '\\';
+                *dst++ = 'u';
+                *dst++ = '0';
+                *dst++ = '0';
+                *dst++ = hex[ch >> 4];
+                *dst++ = hex[ch & 0x0f];
+            } else {
+                *dst++ = text[i];
+            }
             break;
         }
     }

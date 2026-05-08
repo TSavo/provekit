@@ -59,22 +59,28 @@ static void test_populated_result_json(void) {
 
 static void test_opacity_and_refusal_are_separate(void) {
     pk_c_lift_result *r = pk_c_lift_result_new();
-    pk_c_lift_result_add_opacity_entry(
-        r,
-        "unexpanded-macro",
-        "fixture.c",
-        7,
-        5,
-        "macro body unavailable",
-        "sparse");
-    pk_c_lift_result_add_refusal_entry(
-        r,
-        "unsupported-lock-transfer",
-        "fixture.c",
-        9,
-        3,
-        "lockdep",
-        "lock released through function pointer");
+    assert_int_eq(
+        pk_c_lift_result_add_opacity_entry(
+            r,
+            "unexpanded-macro",
+            "fixture.c",
+            7,
+            5,
+            "macro body unavailable",
+            "sparse"),
+        0,
+        "add structured opacity");
+    assert_int_eq(
+        pk_c_lift_result_add_refusal_entry(
+            r,
+            "unsupported-lock-transfer",
+            "fixture.c",
+            9,
+            3,
+            "lockdep",
+            "lock released through function pointer"),
+        0,
+        "add structured refusal");
     char *json = pk_c_lift_result_to_json(r);
     const char *want =
         "{\"declarations\":[],\"callEdges\":[],\"diagnostics\":[],"
@@ -84,6 +90,49 @@ static void test_opacity_and_refusal_are_separate(void) {
         "\"locus\":{\"column\":3,\"line\":9,\"path\":\"fixture.c\"},"
         "\"reason\":\"lock released through function pointer\",\"surface\":\"lockdep\"}]}";
     assert_eq(json, want, "opacity and refusal separation");
+    free(json);
+    pk_c_lift_result_free(r);
+}
+
+static void test_structured_helpers_escape_json_strings(void) {
+    pk_c_lift_result *r = pk_c_lift_result_new();
+    char *json;
+    const char *want =
+        "{\"declarations\":[],\"callEdges\":[],\"diagnostics\":[],"
+        "\"opacityReport\":[{\"affectedSurface\":\"surface\\fpage\","
+        "\"kind\":\"quote\\\"slash\\\\kind\","
+        "\"locus\":{\"column\":11,\"line\":10,\"path\":\"path\\nfile.c\"},"
+        "\"reason\":\"tab\\tback\\bctrl\\u0001end\"}],"
+        "\"refusals\":[{\"kind\":\"ref\\\"kind\","
+        "\"locus\":{\"column\":13,\"line\":12,\"path\":\"ref\\\\path.c\"},"
+        "\"reason\":\"line\\nform\\fctrl\\u0001done\","
+        "\"surface\":\"surface\\tback\\b\"}]}";
+
+    assert_int_eq(
+        pk_c_lift_result_add_opacity_entry(
+            r,
+            "quote\"slash\\kind",
+            "path\nfile.c",
+            10,
+            11,
+            "tab\tback\bctrl\x01" "end",
+            "surface\fpage"),
+        0,
+        "add escaping opacity");
+    assert_int_eq(
+        pk_c_lift_result_add_refusal_entry(
+            r,
+            "ref\"kind",
+            "ref\\path.c",
+            12,
+            13,
+            "surface\tback\b",
+            "line\nform\fctrl\x01" "done"),
+        0,
+        "add escaping refusal");
+
+    json = pk_c_lift_result_to_json(r);
+    assert_eq(json, want, "structured helper JSON escaping");
     free(json);
     pk_c_lift_result_free(r);
 }
@@ -189,6 +238,7 @@ int main(void) {
     test_empty_result_json();
     test_populated_result_json();
     test_opacity_and_refusal_are_separate();
+    test_structured_helpers_escape_json_strings();
     test_array_growth_overflow_is_rejected();
     test_parse_functions_and_macros();
     test_parse_same_line_function_body_call();
