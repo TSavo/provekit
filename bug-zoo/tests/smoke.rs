@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::{env, ffi::OsString};
 
 use provekit_bug_zoo::{run, OutputFlags, ZooArgs};
 
@@ -18,6 +19,38 @@ fn shared_host_tool_lock() -> MutexGuard<'static, ()> {
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
         .expect("shared host tool lock poisoned")
+}
+
+struct CliEnvGuard {
+    provekit_cli: Option<OsString>,
+    external_cli: Option<OsString>,
+}
+
+impl CliEnvGuard {
+    fn force_source_cli() -> Self {
+        let guard = Self {
+            provekit_cli: env::var_os("PROVEKIT_CLI"),
+            external_cli: env::var_os("PROVEKIT_BUG_ZOO_EXTERNAL_CLI"),
+        };
+        env::remove_var("PROVEKIT_CLI");
+        env::remove_var("PROVEKIT_BUG_ZOO_EXTERNAL_CLI");
+        guard
+    }
+}
+
+impl Drop for CliEnvGuard {
+    fn drop(&mut self) {
+        if let Some(value) = self.provekit_cli.take() {
+            env::set_var("PROVEKIT_CLI", value);
+        } else {
+            env::remove_var("PROVEKIT_CLI");
+        }
+        if let Some(value) = self.external_cli.take() {
+            env::set_var("PROVEKIT_BUG_ZOO_EXTERNAL_CLI", value);
+        } else {
+            env::remove_var("PROVEKIT_BUG_ZOO_EXTERNAL_CLI");
+        }
+    }
 }
 
 #[test]
@@ -41,6 +74,7 @@ fn runner_help_is_self_contained() {
 #[test]
 fn all_specimens_pass() {
     let _guard = shared_host_tool_lock();
+    let _cli_env = CliEnvGuard::force_source_cli();
     let root = repo_root();
     let code = run(ZooArgs {
         specimen: Some(root.join("bug-zoo/species")),
@@ -62,6 +96,8 @@ fn all_specimens_reports_current_shapes() {
         .arg("--all")
         .arg("--json")
         .current_dir(&root)
+        .env_remove("PROVEKIT_CLI")
+        .env_remove("PROVEKIT_BUG_ZOO_EXTERNAL_CLI")
         .output()
         .expect("spawn provekit-bug-zoo --all --json");
 
@@ -79,6 +115,13 @@ fn all_specimens_reports_current_shapes() {
         reports.len(),
         3,
         "bug zoo reports the current shape species"
+    );
+    assert!(
+        reports.iter().all(|entry| {
+            entry["workflow"]["runner"] == "provekit-bug-zoo"
+                && entry["workflow"]["provekitCli"]["kind"] == "cargo-run-source"
+        }),
+        "Bug Zoo receipts should report the current source-routed provekit CLI"
     );
 
     let null_boundary = reports

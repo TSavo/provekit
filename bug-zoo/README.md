@@ -141,6 +141,13 @@ Run all species with the Bug Zoo runner:
 cargo run --manifest-path bug-zoo/Cargo.toml -- --all
 ```
 
+or through the top-level target, which deliberately clears external CLI
+overrides so the receipts are replayed against the current source tree:
+
+```sh
+make bug-zoo
+```
+
 Trace a slow or hanging run:
 
 ```sh
@@ -151,6 +158,13 @@ Trace output is written to stderr. The zoo logs host checks, `provekit mint`,
 `provekit link`, and `provekit prove --formula` boundaries with elapsed time. It
 also enables `PROVEKIT_CLI_TRACE=1` for spawned CLI work, which prints mint RPC
 milestones for `initialize`, `lift`, and `shutdown` plus CLI-side link progress.
+The JSON report includes the exact `provekit` command route used for each
+species. By default the runner ignores `PROVEKIT_CLI` and invokes
+`cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- ...`
+so stale local binaries cannot stand in for the current code. To intentionally
+test an external binary, set both `PROVEKIT_CLI=/path/to/provekit` and
+`PROVEKIT_BUG_ZOO_EXTERNAL_CLI=1`; the report will mark the route as
+`external-binary`.
 
 Run discovery directly for the current TypeScript and C# null-boundary examples:
 

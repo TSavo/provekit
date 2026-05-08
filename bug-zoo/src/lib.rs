@@ -13,6 +13,8 @@ use serde_json::{json, Value};
 const EXIT_OK: u8 = 0;
 const EXIT_VERIFY_FAIL: u8 = 1;
 const EXIT_USER_ERROR: u8 = 2;
+const PROVEKIT_CLI_ENV: &str = "PROVEKIT_CLI";
+const PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV: &str = "PROVEKIT_BUG_ZOO_EXTERNAL_CLI";
 
 #[derive(Parser, Debug, Clone, Default)]
 pub struct OutputFlags {
@@ -340,6 +342,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
         .map_err(|e| ZooError::setup(format!("read {}: {e}", manifest_path.display())))?;
     let manifest: SpecimenManifest = serde_yaml::from_str(&text)
         .map_err(|e| ZooError::setup(format!("parse {}: {e}", manifest_path.display())))?;
+    let repo_root = find_repo_root(specimen_dir).map_err(ZooError::setup)?;
 
     let mut errors = validate_manifest_shape(&manifest);
     errors.extend(validate_paths(specimen_dir, &manifest));
@@ -701,6 +704,10 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
         "name": manifest.name,
         "kingdom": manifest.kingdom,
         "status": manifest.status,
+        "workflow": {
+            "runner": "provekit-bug-zoo",
+            "provekitCli": provekit_cli_report(&repo_root),
+        },
         "missingEdge": manifest.predicates.missing_edge,
         "proofIrCids": proof_ir_cids,
         "receiptCids": receipt_cids,
@@ -1623,21 +1630,81 @@ fn temp_zoo_dir(kind: &str, id: &str) -> Result<PathBuf, String> {
 }
 
 fn provekit_cli_command(repo_root: &Path) -> Result<Command, String> {
-    if let Ok(path) = std::env::var("PROVEKIT_CLI") {
-        if !path.trim().is_empty() {
-            return Ok(Command::new(path));
+    let invocation = provekit_cli_invocation(repo_root);
+    let mut args = invocation.command.iter();
+    let program = args
+        .next()
+        .ok_or_else(|| "provekit CLI command is empty".to_string())?;
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    Ok(cmd)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProvekitCliInvocation {
+    kind: &'static str,
+    command: Vec<String>,
+    ignored_external_cli: Option<String>,
+}
+
+fn provekit_cli_invocation(repo_root: &Path) -> ProvekitCliInvocation {
+    let external_cli = std::env::var(PROVEKIT_CLI_ENV)
+        .ok()
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty());
+    if let Some(path) = external_cli.clone() {
+        if external_cli_enabled() {
+            return ProvekitCliInvocation {
+                kind: "external-binary",
+                command: vec![path],
+                ignored_external_cli: None,
+            };
         }
     }
 
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let manifest = repo_root.join("implementations/rust/provekit-cli/Cargo.toml");
-    let mut cmd = Command::new(cargo);
-    cmd.arg("run")
-        .arg("--quiet")
-        .arg("--manifest-path")
-        .arg(manifest)
-        .arg("--");
-    Ok(cmd)
+    ProvekitCliInvocation {
+        kind: "cargo-run-source",
+        command: vec![
+            cargo,
+            "run".into(),
+            "--quiet".into(),
+            "--manifest-path".into(),
+            manifest.display().to_string(),
+            "--".into(),
+        ],
+        ignored_external_cli: external_cli,
+    }
+}
+
+fn external_cli_enabled() -> bool {
+    std::env::var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV)
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn provekit_cli_report(repo_root: &Path) -> Value {
+    let invocation = provekit_cli_invocation(repo_root);
+    let mut report = json!({
+        "kind": invocation.kind,
+        "command": invocation.command,
+    });
+    if let Some(path) = invocation.ignored_external_cli {
+        report["ignoredExternalCli"] = json!({
+            "env": PROVEKIT_CLI_ENV,
+            "value": path,
+            "reason": format!(
+                "set {PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV}=1 to run Bug Zoo against an explicit external provekit binary"
+            ),
+        });
+    }
+    report
 }
 
 fn proof_ir_cid(value: &Value) -> Result<String, String> {
@@ -1684,9 +1751,82 @@ fn manifest_path_escapes_specimen_root(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use std::fs;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     use tempfile::tempdir;
+
+    fn env_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock poisoned")
+    }
+
+    struct EnvGuard {
+        provekit_cli: Option<OsString>,
+        external_cli: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn capture() -> Self {
+            Self {
+                provekit_cli: std::env::var_os(PROVEKIT_CLI_ENV),
+                external_cli: std::env::var_os(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(value) = self.provekit_cli.take() {
+                std::env::set_var(PROVEKIT_CLI_ENV, value);
+            } else {
+                std::env::remove_var(PROVEKIT_CLI_ENV);
+            }
+            if let Some(value) = self.external_cli.take() {
+                std::env::set_var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV, value);
+            } else {
+                std::env::remove_var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV);
+            }
+        }
+    }
+
+    #[test]
+    fn provekit_cli_defaults_to_source_routing_even_when_external_env_is_present() {
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture();
+        std::env::set_var(PROVEKIT_CLI_ENV, "/tmp/stale-provekit");
+        std::env::remove_var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV);
+
+        let invocation = provekit_cli_invocation(Path::new("/repo"));
+
+        assert_eq!(invocation.kind, "cargo-run-source");
+        assert_eq!(
+            invocation.ignored_external_cli.as_deref(),
+            Some("/tmp/stale-provekit")
+        );
+        assert!(invocation.command.iter().any(|arg| arg == "run"));
+        assert!(invocation
+            .command
+            .iter()
+            .any(|arg| arg.ends_with("implementations/rust/provekit-cli/Cargo.toml")));
+    }
+
+    #[test]
+    fn provekit_cli_uses_external_binary_only_when_explicitly_enabled() {
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture();
+        std::env::set_var(PROVEKIT_CLI_ENV, "/tmp/current-provekit");
+        std::env::set_var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV, "1");
+
+        let invocation = provekit_cli_invocation(Path::new("/repo"));
+
+        assert_eq!(invocation.kind, "external-binary");
+        assert_eq!(invocation.command, vec!["/tmp/current-provekit"]);
+        assert_eq!(invocation.ignored_external_cli, None);
+    }
 
     fn valid_manifest() -> SpecimenManifest {
         SpecimenManifest {

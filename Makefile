@@ -77,6 +77,7 @@ help:
 	@echo "  make ci             full gate (conformance + test-all) [Linux/CI: 10 peer langs]"
 	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
+	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
 	@echo "  make bootstrap-self-contracts"
 	@echo "                       re-sign attestations from live kit artifacts"
 	@echo "                       override: CONFORMANCE_PROFILE=all CONFORMANCE_JOBS=8"
@@ -531,6 +532,12 @@ test-rust:
 	cargo test --release --manifest-path implementations/rust/Cargo.toml
 	cargo test --release --manifest-path tools/recompute-spec-cids/Cargo.toml
 	cargo test --release --manifest-path tools/foundation-keygen/Cargo.toml
+
+.PHONY: bug-zoo
+bug-zoo:
+	@echo "=== Bug Zoo: live ProvekIt receipts ==="
+	env -u PROVEKIT_CLI -u PROVEKIT_BUG_ZOO_EXTERNAL_CLI \
+		cargo run --manifest-path bug-zoo/Cargo.toml -- --all
 
 .PHONY: test-go
 test-go:
