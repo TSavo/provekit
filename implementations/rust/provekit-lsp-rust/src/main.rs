@@ -397,8 +397,9 @@ fn handle_parse(id: serde_json::Value, source: &str, path: &str) -> serde_json::
     let decls_value: serde_json::Value =
         serde_json::from_str(&decls_json_str).unwrap_or(serde_json::Value::Array(vec![]));
 
-    let diagnostics: Vec<serde_json::Value> = ForwardPropagator::default()
-        .emit_diagnostics(&[])
+    let floor_stmts = ForwardPropagator::lower_floor_source(source);
+    let diagnostics: Vec<serde_json::Value> = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&floor_stmts)
         .into_iter()
         .map(|diagnostic| diagnostic.to_lsp_json())
         .collect();

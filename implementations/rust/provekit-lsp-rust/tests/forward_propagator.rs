@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeSet;
+
 use provekit_lsp_rust::forward_propagator::{
     BaselineEntry, ForwardPropagator, LspRange, Post, Stmt,
 };
@@ -12,10 +14,40 @@ fn unwrap_entry() -> BaselineEntry {
     )
 }
 
+fn check_positive_entry() -> BaselineEntry {
+    BaselineEntry::new(
+        "checkPositive",
+        Some(Post::known(["x > 0"])),
+        Some(Post::known(["returns true"])),
+    )
+}
+
+fn consume_return_entry() -> BaselineEntry {
+    BaselineEntry::new(
+        "consumeReturn",
+        Some(Post::known(["returns true"])),
+        Some(Post::known([])),
+    )
+}
+
 fn call_unwrap() -> Stmt {
     Stmt::Call {
         callee_id: "std::option::Option::unwrap".into(),
         range: LspRange::single_line(4, 12, 18),
+    }
+}
+
+fn call_check_positive() -> Stmt {
+    Stmt::Call {
+        callee_id: "checkPositive".into(),
+        range: LspRange::single_line(4, 12, 25),
+    }
+}
+
+fn call_consume_return() -> Stmt {
+    Stmt::Call {
+        callee_id: "consumeReturn".into(),
+        range: LspRange::single_line(5, 12, 25),
     }
 }
 
@@ -105,4 +137,127 @@ fn top_fallback_suppresses_false_positive() {
         diagnostics.is_empty(),
         "top fallback is loss of precision and must not become a diagnostic"
     );
+}
+
+#[test]
+fn failed_precondition_does_not_propagate_callee_postcondition() {
+    let propagator = ForwardPropagator::new([check_positive_entry(), consume_return_entry()]);
+    let body = vec![
+        Stmt::Assign {
+            post: Post::known(["x <= 0"]),
+        },
+        call_check_positive(),
+        call_consume_return(),
+    ];
+
+    let diagnostics = propagator.emit_diagnostics(&body);
+
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:#?}");
+    let actual: BTreeSet<_> = diagnostics
+        .iter()
+        .map(|diagnostic| (diagnostic.data.callee.as_str(), diagnostic.code.as_str()))
+        .collect();
+    assert_eq!(
+        actual,
+        BTreeSet::from([
+            ("checkPositive", "implication-failed"),
+            ("consumeReturn", "implication-failed"),
+        ])
+    );
+}
+
+#[test]
+fn floor_lowering_resets_on_qualified_function_headers() {
+    let source = r#"
+fn establishes_fact() {
+    checkPositive(5);
+}
+
+pub fn public_violates() {
+    checkPositive(-1);
+}
+
+pub(crate) fn crate_visible_violates() {
+    checkPositive(-1);
+}
+
+async fn async_violates() {
+    checkPositive(-1);
+}
+"#;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert_eq!(diagnostics.len(), 3, "{diagnostics:#?}");
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.code == "implication-failed"));
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.data.callee == "checkPositive"));
+}
+
+#[test]
+fn floor_lowering_resets_on_extern_function_headers() {
+    let source = r#"
+fn establishes_fact() {
+    checkPositive(5);
+}
+
+pub unsafe extern "C" fn extern_violates() {
+    checkPositive(-1);
+}
+"#;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].code, "implication-failed");
+    assert_eq!(diagnostics[0].data.callee, "checkPositive");
+}
+
+#[test]
+fn floor_lowering_ignores_non_code_check_positive_text() {
+    let source = r##"
+fn no_false_calls() {
+    // checkPositive(-1);
+    let string = "checkPositive(-1)";
+    let raw = r#"checkPositive(-1)"#;
+    let _ = notcheckPositive(-1);
+}
+"##;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+}
+
+#[test]
+fn floor_lowering_keeps_lifetime_lines_visible() {
+    let source = r#"
+fn violates<'a>(value: &'a str) {
+    let _alias: &'a str = value; checkPositive(-1);
+}
+"#;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].code, "implication-failed");
+    assert_eq!(diagnostics[0].data.callee, "checkPositive");
+}
+
+#[test]
+fn floor_lowering_treats_labeled_loops_as_top_fallback() {
+    let source = r#"
+fn labeled_loop() {
+    'outer: loop {
+        checkPositive(-1);
+    }
+}
+"#;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
 }
