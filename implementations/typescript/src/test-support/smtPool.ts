@@ -77,10 +77,11 @@ export class SolverPool {
   }
 
   async shutdown(): Promise<void> {
-    // Kill all available workers
-    await Promise.all(this.available.map((w) => this.killWorker(w)));
-    this.available = [];
+    // Disable crash-replacement before workers emit exit events during teardown.
     this.initialized = false;
+    const workers = this.available;
+    this.available = [];
+    await Promise.all(workers.map((w) => this.killWorker(w)));
   }
 
   async acquire(): Promise<SolverWorker> {
