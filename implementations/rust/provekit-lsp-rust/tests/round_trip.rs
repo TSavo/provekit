@@ -182,6 +182,66 @@ fn value_is_non_negative() {
     let _ = plugin.wait_for_exit(Duration::from_secs(10));
 }
 
+#[test]
+fn parse_floor_fixture_emits_forward_propagation_diagnostic() {
+    let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join("tests/lsp/floor-fixture/rust.rs");
+    let source = std::fs::read_to_string(&fixture_path)
+        .unwrap_or_else(|err| panic!("read fixture {fixture_path:?}: {err}"));
+
+    let mut plugin = Plugin::spawn();
+
+    let _ = plugin.exchange(&json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {}
+    }));
+
+    let resp = plugin.exchange(&json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "parse",
+        "params": {
+            "path": "rust.rs",
+            "source": source
+        }
+    }));
+
+    let result = resp
+        .get("result")
+        .unwrap_or_else(|| panic!("parse returned error: {resp}"));
+    let diagnostics = result["diagnostics"]
+        .as_array()
+        .unwrap_or_else(|| panic!("diagnostics must be an array: {result}"));
+
+    assert_eq!(
+        diagnostics.len(),
+        1,
+        "only the negative callsite should emit a diagnostic: {diagnostics:#?}"
+    );
+    let diagnostic = &diagnostics[0];
+    assert_eq!(diagnostic["severity"].as_i64(), Some(1));
+    assert_eq!(diagnostic["source"].as_str(), Some("provekit"));
+    assert_eq!(diagnostic["code"].as_str(), Some("implication-failed"));
+    assert_eq!(
+        diagnostic["data"]["kind"].as_str(),
+        Some("provekit.lsp.implication_failed")
+    );
+    assert_eq!(diagnostic["data"]["callee"].as_str(), Some("checkPositive"));
+    assert_eq!(
+        diagnostic["data"]["missing_conjuncts"]
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(|item| item.as_str()),
+        Some("x > 0")
+    );
+
+    let _ = plugin.exchange(&json!({"jsonrpc":"2.0","id":99,"method":"shutdown"}));
+    let _ = plugin.wait_for_exit(Duration::from_secs(10));
+}
+
 // ---------------------------------------------------------------------------
 // 3. Unknown method returns JSON-RPC -32601
 // ---------------------------------------------------------------------------

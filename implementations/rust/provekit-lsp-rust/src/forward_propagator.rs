@@ -101,6 +101,7 @@ impl Post {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
+    Reset,
     Assign {
         post: Post,
     },
@@ -291,6 +292,71 @@ impl ForwardPropagator {
         Self { index }
     }
 
+    pub fn floor_v1_seed_index() -> Self {
+        Self::new([BaselineEntry::new(
+            "checkPositive",
+            Some(Post::known(["x > 0"])),
+            Some(Post::known(["returns true"])),
+        )])
+    }
+
+    pub fn lower_floor_source(source: &str) -> Vec<Stmt> {
+        let mut stmts = Vec::new();
+        let mut brace_depth = 0i32;
+        let mut top_block_depth: Option<i32> = None;
+
+        for (line_idx, line) in source.lines().enumerate() {
+            let trimmed = line.trim_start();
+            let is_function_definition = trimmed.starts_with("fn ");
+            if is_function_definition {
+                stmts.push(Stmt::Reset);
+                top_block_depth = None;
+            }
+
+            if starts_top_fallback_block(trimmed) {
+                let opens = line.matches('{').count() as i32;
+                let closes = line.matches('}').count() as i32;
+                top_block_depth = Some(brace_depth + opens - closes);
+                if top_block_depth == Some(brace_depth) {
+                    top_block_depth = Some(brace_depth + 1);
+                }
+            }
+
+            if !is_function_definition {
+                for (start, arg) in check_positive_calls(line) {
+                    let range = LspRange::single_line(
+                        line_idx as u32,
+                        start as u32,
+                        (start + "checkPositive".len()) as u32,
+                    );
+
+                    if top_block_depth.is_some() {
+                        stmts.push(Stmt::Unsupported);
+                    } else {
+                        stmts.push(Stmt::Assign {
+                            post: post_for_check_positive_arg(&arg),
+                        });
+                    }
+
+                    stmts.push(Stmt::Call {
+                        callee_id: "checkPositive".into(),
+                        range,
+                    });
+                }
+            }
+
+            brace_depth += line.matches('{').count() as i32;
+            brace_depth -= line.matches('}').count() as i32;
+            if let Some(depth) = top_block_depth {
+                if brace_depth < depth {
+                    top_block_depth = None;
+                }
+            }
+        }
+
+        stmts
+    }
+
     pub fn emit_diagnostics(&self, function_body: &[Stmt]) -> Vec<LspDiagnostic> {
         let mut diagnostics = Vec::new();
         let _ = self.walk_block(function_body, Post::empty(), &mut diagnostics);
@@ -357,6 +423,9 @@ impl ForwardPropagator {
 
         for stmt in body {
             match stmt {
+                Stmt::Reset => {
+                    current_post = Post::empty();
+                }
                 Stmt::Assign { post } => {
                     current_post = current_post.combine(post);
                 }
@@ -399,6 +468,40 @@ fn sanitize_identifier(value: &str) -> String {
         .chars()
         .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
         .collect()
+}
+
+fn starts_top_fallback_block(trimmed: &str) -> bool {
+    trimmed.starts_with("for ")
+        || trimmed.starts_with("for(")
+        || trimmed.starts_with("while ")
+        || trimmed.starts_with("while(")
+        || trimmed.starts_with("loop ")
+        || trimmed.starts_with("loop{")
+}
+
+fn check_positive_calls(line: &str) -> Vec<(usize, String)> {
+    let mut calls = Vec::new();
+    let mut search_from = 0usize;
+    while let Some(relative_start) = line[search_from..].find("checkPositive(") {
+        let start = search_from + relative_start;
+        let args_start = start + "checkPositive(".len();
+        if let Some(relative_end) = line[args_start..].find(')') {
+            let end = args_start + relative_end;
+            calls.push((start, line[args_start..end].trim().to_string()));
+            search_from = end + 1;
+        } else {
+            break;
+        }
+    }
+    calls
+}
+
+fn post_for_check_positive_arg(arg: &str) -> Post {
+    match arg.parse::<i64>() {
+        Ok(value) if value > 0 => Post::known(["x > 0"]),
+        Ok(_) => Post::known(["x <= 0"]),
+        Err(_) => Post::top(),
+    }
 }
 
 fn cid_for_bytes(bytes: &[u8]) -> String {

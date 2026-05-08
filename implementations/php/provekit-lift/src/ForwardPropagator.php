@@ -1,0 +1,421 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__ . '/../../provekit-ir-symbolic/src/Canonicalizer/Blake3.php';
+
+use ProvekIt\Canonicalizer\Blake3;
+
+const PROVEKIT_LSP_PROTOCOL_CATALOG_CID = 'blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f';
+
+final class ForwardPost
+{
+    /** @param string[] $constraints */
+    public function __construct(
+        public array $constraints = [],
+        public bool $isTop = false,
+    ) {
+        if (!$this->isTop) {
+            $this->constraints = self::normalizeConstraints($this->constraints);
+        } else {
+            $this->constraints = [];
+        }
+    }
+
+    /** @param string[] $constraints */
+    public static function known(array $constraints): self
+    {
+        return new self($constraints, false);
+    }
+
+    public static function empty(): self
+    {
+        return new self([], false);
+    }
+
+    public static function top(): self
+    {
+        return new self([], true);
+    }
+
+    public function combine(self $next): self
+    {
+        if ($this->isTop || $next->isTop) {
+            return self::top();
+        }
+        return self::known(array_merge($this->constraints, $next->constraints));
+    }
+
+    public function branchMerge(self $other): self
+    {
+        if ($this->isTop || $other->isTop) {
+            return self::top();
+        }
+        $otherSet = array_fill_keys($other->constraints, true);
+        $shared = array_values(array_filter(
+            $this->constraints,
+            fn(string $constraint): bool => isset($otherSet[$constraint]),
+        ));
+        return self::known($shared);
+    }
+
+    public function cid(): string
+    {
+        if ($this->isTop) {
+            return Blake3::cid('post:top');
+        }
+        return Blake3::cid('post:known:' . implode("\n", $this->constraints));
+    }
+
+    /** @param string[] $constraints */
+    private static function normalizeConstraints(array $constraints): array
+    {
+        $set = [];
+        foreach ($constraints as $constraint) {
+            if ($constraint !== '') {
+                $set[$constraint] = true;
+            }
+        }
+        $values = array_keys($set);
+        sort($values, SORT_STRING);
+        return $values;
+    }
+}
+
+final class LspPosition
+{
+    public function __construct(
+        public int $line,
+        public int $character,
+    ) {}
+
+    /** @return array{line: int, character: int} */
+    public function toArray(): array
+    {
+        return ['line' => $this->line, 'character' => $this->character];
+    }
+}
+
+final class LspRange
+{
+    public function __construct(
+        public LspPosition $start,
+        public LspPosition $end,
+    ) {}
+
+    public static function singleLine(int $line, int $startCharacter, int $endCharacter): self
+    {
+        return new self(
+            new LspPosition($line, $startCharacter),
+            new LspPosition($line, $endCharacter),
+        );
+    }
+
+    /** @return array{start: array, end: array} */
+    public function toArray(): array
+    {
+        return ['start' => $this->start->toArray(), 'end' => $this->end->toArray()];
+    }
+}
+
+final class BaselineEntry
+{
+    public function __construct(
+        public string $calleeId,
+        public ?ForwardPost $pre,
+        public ?ForwardPost $post,
+        public string $contractName,
+        public string $memberCid,
+        public string $contractCid,
+        public string $attestationCid,
+        public string $preCid,
+        public string $postCid,
+        public string $signer,
+        public string $signerRole,
+        public string $baselineCatalogCid,
+        public string $baselineContractSetCid,
+        public string $baselineIndexCid,
+        public string $protocolCatalogCid,
+    ) {}
+
+    public static function new(string $calleeId, ?ForwardPost $pre, ?ForwardPost $post): self
+    {
+        $preCid = $pre ? $pre->cid() : Blake3::cid($calleeId . ':pre:none');
+        $postCid = $post ? $post->cid() : Blake3::cid($calleeId . ':post:none');
+        $seed = $calleeId . '|' . $preCid . '|' . $postCid;
+
+        return new self(
+            calleeId: $calleeId,
+            pre: $pre,
+            post: $post,
+            contractName: 'php_baseline_' . self::sanitizeIdentifier($calleeId),
+            memberCid: Blake3::cid('member:' . $seed),
+            contractCid: Blake3::cid('contract:' . $seed),
+            attestationCid: Blake3::cid('attestation:' . $seed),
+            preCid: $preCid,
+            postCid: $postCid,
+            signer: 'ed25519:foundation-v0',
+            signerRole: 'foundation-baseline',
+            baselineCatalogCid: Blake3::cid('baseline-catalog:' . $seed),
+            baselineContractSetCid: Blake3::cid('baseline-contract-set:' . $seed),
+            baselineIndexCid: Blake3::cid('baseline-index:' . $seed),
+            protocolCatalogCid: PROVEKIT_LSP_PROTOCOL_CATALOG_CID,
+        );
+    }
+
+    private static function sanitizeIdentifier(string $value): string
+    {
+        $sanitized = preg_replace('/[^A-Za-z0-9]/', '_', $value);
+        return is_string($sanitized) && $sanitized !== '' ? $sanitized : 'unknown';
+    }
+}
+
+final class ForwardStmt
+{
+    private function __construct(
+        public string $kind,
+        public ?ForwardPost $post = null,
+        public ?string $calleeId = null,
+        public ?LspRange $range = null,
+        public array $thenBranch = [],
+        public array $elseBranch = [],
+    ) {}
+
+    public static function reset(): self
+    {
+        return new self('reset');
+    }
+
+    public static function assign(ForwardPost $post): self
+    {
+        return new self('assign', post: $post);
+    }
+
+    public static function call(string $calleeId, LspRange $range): self
+    {
+        return new self('call', calleeId: $calleeId, range: $range);
+    }
+
+    /** @param self[] $thenBranch @param self[] $elseBranch */
+    public static function ifElse(array $thenBranch, array $elseBranch): self
+    {
+        return new self('if_else', thenBranch: $thenBranch, elseBranch: $elseBranch);
+    }
+
+    public static function unsupported(): self
+    {
+        return new self('unsupported');
+    }
+}
+
+final class LspDiagnostic
+{
+    /** @param string[] $missingConjuncts */
+    public function __construct(
+        public LspRange $range,
+        public BaselineEntry $entry,
+        public ForwardPost $currentPost,
+        public array $missingConjuncts,
+    ) {}
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        return [
+            'range' => $this->range->toArray(),
+            'severity' => 1,
+            'source' => 'provekit',
+            'code' => 'implication-failed',
+            'message' => 'callee precondition not established at this callsite',
+            'data' => [
+                'schema_version' => 1,
+                'kind' => 'provekit.lsp.implication_failed',
+                'callee' => $this->entry->calleeId,
+                'callee_contract_cid' => $this->entry->contractCid,
+                'callee_attestation_cid' => $this->entry->attestationCid,
+                'callee_pre_cid' => $this->entry->preCid,
+                'callee_post_cid' => $this->entry->postCid,
+                'current_post_cid' => $this->currentPost->cid(),
+                'missing_conjuncts' => $this->missingConjuncts,
+                'signer' => $this->entry->signer,
+                'signer_role' => $this->entry->signerRole,
+                'baseline_catalog_cid' => $this->entry->baselineCatalogCid,
+                'baseline_contract_set_cid' => $this->entry->baselineContractSetCid,
+                'baseline_index_cid' => $this->entry->baselineIndexCid,
+                'protocol_catalog_cid' => $this->entry->protocolCatalogCid,
+            ],
+        ];
+    }
+}
+
+final class ForwardPropagator
+{
+    /** @var array<string, BaselineEntry> */
+    private array $index = [];
+
+    /** @param BaselineEntry[] $entries */
+    public function __construct(array $entries)
+    {
+        foreach ($entries as $entry) {
+            $this->index[$entry->calleeId] = $entry;
+        }
+    }
+
+    public static function floorV1SeedIndex(): self
+    {
+        return new self([
+            BaselineEntry::new(
+                'checkPositive',
+                ForwardPost::known(['x > 0']),
+                ForwardPost::known(['returns true']),
+            ),
+        ]);
+    }
+
+    /** @param ForwardStmt[] $body @return LspDiagnostic[] */
+    public function emitDiagnostics(array $body): array
+    {
+        $diagnostics = [];
+        $this->walkBlock($body, ForwardPost::empty(), $diagnostics);
+        return $diagnostics;
+    }
+
+    public function checkCallsite(string $calleeId, ForwardPost $currentPost, LspRange $range): ?LspDiagnostic
+    {
+        if ($currentPost->isTop) {
+            return null;
+        }
+        $entry = $this->index[$calleeId] ?? null;
+        if (!$entry || !$entry->pre) {
+            return null;
+        }
+        $currentSet = array_fill_keys($currentPost->constraints, true);
+        $missing = [];
+        foreach ($entry->pre->constraints as $constraint) {
+            if (!isset($currentSet[$constraint])) {
+                $missing[] = $constraint;
+            }
+        }
+        if ($missing === []) {
+            return null;
+        }
+        return new LspDiagnostic($range, $entry, $currentPost, $missing);
+    }
+
+    /** @param ForwardStmt[] $body @param LspDiagnostic[] $diagnostics */
+    private function walkBlock(array $body, ForwardPost $startPost, array &$diagnostics): ForwardPost
+    {
+        $currentPost = $startPost;
+        foreach ($body as $stmt) {
+            switch ($stmt->kind) {
+                case 'reset':
+                    $currentPost = ForwardPost::empty();
+                    break;
+                case 'assign':
+                    $currentPost = $currentPost->combine($stmt->post ?? ForwardPost::empty());
+                    break;
+                case 'call':
+                    if ($stmt->calleeId !== null && $stmt->range !== null) {
+                        $diagnostic = $this->checkCallsite($stmt->calleeId, $currentPost, $stmt->range);
+                        if ($diagnostic) {
+                            $diagnostics[] = $diagnostic;
+                        }
+                        $entry = $this->index[$stmt->calleeId] ?? null;
+                        if ($entry && $entry->post) {
+                            $currentPost = $currentPost->combine($entry->post);
+                        } elseif (!$entry) {
+                            $currentPost = ForwardPost::top();
+                        }
+                    }
+                    break;
+                case 'if_else':
+                    $thenPost = $this->walkBlock($stmt->thenBranch, $currentPost, $diagnostics);
+                    $elsePost = $this->walkBlock($stmt->elseBranch, $currentPost, $diagnostics);
+                    $currentPost = $thenPost->branchMerge($elsePost);
+                    break;
+                case 'unsupported':
+                    $currentPost = ForwardPost::top();
+                    break;
+            }
+        }
+        return $currentPost;
+    }
+
+    /** @return ForwardStmt[] */
+    public static function lowerFloorSource(string $source): array
+    {
+        $stmts = [];
+        $braceDepth = 0;
+        $topBlockDepth = null;
+
+        foreach (explode("\n", $source) as $lineIdx => $line) {
+            $trimmed = ltrim($line);
+            $isFunctionDefinition = preg_match('/^function\s+/', $trimmed) === 1;
+            if ($isFunctionDefinition) {
+                $stmts[] = ForwardStmt::reset();
+                $topBlockDepth = null;
+            }
+
+            if (self::startsTopFallbackBlock($trimmed)) {
+                $depth = $braceDepth + substr_count($line, '{') - substr_count($line, '}');
+                if ($depth === $braceDepth) {
+                    $depth = $braceDepth + 1;
+                }
+                $topBlockDepth = $depth;
+            }
+
+            if (!$isFunctionDefinition) {
+                foreach (self::checkPositiveCalls($line) as [$start, $arg]) {
+                    if ($topBlockDepth !== null) {
+                        $stmts[] = ForwardStmt::unsupported();
+                    } else {
+                        $stmts[] = ForwardStmt::assign(self::postForCheckPositiveArg($arg));
+                    }
+                    $stmts[] = ForwardStmt::call(
+                        'checkPositive',
+                        LspRange::singleLine($lineIdx, $start, $start + strlen('checkPositive')),
+                    );
+                }
+            }
+
+            $braceDepth += substr_count($line, '{');
+            $braceDepth -= substr_count($line, '}');
+            if ($topBlockDepth !== null && $braceDepth < $topBlockDepth) {
+                $topBlockDepth = null;
+            }
+        }
+
+        return $stmts;
+    }
+
+    private static function startsTopFallbackBlock(string $trimmed): bool
+    {
+        return str_starts_with($trimmed, 'for ') || str_starts_with($trimmed, 'for(')
+            || str_starts_with($trimmed, 'while ') || str_starts_with($trimmed, 'while(');
+    }
+
+    /** @return array<int, array{0: int, 1: string}> */
+    private static function checkPositiveCalls(string $line): array
+    {
+        $calls = [];
+        $searchFrom = 0;
+        while (($relativeStart = strpos($line, 'checkPositive(', $searchFrom)) !== false) {
+            $start = $relativeStart;
+            $argsStart = $start + strlen('checkPositive(');
+            $relativeEnd = strpos($line, ')', $argsStart);
+            if ($relativeEnd === false) {
+                break;
+            }
+            $calls[] = [$start, trim(substr($line, $argsStart, $relativeEnd - $argsStart))];
+            $searchFrom = $relativeEnd + 1;
+        }
+        return $calls;
+    }
+
+    private static function postForCheckPositiveArg(string $arg): ForwardPost
+    {
+        if (!preg_match('/^-?\d+$/', $arg)) {
+            return ForwardPost::top();
+        }
+        return (int)$arg > 0 ? ForwardPost::known(['x > 0']) : ForwardPost::known(['x <= 0']);
+    }
+}
