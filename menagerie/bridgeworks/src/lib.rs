@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -208,6 +209,11 @@ fn check_specimen(specimen_dir: &Path) -> Result<Value, BridgeworksError> {
     verify_expected_fixtures(specimen_dir, &manifest, &positive)
         .map_err(BridgeworksError::Verify)?;
     let counts = count_member_kinds(&positive.dump).map_err(BridgeworksError::Verify)?;
+    let witness_proof_cids =
+        collect_external_witness_proof_roots(&repo_root, &positive.dump, &positive.mint)
+            .map_err(BridgeworksError::Verify)?;
+    let implication_reports = collect_actual_implications(&positive.dump, &manifest.implications)
+        .map_err(BridgeworksError::Verify)?;
     if counts.contracts != manifest.positive.expected_contracts {
         return Err(BridgeworksError::Verify(format!(
             "expected {} contract mementos, observed {}",
@@ -305,11 +311,8 @@ fn check_specimen(specimen_dir: &Path) -> Result<Value, BridgeworksError> {
             "implication": counts.implications,
             "authority": counts.authorities,
         },
-        "implications": manifest.implications.iter().map(|edge| json!({
-            "name": edge.name,
-            "antecedent": edge.antecedent,
-            "consequent": edge.consequent,
-        })).collect::<Vec<_>>(),
+        "witnessProofCids": witness_proof_cids,
+        "implications": implication_reports,
         "mutations": mutation_reports,
         "expectedFixtures": {
             "proofCidFile": manifest.expected.proof_cid_file,
@@ -457,6 +460,196 @@ fn count_member_kinds(dump: &Value) -> Result<MemberCounts, String> {
         }
     }
     Ok(counts)
+}
+
+fn collect_external_witness_proof_roots(
+    repo_root: &Path,
+    root_dump: &Value,
+    mint: &Value,
+) -> Result<Vec<String>, String> {
+    let proof_file = mint
+        .get("proofFile")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "provekit mint JSON missing proofFile".to_string())?;
+    let proof_dir = Path::new(proof_file)
+        .parent()
+        .ok_or_else(|| format!("proofFile `{proof_file}` has no parent directory"))?;
+    let members = root_dump
+        .get("members")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "provekit dump JSON missing members object".to_string())?;
+
+    let mut witness_roots = BTreeSet::new();
+    for member in members.values() {
+        let Some(input_cids) = member
+            .pointer("/header/inputCids")
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+        for input_cid in input_cids.iter().filter_map(Value::as_str) {
+            let witness_path = proof_dir.join(format!("{input_cid}.proof"));
+            if !witness_path.exists() {
+                continue;
+            }
+            let witness_path_arg = witness_path.to_string_lossy().into_owned();
+            let inspect = run_provekit_json(
+                repo_root,
+                [
+                    "proof",
+                    "inspect",
+                    witness_path_arg.as_str(),
+                    "--json",
+                    "--quiet",
+                ],
+            )?;
+            if inspect
+                .get("errors")
+                .and_then(Value::as_array)
+                .map(|errors| !errors.is_empty())
+                .unwrap_or(true)
+            {
+                return Err(format!(
+                    "witness proof `{}` did not inspect cleanly: {inspect}",
+                    witness_path.display()
+                ));
+            }
+            let dump = run_provekit_json(
+                repo_root,
+                ["dump", witness_path_arg.as_str(), "--json", "--quiet"],
+            )?;
+            if !proof_contains_member_kind(&dump, "witness")? {
+                return Err(format!(
+                    "external witness proof `{}` has no witness memento",
+                    witness_path.display()
+                ));
+            }
+            witness_roots.insert(input_cid.to_string());
+        }
+    }
+
+    if witness_roots.is_empty() {
+        return Err("main proof does not reference any external witness proof root".into());
+    }
+    Ok(witness_roots.into_iter().collect())
+}
+
+fn proof_contains_member_kind(dump: &Value, kind: &str) -> Result<bool, String> {
+    let members = dump
+        .get("members")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "provekit dump JSON missing members object".to_string())?;
+    Ok(members
+        .values()
+        .any(|member| member.pointer("/header/kind").and_then(Value::as_str) == Some(kind)))
+}
+
+fn collect_actual_implications(
+    dump: &Value,
+    expected: &[ImplicationSpec],
+) -> Result<Vec<Value>, String> {
+    let members = dump
+        .get("members")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "provekit dump JSON missing members object".to_string())?;
+    let mut contract_cids_by_name = BTreeMap::new();
+    let mut implications_by_name = BTreeMap::new();
+
+    for (member_cid, member) in members {
+        match member.pointer("/header/kind").and_then(Value::as_str) {
+            Some("contract") => {
+                if let Some(name) = member.pointer("/header/name").and_then(Value::as_str) {
+                    contract_cids_by_name.insert(name.to_string(), member_cid.clone());
+                }
+            }
+            Some("implication") => {
+                let name = member
+                    .pointer("/metadata/producedBy")
+                    .and_then(Value::as_str)
+                    .and_then(|produced_by| produced_by.strip_prefix("bridgeworks.edge."))
+                    .or_else(|| {
+                        member
+                            .pointer("/metadata/proofWitness")
+                            .and_then(Value::as_str)
+                    })
+                    .unwrap_or(member_cid);
+                let antecedent_cid = member
+                    .pointer("/header/antecedentCid")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        format!("implication member `{member_cid}` missing antecedentCid")
+                    })?;
+                let consequent_cid = member
+                    .pointer("/header/consequentCid")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        format!("implication member `{member_cid}` missing consequentCid")
+                    })?;
+                let input_cids = member
+                    .pointer("/header/inputCids")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                implications_by_name.insert(
+                    name.to_string(),
+                    json!({
+                        "implicationCid": member_cid,
+                        "antecedentCid": antecedent_cid,
+                        "consequentCid": consequent_cid,
+                        "inputCids": input_cids,
+                    }),
+                );
+            }
+            _ => {}
+        }
+    }
+
+    expected
+        .iter()
+        .map(|edge| {
+            let antecedent_cid = contract_cids_by_name.get(&edge.antecedent).ok_or_else(|| {
+                format!(
+                    "manifest implication `{}` antecedent `{}` was not minted as a contract",
+                    edge.name, edge.antecedent
+                )
+            })?;
+            let consequent_cid = contract_cids_by_name.get(&edge.consequent).ok_or_else(|| {
+                format!(
+                    "manifest implication `{}` consequent `{}` was not minted as a contract",
+                    edge.name, edge.consequent
+                )
+            })?;
+            let actual = implications_by_name.get(&edge.name).ok_or_else(|| {
+                format!(
+                    "manifest implication `{}` was not minted as an implication memento",
+                    edge.name
+                )
+            })?;
+            if actual.get("antecedentCid").and_then(Value::as_str) != Some(antecedent_cid.as_str())
+            {
+                return Err(format!(
+                    "implication `{}` antecedent CID does not match minted contract `{}`",
+                    edge.name, edge.antecedent
+                ));
+            }
+            if actual.get("consequentCid").and_then(Value::as_str) != Some(consequent_cid.as_str())
+            {
+                return Err(format!(
+                    "implication `{}` consequent CID does not match minted contract `{}`",
+                    edge.name, edge.consequent
+                ));
+            }
+            Ok(json!({
+                "name": edge.name,
+                "antecedent": edge.antecedent,
+                "consequent": edge.consequent,
+                "implicationCid": actual["implicationCid"],
+                "antecedentCid": actual["antecedentCid"],
+                "consequentCid": actual["consequentCid"],
+                "inputCids": actual["inputCids"],
+            }))
+        })
+        .collect()
 }
 
 fn verify_expected_fixtures(

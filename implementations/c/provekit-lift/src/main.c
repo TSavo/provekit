@@ -178,6 +178,77 @@ static char *json_extract_method(const char *json) {
     return json_extract_str(json, "method");
 }
 
+typedef struct {
+    char **items;
+    size_t len;
+} StringArray;
+
+static void string_array_free(StringArray *arr) {
+    if (!arr) return;
+    for (size_t i = 0; i < arr->len; i++) {
+        free(arr->items[i]);
+    }
+    free(arr->items);
+    arr->items = NULL;
+    arr->len = 0;
+}
+
+static char *str_dup(const char *s) {
+    size_t n = strlen(s);
+    char *out = (char *)malloc(n + 1);
+    if (!out) return NULL;
+    memcpy(out, s, n + 1);
+    return out;
+}
+
+static int json_extract_str_array(const char *json, const char *field, StringArray *out) {
+    memset(out, 0, sizeof(*out));
+    char needle[128];
+    snprintf(needle, sizeof(needle), "\"%s\"", field);
+    const char *p = strstr(json, needle);
+    if (!p) return 0;
+    p += strlen(needle);
+    while (*p == ':' || *p == ' ' || *p == '\t') p++;
+    if (*p != '[') return -1;
+    p++;
+
+    while (*p) {
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') p++;
+        if (*p == ']') return 0;
+        if (*p != '"') return -1;
+        p++;
+
+        Buf b;
+        buf_init(&b);
+        while (*p && *p != '"') {
+            if (*p == '\\' && p[1]) {
+                p++;
+            }
+            buf_append_char(&b, *p);
+            p++;
+        }
+        if (*p != '"') {
+            buf_free(&b);
+            string_array_free(out);
+            return -1;
+        }
+        p++;
+
+        char **next = (char **)realloc(out->items, sizeof(char *) * (out->len + 1));
+        if (!next) {
+            buf_free(&b);
+            string_array_free(out);
+            return -1;
+        }
+        out->items = next;
+        out->items[out->len++] = b.data;
+        b.data = NULL;
+        buf_free(&b);
+    }
+    string_array_free(out);
+    return -1;
+}
+
 static int has_suffix(const char *s, const char *suffix) {
     size_t sl = strlen(s);
     size_t tl = strlen(suffix);
@@ -196,6 +267,16 @@ static char *join_path(const char *a, const char *b) {
     memcpy(out + pos, b, bl);
     out[pos + bl] = '\0';
     return out;
+}
+
+static char *resolve_source_path(const char *workspace, const char *source_path) {
+    if (!source_path || !*source_path || strcmp(source_path, ".") == 0) {
+        return str_dup(workspace);
+    }
+    if (source_path[0] == '/') {
+        return str_dup(source_path);
+    }
+    return join_path(workspace, source_path);
 }
 
 typedef struct {
@@ -352,13 +433,49 @@ static void handle_lift(const char *id, const char *line) {
         strcpy(workspace, ".");
     }
 
-    LiftAccumulator acc;
-    acc_init(&acc);
-    if (walk_path(workspace, &acc) != 0 || acc.hard_error) {
-        send_error(id, 1005, acc.error[0] ? acc.error : "C lift failed");
-        acc_free(&acc);
+    StringArray source_paths;
+    if (json_extract_str_array(line, "source_paths", &source_paths) != 0) {
+        send_error(id, -32602, "source_paths must be an array of strings");
         free(workspace);
         return;
+    }
+    if (source_paths.len == 0) {
+        source_paths.items = (char **)malloc(sizeof(char *));
+        if (!source_paths.items) {
+            send_error(id, -32603, "out of memory");
+            free(workspace);
+            return;
+        }
+        source_paths.items[0] = str_dup(".");
+        if (!source_paths.items[0]) {
+            string_array_free(&source_paths);
+            send_error(id, -32603, "out of memory");
+            free(workspace);
+            return;
+        }
+        source_paths.len = 1;
+    }
+
+    LiftAccumulator acc;
+    acc_init(&acc);
+    for (size_t i = 0; i < source_paths.len; i++) {
+        char *resolved = resolve_source_path(workspace, source_paths.items[i]);
+        if (!resolved) {
+            send_error(id, -32603, "out of memory");
+            acc_free(&acc);
+            string_array_free(&source_paths);
+            free(workspace);
+            return;
+        }
+        int rc = walk_path(resolved, &acc);
+        free(resolved);
+        if (rc != 0 || acc.hard_error) {
+            send_error(id, 1005, acc.error[0] ? acc.error : "C lift failed");
+            acc_free(&acc);
+            string_array_free(&source_paths);
+            free(workspace);
+            return;
+        }
     }
 
     Buf result;
@@ -373,6 +490,7 @@ static void handle_lift(const char *id, const char *line) {
 
     buf_free(&result);
     acc_free(&acc);
+    string_array_free(&source_paths);
     free(workspace);
 }
 

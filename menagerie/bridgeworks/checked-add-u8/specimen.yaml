@@ -46,8 +46,8 @@ mutations:
     target: artifacts/software/checked_add_u8.c
     expectedRefusal: checked_add_u8.postcondition
   - id: compiler-ignores-carry
-    source: mutations/compiler/lowering.trace
-    target: artifacts/compiler/lowering.trace
+    source: mutations/compiler/toy8.asm
+    target: artifacts/compiler/toy8.asm
     expectedRefusal: compiler.lowering.preserves_checked_add
   - id: isa-signed-overflow
     source: mutations/isa/toy8.isa

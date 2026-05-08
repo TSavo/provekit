@@ -207,6 +207,27 @@ fn walkthrough_breakages_show_raw_diffs() {
 }
 
 #[test]
+fn compiler_breakage_shows_machine_code_diff() {
+    let root = repo_root();
+    let exhibit = root.join("menagerie/bridgeworks/checked-add-u8");
+    let manifest = fs::read_to_string(exhibit.join("specimen.yaml"))
+        .expect("read bridgeworks specimen manifest");
+    let script = fs::read_to_string(exhibit.join("walkthrough/13-break-compiler.sh"))
+        .expect("read compiler break walkthrough");
+
+    assert!(
+        manifest.contains("source: mutations/compiler/toy8.asm")
+            && manifest.contains("target: artifacts/compiler/toy8.asm"),
+        "compiler mutation should exercise the assembly artifact, not only the trace"
+    );
+    assert!(
+        script.contains("mutations/compiler/toy8.asm")
+            && script.contains("artifacts/compiler/toy8.asm"),
+        "compiler walkthrough should show the raw assembly diff where BR_CARRY disappears"
+    );
+}
+
+#[test]
 fn walkthrough_scripts_explain_then_prompt_before_work() {
     let root = repo_root();
     let exhibit = root.join("menagerie/bridgeworks/checked-add-u8");
@@ -386,6 +407,36 @@ fn all_exhibits_reports_contract_and_implication_mementos() {
     assert_eq!(exhibit["memberCounts"]["contract"], 8);
     assert_eq!(exhibit["memberCounts"]["implication"], 7);
     assert_eq!(exhibit["memberCounts"]["authority"], 16);
+    let witness_roots = exhibit["witnessProofCids"]
+        .as_array()
+        .expect("report should expose external witness proof roots");
+    assert_eq!(
+        witness_roots.len(),
+        1,
+        "main proof should reference exactly one child witness proof root"
+    );
+    assert!(witness_roots[0]
+        .as_str()
+        .unwrap_or_default()
+        .starts_with("blake3-512:"));
+    let implications = exhibit["implications"]
+        .as_array()
+        .expect("implications report should be an array");
+    assert_eq!(implications.len(), 7);
+    for implication in implications {
+        assert!(implication["implicationCid"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("blake3-512:"));
+        assert!(implication["antecedentCid"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("blake3-512:"));
+        assert!(implication["consequentCid"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("blake3-512:"));
+    }
     let mutations = exhibit["mutations"].as_array().unwrap();
     assert_eq!(mutations.len(), 9);
     assert!(mutations
@@ -418,4 +469,16 @@ fn all_exhibits_reports_contract_and_implication_mementos() {
     assert!(counterfeit_error.contains("counterexample: a=1 b=255"));
     assert!(counterfeit_error.contains("expected: overflow=true value=0"));
     assert!(counterfeit_error.contains("observed: overflow=false value=0"));
+    let experiment = mutations
+        .iter()
+        .find(|mutation| mutation["id"] == "experiment-measurement-changed-without-signature")
+        .expect("experiment mutation report");
+    let experiment_error = experiment["detail"]["error"]
+        .as_str()
+        .expect("experiment mutation error");
+    assert!(
+        experiment_error.contains("calibration signature")
+            && experiment_error.contains("measurement content"),
+        "within-envelope measurement edits should be refused because the signature no longer binds the CSV content: {experiment_error}"
+    );
 }

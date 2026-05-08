@@ -181,12 +181,19 @@ pub(crate) fn dispatch_lift(
     let _ = writeln!(stdin, "{shutdown_req}");
     drop(stdin);
     trace_log(format!("lift rpc wait child exit surface={surface}"));
-    let status = child.wait();
+    let status = child
+        .wait()
+        .map_err(|e| LiftPluginError::Failed(format!("wait lift plugin: {e}")))?;
     trace_log(format!(
-        "lift rpc child exit surface={surface} status={:?} elapsed={:?}",
-        status,
+        "lift rpc child exit surface={surface} status={status:?} elapsed={:?}",
         started.elapsed()
     ));
+    if !status.success() {
+        return Err(LiftPluginError::Failed(format!(
+            "lift plugin exited {status} after {:?}",
+            started.elapsed()
+        )));
+    }
 
     Ok(LiftPluginSession { response })
 }

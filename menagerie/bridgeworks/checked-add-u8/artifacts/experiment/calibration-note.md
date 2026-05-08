@@ -1,7 +1,7 @@
 # Bridgeworks Bandgap Measurement Calibration Note
 
 <!-- bridgeworks:claim experiment.material_parameters.within_tolerance -->
-<!-- bridgeworks:calibration_signature BW-CAL-2026-05-08-SHA256-4b57c1d8 -->
+<!-- bridgeworks:calibration_signature BW-CAL-2026-05-08-SHA256-4b8a02f3 -->
 <!-- bridgeworks:projection calibration-note-lifter/v0 -->
 
 Instrument set:

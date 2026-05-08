@@ -74,6 +74,24 @@ pub fn run(args: LiftArgs) -> u8 {
         args.out.quiet,
     ) {
         Ok(session) => {
+            if args.identify_only
+                && session
+                    .response
+                    .get("kind")
+                    .and_then(|value| value.as_str())
+                    != Some("identity-document")
+            {
+                let kind = session
+                    .response
+                    .get("kind")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("unknown");
+                eprintln!(
+                    "{}: identify-only lift returned `{kind}`; expected `identity-document`",
+                    "error".red().bold()
+                );
+                return EXIT_VERIFY_FAIL;
+            }
             if args.out.json {
                 println!(
                     "{}",

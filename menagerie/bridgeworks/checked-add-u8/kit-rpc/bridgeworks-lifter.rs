@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 const CONTRACTS: &[&str] = &[
     "checked_add_u8.postcondition",
@@ -673,15 +674,27 @@ fn validate_experiment(project: &Path) -> Result<(), String> {
     const CLAIM: &str = "experiment.material_parameters.within_tolerance";
     let csv = read(project, "artifacts/experiment/bandgap-measurements.csv")?;
     let note = read(project, "artifacts/experiment/calibration-note.md")?;
-    let signature = "BW-CAL-2026-05-08-SHA256-4b57c1d8";
+    let csv_signature = calibration_signature(&csv)
+        .ok_or_else(|| format!("{CLAIM} refused: missing CSV calibration signature"))?;
+    let note_signature = calibration_signature(&note)
+        .ok_or_else(|| format!("{CLAIM} refused: missing calibration note signature"))?;
     require_claim(
         &csv,
         "bridgeworks:claim experiment.material_parameters.within_tolerance",
         "experiment claim marker",
         CLAIM,
     )?;
-    require_claim(&csv, signature, "CSV calibration signature", CLAIM)?;
-    require_claim(&note, signature, "calibration note signature", CLAIM)?;
+    if csv_signature != note_signature {
+        return Err(format!(
+            "{CLAIM} refused: calibration signature mismatch between CSV and note"
+        ));
+    }
+    let expected_suffix = format!("SHA256-{}", measurement_content_sha256_8(&csv));
+    if !csv_signature.ends_with(&expected_suffix) {
+        return Err(format!(
+            "{CLAIM} refused: calibration signature does not bind measurement content; expected suffix `{expected_suffix}`, observed `{csv_signature}`"
+        ));
+    }
     for line in csv
         .lines()
         .filter(|line| !line.starts_with('#') && !line.starts_with("sample_id"))
@@ -709,6 +722,33 @@ fn validate_experiment(project: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn calibration_signature(text: &str) -> Option<String> {
+    text.lines()
+        .find_map(|line| line.split_once("bridgeworks:calibration_signature"))
+        .map(|(_, signature)| {
+            signature
+                .trim()
+                .trim_start_matches("-->")
+                .trim_end_matches("-->")
+                .trim()
+                .to_string()
+        })
+}
+
+fn measurement_content_sha256_8(csv: &str) -> String {
+    let canonical = csv
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let digest = Sha256::digest(canonical.as_bytes());
+    digest[..4]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn parse_f64(value: &str, field: &str) -> Result<f64, String> {

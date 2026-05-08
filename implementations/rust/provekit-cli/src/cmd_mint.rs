@@ -880,13 +880,13 @@ pub fn run(args: MintArgs) -> u8 {
         let project_cfg = read_project_config(&project_root);
         let user_cfg = read_user_config();
         match project_cfg
-            .surface_for("must")
-            .or_else(|| user_cfg.surface_for("must"))
+            .surface_for("lift")
+            .or_else(|| user_cfg.surface_for("lift"))
         {
             Some(s) => s,
             None => {
                 eprintln!(
-                    "{}: no `[authoring] surface` in .provekit/config.toml. Pass --surface or --kit.",
+                    "{}: no lift surface configured. Set [authoring] surface or [authoring.lift] surface in .provekit/config.toml, or pass --surface/--kit.",
                     "error".red().bold()
                 );
                 return EXIT_USER_ERROR;

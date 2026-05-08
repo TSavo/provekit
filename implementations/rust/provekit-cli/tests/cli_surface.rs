@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::PathBuf;
+use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::json;
@@ -18,6 +21,19 @@ fn repo_root() -> PathBuf {
         .parent()
         .unwrap()
         .to_path_buf()
+}
+
+fn write_executable(path: &Path, text: &str) {
+    fs::write(path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    #[cfg(unix)]
+    {
+        let mut perms = fs::metadata(path)
+            .unwrap_or_else(|e| panic!("stat {}: {e}", path.display()))
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms)
+            .unwrap_or_else(|e| panic!("chmod {}: {e}", path.display()));
+    }
 }
 
 #[test]
@@ -179,4 +195,127 @@ fn lift_identify_only_delegates_from_project_config() {
     assert!(identities.iter().any(|identity| {
         identity["domain"] == "software" && identity["claim"] == "checked_add_u8.postcondition"
     }));
+}
+
+#[test]
+fn lift_identify_only_rejects_non_identity_response() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let project = dir.path().join("project");
+    let manifest_dir = project.join(".provekit/lift/bad-identify");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        "[authoring.lift]\nsurface = \"bad-identify\"\n",
+    )
+    .expect("write config");
+    let plugin = dir.path().join("bad-identify-plugin.sh");
+    write_executable(
+        &plugin,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"bad-identify","protocol_version":"provekit-lift/1","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[],"diagnostics":[]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"bad-identify\"\ncommand = [\"{}\"]\n",
+            plugin.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let output = Command::new(provekit_bin())
+        .arg("lift")
+        .arg(&project)
+        .arg("--identify-only")
+        .arg("--json")
+        .arg("--quiet")
+        .output()
+        .expect("spawn provekit lift --identify-only");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "identify-only must reject a full ir-document response\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("identify-only") && stderr.contains("identity-document"),
+        "stderr should explain the response-shape violation\nstderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn mint_uses_lift_surface_from_project_config() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let project = dir.path().join("project");
+    let manifest_dir = project.join(".provekit/lift/mint-lift");
+    let out_dir = dir.path().join("out");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        "[authoring.lift]\nsurface = \"mint-lift\"\n",
+    )
+    .expect("write config");
+    let plugin = dir.path().join("mint-lift-plugin.sh");
+    write_executable(
+        &plugin,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"mint-lift","protocol_version":"provekit-lift/1","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"contract","name":"demo.contract","outBinding":"out","post":{"kind":"atomic","name":"demo_true","args":[]}}],"diagnostics":[]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"mint-lift\"\ncommand = [\"{}\"]\n",
+            plugin.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let output = Command::new(provekit_bin())
+        .arg("mint")
+        .arg("--project")
+        .arg(&project)
+        .arg("--out")
+        .arg(&out_dir)
+        .arg("--no-attest")
+        .arg("--json")
+        .arg("--quiet")
+        .output()
+        .expect("spawn provekit mint");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "mint should compose through [authoring.lift], not require [authoring.must]\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("mint JSON parses");
+    assert_eq!(report["surface"], "mint-lift");
+    assert_eq!(report["lift"]["kind"], "ir-document");
+    assert!(report["filenameCid"]
+        .as_str()
+        .unwrap_or_default()
+        .starts_with("blake3-512:"));
 }
