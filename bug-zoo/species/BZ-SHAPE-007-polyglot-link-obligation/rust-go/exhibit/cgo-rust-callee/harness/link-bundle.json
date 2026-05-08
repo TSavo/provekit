@@ -3,7 +3,7 @@
   "kind": "link-bundle",
   "contractSetCid": "blake3-512:4b5c47a0c7cbaee9368eddef52f9b838d92a896f444547298adebadeb7bdd981b3d9e4649a171a67c9de49f1b0e7c6a252423e729e2cc968ad27082efcbd3c65",
   "callEdgeSetCid": "blake3-512:18dc141851f98f2dc08ffe37e0aa9c92c590d607477371dc23f288a4ea40e578be51545f4defa62c430b0c178a7388f38d95dc133d9372502162e51aca18f116",
-  "bridgeSetCid": "blake3-512:726cdd8f4d2684043fc1a53690cbfc11b5bc95480ef9e5960fc706e3dc9f0593e7965736707066d1ae80fe9adcb4255c470098bf8b2c465db5417ba52af82506",
+  "bridgeSetCid": "blake3-512:87c044b574717adb63af7bcca4b34bf0f5382c08cebb76f7a8c13a549bdd3355e9558f9fb896823cb5f17812652ad718c3e97856763841dc8cbf2886575b7635",
   "linkerVersion": "0.1.0",
   "linkerErrors": [
     {
@@ -29,7 +29,7 @@
       "metadata": {
         "callSite": {
           "column": 13,
-          "file": "examples/polyglot-rust-go/fixture-fail/go-caller/caller_fail.go",
+          "file": "bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/exhibit/cgo-rust-callee/harness/go-caller/caller_fail.go",
           "line": 25
         },
         "derivedRelation": {
@@ -50,5 +50,5 @@
       }
     }
   ],
-  "linkBundleCid": "blake3-512:3dfd07083b514890e391062df40e712b332ee7e8725d6f1a84ab4bfa9aedaba9a4ad5743de6990d60326cff448f6cbaf77454d6e8c1f437c6900c5a12a77dc91"
+  "linkBundleCid": "blake3-512:53cfbcde9c00387b80b0e2f143e9191f0130e0e036737b560b0c3dd63edb8a07c473029f03b376762cda894139cbc4a9cfe379a60cf118bdbe7e5b31b4254407"
 }

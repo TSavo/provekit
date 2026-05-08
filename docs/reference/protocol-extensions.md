@@ -39,7 +39,7 @@ These are protocol working notes in `protocol/specs/`. They are content-addresse
 | `provekit proof hash/inspect/check/implements/mint-protocol` | Proof-file hashing, inspection, conformance, implementation witnesses, and fixture corpus minting. | [../../protocol/conformance/proof-protocol/README.md](../../protocol/conformance/proof-protocol/README.md) |
 | `provekit protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.2/README.md](../../protocol/evolution/v1.6.2/README.md) |
 | `provekit ci check/shadow/result/reuse` | Validate CICP bodies, compute blast radii, emit job results, and admit exact-closure reuse. | [../how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md) |
-| `cargo run --manifest-path bug-zoo/Cargo.toml -- [--all]` | Run self-contained Bug Zoo specimens through host checks, exhibits, fixed pairs, equivalence checks, and scoped composition checks. | [../how-to/bug-zoo.md](../how-to/bug-zoo.md) |
+| `cargo run --manifest-path bug-zoo/Cargo.toml -- [--all]` | Run self-contained Bug Zoo specimens through host checks, exhibits, link exhibits, fixed pairs, equivalence checks, and scoped composition checks. | [../how-to/bug-zoo.md](../how-to/bug-zoo.md) |
 
 ## Trust Boundary
 

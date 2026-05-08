@@ -1,7 +1,7 @@
-// caller_fail.go — FAILURE CASE
+// caller_fail.go - FAILURE CASE
 //
 // This Go file calls C.process(-1) without any guard.
-// The Go lifter emits a cgo call-edge from GoCallerFail → rust-kit:process.
+// The Go lifter emits a cgo call-edge from GoCallerFail to rust-kit:process.
 // The linker finds no post-condition on GoCallerFail, and emits:
 //
 //	kind: "linker-error", errorKind: "unprovable-obligation"

@@ -215,7 +215,11 @@ fn logically_incompatible_emits_implication_unprovable() {
     let pre = ge_x_n(10);
     let (registry, plan) = stub_registry_and_plan(ObligationVerdict::Unsatisfied);
     let out = link_with_solvers(inputs(Some(post), Some(pre)), &registry, &plan);
-    assert_eq!(out.linker_errors.len(), 1, "expected exactly one linker error");
+    assert_eq!(
+        out.linker_errors.len(),
+        1,
+        "expected exactly one linker error"
+    );
     assert_eq!(
         out.linker_errors[0].kind, "implication-unprovable",
         "weak-post case must surface implication-unprovable, got {:?}",

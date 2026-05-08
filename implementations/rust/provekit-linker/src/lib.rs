@@ -6,9 +6,11 @@
 //!
 //! ## Consumers
 //!
-//! - `provekit-cli`: the `provekit link` subcommand calls `link(inputs)` after
-//!   gathering contracts and call-edges from the filesystem and subprocess
-//!   lifters. It writes the resulting `LinkBundle` JSON to disk.
+//! - `provekit-cli`: the `provekit link` subcommand gathers contracts and
+//!   call-edges from the filesystem and subprocess lifters, then calls
+//!   `link_with_solvers(inputs, ...)` with the same solver-plan config shape
+//!   used by `provekit prove`. It writes the resulting `LinkBundle` JSON to
+//!   disk.
 //!
 //! - `provekit-linkerd` (LSP+linker daemon, step 2): the daemon receives
 //!   `parseFile` RPCs from per-kit LSP plugins, reconstructs `LinkerInputs`
@@ -188,7 +190,10 @@ pub fn link(inputs: LinkerInputs) -> LinkerOutput {
     // Single-solver-named-"none" plan; lookup will miss for any
     // structurally-distinct discharge, surfacing as Undecidable.
     let no_op_plan = SolverPlan::Single("__no_solver__".into());
-    let LinkerInputs { contracts, call_edges } = inputs;
+    let LinkerInputs {
+        contracts,
+        call_edges,
+    } = inputs;
     derive_link_bundle_inner(contracts, call_edges, &empty_registry, &no_op_plan)
 }
 
@@ -212,7 +217,10 @@ pub fn link_with_solvers(
     registry: &Registry,
     plan: &SolverPlan,
 ) -> LinkerOutput {
-    let LinkerInputs { contracts, call_edges } = inputs;
+    let LinkerInputs {
+        contracts,
+        call_edges,
+    } = inputs;
     derive_link_bundle_inner(contracts, call_edges, registry, plan)
 }
 
@@ -233,8 +241,10 @@ fn derive_link_bundle_inner(
     }
 
     // contractSetCid
-    let mut all_contract_cids: Vec<String> =
-        all_contracts.iter().map(|c| c.contract_cid.clone()).collect();
+    let mut all_contract_cids: Vec<String> = all_contracts
+        .iter()
+        .map(|c| c.contract_cid.clone())
+        .collect();
     all_contract_cids.sort();
     let contract_set_cid = compute_set_cid_sorted(&all_contract_cids);
 
@@ -281,9 +291,7 @@ fn derive_link_bundle_inner(
                 });
             }
             Some(target_cid) => {
-                let target_contract = all_contracts
-                    .iter()
-                    .find(|c| c.contract_cid == target_cid);
+                let target_contract = all_contracts.iter().find(|c| c.contract_cid == target_cid);
                 let source_contract = all_contracts
                     .iter()
                     .find(|c| c.contract_cid == edge.source_contract_cid);
@@ -388,7 +396,10 @@ fn derive_link_bundle_inner(
 
     let mut bundle_json = bundle_without_cid;
     if let Some(obj) = bundle_json.as_object_mut() {
-        obj.insert("linkBundleCid".into(), Json::String(link_bundle_cid.clone()));
+        obj.insert(
+            "linkBundleCid".into(),
+            Json::String(link_bundle_cid.clone()),
+        );
     }
 
     LinkerOutput {
@@ -415,7 +426,9 @@ fn resolve_target_symbol(
     if kit.is_empty() || name.is_empty() {
         return None;
     }
-    name_kit_index.get(&(name.to_string(), kit.to_string())).cloned()
+    name_kit_index
+        .get(&(name.to_string(), kit.to_string()))
+        .cloned()
 }
 
 // -------------------------------------------------------------------

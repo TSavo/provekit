@@ -1,4 +1,4 @@
-// rust-callee/src/lib.rs — SUCCESS FIXTURE
+// rust-callee/src/lib.rs - SUCCESS FIXTURE
 //
 // Same rust callee as fixture-fail. Exposes `process(n: i32) -> i32` via C FFI.
 //

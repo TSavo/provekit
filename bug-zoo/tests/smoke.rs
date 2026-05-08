@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use provekit_bug_zoo::{run, OutputFlags, ZooArgs};
 
@@ -10,6 +11,13 @@ fn repo_root() -> PathBuf {
         .parent()
         .unwrap()
         .to_path_buf()
+}
+
+fn shared_host_tool_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("shared host tool lock poisoned")
 }
 
 #[test]
@@ -32,6 +40,7 @@ fn runner_help_is_self_contained() {
 
 #[test]
 fn all_specimens_pass() {
+    let _guard = shared_host_tool_lock();
     let root = repo_root();
     let code = run(ZooArgs {
         specimen: Some(root.join("bug-zoo/species")),
@@ -46,6 +55,7 @@ fn all_specimens_pass() {
 
 #[test]
 fn all_specimens_reports_current_shapes() {
+    let _guard = shared_host_tool_lock();
     let root = repo_root();
     let output = Command::new(env!("CARGO_BIN_EXE_provekit-bug-zoo"))
         .arg(root.join("bug-zoo/species"))
@@ -67,7 +77,7 @@ fn all_specimens_reports_current_shapes() {
     let reports = report["reports"].as_array().expect("reports is an array");
     assert_eq!(
         reports.len(),
-        2,
+        3,
         "bug zoo reports the current shape species"
     );
 
@@ -138,10 +148,55 @@ fn all_specimens_reports_current_shapes() {
             && check["provedBy"] == "provekit prove --formula"),
         "fixed checks should carry a green provekit prove signal"
     );
+
+    let polyglot = reports
+        .iter()
+        .find(|entry| entry["id"] == "BZ-SHAPE-007")
+        .expect("polyglot link species is reported");
+    assert_eq!(polyglot["missingEdge"], "post_caller => pre_callee");
+    assert_eq!(polyglot["proofIrCids"].as_object().unwrap().len(), 0);
+    assert_eq!(polyglot["receiptCids"].as_object().unwrap().len(), 2);
+    let languages = polyglot["languages"].as_array().unwrap();
+    assert_eq!(languages.len(), 1);
+    assert_eq!(languages[0]["id"], "rust-go");
+    assert_eq!(languages[0]["lab"]["provekitWorkflow"], "none");
+    assert_eq!(languages[0]["proofIrCids"].as_object().unwrap().len(), 0);
+    assert_eq!(languages[0]["linkBundleCids"].as_object().unwrap().len(), 1);
+    assert_eq!(
+        languages[0]["fixedLinkBundleCids"]
+            .as_object()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn polyglot_fixed_link_bundle_keeps_cross_kit_bridge() {
+    let root = repo_root();
+    let bundle_path = root.join(
+        "bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/fixed/cgo-rust-callee/harness/link-bundle.json",
+    );
+    let bundle: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle_path).expect("read fixed bundle"))
+            .expect("parse fixed bundle");
+
+    assert_eq!(bundle["linkerErrors"].as_array().unwrap().len(), 0);
+    let bridges = bundle["bridges"].as_array().unwrap();
+    assert_eq!(
+        bridges.len(),
+        1,
+        "fixed BZ-007 must close the same Go->Rust edge, not erase it"
+    );
+    assert_eq!(
+        bridges[0]["metadata"]["callSite"]["file"],
+        "bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/fixed/cgo-rust-callee/harness/go-caller/caller_ok.go"
+    );
 }
 
 #[test]
 fn csharp_discover_cli_finds_null_boundary_with_language_lifter() {
+    let _guard = shared_host_tool_lock();
     let root = repo_root();
     let project = root.join("implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj");
     let harness = root.join(

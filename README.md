@@ -92,7 +92,7 @@ accountable edges the rest of the graph must satisfy.
 | | |
 | --- | --- |
 | **Use the CLI** | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) to install and run `provekit`; [docs/reference/protocol-extensions.md#tool-surfaces](docs/reference/protocol-extensions.md#tool-surfaces) for the command surface |
-| **See a bug class collapse to the same bytes across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md); run `cargo run --manifest-path bug-zoo/Cargo.toml -- --all` |
+| **See a bug class map to an addressable shape CID across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md); run `cargo run --manifest-path bug-zoo/Cargo.toml -- --all` |
 | **See supported languages and kit coverage** | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
 | **Understand the move** | [docs/papers/](docs/papers/) — recommended order: paper 03 → 06 → 02 |
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
@@ -111,7 +111,7 @@ For more entry points (per-language tutorials, IDE integration, publishing a `.p
 - **Conforming implementations**: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C, PHP. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
 - **Protocol evolution**: PEP dogfoods catalog transitions as signed, content-addressed body-claims under `protocol/evolution/v1.6.1/` and `protocol/evolution/v1.6.2/`.
 - **Content-addressed CI**: CICP binds CI results to exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. Reuse is allowed only when that closure is byte-identical.
-- **Bug Zoo**: the self-contained `bug-zoo/` runner checks lab, exhibit, fixed, and wild specimen states; fixed pairs are accepted only after the same surface re-lifts to a clean boundary receipt.
+- **Bug Zoo**: the self-contained `bug-zoo/` runner checks lab, exhibit, fixed, and wild specimen states; fixed pairs are accepted only after the same surface re-lifts or re-links to a clean boundary receipt.
 - **Conformance gate**: catalog CIDs, proof-protocol fixtures, CICP vectors, self-contract attestations, and per-kit tests must agree before CI is green.
 
 The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
@@ -120,10 +120,10 @@ The protocol is content-addressed end to end. Each version's canonical name is i
 
 Bug Zoo is the executable lab for the claim above. Each specimen runs in an
 isolated host-language environment, uses that language's own compiler/kit to
-map source to a witnessed bug output, then checks that the canonical ProofIR
-signature is byte-identical across surfaces and languages. The normal proof
-gate for projects is `provekit prove`; Bug Zoo owns the fixture orchestration
-under `bug-zoo/` and routes lift/proof work through the Rust CLI.
+map source to canonical truth, then checks that the expected shape CID or
+boundary receipt CID is addressable from that projection. The normal proof gate
+for projects is `provekit prove`; Bug Zoo owns the fixture orchestration under
+`bug-zoo/` and routes lift, link, and proof work through the Rust CLI.
 
 The zoo is organized by species, not by language. A species directory owns a
 `specimen.yaml` manifest, then each language under that species carries the same
@@ -131,10 +131,11 @@ lifecycle:
 
 - `lab/`: ordinary host code that passes native checks while the bug class is
   still latent. It has no ProvekIt workflow.
-- `exhibit/<surface>/`: a native contract surface that lifts to the missing
-  edge and yields the red `provekit prove` signal.
-- `fixed/<surface>/`: the paired source with that boundary closed, re-lifted
-  through the same surface to yield the green `provekit prove` signal.
+- `exhibit/<surface>/`: a native contract surface that lifts or links to the
+  missing edge and yields the red `provekit prove` or `provekit link` signal.
+- `fixed/<surface>/`: the paired source with that boundary closed, re-run
+  through the same surface to yield the green `provekit prove` or
+  `provekit link` signal.
 - `wild/`: optional real upstream sightings pinned by advisory, commit, path,
   and evidence.
 
@@ -145,12 +146,15 @@ k_lang(I) = t
 ```
 
 `k_lang` is the language compiler as a ProvekIt kit/lifter, `I` is the source,
-and `t` is the witnessed output: canonical ProofIR bytes, CID, and receipt.
+and `t` is the canonical truth object: a ProofIR shape CID for claim
+boundaries, or a LinkBundle receipt CID for cross-kit bridge derivations.
 Different languages can disagree in syntax, runtime behavior, and exception
-type while still compiling to the same witnessed `t`.
+type while their native evidence maps homomorphically to the same addressable
+shape.
 
-Native evidence is projected into canonical truth; then the correctness layer
-proves the missing edge or its closure.
+Each native surface maps through a structure-preserving homomorphism into the
+correctness object; the proof layer checks whether the mapped obligation
+commutes with equivalent surfaces or closes under the fixed witness.
 
 The current null-boundary receipts show Java, TypeScript, and C# lifting the same
 missing edge:
@@ -169,12 +173,17 @@ They also run the red/green proof obligations through the Rust CLI: lab null is
 rejected against each lifted non-null requirement, and each fixed surface
 discharges the paired non-null implication with `provekit prove --formula`.
 
-Read [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md), or run:
-
 Bug Zoo also carries value-scope escape as `BZ-SHAPE-006`: Java JUnit and Spring
 exhibits both witness a point value, and the runner invokes
 `provekit prove --formula` to produce the red signal when 42 fails a `>= 43`
 requirement and the green signal when the fixed surface witnesses 43.
+
+`BZ-SHAPE-007` carries the polyglot link-obligation specimen: a Go cgo caller
+invokes a Rust callee whose native contract requires a stricter input. The zoo
+routes the fixture through `provekit link`; the exhibit produces an
+`unprovable-obligation` link-bundle receipt, and the fixed pair links clean.
+
+Read [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md), or run:
 
 ```sh
 cargo run --manifest-path bug-zoo/Cargo.toml -- --all

@@ -1,0 +1,9 @@
+{
+  "kind": "linker-error",
+  "errorKind": "unprovable-obligation",
+  "targetSymbol": "rust-kit:process",
+  "witness": {
+    "callerPostCondition": null,
+    "calleePrecondition": "n > 0"
+  }
+}
