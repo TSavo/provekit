@@ -40,7 +40,7 @@ projected contract claims and bridge edges.
 
 | Layer | Native artifact | Projection `k(I)` | Claim `t` |
 | --- | --- | --- | --- |
-| Software contract | `checked_add_u8.rs` | Source-contract lifter | `checked_add_u8(a,b)` returns `ok(sum)` iff `a+b < 256`; otherwise `overflow`. |
+| Software contract | `checked_add_u8.c` | Existing C lifter path | `checked_add_u8(a,b)` returns `ok(sum)` iff `a+b < 256`; otherwise `overflow`. |
 | Compiler lowering | `lowering.trace` plus toy assembly | Lowering-trace lifter | Source checked-add lowers to `ADD8` plus branch-on-carry without changing the contract. |
 | ISA | `toy8.isa` | ISA lifter | `ADD8(a,b)` yields `sum=(a+b) mod 256` and `carry=(a+b >= 256)`. |
 | CPU/RTL | `alu.v` | RTL lifter | The ALU output wires implement the ISA `sum` and `carry` relation for all 8-bit inputs. |
@@ -95,15 +95,19 @@ work only through contracts, the exhibit has shown the primitive in action.
 
 ## Runner Shape
 
-The first executable Bridgeworks runner should:
+The first executable Bridgeworks runner should invoke the Rust `provekit` CLI to
+run the lift-plugin surface and mint `.proof` output. Bridgeworks owns exhibit
+orchestration and fixtures; the CLI owns ProofIR validation, memento minting,
+implication mementos, and deterministic `.proof` bytes.
+
+The first runner should:
 
 1. load the exhibit manifest;
-2. run every layer lifter on its native artifact;
-3. canonicalize each projected claim;
-4. mint content-addressed claim IDs;
-5. verify each adjacent bridge edge;
-6. emit a compressed top-level receipt for the checked-add postcondition;
-7. run mutation cases that fail closed when any layer weakens or drops an
+2. call `provekit mint` for the exhibit's lift surface;
+3. call `provekit proof inspect` on the emitted `.proof`;
+4. compare the observed claim and implication receipts with expected fixtures;
+5. emit a compressed top-level receipt for the checked-add postcondition;
+6. run mutation cases that fail closed when any layer weakens or drops an
    obligation.
 
 The runner should make the composition visible. It should not merely report
@@ -157,7 +161,7 @@ menagerie/bridgeworks/
       device-physics.yaml
       experiment.yaml
     artifacts/
-      software/checked_add_u8.rs
+      software/checked_add_u8.c
       compiler/lowering.trace
       compiler/toy8.asm
       isa/toy8.isa

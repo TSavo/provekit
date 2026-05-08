@@ -21,6 +21,12 @@ checked_add_u8 postcondition
   <- measured material parameters
 ```
 
+The software artifact is native C and uses the existing C lift path. The other
+domains are intentionally small toy lifters that still emit ordinary ProofIR
+claims. The Bridgeworks runner shells through the Rust `provekit` CLI; it does
+not own ProofIR validation, memento minting, implication mementos, or `.proof`
+bytes.
+
 Each layer is intended to be built by an independent white-room agent from a
 contract sheet. The agent receives the native artifact format, adjacent boundary
 claims, and required refusal cases, then builds the smallest native artifact
