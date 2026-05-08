@@ -96,6 +96,32 @@ public class RpcServerParseTest {
     }
 
     @Test
+    public void parseMergesCompositeSurfaceClausesForSameMethodSymbol() throws Exception {
+        String source = """
+            import jakarta.validation.constraints.Min;
+            import org.springframework.web.bind.annotation.RequestParam;
+            public class PaymentController {
+                public String accept(@RequestParam(defaultValue = "42") @Min(43) int value) {
+                    return "accepted:" + value;
+                }
+            }
+            """;
+        String encodedSource = jsonEncodeString(source);
+        String request = "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"parse\",\"params\":{\"path\":\"/tmp/PaymentController.java\",\"source\":" + encodedSource + "}}";
+
+        String response = invokeHandle(request);
+
+        assertFalse(response.contains("\"error\""), "Composite surface parse must not error: " + response);
+        assertEquals(
+            1,
+            countOccurrences(response, "\"symbol\":\"accept\""),
+            "Bean Validation and Spring clauses on the same method should mint as one contract boundary: " + response
+        );
+        assertTrue(response.contains("\"precondition\":{\"kind\":\"atomic\",\"name\":\"gte\""), response);
+        assertTrue(response.contains("\"invariant\":{\"kind\":\"atomic\",\"name\":\"eq\""), response);
+    }
+
+    @Test
     public void parseSourceWithEmbeddedQuotes() throws Exception {
         // Verify that source containing Java string literals with \" is handled correctly.
         String encodedSource = jsonEncodeString(QUOTED_SOURCE);
@@ -174,5 +200,15 @@ public class RpcServerParseTest {
         }
         sb.append("\"");
         return sb.toString();
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int index = 0;
+        while ((index = haystack.indexOf(needle, index)) >= 0) {
+            count++;
+            index += needle.length();
+        }
+        return count;
     }
 }
