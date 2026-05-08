@@ -470,6 +470,12 @@ pk_c_source_facts *pk_c_parse_source(const char *path, const char *source) {
             body_open = strchr(line + function_match[0].rm_eo, '{');
             if (body_open != NULL) {
                 facts->functions[function_index].has_body = 1;
+                if (pk_c_parser_scan_calls(facts, &call_re, path, body_open + 1, line_no,
+                    facts->functions[function_index].name) != 0) {
+                    pk_c_source_facts_free(facts);
+                    facts = NULL;
+                    goto done;
+                }
                 brace_depth = pk_c_parser_brace_delta_from(body_open);
                 if (brace_depth > 0) {
                     current_function = function_index;

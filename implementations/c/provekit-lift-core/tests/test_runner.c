@@ -106,11 +106,32 @@ static void test_parse_functions_and_macros(void) {
     pk_c_source_facts_free(facts);
 }
 
+static void test_parse_same_line_function_body_call(void) {
+    const char *source =
+        "int helper(int x) { return x + 1; }\n"
+        "int compute(int y) { return helper(y); }\n";
+    pk_c_source_facts *facts = pk_c_parse_source("fixture.c", source);
+    if (!facts) {
+        fprintf(stderr, "FAIL: parse returned null\n");
+        failures++;
+        return;
+    }
+    if (facts->n_call_sites != 1) {
+        fprintf(stderr, "FAIL: expected 1 same-line call site, got %zu\n", facts->n_call_sites);
+        failures++;
+    } else {
+        assert_eq(facts->call_sites[0].caller, "compute", "same-line call caller");
+        assert_eq(facts->call_sites[0].callee, "helper", "same-line call callee");
+    }
+    pk_c_source_facts_free(facts);
+}
+
 int main(void) {
     test_empty_result_json();
     test_populated_result_json();
     test_array_growth_overflow_is_rejected();
     test_parse_functions_and_macros();
+    test_parse_same_line_function_body_call();
     if (failures != 0) {
         fprintf(stderr, "%d failures\n", failures);
         return 1;
