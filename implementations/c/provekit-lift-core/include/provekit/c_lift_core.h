@@ -11,6 +11,7 @@ typedef struct {
 } pk_c_locus;
 
 typedef struct {
+    /* Owned JSON fragment strings. */
     char **items;
     size_t len;
     size_t cap;
