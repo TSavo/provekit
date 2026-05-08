@@ -21,6 +21,7 @@ import (
 	"go/token"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 
 	canonicalizer "github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
@@ -59,9 +60,10 @@ type initializeResult struct {
 }
 
 type parseResult struct {
-	Declarations json.RawMessage `json:"declarations"`
-	CallEdges    json.RawMessage `json:"callEdges"`
-	Warnings     []interface{}   `json:"warnings"`
+	Declarations json.RawMessage   `json:"declarations"`
+	CallEdges    json.RawMessage   `json:"callEdges"`
+	ContractCids map[string]string `json:"contractCids,omitempty"`
+	Warnings     []interface{}     `json:"warnings"`
 }
 
 func main() {
@@ -122,6 +124,7 @@ func handleParse(id interface{}, paramsRaw json.RawMessage) {
 	decls = append(decls, annotationDecls...)
 
 	// Marshal declarations
+	contractCids := buildContractCids(decls)
 	jcs, err := json.Marshal(decls)
 	if err != nil {
 		sendError(id, -32603, fmt.Sprintf("marshal: %v", err))
@@ -147,6 +150,7 @@ func handleParse(id interface{}, paramsRaw json.RawMessage) {
 	send(id, parseResult{
 		Declarations: jcs,
 		CallEdges:    edgesJSON,
+		ContractCids: contractCids,
 		Warnings:     warnings,
 	})
 }
@@ -195,6 +199,14 @@ func contractCidForDeclaration(d ir.Declaration) string {
 // buildContractIndex returns a map from function/contract name to
 // (CID, declaration) for each ContractDeclaration in decls.
 func buildContractIndex(decls []ir.Declaration) map[string]string {
+	idx := make(map[string]string)
+	for name, cid := range buildContractCids(decls) {
+		idx[name] = cid
+	}
+	return idx
+}
+
+func buildContractCids(decls []ir.Declaration) map[string]string {
 	idx := make(map[string]string)
 	for _, d := range decls {
 		if d.Kind() == "contract" {
@@ -442,6 +454,9 @@ func walkCallEdges(src, path string, decls []ir.Declaration) []ir.CallEdgeDeclar
 				if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "C" {
 					// cgo call: cross-kit edge.
 					targetName := sel.Sel.Name
+					if isCgoTypeConversion(targetName) {
+						return true
+					}
 					var sym string
 					if resolvedCgoKit != "" {
 						sym = resolvedCgoKit + ":" + targetName
@@ -486,6 +501,28 @@ func walkCallEdges(src, path string, decls []ir.Declaration) []ir.CallEdgeDeclar
 	}
 
 	return edges
+}
+
+// isCgoTypeConversion returns true for selectors like C.int(n) and
+// C.uint64_t(n). The Go AST represents those conversions as CallExpr nodes,
+// but they are argument casts, not cross-kit calls.
+func isCgoTypeConversion(name string) bool {
+	cgoTypes := map[string]bool{
+		"char": true, "schar": true, "uchar": true,
+		"short": true, "ushort": true,
+		"int": true, "uint": true,
+		"long": true, "ulong": true,
+		"longlong": true, "ulonglong": true,
+		"float": true, "double": true,
+		"int8_t": true, "uint8_t": true,
+		"int16_t": true, "uint16_t": true,
+		"int32_t": true, "uint32_t": true,
+		"int64_t": true, "uint64_t": true,
+		"intptr_t": true, "uintptr_t": true,
+		"size_t": true, "ssize_t": true,
+		"bool": true,
+	}
+	return cgoTypes[name]
 }
 
 // extractCalleeName returns the simple function name from a call
@@ -591,21 +628,32 @@ func sortFromASTType(expr ast.Expr) ir.Sort {
 	return ir.Ref
 }
 
+type paramBinding struct {
+	Name string
+	Sort ir.Sort
+}
+
+type functionSignature struct {
+	Name   string
+	Params []paramBinding
+}
+
 // scanAnnotations scans source lines for //provekit: annotations.
 func scanAnnotations(src, path string) []ir.Declaration {
 	lines := strings.Split(src, "\n")
 	var decls []ir.Declaration
+	fset := token.NewFileSet()
+	file, _ := parser.ParseFile(fset, path, src, 0)
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
 		if strings.HasPrefix(trimmed, "//provekit:contract") {
-			fn := findAheadFn(lines, i)
-			if fn != "" {
+			if sig, ok := findAheadFnSignature(fset, file, lines, i); ok {
 				decls = append(decls, ir.ContractDeclaration{
-					Name:       fn,
+					Name:       sig.Name,
 					OutBinding: ir.DefaultOutBinding,
-					Post:       ir.And(), // true placeholder
+					Post:       wrapFormulaForParams(parseContractPost(trimmed), sig.Params),
 				})
 			}
 		}
@@ -627,6 +675,109 @@ func scanAnnotations(src, path string) []ir.Declaration {
 		}
 	}
 	return decls
+}
+
+func wrapFormulaForParams(formula ir.IrFormula, params []paramBinding) ir.IrFormula {
+	if formula == nil {
+		return nil
+	}
+	for i := len(params) - 1; i >= 0; i-- {
+		param := params[i]
+		inner := formula
+		formula = ir.ForAllNamed(param.Name, param.Sort, func(_ ir.IrTerm) ir.IrFormula {
+			return inner
+		})
+	}
+	return formula
+}
+
+func parseContractPost(annotation string) ir.IrFormula {
+	rest := strings.TrimSpace(strings.TrimPrefix(annotation, "//provekit:contract"))
+	if rest == "" {
+		return nil
+	}
+	for _, prefix := range []string{"post=", "post:"} {
+		if expr, ok := cutPrefix(rest, prefix); ok {
+			return parseSimplePostFormula(strings.TrimSpace(expr))
+		}
+	}
+	return nil
+}
+
+func parseSimplePostFormula(expr string) ir.IrFormula {
+	expr = strings.ReplaceAll(expr, " ", "")
+	if expr == "" {
+		return nil
+	}
+	if strings.Contains(expr, ">=") {
+		parts := strings.SplitN(expr, ">=", 2)
+		if len(parts) == 2 {
+			if value, err := strconv.ParseInt(parts[1], 10, 64); err == nil && parts[0] != "" {
+				return ir.Gte(ir.MakeVar(parts[0], ir.Int), ir.Num(value))
+			}
+		}
+		return nil
+	}
+	parts := strings.SplitN(expr, ">", 2)
+	if len(parts) == 2 {
+		if value, err := strconv.ParseInt(parts[1], 10, 64); err == nil && parts[0] != "" {
+			return ir.Gt(ir.MakeVar(parts[0], ir.Int), ir.Num(value))
+		}
+	}
+	return nil
+}
+
+// findAheadFnSignature scans forward from startLine for a Go function
+// definition and returns the function's parameter scope.
+func findAheadFnSignature(
+	fset *token.FileSet,
+	file *ast.File,
+	lines []string,
+	startLine int,
+) (functionSignature, bool) {
+	const maxLookahead = 10
+	start := startLine + 1
+	end := start + maxLookahead
+
+	if file != nil {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Name == nil {
+				continue
+			}
+			line := fset.Position(fn.Pos()).Line
+			if line <= start || line > end+1 {
+				continue
+			}
+			return functionSignature{
+				Name:   fn.Name.Name,
+				Params: funcParams(fn.Type.Params),
+			}, true
+		}
+	}
+
+	fn := findAheadFn(lines, startLine)
+	if fn == "" {
+		return functionSignature{}, false
+	}
+	return functionSignature{Name: fn}, true
+}
+
+func funcParams(fields *ast.FieldList) []paramBinding {
+	if fields == nil {
+		return nil
+	}
+	var params []paramBinding
+	for _, field := range fields.List {
+		sort := sortFromASTType(field.Type)
+		for _, name := range field.Names {
+			if name == nil || name.Name == "" {
+				continue
+			}
+			params = append(params, paramBinding{Name: name.Name, Sort: sort})
+		}
+	}
+	return params
 }
 
 // findAheadFn scans forward from startLine for a Go function definition.

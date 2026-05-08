@@ -3,13 +3,15 @@
 // This Go file calls C.process(-1) without any guard.
 // The Go lifter emits a cgo call-edge from GoCallerFail → rust-kit:process.
 // The linker finds no post-condition on GoCallerFail, and emits:
-//   kind: "linker-error", errorKind: "unprovable-obligation"
+//
+//	kind: "linker-error", errorKind: "unprovable-obligation"
 //
 // Run: provekit link examples/polyglot-rust-go/fixture-fail/
 // Expected: link-bundle.json with 1 linker-error, exit code 1.
 package caller
 
 /*
+#include "rust_callee.h"
 #include <stdint.h>
 extern int process(int n);
 */

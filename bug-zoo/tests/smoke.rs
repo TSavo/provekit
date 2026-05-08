@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::{env, ffi::OsString};
 
 use provekit_bug_zoo::{run, OutputFlags, ZooArgs};
 
@@ -10,6 +12,45 @@ fn repo_root() -> PathBuf {
         .parent()
         .unwrap()
         .to_path_buf()
+}
+
+fn shared_host_tool_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("shared host tool lock poisoned")
+}
+
+struct CliEnvGuard {
+    provekit_cli: Option<OsString>,
+    external_cli: Option<OsString>,
+}
+
+impl CliEnvGuard {
+    fn force_source_cli() -> Self {
+        let guard = Self {
+            provekit_cli: env::var_os("PROVEKIT_CLI"),
+            external_cli: env::var_os("PROVEKIT_BUG_ZOO_EXTERNAL_CLI"),
+        };
+        env::remove_var("PROVEKIT_CLI");
+        env::remove_var("PROVEKIT_BUG_ZOO_EXTERNAL_CLI");
+        guard
+    }
+}
+
+impl Drop for CliEnvGuard {
+    fn drop(&mut self) {
+        if let Some(value) = self.provekit_cli.take() {
+            env::set_var("PROVEKIT_CLI", value);
+        } else {
+            env::remove_var("PROVEKIT_CLI");
+        }
+        if let Some(value) = self.external_cli.take() {
+            env::set_var("PROVEKIT_BUG_ZOO_EXTERNAL_CLI", value);
+        } else {
+            env::remove_var("PROVEKIT_BUG_ZOO_EXTERNAL_CLI");
+        }
+    }
 }
 
 #[test]
@@ -32,6 +73,8 @@ fn runner_help_is_self_contained() {
 
 #[test]
 fn all_specimens_pass() {
+    let _guard = shared_host_tool_lock();
+    let _cli_env = CliEnvGuard::force_source_cli();
     let root = repo_root();
     let code = run(ZooArgs {
         specimen: Some(root.join("bug-zoo/species")),
@@ -46,12 +89,15 @@ fn all_specimens_pass() {
 
 #[test]
 fn all_specimens_reports_current_shapes() {
+    let _guard = shared_host_tool_lock();
     let root = repo_root();
     let output = Command::new(env!("CARGO_BIN_EXE_provekit-bug-zoo"))
         .arg(root.join("bug-zoo/species"))
         .arg("--all")
         .arg("--json")
         .current_dir(&root)
+        .env_remove("PROVEKIT_CLI")
+        .env_remove("PROVEKIT_BUG_ZOO_EXTERNAL_CLI")
         .output()
         .expect("spawn provekit-bug-zoo --all --json");
 
@@ -67,8 +113,15 @@ fn all_specimens_reports_current_shapes() {
     let reports = report["reports"].as_array().expect("reports is an array");
     assert_eq!(
         reports.len(),
-        2,
+        3,
         "bug zoo reports the current shape species"
+    );
+    assert!(
+        reports.iter().all(|entry| {
+            entry["workflow"]["runner"] == "provekit-bug-zoo"
+                && entry["workflow"]["provekitCli"]["kind"] == "cargo-run-source"
+        }),
+        "Bug Zoo receipts should report the current source-routed provekit CLI"
     );
 
     let null_boundary = reports
@@ -138,10 +191,55 @@ fn all_specimens_reports_current_shapes() {
             && check["provedBy"] == "provekit prove --formula"),
         "fixed checks should carry a green provekit prove signal"
     );
+
+    let polyglot = reports
+        .iter()
+        .find(|entry| entry["id"] == "BZ-SHAPE-007")
+        .expect("polyglot link species is reported");
+    assert_eq!(polyglot["missingEdge"], "post_caller => pre_callee");
+    assert_eq!(polyglot["proofIrCids"].as_object().unwrap().len(), 0);
+    assert_eq!(polyglot["receiptCids"].as_object().unwrap().len(), 2);
+    let languages = polyglot["languages"].as_array().unwrap();
+    assert_eq!(languages.len(), 1);
+    assert_eq!(languages[0]["id"], "rust-go");
+    assert_eq!(languages[0]["lab"]["provekitWorkflow"], "none");
+    assert_eq!(languages[0]["proofIrCids"].as_object().unwrap().len(), 0);
+    assert_eq!(languages[0]["linkBundleCids"].as_object().unwrap().len(), 1);
+    assert_eq!(
+        languages[0]["fixedLinkBundleCids"]
+            .as_object()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn polyglot_fixed_link_bundle_keeps_cross_kit_bridge() {
+    let root = repo_root();
+    let bundle_path = root.join(
+        "bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/fixed/cgo-rust-callee/harness/link-bundle.json",
+    );
+    let bundle: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle_path).expect("read fixed bundle"))
+            .expect("parse fixed bundle");
+
+    assert_eq!(bundle["linkerErrors"].as_array().unwrap().len(), 0);
+    let bridges = bundle["bridges"].as_array().unwrap();
+    assert_eq!(
+        bridges.len(),
+        1,
+        "fixed BZ-007 must close the same Go->Rust edge, not erase it"
+    );
+    assert_eq!(
+        bridges[0]["metadata"]["callSite"]["file"],
+        "bug-zoo/species/BZ-SHAPE-007-polyglot-link-obligation/rust-go/fixed/cgo-rust-callee/harness/go-caller/caller_ok.go"
+    );
 }
 
 #[test]
 fn csharp_discover_cli_finds_null_boundary_with_language_lifter() {
+    let _guard = shared_host_tool_lock();
     let root = repo_root();
     let project = root.join("implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj");
     let harness = root.join(

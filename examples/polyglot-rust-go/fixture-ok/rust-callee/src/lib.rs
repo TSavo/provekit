@@ -4,12 +4,12 @@
 //
 // Contract: pre = (n > 0).
 //
-// In the success fixture, go-caller/caller_ok.go does NOT call C.process at all.
-// The Go lifter emits no cgo call-edges. The linker produces zero cross-kit
-// bridges and zero linker-errors. The link bundle is clean.
+// In the success fixture, go-caller/caller_ok.go still calls C.process.
+// The Go lifter emits the same cgo call-edge as the failure fixture, and the
+// link bundle stays clean because the caller post-condition establishes n > 0.
 //
 // Run: provekit link examples/polyglot-rust-go/fixture-ok/
-// Expected: link-bundle.json with 0 linker-errors, exit code 0.
+// Expected: link-bundle.json with 1 bridge, 0 linker-errors, exit code 0.
 
 #[requires(n > 0)]
 #[no_mangle]

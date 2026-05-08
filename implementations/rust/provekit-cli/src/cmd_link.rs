@@ -6,7 +6,8 @@
 // Orchestrates:
 //   1. Lift rust source in <project>/rust-callee/ via provekit-lift.
 //   2. Spawn go-lsp-lifter over <project>/go-caller/ to get call-edges.
-//   3. Call provekit_linker::link() — pure derivation; no side effects.
+//   3. Call provekit_linker::link_with_solvers() — pure derivation with
+//      the same solver-plan config shape as `provekit prove`.
 //   4. Write the resulting LinkBundle JSON to disk.
 //
 // The pure linker algebra lives in `provekit-linker`.  This module is
@@ -20,7 +21,11 @@ use std::process::{Command, Stdio};
 use owo_colors::OwoColorize;
 use provekit_claim_envelope::{contract_cid as compute_contract_cid, Authoring, MintContractArgs};
 use provekit_lift::lift_path;
-use provekit_linker::{link, LinkerCallEdge, LinkerContract, LinkerInputs};
+use provekit_linker::{
+    link_with_solvers,
+    solver_api::{registry, SolverPlan, SolversConfig},
+    LinkerCallEdge, LinkerContract, LinkerInputs, Registry,
+};
 use serde_json::Value as Json;
 
 use crate::LinkArgs;
@@ -76,7 +81,7 @@ pub fn run(args: LinkArgs) -> u8 {
 }
 
 // -------------------------------------------------------------------
-// I/O gathering — lift both kits, then delegate to provekit_linker::link
+// I/O gathering — lift both kits, then delegate to provekit-linker.
 // -------------------------------------------------------------------
 
 fn gather_and_link(
@@ -84,21 +89,58 @@ fn gather_and_link(
     go_lsp_bin: Option<&str>,
 ) -> Result<provekit_linker::LinkerOutput, String> {
     // --- Step 1: Lift rust contracts ---
+    trace_log(format!("link start project={}", project_root.display()));
     let rust_dir = project_root.join("rust-callee");
+    trace_log(format!("lift rust contracts cwd={}", rust_dir.display()));
     let rust_contracts = lift_rust_contracts(&rust_dir)?;
+    trace_log(format!("rust contracts={}", rust_contracts.len()));
 
     // --- Step 2: Lift go call-edges ---
     let go_dir = project_root.join("go-caller");
+    trace_log(format!(
+        "lift go contracts/call-edges cwd={}",
+        go_dir.display()
+    ));
     let (go_contracts, go_call_edges) = lift_go_call_edges(&go_dir, go_lsp_bin)?;
+    trace_log(format!(
+        "go contracts={} call_edges={}",
+        go_contracts.len(),
+        go_call_edges.len()
+    ));
 
     // --- Step 3: Delegate pure derivation to provekit-linker ---
     let mut all_contracts = rust_contracts;
     all_contracts.extend(go_contracts);
+    let (plan, registry) = build_plan_and_registry(project_root);
+    trace_log(format!(
+        "derive link bundle contracts={} call_edges={}",
+        all_contracts.len(),
+        go_call_edges.len()
+    ));
 
-    Ok(link(LinkerInputs {
-        contracts: all_contracts,
-        call_edges: go_call_edges,
-    }))
+    Ok(link_with_solvers(
+        LinkerInputs {
+            contracts: all_contracts,
+            call_edges: go_call_edges,
+        },
+        &registry,
+        &plan,
+    ))
+}
+
+fn build_plan_and_registry(project_root: &Path) -> (SolverPlan, Registry) {
+    if let Ok(Some(sc)) = SolversConfig::load(project_root) {
+        trace_log(format!(
+            "solver config loaded from {}/.provekit/config.toml",
+            project_root.display()
+        ));
+        return (SolverPlan::from_config(&sc), registry::build(&sc));
+    }
+    trace_log("solver config not found; using default z3 registry");
+    (
+        SolverPlan::Single("z3".into()),
+        registry::build_default_z3("z3"),
+    )
 }
 
 // -------------------------------------------------------------------
@@ -194,6 +236,10 @@ fn lift_go_call_edges(
 
     let bin = go_lsp_bin.unwrap_or("provekit-lsp-go");
 
+    trace_log(format!(
+        "spawn go lifter bin={bin} cwd={}",
+        go_dir.display()
+    ));
     let mut child = Command::new(bin)
         .current_dir(go_dir)
         .stdin(Stdio::piped())
@@ -219,6 +265,7 @@ fn lift_go_call_edges(
     let mut all_call_edges: Vec<LinkerCallEdge> = Vec::new();
 
     for (file_path, source) in &go_files {
+        trace_log(format!("go lifter parse path={file_path}"));
         let parse_req = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 2,
@@ -243,6 +290,7 @@ fn lift_go_call_edges(
         }
 
         if let Some(result) = resp.get("result") {
+            let contract_cids = result.get("contractCids").and_then(|c| c.as_object());
             if let Some(decls) = result.get("declarations").and_then(|d| d.as_array()) {
                 for decl in decls {
                     if decl.get("kind").and_then(|k| k.as_str()) != Some("contract") {
@@ -256,7 +304,11 @@ fn lift_go_call_edges(
                     if name.is_empty() {
                         continue;
                     }
-                    let cid = contract_cid_from_go_decl(decl);
+                    let cid = contract_cids
+                        .and_then(|cids| cids.get(&name))
+                        .and_then(|cid| cid.as_str())
+                        .map(str::to_string)
+                        .unwrap_or_else(|| contract_cid_from_go_decl(decl));
                     let pre_json = decl.get("pre").cloned();
                     let post_json = decl.get("post").cloned();
                     all_go_contracts.push(LinkerContract {
@@ -313,6 +365,7 @@ fn lift_go_call_edges(
     drop(stdin);
 
     let _ = child.wait();
+    trace_log("go lifter shutdown complete");
 
     Ok((all_go_contracts, all_call_edges))
 }
@@ -340,4 +393,14 @@ fn contract_cid_from_go_decl(decl: &Json) -> String {
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()
+}
+
+fn trace_enabled() -> bool {
+    std::env::var_os("PROVEKIT_CLI_TRACE").is_some()
+}
+
+fn trace_log(message: impl std::fmt::Display) {
+    if trace_enabled() {
+        eprintln!("provekit link trace: {message}");
+    }
 }

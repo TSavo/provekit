@@ -65,6 +65,55 @@ func TestHandleParseAnnotation(t *testing.T) {
 	}
 }
 
+func TestHandleParseAnnotationPostCondition(t *testing.T) {
+	done := capture()
+	src := "package main\n\n//provekit:contract post=n>0\nfunc GoCallerOk(n int) int { return n }\n"
+	msg := json.RawMessage(mustMarshal(parseParams{Path: "test.go", Source: src}))
+	handleRequest(mustMarshal(rpcRequest{JSONRPC: "2.0", ID: 2.5, Method: "parse", Params: msg}))
+	resp := done()
+	if resp.Error != nil {
+		t.Fatalf("parse error: %s", resp.Error.Message)
+	}
+	m := resultMap(resp)
+	list, ok := m["declarations"].([]interface{})
+	if !ok {
+		t.Fatalf("declarations not a list: %T", m["declarations"])
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 declaration, got %d", len(list))
+	}
+	decl, ok := list[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("declaration not an object: %T", list[0])
+	}
+	post, ok := decl["post"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("post condition missing or wrong type: %v", decl["post"])
+	}
+	if post["kind"] != "forall" || post["name"] != "n" {
+		t.Fatalf("post should bind parameter n, got %v", post)
+	}
+	body, ok := post["body"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("post body should be an object, got %v", post["body"])
+	}
+	if body["kind"] != "atomic" || body["name"] != ">" {
+		t.Fatalf("post body should be atomic n > 0, got %v", body)
+	}
+	args, ok := body["args"].([]interface{})
+	if !ok || len(args) != 2 {
+		t.Fatalf("post args should have n and 0, got %v", body["args"])
+	}
+	left, _ := args[0].(map[string]interface{})
+	right, _ := args[1].(map[string]interface{})
+	if left["kind"] != "var" || left["name"] != "n" {
+		t.Fatalf("left arg should be var n, got %v", left)
+	}
+	if right["kind"] != "const" || right["value"] != float64(0) {
+		t.Fatalf("right arg should be const 0, got %v", right)
+	}
+}
+
 func TestHandleParseStructTags(t *testing.T) {
 	done := capture()
 	src := "package main\ntype Score struct {\n\tValue int `validate:\"gte=0,lte=100\"`\n}\n"

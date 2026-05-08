@@ -3,11 +3,13 @@
 Bug Zoo is ProvekIt's executable evidence that bug classes have portable
 semantic shape.
 
-The claim is not that TypeScript, Java, and C# fail in the same way at runtime.
-They do not. A TypeScript `TypeError`, a Java `NullPointerException`, and a C#
-`NullReferenceException` are different host-language events. The claim is that
-after each language uses its own kit to lift the bug, the missing obligation can
-collapse to the same canonical ProofIR bytes.
+The claim is not that TypeScript, Java, C#, Go, and Rust fail in the same way at
+runtime. They do not. A TypeScript `TypeError`, a Java `NullPointerException`, a
+C# `NullReferenceException`, and a cross-FFI precondition failure are different
+host-language events. The claim is that each kit gives a homomorphism from its
+native evidence into canonical truth. When those projections preserve the same
+missing obligation, the shape CID is addressable: ProofIR for a contract
+boundary, or a LinkBundle receipt for a cross-kit call edge.
 
 For the null-boundary species, that shared shape is:
 
@@ -31,21 +33,25 @@ ordinary host code still passes native checks.
    Each exhibit/fixed harness is a tiny ProvekIt project with
    `.provekit/config.toml` selecting a surface and
    `.provekit/lift/<surface>/manifest.toml` naming the native RPC lifter.
-   The zoo invokes `provekit mint`; the CLI resolves the surface and drives
-   the native lifter.
+   The zoo invokes `provekit mint` for lift exhibits and `provekit link` for
+   cross-kit link exhibits; the CLI resolves the surface and drives the native
+   lifter or linker.
 2. **Proof verification.** The normal project gate is `provekit prove`. Bug Zoo
    owns a self-contained runner under `bug-zoo/`: it receives canonical Bug Zoo
-   ProofIR from the CLI lift result, hashes it, compares it to checked-in
-   witness bytes, checks required equivalences across surfaces and languages,
-   and invokes `provekit prove --formula` for scoped implication receipts. The
-   exhibit signal is red when the implication is missing; the fixed signal is
-   green when the paired source closes it.
+   ProofIR or LinkBundle output from the CLI result, hashes it, compares it to
+   checked-in witness bytes, checks required equivalences across surfaces and
+   languages, and invokes `provekit prove --formula` for scoped implication
+   receipts. The exhibit signal is red when the implication is missing; the
+   fixed signal is green when the paired source closes it.
 
 In shorthand: each language proves `k_lang(I) = t`, where `k_lang` is the
 language compiler as a ProvekIt kit/lifter, `I` is source, and `t` is witnessed
-output: canonical ProofIR bytes, CID, and receipt. When TypeScript, Java, and
-C# all land on the same `t`, the bug has a portable signature independent of
-its host-language syntax or exception type.
+output: an addressable ProofIR shape CID or LinkBundle receipt CID. When
+different domains land on the same shape CID, the bug has a portable signature
+independent of its host-language syntax, exception type, or call boundary.
+Each native surface maps through a structure-preserving homomorphism into the
+correctness object; the proof layer checks whether the mapped obligation
+commutes with equivalent surfaces or closes under the fixed witness.
 
 ## Current Receipts
 
@@ -58,6 +64,10 @@ The current zoo includes:
 - `BZ-SHAPE-006`: value-scope escape. Java carries JUnit and Spring exhibits
   that both witness a point value and prove that `42` must not discharge a
   `>= 43` requirement.
+- `BZ-SHAPE-007`: polyglot link obligation. A Go cgo caller reaches a Rust
+  callee contract; `provekit link` emits the red `unprovable-obligation`
+  LinkBundle when the caller witness cannot satisfy the callee precondition,
+  and the fixed fixture links clean.
 
 The null-boundary species exposes:
 
@@ -71,10 +81,10 @@ and the same ProofIR CID:
 blake3-512:0d611d8478a205ff040e7d0bcf6c21b12051340ecc5f00c3953af632b23fc01e069b4ad8a8699869163e135b9fde85792eba6acc54cd75cb3d3cc6a40a99ded4
 ```
 
-That CID is the receipt. The source languages disagree; the witnessed output
-does not. The proof signal is also live: the lab null witness is rejected
-against every lifted non-null requirement, and every fixed surface discharges
-the non-null implication through the Rust CLI.
+That CID is the address of the shape. The source languages disagree; the
+projected boundary does not. The proof signal is also live: the lab null
+witness is rejected against every lifted non-null requirement, and every fixed
+surface discharges the non-null implication through the Rust CLI.
 
 The value-scope species exposes:
 
@@ -86,6 +96,17 @@ There the receipt is the `provekit prove --formula` result: exhibit witnesses
 for 42 produce the red signal, while fixed witnesses for 43 produce the green
 signal. The point is that a native value witness is useful evidence only inside
 the value scope it actually observed.
+
+The polyglot species exposes:
+
+```text
+post_caller => pre_callee
+```
+
+There the receipt is a LinkBundle rather than a ProofIR exhibit. The Go kit
+reports the cgo call edge, the Rust kit reports the callee contract, and the
+Rust CLI proves whether the bridge has enough evidence to discharge the callee
+precondition.
 
 ## Run It
 
@@ -105,7 +126,8 @@ dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.cspr
 
 Those commands show the first phase: the language compiler/kit maps source to a
 witnessed bug output. The `provekit-bug-zoo` runner is the lab harness for the
-second phase: proving the witnessed output is byte-identical for the specimen.
+second phase: proving that output lands on the expected addressable shape or
+receipt CID for the specimen.
 
 ## Why This Matters
 
@@ -113,10 +135,11 @@ Bug Zoo turns the broad ProvekIt thesis into receipts:
 
 - ordinary code passes ordinary host checks;
 - each language's own compiler/kit maps source to a witnessed missing edge;
-- canonical ProofIR makes equivalent bug shapes hash to the same bytes;
+- canonical ProofIR and LinkBundle receipts make equivalent bug shapes
+  addressable after projection;
 - point witnesses stay inside the value scope they actually observed;
-- fixed artifacts close the edge only if re-lift verifies the closure.
+- fixed artifacts close the edge only if re-lift or re-link verifies the closure.
 
 It is not a patch archive and not a benchmark of historical remediations. It is
 a laboratory for the substrate claim: bug classes are tractable to universal
-semantic shapes once lifted below language syntax.
+semantic shapes once projected below language syntax.

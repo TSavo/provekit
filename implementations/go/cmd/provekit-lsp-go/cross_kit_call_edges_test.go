@@ -2,13 +2,16 @@
 // emission per protocol/specs/2026-05-03-bridge-linkage-protocol.md §1 R1.
 //
 // Test 1: same-kit call edge — Go function calling another Go function.
-//         Both sourceContractCid and targetContractCid are populated.
+//
+//	Both sourceContractCid and targetContractCid are populated.
 //
 // Test 2: cross-kit cgo call edge — Go function calling C.rustFunc(...).
-//         targetContractCid is null; targetSymbol is "rust-kit:rustFunc".
+//
+//	targetContractCid is null; targetSymbol is "rust-kit:rustFunc".
 //
 // Test 3: JCS bytes are byte-deterministic across two runs of the same
-//         source fixture.
+//
+//	source fixture.
 package main
 
 import (
@@ -182,6 +185,21 @@ func TestCallEdge_CgoRustKit(t *testing.T) {
 	}
 	if !foundCgo {
 		t.Fatalf("no cgo call-edge with targetSymbol=rust-kit:rustFunc found; edges: %v", edgeList)
+	}
+
+	var castEdges []string
+	for _, e := range edgeList {
+		edge, ok := e.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		sym, _ := edge["targetSymbol"].(string)
+		if sym == "rust-kit:int64_t" {
+			castEdges = append(castEdges, sym)
+		}
+	}
+	if len(castEdges) != 0 {
+		t.Fatalf("cgo type conversions must not be emitted as call edges; got %v in %v", castEdges, edgeList)
 	}
 }
 

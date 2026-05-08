@@ -29,7 +29,7 @@ Legend: `+` shipping in the current v1.6.2 tree, `~` planned or partial, `o` und
 | CICP | `+` Rust reference checker plus cross-language golden vectors in `protocol/conformance/cicp/` |
 | Proof protocol | `+` `.proof` fixture corpus and Rust proof-conformance checker under `provekit proof` |
 | CICP CI admission | `+` GitHub Actions computes blast radii, admits exact-closure reuse, and uploads candidate result witnesses |
-| Bug Zoo | `+` the self-contained `bug-zoo/` runner verifies Java, TypeScript, and C# null-boundary exhibits plus Java value-scope JUnit/Spring exhibits with fixed-pair receipts |
+| Bug Zoo | `+` the self-contained `bug-zoo/` runner verifies Java, TypeScript, and C# null-boundary exhibits, Java value-scope JUnit/Spring exhibits, and a Rust<->Go polyglot link-obligation exhibit with fixed-pair receipts |
 | ORP droppers/realizers | `~` proof-plan and language-dropper projections are draft extension surfaces; broader per-language realizer coverage is emerging |
 
 ## CICP Golden-Vector Coverage

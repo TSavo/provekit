@@ -13,6 +13,8 @@ use serde_json::{json, Value};
 const EXIT_OK: u8 = 0;
 const EXIT_VERIFY_FAIL: u8 = 1;
 const EXIT_USER_ERROR: u8 = 2;
+const PROVEKIT_CLI_ENV: &str = "PROVEKIT_CLI";
+const PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV: &str = "PROVEKIT_BUG_ZOO_EXTERNAL_CLI";
 
 #[derive(Parser, Debug, Clone, Default)]
 pub struct OutputFlags {
@@ -28,10 +30,10 @@ pub struct OutputFlags {
 #[command(
     name = "provekit-bug-zoo",
     version,
-    about = "Run self-contained Bug Zoo specimens and verify their witnessed ProofIR shape.",
+    about = "Run self-contained Bug Zoo specimens and verify their witnessed receipt shape.",
     long_about = "Bug Zoo is ProvekIt's executable laboratory. It runs each specimen with the \
-specimen's own host toolchain, invokes the ProvekIt CLI lift path, and verifies the \
-canonical ProofIR bytes and CIDs for each Green/Red/Green bug story."
+specimen's own host toolchain, invokes the ProvekIt CLI lift/link path, and verifies the \
+canonical ProofIR or LinkBundle bytes and CIDs for each Green/Red/Green bug story."
 )]
 pub struct ZooArgs {
     /// Specimen directory or specimen.yaml path. Defaults to bug-zoo/species.
@@ -64,7 +66,10 @@ struct LanguageSpecimen {
     paths: SpecimenPaths,
     commands: SpecimenCommands,
     #[serde(rename = "exhibits")]
+    #[serde(default)]
     exhibits: Vec<Exposure>,
+    #[serde(default)]
+    link_exhibits: Vec<LinkExposure>,
     equivalence: Equivalence,
     exposure: ExposureFiles,
     #[serde(default)]
@@ -120,6 +125,30 @@ struct FixedExposure {
     harness: PathBuf,
     kit_rpc: PathBuf,
     proof_ir_file: PathBuf,
+    diagnostic_file: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkExposure {
+    id: String,
+    surface: String,
+    project: PathBuf,
+    #[serde(default)]
+    go_lsp_bin: Option<PathBuf>,
+    link_bundle_file: PathBuf,
+    diagnostic_file: PathBuf,
+    fixed: FixedLinkExposure,
+    lossiness: Lossiness,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FixedLinkExposure {
+    project: PathBuf,
+    #[serde(default)]
+    go_lsp_bin: Option<PathBuf>,
+    link_bundle_file: PathBuf,
     diagnostic_file: PathBuf,
 }
 
@@ -313,6 +342,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
         .map_err(|e| ZooError::setup(format!("read {}: {e}", manifest_path.display())))?;
     let manifest: SpecimenManifest = serde_yaml::from_str(&text)
         .map_err(|e| ZooError::setup(format!("parse {}: {e}", manifest_path.display())))?;
+    let repo_root = find_repo_root(specimen_dir).map_err(ZooError::setup)?;
 
     let mut errors = validate_manifest_shape(&manifest);
     errors.extend(validate_paths(specimen_dir, &manifest));
@@ -321,7 +351,8 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
     }
 
     let mut language_reports = Vec::new();
-    let mut all_cids = BTreeMap::new();
+    let mut proof_ir_cids = BTreeMap::new();
+    let mut receipt_cids = BTreeMap::new();
 
     for language in &manifest.languages {
         run_host_check(specimen_dir, &language.commands.host_check).map_err(|error| {
@@ -333,6 +364,8 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
 
         let mut cids = BTreeMap::new();
         let mut fixed_cids = BTreeMap::new();
+        let mut link_bundle_cids = BTreeMap::new();
+        let mut fixed_link_bundle_cids = BTreeMap::new();
         let mut exhibit_irs = BTreeMap::new();
         let mut fixed_irs = BTreeMap::new();
         for exhibit in &language.exhibits {
@@ -393,7 +426,11 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                 .map_err(ZooError::verify)?;
 
             cids.insert(exhibit.id.clone(), lifted_cid.clone());
-            all_cids.insert(
+            proof_ir_cids.insert(
+                format!("{}:exhibit:{}", language.id, exhibit.id),
+                lifted_cid.clone(),
+            );
+            receipt_cids.insert(
                 format!("{}:exhibit:{}", language.id, exhibit.id),
                 lifted_cid,
             );
@@ -457,11 +494,128 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                 .map_err(ZooError::verify)?;
 
             fixed_cids.insert(exhibit.id.clone(), fixed_lifted_cid.clone());
-            all_cids.insert(
+            proof_ir_cids.insert(
+                format!("{}:fixed:{}", language.id, exhibit.id),
+                fixed_lifted_cid.clone(),
+            );
+            receipt_cids.insert(
                 format!("{}:fixed:{}", language.id, exhibit.id),
                 fixed_lifted_cid,
             );
             fixed_irs.insert(exhibit.id.clone(), fixed_lifted_ir);
+        }
+
+        for exhibit in &language.link_exhibits {
+            let expected =
+                read_json(specimen_dir.join(&exhibit.link_bundle_file)).map_err(|error| {
+                    ZooError::setup(format!(
+                        "language `{}` link exhibit `{}` expected LinkBundle read failed: {error}",
+                        language.id, exhibit.id
+                    ))
+                })?;
+            let linked = invoke_provekit_cli_link(
+                specimen_dir,
+                &exhibit.id,
+                &exhibit.project,
+                exhibit.go_lsp_bin.as_deref(),
+            )
+            .map_err(|error| {
+                ZooError::verify(format!(
+                    "language `{}` link exhibit `{}` failed: {error}",
+                    language.id, exhibit.id
+                ))
+            })?;
+            if linked.bundle != expected {
+                return Err(ZooError::verify(format!(
+                    "language `{}` link exhibit `{}` LinkBundle mismatch: linked {}, expected {:?}",
+                    language.id,
+                    exhibit.id,
+                    linked.cid,
+                    expected.get("linkBundleCid")
+                )));
+            }
+            if linked.exit_code != EXIT_VERIFY_FAIL
+                || !linked.has_linker_error_kind("unprovable-obligation")
+            {
+                return Err(ZooError::verify(format!(
+                    "language `{}` link exhibit `{}` expected provekit link to catch an unprovable obligation, but exit was {} and error kinds were {:?}",
+                    language.id, exhibit.id, linked.exit_code, linked.error_kinds
+                )));
+            }
+            let diagnostic_path = specimen_dir.join(&exhibit.diagnostic_file);
+            let diag = std::fs::read_to_string(&diagnostic_path).map_err(|e| {
+                ZooError::verify(format!(
+                    "language `{}` link exhibit `{}` diagnostic read failed at {}: {e}",
+                    language.id,
+                    exhibit.id,
+                    diagnostic_path.display(),
+                ))
+            })?;
+            expect_red_diagnostic(&diag, &manifest.predicates, &language.id, &exhibit.id)
+                .map_err(ZooError::verify)?;
+
+            link_bundle_cids.insert(exhibit.id.clone(), linked.cid.clone());
+            receipt_cids.insert(
+                format!("{}:link-exhibit:{}", language.id, exhibit.id),
+                linked.cid,
+            );
+
+            let fixed = &exhibit.fixed;
+            let fixed_expected =
+                read_json(specimen_dir.join(&fixed.link_bundle_file)).map_err(|error| {
+                    ZooError::setup(format!(
+                        "language `{}` fixed link `{}` expected LinkBundle read failed: {error}",
+                        language.id, exhibit.id
+                    ))
+                })?;
+            let fixed_go_lsp_bin = fixed
+                .go_lsp_bin
+                .as_deref()
+                .or(exhibit.go_lsp_bin.as_deref());
+            let fixed_linked = invoke_provekit_cli_link(
+                specimen_dir,
+                &format!("{}-fixed", exhibit.id),
+                &fixed.project,
+                fixed_go_lsp_bin,
+            )
+            .map_err(|error| {
+                ZooError::verify(format!(
+                    "language `{}` fixed link `{}` failed: {error}",
+                    language.id, exhibit.id
+                ))
+            })?;
+            if fixed_linked.bundle != fixed_expected {
+                return Err(ZooError::verify(format!(
+                    "language `{}` fixed link `{}` LinkBundle mismatch: linked {}, expected {:?}",
+                    language.id,
+                    exhibit.id,
+                    fixed_linked.cid,
+                    fixed_expected.get("linkBundleCid")
+                )));
+            }
+            if fixed_linked.exit_code != EXIT_OK || fixed_linked.linker_error_count != 0 {
+                return Err(ZooError::verify(format!(
+                    "language `{}` fixed link `{}` expected clean provekit link, but exit was {} with {} linker error(s)",
+                    language.id, exhibit.id, fixed_linked.exit_code, fixed_linked.linker_error_count
+                )));
+            }
+            let fixed_diagnostic_path = specimen_dir.join(&fixed.diagnostic_file);
+            let fixed_diag = std::fs::read_to_string(&fixed_diagnostic_path).map_err(|e| {
+                ZooError::verify(format!(
+                    "language `{}` fixed link `{}` diagnostic read failed at {}: {e}",
+                    language.id,
+                    exhibit.id,
+                    fixed_diagnostic_path.display(),
+                ))
+            })?;
+            expect_green_diagnostic(&fixed_diag, &manifest.predicates, &language.id, &exhibit.id)
+                .map_err(ZooError::verify)?;
+
+            fixed_link_bundle_cids.insert(exhibit.id.clone(), fixed_linked.cid.clone());
+            receipt_cids.insert(
+                format!("{}:fixed-link:{}", language.id, exhibit.id),
+                fixed_linked.cid,
+            );
         }
 
         for [left, right] in &language.equivalence.required {
@@ -504,6 +658,12 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
             for (id, cid) in &fixed_cids {
                 println!("zoo: {} fixed {id} {cid}", language.id);
             }
+            for (id, cid) in &link_bundle_cids {
+                println!("zoo: {} link exhibit {id} {cid}", language.id);
+            }
+            for (id, cid) in &fixed_link_bundle_cids {
+                println!("zoo: {} fixed link {id} {cid}", language.id);
+            }
             for [left, right] in &language.equivalence.required {
                 println!("zoo: {} equivalence {left} == {right} PASS", language.id);
             }
@@ -531,6 +691,8 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
             },
             "proofIrCids": cids,
             "fixedProofIrCids": fixed_cids,
+            "linkBundleCids": link_bundle_cids,
+            "fixedLinkBundleCids": fixed_link_bundle_cids,
             "composition": composition_reports,
             "wildSightings": language.wild_sightings,
             "satWitness": sat_witness,
@@ -542,8 +704,13 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
         "name": manifest.name,
         "kingdom": manifest.kingdom,
         "status": manifest.status,
+        "workflow": {
+            "runner": "provekit-bug-zoo",
+            "provekitCli": provekit_cli_report(&repo_root),
+        },
         "missingEdge": manifest.predicates.missing_edge,
-        "proofIrCids": all_cids,
+        "proofIrCids": proof_ir_cids,
+        "receiptCids": receipt_cids,
         "languages": language_reports,
         "wildSightings": manifest.wild_sightings,
     }))
@@ -597,9 +764,9 @@ fn validate_language_shape(language: &LanguageSpecimen) -> Vec<String> {
     if language.surface.trim().is_empty() {
         errors.push(format!("language `{}` surface is required", language.id));
     }
-    if language.exhibits.is_empty() {
+    if language.exhibits.is_empty() && language.link_exhibits.is_empty() {
         errors.push(format!(
-            "language `{}` at least one exhibit is required",
+            "language `{}` at least one exhibit or linkExhibit is required",
             language.id
         ));
     }
@@ -610,9 +777,11 @@ fn validate_language_shape(language: &LanguageSpecimen) -> Vec<String> {
         ));
     }
 
-    let mut exhibit_ids = BTreeSet::new();
+    let mut proof_exhibit_ids = BTreeSet::new();
+    let mut all_exhibit_ids = BTreeSet::new();
     for exhibit in &language.exhibits {
-        if !exhibit_ids.insert(exhibit.id.clone()) {
+        proof_exhibit_ids.insert(exhibit.id.clone());
+        if !all_exhibit_ids.insert(exhibit.id.clone()) {
             errors.push(format!(
                 "language `{}` duplicate exhibit id `{}`",
                 language.id, exhibit.id
@@ -625,17 +794,43 @@ fn validate_language_shape(language: &LanguageSpecimen) -> Vec<String> {
             ));
         }
     }
-
-    for [left, right] in &language.equivalence.required {
-        if !exhibit_ids.contains(left) {
+    for exhibit in &language.link_exhibits {
+        if !all_exhibit_ids.insert(exhibit.id.clone()) {
             errors.push(format!(
-                "language `{}` equivalence references unknown exhibit `{left}`",
+                "language `{}` duplicate exhibit id `{}`",
+                language.id, exhibit.id
+            ));
+        }
+        if exhibit.id.trim().is_empty() {
+            errors.push(format!(
+                "language `{}` link exhibit id is required",
                 language.id
             ));
         }
-        if !exhibit_ids.contains(right) {
+        if exhibit.surface.trim().is_empty() {
             errors.push(format!(
-                "language `{}` equivalence references unknown exhibit `{right}`",
+                "language `{}` link exhibit `{}` surface is required",
+                language.id, exhibit.id
+            ));
+        }
+        if exhibit.lossiness.erased.is_empty() || exhibit.lossiness.preserved.is_empty() {
+            errors.push(format!(
+                "language `{}` link exhibit `{}` must describe lossiness erased and preserved boundaries",
+                language.id, exhibit.id
+            ));
+        }
+    }
+
+    for [left, right] in &language.equivalence.required {
+        if !proof_exhibit_ids.contains(left) {
+            errors.push(format!(
+                "language `{}` equivalence references unknown ProofIR exhibit `{left}`",
+                language.id
+            ));
+        }
+        if !proof_exhibit_ids.contains(right) {
+            errors.push(format!(
+                "language `{}` equivalence references unknown ProofIR exhibit `{right}`",
                 language.id
             ));
         }
@@ -661,9 +856,9 @@ fn validate_language_shape(language: &LanguageSpecimen) -> Vec<String> {
                     language.id, check.id
                 ));
             }
-            if !exhibit_ids.contains(&check.witness_exhibit) {
+            if !proof_exhibit_ids.contains(&check.witness_exhibit) {
                 errors.push(format!(
-                    "language `{}` composition check `{}` references unknown witness exhibit `{}`",
+                    "language `{}` composition check `{}` references unknown ProofIR witness exhibit `{}`",
                     language.id, check.id, check.witness_exhibit
                 ));
             }
@@ -676,9 +871,9 @@ fn validate_language_shape(language: &LanguageSpecimen) -> Vec<String> {
                 ));
             }
             if let Some(requirement_exhibit) = &check.requirement_exhibit {
-                if !exhibit_ids.contains(requirement_exhibit) {
+                if !proof_exhibit_ids.contains(requirement_exhibit) {
                     errors.push(format!(
-                        "language `{}` composition check `{}` references unknown requirement exhibit `{}`",
+                        "language `{}` composition check `{}` references unknown ProofIR requirement exhibit `{}`",
                         language.id, check.id, requirement_exhibit
                     ));
                 }
@@ -806,6 +1001,34 @@ fn validate_language_paths(specimen_dir: &Path, language: &LanguageSpecimen) -> 
                 if !full_path.exists() {
                     errors.push(format!("missing {}", full_path.display()));
                 }
+            }
+        }
+    }
+
+    for exhibit in &language.link_exhibits {
+        for path in [
+            Some(&exhibit.project),
+            exhibit.go_lsp_bin.as_ref(),
+            Some(&exhibit.link_bundle_file),
+            Some(&exhibit.diagnostic_file),
+            Some(&exhibit.fixed.project),
+            exhibit.fixed.go_lsp_bin.as_ref(),
+            Some(&exhibit.fixed.link_bundle_file),
+            Some(&exhibit.fixed.diagnostic_file),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if manifest_path_escapes_specimen_root(path) {
+                errors.push(format!(
+                    "invalid path `{}` escapes specimen root",
+                    path.display()
+                ));
+                continue;
+            }
+            let full_path = specimen_dir.join(path);
+            if !full_path.exists() {
+                errors.push(format!("missing {}", full_path.display()));
             }
         }
     }
@@ -1079,6 +1302,21 @@ struct FormulaProofReport {
     reason: String,
 }
 
+#[derive(Debug)]
+struct LinkRunReport {
+    exit_code: u8,
+    bundle: Value,
+    cid: String,
+    linker_error_count: usize,
+    error_kinds: Vec<String>,
+}
+
+impl LinkRunReport {
+    fn has_linker_error_kind(&self, kind: &str) -> bool {
+        self.error_kinds.iter().any(|entry| entry == kind)
+    }
+}
+
 fn invoke_provekit_cli_lift(
     specimen_dir: &Path,
     id: &str,
@@ -1155,6 +1393,111 @@ fn invoke_provekit_cli_lift(
             "`{id}` returned unsupported lift kind {:?} through provekit mint",
             other
         )),
+    }
+}
+
+fn invoke_provekit_cli_link(
+    specimen_dir: &Path,
+    id: &str,
+    project: &Path,
+    go_lsp_bin: Option<&Path>,
+) -> Result<LinkRunReport, String> {
+    if manifest_path_escapes_specimen_root(project) {
+        return Err(format!(
+            "`{id}` contains a project path that escapes specimen root"
+        ));
+    }
+    if let Some(go_lsp_bin) = go_lsp_bin {
+        if manifest_path_escapes_specimen_root(go_lsp_bin) {
+            return Err(format!(
+                "`{id}` contains a goLspBin path that escapes specimen root"
+            ));
+        }
+    }
+
+    let repo_root = find_repo_root(specimen_dir)?;
+    let project_path = specimen_dir.join(project);
+    let project_arg = project_path
+        .strip_prefix(&repo_root)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|_| project_path.clone());
+    let bundle_path = project_path.join("link-bundle.json");
+    let original_bundle = std::fs::read(&bundle_path).ok();
+
+    let mut cmd = provekit_cli_command(&repo_root)?;
+    if trace_enabled() {
+        cmd.env("PROVEKIT_CLI_TRACE", "1");
+        cmd.stderr(Stdio::inherit());
+    }
+    cmd.arg("link").arg(&project_arg).current_dir(&repo_root);
+    if let Some(go_lsp_bin) = go_lsp_bin {
+        let go_lsp_path = specimen_dir.join(go_lsp_bin);
+        let go_lsp_path = go_lsp_path.canonicalize().unwrap_or(go_lsp_path);
+        cmd.arg("--go-lsp-bin").arg(go_lsp_path);
+    }
+
+    let started = Instant::now();
+    trace_log(format!(
+        "provekit link start id={id} project={}",
+        project_arg.display()
+    ));
+    let output = cmd
+        .output()
+        .map_err(|e| format!("spawn provekit link for `{id}`: {e}"))?;
+    trace_log(format!(
+        "provekit link exit id={id} status={} elapsed={:?}",
+        output.status,
+        started.elapsed()
+    ));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(EXIT_USER_ERROR as i32);
+    if !matches!(exit_code, 0 | 1) {
+        restore_original_bundle(&bundle_path, original_bundle.as_deref());
+        return Err(format!(
+            "provekit link returned unexpected exit {exit_code} for `{id}`\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        ));
+    }
+
+    let bundle = read_json(bundle_path.clone()).map_err(|error| {
+        restore_original_bundle(&bundle_path, original_bundle.as_deref());
+        format!(
+            "read provekit link bundle for `{id}`: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        )
+    })?;
+    restore_original_bundle(&bundle_path, original_bundle.as_deref());
+
+    let cid = bundle
+        .get("linkBundleCid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("provekit link bundle for `{id}` missing `linkBundleCid`"))?
+        .to_string();
+    let linker_errors = bundle
+        .get("linkerErrors")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("provekit link bundle for `{id}` missing `linkerErrors` array"))?;
+    let linker_error_count = linker_errors.len();
+    let error_kinds = linker_errors
+        .iter()
+        .filter_map(|error| error.get("errorKind").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    Ok(LinkRunReport {
+        exit_code: exit_code as u8,
+        bundle,
+        cid,
+        linker_error_count,
+        error_kinds,
+    })
+}
+
+fn restore_original_bundle(path: &Path, original: Option<&[u8]>) {
+    if let Some(original) = original {
+        let _ = std::fs::write(path, original);
+    } else {
+        let _ = std::fs::remove_file(path);
     }
 }
 
@@ -1287,21 +1630,81 @@ fn temp_zoo_dir(kind: &str, id: &str) -> Result<PathBuf, String> {
 }
 
 fn provekit_cli_command(repo_root: &Path) -> Result<Command, String> {
-    if let Ok(path) = std::env::var("PROVEKIT_CLI") {
-        if !path.trim().is_empty() {
-            return Ok(Command::new(path));
+    let invocation = provekit_cli_invocation(repo_root);
+    let mut args = invocation.command.iter();
+    let program = args
+        .next()
+        .ok_or_else(|| "provekit CLI command is empty".to_string())?;
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    Ok(cmd)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProvekitCliInvocation {
+    kind: &'static str,
+    command: Vec<String>,
+    ignored_external_cli: Option<String>,
+}
+
+fn provekit_cli_invocation(repo_root: &Path) -> ProvekitCliInvocation {
+    let external_cli = std::env::var(PROVEKIT_CLI_ENV)
+        .ok()
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty());
+    if let Some(path) = external_cli.clone() {
+        if external_cli_enabled() {
+            return ProvekitCliInvocation {
+                kind: "external-binary",
+                command: vec![path],
+                ignored_external_cli: None,
+            };
         }
     }
 
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let manifest = repo_root.join("implementations/rust/provekit-cli/Cargo.toml");
-    let mut cmd = Command::new(cargo);
-    cmd.arg("run")
-        .arg("--quiet")
-        .arg("--manifest-path")
-        .arg(manifest)
-        .arg("--");
-    Ok(cmd)
+    ProvekitCliInvocation {
+        kind: "cargo-run-source",
+        command: vec![
+            cargo,
+            "run".into(),
+            "--quiet".into(),
+            "--manifest-path".into(),
+            manifest.display().to_string(),
+            "--".into(),
+        ],
+        ignored_external_cli: external_cli,
+    }
+}
+
+fn external_cli_enabled() -> bool {
+    std::env::var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV)
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn provekit_cli_report(repo_root: &Path) -> Value {
+    let invocation = provekit_cli_invocation(repo_root);
+    let mut report = json!({
+        "kind": invocation.kind,
+        "command": invocation.command,
+    });
+    if let Some(path) = invocation.ignored_external_cli {
+        report["ignoredExternalCli"] = json!({
+            "env": PROVEKIT_CLI_ENV,
+            "value": path,
+            "reason": format!(
+                "set {PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV}=1 to run Bug Zoo against an explicit external provekit binary"
+            ),
+        });
+    }
+    report
 }
 
 fn proof_ir_cid(value: &Value) -> Result<String, String> {
@@ -1348,9 +1751,82 @@ fn manifest_path_escapes_specimen_root(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use std::fs;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     use tempfile::tempdir;
+
+    fn env_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock poisoned")
+    }
+
+    struct EnvGuard {
+        provekit_cli: Option<OsString>,
+        external_cli: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn capture() -> Self {
+            Self {
+                provekit_cli: std::env::var_os(PROVEKIT_CLI_ENV),
+                external_cli: std::env::var_os(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(value) = self.provekit_cli.take() {
+                std::env::set_var(PROVEKIT_CLI_ENV, value);
+            } else {
+                std::env::remove_var(PROVEKIT_CLI_ENV);
+            }
+            if let Some(value) = self.external_cli.take() {
+                std::env::set_var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV, value);
+            } else {
+                std::env::remove_var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV);
+            }
+        }
+    }
+
+    #[test]
+    fn provekit_cli_defaults_to_source_routing_even_when_external_env_is_present() {
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture();
+        std::env::set_var(PROVEKIT_CLI_ENV, "/tmp/stale-provekit");
+        std::env::remove_var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV);
+
+        let invocation = provekit_cli_invocation(Path::new("/repo"));
+
+        assert_eq!(invocation.kind, "cargo-run-source");
+        assert_eq!(
+            invocation.ignored_external_cli.as_deref(),
+            Some("/tmp/stale-provekit")
+        );
+        assert!(invocation.command.iter().any(|arg| arg == "run"));
+        assert!(invocation
+            .command
+            .iter()
+            .any(|arg| arg.ends_with("implementations/rust/provekit-cli/Cargo.toml")));
+    }
+
+    #[test]
+    fn provekit_cli_uses_external_binary_only_when_explicitly_enabled() {
+        let _lock = env_lock();
+        let _guard = EnvGuard::capture();
+        std::env::set_var(PROVEKIT_CLI_ENV, "/tmp/current-provekit");
+        std::env::set_var(PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV, "1");
+
+        let invocation = provekit_cli_invocation(Path::new("/repo"));
+
+        assert_eq!(invocation.kind, "external-binary");
+        assert_eq!(invocation.command, vec!["/tmp/current-provekit"]);
+        assert_eq!(invocation.ignored_external_cli, None);
+    }
 
     fn valid_manifest() -> SpecimenManifest {
         SpecimenManifest {
@@ -1389,6 +1865,7 @@ mod tests {
                         preserved: vec!["precondition neq(name, null)".into()],
                     },
                 }],
+                link_exhibits: vec![],
                 equivalence: Equivalence { required: vec![] },
                 exposure: ExposureFiles {
                     sat_witness_file: "java/exhibit/sat-witness.json".into(),
@@ -1406,6 +1883,27 @@ mod tests {
             kit_rpc: "java/fixed/spring-web/kit-rpc".into(),
             proof_ir_file: "java/fixed/spring-web/expected.proofir.json".into(),
             diagnostic_file: "java/fixed/spring-web/expected-diagnostic.txt".into(),
+        }
+    }
+
+    fn valid_link_exposure() -> LinkExposure {
+        LinkExposure {
+            id: "cgo-rust-callee".into(),
+            surface: "rust-go-cgo-link".into(),
+            project: "rust-go/exhibit/cgo-rust-callee/harness".into(),
+            go_lsp_bin: Some("rust-go/kit-rpc/run-go-lsp.sh".into()),
+            link_bundle_file: "rust-go/exhibit/cgo-rust-callee/harness/link-bundle.json".into(),
+            diagnostic_file: "rust-go/exhibit/cgo-rust-callee/expected-diagnostic.txt".into(),
+            fixed: FixedLinkExposure {
+                project: "rust-go/fixed/cgo-rust-callee/harness".into(),
+                go_lsp_bin: None,
+                link_bundle_file: "rust-go/fixed/cgo-rust-callee/harness/link-bundle.json".into(),
+                diagnostic_file: "rust-go/fixed/cgo-rust-callee/expected-diagnostic.txt".into(),
+            },
+            lossiness: Lossiness {
+                erased: vec!["Go cgo mechanics".into()],
+                preserved: vec!["cross-kit obligation".into()],
+            },
         }
     }
 
@@ -1795,6 +2293,56 @@ wildSightings: []
     }
 
     #[test]
+    fn parses_manifest_with_link_exhibits_without_proof_ir_exhibits() {
+        let raw = r#"
+id: BZ-SHAPE-007
+name: Polyglot Link Obligation
+kingdom: shape
+status: lab
+predicates:
+  boundary: post_caller
+  sink: pre_callee
+  missingEdge: post_caller => pre_callee
+languages:
+  - id: rust-go
+    surface: rust-go-cgo-link
+    paths:
+      labLibrary: rust-go/lab/library
+      labHarness: rust-go/lab/harness
+    commands:
+      hostCheck:
+        cwd: rust-go/lab/harness
+        argv: ["./run.sh"]
+    exhibits: []
+    linkExhibits:
+      - id: cgo-rust-callee
+        surface: rust-go-cgo-link
+        project: rust-go/exhibit/cgo-rust-callee/harness
+        goLspBin: rust-go/kit-rpc/run-go-lsp.sh
+        linkBundleFile: rust-go/exhibit/cgo-rust-callee/harness/link-bundle.json
+        diagnosticFile: rust-go/exhibit/cgo-rust-callee/expected-diagnostic.txt
+        fixed:
+          project: rust-go/fixed/cgo-rust-callee/harness
+          linkBundleFile: rust-go/fixed/cgo-rust-callee/harness/link-bundle.json
+          diagnosticFile: rust-go/fixed/cgo-rust-callee/expected-diagnostic.txt
+        lossiness:
+          erased: ["Go cgo implementation mechanics", "Rust function body"]
+          preserved: ["cross-kit obligation post_caller => pre_callee"]
+    equivalence:
+      required: []
+    exposure:
+      satWitnessFile: rust-go/exhibit/sat-witness.json
+wildSightings: []
+"#;
+        let manifest: SpecimenManifest = serde_yaml::from_str(raw).expect("parse manifest");
+
+        assert!(
+            validate_manifest_shape(&manifest).is_empty(),
+            "link-only exhibits should satisfy the language shape"
+        );
+    }
+
+    #[test]
     fn parses_value_scope_composition_checks() {
         let raw = r#"
 id: BZ-SHAPE-006
@@ -2091,9 +2639,58 @@ wildSightings: []
         manifest.languages[0].equivalence.required = vec![["spring-web".into(), "missing".into()]];
 
         let errors = validate_manifest_shape(&manifest);
-        assert!(errors
-            .iter()
-            .any(|error| error.contains("equivalence references unknown exhibit `missing`")));
+        assert!(errors.iter().any(
+            |error| error.contains("equivalence references unknown ProofIR exhibit `missing`")
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_link_exhibits_in_proof_ir_equivalence() {
+        let mut manifest = valid_manifest();
+        let language = &mut manifest.languages[0];
+        language.exhibits.clear();
+        language.link_exhibits = vec![valid_link_exposure()];
+        language.equivalence.required = vec![["cgo-rust-callee".into(), "cgo-rust-callee".into()]];
+
+        let errors = validate_manifest_shape(&manifest);
+        assert!(errors.iter().any(|error| {
+            error.contains("equivalence references unknown ProofIR exhibit `cgo-rust-callee`")
+        }));
+    }
+
+    #[test]
+    fn validation_rejects_link_exhibits_in_proof_ir_composition() {
+        let mut manifest = valid_manifest();
+        let language = &mut manifest.languages[0];
+        language.exhibits.clear();
+        language.link_exhibits = vec![valid_link_exposure()];
+        language.composition = Some(Composition {
+            checks: vec![CompositionCheck {
+                id: "link-edge-composition".into(),
+                phase: CompositionPhase::Exhibit,
+                expected: CompositionExpected::Missing,
+                witness_source: CompositionWitnessSource::ProofIr,
+                witness_exhibit: "cgo-rust-callee".into(),
+                requirement_exhibit: Some("cgo-rust-callee".into()),
+                witness_formula: json!({"kind": "atomic", "name": "post_caller", "args": []}),
+                requirement_formula: json!({"kind": "atomic", "name": "pre_callee", "args": []}),
+                bindings: BTreeMap::new(),
+                assignment: BTreeMap::from([("n".into(), 0)]),
+                diagnostic_file: "rust-go/exhibit/cgo-rust-callee/expected-diagnostic.txt".into(),
+            }],
+        });
+
+        let errors = validate_manifest_shape(&manifest);
+        assert!(errors.iter().any(|error| {
+            error.contains(
+                "composition check `link-edge-composition` references unknown ProofIR witness exhibit `cgo-rust-callee`",
+            )
+        }));
+        assert!(errors.iter().any(|error| {
+            error.contains(
+                "composition check `link-edge-composition` references unknown ProofIR requirement exhibit `cgo-rust-callee`",
+            )
+        }));
     }
 
     #[test]
