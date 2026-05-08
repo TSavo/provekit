@@ -122,6 +122,34 @@ printf '%s\n' "$MALFORMED_JSON_RESPONSE" | grep -q '"code":-32700' || {
     exit 1
 }
 
+TRAILING_COMMA_RESPONSE=$(printf '%s\n' '{"jsonrpc":"2.0","id":56,"method":"initialize",}' | "$BIN" --rpc)
+
+printf '%s\n' "$TRAILING_COMMA_RESPONSE" | grep -q '"error"' || {
+    echo "FAIL: trailing comma JSON should return an error" >&2
+    echo "$TRAILING_COMMA_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$TRAILING_COMMA_RESPONSE" | grep -q '"code":-32700' || {
+    echo "FAIL: trailing comma JSON should return parse error -32700" >&2
+    echo "$TRAILING_COMMA_RESPONSE" >&2
+    exit 1
+}
+
+MISSING_COMMA_RESPONSE=$(printf '%s\n' '{"jsonrpc":"2.0","id":57,"method":"initialize" "params":{}}' | "$BIN" --rpc)
+
+printf '%s\n' "$MISSING_COMMA_RESPONSE" | grep -q '"error"' || {
+    echo "FAIL: missing comma JSON should return an error" >&2
+    echo "$MISSING_COMMA_RESPONSE" >&2
+    exit 1
+}
+
+printf '%s\n' "$MISSING_COMMA_RESPONSE" | grep -q '"code":-32700' || {
+    echo "FAIL: missing comma JSON should return parse error -32700" >&2
+    echo "$MISSING_COMMA_RESPONSE" >&2
+    exit 1
+}
+
 MALFORMED_SOURCE_PATHS="$(
     {
         printf '{"jsonrpc":"2.0","id":88,"method":"lift","params":{"workspace_root":'

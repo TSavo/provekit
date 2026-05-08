@@ -256,68 +256,223 @@ static char *json_extract_id(const char *json) {
     return out;
 }
 
-static int validate_json_request(const char *json) {
-    int object_depth = 0;
-    int array_depth = 0;
-    int in_string = 0;
-    int saw_nonspace = 0;
+static void json_skip_ws(const char **p) {
+    while (**p == ' ' || **p == '\t' || **p == '\r' || **p == '\n') {
+        (*p)++;
+    }
+}
 
-    for (const char *p = json; *p; p++) {
-        unsigned char c = (unsigned char)*p;
+static int json_parse_value(const char **p);
 
-        if (!in_string && (c == ' ' || c == '\t' || c == '\r' || c == '\n')) {
-            continue;
+static int json_parse_string_value(const char **p) {
+    if (**p != '"') {
+        return 0;
+    }
+    (*p)++;
+
+    while (**p) {
+        unsigned char c = (unsigned char)**p;
+
+        if (c == '"') {
+            (*p)++;
+            return 1;
         }
-
-        if (!saw_nonspace) {
-            if (c != '{') {
-                return 0;
-            }
-            saw_nonspace = 1;
+        if (c < 0x20) {
+            return 0;
         }
-
-        if (in_string) {
-            if (c == '\\') {
-                if (p[1] == '\0') {
-                    return 0;
+        if (c == '\\') {
+            (*p)++;
+            switch (**p) {
+            case '"':
+            case '\\':
+            case '/':
+            case 'b':
+            case 'f':
+            case 'n':
+            case 'r':
+            case 't':
+                (*p)++;
+                break;
+            case 'u':
+                (*p)++;
+                for (int i = 0; i < 4; i++) {
+                    char h = **p;
+                    if (!((h >= '0' && h <= '9') || (h >= 'a' && h <= 'f') ||
+                          (h >= 'A' && h <= 'F'))) {
+                        return 0;
+                    }
+                    (*p)++;
                 }
-                p++;
-                continue;
-            }
-            if (c == '"') {
-                in_string = 0;
-            }
-            continue;
-        }
-
-        switch (c) {
-        case '"':
-            in_string = 1;
-            break;
-        case '{':
-            object_depth++;
-            break;
-        case '}':
-            if (object_depth == 0) {
+                break;
+            default:
                 return 0;
             }
-            object_depth--;
-            break;
-        case '[':
-            array_depth++;
-            break;
-        case ']':
-            if (array_depth == 0) {
-                return 0;
-            }
-            array_depth--;
-            break;
-        default:
-            break;
+        } else {
+            (*p)++;
         }
     }
 
-    return saw_nonspace && !in_string && object_depth == 0 && array_depth == 0;
+    return 0;
+}
+
+static int json_parse_literal(const char **p, const char *literal) {
+    size_t n = strlen(literal);
+    if (strncmp(*p, literal, n) != 0) {
+        return 0;
+    }
+    *p += n;
+    return 1;
+}
+
+static int json_parse_number(const char **p) {
+    const char *s = *p;
+
+    if (*s == '-') {
+        s++;
+    }
+    if (*s == '0') {
+        s++;
+    } else if (*s >= '1' && *s <= '9') {
+        do {
+            s++;
+        } while (*s >= '0' && *s <= '9');
+    } else {
+        return 0;
+    }
+
+    if (*s == '.') {
+        s++;
+        if (!(*s >= '0' && *s <= '9')) {
+            return 0;
+        }
+        do {
+            s++;
+        } while (*s >= '0' && *s <= '9');
+    }
+
+    if (*s == 'e' || *s == 'E') {
+        s++;
+        if (*s == '+' || *s == '-') {
+            s++;
+        }
+        if (!(*s >= '0' && *s <= '9')) {
+            return 0;
+        }
+        do {
+            s++;
+        } while (*s >= '0' && *s <= '9');
+    }
+
+    *p = s;
+    return 1;
+}
+
+static int json_parse_array(const char **p) {
+    if (**p != '[') {
+        return 0;
+    }
+    (*p)++;
+    json_skip_ws(p);
+
+    if (**p == ']') {
+        (*p)++;
+        return 1;
+    }
+
+    for (;;) {
+        if (!json_parse_value(p)) {
+            return 0;
+        }
+        json_skip_ws(p);
+        if (**p == ']') {
+            (*p)++;
+            return 1;
+        }
+        if (**p != ',') {
+            return 0;
+        }
+        (*p)++;
+        json_skip_ws(p);
+        if (**p == ']') {
+            return 0;
+        }
+    }
+}
+
+static int json_parse_object(const char **p) {
+    if (**p != '{') {
+        return 0;
+    }
+    (*p)++;
+    json_skip_ws(p);
+
+    if (**p == '}') {
+        (*p)++;
+        return 1;
+    }
+
+    for (;;) {
+        if (!json_parse_string_value(p)) {
+            return 0;
+        }
+        json_skip_ws(p);
+        if (**p != ':') {
+            return 0;
+        }
+        (*p)++;
+        json_skip_ws(p);
+        if (!json_parse_value(p)) {
+            return 0;
+        }
+        json_skip_ws(p);
+        if (**p == '}') {
+            (*p)++;
+            return 1;
+        }
+        if (**p != ',') {
+            return 0;
+        }
+        (*p)++;
+        json_skip_ws(p);
+        if (**p == '}') {
+            return 0;
+        }
+    }
+}
+
+static int json_parse_value(const char **p) {
+    json_skip_ws(p);
+
+    switch (**p) {
+    case '{':
+        return json_parse_object(p);
+    case '[':
+        return json_parse_array(p);
+    case '"':
+        return json_parse_string_value(p);
+    case 't':
+        return json_parse_literal(p, "true");
+    case 'f':
+        return json_parse_literal(p, "false");
+    case 'n':
+        return json_parse_literal(p, "null");
+    default:
+        if (**p == '-' || (**p >= '0' && **p <= '9')) {
+            return json_parse_number(p);
+        }
+        return 0;
+    }
+}
+
+static int validate_json_request(const char *json) {
+    const char *p = json;
+
+    json_skip_ws(&p);
+    if (!json_parse_object(&p)) {
+        return 0;
+    }
+    json_skip_ws(&p);
+    return *p == '\0';
 }
 
 static int json_extract_str_array(const char *json, const char *field, StringArray *out) {
