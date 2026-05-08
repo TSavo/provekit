@@ -474,12 +474,13 @@ fn sanitize_identifier(value: &str) -> String {
 }
 
 fn starts_top_fallback_block(trimmed: &str) -> bool {
-    trimmed.starts_with("for ")
-        || trimmed.starts_with("for(")
-        || trimmed.starts_with("while ")
-        || trimmed.starts_with("while(")
-        || trimmed.starts_with("loop ")
-        || trimmed.starts_with("loop{")
+    let loop_head = strip_rust_label(trimmed).unwrap_or(trimmed).trim_start();
+    loop_head.starts_with("for ")
+        || loop_head.starts_with("for(")
+        || loop_head.starts_with("while ")
+        || loop_head.starts_with("while(")
+        || loop_head.starts_with("loop ")
+        || loop_head.starts_with("loop{")
 }
 
 fn is_rust_function_header(trimmed: &str) -> bool {
@@ -500,7 +501,7 @@ fn is_rust_function_header(trimmed: &str) -> bool {
             continue;
         }
         let mut consumed = false;
-        for prefix in ["async ", "unsafe ", "const ", "extern "] {
+        for prefix in ["async ", "unsafe ", "const "] {
             if let Some(next) = rest.strip_prefix(prefix) {
                 rest = next.trim_start();
                 consumed = true;
@@ -508,9 +509,45 @@ fn is_rust_function_header(trimmed: &str) -> bool {
             }
         }
         if !consumed {
+            if let Some(next) = rest.strip_prefix("extern ") {
+                rest = skip_rust_abi_literal(next).trim_start();
+                consumed = true;
+            }
+        }
+        if !consumed {
             return false;
         }
     }
+}
+
+fn skip_rust_abi_literal(value: &str) -> &str {
+    let trimmed = value.trim_start();
+    if let Some(end) = rust_raw_string_end(trimmed.as_bytes(), 0) {
+        return &trimmed[end..];
+    }
+
+    let bytes = trimmed.as_bytes();
+    if bytes.first() != Some(&b'"') {
+        return trimmed;
+    }
+
+    let mut idx = 1usize;
+    let mut escaped = false;
+    while idx < bytes.len() {
+        let byte = bytes[idx];
+        idx += 1;
+        if escaped {
+            escaped = false;
+        } else if byte == b'\\' {
+            escaped = true;
+        } else if byte == b'"' {
+            return &trimmed[idx..];
+        } else if byte == b'\n' {
+            break;
+        }
+    }
+
+    trimmed
 }
 
 fn check_positive_calls(line: &str) -> Vec<(usize, String)> {
@@ -703,6 +740,29 @@ fn push_masked_byte(out: &mut String, byte: u8) {
         out.push('\n');
     } else {
         out.push(' ');
+    }
+}
+
+fn strip_rust_label(value: &str) -> Option<&str> {
+    let bytes = value.as_bytes();
+    if bytes.len() < 3 || bytes[0] != b'\'' {
+        return None;
+    }
+
+    let next = bytes[1];
+    if !next.is_ascii_alphabetic() && next != b'_' {
+        return None;
+    }
+
+    let mut cursor = 2usize;
+    while cursor < bytes.len() && is_identifier_byte(bytes[cursor]) {
+        cursor += 1;
+    }
+
+    if cursor < bytes.len() && bytes[cursor] == b':' {
+        Some(&value[cursor + 1..])
+    } else {
+        None
     }
 }
 

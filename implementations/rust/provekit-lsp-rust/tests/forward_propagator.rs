@@ -225,3 +225,18 @@ fn violates<'a>(value: &'a str) {
 
     assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
 }
+
+#[test]
+fn floor_lowering_treats_labeled_loops_as_top_fallback() {
+    let source = r#"
+fn labeled_loop() {
+    'outer: loop {
+        checkPositive(-1);
+    }
+}
+"#;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+}
