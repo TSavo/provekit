@@ -17,11 +17,27 @@ func unwrapCheckPositiveEntry() BaselineEntry {
 	)
 }
 
+func consumeReturnEntry() BaselineEntry {
+	return NewBaselineEntry(
+		"consumeReturn",
+		&Post{Constraints: []string{"returns true"}},
+		&Post{},
+	)
+}
+
 func callCheckPositive() ForwardStmt {
 	return ForwardStmt{
 		Kind:     ForwardStmtCall,
 		CalleeID: "checkPositive",
 		Range:    SingleLineRange(4, 12, 25),
+	}
+}
+
+func callConsumeReturn() ForwardStmt {
+	return ForwardStmt{
+		Kind:     ForwardStmtCall,
+		CalleeID: "consumeReturn",
+		Range:    SingleLineRange(5, 12, 25),
 	}
 }
 
@@ -111,6 +127,44 @@ func TestTopFallbackSuppressesFalsePositive(t *testing.T) {
 
 	if len(diagnostics) != 0 {
 		t.Fatalf("top fallback must suppress implication-failed diagnostics: %#v", diagnostics)
+	}
+}
+
+func TestFailedPreconditionDoesNotPropagateCalleePostcondition(t *testing.T) {
+	propagator := NewForwardPropagator([]BaselineEntry{unwrapCheckPositiveEntry(), consumeReturnEntry()})
+	body := []ForwardStmt{
+		{Kind: ForwardStmtAssign, Post: Post{Constraints: []string{"x <= 0"}}},
+		callCheckPositive(),
+		callConsumeReturn(),
+	}
+
+	diagnostics := propagator.EmitDiagnostics(body)
+
+	if len(diagnostics) != 2 {
+		t.Fatalf("expected both failed preconditions to diagnose, got %#v", diagnostics)
+	}
+	if diagnostics[0].Data.Callee != "checkPositive" {
+		t.Fatalf("first callee = %q, want checkPositive", diagnostics[0].Data.Callee)
+	}
+	if diagnostics[1].Data.Callee != "consumeReturn" {
+		t.Fatalf("second callee = %q, want consumeReturn", diagnostics[1].Data.Callee)
+	}
+}
+
+func TestLowerFloorSourceResetsOnGoMethods(t *testing.T) {
+	source := `
+func establishesFact() {
+	checkPositive(5)
+}
+
+func (s Service) publicViolates() {
+	checkPositive(-1)
+}
+`
+	diagnostics := FloorV1SeedForwardPropagator().EmitDiagnostics(LowerFloorSource(source))
+
+	if len(diagnostics) != 1 {
+		t.Fatalf("expected qualified method body to reset state and diagnose, got %#v", diagnostics)
 	}
 }
 

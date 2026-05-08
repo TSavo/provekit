@@ -307,7 +307,7 @@ impl ForwardPropagator {
 
         for (line_idx, line) in source.lines().enumerate() {
             let trimmed = line.trim_start();
-            let is_function_definition = trimmed.starts_with("fn ");
+            let is_function_definition = is_rust_function_header(trimmed);
             if is_function_definition {
                 stmts.push(Stmt::Reset);
                 top_block_depth = None;
@@ -430,20 +430,22 @@ impl ForwardPropagator {
                     current_post = current_post.combine(post);
                 }
                 Stmt::Call { callee_id, range } => {
-                    if let Some(diagnostic) =
-                        self.check_callsite(callee_id, &current_post, range.clone())
-                    {
+                    let diagnostic = self.check_callsite(callee_id, &current_post, range.clone());
+                    let failed_precondition = diagnostic.is_some();
+                    if let Some(diagnostic) = diagnostic {
                         diagnostics.push(diagnostic);
                     }
-                    current_post = match self
-                        .index
-                        .get(callee_id)
-                        .and_then(|entry| entry.post.as_ref())
-                    {
-                        Some(post) => current_post.combine(post),
-                        None if self.index.contains_key(callee_id) => current_post,
-                        None => Post::top(),
-                    };
+                    if !failed_precondition {
+                        current_post = match self
+                            .index
+                            .get(callee_id)
+                            .and_then(|entry| entry.post.as_ref())
+                        {
+                            Some(post) => current_post.combine(post),
+                            None if self.index.contains_key(callee_id) => current_post,
+                            None => Post::top(),
+                        };
+                    }
                 }
                 Stmt::IfElse {
                     then_branch,
@@ -477,6 +479,37 @@ fn starts_top_fallback_block(trimmed: &str) -> bool {
         || trimmed.starts_with("while(")
         || trimmed.starts_with("loop ")
         || trimmed.starts_with("loop{")
+}
+
+fn is_rust_function_header(trimmed: &str) -> bool {
+    let mut rest = trimmed;
+    loop {
+        if rest.starts_with("fn ") {
+            return true;
+        }
+        if let Some(next) = rest.strip_prefix("pub ") {
+            rest = next.trim_start();
+            continue;
+        }
+        if let Some(next) = rest
+            .strip_prefix("pub(")
+            .and_then(|tail| tail.find(')').map(|close| tail[close + 1..].trim_start()))
+        {
+            rest = next;
+            continue;
+        }
+        let mut consumed = false;
+        for prefix in ["async ", "unsafe ", "const "] {
+            if let Some(next) = rest.strip_prefix(prefix) {
+                rest = next.trim_start();
+                consumed = true;
+                break;
+            }
+        }
+        if !consumed {
+            return false;
+        }
+    }
 }
 
 fn check_positive_calls(line: &str) -> Vec<(usize, String)> {

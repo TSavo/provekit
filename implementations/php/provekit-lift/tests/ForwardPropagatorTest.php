@@ -32,9 +32,23 @@ function check_positive_entry(): BaselineEntry
     );
 }
 
+function consume_return_entry(): BaselineEntry
+{
+    return BaselineEntry::new(
+        'consumeReturn',
+        ForwardPost::known(['returns true']),
+        ForwardPost::empty(),
+    );
+}
+
 function call_check_positive(): ForwardStmt
 {
     return ForwardStmt::call('checkPositive', LspRange::singleLine(4, 12, 25));
+}
+
+function call_consume_return(): ForwardStmt
+{
+    return ForwardStmt::call('consumeReturn', LspRange::singleLine(5, 12, 25));
 }
 
 function testCallsiteSatisfiesPreNoDiagnostic(): void
@@ -93,6 +107,73 @@ function testTopFallbackSuppressesFalsePositive(): void
     assert_same(0, count($diagnostics), 'top fallback should suppress implication-failed diagnostics');
 }
 
+function testFailedPreconditionDoesNotPropagateCalleePostcondition(): void
+{
+    $propagator = new ForwardPropagator([check_positive_entry(), consume_return_entry()]);
+    $diagnostics = $propagator->emitDiagnostics([
+        ForwardStmt::assign(ForwardPost::known(['x <= 0'])),
+        call_check_positive(),
+        call_consume_return(),
+    ]);
+
+    assert_same(2, count($diagnostics), 'failed precondition should not add the callee postcondition');
+    assert_same('checkPositive', $diagnostics[0]->toArray()['data']['callee'], 'first diagnostic callee');
+    assert_same('consumeReturn', $diagnostics[1]->toArray()['data']['callee'], 'second diagnostic callee');
+}
+
+function testClassMethodResetPreventsFactLeak(): void
+{
+    $source = <<<'PHP'
+<?php
+class Demo {
+    public function establishesFact(): void {
+        checkPositive(5);
+    }
+
+    private function violates(): void {
+        checkPositive(-1);
+    }
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+
+    assert_same(1, count($diagnostics), 'class method declarations should reset forward state');
+}
+
+function testUnbracedLoopBodyUsesTopFallback(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo($condition): void {
+    while ($condition)
+        checkPositive(-1);
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+
+    assert_same(0, count($diagnostics), 'unbraced loop bodies should keep top fallback suppression');
+}
+
+function testCommentsAndStringsDoNotCreateCallsites(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo(): void {
+    // checkPositive(-1);
+    $message = "checkPositive(-1)";
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+
+    assert_same(0, count($diagnostics), 'comments and strings must not lower to callsites');
+}
+
 function testParseFloorFixtureEmitsForwardPropagationDiagnostic(): void
 {
     $root = realpath(__DIR__ . '/../../../..');
@@ -138,6 +219,10 @@ testCallsiteSatisfiesPreNoDiagnostic();
 testCallsiteViolatesPreDiagnosticEmitted();
 testBranchMergePartialSatisfaction();
 testTopFallbackSuppressesFalsePositive();
+testFailedPreconditionDoesNotPropagateCalleePostcondition();
+testClassMethodResetPreventsFactLeak();
+testUnbracedLoopBodyUsesTopFallback();
+testCommentsAndStringsDoNotCreateCallsites();
 testParseFloorFixtureEmitsForwardPropagationDiagnostic();
 
 echo "ForwardPropagatorTest passed\n";

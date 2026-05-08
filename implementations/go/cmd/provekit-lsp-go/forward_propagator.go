@@ -271,8 +271,10 @@ func (p ForwardPropagator) walkBlock(body []ForwardStmt, startPost Post, diagnos
 		case ForwardStmtAssign:
 			currentPost = currentPost.combine(stmt.Post)
 		case ForwardStmtCall:
-			if diagnostic := p.CheckCallsite(stmt.CalleeID, currentPost, stmt.Range); diagnostic != nil {
+			diagnostic := p.CheckCallsite(stmt.CalleeID, currentPost, stmt.Range)
+			if diagnostic != nil {
 				*diagnostics = append(*diagnostics, *diagnostic)
+				break
 			}
 			if entry, ok := p.index[stmt.CalleeID]; ok {
 				if entry.Post != nil {
@@ -299,7 +301,7 @@ func LowerFloorSource(source string) []ForwardStmt {
 
 	for lineIdx, line := range strings.Split(source, "\n") {
 		trimmed := strings.TrimLeft(line, " \t")
-		isFunctionDefinition := strings.HasPrefix(trimmed, "func ")
+		isFunctionDefinition := isGoFunctionHeader(trimmed)
 		if isFunctionDefinition {
 			stmts = append(stmts, ForwardStmt{Kind: ForwardStmtReset})
 			topBlockDepth = nil
@@ -339,6 +341,17 @@ func LowerFloorSource(source string) []ForwardStmt {
 	}
 
 	return stmts
+}
+
+func isGoFunctionHeader(trimmed string) bool {
+	if !strings.HasPrefix(trimmed, "func") {
+		return false
+	}
+	if len(trimmed) == len("func") || (trimmed[len("func")] != ' ' && trimmed[len("func")] != '\t') {
+		return false
+	}
+	rest := strings.TrimLeft(trimmed[len("func"):], " \t")
+	return rest != ""
 }
 
 type checkPositiveCall struct {

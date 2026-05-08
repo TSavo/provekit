@@ -318,6 +318,7 @@ final class ForwardPropagator
                         $diagnostic = $this->checkCallsite($stmt->calleeId, $currentPost, $stmt->range);
                         if ($diagnostic) {
                             $diagnostics[] = $diagnostic;
+                            break;
                         }
                         $entry = $this->index[$stmt->calleeId] ?? null;
                         if ($entry && $entry->post) {
@@ -346,26 +347,33 @@ final class ForwardPropagator
         $stmts = [];
         $braceDepth = 0;
         $topBlockDepth = null;
+        $topSingleStatementPending = false;
+        $scanLines = explode("\n", self::maskNonCode($source));
 
         foreach (explode("\n", $source) as $lineIdx => $line) {
-            $trimmed = ltrim($line);
-            $isFunctionDefinition = preg_match('/^function\s+/', $trimmed) === 1;
+            $scanLine = $scanLines[$lineIdx] ?? '';
+            $trimmed = ltrim($scanLine);
+            $isFunctionDefinition = self::isFunctionDefinition($trimmed);
             if ($isFunctionDefinition) {
                 $stmts[] = ForwardStmt::reset();
                 $topBlockDepth = null;
+                $topSingleStatementPending = false;
             }
 
-            if (self::startsTopFallbackBlock($trimmed)) {
-                $depth = $braceDepth + substr_count($line, '{') - substr_count($line, '}');
-                if ($depth === $braceDepth) {
-                    $depth = $braceDepth + 1;
+            $startsTopFallbackBlock = self::startsTopFallbackBlock($trimmed);
+            if ($startsTopFallbackBlock) {
+                $depth = $braceDepth + substr_count($scanLine, '{') - substr_count($scanLine, '}');
+                if ($depth > $braceDepth) {
+                    $topBlockDepth = $depth;
+                } else {
+                    $topSingleStatementPending = true;
                 }
-                $topBlockDepth = $depth;
             }
 
+            $calls = self::checkPositiveCalls($scanLine);
             if (!$isFunctionDefinition) {
-                foreach (self::checkPositiveCalls($line) as [$start, $arg]) {
-                    if ($topBlockDepth !== null) {
+                foreach ($calls as [$start, $arg]) {
+                    if ($topBlockDepth !== null || $topSingleStatementPending) {
                         $stmts[] = ForwardStmt::unsupported();
                     } else {
                         $stmts[] = ForwardStmt::assign(self::postForCheckPositiveArg($arg));
@@ -377,20 +385,59 @@ final class ForwardPropagator
                 }
             }
 
-            $braceDepth += substr_count($line, '{');
-            $braceDepth -= substr_count($line, '}');
+            $braceDepth += substr_count($scanLine, '{');
+            $braceDepth -= substr_count($scanLine, '}');
             if ($topBlockDepth !== null && $braceDepth < $topBlockDepth) {
                 $topBlockDepth = null;
+            }
+            if ($topSingleStatementPending) {
+                $lineConsumesPendingStatement = !$startsTopFallbackBlock
+                    && trim($trimmed) !== ''
+                    && trim($trimmed) !== '{'
+                    && trim($trimmed) !== '}';
+                if ($lineConsumesPendingStatement || $calls !== [] || self::topHeaderHasInlineStatement($trimmed)) {
+                    $topSingleStatementPending = false;
+                }
             }
         }
 
         return $stmts;
     }
 
+    private static function isFunctionDefinition(string $trimmed): bool
+    {
+        return preg_match('/^(?:(?:public|protected|private|static|final|abstract)\s+)*function\s+/', $trimmed) === 1;
+    }
+
     private static function startsTopFallbackBlock(string $trimmed): bool
     {
         return str_starts_with($trimmed, 'for ') || str_starts_with($trimmed, 'for(')
             || str_starts_with($trimmed, 'while ') || str_starts_with($trimmed, 'while(');
+    }
+
+    private static function topHeaderHasInlineStatement(string $trimmed): bool
+    {
+        $open = strpos($trimmed, '(');
+        if ($open === false) {
+            return false;
+        }
+
+        $depth = 0;
+        $length = strlen($trimmed);
+        for ($idx = $open; $idx < $length; $idx++) {
+            $char = $trimmed[$idx];
+            if ($char === '(') {
+                $depth++;
+            } elseif ($char === ')') {
+                $depth--;
+                if ($depth === 0) {
+                    $trailing = trim(substr($trimmed, $idx + 1));
+                    return $trailing !== '' && $trailing !== '{';
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @return array<int, array{0: int, 1: string}> */
@@ -409,6 +456,37 @@ final class ForwardPropagator
             $searchFrom = $relativeEnd + 1;
         }
         return $calls;
+    }
+
+    private static function maskNonCode(string $source): string
+    {
+        $masked = '';
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token)) {
+                [$id, $text] = $token;
+                if (in_array($id, [
+                    T_COMMENT,
+                    T_DOC_COMMENT,
+                    T_CONSTANT_ENCAPSED_STRING,
+                    T_ENCAPSED_AND_WHITESPACE,
+                    T_INLINE_HTML,
+                    T_START_HEREDOC,
+                    T_END_HEREDOC,
+                ], true)) {
+                    $masked .= self::maskTokenText($text);
+                } else {
+                    $masked .= $text;
+                }
+            } else {
+                $masked .= $token;
+            }
+        }
+        return $masked;
+    }
+
+    private static function maskTokenText(string $text): string
+    {
+        return preg_replace('/[^\r\n]/', ' ', $text) ?? '';
     }
 
     private static function postForCheckPositiveArg(string $arg): ForwardPost

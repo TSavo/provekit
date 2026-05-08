@@ -12,10 +12,40 @@ fn unwrap_entry() -> BaselineEntry {
     )
 }
 
+fn check_positive_entry() -> BaselineEntry {
+    BaselineEntry::new(
+        "checkPositive",
+        Some(Post::known(["x > 0"])),
+        Some(Post::known(["returns true"])),
+    )
+}
+
+fn consume_return_entry() -> BaselineEntry {
+    BaselineEntry::new(
+        "consumeReturn",
+        Some(Post::known(["returns true"])),
+        Some(Post::known([])),
+    )
+}
+
 fn call_unwrap() -> Stmt {
     Stmt::Call {
         callee_id: "std::option::Option::unwrap".into(),
         range: LspRange::single_line(4, 12, 18),
+    }
+}
+
+fn call_check_positive() -> Stmt {
+    Stmt::Call {
+        callee_id: "checkPositive".into(),
+        range: LspRange::single_line(4, 12, 25),
+    }
+}
+
+fn call_consume_return() -> Stmt {
+    Stmt::Call {
+        callee_id: "consumeReturn".into(),
+        range: LspRange::single_line(5, 12, 25),
     }
 }
 
@@ -105,4 +135,47 @@ fn top_fallback_suppresses_false_positive() {
         diagnostics.is_empty(),
         "top fallback is loss of precision and must not become a diagnostic"
     );
+}
+
+#[test]
+fn failed_precondition_does_not_propagate_callee_postcondition() {
+    let propagator = ForwardPropagator::new([check_positive_entry(), consume_return_entry()]);
+    let body = vec![
+        Stmt::Assign {
+            post: Post::known(["x <= 0"]),
+        },
+        call_check_positive(),
+        call_consume_return(),
+    ];
+
+    let diagnostics = propagator.emit_diagnostics(&body);
+
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].data.callee, "checkPositive");
+    assert_eq!(diagnostics[1].data.callee, "consumeReturn");
+}
+
+#[test]
+fn floor_lowering_resets_on_qualified_function_headers() {
+    let source = r#"
+fn establishes_fact() {
+    checkPositive(5);
+}
+
+pub fn public_violates() {
+    checkPositive(-1);
+}
+
+pub(crate) fn crate_visible_violates() {
+    checkPositive(-1);
+}
+
+async fn async_violates() {
+    checkPositive(-1);
+}
+"#;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert_eq!(diagnostics.len(), 3, "{diagnostics:#?}");
 }
