@@ -1288,8 +1288,15 @@ fn run_git(
 }
 
 fn stale_accept_error(args: &CiAcceptArgs, missing: &[(String, String, PathBuf)]) -> String {
-    let mut message =
-        String::from("CICP accepted witnesses are stale.\n\nRun:\n  provekit ci accept");
+    let mut message = String::from(
+        "CICP accepted witnesses are stale.\n\n\
+         Run from the repository root with a freshly built release CLI:\n\
+           make ci-accept-refresh\n\n\
+         To validate after refresh:\n\
+           make ci-accept-check\n\n\
+         Exact CLI equivalent for this invocation:\n\
+           provekit ci accept",
+    );
     if args.all_kits {
         message.push_str(" --all-kits");
     } else if let Some(kit) = &args.kit {
