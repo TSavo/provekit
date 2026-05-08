@@ -579,7 +579,9 @@ fn mask_rust_non_code(source: &str) -> String {
             idx = end;
         } else if bytes[idx] == b'"' || bytes[idx..].starts_with(b"b\"") {
             idx = mask_escaped_delimited(bytes, idx, b'"', &mut out);
-        } else if bytes[idx] == b'\'' || bytes[idx..].starts_with(b"b'") {
+        } else if bytes[idx..].starts_with(b"b'") {
+            idx = mask_escaped_delimited(bytes, idx, b'\'', &mut out);
+        } else if bytes[idx] == b'\'' && !is_rust_lifetime_start(bytes, idx) {
             idx = mask_escaped_delimited(bytes, idx, b'\'', &mut out);
         } else {
             out.push(bytes[idx] as char);
@@ -702,6 +704,24 @@ fn push_masked_byte(out: &mut String, byte: u8) {
     } else {
         out.push(' ');
     }
+}
+
+fn is_rust_lifetime_start(bytes: &[u8], quote_idx: usize) -> bool {
+    if quote_idx + 1 >= bytes.len() {
+        return false;
+    }
+
+    let next = bytes[quote_idx + 1];
+    if !next.is_ascii_alphabetic() && next != b'_' {
+        return false;
+    }
+
+    let mut cursor = quote_idx + 2;
+    while cursor < bytes.len() && is_identifier_byte(bytes[cursor]) {
+        cursor += 1;
+    }
+
+    cursor >= bytes.len() || bytes[cursor] != b'\''
 }
 
 fn is_identifier_byte(byte: u8) -> bool {

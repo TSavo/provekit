@@ -212,3 +212,16 @@ fn no_false_calls() {
 
     assert!(diagnostics.is_empty(), "{diagnostics:#?}");
 }
+
+#[test]
+fn floor_lowering_keeps_lifetime_lines_visible() {
+    let source = r#"
+fn violates<'a>(value: &'a str) {
+    let _alias: &'a str = value; checkPositive(-1);
+}
+"#;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+}
