@@ -452,18 +452,56 @@ final class ForwardPropagator
     private static function checkPositiveCalls(string $line): array
     {
         $calls = [];
+        $name = 'checkPositive';
+        $nameLen = strlen($name);
+        $lineLen = strlen($line);
         $searchFrom = 0;
-        while (($relativeStart = strpos($line, 'checkPositive(', $searchFrom)) !== false) {
+        while (($relativeStart = strpos($line, $name, $searchFrom)) !== false) {
             $start = $relativeStart;
-            $argsStart = $start + strlen('checkPositive(');
-            $relativeEnd = strpos($line, ')', $argsStart);
-            if ($relativeEnd === false) {
+            if ($start > 0 && self::isIdentifierByte($line[$start - 1])) {
+                $searchFrom = $start + $nameLen;
+                continue;
+            }
+
+            $cursor = $start + $nameLen;
+            if ($cursor < $lineLen && self::isIdentifierByte($line[$cursor])) {
+                $searchFrom = $cursor;
+                continue;
+            }
+            while ($cursor < $lineLen && ($line[$cursor] === ' ' || $line[$cursor] === "\t")) {
+                $cursor++;
+            }
+            if ($cursor >= $lineLen || $line[$cursor] !== '(') {
+                $searchFrom = $start + $nameLen;
+                continue;
+            }
+
+            $argsStart = $cursor + 1;
+            $depth = 1;
+            $end = $argsStart;
+            while ($end < $lineLen) {
+                if ($line[$end] === '(') {
+                    $depth++;
+                } elseif ($line[$end] === ')') {
+                    $depth--;
+                    if ($depth === 0) {
+                        break;
+                    }
+                }
+                $end++;
+            }
+            if ($end >= $lineLen || $depth !== 0) {
                 break;
             }
-            $calls[] = [$start, trim(substr($line, $argsStart, $relativeEnd - $argsStart))];
-            $searchFrom = $relativeEnd + 1;
+            $calls[] = [$start, trim(substr($line, $argsStart, $end - $argsStart))];
+            $searchFrom = $end + 1;
         }
         return $calls;
+    }
+
+    private static function isIdentifierByte(string $char): bool
+    {
+        return $char === '$' || $char === '_' || ctype_alnum($char);
     }
 
     private static function maskNonCode(string $source): string

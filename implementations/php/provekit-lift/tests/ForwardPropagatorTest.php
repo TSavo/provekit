@@ -196,6 +196,37 @@ PHP;
     assert_same(0, count($diagnostics), 'comments and strings must not lower to callsites');
 }
 
+function testCheckPositiveScannerUsesIdentifierBoundaries(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo(): void {
+    notcheckPositive(-1);
+    $checkPositive(-1);
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+
+    assert_same(0, count($diagnostics), 'embedded names and variable functions should not lower to checkPositive callsites');
+}
+
+function testCheckPositiveScannerAllowsWhitespaceBeforeParen(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo(): void {
+    checkPositive (-1);
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+
+    assert_same(1, count($diagnostics), 'whitespace before the call paren should still lower checkPositive callsites');
+}
+
 function testParseFloorFixtureEmitsForwardPropagationDiagnostic(): void
 {
     $root = realpath(__DIR__ . '/../../../..');
@@ -246,6 +277,8 @@ testClassMethodResetPreventsFactLeak();
 testUnbracedLoopBodyUsesTopFallback();
 testNextLineLoopBraceUsesTopFallbackForWholeBody();
 testCommentsAndStringsDoNotCreateCallsites();
+testCheckPositiveScannerUsesIdentifierBoundaries();
+testCheckPositiveScannerAllowsWhitespaceBeforeParen();
 testParseFloorFixtureEmitsForwardPropagationDiagnostic();
 
 echo "ForwardPropagatorTest passed\n";
