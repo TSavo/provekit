@@ -57,6 +57,37 @@ static void test_populated_result_json(void) {
     pk_c_lift_result_free(r);
 }
 
+static void test_opacity_and_refusal_are_separate(void) {
+    pk_c_lift_result *r = pk_c_lift_result_new();
+    pk_c_lift_result_add_opacity_entry(
+        r,
+        "unexpanded-macro",
+        "fixture.c",
+        7,
+        5,
+        "macro body unavailable",
+        "sparse");
+    pk_c_lift_result_add_refusal_entry(
+        r,
+        "unsupported-lock-transfer",
+        "fixture.c",
+        9,
+        3,
+        "lockdep",
+        "lock released through function pointer");
+    char *json = pk_c_lift_result_to_json(r);
+    const char *want =
+        "{\"declarations\":[],\"callEdges\":[],\"diagnostics\":[],"
+        "\"opacityReport\":[{\"affectedSurface\":\"sparse\",\"kind\":\"unexpanded-macro\","
+        "\"locus\":{\"column\":5,\"line\":7,\"path\":\"fixture.c\"},\"reason\":\"macro body unavailable\"}],"
+        "\"refusals\":[{\"kind\":\"unsupported-lock-transfer\","
+        "\"locus\":{\"column\":3,\"line\":9,\"path\":\"fixture.c\"},"
+        "\"reason\":\"lock released through function pointer\",\"surface\":\"lockdep\"}]}";
+    assert_eq(json, want, "opacity and refusal separation");
+    free(json);
+    pk_c_lift_result_free(r);
+}
+
 static void test_array_growth_overflow_is_rejected(void) {
     pk_c_lift_result result = {0};
     int rc;
@@ -157,6 +188,7 @@ static void test_parse_recursive_same_line_function_body_call(void) {
 int main(void) {
     test_empty_result_json();
     test_populated_result_json();
+    test_opacity_and_refusal_are_separate();
     test_array_growth_overflow_is_rejected();
     test_parse_functions_and_macros();
     test_parse_same_line_function_body_call();

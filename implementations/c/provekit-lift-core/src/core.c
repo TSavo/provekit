@@ -1,6 +1,7 @@
 #include "provekit/c_lift_core.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -160,6 +161,94 @@ static char *pk_c_append_array(char *dst, const pk_c_json_array *array) {
     return dst;
 }
 
+static int pk_c_json_escaped_len(const char *text, size_t *out) {
+    size_t len = 0;
+    size_t i;
+
+    if (text == NULL || out == NULL) {
+        return -1;
+    }
+
+    for (i = 0; text[i] != '\0'; i++) {
+        switch (text[i]) {
+        case '"':
+        case '\\':
+        case '\n':
+        case '\r':
+        case '\t':
+            if (pk_c_checked_add_size(len, 2, &len) != 0) {
+                return -1;
+            }
+            break;
+        default:
+            if (pk_c_checked_add_size(len, 1, &len) != 0) {
+                return -1;
+            }
+            break;
+        }
+    }
+
+    *out = len;
+    return 0;
+}
+
+static char *pk_c_json_escape_string(const char *text) {
+    size_t len;
+    size_t i;
+    char *escaped;
+    char *dst;
+
+    if (pk_c_json_escaped_len(text, &len) != 0 ||
+        pk_c_checked_add_size(len, 1, &len) != 0) {
+        return NULL;
+    }
+
+    escaped = malloc(len);
+    if (escaped == NULL) {
+        return NULL;
+    }
+
+    dst = escaped;
+    for (i = 0; text[i] != '\0'; i++) {
+        switch (text[i]) {
+        case '"':
+            *dst++ = '\\';
+            *dst++ = '"';
+            break;
+        case '\\':
+            *dst++ = '\\';
+            *dst++ = '\\';
+            break;
+        case '\n':
+            *dst++ = '\\';
+            *dst++ = 'n';
+            break;
+        case '\r':
+            *dst++ = '\\';
+            *dst++ = 'r';
+            break;
+        case '\t':
+            *dst++ = '\\';
+            *dst++ = 't';
+            break;
+        default:
+            *dst++ = text[i];
+            break;
+        }
+    }
+    *dst = '\0';
+    return escaped;
+}
+
+static int pk_c_format_int(char *dst, size_t len, int value) {
+    int written = snprintf(dst, len, "%d", value);
+
+    if (written < 0 || (size_t)written >= len) {
+        return -1;
+    }
+    return 0;
+}
+
 pk_c_lift_result *pk_c_lift_result_new(void) {
     return calloc(1, sizeof(pk_c_lift_result));
 }
@@ -210,6 +299,208 @@ int pk_c_lift_result_add_refusal(pk_c_lift_result *result, const char *json) {
         return -1;
     }
     return pk_c_json_array_add(&result->refusals, json);
+}
+
+int pk_c_lift_result_add_opacity_entry(
+    pk_c_lift_result *result,
+    const char *kind,
+    const char *path,
+    int line,
+    int column,
+    const char *reason,
+    const char *affected_surface) {
+    const char *prefix = "{\"affectedSurface\":\"";
+    const char *kind_key = "\",\"kind\":\"";
+    const char *locus_prefix = "\",\"locus\":{\"column\":";
+    const char *line_key = ",\"line\":";
+    const char *path_key = ",\"path\":\"";
+    const char *reason_key = "\"},\"reason\":\"";
+    const char *suffix = "\"}";
+    char line_buf[32];
+    char column_buf[32];
+    char *escaped_affected_surface;
+    char *escaped_kind;
+    char *escaped_path;
+    char *escaped_reason;
+    char *json;
+    char *dst;
+    size_t len = 0;
+    int rc;
+
+    if (result == NULL || kind == NULL || path == NULL || reason == NULL ||
+        affected_surface == NULL ||
+        pk_c_format_int(line_buf, sizeof(line_buf), line) != 0 ||
+        pk_c_format_int(column_buf, sizeof(column_buf), column) != 0) {
+        return -1;
+    }
+
+    escaped_affected_surface = pk_c_json_escape_string(affected_surface);
+    escaped_kind = pk_c_json_escape_string(kind);
+    escaped_path = pk_c_json_escape_string(path);
+    escaped_reason = pk_c_json_escape_string(reason);
+    if (escaped_affected_surface == NULL || escaped_kind == NULL ||
+        escaped_path == NULL || escaped_reason == NULL) {
+        free(escaped_affected_surface);
+        free(escaped_kind);
+        free(escaped_path);
+        free(escaped_reason);
+        return -1;
+    }
+
+    if (pk_c_add_text_len(&len, prefix) != 0 ||
+        pk_c_add_text_len(&len, escaped_affected_surface) != 0 ||
+        pk_c_add_text_len(&len, kind_key) != 0 ||
+        pk_c_add_text_len(&len, escaped_kind) != 0 ||
+        pk_c_add_text_len(&len, locus_prefix) != 0 ||
+        pk_c_add_text_len(&len, column_buf) != 0 ||
+        pk_c_add_text_len(&len, line_key) != 0 ||
+        pk_c_add_text_len(&len, line_buf) != 0 ||
+        pk_c_add_text_len(&len, path_key) != 0 ||
+        pk_c_add_text_len(&len, escaped_path) != 0 ||
+        pk_c_add_text_len(&len, reason_key) != 0 ||
+        pk_c_add_text_len(&len, escaped_reason) != 0 ||
+        pk_c_add_text_len(&len, suffix) != 0 ||
+        pk_c_checked_add_size(len, 1, &len) != 0) {
+        free(escaped_affected_surface);
+        free(escaped_kind);
+        free(escaped_path);
+        free(escaped_reason);
+        return -1;
+    }
+
+    json = malloc(len);
+    if (json == NULL) {
+        free(escaped_affected_surface);
+        free(escaped_kind);
+        free(escaped_path);
+        free(escaped_reason);
+        return -1;
+    }
+
+    dst = json;
+    dst = pk_c_append_text(dst, prefix);
+    dst = pk_c_append_text(dst, escaped_affected_surface);
+    dst = pk_c_append_text(dst, kind_key);
+    dst = pk_c_append_text(dst, escaped_kind);
+    dst = pk_c_append_text(dst, locus_prefix);
+    dst = pk_c_append_text(dst, column_buf);
+    dst = pk_c_append_text(dst, line_key);
+    dst = pk_c_append_text(dst, line_buf);
+    dst = pk_c_append_text(dst, path_key);
+    dst = pk_c_append_text(dst, escaped_path);
+    dst = pk_c_append_text(dst, reason_key);
+    dst = pk_c_append_text(dst, escaped_reason);
+    dst = pk_c_append_text(dst, suffix);
+    *dst = '\0';
+
+    rc = pk_c_lift_result_add_opacity(result, json);
+    free(json);
+    free(escaped_affected_surface);
+    free(escaped_kind);
+    free(escaped_path);
+    free(escaped_reason);
+    return rc;
+}
+
+int pk_c_lift_result_add_refusal_entry(
+    pk_c_lift_result *result,
+    const char *kind,
+    const char *path,
+    int line,
+    int column,
+    const char *surface,
+    const char *reason) {
+    const char *prefix = "{\"kind\":\"";
+    const char *locus_prefix = "\",\"locus\":{\"column\":";
+    const char *line_key = ",\"line\":";
+    const char *path_key = ",\"path\":\"";
+    const char *reason_key = "\"},\"reason\":\"";
+    const char *surface_key = "\",\"surface\":\"";
+    const char *suffix = "\"}";
+    char line_buf[32];
+    char column_buf[32];
+    char *escaped_kind;
+    char *escaped_path;
+    char *escaped_surface;
+    char *escaped_reason;
+    char *json;
+    char *dst;
+    size_t len = 0;
+    int rc;
+
+    if (result == NULL || kind == NULL || path == NULL || surface == NULL ||
+        reason == NULL ||
+        pk_c_format_int(line_buf, sizeof(line_buf), line) != 0 ||
+        pk_c_format_int(column_buf, sizeof(column_buf), column) != 0) {
+        return -1;
+    }
+
+    escaped_kind = pk_c_json_escape_string(kind);
+    escaped_path = pk_c_json_escape_string(path);
+    escaped_surface = pk_c_json_escape_string(surface);
+    escaped_reason = pk_c_json_escape_string(reason);
+    if (escaped_kind == NULL || escaped_path == NULL ||
+        escaped_surface == NULL || escaped_reason == NULL) {
+        free(escaped_kind);
+        free(escaped_path);
+        free(escaped_surface);
+        free(escaped_reason);
+        return -1;
+    }
+
+    if (pk_c_add_text_len(&len, prefix) != 0 ||
+        pk_c_add_text_len(&len, escaped_kind) != 0 ||
+        pk_c_add_text_len(&len, locus_prefix) != 0 ||
+        pk_c_add_text_len(&len, column_buf) != 0 ||
+        pk_c_add_text_len(&len, line_key) != 0 ||
+        pk_c_add_text_len(&len, line_buf) != 0 ||
+        pk_c_add_text_len(&len, path_key) != 0 ||
+        pk_c_add_text_len(&len, escaped_path) != 0 ||
+        pk_c_add_text_len(&len, reason_key) != 0 ||
+        pk_c_add_text_len(&len, escaped_reason) != 0 ||
+        pk_c_add_text_len(&len, surface_key) != 0 ||
+        pk_c_add_text_len(&len, escaped_surface) != 0 ||
+        pk_c_add_text_len(&len, suffix) != 0 ||
+        pk_c_checked_add_size(len, 1, &len) != 0) {
+        free(escaped_kind);
+        free(escaped_path);
+        free(escaped_surface);
+        free(escaped_reason);
+        return -1;
+    }
+
+    json = malloc(len);
+    if (json == NULL) {
+        free(escaped_kind);
+        free(escaped_path);
+        free(escaped_surface);
+        free(escaped_reason);
+        return -1;
+    }
+
+    dst = json;
+    dst = pk_c_append_text(dst, prefix);
+    dst = pk_c_append_text(dst, escaped_kind);
+    dst = pk_c_append_text(dst, locus_prefix);
+    dst = pk_c_append_text(dst, column_buf);
+    dst = pk_c_append_text(dst, line_key);
+    dst = pk_c_append_text(dst, line_buf);
+    dst = pk_c_append_text(dst, path_key);
+    dst = pk_c_append_text(dst, escaped_path);
+    dst = pk_c_append_text(dst, reason_key);
+    dst = pk_c_append_text(dst, escaped_reason);
+    dst = pk_c_append_text(dst, surface_key);
+    dst = pk_c_append_text(dst, escaped_surface);
+    dst = pk_c_append_text(dst, suffix);
+    *dst = '\0';
+
+    rc = pk_c_lift_result_add_refusal(result, json);
+    free(json);
+    free(escaped_kind);
+    free(escaped_path);
+    free(escaped_surface);
+    free(escaped_reason);
+    return rc;
 }
 
 char *pk_c_lift_result_to_json(const pk_c_lift_result *result) {

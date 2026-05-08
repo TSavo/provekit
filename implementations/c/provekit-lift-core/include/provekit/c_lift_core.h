@@ -68,6 +68,22 @@ int pk_c_lift_result_add_call_edge(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_diagnostic(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_opacity(pk_c_lift_result *result, const char *json);
 int pk_c_lift_result_add_refusal(pk_c_lift_result *result, const char *json);
+int pk_c_lift_result_add_opacity_entry(
+    pk_c_lift_result *result,
+    const char *kind,
+    const char *path,
+    int line,
+    int column,
+    const char *reason,
+    const char *affected_surface);
+int pk_c_lift_result_add_refusal_entry(
+    pk_c_lift_result *result,
+    const char *kind,
+    const char *path,
+    int line,
+    int column,
+    const char *surface,
+    const char *reason);
 char *pk_c_lift_result_to_json(const pk_c_lift_result *result);
 
 #endif
