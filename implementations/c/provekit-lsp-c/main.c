@@ -268,6 +268,11 @@ static void handle_parse(const char *id, const char *json_line) {
     free(source);
     free(path);
 
+    if (!facts) {
+        send_error(id, -32603, "parse: out of memory");
+        return;
+    }
+
     pk_c_lift_result *result_obj = pk_c_lift_result_new();
     if (!result_obj) {
         pk_c_source_facts_free(facts);
@@ -275,21 +280,19 @@ static void handle_parse(const char *id, const char *json_line) {
         return;
     }
 
-    if (facts) {
-        for (size_t i = 0; i < facts->n_functions; i++) {
-            if (facts->functions[i].has_contract_annotation) {
-                add_contract_decl(result_obj, facts->functions[i].name);
-            }
+    for (size_t i = 0; i < facts->n_functions; i++) {
+        if (facts->functions[i].has_contract_annotation) {
+            add_contract_decl(result_obj, facts->functions[i].name);
         }
-        if (facts->extraction_result) {
-            for (size_t i = 0; i < facts->extraction_result->diagnostics.len; i++) {
-                pk_c_lift_result_add_diagnostic(
-                    result_obj,
-                    facts->extraction_result->diagnostics.items[i]);
-            }
-        }
-        pk_c_source_facts_free(facts);
     }
+    if (facts->extraction_result) {
+        for (size_t i = 0; i < facts->extraction_result->diagnostics.len; i++) {
+            pk_c_lift_result_add_diagnostic(
+                result_obj,
+                facts->extraction_result->diagnostics.items[i]);
+        }
+    }
+    pk_c_source_facts_free(facts);
 
     char *result_json = pk_c_lift_result_to_json(result_obj);
     if (!result_json) {
