@@ -53,7 +53,7 @@ This is what the term "constraint-driven development" names. Software ages backw
 ## Install path
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 cd your-rust-crate
 cargo provekit-lift

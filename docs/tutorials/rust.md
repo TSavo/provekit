@@ -8,10 +8,12 @@ For the current end-user quickstart (get a red squiggle in 10 minutes):
 
 > [docs/quickstart-end-user.md](../quickstart-end-user.md)
 
-For the current extender quickstart (write a new kit lifter or protocol spec):
+## Step 1: install the source-built CLI
+
+From the repository root:
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 ```
 
 The installed binary is `provekit`. It is the canonical Rust implementation for protocol v1.6.2; alternative implementations in other languages conform to the same catalog CID.
@@ -122,7 +124,7 @@ provekit search --consequent some-formula.json
 
 ## Troubleshooting
 
-**`provekit verify-protocol` exits with code 1.** The local install's spec bytes do not hash to the expected catalog CID. Either the install is corrupted (re-run `cargo install provekit`) or the binary was built against a different protocol version (check `provekit version`).
+**`provekit verify-protocol` exits with code 1.** The local install's spec bytes do not hash to the expected catalog CID. Either the install is corrupted (re-run `cargo install --path implementations/rust/provekit-cli`) or the binary was built against a different protocol version (check `provekit version`).
 
 **`cargo provekit-lift` reports zero mementos.** No lift adapter recognized any annotations in the workspace. Today's shipping adapters cover `proptest!` blocks and `#[contracts::requires]` / `#[contracts::ensures]` macros; if your crate uses a different annotation library, the adapter is on the v1.2 roadmap (see [per-adapter-coverage.md](../reference/per-adapter-coverage.md)).
 

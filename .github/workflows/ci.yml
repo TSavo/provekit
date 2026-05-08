@@ -1,17 +1,17 @@
 # ProvekIt — cross-language conformance gate
 #
-# Runs the same gate as `make ci` on every push and PR. Source of truth
-# for "do the kits derive the catalog-pinned protocol CIDs on Linux x86_64
-# today" — answer is committed to the repo, not asserted.
+# Runs the Linux `make ci` gate on every push and PR, then adds macOS Swift
+# and per-kit verifier jobs. Source of truth for "do the kits derive the
+# catalog-pinned protocol CIDs today" is committed to the repo, not asserted.
 #
 # Languages exercised:
 #   Rust 1.x stable, Go 1.22, .NET 10 (preview), Node 22 + pnpm 10,
 #   Python 3.12, Java 21 (Temurin) + Maven, clang/clang++ via apt,
 #   C, C++, Zig, PHP, Ruby, and Swift in the macOS job.
 #
-# The Makefile is the contract. CI installs toolchains then calls `make`
-# targets so local dev and CI run the same code path. If you can run
-# `make ci` locally, this workflow runs the same thing.
+# The Makefile is the local contract. CI installs toolchains, calls `make`
+# targets for the Linux profile, then runs the extra platform/profile jobs that
+# are not part of the default local aggregate.
 
 name: CI
 
@@ -247,7 +247,7 @@ jobs:
     # plus an OpenSSL libcrypto dep wired through Homebrew prefixes). This
     # job exercises `make mint-swift` end-to-end on a macOS runner so the
     # swift kit's pinned contractSetCid is verified on every PR alongside
-    # the Linux 10/12 set, advancing the gate to 11/12.
+    # the Linux 11/12 set, advancing the gate to 12/12.
     #
     # Scope (kept lean to manage macOS runner minutes):
     #   - install rust (swift toolchain ships pre-installed on the
@@ -264,7 +264,7 @@ jobs:
     # the Linux job's contract; replicating them here doubles cost
     # without adding signal. The cross-kit byte-equivalence claim is
     # already protected by the Linux gate's pinned CIDs for the other
-    # 10 kits, and JCS+BLAKE3 is architecture-independent.
+    # 11 kits, and JCS+BLAKE3 is architecture-independent.
     name: Cross-language conformance gate (macOS swift)
     # Self-hosted Mac runner registered on the architect's machine
     # (label `macOS`, X64). Closes #305 — moves the swift jobs off

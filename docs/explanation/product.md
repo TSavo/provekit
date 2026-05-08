@@ -80,12 +80,12 @@ ProvekIt is not a coding-agent guardrail or an LLM proof harness. The protocol d
 
 ## Adoption surfaces
 
-ProvekIt ships through three install paths.
+ProvekIt has three adoption paths.
 
 **1. Library author publishes a `.proof` alongside their crate.**
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 cd my-crate
 cargo provekit-lift   # walks proptest! and #[contracts::ensures] annotations
                       # emits target/.proof

@@ -21,7 +21,7 @@ A walkthrough for Java / JVM developers. By the end you have a `.proof` catalog 
 
 ```bash
 # the canonical verifier (Rust CLI)
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 
 # the Java kit (multi-module Maven, ServiceLoader-discovered)

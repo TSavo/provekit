@@ -53,17 +53,17 @@ The top-level Makefile orchestrates the full build:
 # Build the Rust workspace (CLI, LSP server, linker daemon, tools)
 make build-rust
 
-# Run the full conformance gate
+# Run the Linux-profile conformance gate
 make conformance
 
-# Run all language-native test suites
+# Run the Linux native test aggregate
 make test-all
 
 # Run both
 make ci
 ```
 
-`make ci` is the gate. If it is green, every peer's self-contracts round-trip to pinned CIDs, the catalog hash matches, and every native test suite passes.
+`make ci` is the local Linux-profile gate. If it is green, the Linux profile's self-contracts round-trip to pinned CIDs, the catalog hash matches, and the Linux native test aggregate passes. The full GitHub workflow adds the macOS Swift profile and per-kit verifier jobs.
 
 Per-language builds for non-Rust kits:
 
@@ -318,15 +318,17 @@ examples/
 
 ## How CI works
 
-CI runs `make ci` on `ubuntu-latest`. The gate has two parts:
+CI runs `make ci` for the Linux profile, then runs additional macOS Swift and per-kit verifier jobs. The local Linux gate has two parts:
 
-**`make conformance`**: four checks in sequence.
+**`make conformance`**: six checks in sequence.
 1. `catalog-verify`: recomputes all spec CIDs from spec bytes and confirms they match `protocol/specs/2026-04-30-protocol-catalog.json`. Fails on any drift.
 2. `protocol-verify`: runs `provekit verify-protocol --signed`, which checks that the local binary's declared catalog CID is signed by the foundation key.
-3. `all-mint`: runs the five per-kit mint commands (rust, go, cpp, ts, csharp). Each mints the kit's self-contracts bundle, computes the `contractSetCid`, and verifies it against the signed attestation envelope in `.provekit/self-contracts-attestations/<lang>.json`. Fails if the contractSetCid has drifted from the signed value.
+3. `all-mint`: runs the Linux-profile per-kit mint commands. Each mints the kit's self-contracts bundle, computes the `contractSetCid`, and verifies it against the signed attestation envelope in `.provekit/self-contracts-attestations/<lang>.json`. Fails if the contractSetCid has drifted from the signed value.
 4. `test-self-contracts`: runs the Rust kit's catalog-format unit tests (19 tests covering R1-R15 of the protocol catalog format spec). Fails if any format invariant regresses.
+5. `conformance-region-fixture`: checks the RegionSort fixture coverage.
+6. `cross-kit-conformance`: runs the profile-aware cross-kit conformance harness.
 
-**`make test-all`**: runs every language-native test suite in sequence.
+**`make test-all`**: runs the Linux native test aggregate in sequence.
 
 To debug a `mint-<lang>` failure: the Makefile prints the new `cid` and `contractSetCid` when the attestation check fails. If you changed self-contracts intentionally, follow the bump dance printed in the error message (the `sign-self-contracts` tool call). If the drift is unintentional, look for a change in the kit's source that altered the lifted contracts.
 

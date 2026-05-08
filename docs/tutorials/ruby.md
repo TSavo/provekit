@@ -19,13 +19,13 @@ A walkthrough for Ruby developers. By the end you have a `.proof` catalog lifted
 ## 3. Install
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 
-gem install provekit
+cd implementations/ruby && bundle install
 ```
 
-The Ruby kit lives at [implementations/ruby/](../../implementations/ruby/).
+The Ruby kit lives at [implementations/ruby/](../../implementations/ruby/). There is no RubyGems package in the current source-built distribution.
 
 ## 4. Lift your first contract
 

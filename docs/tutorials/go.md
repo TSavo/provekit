@@ -19,7 +19,7 @@ In v1.1: a `.proof` file authored directly through the Go kit's IR API.
 ## 3. Install
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 
 cd implementations/go && go build ./...

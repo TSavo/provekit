@@ -50,7 +50,9 @@ Each species can carry four states:
 - `lab/`: ordinary host-language code and checks. These should pass, because the bug is latent under the host's normal surface. No `.provekit` project is configured here.
 - `exhibit/`: one or more source surfaces lift into ProofIR or link into a LinkBundle and expose the missing edge with a red CLI signal.
 - `fixed/`: paired source surfaces close the edge and re-run through the same ProofIR or LinkBundle path with a green CLI signal.
-- `wild/`: real upstream sightings pinned by advisory, commit, path, and evidence.
+- `wild/`: optional real upstream sightings pinned by advisory, commit, path,
+  and evidence. Today this is metadata: the runner reports `wildSightings`, but
+  no checked-in `wild/` specimens are executed.
 
 ## Run It
 

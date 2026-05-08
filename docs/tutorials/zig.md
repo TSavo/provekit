@@ -19,7 +19,7 @@ A walkthrough for Zig developers. Zig has no native attribute syntax, so the lif
 ## 3. Install
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 
 cd implementations/zig && zig build

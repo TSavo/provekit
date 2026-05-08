@@ -3,14 +3,14 @@
 Modern dependency stacks, protocol stacks, and CI supply chains are deep. ProvekIt collapses their load-bearing claims to content-addressed evidence.
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 cd your-rust-crate
 cargo provekit-lift
 provekit prove
 ```
 
-Three commands. Sixty-four bytes of comparison per call site. One CPU instruction per discharge.
+Install once; then three commands. Sixty-four bytes of comparison per call site. One CPU instruction per discharge.
 
 ## What it does
 

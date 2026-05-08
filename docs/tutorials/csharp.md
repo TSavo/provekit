@@ -19,11 +19,10 @@ A walkthrough for C# developers. By the end you have a `.proof` catalog lifted f
 ## 3. Install
 
 ```bash
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 
 cd implementations/csharp && dotnet build
-dotnet tool install --global Provekit.Cli
 ```
 
 The C# kit ships as `Provekit.IR`, `Provekit.Canonicalizer`, `Provekit.SelfContracts`, `Provekit.ClaimEnvelope`, `Provekit.ProofEnvelope`, `Provekit.Verifier`.

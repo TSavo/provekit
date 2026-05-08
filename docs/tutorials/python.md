@@ -21,14 +21,17 @@ A walkthrough for Python developers. By the end you have a `.proof` catalog lift
 
 ```bash
 # the canonical verifier (Rust CLI)
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 
-# the Python kit
-pip install provekit
+# the in-tree Python lift tests / adapter harness
+cd implementations/python/provekit-lift-py-tests
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
 ```
 
-The Python kit lives at [implementations/python/](../../implementations/python/). The canonicalizer is pure Python and byte-identical to the Rust canonicalizer for all conformance tests.
+The Python kit lives at [implementations/python/](../../implementations/python/). There is no PyPI package in the current source-built distribution. The canonicalizer is pure Python and byte-identical to the Rust canonicalizer for all conformance tests.
 
 ## 4. Lift your first contract
 

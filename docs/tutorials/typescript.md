@@ -20,14 +20,14 @@ A walkthrough for TypeScript developers. By the end you have a `.proof` catalog 
 
 ```bash
 # the canonical verifier (Rust CLI)
-cargo install provekit
+cargo install --path implementations/rust/provekit-cli
 provekit verify-protocol
 
-# the TypeScript kit
-pnpm add @provekit/kit @provekit/lift-zod @provekit/lift-class-validator @provekit/lift-fast-check
+# the in-tree TypeScript kit
+cd implementations/typescript && pnpm install --frozen-lockfile
 ```
 
-Package names are placeholder; actual names will be confirmed when the v1.1 npm publish lands. See [implementations/typescript/](../../implementations/typescript/) for the in-tree workspace.
+Registry package names are not published yet. See [implementations/typescript/](../../implementations/typescript/) for the in-tree workspace.
 
 ## 4. Lift your first contract
 
