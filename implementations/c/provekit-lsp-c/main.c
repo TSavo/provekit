@@ -292,6 +292,11 @@ static void handle_parse(const char *id, const char *json_line) {
     }
 
     char *result_json = pk_c_lift_result_to_json(result_obj);
+    if (!result_json) {
+        pk_c_lift_result_free(result_obj);
+        send_error(id, -32603, "parse: out of memory");
+        return;
+    }
     send_response(id, result_json);
     free(result_json);
     pk_c_lift_result_free(result_obj);

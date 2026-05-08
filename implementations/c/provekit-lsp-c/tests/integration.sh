@@ -71,32 +71,35 @@ check "T4 parse: declarations key present" "$LINE2" '"declarations":'
 # T5: parse response declares contract 'add' with kind:contract shape
 check "T5 parse: contract add declared" "$LINE2" '"kind":"contract"'
 
-# T6: parse response declares contract 'compute' by name
-check "T6 parse: contract compute declared" "$LINE2" '"name":"compute"'
+# T6: parse response declares contract 'add' by name
+check "T6 parse: contract add named" "$LINE2" '"name":"add"'
 
-# T7: parse response contains callEdges array
-check "T7 parse: callEdges key present" "$LINE2" '"callEdges":'
+# T7: parse response declares contract 'compute' by name
+check "T7 parse: contract compute declared" "$LINE2" '"name":"compute"'
 
-# T8: callEdges is emitted as an empty array.
+# T8: parse response contains callEdges array
+check "T8 parse: callEdges key present" "$LINE2" '"callEdges":'
+
+# T9: callEdges is emitted as an empty array.
 #
 # The C LSP cannot compute contract CIDs (no JCS encoder + BLAKE3 here), so
 # the canonical IR shape (sourceContractCid, targetContractCid, targetSymbol,
 # callSiteLocus, evidenceTerm) cannot be produced. Until that's wired up,
 # emit []; the legacy {callee, caller, line} shape was silently dropped by
 # the daemon. (Review feedback: PR #165 / Copilot.)
-check "T8 parse: callEdges is empty array" "$LINE2" '"callEdges":[]'
+check "T9 parse: callEdges is empty array" "$LINE2" '"callEdges":[]'
 
-# T9: parse response contains diagnostics array
-check "T9 parse: diagnostics key present" "$LINE2" '"diagnostics":'
+# T10: parse response contains diagnostics array
+check "T10 parse: diagnostics key present" "$LINE2" '"diagnostics":'
 
-# T10: parse response contains opacityReport array
-check "T10 parse: opacityReport key present" "$LINE2" '"opacityReport":'
+# T11: parse response contains opacityReport array
+check "T11 parse: opacityReport key present" "$LINE2" '"opacityReport":'
 
-# T11: parse response contains refusals array
-check "T11 parse: refusals key present" "$LINE2" '"refusals":'
+# T12: parse response contains refusals array
+check "T12 parse: refusals key present" "$LINE2" '"refusals":'
 
-# T12: shutdown response contains null result
-check "T12 shutdown: result null" "$LINE3" '"result":null'
+# T13: shutdown response contains null result
+check "T13 shutdown: result null" "$LINE3" '"result":null'
 
 printf "\nResults: %d passed, %d failed\n" "$PASS" "$FAIL"
 
