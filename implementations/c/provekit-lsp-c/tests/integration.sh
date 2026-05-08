@@ -86,11 +86,17 @@ check "T7 parse: callEdges key present" "$LINE2" '"callEdges":'
 # the daemon. (Review feedback: PR #165 / Copilot.)
 check "T8 parse: callEdges is empty array" "$LINE2" '"callEdges":[]'
 
-# T9: parse response contains warnings array
-check "T9 parse: warnings key present" "$LINE2" '"warnings":'
+# T9: parse response contains diagnostics array
+check "T9 parse: diagnostics key present" "$LINE2" '"diagnostics":'
 
-# T10: shutdown response contains null result
-check "T10 shutdown: result null" "$LINE3" '"result":null'
+# T10: parse response contains opacityReport array
+check "T10 parse: opacityReport key present" "$LINE2" '"opacityReport":'
+
+# T11: parse response contains refusals array
+check "T11 parse: refusals key present" "$LINE2" '"refusals":'
+
+# T12: shutdown response contains null result
+check "T12 shutdown: result null" "$LINE3" '"result":null'
 
 printf "\nResults: %d passed, %d failed\n" "$PASS" "$FAIL"
 
