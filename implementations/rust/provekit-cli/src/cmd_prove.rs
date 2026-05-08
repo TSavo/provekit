@@ -25,8 +25,9 @@
 //     non-empty-paths invariant (most lifters walk their own working
 //     directory regardless of source_paths).
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use owo_colors::OwoColorize;
@@ -38,7 +39,8 @@ use provekit_self_contracts::lift_plugin_protocol::{
     verify_c5_response_kind_in_set, verify_c6_ir_document_array,
     verify_c7_diagnostics_field_is_array, verify_c8_call_edge_stream_present,
 };
-use provekit_verifier::{Runner, RunnerConfig};
+use provekit_verifier::solvers::{registry, run_plan, SolverHandle, SolverPlan, SolversConfig};
+use provekit_verifier::{ObligationVerdict, Runner, RunnerConfig};
 
 use crate::project_config::read_project_config;
 use crate::report_fmt;
@@ -483,6 +485,17 @@ pub fn run(args: ProveArgs) -> u8 {
         return run_kit(kit, args.out.quiet, args.out.json);
     }
 
+    if let Some(formula) = &args.formula {
+        let project_root: PathBuf = args.project.clone().unwrap_or_else(|| PathBuf::from("."));
+        return run_formula_gate(
+            &project_root,
+            formula,
+            &args.z3,
+            args.out.quiet,
+            args.out.json,
+        );
+    }
+
     // Otherwise, run the six-stage verifier pipeline.
     let project_root: PathBuf = args.project.unwrap_or_else(|| PathBuf::from("."));
     if !project_root.exists() {
@@ -543,6 +556,165 @@ pub fn run(args: ProveArgs) -> u8 {
     }
 
     report_fmt::report_exit_code(&report)
+}
+
+fn run_formula_gate(
+    project_root: &Path,
+    formula_path: &Path,
+    z3_path: &str,
+    quiet: bool,
+    json_out: bool,
+) -> u8 {
+    let started = std::time::Instant::now();
+    trace_log(format!(
+        "prove formula start project={} formula={}",
+        project_root.display(),
+        formula_path.display()
+    ));
+    if !project_root.exists() {
+        eprintln!(
+            "{}: project root does not exist: {}",
+            "error".red().bold(),
+            project_root.display()
+        );
+        return crate::EXIT_USER_ERROR;
+    }
+
+    let formula = match read_formula_json(formula_path) {
+        Ok(formula) => formula,
+        Err(error) => {
+            eprintln!("{}: {error}", "error".red().bold());
+            return crate::EXIT_USER_ERROR;
+        }
+    };
+    trace_log(format!(
+        "prove formula parsed formula={} elapsed={:?}",
+        formula_path.display(),
+        started.elapsed()
+    ));
+
+    let smt = match provekit_verifier::smt_emitter::emit(&formula) {
+        Ok(smt) => smt,
+        Err(error) => {
+            eprintln!("{}: SMT emission failed: {error}", "error".red().bold());
+            return crate::EXIT_SOLVER_FAIL;
+        }
+    };
+    trace_log(format!(
+        "prove formula emitted SMT formula={} elapsed={:?}",
+        formula_path.display(),
+        started.elapsed()
+    ));
+
+    let cfg = RunnerConfig {
+        project_root: project_root.to_path_buf(),
+        z3_path: z3_path.to_string(),
+        ..Default::default()
+    };
+    let (plan, registry) = build_formula_plan_and_registry(&cfg);
+    trace_log(format!(
+        "prove formula run solver plan formula={} elapsed={:?}",
+        formula_path.display(),
+        started.elapsed()
+    ));
+    let (verdict, reason, invocations) = run_plan(&plan, &registry, &smt, Some(&formula));
+    trace_log(format!(
+        "prove formula solver verdict={} formula={} elapsed={:?}",
+        verdict.as_str(),
+        formula_path.display(),
+        started.elapsed()
+    ));
+
+    if json_out {
+        let solver_invocations: Vec<Value> = invocations
+            .iter()
+            .map(|invocation| {
+                json!({
+                    "authoritative": invocation.authoritative,
+                    "solver": invocation.result.solver_name,
+                    "version": invocation.result.solver_version,
+                    "status": invocation.result.verdict.as_str(),
+                    "timedOut": invocation.result.timed_out,
+                    "error": invocation.result.error,
+                    "stdout": invocation.result.solver_stdout,
+                    "wallClockMs": invocation.result.wall_clock.as_millis(),
+                })
+            })
+            .collect();
+        let out = json!({
+            "kind": "formula-obligation",
+            "ok": verdict == ObligationVerdict::Discharged,
+            "status": verdict.as_str(),
+            "reason": reason,
+            "solverInvocations": solver_invocations,
+        });
+        match serde_json::to_string_pretty(&out) {
+            Ok(s) => println!("{s}"),
+            Err(error) => {
+                eprintln!("{}: serialize JSON: {error}", "error".red().bold());
+                return crate::EXIT_USER_ERROR;
+            }
+        }
+    } else if !quiet {
+        let status = match verdict {
+            ObligationVerdict::Discharged => "discharged".green().to_string(),
+            ObligationVerdict::Unsatisfied => "unsatisfied".red().to_string(),
+            ObligationVerdict::Undecidable => "undecidable".yellow().to_string(),
+            ObligationVerdict::Disagreement => "disagreement".yellow().to_string(),
+        };
+        println!("{}", "ProvekIt formula obligation".bold());
+        println!("  status : {status}");
+        println!("  reason : {reason}");
+    }
+
+    match verdict {
+        ObligationVerdict::Discharged => crate::EXIT_OK,
+        ObligationVerdict::Unsatisfied => crate::EXIT_VERIFY_FAIL,
+        ObligationVerdict::Undecidable | ObligationVerdict::Disagreement => crate::EXIT_SOLVER_FAIL,
+    }
+}
+
+fn trace_enabled() -> bool {
+    std::env::var_os("PROVEKIT_CLI_TRACE").is_some()
+}
+
+fn trace_log(message: impl std::fmt::Display) {
+    if trace_enabled() {
+        eprintln!("provekit trace: {message}");
+    }
+}
+
+fn build_formula_plan_and_registry(
+    cfg: &RunnerConfig,
+) -> (SolverPlan, HashMap<String, SolverHandle>) {
+    if let Some(sc) = &cfg.solvers_config {
+        return (SolverPlan::from_config(sc), registry::build(sc));
+    }
+    if let Ok(Some(sc)) = SolversConfig::load(&cfg.project_root) {
+        return (SolverPlan::from_config(&sc), registry::build(&sc));
+    }
+    let z3 = if cfg.z3_path.is_empty() {
+        "z3".to_string()
+    } else {
+        cfg.z3_path.clone()
+    };
+    (
+        SolverPlan::Single("z3".into()),
+        registry::build_default_z3(&z3),
+    )
+}
+
+fn read_formula_json(path: &Path) -> Result<Value, String> {
+    let text = if path.as_os_str() == "-" {
+        let mut buf = String::new();
+        let mut stdin = std::io::stdin();
+        std::io::Read::read_to_string(&mut stdin, &mut buf)
+            .map_err(|e| format!("read formula from stdin: {e}"))?;
+        buf
+    } else {
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?
+    };
+    serde_json::from_str(&text).map_err(|e| format!("parse formula JSON: {e}"))
 }
 
 // ---------------------------------------------------------------------------

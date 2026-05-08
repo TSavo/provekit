@@ -3,54 +3,102 @@
 > *Supra omnia, rectum.*
 > — T
 
-The name is literal: **Prove `k(I)=t`**. `I` is an implementation artifact, `k` is the canonical projection that reads the claim boundary, and `t` is the truth claim the artifact is supposed to yield. ProvekIt does not ask you to trust the artifact; it asks for signed, content-addressed evidence that applying `k` to `I` produces `t`.
+The name is literal: **Prove `k(I)=t`**. ProvekIt is a general-purpose framework
+for proving that a transformation `k`, applied to an input `I` from some domain,
+produces the formal correctness representation `t`.
 
-ProvekIt is a toolchain for proving software correctness across domains. A domain can be a language, package ecosystem, protocol catalog, CI supply-chain closure, proof-file consumer, or generated repair. Cross-platform contract correctness is one use case. The general move is: name the proposition by CID, name the evidence by CID, sign the edge, and fail closed when the graph does not carry the claim.
+`k` can be a compiler, lifter, verifier, policy projector, protocol checker,
+CI closure mapper, schema extractor, or repair transform. `I` can be source
+code, annotations, tests, schemas, build inputs, proof files, package metadata,
+or any other domain artifact. `t` is the canonical truth object the artifact is
+supposed to yield: formal, content-addressed, signable, comparable, and
+verifiable.
 
-Every if-statement is a contract — a guarantee about state, time, and place. Get any of it wrong, and the whole contract breaks. This is the bug class that exists in all upstream code; it's why if-statements exist at all.
+ProvekIt does not ask you to trust the artifact. It asks for signed,
+content-addressed evidence that applying `k` to `I` produces `t`, then fails
+closed when the graph does not carry the claim.
 
-But contracts don't travel. Not across domains, not even within them. The check fires locally and disappears — three function calls deep, your code has no idea what guarantees the leaf function requires. Contracts live INSIDE the code, not beneath it. Nothing demands all code conform.
+Modern software already depends on `k(I)=t` claims everywhere. A compiler says
+source becomes a binary. A type checker says a program inhabits a type. A CI run
+says a precise closure of inputs produced a result. A schema says a payload has a
+shape. A repair tool says a patch closes a defect.
 
-## What if I told you that type of bug was impossible?
+Most of those claims are trusted because a tool said so, a log existed, a check
+passed once, or a convention held locally. They do not travel cleanly across
+languages, repositories, build systems, package ecosystems, generated code, and
+time. The claim falls out of the place where it was made, and the next domain
+has to trust it again from scratch.
 
-What if every if-statement weren't just a check — what if it were a demand on every upstream caller to respect it at compile time?
+ProvekIt makes those claims first-class. The input, transformation, formal
+truth object, evidence, and proof edge become content-addressed artifacts. They
+can be signed, compared, composed, replayed, rejected, and carried across domain
+boundaries without asking the next tool to inherit the previous tool's trust.
 
-Not just within the function. Not just within the language. Across languages. Across platforms. Across domains.
+## The Correctness Stack
 
-What would change? How would software engineering be different? How would supply chains operate?
+ProvekIt has three layers:
 
----
+1. **Projection.** Native adapters apply `k` to domain artifacts `I`: source,
+   annotations, tests, schemas, CI inputs, protocol files, package metadata, or
+   generated repairs.
+2. **Truth.** The result `t` is canonicalized into a formal claim object with
+   stable bytes, stable CIDs, and explicit provenance.
+3. **Proof.** The verifier decides whether the graph carries the required edge:
+   an obligation is discharged, a missing implication is exposed, or a claimed
+   closure is rejected.
 
-## ProvekIt is the substrate that makes that true.
+That is the substrate. Software correctness stops being a local tool result and
+becomes a portable, checkable relationship between domain evidence and formal
+truth.
 
-Every if-statement, assertion, and type signature becomes a signed, binding demand on every upstream caller — enforced at compile time, across every language, across every domain you cross.
+**Artifacts become accountable.** Code is one implementation of a claim, not the
+claim itself. Refactoring, generated code, and AI-produced repairs can be judged
+by the formal truth they preserve or fail to preserve.
 
-**Bug classes vanish.** NullPointerException is no longer a runtime event. Neither is use-after-free, SQL injection, path traversal, or any bug class your error handlers exist to catch.
+**Domains compose.** A language contract, package policy, protocol conformance
+claim, CI result, proof file, and repair witness can all live in the same graph
+when they reduce to content-addressed truth objects.
 
-**Software engineering shifts.** The artifact is the proof. Code is one implementation. Refactoring becomes proof-preserving rewrite. AI becomes a contract-implementation generator.
+**Correctness fails closed.** If the graph cannot prove the edge, the claim does
+not travel. That is how bug classes become missing obligations instead of local
+runtime surprises.
 
-**Supply chains compose.** Every dependency's signed contracts compose into your application's verified properties. CI results bind to exact proof/toolchain/input closures. Dependency confusion becomes arithmetically impossible. SBOMs become meaningful artifacts.
+## Canonical Truth
 
-## ProofIR is allowed to be lossy
+Different domains need different projections, but the output of a projection
+has to become something the rest of the graph can reason about. In this repo,
+the central truth format is ProofIR.
 
-ProofIR is not a universal language for re-expressing every implementation detail of every programming language. It is a universal language for claim boundaries: preconditions, postconditions, invariants, protocol obligations, value predicates, resource states, signer claims, CI blast radii, grammar conformance claims, realizer outputs, and the implication edges that connect them.
+ProofIR is not a universal language for re-expressing every implementation
+detail of every programming language. It is a canonical language for claim
+boundaries: preconditions, postconditions, invariants, protocol obligations,
+value predicates, resource states, signer claims, CI blast radii, grammar
+conformance claims, realizer outputs, and the implication edges that connect
+them.
 
-That is why it can work across domains. A Spring annotation, a Zod validator, an OpenAPI schema, a Rust type invariant, and a ProvekIt-native contract can all collapse to the same canonical predicate when they assert the same boundary fact. The host-language texture can be discarded; the obligation survives.
+That is why a Spring annotation, a Zod validator, an OpenAPI schema, a Rust type
+invariant, and a ProvekIt-native contract can all collapse to the same canonical
+predicate when they assert the same boundary fact. The host-language texture can
+be discarded; the obligation survives.
 
-Once lifted, that boundary is universal, comparable, solvable, translatable, content-addressable, and signable. It has canonical bytes and a CID. It can be carried across languages, repositories, package ecosystems, commits, and time. The contracts were often already in your code; ProvekIt turns them into accountable edges the rest of the graph must satisfy.
+Once projected into ProofIR, a boundary is comparable, solvable, translatable,
+content-addressable, and signable. It has canonical bytes and a CID. It can be
+carried across languages, repositories, package ecosystems, commits, and time.
+The contracts were often already in your code; ProvekIt turns them into
+accountable edges the rest of the graph must satisfy.
 
 ## I want to...
 
 | | |
 | --- | --- |
-| **See it in my language — and every other language at the same time** | [docs/tutorials/polyglot-stack.md](docs/tutorials/polyglot-stack.md) |
-| **See a bug class collapse to the same bytes across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md) |
+| **Use the CLI** | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) to install and run `provekit`; [docs/reference/protocol-extensions.md#tool-surfaces](docs/reference/protocol-extensions.md#tool-surfaces) for the command surface |
+| **See a bug class collapse to the same bytes across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md); run `cargo run --manifest-path bug-zoo/Cargo.toml -- --all` |
+| **See supported languages and kit coverage** | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
 | **Understand the move** | [docs/papers/](docs/papers/) — recommended order: paper 03 → 06 → 02 |
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
 | **Read the spec** | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |
 | **Understand the new protocol/tooling surface** | [docs/reference/protocol-extensions.md](docs/reference/protocol-extensions.md) |
 | **Bind CI results to supply-chain inputs** | [docs/how-to/content-addressed-ci.md](docs/how-to/content-addressed-ci.md) |
-| **Run the Bug Zoo / dropper realizer lab** | [docs/how-to/bug-zoo.md](docs/how-to/bug-zoo.md) |
 | **Compare to other tools** | [docs/explanation/compared-to/](docs/explanation/compared-to/) |
 
 For more entry points (per-language tutorials, IDE integration, publishing a `.proof`, CICP, Bug Zoo, protocol extensions, threat model, and spec CIDs), see [docs/index.md](docs/index.md).
@@ -63,7 +111,7 @@ For more entry points (per-language tutorials, IDE integration, publishing a `.p
 - **Conforming implementations**: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C, PHP. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
 - **Protocol evolution**: PEP dogfoods catalog transitions as signed, content-addressed body-claims under `protocol/evolution/v1.6.1/` and `protocol/evolution/v1.6.2/`.
 - **Content-addressed CI**: CICP binds CI results to exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. Reuse is allowed only when that closure is byte-identical.
-- **Bug Zoo / realizers**: the self-contained `bug-zoo/` runner checks lab, exposed, dropped, and wild specimens; dropped specimens are accepted only after realizer output is re-lifted and bound to a fix receipt.
+- **Bug Zoo**: the self-contained `bug-zoo/` runner checks lab, exhibit, fixed, and wild specimen states; fixed pairs are accepted only after the same surface re-lifts to a clean boundary receipt.
 - **Conformance gate**: catalog CIDs, proof-protocol fixtures, CICP vectors, self-contract attestations, and per-kit tests must agree before CI is green.
 
 The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
@@ -74,8 +122,21 @@ Bug Zoo is the executable lab for the claim above. Each specimen runs in an
 isolated host-language environment, uses that language's own compiler/kit to
 map source to a witnessed bug output, then checks that the canonical ProofIR
 signature is byte-identical across surfaces and languages. The normal proof
-gate for projects is `provekit prove`; Bug Zoo owns this check as
-self-contained machinery under `bug-zoo/`.
+gate for projects is `provekit prove`; Bug Zoo owns the fixture orchestration
+under `bug-zoo/` and routes lift/proof work through the Rust CLI.
+
+The zoo is organized by species, not by language. A species directory owns a
+`specimen.yaml` manifest, then each language under that species carries the same
+lifecycle:
+
+- `lab/`: ordinary host code that passes native checks while the bug class is
+  still latent. It has no ProvekIt workflow.
+- `exhibit/<surface>/`: a native contract surface that lifts to the missing
+  edge and yields the red `provekit prove` signal.
+- `fixed/<surface>/`: the paired source with that boundary closed, re-lifted
+  through the same surface to yield the green `provekit prove` signal.
+- `wild/`: optional real upstream sightings pinned by advisory, commit, path,
+  and evidence.
 
 In shorthand:
 
@@ -87,6 +148,9 @@ k_lang(I) = t
 and `t` is the witnessed output: canonical ProofIR bytes, CID, and receipt.
 Different languages can disagree in syntax, runtime behavior, and exception
 type while still compiling to the same witnessed `t`.
+
+Native evidence is projected into canonical truth; then the correctness layer
+proves the missing edge or its closure.
 
 The current null-boundary receipts show Java, TypeScript, and C# lifting the same
 missing edge:
@@ -101,7 +165,16 @@ to the same ProofIR CID:
 blake3-512:0d611d8478a205ff040e7d0bcf6c21b12051340ecc5f00c3953af632b23fc01e069b4ad8a8699869163e135b9fde85792eba6acc54cd75cb3d3cc6a40a99ded4
 ```
 
+They also run the red/green proof obligations through the Rust CLI: lab null is
+rejected against each lifted non-null requirement, and each fixed surface
+discharges the paired non-null implication with `provekit prove --formula`.
+
 Read [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md), or run:
+
+Bug Zoo also carries value-scope escape as `BZ-SHAPE-006`: Java JUnit and Spring
+exhibits both witness a point value, and the runner invokes
+`provekit prove --formula` to produce the red signal when 42 fails a `>= 43`
+requirement and the green signal when the fixed surface witnesses 43.
 
 ```sh
 cargo run --manifest-path bug-zoo/Cargo.toml -- --all

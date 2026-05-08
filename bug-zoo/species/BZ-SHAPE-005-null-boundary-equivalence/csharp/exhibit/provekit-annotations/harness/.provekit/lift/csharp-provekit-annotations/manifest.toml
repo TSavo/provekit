@@ -1,0 +1,10 @@
+name = "csharp-provekit-annotations"
+version = "1.0.0"
+protocol_version = "provekit-lift/1"
+command = ["../kit-rpc/run-csharp-lifter.sh", "--rpc"]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["csharp-provekit-annotations"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false

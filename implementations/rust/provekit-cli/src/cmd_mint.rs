@@ -29,9 +29,9 @@
 //       protocol/specs/2026-05-02-bundle-attestation-protocol.md
 //       spec #94 §2 (contractSetCid in signed body)
 //
-// Response shapes: only `proof-envelope` (shape c) is supported in v1.
-// Shapes (a) `ir-document` and (b) `signed-mementos` are spec'd but
-// unimplemented; adding them is additive, requires no client breakage.
+// Response shapes: `proof-envelope` and `ir-document` are supported in v1.
+// Shape (b) `signed-mementos` is spec'd but unimplemented; adding it is
+// additive, requires no client breakage.
 //
 // Missing-lifter behavior: when a manifest declares a binary that does
 // not exist yet (ENOENT on spawn), mint produces a well-formed
@@ -44,6 +44,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::Instant;
 
 use base64::Engine;
 use clap::Parser;
@@ -209,9 +210,14 @@ fn find_manifest(project_root: &Path, surface: &str) -> Result<PluginManifest, S
 ///
 /// Extracted as a pure function so unit tests can assert the C3 invariant
 /// (non-empty `source_paths`) without spawning a subprocess.
-fn build_lift_params(surface: &str) -> Value {
+fn build_lift_params(project_root: &Path, surface: &str) -> Value {
+    let workspace_root = project_root
+        .canonicalize()
+        .unwrap_or_else(|_| project_root.to_path_buf());
     json!({
         "surface": surface,
+        "workspace_root": workspace_root,
+        "config_path": ".provekit/config.toml",
         "source_paths": ["."],
         "options": {"layer": "all"}
     })
@@ -222,6 +228,8 @@ struct DispatchResult {
     filename_cid: String,
     contract_set_cid: String,
     bytes_written: usize,
+    proof_file: Option<PathBuf>,
+    lift_result: Value,
 }
 
 /// Dispatch the lift-protocol RPC.
@@ -238,7 +246,14 @@ fn dispatch(
     out_dir: &Path,
     quiet: bool,
 ) -> Result<DispatchResult, String> {
+    let started = Instant::now();
     let manifest = find_manifest(project_root, surface)?;
+    trace_log(format!(
+        "mint dispatch start surface={surface} project={} plugin={} command={:?}",
+        project_root.display(),
+        manifest.name,
+        manifest.command
+    ));
     if !quiet {
         println!(
             "{}: surface=`{}` plugin=`{}` command={:?}",
@@ -272,6 +287,10 @@ fn dispatch(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
 
+    trace_log(format!(
+        "mint rpc spawn surface={surface} command={:?}",
+        manifest.command
+    ));
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -288,10 +307,20 @@ fn dispatch(
                 filename_cid: String::new(),
                 contract_set_cid: empty_cid,
                 bytes_written: 0,
+                proof_file: None,
+                lift_result: json!({
+                    "kind": "empty-set",
+                    "reason": "lifter binary not found",
+                    "binary": manifest.command[0],
+                }),
             });
         }
         Err(e) => return Err(format!("spawn {:?}: {e}", manifest.command)),
     };
+    trace_log(format!(
+        "mint rpc spawned surface={surface} pid={}",
+        child.id()
+    ));
 
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
@@ -309,9 +338,17 @@ fn dispatch(
             "config_path": ".provekit/config.toml"
         }
     });
+    trace_log(format!("mint rpc send initialize surface={surface} id=1"));
     writeln!(stdin, "{init_req}").map_err(|e| format!("write initialize: {e}"))?;
 
+    trace_log(format!(
+        "mint rpc wait initialize response surface={surface} id=1"
+    ));
     let init_resp = read_response(&mut reader, 1)?;
+    trace_log(format!(
+        "mint rpc got initialize response surface={surface} elapsed={:?}",
+        started.elapsed()
+    ));
     if !quiet {
         if let Some(name) = init_resp.get("name").and_then(|v| v.as_str()) {
             println!("{}: plugin `{}` ready", "ok".green().bold(), name);
@@ -322,15 +359,23 @@ fn dispatch(
     //    Most lifters walk their own working directory regardless of source_paths,
     //    but C3 (`verify_c3_lift_request_well_formed`) requires the array to be
     //    non-empty. Mirror the pattern from cmd_prove::capture_rpc.
-    let lift_params = build_lift_params(surface);
+    let lift_params = build_lift_params(project_root, surface);
     let lift_req = json!({
         "jsonrpc": "2.0",
         "id": 2,
         "method": "lift",
         "params": lift_params
     });
+    trace_log(format!("mint rpc send lift surface={surface} id=2"));
     writeln!(stdin, "{lift_req}").map_err(|e| format!("write lift: {e}"))?;
+    trace_log(format!(
+        "mint rpc wait lift response surface={surface} id=2"
+    ));
     let lift_resp = read_response(&mut reader, 2)?;
+    trace_log(format!(
+        "mint rpc got lift response surface={surface} elapsed={:?}",
+        started.elapsed()
+    ));
 
     // 3. shutdown
     let shutdown_req = json!({
@@ -338,9 +383,16 @@ fn dispatch(
         "id": 3,
         "method": "shutdown"
     });
+    trace_log(format!("mint rpc send shutdown surface={surface} id=3"));
     let _ = writeln!(stdin, "{shutdown_req}");
     drop(stdin);
-    let _ = child.wait();
+    trace_log(format!("mint rpc wait child exit surface={surface}"));
+    let status = child.wait();
+    trace_log(format!(
+        "mint rpc child exit surface={surface} status={:?} elapsed={:?}",
+        status,
+        started.elapsed()
+    ));
 
     // Process response: shape `proof-envelope` or `ir-document`
     let kind = lift_resp
@@ -391,6 +443,8 @@ fn dispatch(
                 filename_cid,
                 contract_set_cid,
                 bytes_written: bytes.len(),
+                proof_file: Some(out_path),
+                lift_result: redact_lift_result(lift_resp),
             })
         }
         "ir-document" => {
@@ -424,11 +478,35 @@ fn dispatch(
                 filename_cid,
                 contract_set_cid,
                 bytes_written: bytes.len(),
+                proof_file: Some(out_path),
+                lift_result: lift_resp,
             })
         }
         other => Err(format!(
             "unsupported response shape `{other}`; expected `proof-envelope` or `ir-document`",
         )),
+    }
+}
+
+fn redact_lift_result(mut lift_resp: Value) -> Value {
+    if let Some(obj) = lift_resp.as_object_mut() {
+        if obj.contains_key("bytes_base64") {
+            obj.insert(
+                "bytes_base64".to_string(),
+                Value::String("<redacted>".to_string()),
+            );
+        }
+    }
+    lift_resp
+}
+
+fn trace_enabled() -> bool {
+    std::env::var_os("PROVEKIT_CLI_TRACE").is_some()
+}
+
+fn trace_log(message: impl std::fmt::Display) {
+    if trace_enabled() {
+        eprintln!("provekit trace: {message}");
     }
 }
 
@@ -476,6 +554,7 @@ fn mint_from_ir_document(
 
         let name = decl
             .get("name")
+            .or_else(|| decl.get("symbol"))
             .and_then(|v| v.as_str())
             .unwrap_or("unnamed")
             .to_string();
@@ -484,9 +563,18 @@ fn mint_from_ir_document(
             .and_then(|v| v.as_str())
             .unwrap_or("out")
             .to_string();
-        let pre = decl.get("pre").map(json_to_cvalue);
-        let post = decl.get("post").map(json_to_cvalue);
-        let inv = decl.get("inv").map(json_to_cvalue);
+        let pre = decl
+            .get("pre")
+            .or_else(|| decl.get("precondition"))
+            .map(json_to_cvalue);
+        let post = decl
+            .get("post")
+            .or_else(|| decl.get("postcondition"))
+            .map(json_to_cvalue);
+        let inv = decl
+            .get("inv")
+            .or_else(|| decl.get("invariant"))
+            .map(json_to_cvalue);
 
         if pre.is_none() && post.is_none() && inv.is_none() {
             continue;
@@ -765,7 +853,22 @@ pub fn run(args: MintArgs) -> u8 {
                 result.contract_set_cid.clone()
             };
 
-            if !args.flags.quiet {
+            if args.flags.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "ok": true,
+                        "project": &project_root,
+                        "surface": &surface,
+                        "filenameCid": &result.filename_cid,
+                        "contractSetCid": &contract_set_cid,
+                        "bytesWritten": result.bytes_written,
+                        "proofFile": &result.proof_file,
+                        "lift": &result.lift_result,
+                    }))
+                    .expect("serialize mint JSON")
+                );
+            } else if !args.flags.quiet {
                 println!();
                 if !result.filename_cid.is_empty() {
                     println!("  catalog CID:        {}", result.filename_cid);
@@ -882,7 +985,8 @@ mod tests {
     fn dispatch_lift_params_source_paths_non_empty() {
         // C3 (verify_c3_lift_request_well_formed) requires source_paths to be
         // a non-empty array. Sending [] was the bug fixed in issue #166.
-        let params = build_lift_params("rust");
+        let root = PathBuf::from(".");
+        let params = build_lift_params(&root, "rust");
         let paths = params["source_paths"]
             .as_array()
             .expect("source_paths must be an array");
@@ -895,9 +999,40 @@ mod tests {
 
     #[test]
     fn dispatch_lift_params_has_surface_and_options() {
-        let params = build_lift_params("go");
+        let root = PathBuf::from(".");
+        let params = build_lift_params(&root, "go");
         assert_eq!(params["surface"].as_str(), Some("go"));
+        assert_eq!(
+            params["config_path"].as_str(),
+            Some(".provekit/config.toml")
+        );
+        assert!(
+            params["workspace_root"].as_str().is_some(),
+            "workspace_root should be present for lifters that resolve source through the project root"
+        );
         assert_eq!(params["options"]["layer"].as_str(), Some("all"));
+    }
+
+    #[test]
+    fn mint_from_ir_document_accepts_contract_decl_shape() {
+        let ir = vec![json!({
+            "kind": "contract",
+            "symbol": "accept",
+            "invariant": {
+                "kind": "atomic",
+                "name": "eq",
+                "args": [
+                    {"kind": "var", "name": "value"},
+                    {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}
+                ]
+            }
+        })];
+
+        let (bytes, filename_cid, contract_set_cid) =
+            mint_from_ir_document(&ir, Path::new(".")).expect("mint bug-zoo style ir-document");
+        assert!(!bytes.is_empty());
+        assert!(filename_cid.starts_with("blake3-512:"));
+        assert!(contract_set_cid.starts_with("blake3-512:"));
     }
 
     #[test]

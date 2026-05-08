@@ -128,6 +128,11 @@ enum Cmd {
 pub struct ProveArgs {
     /// Project root to scan for .proof files. Defaults to the current directory.
     pub project: Option<PathBuf>,
+    /// Prove one IR-JSON formula directly. The formula is valid when the solver
+    /// reports UNSAT for its negation; invalid formulas exit with verification
+    /// failure and report the counterexample status.
+    #[arg(long, conflicts_with = "kit")]
+    pub formula: Option<PathBuf>,
     /// Path to z3 binary (default: "z3" on PATH).
     #[arg(long, default_value = "z3")]
     pub z3: String,
