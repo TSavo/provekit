@@ -2,11 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::process::{Command, Stdio};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use serde::Deserialize;
@@ -32,7 +30,7 @@ pub struct OutputFlags {
     version,
     about = "Run self-contained Bug Zoo specimens and verify their witnessed ProofIR shape.",
     long_about = "Bug Zoo is ProvekIt's executable laboratory. It runs each specimen with the \
-specimen's own host toolchain, invokes the language lifter RPC, and verifies the \
+specimen's own host toolchain, invokes the ProvekIt CLI lift path, and verifies the \
 canonical ProofIR bytes and CIDs for each Green/Red/Green bug story."
 )]
 pub struct ZooArgs {
@@ -70,15 +68,17 @@ struct LanguageSpecimen {
     equivalence: Equivalence,
     exposure: ExposureFiles,
     #[serde(default)]
+    composition: Option<Composition>,
+    #[serde(default)]
     wild_sightings: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 struct SpecimenPaths {
     lab_library: PathBuf,
     lab_harness: PathBuf,
-    lab_kit_rpc: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,7 +108,6 @@ struct Exposure {
     surface: String,
     harness: PathBuf,
     kit_rpc: PathBuf,
-    lift_rpc: CommandSpec,
     proof_ir_file: PathBuf,
     diagnostic_file: PathBuf,
     fixed: FixedExposure,
@@ -120,7 +119,6 @@ struct Exposure {
 struct FixedExposure {
     harness: PathBuf,
     kit_rpc: PathBuf,
-    lift_rpc: CommandSpec,
     proof_ir_file: PathBuf,
     diagnostic_file: PathBuf,
 }
@@ -141,6 +139,57 @@ struct Equivalence {
 #[serde(rename_all = "camelCase")]
 struct ExposureFiles {
     sat_witness_file: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct Composition {
+    checks: Vec<CompositionCheck>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompositionCheck {
+    id: String,
+    phase: CompositionPhase,
+    expected: CompositionExpected,
+    #[serde(default)]
+    witness_source: CompositionWitnessSource,
+    witness_exhibit: String,
+    #[serde(default)]
+    requirement_exhibit: Option<String>,
+    witness_formula: Value,
+    requirement_formula: Value,
+    #[serde(default)]
+    bindings: BTreeMap<String, String>,
+    assignment: BTreeMap<String, i64>,
+    diagnostic_file: PathBuf,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "kebab-case")]
+enum CompositionPhase {
+    Exhibit,
+    Fixed,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum CompositionExpected {
+    Missing,
+    Satisfied,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum CompositionWitnessSource {
+    ProofIr,
+    Lab,
+}
+
+impl Default for CompositionWitnessSource {
+    fn default() -> Self {
+        Self::ProofIr
+    }
 }
 
 #[derive(Debug)]
@@ -284,13 +333,14 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
 
         let mut cids = BTreeMap::new();
         let mut fixed_cids = BTreeMap::new();
+        let mut exhibit_irs = BTreeMap::new();
+        let mut fixed_irs = BTreeMap::new();
         for exhibit in &language.exhibits {
-            let lifted = invoke_lift_rpc(
+            let lifted = invoke_provekit_cli_lift(
                 specimen_dir,
                 &exhibit.id,
                 &exhibit.surface,
                 &exhibit.harness,
-                &exhibit.lift_rpc,
             )
             .map_err(|error| {
                 ZooError::verify(format!(
@@ -347,14 +397,14 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                 format!("{}:exhibit:{}", language.id, exhibit.id),
                 lifted_cid,
             );
+            exhibit_irs.insert(exhibit.id.clone(), lifted_ir);
 
             let fixed = &exhibit.fixed;
-            let fixed_lifted = invoke_lift_rpc(
+            let fixed_lifted = invoke_provekit_cli_lift(
                 specimen_dir,
                 &exhibit.id,
                 &exhibit.surface,
                 &fixed.harness,
-                &fixed.lift_rpc,
             )
             .map_err(|error| {
                 ZooError::verify(format!(
@@ -411,6 +461,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                 format!("{}:fixed:{}", language.id, exhibit.id),
                 fixed_lifted_cid,
             );
+            fixed_irs.insert(exhibit.id.clone(), fixed_lifted_ir);
         }
 
         for [left, right] in &language.equivalence.required {
@@ -423,6 +474,20 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                 )));
             }
         }
+
+        let composition_reports = verify_composition_checks(
+            specimen_dir,
+            language,
+            &manifest.predicates,
+            &exhibit_irs,
+            &fixed_irs,
+        )
+        .map_err(|error| {
+            ZooError::verify(format!(
+                "language `{}` composition failed: {error}",
+                language.id
+            ))
+        })?;
 
         let sat_witness = read_json(specimen_dir.join(&language.exposure.sat_witness_file))
             .map_err(|error| {
@@ -447,13 +512,26 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                 language.id, manifest.predicates.missing_edge
             );
             println!("zoo: {} fixed diagnostics clean PASS", language.id);
+            for report in &composition_reports {
+                println!(
+                    "zoo: {} composition {} {} PASS",
+                    language.id,
+                    report["id"].as_str().unwrap_or("check"),
+                    report["expected"].as_str().unwrap_or("unknown")
+                );
+            }
         }
 
         language_reports.push(json!({
             "id": language.id,
             "surface": language.surface,
+            "lab": {
+                "hostCheck": "passed",
+                "provekitWorkflow": "none",
+            },
             "proofIrCids": cids,
             "fixedProofIrCids": fixed_cids,
+            "composition": composition_reports,
             "wildSightings": language.wild_sightings,
             "satWitness": sat_witness,
         }));
@@ -540,18 +618,6 @@ fn validate_language_shape(language: &LanguageSpecimen) -> Vec<String> {
                 language.id, exhibit.id
             ));
         }
-        if exhibit.lift_rpc.argv.is_empty() {
-            errors.push(format!(
-                "language `{}` exhibit `{}` liftRpc.argv is required",
-                language.id, exhibit.id
-            ));
-        }
-        if exhibit.fixed.lift_rpc.argv.is_empty() {
-            errors.push(format!(
-                "language `{}` fixed `{}` liftRpc.argv is required",
-                language.id, exhibit.id
-            ));
-        }
         if exhibit.lossiness.erased.is_empty() || exhibit.lossiness.preserved.is_empty() {
             errors.push(format!(
                 "language `{}` exhibit `{}` must describe lossiness erased and preserved boundaries",
@@ -575,6 +641,69 @@ fn validate_language_shape(language: &LanguageSpecimen) -> Vec<String> {
         }
     }
 
+    if let Some(composition) = &language.composition {
+        if composition.checks.is_empty() {
+            errors.push(format!(
+                "language `{}` composition.checks must not be empty",
+                language.id
+            ));
+        }
+        let mut check_ids = BTreeSet::new();
+        for check in &composition.checks {
+            if check.id.trim().is_empty() {
+                errors.push(format!(
+                    "language `{}` composition check id is required",
+                    language.id
+                ));
+            } else if !check_ids.insert(check.id.clone()) {
+                errors.push(format!(
+                    "language `{}` duplicate composition check id `{}`",
+                    language.id, check.id
+                ));
+            }
+            if !exhibit_ids.contains(&check.witness_exhibit) {
+                errors.push(format!(
+                    "language `{}` composition check `{}` references unknown witness exhibit `{}`",
+                    language.id, check.id, check.witness_exhibit
+                ));
+            }
+            if check.witness_source == CompositionWitnessSource::Lab
+                && check.phase != CompositionPhase::Exhibit
+            {
+                errors.push(format!(
+                    "language `{}` composition check `{}` lab witness source is only valid for exhibit checks",
+                    language.id, check.id
+                ));
+            }
+            if let Some(requirement_exhibit) = &check.requirement_exhibit {
+                if !exhibit_ids.contains(requirement_exhibit) {
+                    errors.push(format!(
+                        "language `{}` composition check `{}` references unknown requirement exhibit `{}`",
+                        language.id, check.id, requirement_exhibit
+                    ));
+                }
+            }
+            if check.witness_formula.is_null() {
+                errors.push(format!(
+                    "language `{}` composition check `{}` witnessFormula is required",
+                    language.id, check.id
+                ));
+            }
+            if check.requirement_formula.is_null() {
+                errors.push(format!(
+                    "language `{}` composition check `{}` requirementFormula is required",
+                    language.id, check.id
+                ));
+            }
+            if check.assignment.is_empty() {
+                errors.push(format!(
+                    "language `{}` composition check `{}` assignment is required",
+                    language.id, check.id
+                ));
+            }
+        }
+    }
+
     errors
 }
 
@@ -591,7 +720,6 @@ fn validate_language_paths(specimen_dir: &Path, language: &LanguageSpecimen) -> 
     for path in [
         &language.paths.lab_library,
         &language.paths.lab_harness,
-        &language.paths.lab_kit_rpc,
         &language.exposure.sat_witness_file,
     ] {
         if manifest_path_escapes_specimen_root(path) {
@@ -627,7 +755,6 @@ fn validate_language_paths(specimen_dir: &Path, language: &LanguageSpecimen) -> 
             &exhibit.kit_rpc,
             &exhibit.proof_ir_file,
             &exhibit.diagnostic_file,
-            &exhibit.lift_rpc.cwd,
         ] {
             if manifest_path_escapes_specimen_root(path) {
                 errors.push(format!(
@@ -646,7 +773,6 @@ fn validate_language_paths(specimen_dir: &Path, language: &LanguageSpecimen) -> 
             &exhibit.fixed.kit_rpc,
             &exhibit.fixed.proof_ir_file,
             &exhibit.fixed.diagnostic_file,
-            &exhibit.fixed.lift_rpc.cwd,
         ] {
             if manifest_path_escapes_specimen_root(path) {
                 errors.push(format!(
@@ -656,6 +782,44 @@ fn validate_language_paths(specimen_dir: &Path, language: &LanguageSpecimen) -> 
                 continue;
             }
             let full_path = specimen_dir.join(path);
+            if !full_path.exists() {
+                errors.push(format!("missing {}", full_path.display()));
+            }
+        }
+
+        for harness in [&exhibit.harness, &exhibit.fixed.harness] {
+            for path in [
+                harness.join(".provekit/config.toml"),
+                harness
+                    .join(".provekit/lift")
+                    .join(&exhibit.surface)
+                    .join("manifest.toml"),
+            ] {
+                if manifest_path_escapes_specimen_root(&path) {
+                    errors.push(format!(
+                        "invalid path `{}` escapes specimen root",
+                        path.display()
+                    ));
+                    continue;
+                }
+                let full_path = specimen_dir.join(&path);
+                if !full_path.exists() {
+                    errors.push(format!("missing {}", full_path.display()));
+                }
+            }
+        }
+    }
+
+    if let Some(composition) = &language.composition {
+        for check in &composition.checks {
+            if manifest_path_escapes_specimen_root(&check.diagnostic_file) {
+                errors.push(format!(
+                    "invalid path `{}` escapes specimen root",
+                    check.diagnostic_file.display()
+                ));
+                continue;
+            }
+            let full_path = specimen_dir.join(&check.diagnostic_file);
             if !full_path.exists() {
                 errors.push(format!("missing {}", full_path.display()));
             }
@@ -681,11 +845,23 @@ fn run_command(specimen_dir: &Path, command: &CommandSpec) -> Result<String, Str
     }
 
     let cwd = specimen_dir.join(&command.cwd);
+    let started = Instant::now();
+    trace_log(format!(
+        "host-check start cwd={} argv={:?}",
+        cwd.display(),
+        command.argv
+    ));
     let output = Command::new(&command.argv[0])
         .args(&command.argv[1..])
         .current_dir(&cwd)
         .output()
         .map_err(|e| format!("spawn {:?} in {}: {e}", command.argv, cwd.display()))?;
+    trace_log(format!(
+        "host-check exit cwd={} status={} elapsed={:?}",
+        cwd.display(),
+        output.status,
+        started.elapsed()
+    ));
     if !output.status.success() {
         return Err(format!(
             "command {:?} failed in {}\nstdout:\n{}\nstderr:\n{}",
@@ -696,6 +872,168 @@ fn run_command(specimen_dir: &Path, command: &CommandSpec) -> Result<String, Str
         ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn verify_composition_checks(
+    specimen_dir: &Path,
+    language: &LanguageSpecimen,
+    predicates: &Predicates,
+    exhibit_irs: &BTreeMap<String, Value>,
+    fixed_irs: &BTreeMap<String, Value>,
+) -> Result<Vec<Value>, String> {
+    let Some(composition) = &language.composition else {
+        return Ok(Vec::new());
+    };
+
+    let mut reports = Vec::new();
+    for check in &composition.checks {
+        let phase_irs = match check.phase {
+            CompositionPhase::Exhibit => exhibit_irs,
+            CompositionPhase::Fixed => fixed_irs,
+        };
+        let witness_ir = phase_irs.get(&check.witness_exhibit).ok_or_else(|| {
+            format!(
+                "check `{}` missing witness exhibit `{}` for phase {:?}",
+                check.id, check.witness_exhibit, check.phase
+            )
+        })?;
+        let requirement_ir = match &check.requirement_exhibit {
+            Some(requirement_exhibit) => {
+                Some(phase_irs.get(requirement_exhibit).ok_or_else(|| {
+                    format!(
+                        "check `{}` missing requirement exhibit `{}` for phase {:?}",
+                        check.id, requirement_exhibit, check.phase
+                    )
+                })?)
+            }
+            None => None,
+        };
+
+        if check.witness_source == CompositionWitnessSource::ProofIr
+            && !json_contains(witness_ir, &check.witness_formula)
+        {
+            return Err(format!(
+                "check `{}` witness formula is not present in lifted `{}` {:?} ProofIR",
+                check.id, check.witness_exhibit, check.phase
+            ));
+        }
+        if let Some(requirement_ir) = requirement_ir {
+            if !json_contains(requirement_ir, &check.requirement_formula) {
+                return Err(format!(
+                    "check `{}` requirement formula is not present in lifted `{}` {:?} ProofIR",
+                    check.id,
+                    check
+                        .requirement_exhibit
+                        .as_deref()
+                        .unwrap_or("requirement"),
+                    check.phase
+                ));
+            }
+        }
+
+        let formula = scoped_implication_formula(check);
+        let proof = invoke_provekit_cli_formula_gate(specimen_dir, &check.id, &formula)?;
+        let diagnostic_path = specimen_dir.join(&check.diagnostic_file);
+        let diagnostic = std::fs::read_to_string(&diagnostic_path)
+            .map_err(|e| format!("check `{}` diagnostic read failed: {e}", check.id))?;
+
+        match check.expected {
+            CompositionExpected::Missing => {
+                if proof.exit_code != EXIT_VERIFY_FAIL || proof.status != "unsatisfied" {
+                    return Err(format!(
+                        "check `{}` expected provekit to catch a missing implication, but status was `{}` (exit {})",
+                        check.id, proof.status, proof.exit_code
+                    ));
+                }
+                expect_red_diagnostic(&diagnostic, predicates, &language.id, &check.id)?;
+            }
+            CompositionExpected::Satisfied => {
+                if proof.exit_code != EXIT_OK || proof.status != "discharged" {
+                    return Err(format!(
+                        "check `{}` expected provekit to discharge the implication, but status was `{}` (exit {})",
+                        check.id, proof.status, proof.exit_code
+                    ));
+                }
+                expect_green_diagnostic(&diagnostic, predicates, &language.id, &check.id)?;
+            }
+        }
+
+        reports.push(json!({
+            "id": check.id,
+            "phase": match check.phase {
+                CompositionPhase::Exhibit => "exhibit",
+                CompositionPhase::Fixed => "fixed",
+            },
+            "expected": match check.expected {
+                CompositionExpected::Missing => "missing",
+                CompositionExpected::Satisfied => "satisfied",
+            },
+            "witnessExhibit": check.witness_exhibit,
+            "witnessSource": match check.witness_source {
+                CompositionWitnessSource::ProofIr => "proof-ir",
+                CompositionWitnessSource::Lab => "lab",
+            },
+            "requirementExhibit": check.requirement_exhibit,
+            "holds": proof.status == "discharged",
+            "provekitStatus": proof.status,
+            "provekitReason": proof.reason,
+            "provekitSignal": match check.expected {
+                CompositionExpected::Missing => "red",
+                CompositionExpected::Satisfied => "green",
+            },
+            "provedBy": "provekit prove --formula",
+            "formula": formula,
+        }));
+    }
+
+    Ok(reports)
+}
+
+fn scoped_implication_formula(check: &CompositionCheck) -> Value {
+    json!({
+        "kind": "implies",
+        "operands": [
+            check.witness_formula.clone(),
+            substitute_bindings(&check.requirement_formula, &check.bindings),
+        ],
+    })
+}
+
+fn substitute_bindings(value: &Value, bindings: &BTreeMap<String, String>) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| substitute_bindings(item, bindings))
+                .collect(),
+        ),
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (key, child) in map {
+                out.insert(key.clone(), substitute_bindings(child, bindings));
+            }
+            if map.get("kind").and_then(Value::as_str) == Some("var") {
+                if let Some(name) = map.get("name").and_then(Value::as_str) {
+                    if let Some(bound) = bindings.get(name) {
+                        out.insert("name".into(), Value::String(bound.clone()));
+                    }
+                }
+            }
+            Value::Object(out)
+        }
+        other => other.clone(),
+    }
+}
+
+fn json_contains(haystack: &Value, needle: &Value) -> bool {
+    if haystack == needle {
+        return true;
+    }
+    match haystack {
+        Value::Array(items) => items.iter().any(|item| json_contains(item, needle)),
+        Value::Object(map) => map.values().any(|value| json_contains(value, needle)),
+        _ => false,
+    }
 }
 
 fn read_json(path: PathBuf) -> Result<Value, String> {
@@ -734,149 +1072,236 @@ fn expect_green_diagnostic(
     ))
 }
 
-fn invoke_lift_rpc(
+#[derive(Debug)]
+struct FormulaProofReport {
+    exit_code: u8,
+    status: String,
+    reason: String,
+}
+
+fn invoke_provekit_cli_lift(
     specimen_dir: &Path,
     id: &str,
     surface: &str,
     harness: &Path,
-    lift_rpc: &CommandSpec,
 ) -> Result<Value, String> {
-    if lift_rpc.argv.is_empty() {
-        return Err(format!("`{id}` liftRpc.argv is required"));
-    }
-    if manifest_path_escapes_specimen_root(&lift_rpc.cwd)
-        || manifest_path_escapes_specimen_root(harness)
-    {
+    if manifest_path_escapes_specimen_root(harness) {
         return Err(format!("`{id}` contains a path that escapes specimen root"));
     }
 
-    let cwd = specimen_dir.join(&lift_rpc.cwd);
     let harness_path = specimen_dir.join(harness);
     let harness_root = harness_path.canonicalize().unwrap_or(harness_path);
-    let harness_root = harness_root.to_string_lossy().to_string();
-    let mut cmd = Command::new(&lift_rpc.argv[0]);
-    cmd.args(&lift_rpc.argv[1..])
-        .current_dir(&cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("spawn lift RPC for `{id}` in {}: {e}", cwd.display(),))?;
-    let mut stdin = match child.stdin.take() {
-        Some(stdin) => stdin,
-        None => {
-            cleanup_rpc_child(&mut child, None, false);
-            return Err("lifter has no stdin".into());
-        }
-    };
-    let stdout = match child.stdout.take() {
-        Some(stdout) => stdout,
-        None => {
-            cleanup_rpc_child(&mut child, Some(stdin), false);
-            return Err("lifter has no stdout".into());
-        }
-    };
-    let mut reader = BufReader::new(stdout);
-
-    let exchange_result =
-        invoke_lift_rpc_exchange(&mut stdin, &mut reader, &harness_root, id, surface);
-    drop(reader);
-    cleanup_rpc_child(&mut child, Some(stdin), exchange_result.is_ok());
-    exchange_result
-}
-
-fn invoke_lift_rpc_exchange(
-    stdin: &mut ChildStdin,
-    reader: &mut impl BufRead,
-    harness_root: &str,
-    id: &str,
-    surface: &str,
-) -> Result<Value, String> {
-    let init_req = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "client": {"name": "provekit-zoo", "version": env!("CARGO_PKG_VERSION")},
-            "protocol_version": "provekit-lift/1",
-            "workspace_root": harness_root,
-            "config_path": ".provekit/config.toml",
-        },
-    });
-    writeln!(stdin, "{init_req}").map_err(|e| format!("write initialize: {e}"))?;
-    let _ = read_response(reader, 1)?;
-
-    let lift_req = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "lift",
-        "params": {
-            "surface": surface,
-            "workspace_root": harness_root,
-            "source_paths": [harness_root],
-            "options": {"layer": "all"},
-        },
-    });
-    writeln!(stdin, "{lift_req}").map_err(|e| format!("write lift: {e}"))?;
-    let lift_resp = read_response(reader, 2)?;
-
-    match lift_resp.get("kind").and_then(|value| value.as_str()) {
-        Some("ir-document") => Ok(lift_resp),
-        other => Err(format!("`{id}` returned unsupported lift kind {:?}", other)),
+    let repo_root = find_repo_root(specimen_dir)?;
+    let out_dir = temp_zoo_dir("mint", id)?;
+    let mut cmd = provekit_cli_command(&repo_root)?;
+    if trace_enabled() {
+        cmd.env("PROVEKIT_CLI_TRACE", "1");
+        cmd.stderr(Stdio::inherit());
     }
-}
+    cmd.arg("mint")
+        .arg("--project")
+        .arg(&harness_root)
+        .arg("--out")
+        .arg(&out_dir)
+        .arg("--no-attest")
+        .arg("--json")
+        .arg("--quiet")
+        .current_dir(&repo_root);
 
-fn cleanup_rpc_child(child: &mut Child, stdin: Option<ChildStdin>, send_shutdown: bool) {
-    if let Some(mut stdin) = stdin {
-        if send_shutdown {
-            let shutdown_req = json!({"jsonrpc": "2.0", "id": 3, "method": "shutdown"});
-            let _ = writeln!(stdin, "{shutdown_req}");
-        }
-        drop(stdin);
+    let started = Instant::now();
+    trace_log(format!(
+        "provekit mint start id={id} surface={surface} project={} out={}",
+        harness_root.display(),
+        out_dir.display()
+    ));
+    let output = cmd.output().map_err(|e| {
+        format!(
+            "spawn provekit mint for `{id}` in project {}: {e}",
+            harness_root.display()
+        )
+    })?;
+    trace_log(format!(
+        "provekit mint exit id={id} status={} elapsed={:?}",
+        output.status,
+        started.elapsed()
+    ));
+    let _ = std::fs::remove_dir_all(&out_dir);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        return Err(format!(
+            "provekit mint failed for `{id}` in project {}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+            harness_root.display()
+        ));
     }
 
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return,
-            Ok(None) if Instant::now() < deadline => {
-                thread::sleep(Duration::from_millis(25));
-            }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return;
-            }
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return;
-            }
-        }
+    let report: Value = serde_json::from_str(&stdout).map_err(|e| {
+        format!("parse provekit mint JSON for `{id}`: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}")
+    })?;
+    if report.get("surface").and_then(Value::as_str) != Some(surface) {
+        return Err(format!(
+            "`{id}` configured surface mismatch: expected `{surface}`, provekit mint used {:?}",
+            report.get("surface")
+        ));
     }
-}
-
-fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
-    let mut line = String::new();
-    let n = reader
-        .read_line(&mut line)
-        .map_err(|e| format!("read RPC response: {e}"))?;
-    if n == 0 {
-        return Err("plugin closed stdout before responding".into());
-    }
-    let v: Value = serde_json::from_str(line.trim())
-        .map_err(|e| format!("parse JSON-RPC response: {e}\nraw: {line}"))?;
-    if v.get("id").and_then(|value| value.as_i64()) != Some(id) {
-        return Err(format!("response id mismatch: expected {id}, got {v:?}"));
-    }
-    if let Some(error) = v.get("error") {
-        return Err(format!("plugin returned error: {error}"));
-    }
-    v.get("result")
+    let lift_resp = report
+        .get("lift")
         .cloned()
-        .ok_or_else(|| "response missing result".into())
+        .ok_or_else(|| format!("`{id}` provekit mint JSON missing `lift`"))?;
+    match lift_resp.get("kind").and_then(Value::as_str) {
+        Some("ir-document") => Ok(lift_resp),
+        other => Err(format!(
+            "`{id}` returned unsupported lift kind {:?} through provekit mint",
+            other
+        )),
+    }
+}
+
+fn invoke_provekit_cli_formula_gate(
+    specimen_dir: &Path,
+    id: &str,
+    formula: &Value,
+) -> Result<FormulaProofReport, String> {
+    let repo_root = find_repo_root(specimen_dir)?;
+    let out_dir = temp_zoo_dir("formula", id)?;
+    std::fs::create_dir_all(&out_dir)
+        .map_err(|e| format!("create formula temp dir {}: {e}", out_dir.display()))?;
+    let formula_path = out_dir.join("obligation.json");
+    let formula_bytes = serde_json::to_vec_pretty(formula)
+        .map_err(|e| format!("serialize formula for `{id}`: {e}"))?;
+    std::fs::write(&formula_path, formula_bytes)
+        .map_err(|e| format!("write formula {}: {e}", formula_path.display()))?;
+
+    let mut cmd = provekit_cli_command(&repo_root)?;
+    if trace_enabled() {
+        cmd.env("PROVEKIT_CLI_TRACE", "1");
+        cmd.stderr(Stdio::inherit());
+    }
+    cmd.arg("prove")
+        .arg("--formula")
+        .arg(&formula_path)
+        .arg("--json")
+        .arg("--quiet")
+        .current_dir(&repo_root);
+
+    let started = Instant::now();
+    trace_log(format!(
+        "provekit prove --formula start id={id} formula={}",
+        formula_path.display()
+    ));
+    let output = cmd
+        .output()
+        .map_err(|e| format!("spawn provekit prove --formula for `{id}`: {e}"))?;
+    trace_log(format!(
+        "provekit prove --formula exit id={id} status={} elapsed={:?}",
+        output.status,
+        started.elapsed()
+    ));
+    let _ = std::fs::remove_dir_all(&out_dir);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(EXIT_USER_ERROR as i32);
+    if !matches!(exit_code, 0 | 1) {
+        return Err(format!(
+            "provekit prove --formula returned unexpected exit {exit_code} for `{id}`\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        ));
+    }
+
+    let report: Value = serde_json::from_str(&stdout).map_err(|e| {
+        format!("parse provekit prove --formula JSON for `{id}`: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}")
+    })?;
+    let status = report
+        .get("status")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("provekit prove --formula JSON for `{id}` missing `status`"))?
+        .to_string();
+    let reason = report
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+
+    Ok(FormulaProofReport {
+        exit_code: exit_code as u8,
+        status,
+        reason,
+    })
+}
+
+fn trace_enabled() -> bool {
+    std::env::var_os("PROVEKIT_BUG_ZOO_TRACE").is_some()
+}
+
+fn trace_log(message: impl fmt::Display) {
+    if trace_enabled() {
+        eprintln!("zoo trace: {message}");
+    }
+}
+
+fn find_repo_root(start: &Path) -> Result<PathBuf, String> {
+    let mut cursor = if start.is_absolute() {
+        start.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("current dir: {e}"))?
+            .join(start)
+    };
+    cursor = cursor.canonicalize().unwrap_or(cursor);
+    loop {
+        if cursor
+            .join("implementations/rust/provekit-cli/Cargo.toml")
+            .exists()
+        {
+            return Ok(cursor);
+        }
+        if !cursor.pop() {
+            return Err(format!(
+                "could not find repo root above {}",
+                start.display()
+            ));
+        }
+    }
+}
+
+fn temp_zoo_dir(kind: &str, id: &str) -> Result<PathBuf, String> {
+    let safe_id: String = id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("system clock before UNIX_EPOCH: {e}"))?
+        .as_nanos();
+    Ok(std::env::temp_dir().join(format!(
+        "provekit-bug-zoo-{kind}-{}-{now}-{safe_id}",
+        std::process::id()
+    )))
+}
+
+fn provekit_cli_command(repo_root: &Path) -> Result<Command, String> {
+    if let Ok(path) = std::env::var("PROVEKIT_CLI") {
+        if !path.trim().is_empty() {
+            return Ok(Command::new(path));
+        }
+    }
+
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let manifest = repo_root.join("implementations/rust/provekit-cli/Cargo.toml");
+    let mut cmd = Command::new(cargo);
+    cmd.arg("run")
+        .arg("--quiet")
+        .arg("--manifest-path")
+        .arg(manifest)
+        .arg("--");
+    Ok(cmd)
 }
 
 fn proof_ir_cid(value: &Value) -> Result<String, String> {
@@ -944,7 +1369,6 @@ mod tests {
                 paths: SpecimenPaths {
                     lab_library: "java/lab/library".into(),
                     lab_harness: "java/lab/harness".into(),
-                    lab_kit_rpc: "java/lab/kit-rpc".into(),
                 },
                 commands: SpecimenCommands {
                     host_check: CommandSpec {
@@ -957,10 +1381,6 @@ mod tests {
                     surface: "java-spring-web".into(),
                     harness: "java/exhibit/spring-web/harness".into(),
                     kit_rpc: "java/exhibit/spring-web/kit-rpc".into(),
-                    lift_rpc: CommandSpec {
-                        cwd: "java/exhibit/spring-web/kit-rpc".into(),
-                        argv: vec!["./run-java-lifter.sh".into()],
-                    },
                     proof_ir_file: "java/exhibit/spring-web/expected.proofir.json".into(),
                     diagnostic_file: "java/exhibit/spring-web/expected-diagnostic.txt".into(),
                     fixed: valid_fixed_exposure(),
@@ -973,6 +1393,7 @@ mod tests {
                 exposure: ExposureFiles {
                     sat_witness_file: "java/exhibit/sat-witness.json".into(),
                 },
+                composition: None,
                 wild_sightings: vec![],
             }],
             wild_sightings: vec![],
@@ -983,10 +1404,6 @@ mod tests {
         FixedExposure {
             harness: "java/fixed/spring-web/harness".into(),
             kit_rpc: "java/fixed/spring-web/kit-rpc".into(),
-            lift_rpc: CommandSpec {
-                cwd: "java/fixed/spring-web/kit-rpc".into(),
-                argv: vec!["./run-java-lifter.sh".into()],
-            },
             proof_ir_file: "java/fixed/spring-web/expected.proofir.json".into(),
             diagnostic_file: "java/fixed/spring-web/expected-diagnostic.txt".into(),
         }
@@ -998,13 +1415,35 @@ mod tests {
         for path in [
             &language.paths.lab_library,
             &language.paths.lab_harness,
-            &language.paths.lab_kit_rpc,
             &exhibit.harness,
             &exhibit.kit_rpc,
             &exhibit.fixed.harness,
             &exhibit.fixed.kit_rpc,
         ] {
             fs::create_dir_all(specimen_dir.join(path)).expect("create directory");
+        }
+        for harness in [&exhibit.harness, &exhibit.fixed.harness] {
+            let config = harness.join(".provekit/config.toml");
+            let manifest = harness
+                .join(".provekit/lift")
+                .join(&exhibit.surface)
+                .join("manifest.toml");
+            if let Some(parent) = config.parent() {
+                fs::create_dir_all(specimen_dir.join(parent)).expect("create .provekit");
+            }
+            if let Some(parent) = manifest.parent() {
+                fs::create_dir_all(specimen_dir.join(parent)).expect("create lift manifest dir");
+            }
+            fs::write(
+                specimen_dir.join(config),
+                format!("[authoring]\nsurface = \"{}\"\n", exhibit.surface),
+            )
+            .expect("write config");
+            fs::write(
+                specimen_dir.join(manifest),
+                format!("name = \"{}\"\n", exhibit.surface),
+            )
+            .expect("write manifest");
         }
 
         for path in [
@@ -1038,7 +1477,6 @@ languages:
     paths:
       labLibrary: java/lab/library
       labHarness: java/lab/harness
-      labKitRpc: java/lab/kit-rpc
     commands:
       hostCheck:
         cwd: java/lab/harness
@@ -1048,17 +1486,11 @@ languages:
         surface: java-provekit-native
         harness: java/exhibit/provekit-native/harness
         kitRpc: java/exhibit/provekit-native/kit-rpc
-        liftRpc:
-          cwd: java/exhibit/provekit-native/kit-rpc
-          argv: ["./run-java-lifter.sh"]
         proofIrFile: java/exhibit/provekit-native/expected.proofir.json
         diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
         fixed:
           harness: java/fixed/provekit-native/harness
           kitRpc: java/fixed/provekit-native/kit-rpc
-          liftRpc:
-            cwd: java/fixed/provekit-native/kit-rpc
-            argv: ["./run-java-lifter.sh"]
           proofIrFile: java/fixed/provekit-native/expected.proofir.json
           diagnosticFile: java/fixed/provekit-native/expected-diagnostic.txt
         lossiness:
@@ -1068,17 +1500,11 @@ languages:
         surface: java-spring-web
         harness: java/exhibit/spring-web/harness
         kitRpc: java/exhibit/spring-web/kit-rpc
-        liftRpc:
-          cwd: java/exhibit/spring-web/kit-rpc
-          argv: ["./run-java-lifter.sh"]
         proofIrFile: java/exhibit/spring-web/expected.proofir.json
         diagnosticFile: java/exhibit/spring-web/expected-diagnostic.txt
         fixed:
           harness: java/fixed/spring-web/harness
           kitRpc: java/fixed/spring-web/kit-rpc
-          liftRpc:
-            cwd: java/fixed/spring-web/kit-rpc
-            argv: ["./run-java-lifter.sh"]
           proofIrFile: java/fixed/spring-web/expected.proofir.json
           diagnosticFile: java/fixed/spring-web/expected-diagnostic.txt
         lossiness:
@@ -1117,7 +1543,6 @@ languages:
     paths:
       labLibrary: java/lab/library
       labHarness: java/lab/harness
-      labKitRpc: java/lab/kit-rpc
     commands:
       hostCheck:
         cwd: java/lab/harness
@@ -1127,17 +1552,11 @@ languages:
         surface: java-provekit-native
         harness: java/exhibit/provekit-native/harness
         kitRpc: java/exhibit/provekit-native/kit-rpc
-        liftRpc:
-          cwd: java/exhibit/provekit-native/kit-rpc
-          argv: ["./run-java-lifter.sh"]
         proofIrFile: java/exhibit/provekit-native/expected.proofir.json
         diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
         fixed:
           harness: java/fixed/provekit-native/harness
           kitRpc: java/fixed/provekit-native/kit-rpc
-          liftRpc:
-            cwd: java/fixed/provekit-native/kit-rpc
-            argv: ["./run-java-lifter.sh"]
           proofIrFile: java/fixed/provekit-native/expected.proofir.json
           diagnosticFile: java/fixed/provekit-native/expected-diagnostic.txt
         lossiness:
@@ -1197,6 +1616,356 @@ wildSightings: []
     }
 
     #[test]
+    fn parses_manifest_without_lab_provekit_workflow() {
+        let raw = r#"
+id: BZ-SHAPE-006
+name: Value Scope Escape
+kingdom: shape
+status: lab
+predicates:
+  boundary: eq(value, 42)
+  sink: gte(value, 43)
+  missingEdge: eq(value, 42) => gte(value, 43)
+languages:
+  - id: java
+    surface: java-junit
+    paths:
+      labLibrary: java/lab/library
+      labHarness: java/lab/harness
+    commands:
+      hostCheck:
+        cwd: java/lab/harness
+        argv: ["./run.sh"]
+    exhibits:
+      - id: junit
+        surface: java-junit
+        harness: java/exhibit/junit/harness
+        kitRpc: java/exhibit/junit/kit-rpc
+        proofIrFile: java/exhibit/junit/expected.proofir.json
+        diagnosticFile: java/exhibit/junit/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/junit/harness
+          kitRpc: java/fixed/junit/kit-rpc
+          proofIrFile: java/fixed/junit/expected.proofir.json
+          diagnosticFile: java/fixed/junit/expected-diagnostic.txt
+        lossiness:
+          erased: ["JUnit runner lifecycle"]
+          preserved: ["point witness eq(value$0, 42)"]
+    equivalence:
+      required: []
+    exposure:
+      satWitnessFile: java/exhibit/sat-witness.json
+wildSightings: []
+"#;
+        let manifest: SpecimenManifest = serde_yaml::from_str(raw)
+            .expect("lab state should not require a ProvekIt RPC workflow");
+
+        assert_eq!(
+            manifest.languages[0].paths.lab_harness,
+            PathBuf::from("java/lab/harness")
+        );
+    }
+
+    #[test]
+    fn manifest_rejects_lab_provekit_workflow_path() {
+        let raw = r#"
+id: BZ-SHAPE-006
+name: Value Scope Escape
+kingdom: shape
+status: lab
+predicates:
+  boundary: eq(value, 42)
+  sink: gte(value, 43)
+  missingEdge: eq(value, 42) => gte(value, 43)
+languages:
+  - id: java
+    surface: java-junit
+    paths:
+      labLibrary: java/lab/library
+      labHarness: java/lab/harness
+      labKitRpc: java/lab/kit-rpc
+    commands:
+      hostCheck:
+        cwd: java/lab/harness
+        argv: ["./run.sh"]
+    exhibits:
+      - id: junit
+        surface: java-junit
+        harness: java/exhibit/junit/harness
+        kitRpc: java/exhibit/junit/kit-rpc
+        proofIrFile: java/exhibit/junit/expected.proofir.json
+        diagnosticFile: java/exhibit/junit/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/junit/harness
+          kitRpc: java/fixed/junit/kit-rpc
+          proofIrFile: java/fixed/junit/expected.proofir.json
+          diagnosticFile: java/fixed/junit/expected-diagnostic.txt
+        lossiness:
+          erased: ["JUnit runner lifecycle"]
+          preserved: ["point witness eq(value$0, 42)"]
+    equivalence:
+      required: []
+    exposure:
+      satWitnessFile: java/exhibit/sat-witness.json
+wildSightings: []
+"#;
+
+        let error = serde_yaml::from_str::<SpecimenManifest>(raw)
+            .expect_err("lab state must not declare a ProvekIt RPC workflow");
+
+        assert!(
+            error.to_string().contains("labKitRpc"),
+            "error should name the rejected lab workflow field: {error}"
+        );
+    }
+
+    #[test]
+    fn parses_lab_witness_composition_checks() {
+        let raw = r#"
+id: BZ-SHAPE-005
+name: Null Boundary Equivalence
+kingdom: shape
+status: lab
+predicates:
+  boundary: maybe_null(name)
+  sink: non_null(name)
+  missingEdge: maybe_null(name) => non_null(name)
+languages:
+  - id: java
+    surface: java-provekit-native
+    paths:
+      labLibrary: java/lab/library
+      labHarness: java/lab/harness
+    commands:
+      hostCheck:
+        cwd: java/lab/harness
+        argv: ["./run.sh"]
+    exhibits:
+      - id: provekit-native
+        surface: java-provekit-native
+        harness: java/exhibit/provekit-native/harness
+        kitRpc: java/exhibit/provekit-native/kit-rpc
+        proofIrFile: java/exhibit/provekit-native/expected.proofir.json
+        diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/provekit-native/harness
+          kitRpc: java/fixed/provekit-native/kit-rpc
+          proofIrFile: java/fixed/provekit-native/expected.proofir.json
+          diagnosticFile: java/fixed/provekit-native/expected-diagnostic.txt
+        lossiness:
+          erased: ["Java method body"]
+          preserved: ["precondition neq(name, null)"]
+    equivalence:
+      required: []
+    exposure:
+      satWitnessFile: java/exhibit/sat-witness.json
+    composition:
+      checks:
+        - id: lab-null-does-not-satisfy-non-null
+          phase: exhibit
+          expected: missing
+          witnessSource: lab
+          witnessExhibit: provekit-native
+          requirementExhibit: provekit-native
+          witnessFormula:
+            kind: atomic
+            name: eq
+            args:
+              - { kind: var, name: name }
+              - { kind: const, value: null, sort: { kind: primitive, name: Ref } }
+          requirementFormula:
+            kind: atomic
+            name: neq
+            args:
+              - { kind: var, name: name }
+              - { kind: const, value: null, sort: { kind: primitive, name: Ref } }
+          assignment:
+            name: 0
+          diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
+wildSightings: []
+"#;
+        let manifest: SpecimenManifest = serde_yaml::from_str(raw).expect("parse manifest");
+        let check = &manifest.languages[0]
+            .composition
+            .as_ref()
+            .expect("composition checks")
+            .checks[0];
+
+        assert_eq!(check.witness_source, CompositionWitnessSource::Lab);
+    }
+
+    #[test]
+    fn parses_value_scope_composition_checks() {
+        let raw = r#"
+id: BZ-SHAPE-006
+name: Value Scope Escape
+kingdom: shape
+status: lab
+predicates:
+  boundary: eq(value, 42)
+  sink: gte(value, 43)
+  missingEdge: eq(value, 42) => gte(value, 43)
+languages:
+  - id: java
+    surface: java-junit-and-spring-value-witnesses
+    paths:
+      labLibrary: java/lab/library
+      labHarness: java/lab/harness
+    commands:
+      hostCheck:
+        cwd: java/lab/harness
+        argv: ["./run.sh"]
+    exhibits:
+      - id: junit
+        surface: java-junit
+        harness: java/exhibit/junit/harness
+        kitRpc: java/exhibit/junit/kit-rpc
+        proofIrFile: java/exhibit/junit/expected.proofir.json
+        diagnosticFile: java/exhibit/junit/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/junit/harness
+          kitRpc: java/fixed/junit/kit-rpc
+          proofIrFile: java/fixed/junit/expected.proofir.json
+          diagnosticFile: java/fixed/junit/expected-diagnostic.txt
+        lossiness:
+          erased: ["JUnit runner lifecycle"]
+          preserved: ["point witness eq(value$0, 42)"]
+      - id: spring
+        surface: java-spring-bean-validation
+        harness: java/exhibit/spring/harness
+        kitRpc: java/exhibit/spring/kit-rpc
+        proofIrFile: java/exhibit/spring/expected.proofir.json
+        diagnosticFile: java/exhibit/spring/expected-diagnostic.txt
+        fixed:
+          harness: java/fixed/spring/harness
+          kitRpc: java/fixed/spring/kit-rpc
+          proofIrFile: java/fixed/spring/expected.proofir.json
+          diagnosticFile: java/fixed/spring/expected-diagnostic.txt
+        lossiness:
+          erased: ["Spring request binding machinery"]
+          preserved: ["precondition gte(value, 43)"]
+    equivalence:
+      required: []
+    exposure:
+      satWitnessFile: java/exhibit/sat-witness.json
+    composition:
+      checks:
+        - id: junit-42-does-not-satisfy-min-43
+          phase: exhibit
+          expected: missing
+          witnessExhibit: junit
+          witnessFormula:
+            kind: atomic
+            name: eq
+            args:
+              - { kind: var, name: "value$0" }
+              - { kind: const, value: 42, sort: { kind: primitive, name: Int } }
+          requirementFormula:
+            kind: atomic
+            name: gte
+            args:
+              - { kind: var, name: value }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          bindings:
+            value: "value$0"
+          assignment:
+            value$0: 42
+          diagnosticFile: java/exhibit/value-scope-escape/expected-diagnostic.txt
+        - id: junit-43-satisfies-min-43
+          phase: fixed
+          expected: satisfied
+          witnessExhibit: junit
+          witnessFormula:
+            kind: atomic
+            name: eq
+            args:
+              - { kind: var, name: "value$0" }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          requirementFormula:
+            kind: atomic
+            name: gte
+            args:
+              - { kind: var, name: value }
+              - { kind: const, value: 43, sort: { kind: primitive, name: Int } }
+          bindings:
+            value: "value$0"
+          assignment:
+            value$0: 43
+          diagnosticFile: java/fixed/value-scope-escape/expected-diagnostic.txt
+wildSightings: []
+"#;
+        let manifest: SpecimenManifest = serde_yaml::from_str(raw).expect("parse manifest");
+        let composition = manifest.languages[0]
+            .composition
+            .as_ref()
+            .expect("java language has composition checks");
+
+        assert_eq!(composition.checks.len(), 2);
+        assert_eq!(composition.checks[0].phase, CompositionPhase::Exhibit);
+        assert_eq!(composition.checks[0].expected, CompositionExpected::Missing);
+        assert!(composition.checks[0].requirement_exhibit.is_none());
+        assert_eq!(composition.checks[0].bindings["value"], "value$0");
+        assert_eq!(composition.checks[1].phase, CompositionPhase::Fixed);
+        assert_eq!(
+            composition.checks[1].diagnostic_file,
+            PathBuf::from("java/fixed/value-scope-escape/expected-diagnostic.txt")
+        );
+    }
+
+    #[test]
+    fn value_scope_implication_uses_callsite_bindings() {
+        let witness_42 = serde_json::json!({
+            "kind": "atomic",
+            "name": "eq",
+            "args": [
+                {"kind": "var", "name": "value$0"},
+                {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}
+            ]
+        });
+        let requirement = serde_json::json!({
+            "kind": "atomic",
+            "name": "gte",
+            "args": [
+                {"kind": "var", "name": "value"},
+                {"kind": "const", "value": 43, "sort": {"kind": "primitive", "name": "Int"}}
+            ]
+        });
+        let bindings = BTreeMap::from([("value".to_string(), "value$0".to_string())]);
+        let check = CompositionCheck {
+            id: "junit-42-does-not-satisfy-min-43".into(),
+            phase: CompositionPhase::Exhibit,
+            expected: CompositionExpected::Missing,
+            witness_source: CompositionWitnessSource::ProofIr,
+            witness_exhibit: "junit".into(),
+            requirement_exhibit: None,
+            witness_formula: witness_42.clone(),
+            requirement_formula: requirement,
+            bindings,
+            assignment: BTreeMap::from([("value$0".to_string(), 42)]),
+            diagnostic_file: "java/exhibit/value-scope-escape/expected-diagnostic.txt".into(),
+        };
+
+        assert_eq!(
+            scoped_implication_formula(&check),
+            serde_json::json!({
+                "kind": "implies",
+                "operands": [
+                    witness_42,
+                    {
+                        "kind": "atomic",
+                        "name": "gte",
+                        "args": [
+                            {"kind": "var", "name": "value$0"},
+                            {"kind": "const", "value": 43, "sort": {"kind": "primitive", "name": "Int"}}
+                        ]
+                    }
+                ]
+            }),
+            "the zoo should hand provekit an implication in the witness value scope"
+        );
+    }
+
+    #[test]
     fn parses_species_manifest_with_language_exhibits() {
         let raw = r#"
 id: BZ-SHAPE-005
@@ -1213,7 +1982,6 @@ languages:
     paths:
       labLibrary: java/lab/library
       labHarness: java/lab/harness
-      labKitRpc: java/lab/kit-rpc
     commands:
       hostCheck:
         cwd: java/lab/harness
@@ -1223,17 +1991,11 @@ languages:
         surface: java-provekit-native
         harness: java/exhibit/provekit-native/harness
         kitRpc: java/exhibit/provekit-native/kit-rpc
-        liftRpc:
-          cwd: java/exhibit/provekit-native/kit-rpc
-          argv: ["./run-java-lifter.sh"]
         proofIrFile: java/exhibit/provekit-native/expected.proofir.json
         diagnosticFile: java/exhibit/provekit-native/expected-diagnostic.txt
         fixed:
           harness: java/fixed/provekit-native/harness
           kitRpc: java/fixed/provekit-native/kit-rpc
-          liftRpc:
-            cwd: java/fixed/provekit-native/kit-rpc
-            argv: ["./run-java-lifter.sh"]
           proofIrFile: java/fixed/provekit-native/expected.proofir.json
           diagnosticFile: java/fixed/provekit-native/expected-diagnostic.txt
         lossiness:
@@ -1248,7 +2010,6 @@ languages:
     paths:
       labLibrary: typescript/lab/library
       labHarness: typescript/lab/harness
-      labKitRpc: typescript/lab/kit-rpc
     commands:
       hostCheck:
         cwd: typescript/lab/harness
@@ -1258,17 +2019,11 @@ languages:
         surface: typescript-zod
         harness: typescript/exhibit/zod/harness
         kitRpc: typescript/exhibit/zod/kit-rpc
-        liftRpc:
-          cwd: typescript/exhibit/zod/kit-rpc
-          argv: ["./run-ts-lifter.sh"]
         proofIrFile: typescript/exhibit/zod/expected.proofir.json
         diagnosticFile: typescript/exhibit/zod/expected-diagnostic.txt
         fixed:
           harness: typescript/fixed/zod/harness
           kitRpc: typescript/fixed/zod/kit-rpc
-          liftRpc:
-            cwd: typescript/fixed/zod/kit-rpc
-            argv: ["./run-ts-lifter.sh"]
           proofIrFile: typescript/fixed/zod/expected.proofir.json
           diagnosticFile: typescript/fixed/zod/expected-diagnostic.txt
         lossiness:
@@ -1310,19 +2065,11 @@ wildSightings: []
             surface: "java-provekit-native".into(),
             harness: "java/exhibit/provekit-native/harness".into(),
             kit_rpc: "java/exhibit/provekit-native/kit-rpc".into(),
-            lift_rpc: CommandSpec {
-                cwd: "java/exhibit/provekit-native/kit-rpc".into(),
-                argv: vec!["./run-java-lifter.sh".into()],
-            },
             proof_ir_file: "java/exhibit/provekit-native/expected.proofir.json".into(),
             diagnostic_file: "java/exhibit/provekit-native/expected-diagnostic.txt".into(),
             fixed: FixedExposure {
                 harness: "java/fixed/provekit-native/harness".into(),
                 kit_rpc: "java/fixed/provekit-native/kit-rpc".into(),
-                lift_rpc: CommandSpec {
-                    cwd: "java/fixed/provekit-native/kit-rpc".into(),
-                    argv: vec!["./run-java-lifter.sh".into()],
-                },
                 proof_ir_file: "java/fixed/provekit-native/expected.proofir.json".into(),
                 diagnostic_file: "java/fixed/provekit-native/expected-diagnostic.txt".into(),
             },
@@ -1353,15 +2100,11 @@ wildSightings: []
     fn validation_rejects_empty_command_argv() {
         let mut manifest = valid_manifest();
         manifest.languages[0].commands.host_check.argv.clear();
-        manifest.languages[0].exhibits[0].lift_rpc.argv.clear();
 
         let errors = validate_manifest_shape(&manifest);
         assert!(errors
             .iter()
             .any(|error| error.contains("commands.hostCheck.argv is required")));
-        assert!(errors
-            .iter()
-            .any(|error| error.contains("exhibit `spring-web` liftRpc.argv is required")));
     }
 
     #[test]

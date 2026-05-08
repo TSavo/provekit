@@ -1,0 +1,1 @@
+value-scope escape rejected: eq(value, 42) => gte(value, 43)

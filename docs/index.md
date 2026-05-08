@@ -55,7 +55,7 @@ See [reference/per-language-status.md](reference/per-language-status.md) for the
 | Publish a `.proof` artifact | [how-to/publishing-a-proof.md](how-to/publishing-a-proof.md) |
 | Bridge claims across languages or domains | [how-to/cross-domain-bridges.md](how-to/cross-domain-bridges.md) |
 | Bind CI results to supply-chain inputs | [how-to/content-addressed-ci.md](how-to/content-addressed-ci.md) |
-| Run Bug Zoo specimens and droppers | [how-to/bug-zoo.md](how-to/bug-zoo.md) |
+| Run Bug Zoo specimens | [how-to/bug-zoo.md](how-to/bug-zoo.md) |
 | Debug a failed verifier or IDE handshake | [how-to/debugging-a-failed-handshake.md](how-to/debugging-a-failed-handshake.md) |
 | Integrate an IDE | [how-to/ide-integration/overview.md](how-to/ide-integration/overview.md) |
 | Use the example GitHub workflow | [templates/provekit-example-workflow.yml](templates/provekit-example-workflow.yml) |

@@ -34,9 +34,9 @@ This is ProvekIt proving a parser/consumer claim rather than an application cont
 
 ## Bug Rediscovery And Closure
 
-Bug Zoo specimens are small, executable examples of latent boundary failures. A specimen starts in `lab/`, where ordinary host checks pass. It moves to `exposed/`, where one or more surfaces lift the missing edge into ProofIR. If a dropper exists, `dropped/` carries a proof plan, language-dropper projection, generated host artifact, re-lifted closure IR, and fix receipt.
+Bug Zoo specimens are small, executable examples of latent boundary failures. A specimen starts in `lab/`, where ordinary host checks pass and no ProvekIt workflow is configured. It moves to `exhibit/`, where one or more surfaces lift the missing edge into ProofIR and produce the red prove signal. The paired `fixed/` surfaces are accepted only when the same lift path re-lifts to a green boundary receipt.
 
-The historical patch is not the oracle. The durable claim is independent rediscovery and independent closure: ProvekIt found the missing `p => q` edge and accepted a generated closure only after re-lift proved the boundary was closed.
+The historical patch is not the oracle. The durable claim is independent rediscovery and independent closure: ProvekIt found the missing `p => q` edge and accepted closure only after re-lift proved the boundary was closed.
 
 ## Realizers And Droppers
 

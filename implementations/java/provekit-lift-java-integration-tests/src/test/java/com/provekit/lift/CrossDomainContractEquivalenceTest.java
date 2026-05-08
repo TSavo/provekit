@@ -264,6 +264,26 @@ public class CrossDomainContractEquivalenceTest {
         // the same constraint will share the same CID and thus the same proof.
     }
 
+    @Test
+    public void springRequestParamDefaultValueLiftsAsValueWitness() {
+        String springSource = """
+            import org.springframework.web.bind.annotation.RequestParam;
+            public class PaymentController {
+                public String accept(@RequestParam(defaultValue = "42") int value) {
+                    return "accepted:" + value;
+                }
+            }
+            """;
+
+        String expected = "[{\"kind\":\"contract\",\"symbol\":\"accept\",\"invariant\":"
+            + "{\"kind\":\"atomic\",\"name\":\"eq\",\"args\":["
+            + "{\"kind\":\"var\",\"name\":\"value\"},"
+            + "{\"kind\":\"const\",\"value\":42,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}"
+            + "]}}]";
+
+        assertEquals(expected, lift(new SpringWebExtractor(), springSource));
+    }
+
     private String lift(Extractor extractor, String source) {
         List<ContractDecl> decls = extract(extractor, source);
         assertFalse(decls.isEmpty(), "Extractor should find at least one contract");

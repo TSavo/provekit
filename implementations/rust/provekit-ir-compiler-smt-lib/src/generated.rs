@@ -153,6 +153,12 @@ fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
 
 fn smt_atomic_name(name: &str) -> &str {
     match name {
+        "eq" => "=",
+        "neq" => "distinct",
+        "gt" => ">",
+        "gte" => ">=",
+        "lt" => "<",
+        "lte" => "<=",
         "\u{2260}" => "distinct",
         "\u{2264}" => "<=",
         "\u{2265}" => ">=",

@@ -96,6 +96,34 @@ fn atomic_unicode_ge_translates_to_smt_ge() {
     assert!(s.contains("(>= a b)"));
 }
 
+#[test]
+fn bug_zoo_predicate_aliases_translate_to_smt_lib() {
+    let f = json!({
+        "kind": "implies",
+        "operands": [
+            {"kind": "atomic", "name": "eq", "args": [
+                {"kind": "var", "name": "value"},
+                {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}}
+            ]},
+            {"kind": "atomic", "name": "gte", "args": [
+                {"kind": "var", "name": "value"},
+                {"kind": "const", "value": 43, "sort": {"kind": "primitive", "name": "Int"}}
+            ]}
+        ]
+    });
+    let s = smt_emitter::emit(&f).expect("emit");
+    assert!(s.contains("(= value 42)"));
+    assert!(s.contains("(>= value 43)"));
+    assert!(
+        !s.contains("(eq value 42)"),
+        "`eq` is a ProofIR alias and must not be emitted as an uninterpreted SMT symbol"
+    );
+    assert!(
+        !s.contains("(gte value 43)"),
+        "`gte` is a ProofIR alias and must not be emitted as an uninterpreted SMT symbol"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Connectives
 // ---------------------------------------------------------------------------

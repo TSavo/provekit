@@ -282,7 +282,9 @@ fn run_evolve(args: ProtocolEvolveArgs) -> Result<EvolveSummary, String> {
         &to,
         &policy,
         &verifier,
-        catalog_attestation.as_ref().map(|(_json, bytes)| bytes.as_slice()),
+        catalog_attestation
+            .as_ref()
+            .map(|(_json, bytes)| bytes.as_slice()),
         &catalog_diff,
         &body,
     )?;
@@ -369,7 +371,9 @@ fn run_check_evolution(args: ProtocolCheckEvolutionArgs) -> Result<CheckEvolutio
         &to,
         &policy,
         &verifier,
-        catalog_attestation.as_ref().map(|(_json, bytes)| bytes.as_slice()),
+        catalog_attestation
+            .as_ref()
+            .map(|(_json, bytes)| bytes.as_slice()),
         &catalog_diff,
         &body,
     )?;
@@ -666,7 +670,11 @@ fn admit_protocol_evolution(
     let change_class = require_json_string(body, "changeClass", "PEP body")?;
     if !matches!(
         change_class,
-        "extension-only" | "compatible" | "migration-required" | "breaking" | "core-candidate"
+        "extension-only"
+            | "compatible"
+            | "migration-required"
+            | "breaking"
+            | "core-candidate"
             | "key-rotation"
     ) {
         return Err(format!(
@@ -851,12 +859,10 @@ fn require_version_label_policy(body: &Json) -> Result<(), String> {
     if change_class != "extension-only" {
         return Ok(());
     }
-    let from = parse_semver_prefix(require_json_string(
-        body,
-        "fromVersionLabel",
-        "PEP body",
-    )?)
-    .ok_or_else(|| "PEP admission refused: fromVersionLabel is not semver-shaped".to_string())?;
+    let from = parse_semver_prefix(require_json_string(body, "fromVersionLabel", "PEP body")?)
+        .ok_or_else(|| {
+            "PEP admission refused: fromVersionLabel is not semver-shaped".to_string()
+        })?;
     let to = parse_semver_prefix(require_json_string(body, "toVersionLabel", "PEP body")?)
         .ok_or_else(|| "PEP admission refused: toVersionLabel is not semver-shaped".to_string())?;
     if from.0 != to.0 || from.1 != to.1 || to.2 <= from.2 {

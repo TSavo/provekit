@@ -58,7 +58,7 @@ There is no central authority that decides what a protocol version means. The by
 - PEP: protocol catalog evolution as signed, content-addressed data.
 - CICP: CI results bound to source/protocol/toolchain/config/witness closures.
 - Proof protocol: `.proof` consumer conformance fixtures and witnesses.
-- Bug Zoo: executable specimens with exposure equivalence and dropper/realizer closure receipts.
+- Bug Zoo: executable specimens with exhibit equivalence, scoped composition checks, and fixed-pair receipts.
 - GCP/TDP/ORP/CBP/FRP draft specs: extension bodies, grammar conformance, realizers, checker bytecode, and fix receipts.
 
 ## Read further

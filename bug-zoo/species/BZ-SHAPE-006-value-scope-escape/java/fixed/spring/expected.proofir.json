@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "contract",
+    "symbol": "accept",
+    "precondition": {
+      "kind": "atomic",
+      "name": "gte",
+      "args": [
+        { "kind": "var", "name": "value" },
+        { "kind": "const", "value": 43, "sort": { "kind": "primitive", "name": "Int" } }
+      ]
+    }
+  },
+  {
+    "kind": "contract",
+    "symbol": "accept",
+    "invariant": {
+      "kind": "atomic",
+      "name": "eq",
+      "args": [
+        { "kind": "var", "name": "value" },
+        { "kind": "const", "value": 43, "sort": { "kind": "primitive", "name": "Int" } }
+      ]
+    }
+  }
+]

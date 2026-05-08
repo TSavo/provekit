@@ -11,6 +11,7 @@ import com.provekit.lift.*;
  *
  * Coq-relevant contracts (runtime values, state):
  *   - @RequestParam(required=true/false) → param presence precondition
+ *   - @RequestParam(defaultValue=...) → param value witness for the defaulted branch
  *   - @PathVariable → path segment extraction (non-null precondition)
  *   - @RequestBody → body deserialization precondition
  *   - @ResponseStatus → response code postcondition
@@ -49,6 +50,7 @@ public class SpringWebExtractor implements Extractor {
         String symbol = method.getNameAsString();
         List<String> pres = new ArrayList<>();
         List<String> posts = new ArrayList<>();
+        List<String> invs = new ArrayList<>();
 
         // Handle method-level mapping annotations
         for (AnnotationExpr ann : method.getAnnotations()) {
@@ -80,6 +82,11 @@ public class SpringWebExtractor implements Extractor {
                 switch (pname) {
                     case "PathVariable" -> pres.add(atom("neq", var(var), cNull()));
                     case "RequestParam" -> {
+                        Optional<String> defaultValue = extractStringValue(ann, "defaultValue");
+                        if (defaultValue.isPresent()) {
+                            invs.add(atom("eq", var(var), defaultValueTerm(param, defaultValue.get())));
+                            break;
+                        }
                         boolean required = extractBooleanValue(ann, "required").orElse(true);
                         if (required) pres.add(atom("neq", var(var), cNull()));
                     }
@@ -92,8 +99,8 @@ public class SpringWebExtractor implements Extractor {
             }
         }
 
-        if (!pres.isEmpty() || !posts.isEmpty()) {
-            out.add(new ContractDecl(symbol, pres, posts));
+        if (!pres.isEmpty() || !posts.isEmpty() || !invs.isEmpty()) {
+            out.add(new ContractDecl(symbol, pres, posts, invs));
         }
     }
 
@@ -161,8 +168,26 @@ public class SpringWebExtractor implements Extractor {
         int dot = fq.lastIndexOf('.'); return dot >= 0 ? fq.substring(dot + 1) : fq;
     }
     private String var(String n) { return "{\"kind\":\"var\",\"name\":\""+n+"\"}"; }
-    private String cInt(int v) { return "{\"kind\":\"const\",\"value\":"+v+",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}"; }
+    private String defaultValueTerm(Parameter param, String raw) {
+        String type = param.getType().asString();
+        if (type.equals("int") || type.equals("Integer") || type.equals("long") || type.equals("Long")) {
+            try {
+                return cInt(Long.parseLong(raw));
+            } catch (NumberFormatException ignored) {
+                return cStr(raw);
+            }
+        }
+        if (type.equals("boolean") || type.equals("Boolean")) {
+            if (raw.equals("true") || raw.equals("false")) {
+                return cBool(Boolean.parseBoolean(raw));
+            }
+        }
+        return cStr(raw);
+    }
+
+    private String cInt(long v) { return "{\"kind\":\"const\",\"value\":"+v+",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}"; }
     private String cStr(String s) { return "{\"kind\":\"const\",\"value\":\""+esc(s)+"\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}"; }
+    private String cBool(boolean b) { return "{\"kind\":\"const\",\"value\":"+b+",\"sort\":{\"kind\":\"primitive\",\"name\":\"Bool\"}}"; }
     private String cNull() { return "{\"kind\":\"const\",\"value\":null,\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"}}"; }
     private String atom(String name, String... args) {
         StringBuilder sb = new StringBuilder("{\"kind\":\"atomic\",\"name\":\""+name+"\",\"args\":[");
