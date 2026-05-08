@@ -70,10 +70,47 @@ static void test_array_growth_overflow_is_rejected(void) {
     }
 }
 
+static void test_parse_functions_and_macros(void) {
+    const char *source =
+        "int helper(int x) { return x + 1; }\n"
+        "int compute(int y) {\n"
+        "    WARN_ON(y < 0);\n"
+        "    return helper(y);\n"
+        "}\n";
+    pk_c_source_facts *facts = pk_c_parse_source("fixture.c", source);
+    if (!facts) {
+        fprintf(stderr, "FAIL: parse returned null\n");
+        failures++;
+        return;
+    }
+    if (facts->n_functions != 2) {
+        fprintf(stderr, "FAIL: expected 2 functions, got %zu\n", facts->n_functions);
+        failures++;
+    }
+    assert_eq(facts->functions[0].name, "helper", "first function name");
+    assert_eq(facts->functions[1].name, "compute", "second function name");
+    if (facts->n_macro_calls != 1) {
+        fprintf(stderr, "FAIL: expected 1 macro call, got %zu\n", facts->n_macro_calls);
+        failures++;
+    } else {
+        assert_eq(facts->macro_calls[0].name, "WARN_ON", "macro call name");
+        assert_eq(facts->macro_calls[0].enclosing_function, "compute", "macro enclosing function");
+    }
+    if (facts->n_call_sites != 1) {
+        fprintf(stderr, "FAIL: expected 1 call site, got %zu\n", facts->n_call_sites);
+        failures++;
+    } else {
+        assert_eq(facts->call_sites[0].callee, "helper", "call callee");
+        assert_eq(facts->call_sites[0].caller, "compute", "call caller");
+    }
+    pk_c_source_facts_free(facts);
+}
+
 int main(void) {
     test_empty_result_json();
     test_populated_result_json();
     test_array_growth_overflow_is_rejected();
+    test_parse_functions_and_macros();
     if (failures != 0) {
         fprintf(stderr, "%d failures\n", failures);
         return 1;

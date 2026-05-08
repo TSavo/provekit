@@ -25,6 +25,42 @@ typedef struct pk_c_lift_result {
     pk_c_json_array refusals;
 } pk_c_lift_result;
 
+typedef struct {
+    char *name;
+    pk_c_locus locus;
+    int has_body;
+    int has_contract_annotation;
+} pk_c_function_fact;
+
+typedef struct {
+    char *name;
+    char *enclosing_function;
+    char *argument_text;
+    pk_c_locus locus;
+} pk_c_macro_call_fact;
+
+typedef struct {
+    char *caller;
+    char *callee;
+    pk_c_locus locus;
+} pk_c_call_site_fact;
+
+typedef struct {
+    pk_c_function_fact *functions;
+    size_t n_functions;
+    size_t cap_functions;
+    pk_c_macro_call_fact *macro_calls;
+    size_t n_macro_calls;
+    size_t cap_macro_calls;
+    pk_c_call_site_fact *call_sites;
+    size_t n_call_sites;
+    size_t cap_call_sites;
+    pk_c_lift_result *extraction_result;
+} pk_c_source_facts;
+
+pk_c_source_facts *pk_c_parse_source(const char *path, const char *source);
+void pk_c_source_facts_free(pk_c_source_facts *facts);
+
 pk_c_lift_result *pk_c_lift_result_new(void);
 void pk_c_lift_result_free(pk_c_lift_result *result);
 int pk_c_lift_result_add_declaration(pk_c_lift_result *result, const char *json);
