@@ -62,6 +62,7 @@ type initializeResult struct {
 type parseResult struct {
 	Declarations json.RawMessage   `json:"declarations"`
 	CallEdges    json.RawMessage   `json:"callEdges"`
+	Diagnostics  []LSPDiagnostic   `json:"diagnostics"`
 	ContractCids map[string]string `json:"contractCids,omitempty"`
 	Warnings     []interface{}     `json:"warnings"`
 }
@@ -147,9 +148,12 @@ func handleParse(id interface{}, paramsRaw json.RawMessage) {
 		edgesJSON = []byte("[]")
 	}
 
+	diagnostics := FloorV1SeedForwardPropagator().EmitDiagnostics(LowerFloorSource(params.Source))
+
 	send(id, parseResult{
 		Declarations: jcs,
 		CallEdges:    edgesJSON,
+		Diagnostics:  diagnostics,
 		ContractCids: contractCids,
 		Warnings:     warnings,
 	})

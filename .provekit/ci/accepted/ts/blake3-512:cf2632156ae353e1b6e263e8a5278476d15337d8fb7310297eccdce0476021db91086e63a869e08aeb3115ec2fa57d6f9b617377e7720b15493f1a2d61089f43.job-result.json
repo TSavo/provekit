@@ -19,7 +19,7 @@
   ],
   "producer": {
     "kind": "ci-runner",
-    "name": "provekit-ci",
-    "version": "checked-in"
+    "name": "checked-in-provekit-ci",
+    "version": "bootstrap-2026-05-07"
   }
 }

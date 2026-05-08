@@ -7,11 +7,12 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../provekit-ir-symbolic/src/Ir/Term.php';
-require_once __DIR__ . '/../provekit-ir-symbolic/src/Ir/Formula.php';
-require_once __DIR__ . '/../provekit-ir-symbolic/src/Ir/Declaration.php';
-require_once __DIR__ . '/../provekit-ir-symbolic/src/Canonicalizer/Blake3.php';
-require_once __DIR__ . '/../provekit-ir-symbolic/src/Canonicalizer/Jcs.php';
+require_once __DIR__ . '/../../provekit-ir-symbolic/src/Ir/Term.php';
+require_once __DIR__ . '/../../provekit-ir-symbolic/src/Ir/Formula.php';
+require_once __DIR__ . '/../../provekit-ir-symbolic/src/Ir/Declaration.php';
+require_once __DIR__ . '/../../provekit-ir-symbolic/src/Canonicalizer/Blake3.php';
+require_once __DIR__ . '/../../provekit-ir-symbolic/src/Canonicalizer/Jcs.php';
+require_once __DIR__ . '/ForwardPropagator.php';
 
 use ProvekIt\Ir\{ContractDecl, BridgeDecl, Collector};
 use ProvekIt\Canonicalizer\{Blake3, Jcs};
@@ -186,12 +187,19 @@ while (($line = fgets($stdin)) !== false) {
 
                 // Merge manual call edges with auto-detected ones
                 $allCallEdges = array_merge($scanned['callEdges'], $callEdges);
+                $diagnostics = array_map(
+                    fn(LspDiagnostic $diagnostic): array => $diagnostic->toArray(),
+                    ForwardPropagator::floorV1SeedIndex()->emitDiagnostics(
+                        ForwardPropagator::lowerFloorSource($source)
+                    ),
+                );
 
                 send(json_encode([
                     'jsonrpc' => '2.0', 'id' => $id,
                     'result' => [
                         'declarations' => $scanned['declarations'],
                         'callEdges' => $allCallEdges,
+                        'diagnostics' => $diagnostics,
                     ],
                 ]));
             })(),
