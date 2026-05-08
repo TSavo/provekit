@@ -136,12 +136,31 @@ static void test_parse_same_line_function_body_call(void) {
     pk_c_source_facts_free(facts);
 }
 
+static void test_parse_recursive_same_line_function_body_call(void) {
+    const char *source = "int fact(int n) { return n ? fact(n - 1) : 1; }\n";
+    pk_c_source_facts *facts = pk_c_parse_source("fixture.c", source);
+    if (!facts) {
+        fprintf(stderr, "FAIL: parse returned null\n");
+        failures++;
+        return;
+    }
+    if (facts->n_call_sites != 1) {
+        fprintf(stderr, "FAIL: expected 1 recursive call site, got %zu\n", facts->n_call_sites);
+        failures++;
+    } else {
+        assert_eq(facts->call_sites[0].caller, "fact", "recursive call caller");
+        assert_eq(facts->call_sites[0].callee, "fact", "recursive call callee");
+    }
+    pk_c_source_facts_free(facts);
+}
+
 int main(void) {
     test_empty_result_json();
     test_populated_result_json();
     test_array_growth_overflow_is_rejected();
     test_parse_functions_and_macros();
     test_parse_same_line_function_body_call();
+    test_parse_recursive_same_line_function_body_call();
     if (failures != 0) {
         fprintf(stderr, "%d failures\n", failures);
         return 1;

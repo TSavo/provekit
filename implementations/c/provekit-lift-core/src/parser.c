@@ -329,7 +329,7 @@ static int pk_c_parser_scan_calls(
             return -1;
         }
         column = (int)((cursor - line) + match[1].rm_so + column_offset + 1);
-        if (!pk_c_parser_keyword(name) && strcmp(name, caller) != 0) {
+        if (!pk_c_parser_keyword(name)) {
             if (pk_c_parser_macro_name(name)) {
                 if (pk_c_parser_append_macro(facts, path, name, caller,
                     cursor + match[0].rm_eo - 1, line_no, column) != 0) {
