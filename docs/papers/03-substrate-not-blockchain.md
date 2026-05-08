@@ -1,6 +1,8 @@
 # Substrate, Not Blockchain
 
-ProvekIt is a substrate. Blockchains are one application of it. The reverse framing, that ProvekIt is "blockchain-adjacent" or "a kind of zk-rollup tooling," gets the architecture upside down. The substrate is more general than the application, and the application is one configuration of the substrate. This essay derives that claim from first principles in six steps.
+ProvekIt builds proofchains: portable chains of formal proofs over content-addressed claims. Proofchains are blockchain-adjacent, not blockchain-derived. They share the same older primitives blockchains assembled so effectively: hash chains, Merkle structure, signatures, content addressing, witness publication, and local verification. The difference is the payload. A blockchain carries state transitions ordered by a distributed timestamp server. A proofchain carries formal proofs checked by a local verifier.
+
+That difference is small at the data-structure level and fundamental at the trust boundary. This essay derives the distinction from first principles.
 
 ## 1. Subjective state, objective correctness
 
@@ -11,6 +13,107 @@ ProvekIt drops the first question. State is whatever the producer says it is. Th
 That question turns out to be content-addressable. A `.proof` bundle either discharges its obligations against its declared contracts or it does not. The verifier walks the chain locally, recomputes hashes, checks signatures, runs the handshake against the IR formulas, and emits a fail-closed verdict. No quorum. No peer consensus. The bytes either prove what they claim or they do not.
 
 This separation is the load-bearing move. Subjective state, objective correctness. Once you take that seriously, the next step writes itself.
+
+### Lemma: proof validity does not require consensus
+
+Let `C` be a canonical claim. Let `P` be a finite proofchain for `C`: a
+content-addressed DAG whose nodes are claims, witnesses, attestations, tool
+outputs, policy roots, and referenced artifacts. Let `pi` be a local verifier
+policy that fixes the accepted proof systems, catalog roots, signer roots, and
+admissible witness kinds. Let `V_pi(C, P)` be the deterministic verifier that:
+
+1. recomputes every CID from canonical bytes;
+2. verifies every signature over the bytes it claims to bind;
+3. checks every witness under `pi`;
+4. checks every proof step against the proof system named by `pi`;
+5. accepts exactly when the root claim `C` is discharged.
+
+For any two honest verifiers holding the same `(C, P, pi)`, `V_pi(C, P)`
+returns the same verdict without communication between them.
+
+Proof. The verifier's input is finite. CID recomputation is a pure function of
+bytes. Signature verification is a pure function of `(message, signature,
+public_key)`. Witness checking is a pure function of the witness bytes and the
+policy that admits or rejects that witness kind. Proof-step checking is a pure
+function of the proof bytes, the named proof system, and the referenced
+premises. Order the proofchain DAG topologically. Leaves are decided by the
+first four deterministic checks. For each internal node, all predecessors have
+already received the same verdict at both verifiers, and the node's check is
+again deterministic. By induction over the DAG, every node receives the same
+verdict at both verifiers, including the root claim `C`. No network message,
+leader election, quorum, fork-choice rule, or shared clock participates in the
+decision. Therefore proof validity is local and does not require distributed
+consensus.
+
+A distributed timestamp server solves the ordering version of the problem. It
+is not asked merely whether `P` proves `C`; it is asked to decide predicates
+such as `published(P) before published(Q)`, `P was included by time T`, or
+`this is the canonical next entry in a public log`. Those predicates quantify
+over events outside the proof object. As a thought experiment, one could put
+EVM bytes inside proofchain metadata and describe blockchain semantics in terms
+of an application-level order relation `p < p'`: this public state precedes
+that public state under the chain's rules. That works precisely because the
+ordering discipline has moved into the application carried by the substrate.
+The exercise is left to the reader.
+
+Under concurrency, two correct observers can receive `P` and `Q` in opposite
+orders, and both local histories are internally consistent. Making one order
+canonical for all observers requires a shared ordering protocol: distributed
+consensus over the timestamp log.
+
+Thus consensus is necessary for distributed timestamp-server claims, not for
+proof claims. A timestamp, transparency-log inclusion proof, or Bitcoin
+`OP_RETURN` anchor can be a witness inside a proofchain when publication time
+or public inclusion matters. It is evidence about ordering. It is not the
+source of logical truth.
+
+Strict ordering therefore layers cleanly on top. Publish a `.proof` CID or a
+proofchain head CID into a blockchain transaction, and the blockchain supplies a
+globally ordered publication witness for that proof object. The proofchain
+still verifies locally from its own bytes. The blockchain only witnesses that a
+particular head was published at a particular position in a public ordering
+discipline. That is exactly where distributed consensus belongs.
+
+### Corollary: the head carries the closure
+
+The same primitive guarantee still exists.
+
+A blockchain head commits to the chain of prior block headers. Because those
+headers commit to state roots and state-transition payloads, the head carries
+the changed state induced by all prior blocks under the chain's ordering rules.
+Given the head and the reachable data, a verifier can recompute the path from
+genesis to the current state.
+
+A proofchain head commits to the chain of prior proof nodes. Because those
+nodes commit to claims, witnesses, attestations, policy roots, and referenced
+artifacts, the head carries the implication closure induced by all prior proofs
+under the verifier's policy. If the reachable proofchain contains `p -> q` and
+`q -> r`, and the policy admits implication composition, the head carries
+`p -> r`. If a new proof node references an old head by CID, it inherits the
+old head's entire reachable closure; changing any predecessor changes the CID
+and therefore changes the head.
+
+This is the parallel: the blockchain head carries the state consequences of
+prior transitions; the proofchain head carries the logical consequences of
+prior proofs. The commitment math is the same: hash links, Merkle roots,
+signatures, and deterministic local verification. The payload is different.
+One head commits to ordered state closure; the other commits to implication
+closure.
+
+ProofIR and lifters/lowerers make that guarantee portable. A lifter projects a
+host artifact into canonical propositions. A lowerer or adapter maps admitted
+propositions back into local obligations, generated repairs, protocol
+migrations, CI closures, or package boundaries. Once lifted, language-specific
+facts occupy the same logical address space. A Rust postcondition can imply a
+TypeScript precondition. A protocol v1 invariant can imply a protocol v2
+migration obligation. A CI input-closure witness can imply a release gate. A
+generated repair can imply that a named bug-class edge has been dropped.
+
+The proofchain head therefore carries more than evidence inside one native
+system. It carries the transitive implication closure of heterogeneous proofs
+after they have been projected into ProofIR. That is the move: the head is not a
+ledger checkpoint. It is a content-addressed theorem root over a multi-language,
+multi-tool, multi-artifact proof space.
 
 ## 2. The transition and the proof are the same act
 
@@ -59,7 +162,7 @@ Witnesses commit each successor to its predecessors via CID. That is the head an
 
 Once you accept that, "what should the substrate add next?" becomes a malformed question. There is nothing above Turing complete. Anyone proposing a more general substrate is either building a less general one (a special-purpose chain, a fixed VM, a typed but narrower envelope) or reinventing the same four invariants under a different brand. The design space above the substrate is full of applications. The space at the substrate level is small because it has to be. This is why §3's "EVM is the floor" is structural rather than aspirational. The ceiling is theorem, not promise.
 
-Conventional blockchains pick one tape format (state-machine deltas) and one consensus discipline (totally ordered chain over a globally shared ledger). That is a restriction on the substrate, not an extension. They left generality on the floor to buy something they did not actually need (consensus on subjective state) for the thing they actually wanted (verifiable transitions). Strip the consensus, keep the verification. You get more, not less. A Turing complete substrate already contains every program a smart contract could embed; the substrate is the bigger set.
+Conventional blockchains pick one tape format (state-machine deltas) and one consensus discipline (totally ordered chain over a globally shared ledger). That is a restriction on the substrate, not an extension. They buy timestamp-server ordering for state transitions. Proofchains do not need that ordering for logical validity. Strip the consensus, keep the verification. You get more, not less. A Turing complete substrate already contains every program a smart contract could embed; the substrate is the bigger set.
 
 ## 5. Per-producer sovereignty
 
@@ -67,7 +170,7 @@ Once the substrate is opaque to body semantics, there is nothing left to globall
 
 This is the Cypherpunk vision realized without the consensus tax. Local trust. Proven transitions. No global coordination. If you do not like Producer A's chain, follow Producer B's. They both have to satisfy the same four invariants; beyond that, the substrate is silent on which is "real." Both are real to whoever follows them.
 
-Sovereignty is per-producer because consensus was never doing useful work. It was doing the work of making correctness checkable when state was subjective. With proofs that travel with their transitions, the consensus layer becomes a vestigial organ.
+Sovereignty is per-producer because consensus was never doing useful work for proof validity. It was doing timestamp-server work: choosing a shared order for subjective events. With proofs that travel with their transitions, consensus becomes optional infrastructure for claims about publication time, inclusion, or ordering; it is not part of proof validity.
 
 ## 6. The substrate stays small
 

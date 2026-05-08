@@ -4,7 +4,7 @@ A modern Rust workspace pulls in a few hundred crates. A modern npm project pull
 
 The conventional answer is "run more tests." Tests are good. Tests are not the answer to behavioral verification at supply-chain scale. Tests verify a finite point set; properties hold over the whole input domain. The tools that do verify properties (Kani, Prusti, F\*, Dafny, TLA+) are heavyweight, language-bound, and demand specifications written and maintained alongside the code. They do not federate. They do not compose across packages. They do not survive a `cargo update`.
 
-ProvekIt is a toolchain for proving content-addressed claims. Behavioral contracts are the first surface, but the same machinery proves claims about protocol evolution, proof-file conformance, CI supply-chain input closure, and generated repair closure. It does not compete with the verification tools above. It sits beneath them and makes their output portable, signed, and composable across the dependency graph.
+ProvekIt is a toolchain for proving content-addressed claims. Behavioral contracts are the first surface, but the same machinery proves claims about protocol evolution, proof-file conformance, CI supply-chain input closure, and generated repair closure. It does not compete with the verification tools above. It sits beneath them and turns their output into proofchains: portable, signed, content-addressed evidence structures that compose across the dependency graph.
 
 ## The petabyte-to-64-bytes ratio
 
@@ -13,6 +13,8 @@ A library publishes signed contract mementos along with its bytes. A consumer's 
 When the hashes match, the call site is discharged. The verifier did not parse the dependency. It did not run the dependency. It did not invoke a solver. It compared 64 bytes.
 
 This is the protocol's headline arithmetic. Verification of an arbitrarily-deep dependency stack reduces to hash comparison; the verifier's cost is decoupled from the size of the stack. The lattice tractability theorem (CID `blake3-512:b6d7c2772c2929294d7f516f79559bd292e44f51805a6bd6ea0ca7fe365b82ec96b86c434f53dfb003f5acd306533831dc0257e46ead4c7d71081f9f56ec6d07`) makes the claim formal: honest verifier cost is a function of grammar parameters and decision-procedure complexity, not of the populated cardinality of the address space and not of the cryptographic security parameter. The 2^512 hashspace is a property of the address space, not the search space.
+
+This is why the high-level primitive is a proofchain. The payload of a blockchain is a series of state transitions. The payload of a proofchain is a series of formal proofs. The implication is slight, but fundamental: the chain is carrying why a claim is logically true.
 
 ## Lift, don't author
 
@@ -66,11 +68,13 @@ The Rust CLI is the canonical shipping implementation for v1.6.2. Per-language l
 
 ProvekIt is honest about scope. It is not a soundness-certified compliance tool; if a regulator requires Coq, Isabelle, or F\* output, those tools remain the right choice. It is not a substitute for runtime testing; properties hold over the input domain only insofar as the lifted IR faithfully encodes the source library's idiom, and per-library adapter coverage is empirical. It is not a substitute for human review; signed mementos document who claimed what, but the trust decision belongs to the verifier.
 
-What ProvekIt is, is the load-bearing primitive missing from the verification ecosystem: a content-addressed substrate over which the existing tools can publish their findings in a portable, signed, composable form. The petabyte/64-byte ratio is the headline. The lift-not-author posture is the adoption story. The Bitcoin/Git/BitTorrent lineage is the reason it scales.
+What ProvekIt is, is the load-bearing primitive missing from the verification ecosystem: proofchains over which the existing tools can publish their findings in a portable, signed, composable form. The petabyte/64-byte ratio is the headline. The lift-not-author posture is the adoption story. The Bitcoin/Git/BitTorrent adjacency is the reason it scales.
 
 ## Read further
 
 - [README.md](../../README.md) for the install path.
+- [proofchain.md](proofchain.md) for the high-level primitive.
+- [../papers/03-substrate-not-blockchain.md](../papers/03-substrate-not-blockchain.md) for the consensus lemma.
 - [architecture.md](architecture.md) for the four-layer model and handshake.
 - [thesis.md](thesis.md) for the deeper architectural claim.
 - [protocol/specs/](../../protocol/specs/) for the canonical specs, addressed by CID.
