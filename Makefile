@@ -538,7 +538,7 @@ test-rust:
 bug-zoo:
 	@echo "=== Bug Zoo: live ProvekIt receipts ==="
 	env -u PROVEKIT_CLI -u PROVEKIT_BUG_ZOO_EXTERNAL_CLI \
-		cargo run --manifest-path bug-zoo/Cargo.toml -- --all
+		cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
 
 .PHONY: test-go
 test-go:

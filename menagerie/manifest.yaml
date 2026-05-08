@@ -1,0 +1,26 @@
+destinations:
+  - id: bug-zoo
+    path: bug-zoo
+    runnable: true
+    claim: bugs as missing edges and fixes as closure receipts
+    command: cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
+  - id: hashbound-mainline
+    path: hashbound-mainline
+    runnable: planned
+    claim: cross-domain implication chains compressed to 64-byte verification
+  - id: supply-chain-rails
+    path: supply-chain-rails
+    runnable: planned
+    claim: artifact admission through rank-3 pins, binaryCid, and CICP
+  - id: bridgeworks
+    path: bridgeworks
+    runnable: planned
+    claim: proof preservation across language, package, protocol, and CI boundaries
+  - id: protocol-switchyard
+    path: protocol-switchyard
+    runnable: planned
+    claim: protocol versions as roots and migrations as witnessed edges
+  - id: change-station
+    path: change-station
+    runnable: planned
+    claim: commits as p -> q proof-carrying transitions

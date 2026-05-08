@@ -13,7 +13,7 @@ make conformance   # catalog + protocol + N mints match pinned CIDs
 make all-mint      # run all mint commands; print CIDs
 make test-all      # run the Linux native test aggregate
 provekit ci ...    # CICP supply-chain admission and result witnesses
-cargo run --manifest-path bug-zoo/Cargo.toml -- --all
+cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
                    # Bug Zoo lab/exhibit/fixed/link/composition checks
 make clean         # remove all build artifacts
 ```
@@ -87,7 +87,7 @@ Additional protocol/tooling checks now run in CI:
 - **Proof protocol conformance.** `.proof` fixtures under `protocol/conformance/proof-protocol/` are checked by `provekit proof`.
 - **CICP vector conformance.** Every language library that emits CICP bodies must derive the same golden-vector CIDs in `protocol/conformance/cicp/`.
 - **CICP supply-chain admission.** The GitHub workflow computes kit blast radii, tries reuse only against checked-in accepted witnesses, and uploads candidate result witnesses for review when reuse is refused.
-- **Bug Zoo.** `cargo run --manifest-path bug-zoo/Cargo.toml -- --all` verifies exhibit ProofIR equivalence, scoped proof receipts, polyglot link-bundle receipts, and fixed-pair closure for checked-in specimens.
+- **Bug Zoo.** `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all` verifies exhibit ProofIR equivalence, scoped proof receipts, polyglot link-bundle receipts, and fixed-pair closure for checked-in specimens.
 
 If you are adding a new implementation, see [porting-to-a-new-language.md](porting-to-a-new-language.md) for how the conformance harness picks up your kit.
 

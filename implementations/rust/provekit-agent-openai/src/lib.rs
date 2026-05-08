@@ -19,7 +19,7 @@ use provekit_agent::{
 };
 
 pub trait Transport: Send + Sync {
-    fn complete(&self, system: &str, user: &str) -> Result<String, AgentError>;
+    fn complete(&self, model: &str, system: &str, user: &str) -> Result<String, AgentError>;
 }
 
 #[derive(Debug, Clone, Default)]
@@ -28,7 +28,7 @@ pub struct MockTransport {
 }
 
 impl Transport for MockTransport {
-    fn complete(&self, _: &str, _: &str) -> Result<String, AgentError> {
+    fn complete(&self, _: &str, _: &str, _: &str) -> Result<String, AgentError> {
         Ok(self.canned.clone())
     }
 }
@@ -85,19 +85,25 @@ impl<T: Transport> ProvekitAgent for OpenAiAgent<T> {
         ctx: &ProposeContext,
     ) -> Result<Vec<ContractCandidate>, AgentError> {
         let user = serde_json::to_string(ctx).unwrap_or_default();
-        let resp = self.transport.complete(&self.system_prompt, &user)?;
+        let resp = self
+            .transport
+            .complete(&self.model, &self.system_prompt, &user)?;
         parse_candidates(&resp)
     }
 
     fn translate_must(&self, ctx: &MustContext) -> Result<ContractCandidate, AgentError> {
         let user = serde_json::to_string(ctx).unwrap_or_default();
-        let resp = self.transport.complete(&self.system_prompt, &user)?;
+        let resp = self
+            .transport
+            .complete(&self.model, &self.system_prompt, &user)?;
         parse_candidate(&resp)
     }
 
     fn fix_bug(&self, ctx: &FixContext) -> Result<FixResult, AgentError> {
         let user = serde_json::to_string(ctx).unwrap_or_default();
-        let resp = self.transport.complete(&self.system_prompt, &user)?;
+        let resp = self
+            .transport
+            .complete(&self.model, &self.system_prompt, &user)?;
         parse_fix(&resp)
     }
 
@@ -123,8 +129,12 @@ pub fn default_provenance(model: &str) -> AgentProvenance {
 /// Convenience: locate a project-local prompt override.
 pub fn locate_prompt(project: &PathBuf, command: &str) -> Option<PathBuf> {
     let candidates = [
-        project.join(".provekit/prompts").join(format!("{command}.openai.md")),
-        project.join(".provekit/prompts").join(format!("{command}.md")),
+        project
+            .join(".provekit/prompts")
+            .join(format!("{command}.openai.md")),
+        project
+            .join(".provekit/prompts")
+            .join(format!("{command}.md")),
     ];
     candidates.into_iter().find(|p| p.exists())
 }
@@ -133,6 +143,7 @@ pub fn locate_prompt(project: &PathBuf, command: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
 
     fn good_candidate_json() -> String {
         r#"{
@@ -200,5 +211,44 @@ mod tests {
             Err(AgentError::InvalidIr(_)) => {}
             other => panic!("expected InvalidIr; got {other:?}"),
         }
+    }
+
+    #[derive(Clone)]
+    struct RecordingTransport {
+        seen_model: Arc<Mutex<Option<String>>>,
+        canned: String,
+    }
+
+    impl Transport for RecordingTransport {
+        fn complete(&self, model: &str, _: &str, _: &str) -> Result<String, AgentError> {
+            *self.seen_model.lock().expect("lock") = Some(model.to_string());
+            Ok(self.canned.clone())
+        }
+    }
+
+    #[test]
+    fn agent_forwards_configured_model_to_transport() {
+        let seen_model = Arc::new(Mutex::new(None));
+        let agent = OpenAiAgent::new(
+            RecordingTransport {
+                seen_model: Arc::clone(&seen_model),
+                canned: good_candidate_json(),
+            },
+            "gpt-test-forwarded",
+        );
+        let ctx = MustContext {
+            source_path: PathBuf::from("foo.ts"),
+            source_text: String::new(),
+            description: "x".into(),
+            authoring_api_doc: String::new(),
+            previous_rejection: None,
+        };
+
+        let _ = agent.translate_must(&ctx).expect("must");
+
+        assert_eq!(
+            seen_model.lock().expect("lock").as_deref(),
+            Some("gpt-test-forwarded")
+        );
     }
 }

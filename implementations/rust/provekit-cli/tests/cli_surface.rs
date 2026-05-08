@@ -24,8 +24,12 @@ fn repo_root() -> PathBuf {
 fn bug_zoo_machinery_is_self_contained() {
     let root = repo_root();
     assert!(
-        root.join("bug-zoo/Cargo.toml").exists(),
-        "Bug Zoo should own its runnable harness under bug-zoo/"
+        root.join("menagerie/bug-zoo/Cargo.toml").exists(),
+        "Bug Zoo should live as a Menagerie destination under menagerie/bug-zoo/"
+    );
+    assert!(
+        !root.join("bug-zoo/Cargo.toml").exists(),
+        "Bug Zoo should no longer live at the repository root"
     );
     assert!(
         !root
@@ -37,7 +41,7 @@ fn bug_zoo_machinery_is_self_contained() {
         !root
             .join("implementations/rust/provekit-cli/tests/support/bug_zoo.rs")
             .exists(),
-        "Bug Zoo harness code should live under bug-zoo/, not provekit-cli tests"
+        "Bug Zoo harness code should live under menagerie/bug-zoo/, not provekit-cli tests"
     );
 }
 

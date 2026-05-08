@@ -48,7 +48,7 @@ There is no central authority that decides what a protocol version means. The by
 
 ## What ships
 
-- A canonical Rust CLI: `provekit`. Subcommands include `prove`, `verify-protocol`, `proof`, `protocol`, `ci`, `mint`, `dump`, `hash`, `ask`, `search`, `implicate`. Bug Zoo is checked by the self-contained runner under `bug-zoo/`.
+- A canonical Rust CLI: `provekit`. Subcommands include `prove`, `verify-protocol`, `proof`, `protocol`, `ci`, `mint`, `dump`, `hash`, `ask`, `search`, `implicate`. Bug Zoo is checked by the self-contained runner under `menagerie/bug-zoo/`.
 - A Rust workspace of libraries: `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`, `provekit-verifier`, `provekit-macros`, `provekit-lift`, `provekit-lift-proptest`, `provekit-lift-contracts`.
 - Per-language kits, verifier libs, lift adapters, CICP vector checks, and self-contract attestations.
 - A protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json`, protocol extension specs, proof-protocol fixtures, CICP vectors, and PEP evolution witnesses.

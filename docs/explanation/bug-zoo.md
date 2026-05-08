@@ -37,7 +37,7 @@ ordinary host code still passes native checks.
    cross-kit link exhibits; the CLI resolves the surface and drives the native
    lifter or linker.
 2. **Proof verification.** The normal project gate is `provekit prove`. Bug Zoo
-   owns a self-contained runner under `bug-zoo/`: it receives canonical Bug Zoo
+   owns a self-contained runner under `menagerie/bug-zoo/`: it receives canonical Bug Zoo
    ProofIR or LinkBundle output from the CLI result, hashes it, compares it to
    checked-in witness bytes, checks required equivalences across surfaces and
    languages, and invokes `provekit prove --formula` for scoped implication
@@ -113,15 +113,15 @@ precondition.
 From the repository root:
 
 ```sh
-cargo run --manifest-path bug-zoo/Cargo.toml -- --all
+cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
 ```
 
 You can also run each discovery step directly:
 
 ```sh
-pnpm exec tsx bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/tools/ts-boundary-discover.ts zod bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/exhibit/zod/harness
+pnpm exec tsx menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/tools/ts-boundary-discover.ts zod menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/typescript/exhibit/zod/harness
 
-dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj -- discover csharp-linq bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness
+dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.csproj -- discover csharp-linq menagerie/bug-zoo/species/BZ-SHAPE-005-null-boundary-equivalence/csharp/exhibit/linq-where/harness
 ```
 
 Those commands show the first phase: the language compiler/kit maps source to a
