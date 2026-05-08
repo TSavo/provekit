@@ -12,8 +12,8 @@
 use std::path::PathBuf;
 
 use crate::{
-    mint_validated, validate_candidate, AgentError, FilePatch, FixContext, FixResult,
-    MintOptions, MintedAgentContract, ProvekitAgent, ValidationOutcome,
+    mint_validated, validate_candidate, AgentError, FilePatch, FixContext, FixResult, MintOptions,
+    MintedAgentContract, ProvekitAgent, ValidationOutcome,
 };
 
 #[derive(Debug, Clone)]
@@ -158,8 +158,8 @@ mod tests {
             allowed_paths: vec![],
             previous_rejection: None,
         };
-        let outcome = run_fix_loop(&agent, ctx, &AlwaysGreen, &FixLoopOptions::default())
-            .expect("loop");
+        let outcome =
+            run_fix_loop(&agent, ctx, &AlwaysGreen, &FixLoopOptions::default()).expect("loop");
         assert!(outcome.verified);
         assert_eq!(outcome.agent_calls, 1);
     }
@@ -198,8 +198,7 @@ mod tests {
             count: AtomicU32::new(0),
             threshold: 1,
         };
-        let outcome = run_fix_loop(&agent, ctx, &v, &FixLoopOptions::default())
-            .expect("loop");
+        let outcome = run_fix_loop(&agent, ctx, &v, &FixLoopOptions::default()).expect("loop");
         assert!(outcome.verified);
         assert_eq!(outcome.agent_calls, 2);
     }

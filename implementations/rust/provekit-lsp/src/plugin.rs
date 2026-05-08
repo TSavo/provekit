@@ -54,8 +54,8 @@ struct PluginManifest {
 
 /// Parse a plugin manifest file.
 fn parse_manifest(path: &Path) -> Result<PluginManifest, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut m = PluginManifest::default();
     for line in text.lines() {
         let line = match line.find('#') {
@@ -117,10 +117,7 @@ fn find_manifest(project_root: &Path, name: &str) -> Result<PluginManifest, Stri
 
 impl LanguagePlugin {
     /// Spawn a language plugin by manifest name and send initialize.
-    pub fn spawn_by_name(
-        project_root: &Path,
-        name: &str,
-    ) -> Result<Self, String> {
+    pub fn spawn_by_name(project_root: &Path, name: &str) -> Result<Self, String> {
         let manifest = find_manifest(project_root, name)?;
         Self::spawn(manifest, project_root)
     }
@@ -176,14 +173,8 @@ impl LanguagePlugin {
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("spawn {:?}: {e}", manifest.command))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or("no stdin")?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or("no stdout")?;
+        let stdin = child.stdin.take().ok_or("no stdin")?;
+        let stdout = child.stdout.take().ok_or("no stdout")?;
 
         let mut plugin = LanguagePlugin {
             name: manifest.name,
@@ -253,13 +244,9 @@ impl LanguagePlugin {
     }
 
     fn exchange(&mut self, req: &Value) -> Result<Value, String> {
-        let line = serde_json::to_string(req)
-            .map_err(|e| format!("encode: {e}"))?;
-        writeln!(self.stdin, "{line}")
-            .map_err(|e| format!("write: {e}"))?;
-        self.stdin
-            .flush()
-            .map_err(|e| format!("flush: {e}"))?;
+        let line = serde_json::to_string(req).map_err(|e| format!("encode: {e}"))?;
+        writeln!(self.stdin, "{line}").map_err(|e| format!("write: {e}"))?;
+        self.stdin.flush().map_err(|e| format!("flush: {e}"))?;
 
         let mut buf = String::new();
         let n = self
@@ -269,8 +256,8 @@ impl LanguagePlugin {
         if n == 0 {
             return Err("plugin closed stdout".to_string());
         }
-        let v: Value = serde_json::from_str(&buf)
-            .map_err(|e| format!("decode: {e}\n  raw: {buf}"))?;
+        let v: Value =
+            serde_json::from_str(&buf).map_err(|e| format!("decode: {e}\n  raw: {buf}"))?;
         Ok(v)
     }
 
@@ -328,12 +315,24 @@ fn parse_plugin_annotations(value: &Value) -> Result<SourceAnnotations, String> 
 
 fn parse_range(value: Option<&Value>) -> Range {
     let default = Range {
-        start: Position { line: 0, character: 0 },
-        end: Position { line: 0, character: 0 },
+        start: Position {
+            line: 0,
+            character: 0,
+        },
+        end: Position {
+            line: 0,
+            character: 0,
+        },
     };
     let Some(v) = value else { return default };
-    let start = v.get("start").and_then(parse_position).unwrap_or(Position { line: 0, character: 0 });
-    let end = v.get("end").and_then(parse_position).unwrap_or(Position { line: 0, character: 0 });
+    let start = v.get("start").and_then(parse_position).unwrap_or(Position {
+        line: 0,
+        character: 0,
+    });
+    let end = v.get("end").and_then(parse_position).unwrap_or(Position {
+        line: 0,
+        character: 0,
+    });
     Range { start, end }
 }
 

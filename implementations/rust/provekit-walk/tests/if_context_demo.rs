@@ -15,9 +15,7 @@
 //   2. unguarded_caller: same callsite without the if-guard. WP retains
 //      the free variable `input`; non-ground; gap.
 
-use provekit_walk::{
-    build_shadow_source, lift_function_precondition, CalleeContract,
-};
+use provekit_walk::{build_shadow_source, lift_function_precondition, CalleeContract};
 use syn::ItemFn;
 
 const GUARDED_DEMO_SRC: &str = r#"

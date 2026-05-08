@@ -15,8 +15,8 @@ use std::sync::Arc;
 use provekit_canonicalizer::Value;
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_proof_envelope::{
-    build_proof_envelope, ed25519_pubkey_string, ed25519_sign_with_seed, ed25519_sign_string,
-    ProofEnvelopeInput, Ed25519Seed,
+    build_proof_envelope, ed25519_pubkey_string, ed25519_sign_string, ed25519_sign_with_seed,
+    Ed25519Seed, ProofEnvelopeInput,
 };
 
 const SEED: Ed25519Seed = [0x42u8; 32];
@@ -30,10 +30,7 @@ fn pre_n_gt_0() -> Arc<Value> {
         (
             "args",
             Value::array(vec![
-                Value::object([
-                    ("kind", Value::string("var")),
-                    ("name", Value::string("n")),
-                ]),
+                Value::object([("kind", Value::string("var")), ("name", Value::string("n"))]),
                 Value::object([
                     ("kind", Value::string("const")),
                     ("value", Value::integer(0)),
@@ -84,7 +81,11 @@ fn main() {
         signer_seed: SEED,
     };
     let m = mint_contract(&args).expect("mint_contract");
-    let hex: String = m.canonical_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    let hex: String = m
+        .canonical_bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
     println!("=== MINT_CONTRACT_HEX ===");
     println!("{}", hex);
     println!("=== MINT_CONTRACT_CID ===");
@@ -108,7 +109,11 @@ fn main() {
         declared_at: PRODUCED_AT.into(),
     };
     let proof_out = build_proof_envelope(&proof_input);
-    let hex: String = proof_out.bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    let hex: String = proof_out
+        .bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
     println!("=== PROOF_ENVELOPE_HEX ===");
     println!("{}", hex);
     println!("=== PROOF_ENVELOPE_CID ===");

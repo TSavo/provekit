@@ -93,7 +93,11 @@ impl LspConfig {
         let with_dot = format!(".{}", ext);
         self.language.iter().find(|l| {
             l.extensions.iter().any(|e| {
-                let e = if e.starts_with('.') { e.clone() } else { format!(".{}", e) };
+                let e = if e.starts_with('.') {
+                    e.clone()
+                } else {
+                    format!(".{}", e)
+                };
                 e == with_dot
             })
         })
@@ -147,11 +151,9 @@ pub fn load_config(path: impl AsRef<Path>) -> Result<LspConfig, String> {
         return Ok(LspConfig::default());
     }
 
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("read config: {}", e))?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("read config: {}", e))?;
 
-    let config: LspConfig = toml::from_str(&text)
-        .map_err(|e| format!("parse config: {}", e))?;
+    let config: LspConfig = toml::from_str(&text).map_err(|e| format!("parse config: {}", e))?;
 
     Ok(config)
 }

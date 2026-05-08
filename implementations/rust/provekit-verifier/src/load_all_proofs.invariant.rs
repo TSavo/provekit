@@ -18,8 +18,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    atomic_, contract, eq, forall, gte, must, num, ContractArgs, Int,
-    String_, Term,
+    atomic_, contract, eq, forall, gte, must, num, ContractArgs, Int, String_, Term,
 };
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
@@ -51,10 +50,7 @@ pub fn invariants() {
     );
 
     // -- mementos count is non-negative. ------------------------------------
-    must(
-        "mementos_count_nonneg",
-        forall(Int(), |n| gte(n, num(0))),
-    );
+    must("mementos_count_nonneg", forall(Int(), |n| gte(n, num(0))));
 
     // -- A mismatched filename-CID is rejected (Rule 2). --------------------
     //

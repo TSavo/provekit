@@ -45,11 +45,14 @@ impl Transport for SubprocessTransport {
             "method": method,
             "params": params,
         });
-        let request_str = serde_json::to_string(&request)
-            .map_err(|e| AgentError::Backend(e.to_string()))?;
+        let request_str =
+            serde_json::to_string(&request).map_err(|e| AgentError::Backend(e.to_string()))?;
 
         let mut cmd = Command::new(&self.binary);
-        cmd.arg("--json").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.arg("--json")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         if let Some(m) = &self.model {
             cmd.arg("--model").arg(m);
         }

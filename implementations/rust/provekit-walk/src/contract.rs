@@ -502,8 +502,7 @@ fn build_value(
     auto_minted_mementos: &[AliasingMemento],
 ) -> Arc<Value> {
     let formals_arr: Vec<Arc<Value>> = formals.iter().map(|n| Value::string(n.clone())).collect();
-    let formal_sorts_arr: Vec<Arc<Value>> =
-        formal_sorts.iter().map(|s| sort_to_value(s)).collect();
+    let formal_sorts_arr: Vec<Arc<Value>> = formal_sorts.iter().map(|s| sort_to_value(s)).collect();
     let body_cid_val: Arc<Value> = match body_cid {
         Some(c) => Value::string(c.to_string()),
         None => Value::null(),
@@ -520,7 +519,10 @@ fn build_value(
         ("bodyCid", body_cid_val),
         ("effects", effects.to_value()),
         ("locus", locus.to_value()),
-        ("autoMintedMementos", aliasing_mementos_to_value(auto_minted_mementos)),
+        (
+            "autoMintedMementos",
+            aliasing_mementos_to_value(auto_minted_mementos),
+        ),
     ])
 }
 
@@ -628,19 +630,39 @@ pub trait OpacityMementoLookup {
     /// effect-free.
     fn has_drop_contract(&self, type_name: &str) -> bool;
     fn has_aliasing_memento(&self, formal_a: &str, formal_b: &str) -> bool;
-    fn lookup_pin_invariant(&self, function_cid: &str, target: &str) -> Option<PinInvariantMementoView>;
+    fn lookup_pin_invariant(
+        &self,
+        function_cid: &str,
+        target: &str,
+    ) -> Option<PinInvariantMementoView>;
 }
 
 /// A no-op pool that never has any discharge mementos. Used as the
 /// default when callers don't yet track opacity discharge.
 pub struct EmptyOpacityPool;
 impl OpacityMementoLookup for EmptyOpacityPool {
-    fn has_loop_invariant(&self, _: &str) -> bool { false }
-    fn has_try_branch(&self, _: &str) -> bool { false }
-    fn has_closure_binding(&self, _: &str) -> bool { false }
-    fn has_drop_contract(&self, _: &str) -> bool { false }
-    fn has_aliasing_memento(&self, _: &str, _: &str) -> bool { false }
-    fn lookup_pin_invariant(&self, _function_cid: &str, _target: &str) -> Option<PinInvariantMementoView> { None }
+    fn has_loop_invariant(&self, _: &str) -> bool {
+        false
+    }
+    fn has_try_branch(&self, _: &str) -> bool {
+        false
+    }
+    fn has_closure_binding(&self, _: &str) -> bool {
+        false
+    }
+    fn has_drop_contract(&self, _: &str) -> bool {
+        false
+    }
+    fn has_aliasing_memento(&self, _: &str, _: &str) -> bool {
+        false
+    }
+    fn lookup_pin_invariant(
+        &self,
+        _function_cid: &str,
+        _target: &str,
+    ) -> Option<PinInvariantMementoView> {
+        None
+    }
 }
 
 /// Lightweight pool lookup type for PinInvariantMemento. The full
@@ -718,22 +740,32 @@ impl EffectSet {
     ///
     /// Returns the FIRST undischarged opacity effect as an error.
     /// The caller can collect all errors by iterating effects directly.
-    pub fn check_opacity_effects(&self, pool: &dyn OpacityMementoLookup, function_cid: Option<&str>) -> Result<(), OpacityError> {
+    pub fn check_opacity_effects(
+        &self,
+        pool: &dyn OpacityMementoLookup,
+        function_cid: Option<&str>,
+    ) -> Result<(), OpacityError> {
         for effect in &self.effects {
             match effect {
                 Effect::OpaqueLoop { loop_cid } => {
                     if !pool.has_loop_invariant(loop_cid) {
-                        return Err(OpacityError::LoopNotDischarged { loop_cid: loop_cid.clone() });
+                        return Err(OpacityError::LoopNotDischarged {
+                            loop_cid: loop_cid.clone(),
+                        });
                     }
                 }
                 Effect::EarlyReturn { try_cid } => {
                     if !pool.has_try_branch(try_cid) {
-                        return Err(OpacityError::EarlyReturnNotDischarged { try_cid: try_cid.clone() });
+                        return Err(OpacityError::EarlyReturnNotDischarged {
+                            try_cid: try_cid.clone(),
+                        });
                     }
                 }
                 Effect::ClosureCapture { body_fn_cid, .. } => {
                     if !pool.has_closure_binding(body_fn_cid) {
-                        return Err(OpacityError::ClosureCaptureNotDischarged { body_fn_cid: body_fn_cid.clone() });
+                        return Err(OpacityError::ClosureCaptureNotDischarged {
+                            body_fn_cid: body_fn_cid.clone(),
+                        });
                     }
                 }
                 Effect::UnresolvedCall { name } => {
@@ -752,11 +784,19 @@ impl EffectSet {
                 Effect::PinnedReference { target } => {
                     let fc = match function_cid {
                         Some(cid) if !cid.is_empty() => cid,
-                        _ => return Err(OpacityError::PinInvariantNotDischarged { target: target.clone() }),
+                        _ => {
+                            return Err(OpacityError::PinInvariantNotDischarged {
+                                target: target.clone(),
+                            })
+                        }
                     };
                     match pool.lookup_pin_invariant(fc, target) {
                         Some(view) if !view.invariant.is_empty() => { /* discharged */ }
-                        _ => return Err(OpacityError::PinInvariantNotDischarged { target: target.clone() }),
+                        _ => {
+                            return Err(OpacityError::PinInvariantNotDischarged {
+                                target: target.clone(),
+                            })
+                        }
                     }
                 }
                 // Non-opacity effects: Reads/Writes/Io/Unsafe/Panics and the
@@ -764,8 +804,11 @@ impl EffectSet {
                 // AtomicAccess) do not participate in memento-based discharge.
                 // They unconditionally block composition via the
                 // outer_non_opacity_pure check in compose_function_contracts_checked.
-                Effect::Reads { .. } | Effect::Writes { .. } | Effect::Io
-                | Effect::Unsafe | Effect::Panics
+                Effect::Reads { .. }
+                | Effect::Writes { .. }
+                | Effect::Io
+                | Effect::Unsafe
+                | Effect::Panics
                 | Effect::RawPointerProvenance { .. }
                 | Effect::AtomicAccess { .. } => {}
             }
@@ -898,8 +941,12 @@ pub fn compose_function_contracts_checked(
 ) -> Result<Option<ComposedFunctionContract>, OpacityError> {
     // Phase 1: check opacity effects on both sides. Returns the first
     // undischarged opacity effect as a typed error.
-    outer.effects.check_opacity_effects(pool, Some(&outer.cid))?;
-    inner.effects.check_opacity_effects(pool, Some(&inner.cid))?;
+    outer
+        .effects
+        .check_opacity_effects(pool, Some(&outer.cid))?;
+    inner
+        .effects
+        .check_opacity_effects(pool, Some(&inner.cid))?;
 
     // Phase 1.5: check aliasing discharge on both sides. PossibleAliasing
     // must have a matching AliasingMemento in auto_minted_mementos for
@@ -913,20 +960,30 @@ pub fn compose_function_contracts_checked(
     // A contract that had ONLY opacity effects — all now discharged — has
     // no remaining blockers; one that still has non-opacity impure effects
     // is still refused.
-    let outer_non_opacity_pure = outer.effects.effects.iter().all(|e| matches!(
-        e,
-        Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
-        | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
-        | Effect::PossibleAliasing { .. }
-        | Effect::Drop { .. } | Effect::PinnedReference { .. }
-    ));
-    let inner_non_opacity_pure = inner.effects.effects.iter().all(|e| matches!(
-        e,
-        Effect::OpaqueLoop { .. } | Effect::EarlyReturn { .. }
-        | Effect::ClosureCapture { .. } | Effect::UnresolvedCall { .. }
-        | Effect::PossibleAliasing { .. }
-        | Effect::Drop { .. } | Effect::PinnedReference { .. }
-    ));
+    let outer_non_opacity_pure = outer.effects.effects.iter().all(|e| {
+        matches!(
+            e,
+            Effect::OpaqueLoop { .. }
+                | Effect::EarlyReturn { .. }
+                | Effect::ClosureCapture { .. }
+                | Effect::UnresolvedCall { .. }
+                | Effect::PossibleAliasing { .. }
+                | Effect::Drop { .. }
+                | Effect::PinnedReference { .. }
+        )
+    });
+    let inner_non_opacity_pure = inner.effects.effects.iter().all(|e| {
+        matches!(
+            e,
+            Effect::OpaqueLoop { .. }
+                | Effect::EarlyReturn { .. }
+                | Effect::ClosureCapture { .. }
+                | Effect::UnresolvedCall { .. }
+                | Effect::PossibleAliasing { .. }
+                | Effect::Drop { .. }
+                | Effect::PinnedReference { .. }
+        )
+    });
     if !outer_non_opacity_pure || !inner_non_opacity_pure {
         return Ok(None);
     }
@@ -942,7 +999,9 @@ pub fn compose_function_contracts_checked(
     let inner_post_renamed = crate::wp::substitute_in_formula(
         inner.post.clone(),
         "result",
-        &IrTerm::Var { name: inner_result_name.clone() },
+        &IrTerm::Var {
+            name: inner_result_name.clone(),
+        },
     );
     let inner_value = match find_result_equation(&inner_post_renamed, &inner_result_name) {
         Some(t) => t,
@@ -1030,8 +1089,10 @@ pub fn compose_with_composed(
 
     let mut components = vec![outer.cid.clone()];
     components.extend(inner.component_cids.iter().cloned());
-    let component_values: Vec<Arc<Value>> =
-        components.iter().map(|c| Value::string(c.clone())).collect();
+    let component_values: Vec<Arc<Value>> = components
+        .iter()
+        .map(|c| Value::string(c.clone()))
+        .collect();
     let value = Value::object([
         ("schemaVersion", Value::string("1")),
         ("kind", Value::string("composed-function-contract")),
@@ -1074,11 +1135,8 @@ pub fn compose_chain_contracts(steps: &[ChainStep<'_>]) -> Option<ComposedFuncti
     if steps.len() < 2 {
         return None;
     }
-    let mut acc = compose_function_contracts(
-        steps[1].contract,
-        steps[0].contract,
-        steps[1].formal_idx,
-    )?;
+    let mut acc =
+        compose_function_contracts(steps[1].contract, steps[0].contract, steps[1].formal_idx)?;
     for step in &steps[2..] {
         acc = compose_with_composed(step.contract, &acc, step.formal_idx)?;
     }
@@ -1429,7 +1487,11 @@ mod tests {
         "#,
         );
         let contract = build_function_contract(&item_fn, None);
-        assert!(contract.is_pure(), "double should be pure: {:?}", contract.effects);
+        assert!(
+            contract.is_pure(),
+            "double should be pure: {:?}",
+            contract.effects
+        );
         assert_eq!(contract.fn_name, "double");
         assert_eq!(contract.formals, vec!["x".to_string()]);
     }
@@ -1613,14 +1675,8 @@ mod tests {
     /// fell to the catch-all, while &str matched the explicit arm.
     #[test]
     fn ref_lifetime_annotation_does_not_change_cid() {
-        let with_lt = build_function_contract(
-            &parse_fn(r#"fn f<'a>(s: &'a str) {}"#),
-            None,
-        );
-        let without_lt = build_function_contract(
-            &parse_fn(r#"fn f(s: &str) {}"#),
-            None,
-        );
+        let with_lt = build_function_contract(&parse_fn(r#"fn f<'a>(s: &'a str) {}"#), None);
+        let without_lt = build_function_contract(&parse_fn(r#"fn f(s: &str) {}"#), None);
         assert_eq!(
             with_lt.formal_sorts, without_lt.formal_sorts,
             "&'a str and &str must produce the same formal sort"
@@ -1632,14 +1688,8 @@ mod tests {
     /// Vec<u32> and a user struct produce distinct formal sorts.
     #[test]
     fn vec_and_user_struct_formals_are_distinct() {
-        let f_vec = build_function_contract(
-            &parse_fn(r#"fn f(x: Vec<u32>) {}"#),
-            None,
-        );
-        let f_struct = build_function_contract(
-            &parse_fn(r#"fn f(x: SomeStruct) {}"#),
-            None,
-        );
+        let f_vec = build_function_contract(&parse_fn(r#"fn f(x: Vec<u32>) {}"#), None);
+        let f_struct = build_function_contract(&parse_fn(r#"fn f(x: SomeStruct) {}"#), None);
         assert_ne!(
             f_vec.formal_sorts, f_struct.formal_sorts,
             "Vec<u32> and SomeStruct formals must produce distinct sorts"
@@ -1659,7 +1709,12 @@ mod tests {
 
     impl MockPool {
         fn empty() -> Self {
-            Self { loop_cids: vec![], try_cids: vec![], body_fn_cids: vec![], pin_invariant_targets: std::collections::HashMap::new() }
+            Self {
+                loop_cids: vec![],
+                try_cids: vec![],
+                body_fn_cids: vec![],
+                pin_invariant_targets: std::collections::HashMap::new(),
+            }
         }
         fn with_loop(mut self, cid: &str) -> Self {
             self.loop_cids.push(cid.to_string());
@@ -1674,11 +1729,13 @@ mod tests {
             self
         }
         fn with_pin_invariant(mut self, target: &str) -> Self {
-            self.pin_invariant_targets.insert(target.to_string(), "true".to_string());
+            self.pin_invariant_targets
+                .insert(target.to_string(), "true".to_string());
             self
         }
         fn with_pin_invariant_empty(mut self, target: &str) -> Self {
-            self.pin_invariant_targets.insert(target.to_string(), "".to_string());
+            self.pin_invariant_targets
+                .insert(target.to_string(), "".to_string());
             self
         }
     }
@@ -1699,7 +1756,11 @@ mod tests {
         fn has_aliasing_memento(&self, _a: &str, _b: &str) -> bool {
             false // no aliasing mementos in mock pool
         }
-        fn lookup_pin_invariant(&self, _function_cid: &str, target: &str) -> Option<PinInvariantMementoView> {
+        fn lookup_pin_invariant(
+            &self,
+            _function_cid: &str,
+            target: &str,
+        ) -> Option<PinInvariantMementoView> {
             if let Some(invariant) = self.pin_invariant_targets.get(target).cloned() {
                 Some(PinInvariantMementoView {
                     function_cid: _function_cid.to_string(),
@@ -1734,13 +1795,20 @@ mod tests {
     #[test]
     fn opaque_loop_without_memento_blocks_composition() {
         let loop_cid = "blake3-512:aabb".repeat(8); // fake stable cid
-        let outer = contract_with_effects("outer", vec![Effect::OpaqueLoop { loop_cid: loop_cid.clone() }]);
-        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
+        let outer = contract_with_effects(
+            "outer",
+            vec![Effect::OpaqueLoop {
+                loop_cid: loop_cid.clone(),
+            }],
+        );
+        let inner =
+            build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
         let pool = MockPool::empty(); // no loop invariant
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
             matches!(result, Err(OpacityError::LoopNotDischarged { .. })),
-            "expected LoopNotDischarged, got {:?}", result
+            "expected LoopNotDischarged, got {:?}",
+            result
         );
     }
 
@@ -1749,15 +1817,22 @@ mod tests {
     #[test]
     fn opaque_loop_with_memento_allows_composition() {
         let loop_cid = "blake3-512:aabb".repeat(8);
-        let outer = contract_with_effects("outer", vec![Effect::OpaqueLoop { loop_cid: loop_cid.clone() }]);
-        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
+        let outer = contract_with_effects(
+            "outer",
+            vec![Effect::OpaqueLoop {
+                loop_cid: loop_cid.clone(),
+            }],
+        );
+        let inner =
+            build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
         let pool = MockPool::empty().with_loop(&loop_cid);
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         // outer has only an OpaqueLoop (now discharged) and inner is pure →
         // composition should succeed.
         assert!(
             matches!(result, Ok(Some(_))),
-            "expected Ok(Some(_)) after discharge, got {:?}", result
+            "expected Ok(Some(_)) after discharge, got {:?}",
+            result
         );
     }
 
@@ -1765,13 +1840,19 @@ mod tests {
     #[test]
     fn early_return_without_memento_blocks_composition() {
         let try_cid = "blake3-512:ccdd".repeat(8);
-        let outer = contract_with_effects("outer", vec![Effect::EarlyReturn { try_cid: try_cid.clone() }]);
+        let outer = contract_with_effects(
+            "outer",
+            vec![Effect::EarlyReturn {
+                try_cid: try_cid.clone(),
+            }],
+        );
         let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
         let pool = MockPool::empty();
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
             matches!(result, Err(OpacityError::EarlyReturnNotDischarged { .. })),
-            "expected EarlyReturnNotDischarged, got {:?}", result
+            "expected EarlyReturnNotDischarged, got {:?}",
+            result
         );
     }
 
@@ -1779,13 +1860,19 @@ mod tests {
     #[test]
     fn early_return_with_memento_allows_composition() {
         let try_cid = "blake3-512:ccdd".repeat(8);
-        let outer = contract_with_effects("outer", vec![Effect::EarlyReturn { try_cid: try_cid.clone() }]);
+        let outer = contract_with_effects(
+            "outer",
+            vec![Effect::EarlyReturn {
+                try_cid: try_cid.clone(),
+            }],
+        );
         let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
         let pool = MockPool::empty().with_try(&try_cid);
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
             matches!(result, Ok(Some(_))),
-            "expected Ok(Some(_)) after discharge, got {:?}", result
+            "expected Ok(Some(_)) after discharge, got {:?}",
+            result
         );
     }
 
@@ -1793,13 +1880,23 @@ mod tests {
     #[test]
     fn closure_capture_without_memento_blocks_composition() {
         let body_fn_cid = "blake3-512:eeff".repeat(8);
-        let outer = contract_with_effects("outer", vec![Effect::ClosureCapture { body_fn_cid: body_fn_cid.clone(), n_captures: 1 }]);
+        let outer = contract_with_effects(
+            "outer",
+            vec![Effect::ClosureCapture {
+                body_fn_cid: body_fn_cid.clone(),
+                n_captures: 1,
+            }],
+        );
         let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
         let pool = MockPool::empty();
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
-            matches!(result, Err(OpacityError::ClosureCaptureNotDischarged { .. })),
-            "expected ClosureCaptureNotDischarged, got {:?}", result
+            matches!(
+                result,
+                Err(OpacityError::ClosureCaptureNotDischarged { .. })
+            ),
+            "expected ClosureCaptureNotDischarged, got {:?}",
+            result
         );
     }
 
@@ -1807,26 +1904,42 @@ mod tests {
     #[test]
     fn closure_capture_with_memento_allows_composition() {
         let body_fn_cid = "blake3-512:eeff".repeat(8);
-        let outer = contract_with_effects("outer", vec![Effect::ClosureCapture { body_fn_cid: body_fn_cid.clone(), n_captures: 1 }]);
+        let outer = contract_with_effects(
+            "outer",
+            vec![Effect::ClosureCapture {
+                body_fn_cid: body_fn_cid.clone(),
+                n_captures: 1,
+            }],
+        );
         let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
         let pool = MockPool::empty().with_closure(&body_fn_cid);
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
             matches!(result, Ok(Some(_))),
-            "expected Ok(Some(_)) after discharge, got {:?}", result
+            "expected Ok(Some(_)) after discharge, got {:?}",
+            result
         );
     }
 
     /// UnresolvedCall always blocks composition regardless of pool contents.
     #[test]
     fn unresolved_call_always_blocks_composition() {
-        let outer = contract_with_effects("outer", vec![Effect::UnresolvedCall { name: "some_fn".to_string() }]);
+        let outer = contract_with_effects(
+            "outer",
+            vec![Effect::UnresolvedCall {
+                name: "some_fn".to_string(),
+            }],
+        );
         let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
         let pool = MockPool::empty();
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
-            matches!(result, Err(OpacityError::UnresolvedCallNotDischarged { .. })),
-            "expected UnresolvedCallNotDischarged, got {:?}", result
+            matches!(
+                result,
+                Err(OpacityError::UnresolvedCallNotDischarged { .. })
+            ),
+            "expected UnresolvedCallNotDischarged, got {:?}",
+            result
         );
     }
 
@@ -1836,17 +1949,23 @@ mod tests {
     fn non_opacity_effects_still_block_after_opacity_discharge() {
         let loop_cid = "blake3-512:1122".repeat(8);
         // Contract has both OpaqueLoop (dischargeable) and Io (not dischargeable).
-        let outer = contract_with_effects("outer", vec![
-            Effect::OpaqueLoop { loop_cid: loop_cid.clone() },
-            Effect::Io,
-        ]);
+        let outer = contract_with_effects(
+            "outer",
+            vec![
+                Effect::OpaqueLoop {
+                    loop_cid: loop_cid.clone(),
+                },
+                Effect::Io,
+            ],
+        );
         let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y }"#), None);
         let pool = MockPool::empty().with_loop(&loop_cid);
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         // OpaqueLoop is discharged → no OpacityError. But Io blocks → Ok(None).
         assert!(
             matches!(result, Ok(None)),
-            "expected Ok(None) when non-opacity effect blocks, got {:?}", result
+            "expected Ok(None) when non-opacity effect blocks, got {:?}",
+            result
         );
     }
 
@@ -1866,14 +1985,18 @@ mod tests {
     fn pinned_reference_without_memento_blocks_composition() {
         let outer = contract_with_effects(
             "outer",
-            vec![Effect::PinnedReference { target: "pin".to_string() }],
+            vec![Effect::PinnedReference {
+                target: "pin".to_string(),
+            }],
         );
-        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
+        let inner =
+            build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
         let pool = MockPool::empty();
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
             matches!(result, Err(OpacityError::PinInvariantNotDischarged { .. })),
-            "expected PinInvariantNotDischarged, got {:?}", result
+            "expected PinInvariantNotDischarged, got {:?}",
+            result
         );
     }
 
@@ -1883,14 +2006,20 @@ mod tests {
     fn pinned_reference_with_memento_succeeds() {
         let outer = contract_with_effects(
             "outer",
-            vec![Effect::PinnedReference { target: "pin".to_string() }],
+            vec![Effect::PinnedReference {
+                target: "pin".to_string(),
+            }],
         );
-        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
+        let inner =
+            build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
         let pool = MockPool::empty().with_pin_invariant("pin");
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         match result {
             Ok(Some(_)) => { /* success */ }
-            other => panic!("expected Ok(Some(_)) after PinInvariantMemento discharge, got {:?}", other),
+            other => panic!(
+                "expected Ok(Some(_)) after PinInvariantMemento discharge, got {:?}",
+                other
+            ),
         }
     }
 
@@ -1900,14 +2029,18 @@ mod tests {
     fn pinned_reference_with_wrong_target_memento_blocks() {
         let outer = contract_with_effects(
             "outer",
-            vec![Effect::PinnedReference { target: "pin".to_string() }],
+            vec![Effect::PinnedReference {
+                target: "pin".to_string(),
+            }],
         );
-        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
+        let inner =
+            build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
         let pool = MockPool::empty().with_pin_invariant("other");
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
             matches!(result, Err(OpacityError::PinInvariantNotDischarged { .. })),
-            "expected PinInvariantNotDischarged for wrong target, got {:?}", result
+            "expected PinInvariantNotDischarged for wrong target, got {:?}",
+            result
         );
     }
 
@@ -1917,14 +2050,18 @@ mod tests {
     fn pinned_reference_with_empty_invariant_blocks() {
         let outer = contract_with_effects(
             "outer",
-            vec![Effect::PinnedReference { target: "pin".to_string() }],
+            vec![Effect::PinnedReference {
+                target: "pin".to_string(),
+            }],
         );
-        let inner = build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
+        let inner =
+            build_function_contract(&parse_fn(r#"fn inner(y: u32) -> u32 { y + 1 }"#), None);
         let pool = MockPool::empty().with_pin_invariant_empty("pin");
         let result = compose_function_contracts_checked(&outer, &inner, 0, &pool);
         assert!(
             matches!(result, Err(OpacityError::PinInvariantNotDischarged { .. })),
-            "expected PinInvariantNotDischarged for empty invariant, got {:?}", result
+            "expected PinInvariantNotDischarged for empty invariant, got {:?}",
+            result
         );
     }
 }

@@ -30,8 +30,14 @@ use std::time::{Duration, Instant};
 fn daemon_bin() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
-    let release = workspace.join("target").join("release").join("provekit-linkerd");
-    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
+    let release = workspace
+        .join("target")
+        .join("release")
+        .join("provekit-linkerd");
+    let debug = workspace
+        .join("target")
+        .join("debug")
+        .join("provekit-linkerd");
     if release.exists() {
         release
     } else {
@@ -59,9 +65,12 @@ fn spawn_daemon(sock: &PathBuf) -> Child {
             .unwrap_or(0)
     ));
     Command::new(daemon_bin())
-        .arg("--socket").arg(sock)
-        .arg("--snapshot").arg(snap)
-        .arg("--idle-timeout-ms").arg("30000")
+        .arg("--socket")
+        .arg(sock)
+        .arg("--snapshot")
+        .arg(snap)
+        .arg("--idle-timeout-ms")
+        .arg("30000")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -187,38 +196,30 @@ func Negate(x int) int {
             // Check for errors.
             if let Some(err) = resp.get("error") {
                 let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
-                let message = err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
-                eprintln!(
-                    "Request {} returned error code {}: {}",
-                    i, code, message
-                );
-                results_clone.lock().unwrap().push((
-                    i,
-                    false,
-                    code,
-                ));
+                let message = err
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown");
+                eprintln!("Request {} returned error code {}: {}", i, code, message);
+                results_clone.lock().unwrap().push((i, false, code));
                 return;
             }
 
             // Check for success.
-            if !resp.get("result").and_then(|r| r.get("diagnostics")).is_some() {
+            if !resp
+                .get("result")
+                .and_then(|r| r.get("diagnostics"))
+                .is_some()
+            {
                 eprintln!(
                     "Request {} response missing result.diagnostics: {:?}",
                     i, resp
                 );
-                results_clone.lock().unwrap().push((
-                    i,
-                    false,
-                    -999,
-                ));
+                results_clone.lock().unwrap().push((i, false, -999));
                 return;
             }
 
-            results_clone.lock().unwrap().push((
-                i,
-                true,
-                0,
-            ));
+            results_clone.lock().unwrap().push((i, true, 0));
         });
 
         handles.push(handle);
@@ -234,11 +235,7 @@ func Negate(x int) int {
     // Verify all requests succeeded.
     let res_vec = results.lock().unwrap();
     for (idx, success, code) in res_vec.iter() {
-        assert!(
-            success,
-            "Request {} failed with code {}",
-            idx, code
-        );
+        assert!(success, "Request {} failed with code {}", idx, code);
     }
 
     // Check for parallelism: if requests ran serially, elapsed would be
@@ -255,7 +252,7 @@ func Negate(x int) int {
     // Heuristic: if all N requests ran sequentially, total would be > 1s (5 requests * 200ms).
     // If they ran in parallel, total should be < 1s. We allow 2s as a generous bound.
     let expected_serial_time = Duration::from_secs_f64(
-        0.3 * NUM_CONCURRENT_REQUESTS as f64  // 0.3s per request * N
+        0.3 * NUM_CONCURRENT_REQUESTS as f64, // 0.3s per request * N
     );
     let parallelism_threshold = Duration::from_millis(800);
 
@@ -285,9 +282,7 @@ func Negate(x int) int {
 #[test]
 fn test_single_subprocess_kit_baseline() {
     if !binary_on_path("provekit-lsp-go") {
-        println!(
-            "SKIP test_single_subprocess_kit_baseline: provekit-lsp-go not on PATH"
-        );
+        println!("SKIP test_single_subprocess_kit_baseline: provekit-lsp-go not on PATH");
         return;
     }
 
@@ -330,7 +325,9 @@ func Baseline(x int) int {
         resp
     );
     assert!(
-        resp.get("result").and_then(|r| r.get("diagnostics")).is_some(),
+        resp.get("result")
+            .and_then(|r| r.get("diagnostics"))
+            .is_some(),
         "baseline request response missing result.diagnostics: {:?}",
         resp
     );

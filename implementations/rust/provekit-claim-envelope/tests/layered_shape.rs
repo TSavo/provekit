@@ -143,7 +143,11 @@ fn contract_memento_has_exactly_three_top_level_layers() {
 fn contract_envelope_has_exactly_signer_declared_at_signature() {
     let m = mint_contract(&contract_args()).expect("mint");
     let env: Json = serde_json::from_slice(&m.canonical_bytes).expect("json");
-    let envelope = env.pointer("/envelope").expect("envelope").as_object().unwrap();
+    let envelope = env
+        .pointer("/envelope")
+        .expect("envelope")
+        .as_object()
+        .unwrap();
     let mut keys: Vec<&str> = envelope.keys().map(|k| k.as_str()).collect();
     keys.sort();
     assert_eq!(
@@ -160,8 +164,14 @@ fn contract_header_carries_kind_and_substrate_fields() {
     let header = env.pointer("/header").expect("header").as_object().unwrap();
 
     // Universal header fields (spec §1).
-    assert_eq!(header.get("schemaVersion").and_then(|v| v.as_str()), Some("2"));
-    assert_eq!(header.get("kind").and_then(|v| v.as_str()), Some("contract"));
+    assert_eq!(
+        header.get("schemaVersion").and_then(|v| v.as_str()),
+        Some("2")
+    );
+    assert_eq!(
+        header.get("kind").and_then(|v| v.as_str()),
+        Some("contract")
+    );
     assert!(header
         .get("cid")
         .and_then(|v| v.as_str())
@@ -170,15 +180,25 @@ fn contract_header_carries_kind_and_substrate_fields() {
 
     // Kind-specific REQUIRED contract fields (spec §3 example).
     assert_eq!(header.get("name").and_then(|v| v.as_str()), Some("demo"));
-    assert_eq!(header.get("outBinding").and_then(|v| v.as_str()), Some("out"));
-    assert!(header.get("pre").is_some(), "header.pre is REQUIRED for contract memento with pre clause");
+    assert_eq!(
+        header.get("outBinding").and_then(|v| v.as_str()),
+        Some("out")
+    );
+    assert!(
+        header.get("pre").is_some(),
+        "header.pre is REQUIRED for contract memento with pre clause"
+    );
 }
 
 #[test]
 fn contract_metadata_carries_authoring_and_producer_attribution() {
     let m = mint_contract(&contract_args()).expect("mint");
     let env: Json = serde_json::from_slice(&m.canonical_bytes).expect("json");
-    let metadata = env.pointer("/metadata").expect("metadata").as_object().unwrap();
+    let metadata = env
+        .pointer("/metadata")
+        .expect("metadata")
+        .as_object()
+        .unwrap();
     assert!(metadata.get("authoring").is_some(), "metadata.authoring");
     assert_eq!(
         metadata.get("producedBy").and_then(|v| v.as_str()),
@@ -300,9 +320,18 @@ fn bridge_memento_has_layered_shape() {
     assert_eq!(keys, vec!["envelope", "header", "metadata"]);
 
     let header = env.pointer("/header").unwrap().as_object().unwrap();
-    assert_eq!(header.get("schemaVersion").and_then(|v| v.as_str()), Some("2"));
+    assert_eq!(
+        header.get("schemaVersion").and_then(|v| v.as_str()),
+        Some("2")
+    );
     assert_eq!(header.get("kind").and_then(|v| v.as_str()), Some("bridge"));
-    assert_eq!(header.get("sourceSymbol").and_then(|v| v.as_str()), Some("foo"));
-    assert_eq!(header.get("sourceLayer").and_then(|v| v.as_str()), Some("rust"));
+    assert_eq!(
+        header.get("sourceSymbol").and_then(|v| v.as_str()),
+        Some("foo")
+    );
+    assert_eq!(
+        header.get("sourceLayer").and_then(|v| v.as_str()),
+        Some("rust")
+    );
     assert!(header.get("targetContractCid").is_some());
 }

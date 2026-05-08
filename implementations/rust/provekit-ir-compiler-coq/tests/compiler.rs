@@ -20,7 +20,10 @@ fn lambda_emits_coq_fun() {
     assert!(result.is_ok(), "compile failed: {:?}", result.err());
     let compiled = result.unwrap();
     let coq_code = compiled.body;
-    assert!(coq_code.contains("fun (x : Z)"), "Expected Coq lambda syntax");
+    assert!(
+        coq_code.contains("fun (x : Z)"),
+        "Expected Coq lambda syntax"
+    );
     assert!(coq_code.contains("42"), "Expected body in output");
 }
 
@@ -107,8 +110,11 @@ fn function_sort_in_forall_emits_coq_arrow() {
     let result = compiler.compile(&ir, DIALECT);
     assert!(result.is_ok(), "compile failed: {:?}", result.err());
     let coq_code = result.unwrap().body;
-    assert!(coq_code.contains("forall f : Z -> bool"),
-            "Expected Coq forall over function type, got:\n{}", coq_code);
+    assert!(
+        coq_code.contains("forall f : Z -> bool"),
+        "Expected Coq forall over function type, got:\n{}",
+        coq_code
+    );
 }
 
 #[test]
@@ -129,8 +135,11 @@ fn function_sort_multi_arg_curries_left_to_right() {
     });
     let compiler = CoqCompiler::new();
     let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
-    assert!(coq_code.contains("forall g : Z -> Z -> bool"),
-            "Expected curried multi-arg arrow, got:\n{}", coq_code);
+    assert!(
+        coq_code.contains("forall g : Z -> Z -> bool"),
+        "Expected curried multi-arg arrow, got:\n{}",
+        coq_code
+    );
 }
 
 #[test]
@@ -155,11 +164,16 @@ fn function_sort_higher_order_arg_is_parenthesized() {
     });
     let compiler = CoqCompiler::new();
     let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
-    assert!(coq_code.contains("forall hof : (Z -> Z) -> bool"),
-            "Higher-order arg must be parenthesized for soundness, got:\n{}", coq_code);
+    assert!(
+        coq_code.contains("forall hof : (Z -> Z) -> bool"),
+        "Higher-order arg must be parenthesized for soundness, got:\n{}",
+        coq_code
+    );
     // Negative check: the unparenthesized form would be wrong.
-    assert!(!coq_code.contains("forall hof : Z -> Z -> bool"),
-            "Must NOT collapse parens on a function-typed arg");
+    assert!(
+        !coq_code.contains("forall hof : Z -> Z -> bool"),
+        "Must NOT collapse parens on a function-typed arg"
+    );
 }
 
 #[test]
@@ -176,8 +190,11 @@ fn lambda_over_function_sort_emits_coq_fun() {
     });
     let compiler = CoqCompiler::new();
     let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
-    assert!(coq_code.contains("fun (f : Z -> Z)"),
-            "Expected Coq fun over function sort, got:\n{}", coq_code);
+    assert!(
+        coq_code.contains("fun (f : Z -> Z)"),
+        "Expected Coq fun over function sort, got:\n{}",
+        coq_code
+    );
 }
 
 #[test]
@@ -196,8 +213,11 @@ fn dependent_sort_emits_coq_pi_type() {
     });
     let compiler = CoqCompiler::new();
     let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
-    assert!(coq_code.contains("forall n : Z, Vec n"),
-            "Expected Coq Π-type with instantiated index, got:\n{}", coq_code);
+    assert!(
+        coq_code.contains("forall n : Z, Vec n"),
+        "Expected Coq Π-type with instantiated index, got:\n{}",
+        coq_code
+    );
 }
 
 #[test]
@@ -215,8 +235,11 @@ fn dependent_sort_in_lambda_param_position() {
     });
     let compiler = CoqCompiler::new();
     let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
-    assert!(coq_code.contains("fun (v : forall n : Z, Vec n)"),
-            "Expected lambda binder over Π-type, got:\n{}", coq_code);
+    assert!(
+        coq_code.contains("fun (v : forall n : Z, Vec n)"),
+        "Expected lambda binder over Π-type, got:\n{}",
+        coq_code
+    );
 }
 
 #[test]
@@ -243,10 +266,16 @@ fn dependent_sort_in_function_arg_position_is_parenthesized() {
     });
     let compiler = CoqCompiler::new();
     let coq_code = compiler.compile(&ir, DIALECT).unwrap().body;
-    assert!(coq_code.contains("(forall n : Z, Vec n) -> bool"),
-            "Expected parenthesized Π-type in arg position, got:\n{}", coq_code);
-    assert!(!coq_code.contains("forall n : Z, Vec n -> bool"),
-            "Unparenthesized Π-type leaks binder into function arrow:\n{}", coq_code);
+    assert!(
+        coq_code.contains("(forall n : Z, Vec n) -> bool"),
+        "Expected parenthesized Π-type in arg position, got:\n{}",
+        coq_code
+    );
+    assert!(
+        !coq_code.contains("forall n : Z, Vec n -> bool"),
+        "Unparenthesized Π-type leaks binder into function arrow:\n{}",
+        coq_code
+    );
 }
 
 #[test]
@@ -267,7 +296,10 @@ fn function_sort_serde_roundtrip() {
     let parsed: provekit_ir_types::Sort =
         serde_json::from_value(original.clone()).expect("FunctionSort deserialization");
     let reemitted = serde_json::to_value(&parsed).expect("FunctionSort serialization");
-    assert_eq!(original, reemitted, "FunctionSort IR JSON did not round-trip");
+    assert_eq!(
+        original, reemitted,
+        "FunctionSort IR JSON did not round-trip"
+    );
 }
 
 #[test]
@@ -281,7 +313,10 @@ fn dependent_sort_serde_roundtrip() {
     let parsed: provekit_ir_types::Sort =
         serde_json::from_value(original.clone()).expect("DependentSort deserialization");
     let reemitted = serde_json::to_value(&parsed).expect("DependentSort serialization");
-    assert_eq!(original, reemitted, "DependentSort IR JSON did not round-trip");
+    assert_eq!(
+        original, reemitted,
+        "DependentSort IR JSON did not round-trip"
+    );
 }
 
 #[test]
@@ -330,5 +365,9 @@ fn let_with_multiple_bindings() {
     let coq_code = compiled.body;
     // Should have two let bindings
     let let_count = coq_code.matches("let").count();
-    assert!(let_count >= 2, "Expected at least 2 let occurrences, got {}", let_count);
+    assert!(
+        let_count >= 2,
+        "Expected at least 2 let occurrences, got {}",
+        let_count
+    );
 }

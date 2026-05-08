@@ -202,7 +202,11 @@ mod tests {
                 || w.item_name.contains("lemma_add")
                 || w.item_name.contains("double")
         });
-        assert!(any_named, "warnings should reference inner items: {:?}", out.warnings);
+        assert!(
+            any_named,
+            "warnings should reference inner items: {:?}",
+            out.warnings
+        );
     }
 
     #[test]

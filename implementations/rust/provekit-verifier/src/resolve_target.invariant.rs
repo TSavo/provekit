@@ -15,8 +15,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    atomic_, contract, eq, forall, implies, must, ContractArgs, String_,
-    Term,
+    atomic_, contract, eq, forall, implies, must, ContractArgs, String_, Term,
 };
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {

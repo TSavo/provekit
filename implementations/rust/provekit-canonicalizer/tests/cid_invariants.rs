@@ -27,7 +27,12 @@ fn cid_total_length_is_prefix_plus_128_hex() {
 
 #[test]
 fn cid_hex_is_exactly_128_chars() {
-    for input in &[b"".as_ref(), b"x".as_ref(), b"hello world".as_ref(), b"\x00".as_ref()] {
+    for input in &[
+        b"".as_ref(),
+        b"x".as_ref(),
+        b"hello world".as_ref(),
+        b"\x00".as_ref(),
+    ] {
         let h = blake3_512_of(input);
         let hex = h.trim_start_matches(PREFIX);
         assert_eq!(hex.len(), 128, "hex length wrong for {input:?}");
@@ -36,7 +41,12 @@ fn cid_hex_is_exactly_128_chars() {
 
 #[test]
 fn cid_hex_is_lowercase_only() {
-    for input in &[b"".as_ref(), b"x".as_ref(), b"hello world".as_ref(), b"ABCDEF".as_ref()] {
+    for input in &[
+        b"".as_ref(),
+        b"x".as_ref(),
+        b"hello world".as_ref(),
+        b"ABCDEF".as_ref(),
+    ] {
         let h = blake3_512_of(input);
         let hex = h.trim_start_matches(PREFIX);
         for c in hex.chars() {

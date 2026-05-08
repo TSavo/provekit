@@ -80,16 +80,18 @@ pub fn emit_drop(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use provekit_ir_types::{IrFormula, IrTerm};
-    use crate::walk::walk_callsites_to_entry;
-    use crate::wp::Wp;
     use crate::dropper::gap::detect_gaps;
     use crate::dropper::predicates::not_null::NotNullPredicate;
+    use crate::walk::walk_callsites_to_entry;
+    use crate::wp::Wp;
+    use provekit_ir_types::{IrFormula, IrTerm};
 
     fn not_null_wp(var_name: &str) -> Wp {
         Wp(IrFormula::Atomic {
             name: "not_null".to_string(),
-            args: vec![IrTerm::Var { name: var_name.to_string() }],
+            args: vec![IrTerm::Var {
+                name: var_name.to_string(),
+            }],
         })
     }
 
@@ -117,16 +119,21 @@ fn caller(x: Option<i32>) {
     #[test]
     fn emit_drop_inserts_guard_before_callsite() {
         let caller_fn = find_caller(FIXTURE_SRC, "caller");
-        let walks =
-            walk_callsites_to_entry(&caller_fn, "f", &["x".to_string()], not_null_wp("x"));
+        let walks = walk_callsites_to_entry(&caller_fn, "f", &["x".to_string()], not_null_wp("x"));
         let gaps = detect_gaps(&walks, &NotNullPredicate);
         let gap = &gaps[0];
 
         let result = emit_drop(FIXTURE_SRC, gap, DropTemplate::Defensive, &NotNullPredicate)
             .expect("emit succeeds");
 
-        let guard_pos = result.modified_source.find("x.is_none()").expect("guard present");
-        let callsite_pos = result.modified_source.find("f(x)").expect("callsite present");
+        let guard_pos = result
+            .modified_source
+            .find("x.is_none()")
+            .expect("guard present");
+        let callsite_pos = result
+            .modified_source
+            .find("f(x)")
+            .expect("callsite present");
         assert!(
             guard_pos < callsite_pos,
             "guard must appear before callsite: guard_pos={}, callsite_pos={}",
@@ -138,8 +145,7 @@ fn caller(x: Option<i32>) {
     #[test]
     fn emitted_source_is_syntactically_valid() {
         let caller_fn = find_caller(FIXTURE_SRC, "caller");
-        let walks =
-            walk_callsites_to_entry(&caller_fn, "f", &["x".to_string()], not_null_wp("x"));
+        let walks = walk_callsites_to_entry(&caller_fn, "f", &["x".to_string()], not_null_wp("x"));
         let gaps = detect_gaps(&walks, &NotNullPredicate);
         let gap = &gaps[0];
 
@@ -170,8 +176,7 @@ fn caller_b(x: Option<i32>) {
 }
 ";
         let caller_a = find_caller(src, "caller_a");
-        let walks =
-            walk_callsites_to_entry(&caller_a, "f", &["x".to_string()], not_null_wp("x"));
+        let walks = walk_callsites_to_entry(&caller_a, "f", &["x".to_string()], not_null_wp("x"));
         let gaps = detect_gaps(&walks, &NotNullPredicate);
         assert_eq!(gaps.len(), 1, "one gap in caller_a");
         let gap = &gaps[0];
@@ -210,8 +215,7 @@ fn caller(x: Option<i32>) {
 }
 ";
         let caller_fn = find_caller(src, "caller");
-        let walks =
-            walk_callsites_to_entry(&caller_fn, "f", &["x".to_string()], not_null_wp("x"));
+        let walks = walk_callsites_to_entry(&caller_fn, "f", &["x".to_string()], not_null_wp("x"));
         let gaps = detect_gaps(&walks, &NotNullPredicate);
         assert!(gaps.len() >= 2, "two callsites yield two gaps");
         let second_gap = gaps
@@ -228,12 +232,18 @@ fn caller(x: Option<i32>) {
         let second_call_pos = modified.find("f(y);").expect("second call f(y) present");
         let guard_pos = modified.find("is_none()").expect("guard present");
 
-        assert!(first_call_pos < let_y_pos, "first callsite must precede let-binding");
+        assert!(
+            first_call_pos < let_y_pos,
+            "first callsite must precede let-binding"
+        );
         assert!(
             let_y_pos < guard_pos,
             "guard must follow let-binding (not precede first callsite)"
         );
-        assert!(guard_pos < second_call_pos, "guard must precede second callsite");
+        assert!(
+            guard_pos < second_call_pos,
+            "guard must precede second callsite"
+        );
 
         syn::parse_str::<syn::File>(modified).expect("modified source parses");
     }

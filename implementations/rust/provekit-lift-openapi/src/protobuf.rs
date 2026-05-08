@@ -33,8 +33,7 @@ pub fn lift_proto(path: &Path, diagnostics: &mut Diagnostics) -> Result<Vec<Decl
         } else {
             None
         }
-    }) {
-    }
+    }) {}
 
     for rpc in &parser.rpcs {
         let name = format!("proto-rpc-{}", slugify(&rpc.name));
@@ -115,13 +114,10 @@ fn message_to_contract(name: &str, msg: &ProtoMessage) -> Option<ContractDecl> {
             "int32" | "int64" | "sint32" | "sint64" | "sfixed32" | "sfixed64" => {
                 ir_builder::atomic("is_int", vec![field_var.clone()])
             }
-            "uint32" | "uint64" | "fixed32" | "fixed64" => ir_builder::gte(
-                field_var.clone(),
-                ir_builder::const_int(0),
-            ),
-            "float" | "double" => {
-                ir_builder::atomic("is_real", vec![field_var.clone()])
+            "uint32" | "uint64" | "fixed32" | "fixed64" => {
+                ir_builder::gte(field_var.clone(), ir_builder::const_int(0))
             }
+            "float" | "double" => ir_builder::atomic("is_real", vec![field_var.clone()]),
             "bool" => ir_builder::atomic("is_bool", vec![field_var.clone()]),
             "string" => ir_builder::atomic("is_string", vec![field_var.clone()]),
             "bytes" => ir_builder::atomic("is_string", vec![field_var.clone()]),
@@ -159,8 +155,8 @@ fn message_to_contract(name: &str, msg: &ProtoMessage) -> Option<ContractDecl> {
 
 fn proto_to_ir_sort(proto_type: &str) -> Value {
     match proto_type {
-        "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64"
-        | "fixed32" | "fixed64" | "sfixed32" | "sfixed64" => ir_builder::int_sort(),
+        "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" | "fixed32" | "fixed64"
+        | "sfixed32" | "sfixed64" => ir_builder::int_sort(),
         "float" | "double" => ir_builder::real_sort(),
         "bool" => ir_builder::bool_sort(),
         "string" | "bytes" => ir_builder::string_sort(),
@@ -250,11 +246,7 @@ impl ProtoParser {
         Ok(())
     }
 
-    fn parse_message(
-        &self,
-        lines: &[&str],
-        start: usize,
-    ) -> Result<(ProtoMessage, usize), String> {
+    fn parse_message(&self, lines: &[&str], start: usize) -> Result<(ProtoMessage, usize), String> {
         let header = lines[start].trim();
         let name = header
             .trim_start_matches("message ")
@@ -330,7 +322,14 @@ impl ProtoParser {
             pos += 1;
         }
 
-        Ok((ProtoMessage { name, fields, nested }, pos - start))
+        Ok((
+            ProtoMessage {
+                name,
+                fields,
+                nested,
+            },
+            pos - start,
+        ))
     }
 
     fn parse_service(

@@ -273,20 +273,20 @@ fn fixtures() -> Vec<Json> {
         ]}),
         // forall over Int with bound var
         json!({"kind": "forall", "name": "n",
-            "sort": {"kind": "primitive", "name": "Int"},
-            "body": {"kind": "atomic", "name": ">", "args": [
-                {"kind": "var", "name": "n"},
-                {"kind": "const", "value": 0,
-                 "sort": {"kind": "primitive", "name": "Int"}}
-            ]}}),
+        "sort": {"kind": "primitive", "name": "Int"},
+        "body": {"kind": "atomic", "name": ">", "args": [
+            {"kind": "var", "name": "n"},
+            {"kind": "const", "value": 0,
+             "sort": {"kind": "primitive", "name": "Int"}}
+        ]}}),
         // forall Real
         json!({"kind": "forall", "name": "x",
-            "sort": {"kind": "primitive", "name": "Real"},
-            "body": {"kind": "atomic", "name": ">", "args": [
-                {"kind": "var", "name": "x"},
-                {"kind": "const", "value": 0,
-                 "sort": {"kind": "primitive", "name": "Real"}}
-            ]}}),
+        "sort": {"kind": "primitive", "name": "Real"},
+        "body": {"kind": "atomic", "name": ">", "args": [
+            {"kind": "var", "name": "x"},
+            {"kind": "const", "value": 0,
+             "sort": {"kind": "primitive", "name": "Real"}}
+        ]}}),
         // ctor in atomic
         json!({"kind": "atomic", "name": "=", "args": [
             {"kind": "ctor", "name": "sumDebits",
@@ -366,8 +366,7 @@ fn capabilities_lists_all_documented_predicates() {
     let c = SmtLibCompiler::new();
     let caps = c.capabilities();
     for needed in [
-        "=", "distinct", "<", "<=", ">", ">=", "and", "or", "not", "implies",
-        "forall", "exists",
+        "=", "distinct", "<", "<=", ">", ">=", "and", "or", "not", "implies", "forall", "exists",
     ] {
         assert!(
             caps.supported_predicates.iter().any(|p| p == needed),

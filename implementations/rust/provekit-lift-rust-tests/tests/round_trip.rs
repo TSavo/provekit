@@ -110,7 +110,11 @@ fn fixture_lifts_5_skips_1_and_round_trips_through_verifier() {
 
     // .proof filename = `<cid>.proof`.
     assert!(proof_path.exists(), "proof file should exist on disk");
-    let fname = proof_path.file_name().unwrap().to_string_lossy().to_string();
+    let fname = proof_path
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
     let expected = format!("{}.proof", minted.cid);
     assert_eq!(fname, expected, "filename should be <cid>.proof");
     assert!(

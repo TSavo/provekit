@@ -124,16 +124,16 @@ impl ShadowSlot {
         callee_root_cid: &'b str,
     ) -> impl Iterator<Item = &'a ShadowArrival> + use<'a, 'b> {
         let needle = callee_root_cid.to_string();
-        self.arrivals.iter().filter(move |a| a.callee_root_cid == needle)
+        self.arrivals
+            .iter()
+            .filter(move |a| a.callee_root_cid == needle)
     }
 }
 
 impl ShadowSource {
     /// Find the slot for a given source index (body[i] or len for entry).
     pub fn slot(&self, source_index: usize) -> Option<&ShadowSlot> {
-        self.slots
-            .iter()
-            .find(|s| s.source_index == source_index)
+        self.slots.iter().find(|s| s.source_index == source_index)
     }
 
     /// Iterate every (slot, arrival) pair. Useful for emission / cache
@@ -264,11 +264,7 @@ pub fn build_shadow_source(caller: &ItemFn, callees: &[CalleeContract]) -> Shado
                     pre_wp,
                     post_wp,
                     predecessor_cid: predecessor_cid.clone(),
-                    allocation_cid: if k == 0 {
-                        None
-                    } else {
-                        allocation_cid.clone()
-                    },
+                    allocation_cid: if k == 0 { None } else { allocation_cid.clone() },
                     canonical_bytes,
                     cid: cid.clone(),
                 };
@@ -282,10 +278,7 @@ pub fn build_shadow_source(caller: &ItemFn, callees: &[CalleeContract]) -> Shado
             for slot in minted.into_iter().flatten() {
                 let mut a = slot;
                 a.callee_root_cid = root_cid.clone();
-                arrivals_by_index
-                    .entry(a.source_index)
-                    .or_default()
-                    .push(a);
+                arrivals_by_index.entry(a.source_index).or_default().push(a);
             }
         }
     }
@@ -518,7 +511,9 @@ where
     I: IntoIterator<Item = &'a ShadowArrival>,
 {
     let mut iter = edges.into_iter();
-    let first = iter.next().expect("compose_chain requires at least one edge");
+    let first = iter
+        .next()
+        .expect("compose_chain requires at least one edge");
     let mut p = first.pre_wp.as_formula().clone();
     let mut q = first.post_wp.as_formula().clone();
     let mut components = vec![first.cid.clone()];
@@ -674,10 +669,21 @@ mod shadow_tests {
             let bytes = jcs_bytes_of_value(&edge_memento_value(arrival));
             let parsed: serde_json::Value =
                 serde_json::from_slice(&bytes).expect("valid JSON from edge_memento_value");
-            assert_eq!(parsed["kind"].as_str(), Some("contract"), "must emit kind:contract");
-            assert_eq!(parsed["schemaVersion"].as_str(), Some("2"), "must emit schemaVersion:2");
+            assert_eq!(
+                parsed["kind"].as_str(),
+                Some("contract"),
+                "must emit kind:contract"
+            );
+            assert_eq!(
+                parsed["schemaVersion"].as_str(),
+                Some("2"),
+                "must emit schemaVersion:2"
+            );
             assert!(parsed["name"].is_string(), "must include name field");
-            assert!(parsed["outBinding"].is_string(), "must include outBinding field");
+            assert!(
+                parsed["outBinding"].is_string(),
+                "must include outBinding field"
+            );
             assert!(!parsed["pre"].is_null(), "must include pre field");
             assert!(!parsed["post"].is_null(), "must include post field");
             assert!(!parsed["evidence"].is_null(), "must include evidence field");

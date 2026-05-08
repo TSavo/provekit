@@ -126,11 +126,7 @@ fn handle_lift(id: Value, params: Value) -> Value {
         .unwrap_or("openapi");
 
     if !["openapi", "swagger", "protobuf"].contains(&surface) {
-        return error_response(
-            id,
-            1003,
-            format!("SURFACE_NOT_SUPPORTED: {surface}"),
-        );
+        return error_response(id, 1003, format!("SURFACE_NOT_SUPPORTED: {surface}"));
     }
 
     let workspace_root = params
@@ -183,9 +179,7 @@ fn handle_lift(id: Value, params: Value) -> Value {
         match result {
             Ok(mut decls) => declarations.append(&mut decls),
             Err(e) => {
-                diagnostics.push(format!(
-                    "failed to lift {rel_path}: {e}"
-                ));
+                diagnostics.push(format!("failed to lift {rel_path}: {e}"));
             }
         }
     }

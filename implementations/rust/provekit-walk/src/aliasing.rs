@@ -8,7 +8,13 @@ use std::collections::HashSet;
 /// Known types that wrap UnsafeCell. Detection of any of these in a
 /// transitive type walk means the type has interior mutability.
 const INTERIOR_MUT_TYPE_NAMES: &[&str] = &[
-    "UnsafeCell", "Cell", "RefCell", "Mutex", "RwLock", "OnceCell", "LazyLock",
+    "UnsafeCell",
+    "Cell",
+    "RefCell",
+    "Mutex",
+    "RwLock",
+    "OnceCell",
+    "LazyLock",
 ];
 
 /// Walk the type graph starting from `ty` and return true if any
@@ -27,9 +33,9 @@ pub fn has_unsafecell_transitive(
     // Adt: recurse into fields
     if let Some(adt) = inner.get("Adt") {
         let id = adt.get("id");
-        let adt_id = id.and_then(|i| i.as_u64()).or_else(|| {
-            id.and_then(|i| i.get("Adt")).and_then(|a| a.as_u64())
-        });
+        let adt_id = id
+            .and_then(|i| i.as_u64())
+            .or_else(|| id.and_then(|i| i.get("Adt")).and_then(|a| a.as_u64()));
 
         // Check the ADT's own name against interior-mut set
         if let Some(type_name) = adt_name_for_id(type_decls, adt_id) {
@@ -53,7 +59,11 @@ pub fn has_unsafecell_transitive(
             .and_then(|t| t.as_array())
         {
             for t in types_arr {
-                let wrapped = if t.is_object() && t.as_object().map(|o| o.contains_key("Untagged")).unwrap_or(false) {
+                let wrapped = if t.is_object()
+                    && t.as_object()
+                        .map(|o| o.contains_key("Untagged"))
+                        .unwrap_or(false)
+                {
                     t.clone()
                 } else {
                     let mut map = serde_json::Map::new();
@@ -72,7 +82,10 @@ pub fn has_unsafecell_transitive(
                 for td in tds {
                     if adt_decl_matches_id(td, aid) {
                         let kind = td.get("kind");
-                        if let Some(fields_arr) = kind.and_then(|k| k.get("Struct")).and_then(|v| v.as_array()) {
+                        if let Some(fields_arr) = kind
+                            .and_then(|k| k.get("Struct"))
+                            .and_then(|v| v.as_array())
+                        {
                             for field in fields_arr {
                                 if let Some(ft) = field.get("ty") {
                                     if has_unsafecell_transitive(ft, type_decls, visited) {
@@ -81,9 +94,13 @@ pub fn has_unsafecell_transitive(
                                 }
                             }
                         }
-                        if let Some(variants_arr) = kind.and_then(|k| k.get("Enum")).and_then(|v| v.as_array()) {
+                        if let Some(variants_arr) =
+                            kind.and_then(|k| k.get("Enum")).and_then(|v| v.as_array())
+                        {
                             for variant in variants_arr {
-                                if let Some(fields_arr) = variant.get("fields").and_then(|v| v.as_array()) {
+                                if let Some(fields_arr) =
+                                    variant.get("fields").and_then(|v| v.as_array())
+                                {
                                     for field in fields_arr {
                                         if let Some(ft) = field.get("ty") {
                                             if has_unsafecell_transitive(ft, type_decls, visited) {

@@ -72,10 +72,7 @@ fn main() {
 
     println!("Registered contracts (via inventory::iter):");
     for r in registered_contracts() {
-        println!(
-            "  {:<20} @ {}:{}",
-            r.name, r.source_path, r.source_line
-        );
+        println!("  {:<20} @ {}:{}", r.name, r.source_path, r.source_line);
     }
 
     println!("\nMaterialized ContractDecls (sorted, ready to mint):");

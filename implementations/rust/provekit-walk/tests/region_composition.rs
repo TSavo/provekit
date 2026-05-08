@@ -21,13 +21,13 @@ fn fixture_path(name: &str) -> PathBuf {
 #[test]
 #[ignore = "blocked on #410: walk lifter Region+Outlives emission"]
 fn region_composition_succeeds_when_where_clause_matches() {
-    use provekit_walk::llbc_calls::lift_llbc_crate;
     use provekit_walk::llbc::LlbcCrate;
+    use provekit_walk::llbc_calls::lift_llbc_crate;
 
     let krate = LlbcCrate::from_path(fixture_path("region_caller_satisfied.llbc"))
         .expect("load llbc fixture");
-    let registry = lift_llbc_crate(&krate, Some("region_caller_satisfied.rs"))
-        .expect("lift registry");
+    let registry =
+        lift_llbc_crate(&krate, Some("region_caller_satisfied.rs")).expect("lift registry");
 
     let caller = registry.get("caller").expect("caller must lift");
     let callee = registry.get("callee").expect("callee must lift");
@@ -47,13 +47,13 @@ fn region_composition_succeeds_when_where_clause_matches() {
 #[test]
 #[ignore = "blocked on #410: walk lifter Region+Outlives emission"]
 fn region_composition_refuses_when_unrelated() {
-    use provekit_walk::llbc_calls::lift_llbc_crate;
     use provekit_walk::llbc::LlbcCrate;
+    use provekit_walk::llbc_calls::lift_llbc_crate;
 
     let krate = LlbcCrate::from_path(fixture_path("region_caller_unsatisfied.llbc"))
         .expect("load llbc fixture");
-    let registry = lift_llbc_crate(&krate, Some("region_caller_unsatisfied.rs"))
-        .expect("lift registry");
+    let registry =
+        lift_llbc_crate(&krate, Some("region_caller_unsatisfied.rs")).expect("lift registry");
 
     let caller = registry.get("caller").expect("caller must lift");
     let callee = registry.get("callee").expect("callee must lift");
@@ -74,10 +74,10 @@ fn region_composition_refuses_when_unrelated() {
 fn region_marriage_classifies_outlives_as_lifetime_relative() {
     use provekit_walk::llbc::LlbcCrate;
     use provekit_walk::llbc_lift::lift_llbc_function_with_types;
-    use provekit_walk::marriage::{LayerAgreement, LlbcExtraCategory, marry};
+    use provekit_walk::marriage::{marry, LayerAgreement, LlbcExtraCategory};
 
-    let krate = LlbcCrate::from_path(fixture_path("region_callee.llbc"))
-        .expect("load llbc fixture");
+    let krate =
+        LlbcCrate::from_path(fixture_path("region_callee.llbc")).expect("load llbc fixture");
     let f = krate.function_by_name("callee").expect("find callee");
     let llbc = lift_llbc_function_with_types(f, Some("region_callee.rs"), krate.type_decls_raw())
         .expect("lift callee");
@@ -102,9 +102,6 @@ fn region_marriage_classifies_outlives_as_lifetime_relative() {
     match married.agreement {
         LayerAgreement::LlbcExtra(LlbcExtraCategory::LifetimeRelative)
         | LayerAgreement::Both(LlbcExtraCategory::LifetimeRelative) => {}
-        other => panic!(
-            "expected LifetimeRelative classification, got {:?}",
-            other
-        ),
+        other => panic!("expected LifetimeRelative classification, got {:?}", other),
     }
 }

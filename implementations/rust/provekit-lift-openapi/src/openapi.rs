@@ -14,8 +14,7 @@ pub fn lift_spec(path: &Path, diagnostics: &mut Diagnostics) -> Result<Vec<Decla
     {
         let yaml_doc: serde_yaml::Value =
             serde_yaml::from_str(&contents).map_err(|e| format!("yaml parse: {e}"))?;
-        let json_str =
-            serde_json::to_string(&yaml_doc).map_err(|e| format!("yaml->json: {e}"))?;
+        let json_str = serde_json::to_string(&yaml_doc).map_err(|e| format!("yaml->json: {e}"))?;
         serde_json::from_str(&json_str).map_err(|e| format!("json parse: {e}"))?
     } else {
         serde_json::from_str(&contents).map_err(|e| format!("json parse: {e}"))?
@@ -83,15 +82,12 @@ impl<'a> SpecResolver<'a> {
                     .unwrap_or_else(|| method)
                     .to_string();
 
-                let route_slug =
-                    slugify(&format!("{spec_prefix}-{method}-{op_id}"));
+                let route_slug = slugify(&format!("{spec_prefix}-{method}-{op_id}"));
 
                 if let Some(request_body) = operation.get("requestBody") {
-                    if let Some((contract, bridge)) = self.lift_body(
-                        request_body,
-                        &format!("{route_slug}-request"),
-                        &schemas,
-                    ) {
+                    if let Some((contract, bridge)) =
+                        self.lift_body(request_body, &format!("{route_slug}-request"), &schemas)
+                    {
                         decls.push(Declaration::Contract(contract));
                         if let Some(b) = bridge {
                             decls.push(Declaration::Bridge(b));
@@ -102,18 +98,12 @@ impl<'a> SpecResolver<'a> {
                 if let Some(responses) = operation.get("responses") {
                     if let Value::Object(resp_map) = responses {
                         for (status_code, response) in resp_map {
-                            let sc = status_code
-                                .chars()
-                                .take(3)
-                                .collect::<String>();
-                            let status_slug =
-                                slugify(&format!("{route_slug}-{sc}"));
+                            let sc = status_code.chars().take(3).collect::<String>();
+                            let status_slug = slugify(&format!("{route_slug}-{sc}"));
 
-                            if let Some((contract, bridge)) = self.lift_body(
-                                response,
-                                &status_slug,
-                                &schemas,
-                            ) {
+                            if let Some((contract, bridge)) =
+                                self.lift_body(response, &status_slug, &schemas)
+                            {
                                 decls.push(Declaration::Contract(contract));
                                 if let Some(b) = bridge {
                                     decls.push(Declaration::Bridge(b));
@@ -125,8 +115,7 @@ impl<'a> SpecResolver<'a> {
 
                 if let Some(parameters) = operation.get("parameters") {
                     if let Value::Array(params) = parameters {
-                        let param_constraints =
-                            self.lift_parameters(params);
+                        let param_constraints = self.lift_parameters(params);
                         if let Some(formula) = param_constraints {
                             let name = format!("{route_slug}-params");
                             decls.push(Declaration::Contract(ContractDecl {
@@ -177,7 +166,10 @@ impl<'a> SpecResolver<'a> {
                 }
             }
 
-            if let Some(schema_val) = content_map.get("application/json").or(content_map.values().next()) {
+            if let Some(schema_val) = content_map
+                .get("application/json")
+                .or(content_map.values().next())
+            {
                 let resolved = resolve_schema(schema_val, schemas);
                 return self.lift_schema_to_contract(base_name, &resolved, schemas);
             }
@@ -211,10 +203,7 @@ impl<'a> SpecResolver<'a> {
         Some((contract, bridge))
     }
 
-    fn lift_parameters(
-        &self,
-        params: &Vec<Value>,
-    ) -> Option<Value> {
+    fn lift_parameters(&self, params: &Vec<Value>) -> Option<Value> {
         let mut operands = Vec::new();
 
         for param in params {
@@ -233,8 +222,7 @@ impl<'a> SpecResolver<'a> {
 
             if let Some(schema) = param.get("schema") {
                 let resolved = resolve_schema_ref(schema);
-                let constraints =
-                    schema_to_constraints_on_field(&resolved, name, "x");
+                let constraints = schema_to_constraints_on_field(&resolved, name, "x");
                 if !is_true(&constraints) {
                     operands.push(constraints);
                 }
@@ -266,7 +254,10 @@ fn slugify(s: &str) -> String {
 }
 
 fn is_http_method(s: &str) -> bool {
-    matches!(s, "get" | "post" | "put" | "delete" | "patch" | "head" | "options")
+    matches!(
+        s,
+        "get" | "post" | "put" | "delete" | "patch" | "head" | "options"
+    )
 }
 
 fn resolve_schema_ref(schema: &Value) -> Value {
@@ -299,11 +290,7 @@ fn schema_to_constraints(
     merge_constraints(base, extras)
 }
 
-fn schema_to_constraints_on_field(
-    schema: &Value,
-    field_name: &str,
-    var_name: &str,
-) -> Value {
+fn schema_to_constraints_on_field(schema: &Value, field_name: &str, var_name: &str) -> Value {
     let field = ir_builder::field_access(field_name, var_name);
     let inner = schema_to_constraints_on_value(schema, field);
     inner
@@ -312,9 +299,7 @@ fn schema_to_constraints_on_field(
 fn schema_to_constraints_on_value(schema: &Value, value: Value) -> Value {
     let mut operands = Vec::new();
 
-    let type_name = schema
-        .get("type")
-        .and_then(|v| v.as_str());
+    let type_name = schema.get("type").and_then(|v| v.as_str());
 
     let nullable = schema
         .get("nullable")
@@ -335,10 +320,7 @@ fn schema_to_constraints_on_value(schema: &Value, value: Value) -> Value {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false)
                 {
-                    operands.push(ir_builder::gt(
-                        value.clone(),
-                        ir_builder::const_real(min),
-                    ));
+                    operands.push(ir_builder::gt(value.clone(), ir_builder::const_real(min)));
                 } else {
                     operands.push(ir_builder::gte(
                         value.clone(),
@@ -352,10 +334,7 @@ fn schema_to_constraints_on_value(schema: &Value, value: Value) -> Value {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false)
                 {
-                    operands.push(ir_builder::lt(
-                        value.clone(),
-                        ir_builder::const_real(max),
-                    ));
+                    operands.push(ir_builder::lt(value.clone(), ir_builder::const_real(max)));
                 } else {
                     operands.push(ir_builder::lte(
                         value.clone(),
@@ -363,42 +342,29 @@ fn schema_to_constraints_on_value(schema: &Value, value: Value) -> Value {
                     ));
                 }
             }
-            if let Some(multiple) =
-                schema.get("multipleOf").and_then(|v| v.as_f64())
-            {
+            if let Some(multiple) = schema.get("multipleOf").and_then(|v| v.as_f64()) {
                 if type_name == Some("integer") {
                     operands.push(ir_builder::eq(
-                        ir_builder::ctor("mod", vec![
-                            value.clone(),
-                            ir_builder::const_int(multiple as i64),
-                        ]),
+                        ir_builder::ctor(
+                            "mod",
+                            vec![value.clone(), ir_builder::const_int(multiple as i64)],
+                        ),
                         ir_builder::const_int(0),
                     ));
                 }
             }
         }
         Some("string") => {
-            if let Some(min_len) =
-                schema.get("minLength").and_then(|v| v.as_i64())
-            {
-                operands
-                    .push(ir_builder::len_gte(value.clone(), min_len));
+            if let Some(min_len) = schema.get("minLength").and_then(|v| v.as_i64()) {
+                operands.push(ir_builder::len_gte(value.clone(), min_len));
             }
-            if let Some(max_len) =
-                schema.get("maxLength").and_then(|v| v.as_i64())
-            {
-                operands
-                    .push(ir_builder::len_lte(value.clone(), max_len));
+            if let Some(max_len) = schema.get("maxLength").and_then(|v| v.as_i64()) {
+                operands.push(ir_builder::len_lte(value.clone(), max_len));
             }
-            if let Some(pattern) =
-                schema.get("pattern").and_then(|v| v.as_str())
-            {
-                operands
-                    .push(ir_builder::matches(value.clone(), pattern));
+            if let Some(pattern) = schema.get("pattern").and_then(|v| v.as_str()) {
+                operands.push(ir_builder::matches(value.clone(), pattern));
             }
-            if let Some(format) =
-                schema.get("format").and_then(|v| v.as_str())
-            {
+            if let Some(format) = schema.get("format").and_then(|v| v.as_str()) {
                 operands.push(ir_builder::atomic(format, vec![value.clone()]));
             }
         }
@@ -414,55 +380,33 @@ fn schema_to_constraints_on_value(schema: &Value, value: Value) -> Value {
                 operands.push(ir_builder::forall(
                     "_elem",
                     ir_builder::ref_sort(),
-                    schema_to_constraints_on_value(
-                        &items_schema,
-                        ir_builder::var("_elem"),
-                    ),
+                    schema_to_constraints_on_value(&items_schema, ir_builder::var("_elem")),
                 ));
             }
-            if let Some(min_items) =
-                schema.get("minItems").and_then(|v| v.as_i64())
-            {
-                operands.push(ir_builder::len_gte(
-                    value.clone(),
-                    min_items,
-                ));
+            if let Some(min_items) = schema.get("minItems").and_then(|v| v.as_i64()) {
+                operands.push(ir_builder::len_gte(value.clone(), min_items));
             }
-            if let Some(max_items) =
-                schema.get("maxItems").and_then(|v| v.as_i64())
-            {
-                operands.push(ir_builder::len_lte(
-                    value.clone(),
-                    max_items,
-                ));
+            if let Some(max_items) = schema.get("maxItems").and_then(|v| v.as_i64()) {
+                operands.push(ir_builder::len_lte(value.clone(), max_items));
             }
         }
         Some("object") => {
-            if let Some(properties) =
-                schema.get("properties").and_then(|v| v.as_object())
-            {
+            if let Some(properties) = schema.get("properties").and_then(|v| v.as_object()) {
                 let required: Vec<&str> = schema
                     .get("required")
                     .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .collect()
-                    })
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
 
                 for (prop_name, prop_schema) in properties {
                     let prop_schema = resolve_schema_ref(prop_schema);
-                    let field =
-                        ir_builder::field_access_val(prop_name, &value);
+                    let field = ir_builder::field_access_val(prop_name, &value);
 
                     if required.contains(&prop_name.as_str()) {
-                        operands
-                            .push(ir_builder::not_null(field.clone()));
+                        operands.push(ir_builder::not_null(field.clone()));
                     }
 
-                    let prop_constraints =
-                        schema_to_constraints_on_value(&prop_schema, field);
+                    let prop_constraints = schema_to_constraints_on_value(&prop_schema, field);
                     if !is_true(&prop_constraints) {
                         operands.push(prop_constraints);
                     }
@@ -477,9 +421,7 @@ fn schema_to_constraints_on_value(schema: &Value, value: Value) -> Value {
             .iter()
             .filter_map(|v| {
                 if v.is_number() {
-                    Some(ir_builder::const_int(
-                        v.as_i64().unwrap_or(0),
-                    ))
+                    Some(ir_builder::const_int(v.as_i64().unwrap_or(0)))
                 } else if v.is_string() {
                     Some(ir_builder::const_string(v.as_str().unwrap_or("")))
                 } else {
@@ -495,8 +437,7 @@ fn schema_to_constraints_on_value(schema: &Value, value: Value) -> Value {
     if let Some(all_of) = schema.get("allOf").and_then(|v| v.as_array()) {
         for sub in all_of {
             let sub = resolve_schema_ref(sub);
-            let constraints =
-                schema_to_constraints_on_value(&sub, value.clone());
+            let constraints = schema_to_constraints_on_value(&sub, value.clone());
             if !is_true(&constraints) {
                 operands.push(constraints);
             }

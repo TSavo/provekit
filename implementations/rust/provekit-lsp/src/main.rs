@@ -114,8 +114,14 @@ struct DaemonDiagnostic {
 /// fields and produce a precise range.
 fn daemon_diag_to_lsp(d: &DaemonDiagnostic) -> Diagnostic {
     let range = Range {
-        start: Position { line: 0, character: 0 },
-        end: Position { line: 0, character: 1 },
+        start: Position {
+            line: 0,
+            character: 0,
+        },
+        end: Position {
+            line: 0,
+            character: 1,
+        },
     };
     let severity = match d.error_kind.as_str() {
         "unprovable-obligation" => Some(DiagnosticSeverity::ERROR),
@@ -172,9 +178,10 @@ impl LanguageServer for ProvekitLanguageServer {
             .as_ref()
             .map(|u| PathBuf::from(u.path()))
             .or_else(|| {
-                params.workspace_folders.as_ref().and_then(|folders| {
-                    folders.first().map(|f| PathBuf::from(f.uri.path()))
-                })
+                params
+                    .workspace_folders
+                    .as_ref()
+                    .and_then(|folders| folders.first().map(|f| PathBuf::from(f.uri.path())))
             })
             .unwrap_or_else(|| PathBuf::from("."));
 
@@ -244,7 +251,8 @@ impl LanguageServer for ProvekitLanguageServer {
             .unwrap_or_default();
         // Full sync: take the last content change
         if let Some(change) = params.content_changes.last() {
-            self.update_document(uri, change.text.clone(), lang_id).await;
+            self.update_document(uri, change.text.clone(), lang_id)
+                .await;
         }
     }
 
@@ -256,9 +264,7 @@ impl LanguageServer for ProvekitLanguageServer {
         }
         // Clear any published diagnostics for this file so the editor pane
         // goes clean.  This applies to both per-plugin and daemon-client mode.
-        self.client
-            .publish_diagnostics(uri, vec![], None)
-            .await;
+        self.client.publish_diagnostics(uri, vec![], None).await;
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
@@ -357,7 +363,9 @@ impl ProvekitLanguageServer {
     async fn init_plugins(&self, project_root: &std::path::Path) {
         let mut plugins = self.plugins.lock().await;
         for lang in &self.config.language {
-            if lang.parser.as_deref() == Some("builtin:rust") || lang.parser.as_deref() == Some("builtin") {
+            if lang.parser.as_deref() == Some("builtin:rust")
+                || lang.parser.as_deref() == Some("builtin")
+            {
                 plugins.insert(lang.name.clone(), LanguageHandle::BuiltinRust);
                 continue;
             }
@@ -373,10 +381,7 @@ impl ProvekitLanguageServer {
                         self.client
                             .log_message(
                                 MessageType::WARNING,
-                                format!(
-                                    "Failed to load language plugin `{}`: {}",
-                                    plugin_name, e
-                                ),
+                                format!("Failed to load language plugin `{}`: {}", plugin_name, e),
                             )
                             .await;
                     }
@@ -416,15 +421,25 @@ impl ProvekitLanguageServer {
                             Ok(Ok(anns)) => anns,
                             Ok(Err(e)) => {
                                 self.client
-                                    .log_message(MessageType::ERROR, format!("Plugin parse error: {}", e))
+                                    .log_message(
+                                        MessageType::ERROR,
+                                        format!("Plugin parse error: {}", e),
+                                    )
                                     .await;
-                                SourceAnnotations { annotations: Vec::new() }
+                                SourceAnnotations {
+                                    annotations: Vec::new(),
+                                }
                             }
                             Err(e) => {
                                 self.client
-                                    .log_message(MessageType::ERROR, format!("Plugin task panicked: {}", e))
+                                    .log_message(
+                                        MessageType::ERROR,
+                                        format!("Plugin task panicked: {}", e),
+                                    )
                                     .await;
-                                SourceAnnotations { annotations: Vec::new() }
+                                SourceAnnotations {
+                                    annotations: Vec::new(),
+                                }
                             }
                         }
                     }
@@ -435,7 +450,9 @@ impl ProvekitLanguageServer {
                                 format!("No plugin loaded for language `{}`", cfg.name),
                             )
                             .await;
-                        SourceAnnotations { annotations: Vec::new() }
+                        SourceAnnotations {
+                            annotations: Vec::new(),
+                        }
                     }
                 }
             }
@@ -444,7 +461,9 @@ impl ProvekitLanguageServer {
                 if uri.path().ends_with(".rs") {
                     parser::parse_rust_source(&text)
                 } else {
-                    SourceAnnotations { annotations: Vec::new() }
+                    SourceAnnotations {
+                        annotations: Vec::new(),
+                    }
                 }
             }
         };
@@ -496,12 +515,7 @@ impl ProvekitLanguageServer {
     ///
     /// Uses `tokio::task::spawn_blocking` because `daemon_client` operations
     /// (`connect_or_spawn`, `send_parse_file`) are synchronous std I/O.
-    async fn daemon_routed_parse(
-        &self,
-        uri: Url,
-        text: String,
-        sock_path: PathBuf,
-    ) {
+    async fn daemon_routed_parse(&self, uri: Url, text: String, sock_path: PathBuf) {
         let daemon_stream = self.daemon_stream.clone();
         let client = self.client.clone();
         let file_path = uri.path().to_string();
@@ -520,18 +534,18 @@ impl ProvekitLanguageServer {
                     Err(e) => {
                         return Err(format!(
                             "daemon-client: failed to connect to {}: {}",
-                            sock_path.display(), e
+                            sock_path.display(),
+                            e
                         ));
                     }
                 }
             }
 
             let stream = guard.as_mut().unwrap();
-            daemon_client::send_parse_file(stream, "rust", &file_path, &text, 1)
-                .map_err(|e| {
-                    // Connection may have dropped; clear so we reconnect next time.
-                    format!("daemon-client send_parse_file failed: {e}")
-                })
+            daemon_client::send_parse_file(stream, "rust", &file_path, &text, 1).map_err(|e| {
+                // Connection may have dropped; clear so we reconnect next time.
+                format!("daemon-client send_parse_file failed: {e}")
+            })
         })
         .await;
 
@@ -540,9 +554,7 @@ impl ProvekitLanguageServer {
                 // Deserialize daemon JSON -> DaemonDiagnostic -> LSP Diagnostic.
                 let diagnostics: Vec<Diagnostic> = raw_diags
                     .iter()
-                    .filter_map(|v| {
-                        serde_json::from_value::<DaemonDiagnostic>(v.clone()).ok()
-                    })
+                    .filter_map(|v| serde_json::from_value::<DaemonDiagnostic>(v.clone()).ok())
                     .map(|d| daemon_diag_to_lsp(&d))
                     .collect();
 
@@ -621,13 +633,19 @@ mod tests {
 
     #[test]
     fn unprovable_obligation_maps_to_error() {
-        let d = make_diag("unprovable-obligation", "MyTrait::verify", "postcondition not met");
+        let d = make_diag(
+            "unprovable-obligation",
+            "MyTrait::verify",
+            "postcondition not met",
+        );
         let lsp = daemon_diag_to_lsp(&d);
 
         assert_eq!(lsp.severity, Some(DiagnosticSeverity::ERROR));
         assert_eq!(
             lsp.code,
-            Some(NumberOrString::String("provekit:unprovable-obligation".to_string()))
+            Some(NumberOrString::String(
+                "provekit:unprovable-obligation".to_string()
+            ))
         );
         assert_eq!(lsp.source, Some("provekit".to_string()));
         assert!(
@@ -655,7 +673,9 @@ mod tests {
         assert_eq!(lsp.severity, Some(DiagnosticSeverity::WARNING));
         assert_eq!(
             lsp.code,
-            Some(NumberOrString::String("provekit:unresolved-symbol".to_string()))
+            Some(NumberOrString::String(
+                "provekit:unresolved-symbol".to_string()
+            ))
         );
         assert_eq!(lsp.source, Some("provekit".to_string()));
         assert!(
@@ -678,7 +698,9 @@ mod tests {
         assert_eq!(lsp.severity, Some(DiagnosticSeverity::INFORMATION));
         assert_eq!(
             lsp.code,
-            Some(NumberOrString::String("provekit:some-future-kind".to_string()))
+            Some(NumberOrString::String(
+                "provekit:some-future-kind".to_string()
+            ))
         );
         assert_eq!(lsp.source, Some("provekit".to_string()));
         assert_eq!(lsp.message, "some reason");

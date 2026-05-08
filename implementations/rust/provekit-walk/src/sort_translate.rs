@@ -376,10 +376,7 @@ fn charon_inner_to_sort_name(
     "Unknown".to_string()
 }
 
-fn charon_adt_sort_name(
-    adt: &serde_json::Value,
-    type_decls: Option<&serde_json::Value>,
-) -> String {
+fn charon_adt_sort_name(adt: &serde_json::Value, type_decls: Option<&serde_json::Value>) -> String {
     let id = match adt.get("id") {
         Some(v) => v,
         None => return "Unknown".to_string(),
@@ -596,13 +593,19 @@ pub fn resolve_region_json(
     // Bound: {"region_id": N, "var_id": M}
     if let Some(bound) = region.get("Bound") {
         let rid = bound.get("region_id").and_then(|v| v.as_u64())? as u32;
-        return region_map.get(&rid).cloned().or_else(|| Some(format!("'r{}", rid)));
+        return region_map
+            .get(&rid)
+            .cloned()
+            .or_else(|| Some(format!("'r{}", rid)));
     }
 
     // Body: N (body-bound region, De Bruijn-like index)
     if let Some(body_id) = region.get("Body").and_then(|v| v.as_u64()) {
         let id = body_id as u32;
-        return region_map.get(&id).cloned().or_else(|| Some(format!("'r{}", id)));
+        return region_map
+            .get(&id)
+            .cloned()
+            .or_else(|| Some(format!("'r{}", id)));
     }
 
     None
@@ -674,7 +677,9 @@ mod tests {
         let slice_sort = syn_type_to_sort(&parse_ty("[u32]"));
         assert_eq!(
             slice_sort,
-            Sort::Primitive { name: "Slice<U32>".to_string() }
+            Sort::Primitive {
+                name: "Slice<U32>".to_string()
+            }
         );
     }
 
@@ -683,7 +688,9 @@ mod tests {
         let ty = syn_type_to_sort(&parse_ty("&[u32]"));
         assert_eq!(
             ty,
-            Sort::Primitive { name: "Ref<Slice<U32>>".to_string() }
+            Sort::Primitive {
+                name: "Ref<Slice<U32>>".to_string()
+            }
         );
     }
 
@@ -692,7 +699,12 @@ mod tests {
     #[test]
     fn unit_tuple_is_unit() {
         let ty = syn_type_to_sort(&parse_ty("()"));
-        assert_eq!(ty, Sort::Primitive { name: "Unit".to_string() });
+        assert_eq!(
+            ty,
+            Sort::Primitive {
+                name: "Unit".to_string()
+            }
+        );
     }
 
     // --- Charon path: agree with syn path on primitives ---
@@ -771,11 +783,15 @@ mod tests {
     #[test]
     fn charon_distinct_adt_ids_produce_distinct_sorts() {
         let a = ty_to_sort(
-            Some(&json!({"Untagged": {"Adt": {"id": {"Adt": 1}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}})),
+            Some(
+                &json!({"Untagged": {"Adt": {"id": {"Adt": 1}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}}),
+            ),
             None,
         );
         let b = ty_to_sort(
-            Some(&json!({"Untagged": {"Adt": {"id": {"Adt": 2}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}})),
+            Some(
+                &json!({"Untagged": {"Adt": {"id": {"Adt": 2}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}}),
+            ),
             None,
         );
         assert_ne!(a, b, "different Adt ids must produce different sorts");
@@ -786,10 +802,17 @@ mod tests {
     #[test]
     fn charon_unit_tuple_is_unit() {
         let ty = ty_to_sort(
-            Some(&json!({"Untagged": {"Adt": {"id": "Tuple", "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}})),
+            Some(
+                &json!({"Untagged": {"Adt": {"id": "Tuple", "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}}),
+            ),
             None,
         );
-        assert_eq!(ty, Sort::Primitive { name: "Unit".to_string() });
+        assert_eq!(
+            ty,
+            Sort::Primitive {
+                name: "Unit".to_string()
+            }
+        );
     }
 
     // --- Charon path: type_decls resolution ---
@@ -803,10 +826,17 @@ mod tests {
             }
         }]);
         let ty = ty_to_sort(
-            Some(&json!({"Untagged": {"Adt": {"id": {"Adt": 5}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}})),
+            Some(
+                &json!({"Untagged": {"Adt": {"id": {"Adt": 5}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}}),
+            ),
             Some(&type_decls),
         );
-        assert_eq!(ty, Sort::Primitive { name: "Point".to_string() });
+        assert_eq!(
+            ty,
+            Sort::Primitive {
+                name: "Point".to_string()
+            }
+        );
     }
 
     #[test]
@@ -822,16 +852,30 @@ mod tests {
             }
         ]);
         let foo = ty_to_sort(
-            Some(&json!({"Untagged": {"Adt": {"id": {"Adt": 1}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}})),
+            Some(
+                &json!({"Untagged": {"Adt": {"id": {"Adt": 1}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}}),
+            ),
             Some(&type_decls),
         );
         let bar = ty_to_sort(
-            Some(&json!({"Untagged": {"Adt": {"id": {"Adt": 2}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}})),
+            Some(
+                &json!({"Untagged": {"Adt": {"id": {"Adt": 2}, "generics": {"regions":[], "types":[], "const_generics":[], "trait_refs":[]}}}}),
+            ),
             Some(&type_decls),
         );
         assert_ne!(foo, bar);
-        assert_eq!(foo, Sort::Primitive { name: "Foo".to_string() });
-        assert_eq!(bar, Sort::Primitive { name: "Bar".to_string() });
+        assert_eq!(
+            foo,
+            Sort::Primitive {
+                name: "Foo".to_string()
+            }
+        );
+        assert_eq!(
+            bar,
+            Sort::Primitive {
+                name: "Bar".to_string()
+            }
+        );
     }
 
     // ---- Sort::Float: syn path ----
@@ -839,13 +883,21 @@ mod tests {
     #[test]
     fn syn_f32_produces_float32_sort() {
         let s = syn_type_to_sort(&parse_ty("f32"));
-        assert_eq!(s, Sort::Float { width: 32 }, "f32 must yield Sort::Float{{32}}");
+        assert_eq!(
+            s,
+            Sort::Float { width: 32 },
+            "f32 must yield Sort::Float{{32}}"
+        );
     }
 
     #[test]
     fn syn_f64_produces_float64_sort() {
         let s = syn_type_to_sort(&parse_ty("f64"));
-        assert_eq!(s, Sort::Float { width: 64 }, "f64 must yield Sort::Float{{64}}");
+        assert_eq!(
+            s,
+            Sort::Float { width: 64 },
+            "f64 must yield Sort::Float{{64}}"
+        );
     }
 
     #[test]
@@ -914,7 +966,9 @@ mod tests {
         );
         assert_ne!(
             s,
-            Sort::Primitive { name: "F64".to_string() },
+            Sort::Primitive {
+                name: "F64".to_string()
+            },
             "float sort must NOT be Sort::Primitive after #385"
         );
     }

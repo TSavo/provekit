@@ -23,9 +23,7 @@ fn to_cvalue(v: &serde_json::Value) -> Arc<CValue> {
             }
         }
         serde_json::Value::String(s) => CValue::string(s.clone()),
-        serde_json::Value::Array(arr) => {
-            CValue::array(arr.iter().map(|v| to_cvalue(v)).collect())
-        }
+        serde_json::Value::Array(arr) => CValue::array(arr.iter().map(|v| to_cvalue(v)).collect()),
         serde_json::Value::Object(obj) => {
             CValue::object(obj.iter().map(|(k, v)| (k.clone(), to_cvalue(v))))
         }
@@ -35,18 +33,24 @@ fn to_cvalue(v: &serde_json::Value) -> Arc<CValue> {
 fn fixture_path() -> std::path::PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     std::path::Path::new(manifest_dir)
-        .parent().unwrap()
-        .parent().unwrap()
-        .parent().unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
         .join("protocol/conformance/2026-05-05-sort-region-and-dependent-byte-pinned.json")
 }
 
 fn cid_path() -> std::path::PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     std::path::Path::new(manifest_dir)
-        .parent().unwrap()
-        .parent().unwrap()
-        .parent().unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
         .join("protocol/conformance/2026-05-05-sort-region-and-dependent-byte-pinned.cid.txt")
 }
 
@@ -57,8 +61,8 @@ fn rust_kit_produces_pinned_cid() {
 
     let json_str = fs::read_to_string(&fixture)
         .unwrap_or_else(|e| panic!("read fixture {:?}: {}", fixture, e));
-    let v: serde_json::Value = serde_json::from_str(&json_str)
-        .unwrap_or_else(|e| panic!("parse JSON: {}", e));
+    let v: serde_json::Value =
+        serde_json::from_str(&json_str).unwrap_or_else(|e| panic!("parse JSON: {}", e));
     let cv = to_cvalue(&v);
     let jcs = encode_jcs(&cv);
     let actual = blake3_512_of(jcs.as_bytes());
@@ -80,21 +84,25 @@ fn fixture_contains_region_and_dependent_sorts() {
     let fixture = fixture_path();
     let json_str = fs::read_to_string(&fixture)
         .unwrap_or_else(|e| panic!("read fixture {:?}: {}", fixture, e));
-    let v: serde_json::Value = serde_json::from_str(&json_str)
-        .unwrap_or_else(|e| panic!("parse JSON: {}", e));
+    let v: serde_json::Value =
+        serde_json::from_str(&json_str).unwrap_or_else(|e| panic!("parse JSON: {}", e));
 
-    let formal_sorts = v.get("formalSorts")
+    let formal_sorts = v
+        .get("formalSorts")
         .expect("fixture must have formalSorts")
         .as_array()
         .expect("formalSorts must be an array");
 
-    let has_region = formal_sorts.iter().any(|s| {
-        s.get("kind").and_then(|k| k.as_str()) == Some("region")
-    });
-    let has_dependent = formal_sorts.iter().any(|s| {
-        s.get("kind").and_then(|k| k.as_str()) == Some("dependent")
-    });
+    let has_region = formal_sorts
+        .iter()
+        .any(|s| s.get("kind").and_then(|k| k.as_str()) == Some("region"));
+    let has_dependent = formal_sorts
+        .iter()
+        .any(|s| s.get("kind").and_then(|k| k.as_str()) == Some("dependent"));
 
     assert!(has_region, "fixture must contain at least one Sort::Region");
-    assert!(has_dependent, "fixture must contain at least one Sort::Dependent");
+    assert!(
+        has_dependent,
+        "fixture must contain at least one Sort::Dependent"
+    );
 }

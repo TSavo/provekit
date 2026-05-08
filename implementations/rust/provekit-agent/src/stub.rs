@@ -17,8 +17,8 @@
 // contract by phrase.
 
 use crate::{
-    AgentError, AgentProvenance, ContractCandidate, FilePatch, FixContext, FixResult,
-    MustContext, ProposeContext, ProvekitAgent,
+    AgentError, AgentProvenance, ContractCandidate, FilePatch, FixContext, FixResult, MustContext,
+    ProposeContext, ProvekitAgent,
 };
 
 /// Stub agent — returns canned ContractCandidates for every request.

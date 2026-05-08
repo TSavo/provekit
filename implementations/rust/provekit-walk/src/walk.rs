@@ -70,7 +70,11 @@ pub struct CallsiteWalk {
 impl CallsiteWalk {
     /// The proof obligation the caller's caller must discharge.
     pub fn entry_wp(&self) -> &Wp {
-        &self.arrivals.last().expect("walk has at least one arrival").wp
+        &self
+            .arrivals
+            .last()
+            .expect("walk has at least one arrival")
+            .wp
     }
 }
 
@@ -232,7 +236,13 @@ pub struct CallsiteHit {
 /// `cond` to the then-region's context and `¬cond` to the else-region's.
 fn find_callsites_with_context(stmt: &Stmt, callee_name: &str) -> Vec<CallsiteHit> {
     let mut hits = Vec::new();
-    walk_stmt_for_callsites(stmt, callee_name, &mut Vec::new(), &mut Vec::new(), &mut hits);
+    walk_stmt_for_callsites(
+        stmt,
+        callee_name,
+        &mut Vec::new(),
+        &mut Vec::new(),
+        &mut hits,
+    );
     hits
 }
 
@@ -359,11 +369,8 @@ fn walk_expr_for_callsites(
         }
         Expr::Block(b) => {
             for (block_idx, s) in b.block.stmts.iter().enumerate() {
-                let mut block_preceding: Vec<Stmt> = b.block.stmts[..block_idx]
-                    .iter()
-                    .rev()
-                    .cloned()
-                    .collect();
+                let mut block_preceding: Vec<Stmt> =
+                    b.block.stmts[..block_idx].iter().rev().cloned().collect();
                 block_preceding.extend(inner_stmts.iter().cloned());
                 let saved = inner_stmts.clone();
                 *inner_stmts = block_preceding;
@@ -568,10 +575,7 @@ fn collect_into(pat: &Pat, term: IrTerm, out: &mut Vec<(String, IrTerm)>) -> Opt
             for (i, sub) in s.elems.iter().enumerate() {
                 let projected = IrTerm::Ctor {
                     name: "index".to_string(),
-                    args: vec![
-                        term.clone(),
-                        crate::wp::const_int(i as i64),
-                    ],
+                    args: vec![term.clone(), crate::wp::const_int(i as i64)],
                 };
                 collect_into(sub, projected, out)?;
             }
@@ -646,12 +650,7 @@ mod tests {
         let caller_fn: ItemFn = parse_fn(caller_src);
         let pre = lift_function_precondition(&callee_fn);
 
-        let walks = walk_callsites_to_entry(
-            &caller_fn,
-            "callee",
-            &["x".to_string()],
-            pre,
-        );
+        let walks = walk_callsites_to_entry(&caller_fn, "callee", &["x".to_string()], pre);
 
         assert_eq!(walks.len(), 1, "exactly one callsite found");
         let entry_wp = walks[0].entry_wp();
@@ -678,12 +677,7 @@ mod tests {
         let pre = atomic_ge(var("x"), const_int(10));
 
         // One formal but two actuals — mismatch.
-        let walks = walk_callsites_to_entry(
-            &caller_fn,
-            "callee",
-            &["x".to_string()],
-            pre,
-        );
+        let walks = walk_callsites_to_entry(&caller_fn, "callee", &["x".to_string()], pre);
 
         // The mismatched callsite must be skipped: zero walks returned.
         assert_eq!(
@@ -717,12 +711,7 @@ mod tests {
         let caller_fn: ItemFn = parse_fn(caller_src);
         let pre = atomic_ge(var("x"), const_int(10));
 
-        let walks = walk_callsites_to_entry(
-            &caller_fn,
-            "callee",
-            &["x".to_string()],
-            pre,
-        );
+        let walks = walk_callsites_to_entry(&caller_fn, "callee", &["x".to_string()], pre);
 
         assert_eq!(walks.len(), 2, "two callsites: one in then, one in else");
         // The else-branch callsite (second walk) must not have y substituted.
@@ -751,12 +740,7 @@ mod tests {
         let caller_fn: ItemFn = parse_fn(caller_src);
         let pre = atomic_ge(var("x"), const_int(10));
 
-        let walks = walk_callsites_to_entry(
-            &caller_fn,
-            "callee",
-            &["x".to_string()],
-            pre,
-        );
+        let walks = walk_callsites_to_entry(&caller_fn, "callee", &["x".to_string()], pre);
 
         assert_eq!(
             walks.len(),
@@ -778,12 +762,7 @@ mod tests {
         let caller_fn: ItemFn = parse_fn(caller_src);
         let pre = atomic_ge(var("x"), const_int(10));
 
-        let walks = walk_callsites_to_entry(
-            &caller_fn,
-            "callee",
-            &["x".to_string()],
-            pre,
-        );
+        let walks = walk_callsites_to_entry(&caller_fn, "callee", &["x".to_string()], pre);
 
         assert_eq!(
             walks.len(),
@@ -808,12 +787,7 @@ mod tests {
         let caller_fn: ItemFn = parse_fn(caller_src);
         let pre = atomic_ge(var("x"), const_int(10));
 
-        let walks = walk_callsites_to_entry(
-            &caller_fn,
-            "callee",
-            &["x".to_string()],
-            pre,
-        );
+        let walks = walk_callsites_to_entry(&caller_fn, "callee", &["x".to_string()], pre);
 
         assert_eq!(walks.len(), 1);
         let callsite_arrival = &walks[0].arrivals[0];

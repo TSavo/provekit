@@ -139,10 +139,9 @@ fn handshake(io: &mut ChildIo) -> Result<Capabilities, CompileError> {
 }
 
 fn exchange(io: &mut ChildIo, req: &Json) -> Result<Json, CompileError> {
-    let line = serde_json::to_string(req)
-        .map_err(|e| CompileError::Transport(format!("encode: {e}")))?;
-    writeln!(io.stdin, "{line}")
-        .map_err(|e| CompileError::Transport(format!("write: {e}")))?;
+    let line =
+        serde_json::to_string(req).map_err(|e| CompileError::Transport(format!("encode: {e}")))?;
+    writeln!(io.stdin, "{line}").map_err(|e| CompileError::Transport(format!("write: {e}")))?;
     io.stdin
         .flush()
         .map_err(|e| CompileError::Transport(format!("flush: {e}")))?;

@@ -8,9 +8,9 @@
 // Spec: protocol/specs/2026-04-30-ir-compiler-protocol.md.
 
 pub mod error;
+pub mod manifest;
 pub mod registry;
 pub mod subprocess;
-pub mod manifest;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;

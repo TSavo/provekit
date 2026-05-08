@@ -29,9 +29,9 @@
 pub mod aliasing;
 pub mod canonical;
 pub mod chain;
-pub mod dropper;
 pub mod charon_runner;
 pub mod contract;
+pub mod dropper;
 pub mod emit;
 pub mod envelope;
 pub mod lift;
@@ -41,9 +41,9 @@ pub mod llbc_closures;
 pub mod llbc_lift;
 pub mod llbc_loops;
 pub mod llbc_try;
-pub mod marriage;
 pub mod locus;
 pub mod loops_and_exceptions;
+pub mod marriage;
 pub mod shadow;
 pub mod sort_translate;
 pub mod type_decl;
@@ -53,6 +53,11 @@ pub mod wp;
 pub use canonical::{
     cid_of_value, formula_to_canonical, jcs_bytes_of_value, serde_to_canonical, term_to_canonical,
 };
+pub use dropper::{
+    detect_gaps, drop_gap, emit_drop, formula_contains_predicate, predicate_var_arg,
+    verify_closure, DropFailure, DropTemplate, EmitResult, Gap, NotNullPredicate, NotRenderable,
+    PredicateDescriptor, PredicateRegistry,
+};
 pub use envelope::{
     mint_args, wrap_function_contract, wrap_function_contract_cached, EnvelopeCache,
     DEV_SIGNER_SEED,
@@ -61,11 +66,6 @@ pub use lift::{lift_function_postcondition, lift_function_precondition, lift_pre
 pub use shadow::{
     build_shadow_source, compose_chain, compose_edges, edge_memento_cid, edge_memento_value,
     CalleeContract, ComposedEdge, ShadowArrival, ShadowSlot, ShadowSource,
-};
-pub use dropper::{
-    detect_gaps, drop_gap, emit_drop, formula_contains_predicate, predicate_var_arg,
-    verify_closure, DropFailure, DropTemplate, EmitResult, Gap, NotRenderable,
-    PredicateDescriptor, PredicateRegistry, NotNullPredicate,
 };
 pub use walk::{walk_callsites_to_entry, Arrival, CallsiteWalk};
 pub use wp::{

@@ -64,8 +64,7 @@ use std::rc::Rc;
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_symbolic::{
-    contract, eq, forall, gte, must, num, str_const, ContractArgs,
-    String_, Term,
+    contract, eq, forall, gte, must, num, str_const, ContractArgs, String_, Term,
 };
 use serde_json::{Map, Value as JsonValue};
 
@@ -91,9 +90,7 @@ pub fn invariants() {
     // -- R1: top-level `kind` MUST be the literal string "catalog". --------
     must(
         "catalog_format_r1_kind_is_literal_catalog",
-        forall(String_(), |c| {
-            eq(ctor1("kind_of", c), str_const("catalog"))
-        }),
+        forall(String_(), |c| eq(ctor1("kind_of", c), str_const("catalog"))),
     );
 
     // -- R2: `name` MUST be present (string). ------------------------------
@@ -103,10 +100,7 @@ pub fn invariants() {
         "catalog_format_r2_name_present_string",
         forall(String_(), |c| {
             eq(
-                ctor1(
-                    "has_string_field_name",
-                    c,
-                ),
+                ctor1("has_string_field_name", c),
                 ctor1("true_const", str_const("")),
             )
         }),
@@ -117,10 +111,7 @@ pub fn invariants() {
         "catalog_format_r3_version_present_string",
         forall(String_(), |c| {
             eq(
-                ctor1(
-                    "has_string_field_version",
-                    c,
-                ),
+                ctor1("has_string_field_version", c),
                 ctor1("true_const", str_const("")),
             )
         }),
@@ -145,7 +136,10 @@ pub fn invariants() {
         "catalog_format_r5_property_values_are_self_identifying_cids",
         ContractArgs {
             post: Some(eq(
-                ctor1("is_self_identifying_cid", ctor1("properties_value", str_const("any"))),
+                ctor1(
+                    "is_self_identifying_cid",
+                    ctor1("properties_value", str_const("any")),
+                ),
                 ctor1("true_const", str_const("")),
             )),
             ..Default::default()
@@ -168,10 +162,7 @@ pub fn invariants() {
     must(
         "catalog_format_r7_underscore_fields_participate_in_canonicalization",
         forall(String_(), |c| {
-            gte(
-                ctor1("len", ctor1("jcs_with_underscore_fields", c)),
-                num(1),
-            )
+            gte(ctor1("len", ctor1("jcs_with_underscore_fields", c)), num(1))
         }),
     );
 
@@ -248,10 +239,7 @@ pub fn invariants() {
         "catalog_format_r15_cid_carries_blake3_512_prefix",
         ContractArgs {
             post: Some(eq(
-                ctor1(
-                    "starts_with",
-                    ctor1("any_cid_in_catalog", str_const("c")),
-                ),
+                ctor1("starts_with", ctor1("any_cid_in_catalog", str_const("c"))),
                 str_const("blake3-512:"),
             )),
             ..Default::default()
@@ -370,11 +358,11 @@ fn cid_format_problem(s: &str) -> Option<String> {
             hex.len()
         ));
     }
-    if let Some(bad) = hex.chars().find(|c| !c.is_ascii_hexdigit() || c.is_ascii_uppercase()) {
-        return Some(format!(
-            "non-lowercase-hex character `{}` in digest",
-            bad
-        ));
+    if let Some(bad) = hex
+        .chars()
+        .find(|c| !c.is_ascii_hexdigit() || c.is_ascii_uppercase())
+    {
+        return Some(format!("non-lowercase-hex character `{}` in digest", bad));
     }
     None
 }
@@ -383,10 +371,16 @@ fn cid_format_problem(s: &str) -> Option<String> {
 fn iso8601_utc_problem(s: &str) -> Option<String> {
     let bytes = s.as_bytes();
     if bytes.len() < 20 {
-        return Some(format!("string too short ({} bytes) for ISO-8601 UTC", bytes.len()));
+        return Some(format!(
+            "string too short ({} bytes) for ISO-8601 UTC",
+            bytes.len()
+        ));
     }
     if !s.ends_with('Z') {
-        return Some(format!("must end with literal `Z` (UTC marker); got `{}`", s));
+        return Some(format!(
+            "must end with literal `Z` (UTC marker); got `{}`",
+            s
+        ));
     }
     let positions: &[(usize, fn(u8) -> bool, &str)] = &[
         (4, |b| b == b'-', "expected `-` after year"),
@@ -400,9 +394,7 @@ fn iso8601_utc_problem(s: &str) -> Option<String> {
             return Some(format!("at byte {}: {}", pos, msg));
         }
     }
-    let digit_positions: &[usize] = &[
-        0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18,
-    ];
+    let digit_positions: &[usize] = &[0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18];
     for &p in digit_positions {
         if !bytes[p].is_ascii_digit() {
             return Some(format!(
@@ -505,10 +497,9 @@ fn verify_catalog_inner(
     // --- R1: kind == "catalog" ------------------------------------------
     let r1_kind = match obj.and_then(|o| o.get("kind")) {
         Some(JsonValue::String(s)) if s == "catalog" => RuleVerdict::Holds,
-        Some(JsonValue::String(s)) => RuleVerdict::Violated(format!(
-            "`kind` is `{}`, expected literal `catalog`",
-            s
-        )),
+        Some(JsonValue::String(s)) => {
+            RuleVerdict::Violated(format!("`kind` is `{}`, expected literal `catalog`", s))
+        }
         Some(other) => RuleVerdict::Violated(format!(
             "`kind` must be a string, got {}",
             value_type(other)
@@ -624,10 +615,7 @@ fn verify_catalog_inner(
             }
         }
         Some(other) => {
-            let msg = format!(
-                "`properties` must be an object, got {}",
-                value_type(other)
-            );
+            let msg = format!("`properties` must be an object, got {}", value_type(other));
             r5_problems.push(msg.clone());
             r14_problems.push(msg.clone());
             r15_problems.push(msg);
@@ -676,8 +664,7 @@ fn verify_catalog_inner(
     let r7_underscore_fields_in_canonical = match obj {
         None => RuleVerdict::Violated("top-level value is not an object".into()),
         Some(o) => {
-            let underscore_keys: Vec<&String> =
-                o.keys().filter(|k| k.starts_with('_')).collect();
+            let underscore_keys: Vec<&String> = o.keys().filter(|k| k.starts_with('_')).collect();
             if underscore_keys.is_empty() {
                 RuleVerdict::Holds
             } else {
@@ -698,10 +685,9 @@ fn verify_catalog_inner(
                             RuleVerdict::Holds
                         }
                     }
-                    (Err(e), _) | (_, Err(e)) => RuleVerdict::Violated(format!(
-                        "JCS encoding failed during R7 check: {}",
-                        e
-                    )),
+                    (Err(e), _) | (_, Err(e)) => {
+                        RuleVerdict::Violated(format!("JCS encoding failed during R7 check: {}", e))
+                    }
                 }
             }
         }
@@ -721,9 +707,7 @@ fn verify_catalog_inner(
             RuleVerdict::Vacuous(
                 "R8 is the formula version of R11; supply `spec_files` to discharge".into(),
             ),
-            RuleVerdict::Vacuous(
-                "no spec_files provided; cannot recompute disk BLAKE3-512".into(),
-            ),
+            RuleVerdict::Vacuous("no spec_files provided; cannot recompute disk BLAKE3-512".into()),
         ),
         Some(map) => {
             let props = obj
@@ -786,7 +770,10 @@ fn verify_catalog_inner(
                         if recomputed != claimed {
                             r11_problems.push(format!(
                                 "properties[`{}`] = `{}` does not match BLAKE3-512({}) = `{}`",
-                                key, claimed, path.display(), recomputed
+                                key,
+                                claimed,
+                                path.display(),
+                                recomputed
                             ));
                         }
                     }
@@ -846,10 +833,7 @@ fn verify_catalog_inner(
                     ))
                 }
             }
-            Err(e) => RuleVerdict::Violated(format!(
-                "JCS encoding failed during R12 check: {}",
-                e
-            )),
+            Err(e) => RuleVerdict::Violated(format!("JCS encoding failed during R12 check: {}", e)),
         },
     };
 
@@ -913,8 +897,7 @@ mod tests {
             .join("protocol")
             .join("specs")
             .join("2026-04-30-protocol-catalog.json");
-        let bytes =
-            std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         serde_json::from_slice(&bytes).expect("catalog parses as JSON")
     }
 
@@ -924,8 +907,7 @@ mod tests {
             .join("fixtures")
             .join("catalog-format")
             .join(name);
-        let bytes =
-            std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         serde_json::from_slice(&bytes).expect("fixture parses as JSON")
     }
 
@@ -1188,11 +1170,8 @@ mod tests {
     #[test]
     fn r12_catalog_cid_holds_on_correct_recompute() {
         let (spec_path, cat, recomputed) = synth_spec_dir_and_catalog();
-        let report = verify_catalog_against_spec_dir(
-            &cat,
-            std::iter::empty(),
-            Some(recomputed.as_str()),
-        );
+        let report =
+            verify_catalog_against_spec_dir(&cat, std::iter::empty(), Some(recomputed.as_str()));
         assert!(
             matches!(report.r12_catalog_cid_recomputes, RuleVerdict::Holds),
             "R12 should hold when claimed CID matches recomputation; verdict = {:?}",
@@ -1205,15 +1184,9 @@ mod tests {
     fn r12_violation_wrong_claimed_cid_is_caught() {
         let (spec_path, cat, _real) = synth_spec_dir_and_catalog();
         // A made-up CID with the right shape but wrong digest.
-        let bogus = format!(
-            "blake3-512:{}",
-            "0".repeat(128)
-        );
-        let report = verify_catalog_against_spec_dir(
-            &cat,
-            std::iter::empty(),
-            Some(bogus.as_str()),
-        );
+        let bogus = format!("blake3-512:{}", "0".repeat(128));
+        let report =
+            verify_catalog_against_spec_dir(&cat, std::iter::empty(), Some(bogus.as_str()));
         assert!(
             matches!(report.r12_catalog_cid_recomputes, RuleVerdict::Violated(_)),
             "R12 should fire on wrong claimed CID; verdict = {:?}",

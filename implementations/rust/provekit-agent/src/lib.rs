@@ -29,14 +29,14 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub mod loop_fix;
 pub mod loop_lift;
 pub mod loop_must;
-pub mod loop_fix;
 pub mod stub;
 
+pub use loop_fix::{run_fix_loop, FixLoopOptions, FixLoopOutcome};
 pub use loop_lift::{run_lift_loop, LiftLoopOptions, LiftLoopOutcome};
 pub use loop_must::{run_must_loop, MustLoopOptions, MustLoopOutcome};
-pub use loop_fix::{run_fix_loop, FixLoopOptions, FixLoopOutcome};
 pub use stub::StubAgent;
 
 // ---------------------------------------------------------------------------
@@ -196,16 +196,11 @@ pub struct FixContext {
 pub trait ProvekitAgent: Send + Sync {
     /// Lift contracts from a source file. Returns zero or more
     /// candidates in canonical IR-JSON.
-    fn propose_contracts(
-        &self,
-        ctx: &ProposeContext,
-    ) -> Result<Vec<ContractCandidate>, AgentError>;
+    fn propose_contracts(&self, ctx: &ProposeContext)
+        -> Result<Vec<ContractCandidate>, AgentError>;
 
     /// Translate an English description to one IR contract.
-    fn translate_must(
-        &self,
-        ctx: &MustContext,
-    ) -> Result<ContractCandidate, AgentError>;
+    fn translate_must(&self, ctx: &MustContext) -> Result<ContractCandidate, AgentError>;
 
     /// Fix a bug. Returns code patches + any new contracts the fix
     /// implies.
@@ -260,11 +255,14 @@ pub fn validate_candidate(c: &ContractCandidate) -> ValidationOutcome {
         return ValidationOutcome::Rejected("out_binding must be non-empty".into());
     }
 
-    fn parse_one(label: &str, s: &str) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, String> {
-        let v: serde_json::Value = serde_json::from_str(s)
-            .map_err(|e| format!("`{label}` is not valid JSON: {e}"))?;
-        let f = parse::parse_formula(&v)
-            .map_err(|e| format!("`{label}` is not valid IR-JSON: {e}"))?;
+    fn parse_one(
+        label: &str,
+        s: &str,
+    ) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, String> {
+        let v: serde_json::Value =
+            serde_json::from_str(s).map_err(|e| format!("`{label}` is not valid JSON: {e}"))?;
+        let f =
+            parse::parse_formula(&v).map_err(|e| format!("`{label}` is not valid IR-JSON: {e}"))?;
         Ok(serialize::formula_to_value(&f))
     }
 
@@ -350,12 +348,13 @@ pub fn mint_validated(
         authoring: Authoring::Llm {
             llm: v.provenance.agent_name.clone(),
             llm_version: v.provenance.agent_version.clone(),
-            prompt_cid: format!(
-                "blake3-512:{}",
-                hex_zero_pad(&v.provenance.agent_name)
-            ),
+            prompt_cid: format!("blake3-512:{}", hex_zero_pad(&v.provenance.agent_name)),
             confidence: v.provenance.confidence.unwrap_or(0.5),
-            rationale: v.provenance.rationale.clone().or_else(|| Some(evidence.clone())),
+            rationale: v
+                .provenance
+                .rationale
+                .clone()
+                .or_else(|| Some(evidence.clone())),
         },
         signer_seed: opts.signer_seed,
     };

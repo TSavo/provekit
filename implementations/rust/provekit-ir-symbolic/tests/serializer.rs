@@ -11,10 +11,12 @@
 // JCS-sorted order at hash time. Both are tested.
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use provekit_ir_symbolic::serialize::{formula_to_value, marshal_declarations, sort_to_value, term_to_value};
+use provekit_ir_symbolic::serialize::{
+    formula_to_value, marshal_declarations, sort_to_value, term_to_value,
+};
 use provekit_ir_symbolic::{
-    and_, eq, exists, forall, gt, implies, must, not_, num, or_, out, parse_int, reset_collector,
-    str_const, ConstValue, Int, Sort, Term, lambda, let_term, choice,
+    and_, choice, eq, exists, forall, gt, implies, lambda, let_term, must, not_, num, or_, out,
+    parse_int, reset_collector, str_const, ConstValue, Int, Sort, Term,
 };
 
 // ---------------------------------------------------------------------------
@@ -354,9 +356,7 @@ fn formula_to_value_is_deterministic_across_calls() {
 #[test]
 fn nested_quantifier_serializes_recursively() {
     reset_collector();
-    let f = forall(Int(), |a| {
-        exists(Int(), move |b| eq(a.clone(), b))
-    });
+    let f = forall(Int(), |a| exists(Int(), move |b| eq(a.clone(), b)));
     let s = encode_jcs(&formula_to_value(&f));
     assert!(s.contains("\"kind\":\"forall\""));
     assert!(s.contains("\"kind\":\"exists\""));
@@ -386,7 +386,9 @@ fn deeply_nested_connective_serializes() {
 fn changing_predicate_changes_hash() {
     reset_collector();
     let h_gt = blake3_512_of(encode_jcs(&formula_to_value(&gt(num(1), num(2)))).as_bytes());
-    let h_lt = blake3_512_of(encode_jcs(&formula_to_value(&provekit_ir_symbolic::lt(num(1), num(2)))).as_bytes());
+    let h_lt = blake3_512_of(
+        encode_jcs(&formula_to_value(&provekit_ir_symbolic::lt(num(1), num(2)))).as_bytes(),
+    );
     assert_ne!(h_gt, h_lt);
 }
 
@@ -440,7 +442,10 @@ fn lambda_hash_is_deterministic() {
 #[test]
 fn let_serializes_to_value_with_bindings_and_body() {
     let let_expr = let_term(
-        vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+        vec![provekit_ir_symbolic::LetBinding {
+            name: "x".into(),
+            bound_term: num(1),
+        }],
         num(2),
     );
     let v = term_to_value(&let_expr);
@@ -454,11 +459,17 @@ fn let_serializes_to_value_with_bindings_and_body() {
 #[test]
 fn let_hash_is_deterministic() {
     let l1 = let_term(
-        vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+        vec![provekit_ir_symbolic::LetBinding {
+            name: "x".into(),
+            bound_term: num(1),
+        }],
         num(2),
     );
     let l2 = let_term(
-        vec![provekit_ir_symbolic::LetBinding { name: "x".into(), bound_term: num(1) }],
+        vec![provekit_ir_symbolic::LetBinding {
+            name: "x".into(),
+            bound_term: num(1),
+        }],
         num(2),
     );
     let h1 = blake3_512_of(encode_jcs(&term_to_value(&l1)).as_bytes());

@@ -28,9 +28,7 @@
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
-use provekit_claim_envelope::{
-    mint_bridge_v14, BridgeTargetV14, MintBridgeV14Args,
-};
+use provekit_claim_envelope::{mint_bridge_v14, BridgeTargetV14, MintBridgeV14Args};
 use provekit_proof_envelope::Ed25519Seed;
 use serde_json::Value as Json;
 
@@ -175,10 +173,7 @@ fn bridge_v14_target_tagged_union_shape() {
         target.pointer("/kind").and_then(|v| v.as_str()),
         Some("contract")
     );
-    assert!(target
-        .pointer("/cid")
-        .and_then(|v| v.as_str())
-        .is_some());
+    assert!(target.pointer("/cid").and_then(|v| v.as_str()).is_some());
 }
 
 #[test]

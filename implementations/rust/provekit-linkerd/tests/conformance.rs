@@ -186,8 +186,14 @@ fn daemon_bin() -> PathBuf {
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
     // CI builds with --release; local cargo test uses debug. Try release first
     // (CI), fall back to debug (local).
-    let release = workspace.join("target").join("release").join("provekit-linkerd");
-    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
+    let release = workspace
+        .join("target")
+        .join("release")
+        .join("provekit-linkerd");
+    let debug = workspace
+        .join("target")
+        .join("debug")
+        .join("provekit-linkerd");
     if release.exists() {
         release
     } else {
@@ -210,9 +216,12 @@ fn spawn_daemon(sock: &PathBuf, idle_ms: u64) -> Child {
     let snap = std::env::temp_dir().join(format!("conf-snap-{}.bin", idle_ms));
     let bin = daemon_bin();
     Command::new(&bin)
-        .arg("--socket").arg(sock)
-        .arg("--snapshot").arg(snap)
-        .arg("--idle-timeout-ms").arg(idle_ms.to_string())
+        .arg("--socket")
+        .arg(sock)
+        .arg("--snapshot")
+        .arg(snap)
+        .arg("--idle-timeout-ms")
+        .arg(idle_ms.to_string())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -292,7 +301,8 @@ fn conformance_3_concurrent_clients_consistent_diagnostics() {
     );
 
     // Shutdown.
-    let shutdown = serde_json::json!({ "jsonrpc": "2.0", "id": 99, "method": "shutdown", "params": {} });
+    let shutdown =
+        serde_json::json!({ "jsonrpc": "2.0", "id": 99, "method": "shutdown", "params": {} });
     let _ = send_recv_sync(&sock, &shutdown);
     child.wait().ok();
 

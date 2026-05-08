@@ -183,9 +183,7 @@ fn free_vars_formula_into(f: &IrFormula, acc: &mut HashSet<String>) {
             inner.remove(name);
             acc.extend(inner);
         }
-        IrFormula::Choice {
-            var_name, body, ..
-        } => {
+        IrFormula::Choice { var_name, body, .. } => {
             let mut inner = HashSet::new();
             free_vars_formula_into(body, &mut inner);
             inner.remove(var_name);
@@ -301,7 +299,13 @@ fn handle_formula_binder(
         taken.insert(var_name.to_string());
         taken.insert(bound.clone());
         let fresh = fresh_name(&taken, &bound);
-        let renamed = substitute_in_formula(*body, &bound, &IrTerm::Var { name: fresh.clone() });
+        let renamed = substitute_in_formula(
+            *body,
+            &bound,
+            &IrTerm::Var {
+                name: fresh.clone(),
+            },
+        );
         let substituted = substitute_in_formula(renamed, var_name, replacement);
         (fresh, Box::new(substituted))
     } else {
@@ -486,7 +490,10 @@ mod tests {
     #[test]
     fn free_vars_term_var_returns_singleton() {
         let fv = free_vars_term(&var("x"));
-        assert_eq!(fv.iter().cloned().collect::<Vec<_>>(), vec!["x".to_string()]);
+        assert_eq!(
+            fv.iter().cloned().collect::<Vec<_>>(),
+            vec!["x".to_string()]
+        );
     }
 
     #[test]

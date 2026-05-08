@@ -39,7 +39,10 @@ pub struct TryBranchFingerprint {
 /// branch site. Walks recursively into Switch::If branches, Loop
 /// bodies, and Switch::Match arms (yes — nested `?` inside a match
 /// arm). Source order.
-pub fn extract_try_branches(stmts: &[&Value], fun_decls: Option<&Value>) -> Vec<TryBranchFingerprint> {
+pub fn extract_try_branches(
+    stmts: &[&Value],
+    fun_decls: Option<&Value>,
+) -> Vec<TryBranchFingerprint> {
     let mut out = Vec::new();
     for s in stmts {
         collect_try_in_stmt(s, fun_decls, stmts, &mut out);
@@ -182,7 +185,10 @@ fn callee_is_try_branch(func_id: u64, fun_decls: Option<&Value>) -> bool {
     else {
         return false;
     };
-    let Some(elems) = decl.get("item_meta").and_then(|m| m.get("name")).and_then(|n| n.as_array())
+    let Some(elems) = decl
+        .get("item_meta")
+        .and_then(|m| m.get("name"))
+        .and_then(|n| n.as_array())
     else {
         return false;
     };

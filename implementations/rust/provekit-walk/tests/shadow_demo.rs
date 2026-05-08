@@ -102,10 +102,26 @@ fn one_callsite_yields_one_arrival_per_slot_in_chain() {
     //  - slot 3 (function-entry)
     // Each gets one arrival from the f-chain.
     // Slot 2 (println!) is NOT in the chain → no arrivals.
-    assert_eq!(s.slots[0].arrivals.len(), 1, "slot 0 (let y) has the let-binding arrival");
-    assert_eq!(s.slots[1].arrivals.len(), 1, "slot 1 (callsite) has the callsite-root arrival");
-    assert_eq!(s.slots[2].arrivals.len(), 0, "slot 2 (println!) is not in the f-chain");
-    assert_eq!(s.slots[3].arrivals.len(), 1, "slot 3 (entry) has the entry arrival");
+    assert_eq!(
+        s.slots[0].arrivals.len(),
+        1,
+        "slot 0 (let y) has the let-binding arrival"
+    );
+    assert_eq!(
+        s.slots[1].arrivals.len(),
+        1,
+        "slot 1 (callsite) has the callsite-root arrival"
+    );
+    assert_eq!(
+        s.slots[2].arrivals.len(),
+        0,
+        "slot 2 (println!) is not in the f-chain"
+    );
+    assert_eq!(
+        s.slots[3].arrivals.len(),
+        1,
+        "slot 3 (entry) has the entry arrival"
+    );
 }
 
 #[test]
@@ -137,7 +153,11 @@ fn two_callsites_yield_n_arrivals_per_slot_at_shared_nodes() {
         .iter()
         .map(|a| a.callee_root_cid.clone())
         .collect();
-    assert_eq!(chains.len(), 2, "two distinct callsite chains land at slot 0");
+    assert_eq!(
+        chains.len(),
+        2,
+        "two distinct callsite chains land at slot 0"
+    );
 }
 
 #[test]
@@ -184,7 +204,10 @@ fn shadow_source_cid_is_callee_walk_order_independent() {
     let caller = parse_named(TWO_CALLSITES_SRC, "caller");
     let s_fg = build_shadow_source(&caller, &[pre_f(), pre_g()]);
     let s_gf = build_shadow_source(&caller, &[pre_g(), pre_f()]);
-    assert_eq!(s_fg.cid, s_gf.cid, "walk order must not affect the source CID");
+    assert_eq!(
+        s_fg.cid, s_gf.cid,
+        "walk order must not affect the source CID"
+    );
     assert_eq!(s_fg.canonical_bytes, s_gf.canonical_bytes);
 }
 
@@ -278,9 +301,9 @@ fn allocation_memento_is_self_contained_and_cacheable() {
     assert!(entry.cid.starts_with("blake3-512:"));
 
     // The CID is a function of the bytes.
-    let recomputed = provekit_walk::cid_of_value(
-        &provekit_walk::serde_to_canonical(serde_json::from_slice(&entry.canonical_bytes).unwrap()),
-    );
+    let recomputed = provekit_walk::cid_of_value(&provekit_walk::serde_to_canonical(
+        serde_json::from_slice(&entry.canonical_bytes).unwrap(),
+    ));
     assert_eq!(recomputed, entry.cid);
 }
 
@@ -305,10 +328,26 @@ fn edge_memento_emits_p_implies_q_over_x() {
     // The edge memento now emits kind:"contract" (schemaVersion "2") with
     // pre/post instead of the old p/q fields, and evidence wrapping the witness.
     let json = serde_json::to_string(&serialize_value(&value)).unwrap();
-    assert!(json.contains("\"pre\""), "expected pre field in contract memento: {}", json);
-    assert!(json.contains("\"post\""), "expected post field in contract memento: {}", json);
-    assert!(json.contains("\"evidence\""), "expected evidence field in contract memento: {}", json);
-    assert!(json.contains("\"kind\":\"contract\""), "expected kind:contract in memento: {}", json);
+    assert!(
+        json.contains("\"pre\""),
+        "expected pre field in contract memento: {}",
+        json
+    );
+    assert!(
+        json.contains("\"post\""),
+        "expected post field in contract memento: {}",
+        json
+    );
+    assert!(
+        json.contains("\"evidence\""),
+        "expected evidence field in contract memento: {}",
+        json
+    );
+    assert!(
+        json.contains("\"kind\":\"contract\""),
+        "expected kind:contract in memento: {}",
+        json
+    );
 }
 
 #[test]

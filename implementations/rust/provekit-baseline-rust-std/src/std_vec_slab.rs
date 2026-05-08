@@ -9,8 +9,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    contract, eq, forall, gte, must, num, str_const, ContractArgs,
-    String_, Term,
+    contract, eq, forall, gte, must, num, str_const, ContractArgs, String_, Term,
 };
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
@@ -77,10 +76,7 @@ pub fn invariants() {
         "Vec_with_capacity__starts_empty",
         ContractArgs {
             post: Some(forall(String_(), |_| {
-                eq(
-                    ctor1("Vec_len", ctor1("Vec_with_capacity", num(0))),
-                    num(0),
-                )
+                eq(ctor1("Vec_len", ctor1("Vec_with_capacity", num(0))), num(0))
             })),
             ..Default::default()
         },
@@ -108,7 +104,10 @@ pub fn invariants() {
     must(
         "Vec_is_empty__type_signature",
         forall(String_(), |v| {
-            eq(ctor1("type_of", ctor1("Vec_is_empty", v)), str_const("bool"))
+            eq(
+                ctor1("type_of", ctor1("Vec_is_empty", v)),
+                str_const("bool"),
+            )
         }),
     );
     must(
@@ -152,10 +151,7 @@ pub fn invariants() {
         "Vec_push__post_state_nonempty",
         ContractArgs {
             post: Some(forall(String_(), |v| {
-                gte(
-                    ctor1("Vec_len", ctor2("Vec_push_post", v, num(0))),
-                    num(1),
-                )
+                gte(ctor1("Vec_len", ctor2("Vec_push_post", v, num(0))), num(1))
             })),
             ..Default::default()
         },
@@ -165,10 +161,7 @@ pub fn invariants() {
     must(
         "Vec_pop__type_signature",
         forall(String_(), |v| {
-            eq(
-                ctor1("type_of", ctor1("Vec_pop", v)),
-                str_const("Option"),
-            )
+            eq(ctor1("type_of", ctor1("Vec_pop", v)), str_const("Option"))
         }),
     );
     must(
@@ -256,20 +249,14 @@ pub fn invariants() {
     must(
         "Vec_capacity__determinism",
         forall(String_(), |v| {
-            eq(
-                ctor1("Vec_capacity", v.clone()),
-                ctor1("Vec_capacity", v),
-            )
+            eq(ctor1("Vec_capacity", v.clone()), ctor1("Vec_capacity", v))
         }),
     );
     // Structural: capacity is always >= len.
     must(
         "Vec_capacity__bounds_len_from_above",
         forall(String_(), |v| {
-            gte(
-                ctor1("Vec_capacity", v.clone()),
-                ctor1("Vec_len", v),
-            )
+            gte(ctor1("Vec_capacity", v.clone()), ctor1("Vec_len", v))
         }),
     );
 }

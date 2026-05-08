@@ -21,9 +21,7 @@
 
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{
-    eq, forall, gte, must, num, String_, Term,
-};
+use provekit_ir_symbolic::{eq, forall, gte, must, num, String_, Term};
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor {
@@ -59,10 +57,7 @@ pub fn invariants() {
     must(
         "ed25519_sign_string_length_eq_96",
         forall(String_(), |msg| {
-            eq(
-                ctor1("len", ctor1("ed25519_sign_string", msg)),
-                num(96),
-            )
+            eq(ctor1("len", ctor1("ed25519_sign_string", msg)), num(96))
         }),
     );
 
@@ -78,10 +73,7 @@ pub fn invariants() {
     must(
         "ed25519_pubkey_string_length_eq_52",
         forall(String_(), |seed| {
-            eq(
-                ctor1("len", ctor1("ed25519_pubkey_string", seed)),
-                num(52),
-            )
+            eq(ctor1("len", ctor1("ed25519_pubkey_string", seed)), num(52))
         }),
     );
 

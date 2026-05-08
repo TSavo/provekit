@@ -138,13 +138,9 @@ pub struct BridgeMetadataV14 {
 #[serde(tag = "kind")]
 pub enum BridgeTarget {
     #[serde(rename = "contract")]
-    Contract {
-        cid: String,
-    },
+    Contract { cid: String },
     #[serde(rename = "contractSet")]
-    ContractSet {
-        cid: String,
-    },
+    ContractSet { cid: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,9 +186,7 @@ pub type ProofType = String;
 #[serde(tag = "kind")]
 pub enum Sort {
     #[serde(rename = "primitive")]
-    Primitive {
-        name: PrimitiveSortName,
-    },
+    Primitive { name: PrimitiveSortName },
     #[serde(rename = "function")]
     Function {
         args: Vec<Sort>,
@@ -228,9 +222,7 @@ pub enum Sort {
     ///
     /// This is tracked for full treatment in #385 / a follow-up RFC.
     #[serde(rename = "float")]
-    Float {
-        width: u8,
-    },
+    Float { width: u8 },
     /// Lifetime / region sort for borrow-checker lifetime variables.
     /// `name` is the lifetime name, e.g. `"'a"`, `"'static"`, or a fresh
     /// region variable like `"'r0"` emitted by Charon's region inference.
@@ -247,9 +239,7 @@ pub enum Sort {
     /// JCS-canonical key order: `kind`, `name` (alphabetical).
     /// Prerequisite for #384 C.9 (Outlives predicates).
     #[serde(rename = "region")]
-    Region {
-        name: String,
-    },
+    Region { name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -263,19 +253,14 @@ pub struct BridgeDeclarationV14 {
 #[serde(tag = "kind")]
 pub enum IrTerm {
     #[serde(rename = "var")]
-    Var {
-        name: String,
-    },
+    Var { name: String },
     #[serde(rename = "const")]
     Const {
         value: serde_json::Value,
         sort: Sort,
     },
     #[serde(rename = "ctor")]
-    Ctor {
-        name: String,
-        args: Vec<IrTerm>,
-    },
+    Ctor { name: String, args: Vec<IrTerm> },
     #[serde(rename = "lambda")]
     Lambda {
         #[serde(rename = "paramName")]
@@ -300,21 +285,13 @@ pub enum IrFormula {
         args: Vec<IrTerm>,
     },
     #[serde(rename = "and")]
-    And {
-        operands: Vec<IrFormula>,
-    },
+    And { operands: Vec<IrFormula> },
     #[serde(rename = "or")]
-    Or {
-        operands: Vec<IrFormula>,
-    },
+    Or { operands: Vec<IrFormula> },
     #[serde(rename = "not")]
-    Not {
-        operands: Vec<IrFormula>,
-    },
+    Not { operands: Vec<IrFormula> },
     #[serde(rename = "implies")]
-    Implies {
-        operands: Vec<IrFormula>,
-    },
+    Implies { operands: Vec<IrFormula> },
     #[serde(rename = "forall")]
     Forall {
         name: String,

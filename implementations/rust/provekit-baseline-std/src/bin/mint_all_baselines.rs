@@ -7,14 +7,12 @@ use std::fs;
 use std::path::Path;
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{
-    eq, forall, gte, num, reset_collector, str_const, String_, Term,
-};
+use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_symbolic::serialize::formula_to_value;
+use provekit_ir_symbolic::{eq, forall, gte, num, reset_collector, str_const, String_, Term};
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
-use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 
 use serde::Deserialize;
 
@@ -22,17 +20,29 @@ const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 
 #[allow(dead_code)] // nullary ctor; not used by current predicate set but kept for future extensibility
 fn ctor0(name: &str) -> Rc<Term> {
-    Rc::new(Term::Ctor { name: name.into(), args: vec![] })
+    Rc::new(Term::Ctor {
+        name: name.into(),
+        args: vec![],
+    })
 }
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
-    Rc::new(Term::Ctor { name: name.into(), args: vec![arg] })
+    Rc::new(Term::Ctor {
+        name: name.into(),
+        args: vec![arg],
+    })
 }
 #[allow(dead_code)] // binary ctor; not used by current predicate set but kept for future extensibility
 fn ctor2(name: &str, a: Rc<Term>, b: Rc<Term>) -> Rc<Term> {
-    Rc::new(Term::Ctor { name: name.into(), args: vec![a, b] })
+    Rc::new(Term::Ctor {
+        name: name.into(),
+        args: vec![a, b],
+    })
 }
 fn ctor_n(name: &str, args: Vec<Rc<Term>>) -> Rc<Term> {
-    Rc::new(Term::Ctor { name: name.into(), args })
+    Rc::new(Term::Ctor {
+        name: name.into(),
+        args,
+    })
 }
 
 // ── Config types ────────────────────────────────────
@@ -84,9 +94,19 @@ fn apply_builtin(sig: &str, arity: usize, vars: &[Rc<Term>]) -> Rc<Term> {
         // arity field absent from config (serde default 0) means unary, not truly nullary.
         // Callers that want a nullary ctor must pass explicit arity=0 AND a known-nullary sig.
         // Since all builtins in practice take at least one argument, treat absent=unary.
-        ctor1(sig, vars.first().cloned().unwrap_or_else(|| Rc::new(Term::Var { name: "_".into() })))
+        ctor1(
+            sig,
+            vars.first()
+                .cloned()
+                .unwrap_or_else(|| Rc::new(Term::Var { name: "_".into() })),
+        )
     } else if arity == 1 || vars.len() < 2 {
-        ctor1(sig, vars.first().cloned().unwrap_or_else(|| Rc::new(Term::Var { name: "_".into() })))
+        ctor1(
+            sig,
+            vars.first()
+                .cloned()
+                .unwrap_or_else(|| Rc::new(Term::Var { name: "_".into() })),
+        )
     } else {
         ctor_n(sig, vars[..arity.min(vars.len())].to_vec())
     }
@@ -164,23 +184,25 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
                     let left_name = pred
                         .args
                         .as_ref()
-                        .and_then(|a| if a.left.is_empty() { None } else { Some(a.left.clone()) })
+                        .and_then(|a| {
+                            if a.left.is_empty() {
+                                None
+                            } else {
+                                Some(a.left.clone())
+                            }
+                        })
                         .unwrap_or_else(|| {
                             panic!(
                                 "gte predicate for {}/{} requires non-empty `left` field in config",
                                 config.lang, builtin_name
                             )
                         });
-                    let right_val = pred
-                        .args
-                        .as_ref()
-                        .map(|a| a.right)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "gte predicate for {}/{} requires `right` field in config",
-                                config.lang, builtin_name
-                            )
-                        });
+                    let right_val = pred.args.as_ref().map(|a| a.right).unwrap_or_else(|| {
+                        panic!(
+                            "gte predicate for {}/{} requires `right` field in config",
+                            config.lang, builtin_name
+                        )
+                    });
                     let f = forall(String_(), move |s| {
                         // left_name(s) >= right_val — the property bounded below.
                         let inner = ctor1(&left_name, s);
@@ -214,7 +236,9 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
 
             let minted = mint_contract(&args).expect("mint contract");
             content_cids.push(minted.cid.clone());
-            members.entry(minted.cid.clone()).or_insert(minted.canonical_bytes);
+            members
+                .entry(minted.cid.clone())
+                .or_insert(minted.canonical_bytes);
         }
     }
 
@@ -249,14 +273,22 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
 
 fn main() {
     let config_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("configs");
-    let out_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../.provekit/baselines");
+    let out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../.provekit/baselines");
 
     // 11 language kits. Rust is handled by provekit-baseline-rust-std (#292).
     // Including rust here would produce a second rust baseline artifact.
     let langs = [
-        "c", "cpp", "csharp", "go", "java", "php", "python",
-        "ruby", "swift", "typescript", "zig",
+        "c",
+        "cpp",
+        "csharp",
+        "go",
+        "java",
+        "php",
+        "python",
+        "ruby",
+        "swift",
+        "typescript",
+        "zig",
     ];
 
     let mut count = 0;
@@ -268,16 +300,19 @@ fn main() {
                 config_path.display()
             );
         }
-        let toml_text = fs::read_to_string(&config_path)
-            .unwrap_or_else(|e| panic!("read {lang} config: {e}"));
-        let config: BaselineConfig = toml::from_str(&toml_text)
-            .unwrap_or_else(|e| panic!("parse {lang} config: {e}"));
+        let toml_text =
+            fs::read_to_string(&config_path).unwrap_or_else(|e| panic!("read {lang} config: {e}"));
+        let config: BaselineConfig =
+            toml::from_str(&toml_text).unwrap_or_else(|e| panic!("parse {lang} config: {e}"));
         mint_baseline(&config, &out_dir);
         count += 1;
     }
 
     if count == 0 {
-        panic!("no configs found in {} — nothing to mint", config_dir.display());
+        panic!(
+            "no configs found in {} — nothing to mint",
+            config_dir.display()
+        );
     }
 
     println!("\nminted {count} baselines to {}", out_dir.display());

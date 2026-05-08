@@ -51,4 +51,3 @@ pub fn deliberate_violation() {
         panic!("can't reach here per the contract");
     }
 }
-

@@ -37,9 +37,19 @@ fn daemon_bin() -> PathBuf {
     // provekit-lsp is at implementations/rust/provekit-lsp/
     // workspace root is implementations/rust/
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
-    let release = workspace.join("target").join("release").join("provekit-linkerd");
-    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
-    if release.exists() { release } else { debug }
+    let release = workspace
+        .join("target")
+        .join("release")
+        .join("provekit-linkerd");
+    let debug = workspace
+        .join("target")
+        .join("debug")
+        .join("provekit-linkerd");
+    if release.exists() {
+        release
+    } else {
+        debug
+    }
 }
 
 fn unique_sock(label: &str) -> PathBuf {
@@ -76,10 +86,14 @@ fn spawn_daemon(sock: &PathBuf, snap: &PathBuf, idle_ms: u64) -> Child {
         bin.display()
     );
     Command::new(&bin)
-        .arg("--socket").arg(sock)
-        .arg("--snapshot").arg(snap)
-        .arg("--idle-timeout-ms").arg(idle_ms.to_string())
-        .arg("--project-cid").arg("lsp-daemon-routed-test")
+        .arg("--socket")
+        .arg(sock)
+        .arg("--snapshot")
+        .arg(snap)
+        .arg("--idle-timeout-ms")
+        .arg(idle_ms.to_string())
+        .arg("--project-cid")
+        .arg("lsp-daemon-routed-test")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -102,8 +116,9 @@ fn wait_for_socket(sock: &PathBuf, timeout: Duration) -> bool {
 fn shutdown_daemon(sock: &PathBuf) {
     if let Ok(mut stream) = UnixStream::connect(sock) {
         let req = serde_json::to_string(
-            &json!({"jsonrpc":"2.0","id":999,"method":"shutdown","params":{}})
-        ).unwrap();
+            &json!({"jsonrpc":"2.0","id":999,"method":"shutdown","params":{}}),
+        )
+        .unwrap();
         let _ = writeln!(stream, "{req}");
         let _ = stream.flush();
         std::thread::sleep(Duration::from_millis(200));
@@ -133,7 +148,12 @@ impl LspServer {
             .expect("spawn provekit-lsp --daemon-socket");
         let stdin = child.stdin.take().expect("lsp stdin");
         let stdout = BufReader::new(child.stdout.take().expect("lsp stdout"));
-        Self { child, stdin, stdout, next_id: 1 }
+        Self {
+            child,
+            stdin,
+            stdout,
+            next_id: 1,
+        }
     }
 
     fn spawn_default() -> Self {
@@ -145,14 +165,21 @@ impl LspServer {
             .expect("spawn provekit-lsp");
         let stdin = child.stdin.take().expect("lsp stdin");
         let stdout = BufReader::new(child.stdout.take().expect("lsp stdout"));
-        Self { child, stdin, stdout, next_id: 1 }
+        Self {
+            child,
+            stdin,
+            stdout,
+            next_id: 1,
+        }
     }
 
     /// Send a JSON-RPC message with Content-Length framing.
     fn send(&mut self, msg: &Value) {
         let body = serde_json::to_string(msg).unwrap();
         let header = format!("Content-Length: {}\r\n\r\n", body.len());
-        self.stdin.write_all(header.as_bytes()).expect("write header");
+        self.stdin
+            .write_all(header.as_bytes())
+            .expect("write header");
         self.stdin.write_all(body.as_bytes()).expect("write body");
         self.stdin.flush().expect("flush");
     }
@@ -223,29 +250,42 @@ impl LspServer {
             use std::os::unix::io::AsRawFd;
             let fd = self.stdout.get_ref().as_raw_fd();
             // Use select() with 100ms timeout to poll.
-            let mut tv = libc::timeval { tv_sec: 0, tv_usec: 100_000 };
+            let mut tv = libc::timeval {
+                tv_sec: 0,
+                tv_usec: 100_000,
+            };
             let mut readfds: libc::fd_set = unsafe { std::mem::zeroed() };
             unsafe {
                 libc::FD_ZERO(&mut readfds);
                 libc::FD_SET(fd, &mut readfds);
-                let n = libc::select(fd + 1, &mut readfds, std::ptr::null_mut(), std::ptr::null_mut(), &mut tv);
+                let n = libc::select(
+                    fd + 1,
+                    &mut readfds,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut tv,
+                );
                 if n <= 0 {
                     continue;
                 }
             }
             let msg = self.recv();
-            if msg.get("method").and_then(|m| m.as_str()) == Some("textDocument/publishDiagnostics") {
+            if msg.get("method").and_then(|m| m.as_str()) == Some("textDocument/publishDiagnostics")
+            {
                 return msg.get("params").cloned();
             }
         }
     }
 
     fn initialize(&mut self) -> Value {
-        self.request("initialize", json!({
-            "processId": null,
-            "capabilities": {},
-            "rootUri": null,
-        }))
+        self.request(
+            "initialize",
+            json!({
+                "processId": null,
+                "capabilities": {},
+                "rootUri": null,
+            }),
+        )
     }
 
     fn initialized(&mut self) {
@@ -266,7 +306,10 @@ impl LspServer {
 fn daemon_mode_did_open_publishes_diagnostics() {
     let bin = daemon_bin();
     if !bin.exists() {
-        eprintln!("SKIP: provekit-linkerd not found at {}; build it first", bin.display());
+        eprintln!(
+            "SKIP: provekit-linkerd not found at {}; build it first",
+            bin.display()
+        );
         return;
     }
 
@@ -292,14 +335,17 @@ fn daemon_mode_did_open_publishes_diagnostics() {
     let source = r#"fn add(a: i64, b: i64) -> i64 { a + b }"#;
     let uri = "file:///tmp/test_smoke.rs";
 
-    lsp.notify("textDocument/didOpen", json!({
-        "textDocument": {
-            "uri": uri,
-            "languageId": "rust",
-            "version": 1,
-            "text": source,
-        }
-    }));
+    lsp.notify(
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": uri,
+                "languageId": "rust",
+                "version": 1,
+                "text": source,
+            }
+        }),
+    );
 
     // Wait for publishDiagnostics notification (up to 5s).
     let params = lsp.wait_for_publish_diagnostics(Duration::from_secs(5));
@@ -314,7 +360,10 @@ fn daemon_mode_did_open_publishes_diagnostics() {
     );
     // diagnostics must be an array (may be empty for clean source).
     assert!(
-        params.get("diagnostics").and_then(|d| d.as_array()).is_some(),
+        params
+            .get("diagnostics")
+            .and_then(|d| d.as_array())
+            .is_some(),
         "publishDiagnostics.diagnostics must be an array: {params}"
     );
 
@@ -351,29 +400,33 @@ fn daemon_mode_did_change_clears_stale_diagnostics() {
     let uri = "file:///tmp/test_change.rs";
 
     // First open.
-    lsp.notify("textDocument/didOpen", json!({
-        "textDocument": {
-            "uri": uri,
-            "languageId": "rust",
-            "version": 1,
-            "text": "fn foo() {}",
-        }
-    }));
+    lsp.notify(
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": uri,
+                "languageId": "rust",
+                "version": 1,
+                "text": "fn foo() {}",
+            }
+        }),
+    );
 
     // Consume the first publishDiagnostics.
     let _first = lsp.wait_for_publish_diagnostics(Duration::from_secs(5));
 
     // Now send a change.
-    lsp.notify("textDocument/didChange", json!({
-        "textDocument": { "uri": uri, "version": 2 },
-        "contentChanges": [{ "text": "fn bar() {}" }]
-    }));
+    lsp.notify(
+        "textDocument/didChange",
+        json!({
+            "textDocument": { "uri": uri, "version": 2 },
+            "contentChanges": [{ "text": "fn bar() {}" }]
+        }),
+    );
 
     // Should get another publishDiagnostics for the change.
     let params = lsp.wait_for_publish_diagnostics(Duration::from_secs(5));
-    let params = params.unwrap_or_else(|| {
-        panic!("no publishDiagnostics after didChange")
-    });
+    let params = params.unwrap_or_else(|| panic!("no publishDiagnostics after didChange"));
 
     assert_eq!(
         params.get("uri").and_then(|v| v.as_str()),
@@ -381,7 +434,10 @@ fn daemon_mode_did_change_clears_stale_diagnostics() {
         "didChange publishDiagnostics uri wrong: {params}"
     );
     assert!(
-        params.get("diagnostics").and_then(|d| d.as_array()).is_some(),
+        params
+            .get("diagnostics")
+            .and_then(|d| d.as_array())
+            .is_some(),
         "diagnostics must be array after didChange: {params}"
     );
 
@@ -418,28 +474,32 @@ fn daemon_mode_did_close_clears_diagnostics() {
     let uri = "file:///tmp/test_close.rs";
 
     // Open.
-    lsp.notify("textDocument/didOpen", json!({
-        "textDocument": {
-            "uri": uri,
-            "languageId": "rust",
-            "version": 1,
-            "text": "fn baz() {}",
-        }
-    }));
+    lsp.notify(
+        "textDocument/didOpen",
+        json!({
+            "textDocument": {
+                "uri": uri,
+                "languageId": "rust",
+                "version": 1,
+                "text": "fn baz() {}",
+            }
+        }),
+    );
 
     // Consume open diagnostics.
     let _ = lsp.wait_for_publish_diagnostics(Duration::from_secs(5));
 
     // Close.
-    lsp.notify("textDocument/didClose", json!({
-        "textDocument": { "uri": uri }
-    }));
+    lsp.notify(
+        "textDocument/didClose",
+        json!({
+            "textDocument": { "uri": uri }
+        }),
+    );
 
     // Must receive publishDiagnostics with empty array.
     let params = lsp.wait_for_publish_diagnostics(Duration::from_secs(5));
-    let params = params.unwrap_or_else(|| {
-        panic!("no publishDiagnostics on didClose")
-    });
+    let params = params.unwrap_or_else(|| panic!("no publishDiagnostics on didClose"));
 
     assert_eq!(
         params.get("uri").and_then(|v| v.as_str()),

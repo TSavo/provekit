@@ -122,10 +122,13 @@ fn validate_formula(formula: &provekit_ir_types::IrFormula) -> Result<(), String
 /// `compile_to_parts`. Also accepts bare terms (lambda, let, etc.) for
 /// backward compatibility with the historical verifier emitter.
 pub fn emit(ir_formula: &Json) -> Result<String, String> {
-    let kind = ir_formula.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+    let kind = ir_formula
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if is_term_kind(kind) {
-        let term: provekit_ir_types::Term = serde_json::from_value(ir_formula.clone())
-            .map_err(|e| format!("{e}"))?;
+        let term: provekit_ir_types::Term =
+            serde_json::from_value(ir_formula.clone()).map_err(|e| format!("{e}"))?;
         validate_term(&term)?;
         Ok(generated::emit_term(&term))
     } else {
@@ -163,7 +166,10 @@ mod tests {
         });
         let result = compile_to_parts(&ir).expect("compile succeeds");
         assert_eq!(result.opacity_manifest.opacities.len(), 1);
-        assert_eq!(result.opacity_manifest.opacities[0].reason_code, "predicate_quantification");
+        assert_eq!(
+            result.opacity_manifest.opacities[0].reason_code,
+            "predicate_quantification"
+        );
         assert!(result.body.contains("(true)"));
     }
 
@@ -178,7 +184,10 @@ mod tests {
         });
         let result = compile_to_parts(&ir).expect("compile succeeds");
         assert_eq!(result.opacity_manifest.opacities.len(), 1);
-        assert_eq!(result.opacity_manifest.opacities[0].reason_code, "dependent_type");
+        assert_eq!(
+            result.opacity_manifest.opacities[0].reason_code,
+            "dependent_type"
+        );
         assert!(result.body.contains("(true)"));
     }
 
@@ -230,10 +239,15 @@ mod tests {
         });
         let result = compile_to_parts(&ir).expect("compile succeeds");
         assert_eq!(result.opacity_manifest.opacities.len(), 2);
-        let cids: Vec<&str> = result.opacity_manifest.opacities.iter()
-            .map(|e| e.position_cid.as_str()).collect();
-        assert!(cids[0] <= cids[1], "opacities must be sorted by positionCid");
+        let cids: Vec<&str> = result
+            .opacity_manifest
+            .opacities
+            .iter()
+            .map(|e| e.position_cid.as_str())
+            .collect();
+        assert!(
+            cids[0] <= cids[1],
+            "opacities must be sorted by positionCid"
+        );
     }
 }
-
-

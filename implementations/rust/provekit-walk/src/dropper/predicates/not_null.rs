@@ -50,7 +50,10 @@ impl PredicateDescriptor for NotNullPredicate {
         }
 
         // Conservative: if not_null appears in any premise, emit the gap.
-        if premises.iter().any(|p| formula_contains_predicate(p, "not_null")) {
+        if premises
+            .iter()
+            .any(|p| formula_contains_predicate(p, "not_null"))
+        {
             return false;
         }
 
@@ -104,8 +107,7 @@ fn is_guard_for(formula: &IrFormula, var_name: &str) -> bool {
         IrFormula::Not { operands } => {
             if operands.len() == 1 {
                 if let IrFormula::Atomic { name, args } = &operands[0] {
-                    return matches!(name.as_str(), "is_none")
-                        && has_var(args, var_name);
+                    return matches!(name.as_str(), "is_none") && has_var(args, var_name);
                 }
             }
             false
@@ -140,14 +142,16 @@ fn formula_contains_guard_for(formula: &IrFormula, var_name: &str) -> bool {
                     }
                 }
             }
-            operands.iter().any(|o| formula_contains_guard_for(o, var_name))
+            operands
+                .iter()
+                .any(|o| formula_contains_guard_for(o, var_name))
         }
         IrFormula::Atomic { .. } => false,
         IrFormula::And { operands }
         | IrFormula::Or { operands }
-        | IrFormula::Implies { operands } => {
-            operands.iter().any(|o| formula_contains_guard_for(o, var_name))
-        }
+        | IrFormula::Implies { operands } => operands
+            .iter()
+            .any(|o| formula_contains_guard_for(o, var_name)),
         IrFormula::Forall { body, .. } | IrFormula::Exists { body, .. } => {
             formula_contains_guard_for(body, var_name)
         }
@@ -163,9 +167,16 @@ mod tests {
     #[test]
     fn not_null_predicate_verified_templates_returns_defensive_only() {
         let templates = NotNullPredicate.verified_templates();
-        assert_eq!(templates.len(), 1, "one verified template for not_null (Expect is scaffolding)");
+        assert_eq!(
+            templates.len(),
+            1,
+            "one verified template for not_null (Expect is scaffolding)"
+        );
         assert!(templates.contains(&DropTemplate::Defensive));
-        assert!(!templates.contains(&DropTemplate::Expect), "Expect is not closure-verified");
+        assert!(
+            !templates.contains(&DropTemplate::Expect),
+            "Expect is not closure-verified"
+        );
     }
 
     #[test]
@@ -175,7 +186,10 @@ mod tests {
             .expect("Defensive must render OK");
         assert!(rendered.contains("x.is_none()"), "must guard x");
         assert!(rendered.contains("panic!"), "must panic on violation");
-        assert!(rendered.contains("not_null"), "panic msg must name invariant");
+        assert!(
+            rendered.contains("not_null"),
+            "panic msg must name invariant"
+        );
     }
 
     #[test]
@@ -202,9 +216,13 @@ mod tests {
 
     #[test]
     fn expect_template_renders_fresh_name_binding() {
-        let rendered = NotNullPredicate.render(DropTemplate::Expect, "x")
+        let rendered = NotNullPredicate
+            .render(DropTemplate::Expect, "x")
             .expect("Expect must render OK with fresh-name binding (fix #407)");
-        assert!(rendered.contains("x_ok"), "fresh name x_ok preserves downstream types");
+        assert!(
+            rendered.contains("x_ok"),
+            "fresh name x_ok preserves downstream types"
+        );
         assert!(rendered.contains("x.expect"), "uses Option::expect");
     }
 

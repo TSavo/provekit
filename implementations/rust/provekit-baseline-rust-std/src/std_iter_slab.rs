@@ -7,9 +7,7 @@
 
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{
-    eq, forall, gte, must, num, str_const, String_, Term,
-};
+use provekit_ir_symbolic::{eq, forall, gte, must, num, str_const, String_, Term};
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor {
@@ -76,10 +74,7 @@ pub fn invariants() {
         "Iter_fold__type_signature",
         forall(String_(), |i| {
             eq(
-                ctor1(
-                    "type_of",
-                    ctor3("Iter_fold", i, num(0), str_const("f")),
-                ),
+                ctor1("type_of", ctor3("Iter_fold", i, num(0), str_const("f"))),
                 str_const("B"),
             )
         }),
@@ -119,10 +114,7 @@ pub fn invariants() {
         "Iter_map__count_preserved",
         forall(String_(), |i| {
             eq(
-                ctor1(
-                    "Iter_count",
-                    ctor2("Iter_map", i.clone(), str_const("f")),
-                ),
+                ctor1("Iter_count", ctor2("Iter_map", i.clone(), str_const("f"))),
                 ctor1("Iter_count", i),
             )
         }),
@@ -153,10 +145,7 @@ pub fn invariants() {
         forall(String_(), |i| {
             gte(
                 ctor1("Iter_count", i.clone()),
-                ctor1(
-                    "Iter_count",
-                    ctor2("Iter_filter", i, str_const("p")),
-                ),
+                ctor1("Iter_count", ctor2("Iter_filter", i, str_const("p"))),
             )
         }),
     );
@@ -167,10 +156,7 @@ pub fn invariants() {
     must(
         "Iter_next__type_signature",
         forall(String_(), |i| {
-            eq(
-                ctor1("type_of", ctor1("Iter_next", i)),
-                str_const("Option"),
-            )
+            eq(ctor1("type_of", ctor1("Iter_next", i)), str_const("Option"))
         }),
     );
     must(

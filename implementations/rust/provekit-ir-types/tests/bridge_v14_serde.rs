@@ -70,10 +70,7 @@ fn bridge_v14_deserializes_from_spec_shape() {
     // placeholder strings).
     assert!(bridge.metadata.target_witness_cid.is_none());
     assert!(bridge.metadata.target_binary_cid.is_none());
-    assert_eq!(
-        bridge.metadata.target_layer.as_deref(),
-        Some("rust-kit"),
-    );
+    assert_eq!(bridge.metadata.target_layer.as_deref(), Some("rust-kit"),);
     assert_eq!(
         bridge.metadata.produced_by.as_deref(),
         Some("provekit-canonical-reference@v1.4"),
@@ -127,8 +124,7 @@ fn bridge_v14_serde_round_trip_preserves_value() {
     let bridge_in: BridgeDeclarationV14 =
         serde_json::from_str(CANONICAL_FIXTURE_JSON).expect("parse #1");
     let serialized = serde_json::to_string(&bridge_in).expect("serialize");
-    let bridge_out: BridgeDeclarationV14 =
-        serde_json::from_str(&serialized).expect("parse #2");
+    let bridge_out: BridgeDeclarationV14 = serde_json::from_str(&serialized).expect("parse #2");
     assert_eq!(bridge_in, bridge_out);
 }
 

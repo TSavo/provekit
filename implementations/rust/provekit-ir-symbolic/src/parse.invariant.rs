@@ -30,8 +30,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    and_, atomic_, contract, eq, forall, gt, lt, not_, num, ContractArgs, Int,
-    String_, Term,
+    and_, atomic_, contract, eq, forall, gt, lt, not_, num, ContractArgs, Int, String_, Term,
 };
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {

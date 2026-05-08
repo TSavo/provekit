@@ -18,9 +18,7 @@
 // the trust anchor — same contracts, same set CID across signers,
 // across kits, across rebuilds.
 
-use provekit_baseline_rust_std::{
-    compute_disclaimer_cid, disclaimer_text, mint_baseline,
-};
+use provekit_baseline_rust_std::{compute_disclaimer_cid, disclaimer_text, mint_baseline};
 
 const PINNED_CONTRACT_SET_CID: &str = "blake3-512:76c278afe2f60f5b58ebaf53df1078143204cddbbf47d23119fb9778e17b6488004b3f8d8ca471720c1774483ea0fc7cb6dba0a097c638cc7e8231edb566d5e4";
 const PINNED_DISCLAIMER_CID: &str = "blake3-512:dae426aaf69da3fb28d1b45bc61dd700e3b3e1f0637814d24ec9071071d2fe9f32befb5b4211cd4ae8d6596e67e7a12eecff849ffdbf8a832b376fc7db19bca1";

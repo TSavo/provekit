@@ -7,9 +7,7 @@
 
 use std::rc::Rc;
 
-use provekit_ir_symbolic::{
-    eq, forall, gte, must, num, str_const, String_, Term,
-};
+use provekit_ir_symbolic::{eq, forall, gte, must, num, str_const, String_, Term};
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
     Rc::new(Term::Ctor {
@@ -130,10 +128,7 @@ pub fn invariants() {
     must(
         "slice_first__determinism",
         forall(String_(), |s| {
-            eq(
-                ctor1("slice_first", s.clone()),
-                ctor1("slice_first", s),
-            )
+            eq(ctor1("slice_first", s.clone()), ctor1("slice_first", s))
         }),
     );
 
@@ -178,19 +173,13 @@ pub fn invariants() {
     must(
         "slice_to_vec__type_signature",
         forall(String_(), |s| {
-            eq(
-                ctor1("type_of", ctor1("slice_to_vec", s)),
-                str_const("Vec"),
-            )
+            eq(ctor1("type_of", ctor1("slice_to_vec", s)), str_const("Vec"))
         }),
     );
     must(
         "slice_to_vec__determinism",
         forall(String_(), |s| {
-            eq(
-                ctor1("slice_to_vec", s.clone()),
-                ctor1("slice_to_vec", s),
-            )
+            eq(ctor1("slice_to_vec", s.clone()), ctor1("slice_to_vec", s))
         }),
     );
     // Structural: to_vec preserves length.

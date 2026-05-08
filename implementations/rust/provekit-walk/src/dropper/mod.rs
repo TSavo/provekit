@@ -57,8 +57,7 @@ pub fn drop_gap(
     descriptor: &dyn PredicateDescriptor,
     template: DropTemplate,
 ) -> Result<EmitResult, DropFailure> {
-    let file: syn::File =
-        syn::parse_str(source).map_err(|_| DropFailure::SourceParseFailed)?;
+    let file: syn::File = syn::parse_str(source).map_err(|_| DropFailure::SourceParseFailed)?;
 
     let caller_fn = file
         .items
@@ -129,13 +128,15 @@ pub fn drop_gap(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use provekit_ir_types::{IrFormula, IrTerm};
     use crate::wp::{atomic_ge, const_int, var, Wp};
+    use provekit_ir_types::{IrFormula, IrTerm};
 
     fn not_null_wp(var_name: &str) -> Wp {
         Wp(IrFormula::Atomic {
             name: "not_null".to_string(),
-            args: vec![IrTerm::Var { name: var_name.to_string() }],
+            args: vec![IrTerm::Var {
+                name: var_name.to_string(),
+            }],
         })
     }
 
@@ -164,8 +165,15 @@ fn caller(x: Option<i32>) {
         assert_eq!(emit.template, DropTemplate::Defensive);
         assert_eq!(emit.var_name, "x");
         let parse_result: Result<syn::File, _> = syn::parse_str(&emit.modified_source);
-        assert!(parse_result.is_ok(), "emitted source parses: {:?}", parse_result.err());
-        let guard_pos = emit.modified_source.find("x.is_none()").expect("guard present");
+        assert!(
+            parse_result.is_ok(),
+            "emitted source parses: {:?}",
+            parse_result.err()
+        );
+        let guard_pos = emit
+            .modified_source
+            .find("x.is_none()")
+            .expect("guard present");
         let callsite_pos = emit.modified_source.find("f(x)").expect("callsite present");
         assert!(guard_pos < callsite_pos, "guard before callsite");
     }
@@ -215,24 +223,37 @@ fn caller(x: Option<i32>) {
         #[derive(Debug)]
         struct EmptyDescriptor;
         impl PredicateDescriptor for EmptyDescriptor {
-            fn name(&self) -> &str { "unknown_pred" }
+            fn name(&self) -> &str {
+                "unknown_pred"
+            }
             fn contains(&self, formula: &IrFormula) -> bool {
                 formula_contains_predicate(formula, "unknown_pred")
             }
             fn var_arg(&self, formula: &IrFormula) -> Option<String> {
                 predicate_var_arg(formula, "unknown_pred")
             }
-            fn is_premise_guarded(&self, _: &IrFormula, _: &str) -> bool { false }
-            fn verified_templates(&self) -> &[DropTemplate] { &[] }
-            fn render(&self, _: DropTemplate, _: &str) -> Result<String, NotRenderable> {
-                Err(NotRenderable::Scaffolding { family: "EmptyDescriptor", reason: "test" })
+            fn is_premise_guarded(&self, _: &IrFormula, _: &str) -> bool {
+                false
             }
-            fn guard_discharged(&self, _: &IrFormula, _: &str) -> bool { false }
+            fn verified_templates(&self) -> &[DropTemplate] {
+                &[]
+            }
+            fn render(&self, _: DropTemplate, _: &str) -> Result<String, NotRenderable> {
+                Err(NotRenderable::Scaffolding {
+                    family: "EmptyDescriptor",
+                    reason: "test",
+                })
+            }
+            fn guard_discharged(&self, _: &IrFormula, _: &str) -> bool {
+                false
+            }
         }
 
         let unknown_pred_wp = Wp(IrFormula::Atomic {
             name: "unknown_pred".to_string(),
-            args: vec![IrTerm::Var { name: "x".to_string() }],
+            args: vec![IrTerm::Var {
+                name: "x".to_string(),
+            }],
         });
         let result = drop_gap(
             FIXTURE_SRC,

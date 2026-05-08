@@ -44,30 +44,45 @@ fn primitive_sort_v14_backward_compat() {
 fn function_sort_serializes_to_cddl_shape() {
     let sort = Sort::Function {
         args: vec![Sort::Primitive { name: "Int".into() }],
-        ret: Box::new(Sort::Primitive { name: "Bool".into() }),
+        ret: Box::new(Sort::Primitive {
+            name: "Bool".into(),
+        }),
     };
 
     let serialized = serde_json::to_string(&sort).expect("serialize function sort");
-    let value: serde_json::Value =
-        serde_json::from_str(&serialized).expect("re-parse to Value");
+    let value: serde_json::Value = serde_json::from_str(&serialized).expect("re-parse to Value");
 
     // Shape check: exactly the keys CDDL specifies.
-    let obj = value.as_object().expect("function sort should serialize as object");
+    let obj = value
+        .as_object()
+        .expect("function sort should serialize as object");
     assert_eq!(obj.get("kind").and_then(|v| v.as_str()), Some("function"));
     assert!(obj.contains_key("args"), "function sort must have `args`");
-    assert!(obj.contains_key("return"), "function sort must have `return`");
+    assert!(
+        obj.contains_key("return"),
+        "function sort must have `return`"
+    );
     // No leaked rust field name (`ret`) — must be JSON `return`.
-    assert!(!obj.contains_key("ret"), "rust field `ret` must serialize as `return`");
+    assert!(
+        !obj.contains_key("ret"),
+        "rust field `ret` must serialize as `return`"
+    );
 
     // args is a list of one Sort.
-    let args = obj.get("args").and_then(|v| v.as_array()).expect("args is array");
+    let args = obj
+        .get("args")
+        .and_then(|v| v.as_array())
+        .expect("args is array");
     assert_eq!(args.len(), 1);
     let arg0 = args[0].as_object().expect("arg0 is object");
     assert_eq!(arg0.get("kind").and_then(|v| v.as_str()), Some("primitive"));
     assert_eq!(arg0.get("name").and_then(|v| v.as_str()), Some("Int"));
 
     // return is a Sort.
-    let ret = obj.get("return").and_then(|v| v.as_object()).expect("return is object");
+    let ret = obj
+        .get("return")
+        .and_then(|v| v.as_object())
+        .expect("return is object");
     assert_eq!(ret.get("kind").and_then(|v| v.as_str()), Some("primitive"));
     assert_eq!(ret.get("name").and_then(|v| v.as_str()), Some("Bool"));
 }
@@ -77,9 +92,13 @@ fn function_sort_round_trip_preserves_value() {
     let sort = Sort::Function {
         args: vec![
             Sort::Primitive { name: "Int".into() },
-            Sort::Primitive { name: "String".into() },
+            Sort::Primitive {
+                name: "String".into(),
+            },
         ],
-        ret: Box::new(Sort::Primitive { name: "Bool".into() }),
+        ret: Box::new(Sort::Primitive {
+            name: "Bool".into(),
+        }),
     };
 
     let serialized = serde_json::to_string(&sort).expect("serialize");
@@ -122,23 +141,36 @@ fn dependent_sort_serializes_to_cddl_shape() {
     };
 
     let serialized = serde_json::to_string(&sort).expect("serialize dependent sort");
-    let value: serde_json::Value =
-        serde_json::from_str(&serialized).expect("re-parse to Value");
+    let value: serde_json::Value = serde_json::from_str(&serialized).expect("re-parse to Value");
 
-    let obj = value.as_object().expect("dependent sort should serialize as object");
+    let obj = value
+        .as_object()
+        .expect("dependent sort should serialize as object");
     assert_eq!(obj.get("kind").and_then(|v| v.as_str()), Some("dependent"));
     assert_eq!(obj.get("name").and_then(|v| v.as_str()), Some("Vec"));
     assert_eq!(obj.get("indexVar").and_then(|v| v.as_str()), Some("n"));
-    assert!(obj.contains_key("indexSort"), "dependent sort must have `indexSort`");
+    assert!(
+        obj.contains_key("indexSort"),
+        "dependent sort must have `indexSort`"
+    );
     // No leaked rust snake_case field names.
-    assert!(!obj.contains_key("index_var"), "rust field `index_var` must serialize as `indexVar`");
-    assert!(!obj.contains_key("index_sort"), "rust field `index_sort` must serialize as `indexSort`");
+    assert!(
+        !obj.contains_key("index_var"),
+        "rust field `index_var` must serialize as `indexVar`"
+    );
+    assert!(
+        !obj.contains_key("index_sort"),
+        "rust field `index_sort` must serialize as `indexSort`"
+    );
 
     let index_sort = obj
         .get("indexSort")
         .and_then(|v| v.as_object())
         .expect("indexSort is object");
-    assert_eq!(index_sort.get("kind").and_then(|v| v.as_str()), Some("primitive"));
+    assert_eq!(
+        index_sort.get("kind").and_then(|v| v.as_str()),
+        Some("primitive")
+    );
     assert_eq!(index_sort.get("name").and_then(|v| v.as_str()), Some("Int"));
 }
 
@@ -161,7 +193,11 @@ fn dependent_sort_deserializes_from_cddl_wire_shape() {
     let json = r#"{"indexSort":{"kind":"primitive","name":"Int"},"indexVar":"n","kind":"dependent","name":"Vec"}"#;
     let parsed: Sort = serde_json::from_str(json).expect("parse dependent sort");
     match parsed {
-        Sort::Dependent { name, index_var, index_sort } => {
+        Sort::Dependent {
+            name,
+            index_var,
+            index_sort,
+        } => {
             assert_eq!(name, "Vec");
             assert_eq!(index_var, "n");
             match *index_sort {
@@ -187,7 +223,9 @@ fn nested_sorts_round_trip() {
             index_var: "n".into(),
             index_sort: Box::new(Sort::Primitive { name: "Int".into() }),
         }],
-        ret: Box::new(Sort::Primitive { name: "Bool".into() }),
+        ret: Box::new(Sort::Primitive {
+            name: "Bool".into(),
+        }),
     };
 
     let serialized = serde_json::to_string(&sort).expect("serialize");

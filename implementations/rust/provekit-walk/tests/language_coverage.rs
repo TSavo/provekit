@@ -41,7 +41,11 @@ fn field_access_lifts_as_ctor() {
     let t = lift_expr_to_term(&parse_expr("s.field")).unwrap();
     let json = serde_json::to_string(&t).unwrap();
     assert!(json.contains("\"field\""));
-    assert!(json.contains("\".field\""), "field name encoded with leading dot: {}", json);
+    assert!(
+        json.contains("\".field\""),
+        "field name encoded with leading dot: {}",
+        json
+    );
 }
 
 #[test]
@@ -112,7 +116,13 @@ fn bitwise_ops_lift_as_ctor() {
     ] {
         let t = lift_expr_to_term(&parse_expr(src)).unwrap();
         let json = serde_json::to_string(&t).unwrap();
-        assert!(json.contains(&format!("\"{}\"", op)), "{} → {}: {}", src, op, json);
+        assert!(
+            json.contains(&format!("\"{}\"", op)),
+            "{} → {}: {}",
+            src,
+            op,
+            json
+        );
     }
 }
 
@@ -143,7 +153,11 @@ fn closure_lifts_as_lambda() {
     // body's reference resolves to the same id.
     let t = lift_expr_to_term(&parse_expr("|x| x + 1")).unwrap();
     let json = serde_json::to_string(&t).unwrap();
-    assert!(json.contains("\"lambda\""), "expected lambda variant: {}", json);
+    assert!(
+        json.contains("\"lambda\""),
+        "expected lambda variant: {}",
+        json
+    );
     assert!(
         json.contains("\"x#"),
         "expected scope-resolved x#N param: {}",

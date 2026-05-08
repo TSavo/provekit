@@ -65,9 +65,15 @@ fn compose_two_adjacent_edges_yields_stable_cid() {
     let composed_a = compose_edges(let_y, callsite);
     let composed_b = compose_edges(let_y, callsite);
 
-    assert_eq!(composed_a.cid, composed_b.cid, "composition is deterministic");
+    assert_eq!(
+        composed_a.cid, composed_b.cid,
+        "composition is deterministic"
+    );
     assert_eq!(composed_a.canonical_bytes, composed_b.canonical_bytes);
-    assert_eq!(composed_a.component_cids, vec![let_y.cid.clone(), callsite.cid.clone()]);
+    assert_eq!(
+        composed_a.component_cids,
+        vec![let_y.cid.clone(), callsite.cid.clone()]
+    );
     // Composition CID is self-identifying BLAKE3-512.
     assert!(composed_a.cid.starts_with("blake3-512:"));
     assert_eq!(composed_a.cid.len(), 139);

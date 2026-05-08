@@ -287,7 +287,10 @@ pub fn lift_match_arm_postconditions(item_fn: &ItemFn) -> Vec<ArmPost> {
     for arm in &last.arms {
         let pattern_label = pattern_to_label(&arm.pat);
         let post = arm_body_post(&arm.body);
-        out.push(ArmPost { pattern_label, post });
+        out.push(ArmPost {
+            pattern_label,
+            post,
+        });
     }
     out
 }

@@ -14,8 +14,7 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    contract, eq, forall, gte, must, num, str_const, ContractArgs,
-    String_, Term,
+    contract, eq, forall, gte, must, num, str_const, ContractArgs, String_, Term,
 };
 
 fn ctor1(name: &str, arg: Rc<Term>) -> Rc<Term> {
@@ -88,7 +87,10 @@ pub fn invariants() {
     must(
         "Map_is_empty__type_signature",
         forall(String_(), |m| {
-            eq(ctor1("type_of", ctor1("Map_is_empty", m)), str_const("bool"))
+            eq(
+                ctor1("type_of", ctor1("Map_is_empty", m)),
+                str_const("bool"),
+            )
         }),
     );
     must(
@@ -141,10 +143,7 @@ pub fn invariants() {
         "Map_insert__type_signature",
         forall(String_(), |m| {
             eq(
-                ctor1(
-                    "type_of",
-                    ctor3("Map_insert", m, str_const("k"), num(0)),
-                ),
+                ctor1("type_of", ctor3("Map_insert", m, str_const("k"), num(0))),
                 str_const("Option"),
             )
         }),
@@ -178,10 +177,7 @@ pub fn invariants() {
         "Map_contains_key__type_signature",
         forall(String_(), |m| {
             eq(
-                ctor1(
-                    "type_of",
-                    ctor2("Map_contains_key", m, str_const("k")),
-                ),
+                ctor1("type_of", ctor2("Map_contains_key", m, str_const("k"))),
                 str_const("bool"),
             )
         }),
@@ -201,10 +197,7 @@ pub fn invariants() {
         forall(String_(), |m| {
             eq(
                 ctor2("Map_contains_key", m.clone(), str_const("k")),
-                ctor1(
-                    "Option_is_some",
-                    ctor2("Map_get", m, str_const("k")),
-                ),
+                ctor1("Option_is_some", ctor2("Map_get", m, str_const("k"))),
             )
         }),
     );

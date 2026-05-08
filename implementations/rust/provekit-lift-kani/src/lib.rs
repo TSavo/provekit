@@ -50,8 +50,8 @@
 use std::rc::Rc;
 
 use provekit_ir_symbolic::{
-    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula,
-    Int, Sort, Term,
+    and_, atomic_, eq, gt, gte, lt, lte, make_var, ne, num, str_const, ContractDecl, Formula, Int,
+    Sort, Term,
 };
 
 #[derive(Debug, Clone)]
@@ -267,7 +267,7 @@ fn process(
         post,
         inv: None,
         out_binding: "out".into(),
-    evidence: None,
+        evidence: None,
     });
     out.lifted += 1;
 }
@@ -312,7 +312,10 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
         }
         Formula::Connective { kind, operands } => Rc::new(Formula::Connective {
             kind: kind.clone(),
-            operands: operands.iter().map(|o| subst_var_name(o, from, to)).collect(),
+            operands: operands
+                .iter()
+                .map(|o| subst_var_name(o, from, to))
+                .collect(),
         }),
         Formula::Quantifier {
             kind,
@@ -331,7 +334,11 @@ fn subst_var_name(f: &Rc<Formula>, from: &str, to: &str) -> Rc<Formula> {
                 })
             }
         }
-        Formula::Choice { var_name, sort, body } => {
+        Formula::Choice {
+            var_name,
+            sort,
+            body,
+        } => {
             if var_name == from {
                 f.clone() // shadowed
             } else {
@@ -355,7 +362,11 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
             name: name.clone(),
             args: args.iter().map(|a| subst_term(a, from, to)).collect(),
         }),
-        Term::Lambda { param_name, param_sort, body } => {
+        Term::Lambda {
+            param_name,
+            param_sort,
+            body,
+        } => {
             if param_name == from {
                 t.clone() // shadowed
             } else {
@@ -385,8 +396,15 @@ fn subst_term(t: &Rc<Term>, from: &str, to: &str) -> Rc<Term> {
                     });
                 }
             }
-            let new_body = if shadowed { body.clone() } else { subst_term(body, from, to) };
-            Rc::new(Term::Let { bindings: new_bindings, body: new_body })
+            let new_body = if shadowed {
+                body.clone()
+            } else {
+                subst_term(body, from, to)
+            };
+            Rc::new(Term::Let {
+                bindings: new_bindings,
+                body: new_body,
+            })
         }
     }
 }
@@ -555,7 +573,10 @@ mod tests {
             .warnings
             .iter()
             .any(|w| w.reason.contains("should_panic")));
-        assert!(out.warnings.iter().any(|w| w.reason.contains("kani::proof")));
+        assert!(out
+            .warnings
+            .iter()
+            .any(|w| w.reason.contains("kani::proof")));
     }
 
     #[test]
