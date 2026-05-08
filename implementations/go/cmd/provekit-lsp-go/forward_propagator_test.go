@@ -168,6 +168,22 @@ func (s Service) publicViolates() {
 	}
 }
 
+func TestLowerFloorSourceIgnoresNonCodeCheckPositiveText(t *testing.T) {
+	source := `
+func noFalseCalls() {
+	// checkPositive(-1)
+	_ = "checkPositive(-1)"
+	_ = ` + "`checkPositive(-1)`" + `
+	notcheckPositive(-1)
+}
+`
+	diagnostics := FloorV1SeedForwardPropagator().EmitDiagnostics(LowerFloorSource(source))
+
+	if len(diagnostics) != 0 {
+		t.Fatalf("expected comments, strings, and longer identifiers to be ignored, got %#v", diagnostics)
+	}
+}
+
 func TestParseFloorFixtureEmitsForwardPropagationDiagnostic(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

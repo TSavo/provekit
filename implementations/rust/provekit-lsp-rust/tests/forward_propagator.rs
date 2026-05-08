@@ -179,3 +179,36 @@ async fn async_violates() {
 
     assert_eq!(diagnostics.len(), 3, "{diagnostics:#?}");
 }
+
+#[test]
+fn floor_lowering_resets_on_extern_function_headers() {
+    let source = r#"
+fn establishes_fact() {
+    checkPositive(5);
+}
+
+pub unsafe extern "C" fn extern_violates() {
+    checkPositive(-1);
+}
+"#;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+}
+
+#[test]
+fn floor_lowering_ignores_non_code_check_positive_text() {
+    let source = r##"
+fn no_false_calls() {
+    // checkPositive(-1);
+    let string = "checkPositive(-1)";
+    let raw = r#"checkPositive(-1)"#;
+    let _ = notcheckPositive(-1);
+}
+"##;
+    let diagnostics = ForwardPropagator::floor_v1_seed_index()
+        .emit_diagnostics(&ForwardPropagator::lower_floor_source(source));
+
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+}

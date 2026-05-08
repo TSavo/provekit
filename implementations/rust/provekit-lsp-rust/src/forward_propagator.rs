@@ -304,8 +304,9 @@ impl ForwardPropagator {
         let mut stmts = Vec::new();
         let mut brace_depth = 0i32;
         let mut top_block_depth: Option<i32> = None;
+        let scan_source = mask_rust_non_code(source);
 
-        for (line_idx, line) in source.lines().enumerate() {
+        for (line_idx, line) in scan_source.lines().enumerate() {
             let trimmed = line.trim_start();
             let is_function_definition = is_rust_function_header(trimmed);
             if is_function_definition {
@@ -499,7 +500,7 @@ fn is_rust_function_header(trimmed: &str) -> bool {
             continue;
         }
         let mut consumed = false;
-        for prefix in ["async ", "unsafe ", "const "] {
+        for prefix in ["async ", "unsafe ", "const ", "extern "] {
             if let Some(next) = rest.strip_prefix(prefix) {
                 rest = next.trim_start();
                 consumed = true;
@@ -513,13 +514,47 @@ fn is_rust_function_header(trimmed: &str) -> bool {
 }
 
 fn check_positive_calls(line: &str) -> Vec<(usize, String)> {
+    const NAME: &str = "checkPositive";
     let mut calls = Vec::new();
     let mut search_from = 0usize;
-    while let Some(relative_start) = line[search_from..].find("checkPositive(") {
+    while let Some(relative_start) = line[search_from..].find(NAME) {
         let start = search_from + relative_start;
-        let args_start = start + "checkPositive(".len();
-        if let Some(relative_end) = line[args_start..].find(')') {
-            let end = args_start + relative_end;
+        let bytes = line.as_bytes();
+        if start > 0 && is_identifier_byte(bytes[start - 1]) {
+            search_from = start + NAME.len();
+            continue;
+        }
+
+        let mut cursor = start + NAME.len();
+        if cursor < bytes.len() && is_identifier_byte(bytes[cursor]) {
+            search_from = cursor;
+            continue;
+        }
+        while cursor < bytes.len() && matches!(bytes[cursor], b' ' | b'\t') {
+            cursor += 1;
+        }
+        if cursor >= bytes.len() || bytes[cursor] != b'(' {
+            search_from = start + NAME.len();
+            continue;
+        }
+
+        let args_start = cursor + 1;
+        let mut depth = 1i32;
+        let mut end = args_start;
+        while end < bytes.len() {
+            match bytes[end] {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            end += 1;
+        }
+        if end < bytes.len() && depth == 0 {
             calls.push((start, line[args_start..end].trim().to_string()));
             search_from = end + 1;
         } else {
@@ -527,6 +562,150 @@ fn check_positive_calls(line: &str) -> Vec<(usize, String)> {
         }
     }
     calls
+}
+
+fn mask_rust_non_code(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut out = String::with_capacity(source.len());
+    let mut idx = 0usize;
+
+    while idx < bytes.len() {
+        if bytes[idx..].starts_with(b"//") {
+            idx = mask_until_newline(bytes, idx, &mut out);
+        } else if bytes[idx..].starts_with(b"/*") {
+            idx = mask_rust_block_comment(bytes, idx, &mut out);
+        } else if let Some(end) = rust_raw_string_end(bytes, idx) {
+            mask_range(bytes, idx, end, &mut out);
+            idx = end;
+        } else if bytes[idx] == b'"' || bytes[idx..].starts_with(b"b\"") {
+            idx = mask_escaped_delimited(bytes, idx, b'"', &mut out);
+        } else if bytes[idx] == b'\'' || bytes[idx..].starts_with(b"b'") {
+            idx = mask_escaped_delimited(bytes, idx, b'\'', &mut out);
+        } else {
+            out.push(bytes[idx] as char);
+            idx += 1;
+        }
+    }
+
+    out
+}
+
+fn rust_raw_string_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let (hash_start, quote_idx) = if bytes[start] == b'r' {
+        (start + 1, start + 1)
+    } else if bytes[start..].starts_with(b"br") {
+        (start + 2, start + 2)
+    } else {
+        return None;
+    };
+
+    let mut cursor = quote_idx;
+    while cursor < bytes.len() && bytes[cursor] == b'#' {
+        cursor += 1;
+    }
+    if cursor >= bytes.len() || bytes[cursor] != b'"' {
+        return None;
+    }
+    let hash_count = cursor - hash_start;
+    cursor += 1;
+
+    while cursor < bytes.len() {
+        if bytes[cursor] == b'"' {
+            let hashes_end = cursor + 1 + hash_count;
+            if hashes_end <= bytes.len()
+                && bytes[cursor + 1..hashes_end]
+                    .iter()
+                    .all(|byte| *byte == b'#')
+            {
+                return Some(hashes_end);
+            }
+        }
+        cursor += 1;
+    }
+
+    Some(bytes.len())
+}
+
+fn mask_rust_block_comment(bytes: &[u8], start: usize, out: &mut String) -> usize {
+    let mut idx = start;
+    let mut depth = 0i32;
+    while idx < bytes.len() {
+        if bytes[idx..].starts_with(b"/*") {
+            depth += 1;
+            mask_range(bytes, idx, idx + 2, out);
+            idx += 2;
+        } else if bytes[idx..].starts_with(b"*/") {
+            depth -= 1;
+            mask_range(bytes, idx, idx + 2, out);
+            idx += 2;
+            if depth == 0 {
+                break;
+            }
+        } else {
+            push_masked_byte(out, bytes[idx]);
+            idx += 1;
+        }
+    }
+    idx
+}
+
+fn mask_until_newline(bytes: &[u8], start: usize, out: &mut String) -> usize {
+    let mut idx = start;
+    while idx < bytes.len() && bytes[idx] != b'\n' {
+        push_masked_byte(out, bytes[idx]);
+        idx += 1;
+    }
+    if idx < bytes.len() {
+        out.push('\n');
+        idx += 1;
+    }
+    idx
+}
+
+fn mask_escaped_delimited(bytes: &[u8], start: usize, delimiter: u8, out: &mut String) -> usize {
+    let mut idx = if bytes[start] == b'b' {
+        start + 1
+    } else {
+        start
+    };
+    mask_range(bytes, start, idx + 1, out);
+    idx += 1;
+
+    let mut escaped = false;
+    while idx < bytes.len() {
+        let byte = bytes[idx];
+        push_masked_byte(out, byte);
+        idx += 1;
+        if byte == b'\n' {
+            break;
+        }
+        if escaped {
+            escaped = false;
+        } else if byte == b'\\' {
+            escaped = true;
+        } else if byte == delimiter {
+            break;
+        }
+    }
+    idx
+}
+
+fn mask_range(bytes: &[u8], start: usize, end: usize, out: &mut String) {
+    for byte in &bytes[start..end] {
+        push_masked_byte(out, *byte);
+    }
+}
+
+fn push_masked_byte(out: &mut String, byte: u8) {
+    if byte == b'\n' {
+        out.push('\n');
+    } else {
+        out.push(' ');
+    }
+}
+
+fn is_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 fn post_for_check_positive_arg(arg: &str) -> Post {

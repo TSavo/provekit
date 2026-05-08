@@ -298,9 +298,14 @@ func LowerFloorSource(source string) []ForwardStmt {
 	stmts := []ForwardStmt{}
 	braceDepth := 0
 	var topBlockDepth *int
+	scanLines := strings.Split(maskGoNonCode(source), "\n")
 
-	for lineIdx, line := range strings.Split(source, "\n") {
-		trimmed := strings.TrimLeft(line, " \t")
+	for lineIdx := range strings.Split(source, "\n") {
+		scanLine := ""
+		if lineIdx < len(scanLines) {
+			scanLine = scanLines[lineIdx]
+		}
+		trimmed := strings.TrimLeft(scanLine, " \t")
 		isFunctionDefinition := isGoFunctionHeader(trimmed)
 		if isFunctionDefinition {
 			stmts = append(stmts, ForwardStmt{Kind: ForwardStmtReset})
@@ -308,7 +313,7 @@ func LowerFloorSource(source string) []ForwardStmt {
 		}
 
 		if startsTopFallbackBlock(trimmed) {
-			depth := braceDepth + strings.Count(line, "{") - strings.Count(line, "}")
+			depth := braceDepth + strings.Count(scanLine, "{") - strings.Count(scanLine, "}")
 			if depth == braceDepth {
 				depth = braceDepth + 1
 			}
@@ -316,7 +321,7 @@ func LowerFloorSource(source string) []ForwardStmt {
 		}
 
 		if !isFunctionDefinition {
-			for _, call := range checkPositiveCalls(line) {
+			for _, call := range checkPositiveCalls(scanLine) {
 				if topBlockDepth != nil {
 					stmts = append(stmts, ForwardStmt{Kind: ForwardStmtUnsupported})
 				} else {
@@ -333,8 +338,8 @@ func LowerFloorSource(source string) []ForwardStmt {
 			}
 		}
 
-		braceDepth += strings.Count(line, "{")
-		braceDepth -= strings.Count(line, "}")
+		braceDepth += strings.Count(scanLine, "{")
+		braceDepth -= strings.Count(scanLine, "}")
 		if topBlockDepth != nil && braceDepth < *topBlockDepth {
 			topBlockDepth = nil
 		}
@@ -360,24 +365,152 @@ type checkPositiveCall struct {
 }
 
 func checkPositiveCalls(line string) []checkPositiveCall {
+	const name = "checkPositive"
 	calls := []checkPositiveCall{}
 	searchFrom := 0
 	for {
-		relativeStart := strings.Index(line[searchFrom:], "checkPositive(")
+		relativeStart := strings.Index(line[searchFrom:], name)
 		if relativeStart < 0 {
 			break
 		}
 		start := searchFrom + relativeStart
-		argsStart := start + len("checkPositive(")
-		relativeEnd := strings.Index(line[argsStart:], ")")
-		if relativeEnd < 0 {
+		if start > 0 && isIdentifierByte(line[start-1]) {
+			searchFrom = start + len(name)
+			continue
+		}
+
+		cursor := start + len(name)
+		if cursor < len(line) && isIdentifierByte(line[cursor]) {
+			searchFrom = cursor
+			continue
+		}
+		for cursor < len(line) && (line[cursor] == ' ' || line[cursor] == '\t') {
+			cursor++
+		}
+		if cursor >= len(line) || line[cursor] != '(' {
+			searchFrom = start + len(name)
+			continue
+		}
+
+		argsStart := cursor + 1
+		depth := 1
+		end := argsStart
+		foundEnd := false
+		for end < len(line) {
+			switch line[end] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					foundEnd = true
+				}
+			}
+			if foundEnd {
+				break
+			}
+			end++
+		}
+		if !foundEnd {
 			break
 		}
-		end := argsStart + relativeEnd
 		calls = append(calls, checkPositiveCall{start: start, arg: strings.TrimSpace(line[argsStart:end])})
 		searchFrom = end + 1
 	}
 	return calls
+}
+
+func maskGoNonCode(source string) string {
+	var out strings.Builder
+	out.Grow(len(source))
+	for idx := 0; idx < len(source); {
+		switch {
+		case strings.HasPrefix(source[idx:], "//"):
+			idx = maskGoUntilNewline(source, idx, &out)
+		case strings.HasPrefix(source[idx:], "/*"):
+			idx = maskGoBlockComment(source, idx, &out)
+		case source[idx] == '`':
+			idx = maskGoRawString(source, idx, &out)
+		case source[idx] == '"' || source[idx] == '\'':
+			idx = maskGoEscapedDelimited(source, idx, source[idx], &out)
+		default:
+			out.WriteByte(source[idx])
+			idx++
+		}
+	}
+	return out.String()
+}
+
+func maskGoUntilNewline(source string, start int, out *strings.Builder) int {
+	idx := start
+	for idx < len(source) && source[idx] != '\n' {
+		writeMaskedByte(out, source[idx])
+		idx++
+	}
+	if idx < len(source) {
+		out.WriteByte('\n')
+		idx++
+	}
+	return idx
+}
+
+func maskGoBlockComment(source string, start int, out *strings.Builder) int {
+	idx := start
+	for idx < len(source) {
+		if strings.HasPrefix(source[idx:], "*/") {
+			writeMaskedByte(out, source[idx])
+			writeMaskedByte(out, source[idx+1])
+			return idx + 2
+		}
+		writeMaskedByte(out, source[idx])
+		idx++
+	}
+	return idx
+}
+
+func maskGoRawString(source string, start int, out *strings.Builder) int {
+	idx := start
+	for idx < len(source) {
+		writeMaskedByte(out, source[idx])
+		idx++
+		if source[idx-1] == '`' && idx-1 != start {
+			break
+		}
+	}
+	return idx
+}
+
+func maskGoEscapedDelimited(source string, start int, delimiter byte, out *strings.Builder) int {
+	idx := start
+	escaped := false
+	for idx < len(source) {
+		char := source[idx]
+		writeMaskedByte(out, char)
+		idx++
+		if char == '\n' {
+			break
+		}
+		if escaped {
+			escaped = false
+		} else if char == '\\' {
+			escaped = true
+		} else if char == delimiter && idx-1 != start {
+			break
+		}
+	}
+	return idx
+}
+
+func writeMaskedByte(out *strings.Builder, char byte) {
+	if char == '\n' {
+		out.WriteByte('\n')
+	} else {
+		out.WriteByte(' ')
+	}
+}
+
+func isIdentifierByte(char byte) bool {
+	return char == '_' || (char >= '0' && char <= '9') || (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z')
 }
 
 func startsTopFallbackBlock(trimmed string) bool {
