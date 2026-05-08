@@ -12,3 +12,4 @@
 // through `provekit-linkerd`.
 
 pub mod daemon_client;
+pub mod forward_propagator;

@@ -26,9 +26,19 @@ fn daemon_bin() -> PathBuf {
     // lsp-rust is at implementations/rust/provekit-lsp-rust/
     // workspace root is implementations/rust/
     let workspace = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
-    let release = workspace.join("target").join("release").join("provekit-linkerd");
-    let debug = workspace.join("target").join("debug").join("provekit-linkerd");
-    if release.exists() { release } else { debug }
+    let release = workspace
+        .join("target")
+        .join("release")
+        .join("provekit-linkerd");
+    let debug = workspace
+        .join("target")
+        .join("debug")
+        .join("provekit-linkerd");
+    if release.exists() {
+        release
+    } else {
+        debug
+    }
 }
 
 fn lsp_bin() -> PathBuf {
@@ -65,10 +75,14 @@ fn spawn_daemon(sock: &PathBuf, snap: &PathBuf, idle_ms: u64) -> Child {
         bin.display()
     );
     Command::new(&bin)
-        .arg("--socket").arg(sock)
-        .arg("--snapshot").arg(snap)
-        .arg("--idle-timeout-ms").arg(idle_ms.to_string())
-        .arg("--project-cid").arg("lsp-rust-test")
+        .arg("--socket")
+        .arg(sock)
+        .arg("--snapshot")
+        .arg(snap)
+        .arg("--idle-timeout-ms")
+        .arg(idle_ms.to_string())
+        .arg("--project-cid")
+        .arg("lsp-rust-test")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -91,8 +105,9 @@ fn wait_for_socket(sock: &PathBuf, timeout: Duration) -> bool {
 fn shutdown_daemon(sock: &PathBuf) {
     if let Ok(mut stream) = UnixStream::connect(sock) {
         let req = serde_json::to_string(
-            &json!({"jsonrpc":"2.0","id":999,"method":"shutdown","params":{}})
-        ).unwrap();
+            &json!({"jsonrpc":"2.0","id":999,"method":"shutdown","params":{}}),
+        )
+        .unwrap();
         let _ = writeln!(stream, "{req}");
         let _ = stream.flush();
         // Give it a moment to shut down.
@@ -119,7 +134,11 @@ impl LspPlugin {
             .expect("spawn provekit-lsp-rust --daemon-socket");
         let stdin = child.stdin.take().expect("lsp stdin");
         let stdout = BufReader::new(child.stdout.take().expect("lsp stdout"));
-        Self { child, stdin, stdout }
+        Self {
+            child,
+            stdin,
+            stdout,
+        }
     }
 
     fn exchange(&mut self, payload: &Value) -> Value {
@@ -188,13 +207,16 @@ fn value_is_non_negative() {
     assert_eq!(resp["id"], 2);
 
     // Must have result, not error.
-    let result = resp.get("result").unwrap_or_else(|| panic!(
-        "daemon-client parse returned error instead of result: {resp}"
-    ));
+    let result = resp
+        .get("result")
+        .unwrap_or_else(|| panic!("daemon-client parse returned error instead of result: {resp}"));
 
     // result.diagnostics must be an array.
     assert!(
-        result.get("diagnostics").and_then(|d| d.as_array()).is_some(),
+        result
+            .get("diagnostics")
+            .and_then(|d| d.as_array())
+            .is_some(),
         "result.diagnostics must be an array in daemon-client mode; got: {result}"
     );
 

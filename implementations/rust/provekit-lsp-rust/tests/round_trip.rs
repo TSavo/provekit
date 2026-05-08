@@ -30,7 +30,11 @@ impl Plugin {
             .expect("spawn provekit-lsp-rust");
         let stdin = child.stdin.take().expect("stdin");
         let stdout = BufReader::new(child.stdout.take().expect("stdout"));
-        Self { child, stdin, stdout }
+        Self {
+            child,
+            stdin,
+            stdout,
+        }
     }
 
     fn exchange(&mut self, payload: &Value) -> Value {
@@ -38,7 +42,10 @@ impl Plugin {
         writeln!(self.stdin, "{line}").expect("write to plugin stdin");
         self.stdin.flush().expect("flush");
         let mut buf = String::new();
-        let n = self.stdout.read_line(&mut buf).expect("read from plugin stdout");
+        let n = self
+            .stdout
+            .read_line(&mut buf)
+            .expect("read from plugin stdout");
         assert!(n > 0, "plugin closed stdout without responding");
         serde_json::from_str(buf.trim()).expect("decode plugin response as JSON")
     }
@@ -150,6 +157,14 @@ fn value_is_non_negative() {
         .unwrap_or_else(|| panic!("declarations must be an array: {result}"));
 
     assert!(
+        result
+            .get("diagnostics")
+            .and_then(|d| d.as_array())
+            .is_some(),
+        "parse result must expose a diagnostics array for LSP forward propagation: {result}"
+    );
+
+    assert!(
         !decls.is_empty(),
         "expected at least one contract declaration from fixture; got empty array.\nfull result: {result}"
     );
@@ -230,5 +245,8 @@ fn shutdown_exits_cleanly() {
     );
 
     let status = plugin.wait_for_exit(Duration::from_secs(10));
-    assert!(status.success(), "plugin exited with non-zero status: {status:?}");
+    assert!(
+        status.success(),
+        "plugin exited with non-zero status: {status:?}"
+    );
 }
