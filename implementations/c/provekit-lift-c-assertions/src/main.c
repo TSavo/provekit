@@ -205,6 +205,13 @@ static char *json_extract_str(const char *json, const char *field) {
     return decode_json_string(p + 1, NULL);
 }
 
+static int json_has_field(const char *json, const char *field) {
+    char needle[128];
+
+    (void)snprintf(needle, sizeof(needle), "\"%s\"", field);
+    return strstr(json, needle) != NULL;
+}
+
 static char *json_extract_id(const char *json) {
     const char *p = strstr(json, "\"id\"");
     Buf b;
@@ -816,46 +823,63 @@ static void handle_parse(const char *id, const char *line) {
 
 static void handle_lift(const char *id, const char *line) {
     char *workspace = json_extract_str(line, "workspace_root");
+    char *surface = json_extract_str(line, "surface");
     StringArray source_paths;
     LiftAccumulator acc;
     Buf result;
+
+    if (!surface) {
+        free(workspace);
+        send_error(id, -32602, "surface must be a string");
+        return;
+    }
 
     if (!workspace || !*workspace) {
         free(workspace);
         workspace = str_dup(".");
         if (!workspace) {
+            free(surface);
             send_error(id, -32603, "out of memory");
             return;
         }
     }
 
+    if (!json_has_field(line, "source_paths")) {
+        free(surface);
+        free(workspace);
+        send_error(id, -32602, "source_paths must be a non-empty array of strings");
+        return;
+    }
+
     if (json_extract_str_array(line, "source_paths", &source_paths) != 0) {
         string_array_free(&source_paths);
+        free(surface);
         free(workspace);
         send_error(id, -32602, "source_paths must be an array of strings");
         return;
     }
     if (source_paths.len == 0) {
-        source_paths.items = malloc(sizeof(char *));
-        if (!source_paths.items) {
-            free(workspace);
-            send_error(id, -32603, "out of memory");
-            return;
-        }
-        source_paths.items[0] = str_dup(".");
-        if (!source_paths.items[0]) {
+        string_array_free(&source_paths);
+        free(surface);
+        free(workspace);
+        send_error(id, -32602, "source_paths must be a non-empty array of strings");
+        return;
+    }
+    for (size_t i = 0; i < source_paths.len; i++) {
+        if (!source_paths.items[i] || !*source_paths.items[i]) {
             string_array_free(&source_paths);
+            free(surface);
             free(workspace);
-            send_error(id, -32603, "out of memory");
+            send_error(id, -32602, "source_paths entries must be non-empty strings");
             return;
         }
-        source_paths.len = 1;
     }
 
     acc_init(&acc);
     if (!acc.ir.data || !acc.diagnostics.data) {
         acc_free(&acc);
         string_array_free(&source_paths);
+        free(surface);
         free(workspace);
         send_error(id, -32603, "out of memory");
         return;
@@ -868,6 +892,7 @@ static void handle_lift(const char *id, const char *line) {
         if (!resolved) {
             acc_free(&acc);
             string_array_free(&source_paths);
+            free(surface);
             free(workspace);
             send_error(id, -32603, "out of memory");
             return;
@@ -879,6 +904,7 @@ static void handle_lift(const char *id, const char *line) {
             send_error(id, -32603, acc.error[0] ? acc.error : "lift failed");
             acc_free(&acc);
             string_array_free(&source_paths);
+            free(surface);
             free(workspace);
             return;
         }
@@ -894,6 +920,7 @@ static void handle_lift(const char *id, const char *line) {
         buf_free(&result);
         acc_free(&acc);
         string_array_free(&source_paths);
+        free(surface);
         free(workspace);
         send_error(id, -32603, "out of memory");
         return;
@@ -904,6 +931,7 @@ static void handle_lift(const char *id, const char *line) {
     buf_free(&result);
     acc_free(&acc);
     string_array_free(&source_paths);
+    free(surface);
     free(workspace);
 }
 

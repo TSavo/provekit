@@ -182,4 +182,69 @@ if printf '%s\n' "$MALFORMED_SOURCE_PATHS" | grep -q '"kind":"ir-document"'; the
     exit 1
 fi
 
+printf '%s\n' "$MALFORMED_SOURCE_PATHS" | grep -q '"code":-32602' || {
+    echo "FAIL: malformed source_paths should return invalid params -32602" >&2
+    echo "$MALFORMED_SOURCE_PATHS" >&2
+    exit 1
+}
+
+assert_invalid_lift_params() {
+    name="$1"
+    response="$2"
+
+    printf '%s\n' "$response" | grep -q '"error"' || {
+        echo "FAIL: $name should return an error" >&2
+        echo "$response" >&2
+        exit 1
+    }
+
+    printf '%s\n' "$response" | grep -q '"code":-32602' || {
+        echo "FAIL: $name should return invalid params -32602" >&2
+        echo "$response" >&2
+        exit 1
+    }
+
+    if printf '%s\n' "$response" | grep -q '"kind":"ir-document"'; then
+        echo "FAIL: $name should not return an ir-document" >&2
+        echo "$response" >&2
+        exit 1
+    fi
+}
+
+MISSING_SOURCE_PATHS="$(
+    {
+        printf '{"jsonrpc":"2.0","id":89,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"surface":"c-assertions"}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "missing source_paths" "$MISSING_SOURCE_PATHS"
+
+EMPTY_SOURCE_PATHS="$(
+    {
+        printf '{"jsonrpc":"2.0","id":90,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":[],"surface":"c-assertions"}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "empty source_paths" "$EMPTY_SOURCE_PATHS"
+
+EMPTY_SOURCE_PATH="$(
+    {
+        printf '{"jsonrpc":"2.0","id":91,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":[""],"surface":"c-assertions"}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "empty source path" "$EMPTY_SOURCE_PATH"
+
+MISSING_SURFACE="$(
+    {
+        printf '{"jsonrpc":"2.0","id":92,"method":"lift","params":{"workspace_root":'
+        printf '"%s"' "$SCRIPT_DIR/fixtures"
+        printf ',"source_paths":["assertions_basic.c"]}}\n'
+    } | "$BIN" --rpc
+)"
+assert_invalid_lift_params "missing surface" "$MISSING_SURFACE"
+
 printf 'provekit-lift-c-assertions integration passed\n'
