@@ -184,6 +184,48 @@ func noFalseCalls() {
 	}
 }
 
+func TestLowerFloorSourceIgnoresSelectorQualifiedCheckPositive(t *testing.T) {
+	source := `
+func noFalseCalls() {
+	pkg.checkPositive(-1)
+	value.checkPositive(-1)
+}
+`
+	diagnostics := FloorV1SeedForwardPropagator().EmitDiagnostics(LowerFloorSource(source))
+
+	if len(diagnostics) != 0 {
+		t.Fatalf("expected selector-qualified calls to be ignored, got %#v", diagnostics)
+	}
+}
+
+func TestLowerFloorSourceUsesUTF16DiagnosticColumns(t *testing.T) {
+	source := "func demo() {\n\téé checkPositive(-1)\n}\n"
+	diagnostics := FloorV1SeedForwardPropagator().EmitDiagnostics(LowerFloorSource(source))
+
+	if len(diagnostics) != 1 {
+		t.Fatalf("expected one diagnostic, got %#v", diagnostics)
+	}
+	want := SingleLineRange(1, 4, 17)
+	if diagnostics[0].Range != want {
+		t.Fatalf("diagnostic range = %#v, want %#v", diagnostics[0].Range, want)
+	}
+}
+
+func TestLowerFloorSourceTreatsLabeledForAsTopFallback(t *testing.T) {
+	source := `
+func labeledLoop() {
+outer: for true {
+		checkPositive(-1)
+	}
+}
+`
+	diagnostics := FloorV1SeedForwardPropagator().EmitDiagnostics(LowerFloorSource(source))
+
+	if len(diagnostics) != 0 {
+		t.Fatalf("expected labeled loop body to use top fallback, got %#v", diagnostics)
+	}
+}
+
 func TestParseFloorFixtureEmitsForwardPropagationDiagnostic(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

@@ -420,7 +420,10 @@ final class ForwardPropagator
     private static function startsTopFallbackBlock(string $trimmed): bool
     {
         return str_starts_with($trimmed, 'for ') || str_starts_with($trimmed, 'for(')
-            || str_starts_with($trimmed, 'while ') || str_starts_with($trimmed, 'while(');
+            || str_starts_with($trimmed, 'while ') || str_starts_with($trimmed, 'while(')
+            || str_starts_with($trimmed, 'foreach ') || str_starts_with($trimmed, 'foreach(')
+            || str_starts_with($trimmed, 'switch ') || str_starts_with($trimmed, 'switch(')
+            || $trimmed === 'do' || str_starts_with($trimmed, 'do ') || str_starts_with($trimmed, 'do{');
     }
 
     private static function topHeaderHasInlineStatement(string $trimmed): bool
@@ -458,9 +461,11 @@ final class ForwardPropagator
         $searchFrom = 0;
         while (($relativeStart = strpos($line, $name, $searchFrom)) !== false) {
             $start = $relativeStart;
-            if ($start > 0 && self::isIdentifierByte($line[$start - 1])) {
-                $searchFrom = $start + $nameLen;
-                continue;
+            if ($start > 0) {
+                if (self::isIdentifierByte($line[$start - 1]) || self::hasQualifiedCallPrefix($line, $start)) {
+                    $searchFrom = $start + $nameLen;
+                    continue;
+                }
             }
 
             $cursor = $start + $nameLen;
@@ -502,6 +507,23 @@ final class ForwardPropagator
     private static function isIdentifierByte(string $char): bool
     {
         return $char === '$' || $char === '_' || ctype_alnum($char);
+    }
+
+    private static function hasQualifiedCallPrefix(string $line, int $start): bool
+    {
+        for ($idx = $start - 1; $idx >= 0; $idx--) {
+            if ($line[$idx] === ' ' || $line[$idx] === "\t") {
+                continue;
+            }
+            if ($line[$idx] === '>') {
+                return $idx > 0 && $line[$idx - 1] === '-';
+            }
+            if ($line[$idx] === ':') {
+                return $idx > 0 && $line[$idx - 1] === ':';
+            }
+            return false;
+        }
+        return false;
     }
 
     private static function maskNonCode(string $source): string

@@ -212,6 +212,22 @@ PHP;
     assert_same(0, count($diagnostics), 'embedded names and variable functions should not lower to checkPositive callsites');
 }
 
+function testCheckPositiveScannerIgnoresQualifiedMemberCalls(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo($obj): void {
+    $obj->checkPositive(-1);
+    Foo::checkPositive(-1);
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+
+    assert_same(0, count($diagnostics), 'member and static method calls should not lower to global checkPositive callsites');
+}
+
 function testCheckPositiveScannerAllowsWhitespaceBeforeParen(): void
 {
     $source = <<<'PHP'
@@ -225,6 +241,34 @@ PHP;
         ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
 
     assert_same(1, count($diagnostics), 'whitespace before the call paren should still lower checkPositive callsites');
+}
+
+function testCommonPhpControlBlocksUseTopFallback(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo($items, $value, $condition): void {
+    foreach ($items as $item) {
+        checkPositive(-1);
+    }
+    switch ($value) {
+        case 1:
+            checkPositive(-2);
+            break;
+    }
+    do {
+        checkPositive(-3);
+    } while ($condition);
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+    $stmts = ForwardPropagator::lowerFloorSource($source);
+    $unsupportedCount = count(array_filter($stmts, static fn (ForwardStmt $stmt): bool => $stmt->kind === 'unsupported'));
+
+    assert_same(0, count($diagnostics), 'foreach, switch, and do bodies should use top fallback');
+    assert_same(3, $unsupportedCount, 'all common control-block calls should lower under top fallback');
 }
 
 function testParseFloorFixtureEmitsForwardPropagationDiagnostic(): void
@@ -278,7 +322,9 @@ testUnbracedLoopBodyUsesTopFallback();
 testNextLineLoopBraceUsesTopFallbackForWholeBody();
 testCommentsAndStringsDoNotCreateCallsites();
 testCheckPositiveScannerUsesIdentifierBoundaries();
+testCheckPositiveScannerIgnoresQualifiedMemberCalls();
 testCheckPositiveScannerAllowsWhitespaceBeforeParen();
+testCommonPhpControlBlocksUseTopFallback();
 testParseFloorFixtureEmitsForwardPropagationDiagnostic();
 
 echo "ForwardPropagatorTest passed\n";

@@ -298,9 +298,10 @@ func LowerFloorSource(source string) []ForwardStmt {
 	stmts := []ForwardStmt{}
 	braceDepth := 0
 	var topBlockDepth *int
+	sourceLines := strings.Split(source, "\n")
 	scanLines := strings.Split(maskGoNonCode(source), "\n")
 
-	for lineIdx := range strings.Split(source, "\n") {
+	for lineIdx, sourceLine := range sourceLines {
 		scanLine := ""
 		if lineIdx < len(scanLines) {
 			scanLine = scanLines[lineIdx]
@@ -333,7 +334,11 @@ func LowerFloorSource(source string) []ForwardStmt {
 				stmts = append(stmts, ForwardStmt{
 					Kind:     ForwardStmtCall,
 					CalleeID: "checkPositive",
-					Range:    SingleLineRange(lineIdx, call.start, call.start+len("checkPositive")),
+					Range: SingleLineRange(
+						lineIdx,
+						utf16ColumnForByte(sourceLine, call.start),
+						utf16ColumnForByte(sourceLine, call.start+len("checkPositive")),
+					),
 				})
 			}
 		}
@@ -374,9 +379,11 @@ func checkPositiveCalls(line string) []checkPositiveCall {
 			break
 		}
 		start := searchFrom + relativeStart
-		if start > 0 && isIdentifierByte(line[start-1]) {
-			searchFrom = start + len(name)
-			continue
+		if start > 0 {
+			if isIdentifierByte(line[start-1]) || hasGoSelectorPrefix(line, start) {
+				searchFrom = start + len(name)
+				continue
+			}
 		}
 
 		cursor := start + len(name)
@@ -514,7 +521,54 @@ func isIdentifierByte(char byte) bool {
 }
 
 func startsTopFallbackBlock(trimmed string) bool {
-	return strings.HasPrefix(trimmed, "for ") || strings.HasPrefix(trimmed, "for{")
+	loopHead := strings.TrimLeft(stripGoLabel(trimmed), " \t")
+	return strings.HasPrefix(loopHead, "for ") || strings.HasPrefix(loopHead, "for{")
+}
+
+func stripGoLabel(trimmed string) string {
+	if len(trimmed) < 2 || !isGoLabelStart(trimmed[0]) {
+		return trimmed
+	}
+	cursor := 1
+	for cursor < len(trimmed) && isIdentifierByte(trimmed[cursor]) {
+		cursor++
+	}
+	if cursor < len(trimmed) && trimmed[cursor] == ':' {
+		return trimmed[cursor+1:]
+	}
+	return trimmed
+}
+
+func isGoLabelStart(char byte) bool {
+	return char == '_' || (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z')
+}
+
+func hasGoSelectorPrefix(line string, start int) bool {
+	for idx := start - 1; idx >= 0; idx-- {
+		if line[idx] == ' ' || line[idx] == '\t' {
+			continue
+		}
+		return line[idx] == '.'
+	}
+	return false
+}
+
+func utf16ColumnForByte(line string, byteOffset int) int {
+	if byteOffset > len(line) {
+		byteOffset = len(line)
+	}
+	column := 0
+	for idx, char := range line {
+		if idx >= byteOffset {
+			break
+		}
+		if char > 0xFFFF {
+			column += 2
+		} else {
+			column++
+		}
+	}
+	return column
 }
 
 func postForCheckPositiveArg(arg string) Post {
